@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
+import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
 import { VacancyFilters } from '@presentation/components/features/admin/VacancyFilters';
@@ -145,7 +146,7 @@ export function AdminVacanciesPage(): JSX.Element {
   );
 
   return (
-    <div className="w-full min-h-screen bg-[#FFF9FC] px-4 sm:px-8 lg:px-[120px] py-8">
+    <PageContainer>
       {/* Header */}
       <div className="flex items-center justify-between mb-10">
         <Typography variant="h1" weight="semibold" color="primary" className="font-poppins text-2xl">
@@ -304,6 +305,6 @@ export function AdminVacanciesPage(): JSX.Element {
         onClose={closeModal}
         onSuccess={handleModalSuccess}
       />
-    </div>
+    </PageContainer>
   );
 }

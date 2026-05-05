@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
+import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { PatientFilters } from '@presentation/components/features/admin/PatientFilters';
 import { PatientStatsCards } from '@presentation/components/features/admin/PatientStatsCards';
@@ -95,7 +96,7 @@ export function AdminPatientsPage(): JSX.Element {
   );
 
   return (
-    <div className="w-full min-h-screen bg-[#FFF9FC] px-4 sm:px-8 lg:px-[120px] py-8">
+    <PageContainer>
       {/* Header */}
       <div className="flex items-center justify-between mb-10">
         <Typography variant="h1" weight="semibold" color="primary" className="font-poppins text-2xl">
@@ -199,6 +200,6 @@ export function AdminPatientsPage(): JSX.Element {
           </div>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

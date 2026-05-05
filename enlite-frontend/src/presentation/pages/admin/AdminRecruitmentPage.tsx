@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { MetricCard } from '@presentation/components/atoms/MetricCard';
+import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { DateRangeFilter } from '@presentation/components/molecules/DateRangeFilter';
 import { CaseSearchBar } from '@presentation/components/molecules/CaseSearchBar';
 import { ActiveCasesTable } from '@presentation/components/organisms/ActiveCasesTable';
@@ -56,7 +57,7 @@ export function AdminRecruitmentPage(): JSX.Element {
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#FFF9FC] px-4 sm:px-8 lg:px-[120px] py-8">
+    <PageContainer>
       {/* Page Header */}
       <div className="flex items-center justify-between mb-10">
         <div className="flex items-center gap-3">
@@ -240,6 +241,6 @@ export function AdminRecruitmentPage(): JSX.Element {
           </div>
         )}
       </div>
-    </div>
+    </PageContainer>
   );
 }

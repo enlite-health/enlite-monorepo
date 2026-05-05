@@ -74,13 +74,19 @@ const NEXT_LABEL = /nextPage/i;
 // ── GARANTIA 1: Layout responsivo ─────────────────────────────────────────
 
 describe('AdminVacanciesPage — responsive layout', () => {
-  it('CRITICAL: container has responsive padding classes (not fixed px-[120px])', () => {
+  it('CRITICAL: container uses PageContainer atom with responsive padding', () => {
     const { container } = renderPage();
-    const mainDiv = container.firstElementChild as HTMLElement;
+    const outer = container.firstElementChild as HTMLElement;
+    const inner = outer.firstElementChild as HTMLElement;
 
-    expect(mainDiv.className).toContain('px-4');
-    expect(mainDiv.className).toContain('sm:px-8');
-    expect(mainDiv.className).toContain('lg:px-[120px]');
+    expect(outer.className).toContain('min-h-screen');
+    expect(outer.className).toContain('bg-background');
+    expect(inner.className).toContain('max-w-[1600px]');
+    expect(inner.className).toContain('mx-auto');
+    expect(inner.className).toContain('px-4');
+    expect(inner.className).toContain('sm:px-6');
+    expect(inner.className).toContain('md:px-8');
+    expect(inner.className).toContain('lg:px-12');
   });
 
   it('CRITICAL: pagination select has responsive width', () => {

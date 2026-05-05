@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Calendar } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
+import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import { useVacancyMatch } from '@hooks/admin/useVacancyMatch';
 import { MatchSummaryBar } from '@presentation/components/features/admin/VacancyMatch/MatchSummaryBar';
@@ -80,7 +81,7 @@ export default function VacancyMatchPage() {
     filtered.length > 0 && selected.size === filtered.length;
 
   return (
-    <div className="w-full min-h-screen bg-[#FFF9FC] px-4 sm:px-8 lg:px-[120px] py-8 pb-24">
+    <PageContainer className="pb-24">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
@@ -265,6 +266,6 @@ export default function VacancyMatchPage() {
           onScheduled={handleScheduled}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
