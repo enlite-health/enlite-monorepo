@@ -22,12 +22,18 @@ export class VacancyMatchController {
   async triggerMatch(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const topN                 = req.query.top_n             ? parseInt(req.query.top_n as string)       : 20;
-      const radiusKm             = req.query.radius_km         ? parseInt(req.query.radius_km as string)   : null;
+      const topN                   = req.query.top_n     ? parseInt(req.query.top_n as string)     : 20;
+      const radiusKm               = req.query.radius_km ? parseInt(req.query.radius_km as string) : undefined;
       const excludeWithActiveCases = req.query.exclude_active === 'true';
+      const useScoring             = req.query.use_scoring === 'true';
 
       const matchingService = new MatchmakingService();
-      const result = await matchingService.matchWorkersForJob(id, topN, radiusKm, excludeWithActiveCases);
+      const result = await matchingService.matchWorkersForJob(id, {
+        topN,
+        radiusKm,
+        excludeWithActiveCases,
+        useScoring,
+      });
 
       res.status(200).json({ success: true, data: result });
     } catch (error: any) {

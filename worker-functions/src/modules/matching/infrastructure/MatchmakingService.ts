@@ -25,12 +25,16 @@ import {
   WorkerCandidate,
   ScoredCandidate,
   MatchResult,
+  MatchOptions,
+  DEFAULT_RADIUS_KM,
   registrationWarning,
   haversineKm,
 } from './MatchmakingTypes';
 import { MatchmakingLLMScorer } from './MatchmakingLLMScorer';
+import { computeStructuredScore } from './MatchmakingStructuredScorer';
+import { runHardFilterOnlyPath } from './MatchmakingHardFilterPath';
 
-export type { ScoredCandidate, MatchResult } from './MatchmakingTypes';
+export type { ScoredCandidate, MatchResult, MatchOptions } from './MatchmakingTypes';
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -50,25 +54,34 @@ export class MatchmakingService {
 
   async matchWorkersForJob(
     jobPostingId: string,
-    topN = 20,
-    radiusKm: number | null = null,
-    excludeWithActiveCases = false,
+    options: MatchOptions = {},
   ): Promise<MatchResult> {
-    // worker_eligibility materialized view was cascade-dropped by migration 096.
-    // Eligibility is now checked inline: status = 'REGISTERED' AND deleted_at IS NULL.
+    const topN                   = options.topN ?? 20;
+    const radiusKm               = options.radiusKm ?? DEFAULT_RADIUS_KM;
+    const excludeWithActiveCases = options.excludeWithActiveCases ?? false;
+    const useScoring             = options.useScoring ?? false;
 
     const job = await this.loadJob(jobPostingId);
 
     const candidates = await this.hardFilter(job, radiusKm, excludeWithActiveCases);
     console.log(
       `[Matchmaking] ${candidates.length} candidatos passaram no hard filter para vaga ${jobPostingId}` +
-      `${radiusKm ? ` (raio: ${radiusKm}km)` : ''}` +
-      `${excludeWithActiveCases ? ' (excluindo com casos ativos)' : ''}`,
+      ` (raio: ${radiusKm}km)` +
+      `${excludeWithActiveCases ? ' (excluindo com casos ativos)' : ''}` +
+      `${useScoring ? '' : ' [SCORING DISABLED]'}`,
     );
+
+
+    if (!useScoring) {
+      return runHardFilterOnlyPath(
+        { kms: this.kms, saveMatchResults: this.saveMatchResults.bind(this) },
+        jobPostingId, job, candidates, radiusKm, topN,
+      );
+    }
 
     const rankedByStructured = candidates
       .map(w => {
-        const { score: structuredScore, distanceKm } = this.computeStructuredScore(w, job);
+        const { score: structuredScore, distanceKm } = computeStructuredScore(w, job);
         return { worker: w, structuredScore, distanceKm };
       })
       .sort((a, b) => b.structuredScore - a.structuredScore)
@@ -137,7 +150,7 @@ export class MatchmakingService {
 
     return {
       jobPostingId,
-      radiusKm: radiusKm ?? null,
+      radiusKm,
       matchSummary: {
         hardFilteredCount: candidates.length,
         llmScoredCount: finalCandidates.filter(c => c.llmScore !== null).length,
@@ -247,6 +260,7 @@ export class MatchmakingService {
          )
          AND (
            NOT $3::BOOLEAN
+           OR wl.location IS NULL
            OR ST_DWithin(
              wl.location,
              ST_MakePoint($4::FLOAT, $5::FLOAT)::geography,
@@ -297,13 +311,24 @@ export class MatchmakingService {
 
     const filteredCandidates: WorkerCandidate[] = [];
     for (const candidate of candidates) {
+      // Sex match (conservador): vaga BOTH/null aceita qualquer; vaga M/F
+      // exige worker com sex cadastrado E batendo. Worker sem sex_encrypted
+      // (null) é EXCLUÍDO quando a vaga restringe.
       if (job.requiredSex && job.requiredSex !== 'BOTH') {
+        if (!candidate.sexEncrypted) continue;
         const workerSex = await this.kms.decrypt(candidate.sexEncrypted);
         if (workerSex !== job.requiredSex) continue;
       }
-      if (job.serviceLat !== null && job.serviceLng !== null && candidate.workerLat !== null && candidate.workerLng !== null) {
+      // Distance: só exclui se TODOS os 4 (vaga lat+lng, worker lat+lng)
+      // estão presentes E a distância passa do raio. Worker sem coords ou
+      // vaga sem coords → mantém candidato (distance unknown).
+      if (
+        radiusKm !== null &&
+        job.serviceLat !== null && job.serviceLng !== null &&
+        candidate.workerLat !== null && candidate.workerLng !== null
+      ) {
         const distance = haversineKm(job.serviceLat, job.serviceLng, candidate.workerLat, candidate.workerLng);
-        if (radiusKm !== null && distance > radiusKm) continue;
+        if (distance > radiusKm) continue;
       }
       filteredCandidates.push(candidate);
     }
@@ -311,75 +336,15 @@ export class MatchmakingService {
     return filteredCandidates;
   }
 
-  // ─── Fase 2: Structured scoring ──────────────────────────────────────────
-
-  private computeStructuredScore(worker: WorkerCandidate, job: JobPosting): { score: number; distanceKm: number | null } {
-    let score = 0;
-
-    // Occupation match (0-40 pts)
-    if (job.requiredProfessions && job.requiredProfessions.length > 0) {
-      if (worker.occupation && job.requiredProfessions.includes(worker.occupation)) score += 40;
-    } else {
-      score += 20;
-    }
-
-    // Proximidade geográfica (0-35 pts)
-    let distanceKm: number | null = null;
-    if (job.serviceLat && job.serviceLng && worker.workerLat && worker.workerLng) {
-      distanceKm = haversineKm(job.serviceLat, job.serviceLng, worker.workerLat, worker.workerLng);
-      if      (distanceKm <  5) score += 35;
-      else if (distanceKm < 10) score += 28;
-      else if (distanceKm < 20) score += 18;
-      else if (distanceKm < 40) score += 8;
-      else                      score += 2;
-    } else if (job.patientZone && (worker.workZone || worker.interestZone)) {
-      const zone = job.patientZone.toLowerCase();
-      const wz   = (worker.workZone ?? '').toLowerCase();
-      const iz   = (worker.interestZone ?? '').toLowerCase();
-      if (wz && (zone.includes(wz) || wz.includes(zone))) score += 35;
-      else if (iz && (zone.includes(iz) || iz.includes(zone))) score += 20;
-      else score += 5;
-    } else {
-      score += 15;
-    }
-
-    // Diagnósticos / patologias (0-25 pts)
-    const jobPathologies = (job.pathologyTypes ?? '')
-      .split(/[,;/]/)
-      .map(p => p.trim().toLowerCase())
-      .filter(Boolean);
-    if (jobPathologies.length > 0 && worker.diagnosticPreferences.length > 0) {
-      const workerDx = worker.diagnosticPreferences.map(p => p.toLowerCase());
-      const matches  = jobPathologies.filter(d => workerDx.some(p => p.includes(d) || d.includes(p)));
-      score += Math.round((matches.length / jobPathologies.length) * 25);
-    } else if (jobPathologies.length === 0) {
-      score += 12;
-    }
-
-    // Penalty: rejection history
-    const rejHist = worker.rejectionHistory;
-    if (rejHist) {
-      if ((rejHist['DISTANCE'] ?? 0) >= 2) score -= 10;
-      if ((rejHist['SCHEDULE_INCOMPATIBLE'] ?? 0) >= 2) score -= 15;
-      if ((rejHist['DEPENDENCY_MISMATCH'] ?? 0) >= 3) score -= 20;
-      if ((rejHist['INSUFFICIENT_EXPERIENCE'] ?? 0) >= 3) score -= 15;
-    }
-
-    // Bonus/penalty: quality rating
-    const qr = worker.avgQualityRating;
-    if (qr !== null) {
-      if (qr >= 4.5) score += 15;
-      else if (qr >= 4.0) score += 10;
-      else if (qr < 3.0) score -= 10;
-    }
-
-    return { score: Math.min(100, Math.max(0, score)), distanceKm };
-  }
-
   // ─── Persistência ─────────────────────────────────────────────────────────
 
   private async saveMatchResults(jobPostingId: string, candidates: ScoredCandidate[]): Promise<void> {
     for (const candidate of candidates) {
+      // When scoring is disabled, finalScore=0 — persist as NULL so dashboards
+      // can distinguish "not scored yet" from "scored 0".
+      const matchScore = candidate.llmScore !== null || candidate.structuredScore !== 0
+        ? candidate.finalScore
+        : null;
       await this.db.query(
         `INSERT INTO worker_job_applications
            (worker_id, job_posting_id, match_score, application_status, application_funnel_stage, internal_notes)
@@ -388,7 +353,7 @@ export class MatchmakingService {
            match_score    = EXCLUDED.match_score,
            internal_notes = EXCLUDED.internal_notes,
            updated_at     = NOW()`,
-        [candidate.workerId, jobPostingId, candidate.finalScore, candidate.llmReasoning],
+        [candidate.workerId, jobPostingId, matchScore, candidate.llmReasoning],
       );
     }
   }

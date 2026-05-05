@@ -12,6 +12,16 @@ export function sanitizeDescription(raw: string | null): string {
   return raw.trim();
 }
 
+function normalizeStateCity(raw: string | null): string | null {
+  if (!raw || !raw.trim()) return null;
+  return raw;
+}
+
+function normalizeWorkerType(raw: string[] | null): string[] | null {
+  if (!raw || raw.length === 0) return null;
+  return raw;
+}
+
 export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
   return {
     id: row.id,
@@ -24,8 +34,13 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     worker_profile_sought: row.worker_profile_sought,
     service: row.service,
     pathologies: row.pathologies,
-    provincia: row.provincia,
-    localidad: row.localidad,
+    state: row.state,
+    city: row.city,
     detail_link: row.detail_link,
+    worker_type: normalizeWorkerType(row.worker_type),
+    worker_sex: row.worker_sex ?? null,
+    job_zone: row.job_zone ?? null,
+    neighborhood: row.neighborhood ?? null,
+    state_city: normalizeStateCity(row.state_city),
   };
 }

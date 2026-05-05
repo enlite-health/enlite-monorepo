@@ -26,6 +26,7 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
     workerType: dto.service ?? '',
     provincia: dto.provincia ?? '',
     localidad: dto.localidad ?? '',
+    barrio: dto.neighborhood ?? '',
     workerSex: '',
     pathologies: dto.pathologies ?? '',
     description: dto.description,
@@ -262,7 +263,7 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
                     <span className="text-xs text-[#737373] capitalize font-lexend font-medium">{job.workerType}</span>
                   </div>
                   <h3 className="font-semibold text-[#180149] text-sm font-lexend">
-                    {job.provincia} - {job.localidad}
+                    {[job.barrio, job.localidad, job.provincia].filter(Boolean).join(' · ')}
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2 flex-shrink-0">
