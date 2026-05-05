@@ -1,6 +1,18 @@
 import { ReactNode } from 'react';
 
-type TypographyVariant = 'h1' | 'h2' | 'h3' | 'body' | 'caption' | 'label';
+type TypographyVariant =
+  | 'h1'
+  | 'h2'
+  | 'h3'
+  | 'body'
+  | 'caption'
+  | 'label'
+  | 'card-title'
+  | 'section-title'
+  | 'value'
+  | 'value-sm'
+  | 'day-name';
+
 type TypographyWeight = 'normal' | 'medium' | 'semibold' | 'bold';
 type TypographyColor = 'primary' | 'secondary' | 'tertiary' | 'white';
 
@@ -20,6 +32,11 @@ const variantStyles: Record<TypographyVariant, string> = {
   body: 'font-lexend text-sm leading-snug',
   caption: 'font-lexend text-xs leading-relaxed',
   label: 'font-lexend text-base leading-[150%]',
+  'card-title': 'font-lexend text-[28px] leading-[1.3]',
+  'section-title': 'font-lexend text-[22px] leading-[1.3]',
+  value: 'font-lexend text-[22px] leading-[1.3]',
+  'value-sm': 'font-lexend text-[18px] leading-[1.3]',
+  'day-name': 'font-lexend text-sm leading-[1.4]',
 };
 
 const weightStyles: Record<TypographyWeight, string> = {
@@ -44,7 +61,8 @@ export function Typography({
   className = '',
   as,
 }: TypographyProps): JSX.Element {
-  const Component = as || (variant.startsWith('h') ? variant : 'p');
+  const isHeading = variant === 'h1' || variant === 'h2' || variant === 'h3';
+  const Component = as || (isHeading ? (variant as 'h1' | 'h2' | 'h3') : 'p');
   
   return (
     <Component
