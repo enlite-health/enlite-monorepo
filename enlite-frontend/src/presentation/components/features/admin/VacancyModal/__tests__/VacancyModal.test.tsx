@@ -231,6 +231,8 @@ describe('CaseSelectStep', () => {
           display_order: 1,
           source: 'manual',
           complement: null,
+          lat: null,
+          lng: null,
         }]}
         selectedAddressId={null}
         selectAddress={selectAddress}

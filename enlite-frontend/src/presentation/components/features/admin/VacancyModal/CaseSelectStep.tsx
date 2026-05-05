@@ -134,7 +134,7 @@ export function CaseSelectStep({
                       >
                         <MapPin className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                         <div className="min-w-0">
-                          <p className="text-slate-700 text-sm font-medium truncate">{addr.address_formatted}</p>
+                          <p className="text-slate-700 text-sm font-medium truncate">{addr.address_formatted || addr.address_raw || '—'}</p>
                           {addr.address_type && (
                             <p className="text-slate-500 text-xs mt-0.5">{addr.address_type}</p>
                           )}

@@ -58,6 +58,11 @@ export const vacancyFormSchema = z
     salary_text: z.string().optional(),
     payment_day: z.string().optional(),
     daily_obs: z.string().optional(),
+    /** ISO date `YYYY-MM-DD` from `<input type="date">`. Optional — backend
+     *  defaults to NOW() when null/empty. */
+    published_at: z.string().optional(),
+    /** ISO date `YYYY-MM-DD`. Optional — left blank by default. */
+    closes_at: z.string().optional(),
     /** 3 fixed Meet link slots. At least one must be a valid Google Meet URL. */
     meet_links: z.tuple([meetLinkSlot, meetLinkSlot, meetLinkSlot]),
   })
@@ -208,12 +213,29 @@ export function buildVacancyPayload(
     payment_day: data.payment_day || null,
     daily_obs: data.daily_obs || null,
     status: data.status,
+    // Backend coalesces null published_at to NOW(); empty string is treated as
+    // null too. closes_at stays null when blank.
+    published_at: data.published_at?.trim() ? data.published_at : null,
+    closes_at: data.closes_at?.trim() ? data.closes_at : null,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Default form values
 // ---------------------------------------------------------------------------
+
+/**
+ * Today as `YYYY-MM-DD` in the user's local timezone — what `<input type="date">`
+ * expects. We deliberately avoid `toISOString()` because it would shift to UTC
+ * and produce yesterday's date for users in negative-offset zones (AR is UTC-3).
+ */
+function todayIsoDate(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 export const DEFAULT_FORM_VALUES: VacancyFormData = {
   title: '',
@@ -230,5 +252,8 @@ export const DEFAULT_FORM_VALUES: VacancyFormData = {
   salary_text: '',
   payment_day: '',
   daily_obs: '',
+  // Publish defaults to today (operations rule: auto-fill, but editable). Closes blank.
+  published_at: todayIsoDate(),
+  closes_at: '',
   meet_links: ['', '', ''],
 };

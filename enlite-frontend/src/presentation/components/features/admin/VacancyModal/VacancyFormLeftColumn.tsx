@@ -267,14 +267,22 @@ export function VacancyFormLeftColumn({
         <MeetLinksField control={control} errors={errors} />
       </div>
 
-      {/* 10. Publish date — display only (no schema field yet) */}
+      {/* 10. Publish date — defaults to today, optional, editable. */}
       <FormField label={tp('publishDate')}>
-        <InputWithIcon type="date" disabled />
+        <InputWithIcon
+          type="date"
+          {...register('published_at')}
+          data-testid="published-at-input"
+        />
       </FormField>
 
-      {/* 11. Closing date — display only (no schema field yet) */}
+      {/* 11. Closing date — optional, blank by default. */}
       <FormField label={tp('closingDate')}>
-        <InputWithIcon type="date" disabled />
+        <InputWithIcon
+          type="date"
+          {...register('closes_at')}
+          data-testid="closes-at-input"
+        />
       </FormField>
     </div>
   );

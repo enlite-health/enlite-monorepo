@@ -36,6 +36,7 @@ export default function CreateVacancyPage(): JSX.Element {
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [validationFailedFields, setValidationFailedFields] = useState<string[]>([]);
+  const [formComplete, setFormComplete] = useState(false);
 
   const flow = useVacancyModalFlow();
   const patientSelected = flow.selectedCaseNumber != null;
@@ -81,7 +82,7 @@ export default function CreateVacancyPage(): JSX.Element {
             variant="primary"
             size="sm"
             onClick={handleSave}
-            disabled={isBusy || !patientSelected}
+            disabled={isBusy || !formComplete}
             isLoading={isBusy}
             className="h-10 w-40 rounded-full bg-[#180149] text-white font-['Poppins'] font-semibold text-[16px] hover:bg-[#180149]/90 active:bg-[#180149]/80"
             data-testid="create-vacancy-save-btn"
@@ -145,6 +146,7 @@ export default function CreateVacancyPage(): JSX.Element {
             selectCase={flow.selectCase}
             selectAddress={flow.selectAddress}
             onValidationFailedFieldsChange={setValidationFailedFields}
+            onCompleteChange={setFormComplete}
           />
         </div>
       </div>

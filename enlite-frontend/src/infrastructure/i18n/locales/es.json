@@ -782,6 +782,7 @@
       "patientCard": {
         "title": "Paciente",
         "name": "Nombre",
+        "nameLabel": "Nombre del paciente:",
         "diagnosis": "Diagnóstico",
         "dependencyLevel": "Nivel de dependencia",
         "zone": "Zona / Barrio",
@@ -866,6 +867,46 @@
         "encuadres": "Encuadres",
         "talentum": "Talentum",
         "links": "Links"
+      },
+      "funnelView": {
+        "viewToggle": {
+          "label": "Cambiar vista",
+          "list": "Lista",
+          "kanban": "Kanban"
+        },
+        "dispatchInvitesButton": "Enviar invitaciones",
+        "kanban": {
+          "totalEncuadres": "encuadres totales",
+          "refresh": "Actualizar"
+        }
+      },
+      "funnelTabs": {
+        "ariaLabel": "Filtros del embudo",
+        "invited": "Invitados",
+        "postulated": "Postulados",
+        "preSelected": "Pre Seleccionados",
+        "rejected": "Rechazados",
+        "withdrew": "Desistentes"
+      },
+      "funnelTable": {
+        "headers": {
+          "name": "NOMBRE",
+          "phone": "TELÉFONO",
+          "inviteDate": "DATA DO CONVITE",
+          "whatsapp": "WHATSAPP",
+          "accepted": "ACEITO"
+        },
+        "acceptedYes": "Sí",
+        "acceptedNo": "No",
+        "emptyState": "Sin candidatos en esta etapa todavía."
+      },
+      "whatsappStatus": {
+        "notSent": "No enviado",
+        "sent": "Enviado",
+        "delivered": "Entregado",
+        "read": "Leído",
+        "replied": "Respondido",
+        "failed": "Fallido"
       },
       "publications": {
         "title": "Publicaciones",
@@ -1054,6 +1095,54 @@
         "unpublishError": "Error al despublicar de Talentum",
         "generateError": "Error al generar descripción",
         "noDescription": "Sin descripción generada aún. Hacé clic en \"Regenerar\" para crear una."
+      },
+      "statusBadge": {
+        "BUSQUEDA": "En búsqueda",
+        "ACTIVO": "Activo",
+        "REEMPLAZOS": "Reemplazo",
+        "CERRADO": "Cerrado",
+        "ADMISSION": "Admisión"
+      },
+      "caseCard": {
+        "caseLabel": "CASO",
+        "paymentTerm": "Plazo de pago",
+        "details": "Detalles",
+        "netHourlyRate": "Valor neto/hora:",
+        "weeklyHours": "Horas semanales:",
+        "providersNeeded": "Cantidad de Profesionales:",
+        "dates": "Fechas",
+        "publishedAt": "Fecha de publicación:",
+        "closedAt": "Fecha de cierre:"
+      },
+      "patientCard": {
+        "title": "Paciente",
+        "nameLabel": "Nombre del paciente:"
+      },
+      "professionCard": {
+        "title": "Acompañantes Terapéuticos",
+        "titleCaregiver": "Cuidadores",
+        "availableFor": "Disponible para:",
+        "diagnosis": "Hipótesis Diagnóstica - CID:",
+        "description": "Descripción del trabajo:",
+        "characteristics": "Características:",
+        "ageRange": "Faixa Etária:",
+        "location": "Localización:",
+        "profile": "Perfil:",
+        "serviceType": "Tipo de servicio:",
+        "daysAndHours": "Días y Horarios:",
+        "edit": "Editar",
+        "weekdays": {
+          "sunday": "Domingo:",
+          "monday": "Lunes:",
+          "tuesday": "Martes:",
+          "wednesday": "Miércoles:",
+          "thursday": "Jueves:",
+          "friday": "Viernes:",
+          "saturday": "Sábado:"
+        }
+      },
+      "meetLinksRow": {
+        "title": "Fechas para entrevista:"
       }
     },
     "vacancyModal": {
@@ -1102,6 +1191,7 @@
       "scheduleSlotsLabel": "Horarios",
       "scheduleSlotsCount": "Horarios ({{count}})",
       "scheduleRemoveSlot": "Quitar horario",
+      "scheduleDayFull": "El día ya está completo",
       "professionalTypePlaceholder": "Seleccionar...",
       "sexPlaceholder": "Seleccionar...",
       "ageRangePlaceholder": "Seleccionar...",
@@ -1232,7 +1322,7 @@
     "createVacancyV2": {
       "pageTitle": "Nueva Vacante",
       "pageSubtitle": "Completá los datos para crear la vacante",
-      "saveButton": "Guardar",
+      "saveButton": "Continuar",
       "saving": "Guardando...",
       "generatingAI": "Generando contenido con IA...",
       "steps": {

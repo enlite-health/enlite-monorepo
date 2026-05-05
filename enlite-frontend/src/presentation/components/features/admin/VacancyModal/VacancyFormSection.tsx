@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useRef, RefObject } from 'react';
-import { useForm, type FieldErrors } from 'react-hook-form';
+import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
@@ -25,6 +25,7 @@ import {
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
   buildScheduleFromVacancy,
+  MEET_LINK_REGEX,
 } from '../vacancy-form-schema';
 import { summarizeAddress } from '@presentation/utils/summarizeAddress';
 import { VacancyFormLeftColumn } from './VacancyFormLeftColumn';
@@ -70,6 +71,14 @@ export interface VacancyFormSectionProps {
   selectAddress: (addressId: string) => void;
   /** Surfaces RHF/Zod validation failures so the page can render a banner above the form. */
   onValidationFailedFieldsChange?: (fields: string[]) => void;
+  /**
+   * Notifies the parent whenever the form's required-field set is fully
+   * satisfied — used to gate the "Continuar" button without invoking RHF's
+   * full validation cycle. Watches the same minimum invariants that the
+   * Zod schema enforces on submit (case + address + profession + schedule
+   * + at least one valid Meet link).
+   */
+  onCompleteChange?: (isComplete: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +101,7 @@ export function VacancyFormSection({
   selectCase,
   selectAddress,
   onValidationFailedFieldsChange,
+  onCompleteChange,
 }: VacancyFormSectionProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -119,6 +129,37 @@ export function VacancyFormSection({
       prevSubmitting.current = submitting;
     }
   }, [submitting, onSubmittingChange]);
+
+  // Watch the minimum invariants required by the schema so the parent can
+  // gate the "Continuar" button without triggering a full RHF validation pass.
+  const watched = useWatch({
+    control,
+    name: ['required_professions', 'schedule', 'meet_links', 'providers_needed'],
+  }) as [
+    string[] | undefined,
+    Array<{ days: string[]; timeFrom: string; timeTo: string }> | undefined,
+    [string, string, string] | undefined,
+    number | undefined,
+  ];
+  const [professions, schedule, meetLinks, providersNeeded] = watched;
+
+  const isComplete =
+    patientSelected &&
+    !!selectedAddressId &&
+    Array.isArray(professions) && professions.length > 0 &&
+    typeof providersNeeded === 'number' && providersNeeded >= 1 &&
+    Array.isArray(schedule) &&
+    schedule.some((s) => s?.days?.length > 0 && !!s.timeFrom && !!s.timeTo) &&
+    Array.isArray(meetLinks) &&
+    meetLinks.some((l) => !!l && MEET_LINK_REGEX.test(l));
+
+  const prevComplete = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (prevComplete.current !== isComplete) {
+      onCompleteChange?.(isComplete);
+      prevComplete.current = isComplete;
+    }
+  }, [isComplete, onCompleteChange]);
 
   // Fetch patient detail when patient is selected (for diagnosis / cityLocality)
   useEffect(() => {
@@ -150,6 +191,14 @@ export function VacancyFormSection({
         salary_text: existingVacancy.salary_text ?? '',
         payment_day: existingVacancy.payment_day ?? '',
         daily_obs: existingVacancy.daily_obs ?? '',
+        // Backend returns timestamptz as ISO string; the date input only
+        // accepts `YYYY-MM-DD`, so we slice. Empty/null → empty string.
+        published_at: existingVacancy.published_at
+          ? String(existingVacancy.published_at).slice(0, 10)
+          : '',
+        closes_at: existingVacancy.closes_at
+          ? String(existingVacancy.closes_at).slice(0, 10)
+          : '',
         meet_links: [
           existingVacancy.meet_link_1 ?? '',
           existingVacancy.meet_link_2 ?? '',

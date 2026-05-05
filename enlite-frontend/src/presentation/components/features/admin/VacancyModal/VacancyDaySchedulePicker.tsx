@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { TimeSelect } from '@presentation/components/atoms';
 import {
   DAY_KEYS,
+  findNextAvailableSlot,
   type DayKey,
   type ScheduleValue,
 } from '../vacancyScheduleUtils';
@@ -88,7 +89,9 @@ export function VacancyDaySchedulePicker({
   const daysMap = valueToDaysMap(value);
 
   const addSlot = (day: DayKey) => {
-    const next: SlotMap = { ...daysMap, [day]: [...daysMap[day], { startTime: '09:00', endTime: '17:00' }] };
+    const suggestion = findNextAvailableSlot(daysMap[day]);
+    if (!suggestion) return;
+    const next: SlotMap = { ...daysMap, [day]: [...daysMap[day], suggestion] };
     onChange(daysMapToValue(next));
   };
 
@@ -119,6 +122,7 @@ export function VacancyDaySchedulePicker({
         const slots = daysMap[day];
         const enabled = slots.length > 0;
         const dayLabel = t(`admin.vacancyDetail.vacancyForm.days.${day}`);
+        const dayFull = findNextAvailableSlot(slots) === null;
 
         return (
           <div
@@ -147,8 +151,14 @@ export function VacancyDaySchedulePicker({
                 <button
                   type="button"
                   onClick={() => addSlot(day)}
-                  className="p-2 rounded-pill bg-primary hover:bg-primary/90 transition-colors"
+                  disabled={dayFull}
+                  className={`p-2 rounded-pill transition-colors ${
+                    dayFull
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-primary hover:bg-primary/90'
+                  }`}
                   aria-label={t('admin.vacancyModal.scheduleSlotsLabel')}
+                  title={dayFull ? t('admin.vacancyModal.scheduleDayFull') : undefined}
                 >
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                     <path
@@ -178,6 +188,7 @@ export function VacancyDaySchedulePicker({
                       <TimeSelect
                         value={slot.endTime}
                         onChange={(e) => updateSlot(day, i, 'endTime', e.target.value)}
+                        includeEndOfDay
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
                     </div>

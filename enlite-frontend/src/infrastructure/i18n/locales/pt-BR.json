@@ -782,6 +782,7 @@
       "patientCard": {
         "title": "Paciente",
         "name": "Nome",
+        "nameLabel": "Nome do paciente:",
         "diagnosis": "Diagnóstico",
         "dependencyLevel": "Nível de dependência",
         "zone": "Zona / Bairro",
@@ -850,6 +851,46 @@
         "encuadres": "Encuadres",
         "talentum": "Talentum",
         "links": "Links"
+      },
+      "funnelView": {
+        "viewToggle": {
+          "label": "Alternar visualização",
+          "list": "Lista",
+          "kanban": "Kanban"
+        },
+        "dispatchInvitesButton": "Disparar novos convites",
+        "kanban": {
+          "totalEncuadres": "encuadres totais",
+          "refresh": "Atualizar"
+        }
+      },
+      "funnelTabs": {
+        "ariaLabel": "Filtros do funil",
+        "invited": "Convidados",
+        "postulated": "Postulados",
+        "preSelected": "Pré Selecionados",
+        "rejected": "Rejeitados",
+        "withdrew": "Desistentes"
+      },
+      "funnelTable": {
+        "headers": {
+          "name": "NOME",
+          "phone": "TELEFONE",
+          "inviteDate": "DATA DO CONVITE",
+          "whatsapp": "WHATSAPP",
+          "accepted": "ACEITO"
+        },
+        "acceptedYes": "Sim",
+        "acceptedNo": "Não",
+        "emptyState": "Nenhum candidato neste estágio ainda."
+      },
+      "whatsappStatus": {
+        "notSent": "Não enviado",
+        "sent": "Enviado",
+        "delivered": "Entregue",
+        "read": "Lido",
+        "replied": "Respondido",
+        "failed": "Falhou"
       },
       "publications": {
         "title": "Publicações",
@@ -976,6 +1017,54 @@
           "ageRangeMinInvalid": "A idade mínima deve ser pelo menos 18 anos",
           "ageRangeInvalid": "A idade máxima deve ser maior ou igual à mínima"
         }
+      },
+      "statusBadge": {
+        "BUSQUEDA": "Em busca",
+        "ACTIVO": "Ativo",
+        "REEMPLAZOS": "Substituição",
+        "CERRADO": "Encerrado",
+        "ADMISSION": "Admissão"
+      },
+      "caseCard": {
+        "caseLabel": "CASO",
+        "paymentTerm": "Prazo de pagamento",
+        "details": "Detalhes",
+        "netHourlyRate": "Valor líquido/hora:",
+        "weeklyHours": "Horas semanais:",
+        "providersNeeded": "Quantidade de Profissionais:",
+        "dates": "Datas",
+        "publishedAt": "Data de publicação:",
+        "closedAt": "Data de encerramento:"
+      },
+      "patientCard": {
+        "title": "Paciente",
+        "nameLabel": "Nome do paciente:"
+      },
+      "professionCard": {
+        "title": "Acompanhantes Terapêuticos",
+        "titleCaregiver": "Cuidadores",
+        "availableFor": "Disponível para:",
+        "diagnosis": "Hipótese Diagnóstica - CID:",
+        "description": "Descrição do trabalho:",
+        "characteristics": "Características:",
+        "ageRange": "Faixa Etária:",
+        "location": "Localização:",
+        "profile": "Perfil:",
+        "serviceType": "Tipo de serviço:",
+        "daysAndHours": "Dias e Horários:",
+        "edit": "Editar",
+        "weekdays": {
+          "sunday": "Domingo:",
+          "monday": "Segunda-feira:",
+          "tuesday": "Terça-feira:",
+          "wednesday": "Quarta-feira:",
+          "thursday": "Quinta-feira:",
+          "friday": "Sexta-feira:",
+          "saturday": "Sábado:"
+        }
+      },
+      "meetLinksRow": {
+        "title": "Datas para entrevista:"
       }
     },
     "vacancyModal": {
@@ -1024,6 +1113,7 @@
       "scheduleSlotsLabel": "Horários",
       "scheduleSlotsCount": "Horários ({{count}})",
       "scheduleRemoveSlot": "Remover horário",
+      "scheduleDayFull": "O dia já está completo",
       "professionalTypePlaceholder": "Selecionar...",
       "sexPlaceholder": "Selecionar...",
       "ageRangePlaceholder": "Selecionar...",
@@ -1154,7 +1244,7 @@
     "createVacancyV2": {
       "pageTitle": "Nova Vaga",
       "pageSubtitle": "Preencha os dados para criar a vaga",
-      "saveButton": "Salvar",
+      "saveButton": "Continuar",
       "saving": "Salvando...",
       "generatingAI": "Gerando conteúdo com IA...",
       "steps": {

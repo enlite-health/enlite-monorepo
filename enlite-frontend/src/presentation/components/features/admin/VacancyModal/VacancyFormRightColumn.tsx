@@ -22,11 +22,12 @@
 
 import { UseFormRegister, Control, Controller, FieldErrors, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Map } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
+import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { VacancyDaySchedulePicker } from './VacancyDaySchedulePicker';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { STATUS_OPTIONS } from '../vacancy-form-schema';
@@ -167,7 +168,7 @@ export function VacancyFormRightColumn({
                 >
                   <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
                   <span className="truncate text-base text-slate-700">
-                    {addr.address_formatted}
+                    {addr.address_formatted || addr.address_raw || '—'}
                   </span>
                 </button>
               ))}
@@ -189,15 +190,19 @@ export function VacancyFormRightColumn({
         </FormField>
       </div>
 
-      {/* 6. Map placeholder */}
+      {/* 6. Map of the selected address. lat/lng come from the backend
+          (PatientService geocodes at upsert; backfill script fills legacy rows).
+          When coords are missing the component shows its placeholder. */}
       <FormField label="">
-        <div
-          className="h-[280px] rounded-xl border border-[#E5E7EB] bg-slate-100 flex flex-col items-center justify-center gap-3 text-slate-400"
-          aria-label={tp('mapPlaceholder')}
-        >
-          <Map className="w-10 h-10 opacity-30" />
-          <span className="text-sm">{tp('mapPlaceholder')}</span>
-        </div>
+        {(() => {
+          const selected = addresses.find((a) => a.id === selectedAddressId);
+          return (
+            <ServiceAreaMap
+              lat={selected?.lat ?? null}
+              lng={selected?.lng ?? null}
+            />
+          );
+        })()}
       </FormField>
 
       {/* 7. Payment day */}
