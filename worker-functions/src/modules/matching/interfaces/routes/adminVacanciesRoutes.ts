@@ -4,6 +4,7 @@ import { VacancyTalentumController } from '../controllers/VacancyTalentumControl
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
 import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
 import { EncuadreFunnelController } from '../controllers/EncuadreFunnelController';
+import { EncuadreFunnelTableController } from '../controllers/EncuadreFunnelTableController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
@@ -30,6 +31,7 @@ export function createAdminVacanciesRoutes(
   interviewSlotsController: InterviewSlotsController,
   authMiddleware: AuthMiddleware,
   vacancyAddressReviewController?: VacancyAddressReviewController,
+  funnelTableController?: EncuadreFunnelTableController,
 ): Router {
   const router = Router();
 
@@ -129,6 +131,13 @@ export function createAdminVacanciesRoutes(
   router.put('/encuadres/:id/move', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.moveEncuadre(req, res),
   );
+
+  // ── Encuadre Funnel Table — audit table (EncuadreFunnelTableController) ───────
+  if (funnelTableController) {
+    router.get('/vacancies/:id/funnel-table', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+      funnelTableController!.getEncuadreFunnelTable(req, res),
+    );
+  }
 
   // ── Coordinator Dashboard (EncuadreDashboardController) ──────────────────────
   router.get('/dashboard/coordinator-capacity', authMiddleware.requireStaff(), (req: Request, res: Response) =>

@@ -4,8 +4,10 @@ export * from './domain/TalentumPrescreening';
 export * from './domain/WorkerJobApplication';
 export * from './domain/WorkerOccupation';
 export * from './domain/WorkerLocation';
+export * from './domain/FunnelTableRow';
 
 // ── Infrastructure ───────────────────────────────────────────────
+export { FunnelTableRepository } from './infrastructure/FunnelTableRepository';
 export { EncuadreRepository } from './infrastructure/EncuadreRepository';
 export { EncuadreQueryRepository } from './infrastructure/EncuadreQueryRepository';
 export * from './infrastructure/EncuadreMappers';
@@ -17,6 +19,7 @@ export { MatchmakingService } from './infrastructure/MatchmakingService';
 export { GoogleCalendarService, googleCalendarService } from './infrastructure/GoogleCalendarService';
 
 // ── Application ──────────────────────────────────────────────────
+export { GetFunnelTableUseCase } from './application/GetFunnelTableUseCase';
 export { UpdateEncuadreResultUseCase } from './application/UpdateEncuadreResultUseCase';
 export { ScheduleInterviewsUseCase } from './application/ScheduleInterviewsUseCase';
 export { ProcessTalentumPrescreening } from './application/ProcessTalentumPrescreening';
@@ -26,6 +29,7 @@ export type { IJobPostingLookup } from './application/ProcessTalentumPrescreenin
 export { EncuadreController } from './interfaces/controllers/EncuadreController';
 export * from './interfaces/controllers/EncuadreControllerHelpers';
 export { EncuadreFunnelController } from './interfaces/controllers/EncuadreFunnelController';
+export { EncuadreFunnelTableController } from './interfaces/controllers/EncuadreFunnelTableController';
 export { EncuadreDashboardController } from './interfaces/controllers/EncuadreDashboardController';
 export { VacanciesController } from './interfaces/controllers/VacanciesController';
 export { VacancyMatchController } from './interfaces/controllers/VacancyMatchController';

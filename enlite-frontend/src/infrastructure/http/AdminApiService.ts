@@ -305,6 +305,17 @@ class AdminApiServiceClass {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
   }
 
+  async getVacancyFunnelTable(
+    vacancyId: string,
+    bucket?: 'INVITED' | 'POSTULATED' | 'PRE_SELECTED' | 'REJECTED' | 'WITHDREW' | 'ALL',
+  ): Promise<import('@domain/entities/Funnel').FunnelTableResponse> {
+    const qs = bucket ? `?bucket=${bucket}` : '';
+    return this.request<import('@domain/entities/Funnel').FunnelTableResponse>(
+      'GET',
+      `/api/admin/vacancies/${vacancyId}/funnel-table${qs}`,
+    );
+  }
+
   // ========== Interview Slots Methods ==========
 
   async createInterviewSlots(vacancyId: string, data: CreateSlotsInput): Promise<InterviewSlot[]> {
