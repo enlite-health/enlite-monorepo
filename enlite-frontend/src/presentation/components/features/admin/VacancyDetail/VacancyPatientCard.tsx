@@ -1,48 +1,42 @@
 import { useTranslation } from 'react-i18next';
+import { Eye } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 
 interface VacancyPatientCardProps {
   firstName: string | null;
   lastName: string | null;
-  diagnosis: string | null;
-  zone: string | null;
-  insuranceVerified: boolean | null;
+  /** Kept for backward compat — no longer displayed in the Figma layout */
+  diagnosis?: string | null;
+  /** Kept for backward compat — no longer displayed in the Figma layout */
+  zone?: string | null;
+  /** Kept for backward compat — no longer displayed in the Figma layout */
+  insuranceVerified?: boolean | null;
 }
 
 export function VacancyPatientCard({
   firstName,
   lastName,
-  diagnosis,
-  zone,
-  insuranceVerified,
 }: VacancyPatientCardProps) {
   const { t } = useTranslation();
   const patientName = [firstName, lastName].filter(Boolean).join(' ') || '—';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      <Typography variant="h3" weight="semibold" className="text-[#737373]">
+    <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-8 flex flex-col gap-3.5">
+      <Typography variant="card-title" color="primary" weight="semibold">
         {t('admin.vacancyDetail.patientCard.title')}
       </Typography>
-      <div className="flex flex-col gap-3">
-        <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">{t('admin.vacancyDetail.patientCard.name')}</Typography>
-          <Typography variant="body" weight="medium">{patientName}</Typography>
-        </div>
-        <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">{t('admin.vacancyDetail.patientCard.diagnosis')}</Typography>
-          <Typography variant="body" weight="medium">{diagnosis ?? '—'}</Typography>
-        </div>
-        <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">{t('admin.vacancyDetail.patientCard.zone')}</Typography>
-          <Typography variant="body" weight="medium">{zone ?? '—'}</Typography>
-        </div>
-        <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">{t('admin.vacancyDetail.patientCard.insuranceVerified')}</Typography>
-          <Typography variant="body" weight="medium">
-            {insuranceVerified === null ? '—' : insuranceVerified ? t('admin.vacancyDetail.patientCard.yes') : t('admin.vacancyDetail.patientCard.no')}
-          </Typography>
-        </div>
+      <Typography variant="label" color="secondary" weight="semibold">
+        {t('admin.vacancyDetail.patientCard.nameLabel')}
+      </Typography>
+      <div className="flex items-center gap-2">
+        <Eye
+          className="text-gray-800 shrink-0"
+          style={{ width: 23, height: 20 }}
+          strokeWidth={1.5}
+        />
+        <Typography variant="value" color="primary" weight="medium">
+          {patientName}
+        </Typography>
       </div>
     </div>
   );
