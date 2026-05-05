@@ -30,6 +30,8 @@ import { Pool } from 'pg';
 import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpVacancyMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpVacancyMapper';
 import { JobPostingARRepository } from '../src/modules/matching/infrastructure/JobPostingARRepository';
+import { ShortLinkService } from '../src/modules/matching/infrastructure/shortlinks/ShortLinkService';
+import { EnsureVacancyShortLinkUseCase } from '../src/modules/matching/application/EnsureVacancyShortLinkUseCase';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -37,6 +39,9 @@ import type { ClickUpTask } from '../src/modules/integration/infrastructure/clic
 const LIST_ID = '901304883903'; // Estado de Pacientes
 const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
 const SCRIPT_TAG = '[import-vacancies-from-clickup]';
+
+/** Statuses that require a public site short-link to exist. */
+const PUBLIC_STATUSES = new Set(['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE']);
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
@@ -154,10 +159,19 @@ async function updatePatientStatus(
 async function main(): Promise<void> {
   let pool: Pool | null = null;
   let jobRepo: JobPostingARRepository | null = null;
+  let shortLinkUseCase: EnsureVacancyShortLinkUseCase | null = null;
 
   if (!isDryRun) {
     pool = new Pool({ connectionString: DATABASE_URL });
     jobRepo = new JobPostingARRepository();
+
+    // Short.io — optional; silently skip if env vars are absent
+    const shortLinkService = ShortLinkService.fromEnv();
+    if (shortLinkService) {
+      shortLinkUseCase = new EnsureVacancyShortLinkUseCase(pool, shortLinkService);
+    } else {
+      console.warn(`${SCRIPT_TAG} WARN: SHORT_IO_API_KEY / SHORT_IO_DOMAIN not set — site short-links will not be generated.`);
+    }
   }
 
   // Dry-run: we still open a pool for classification queries if DATABASE_URL is reachable
@@ -304,13 +318,33 @@ async function main(): Promise<void> {
             );
           }
 
+          // After a successful upsert, ensure site short-link exists for public statuses.
+          // Non-blocking: if Short.io is unavailable, log a warning and continue.
+          if (shortLinkUseCase && input.jobPostingStatus && PUBLIC_STATUSES.has(input.jobPostingStatus)) {
+            try {
+              const linkResult = await shortLinkUseCase.execute(result.id, 'site');
+              if (!linkResult.alreadyExisted) {
+                console.log(
+                  `  ${num} task=${task.id} → SHORT LINK created for vacancy ${result.id}` +
+                  ` → ${linkResult.shortURL}`,
+                );
+              }
+            } catch (linkErr) {
+              const linkMsg = linkErr instanceof Error ? linkErr.message : String(linkErr);
+              console.warn(
+                `  ${num} WARN task=${task.id} vacancy=${result.id}` +
+                ` site short-link failed (non-fatal): ${linkMsg}`,
+              );
+            }
+          }
+
           if (isVerbose) {
             console.log('         payload:', JSON.stringify({ ...input, patientId }, null, 2));
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(
-            `  ERROR  task=${task.id} caseNumber=${input.caseNumber} addr=${addrTag} msg=${msg}`,
+            `  ERROR  task=${task.id} caseNumber=${input.caseNumber} msg=${msg}`,
           );
           errors++;
         }

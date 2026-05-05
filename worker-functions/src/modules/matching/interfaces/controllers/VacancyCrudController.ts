@@ -3,6 +3,27 @@ import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { buildInsertQuery, buildInsertParams } from './vacancyCrudHelpers';
+import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
+import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
+
+const PUBLIC_STATUSES = new Set([
+  'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
+]);
+
+async function tryEnsureShortLink(pool: Pool, vacancyId: string, status: string | null | undefined): Promise<void> {
+  if (!status || !PUBLIC_STATUSES.has(status)) return;
+  const svc = ShortLinkService.fromEnv();
+  if (!svc) {
+    console.warn('[VacancyCrud] SHORT_IO not configured — skipping short-link generation');
+    return;
+  }
+  try {
+    const uc = new EnsureVacancyShortLinkUseCase(pool, svc);
+    await uc.execute(vacancyId, 'site');
+  } catch (err: any) {
+    console.error(`[VacancyCrud] Short-link generation failed for ${vacancyId}: ${err.message}`);
+  }
+}
 
 /**
  * VacancyCrudController
@@ -38,6 +59,8 @@ export class VacancyCrudController {
         daily_obs,
         patient_address_id,
         status: bodyStatus,
+        published_at,
+        closes_at,
         updatePatient,
       } = req.body;
 
@@ -77,6 +100,8 @@ export class VacancyCrudController {
         schedule, work_schedule, providers_needed, salary_text, payment_day,
         daily_obs, patient_address_id,
         status: bodyStatus || undefined,
+        published_at: published_at ?? null,
+        closes_at: closes_at ?? null,
       };
 
       let newVacancy: any;
@@ -95,12 +120,13 @@ export class VacancyCrudController {
       setImmediate(() => {
         try {
           const matchingService = new MatchmakingService();
-          matchingService.matchWorkersForJob(newVacancy.id)
+          matchingService.matchWorkersForJob(newVacancy.id, {})
             .then(r => console.log(`[VacancyCrud] Auto-match done for ${newVacancy.id}: ${r.candidates.length} candidates`))
             .catch(err => console.error(`[VacancyCrud] Auto-match error for ${newVacancy.id}:`, err.message));
         } catch (err: any) {
           console.warn(`[VacancyCrud] Background match unavailable for ${newVacancy.id}: ${err.message}`);
         }
+        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status).catch(() => {});
       });
 
       res.status(201).json({ success: true, data: newVacancy });
@@ -201,6 +227,7 @@ export class VacancyCrudController {
         'schedule', 'work_schedule',
         'providers_needed', 'salary_text', 'payment_day',
         'daily_obs', 'status',
+        'published_at', 'closes_at',
       ];
 
       const jsonbFields = new Set(['schedule']);
@@ -237,7 +264,12 @@ export class VacancyCrudController {
         return;
       }
 
-      res.status(200).json({ success: true, data: result.rows[0] });
+      const updated = result.rows[0];
+      setImmediate(() => {
+        tryEnsureShortLink(this.db, id, updated.status).catch(() => {});
+      });
+
+      res.status(200).json({ success: true, data: updated });
     } catch (error: any) {
       console.error('[VacancyCrud] Error updating vacancy:', error);
       res.status(500).json({ success: false, error: 'Failed to update vacancy', details: error.message });

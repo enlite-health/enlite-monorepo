@@ -26,6 +26,10 @@ export interface VacancyInsertParams {
   patient_address_id: any;
   /** Default: 'PENDING_ACTIVATION' when not provided. */
   status?: string;
+  /** ISO date (YYYY-MM-DD) or full timestamp. Defaults to NOW() in the SQL when null. */
+  published_at?: string | null;
+  /** ISO date (YYYY-MM-DD) or full timestamp. Optional — left NULL when not provided. */
+  closes_at?: string | null;
 }
 
 const CANONICAL_STATUSES = new Set([
@@ -39,6 +43,9 @@ const CANONICAL_STATUSES = new Set([
 ]);
 
 export function buildInsertQuery(): string {
+  // `published_at` defaults to NOW() when the caller passes NULL — matches the
+  // product rule that publication date auto-fills with today if left blank.
+  // `closes_at` stays NULL when not provided (optional).
   return `
     INSERT INTO job_postings (
       vacancy_number, case_number, title, description, patient_id,
@@ -49,7 +56,9 @@ export function buildInsertQuery(): string {
       providers_needed, salary_text, payment_day,
       daily_obs,
       patient_address_id,
-      status, country
+      status,
+      published_at, closes_at,
+      country
     ) VALUES (
       $1, $2, $3, '', $4,
       $5, $6,
@@ -59,7 +68,9 @@ export function buildInsertQuery(): string {
       $14, $15, $16,
       $17,
       $18,
-      $19, 'AR'
+      $19,
+      COALESCE($20::timestamptz, NOW()), $21::timestamptz,
+      'AR'
     )
     RETURNING *
   `;
@@ -89,5 +100,7 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     p.daily_obs ?? null,
     p.patient_address_id ?? null,
     status,
+    p.published_at ?? null,
+    p.closes_at ?? null,
   ];
 }
