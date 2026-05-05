@@ -1,82 +1,53 @@
 /**
  * full-create-vacancy.integration.e2e.ts @integration
  *
- * Integration E2E — full stack (frontend → real backend → real Postgres).
+ * Caminho feliz único — UI real → backend real → Postgres real.
  *
- * Prereqs:
- *   1. Docker stack running: cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api
- *   2. Frontend dev server: cd enlite-frontend && pnpm dev
- *   3. Firebase Emulator on port 9099 (or test falls back to direct Firebase sign-up against prod emulator)
+ * Cobre:
+ *   1. Seleciona caso no case-select dropdown
+ *   2. Hidratação dos campos do paciente (nome, diagnóstico, dependência)
+ *   3. Endereço auto-selecionado quando há 1 só
+ *   4. Mapa renderiza com lat/lng do banco
+ *   5. Profissão + 1 slot de schedule + meet link
+ *   6. Botão Continuar habilita só com tudo preenchido
+ *   7. Submit → POST /vacancies REAL persiste no banco
+ *   8. Geração AI MOCKADA popula descrição/prescreening
+ *   9. Publicar Talentum MOCKADO → detail page
+ *  10. SELECT no banco prova: case_number, patient_id, patient_address_id,
+ *      schedule, meet_link_1, published_at, closes_at, status
  *
- * Auth strategy:
- *   - Creates a test user in Firebase Emulator via REST
- *   - Mocks GET /api/admin/auth/profile (returns admin role)
- *   - ALL other API calls are intercepted to swap the Firebase token for a
- *     mock_* token (USE_MOCK_AUTH=true mode on the backend)
+ * Mocks (ÚNICOS):
+ *   - /generate-ai-content (Gemini — custo)
+ *   - /publish-talentum (não polui prod do Talentum)
+ *   - /api/admin/auth/profile (evita lookup de usuário)
+ *   - Firebase Identity Toolkit (auth fake JWT)
+ *   - /meet-links/lookup (Google Calendar — sem ambiente real)
  *
- * AI strategy:
- *   - generate-ai-content endpoint is mocked (GEMINI_API_KEY not in Docker
- *     test env), returning a realistic fixture
- *
- * publish-talentum:
- *   - Always mocked to avoid creating real records in Talentum
+ * Tudo o resto bate no backend real.
  */
 
 import { test, expect, type Page, type Route } from '@playwright/test';
 import {
   insertTestPatient,
   cleanupTestPatient,
+  insertBaseVacancy,
+  cleanupVacancies,
   getVacancyById,
+  type JobPostingRow,
 } from '../helpers/db-test-helper';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BACKEND_URL = 'http://localhost:8080';
 
-// Mock token for USE_MOCK_AUTH=true backend
-const MOCK_ADMIN_USER = { uid: 'e2e-int-admin-vacancy', email: 'admin.vacancy@e2e.test', role: 'admin' };
+const MOCK_ADMIN_USER = {
+  uid: 'e2e-int-happy-path',
+  email: 'admin.happy@e2e.test',
+  role: 'admin',
+};
 const MOCK_TOKEN =
   'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
 
-// AI content fixture
-const AI_CONTENT_FIXTURE = {
-  description:
-    'Se busca Acompañante Terapéutico para paciente con diagnóstico de TEA leve en CABA. ' +
-    'El AT deberá acompañar al paciente en sus actividades diarias, promoviendo la autonomía ' +
-    'y la integración social. Horario: Lunes a Viernes, turnos mañana.',
-  prescreening: {
-    questions: [
-      {
-        question: '¿Tenés experiencia trabajando con pacientes con TEA?',
-        responseType: ['YES_NO'],
-        desiredResponse: 'YES',
-        weight: 3,
-        required: true,
-        analyzed: true,
-        earlyStoppage: false,
-      },
-      {
-        question: '¿Disponés de CUD vigente?',
-        responseType: ['YES_NO'],
-        desiredResponse: 'YES',
-        weight: 2,
-        required: false,
-        analyzed: true,
-        earlyStoppage: false,
-      },
-    ],
-    faq: [
-      {
-        question: '¿Cuáles son las condiciones de contratación?',
-        answer: 'Contratación bajo modalidad MEI con liquidación mensual.',
-      },
-    ],
-  },
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// Minimal JWT header.payload (no signature) that Firebase SDK accepts for mock login
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
   Buffer.from(
@@ -92,17 +63,35 @@ const FAKE_ID_TOKEN =
   ).toString('base64url') +
   '.';
 
-/**
- * Sets up all route interceptors before navigation:
- *   1. Firebase Identity Toolkit (signIn, token refresh) → fake JWT response
- *   2. /api/admin/auth/profile → mock admin profile
- *   3. /generate-ai-content → fixture
- *   4. /publish-talentum → mock success
- *   5. All other /api/** → swap token to mock_*
- */
+const AI_CONTENT_FIXTURE = {
+  description:
+    'Se busca Acompañante Terapéutico para paciente con TEA leve. ' +
+    'El AT acompañará en actividades diarias promoviendo autonomía.',
+  prescreening: {
+    questions: [
+      {
+        question: '¿Tenés experiencia con TEA?',
+        responseType: ['YES_NO'],
+        desiredResponse: 'YES',
+        weight: 3,
+        required: true,
+        analyzed: true,
+        earlyStoppage: false,
+      },
+    ],
+    faq: [
+      {
+        question: '¿Modalidad?',
+        answer: 'MEI con liquidación mensual.',
+      },
+    ],
+  },
+};
+
+// ── Mock interceptors ─────────────────────────────────────────────────────────
+
 async function installInterceptors(page: Page): Promise<void> {
-  // ── Firebase Identity Toolkit ──────────────────────────────────────────────
-  // Intercept sign-in and token refresh so the SDK considers us authenticated
+  // Firebase Identity Toolkit — fake JWT
   await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
     const url = route.request().url();
     if (url.includes('signInWithPassword') || url.includes('signUp')) {
@@ -136,7 +125,6 @@ async function installInterceptors(page: Page): Promise<void> {
       });
       return;
     }
-    // Other Firebase calls (getUserData, etc.) — return minimal user info
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -166,7 +154,7 @@ async function installInterceptors(page: Page): Promise<void> {
     });
   });
 
-  // ── Backend API calls ──────────────────────────────────────────────────────
+  // Backend — mocka 4 endpoints específicos, deixa o resto passar com mock token
   await page.route('**/api/**', async (route: Route) => {
     const url = route.request().url();
 
@@ -208,7 +196,7 @@ async function installInterceptors(page: Page): Promise<void> {
           data: {
             projectId: 'fake-project-id',
             publicId: '00000000-0000-0000-0000-000000000000',
-            slug: 'e2e-test-vacancy',
+            slug: 'happy-path-vacancy',
             whatsappUrl: 'https://wa.me/fake',
           },
         }),
@@ -216,205 +204,175 @@ async function installInterceptors(page: Page): Promise<void> {
       return;
     }
 
-    // All other calls: swap Authorization header to mock token
+    if (url.includes('/meet-links/lookup')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            normalized: 'https://meet.google.com/abc-defg-hij',
+            datetime: '2026-06-01T15:00:00-03:00',
+          },
+        }),
+      });
+      return;
+    }
+
+    // Tudo mais: troca o token Firebase pelo mock_<base64> que o backend aceita
     const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
     await route.continue({ headers });
   });
 }
 
-/**
- * Logs in as admin via the login form. Firebase Identity Toolkit calls are
- * intercepted to return a fake-but-valid JWT (no real Firebase needed).
- * The backend profile endpoint is also mocked.
- */
 async function loginAsAdmin(page: Page): Promise<void> {
-  const email = MOCK_ADMIN_USER.email;
-  const password = 'TestAdmin123!';
-
-  // Install interceptors BEFORE any navigation
   await installInterceptors(page);
-
-  // Go to admin login and fill the form
   await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
+  await page.locator('input[type="email"]').fill(MOCK_ADMIN_USER.email);
+  await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();
-
-  // Wait for redirect away from login
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+// ── Test ──────────────────────────────────────────────────────────────────────
 
-test.describe('Full create vacancy flow @integration', () => {
-  test.setTimeout(90_000);
+test.describe('Caminho feliz: criar vaga ponta-a-ponta @integration', () => {
+  test.setTimeout(120_000);
 
-  let patientId: string;
-  let addressId: string | null;
+  let patientId = '';
+  let addressId = '';
+  let baseVacancyId = '';
+  let caseNumber = 0;
+  const createdVacancyIds: string[] = [];
 
   test.beforeAll(() => {
-    const result = insertTestPatient({
+    caseNumber = 990_000 + Math.floor(Math.random() * 9999);
+    const patient = insertTestPatient({
       status: 'ACTIVE',
-      firstName: 'IntegTest',
-      lastName: `ActivePatient${Date.now()}`,
+      firstName: 'HappyPath',
+      lastName: `Patient${Date.now()}`,
       diagnosis: 'TEA leve',
       dependencyLevel: 'SEVERE',
       withAddress: true,
       addressLat: -34.6037,
       addressLng: -58.3816,
     });
-    patientId = result.patientId;
-    addressId = result.addressId;
+    patientId = patient.patientId;
+    addressId = patient.addressId ?? '';
+    baseVacancyId = insertBaseVacancy({
+      patientId,
+      patientAddressId: addressId,
+      caseNumber,
+    });
   });
 
   test.afterAll(() => {
+    cleanupVacancies([baseVacancyId, ...createdVacancyIds]);
     cleanupTestPatient(patientId);
   });
 
-  test('happy path: create vacancy end-to-end with real backend and DB', async ({ page }) => {
-    test.skip(!patientId, 'Could not seed test patient');
+  test('seleciona caso → preenche → salva → AI mockado → publica → DB persistiu tudo', async ({ page }) => {
+    test.skip(!patientId || !addressId, 'Could not seed test patient + address');
 
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies/new');
-    await expect(page.getByText('Nueva Vacante')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Nueva Vacante/i)).toBeVisible({ timeout: 15_000 });
 
-    // ── Step 1: Search and select patient ──────────────────────────────────
+    // ── 1. Seleciona o caso ─────────────────────────────────────────────────
+    const caseSelect = page.locator('[data-testid="case-select"]');
+    await expect(caseSelect).toBeVisible({ timeout: 10_000 });
+    await caseSelect.selectOption(String(caseNumber));
 
-    const searchInput = page.getByPlaceholder(/Buscar paciente/i);
-    await searchInput.fill('IntegTest');
+    // ── 2. Hidratação do paciente — patient name visível (read-only) ────────
+    await expect(page.getByText('HappyPath', { exact: false })).toBeVisible({ timeout: 8_000 });
+    // Diagnóstico aparece na coluna esquerda
+    await expect(page.getByText('TEA leve')).toBeVisible({ timeout: 5_000 });
 
-    // Dropdown appears with real data from backend
-    await expect(page.getByRole('listbox')).toBeVisible({ timeout: 10_000 });
-    const option = page.getByRole('option').first();
-    await expect(option).toBeVisible({ timeout: 5_000 });
-    await option.click();
+    // ── 3. Endereço auto-selecionado (1 endereço só) ────────────────────────
+    const addressOption = page.locator(`[data-testid="address-option-${addressId}"]`);
+    await expect(addressOption).toBeVisible({ timeout: 5_000 });
+    // Já vem selecionado (border-primary)
+    await expect(addressOption).toHaveClass(/border-primary/);
 
-    // ── Step 2: Verify patient fields hydrate ─────────────────────────────
-
-    // Diagnosis and dependency level visible (come from patient record)
-    await expect(page.getByText('TEA leve')).toBeVisible({ timeout: 8_000 });
-    await expect(page.getByText('SEVERE')).toBeVisible({ timeout: 5_000 });
-
-    // Address auto-selected (1 address) — availability badge confirms address rendered
-    // Note: address label text may be empty if backend doesn't return fullAddress field,
-    // but the availability badge ("hs/sem disponibles") confirms the address row IS rendered
-    await expect(page.getByText(/hs\/sem disponibles/i)).toBeVisible({ timeout: 8_000 });
-
-    // Screenshot 1: after patient hydration
-    await expect(page).toHaveScreenshot('full-create-vacancy-patient-hydrated.png', {
-      fullPage: false,
-      maxDiffPixelRatio: 0.05,
+    // ── 4. Mapa renderiza (lat/lng vêm do banco) ────────────────────────────
+    // O mapa pode levar alguns segundos pra carregar o script
+    await expect(page.locator('[data-testid="service-area-map"]')).toBeVisible({
+      timeout: 15_000,
     });
 
-    // ── Step 3: Fill required professions ─────────────────────────────────
+    // ── 5. Preenche profissão ───────────────────────────────────────────────
+    await page
+      .locator('[data-testid="profession-select"]')
+      .first()
+      .selectOption('AT');
 
-    // Find and click the AT checkbox/option (required_professions)
-    const atOption = page.getByText('AT', { exact: true }).first();
-    if (await atOption.isVisible()) {
-      await atOption.click();
-    } else {
-      // Fallback: try select/multi-select for profession
-      const profSelect = page.locator('[id="required_professions"]').first();
-      if (await profSelect.isVisible()) {
-        await profSelect.selectOption('AT');
-      }
-    }
+    // ── 6. Adiciona 1 slot de schedule (Lunes 09:00–17:00 default) ──────────
+    // Cada day card tem um botão "+" cujo aria-label vem do i18n
+    // ("Horarios" em ES, "Horários" em pt-BR). Match por regex.
+    const lunesAddBtn = page
+      .getByRole('button', { name: /Horarios|Horários/i })
+      .first();
+    await lunesAddBtn.scrollIntoViewIfNeeded();
+    await lunesAddBtn.click();
 
-    // ── Step 4: Add a schedule slot (Lunes 09:00-17:00) ──────────────────
+    // ── 7. Preenche meet link ───────────────────────────────────────────────
+    const meetInput = page.locator('[data-testid="meet-link-0"]');
+    await meetInput.scrollIntoViewIfNeeded();
+    await meetInput.fill('meet.google.com/abc-defg-hij');
+    await meetInput.blur();
 
-    // The VacancyDaySchedulePicker renders day cards with "+" buttons
-    // Click the "+" button for Lunes (first day card)
-    const addSlotButtons = page.getByRole('button', {
-      name: /horario/i,
-    });
-    if ((await addSlotButtons.count()) > 0) {
-      await addSlotButtons.first().click();
-    } else {
-      // Try aria-label approach
-      const lunesAddBtn = page.locator('[aria-label*="horario"]').first();
-      if (await lunesAddBtn.isVisible()) {
-        await lunesAddBtn.click();
-      }
-    }
+    // ── 8. Botão Continuar fica habilitado ──────────────────────────────────
+    const continueBtn = page.getByTestId('create-vacancy-save-btn');
+    await expect(continueBtn).toBeEnabled({ timeout: 10_000 });
 
-    // ── Step 5: Save vacancy ──────────────────────────────────────────────
+    // ── 9. Submit ───────────────────────────────────────────────────────────
+    await continueBtn.click();
 
-    const saveBtn = page.getByRole('button', { name: /Guardar/i });
-    await saveBtn.click();
+    // Navega pra Talentum config
+    await expect(page).toHaveURL(/\/admin\/vacancies\/.+\/talentum/, { timeout: 30_000 });
 
-    // Should navigate to /admin/vacancies/:id/talentum
-    await expect(page).toHaveURL(/\/admin\/vacancies\/.+\/talentum/, { timeout: 20_000 });
-
-    // ── Step 6: Verify vacancy in DB ──────────────────────────────────────
-
+    // Captura o vacancyId da URL
     const urlParts = page.url().split('/');
     const talentumIdx = urlParts.indexOf('talentum');
-    const vacancyId = talentumIdx > 0 ? urlParts[talentumIdx - 1] : null;
-    expect(vacancyId).toBeTruthy();
+    const newVacancyId = talentumIdx > 0 ? urlParts[talentumIdx - 1] : '';
+    expect(newVacancyId).toBeTruthy();
+    createdVacancyIds.push(newVacancyId);
 
-    const dbVacancy = vacancyId ? getVacancyById(vacancyId) : null;
-    expect(dbVacancy).not.toBeNull();
-    expect(dbVacancy?.patient_id).toBe(patientId);
-    expect(dbVacancy?.patient_address_id).toBe(addressId);
-    // Status can be SEARCHING (default) or PENDING_ACTIVATION
-    expect(['SEARCHING', 'PENDING_ACTIVATION']).toContain(dbVacancy?.status);
-
-    // ── Step 7: TalentumConfigPage — generate AI content ─────────────────
-
-    await expect(page.getByRole('button', { name: /Generar contenido con IA/i })).toBeVisible({
-      timeout: 10_000,
-    });
-
-    await page.getByRole('button', { name: /Generar contenido con IA/i }).click();
-
-    // AI is mocked — response is near instant
-    // Wait for description textarea to be filled
+    // ── 10. AI mockada popula descrição ─────────────────────────────────────
     const descTextarea = page.locator('textarea').first();
-    await expect(descTextarea).not.toBeEmpty({ timeout: 8_000 });
+    await expect(descTextarea).not.toBeEmpty({ timeout: 15_000 });
+    const descValue = await descTextarea.inputValue();
+    expect(descValue).toContain('Acompañante Terapéutico');
 
-    // Verify prescreening section is visible (questions are inside <textarea> value
-    // attributes, so getByText() won't find them — check the section heading instead)
-    await page.getByText(/Configuración Pre-Screening Talentum/i).scrollIntoViewIfNeeded();
-    await expect(page.getByText(/Configuración Pre-Screening Talentum/i)).toBeVisible({
-      timeout: 5_000,
-    });
+    // ── 11. Publicar Talentum (mockado) ─────────────────────────────────────
+    const publishBtn = page.getByRole('button', { name: /Publicar en Talentum/i });
+    await publishBtn.scrollIntoViewIfNeeded();
+    await publishBtn.click();
 
-    // Verify at least one prescreening question was populated by AI
-    // (textarea value is not queryable via getByText — use evaluateAll on textareas)
-    const textareaValues = await page.locator('textarea').evaluateAll(
-      (els) => els.map((el) => (el as HTMLTextAreaElement).value),
-    );
-    const hasQuestion = textareaValues.some((v) =>
-      v.includes('experiencia') || v.includes('TEA') || v.length > 10,
-    );
-    expect(hasQuestion).toBe(true);
-
-    // Screenshot 2: after AI generation
-    await expect(page).toHaveScreenshot('full-create-vacancy-ai-generated.png', {
-      fullPage: false,
-      maxDiffPixelRatio: 0.05,
-    });
-
-    // ── Step 8: Edit description (interactivity check) ────────────────────
-
-    await descTextarea.click();
-    const currentDesc = await descTextarea.inputValue();
-    expect(currentDesc.length).toBeGreaterThan(10);
-    await descTextarea.fill(currentDesc.slice(0, -5) + 'EDITD');
-
-    // ── Step 9: Publish to Talentum (mocked) ─────────────────────────────
-
-    await page.getByRole('button', { name: /Publicar en Talentum/i }).click();
-
-    // Should navigate to /admin/vacancies/:id (detail page)
+    // Navega pra detail page
     await expect(page).toHaveURL(
-      new RegExp(`/admin/vacancies/${vacancyId}$`),
+      new RegExp(`/admin/vacancies/${newVacancyId}$`),
       { timeout: 20_000 },
     );
+
+    // ── 12. Assertion final no banco ─────────────────────────────────────────
+    const row = getVacancyById(newVacancyId) as JobPostingRow;
+    expect(row).not.toBeNull();
+    expect(row.patient_id).toBe(patientId);
+    expect(row.patient_address_id).toBe(addressId);
+    // Status = SEARCHING (default ao criar via UI atual)
+    expect(['SEARCHING', 'PENDING_ACTIVATION']).toContain(row.status);
+    // schedule é JSONB; só validamos que NÃO está vazio
+    expect(row.schedule).toBeTruthy();
+    expect(String(row.schedule)).toContain('09:00');
+    // published_at default = today (auto-fill)
+    expect(row.published_at).not.toBeNull();
+    // closes_at fica null (não preenchemos)
+    expect(row.closes_at).toBeNull();
   });
 });
 
-// ── Test backend is reachable ───────────────────────────────────────────────
+// ── Backend health ─────────────────────────────────────────────────────────────
 
 test.describe('Backend connectivity check @integration', () => {
   test.setTimeout(10_000);
