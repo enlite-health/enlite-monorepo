@@ -51,6 +51,11 @@ export interface PatientAddressRow {
   source: string;
   /** Address complement (Depto, Piso, andar). Migration 157. Null until populated via UI. */
   complement: string | null;
+  /** Latitude/Longitude (migration 153). Null in legacy ClickUp imports — UI may
+   *  geocode the address on the fly to recover coords for display. Backend
+   *  returns Postgres `numeric` as string, normalized to number in the API client. */
+  lat: number | null;
+  lng: number | null;
 }
 
 export interface PendingAddressReviewItem {

@@ -81,11 +81,20 @@ class AdminVacancyAddressApiServiceClass {
   }
 
   async listPatientAddresses(patientId: string): Promise<PatientAddressRow[]> {
-    const result = await this.request<PatientAddressRow[]>(
+    // Postgres `numeric` arrives as string over JSON; normalize lat/lng to
+    // numbers so consumers (ServiceAreaMap, etc.) don't need to coerce.
+    const result = await this.request<Array<Omit<PatientAddressRow, 'lat' | 'lng'> & {
+      lat: number | string | null;
+      lng: number | string | null;
+    }>>(
       'GET',
       `/api/admin/patients/${patientId}/addresses`,
     );
-    return result.data;
+    return result.data.map((r) => ({
+      ...r,
+      lat: r.lat == null ? null : Number(r.lat),
+      lng: r.lng == null ? null : Number(r.lng),
+    }));
   }
 }
 
