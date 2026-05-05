@@ -97,7 +97,7 @@ describe('VacancyCrudController', () => {
       expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*'',/);
     });
 
-    it('sends 19 parameters ($1 through $19, including patient_address_id and status)', async () => {
+    it('sends 21 parameters ($1 through $21, including patient_address_id, status, published_at, closes_at)', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ vn: '42' }] })
         .mockResolvedValueOnce({ rows: [VACANCY_ROW] });
@@ -107,7 +107,7 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req, res);
 
       const params = mockQuery.mock.calls[1][1] as any[];
-      expect(params).toHaveLength(19);
+      expect(params).toHaveLength(21);
     });
 
     it('maps all fields to correct parameter positions', async () => {
@@ -268,8 +268,8 @@ describe('VacancyCrudController', () => {
       const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
-      // 19 param columns + description (literal '') + country (literal 'AR') = 21 total
-      expect(columns).toHaveLength(21);
+      // 21 param columns + description (literal '') + country (literal 'AR') = 23 total
+      expect(columns).toHaveLength(23);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {
