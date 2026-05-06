@@ -13,7 +13,8 @@ import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useTalentumConfig } from '@hooks/admin/useTalentumConfig';
 import { Stepper } from '@presentation/components/molecules/Stepper';
@@ -103,9 +104,9 @@ export default function TalentumConfigPage(): JSX.Element {
     return (
       <div className="w-full min-h-screen bg-[#FFF9FC] flex items-center justify-center px-6">
         <div className="bg-red-50 border border-red-200 rounded-[10px] px-6 py-4 max-w-md text-center">
-          <Typography variant="body" className="text-red-600 font-['Lexend']">
+          <Text size="sm" color="inherit" className="text-red-600">
             {vacancyError}
-          </Typography>
+          </Text>
         </div>
       </div>
     );
@@ -118,19 +119,19 @@ export default function TalentumConfigPage(): JSX.Element {
         {/* ── Page header ─────────────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <h1 className="font-['Poppins'] font-semibold text-[32px] leading-[1.3] text-[#180149]">
+            <Heading level={1} weight="semibold">
               {tc('pageTitle')}
-            </h1>
-            <p className="font-['Lexend'] font-medium text-[16px] text-[#737373]">
+            </Heading>
+            <Text size="base" weight="medium" color="secondary">
               {tc('pageSubtitle')}
-            </p>
+            </Text>
           </div>
 
           <div className="flex flex-col items-end gap-2 shrink-0">
             {publishError && (
-              <p className="text-sm text-red-600 font-['Lexend'] text-right max-w-[260px]">
+              <Text as="span" size="sm" color="inherit" className="text-red-600 text-right max-w-[260px]">
                 {publishError}
-              </p>
+              </Text>
             )}
             <Button
               variant="primary"
@@ -160,20 +161,20 @@ export default function TalentumConfigPage(): JSX.Element {
 
         {/* ── Section 2: AI-generated content ─────────────────────────────── */}
         <div className="flex flex-col gap-6">
-          <h2 className="font-['Poppins'] font-semibold text-[24px] text-[#180149] border-b border-[#d9d9d9] pb-2">
+          <Heading level={2} weight="semibold" className="border-b border-[#d9d9d9] pb-2">
             {tc('aiSectionTitle')}
-          </h2>
+          </Heading>
 
           {/* Generation status banner — replaces the manual "Generate" button */}
           {generateStatus === 'loading' && (
             <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
               <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-              <p className="text-sm text-blue-700 font-['Lexend']">{tc('generatingAI')}</p>
+              <Text as="span" size="sm" color="inherit" className="text-blue-700">{tc('generatingAI')}</Text>
             </div>
           )}
           {generateStatus === 'error' && generateError && (
             <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <p className="text-sm text-red-600 font-['Lexend']">{generateError}</p>
+              <Text as="span" size="sm" color="inherit" className="text-red-600">{generateError}</Text>
               <Button variant="outline" size="sm" onClick={generateAIContent}>
                 {tc('retryGenerate')}
               </Button>
@@ -183,9 +184,9 @@ export default function TalentumConfigPage(): JSX.Element {
           <AIDescriptionEditor value={description} onChange={setDescription} />
 
           {/* Prescreening */}
-          <h3 className="font-['Poppins'] font-semibold text-[20px] text-[#180149]">
+          <Heading level={3} weight="semibold">
             {tc('prescreeningSectionTitle')}
-          </h3>
+          </Heading>
 
           <PrescreeningStep
             initialQuestions={prescreeningQuestions}
@@ -198,9 +199,9 @@ export default function TalentumConfigPage(): JSX.Element {
 
         {/* ── Section 3: Social links ──────────────────────────────────────── */}
         <div className="flex flex-col gap-6">
-          <h2 className="font-['Poppins'] font-semibold text-[24px] text-[#180149] border-b border-[#d9d9d9] pb-2">
+          <Heading level={2} weight="semibold" className="border-b border-[#d9d9d9] pb-2">
             {tc('socialSectionTitle')}
-          </h2>
+          </Heading>
 
           <VacancySocialLinksCard
             vacancyId={vacancyId}

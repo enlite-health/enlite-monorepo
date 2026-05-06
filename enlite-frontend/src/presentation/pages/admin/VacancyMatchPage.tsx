@@ -1,7 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Calendar } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+} from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
@@ -90,14 +97,14 @@ export default function VacancyMatchPage() {
             className="flex items-center gap-1 text-[#737373] hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            <Typography variant="body" weight="medium" className="text-inherit">
+            <Text as="span" size="sm" weight="medium" color="inherit">
               Vaga
-            </Typography>
+            </Text>
           </button>
-          <span className="text-[#D9D9D9]">/</span>
-          <Typography variant="h1" weight="semibold" className="text-[#737373] font-poppins text-2xl">
+          <span className="text-gray-600">/</span>
+          <Heading level={1} weight="semibold" color="secondary">
             {pageTitle}
-          </Typography>
+          </Heading>
         </div>
         <div className="flex items-center gap-3">
           {selected.size > 0 && (
@@ -150,16 +157,16 @@ export default function VacancyMatchPage() {
       {/* Erro */}
       {error && !isLoading && (
         <div className="flex items-center justify-center py-10">
-          <Typography variant="body" className="text-red-600">{error}</Typography>
+          <Text size="sm" color="inherit" className="text-red-600">{error}</Text>
         </div>
       )}
 
       {/* Estado vazio — nunca rodou match */}
       {!isLoading && !error && !results && (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <Typography variant="h3" className="text-[#737373]">
+          <Heading level={3} color="secondary">
             Nenhum match salvo ainda.
-          </Typography>
+          </Heading>
           <Button variant="primary" size="lg" isLoading={isRunning} onClick={() => runMatch()}>
             Rodar Match
           </Button>
@@ -178,49 +185,32 @@ export default function VacancyMatchPage() {
 
           {filtered.length === 0 ? (
             <div className="flex items-center justify-center py-12">
-              <Typography variant="body" className="text-[#737373]">
+              <Text size="sm" color="secondary">
                 Nenhum candidato com score ≥ {minScore}.
-              </Typography>
+              </Text>
             </div>
           ) : (
-            <div className="rounded-xl overflow-hidden border border-[#ECEFF1]">
-              <div className="overflow-x-auto">
-              <table className="w-full border-collapse min-w-[800px]">
-                <thead>
-                  <tr className="h-11 bg-[#EEEEEE]">
-                    <th className="px-3 w-10">
-                      <input
-                        type="checkbox"
-                        checked={allFilteredSelected}
-                        onChange={toggleSelectAll}
-                        className="w-4 h-4 accent-primary cursor-pointer"
-                      />
-                    </th>
-                    <th className="px-3 w-10 text-center">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">#</Typography>
-                    </th>
-                    <th className="px-4 text-left whitespace-nowrap">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">Nome</Typography>
-                    </th>
-                    <th className="px-4 text-left whitespace-nowrap">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">Status</Typography>
-                    </th>
-                    <th className="px-4 text-left whitespace-nowrap">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">Ocupação</Typography>
-                    </th>
-                    <th className="px-4 text-left whitespace-nowrap">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">Zona / Dist</Typography>
-                    </th>
-                    <th className="px-4 text-center whitespace-nowrap">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">Casos</Typography>
-                    </th>
-                    <th className="px-4 text-left whitespace-nowrap">
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">Score Final</Typography>
-                    </th>
-                    <th className="px-3 w-16" />
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="rounded-xl overflow-hidden border border-gray-400">
+              <Table className="min-w-[800px]">
+                <TableHeader>
+                  <TableHead unwrapped className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 accent-primary cursor-pointer"
+                    />
+                  </TableHead>
+                  <TableHead align="center" className="w-10">#</TableHead>
+                  <TableHead className="whitespace-nowrap">Nome</TableHead>
+                  <TableHead className="whitespace-nowrap">Status</TableHead>
+                  <TableHead className="whitespace-nowrap">Ocupação</TableHead>
+                  <TableHead className="whitespace-nowrap">Zona / Dist</TableHead>
+                  <TableHead align="center" className="whitespace-nowrap">Casos</TableHead>
+                  <TableHead className="whitespace-nowrap">Score Final</TableHead>
+                  <TableHead className="w-16" />
+                </TableHeader>
+                <TableBody>
                   {filtered.map((candidate, idx) => (
                     <MatchCandidateRow
                       key={candidate.workerId}
@@ -231,9 +221,8 @@ export default function VacancyMatchPage() {
                       onSendMessage={handleSendOne}
                     />
                   ))}
-                </tbody>
-              </table>
-              </div>
+                </TableBody>
+              </Table>
             </div>
           )}
         </>

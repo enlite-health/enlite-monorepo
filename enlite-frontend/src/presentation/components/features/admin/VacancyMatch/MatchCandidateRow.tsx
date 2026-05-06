@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { MatchScoreBar } from './MatchScoreBar';
+import { Text } from '@presentation/components/atoms/Text';
+import { TableRow, TableCell } from '@presentation/components/atoms/Table';
 import type { SavedCandidate } from '../../../../../types/match';
 
 interface MatchCandidateRowProps {
@@ -47,89 +49,84 @@ export function MatchCandidateRow({
   const zoneLabel = [candidate.workZone, distanceLabel].filter(Boolean).join(' · ');
   const score = candidate.matchScore ?? 0;
 
-  // Parse strengths and red flags from internalNotes if stored as JSON-like string,
-  // otherwise show plain text in expanded section.
   const hasExpansion = !!(candidate.internalNotes);
 
   return (
     <>
-      <tr
-        className={`border-b border-[#ECEFF1] hover:bg-gray-50 transition-colors ${
-          isSelected ? 'bg-primary/5' : ''
-        }`}
-      >
-        {/* Checkbox */}
-        <td className="px-3 py-3 w-10">
+      <TableRow className={isSelected ? 'bg-primary/5' : ''}>
+        <TableCell unwrapped className="w-10">
           <input
             type="checkbox"
             checked={isSelected}
             onChange={() => onToggleSelect(candidate.workerId)}
             className="w-4 h-4 accent-primary cursor-pointer"
           />
-        </td>
+        </TableCell>
 
-        {/* Rank */}
-        <td className="px-3 py-3 w-10 text-[#737373] text-sm text-center">{rank}</td>
+        <TableCell align="center" className="w-10">
+          {rank}
+        </TableCell>
 
-        {/* Nome + badges */}
-        <td className="px-3 py-3">
+        <TableCell unwrapped>
           <div className="flex items-center gap-2">
             <button
-              className="text-sm font-medium text-slate-700 hover:text-primary transition-colors text-left"
+              className="text-left hover:text-primary transition-colors"
               onClick={() => hasExpansion && setExpanded(!expanded)}
             >
-              {candidate.workerName}
+              <Text as="span" size="sm" weight="medium" color="secondary">
+                {candidate.workerName}
+              </Text>
             </button>
             {candidate.alreadyApplied && (
-              <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full whitespace-nowrap">
-                Já candidatou
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full whitespace-nowrap">
+                <Text as="span" size="xs" color="inherit">Já candidatou</Text>
               </span>
             )}
             {messagedLabel && (
-              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full whitespace-nowrap">
-                Notificado {messagedLabel}
+              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full whitespace-nowrap">
+                <Text as="span" size="xs" color="inherit">Notificado {messagedLabel}</Text>
               </span>
             )}
           </div>
-        </td>
+        </TableCell>
 
-        {/* Status */}
-        <td className="px-3 py-3">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor(candidate.overallStatus)}`}>
-            {candidate.overallStatus ?? '—'}
+        <TableCell unwrapped>
+          <span className={`inline-flex px-2 py-0.5 rounded-full ${statusColor(candidate.overallStatus)}`}>
+            <Text as="span" size="xs" weight="medium" color="inherit">
+              {candidate.overallStatus ?? '—'}
+            </Text>
           </span>
-        </td>
+        </TableCell>
 
-        {/* Ocupação */}
-        <td className="px-3 py-3 text-sm text-slate-600">{candidate.occupation ?? '—'}</td>
+        <TableCell unwrapped>
+          <Text as="span" size="sm" color="muted">{candidate.occupation ?? '—'}</Text>
+        </TableCell>
 
-        {/* Zona / Distância */}
-        <td className="px-3 py-3 text-sm text-slate-600">{zoneLabel || '—'}</td>
+        <TableCell unwrapped>
+          <Text as="span" size="sm" color="muted">{zoneLabel || '—'}</Text>
+        </TableCell>
 
-        {/* Casos ativos */}
-        <td className="px-3 py-3 text-sm text-center text-slate-600">
-          {candidate.activeCasesCount}
-        </td>
+        <TableCell unwrapped align="center">
+          <Text as="span" size="sm" color="muted">{candidate.activeCasesCount}</Text>
+        </TableCell>
 
-        {/* Score */}
-        <td className="px-3 py-3">
+        <TableCell unwrapped>
           <MatchScoreBar score={score} />
-        </td>
+        </TableCell>
 
-        {/* Ações */}
-        <td className="px-3 py-3 w-16">
+        <TableCell unwrapped className="w-16">
           <div className="flex items-center gap-1">
             <button
               onClick={() => onSendMessage(candidate)}
               title="Enviar WhatsApp"
-              className="p-1.5 rounded-lg text-[#737373] hover:text-green-600 hover:bg-green-50 transition-colors"
+              className="p-1.5 rounded-lg text-gray-800 hover:text-green-600 hover:bg-green-50 transition-colors"
             >
               <MessageCircle className="w-4 h-4" />
             </button>
             {hasExpansion && (
               <button
                 onClick={() => setExpanded(!expanded)}
-                className="p-1.5 rounded-lg text-[#737373] hover:text-primary hover:bg-primary/10 transition-colors"
+                className="p-1.5 rounded-lg text-gray-800 hover:text-primary hover:bg-primary/10 transition-colors"
               >
                 {expanded ? (
                   <ChevronUp className="w-4 h-4" />
@@ -139,18 +136,17 @@ export function MatchCandidateRow({
               </button>
             )}
           </div>
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
 
-      {/* Linha expandida: LLM reasoning */}
       {expanded && candidate.internalNotes && (
-        <tr className="border-b border-[#ECEFF1] bg-gray-50">
-          <td colSpan={9} className="px-6 py-3">
-            <p className="text-sm text-slate-600 italic leading-relaxed">
+        <TableRow className="bg-gray-50">
+          <TableCell unwrapped colSpan={9} className="px-6 py-3">
+            <Text size="sm" color="muted" className="italic leading-relaxed">
               {candidate.internalNotes}
-            </p>
-          </td>
-        </tr>
+            </Text>
+          </TableCell>
+        </TableRow>
       )}
     </>
   );

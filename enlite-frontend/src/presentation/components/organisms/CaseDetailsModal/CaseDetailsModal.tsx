@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 
 interface CaseDetailsModalProps {
   isOpen: boolean;
@@ -18,14 +19,14 @@ export function CaseDetailsModal({ isOpen, onClose, caseData }: CaseDetailsModal
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" onClick={onClose}>
-      <div 
+      <div
         className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto m-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-          <Typography variant="h2" weight="semibold">
+          <Heading level={2} weight="semibold">
             {t('admin.recruitment.caseDetails')} {caseInfo?.case_number}
-          </Typography>
+          </Heading>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X size={24} />
           </button>
@@ -34,89 +35,89 @@ export function CaseDetailsModal({ isOpen, onClose, caseData }: CaseDetailsModal
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Typography variant="body" weight="semibold" className="text-gray-600">
+              <Text size="sm" weight="semibold" color="muted">
                 {t('admin.recruitment.status')}
-              </Typography>
-              <Typography variant="body">{caseInfo?.clickup_status || '-'}</Typography>
+              </Text>
+              <Text size="sm">{caseInfo?.clickup_status || '-'}</Text>
             </div>
             <div>
-              <Typography variant="body" weight="semibold" className="text-gray-600">
+              <Text size="sm" weight="semibold" color="muted">
                 {t('admin.recruitment.priority')}
-              </Typography>
-              <Typography variant="body">{caseInfo?.clickup_priority || '-'}</Typography>
+              </Text>
+              <Text size="sm">{caseInfo?.clickup_priority || '-'}</Text>
             </div>
             <div>
-              <Typography variant="body" weight="semibold" className="text-gray-600">
+              <Text size="sm" weight="semibold" color="muted">
                 {t('admin.recruitment.diagnosis')}
-              </Typography>
-              <Typography variant="body">{caseInfo?.diagnosis || '-'}</Typography>
+              </Text>
+              <Text size="sm">{caseInfo?.diagnosis || '-'}</Text>
             </div>
             <div>
-              <Typography variant="body" weight="semibold" className="text-gray-600">
+              <Text size="sm" weight="semibold" color="muted">
                 {t('admin.recruitment.zone')}
-              </Typography>
-              <Typography variant="body">{caseInfo?.patient_zone || '-'}</Typography>
+              </Text>
+              <Text size="sm">{caseInfo?.patient_zone || '-'}</Text>
             </div>
           </div>
 
           <div>
-            <Typography variant="h3" weight="semibold" className="mb-3">
+            <Heading level={3} weight="semibold" className="mb-3">
               {t('admin.recruitment.metrics')}
-            </Typography>
+            </Heading>
             <div className="grid grid-cols-4 gap-4">
               <div className="bg-blue-50 p-4 rounded-lg">
-                <Typography variant="body" className="text-gray-600 text-sm">
+                <Text size="sm" color="muted">
                   {t('admin.recruitment.postulados')}
-                </Typography>
-                <Typography variant="h2" weight="bold" className="text-blue-600">
+                </Text>
+                <Heading level={2} weight="bold" color="inherit" className="text-blue-600">
                   {metrics?.postuladosInTalentum || 0}
-                </Typography>
+                </Heading>
               </div>
               <div className="bg-green-50 p-4 rounded-lg">
-                <Typography variant="body" className="text-gray-600 text-sm">
+                <Text size="sm" color="muted">
                   {t('admin.recruitment.seleccionados')}
-                </Typography>
-                <Typography variant="h2" weight="bold" className="text-green-600">
+                </Text>
+                <Heading level={2} weight="bold" color="inherit" className="text-green-600">
                   {metrics?.seleccionados || 0}
-                </Typography>
+                </Heading>
               </div>
               <div className="bg-yellow-50 p-4 rounded-lg">
-                <Typography variant="body" className="text-gray-600 text-sm">
+                <Text size="sm" color="muted">
                   {t('admin.recruitment.reemplazos')}
-                </Typography>
-                <Typography variant="h2" weight="bold" className="text-yellow-600">
+                </Text>
+                <Heading level={2} weight="bold" color="inherit" className="text-yellow-600">
                   {metrics?.reemplazos || 0}
-                </Typography>
+                </Heading>
               </div>
               <div className="bg-purple-50 p-4 rounded-lg">
-                <Typography variant="body" className="text-gray-600 text-sm">
+                <Text size="sm" color="muted">
                   {t('admin.recruitment.invitados')}
-                </Typography>
-                <Typography variant="h2" weight="bold" className="text-purple-600">
+                </Text>
+                <Heading level={2} weight="bold" color="inherit" className="text-purple-600">
                   {metrics?.invitados || 0}
-                </Typography>
+                </Heading>
               </div>
             </div>
           </div>
 
           {publicationsHistory && publicationsHistory.length > 0 && (
             <div>
-              <Typography variant="h3" weight="semibold" className="mb-3">
+              <Heading level={3} weight="semibold" className="mb-3">
                 {t('admin.recruitment.publicationsHistory')}
-              </Typography>
+              </Heading>
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {publicationsHistory.map((pub: any, idx: number) => (
                   <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2">
                     <div className="flex justify-between">
-                      <Typography variant="body" weight="semibold">{pub.channel}</Typography>
-                      <Typography variant="body" className="text-gray-500 text-sm">
+                      <Text size="sm" weight="semibold">{pub.channel}</Text>
+                      <Text size="sm" color="muted">
                         {new Date(pub.published_at).toLocaleDateString()}
-                      </Typography>
+                      </Text>
                     </div>
                     {pub.recruiter_name && (
-                      <Typography variant="body" className="text-gray-600 text-sm">
+                      <Text size="sm" color="muted">
                         {pub.recruiter_name}
-                      </Typography>
+                      </Text>
                     )}
                   </div>
                 ))}

@@ -8,7 +8,8 @@ import { useRegisterUser } from '@presentation/hooks/useRegisterUser';
 import { useWorkerEmailLookup } from '@presentation/hooks/useWorkerEmailLookup';
 import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
 import { PhoneInputIntl } from '@presentation/components/shared/PhoneInputIntl';
-import { Typography } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { FormField, InputWithIcon, PasswordInput } from '@presentation/components/molecules';
 import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox, Divider } from '@presentation/components/atoms';
@@ -142,18 +143,18 @@ export function RegisterPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center w-full max-w-[1200px] self-center flex-1 gap-8 md:gap-10 lg:gap-12">
         <div className="flex flex-col justify-center gap-5 w-full lg:w-[456px]">
           <div className="flex flex-col gap-2">
-            <Typography variant="h1" weight="semibold" color="primary">
+            <Heading level={1} weight="semibold" color="primary">
               {t('register.title')}
-            </Typography>
-            <Typography variant="body" color="primary" className="max-w-[456px]">
+            </Heading>
+            <Text size="sm" color="primary" className="max-w-[456px]">
               {t('register.description')}
-            </Typography>
+            </Text>
           </div>
 
           <form className="flex flex-col gap-5 w-full" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg font-lexend text-sm">
-                {error}
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                <Text as="span" size="sm" color="inherit">{error}</Text>
               </div>
             )}
             <div className="flex flex-col gap-3 w-full">
@@ -226,7 +227,9 @@ export function RegisterPage() {
                   />
                 )}
                 {phoneDisabled && (
-                  <span className="text-xs text-gray-800 mt-1">{t('register.phonePrefilledHint')}</span>
+                  <Text as="span" size="xs" color="secondary" className="mt-1">
+                    {t('register.phonePrefilledHint')}
+                  </Text>
                 )}
               </FormField>
             </div>
@@ -235,9 +238,9 @@ export function RegisterPage() {
               id="lgpdOptIn"
               labelContent={
                 <div className="flex flex-col gap-0.5">
-                  <span className="font-semibold">{t('register.lgpdOptIn')}</span>
-                  <span className="text-sm text-gray-800">{t('register.lgpdSubtitle')}</span>
-                  <span className="text-xs text-gray-800">
+                  <Text as="span" size="sm" weight="semibold" color="inherit">{t('register.lgpdOptIn')}</Text>
+                  <Text as="span" size="sm" color="secondary">{t('register.lgpdSubtitle')}</Text>
+                  <Text as="span" size="xs" color="secondary">
                     {t('register.lgpdBody')
                       .split('{termsLink}')
                       .flatMap((partBeforeTerms, i) => {
@@ -273,7 +276,7 @@ export function RegisterPage() {
                           segments[1],
                         ];
                       })}
-                  </span>
+                  </Text>
                 </div>
               }
               checked={lgpdOptIn}
@@ -284,12 +287,12 @@ export function RegisterPage() {
               error={lgpdError || undefined}
             />
 
-            <Typography variant="body" color="secondary" className="text-left">
+            <Text size="sm" color="secondary" className="text-left">
               {t('register.hasAccount')}{' '}
               <Link to="/login" className="font-medium text-primary underline">
                 {t('register.loginHere')}
               </Link>
-            </Typography>
+            </Text>
 
             <div className="flex flex-col gap-3">
               <Button

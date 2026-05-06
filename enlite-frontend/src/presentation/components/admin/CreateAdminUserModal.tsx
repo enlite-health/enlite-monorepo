@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnliteRole } from '@domain/entities/EnliteRole';
-import { Typography, Label } from '@presentation/components/atoms';
+import { Heading, Label } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 
 export interface CreateAdminUserForm {
@@ -46,9 +46,9 @@ export function CreateAdminUserModal({ isLoading, onSubmit, onClose }: Props): J
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
-        <Typography variant="h2" weight="semibold" color="primary" className="mb-4">
+        <Heading level={2} weight="semibold" color="primary" className="mb-4">
           {t('admin.users.createUserTitle')}
-        </Typography>
+        </Heading>
 
         <div className="space-y-3">
           <div>

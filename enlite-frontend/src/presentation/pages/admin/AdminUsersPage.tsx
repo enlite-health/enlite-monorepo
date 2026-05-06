@@ -3,7 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AdminUser } from '@domain/entities/AdminUser';
 import { EnliteRole } from '@domain/entities/EnliteRole';
-import { Typography } from '@presentation/components/atoms';
+import {
+  Heading,
+  Text,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
@@ -28,8 +37,10 @@ function RoleBadge({ role }: { role: EnliteRole }): JSX.Element {
   }[role];
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${ROLE_BADGE_CLASSES[role]}`}>
-      {t(labelKey)}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded ${ROLE_BADGE_CLASSES[role]}`}>
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {t(labelKey)}
+      </Text>
     </span>
   );
 }
@@ -161,9 +172,9 @@ export function AdminUsersPage(): JSX.Element {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <Typography variant="h1" weight="semibold" color="primary">
+        <Heading level={1} weight="semibold" color="primary">
           {t('admin.users.title')}
-        </Typography>
+        </Heading>
         {isAdmin && (
           <Button variant="primary" onClick={() => setShowCreateModal(true)}>
             {t('admin.users.create')}
@@ -173,7 +184,7 @@ export function AdminUsersPage(): JSX.Element {
 
       {error && (
         <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg flex items-center justify-between">
-          <Typography variant="body" color="primary">{error}</Typography>
+          <Text size="sm" color="primary">{error}</Text>
           <button className="ml-2 text-red-600 hover:text-red-800" onClick={() => setError(null)}>×</button>
         </div>
       )}
@@ -181,75 +192,57 @@ export function AdminUsersPage(): JSX.Element {
       {isLoading ? (
         <TableSkeleton />
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-6 py-3">
-                  <Typography variant="caption" weight="medium" color="secondary">{t('admin.users.name')}</Typography>
-                </th>
-                <th className="text-left px-6 py-3">
-                  <Typography variant="caption" weight="medium" color="secondary">{t('admin.users.email')}</Typography>
-                </th>
-                <th className="text-left px-6 py-3">
-                  <Typography variant="caption" weight="medium" color="secondary">{t('admin.users.role')}</Typography>
-                </th>
-                <th className="text-left px-6 py-3">
-                  <Typography variant="caption" weight="medium" color="secondary">{t('admin.users.lastLogin')}</Typography>
-                </th>
-                <th className="text-right px-6 py-3">
-                  <Typography variant="caption" weight="medium" color="secondary">{t('admin.users.actions')}</Typography>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-400">
+          <Table>
+            <TableHeader>
+              <TableHead>{t('admin.users.name')}</TableHead>
+              <TableHead>{t('admin.users.email')}</TableHead>
+              <TableHead>{t('admin.users.role')}</TableHead>
+              <TableHead>{t('admin.users.lastLogin')}</TableHead>
+              <TableHead align="right">{t('admin.users.actions')}</TableHead>
+            </TableHeader>
+            <TableBody>
               {admins.map((admin) => (
-                <tr key={admin.firebaseUid} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <Typography variant="body" weight="medium" color="primary">{admin.displayName || '—'}</Typography>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Typography variant="body" color="secondary">{admin.email}</Typography>
-                  </td>
-                  <td className="px-6 py-4">
+                <TableRow key={admin.firebaseUid}>
+                  <TableCell weight="medium">{admin.displayName || '—'}</TableCell>
+                  <TableCell>{admin.email}</TableCell>
+                  <TableCell unwrapped>
                     <RoleCell admin={admin} canEdit={isAdmin} onRoleChange={handleRoleChange} />
-                  </td>
-                  <td className="px-6 py-4">
-                    <Typography variant="body" color="secondary">
-                      {admin.lastLoginAt
-                        ? new Date(admin.lastLoginAt).toLocaleDateString('es-AR')
-                        : '—'}
-                    </Typography>
-                  </td>
-                  <td className="px-6 py-4 text-right space-x-2">
+                  </TableCell>
+                  <TableCell>
+                    {admin.lastLoginAt
+                      ? new Date(admin.lastLoginAt).toLocaleDateString('es-AR')
+                      : '—'}
+                  </TableCell>
+                  <TableCell unwrapped align="right" className="space-x-2">
                     <button
                       type="button"
-                      className="text-blue-600 hover:underline text-sm"
+                      className="text-blue-600 hover:underline"
                       onClick={() => handleResetPassword(admin)}
                     >
-                      <Typography variant="caption" color="primary">{t('admin.users.reset')}</Typography>
+                      <Text as="span" size="xs" color="inherit">{t('admin.users.reset')}</Text>
                     </button>
                     {isAdmin && (
                       <button
                         type="button"
-                        className="text-red-600 hover:underline text-sm"
+                        className="text-red-600 hover:underline"
                         onClick={() => setDeleteTarget(admin)}
                       >
-                        <Typography variant="caption" color="primary">{t('admin.users.delete')}</Typography>
+                        <Text as="span" size="xs" color="inherit">{t('admin.users.delete')}</Text>
                       </button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
               {admins.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center">
-                    <Typography variant="body" color="secondary">{t('admin.users.empty')}</Typography>
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell unwrapped colSpan={5} className="px-6 py-8 text-center">
+                    <Text as="span" size="sm" color="secondary">{t('admin.users.empty')}</Text>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

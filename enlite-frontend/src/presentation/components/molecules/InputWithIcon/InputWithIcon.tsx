@@ -1,5 +1,5 @@
 import { InputHTMLAttributes, ReactNode, forwardRef } from 'react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 
 interface InputWithIconProps extends InputHTMLAttributes<HTMLInputElement> {
   icon?: ReactNode;
@@ -21,7 +21,7 @@ export const InputWithIcon = forwardRef<HTMLInputElement, InputWithIconProps>(
     ref
   ): JSX.Element {
   const borderClass = error ? 'border-red-500' : `border-[${borderColor}]`;
-  
+
   return (
     <div className="flex flex-col gap-1 w-full">
       <div
@@ -39,7 +39,7 @@ export const InputWithIcon = forwardRef<HTMLInputElement, InputWithIconProps>(
           <span className="flex items-center shrink-0">{icon}</span>
         )}
       </div>
-      {error && <Typography variant="caption" className="text-red-500">{error}</Typography>}
+      {error && <Text size="xs" color="inherit" className="text-red-500">{error}</Text>}
     </div>
   );
   }

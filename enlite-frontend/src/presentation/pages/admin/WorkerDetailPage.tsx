@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useWorkerDetail } from '@hooks/admin/useWorkerDetail';
 import { useAdminWorkerDocuments } from '@hooks/admin/useAdminWorkerDocuments';
@@ -39,9 +40,9 @@ export default function WorkerDetailPage() {
   if (error || !worker) {
     return (
       <div className="w-full min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <Typography variant="h3" className="text-red-600">
+        <Heading level={3} color="inherit" className="text-red-600">
           {error ?? t('admin.workerDetail.notFound')}
-        </Typography>
+        </Heading>
         <Button variant="outline" size="sm" onClick={() => navigate('/admin/workers')}>
           {t('admin.workerDetail.back')}
         </Button>
@@ -61,14 +62,14 @@ export default function WorkerDetailPage() {
             className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            <Typography variant="body" weight="medium" className="text-inherit">
+            <Text as="span" size="sm" weight="medium" color="inherit">
               {t('admin.workerDetail.back')}
-            </Typography>
+            </Text>
           </button>
           <ChevronRight className="w-4 h-4 text-gray-600" />
-          <Typography variant="h1" weight="semibold" color="primary">
+          <Heading level={1} weight="semibold" color="primary">
             {fullName}
-          </Typography>
+          </Heading>
         </div>
       </div>
 
@@ -176,9 +177,9 @@ function PlaceholderTab({ label }: { label: string }) {
   const { t } = useTranslation();
   return (
     <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex items-center justify-center min-h-[200px]">
-      <Typography variant="body" className="text-gray-700">
+      <Text size="sm" color="muted">
         {label} — {t('admin.workerDetail.comingSoon')}
-      </Typography>
+      </Text>
     </div>
   );
 }

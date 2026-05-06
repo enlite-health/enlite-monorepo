@@ -1,6 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { WorkerAvatar } from '@presentation/components/atoms/WorkerAvatar';
 import { WhatsappStatusBadge } from '@presentation/components/atoms/WhatsappStatusBadge';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  TableRow,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
 
 interface VacancyFunnelTableRowProps {
@@ -29,56 +34,46 @@ export function VacancyFunnelTableRow({
         ? t('admin.vacancyDetail.funnelTable.acceptedNo')
         : '—';
 
-  const rowClass = `bg-white h-[60px] border-b border-gray-400${isLast ? ' rounded-bl-[12px] rounded-br-[12px]' : ''}`;
-
   return (
-    <tr className={rowClass}>
-      {/* NOME */}
-      <td className="px-6">
+    <TableRow className={`bg-white${isLast ? ' rounded-bl-[12px] rounded-br-[12px]' : ''}`}>
+      <TableCell unwrapped className="px-6">
         <div className="flex items-center gap-2 max-w-[280px]">
           <WorkerAvatar name={row.workerName} avatarUrl={row.workerAvatarUrl} size={32} />
           <div className="flex flex-col min-w-0 flex-1">
-            <span
-              className="font-lexend font-medium text-base text-gray-800 truncate"
+            <Text
+              as="span"
+              size="sm"
+              weight="medium"
+              color="secondary"
               title={row.workerName ?? undefined}
+              className="truncate"
             >
               {row.workerName ?? '—'}
-            </span>
-            <span
-              className="font-lexend font-normal text-[10px] text-gray-800/50 truncate"
+            </Text>
+            <Text
+              as="span"
+              size="xs"
+              color="muted"
               title={row.workerEmail ?? undefined}
+              className="truncate"
             >
               {row.workerEmail ?? ''}
-            </span>
+            </Text>
           </div>
         </div>
-      </td>
-
-      {/* TELEFONE */}
-      <td className="px-6">
-        <span className="font-lexend font-medium text-base text-gray-800">
-          {row.workerPhone ?? '—'}
-        </span>
-      </td>
-
-      {/* DATA DO CONVITE */}
-      <td className="px-6 whitespace-nowrap">
-        <span className="font-lexend font-medium text-base text-gray-800">
-          {formattedDate}
-        </span>
-      </td>
-
-      {/* WHATSAPP */}
-      <td className="px-6">
+      </TableCell>
+      <TableCell weight="medium" className="px-6">
+        {row.workerPhone ?? '—'}
+      </TableCell>
+      <TableCell weight="medium" className="px-6 whitespace-nowrap">
+        {formattedDate}
+      </TableCell>
+      <TableCell unwrapped className="px-6">
         <WhatsappStatusBadge status={row.whatsappStatus} />
-      </td>
-
-      {/* ACEITO */}
-      <td className="px-6">
-        <span className="font-lexend font-medium text-sm text-gray-800">
-          {acceptedLabel}
-        </span>
-      </td>
-    </tr>
+      </TableCell>
+      <TableCell weight="medium" className="px-6">
+        {acceptedLabel}
+      </TableCell>
+    </TableRow>
   );
 }

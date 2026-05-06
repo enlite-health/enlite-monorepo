@@ -7,7 +7,9 @@ import { availabilitySchema, AvailabilityFormData } from '@presentation/validati
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { Button } from '@presentation/components/atoms/Button';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
-import { TimeSelect, Typography } from '@presentation/components/atoms';
+import { TimeSelect } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 
 const DAYS_OF_WEEK = [
   { id: 'sunday', key: 'sunday' },
@@ -162,19 +164,23 @@ export function AvailabilityTab(): JSX.Element {
     <div ref={containerRef} className="flex flex-col gap-6 w-full" onBlur={triggerSave}>
       {/* Success/Error Messages */}
       {saveSuccess && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-input font-lexend text-sm text-green-700">
-          {t('profile.saveSuccess', 'Informações salvas com sucesso!')}
+        <div className="p-3 bg-green-50 border border-green-200 rounded-input">
+          <Text as="span" size="sm" color="inherit" className="text-green-700">
+            {t('profile.saveSuccess', 'Informações salvas com sucesso!')}
+          </Text>
         </div>
       )}
       {saveError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-input font-lexend text-sm text-red-700">
-          {saveError}
+        <div className="p-3 bg-red-50 border border-red-200 rounded-input">
+          <Text as="span" size="sm" color="inherit" className="text-red-700">
+            {saveError}
+          </Text>
         </div>
       )}
 
-      <Typography variant="h3" weight="medium" color="secondary">
+      <Heading level={3} weight="medium" color="secondary">
         {t('workerRegistration.availability.title')}
-      </Typography>
+      </Heading>
 
       <div className="flex flex-col gap-4">
         {translatedDays.map((day, dayIndex) => {
@@ -189,16 +195,21 @@ export function AvailabilityTab(): JSX.Element {
               }`}
             >
               <div className="flex items-center justify-between">
-                <div className={`font-lexend font-medium text-base ${isEnabled ? 'text-primary' : 'text-gray-800'}`}>
+                <Text
+                  as="span"
+                  size="base"
+                  weight="medium"
+                  color={isEnabled ? 'primary' : 'secondary'}
+                >
                   {day.label}
-                </div>
+                </Text>
 
                 <div className="flex items-center gap-3">
-                  <div className="font-lexend text-gray-800 text-sm">
+                  <Text as="span" size="sm" color="secondary">
                     {isEnabled && timeSlots.length > 0
                       ? t('workerRegistration.availability.timeSlotsCount', { count: timeSlots.length })
                       : t('workerRegistration.availability.timeSlots')}
-                  </div>
+                  </Text>
 
                   <button
                     type="button"
@@ -216,14 +227,14 @@ export function AvailabilityTab(): JSX.Element {
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   {timeSlots.map((slot, slotIndex) => (
                     <div key={slotIndex} className="flex items-center gap-2">
-                      {slotIndex > 0 && <Typography variant="body" color="secondary">|</Typography>}
+                      {slotIndex > 0 && <Text as="span" size="sm" color="secondary">|</Text>}
                       <div className="flex items-center gap-1 px-2 py-1 bg-primary rounded-input font-lexend text-white text-sm">
                         <TimeSelect
                           value={slot.startTime}
                           onChange={(e) => updateTimeSlot(dayIndex, slotIndex, 'startTime', e.target.value)}
                           className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                         />
-                        <Typography variant="body" color="white">-</Typography>
+                        <Text as="span" size="sm" color="white">-</Text>
                         <TimeSelect
                           value={slot.endTime}
                           onChange={(e) => updateTimeSlot(dayIndex, slotIndex, 'endTime', e.target.value)}
@@ -250,7 +261,9 @@ export function AvailabilityTab(): JSX.Element {
       </div>
 
       {errors.schedule && (
-        <p className="font-lexend text-red-500 text-sm">{errors.schedule.message}</p>
+        <Text as="span" size="sm" color="inherit" className="text-red-500">
+          {errors.schedule.message}
+        </Text>
       )}
 
       {/* Submit Button */}

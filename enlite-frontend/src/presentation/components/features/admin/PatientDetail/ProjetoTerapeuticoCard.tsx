@@ -1,33 +1,28 @@
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
 
-/**
- * ProjetoTerapeuticoCard — Projeto/Plan Terapêutico.
- *
- * All fields display '—' because there is no backend table for therapeutic
- * projects yet. The version table shows an empty state.
- *
- * TODO: implement when therapeuticProjects table is added to the DB.
- */
 export function ProjetoTerapeuticoCard() {
   const { t } = useTranslation();
 
   return (
     <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.therapeuticProjectCard.title')}
-        </Typography>
+        </Heading>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            onClick={() => {}}
-            className="flex items-center gap-1"
-          >
+          <Button variant="outline" size="sm" disabled onClick={() => {}} className="flex items-center gap-1">
             <Plus className="w-4 h-4" />
             {t('admin.patients.detail.new')}
           </Button>
@@ -50,49 +45,36 @@ export function ProjetoTerapeuticoCard() {
           'deadlines',
           'pathologyTypes',
         ].map((key) => (
-          <p key={key} className="font-lexend text-sm leading-snug">
-            <span className="text-gray-800 font-medium">
+          <Text key={key} size="sm">
+            <Text as="span" size="sm" weight="medium" color="secondary">
               {t(`admin.patients.detail.therapeuticProjectCard.${key}`)}:{' '}
-            </span>
-            <span className="text-gray-700">—</span>
-          </p>
+            </Text>
+            <Text as="span" size="sm" color="muted">—</Text>
+          </Text>
         ))}
       </div>
 
-      {/* Version history table */}
       <div className="mt-4">
-        <Typography variant="body" weight="semibold" className="text-gray-800 mb-2">
+        <Text size="sm" weight="semibold" color="secondary" className="mb-2">
           {t('admin.patients.detail.therapeuticProjectCard.tableVersion')}
-        </Typography>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#EEEEEE] text-[#737373]">
-                <th className="text-left px-3 py-2 font-medium">
-                  {t('admin.patients.detail.therapeuticProjectCard.tableVersion')}
-                </th>
-                <th className="text-left px-3 py-2 font-medium">
-                  {t('admin.patients.detail.therapeuticProjectCard.tableAuthor')}
-                </th>
-                <th className="text-left px-3 py-2 font-medium">
-                  {t('admin.patients.detail.therapeuticProjectCard.tableStartDate')}
-                </th>
-                <th className="text-left px-3 py-2 font-medium">
-                  {t('admin.patients.detail.therapeuticProjectCard.tableEndDate')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colSpan={4} className="px-3 py-6 text-center">
-                  <Typography variant="body" className="text-[#737373]">
-                    {t('admin.patients.detail.noData')}
-                  </Typography>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        </Text>
+        <Table>
+          <TableHeader>
+            <TableHead>{t('admin.patients.detail.therapeuticProjectCard.tableVersion')}</TableHead>
+            <TableHead>{t('admin.patients.detail.therapeuticProjectCard.tableAuthor')}</TableHead>
+            <TableHead>{t('admin.patients.detail.therapeuticProjectCard.tableStartDate')}</TableHead>
+            <TableHead>{t('admin.patients.detail.therapeuticProjectCard.tableEndDate')}</TableHead>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell unwrapped colSpan={4} className="py-6 text-center">
+                <Text as="span" size="sm" color="secondary">
+                  {t('admin.patients.detail.noData')}
+                </Text>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

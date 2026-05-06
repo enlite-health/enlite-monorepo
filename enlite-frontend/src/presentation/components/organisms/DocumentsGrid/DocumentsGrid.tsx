@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentUploadCard } from '@presentation/components/molecules/DocumentUploadCard';
-import { Typography } from '@presentation/components/atoms';
+import { Heading, Text } from '@presentation/components/atoms';
 import { AlertTriangle } from 'lucide-react';
 import { DocumentType, WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
 
@@ -86,7 +86,9 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
           className="flex-1"
         />
         {cardErrors[slot.docType] && (
-          <p className="font-lexend text-xs text-red-500">{cardErrors[slot.docType]}</p>
+          <Text as="p" size="xs" color="secondary" className="text-red-500">
+            {cardErrors[slot.docType]}
+          </Text>
         )}
       </div>
     );
@@ -94,9 +96,9 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
 
   return (
     <div className="flex flex-col gap-5">
-      <Typography variant="h2" weight="semibold" color="secondary">
+      <Heading level={2} weight="semibold" color="secondary">
         {t('documents.title', 'Documentos')}
-      </Typography>
+      </Heading>
 
       <div className="flex flex-wrap gap-4">
         {row1.map((slot) => renderCard(slot, 'flex-1 min-w-[200px]'))}
@@ -111,9 +113,9 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
           {isAT && (
             <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200">
               <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-              <p className="font-lexend text-sm text-amber-800">
+              <Text as="p" size="sm" color="secondary" className="text-amber-800">
                 {t('documents.atRequiredWarning', 'Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.')}
-              </p>
+              </Text>
             </div>
           )}
           <div className="flex flex-wrap gap-4">

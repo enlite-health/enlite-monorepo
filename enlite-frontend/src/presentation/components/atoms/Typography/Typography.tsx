@@ -53,6 +53,10 @@ const colorStyles: Record<TypographyColor, string> = {
   white: 'text-white',
 };
 
+/**
+ * @deprecated Use `<Heading>` for h1-h4 e `<Text>` para corpo/spans.
+ * Migrar gradualmente — Typography permanece funcional até a migração concluir.
+ */
 export function Typography({
   variant = 'body',
   weight = 'normal',

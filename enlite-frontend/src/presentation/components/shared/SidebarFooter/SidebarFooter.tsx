@@ -1,4 +1,4 @@
-import { Typography } from '@presentation/components/atoms';
+import { Text } from '@presentation/components/atoms';
 
 export interface SidebarFooterProps {
   userName: string;
@@ -19,20 +19,20 @@ export const SidebarFooter = ({
             <img src={userAvatar} alt={userName} className="w-full h-full rounded-full object-cover" />
           ) : (
             <div className="w-full h-full rounded-full bg-gray-300 flex items-center justify-center">
-              <Typography variant="caption" weight="semibold" color="secondary">
+              <Text as="span" size="xs" weight="semibold" color="secondary">
                 {userName.charAt(0).toUpperCase()}
-              </Typography>
+              </Text>
             </div>
           )}
           <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full" />
         </div>
-        <Typography variant="caption" weight="medium" color="primary" className="truncate">
+        <Text as="span" size="xs" weight="medium" color="primary" className="truncate">
           {userName}
-        </Typography>
+        </Text>
       </div>
 
-      <button 
-        onClick={onMenuClick} 
+      <button
+        onClick={onMenuClick}
         className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
         aria-label="Logout"
       >

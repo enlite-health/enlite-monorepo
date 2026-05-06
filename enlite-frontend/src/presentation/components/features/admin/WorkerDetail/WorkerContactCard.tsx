@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
 import { getDocumentTypeLabel } from './workerDetailLabels';
 
@@ -46,9 +47,9 @@ function formatPhoneDisplay(raw: string | null): string | null {
 
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
-    <p className="font-lexend text-sm leading-snug">
-      <span className="text-gray-800 font-medium">{label} </span>
-      <span className="text-gray-700">{value ?? '—'}</span>
+    <p className="leading-snug">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
+      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
     </p>
   );
 }
@@ -86,27 +87,31 @@ export function WorkerContactCard({
             className="w-14 h-14 rounded-full object-cover border border-gray-600"
           />
         ) : (
-          <div className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center text-gray-800 text-xl font-semibold font-poppins">
-            {(firstName?.[0] ?? email[0] ?? '?').toUpperCase()}
+          <div className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
+            <Text as="span" size="xl" weight="semibold" color="secondary">
+              {(firstName?.[0] ?? email[0] ?? '?').toUpperCase()}
+            </Text>
           </div>
         )}
         <div className="min-w-0">
-          <Typography variant="h1" weight="semibold" as="h3" className="truncate">
+          <Heading level={1} as="h3" className="truncate">
             {fullName}
-          </Typography>
-          <Typography variant="body" className="text-gray-700 truncate">{email}</Typography>
+          </Heading>
+          <Text size="sm" color="muted" className="truncate">{email}</Text>
         </div>
       </div>
 
-      <Typography variant="h1" weight="semibold" as="h3">
+      <Heading level={1} as="h3">
         {t('admin.workerDetail.contactData')}
-      </Typography>
+      </Heading>
 
       <div className="flex flex-col gap-3">
         <Field label={`${t('admin.workerDetail.statusLabel')}:`} value={null} />
         <div className="-mt-3 ml-0">
-          <span className={`inline-flex px-3 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
-            {statusLabel}
+          <span className={`inline-flex px-3 py-0.5 rounded-full ${statusColor}`}>
+            <Text as="span" size="xs" weight="medium" color="inherit">
+              {statusLabel}
+            </Text>
           </span>
         </div>
         <Field label={`${t('admin.workerDetail.phone')}:`} value={formatPhoneDisplay(phone)} />
@@ -147,7 +152,7 @@ function ToggleIndicator({ label, enabled }: { label: string; enabled: boolean }
           }`}
         />
       </div>
-      <span className="font-lexend text-sm font-medium text-primary">{label}</span>
+      <Text as="span" size="sm" weight="medium" color="primary">{label}</Text>
     </div>
   );
 }

@@ -1,6 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { Eye } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
 
 export interface WorkerRow {
@@ -41,17 +49,21 @@ function DocsStatusBadge({ complete, status }: { complete: boolean; status: stri
   const { t } = useTranslation();
   if (complete) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-green-100 text-green-700">
         <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-        {t('admin.workers.docsStatus.complete')}
+        <Text as="span" size="xs" weight="medium" color="inherit">
+          {t('admin.workers.docsStatus.complete')}
+        </Text>
       </span>
     );
   }
   const statusKey = status === 'rejected' ? 'rejected' : status === 'pending' ? 'pending' : 'incomplete';
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">
       <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-      {t(`admin.workers.docsStatus.${statusKey}`)}
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {t(`admin.workers.docsStatus.${statusKey}`)}
+      </Text>
     </span>
   );
 }
@@ -61,74 +73,62 @@ export function WorkersTable({ workers, onRowClick }: WorkersTableProps): JSX.El
   const safeWorkers = workers ?? [];
 
   return (
-    <div className="w-full rounded-xl overflow-hidden border border-[#ECEFF1]">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse min-w-[500px]">
-          <thead>
-            <tr className="h-11 bg-[#EEEEEE]">
-              <th className="w-10 px-3" />
-              {COLUMNS.map(({ key, hiddenClass }) => (
-                <th key={key} className={`text-left px-4 whitespace-nowrap ${hiddenClass}`}>
-                  <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">
-                    {t(`admin.workers.table.${key}`)}
-                  </Typography>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#ECEFF1]">
-            {safeWorkers.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMNS.length + 1} className="h-[200px] bg-white text-center">
-                  <Typography variant="body" className="text-[#737373]">
-                    {t('admin.workers.noWorkers')}
-                  </Typography>
-                </td>
-              </tr>
-            ) : (
-              safeWorkers.map((row) => (
-                <tr
-                  key={row.id}
-                  onClick={() => onRowClick?.(row.id)}
-                  className={`h-[72px] bg-white ${onRowClick ? 'cursor-pointer hover:bg-slate-50' : ''}`}
-                >
-                  <td className="px-3">
-                    <Eye className="w-5 h-5 text-[#737373]" aria-label={t('admin.workers.table.view')} />
-                  </td>
-                  <td className="px-4">
-                    <div>
-                      <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                        {row.name}
-                      </Typography>
-                      <Typography variant="body" className="text-[#AEAEAE] font-lexend text-xs">
-                        {row.email}
-                      </Typography>
-                    </div>
-                  </td>
-                  <td className="px-4 whitespace-nowrap">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.casesCount}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap">
-                    <DocsStatusBadge complete={row.documentsComplete} status={row.documentsStatus} />
-                  </td>
-                  <td className="px-4 whitespace-nowrap hidden md:table-cell">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {formatDate(row.createdAt, i18n.language)}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap hidden md:table-cell">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {getPlatformLabel(t, row.platform)}
-                    </Typography>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+    <div className="w-full rounded-xl overflow-hidden border border-gray-400">
+      <Table className="min-w-[500px]">
+        <TableHeader>
+          <TableHead className="w-10" />
+          {COLUMNS.map(({ key, hiddenClass }) => (
+            <TableHead key={key} className={`whitespace-nowrap ${hiddenClass}`}>
+              {t(`admin.workers.table.${key}`)}
+            </TableHead>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {safeWorkers.length === 0 ? (
+            <TableRow>
+              <TableCell unwrapped colSpan={COLUMNS.length + 1} className="h-[200px] bg-white text-center">
+                <Text as="span" size="sm" color="secondary">
+                  {t('admin.workers.noWorkers')}
+                </Text>
+              </TableCell>
+            </TableRow>
+          ) : (
+            safeWorkers.map((row) => (
+              <TableRow
+                key={row.id}
+                onClick={onRowClick ? () => onRowClick(row.id) : undefined}
+                className="bg-white h-[72px]"
+              >
+                <TableCell unwrapped className="w-10">
+                  <Eye className="w-5 h-5 text-gray-800" aria-label={t('admin.workers.table.view')} />
+                </TableCell>
+                <TableCell unwrapped>
+                  <div className="flex flex-col">
+                    <Text as="span" size="sm" weight="medium" color="secondary">
+                      {row.name}
+                    </Text>
+                    <Text as="span" size="xs" color="muted">
+                      {row.email}
+                    </Text>
+                  </div>
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap">
+                  {row.casesCount}
+                </TableCell>
+                <TableCell unwrapped className="whitespace-nowrap">
+                  <DocsStatusBadge complete={row.documentsComplete} status={row.documentsStatus} />
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {formatDate(row.createdAt, i18n.language)}
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {getPlatformLabel(t, row.platform)}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

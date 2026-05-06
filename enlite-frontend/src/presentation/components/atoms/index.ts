@@ -2,6 +2,7 @@ export { Badge } from './Badge';
 export { Button } from './Button';
 export { Checkbox } from './Checkbox';
 export { Divider } from './Divider';
+export { Heading } from './Heading';
 export { Icon } from './Icon';
 export { Input } from './Input';
 export type { InputProps, InputSize } from './Input';
@@ -14,6 +15,15 @@ export { Select } from './Select';
 export type { SelectProps, SelectOption } from './Select';
 export { StatusBadge } from './StatusBadge';
 export { VacancyStatusBadge } from './VacancyStatusBadge';
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from './Table';
+export { Text } from './Text';
 export { Textarea } from './Textarea';
 export type { TextareaProps } from './Textarea';
 export { TimeSelect } from './TimeSelect';
