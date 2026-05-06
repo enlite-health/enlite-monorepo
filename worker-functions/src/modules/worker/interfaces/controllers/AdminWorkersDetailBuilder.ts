@@ -103,11 +103,18 @@ export async function buildWorkerDetailResponse(
       [w.id],
     ),
     db.query(
-      `SELECT id, address_line, latitude, longitude, radius_km FROM worker_service_areas WHERE worker_id = $1`,
+      `SELECT id, address_line, latitude, longitude, radius_km, city, work_zone, interest_zone
+         FROM worker_service_areas
+        WHERE worker_id = $1 AND deleted_at IS NULL`,
       [w.id],
     ),
+    // Mantida como query separada (mesma fonte agora) para preservar shape do
+    // builder downstream — `loc` espelha o primeiro service_area do worker.
     db.query(
-      `SELECT address, city, work_zone, interest_zone FROM worker_locations WHERE worker_id = $1`,
+      `SELECT address_line AS address, city, work_zone, interest_zone
+         FROM worker_service_areas
+        WHERE worker_id = $1 AND deleted_at IS NULL
+        ORDER BY created_at DESC LIMIT 1`,
       [w.id],
     ),
     db.query(

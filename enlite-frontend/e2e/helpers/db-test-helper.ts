@@ -242,22 +242,27 @@ export function insertTestWorker(opts: InsertTestWorkerOpts = {}): string {
   const workerId = extractUUID(idRow);
   if (!workerId) throw new Error(`Could not find worker after insert (phone=${phone})`);
 
-  if (lat !== null && lng !== null) {
-    runSQL(`
-      INSERT INTO worker_locations (
-        worker_id, country, lat, lng, created_at, updated_at
-      ) VALUES (
-        '${workerId}', 'AR', ${lat}, ${lng}, NOW(), NOW()
-      )
-    `);
-  }
+  // Sempre cria row em worker_service_areas (fonte canônica do endereço do
+  // worker, consolidada via migrations 158/159/160 — 2026-05-06).
+  // lat/lng nullable: workers sem coords entram como "distance unknown" no match.
+  runSQL(`
+    INSERT INTO worker_service_areas (
+      worker_id, country, latitude, longitude, radius_km, created_at, updated_at
+    ) VALUES (
+      '${workerId}', 'AR',
+      ${lat !== null ? lat : 'NULL'},
+      ${lng !== null ? lng : 'NULL'},
+      20, NOW(), NOW()
+    )
+  `);
   return workerId;
 }
 
-/** Deletes a worker row (worker_locations and worker_job_applications cascade). */
+/** Deletes a worker row (worker_service_areas and worker_job_applications cascade). */
 export function cleanupTestWorker(workerId: string): void {
   if (!workerId || workerId === 'undefined') return;
   runSQL(`DELETE FROM worker_job_applications WHERE worker_id = '${workerId}'`);
+  runSQL(`DELETE FROM worker_service_areas WHERE worker_id = '${workerId}'`);
   runSQL(`DELETE FROM workers WHERE id = '${workerId}'`);
 }
 
@@ -265,6 +270,12 @@ export interface InsertBaseVacancyOpts {
   patientId: string;
   patientAddressId: string;
   caseNumber: number;
+  /** Default 'AT'. Pass `null` to leave NULL. */
+  requiredProfessions?: string[] | null;
+  /** Default null. */
+  requiredSex?: 'M' | 'F' | 'BOTH' | null;
+  /** Default 'PENDING_ACTIVATION'. Use 'SEARCHING' to enable the funnel. */
+  status?: string;
 }
 
 /**
@@ -274,12 +285,26 @@ export interface InsertBaseVacancyOpts {
  * dropdown to expose a freshly seeded patient.
  */
 export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
-  const { patientId, patientAddressId, caseNumber } = opts;
+  const {
+    patientId,
+    patientAddressId,
+    caseNumber,
+    requiredProfessions = ['AT'],
+    requiredSex = null,
+    status = 'PENDING_ACTIVATION',
+  } = opts;
+
+  const professionsSql =
+    requiredProfessions === null
+      ? 'NULL'
+      : `ARRAY[${requiredProfessions.map((p) => `'${p}'`).join(',')}]::varchar[]`;
+  const sexSql = requiredSex === null ? 'NULL' : `'${requiredSex}'`;
+
   runSQL(`
     INSERT INTO job_postings (
       vacancy_number, case_number, title, description,
       patient_id, patient_address_id,
-      required_professions, providers_needed,
+      required_professions, required_sex, providers_needed,
       status, country, created_at, updated_at
     ) VALUES (
       nextval('job_postings_vacancy_number_seq'),
@@ -288,9 +313,10 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
       '',
       '${patientId}',
       '${patientAddressId}',
-      ARRAY['AT']::varchar[],
+      ${professionsSql},
+      ${sexSql},
       1,
-      'PENDING_ACTIVATION',
+      '${status}',
       'AR',
       NOW(), NOW()
     )

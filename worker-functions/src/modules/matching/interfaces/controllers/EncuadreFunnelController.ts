@@ -51,12 +51,12 @@ export class EncuadreFunnelController {
            CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
              WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = e.worker_id AND tp.job_posting_id = e.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
              ELSE wja.application_funnel_stage END AS talentum_status,
-           wl.work_zone
+           wsa.work_zone
          FROM encuadres e
          LEFT JOIN workers w ON w.id = e.worker_id
          LEFT JOIN worker_job_applications wja
            ON wja.worker_id = e.worker_id AND wja.job_posting_id = e.job_posting_id
-         LEFT JOIN worker_locations wl ON wl.worker_id = e.worker_id
+         LEFT JOIN worker_service_areas wsa ON wsa.worker_id = e.worker_id AND wsa.deleted_at IS NULL
          WHERE e.job_posting_id = $1
          ORDER BY wja.updated_at DESC NULLS LAST, e.created_at DESC`,
         [id]
