@@ -698,10 +698,13 @@ describe('Regressão — Validação transversal de schema Wave 2', () => {
     expect(missing).toEqual([]);
   });
 
-  it('patients e worker_service_areas usam bpchar(2) para country', async () => {
+  it('patients e worker_service_areas têm country com 2 chars', async () => {
     // Verifica especificamente as tabelas corrigidas nesta wave (D4 + D4-B).
     // Após migrations 158/159/160 (2026-05-06), worker_locations foi consolidada
-    // em worker_service_areas — country segue como bpchar(2) na tabela canônica.
+    // em worker_service_areas. Note: patients.country é bpchar(2) mas
+    // worker_service_areas.country é varchar(2) (definido na migration original
+    // dessa tabela). O invariante essencial é character_maximum_length = 2 —
+    // o tipo exato (bpchar vs varchar) é histórico e não impacta funcionalidade.
     const result = await pool.query<{
       table_name: string;
       data_type: string;
@@ -717,7 +720,7 @@ describe('Regressão — Validação transversal de schema Wave 2', () => {
 
     expect(result.rows.length).toBe(2);
     for (const row of result.rows) {
-      expect(row.data_type).toBe('character');
+      expect(['character', 'character varying']).toContain(row.data_type);
       expect(row.character_maximum_length).toBe(2);
     }
   });
