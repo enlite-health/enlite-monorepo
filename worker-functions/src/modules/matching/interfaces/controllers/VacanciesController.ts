@@ -220,6 +220,8 @@ export class VacanciesController {
           p.dependency_level as patient_dependency_level,
           p.diagnosis as patient_diagnosis,
           p.insurance_verified,
+          pa.address_formatted as patient_address_formatted,
+          pa.address_raw as patient_address_raw,
           json_agg(
             DISTINCT jsonb_build_object(
               'id', e.id,
@@ -241,12 +243,14 @@ export class VacanciesController {
           ) FILTER (WHERE pub.id IS NOT NULL) as publications
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id
+        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
         LEFT JOIN encuadres e ON jp.id = e.job_posting_id
         LEFT JOIN workers w ON e.worker_id = w.id
         LEFT JOIN publications pub ON jp.id = pub.job_posting_id
         WHERE jp.id = $1
         GROUP BY jp.id, p.id, p.first_name, p.last_name, p.zone_neighborhood,
-                 p.dependency_level, p.diagnosis, p.insurance_verified
+                 p.dependency_level, p.diagnosis, p.insurance_verified,
+                 pa.id, pa.address_formatted, pa.address_raw
       `;
 
       const result = await this.db.query(query, [id]);

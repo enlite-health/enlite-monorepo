@@ -170,7 +170,7 @@ export default function VacancyDetailPage() {
       {/* Tab content */}
       {activeTab === 'encuadres' && (
         <div className="mb-6">
-          <VacancyFunnelView vacancyId={id!} />
+          <VacancyFunnelView vacancyId={id!} vacancy={vacancy} />
         </div>
       )}
 

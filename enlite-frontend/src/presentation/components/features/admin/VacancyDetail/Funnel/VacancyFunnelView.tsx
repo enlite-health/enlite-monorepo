@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import type { FunnelBucket } from '@domain/entities/Funnel';
@@ -8,6 +9,8 @@ import type { FunnelView } from './VacancyFunnelToggle';
 import { VacancyFunnelTabs } from './VacancyFunnelTabs';
 import { VacancyFunnelTable } from './VacancyFunnelTable';
 import { VacancyFunnelKanban } from './VacancyFunnelKanban';
+import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
+import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
 
 const DEFAULT_BUCKET: FunnelBucket = 'INVITED';
 
@@ -33,10 +36,12 @@ function persistView(vacancyId: string, view: FunnelView): void {
 
 interface VacancyFunnelViewProps {
   vacancyId: string;
+  vacancy?: VacancyForMatch;
 }
 
 export function VacancyFunnelView({
   vacancyId,
+  vacancy,
 }: VacancyFunnelViewProps): JSX.Element {
   const { t } = useTranslation();
   const [view, setView] = useState<FunnelView>(() =>
@@ -44,6 +49,7 @@ export function VacancyFunnelView({
   );
   const [activeBucket, setActiveBucket] =
     useState<FunnelBucket>(DEFAULT_BUCKET);
+  const [showMatchModal, setShowMatchModal] = useState(false);
 
   const isListView = view === 'list';
 
@@ -76,18 +82,27 @@ export function VacancyFunnelView({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      {/* Linha 1: toggle (esquerda) + Enviar invitaciones (direita, só em modo lista) */}
+      {/* Linha 1: toggle (esquerda) + ações (direita, só em modo lista) */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />
         {isListView && (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handleDispatchInvites}
-            className="flex-shrink-0"
-          >
-            {t('admin.vacancyDetail.funnelView.dispatchInvitesButton')}
-          </Button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => setShowMatchModal(true)}
+            >
+              <Sparkles size={16} aria-hidden="true" />
+              Hacer match
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleDispatchInvites}
+            >
+              {t('admin.vacancyDetail.funnelView.dispatchInvitesButton')}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -123,6 +138,14 @@ export function VacancyFunnelView({
 
       {/* Kanban view content */}
       {!isListView && <VacancyFunnelKanban vacancyId={vacancyId} />}
+
+      {showMatchModal && (
+        <MatchVacancyModal
+          vacancyId={vacancyId}
+          vacancy={vacancy}
+          onClose={() => setShowMatchModal(false)}
+        />
+      )}
     </div>
   );
 }
