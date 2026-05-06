@@ -902,7 +902,7 @@ describe('AdminWorkersController — getWorkerById', () => {
   // ── Cenário 6: Sem location ───────────────────────────────────────────────
 
   describe('worker sem location', () => {
-    it('retorna location: null quando não há registro em worker_locations', async () => {
+    it('retorna location: null quando não há registro em worker_service_areas', async () => {
       setupFullMocks({ locationRows: [] });
       const [req, res] = mockReqRes({ id: WORKER_ID });
 

@@ -51,7 +51,7 @@ beforeAll(async () => {
   await pool.query(`DELETE FROM patient_addresses WHERE patient_id = $1`, [PATIENT_ID]);
   await pool.query(`DELETE FROM patient_professionals WHERE patient_id = $1`, [PATIENT_ID]);
   await pool.query(`DELETE FROM publications WHERE job_posting_id = $1`, [JOB_ID]);
-  await pool.query(`DELETE FROM worker_locations WHERE worker_id = ANY($1)`, [Object.values(WORKER_IDS)]);
+  await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = ANY($1)`, [Object.values(WORKER_IDS)]);
   await pool.query(`DELETE FROM job_postings WHERE id = $1`, [JOB_ID]);
   await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT_ID]);
   await pool.query(`DELETE FROM workers WHERE id = ANY($1)`, [Object.values(WORKER_IDS)]);
@@ -92,7 +92,7 @@ afterAll(async () => {
   await pool.query(`DELETE FROM patient_addresses WHERE patient_id = $1`, [PATIENT_ID]);
   await pool.query(`DELETE FROM patient_professionals WHERE patient_id = $1`, [PATIENT_ID]);
   await pool.query(`DELETE FROM publications WHERE job_posting_id = $1`, [JOB_ID]);
-  await pool.query(`DELETE FROM worker_locations WHERE worker_id = ANY($1)`, [Object.values(WORKER_IDS)]);
+  await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = ANY($1)`, [Object.values(WORKER_IDS)]);
   await pool.query(`DELETE FROM job_postings WHERE id = $1`, [JOB_ID]);
   await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT_ID]);
   await pool.query(`DELETE FROM workers WHERE id = ANY($1)`, [Object.values(WORKER_IDS)]);
@@ -460,7 +460,10 @@ describe('D4 — patients.country bpchar(2) com CHECK', () => {
 // D4-B — worker_locations.country constraint
 // ═══════════════════════════════════════════════════════════════
 
-describe('D4-B — worker_locations.country bpchar(2) com CHECK', () => {
+// SKIP: worker_locations foi consolidada em worker_service_areas via migrations
+// 158/159/160 (2026-05-06) e renomeada para worker_locations_deprecated_20260506.
+// As constraints de country/check pertencem ao schema legado em desuso.
+describe.skip('D4-B — worker_locations.country bpchar(2) com CHECK [legacy, table deprecated]', () => {
   it('worker_locations.country é bpchar(2) NOT NULL', async () => {
     const result = await pool.query<{
       data_type: string;
@@ -695,8 +698,10 @@ describe('Regressão — Validação transversal de schema Wave 2', () => {
     expect(missing).toEqual([]);
   });
 
-  it('patients e worker_locations usam bpchar(2) para country', async () => {
-    // Verifica especificamente as tabelas corrigidas nesta wave (D4 + D4-B)
+  it('patients e worker_service_areas usam bpchar(2) para country', async () => {
+    // Verifica especificamente as tabelas corrigidas nesta wave (D4 + D4-B).
+    // Após migrations 158/159/160 (2026-05-06), worker_locations foi consolidada
+    // em worker_service_areas — country segue como bpchar(2) na tabela canônica.
     const result = await pool.query<{
       table_name: string;
       data_type: string;
@@ -706,7 +711,7 @@ describe('Regressão — Validação transversal de schema Wave 2', () => {
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND column_name = 'country'
-        AND table_name IN ('patients', 'worker_locations')
+        AND table_name IN ('patients', 'worker_service_areas')
       ORDER BY table_name
     `);
 

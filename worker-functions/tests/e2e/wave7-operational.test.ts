@@ -651,17 +651,19 @@ describe('I3 — current_applicants removido, get_applicant_count()', () => {
 // =================================================================
 
 describe('Regression — Wave 7 schema integrity', () => {
-  it('worker_service_areas e worker_locations ambas tem coluna location geography', async () => {
+  it('worker_service_areas tem coluna location geography (fonte canônica do worker)', async () => {
+    // Histórico: worker_locations foi consolidado em worker_service_areas via
+    // migration 158/159/160 (2026-05-06). worker_service_areas é a única fonte
+    // de verdade; worker_locations vive como worker_locations_deprecated_20260506
+    // até ser dropada em release futura.
     const result = await pool.query(
       `SELECT table_name FROM information_schema.columns
        WHERE column_name = 'location'
          AND udt_name = 'geography'
-         AND table_name IN ('worker_service_areas', 'worker_locations')
-       ORDER BY table_name`
+         AND table_name = 'worker_service_areas'`
     );
     const tables = result.rows.map((r: any) => r.table_name);
     expect(tables).toContain('worker_service_areas');
-    expect(tables).toContain('worker_locations');
   });
 
   it('ambas tabelas de messaging tem ON DELETE SET NULL', async () => {

@@ -216,11 +216,11 @@ export class MatchmakingService {
          w.sex_encrypted,
          w.first_name_encrypted,
          w.last_name_encrypted,
-         wl.work_zone,
-         wl.address                               AS worker_address,
-         wl.interest_zone,
-         wl.lat                                   AS worker_lat,
-         wl.lng                                   AS worker_lng,
+         wsa.work_zone,
+         wsa.address_line                         AS worker_address,
+         wsa.interest_zone,
+         wsa.latitude                             AS worker_lat,
+         wsa.longitude                            AS worker_lng,
          (
            SELECT COALESCE(json_agg(json_build_object(
              'case_number', jp2.case_number,
@@ -249,7 +249,7 @@ export class MatchmakingService {
          w.avg_quality_rating
        FROM workers w
        LEFT JOIN blacklist bl ON bl.worker_id = w.id
-       LEFT JOIN worker_locations wl ON wl.worker_id = w.id
+       LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
        WHERE w.merged_into_id IS NULL
          AND w.status = 'REGISTERED'
          AND w.deleted_at IS NULL
@@ -260,9 +260,9 @@ export class MatchmakingService {
          )
          AND (
            NOT $3::BOOLEAN
-           OR wl.location IS NULL
+           OR wsa.location IS NULL
            OR ST_DWithin(
-             wl.location,
+             wsa.location,
              ST_MakePoint($4::FLOAT, $5::FLOAT)::geography,
              $6::FLOAT * 1000
            )
@@ -277,7 +277,7 @@ export class MatchmakingService {
                AND jp3.is_covered = false
            )
          )
-       GROUP BY w.id, wl.work_zone, wl.address, wl.interest_zone, wl.lat, wl.lng`,
+       GROUP BY w.id, wsa.work_zone, wsa.address_line, wsa.interest_zone, wsa.latitude, wsa.longitude`,
       [
         job.id,
         requiredProfession !== null ? JSON.stringify(requiredProfession) : null,
