@@ -3,7 +3,8 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { SchedulePicker } from './VacancySchedulePicker';
@@ -165,9 +166,9 @@ export function VacancyFormModal({ isOpen, onClose, onSuccess, vacancy }: Vacanc
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          <Typography variant="h3" weight="semibold" className="text-[#737373] font-poppins">
+          <Heading level={3} weight="semibold" color="secondary">
             {modalTitle}
-          </Typography>
+          </Heading>
           <button onClick={onClose} className="text-[#737373] hover:text-red-500 transition-colors p-1 rounded">
             <X className="w-5 h-5" />
           </button>
@@ -303,7 +304,7 @@ export function VacancyFormModal({ isOpen, onClose, onSuccess, vacancy }: Vacanc
           {/* Error + Actions */}
           {apiError && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-              <Typography variant="body" className="text-red-600 text-sm">{apiError}</Typography>
+              <Text size="sm" color="inherit" className="text-red-600">{apiError}</Text>
             </div>
           )}
 

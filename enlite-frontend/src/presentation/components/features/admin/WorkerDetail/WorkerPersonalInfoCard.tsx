@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { getSexLabel, getGenderLabel, getLanguageLabel } from './workerDetailLabels';
 
@@ -17,9 +18,9 @@ interface WorkerPersonalInfoCardProps {
 
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
-    <p className="font-lexend text-sm leading-snug">
-      <span className="text-gray-800 font-medium">{label} </span>
-      <span className="text-gray-700">{value ?? '—'}</span>
+    <p className="leading-snug">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
+      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
     </p>
   );
 }
@@ -44,9 +45,9 @@ export function WorkerPersonalInfoCard({
   return (
     <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3">
           {t('admin.workerDetail.personalInfo')}
-        </Typography>
+        </Heading>
         <Button variant="primary" size="sm" className="w-40 shrink-0">
           {t('admin.workerDetail.edit')}
         </Button>

@@ -9,7 +9,7 @@ import {
   AlertTriangle,
   Radio,
 } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
@@ -163,9 +163,9 @@ export function VacancyTalentumCard({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Radio className="w-5 h-5 text-[#737373]" />
-          <Typography variant="h3" weight="semibold" className="text-[#737373]">
+          <Heading level={3} weight="semibold" color="secondary">
             {t(`${tk}.title`)}
-          </Typography>
+          </Heading>
         </div>
         {isPublished && (
           <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium">

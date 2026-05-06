@@ -20,7 +20,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Stepper } from '@presentation/components/molecules/Stepper';
 import { useVacancyModalFlow } from '@hooks/admin/useVacancyModalFlow';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
@@ -75,9 +76,9 @@ export default function CreateVacancyPage(): JSX.Element {
 
         {/* Page header */}
         <div className="flex items-center justify-between w-full">
-          <h1 className="font-['Poppins'] font-semibold text-[32px] leading-[1.3] text-[#180149]">
+          <Heading level={1} weight="semibold">
             {v('pageTitle')}
-          </h1>
+          </Heading>
           <Button
             variant="primary"
             size="sm"
@@ -108,12 +109,14 @@ export default function CreateVacancyPage(): JSX.Element {
             data-testid="vacancy-form-validation-error"
             role="alert"
           >
-            <Typography variant="body" className="text-red-600 text-sm font-medium font-['Lexend']">
+            <Text size="sm" weight="medium" color="inherit" className="text-red-600">
               {t('admin.vacancyModal.validationBanner.title')}
-            </Typography>
-            <ul className="list-disc pl-5 mt-1 text-sm text-red-600 font-['Lexend']">
+            </Text>
+            <ul className="list-disc pl-5 mt-1">
               {validationFailedFields.map((label) => (
-                <li key={label}>{label}</li>
+                <li key={label}>
+                  <Text as="span" size="sm" color="inherit" className="text-red-600">{label}</Text>
+                </li>
               ))}
             </ul>
           </div>
@@ -121,9 +124,9 @@ export default function CreateVacancyPage(): JSX.Element {
 
         {generateError && (
           <div className="bg-red-50 border border-red-200 rounded-[10px] px-5 py-3">
-            <Typography variant="body" className="text-red-600 text-sm font-['Lexend']">
+            <Text size="sm" color="inherit" className="text-red-600">
               {generateError}
-            </Typography>
+            </Text>
           </div>
         )}
 
@@ -160,9 +163,9 @@ export default function CreateVacancyPage(): JSX.Element {
         >
           <div className="bg-white rounded-2xl px-8 py-6 shadow-xl flex items-center gap-4 max-w-md mx-6">
             <Loader2 className="w-6 h-6 animate-spin text-[#180149]" />
-            <span className="font-['Lexend'] font-medium text-[16px] text-[#180149]">
+            <Text as="span" size="base" weight="medium" color="inherit" className="text-[#180149]">
               {v('generatingAI')}
-            </span>
+            </Text>
           </div>
         </div>
       )}

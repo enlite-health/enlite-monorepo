@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { WorkerServiceArea, WorkerLocation } from '@domain/entities/Worker';
 
@@ -10,9 +11,9 @@ interface WorkerAddressCardProps {
 
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
-    <p className="font-lexend text-sm leading-snug">
-      <span className="text-gray-800 font-medium">{label} </span>
-      <span className="text-gray-700">{value ?? '—'}</span>
+    <p className="leading-snug">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
+      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
     </p>
   );
 }
@@ -25,18 +26,18 @@ export function WorkerAddressCard({ serviceAreas, location }: WorkerAddressCardP
   return (
     <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3">
           {t('admin.workerDetail.addressData')}
-        </Typography>
+        </Heading>
         <Button variant="primary" size="sm" className="w-40 shrink-0">
           {t('admin.workerDetail.edit')}
         </Button>
       </div>
 
       {!hasData && (
-        <Typography variant="body" className="text-gray-700">
+        <Text size="sm" color="muted">
           {t('admin.workerDetail.noLocation')}
-        </Typography>
+        </Text>
       )}
 
       {/* Argentina location */}
@@ -68,15 +69,15 @@ export function WorkerAddressCard({ serviceAreas, location }: WorkerAddressCardP
           {/* Map placeholder - service area visualization */}
           {serviceAreas[0]?.lat != null && serviceAreas[0]?.lng != null && (
             <div className="flex flex-col gap-2 shrink-0">
-              <p className="font-lexend text-sm leading-snug">
-                <span className="text-gray-800 font-medium">{t('admin.workerDetail.serviceRadius')}: </span>
-                <span className="text-gray-700">{serviceAreas[0].serviceRadiusKm ?? '—'}km</span>
+              <p className="leading-snug">
+                <Text as="span" size="sm" weight="medium" color="secondary">{t('admin.workerDetail.serviceRadius')}: </Text>
+                <Text as="span" size="sm" color="muted">{serviceAreas[0].serviceRadiusKm ?? '—'}km</Text>
               </p>
               <div className="w-full sm:w-[408px] h-[109px] bg-gray-300 rounded-lg flex items-center justify-center relative overflow-hidden">
                 <div className="w-24 h-24 rounded-full border-2 border-coordination bg-coordination/20" />
-                <span className="absolute bottom-2 right-2 text-xs text-gray-800 font-lexend">
+                <Text as="span" size="xs" color="secondary" className="absolute bottom-2 right-2">
                   ({serviceAreas[0].lat.toFixed(4)}, {serviceAreas[0].lng.toFixed(4)})
-                </span>
+                </Text>
               </div>
             </div>
           )}

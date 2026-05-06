@@ -6,6 +6,15 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StatusBadge } from '@presentation/components/atoms/StatusBadge';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 import type { ActiveCase } from '@domain/entities/RecruitmentData';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -87,11 +96,7 @@ export function ActiveCasesTable({
 
   const renderSortIcon = (key: SortKey): JSX.Element => {
     if (!sortConfig || sortConfig.key !== key) {
-      return (
-        <span className="text-slate-300 dark:text-slate-600 ml-1 opacity-0 group-hover:opacity-100">
-          ↕
-        </span>
-      );
+      return <span className="text-slate-300 ml-1 opacity-0 group-hover:opacity-100">↕</span>;
     }
     return sortConfig.direction === 'asc' ? (
       <ChevronUp className="w-4 h-4 ml-1 text-primary inline" />
@@ -102,82 +107,92 @@ export function ActiveCasesTable({
 
   if (cases.length === 0) {
     return (
-      <div className="text-center py-12 text-slate-500">
-        {t('admin.recruitment.caseAnalysis.noCase')}
+      <div className="text-center py-12">
+        <Text size="sm" color="muted">
+          {t('admin.recruitment.caseAnalysis.noCase')}
+        </Text>
       </div>
     );
   }
 
   return (
-    <div className={`overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg overflow-x-auto ${className}`}>
-      <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-        <thead className="bg-slate-50 dark:bg-slate-900/50">
-          <tr>
-            <th
-              scope="col"
-              onClick={() => requestSort('id')}
-              className="cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-slate-900 dark:text-slate-200 sm:pl-6 select-none"
-            >
-              {t('admin.recruitment.table.caseNumber')}
-              {renderSortIcon('id')}
-            </th>
-            <th
-              scope="col"
-              onClick={() => requestSort('name')}
-              className="cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors px-3 py-3.5 text-left text-sm font-semibold text-slate-900 dark:text-slate-200 select-none"
-            >
-              {t('admin.recruitment.table.taskName')}
-              {renderSortIcon('name')}
-            </th>
-            <th
-              scope="col"
-              onClick={() => requestSort('status')}
-              className="cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors px-3 py-3.5 text-left text-sm font-semibold text-slate-900 dark:text-slate-200 select-none"
-            >
-              {t('admin.recruitment.table.status')}
-              {renderSortIcon('status')}
-            </th>
-            <th
-              scope="col"
-              onClick={() => requestSort('inicioBusqueda')}
-              className="cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors px-3 py-3.5 text-left text-sm font-semibold text-slate-900 dark:text-slate-200 select-none"
-            >
-              {t('admin.recruitment.table.startDate')}
-              {renderSortIcon('inicioBusqueda')}
-            </th>
-            <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-              <span className="sr-only">Acciones</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-800">
+    <div
+      className={`overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg overflow-x-auto ${className}`}
+    >
+      <Table className="min-w-full">
+        <TableHeader>
+          <TableHead
+            scope="col"
+            onClick={() => requestSort('id')}
+            className="cursor-pointer group hover:bg-gray-400 transition-colors select-none"
+          >
+            {t('admin.recruitment.table.caseNumber')}
+            {renderSortIcon('id')}
+          </TableHead>
+          <TableHead
+            scope="col"
+            onClick={() => requestSort('name')}
+            className="cursor-pointer group hover:bg-gray-400 transition-colors select-none"
+          >
+            {t('admin.recruitment.table.taskName')}
+            {renderSortIcon('name')}
+          </TableHead>
+          <TableHead
+            scope="col"
+            onClick={() => requestSort('status')}
+            className="cursor-pointer group hover:bg-gray-400 transition-colors select-none"
+          >
+            {t('admin.recruitment.table.status')}
+            {renderSortIcon('status')}
+          </TableHead>
+          <TableHead
+            scope="col"
+            onClick={() => requestSort('inicioBusqueda')}
+            className="cursor-pointer group hover:bg-gray-400 transition-colors select-none"
+          >
+            {t('admin.recruitment.table.startDate')}
+            {renderSortIcon('inicioBusqueda')}
+          </TableHead>
+          <TableHead scope="col" align="right">
+            <span className="sr-only">Acciones</span>
+          </TableHead>
+        </TableHeader>
+        <TableBody>
           {sortedCases.map((caseItem) => (
-            <tr
+            <TableRow
               key={caseItem.id}
               onClick={() => onCaseClick(caseItem.id)}
-              className={`cursor-pointer transition-colors ${getRowColorClass(caseItem.id) || 'hover:bg-gray-50'}`}
+              className={getRowColorClass(caseItem.id)}
             >
-              <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-slate-900 dark:text-slate-200 sm:pl-6">
+              <TableCell weight="medium" className="whitespace-nowrap">
                 {caseItem.id}
-              </td>
-              <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
-                {caseItem.name}
-              </td>
-              <td className="whitespace-nowrap px-3 py-4 text-sm">
+              </TableCell>
+              <TableCell unwrapped className="whitespace-nowrap">
+                <Text as="span" size="sm" color="muted">
+                  {caseItem.name}
+                </Text>
+              </TableCell>
+              <TableCell unwrapped className="whitespace-nowrap">
                 <StatusBadge status={caseItem.status} />
-              </td>
-              <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-slate-900 dark:text-slate-200">
+              </TableCell>
+              <TableCell weight="medium" className="whitespace-nowrap">
                 {caseItem.inicioBusqueda}
-              </td>
-              <td className="whitespace-nowrap px-3 py-4 text-sm text-right">
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-primary text-xs font-medium">
+              </TableCell>
+              <TableCell unwrapped align="right" className="whitespace-nowrap">
+                <Text
+                  as="span"
+                  size="xs"
+                  weight="medium"
+                  color="primary"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                >
                   {t('admin.recruitment.table.viewAnalysis')} &rarr;
-                </span>
-              </td>
-            </tr>
+                </Text>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

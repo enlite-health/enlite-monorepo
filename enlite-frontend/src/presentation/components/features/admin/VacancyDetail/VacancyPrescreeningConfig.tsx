@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle, Loader2 } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
@@ -236,9 +236,9 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
-      <Typography variant="h3" weight="semibold" className="text-[#737373]">
+      <Heading level={3} weight="semibold" color="secondary">
         {t(`${ps}.title`)}
-      </Typography>
+      </Heading>
 
       {isPublished && (
         <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
@@ -270,9 +270,9 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
           <hr className="border-slate-100" />
 
           <div className="flex flex-col gap-3">
-            <Typography variant="h3" weight="semibold" className="text-[#737373] text-base">
+            <Heading level={4} weight="semibold" color="secondary">
               {t(`${ps}.faqTitle`)}
-            </Typography>
+            </Heading>
             {faq.map((item, i) => (
               <FaqCard key={i} item={item} index={i} onDelete={() => setFaq(p => p.filter((_, j) => j !== i))}
                 onChange={(f, v) => updateFaq(i, f, v)} />

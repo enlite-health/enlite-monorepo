@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
 
 interface VacancyMeetLinksRowProps {
   meetLink1: string | null;
@@ -43,7 +43,7 @@ function MeetDatePill({ slot }: { slot: MeetSlot }) {
         href={slot.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="bg-primary text-[#EDF2FE] font-lexend text-base font-medium px-5 py-2 rounded inline-flex items-center hover:opacity-90 transition-opacity"
+        className="bg-primary text-[#EDF2FE] text-base font-medium px-5 py-2 rounded inline-flex items-center hover:opacity-90 transition-opacity"
       >
         {label}
       </a>
@@ -51,7 +51,7 @@ function MeetDatePill({ slot }: { slot: MeetSlot }) {
   }
 
   return (
-    <span className="bg-primary text-[#EDF2FE] font-lexend text-base font-medium px-5 py-2 rounded inline-flex items-center">
+    <span className="bg-primary text-[#EDF2FE] text-base font-medium px-5 py-2 rounded inline-flex items-center">
       {label}
     </span>
   );
@@ -81,9 +81,9 @@ export function VacancyMeetLinksRow({
 
   return (
     <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-6 flex flex-col gap-3 mb-5">
-      <Typography variant="section-title" color="primary" weight="medium">
+      <Heading level={2} color="primary" weight="medium">
         {t('admin.vacancyDetail.meetLinksRow.title')}
-      </Typography>
+      </Heading>
       <div className="flex flex-wrap gap-3">
         {filledSlots.map((slot, idx) => (
           <MeetDatePill key={idx} slot={slot} />

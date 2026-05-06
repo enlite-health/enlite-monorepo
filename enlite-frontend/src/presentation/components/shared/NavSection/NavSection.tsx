@@ -1,4 +1,4 @@
-import { Typography } from '@presentation/components/atoms';
+import { Text } from '@presentation/components/atoms';
 import { ReactNode, useState } from 'react';
 import { NavItem } from '@presentation/components/shared/NavItem';
 
@@ -35,9 +35,9 @@ export const NavSection = ({
         className="flex w-full items-center gap-3 px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
       >
         <div className="w-5 h-5 flex-shrink-0">{icon}</div>
-        <Typography variant="body" weight="medium" color="primary" className="flex-1 text-left">
+        <Text as="span" size="sm" weight="medium" color="inherit" className="flex-1 text-left">
           {label}
-        </Typography>
+        </Text>
         <svg
           className={`w-3 h-3 text-[#180149] transition-transform flex-shrink-0 ${
             isExpanded ? 'rotate-90' : ''

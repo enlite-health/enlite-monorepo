@@ -1,4 +1,4 @@
-import { Typography } from '@presentation/components/atoms';
+import { Text } from '@presentation/components/atoms';
 import { ReactNode } from 'react';
 import { Link, useMatch } from 'react-router-dom';
 
@@ -39,14 +39,15 @@ export const NavItem = ({
   ) : (
     <>
       <div className={isSubItem ? 'w-4 h-4 flex-shrink-0' : 'w-5 h-5 flex-shrink-0'}>{icon}</div>
-      <Typography
-        variant={isSubItem ? 'caption' : 'body'}
+      <Text
+        as="span"
+        size={isSubItem ? 'xs' : 'sm'}
         weight={isRouteActive ? 'semibold' : 'medium'}
-        color="primary"
+        color="inherit"
         className="flex-1"
       >
         {label}
-      </Typography>
+      </Text>
     </>
   );
 

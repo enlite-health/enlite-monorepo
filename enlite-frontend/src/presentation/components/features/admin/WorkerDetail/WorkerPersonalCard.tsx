@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 
 interface WorkerPersonalCardProps {
   firstName: string | null;
@@ -33,8 +34,8 @@ function formatPhoneDisplay(raw: string | null): string | null {
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="flex justify-between">
-      <Typography variant="body" className="text-[#737373]">{label}</Typography>
-      <Typography variant="body" weight="medium">{value ?? '—'}</Typography>
+      <Text size="sm" color="secondary">{label}</Text>
+      <Text size="sm" weight="medium">{value ?? '—'}</Text>
     </div>
   );
 }
@@ -63,9 +64,9 @@ export function WorkerPersonalCard({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      <Typography variant="h1" weight="semibold" as="h3" className="text-[#737373]">
+      <Heading level={1} as="h3" color="secondary">
         {t('admin.workerDetail.personalData')}
-      </Typography>
+      </Heading>
       <div className="flex items-center gap-4 mb-2">
         {profilePhotoUrl ? (
           <img
@@ -74,13 +75,15 @@ export function WorkerPersonalCard({
             className="w-14 h-14 rounded-full object-cover border border-slate-200"
           />
         ) : (
-          <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xl font-semibold">
-            {(firstName?.[0] ?? email[0] ?? '?').toUpperCase()}
+          <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
+            <Text size="xl" weight="semibold" color="inherit" className="text-slate-400">
+              {(firstName?.[0] ?? email[0] ?? '?').toUpperCase()}
+            </Text>
           </div>
         )}
         <div>
-          <Typography variant="body" weight="semibold">{fullName}</Typography>
-          <Typography variant="body" className="text-[#737373] text-sm">{email}</Typography>
+          <Text size="sm" weight="semibold">{fullName}</Text>
+          <Text size="sm" color="secondary">{email}</Text>
         </div>
       </div>
       <div className="flex flex-col gap-3">

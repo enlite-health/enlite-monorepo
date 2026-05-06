@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
 
 interface VacancyCaseCardProps {
@@ -42,12 +43,12 @@ function DetailRow({
 }) {
   return (
     <div className="flex justify-between items-baseline gap-2">
-      <Typography variant="label" color="secondary">
+      <Text size="base" color="secondary">
         {label}
-      </Typography>
-      <Typography variant="value" color="primary" weight="medium">
+      </Text>
+      <Text size="xl" color="primary" weight="medium">
         {value != null && value !== '' ? String(value) : '—'}
-      </Typography>
+      </Text>
     </div>
   );
 }
@@ -61,12 +62,12 @@ function DateRow({
 }) {
   return (
     <div className="flex justify-between items-baseline gap-2">
-      <Typography variant="label" color="secondary">
+      <Text size="base" color="secondary">
         {label}
-      </Typography>
-      <Typography variant="value-sm" color="primary" weight="medium">
+      </Text>
+      <Text size="lg" color="primary" weight="medium">
         {formatDateAR(value)}
-      </Typography>
+      </Text>
     </div>
   );
 }
@@ -111,49 +112,51 @@ export function VacancyCaseCard({
     <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-8">
       {/* Header: case label + badge */}
       <div className="flex justify-between items-center mb-5">
-        <Typography variant="section-title" color="primary" weight="medium">
+        <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.caseLabel')} {caseNumber ?? '—'}
-        </Typography>
+        </Heading>
         <VacancyStatusBadge status={status} />
       </div>
 
       {/* Dependency level pill */}
       {dependencyLevel && (
-        <span className="inline-flex items-center font-lexend font-medium text-base text-cyan-focus bg-gray-400 px-7 py-2 rounded">
-          {dependencyLevel}
+        <span className="inline-flex items-center bg-gray-400 text-cyan-focus px-7 py-2 rounded">
+          <Text as="span" size="base" weight="medium" color="inherit">
+            {dependencyLevel}
+          </Text>
         </span>
       )}
 
       {/* Case description */}
-      <Typography variant="label" color="secondary" className="mt-4">
+      <Text size="base" color="secondary" className="mt-4">
         {caseDesc}
-      </Typography>
+      </Text>
 
       {/* Location */}
       {locationParts && (
         <div className="flex items-center gap-1 mt-3">
           <MapPin className="w-4 h-4 text-gray-800 shrink-0" strokeWidth={1.5} />
-          <Typography variant="label" color="secondary">
+          <Text size="base" color="secondary">
             {locationParts}
-          </Typography>
+          </Text>
         </div>
       )}
 
       {/* Payment term */}
       <div className="flex flex-col gap-2.5 mt-6">
-        <Typography variant="section-title" color="primary" weight="medium">
+        <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.paymentTerm')}
-        </Typography>
-        <Typography variant="label" color="secondary">
+        </Heading>
+        <Text size="base" color="secondary">
           {paymentTermLabel}
-        </Typography>
+        </Text>
       </div>
 
       {/* Details */}
       <div className="flex flex-col gap-2.5 mt-6">
-        <Typography variant="section-title" color="primary" weight="medium">
+        <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.details')}
-        </Typography>
+        </Heading>
         <DetailRow
           label={t('admin.vacancyDetail.caseCard.netHourlyRate')}
           value={netHourlyRate ?? null}
@@ -170,9 +173,9 @@ export function VacancyCaseCard({
 
       {/* Dates */}
       <div className="flex flex-col gap-2.5 mt-6">
-        <Typography variant="section-title" color="primary" weight="medium">
+        <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.dates')}
-        </Typography>
+        </Heading>
         <DateRow
           label={t('admin.vacancyDetail.caseCard.publishedAt')}
           value={publishedAt}

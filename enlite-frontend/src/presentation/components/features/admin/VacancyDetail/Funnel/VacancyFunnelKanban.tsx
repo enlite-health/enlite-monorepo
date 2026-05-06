@@ -1,6 +1,6 @@
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useEncuadreFunnel } from '@hooks/admin/useEncuadreFunnel';
@@ -21,9 +21,9 @@ export function VacancyFunnelKanban({
       {/* Sub-header with refresh */}
       <div className="flex items-center justify-between">
         {data && (
-          <Typography variant="caption" className="text-gray-800">
+          <Text size="xs" color="secondary">
             {data.totalEncuadres} {t('admin.vacancyDetail.funnelView.kanban.totalEncuadres')}
-          </Typography>
+          </Text>
         )}
         <Button
           variant="outline"
@@ -43,9 +43,9 @@ export function VacancyFunnelKanban({
       {/* Error */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <Typography variant="body" className="text-red-700">
+          <Text size="sm" color="inherit" className="text-red-700">
             {error}
-          </Typography>
+          </Text>
         </div>
       )}
 

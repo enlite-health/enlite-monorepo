@@ -3,7 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
@@ -32,9 +41,9 @@ export default function VacancyDetailPage() {
   if (error || !vacancy) {
     return (
       <div className="w-full min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <Typography variant="h3" className="text-red-600">
+        <Heading level={3} color="inherit" className="text-red-600">
           {error ?? t('admin.vacancyDetail.notFound')}
-        </Typography>
+        </Heading>
         <Button variant="outline" size="sm" onClick={() => navigate('/admin/vacancies')}>
           ← {t('admin.vacancyDetail.back')}
         </Button>
@@ -69,14 +78,14 @@ export default function VacancyDetailPage() {
             className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            <Typography variant="body" weight="medium" className="text-inherit">
+            <Text as="span" size="sm" weight="medium" color="inherit">
               {t('admin.vacancyDetail.back')}
-            </Typography>
+            </Text>
           </button>
           <ChevronRight className="w-4 h-4 text-gray-600" />
-          <Typography variant="h1" weight="semibold" className="text-gray-800 font-poppins text-2xl">
+          <Heading level={1} weight="semibold" color="secondary">
             {pageTitle}
-          </Typography>
+          </Heading>
         </div>
         <div className="flex items-center gap-3">
           <Button
@@ -185,44 +194,34 @@ export default function VacancyDetailPage() {
             />
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-            <Typography variant="h3" weight="semibold" className="text-gray-800">
+            <Heading level={3} weight="semibold" color="secondary">
               {t('admin.vacancyDetail.publications.title')}
-            </Typography>
+            </Heading>
             {publications.length === 0 ? (
-              <Typography variant="body" className="text-gray-800">
+              <Text size="sm" color="secondary">
                 {t('admin.vacancyDetail.publications.noPublications')}
-              </Typography>
+              </Text>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-300 text-gray-800">
-                      <th className="text-left px-3 py-2 font-medium rounded-tl-lg">
-                        {t('admin.vacancyDetail.publications.channel')}
-                      </th>
-                      <th className="text-left px-3 py-2 font-medium">
-                        {t('admin.vacancyDetail.publications.date')}
-                      </th>
-                      <th className="text-left px-3 py-2 font-medium rounded-tr-lg">
-                        {t('admin.vacancyDetail.publications.recruiter')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {publications.map((pub, i) => (
-                      <tr key={i} className="border-b border-gray-600 last:border-0">
-                        <td className="px-3 py-2">{pub.channel ?? '—'}</td>
-                        <td className="px-3 py-2">
-                          {pub.published_at
-                            ? new Date(pub.published_at).toLocaleDateString('es-AR')
-                            : '—'}
-                        </td>
-                        <td className="px-3 py-2">{pub.recruiter ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableHead>{t('admin.vacancyDetail.publications.channel')}</TableHead>
+                  <TableHead>{t('admin.vacancyDetail.publications.date')}</TableHead>
+                  <TableHead>{t('admin.vacancyDetail.publications.recruiter')}</TableHead>
+                </TableHeader>
+                <TableBody>
+                  {publications.map((pub, i) => (
+                    <TableRow key={i}>
+                      <TableCell>{pub.channel ?? '—'}</TableCell>
+                      <TableCell>
+                        {pub.published_at
+                          ? new Date(pub.published_at).toLocaleDateString('es-AR')
+                          : '—'}
+                      </TableCell>
+                      <TableCell>{pub.recruiter ?? '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </div>
         </>

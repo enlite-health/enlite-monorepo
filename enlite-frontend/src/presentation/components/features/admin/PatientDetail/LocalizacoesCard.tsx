@@ -1,6 +1,15 @@
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 
@@ -19,70 +28,51 @@ export function LocalizacoesCard({ addresses }: LocalizacoesCardProps) {
       data-testid="localizacoes-card"
     >
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.locationsCard.title')}
-        </Typography>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled
-          onClick={() => {}}
-          className="flex items-center gap-1"
-        >
+        </Heading>
+        <Button variant="outline" size="sm" disabled onClick={() => {}} className="flex items-center gap-1">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
         </Button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[#EEEEEE] text-[#737373]">
-              <th className="text-left px-3 py-2 font-medium">
-                {t('admin.patients.detail.locationsCard.tableName')}
-              </th>
-              <th className="text-left px-3 py-2 font-medium">
-                {t('admin.patients.detail.locationsCard.tableAddress')}
-              </th>
-              <th className="text-left px-3 py-2 font-medium">
-                {t('admin.patients.detail.locationsCard.tableNote')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-3 py-6 text-center">
-                  <Typography variant="body" className="text-[#737373]">
-                    {t('admin.patients.detail.noData')}
-                  </Typography>
-                </td>
-              </tr>
-            ) : (
-              rows.map((addr, idx) => (
-                <tr key={addr.id} className="border-b border-[#D9D9D9] last:border-0 align-top">
-                  <td className="px-3 py-3">
-                    {/* TODO: nameLabel column does not exist; show generic placeholder by index. */}
-                    {t('admin.patients.detail.locationsCard.addressGeneric', {
-                      index: idx + 1,
-                      defaultValue: `Endereço ${idx + 1}`,
-                    })}
-                  </td>
-                  <td className="px-3 py-3">
-                    {addr.fullAddress
-                      ?? ([addr.street, addr.number, addr.city, addr.state]
-                          .filter(Boolean)
-                          .join(', ') || empty)}
-                  </td>
-                  <td className="px-3 py-3 text-gray-600">
-                    {addr.complement ?? empty}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <Table>
+        <TableHeader>
+          <TableHead>{t('admin.patients.detail.locationsCard.tableName')}</TableHead>
+          <TableHead>{t('admin.patients.detail.locationsCard.tableAddress')}</TableHead>
+          <TableHead>{t('admin.patients.detail.locationsCard.tableNote')}</TableHead>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell unwrapped colSpan={3} className="py-6 text-center">
+                <Text as="span" size="sm" color="secondary">
+                  {t('admin.patients.detail.noData')}
+                </Text>
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((addr, idx) => (
+              <TableRow key={addr.id} className="align-top">
+                <TableCell>
+                  {t('admin.patients.detail.locationsCard.addressGeneric', {
+                    index: idx + 1,
+                    defaultValue: `Endereço ${idx + 1}`,
+                  })}
+                </TableCell>
+                <TableCell>
+                  {addr.fullAddress
+                    ?? ([addr.street, addr.number, addr.city, addr.state]
+                        .filter(Boolean)
+                        .join(', ') || empty)}
+                </TableCell>
+                <TableCell className="text-gray-600">{addr.complement ?? empty}</TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -1,6 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { Eye, Pencil } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@presentation/components/atoms/Table';
 
 export interface VacancyRow {
   id: string;
@@ -36,98 +44,72 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
   const safeVacancies = vacancies ?? [];
 
   return (
-    <div className="w-full rounded-xl overflow-hidden border border-[#ECEFF1]">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse min-w-[500px]">
-          <thead>
-            <tr className="h-11 bg-[#EEEEEE]">
-              <th className="w-10 px-3" />
-              {COLUMNS.map(({ key, hiddenClass }) => (
-                <th key={key} className={`text-left px-4 whitespace-nowrap ${hiddenClass}`}>
-                  <Typography
-                    variant="body"
-                    weight="medium"
-                    className="text-[#737373] font-lexend text-base"
-                  >
-                    {t(`admin.vacancies.table.${key}`)}
-                  </Typography>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#ECEFF1]">
-            {safeVacancies.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMNS.length + 1} className="h-[200px] bg-white text-center">
-                  <Typography variant="body" className="text-[#737373]">
-                    {t('admin.vacancies.noVacancies')}
-                  </Typography>
-                </td>
-              </tr>
-            ) : (
-              safeVacancies.map((row) => (
-                <tr
-                  key={row.id}
-                  onClick={() => onRowClick?.(row.id)}
-                  className={`h-[72px] bg-white ${onRowClick ? 'cursor-pointer hover:bg-slate-50' : ''}`}
-                >
-                  <td className="px-3">
-                    <div className="flex items-center gap-1.5">
-                      <Eye className="w-4 h-4 text-[#737373]" aria-label={t('admin.vacancies.table.view')} />
-                      {onEditClick && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onEditClick(row.id); }}
-                          className="p-0.5 hover:text-primary transition-colors"
-                          aria-label={t('admin.vacancies.table.edit')}
-                          data-testid={`edit-vacancy-${row.id}`}
-                        >
-                          <Pencil className="w-4 h-4 text-[#737373] hover:text-primary" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.caso}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.status}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap">
-                    <Typography variant="body" weight="medium" className={`font-lexend text-sm ${row.grauColor}`}>
-                      {row.grau}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap hidden md:table-cell">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.convidados}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap hidden md:table-cell">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.postulados}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap hidden md:table-cell">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.selecionados}
-                    </Typography>
-                  </td>
-                  <td className="px-4 whitespace-nowrap hidden md:table-cell">
-                    <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-sm">
-                      {row.faltantes}
-                    </Typography>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+    <div className="w-full rounded-xl overflow-hidden border border-gray-400">
+      <Table className="min-w-[500px]">
+        <TableHeader>
+          <TableHead className="w-10" />
+          {COLUMNS.map(({ key, hiddenClass }) => (
+            <TableHead key={key} className={`whitespace-nowrap ${hiddenClass}`}>
+              {t(`admin.vacancies.table.${key}`)}
+            </TableHead>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {safeVacancies.length === 0 ? (
+            <TableRow>
+              <TableCell unwrapped colSpan={COLUMNS.length + 1} className="h-[200px] bg-white text-center">
+                <Text as="span" size="sm" color="secondary">
+                  {t('admin.vacancies.noVacancies')}
+                </Text>
+              </TableCell>
+            </TableRow>
+          ) : (
+            safeVacancies.map((row) => (
+              <TableRow
+                key={row.id}
+                onClick={onRowClick ? () => onRowClick(row.id) : undefined}
+                className="bg-white h-[72px]"
+              >
+                <TableCell unwrapped className="w-10">
+                  <div className="flex items-center gap-1.5">
+                    <Eye className="w-4 h-4 text-gray-800" aria-label={t('admin.vacancies.table.view')} />
+                    {onEditClick && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onEditClick(row.id); }}
+                        className="p-0.5 hover:text-primary transition-colors"
+                        aria-label={t('admin.vacancies.table.edit')}
+                        data-testid={`edit-vacancy-${row.id}`}
+                      >
+                        <Pencil className="w-4 h-4 text-gray-800 hover:text-primary" />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell weight="medium">{row.caso}</TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap">{row.status}</TableCell>
+                <TableCell unwrapped className="whitespace-nowrap">
+                  <Text as="span" size="sm" weight="medium" className={row.grauColor}>
+                    {row.grau}
+                  </Text>
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {row.convidados}
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {row.postulados}
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {row.selecionados}
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {row.faltantes}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -13,7 +13,8 @@ import { GeneralInfoTab } from './tabs/GeneralInfoTab';
 import { ServiceAddressTab } from './tabs/ServiceAddressTab';
 import { AvailabilityTab } from './tabs/AvailabilityTab';
 import { DocumentsTab } from './tabs/DocumentsTab';
-import { Typography } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 
 type TabId = 'general' | 'address' | 'availability' | 'documents';
 
@@ -22,7 +23,7 @@ export function WorkerProfilePage(): JSX.Element {
   const { user } = useAuth();
   const navItems = useWorkerNavItems();
   const { getProgress, initWorker } = useWorkerApi();
-  
+
   // Use individual selectors to prevent re-renders
   const setMode = useWorkerRegistrationStore((state) => state.setMode);
   const updateGeneralInfo = useWorkerRegistrationStore((state) => state.updateGeneralInfo);
@@ -125,9 +126,9 @@ export function WorkerProfilePage(): JSX.Element {
   return (
     <AppLayout navItems={navItems} userName={user?.name || t('common.userFallback')} userAvatar={profilePhoto || undefined}>
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-poppins font-semibold text-gray-900 mb-6">
+        <Heading level={1} weight="semibold" color="secondary" className="mb-6">
           {t('profile.title', 'Meu Perfil')}
-        </h1>
+        </Heading>
 
         {initError && (
           <div className="mb-6 p-4 rounded-lg bg-red-100 border border-red-400 text-red-700">
@@ -163,11 +164,10 @@ export function WorkerProfilePage(): JSX.Element {
                 <ChevronLeft className="w-5 h-5 text-primary" />
               </button>
 
-              <span
-                data-testid="tab-current-label"
-                className="font-poppins font-semibold text-primary text-sm text-center flex-1 px-2"
-              >
-                {tabs[currentTabIndex].label}
+              <span data-testid="tab-current-label" className="text-center flex-1 px-2">
+                <Text as="span" size="sm" weight="semibold" color="primary">
+                  {tabs[currentTabIndex].label}
+                </Text>
               </span>
 
               <button
@@ -203,13 +203,14 @@ export function WorkerProfilePage(): JSX.Element {
                       `}
                       aria-current={isActive ? 'page' : undefined}
                     >
-                      <Typography
-                        variant="body"
+                      <Text
+                        as="span"
+                        size="sm"
                         weight="medium"
                         color={isActive ? 'primary' : 'secondary'}
                       >
                         {tab.label}
-                      </Typography>
+                      </Text>
                     </button>
                   );
                 })}

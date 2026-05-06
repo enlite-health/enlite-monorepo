@@ -56,28 +56,28 @@ describe('WorkerStatusCard', () => {
 
   it('applies green color for REGISTERED status', () => {
     render(<WorkerStatusCard {...baseProps} />);
-    const badge = screen.getByText('admin.workerDetail.statusRegistered');
+    const badge = screen.getByText('admin.workerDetail.statusRegistered').parentElement!;
     expect(badge.className).toContain('bg-green-100');
     expect(badge.className).toContain('text-green-700');
   });
 
   it('applies yellow color for INCOMPLETE_REGISTER status', () => {
     render(<WorkerStatusCard {...baseProps} status="INCOMPLETE_REGISTER" />);
-    const badge = screen.getByText('admin.workerDetail.statusIncomplete');
+    const badge = screen.getByText('admin.workerDetail.statusIncomplete').parentElement!;
     expect(badge.className).toContain('bg-yellow-100');
     expect(badge.className).toContain('text-yellow-700');
   });
 
   it('applies red color for DISABLED status', () => {
     render(<WorkerStatusCard {...baseProps} status="DISABLED" />);
-    const badge = screen.getByText('admin.workerDetail.statusDisabled');
+    const badge = screen.getByText('admin.workerDetail.statusDisabled').parentElement!;
     expect(badge.className).toContain('bg-red-100');
     expect(badge.className).toContain('text-red-700');
   });
 
   it('applies gray fallback color for unknown status', () => {
     render(<WorkerStatusCard {...baseProps} status={'UNKNOWN' as any} />);
-    const badge = screen.getByText('UNKNOWN');
+    const badge = screen.getByText('UNKNOWN').parentElement!;
     expect(badge.className).toContain('bg-gray-100');
     expect(badge.className).toContain('text-gray-600');
   });

@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { GoogleLoginButton } from '@presentation/components/features/auth/GoogleLoginButton';
 import { useAuth } from '@presentation/hooks/useAuth';
-import { Typography } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { FormField, InputWithIcon, PasswordInput } from '@presentation/components/molecules';
 import { Button } from '@presentation/components/atoms/Button';
 import { Divider } from '@presentation/components/atoms';
@@ -49,7 +50,7 @@ export function LoginPage() {
     }
 
     setIsLoading(true);
-    
+
     try {
       await login(email, password);
       handleSuccess();
@@ -67,18 +68,18 @@ export function LoginPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center w-full max-w-[1200px] self-center flex-1 gap-8 md:gap-10 lg:gap-12">
         <div className="flex flex-col justify-center gap-5 w-full lg:w-[456px]">
           <div className="flex flex-col gap-2">
-            <Typography variant="h1" weight="semibold" color="primary">
+            <Heading level={1} weight="semibold" color="primary">
               {t('login.title')}
-            </Typography>
-            <Typography variant="body" color="primary" className="max-w-[456px]">
+            </Heading>
+            <Text size="sm" color="primary" className="max-w-[456px]">
               {t('login.description')}
-            </Typography>
+            </Text>
           </div>
 
           <form className="flex flex-col gap-5 w-full" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg font-lexend text-sm">
-                {error}
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                <Text as="span" size="sm" color="inherit">{error}</Text>
               </div>
             )}
             <div className="flex flex-col gap-3 w-full">
@@ -131,12 +132,12 @@ export function LoginPage() {
             </div>
           </form>
 
-          <Typography variant="body" color="secondary" className="text-right">
+          <Text size="sm" color="secondary" className="text-right">
             {t('login.noAccount')}{' '}
             <Link to="/register?type=worker" className="font-medium text-primary underline">
               {t('login.signUp')}
             </Link>
-          </Typography>
+          </Text>
         </div>
 
         <div className="hidden lg:flex shrink-0 w-[400px] xl:w-[700px] h-[400px] xl:h-[760px] overflow-hidden rounded-[16px]">

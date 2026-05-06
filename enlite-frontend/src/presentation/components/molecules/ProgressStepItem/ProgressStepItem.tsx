@@ -1,5 +1,5 @@
 import { Check, AlertTriangle, Lock } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms';
+import { Text } from '@presentation/components/atoms';
 import type { StepStatus } from '../../../../types/workerProgress';
 
 interface ProgressStepItemProps {
@@ -32,9 +32,9 @@ export const ProgressStepItem = ({
           <Lock className="w-3 h-3 text-gray-400" strokeWidth={2} />
         </div>
       )}
-      <Typography variant="body" color="primary">
+      <Text size="sm" color="primary">
         {label}
-      </Typography>
+      </Text>
     </div>
   );
 };

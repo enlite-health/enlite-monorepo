@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 import { SearchInput } from '@presentation/components/molecules/SearchBar/SearchInput';
 import { SelectField, SelectOption } from '@presentation/components/molecules/SelectField';
 
@@ -42,9 +42,9 @@ export function VacancyFilters({
       />
       <div className="flex items-end gap-4 flex-wrap ml-auto">
         <div className="w-full sm:w-[200px]">
-          <Typography variant="body" weight="semibold" className="text-[#737373] mb-1 font-lexend text-base">
+          <Text size="base" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.clients')}
-          </Typography>
+          </Text>
           <SelectField
             options={clientOptions}
             value={selectedClient}
@@ -53,9 +53,9 @@ export function VacancyFilters({
           />
         </div>
         <div className="w-full sm:w-[200px]">
-          <Typography variant="body" weight="semibold" className="text-[#737373] mb-1 font-lexend text-base">
+          <Text size="base" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.statusLabel')}
-          </Typography>
+          </Text>
           <SelectField
             options={statusOptions}
             value={selectedStatus}
@@ -64,9 +64,9 @@ export function VacancyFilters({
           />
         </div>
         <div className="w-full sm:w-[200px]">
-          <Typography variant="body" weight="semibold" className="text-[#737373] mb-1 font-lexend text-base">
+          <Text size="base" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.priorityLabel')}
-          </Typography>
+          </Text>
           <SelectField
             options={priorityOptions}
             value={selectedPriority}

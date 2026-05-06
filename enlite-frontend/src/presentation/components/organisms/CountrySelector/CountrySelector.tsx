@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms';
+import { Text } from '@presentation/components/atoms';
 
 interface CountrySelectorProps {
   className?: string;
@@ -17,9 +17,9 @@ export function CountrySelector({ className = '', showLabel = true }: CountrySel
         <path d="M14 6.15625L14.3795 8.11625L15.4886 6.44933L15.0803 8.40317L16.7494 7.2824L15.6162 8.93394L17.5925 8.53087L15.9071 9.62702L17.8889 10.0024L15.9071 10.3778L17.5925 11.4747L15.6162 11.0709L16.7494 12.7216L15.0803 11.6009L15.4886 13.5555L14.3795 11.8886L14 13.8486L13.6205 11.8886L12.5122 13.5555L12.9197 11.6009L11.2498 12.7216L12.3831 11.0709L10.4075 11.4747L12.093 10.3778L10.1112 10.0024L12.093 9.62702L10.4075 8.53087L12.3831 8.93394L11.2498 7.2824L12.9197 8.40317L12.5122 6.44933L13.6205 8.11625L14 6.15625Z" fill="#FCBF49"/>
       </svg>
       {showLabel && (
-        <Typography variant="body" weight="medium" color="secondary">
+        <Text as="span" size="sm" weight="medium" color="secondary">
           {t('common.country')}
-        </Typography>
+        </Text>
       )}
     </div>
   );

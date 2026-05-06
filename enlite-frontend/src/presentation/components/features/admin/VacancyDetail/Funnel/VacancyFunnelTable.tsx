@@ -1,5 +1,11 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+} from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
 import type { FunnelBucket } from '@domain/entities/Funnel';
 import { VacancyFunnelTableRow } from './VacancyFunnelTableRow';
@@ -35,49 +41,36 @@ export function VacancyFunnelTable({
 
   if (rows.length === 0) {
     return (
-      <div
-        role="status"
-        className="py-12 flex flex-col items-center gap-2"
-      >
-        <Typography variant="body" className="text-gray-800">
+      <div role="status" className="py-12 flex flex-col items-center gap-2">
+        <Text size="sm" color="secondary">
           {t('admin.vacancyDetail.funnelTable.emptyState')}
-        </Typography>
+        </Text>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-tl-[12px] rounded-tr-[12px]">
-      <table
-        role="table"
-        aria-label={`${t('admin.vacancyDetail.funnelTabs.' + activeBucket.toLowerCase().replace('_', ''))} funnel`}
-        className="w-full border-collapse"
-      >
-        <thead>
-          <tr
-            className="bg-gray-300 h-[52px] rounded-tl-[12px] rounded-tr-[12px]"
-          >
-            {headers.map((header) => (
-              <th
-                key={header}
-                scope="col"
-                className="text-left px-6 whitespace-nowrap font-lexend font-medium text-base text-gray-800 first:rounded-tl-[12px] last:rounded-tr-[12px]"
-              >
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <VacancyFunnelTableRow
-              key={row.id}
-              row={row}
-              isLast={index === rows.length - 1}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table
+      role="table"
+      aria-label={`${t('admin.vacancyDetail.funnelTabs.' + activeBucket.toLowerCase().replace('_', ''))} funnel`}
+      className="border-collapse"
+    >
+      <TableHeader>
+        {headers.map((header) => (
+          <TableHead key={header} className="px-6 whitespace-nowrap">
+            {header}
+          </TableHead>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {rows.map((row, index) => (
+          <VacancyFunnelTableRow
+            key={row.id}
+            row={row}
+            isLast={index === rows.length - 1}
+          />
+        ))}
+      </TableBody>
+    </Table>
   );
 }

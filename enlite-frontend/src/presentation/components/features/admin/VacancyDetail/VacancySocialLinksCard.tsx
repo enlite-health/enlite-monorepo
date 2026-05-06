@@ -4,7 +4,8 @@ import {
   Loader2, Copy, Check, ExternalLink, MousePointerClick,
   Facebook, Instagram, Linkedin, Globe, MessageCircle,
 } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
@@ -99,14 +100,14 @@ export function VacancySocialLinksCard({
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
       <div>
-        <Typography variant="h3" weight="semibold" className="text-[#737373]">
+        <Heading level={3} weight="semibold" color="secondary">
           {t('admin.vacancyDetail.socialLinksCard.title')}
-        </Typography>
-        <Typography variant="body" className="text-[#737373] text-sm mt-1">
+        </Heading>
+        <Text size="sm" color="secondary" className="mt-1">
           {noCaseNumber
             ? t('admin.vacancyDetail.socialLinksCard.noCaseNumber')
             : t('admin.vacancyDetail.socialLinksCard.subtitle')}
-        </Typography>
+        </Text>
       </div>
 
       {!noCaseNumber && (

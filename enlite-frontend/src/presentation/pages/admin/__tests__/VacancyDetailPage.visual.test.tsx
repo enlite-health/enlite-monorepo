@@ -232,7 +232,9 @@ describe('VacancyDetailPage — tabs component', () => {
 
   it('default active tab is encuadres (has bg-primary)', () => {
     renderPage();
-    const encuadresTab = screen.getByText('admin.vacancyDetail.tabs.encuadres');
+    const encuadresTab = screen.getByRole('button', {
+      name: 'admin.vacancyDetail.tabs.encuadres',
+    });
     expect(encuadresTab.className).toContain('bg-primary');
   });
 });

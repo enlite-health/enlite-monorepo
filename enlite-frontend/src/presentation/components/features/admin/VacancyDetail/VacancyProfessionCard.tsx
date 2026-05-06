@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 
 type WeekdayKey =
@@ -22,7 +23,6 @@ const WEEKDAY_KEYS: WeekdayKey[] = [
   'saturday',
 ];
 
-// Map weekday keys to schedule object keys (backend uses various formats)
 const SCHEDULE_KEY_MAP: Record<WeekdayKey, string[]> = {
   sunday: ['sunday', 'domingo', '0'],
   monday: ['monday', 'lunes', '1'],
@@ -44,8 +44,10 @@ interface ScheduleGridProps {
 
 function SchedulePill({ slot }: { slot: TimeSlot }) {
   return (
-    <span className="bg-primary text-[#EDF2FE] font-lexend text-xs font-medium px-3 py-1 rounded tracking-[0.04px]">
-      {slot.start}h - {slot.end}h
+    <span className="bg-primary text-[#EDF2FE] px-3 py-1 rounded tracking-[0.04px]">
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {slot.start}h - {slot.end}h
+      </Text>
     </span>
   );
 }
@@ -70,13 +72,9 @@ function ScheduleGrid({ schedule }: ScheduleGridProps) {
 
         return (
           <div key={weekdayKey} className="flex items-center gap-2">
-            <Typography
-              variant="day-name"
-              color="secondary"
-              className="w-[103px] shrink-0"
-            >
+            <Text size="sm" color="secondary" className="w-[103px] shrink-0">
               {t(i18nKey)}
-            </Typography>
+            </Text>
             <div className="flex flex-wrap gap-2">
               {slots.map((slot, idx) => (
                 <SchedulePill key={idx} slot={slot} />
@@ -102,13 +100,13 @@ function CharacteristicRow({ label, value }: CharacteristicRowProps) {
         style={{ width: 18, height: 15 }}
         strokeWidth={2}
       />
-      <Typography variant="label" color="secondary">
+      <Text as="span" size="base" color="secondary">
         {label}
-      </Typography>
+      </Text>
       {value != null && value !== '' && (
-        <Typography variant="label" color="primary" weight="medium">
+        <Text as="span" size="base" color="primary" weight="medium">
           {value}
-        </Typography>
+        </Text>
       )}
     </div>
   );
@@ -158,11 +156,10 @@ export function VacancyProfessionCard({
 
   return (
     <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-8 flex flex-col gap-6">
-      {/* Header */}
       <div className="flex justify-between items-start">
-        <Typography variant="card-title" color="primary" weight="semibold">
+        <Heading level={1} color="primary" weight="semibold">
           {cardTitle}
-        </Typography>
+        </Heading>
         {onEdit && (
           <Button
             variant="primary"
@@ -175,48 +172,39 @@ export function VacancyProfessionCard({
         )}
       </div>
 
-      {/* Available for */}
       <div className="flex items-baseline gap-2 flex-wrap">
-        <Typography variant="label" color="secondary">
+        <Text as="span" size="base" color="secondary">
           {t('admin.vacancyDetail.professionCard.availableFor')}
-        </Typography>
-        <Typography variant="label" color="primary" weight="medium">
+        </Text>
+        <Text as="span" size="base" color="primary" weight="medium">
           {requiredSex ?? '—'}
-        </Typography>
+        </Text>
       </div>
 
-      {/* Diagnosis */}
       <div className="flex items-baseline gap-2 flex-wrap">
-        <Typography variant="label" color="secondary">
+        <Text as="span" size="base" color="secondary">
           {t('admin.vacancyDetail.professionCard.diagnosis')}
-        </Typography>
-        <Typography variant="label" color="primary" weight="medium">
+        </Text>
+        <Text as="span" size="base" color="primary" weight="medium">
           {diagnosis ?? '—'}
-        </Typography>
+        </Text>
       </div>
 
-      {/* Description */}
       {talentumDescription && (
         <div className="flex flex-col gap-2">
-          <Typography
-            variant="label"
-            color="primary"
-            weight="medium"
-            className="font-lexend text-[18px] leading-[1.3]"
-          >
+          <Text size="base" color="primary" weight="medium">
             {t('admin.vacancyDetail.professionCard.description')}
-          </Typography>
-          <Typography variant="body" color="secondary" className="leading-[1.5]">
+          </Text>
+          <Text size="sm" color="secondary" className="leading-[1.5]">
             {talentumDescription}
-          </Typography>
+          </Text>
         </div>
       )}
 
-      {/* Characteristics */}
       <div className="flex flex-col gap-4">
-        <Typography variant="section-title" color="primary" weight="medium">
+        <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.professionCard.characteristics')}
-        </Typography>
+        </Heading>
         <div className="flex flex-col gap-2.5">
           <CharacteristicRow
             label={t('admin.vacancyDetail.professionCard.ageRange')}

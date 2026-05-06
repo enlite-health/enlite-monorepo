@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { Typography } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { FormField, InputWithIcon, PasswordInput } from '@presentation/components/molecules';
 import { Button } from '@presentation/components/atoms/Button';
 import { AuthNavbar } from '@presentation/components/organisms/AuthNavbar';
@@ -67,25 +68,25 @@ export function AdminLoginPage() {
     setIsLoading(true);
     try {
       await login(email, password);
-      
+
       // Aguarda um momento para o store atualizar o adminProfile
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Verifica se o perfil admin foi carregado
       const { adminProfile: profile } = useAdminAuthStore.getState();
-      
+
       if (!profile) {
         // Usuário autenticou no Firebase mas não tem perfil admin
         console.warn('[AdminLoginPage] Login bloqueado - usuário não é admin');
         setError(t('admin.login.notAuthorized', 'Acesso negado. Esta conta não possui permissões de administrador.'));
-        
+
         // Faz logout para limpar o estado
         const { logout: adminLogout } = useAdminAuthStore.getState();
         await adminLogout();
         setIsLoading(false);
         return;
       }
-      
+
       // Admin válido, redireciona
       navigate('/admin');
     } catch (err) {
@@ -102,18 +103,18 @@ export function AdminLoginPage() {
 
       <div className="flex flex-col items-center justify-center flex-1 w-full max-w-[440px] mx-auto">
         <div className="flex flex-col gap-2 mb-8 text-center">
-          <Typography variant="h1" weight="semibold" color="primary">
+          <Heading level={1} weight="semibold" color="primary">
             {t('admin.login.title', 'Panel Administrativo')}
-          </Typography>
-          <Typography variant="body" color="primary">
+          </Heading>
+          <Text size="sm" color="primary">
             {t('admin.login.description', 'Ingrese sus credenciales de administrador')}
-          </Typography>
+          </Text>
         </div>
 
         <form className="flex flex-col gap-5 w-full" onSubmit={handleSubmit}>
           {error && (
             <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg">
-              <Typography variant="body" color="primary">{error}</Typography>
+              <Text as="span" size="sm" color="primary">{error}</Text>
             </div>
           )}
 
@@ -157,9 +158,9 @@ export function AdminLoginPage() {
 
         <div className="flex items-center gap-3 w-full mt-5">
           <div className="flex-1 h-px bg-gray-200" />
-          <Typography variant="body" color="primary" className="text-sm text-gray-400 whitespace-nowrap">
+          <Text as="span" size="sm" color="muted" className="whitespace-nowrap">
             {t('common.or', 'ou')}
-          </Typography>
+          </Text>
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
@@ -175,9 +176,9 @@ export function AdminLoginPage() {
             <path d="M4.58467 11.9163C4.16578 10.6743 4.16578 9.32947 4.58467 8.0875V5.51172H1.26297C-0.155365 8.33737 -0.155365 11.6664 1.26297 14.4921L4.58467 11.9163Z" fill="#FBBC04"/>
             <path d="M10.198 3.95805C11.6236 3.936 13.0016 4.47247 14.0341 5.45722L16.8891 2.60218C15.0813 0.904588 12.6819 -0.0287217 10.198 0.000673889C6.41696 0.000673889 2.95931 2.13185 1.26172 5.51234L4.58342 8.08813C5.37342 5.71811 7.58911 3.95805 10.198 3.95805Z" fill="#EA4335"/>
           </svg>
-          <span style={{ color: '#180149', fontFamily: 'Poppins, sans-serif', fontSize: '16px', fontWeight: 600 }}>
+          <Text as="span" size="base" weight="semibold" color="primary">
             {isGoogleLoading ? t('common.loading', 'Carregando...') : t('auth.google.login', 'Entrar com Google')}
-          </span>
+          </Text>
         </button>
       </div>
     </div>

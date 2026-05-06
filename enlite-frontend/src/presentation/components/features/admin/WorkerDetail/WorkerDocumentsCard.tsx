@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { DocumentUploadCard } from '@presentation/components/molecules/DocumentUploadCard';
 import { AlertTriangle } from 'lucide-react';
 import type { WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
@@ -96,7 +97,7 @@ export function WorkerDocumentsCard({
           onInvalidate={onInvalidate}
         />
         {errors[slot.docType] && (
-          <p className="font-lexend text-xs text-red-500">{errors[slot.docType]}</p>
+          <Text size="xs" color="inherit" className="text-red-500">{errors[slot.docType]}</Text>
         )}
       </div>
     );
@@ -105,19 +106,21 @@ export function WorkerDocumentsCard({
   return (
     <div data-testid="worker-documents-card" className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-5">
       <div className="flex items-center justify-between">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3">
           {t('admin.workerDetail.documents')}
-        </Typography>
+        </Heading>
         {statusColor && documents && (
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor}`}>
-            {documents.documentsStatus}
+          <span className={`px-3 py-1 rounded-full ${statusColor}`}>
+            <Text as="span" size="sm" weight="medium" color="inherit">
+              {documents.documentsStatus}
+            </Text>
           </span>
         )}
       </div>
 
-      <Typography variant="body" className="text-gray-700 text-sm">
+      <Text size="sm" color="muted">
         {t('admin.workerDetail.documentsAdminHint')}
-      </Typography>
+      </Text>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {row1.map(renderCard)}
@@ -132,9 +135,9 @@ export function WorkerDocumentsCard({
           {isAT && (
             <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200">
               <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-              <p className="font-lexend text-sm text-amber-800">
+              <Text size="sm" color="inherit" className="text-amber-800">
                 {t('documents.atRequiredWarning', 'Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.')}
-              </p>
+              </Text>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -145,10 +148,10 @@ export function WorkerDocumentsCard({
 
       {documents?.reviewNotes && (
         <div className="bg-gray-200 rounded-lg p-3">
-          <Typography variant="body" className="text-xs text-gray-800 mb-1">
+          <Text size="xs" color="secondary" className="mb-1">
             {t('admin.workerDetail.reviewNotes')}
-          </Typography>
-          <Typography variant="body" className="text-sm">{documents.reviewNotes}</Typography>
+          </Text>
+          <Text size="sm">{documents.reviewNotes}</Text>
         </div>
       )}
 

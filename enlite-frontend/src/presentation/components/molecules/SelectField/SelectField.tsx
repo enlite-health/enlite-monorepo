@@ -1,6 +1,6 @@
 import { SelectHTMLAttributes, forwardRef, type ChangeEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text as BodyText } from '@presentation/components/atoms/Text';
 
 export interface SelectOption {
   value: string;
@@ -58,7 +58,7 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
             <ChevronDown size={20} className="absolute right-0 text-[#737373] pointer-events-none z-0" />
           </div>
         </div>
-        {error && <Typography variant="caption" className="text-red-500">{error}</Typography>}
+        {error && <BodyText size="xs" color="inherit" className="text-red-500">{error}</BodyText>}
       </div>
     );
   }

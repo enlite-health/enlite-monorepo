@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { AlertCircle } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 
 interface ActionErrorCardProps {
@@ -18,13 +19,13 @@ export function ActionErrorCard({ titleKey, descriptionKey }: ActionErrorCardPro
       </div>
 
       <div className="flex flex-col gap-2">
-        <Typography variant="h2" weight="semibold" color="primary">
+        <Heading level={2} weight="semibold" color="primary">
           {t(titleKey)}
-        </Typography>
+        </Heading>
         {descriptionKey && (
-          <Typography variant="body" color="secondary">
+          <Text size="sm" color="secondary">
             {t(descriptionKey)}
-          </Typography>
+          </Text>
         )}
       </div>
 
