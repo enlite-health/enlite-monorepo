@@ -7,8 +7,10 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
  * Endpoint público (sem auth) para leitura de dados não-sensíveis de uma vaga.
  * Usado pela página pública de vaga (landing page de candidatos).
  *
- * Dados sensíveis do paciente (nome, diagnóstico, insurance) são deliberadamente
- * excluídos desta query — apenas zone_neighborhood é exposto como patient_zone.
+ * PII do paciente (nome, telefone, email, documento, etc.) nunca é exposta.
+ * Localização é coarse: bairro + cidade + província — nunca rua, número,
+ * complemento ou coordenadas. Diagnóstico (pathologies) é exposto sem nome
+ * associado, necessário para o candidato qualificar a vaga.
  */
 
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
@@ -77,7 +79,14 @@ export class PublicVacancyController {
           jp.talentum_whatsapp_url,
           jp.country,
           jp.created_at,
-          COALESCE(p.zone_neighborhood, CONCAT_WS(', ', pa.city, pa.state), jp.inferred_zone) AS patient_zone
+          COALESCE(
+            NULLIF(CONCAT_WS(', ',
+              COALESCE(pa.neighborhood, p.zone_neighborhood),
+              pa.city,
+              pa.state
+            ), ''),
+            jp.inferred_zone
+          ) AS patient_zone
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id

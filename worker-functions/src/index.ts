@@ -25,7 +25,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, EncuadreFunnelController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyParseController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, EncuadreFunnelController, EncuadreFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
 import { AdminWorkersController } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
@@ -118,6 +118,7 @@ const vacancyCrudController = new VacancyCrudController();
 const vacancyTalentumController = new VacancyTalentumController();
 const vacancyMatchController = new VacancyMatchController();
 const funnelController = new EncuadreFunnelController();
+const funnelTableController = new EncuadreFunnelTableController();
 const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();
@@ -127,7 +128,6 @@ const publicVacancyController = new PublicVacancyController();
 const interviewSlotsController = new InterviewSlotsController();
 const vacancyMeetLinksController = new VacancyMeetLinksController();
 const vacancySocialLinksController = new VacancySocialLinksController();
-const vacancyParseController = new VacancyParseController();
 const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
 
@@ -286,8 +286,8 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   dashboardController,
   interviewSlotsController,
   authMiddleware,
-  vacancyParseController,
   vacancyAddressReviewController,
+  funnelTableController,
 ));
 
 // ========== Analytics & BI (extracted router) ==========

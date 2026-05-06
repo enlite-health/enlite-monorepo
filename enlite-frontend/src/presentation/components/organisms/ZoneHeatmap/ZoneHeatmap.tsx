@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { MapPin } from 'lucide-react';
 
 interface ZoneData {
@@ -16,11 +17,11 @@ interface ZoneHeatmapProps {
   identifiedZones: number;
 }
 
-export function ZoneHeatmap({ 
-  zones, 
-  totalCases, 
-  nullCount, 
-  identifiedZones 
+export function ZoneHeatmap({
+  zones,
+  totalCases,
+  nullCount,
+  identifiedZones,
 }: ZoneHeatmapProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -41,39 +42,39 @@ export function ZoneHeatmap({
           <div className="bg-cyan-500 px-3 py-1 rounded text-xs font-bold animate-pulse">
             INTEL
           </div>
-          <Typography variant="h2" weight="bold" className="text-white">
+          <Heading level={2} weight="bold" color="white">
             {t('admin.recruitment.zoneAnalysis')}
-          </Typography>
+          </Heading>
         </div>
-        <Typography variant="body" className="text-gray-300">
+        <Text size="sm" color="inherit" className="text-gray-300">
           {t('admin.recruitment.zoneSource')}
-        </Typography>
+        </Text>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-blue-50 p-4 rounded-lg">
-          <Typography variant="body" className="text-gray-600 text-sm">
+          <Text size="sm" color="muted">
             {t('admin.recruitment.totalCases')}
-          </Typography>
-          <Typography variant="h2" weight="bold" className="text-blue-600">
+          </Text>
+          <Heading level={2} weight="bold" color="inherit" className="text-blue-600">
             {totalCases}
-          </Typography>
+          </Heading>
         </div>
         <div className="bg-green-50 p-4 rounded-lg">
-          <Typography variant="body" className="text-gray-600 text-sm">
+          <Text size="sm" color="muted">
             {t('admin.recruitment.identifiedZones')}
-          </Typography>
-          <Typography variant="h2" weight="bold" className="text-green-600">
+          </Text>
+          <Heading level={2} weight="bold" color="inherit" className="text-green-600">
             {identifiedZones}
-          </Typography>
+          </Heading>
         </div>
         <div className={`p-4 rounded-lg ${nullCount > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
-          <Typography variant="body" className="text-gray-600 text-sm">
+          <Text size="sm" color="muted">
             {t('admin.recruitment.noZone')}
-          </Typography>
-          <Typography variant="h2" weight="bold" className={nullCount > 0 ? 'text-amber-600' : 'text-gray-600'}>
+          </Text>
+          <Heading level={2} weight="bold" color="inherit" className={nullCount > 0 ? 'text-amber-600' : 'text-gray-600'}>
             {nullCount}
-          </Typography>
+          </Heading>
         </div>
       </div>
 
@@ -87,19 +88,19 @@ export function ZoneHeatmap({
             <div className="flex items-start justify-between mb-2">
               <div className="flex items-center gap-2">
                 <MapPin size={16} className="text-gray-700" />
-                <Typography variant="body" weight="bold" className="text-gray-900">
+                <Text size="sm" weight="bold" color="inherit" className="text-gray-900">
                   {zone.zone}
-                </Typography>
+                </Text>
               </div>
-              <Typography variant="h3" weight="bold" className="text-gray-900">
+              <Heading level={3} weight="bold" color="inherit" className="text-gray-900">
                 {zone.caseCount}
-              </Typography>
+              </Heading>
             </div>
-            <Typography variant="body" className="text-gray-700 text-sm">
+            <Text size="sm" color="inherit" className="text-gray-700">
               {zone.percentage}% {t('admin.recruitment.ofTotal')}
-            </Typography>
+            </Text>
             <div className="mt-2 h-2 bg-gray-900 bg-opacity-10 rounded-full overflow-hidden">
-              <div 
+              <div
                 className="h-full bg-gray-900 bg-opacity-30"
                 style={{ width: `${zone.percentage}%` }}
               />

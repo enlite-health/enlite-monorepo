@@ -23,6 +23,10 @@ export interface PatientAddress {
   city?: string | null;
   /** Zona o Barrio (ClickUp: "Zona o Barrio Paciente", short_text). Migration 147. */
   neighborhood?: string | null;
+  /** Latitude geocodificada. Migrated from job_postings.service_lat (migration 153/154). */
+  lat?: number | null;
+  /** Longitude geocodificada. Migrated from job_postings.service_lng (migration 153/154). */
+  lng?: number | null;
 }
 
 export interface PatientProfessional {

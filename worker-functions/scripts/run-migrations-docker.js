@@ -28,10 +28,25 @@ function createPool() {
   return new Pool({ connectionString: DATABASE_URL });
 }
 
+async function waitForDB(pool, attempts = 30, delayMs = 1000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      console.log(`⏳ DB not ready (attempt ${i}/${attempts}) — ${err.code || err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function run() {
   const pool = createPool();
 
   try {
+    await waitForDB(pool);
+
     // Ensure tracking table exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (

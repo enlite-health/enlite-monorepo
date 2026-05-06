@@ -28,7 +28,17 @@ export interface PatientAddressDetail {
   addressType: string;
   addressFormatted: string | null;
   addressRaw: string | null;
+  /** Address complement (Depto, Piso, andar). Manual UI entry. Migration 157. */
+  complement: string | null;
   displayOrder: number;
+  /** Latitude geocodificada. Migrated from job_postings.service_lat (migration 153/154). */
+  lat: number | null;
+  /** Longitude geocodificada. Migrated from job_postings.service_lng (migration 153/154). */
+  lng: number | null;
+  /** True when address_type === 'primary'. */
+  isPrimary: boolean;
+  /** Computed availability for this address based on active vacancies. */
+  availability: import('../application/AddressAvailabilityCalculator').AddressAvailability;
 }
 
 export interface PatientProfessionalDetail {
@@ -81,6 +91,8 @@ export interface PatientDetailRow {
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
+  /** Last case_number across all job_postings for this patient (null if none). */
+  lastCaseNumber: number | null;
   // Audit
   createdAt: Date;
   updatedAt: Date;
@@ -100,6 +112,8 @@ export interface PatientListRow {
   sex: string | null;
   needsAttention: boolean;
   attentionReasons: string[];
+  /** Number of addresses linked to this patient. */
+  addressesCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -185,19 +199,21 @@ export class PatientQueryRepository {
         sex,
         needs_attention        AS "needsAttention",
         attention_reasons      AS "attentionReasons",
+        (SELECT COUNT(*) FROM patient_addresses pa WHERE pa.patient_id = p.id)::int
+                               AS "addressesCount",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
         COUNT(*) OVER()        AS total_count
-      FROM patients
+      FROM patients p
       WHERE
         ($${searchIdx}::text IS NULL
-          OR first_name    ILIKE '%' || $${searchIdx} || '%'
-          OR last_name     ILIKE '%' || $${searchIdx} || '%'
-          OR document_number ILIKE '%' || $${searchIdx} || '%')
-        AND ($${needsAttentionIdx}::boolean IS NULL OR needs_attention = $${needsAttentionIdx})
-        AND ($${attentionReasonIdx}::text IS NULL OR $${attentionReasonIdx} = ANY(attention_reasons))
-        AND ($${clinicalSpecialtyIdx}::text IS NULL OR clinical_specialty = $${clinicalSpecialtyIdx})
-        AND ($${dependencyLevelIdx}::text IS NULL OR dependency_level = $${dependencyLevelIdx})
+          OR p.first_name    ILIKE '%' || $${searchIdx} || '%'
+          OR p.last_name     ILIKE '%' || $${searchIdx} || '%'
+          OR p.document_number ILIKE '%' || $${searchIdx} || '%')
+        AND ($${needsAttentionIdx}::boolean IS NULL OR p.needs_attention = $${needsAttentionIdx})
+        AND ($${attentionReasonIdx}::text IS NULL OR $${attentionReasonIdx} = ANY(p.attention_reasons))
+        AND ($${clinicalSpecialtyIdx}::text IS NULL OR p.clinical_specialty = $${clinicalSpecialtyIdx})
+        AND ($${dependencyLevelIdx}::text IS NULL OR p.dependency_level = $${dependencyLevelIdx})
       ORDER BY created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
@@ -223,6 +239,7 @@ export class PatientQueryRepository {
       sex: row.sex,
       needsAttention: row.needsAttention,
       attentionReasons: row.attentionReasons ?? [],
+      addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));

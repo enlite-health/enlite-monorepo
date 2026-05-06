@@ -1,5 +1,5 @@
 import { ProgressStepItem } from '../ProgressStepItem';
-import { ProgressBar, Typography } from '@presentation/components/atoms';
+import { Heading, Text, ProgressBar } from '@presentation/components/atoms';
 import type { ProgressSection as ProgressSectionType } from '../../../../types/workerProgress';
 
 interface ProgressSectionProps {
@@ -15,16 +15,16 @@ export const ProgressSection = ({
     <div data-testid={`section-${section.id}`} className={`flex flex-col gap-2 ${className}`}>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-lg">{section.icon}</span>
-        <Typography variant="h3" color="primary">
+        <Heading level={3} color="primary">
           {section.title}
-        </Typography>
-        <Typography variant="caption" color="tertiary">
+        </Heading>
+        <Text as="span" size="xs" color="tertiary">
           ({section.completedCount}/{section.totalCount})
-        </Typography>
+        </Text>
         {section.percentage === 100 ? (
-          <span className="text-xs font-semibold text-green-600">100%</span>
+          <Text as="span" size="xs" weight="semibold" color="primary">100%</Text>
         ) : (
-          <span className="text-xs text-gray-400">{section.percentage}%</span>
+          <Text as="span" size="xs" color="secondary">{section.percentage}%</Text>
         )}
       </div>
       <ProgressBar

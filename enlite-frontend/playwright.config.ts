@@ -28,16 +28,27 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['setup'],
+      testIgnore: '**/integration/**',
     },
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
       dependencies: ['setup'],
+      testIgnore: '**/integration/**',
     },
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
       dependencies: ['setup'],
+      testIgnore: '**/integration/**',
+    },
+
+    // Integration — full-stack tests (real backend + real DB). No Firebase Emulator needed.
+    // Auth is handled internally via mock_* tokens (USE_MOCK_AUTH=true on Docker backend).
+    {
+      name: 'integration',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: '**/integration/**/*.integration.e2e.ts',
     },
   ],
 });

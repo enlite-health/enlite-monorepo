@@ -8,16 +8,27 @@ interface TimeSelectProps {
   className?: string;
   disabled?: boolean;
   placeholder?: string;
+  /**
+   * Adds `23:59` (last canonical minute of the day) as the final option.
+   * Use it on *end* time inputs to cover the tail between the last `step`
+   * boundary and midnight. We deliberately avoid `24:00` because it isn't
+   * a valid HH:mm value — Postgres `time`, `Date`, Zod time validators and
+   * most libs reject it, which would force special-casing across the codebase.
+   */
+  includeEndOfDay?: boolean;
 }
 
-function generateOptions(step: number): string[] {
+const END_OF_DAY = '23:59';
+
+function generateOptions(step: number, includeEndOfDay: boolean): string[] {
   const intervals = (24 * 60) / step;
-  return Array.from({ length: intervals }, (_, i) => {
+  const opts = Array.from({ length: intervals }, (_, i) => {
     const totalMinutes = i * step;
     const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
     const minutes = String(totalMinutes % 60).padStart(2, '0');
     return `${hours}:${minutes}`;
   });
+  return includeEndOfDay ? [...opts, END_OF_DAY] : opts;
 }
 
 function normalizeTime(val: string): string {
@@ -32,13 +43,14 @@ export function TimeSelect({
   className = '',
   disabled = false,
   placeholder = '--:--',
+  includeEndOfDay = false,
 }: TimeSelectProps) {
   const normalized = normalizeTime(value);
   const [open, setOpen] = useState(false);
   const [openUp, setOpenUp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const options = generateOptions(step);
+  const options = generateOptions(step, includeEndOfDay);
 
   const close = useCallback(() => setOpen(false), []);
 

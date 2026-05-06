@@ -237,8 +237,18 @@ describe('PublicVacancyController.getById', () => {
     // diagnosis exposed only as anonymized 'pathologies' alias — not the raw name/surname
     expect(sql).toContain('p.diagnosis AS pathologies');
 
-    // Non-sensitive zone field
+    // Coarse location: bairro + cidade + província (estruturado de pa.*, fallback pra texto-livre)
+    expect(sql).toContain('pa.neighborhood');
     expect(sql).toContain('p.zone_neighborhood');
+    expect(sql).toContain('pa.city');
+    expect(sql).toContain('pa.state');
     expect(sql).toContain('patient_zone');
+
+    // Endereço completo nunca é exposto
+    expect(sql).not.toMatch(/pa\.address_formatted/);
+    expect(sql).not.toMatch(/pa\.address_raw/);
+    expect(sql).not.toMatch(/pa\.complement/);
+    expect(sql).not.toMatch(/pa\.lat/);
+    expect(sql).not.toMatch(/pa\.lng/);
   });
 });

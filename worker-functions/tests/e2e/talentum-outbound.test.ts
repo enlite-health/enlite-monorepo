@@ -811,8 +811,8 @@ describe('Talentum Outbound API', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('POST /api/admin/vacancies/:id/generate-talentum-description', () => {
-    it('returns 500 without GROQ_API_KEY configured', async () => {
-      // In test environment, GROQ_API_KEY is not set → service constructor throws
+    it('returns 500 without GEMINI_API_KEY configured', async () => {
+      // In test environment, GEMINI_API_KEY is not set → service constructor throws
       const res = await api.post(
         `/api/admin/vacancies/${vacancyId}/generate-talentum-description`,
         {},

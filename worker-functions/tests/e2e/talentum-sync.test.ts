@@ -130,6 +130,8 @@ describe('Talentum Sync API', () => {
 
     beforeAll(async () => {
       // Simulate a vacancy created by the sync process (same INSERT as SyncTalentumVacanciesUseCase.createFromSync)
+      // Note: pathology_types, dependency_level, service_device_types, city, state
+      // were dropped in migration 152 — those fields now live in patients / patient_addresses.
       const result = await pool.query(
         `INSERT INTO job_postings (
            case_number, title, description, country, status,
@@ -137,14 +139,12 @@ describe('Talentum Sync API', () => {
            age_range_min, age_range_max,
            required_experience, worker_attributes,
            schedule, work_schedule,
-           pathology_types, dependency_level,
-           service_device_types,
            providers_needed, salary_text, payment_day,
-           daily_obs, city, state
+           daily_obs
          ) VALUES (
            $1, $2, '', 'AR', 'SEARCHING',
            $3, $4, $5, $6, $7, $8, $9, $10,
-           $11, $12, $13, $14, $15, $16, $17, $18, $19
+           $11, $12, $13, $14
          )
          RETURNING id`,
         [
@@ -158,15 +158,10 @@ describe('Talentum Sync API', () => {
           null,           // worker_attributes
           JSON.stringify([{ dayOfWeek: 1, startTime: '17:00', endTime: '23:00' }]),
           'part-time',
-          'Bipolaridad',
-          null,           // dependency_level
-          ['DOMICILIARIO'],
           1,              // providers_needed
           'A convenir',
           null,           // payment_day
           null,           // daily_obs
-          'Recoleta',
-          'CABA',
         ],
       );
       syncedVacancyId = result.rows[0].id;
@@ -197,9 +192,10 @@ describe('Talentum Sync API', () => {
     });
 
     it('vacancy has structured fields correctly stored', async () => {
+      // Note: pathology_types, city, state, service_device_types, dependency_level
+      // were dropped in migration 152 — clinical/location data lives in patients / patient_addresses.
       const { rows } = await pool.query(
-        `SELECT required_professions, required_sex, schedule, work_schedule,
-                pathology_types, city, state, service_device_types
+        `SELECT required_professions, required_sex, schedule, work_schedule
          FROM job_postings WHERE id = $1`,
         [syncedVacancyId],
       );
@@ -208,15 +204,11 @@ describe('Talentum Sync API', () => {
       expect(rows[0].required_sex).toBe('M');
       expect(rows[0].schedule).toEqual([{ dayOfWeek: 1, startTime: '17:00', endTime: '23:00' }]);
       expect(rows[0].work_schedule).toBe('part-time');
-      expect(rows[0].pathology_types).toBe('Bipolaridad');
-      expect(rows[0].city).toBe('Recoleta');
-      expect(rows[0].state).toBe('CABA');
-      expect(rows[0].service_device_types).toEqual(['DOMICILIARIO']);
     });
 
     it('nullable fields are null when not provided', async () => {
       const { rows } = await pool.query(
-        `SELECT age_range_min, age_range_max, worker_attributes, dependency_level,
+        `SELECT age_range_min, age_range_max, worker_attributes,
                 payment_day, daily_obs
          FROM job_postings WHERE id = $1`,
         [syncedVacancyId],
@@ -225,7 +217,6 @@ describe('Talentum Sync API', () => {
       expect(rows[0].age_range_min).toBeNull();
       expect(rows[0].age_range_max).toBeNull();
       expect(rows[0].worker_attributes).toBeNull();
-      expect(rows[0].dependency_level).toBeNull();
       expect(rows[0].payment_day).toBeNull();
       expect(rows[0].daily_obs).toBeNull();
     });
@@ -240,16 +231,15 @@ describe('Talentum Sync API', () => {
 
     beforeAll(async () => {
       // Create vacancy with initial data
+      // Note: city, state, pathology_types, service_device_types dropped in migration 152.
       const result = await pool.query(
         `INSERT INTO job_postings (
            case_number, title, description, country, status,
-           required_professions, required_sex, city, state,
-           pathology_types, salary_text, providers_needed,
-           service_device_types
+           required_professions, required_sex,
+           salary_text, providers_needed
          ) VALUES (
            88802, 'CASO 88802', '', 'AR', 'SEARCHING',
-           '{AT}', 'F', 'Belgrano', 'CABA',
-           'TEA', '50000 ARS', 2, '{ESCOLAR}'
+           '{AT}', 'F', '50000 ARS', 2
          )
          RETURNING id`,
       );
@@ -262,33 +252,31 @@ describe('Talentum Sync API', () => {
 
     it('update only overwrites non-null fields, preserves existing values', async () => {
       // Simulate what SyncTalentumVacanciesUseCase.updateFromSync does:
-      // Only update city and pathology_types (the rest would be null from LLM)
+      // Only update work_schedule (the rest would be null from LLM).
+      // Note: city, state, pathology_types, service_device_types dropped in migration 152.
       await pool.query(
         `UPDATE job_postings
-         SET city = $1, pathology_types = $2, updated_at = NOW()
-         WHERE id = $3`,
-        ['Palermo', 'Bipolaridad', existingVacancyId],
+         SET work_schedule = $1, updated_at = NOW()
+         WHERE id = $2`,
+        ['full-time', existingVacancyId],
       );
 
       const { rows } = await pool.query(
-        `SELECT city, state, pathology_types, required_sex, salary_text,
-                providers_needed, required_professions, service_device_types
+        `SELECT work_schedule, required_sex, salary_text,
+                providers_needed, required_professions
          FROM job_postings WHERE id = $1`,
         [existingVacancyId],
       );
 
-      // Updated fields
-      expect(rows[0].city).toBe('Palermo');
-      expect(rows[0].pathology_types).toBe('Bipolaridad');
+      // Updated field
+      expect(rows[0].work_schedule).toBe('full-time');
 
       // Preserved fields (not overwritten with null)
-      expect(rows[0].state).toBe('CABA');
       expect(rows[0].required_sex).toBe('F');
       expect(rows[0].salary_text).toBe('50000 ARS');
       // providers_needed is TEXT in the DB — returns string value
       expect(String(rows[0].providers_needed)).toBe('2');
       expect(rows[0].required_professions).toEqual(['AT']);
-      expect(rows[0].service_device_types).toEqual(['ESCOLAR']);
     });
   });
 

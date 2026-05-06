@@ -22,6 +22,22 @@ const MeetLinksBodySchema = z.object({
   ]),
 });
 
+const MeetLinkLookupSchema = z.object({
+  link: z.string().min(1),
+});
+
+/**
+ * Normalize "meet.google.com/abc-defg-hij" (with optional `https://` and
+ * `www.`) to the canonical form. Returns the trimmed input untouched when
+ * no match is found.
+ */
+function normalizeMeetLink(input: string): string {
+  const trimmed = input.trim();
+  const match = trimmed.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})$/i);
+  if (!match) return trimmed;
+  return `https://meet.google.com/${match[1].toLowerCase()}`;
+}
+
 export class VacancyMeetLinksController {
   private db: Pool;
 
@@ -124,6 +140,60 @@ export class VacancyMeetLinksController {
       res.status(500).json({
         success: false,
         error: 'Failed to update meet links',
+        details: message,
+      });
+    }
+  }
+
+  /**
+   * POST /api/admin/vacancies/meet-links/lookup
+   *
+   * Wrapper fino sobre `googleCalendarService.resolveDateTime()` (a mesma
+   * rotina já consumida pelo PUT /:id/meet-links). Não persiste nada — só
+   * permite que o form de criação de vaga (que ainda não tem vacancyId)
+   * mostre a data/hora do evento ao perder o foco do input.
+   *
+   * Body: { link: string }
+   *
+   * Retorna:
+   *   200 — { success: true, data: { normalized: string, datetime: string | null } }
+   *   400 — link com formato inválido (mesmo após normalização)
+   */
+  async lookupMeetDatetime(req: Request, res: Response): Promise<void> {
+    try {
+      const parseResult = MeetLinkLookupSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        res.status(400).json({
+          success: false,
+          error: 'Invalid request body',
+          details: parseResult.error.flatten().fieldErrors,
+        });
+        return;
+      }
+
+      const normalized = normalizeMeetLink(parseResult.data.link);
+
+      if (!googleCalendarService.isValidMeetLink(normalized)) {
+        res.status(400).json({
+          success: false,
+          error: 'invalid_meet_link',
+          data: { normalized, datetime: null },
+        });
+        return;
+      }
+
+      const datetime = await googleCalendarService.resolveDateTime(normalized);
+
+      res.status(200).json({
+        success: true,
+        data: { normalized, datetime },
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[VacancyMeetLinksController] Error looking up meet link:', message);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to lookup meet link',
         details: message,
       });
     }

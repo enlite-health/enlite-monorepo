@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { Typography } from '@presentation/components/atoms';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { FormField, PasswordInput } from '@presentation/components/molecules';
 
@@ -51,20 +52,20 @@ export function PasswordResetForm({
   return (
     <div className="flex flex-col gap-6 w-full">
       <div className="flex flex-col gap-1 text-center">
-        <Typography variant="h2" weight="semibold" color="primary">
+        <Heading level={2} weight="semibold" color="primary">
           {t('auth.action.title')}
-        </Typography>
-        <Typography variant="body" color="secondary">
+        </Heading>
+        <Text size="sm" color="secondary">
           {t('auth.action.titleFor', { email })}
-        </Typography>
+        </Text>
       </div>
 
       <form className="flex flex-col gap-5 w-full" onSubmit={handleSubmit}>
         {displayError && (
           <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg">
-            <Typography variant="body" color="primary">
+            <Text as="span" size="sm" color="primary">
               {displayError}
-            </Typography>
+            </Text>
           </div>
         )}
 

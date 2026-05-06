@@ -13,12 +13,13 @@
     "test:e2e:coverage": "jest --config jest.config.e2e.js --coverage",
     "migrate": "bash run_migrations.sh",
     "migrate:docker": "node scripts/run-migrations-docker.js",
-    "geocode:jobs": "ts-node -r dotenv/config scripts/geocode-job-postings.ts",
-    "geocode:jobs:dry": "ts-node -r dotenv/config scripts/geocode-job-postings.ts --dry-run",
+    "geocode:jobs": "ts-node -r dotenv/config scripts/backfill-patient-addresses-geocoding.ts",
+    "geocode:jobs:dry": "ts-node -r dotenv/config scripts/backfill-patient-addresses-geocoding.ts --dry-run",
     "sync:talentum": "ts-node -r dotenv/config scripts/sync-talentum-status.ts",
     "sync:talentum:dry": "ts-node -r dotenv/config scripts/sync-talentum-status.ts --dry-run",
     "sync:ana-care": "ts-node -r dotenv/config scripts/sync-ana-care-status.ts",
     "sync:ana-care:dry": "ts-node -r dotenv/config scripts/sync-ana-care-status.ts --dry-run",
+    "db:rewrap-passthrough": "ts-node -r dotenv/config scripts/rewrap-encrypted-passthrough.ts",
     "dev:local": "docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api",
     "test:e2e:stack:up": "docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml up -d postgres firebase-emulator api",
     "test:e2e:stack:down": "docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml down",
@@ -26,7 +27,7 @@
     "test:e2e:docker": "docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api && node scripts/wait-for-health.js && npm run test:e2e; docker compose -f docker-compose.yml -f docker-compose.test.yml down",
     "test:e2e:reset": "docker compose -f docker-compose.yml -f docker-compose.test.yml down -v && docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api && node scripts/wait-for-health.js",
     "test:e2e:fixtures": "node scripts/generate-test-fixtures.js",
-    "snapshot:seed": "ts-node -r dotenv/config scripts/snapshot-prod-to-seed.ts"
+    "smoke:public-jobs": "ts-node -r tsconfig-paths/register scripts/smoke-public-jobs.ts"
   },
   "keywords": [
     "enlite",

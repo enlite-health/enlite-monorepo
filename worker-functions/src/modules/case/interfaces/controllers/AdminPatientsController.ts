@@ -69,6 +69,7 @@ export class AdminPatientsController {
         sex: row.sex,
         needsAttention: row.needsAttention,
         attentionReasons: row.attentionReasons,
+        addressesCount: row.addressesCount,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       }));
@@ -188,8 +189,11 @@ export class AdminPatientsController {
         address_type: string;
         display_order: number | null;
         source: string | null;
+        complement: string | null;
+        lat: string | null;
+        lng: string | null;
       }>(
-        `SELECT id, address_formatted, address_raw, address_type, display_order, source
+        `SELECT id, address_formatted, address_raw, address_type, display_order, source, complement, lat, lng
          FROM patient_addresses
          WHERE patient_id = $1
          ORDER BY display_order ASC, created_at ASC`,

@@ -89,6 +89,8 @@ function makeCounters(): ValidationCounters {
 function samplePatch(): EnrichmentPatch {
   const v = sampleResponse.vacancy;
   const vc = makeCounters();
+  // pathology_types, dependency_level, service_device_types dropped in migration 152
+  // — those fields now live in patients table and are no longer enriched here.
   return {
     schedule:             validateSchedule(v.schedule, vc),
     required_professions: validateProfessions(v.required_professions, vc),
@@ -97,9 +99,6 @@ function samplePatch(): EnrichmentPatch {
     age_range_max:        v.age_range_max,
     required_experience:  v.required_experience,
     worker_attributes:    v.worker_attributes,
-    pathology_types:      v.pathology_types,
-    dependency_level:     v.dependency_level,
-    service_device_types: v.service_device_types,
     salary_text:          v.salary_text,
     payment_day:          v.payment_day,
   };

@@ -7,8 +7,13 @@
  *   3. sanitizeDescription — returns sanitized string for real description
  *   4. sanitizeDescription — returns empty string for null
  *   5. sanitizeDescription — trims whitespace
- *   6. mapPublicJobRow — maps all fields correctly
+ *   6. mapPublicJobRow — maps all fields correctly (including 5 new fields)
  *   7. mapPublicJobRow — description is sanitized in the output
+ *   8. mapPublicJobRow — state_city empty string normalised to null
+ *   9. mapPublicJobRow — state_city whitespace-only normalised to null
+ *  10. mapPublicJobRow — worker_type empty array normalised to null
+ *  11. mapPublicJobRow — new fields pass-through when populated
+ *  12. mapPublicJobRow — new fields pass-through as null when absent
  */
 
 import { sanitizeDescription, mapPublicJobRow } from '../PublicJobMapper';
@@ -60,14 +65,19 @@ describe('mapPublicJobRow', () => {
       worker_profile_sought: 'Con experiencia en TEA',
       service: 'DOMICILIO',
       pathologies: 'TEA',
-      provincia: 'Buenos Aires',
-      localidad: 'Palermo',
+      state: 'Buenos Aires',
+      city: 'Palermo',
       detail_link: 'https://srt.io/abc',
+      worker_type: ['AT'],
+      worker_sex: 'FEMALE',
+      job_zone: 'NORTE',
+      neighborhood: 'Palermo Soho',
+      state_city: 'Buenos Aires / CABA',
       ...overrides,
     };
   }
 
-  it('maps all fields from row to DTO', () => {
+  it('maps all fields from row to DTO (including 5 new fields)', () => {
     const row = makeRow();
     const dto = mapPublicJobRow(row);
 
@@ -81,9 +91,14 @@ describe('mapPublicJobRow', () => {
     expect(dto.worker_profile_sought).toBe('Con experiencia en TEA');
     expect(dto.service).toBe('DOMICILIO');
     expect(dto.pathologies).toBe('TEA');
-    expect(dto.provincia).toBe('Buenos Aires');
-    expect(dto.localidad).toBe('Palermo');
+    expect(dto.state).toBe('Buenos Aires');
+    expect(dto.city).toBe('Palermo');
     expect(dto.detail_link).toBe('https://srt.io/abc');
+    expect(dto.worker_type).toEqual(['AT']);
+    expect(dto.worker_sex).toBe('FEMALE');
+    expect(dto.job_zone).toBe('NORTE');
+    expect(dto.neighborhood).toBe('Palermo Soho');
+    expect(dto.state_city).toBe('Buenos Aires / CABA');
   });
 
   it('sanitizes generic description to empty string in DTO', () => {
@@ -98,8 +113,8 @@ describe('mapPublicJobRow', () => {
       worker_profile_sought: null,
       service: null,
       pathologies: null,
-      provincia: null,
-      localidad: null,
+      state: null,
+      city: null,
     });
     const dto = mapPublicJobRow(row);
 
@@ -107,7 +122,52 @@ describe('mapPublicJobRow', () => {
     expect(dto.worker_profile_sought).toBeNull();
     expect(dto.service).toBeNull();
     expect(dto.pathologies).toBeNull();
-    expect(dto.provincia).toBeNull();
-    expect(dto.localidad).toBeNull();
+    expect(dto.state).toBeNull();
+    expect(dto.city).toBeNull();
+  });
+
+  it('normalises state_city empty string to null', () => {
+    const dto = mapPublicJobRow(makeRow({ state_city: '' }));
+    expect(dto.state_city).toBeNull();
+  });
+
+  it('normalises state_city whitespace-only string to null', () => {
+    const dto = mapPublicJobRow(makeRow({ state_city: '   ' }));
+    expect(dto.state_city).toBeNull();
+  });
+
+  it('normalises worker_type empty array to null', () => {
+    const dto = mapPublicJobRow(makeRow({ worker_type: [] }));
+    expect(dto.worker_type).toBeNull();
+  });
+
+  it('passes through populated new fields', () => {
+    const dto = mapPublicJobRow(makeRow({
+      worker_type: ['AT', 'PSICÓLOGO'],
+      worker_sex: 'MALE',
+      job_zone: 'SUR',
+      neighborhood: 'Villa Lugano',
+      state_city: 'Buenos Aires / Quilmes',
+    }));
+    expect(dto.worker_type).toEqual(['AT', 'PSICÓLOGO']);
+    expect(dto.worker_sex).toBe('MALE');
+    expect(dto.job_zone).toBe('SUR');
+    expect(dto.neighborhood).toBe('Villa Lugano');
+    expect(dto.state_city).toBe('Buenos Aires / Quilmes');
+  });
+
+  it('passes through null new fields as null', () => {
+    const dto = mapPublicJobRow(makeRow({
+      worker_type: null,
+      worker_sex: null,
+      job_zone: null,
+      neighborhood: null,
+      state_city: null,
+    }));
+    expect(dto.worker_type).toBeNull();
+    expect(dto.worker_sex).toBeNull();
+    expect(dto.job_zone).toBeNull();
+    expect(dto.neighborhood).toBeNull();
+    expect(dto.state_city).toBeNull();
   });
 });

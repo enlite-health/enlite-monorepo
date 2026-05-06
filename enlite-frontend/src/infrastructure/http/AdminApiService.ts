@@ -22,6 +22,10 @@ import {
   AdminVacancyAddressApiService,
   type ResolveAddressBody,
 } from './AdminVacancyAddressApiService';
+import {
+  AdminTalentumApiService,
+  type AIContentResult,
+} from './AdminTalentumApiService';
 import type {
   ParseVacancyFullResult,
   PatientAddressCreateInput,
@@ -32,6 +36,7 @@ import type {
 export type { WorkerDateStats, AdminAdditionalDocument };
 export type { ParseVacancyFullResult, PatientAddressCreateInput, PatientAddressRow };
 export type { PendingAddressReviewItem, ResolveAddressBody };
+export type { AIContentResult };
 
 interface ApiSuccessResponse<T> {
   success: true;
@@ -120,19 +125,13 @@ class AdminApiServiceClass {
     );
   }
 
+  async getCasesForSelect(): Promise<{ caseNumber: number; patientId: string; dependencyLevel: string }[]> {
+    return this.request<{ caseNumber: number; patientId: string; dependencyLevel: string }[]>(
+      'GET', '/api/admin/vacancies/cases-for-select',
+    );
+  }
+
   // ========== Vacancy AI Parsing — delegated to AdminVacancyParseApiService ==========
-
-  parseVacancyFromText(data: { text: string; workerType: 'AT' | 'CUIDADOR' }) {
-    return AdminVacancyParseApiService.parseVacancyFromText(data);
-  }
-
-  parseVacancyFromPdf(file: File, workerType: 'AT' | 'CUIDADOR') {
-    return AdminVacancyParseApiService.parseVacancyFromPdf(file, workerType);
-  }
-
-  parseVacancyFull(file: File, workerType: 'AT' | 'CUIDADOR'): Promise<ParseVacancyFullResult> {
-    return AdminVacancyParseApiService.parseVacancyFull(file, workerType);
-  }
 
   createPatientAddress(patientId: string, data: PatientAddressCreateInput): Promise<PatientAddressRow> {
     return AdminVacancyParseApiService.createPatientAddress(patientId, data);
@@ -179,8 +178,30 @@ class AdminApiServiceClass {
   async updateVacancyMeetLinks(
     vacancyId: string,
     meetLinks: [string | null, string | null, string | null],
-  ): Promise<void> {
-    await this.request<unknown>('PUT', `/api/admin/vacancies/${vacancyId}/meet-links`, { meet_links: meetLinks });
+  ): Promise<{
+    meet_link_1: string | null; meet_datetime_1: string | null;
+    meet_link_2: string | null; meet_datetime_2: string | null;
+    meet_link_3: string | null; meet_datetime_3: string | null;
+  }> {
+    return this.request<{
+      meet_link_1: string | null; meet_datetime_1: string | null;
+      meet_link_2: string | null; meet_datetime_2: string | null;
+      meet_link_3: string | null; meet_datetime_3: string | null;
+    }>('PUT', `/api/admin/vacancies/${vacancyId}/meet-links`, { meet_links: meetLinks });
+  }
+
+  /**
+   * Resolve the start datetime of a Google Meet link via Calendar API
+   * without persisting anything. Reuses the same `resolveDateTime` routine
+   * used by the PUT meet-links endpoint, but exposed for on-blur preview
+   * before the vacancy exists.
+   */
+  async lookupMeetDatetime(meetLink: string): Promise<{ datetime: string | null; normalized: string }> {
+    return this.request<{ datetime: string | null; normalized: string }>(
+      'POST',
+      '/api/admin/vacancies/meet-links/lookup',
+      { link: meetLink },
+    );
   }
 
   // ========== Match Methods ==========
@@ -261,6 +282,8 @@ class AdminApiServiceClass {
   listPatients(f?: Parameters<typeof AdminPatientsApiService.listPatients>[0]) { return AdminPatientsApiService.listPatients(f); }
   getPatientStats() { return AdminPatientsApiService.getPatientStats(); }
   getPatientById(id: string) { return AdminPatientsApiService.getPatientById(id); }
+  searchPatients(search: string, limit = 10) { return AdminPatientsApiService.listPatients({ search, limit: String(limit) }); }
+  getPatientByIdFull(id: string) { return AdminPatientsApiService.getPatientById(id); }
 
   // ========== Encuadres Methods ==========
 
@@ -280,6 +303,17 @@ class AdminApiServiceClass {
     data: { targetStage: string; rejectionReasonCategory?: string; rejectionReason?: string }
   ): Promise<void> {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
+  }
+
+  async getVacancyFunnelTable(
+    vacancyId: string,
+    bucket?: 'INVITED' | 'POSTULATED' | 'PRE_SELECTED' | 'REJECTED' | 'WITHDREW' | 'ALL',
+  ): Promise<import('@domain/entities/Funnel').FunnelTableResponse> {
+    const qs = bucket ? `?bucket=${bucket}` : '';
+    return this.request<import('@domain/entities/Funnel').FunnelTableResponse>(
+      'GET',
+      `/api/admin/vacancies/${vacancyId}/funnel-table${qs}`,
+    );
   }
 
   // ========== Interview Slots Methods ==========
@@ -316,46 +350,17 @@ class AdminApiServiceClass {
     return this.request('POST', '/api/admin/workers/sync-talentum');
   }
 
-  // ========== Talentum Methods ==========
-
-  async syncFromTalentum(opts?: { force?: boolean }): Promise<{
-    total: number; updated: number; created: number; skipped: number;
-    errors: Array<{ projectId: string; title: string; error: string }>;
-  }> {
-    const qs = opts?.force ? '?force=true' : '';
-    return this.request('POST', `/api/admin/vacancies/sync-talentum${qs}`);
+  // ========== Talentum + AI — delegated to AdminTalentumApiService ==========
+  syncFromTalentum(opts?: { force?: boolean }) { return AdminTalentumApiService.syncFromTalentum(opts); }
+  publishToTalentum(vacancyId: string) { return AdminTalentumApiService.publishToTalentum(vacancyId); }
+  unpublishFromTalentum(vacancyId: string) { return AdminTalentumApiService.unpublishFromTalentum(vacancyId); }
+  generateAIContent(vacancyId: string) { return AdminTalentumApiService.generateAIContent(vacancyId); }
+  generateSocialLink(vacancyId: string, channel: 'facebook' | 'instagram' | 'whatsapp' | 'linkedin' | 'site') {
+    return AdminTalentumApiService.generateSocialLink(vacancyId, channel);
   }
+  getSocialLinksStats(vacancyId: string) { return AdminTalentumApiService.getSocialLinksStats(vacancyId); }
 
-  async publishToTalentum(vacancyId: string): Promise<{ projectId: string; publicId: string; whatsappUrl: string }> {
-    return this.request<{ projectId: string; publicId: string; whatsappUrl: string }>(
-      'POST', `/api/admin/vacancies/${vacancyId}/publish-talentum`,
-    );
-  }
-
-  async unpublishFromTalentum(vacancyId: string): Promise<void> {
-    await this.request<unknown>('DELETE', `/api/admin/vacancies/${vacancyId}/publish-talentum`);
-  }
-
-  // ========== Social Short Links ==========
-
-  async generateSocialLink(
-    vacancyId: string,
-    channel: 'facebook' | 'instagram' | 'whatsapp' | 'linkedin' | 'site',
-  ): Promise<{ channel: string; shortURL: string; social_short_links: Record<string, { url: string; id: string }> }> {
-    return this.request('POST', `/api/admin/vacancies/${vacancyId}/social-links`, { channel });
-  }
-
-  async getSocialLinksStats(vacancyId: string): Promise<Record<string, { url: string; clicks: number }>> {
-    return this.request('GET', `/api/admin/vacancies/${vacancyId}/social-links-stats`);
-  }
-
-  async generateTalentumDescription(vacancyId: string): Promise<{ description: string }> {
-    return this.request<{ description: string }>(
-      'POST', `/api/admin/vacancies/${vacancyId}/generate-talentum-description`,
-    );
-  }
-
-  // ========== Prescreening Config Methods ==========
+  // ========== Prescreening Config ==========
 
   async getPrescreeningConfig(vacancyId: string): Promise<{ questions: any[]; faq: any[] }> {
     return this.request<{ questions: any[]; faq: any[] }>('GET', `/api/admin/vacancies/${vacancyId}/prescreening-config`);

@@ -301,15 +301,20 @@ export class JobPostingARRepository {
          jp.description,
          jp.schedule_days_hours,
          jp.worker_profile_sought,
-         p.service_type         AS service,
-         p.diagnosis            AS pathologies,
-         pa.state               AS provincia,
-         pa.city                AS localidad,
-         jp.social_short_links->>'site' AS detail_link
+         p.service_type                       AS service,
+         p.diagnosis                          AS pathologies,
+         pa.state                             AS state,
+         pa.city                              AS city,
+         jp.social_short_links->>'site'       AS detail_link,
+         jp.required_professions              AS worker_type,
+         jp.required_sex                      AS worker_sex,
+         jp.inferred_zone                     AS job_zone,
+         COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood,
+         NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city
        FROM job_postings jp
        LEFT JOIN patients p    ON jp.patient_id = p.id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
-       WHERE jp.status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+       WHERE jp.status IN ('ACTIVE','SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
          AND jp.deleted_at IS NULL
          AND jp.social_short_links ? 'site'
        ORDER BY jp.case_number DESC, jp.vacancy_number DESC`,

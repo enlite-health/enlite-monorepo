@@ -65,11 +65,28 @@ async function insertPatient(
   );
 }
 
+// service_address_formatted was dropped in migration 152.
+// Addresses now live in patient_addresses; job_postings references them via patient_address_id FK.
+async function insertPatientAddress(
+  p: Pool,
+  patientId: string,
+  addressFormatted: string,
+): Promise<string> {
+  const res = await p.query<{ id: string }>(
+    `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, source)
+     VALUES ($1, 'primary', $2, $2, 'e2e-test')
+     RETURNING id`,
+    [patientId, addressFormatted],
+  );
+  return res.rows[0].id;
+}
+
 async function insertJobPosting(
   p: Pool,
   opts: {
     patientId: string | null;
     caseNumber: number;
+    /** Provide addressFormatted to auto-create a patient_addresses row and link it. */
     addressFormatted?: string | null;
     schedule?: object | null;
     /**
@@ -89,11 +106,17 @@ async function insertJobPosting(
   // undefined → 'SEARCHING'; null → null (explicit NULL insert)
   const status = opts.status === undefined ? 'SEARCHING' : opts.status;
 
+  // Create a patient_address row and link via FK if addressFormatted is provided.
+  let patientAddressId: string | null = null;
+  if (opts.addressFormatted && opts.patientId) {
+    patientAddressId = await insertPatientAddress(p, opts.patientId, opts.addressFormatted);
+  }
+
   const res = await p.query<{ id: string }>(
     `INSERT INTO job_postings (
        vacancy_number, case_number, patient_id,
        title, country, status,
-       service_address_formatted, schedule
+       patient_address_id, schedule
      ) VALUES ($1, $2, $3, $4, 'AR', $5, $6, $7)
      RETURNING id`,
     [
@@ -102,7 +125,7 @@ async function insertJobPosting(
       opts.patientId,
       title,
       status,
-      opts.addressFormatted ?? null,
+      patientAddressId,
       opts.schedule ? JSON.stringify(opts.schedule) : null,
     ],
   );
@@ -133,7 +156,7 @@ describe('I1: job_postings.patient_id sempre populado após import-vacancies', (
       clickupTaskId: 'clickup-task-i1',
       patientId: P.p1,
       status: 'SEARCHING',
-      serviceAddressFormatted: 'Av. Siempre Viva 742, Springfield',
+      // serviceAddressFormatted removed in migration 152 — address now lives in patient_addresses
     });
 
     expect(result.created).toBe(true);
@@ -174,32 +197,17 @@ describe('I1: job_postings.patient_id sempre populado após import-vacancies', (
 });
 
 // =============================================================================
-// I2: uniqueness (patient_id, address, schedule) é guard-rail de DB
+// I2: patient_id + patient_address_id + schedule — estado após migration 152
 // =============================================================================
+// NOTE: idx_job_postings_unique_slot (criado em migration 142 sobre service_address_formatted)
+// foi automaticamente dropado quando service_address_formatted foi removida na migration 152.
+// A guarda de unicidade (patient + endereço + horário) passou a ser responsabilidade
+// da camada de aplicação. Os testes abaixo refletem o schema atual.
 
-describe('I2: uniqueness (patient_id, address, schedule) é guard-rail de DB', () => {
-  it('INSERT duplicado de (patient, address, schedule) é REJEITADO pelo unique index', async () => {
+describe('I2: job_postings aceita múltiplas vagas por paciente com endereços via patient_addresses', () => {
+  it('permite 2 vagas mesmo paciente com endereços diferentes em patient_addresses', async () => {
     await insertPatient(pool, P.p2, 'clickup-task-i2');
 
-    await insertJobPosting(pool, {
-      patientId: P.p2,
-      caseNumber: 5010,
-      addressFormatted: 'Calle Falsa 123, Buenos Aires',
-      schedule: { start: '09:00', end: '17:00' },
-    });
-
-    await expect(
-      insertJobPosting(pool, {
-        patientId: P.p2,
-        caseNumber: 5011, // different case number, same patient+addr+schedule
-        addressFormatted: 'Calle Falsa 123, Buenos Aires',
-        schedule: { start: '09:00', end: '17:00' },
-      }),
-    ).rejects.toMatchObject({ code: '23505' }); // unique_violation
-  });
-
-  it('permite 2 vagas mesmo paciente se endereços diferentes', async () => {
-    // P.p2 already exists from previous test
     const id1 = await insertJobPosting(pool, {
       patientId: P.p2,
       caseNumber: 5012,
@@ -210,7 +218,7 @@ describe('I2: uniqueness (patient_id, address, schedule) é guard-rail de DB', (
     const id2 = await insertJobPosting(pool, {
       patientId: P.p2,
       caseNumber: 5013,
-      addressFormatted: 'Rivadavia 200, Buenos Aires', // different address
+      addressFormatted: 'Rivadavia 200, Buenos Aires', // different address row
       schedule: { start: '08:00', end: '12:00' },
     });
 
@@ -230,8 +238,8 @@ describe('I2: uniqueness (patient_id, address, schedule) é guard-rail de DB', (
     const id2 = await insertJobPosting(pool, {
       patientId: P.p2,
       caseNumber: 5015,
-      addressFormatted: 'Tucumán 300, Buenos Aires', // same address
-      schedule: { start: '13:00', end: '17:00' },   // different schedule
+      addressFormatted: 'Tucumán 300, Buenos Aires',
+      schedule: { start: '13:00', end: '17:00' }, // different schedule
     });
 
     expect(id1).toBeTruthy();
@@ -239,26 +247,42 @@ describe('I2: uniqueness (patient_id, address, schedule) é guard-rail de DB', (
     expect(id1).not.toBe(id2);
   });
 
-  it('permite N vagas com schedule=NULL (drafts) para o mesmo paciente e endereço', async () => {
+  it('permite N vagas com schedule=NULL (drafts) para o mesmo paciente', async () => {
     await insertPatient(pool, P.p3, 'clickup-task-i2-draft');
 
     const id1 = await insertJobPosting(pool, {
       patientId: P.p3,
       caseNumber: 5020,
       addressFormatted: 'Draft Address 1, CABA',
-      schedule: null, // no schedule → not covered by unique index
+      schedule: null,
     });
 
     const id2 = await insertJobPosting(pool, {
       patientId: P.p3,
       caseNumber: 5021,
-      addressFormatted: 'Draft Address 1, CABA', // same address, but schedule=null
+      addressFormatted: 'Draft Address 1, CABA',
       schedule: null,
     });
 
     expect(id1).toBeTruthy();
     expect(id2).toBeTruthy();
     expect(id1).not.toBe(id2);
+  });
+
+  it('patient_address_id FK existe em job_postings (migration 149)', async () => {
+    const res = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'job_postings' AND column_name = 'patient_address_id'`,
+    );
+    expect(res.rows).toHaveLength(1);
+  });
+
+  it('service_address_formatted NÃO existe mais em job_postings (dropada em migration 152)', async () => {
+    const res = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'job_postings' AND column_name = 'service_address_formatted'`,
+    );
+    expect(res.rows).toHaveLength(0);
   });
 });
 
@@ -593,7 +617,7 @@ describe('I7: job_postings_clickup_sync permite N entries por task (1 task × N 
       clickupTaskId: TASK_ID_I7,
       patientId: P.p5,
       status: 'SEARCHING',
-      serviceAddressFormatted: 'Dom1 Addr Multi, CABA',
+      // serviceAddressFormatted removed in migration 152 — address via patient_address_id FK
       sourceCreatedAt: new Date('2025-01-01'),
       sourceUpdatedAt: new Date('2025-01-02'),
     });
@@ -603,7 +627,7 @@ describe('I7: job_postings_clickup_sync permite N entries por task (1 task × N 
       clickupTaskId: TASK_ID_I7,
       patientId: P.p5,
       status: 'SEARCHING',
-      serviceAddressFormatted: 'Dom2 Addr Multi, CABA',
+      // serviceAddressFormatted removed in migration 152 — address via patient_address_id FK
       sourceCreatedAt: new Date('2025-01-01'),
       sourceUpdatedAt: new Date('2025-01-02'),
     });
@@ -641,7 +665,7 @@ describe('I7: job_postings_clickup_sync permite N entries por task (1 task × N 
       clickupTaskId: TASK_ID_I7,
       patientId: P.p5,
       status: 'ACTIVE', // status changed
-      serviceAddressFormatted: 'Dom1 Addr Multi, CABA',
+      // serviceAddressFormatted removed in migration 152 — address via patient_address_id FK
       sourceUpdatedAt: new Date('2025-01-10'), // updated timestamp
     });
 
@@ -751,12 +775,14 @@ describe('I8: patients.status CHECK constraint', () => {
 // =============================================================================
 
 describe('Schema guard-rails (migrations 142 + 143)', () => {
-  it('idx_job_postings_unique_slot unique index exists (migration 142)', async () => {
+  it('idx_job_postings_unique_slot NÃO existe mais (dropada com service_address_formatted em migration 152)', async () => {
+    // migration 142 criou o índice sobre service_address_formatted;
+    // migration 152 dropou a coluna, o que automaticamente removeu o índice também.
     const res = await pool.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes
        WHERE tablename = 'job_postings' AND indexname = 'idx_job_postings_unique_slot'`,
     );
-    expect(res.rows).toHaveLength(1);
+    expect(res.rows).toHaveLength(0);
   });
 
   it('idx_ambiguity_unresolved index exists on encuadre_ambiguity_queue (migration 142)', async () => {

@@ -225,11 +225,11 @@ describe('I22 — hard filter SQL (MatchmakingService) não crashar por colunas 
          w.sex_encrypted,
          w.first_name_encrypted,
          w.last_name_encrypted,
-         wl.work_zone,
-         wl.address AS worker_address,
-         wl.interest_zone,
-         wl.lat AS worker_lat,
-         wl.lng AS worker_lng,
+         wsa.work_zone,
+         wsa.address_line AS worker_address,
+         wsa.interest_zone,
+         wsa.latitude AS worker_lat,
+         wsa.longitude AS worker_lng,
          (
            SELECT COALESCE(json_agg(json_build_object(
              'case_number', jp2.case_number,
@@ -258,11 +258,11 @@ describe('I22 — hard filter SQL (MatchmakingService) não crashar por colunas 
          w.avg_quality_rating
        FROM workers w
        LEFT JOIN blacklist bl ON bl.worker_id = w.id
-       LEFT JOIN worker_locations wl ON wl.worker_id = w.id
+       LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
        WHERE w.id = $2
          AND w.merged_into_id IS NULL
          AND bl.id IS NULL
-       GROUP BY w.id, wl.work_zone, wl.address, wl.interest_zone, wl.lat, wl.lng`,
+       GROUP BY w.id, wsa.work_zone, wsa.address_line, wsa.interest_zone, wsa.latitude, wsa.longitude`,
       [jobPostingId, workerId],
     );
 

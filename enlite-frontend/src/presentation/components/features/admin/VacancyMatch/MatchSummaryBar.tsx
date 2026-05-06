@@ -1,4 +1,4 @@
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 
 interface MatchSummaryBarProps {
   totalCandidates: number;
@@ -26,22 +26,22 @@ export function MatchSummaryBar({
   return (
     <div className="flex items-center justify-between bg-white border border-[#D9D9D9] rounded-xl px-5 py-3 mb-4">
       <div className="flex items-center gap-4">
-        <Typography variant="body" weight="medium" className="text-slate-700">
+        <Text size="sm" weight="medium" color="secondary">
           {totalCandidates} candidato{totalCandidates !== 1 ? 's' : ''}
-        </Typography>
+        </Text>
         {lastMatchLabel && (
           <>
             <span className="text-[#D9D9D9]">|</span>
-            <Typography variant="body" className="text-[#737373] text-sm">
+            <Text size="sm" color="secondary">
               Último match: {lastMatchLabel}
-            </Typography>
+            </Text>
           </>
         )}
       </div>
       <div className="flex items-center gap-3">
-        <Typography variant="body" className="text-[#737373] text-sm whitespace-nowrap">
+        <Text size="sm" color="secondary" className="whitespace-nowrap">
           Score mínimo
-        </Typography>
+        </Text>
         <input
           type="number"
           min={0}

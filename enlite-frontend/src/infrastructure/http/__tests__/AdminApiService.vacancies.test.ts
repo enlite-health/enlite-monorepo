@@ -2,20 +2,13 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { AdminApiService } from '../AdminApiService';
 
 // ── Mock AdminVacancyParseApiService ────────────────────────────────────────
-// parseVacancyFromText, parseVacancyFromPdf, parseVacancyFull and
-// createPatientAddress are delegated to this service. We mock the whole
+// createPatientAddress is delegated to this service. We mock the whole
 // module so the delegation works without a real Firebase instance.
 
-const mockParseFromText = vi.fn();
-const mockParseFromPdf = vi.fn();
-const mockParseVacancyFull = vi.fn();
 const mockCreatePatientAddress = vi.fn();
 
 vi.mock('../AdminVacancyParseApiService', () => ({
   AdminVacancyParseApiService: {
-    parseVacancyFromText: (...args: any[]) => mockParseFromText(...args),
-    parseVacancyFromPdf: (...args: any[]) => mockParseFromPdf(...args),
-    parseVacancyFull: (...args: any[]) => mockParseVacancyFull(...args),
     createPatientAddress: (...args: any[]) => mockCreatePatientAddress(...args),
   },
 }));
@@ -149,80 +142,8 @@ describe('AdminApiService - Vacancies Methods', () => {
     });
   });
 
-  // ── Delegated parse methods ────────────────────────────────────────────────
-  // AdminApiService delegates to AdminVacancyParseApiService. Tests verify
-  // that the delegation passes arguments through correctly.
-
-  describe('parseVacancyFromText (delegated)', () => {
-    it('delegates to AdminVacancyParseApiService.parseVacancyFromText', async () => {
-      const mockResponse = {
-        vacancy: {}, prescreening: { questions: [], faq: [] },
-        description: { titulo_propuesta: '', descripcion_propuesta: '', perfil_profesional: '' },
-      };
-      mockParseFromText.mockResolvedValueOnce(mockResponse);
-
-      const result = await AdminApiService.parseVacancyFromText({ text: 'caso TEA', workerType: 'AT' });
-
-      expect(mockParseFromText).toHaveBeenCalledWith({ text: 'caso TEA', workerType: 'AT' });
-      expect(result).toEqual(mockResponse);
-    });
-  });
-
-  describe('parseVacancyFromPdf (delegated)', () => {
-    const MOCK_PARSED = {
-      vacancy: { case_number: 42 },
-      prescreening: { questions: [], faq: [] },
-      description: { titulo_propuesta: '', descripcion_propuesta: '', perfil_profesional: '' },
-    };
-
-    it('delegates to AdminVacancyParseApiService.parseVacancyFromPdf', async () => {
-      mockParseFromPdf.mockResolvedValueOnce(MOCK_PARSED);
-      const file = new File(['pdf-content'], 'case.pdf', { type: 'application/pdf' });
-
-      const result = await AdminApiService.parseVacancyFromPdf(file, 'AT');
-
-      expect(mockParseFromPdf).toHaveBeenCalledWith(file, 'AT');
-      expect(result).toEqual(MOCK_PARSED);
-    });
-
-    it('passes CUIDADOR worker type', async () => {
-      mockParseFromPdf.mockResolvedValueOnce(MOCK_PARSED);
-      const file = new File(['pdf'], 'f.pdf', { type: 'application/pdf' });
-
-      await AdminApiService.parseVacancyFromPdf(file, 'CUIDADOR');
-
-      expect(mockParseFromPdf).toHaveBeenCalledWith(file, 'CUIDADOR');
-    });
-
-    it('propagates errors from the delegate', async () => {
-      mockParseFromPdf.mockRejectedValueOnce(new Error('Invalid PDF'));
-      const file = new File(['pdf'], 'f.pdf', { type: 'application/pdf' });
-
-      await expect(AdminApiService.parseVacancyFromPdf(file, 'AT')).rejects.toThrow('Invalid PDF');
-    });
-  });
-
-  describe('parseVacancyFull (delegated)', () => {
-    it('delegates to AdminVacancyParseApiService.parseVacancyFull', async () => {
-      const mockFull = {
-        parsed: {
-          vacancy: { case_number: 7 },
-          prescreening: { questions: [], faq: [] },
-          description: { titulo_propuesta: '', descripcion_propuesta: '', perfil_profesional: '' },
-        },
-        addressMatches: [{ patient_address_id: 'addr-1', addressFormatted: 'Av. X 100', confidence: 1, matchType: 'EXACT' as const }],
-        fieldClashes: [],
-        patientId: 'pat-1',
-      };
-      mockParseVacancyFull.mockResolvedValueOnce(mockFull);
-      const file = new File(['pdf'], 'f.pdf', { type: 'application/pdf' });
-
-      const result = await AdminApiService.parseVacancyFull(file, 'AT');
-
-      expect(mockParseVacancyFull).toHaveBeenCalledWith(file, 'AT');
-      expect(result).toEqual(mockFull);
-    });
-  });
+  // ── Delegated methods ──────────────────────────────────────────────────────
+  // AdminApiService delegates createPatientAddress to AdminVacancyParseApiService.
 
   describe('createPatientAddress (delegated)', () => {
     it('delegates to AdminVacancyParseApiService.createPatientAddress', async () => {

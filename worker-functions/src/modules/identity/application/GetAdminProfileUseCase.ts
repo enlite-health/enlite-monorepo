@@ -35,6 +35,18 @@ export class GetAdminProfileUseCase {
   private async autoProvisionIfEligible(firebaseUid: string): Promise<AdminRecord | null> {
     const firebaseUser = await admin.auth().getUser(firebaseUid);
 
+    // Dev-only: claim seed rows by email when firebase_uid mismatches.
+    // Why: local Docker uses prod Firebase Auth (docker-compose.prod-auth.yml) but a fresh
+    // local DB seeded with placeholder firebase_uid. Without this, every `make reset` would
+    // require re-promoting the seeded admin manually.
+    if (process.env.NODE_ENV === 'development' && firebaseUser.email) {
+      const seedRecord = await this.adminRepo.findByEmail(firebaseUser.email);
+      if (seedRecord && seedRecord.firebaseUid !== firebaseUid) {
+        await this.adminRepo.reassignFirebaseUid(firebaseUser.email, firebaseUid);
+        return this.adminRepo.findByFirebaseUid(firebaseUid);
+      }
+    }
+
     if (!firebaseUser.email?.endsWith('@enlite.health')) {
       return null;
     }

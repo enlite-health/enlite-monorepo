@@ -1,23 +1,34 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
+import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
 
 interface ServiceAreaMapProps {
-  lat: number;
-  lng: number;
+  lat?: number | null;
+  lng?: number | null;
   className?: string;
 }
 
-function isValidCoordinates(lat: number, lng: number): boolean {
-  return lat !== 0 || lng !== 0;
+function isValidCoordinates(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): lat is number {
+  return lat != null && lng != null && (lat !== 0 || lng !== 0);
 }
 
 /**
  * Renders a Google Maps embed with a Marker at the given coordinates.
- * Uses the same Google Maps script loaded by GooglePlacesAutocomplete.
- * Shows a placeholder when coordinates are invalid (0,0 or uninitialised).
+ * Loads the Maps script on demand via `loadGoogleMaps`. Coordinates are
+ * authoritative — they're populated by the backend at upsert time
+ * (PatientService.replaceAddresses) and backfilled by the geocoding script
+ * for legacy rows. If lat/lng are missing the placeholder card is shown
+ * instead of geocoding client-side.
  */
-export function ServiceAreaMap({ lat, lng, className = '' }: ServiceAreaMapProps): JSX.Element {
+export function ServiceAreaMap({
+  lat,
+  lng,
+  className = '',
+}: ServiceAreaMapProps): JSX.Element {
   const { t } = useTranslation();
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -27,45 +38,40 @@ export function ServiceAreaMap({ lat, lng, className = '' }: ServiceAreaMapProps
 
   useEffect(() => {
     if (!valid) return;
+    let cancelled = false;
 
-    const initMap = (): void => {
-      if (!mapDivRef.current) return;
-      if (typeof google === 'undefined' || !google.maps) return;
+    loadGoogleMaps()
+      .then(() => {
+        if (cancelled || !mapDivRef.current) return;
+        const position = { lat: lat as number, lng: lng as number };
 
-      const position = { lat, lng };
+        if (!mapInstanceRef.current) {
+          mapInstanceRef.current = new google.maps.Map(mapDivRef.current, {
+            center: position,
+            zoom: 15,
+            disableDefaultUI: true,
+            zoomControl: true,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+          });
+          markerRef.current = new google.maps.Marker({
+            position,
+            map: mapInstanceRef.current,
+          });
+        } else {
+          mapInstanceRef.current.setCenter(position);
+          markerRef.current?.setPosition(position);
+        }
+      })
+      .catch(() => {
+        // Maps couldn't load (offline / missing key). Silent — placeholder
+        // already covers the no-coords case; here we accept "no map" gracefully.
+      });
 
-      if (!mapInstanceRef.current) {
-        mapInstanceRef.current = new google.maps.Map(mapDivRef.current, {
-          center: position,
-          zoom: 15,
-          disableDefaultUI: true,
-          zoomControl: true,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-        });
-
-        markerRef.current = new google.maps.Marker({
-          position,
-          map: mapInstanceRef.current,
-        });
-      } else {
-        mapInstanceRef.current.setCenter(position);
-        markerRef.current?.setPosition(position);
-      }
+    return () => {
+      cancelled = true;
     };
-
-    // Google Maps may already be loaded (by GooglePlacesAutocomplete)
-    if (typeof google !== 'undefined' && google.maps) {
-      initMap();
-    } else {
-      // Wait for the script to load
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (existingScript) {
-        existingScript.addEventListener('load', initMap);
-        return () => existingScript.removeEventListener('load', initMap);
-      }
-    }
   }, [lat, lng, valid]);
 
   if (!valid) {

@@ -45,9 +45,14 @@ const SAMPLE_JOB = {
   worker_profile_sought: null,
   service: 'DOMICILIO',
   pathologies: 'TEA',
-  provincia: 'Buenos Aires',
-  localidad: 'Palermo',
+  state: 'Buenos Aires',
+  city: 'Palermo',
   detail_link: 'https://srt.io/abc',
+  worker_type: ['AT'],
+  worker_sex: null,
+  job_zone: 'NORTE',
+  neighborhood: 'Palermo',
+  state_city: 'Buenos Aires / CABA',
 };
 
 describe('PublicJobsController.listActiveJobs', () => {

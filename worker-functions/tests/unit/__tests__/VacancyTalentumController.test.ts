@@ -24,6 +24,9 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 const mockPublish = jest.fn();
 const mockUnpublish = jest.fn();
 const mockGenerateDescription = jest.fn();
+const mockGenerateDescriptionPreview = jest.fn();
+const mockGenerateFromVacancyData = jest.fn();
+
 jest.mock('@modules/integration', () => ({
   PublishVacancyToTalentumUseCase: jest.fn().mockImplementation(() => ({
     publish: mockPublish,
@@ -40,6 +43,10 @@ jest.mock('@modules/integration', () => ({
   })),
   TalentumDescriptionService: jest.fn().mockImplementation(() => ({
     generateDescription: mockGenerateDescription,
+    generateDescriptionPreview: mockGenerateDescriptionPreview,
+  })),
+  GeminiVacancyParserService: jest.fn().mockImplementation(() => ({
+    generateFromVacancyData: mockGenerateFromVacancyData,
   })),
 }));
 
@@ -69,6 +76,8 @@ describe('VacancyTalentumController', () => {
     mockPublish.mockReset();
     mockUnpublish.mockReset();
     mockGenerateDescription.mockReset();
+    mockGenerateDescriptionPreview.mockReset();
+    mockGenerateFromVacancyData.mockReset();
     controller = new VacancyTalentumController();
   });
 
@@ -259,6 +268,138 @@ describe('VacancyTalentumController', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         data: { description: 'Generated text...' },
       }));
+    });
+  });
+
+  // ── generateAIContent ────────────────────────────────────────────
+
+  describe('generateAIContent', () => {
+    const VACANCY_ROW = {
+      id: 'v-1',
+      title: 'CASO 100-1',
+      case_number: 100,
+      required_professions: ['AT'],
+      required_sex: null,
+      age_range_min: null,
+      age_range_max: null,
+      required_experience: null,
+      worker_attributes: null,
+      schedule: null,
+      work_schedule: null,
+      providers_needed: 1,
+      salary_text: null,
+      payment_day: null,
+      daily_obs: null,
+      address_formatted: null,
+      city: null,
+      state: null,
+      diagnosis: null,
+      dependency_level: null,
+      service_type: null,
+    };
+
+    beforeEach(() => {
+      mockGenerateDescriptionPreview.mockReset();
+      mockGenerateFromVacancyData.mockReset();
+    });
+
+    it('returns 404 when vacancy not found', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      const req = mockReq({}, { id: 'nonexistent' });
+      const res = mockRes();
+
+      await controller.generateAIContent(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, error: 'Vacancy not found' }),
+      );
+    });
+
+    it('returns { description, prescreening: { questions, faq } } on success', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [VACANCY_ROW] });
+
+      mockGenerateDescriptionPreview.mockResolvedValueOnce({
+        title: 'CASO 100-1',
+        description: 'Generated description text',
+      });
+
+      mockGenerateFromVacancyData.mockResolvedValueOnce({
+        prescreening: {
+          questions: [{ question: 'Q1?', desiredResponse: 'Yes', weight: 8 }],
+          faq: [{ question: 'FAQ1?', answer: 'Ans' }],
+        },
+      });
+
+      const req = mockReq({}, { id: 'v-1' });
+      const res = mockRes();
+
+      await controller.generateAIContent(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const body = res.json.mock.calls[0][0];
+      expect(body.success).toBe(true);
+      expect(body.data.description).toBe('Generated description text');
+      expect(body.data.prescreening.questions).toHaveLength(1);
+      expect(body.data.prescreening.faq).toHaveLength(1);
+    });
+
+    it('does NOT persist anything (no UPDATE query issued)', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [VACANCY_ROW] });
+      mockGenerateDescriptionPreview.mockResolvedValueOnce({ title: 'T', description: 'D' });
+      mockGenerateFromVacancyData.mockResolvedValueOnce({
+        prescreening: { questions: [], faq: [] },
+      });
+
+      const req = mockReq({}, { id: 'v-1' });
+      const res = mockRes();
+
+      await controller.generateAIContent(req, res);
+
+      // Only 1 DB query (SELECT) — no UPDATE
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('SELECT');
+      expect(sql).not.toContain('UPDATE');
+    });
+
+    it('passes workerType=CUIDADOR when professions include CUIDADOR', async () => {
+      const cuidadorRow = { ...VACANCY_ROW, required_professions: ['CUIDADOR'] };
+      mockQuery.mockResolvedValueOnce({ rows: [cuidadorRow] });
+      mockGenerateDescriptionPreview.mockResolvedValueOnce({ title: 'T', description: 'D' });
+      mockGenerateFromVacancyData.mockResolvedValueOnce({
+        prescreening: { questions: [], faq: [] },
+      });
+
+      const req = mockReq({}, { id: 'v-1' });
+      const res = mockRes();
+
+      await controller.generateAIContent(req, res);
+
+      expect(mockGenerateFromVacancyData).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(Object),
+        expect.any(Object),
+        'CUIDADOR',
+      );
+    });
+
+    it('returns 500 when AI service throws', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [VACANCY_ROW] });
+      mockGenerateDescriptionPreview.mockRejectedValueOnce(new Error('GEMINI_API_KEY não configurado'));
+
+      const req = mockReq({}, { id: 'v-1' });
+      const res = mockRes();
+
+      await controller.generateAIContent(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: 'Failed to generate AI content',
+        }),
+      );
     });
   });
 });

@@ -6,6 +6,40 @@ import { parseScheduleString } from './vacancyScheduleUtils';
 // Zod Schema
 // ---------------------------------------------------------------------------
 
+/**
+ * Google Meet URL pattern (canonical, with scheme): https://meet.google.com/xxx-xxxx-xxx
+ * Same regex used by VacancyMeetLinksCard for the detail page.
+ */
+export const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
+
+/**
+ * Loose regex used while typing — accepts the link with or without the `https://`
+ * prefix and with optional `www.`, so users can paste raw `meet.google.com/...`.
+ * Always normalize to the canonical form via {@link normalizeMeetLink} before
+ * sending to the backend.
+ */
+export const MEET_LINK_REGEX_LOOSE = /^(?:https?:\/\/)?(?:www\.)?meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
+
+/**
+ * Normalize a user-provided Meet URL to the canonical
+ * `https://meet.google.com/xxx-xxxx-xxx` form. Returns the original (trimmed)
+ * input untouched when it does not match the loose pattern.
+ */
+export function normalizeMeetLink(input: string): string {
+  const trimmed = (input ?? '').trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})$/i);
+  if (!match) return trimmed;
+  return `https://meet.google.com/${match[1].toLowerCase()}`;
+}
+
+const meetLinkSlot = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v ? normalizeMeetLink(v) : v))
+  .refine((v) => !v || MEET_LINK_REGEX.test(v), { message: 'invalidMeetLink' });
+
 export const vacancyFormSchema = z
   .object({
     title: z.string().min(3),
@@ -24,10 +58,21 @@ export const vacancyFormSchema = z
     salary_text: z.string().optional(),
     payment_day: z.string().optional(),
     daily_obs: z.string().optional(),
+    /** ISO date `YYYY-MM-DD` from `<input type="date">`. Optional — backend
+     *  defaults to NOW() when null/empty. */
+    published_at: z.string().optional(),
+    /** ISO date `YYYY-MM-DD`. Optional — left blank by default. */
+    closes_at: z.string().optional(),
+    /** 3 fixed Meet link slots. At least one must be a valid Google Meet URL. */
+    meet_links: z.tuple([meetLinkSlot, meetLinkSlot, meetLinkSlot]),
   })
   .refine(
     (d) => !(d.age_range_min !== undefined && d.age_range_max !== undefined && d.age_range_max < d.age_range_min),
     { message: 'ageRangeInvalid', path: ['age_range_max'] },
+  )
+  .refine(
+    (d) => d.meet_links.some((l) => !!l && MEET_LINK_REGEX.test(l)),
+    { message: 'meetLinkRequired', path: ['meet_links'] },
   );
 
 export type VacancyFormData = z.infer<typeof vacancyFormSchema>;
@@ -46,9 +91,24 @@ export const STATUS_OPTIONS = [
   'CLOSED',
 ] as const;
 
-export const PROFESSION_OPTIONS = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
+/**
+ * Profession options exposed in the create-vacancy form. Operations only
+ * recruits ATs and Cuidadores via the form today (other professions like
+ * NURSE / KINESIOLOGIST / PSYCHOLOGIST stay valid in DB for legacy ClickUp
+ * imports but are not user-selectable here).
+ */
+export const PROFESSION_OPTIONS = ['AT', 'CAREGIVER'] as const;
 
 export const SEX_OPTIONS = ['M', 'F', 'BOTH'] as const;
+
+export const AGE_RANGE_OPTIONS = [
+  { label: 'Bebê', min: 0, max: 2 },
+  { label: 'Criança', min: 3, max: 11 },
+  { label: 'Adolescente', min: 12, max: 17 },
+  { label: 'Adulto Jovem', min: 18, max: 35 },
+  { label: 'Adulto', min: 36, max: 64 },
+  { label: 'Idoso', min: 65, max: 99 },
+] as const;
 
 export const DEVICE_OPTIONS = [
   'DOMICILIARIO', 'ESCOLAR', 'INSTITUCIONAL', 'COMUNITARIO',
@@ -128,12 +188,18 @@ export function buildScheduleFromVacancy(vacancy: any): ScheduleValue {
 // Build API payload from form data
 // ---------------------------------------------------------------------------
 
-export function buildVacancyPayload(data: VacancyFormData, caseNumber: number | null) {
+export function buildVacancyPayload(
+  data: VacancyFormData,
+  caseNumber: number | null,
+  patientId: string | null = null,
+  patientAddressId: string | null = null,
+) {
   const jsonb = scheduleToJsonb(data.schedule);
   return {
     case_number: caseNumber,
     title: data.title,
-    patient_id: null,
+    patient_id: patientId,
+    patient_address_id: patientAddressId,
     required_professions: data.required_professions,
     required_sex: data.required_sex || null,
     age_range_min: data.age_range_min ?? null,
@@ -147,12 +213,29 @@ export function buildVacancyPayload(data: VacancyFormData, caseNumber: number | 
     payment_day: data.payment_day || null,
     daily_obs: data.daily_obs || null,
     status: data.status,
+    // Backend coalesces null published_at to NOW(); empty string is treated as
+    // null too. closes_at stays null when blank.
+    published_at: data.published_at?.trim() ? data.published_at : null,
+    closes_at: data.closes_at?.trim() ? data.closes_at : null,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Default form values
 // ---------------------------------------------------------------------------
+
+/**
+ * Today as `YYYY-MM-DD` in the user's local timezone — what `<input type="date">`
+ * expects. We deliberately avoid `toISOString()` because it would shift to UTC
+ * and produce yesterday's date for users in negative-offset zones (AR is UTC-3).
+ */
+function todayIsoDate(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 export const DEFAULT_FORM_VALUES: VacancyFormData = {
   title: '',
@@ -169,4 +252,8 @@ export const DEFAULT_FORM_VALUES: VacancyFormData = {
   salary_text: '',
   payment_day: '',
   daily_obs: '',
+  // Publish defaults to today (operations rule: auto-fill, but editable). Closes blank.
+  published_at: todayIsoDate(),
+  closes_at: '',
+  meet_links: ['', '', ''],
 };

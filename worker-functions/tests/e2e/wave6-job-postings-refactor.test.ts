@@ -63,14 +63,15 @@ afterAll(async () => {
 // =================================================================
 
 describe('N4 Fase 1 — dependency_level em job_postings', () => {
-  // dependency_level foi removido em migration 080 mas re-adicionado em migration 107
-  // (campo necessário para formulário de vagas). Ambas as tabelas têm o campo.
-  it('job_postings tem coluna dependency_level (re-adicionada em migration 107)', async () => {
+  // dependency_level foi removido em migration 080, re-adicionado em migration 107,
+  // e definitivamente removido em migration 152 (Fase 9 do refactor de vagas).
+  // O campo agora vive SOMENTE em patients (via JOIN com patient_id).
+  it('job_postings NÃO tem coluna dependency_level (dropada em migration 152)', async () => {
     const result = await pool.query(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'job_postings' AND column_name = 'dependency_level'`
     );
-    expect(result.rows).toHaveLength(1);
+    expect(result.rows).toHaveLength(0);
   });
 
   it('patients manteve coluna dependency_level', async () => {
@@ -417,13 +418,13 @@ describe('Regression — schema limits and linters', () => {
     expect(result.rows).toHaveLength(0);
   });
 
-  // dependency_level foi re-adicionado em migration 107 para o formulário de vagas
-  it('campo dependency_level existe em job_postings (re-adicionado em migration 107)', async () => {
+  // dependency_level foi re-adicionado em migration 107 e dropado definitivamente em migration 152
+  it('campo dependency_level NÃO existe em job_postings (dropado em migration 152)', async () => {
     const result = await pool.query(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'job_postings' AND column_name = 'dependency_level'`
     );
-    expect(result.rows).toHaveLength(1);
+    expect(result.rows).toHaveLength(0);
   });
 
   it('job_postings_clickup_sync FK cascade funciona', async () => {

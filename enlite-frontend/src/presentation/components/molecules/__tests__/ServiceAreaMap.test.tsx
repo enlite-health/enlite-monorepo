@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { ServiceAreaMap } from '../ServiceAreaMap';
 
 vi.mock('react-i18next', () => ({
@@ -29,7 +29,7 @@ describe('ServiceAreaMap', () => {
     expect(screen.getByText('workerRegistration.serviceAddress.mapPlaceholder')).toBeTruthy();
   });
 
-  it('renders the map container when valid coordinates are given', () => {
+  it('renders the map container when valid coordinates are given', async () => {
     // Minimal google.maps stub
     const mockSetCenter = vi.fn();
     const mockMap = { setCenter: mockSetCenter };
@@ -47,12 +47,17 @@ describe('ServiceAreaMap', () => {
 
     render(<ServiceAreaMap lat={-34.6037} lng={-58.3816} />);
 
+    // Map container is rendered synchronously based on coords; init happens
+    // inside `loadGoogleMaps().then(...)` so we wait for the async wiring.
     const mapDiv = screen.getByTestId('service-area-map');
     expect(mapDiv).toBeTruthy();
-    expect(googleStub.maps.Map).toHaveBeenCalled();
-    expect(googleStub.maps.Marker).toHaveBeenCalledWith(
-      expect.objectContaining({ position: { lat: -34.6037, lng: -58.3816 } }),
-    );
+
+    await waitFor(() => {
+      expect(googleStub.maps.Map).toHaveBeenCalled();
+      expect(googleStub.maps.Marker).toHaveBeenCalledWith(
+        expect.objectContaining({ position: { lat: -34.6037, lng: -58.3816 } }),
+      );
+    });
 
     delete (globalThis as any).google;
   });
@@ -73,11 +78,14 @@ describe('ServiceAreaMap', () => {
     (globalThis as any).google = googleStub;
 
     const { rerender } = render(<ServiceAreaMap lat={-34.6037} lng={-58.3816} />);
+    await waitFor(() => expect(googleStub.maps.Map).toHaveBeenCalled());
 
     rerender(<ServiceAreaMap lat={-23.5505} lng={-46.6333} />);
 
-    expect(mockSetCenter).toHaveBeenLastCalledWith({ lat: -23.5505, lng: -46.6333 });
-    expect(mockSetPosition).toHaveBeenLastCalledWith({ lat: -23.5505, lng: -46.6333 });
+    await waitFor(() => {
+      expect(mockSetCenter).toHaveBeenLastCalledWith({ lat: -23.5505, lng: -46.6333 });
+      expect(mockSetPosition).toHaveBeenLastCalledWith({ lat: -23.5505, lng: -46.6333 });
+    });
 
     delete (globalThis as any).google;
   });

@@ -1,7 +1,13 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { PublishVacancyToTalentumUseCase, PublishError, SyncTalentumVacanciesUseCase, TalentumDescriptionService } from '@modules/integration';
+import {
+  PublishVacancyToTalentumUseCase,
+  PublishError,
+  SyncTalentumVacanciesUseCase,
+  TalentumDescriptionService,
+  GeminiVacancyParserService,
+} from '@modules/integration';
 
 /**
  * VacancyTalentumController
@@ -120,6 +126,105 @@ export class VacancyTalentumController {
       const label = isTalentumError ? 'Talentum communication' : 'sync';
       console.error(`[VacancyTalentum] Error in syncFromTalentum:`, error);
       res.status(status).json({ success: false, error: `Failed ${label}`, details: error.message });
+    }
+  }
+
+  /**
+   * POST /api/admin/vacancies/:id/generate-ai-content
+   *
+   * Generates Talentum description + prescreening questions + FAQ for the given
+   * vacancy using the existing AI services. Does NOT persist anything — the
+   * caller is responsible for saving via savePrescreeningConfig.
+   */
+  async generateAIContent(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // 1. Load vacancy + patient + address (read-only)
+      const result = await this.db.query(
+        `SELECT
+           jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
+           jp.age_range_min, jp.age_range_max, jp.required_experience, jp.worker_attributes,
+           jp.schedule, jp.work_schedule, jp.providers_needed, jp.salary_text,
+           jp.payment_day, jp.daily_obs,
+           pa.address_formatted, pa.city, pa.state,
+           p.diagnosis, p.dependency_level, p.service_type
+         FROM job_postings jp
+         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
+         LEFT JOIN patients p ON jp.patient_id = p.id
+         WHERE jp.id = $1`,
+        [id],
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Vacancy not found' });
+        return;
+      }
+
+      const row = result.rows[0];
+
+      const vacancyData = {
+        title: row.title,
+        case_number: row.case_number,
+        required_professions: row.required_professions,
+        required_sex: row.required_sex,
+        age_range_min: row.age_range_min,
+        age_range_max: row.age_range_max,
+        required_experience: row.required_experience,
+        worker_attributes: row.worker_attributes,
+        schedule: row.schedule,
+        work_schedule: row.work_schedule,
+        providers_needed: row.providers_needed,
+        salary_text: row.salary_text,
+        payment_day: row.payment_day,
+        daily_obs: row.daily_obs,
+      };
+
+      const patientData = {
+        diagnosis: row.diagnosis,
+        dependency_level: row.dependency_level,
+        service_type: row.service_type,
+      };
+
+      const addressData = {
+        address_formatted: row.address_formatted,
+        city: row.city,
+        state: row.state,
+      };
+
+      // 2. Generate description (without persisting)
+      const descService = new TalentumDescriptionService();
+      const descResult = await descService.generateDescriptionPreview(id);
+
+      // 3. Generate prescreening questions + FAQ
+      const geminiService = new GeminiVacancyParserService();
+      const professions: string[] = vacancyData.required_professions ?? [];
+      const workerType = professions.includes('CUIDADOR') ? 'CUIDADOR' : 'AT';
+      const prescreeningResult = await geminiService.generateFromVacancyData(
+        vacancyData,
+        patientData,
+        addressData,
+        workerType,
+      );
+
+      // 4. Return without persisting
+      res.status(200).json({
+        success: true,
+        data: {
+          description: descResult.description,
+          prescreening: {
+            questions: prescreeningResult.prescreening.questions,
+            faq: prescreeningResult.prescreening.faq,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('[VacancyTalentum] Error generating AI content:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to generate AI content',
+        details: error.message,
+      });
     }
   }
 

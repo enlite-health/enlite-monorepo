@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 
@@ -9,10 +10,10 @@ interface PatientGeneralInfoCardProps {
 
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
-    <p className="font-lexend text-sm leading-snug">
-      <span className="text-gray-800 font-medium">{label} </span>
-      <span className="text-gray-700">{value ?? '—'}</span>
-    </p>
+    <Text size="sm" className="leading-snug">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
+      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
+    </Text>
   );
 }
 
@@ -63,52 +64,24 @@ export function PatientGeneralInfoCard({ patient }: PatientGeneralInfoCardProps)
   return (
     <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.generalInfoCard.title')}
-        </Typography>
+        </Heading>
         <Button variant="outline" size="sm" disabled onClick={() => {}} className="w-28">
           {t('admin.patients.detail.edit')}
         </Button>
       </div>
 
       <div className="flex flex-col gap-2.5">
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.birthDate')}:`}
-          value={formatBirthDate(patient.birthDate)}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.age')}:`}
-          value={ageDisplay}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.ageBracket')}:`}
-          value={ageBracket}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.sex')}:`}
-          value={sexLabel}
-        />
-        {/* Fields without backend columns — TODO: add when columns available */}
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.gender')}:`}
-          value={null}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.sexualOrientation')}:`}
-          value={null}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.racialOrigin')}:`}
-          value={null}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.religion')}:`}
-          value={null}
-        />
-        <Field
-          label={`${t('admin.patients.detail.generalInfoCard.languages')}:`}
-          value={null}
-        />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.birthDate')}:`} value={formatBirthDate(patient.birthDate)} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.age')}:`} value={ageDisplay} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.ageBracket')}:`} value={ageBracket} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.sex')}:`} value={sexLabel} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.gender')}:`} value={null} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.sexualOrientation')}:`} value={null} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.racialOrigin')}:`} value={null} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.religion')}:`} value={null} />
+        <Field label={`${t('admin.patients.detail.generalInfoCard.languages')}:`} value={null} />
       </div>
     </div>
   );

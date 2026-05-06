@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { User } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail, PatientResponsibleDetail } from '@domain/entities/PatientDetail';
 
@@ -14,7 +15,6 @@ const STATUS_COLORS: Record<string, string> = {
   SUSPENDED: 'bg-orange-100 text-orange-700',
   DISCONTINUED: 'bg-red-100 text-red-700',
   DISCHARGED: 'bg-gray-100 text-gray-600',
-  // ClickUp legacy aliases
   EM_ADMISSAO: 'bg-yellow-100 text-yellow-700',
   EM_ATENDIMENTO: 'bg-green-100 text-green-700',
   PACIENTE_COM_ALTA: 'bg-gray-100 text-gray-600',
@@ -27,7 +27,6 @@ const STATUS_I18N_MAP: Record<string, string> = {
   SUSPENDED: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
   DISCONTINUED: 'admin.patients.detail.patientStatus.CANCELADO',
   DISCHARGED: 'admin.patients.detail.patientStatus.PACIENTE_COM_ALTA',
-  // ClickUp legacy aliases
   EM_ADMISSAO: 'admin.patients.detail.patientStatus.EM_ADMISSAO',
   EM_ATENDIMENTO: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
   PACIENTE_COM_ALTA: 'admin.patients.detail.patientStatus.PACIENTE_COM_ALTA',
@@ -36,10 +35,10 @@ const STATUS_I18N_MAP: Record<string, string> = {
 
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
-    <p className="font-lexend text-sm leading-snug">
-      <span className="text-gray-800 font-medium">{label} </span>
-      <span className="text-gray-700">{value ?? '—'}</span>
-    </p>
+    <Text size="sm" className="leading-snug">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
+      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
+    </Text>
   );
 }
 
@@ -73,9 +72,9 @@ function ResponsibleSection({ responsible, t }: { responsible: PatientResponsibl
 
   return (
     <div className="mt-3 flex flex-col gap-2">
-      <Typography variant="body" weight="semibold" className="text-gray-800">
+      <Text size="sm" weight="semibold" color="secondary">
         {t('admin.patients.detail.identityCard.emergencyContact')}
-      </Typography>
+      </Text>
       <Field label={`${t('admin.patients.detail.identityCard.responsibleName')}:`} value={name} />
       <Field label={`${t('admin.patients.detail.identityCard.responsiblePhone')}:`} value={responsible.phone} />
       <Field label={`${t('admin.patients.detail.identityCard.documentType')}:`} value={doc} />
@@ -98,29 +97,28 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
 
   return (
     <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
-      {/* Avatar + name */}
       <div className="flex items-center gap-4 mb-2">
         <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 shrink-0">
           <User className="w-8 h-8" />
         </div>
         <div className="min-w-0">
-          <Typography variant="h1" weight="semibold" as="h3" className="truncate">
+          <Heading level={1} as="h3" weight="semibold" color="primary" className="truncate">
             {fullName}
-          </Typography>
-          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 ${statusColor}`}>
-            {statusLabel}
+          </Heading>
+          <span className={`inline-flex px-2.5 py-0.5 rounded-full mt-1 ${statusColor}`}>
+            <Text as="span" size="xs" weight="medium" color="inherit">
+              {statusLabel}
+            </Text>
           </span>
         </div>
       </div>
 
-      {/* Edit button */}
       <div className="flex justify-end">
         <Button variant="outline" size="sm" disabled onClick={() => {}} className="w-28">
           {t('admin.patients.detail.edit')}
         </Button>
       </div>
 
-      {/* Contact fields */}
       <div className="flex flex-col gap-3">
         <Field label={`${t('admin.patients.detail.identityCard.responsiblePhone')}:`} value={patient.phoneWhatsapp} />
         <Field label={`${t('admin.patients.detail.identityCard.admission')}:`} value={formatDate(patient.createdAt)} />
@@ -131,7 +129,6 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
         )}
       </div>
 
-      {/* Primary responsible / emergency contact */}
       {primaryResponsible && (
         <div className="border-t border-gray-200 pt-4">
           <ResponsibleSection responsible={primaryResponsible} t={t} />

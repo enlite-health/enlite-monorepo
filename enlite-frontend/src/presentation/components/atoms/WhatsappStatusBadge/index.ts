@@ -1,0 +1,1 @@
+export { WhatsappStatusBadge } from './WhatsappStatusBadge';

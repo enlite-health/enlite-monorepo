@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
 
 interface WorkerStatusCardProps {
@@ -39,41 +40,43 @@ export function WorkerStatusCard({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      <Typography variant="h1" weight="semibold" as="h3" className="text-[#737373]">
+      <Heading level={1} as="h3" color="secondary">
         {t('admin.workerDetail.status')}
-      </Typography>
+      </Heading>
       <div className="flex flex-col gap-3">
         <div className="flex justify-between items-center">
-          <Typography variant="body" className="text-[#737373]">{t('admin.workerDetail.statusLabel')}</Typography>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${colorClass}`}>
-            {statusLabel}
+          <Text size="sm" color="secondary">{t('admin.workerDetail.statusLabel')}</Text>
+          <span className={`px-3 py-1 rounded-full ${colorClass}`}>
+            <Text as="span" size="sm" weight="medium" color="inherit">
+              {statusLabel}
+            </Text>
           </span>
         </div>
         <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">
+          <Text size="sm" color="secondary">
             {t('admin.workerDetail.platform')}
-          </Typography>
-          <Typography variant="body" weight="medium">{platformLabel}</Typography>
+          </Text>
+          <Text size="sm" weight="medium">{platformLabel}</Text>
         </div>
         {dataSources.length > 0 && (
           <div className="flex justify-between">
-            <Typography variant="body" className="text-[#737373]">
+            <Text size="sm" color="secondary">
               {t('admin.workerDetail.dataSources')}
-            </Typography>
-            <Typography variant="body" weight="medium">{dataSourceLabels.join(', ')}</Typography>
+            </Text>
+            <Text size="sm" weight="medium">{dataSourceLabels.join(', ')}</Text>
           </div>
         )}
         <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">
+          <Text size="sm" color="secondary">
             {t('admin.workerDetail.createdAt')}
-          </Typography>
-          <Typography variant="body" weight="medium">{created}</Typography>
+          </Text>
+          <Text size="sm" weight="medium">{created}</Text>
         </div>
         <div className="flex justify-between">
-          <Typography variant="body" className="text-[#737373]">
+          <Text size="sm" color="secondary">
             {t('admin.workerDetail.updatedAt')}
-          </Typography>
-          <Typography variant="body" weight="medium">{updated}</Typography>
+          </Text>
+          <Text size="sm" weight="medium">{updated}</Text>
         </div>
       </div>
     </div>

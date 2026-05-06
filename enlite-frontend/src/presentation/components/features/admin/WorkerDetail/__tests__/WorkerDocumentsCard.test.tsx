@@ -108,49 +108,49 @@ describe('WorkerDocumentsCard', () => {
 
   it('applies turquoise badge for approved status', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    const badge = screen.getByText('approved');
+    const badge = screen.getByText('approved').parentElement!;
     expect(badge.className).toContain('bg-turquoise/20');
     expect(badge.className).toContain('text-primary');
   });
 
   it('applies red badge for rejected status', () => {
     render(<WorkerDocumentsCard {...defaultHandlers} documents={{ ...fullDoc, documentsStatus: 'rejected' }} />);
-    const badge = screen.getByText('rejected');
+    const badge = screen.getByText('rejected').parentElement!;
     expect(badge.className).toContain('bg-cancelled/20');
     expect(badge.className).toContain('text-red-700');
   });
 
   it('applies yellow badge for under_review status', () => {
     render(<WorkerDocumentsCard {...defaultHandlers} documents={{ ...fullDoc, documentsStatus: 'under_review' }} />);
-    const badge = screen.getByText('under_review');
+    const badge = screen.getByText('under_review').parentElement!;
     expect(badge.className).toContain('bg-wait/20');
     expect(badge.className).toContain('text-yellow-700');
   });
 
   it('applies blue badge for submitted status', () => {
     render(<WorkerDocumentsCard {...defaultHandlers} documents={{ ...fullDoc, documentsStatus: 'submitted' }} />);
-    const badge = screen.getByText('submitted');
+    const badge = screen.getByText('submitted').parentElement!;
     expect(badge.className).toContain('bg-blue-100');
     expect(badge.className).toContain('text-blue-700');
   });
 
   it('applies gray badge for pending status', () => {
     render(<WorkerDocumentsCard {...defaultHandlers} documents={{ ...fullDoc, documentsStatus: 'pending' }} />);
-    const badge = screen.getByText('pending');
+    const badge = screen.getByText('pending').parentElement!;
     expect(badge.className).toContain('bg-gray-300');
     expect(badge.className).toContain('text-gray-800');
   });
 
   it('applies gray badge for incomplete status', () => {
     render(<WorkerDocumentsCard {...defaultHandlers} documents={{ ...fullDoc, documentsStatus: 'incomplete' }} />);
-    const badge = screen.getByText('incomplete');
+    const badge = screen.getByText('incomplete').parentElement!;
     expect(badge.className).toContain('bg-gray-300');
     expect(badge.className).toContain('text-gray-800');
   });
 
   it('applies gray fallback for unknown status', () => {
     render(<WorkerDocumentsCard {...defaultHandlers} documents={{ ...fullDoc, documentsStatus: 'some_unknown' }} />);
-    const badge = screen.getByText('some_unknown');
+    const badge = screen.getByText('some_unknown').parentElement!;
     expect(badge.className).toContain('bg-gray-300');
   });
 

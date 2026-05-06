@@ -49,6 +49,7 @@ const minimalFormData: VacancyFormData = {
   providers_needed: 1,
   schedule: [{ days: ['lun'], timeFrom: '08:00', timeTo: '16:00' }],
   status: 'SEARCHING',
+  meet_links: ['https://meet.google.com/abc-defg-hij', undefined, undefined],
 };
 
 // ---------------------------------------------------------------------------

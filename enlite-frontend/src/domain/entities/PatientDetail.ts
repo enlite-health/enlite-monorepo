@@ -17,10 +17,26 @@ export interface PatientResponsibleDetail {
   isPrimary: boolean;
 }
 
+export interface AddressAvailabilityPerDay {
+  dayOfWeek: number;
+  coveredHours: number;
+  availableRanges: Array<{ start: string; end: string }>;
+}
+
+export interface AddressAvailability {
+  totalCoveredHours: number;
+  maxHours: 168;
+  isFull: boolean;
+  perDay: AddressAvailabilityPerDay[];
+  activeVacanciesCount: number;
+  hasUnknownSchedule: boolean;
+}
+
 export interface PatientAddressDetail {
   id: string;
   street: string | null;
   number: string | null;
+  /** Address complement (Depto, Piso, andar). Migration 157. */
   complement: string | null;
   neighborhood: string | null;
   city: string | null;
@@ -28,6 +44,11 @@ export interface PatientAddressDetail {
   country: string | null;
   zipCode: string | null;
   fullAddress: string | null;
+  // Extended fields for vacancy creation form
+  lat?: number | null;
+  lng?: number | null;
+  isPrimary?: boolean;
+  availability?: AddressAvailability;
 }
 
 export interface PatientProfessionalDetail {
@@ -71,6 +92,7 @@ export interface PatientDetail {
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
+  lastCaseNumber?: number | null;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
 }

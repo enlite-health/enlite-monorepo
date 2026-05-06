@@ -45,6 +45,7 @@ const mockPatient: PatientDetailRow = {
   status: 'ACTIVE',
   needsAttention: false,
   attentionReasons: [],
+  lastCaseNumber: null,
   responsibles: [
     {
       id: 'r1',
@@ -66,7 +67,19 @@ const mockPatient: PatientDetailRow = {
       addressType: 'primary',
       addressFormatted: 'Av. Corrientes 1234',
       addressRaw: 'Av. Corrientes 1234, CABA',
+      complement: null,
       displayOrder: 1,
+      lat: null,
+      lng: null,
+      isPrimary: true,
+      availability: {
+        totalCoveredHours: 0,
+        maxHours: 168 as const,
+        isFull: false,
+        perDay: [],
+        activeVacanciesCount: 0,
+        hasUnknownSchedule: false,
+      },
     },
   ],
   professionals: [

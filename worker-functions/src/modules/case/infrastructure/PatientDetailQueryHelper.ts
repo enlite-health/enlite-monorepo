@@ -6,6 +6,11 @@ import type {
   PatientAddressDetail,
   PatientProfessionalDetail,
 } from './PatientQueryRepository';
+import {
+  computeAddressAvailability,
+  type AddressAvailability,
+  type ActiveVacancy,
+} from '../application/AddressAvailabilityCalculator';
 
 const PATIENT_DETAIL_SQL = `
   SELECT
@@ -38,10 +43,12 @@ const PATIENT_DETAIL_SQL = `
     status,
     needs_attention          AS "needsAttention",
     attention_reasons        AS "attentionReasons",
-    created_at               AS "createdAt",
-    updated_at               AS "updatedAt"
-  FROM patients
-  WHERE id = $1
+    (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
+                             AS "lastCaseNumber",
+    p.created_at               AS "createdAt",
+    p.updated_at               AS "updatedAt"
+  FROM patients p
+  WHERE p.id = $1
 `;
 
 async function fetchRelated(pool: Pool, patientId: string) {
@@ -57,7 +64,7 @@ async function fetchRelated(pool: Pool, patientId: string) {
       [patientId],
     ),
     pool.query(
-      `SELECT id, address_type, address_formatted, address_raw, display_order
+      `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng
          FROM patient_addresses
         WHERE patient_id = $1
         ORDER BY display_order ASC`,
@@ -68,6 +75,16 @@ async function fetchRelated(pool: Pool, patientId: string) {
          FROM patient_professionals
         WHERE patient_id = $1
         ORDER BY display_order ASC`,
+      [patientId],
+    ),
+    // Active vacancies for addresses of this patient (for availability computation)
+    pool.query(
+      `SELECT jp.id, jp.patient_address_id, jp.status, jp.schedule
+         FROM job_postings jp
+         JOIN patient_addresses pa ON jp.patient_address_id = pa.id
+        WHERE pa.patient_id = $1
+          AND jp.status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE','ACTIVE')
+          AND jp.deleted_at IS NULL`,
       [patientId],
     ),
   ]);
@@ -123,13 +140,18 @@ async function decryptProfessionals(
   );
 }
 
-function mapAddresses(rows: any[]): PatientAddressDetail[] {
+function mapAddresses(rows: any[], vacancyRows: ActiveVacancy[]): PatientAddressDetail[] {
   return rows.map((a) => ({
     id: a.id,
     addressType: a.address_type,
     addressFormatted: a.address_formatted,
     addressRaw: a.address_raw,
+    complement: a.complement ?? null,
     displayOrder: a.display_order,
+    lat: a.lat != null ? parseFloat(a.lat) : null,
+    lng: a.lng != null ? parseFloat(a.lng) : null,
+    isPrimary: a.address_type === 'primary',
+    availability: computeAddressAvailability(a.id, vacancyRows),
   }));
 }
 
@@ -147,14 +169,21 @@ export async function fetchPatientDetail(
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows] = await fetchRelated(pool, id);
+  const [responsibleRows, addressRows, professionalRows, vacancyRows] = await fetchRelated(pool, id);
+
+  const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
+    id: v.id,
+    patient_address_id: v.patient_address_id,
+    status: v.status,
+    schedule: v.schedule,
+  }));
 
   const [responsibles, professionals] = await Promise.all([
     decryptResponsibles(responsibleRows.rows, encryptionService),
     decryptProfessionals(professionalRows.rows, encryptionService),
   ]);
 
-  const addresses = mapAddresses(addressRows.rows);
+  const addresses = mapAddresses(addressRows.rows, vacancies);
 
   return {
     id: p.id,
@@ -186,6 +215,7 @@ export async function fetchPatientDetail(
     status: p.status,
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],
+    lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
     addresses,
     professionals,

@@ -28,13 +28,6 @@ jest.mock('../../../src/modules/matching/infrastructure/MatchmakingService', () 
   })),
 }));
 
-const mockParseFromPdf = jest.fn();
-jest.mock('@modules/integration', () => ({
-  GeminiVacancyParserService: jest.fn().mockImplementation(() => ({
-    parseFromPdf: mockParseFromPdf,
-  })),
-}));
-
 import { VacancyCrudController } from '../../../src/modules/matching/interfaces/controllers/VacancyCrudController';
 
 // Flush setImmediate callbacks from background matching
@@ -104,7 +97,7 @@ describe('VacancyCrudController', () => {
       expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*'',/);
     });
 
-    it('sends 18 parameters ($1 through $18, including patient_address_id)', async () => {
+    it('sends 21 parameters ($1 through $21, including patient_address_id, status, published_at, closes_at)', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ vn: '42' }] })
         .mockResolvedValueOnce({ rows: [VACANCY_ROW] });
@@ -114,7 +107,7 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req, res);
 
       const params = mockQuery.mock.calls[1][1] as any[];
-      expect(params).toHaveLength(18);
+      expect(params).toHaveLength(21);
     });
 
     it('maps all fields to correct parameter positions', async () => {
@@ -147,9 +140,10 @@ describe('VacancyCrudController', () => {
       expect(params[15]).toBe('Dia 20');                     // payment_day
       expect(params[16]).toBe('Nota interna');               // daily_obs
       expect(params[17]).toBeNull();                         // patient_address_id (not in FULL_BODY)
+      expect(params[18]).toBe('PENDING_ACTIVATION');         // status default
     });
 
-    it('hardcodes status=SEARCHING and country=AR in SQL', async () => {
+    it('passes status as $19 param (defaulting to PENDING_ACTIVATION) and hardcodes country=AR', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ vn: '42' }] })
         .mockResolvedValueOnce({ rows: [VACANCY_ROW] });
@@ -159,8 +153,13 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req, res);
 
       const sql = mockQuery.mock.calls[1][0] as string;
-      expect(sql).toContain("'SEARCHING'");
+      // status is now a param ($19), not hardcoded
+      expect(sql).toContain('$19');
       expect(sql).toContain("'AR'");
+
+      // When status not in body, defaults to PENDING_ACTIVATION
+      const params = mockQuery.mock.calls[1][1] as any[];
+      expect(params[18]).toBe('PENDING_ACTIVATION');
     });
 
     it('serializes schedule as JSON string', async () => {
@@ -269,8 +268,8 @@ describe('VacancyCrudController', () => {
       const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
-      // 18 param columns + description (literal '') + status (literal) + country (literal) = 21 total
-      expect(columns).toHaveLength(21);
+      // 21 param columns + description (literal '') + country (literal 'AR') = 23 total
+      expect(columns).toHaveLength(23);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {
@@ -452,118 +451,6 @@ describe('VacancyCrudController', () => {
         expect(res.status).toHaveBeenCalledWith(200);
         expect(mockQuery).toHaveBeenCalledTimes(1);
       });
-    });
-  });
-
-  // ── parseFromPdf ─────────────────────────────────────────────────
-
-  describe('parseFromPdf', () => {
-    const PARSED_RESULT = {
-      vacancy: { case_number: 42, title: 'CASO 42', status: 'SEARCHING' },
-      prescreening: { questions: [], faq: [] },
-      description: { titulo_propuesta: '', descripcion_propuesta: '', perfil_profesional: '' },
-    };
-
-    function mockReqWithFile(body: any = {}, file?: any): any {
-      return { body, file };
-    }
-
-    it('returns 400 when no file is provided', async () => {
-      const req = mockReqWithFile({ workerType: 'AT' });
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ success: false, error: 'PDF file is required' }),
-      );
-    });
-
-    it('returns 400 when workerType is missing', async () => {
-      const req = mockReqWithFile({}, { buffer: Buffer.from('pdf') });
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: 'workerType must be AT or CUIDADOR' }),
-      );
-    });
-
-    it('returns 400 when workerType is invalid', async () => {
-      const req = mockReqWithFile({ workerType: 'NURSE' }, { buffer: Buffer.from('pdf') });
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: 'workerType must be AT or CUIDADOR' }),
-      );
-    });
-
-    it('converts file buffer to base64 and calls service', async () => {
-      mockParseFromPdf.mockResolvedValueOnce(PARSED_RESULT);
-      const pdfBuffer = Buffer.from('fake-pdf-content');
-      const req = mockReqWithFile({ workerType: 'AT' }, { buffer: pdfBuffer });
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(mockParseFromPdf).toHaveBeenCalledWith(
-        pdfBuffer.toString('base64'),
-        'AT',
-      );
-    });
-
-    it('returns 200 with parsed result on success', async () => {
-      mockParseFromPdf.mockResolvedValueOnce(PARSED_RESULT);
-      const req = mockReqWithFile(
-        { workerType: 'CUIDADOR' },
-        { buffer: Buffer.from('pdf') },
-      );
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: PARSED_RESULT });
-    });
-
-    it('accepts workerType CUIDADOR', async () => {
-      mockParseFromPdf.mockResolvedValueOnce(PARSED_RESULT);
-      const req = mockReqWithFile(
-        { workerType: 'CUIDADOR' },
-        { buffer: Buffer.from('pdf') },
-      );
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(mockParseFromPdf).toHaveBeenCalledWith(expect.any(String), 'CUIDADOR');
-      expect(res.status).toHaveBeenCalledWith(200);
-    });
-
-    it('returns 500 when service throws', async () => {
-      mockParseFromPdf.mockRejectedValueOnce(new Error('Gemini API error 429'));
-      const req = mockReqWithFile(
-        { workerType: 'AT' },
-        { buffer: Buffer.from('pdf') },
-      );
-      const res = mockRes();
-
-      await controller.parseFromPdf(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: 'Failed to parse vacancy PDF',
-          details: 'Gemini API error 429',
-        }),
-      );
     });
   });
 

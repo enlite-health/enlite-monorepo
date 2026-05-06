@@ -1,5 +1,5 @@
 import { useRef, ChangeEvent } from 'react';
-import { Typography } from '@presentation/components/atoms';
+import { Text } from '@presentation/components/atoms';
 
 interface DocumentUploadCardProps {
   label: string;
@@ -82,14 +82,15 @@ export function DocumentUploadCard({
 
       <FileIcon uploaded={isUploaded} />
 
-      <Typography
-        variant="label"
+      <Text
+        as="p"
+        size="base"
         weight="medium"
         color={isUploaded ? 'primary' : 'secondary'}
         className={`text-center ${!isUploaded ? 'opacity-50' : ''}`}
       >
         {label}
-      </Typography>
+      </Text>
 
       <input
         ref={inputRef}

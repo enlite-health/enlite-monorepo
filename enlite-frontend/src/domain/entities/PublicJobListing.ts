@@ -11,6 +11,7 @@ export interface PublicJobListing {
   pathologies: string | null;
   provincia: string | null;
   localidad: string | null;
+  neighborhood: string | null;
   detail_link: string;
 }
 

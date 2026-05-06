@@ -1,8 +1,13 @@
 /**
  * enrich-vacancies-helpers.ts
  *
- * Validators, DB helpers, retry logic, and text builders for
- * enrich-vacancies-with-gemini.ts. Extracted to keep that script ≤400 lines.
+ * Validators, DB helpers, retry logic, and text builders for vacancy enrichment.
+ *
+ * The original CLI consumer (enrich-vacancies-with-gemini.ts) was removed in
+ * 2026-05-01 — see docs/FOLLOWUPS.md TD-002. These helpers stay because their
+ * E2E invariants (idempotency, fill-only, guard against invalid output) are
+ * exercised by tests/e2e/phase3-enrichment-invariants.e2e.test.ts and
+ * document the contract any future enrichment path must honor.
  *
  * Pure validator functions have no side-effects — safe to unit test in isolation.
  * DB helpers and the Gemini retry wrapper require real dependencies.
@@ -28,7 +33,7 @@ export interface JobPostingRow {
   worker_profile_sought: string | null;
   schedule_days_hours: string | null;
   daily_obs: string | null;
-  service_address_raw: string | null;
+  // service_address_raw dropped in migration 152 (lives in patient_addresses via patient_address_id FK)
   required_professions: string[] | null;
   schedule: unknown | null;
   required_sex: string | null;
@@ -36,9 +41,9 @@ export interface JobPostingRow {
   age_range_max: number | null;
   required_experience: string | null;
   worker_attributes: string | null;
-  pathology_types: string | null;
-  dependency_level: string | null;
-  service_device_types: string[] | null;
+  // pathology_types dropped in migration 152 — use patients.diagnosis via patient_id FK
+  // dependency_level dropped in migration 152 — use patients.dependency_level via patient_id FK
+  // service_device_types dropped in migration 152 — use patients.service_type via patient_id FK
   salary_text: string | null;
   payment_day: string | null;
   enriched_at: string | null;
@@ -60,9 +65,8 @@ export interface EnrichmentPatch {
   age_range_max: number | null;
   required_experience: string | null;
   worker_attributes: string | null;
-  pathology_types: string | null;
-  dependency_level: string | null;
-  service_device_types: string[];
+  // pathology_types, dependency_level, service_device_types dropped in migration 152
+  // Clinical data now lives in patients table — enrichment script no longer writes these.
   salary_text: string | null;
   payment_day: string | null;
 }
@@ -209,14 +213,14 @@ export function validateProfessions(
  */
 export function buildInputText(row: Pick<
   JobPostingRow,
-  'title' | 'worker_profile_sought' | 'schedule_days_hours' | 'daily_obs' | 'service_address_raw'
+  'title' | 'worker_profile_sought' | 'schedule_days_hours' | 'daily_obs'
 >): string {
   const parts: string[] = [];
   if (row.title)                  parts.push(`Título: ${row.title}`);
   if (row.worker_profile_sought)  parts.push(`Perfil buscado: ${row.worker_profile_sought}`);
   if (row.schedule_days_hours)    parts.push(`Horários: ${row.schedule_days_hours}`);
   if (row.daily_obs)              parts.push(`Observações: ${row.daily_obs}`);
-  if (row.service_address_raw)    parts.push(`Endereço: ${row.service_address_raw}`);
+  // service_address_raw dropped in migration 152 — address lives in patient_addresses
   return parts.join('\n');
 }
 
@@ -248,6 +252,8 @@ export function sleep(ms: number): Promise<void> {
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
+// pathology_types, dependency_level, service_device_types dropped in migration 152.
+// Clinical data (diagnosis, dependency_level, service_type) now lives in patients table.
 const UPDATE_PARAMS = (id: string, patch: EnrichmentPatch) => [
   patch.schedule !== null ? JSON.stringify(patch.schedule) : null,
   patch.required_professions,
@@ -256,9 +262,6 @@ const UPDATE_PARAMS = (id: string, patch: EnrichmentPatch) => [
   patch.age_range_max,
   patch.required_experience,
   patch.worker_attributes,
-  patch.pathology_types,
-  patch.dependency_level,
-  patch.service_device_types,
   patch.salary_text,
   patch.payment_day,
   id,
@@ -281,16 +284,11 @@ export async function applyEnrichment(
       age_range_max       = COALESCE(age_range_max, $5),
       required_experience = COALESCE(required_experience, $6),
       worker_attributes   = COALESCE(worker_attributes, $7),
-      pathology_types     = COALESCE(pathology_types, $8),
-      dependency_level    = COALESCE(dependency_level, $9),
-      service_device_types = CASE
-        WHEN service_device_types IS NULL OR service_device_types = '{}'
-        THEN $10 ELSE service_device_types END,
-      salary_text         = COALESCE(salary_text, $11),
-      payment_day         = COALESCE(payment_day, $12),
+      salary_text         = COALESCE(salary_text, $8),
+      payment_day         = COALESCE(payment_day, $9),
       enriched_at         = NOW(),
       updated_at          = NOW()
-    WHERE id = $13`,
+    WHERE id = $10`,
     UPDATE_PARAMS(id, patch),
   );
 }
@@ -308,14 +306,11 @@ export async function applyEnrichmentForce(
       age_range_max        = $5,
       required_experience  = $6,
       worker_attributes    = $7,
-      pathology_types      = $8,
-      dependency_level     = $9,
-      service_device_types = $10,
-      salary_text          = $11,
-      payment_day          = $12,
+      salary_text          = $8,
+      payment_day          = $9,
       enriched_at          = NOW(),
       updated_at           = NOW()
-    WHERE id = $13`,
+    WHERE id = $10`,
     UPDATE_PARAMS(id, patch),
   );
 }

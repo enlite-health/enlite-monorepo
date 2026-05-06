@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { ExternalLink } from 'lucide-react';
 import {
   getProfessionLabel,
@@ -26,8 +27,8 @@ interface WorkerProfessionalCardProps {
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="flex justify-between">
-      <Typography variant="body" className="text-[#737373]">{label}</Typography>
-      <Typography variant="body" weight="medium">{value ?? '—'}</Typography>
+      <Text size="sm" color="secondary">{label}</Text>
+      <Text size="sm" weight="medium">{value ?? '—'}</Text>
     </div>
   );
 }
@@ -35,16 +36,16 @@ function Field({ label, value }: { label: string; value: string | null }) {
 function ArrayField({ label, values }: { label: string; values: string[] }) {
   return (
     <div className="flex justify-between items-start">
-      <Typography variant="body" className="text-[#737373] shrink-0">{label}</Typography>
+      <Text size="sm" color="secondary" className="shrink-0">{label}</Text>
       <div className="flex flex-wrap justify-end gap-1 ml-4">
         {values.length > 0 ? (
           values.map((v) => (
-            <span key={v} className="px-2 py-0.5 rounded-full bg-slate-100 text-xs text-slate-600">
-              {v}
+            <span key={v} className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              <Text as="span" size="xs" color="inherit">{v}</Text>
             </span>
           ))
         ) : (
-          <Typography variant="body" weight="medium">—</Typography>
+          <Text size="sm" weight="medium">—</Text>
         )}
       </div>
     </div>
@@ -67,9 +68,9 @@ export function WorkerProfessionalCard({
 
   return (
     <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
-      <Typography variant="h1" weight="semibold" as="h3" className="text-[#737373]">
+      <Heading level={1} as="h3" color="secondary">
         {t('admin.workerDetail.professionalData')}
-      </Typography>
+      </Heading>
       <div className="flex flex-col gap-3">
         <Field label={t('admin.workerDetail.profession')} value={getProfessionLabel(t, profession)} />
         <Field label={t('admin.workerDetail.occupation')} value={occupation} />
@@ -82,14 +83,15 @@ export function WorkerProfessionalCard({
         <ArrayField label={t('admin.workerDetail.languages')} values={languages.map(v => getLanguageLabel(t, v))} />
         {linkedinUrl && (
           <div className="flex justify-between items-center">
-            <Typography variant="body" className="text-[#737373]">{t('admin.workerDetail.linkedin')}</Typography>
+            <Text size="sm" color="secondary">{t('admin.workerDetail.linkedin')}</Text>
             <a
               href={linkedinUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-blue-600 hover:underline text-sm"
+              className="flex items-center gap-1 text-blue-600 hover:underline"
             >
-              {t('admin.workerDetail.viewProfile')} <ExternalLink className="w-3 h-3" />
+              <Text as="span" size="sm" color="inherit">{t('admin.workerDetail.viewProfile')}</Text>
+              <ExternalLink className="w-3 h-3" />
             </a>
           </div>
         )}

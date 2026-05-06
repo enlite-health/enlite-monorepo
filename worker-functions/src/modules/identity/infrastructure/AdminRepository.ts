@@ -106,4 +106,32 @@ export class AdminRepository {
       [firebaseUid]
     );
   }
+
+  async findByEmail(email: string): Promise<AdminRecord | null> {
+    const result = await this.pool.query(
+      `SELECT
+        u.firebase_uid      AS "firebaseUid",
+        u.email,
+        u.display_name      AS "displayName",
+        u.role,
+        u.department,
+        u.last_login_at     AS "lastLoginAt",
+        COALESCE(u.login_count, 0) AS "loginCount",
+        u.created_at        AS "createdAt"
+      FROM users u
+      WHERE u.email = $1
+        AND u.role IN ('admin', 'recruiter', 'community_manager')
+        AND u.is_active = true`,
+      [email]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async reassignFirebaseUid(email: string, newFirebaseUid: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE users SET firebase_uid = $1, updated_at = NOW()
+       WHERE email = $2 AND firebase_uid <> $1`,
+      [newFirebaseUid, email]
+    );
+  }
 }

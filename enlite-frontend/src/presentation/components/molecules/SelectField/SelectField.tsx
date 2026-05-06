@@ -1,5 +1,6 @@
 import { SelectHTMLAttributes, forwardRef, type ChangeEvent } from 'react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { ChevronDown } from 'lucide-react';
+import { Text as BodyText } from '@presentation/components/atoms/Text';
 
 export interface SelectOption {
   value: string;
@@ -38,12 +39,12 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
     return (
       <div className="flex flex-col gap-1 w-full">
         <div
-          className={`flex items-center h-12 px-4 rounded-[10px] border-[1.5px] border-solid ${borderClass} bg-white focus-within:border-primary transition-colors ${className}`}
+          className={`flex items-center h-[60px] px-5 rounded-[10px] border-2 border-solid ${borderClass} bg-white focus-within:border-[#180149] transition-colors ${className}`}
         >
           <div className="flex justify-between w-full items-center relative">
             <select
               ref={ref}
-              className="w-full font-lexend font-medium text-[#374151] text-sm leading-[150%] bg-transparent outline-none appearance-none pr-8 cursor-pointer relative z-10"
+              className="w-full font-['Lexend'] font-medium text-[20px] leading-[1.3] text-[#737373] bg-transparent outline-none appearance-none pr-8 cursor-pointer relative z-10"
               onChange={handleChange}
               {...props}
             >
@@ -54,14 +55,10 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
                 </option>
               ))}
             </select>
-            <img
-              className="absolute right-0 w-3 h-[7px] pointer-events-none z-0"
-              alt="Dropdown"
-              src="https://c.animaapp.com/Bbli6X7n/img/vector-9.svg"
-            />
+            <ChevronDown size={20} className="absolute right-0 text-[#737373] pointer-events-none z-0" />
           </div>
         </div>
-        {error && <Typography variant="caption" className="text-red-500">{error}</Typography>}
+        {error && <BodyText size="xs" color="inherit" className="text-red-500">{error}</BodyText>}
       </div>
     );
   }

@@ -54,6 +54,29 @@ export interface LLMMatchScore {
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
+/**
+ * Default radius (km) when caller doesn't specify one.
+ * AT típico em Buenos Aires faz até ~30km de deslocamento — fora disso vira
+ * problema operacional. Decisão de produto, NÃO de algoritmo.
+ */
+export const DEFAULT_RADIUS_KM = 30;
+
+export interface MatchOptions {
+  /** How many candidates to keep after the hard filter. Default 20. */
+  topN?: number;
+  /** Distance cap in kilometers. Default `DEFAULT_RADIUS_KM`. */
+  radiusKm?: number;
+  /** Skip workers already assigned to an active (uncovered) case. */
+  excludeWithActiveCases?: boolean;
+  /**
+   * Run the structured scoring (Fase 2) and LLM scoring (Fase 3) after the
+   * hard filter. Default `false` — operations doesn't have enough history
+   * yet for the score signals (rejections, quality rating, diagnostic
+   * preferences) to be reliable. Flip to `true` once the data matures.
+   */
+  useScoring?: boolean;
+}
+
 export interface ScoredCandidate {
   workerId: string;
   workerName: string;

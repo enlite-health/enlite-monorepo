@@ -782,6 +782,7 @@
       "patientCard": {
         "title": "Paciente",
         "name": "Nombre",
+        "nameLabel": "Nombre del paciente:",
         "diagnosis": "Diagnóstico",
         "dependencyLevel": "Nivel de dependencia",
         "zone": "Zona / Barrio",
@@ -867,6 +868,46 @@
         "talentum": "Talentum",
         "links": "Links"
       },
+      "funnelView": {
+        "viewToggle": {
+          "label": "Cambiar vista",
+          "list": "Lista",
+          "kanban": "Kanban"
+        },
+        "dispatchInvitesButton": "Enviar invitaciones",
+        "kanban": {
+          "totalEncuadres": "encuadres totales",
+          "refresh": "Actualizar"
+        }
+      },
+      "funnelTabs": {
+        "ariaLabel": "Filtros del embudo",
+        "invited": "Invitados",
+        "postulated": "Postulados",
+        "preSelected": "Pre Seleccionados",
+        "rejected": "Rechazados",
+        "withdrew": "Desistentes"
+      },
+      "funnelTable": {
+        "headers": {
+          "name": "NOMBRE",
+          "phone": "TELÉFONO",
+          "inviteDate": "DATA DO CONVITE",
+          "whatsapp": "WHATSAPP",
+          "accepted": "ACEITO"
+        },
+        "acceptedYes": "Sí",
+        "acceptedNo": "No",
+        "emptyState": "Sin candidatos en esta etapa todavía."
+      },
+      "whatsappStatus": {
+        "notSent": "No enviado",
+        "sent": "Enviado",
+        "delivered": "Entregado",
+        "read": "Leído",
+        "replied": "Respondido",
+        "failed": "Fallido"
+      },
       "publications": {
         "title": "Publicaciones",
         "noPublications": "Ninguna publicación registrada.",
@@ -883,6 +924,7 @@
         "title": "Título",
         "status": "Estado",
         "selectPlaceholder": "Seleccionar...",
+        "hintSelectCase": "Seleccioná un caso primero para habilitar los campos del paciente.",
         "sectionCaseInfo": "Información del Caso",
         "sectionProfessionalProfile": "Perfil Profesional Buscado",
         "sectionLocationSchedule": "Ubicación y Horarios",
@@ -915,7 +957,8 @@
           "CAREGIVER": "Cuidador/a",
           "NURSE": "Enfermero/a",
           "KINESIOLOGIST": "Kinesiólogo/a",
-          "PSYCHOLOGIST": "Psicólogo/a"
+          "PSYCHOLOGIST": "Psicólogo/a",
+          "AT_AND_CAREGIVER": "AT y Cuidador"
         },
         "sexOptions": {
           "unspecified": "Indistinto",
@@ -983,6 +1026,7 @@
           "scheduleDaysRequired": "Seleccioná al menos un día",
           "scheduleTimeRequired": "Completá el horario de inicio y fin",
           "providersMin": "Debe haber al menos 1 prestador",
+          "meetLinkRequired": "Necesitás al menos un link de Google Meet válido",
           "requiredProfessionsMin": "Seleccioná al menos un tipo de prestador",
           "stateRequired": "La provincia es obligatoria",
           "cityMin": "La localidad debe tener al menos 2 caracteres",
@@ -1051,10 +1095,122 @@
         "unpublishError": "Error al despublicar de Talentum",
         "generateError": "Error al generar descripción",
         "noDescription": "Sin descripción generada aún. Hacé clic en \"Regenerar\" para crear una."
+      },
+      "statusBadge": {
+        "BUSQUEDA": "En búsqueda",
+        "ACTIVO": "Activo",
+        "REEMPLAZOS": "Reemplazo",
+        "CERRADO": "Cerrado",
+        "ADMISSION": "Admisión"
+      },
+      "caseCard": {
+        "caseLabel": "CASO",
+        "paymentTerm": "Plazo de pago",
+        "details": "Detalles",
+        "netHourlyRate": "Valor neto/hora:",
+        "weeklyHours": "Horas semanales:",
+        "providersNeeded": "Cantidad de Profesionales:",
+        "dates": "Fechas",
+        "publishedAt": "Fecha de publicación:",
+        "closedAt": "Fecha de cierre:"
+      },
+      "patientCard": {
+        "title": "Paciente",
+        "nameLabel": "Nombre del paciente:"
+      },
+      "professionCard": {
+        "title": "Acompañantes Terapéuticos",
+        "titleCaregiver": "Cuidadores",
+        "availableFor": "Disponible para:",
+        "diagnosis": "Hipótesis Diagnóstica - CID:",
+        "description": "Descripción del trabajo:",
+        "characteristics": "Características:",
+        "ageRange": "Faixa Etária:",
+        "location": "Localización:",
+        "profile": "Perfil:",
+        "serviceType": "Tipo de servicio:",
+        "daysAndHours": "Días y Horarios:",
+        "edit": "Editar",
+        "weekdays": {
+          "sunday": "Domingo:",
+          "monday": "Lunes:",
+          "tuesday": "Martes:",
+          "wednesday": "Miércoles:",
+          "thursday": "Jueves:",
+          "friday": "Viernes:",
+          "saturday": "Sábado:"
+        }
+      },
+      "meetLinksRow": {
+        "title": "Fechas para entrevista:"
+      }
+    },
+    "vacancyModal": {
+      "createTitle": "Vacantes",
+      "editTitle": "Vacantes",
+      "close": "Cerrar",
+      "cancel": "Cancelar",
+      "save": "Guardar",
+      "saving": "Guardando...",
+      "back": "Anterior",
+      "next": "Siguiente",
+      "stepCaseSelect": "Selección de Caso",
+      "stepVacancyForm": "Datos de la Vacante",
+      "hintSelectCase": "Seleccioná un caso primero para habilitar los campos del paciente.",
+      "patientName": "Nombre del paciente",
+      "professionalType": "Tipo de profesional",
+      "caseNumber": "Número de caso",
+      "dependencyLevel": "Grado de dependencia",
+      "workerProfile": "Perfil",
+      "availableFor": "Disponible para",
+      "diagnosticHypothesis": "Hipótesis Diagnóstica - CID",
+      "ageRange": "Faja etaria",
+      "jobDescription": "Descripción del trabajo",
+      "interviewDates": "Fechas para entrevistas de enquadre",
+      "interviewDatesPlaceholder": "Próximamente",
+      "meetLinksLabel": "Links de Google Meet (al menos uno)",
+      "meetLinkPlaceholder": "https://meet.google.com/xxx-xxxx-xxx",
+      "meetLinkNotFound": "No encontramos este meet en tu calendario.",
+      "meetLinkInvalid": "Formato inválido. Usá meet.google.com/xxx-xxxx-xxx",
+      "validationBanner": {
+        "title": "Faltan datos para crear la vacante:"
+      },
+      "publishDate": "Fecha de publicación",
+      "closingDate": "Fecha de encerramento",
+      "status": "Estado",
+      "serviceType": "Tipo de servicio",
+      "location": "Localización",
+      "serviceAddress": "Dirección donde se presta el servicio",
+      "addressComplement": "Complemento de dirección",
+      "mapPlaceholder": "Mapa (próximamente)",
+      "paymentDeadline": "Plazo de pago",
+      "weeklyHours": "Horas semanales",
+      "netHourlyRate": "Valor neto/hora",
+      "providersNeeded": "Cantidad de profesionales",
+      "schedule": "Horario de los atendimientos",
+      "scheduleSlotsLabel": "Horarios",
+      "scheduleSlotsCount": "Horarios ({{count}})",
+      "scheduleRemoveSlot": "Quitar horario",
+      "scheduleDayFull": "El día ya está completo",
+      "professionalTypePlaceholder": "Seleccionar...",
+      "sexPlaceholder": "Seleccionar...",
+      "ageRangePlaceholder": "Seleccionar...",
+      "statusPlaceholder": "Seleccionar...",
+      "serviceTypePlaceholder": "Seleccionar...",
+      "caseSelectStep": {
+        "caseLabel": "Caso",
+        "casePlaceholder": "Seleccioná un caso...",
+        "caseOptionLabel": "CASO {{caseNumber}}",
+        "loadingCases": "Cargando casos...",
+        "loadingPatient": "Cargando datos del paciente...",
+        "dependencyLevelLabel": "Gravedad",
+        "selectAddressLabel": "Domicilio del servicio",
+        "noAddresses": "No hay domicilios registrados para este paciente."
       }
     },
     "createVacancy": {
       "pageTitle": "Nueva Vacante",
+      "pageSubtitle": "Completá los pasos para publicar la nueva vacante en Talentum",
       "step0Label": "Datos del Caso",
       "step1Label": "Domicilio",
       "step2Label": "Conflictos",
@@ -1133,6 +1289,113 @@
         "weight": "Peso",
         "desiredResponse": "Respuesta esperada",
         "loadingDescription": "Generando descripción..."
+      }
+    },
+    "talentumConfig": {
+      "pageTitle": "Configurar publicación",
+      "pageSubtitle": "Revisá el contenido antes de publicar en Talentum",
+      "publishButton": "Publicar en Talentum",
+      "publishing": "Publicando...",
+      "generatingAI": "Generando contenido con IA...",
+      "retryGenerate": "Reintentar",
+      "aiSectionTitle": "Contenido generado por IA",
+      "prescreeningSectionTitle": "Preguntas para los candidatos",
+      "socialSectionTitle": "Links sociales",
+      "summaryCard": {
+        "noTitle": "Sin título asignado",
+        "patientLabel": "Paciente",
+        "noPatient": "Sin paciente asignado",
+        "publishedLabel": "Publicado",
+        "closedLabel": "Cerrado"
+      },
+      "generateAI": {
+        "generate": "Generar contenido con IA",
+        "regenerate": "Re-generar con IA",
+        "generating": "Generando..."
+      },
+      "descriptionEditor": {
+        "label": "Descripción del trabajo (generada por IA)",
+        "placeholder": "Hacé clic en 'Generar con IA' para crear la descripción",
+        "helper": "Podés editar libremente el texto generado"
+      }
+    },
+    "createVacancyV2": {
+      "pageTitle": "Nueva Vacante",
+      "pageSubtitle": "Completá los datos para crear la vacante",
+      "saveButton": "Continuar",
+      "saving": "Guardando...",
+      "generatingAI": "Generando contenido con IA...",
+      "steps": {
+        "vacancyData": "Datos de la vacante",
+        "talentumConfig": "Configuración Talentum",
+        "vacancyDetail": "Detalle y postulantes"
+      },
+      "admissionWarning": {
+        "title": "Paciente en admisión",
+        "message": "Este paciente está en proceso de admisión. La vacante puede crearse pero revisá antes de publicar en Talentum."
+      },
+      "patientSearch": {
+        "placeholder": "Buscar paciente por nombre o documento...",
+        "ariaLabel": "Buscar paciente",
+        "admissionBadge": "Admisión",
+        "addressCount": "{{count}} domicilio(s)"
+      },
+      "addressSelector": {
+        "noAddresses": "El paciente no tiene domicilios registrados.",
+        "createNew": "Crear nuevo domicilio",
+        "selectPlaceholder": "Seleccioná un domicilio",
+        "badgeFull": "Sin disponibilidad",
+        "badgePartial": "Horarios parciales",
+        "badgeHours": "{{hours}} hs/sem disponibles"
+      },
+      "interviewSlots": {
+        "addButton": "Agregar horarios de entrevista",
+        "removeSlot": "Quitar horario",
+        "modalTitle": "Seleccioná un día y horario para la entrevista",
+        "selectDate": "Seleccioná un día para la entrevista",
+        "selectTime": "¿Cuál es el mejor horario?",
+        "pickDateFirst": "Primero seleccioná un día",
+        "selectDay": "Seleccionar día {{day}}",
+        "slotsHeader": "Entrevistas de 60 min",
+        "save": "Guardar",
+        "close": "Cerrar"
+      },
+      "createAddressDialog": {
+        "title": "Crear nuevo domicilio",
+        "addressFormatted": "Dirección formateada",
+        "addressFormattedRequired": "La dirección formateada es obligatoria",
+        "addressRaw": "Dirección informada (texto libre)",
+        "addressType": "Tipo de domicilio",
+        "addressTypePrimary": "Principal",
+        "addressTypeSecondary": "Secundario",
+        "addressTypeService": "Servicio",
+        "save": "Guardar",
+        "cancel": "Cancelar"
+      },
+      "form": {
+        "patientLabel": "Paciente",
+        "diagnosisLabel": "Diagnóstico",
+        "dependencyLabel": "Nivel de dependencia",
+        "locationLabel": "Ciudad / Provincia",
+        "professionsLabel": "Perfil profesional requerido",
+        "sexLabel": "Sexo requerido",
+        "sexPlaceholder": "Sin preferencia",
+        "providersNeededLabel": "Cantidad de prestadores",
+        "experienceLabel": "Experiencia requerida",
+        "experiencePlaceholder": "Ej: 2 años de experiencia con autismo",
+        "attributesLabel": "Atributos del prestador",
+        "attributesPlaceholder": "Ej: paciente, con manejo de conducta",
+        "statusLabel": "Estado de la vacante",
+        "statusPlaceholder": "Seleccioná un estado",
+        "addressLabel": "Domicilio de atención",
+        "scheduleLabel": "Días y horarios",
+        "salaryLabel": "Honorarios",
+        "salaryPlaceholder": "A convenir",
+        "paymentDayLabel": "Día de cobro",
+        "paymentDayPlaceholder": "Ej: 10 de cada mes",
+        "dailyObsLabel": "Observaciones",
+        "dailyObsPlaceholder": "Notas adicionales para el prestador",
+        "interviewSlotsLabel": "Horarios disponibles para entrevista"
       }
     },
     "workers": {

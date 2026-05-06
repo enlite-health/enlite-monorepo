@@ -15,6 +15,19 @@ const DATABASE_URL =
 
 const SEEDS_DIR = path.join(__dirname, '..', 'seeds');
 
+async function waitForDB(pool, attempts = 30, delayMs = 1000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      console.log(`⏳ DB not ready (attempt ${i}/${attempts}) — ${err.code || err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function run() {
   if (!fs.existsSync(SEEDS_DIR)) {
     console.log('No seeds directory found — skipping.');
@@ -34,6 +47,8 @@ async function run() {
   const pool = new Pool({ connectionString: DATABASE_URL });
 
   try {
+    await waitForDB(pool);
+
     for (const file of files) {
       const sql = fs.readFileSync(path.join(SEEDS_DIR, file), 'utf8');
       const client = await pool.connect();
@@ -43,7 +58,7 @@ async function run() {
         await client.query('COMMIT');
         console.log(`🌱 Seeded: ${file}`);
       } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.warn(`⚠️  Skipped: ${file} — ${err.message}`);
       } finally {
         client.release();

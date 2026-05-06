@@ -2,6 +2,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { PatientIdentityRepository, PatientIdentityUpsertInput } from '../infrastructure/PatientIdentityRepository';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
+import { geocodePatientAddressesBestEffort } from '../infrastructure/geocodePatientAddresses';
+import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import {
   PatientResponsibleInput,
   validateContactChannel,
@@ -67,11 +69,15 @@ export class PatientService {
   private identityRepo: PatientIdentityRepository;
   private clinicalRepo: PatientClinicalRepository;
   private responsibleRepo: PatientResponsibleRepository;
+  private geocoder: GeocodingService;
 
-  constructor() {
+  constructor(geocoder?: GeocodingService) {
     this.identityRepo   = new PatientIdentityRepository();
     this.clinicalRepo   = new PatientClinicalRepository();
     this.responsibleRepo = new PatientResponsibleRepository();
+    // Injected for tests; defaults to a real instance that no-ops when
+    // GOOGLE_MAPS_API_KEY is missing (see GeocodingService.geocode).
+    this.geocoder = geocoder ?? new GeocodingService();
   }
 
   /**
@@ -184,9 +190,17 @@ export class PatientService {
     const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
     if (valid.length === 0) return;
 
+    // Best-effort geocoding — never blocks the upsert. Failures persist
+    // lat/lng=NULL so the backfill job can recover them later.
+    const geocoded = await geocodePatientAddressesBestEffort(valid, this.geocoder, {
+      delayMs: 0,
+      timeoutMs: 8000,
+    });
+
     const values: unknown[] = [];
-    const placeholders = valid.map((a, i) => {
-      const base = i * 8;
+    const placeholders = geocoded.map((g, i) => {
+      const base = i * 10;
+      const a = g.address;
       values.push(
         patientId,
         a.addressType,
@@ -196,13 +210,15 @@ export class PatientService {
         a.state ?? null,
         a.city ?? null,
         a.neighborhood ?? null,
+        g.lat,
+        g.lng,
       );
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
     });
 
     await client.query(
       `INSERT INTO patient_addresses
-         (patient_id, address_type, address_formatted, address_raw, display_order, state, city, neighborhood)
+         (patient_id, address_type, address_formatted, address_raw, display_order, state, city, neighborhood, lat, lng)
        VALUES ${placeholders.join(', ')}`,
       values,
     );

@@ -24,9 +24,28 @@ export interface VacancyInsertParams {
   payment_day: any;
   daily_obs: any;
   patient_address_id: any;
+  /** Default: 'PENDING_ACTIVATION' when not provided. */
+  status?: string;
+  /** ISO date (YYYY-MM-DD) or full timestamp. Defaults to NOW() in the SQL when null. */
+  published_at?: string | null;
+  /** ISO date (YYYY-MM-DD) or full timestamp. Optional — left NULL when not provided. */
+  closes_at?: string | null;
 }
 
+const CANONICAL_STATUSES = new Set([
+  'SEARCHING',
+  'SEARCHING_REPLACEMENT',
+  'RAPID_RESPONSE',
+  'PENDING_ACTIVATION',
+  'ACTIVE',
+  'SUSPENDED',
+  'CLOSED',
+]);
+
 export function buildInsertQuery(): string {
+  // `published_at` defaults to NOW() when the caller passes NULL — matches the
+  // product rule that publication date auto-fills with today if left blank.
+  // `closes_at` stays NULL when not provided (optional).
   return `
     INSERT INTO job_postings (
       vacancy_number, case_number, title, description, patient_id,
@@ -37,7 +56,9 @@ export function buildInsertQuery(): string {
       providers_needed, salary_text, payment_day,
       daily_obs,
       patient_address_id,
-      status, country
+      status,
+      published_at, closes_at,
+      country
     ) VALUES (
       $1, $2, $3, '', $4,
       $5, $6,
@@ -47,13 +68,18 @@ export function buildInsertQuery(): string {
       $14, $15, $16,
       $17,
       $18,
-      'SEARCHING', 'AR'
+      $19,
+      COALESCE($20::timestamptz, NOW()), $21::timestamptz,
+      'AR'
     )
     RETURNING *
   `;
 }
 
 export function buildInsertParams(p: VacancyInsertParams): unknown[] {
+  const status =
+    p.status && CANONICAL_STATUSES.has(p.status) ? p.status : 'PENDING_ACTIVATION';
+
   return [
     p.vacancyNumber,
     p.case_number,
@@ -73,5 +99,8 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     p.payment_day ?? null,
     p.daily_obs ?? null,
     p.patient_address_id ?? null,
+    status,
+    p.published_at ?? null,
+    p.closes_at ?? null,
   ];
 }

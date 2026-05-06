@@ -1,0 +1,14 @@
+# Override usado pelo target `make test-integration` no Makefile da raiz.
+# Mantém a image dev (ts-node-dev) mas troca USE_MOCK_AUTH pra true,
+# permitindo que os integration tests do Playwright autentiquem com
+# tokens `mock_<base64>` em vez de Firebase real.
+#
+# É composto sobre docker-compose.yml + docker-compose.dev.yml. Não
+# substitui docker-compose.test.yml — esse último usa `npm start` e
+# exige build, enquanto este preserva o ts-node-dev em watch mode.
+
+services:
+  api:
+    environment:
+      USE_MOCK_AUTH: "true"
+      FIREBASE_AUTH_EMULATOR_HOST: ""

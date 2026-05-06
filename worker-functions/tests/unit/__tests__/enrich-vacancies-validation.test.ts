@@ -31,13 +31,14 @@ function makeCounters(): ValidationCounters {
 }
 
 function makeRow(overrides: Partial<JobPostingRow> = {}): JobPostingRow {
+  // service_address_raw, pathology_types, dependency_level, service_device_types
+  // were dropped in migration 152 and removed from JobPostingRow.
   return {
     id: 'test-id',
     title: null,
     worker_profile_sought: null,
     schedule_days_hours: null,
     daily_obs: null,
-    service_address_raw: null,
     required_professions: null,
     schedule: null,
     required_sex: null,
@@ -45,9 +46,6 @@ function makeRow(overrides: Partial<JobPostingRow> = {}): JobPostingRow {
     age_range_max: null,
     required_experience: null,
     worker_attributes: null,
-    pathology_types: null,
-    dependency_level: null,
-    service_device_types: null,
     salary_text: null,
     payment_day: null,
     enriched_at: null,
@@ -331,19 +329,19 @@ describe('validateProfessions()', () => {
 
 describe('buildInputText()', () => {
   it('includes all available fields', () => {
+    // service_address_raw dropped in migration 152 — address via patient_addresses FK.
     const row = makeRow({
       title: 'CASO 100',
       worker_profile_sought: 'AT con experiencia en TEA',
       schedule_days_hours: 'Lunes a viernes 8-17hs',
       daily_obs: 'Paciente con comportamientos desafiantes',
-      service_address_raw: 'Palermo, CABA',
     });
     const text = buildInputText(row);
     expect(text).toContain('Título: CASO 100');
     expect(text).toContain('Perfil buscado: AT con experiencia en TEA');
     expect(text).toContain('Horários: Lunes a viernes 8-17hs');
     expect(text).toContain('Observações: Paciente con comportamientos desafiantes');
-    expect(text).toContain('Endereço: Palermo, CABA');
+    expect(text).not.toContain('Endereço:'); // address field no longer in enrichment input
   });
 
   it('omits sections where field is null', () => {

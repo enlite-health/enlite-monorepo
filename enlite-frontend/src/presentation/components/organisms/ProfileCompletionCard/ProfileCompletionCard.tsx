@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ProgressBar, PercentageDisplay, Typography } from '@presentation/components/atoms';
+import { Heading, ProgressBar, PercentageDisplay } from '@presentation/components/atoms';
 import { ProgressSection } from '@presentation/components/molecules/ProgressSection';
 import type { WorkerProfileProgress } from '../../../../types/workerProgress';
 
@@ -22,11 +22,11 @@ export const ProfileCompletionCard = ({
       className={`w-full bg-white border-2 border-purple-100 rounded-2xl p-4 sm:p-6 shadow-sm ${className}`}
     >
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
-        <Typography variant="h2" color="primary" className="text-base sm:text-xl" as="h2">
+        <Heading level={2} color="primary" className="text-base sm:text-xl" as="h2">
           <span data-testid="profile-completion-title">
             🎯 {t('profile.completionCard.title')}
           </span>
-        </Typography>
+        </Heading>
         <span data-testid="overall-percentage" className="self-start sm:self-auto">
           <PercentageDisplay percentage={progress.overallPercentage} size="lg" />
         </span>

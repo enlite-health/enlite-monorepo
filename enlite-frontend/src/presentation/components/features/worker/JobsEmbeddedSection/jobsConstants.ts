@@ -8,6 +8,7 @@ export interface Job {
   workerType: string;
   provincia: string;
   localidad: string;
+  barrio: string;
   workerSex: string;
   pathologies: string;
   description: string;
@@ -118,6 +119,7 @@ export const MOCK_JOBS: Job[] = [
     workerType: 'acompañante terapéutico',
     provincia: 'provincia de buenos aires',
     localidad: 'lanús este',
+    barrio: '',
     workerSex: 'indistinto',
     pathologies: 'trastorno disociativo, tlp, tca, estrés postraumático.',
     description: 'prestación de servicios para acompañamiento terapéutico domiciliario en lanús. paciente joven con trastorno disociativo de la personalidad y tlp. se requiere experiencia previa y manejo de herramientas clínicas para el abordaje de trauma y tca.',
@@ -134,6 +136,7 @@ export const MOCK_JOBS: Job[] = [
     workerType: 'acompañante terapéutico',
     provincia: 'provincia de buenos aires',
     localidad: 'nordelta (tigre) y puerto madero (caba)',
+    barrio: '',
     workerSex: 'mujer',
     pathologies: 'discapacidad intelectual leve, trastorno del lenguaje expresivo.',
     description: 'prestación de servicio de at para acompañar a una joven de 19 años durante sus traslados educativos. el objetivo es brindar soporte frente a su discapacidad intelectual leve y trastorno del lenguaje, promoviendo su seguridad y autonomía en la vía pública.',
@@ -150,6 +153,7 @@ export const MOCK_JOBS: Job[] = [
     workerType: 'acompañante terapéutico',
     provincia: 'provincia de buenos aires',
     localidad: 'lomas de zamora',
+    barrio: '',
     workerSex: 'indistinto',
     pathologies: 'trastorno del lenguaje',
     description: 'prestación de servicios de at para acompañamiento escolar de un niño con trastorno del lenguaje. el objetivo es brindar soporte pedagógico-vincular en lomas de zamora, integrándose a un equipo con supervisión clínica.',
@@ -166,6 +170,7 @@ export const MOCK_JOBS: Job[] = [
     workerType: 'acompañante terapéutico',
     provincia: 'caba',
     localidad: 'balvanera',
+    barrio: '',
     workerSex: 'hombre',
     pathologies: 'tea (trastorno del espectro autista)',
     description: 'prestación de servicios para at masculino en domicilio. paciente adolescente con diagnóstico de tea. el foco está en el soporte post-internación y cumplimiento de objetivos terapéuticos.',
@@ -182,6 +187,7 @@ export const MOCK_JOBS: Job[] = [
     workerType: 'acompañante terapéutico',
     provincia: 'provincia de buenos aires',
     localidad: 'quilmes',
+    barrio: '',
     workerSex: 'mujer',
     pathologies: 'ansiedad por separación',
     description: 'prestación de servicios para acompañamiento escolar de niña de 5 años con ansiedad por separación. se busca perfil con experiencia en integración escolar y manejo de vínculos en infancia.',

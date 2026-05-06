@@ -17,6 +17,11 @@ export { TalentumDescriptionService } from './infrastructure/TalentumDescription
 export type { GenerateDescriptionInput, GeneratedDescription } from './infrastructure/TalentumDescriptionService';
 export { GeminiVacancyParserService } from './infrastructure/GeminiVacancyParserService';
 export type { ParsedVacancyResult, WorkerType } from './infrastructure/GeminiVacancyParserService';
+export {
+  parseFromTalentumDescriptionHelper,
+  detectMissingFields,
+  retryMissingFields,
+} from './infrastructure/GeminiVacancyParserHelpers';
 export { GoogleApiKeyValidator } from './infrastructure/GoogleApiKeyValidator';
 export { GoogleDocsPromptProvider } from './infrastructure/GoogleDocsPromptProvider';
 export { ClickUpFieldResolver } from './infrastructure/clickup/ClickUpFieldResolver';

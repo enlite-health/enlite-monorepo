@@ -4,9 +4,9 @@ import { VacancyTalentumController } from '../controllers/VacancyTalentumControl
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
 import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
 import { EncuadreFunnelController } from '../controllers/EncuadreFunnelController';
+import { EncuadreFunnelTableController } from '../controllers/EncuadreFunnelTableController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
-import { VacancyCrudController, pdfUploadMiddleware } from '../controllers/VacancyCrudController';
-import { VacancyParseController } from '../controllers/VacancyParseController';
+import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
 import { InterviewSlotsController } from '../controllers/InterviewSlotsController';
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
@@ -16,7 +16,7 @@ import { AuthMiddleware } from '@modules/identity';
  * Admin vacancies routes — /api/admin/vacancies/* and related encuadre/funnel/slots.
  * All endpoints require staff authentication.
  *
- * IMPORTANTE: rotas estáticas antes das dinâmicas (ex: /stats, /next-case-number
+ * IMPORTANTE: rotas estáticas antes das dinâmicas (ex: /stats, /next-vacancy-number
  * antes de /:id) para evitar captura pelo param.
  */
 export function createAdminVacanciesRoutes(
@@ -30,8 +30,8 @@ export function createAdminVacanciesRoutes(
   dashboardController: EncuadreDashboardController,
   interviewSlotsController: InterviewSlotsController,
   authMiddleware: AuthMiddleware,
-  vacancyParseController?: VacancyParseController,
   vacancyAddressReviewController?: VacancyAddressReviewController,
+  funnelTableController?: EncuadreFunnelTableController,
 ): Router {
   const router = Router();
 
@@ -45,10 +45,10 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/next-vacancy-number', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.getNextVacancyNumber(req, res),
   );
-  router.get('/vacancies/next-case-number', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacanciesController.getNextCaseNumber(req, res),
-  );
   // IMPORTANTE: static before /:id to avoid param capture
+  router.get('/vacancies/cases-for-select', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacanciesController.getCasesForSelect(req, res),
+  );
   router.get('/vacancies/pending-address-review', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.listPendingAddressReview(req, res),
   );
@@ -57,18 +57,6 @@ export function createAdminVacanciesRoutes(
   );
 
   // ── CRUD (VacancyCrudController) ─────────────────────────────────────────────
-  // POST /vacancies/parse — MUST be before POST /vacancies (static before dynamic)
-  if (vacancyParseController) {
-    router.post('/vacancies/parse', authMiddleware.requireStaff(), pdfUploadMiddleware, (req: Request, res: Response) =>
-      vacancyParseController!.parseVacancy(req, res),
-    );
-  }
-  router.post('/vacancies/parse-from-text', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacancyCrudController.parseFromText(req, res),
-  );
-  router.post('/vacancies/parse-from-pdf', authMiddleware.requireStaff(), pdfUploadMiddleware, (req: Request, res: Response) =>
-    vacancyCrudController.parseFromPdf(req, res),
-  );
   router.post('/vacancies', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyCrudController.createVacancy(req, res),
   );
@@ -105,6 +93,9 @@ export function createAdminVacanciesRoutes(
   router.post('/vacancies/:id/generate-talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateTalentumDescription(req, res),
   );
+  router.post('/vacancies/:id/generate-ai-content', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.generateAIContent(req, res),
+  );
   router.post('/vacancies/sync-talentum', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.syncFromTalentum(req, res),
   );
@@ -116,6 +107,11 @@ export function createAdminVacanciesRoutes(
   );
 
   // ── Meet Links (VacancyMeetLinksController) ───────────────────────────────────
+  // Static lookup route MUST come before dynamic /:id/meet-links to prevent the
+  // express router from treating "meet-links" as the :id param.
+  router.post('/vacancies/meet-links/lookup', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyMeetLinksController.lookupMeetDatetime(req, res),
+  );
   router.put('/vacancies/:id/meet-links', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyMeetLinksController.updateMeetLinks(req, res),
   );
@@ -135,6 +131,13 @@ export function createAdminVacanciesRoutes(
   router.put('/encuadres/:id/move', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.moveEncuadre(req, res),
   );
+
+  // ── Encuadre Funnel Table — audit table (EncuadreFunnelTableController) ───────
+  if (funnelTableController) {
+    router.get('/vacancies/:id/funnel-table', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+      funnelTableController!.getEncuadreFunnelTable(req, res),
+    );
+  }
 
   // ── Coordinator Dashboard (EncuadreDashboardController) ──────────────────────
   router.get('/dashboard/coordinator-capacity', authMiddleware.requireStaff(), (req: Request, res: Response) =>

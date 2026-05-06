@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { usePatientDetail } from '@hooks/admin/usePatientDetail';
 import { PatientIdentityCard } from '@presentation/components/features/admin/PatientDetail/PatientIdentityCard';
@@ -39,9 +40,9 @@ export default function PatientDetailPage() {
     const isNotFound = error?.toLowerCase().includes('not found') || error?.includes('404');
     return (
       <div className="w-full min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <Typography variant="h3" className="text-red-600">
+        <Heading level={3} color="inherit" className="text-red-600">
           {isNotFound ? t('admin.patients.detail.notFound') : (error ?? t('admin.patients.detail.errorLoading'))}
-        </Typography>
+        </Heading>
         <Button variant="outline" size="sm" onClick={() => navigate('/admin/patients')}>
           {t('admin.patients.detail.backToList')}
         </Button>
@@ -62,20 +63,20 @@ export default function PatientDetailPage() {
             className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
-            <Typography variant="body" weight="medium" className="text-inherit">
+            <Text as="span" size="sm" weight="medium" color="inherit">
               {t('admin.patients.detail.backToList')}
-            </Typography>
+            </Text>
           </button>
           <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
-          <Typography variant="h1" weight="semibold" color="primary" className="truncate">
+          <Heading level={1} weight="semibold" color="primary" className="truncate">
             {t('admin.patients.detail.pageTitle')}
-          </Typography>
+          </Heading>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-4">
           <span className="text-2xl" role="img" aria-label={countryLabel}>{countryFlag}</span>
-          <Typography variant="body" weight="medium" className="text-[#737373] hidden sm:block">
+          <Text as="span" size="sm" weight="medium" color="secondary" className="hidden sm:block">
             {countryLabel}
-          </Typography>
+          </Text>
         </div>
       </div>
 
@@ -132,9 +133,9 @@ function PlaceholderTab({ label }: { label: string }) {
   const { t } = useTranslation();
   return (
     <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex items-center justify-center min-h-[200px]">
-      <Typography variant="body" className="text-gray-700">
+      <Text size="sm" color="muted">
         {label} — {t('admin.patients.detail.comingSoon')}
-      </Typography>
+      </Text>
     </div>
   );
 }

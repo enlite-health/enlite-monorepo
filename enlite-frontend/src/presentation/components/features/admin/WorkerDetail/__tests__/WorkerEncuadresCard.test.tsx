@@ -154,14 +154,14 @@ describe('WorkerEncuadresCard', () => {
 
   it('applies green badge for SELECCIONADO', () => {
     render(<WorkerEncuadresCard encuadres={encuadres} />);
-    const badge = screen.getByText('SELECCIONADO');
+    const badge = screen.getByText('SELECCIONADO').parentElement!;
     expect(badge.className).toContain('bg-green-100');
     expect(badge.className).toContain('text-green-700');
   });
 
   it('applies red badge for RECHAZADO', () => {
     render(<WorkerEncuadresCard encuadres={encuadres} />);
-    const badge = screen.getByText('RECHAZADO');
+    const badge = screen.getByText('RECHAZADO').parentElement!;
     expect(badge.className).toContain('bg-red-100');
     expect(badge.className).toContain('text-red-700');
   });
@@ -169,35 +169,35 @@ describe('WorkerEncuadresCard', () => {
   it('applies yellow badge for PENDIENTE', () => {
     const pending: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'PENDIENTE' }];
     render(<WorkerEncuadresCard encuadres={pending} />);
-    const badge = screen.getByText('PENDIENTE');
+    const badge = screen.getByText('PENDIENTE').parentElement!;
     expect(badge.className).toContain('bg-yellow-100');
   });
 
   it('applies orange badge for AT_NO_ACEPTA', () => {
     const noAcepta: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'AT_NO_ACEPTA' }];
     render(<WorkerEncuadresCard encuadres={noAcepta} />);
-    const badge = screen.getByText('AT_NO_ACEPTA');
+    const badge = screen.getByText('AT_NO_ACEPTA').parentElement!;
     expect(badge.className).toContain('bg-orange-100');
   });
 
   it('applies blue badge for REPROGRAMAR', () => {
     const reprog: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'REPROGRAMAR' }];
     render(<WorkerEncuadresCard encuadres={reprog} />);
-    const badge = screen.getByText('REPROGRAMAR');
+    const badge = screen.getByText('REPROGRAMAR').parentElement!;
     expect(badge.className).toContain('bg-blue-100');
   });
 
   it('applies purple badge for REEMPLAZO', () => {
     const reem: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'REEMPLAZO' }];
     render(<WorkerEncuadresCard encuadres={reem} />);
-    const badge = screen.getByText('REEMPLAZO');
+    const badge = screen.getByText('REEMPLAZO').parentElement!;
     expect(badge.className).toContain('bg-purple-100');
   });
 
   it('applies black badge for BLACKLIST', () => {
     const bl: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'BLACKLIST' }];
     render(<WorkerEncuadresCard encuadres={bl} />);
-    const badge = screen.getByText('BLACKLIST');
+    const badge = screen.getByText('BLACKLIST').parentElement!;
     expect(badge.className).toContain('bg-gray-800');
     expect(badge.className).toContain('text-white');
   });
@@ -205,7 +205,7 @@ describe('WorkerEncuadresCard', () => {
   it('applies gray fallback badge for unknown resultado', () => {
     const unknown: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'CUSTOM_STATUS' }];
     render(<WorkerEncuadresCard encuadres={unknown} />);
-    const badge = screen.getByText('CUSTOM_STATUS');
+    const badge = screen.getByText('CUSTOM_STATUS').parentElement!;
     expect(badge.className).toContain('bg-gray-100');
   });
 

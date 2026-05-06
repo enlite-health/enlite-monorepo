@@ -59,6 +59,10 @@ const SKIP_ALIASES = new Set([
   'json', 'jsonb', 'pg', 'st', 'array', 'db', 'identity',
   'console', 'process', 'error', 'req', 'res', 'row', 'rows',
   'this', 'self', 'opts', 'options', 'config', 'env', 'math',
+  // Inline LATERAL subquery aliases — `) alias_name ON true` pattern.
+  // These are not real tables; they are names given to anonymous subqueries.
+  // The parser matches word.word and can't distinguish these from table refs.
+  'latest_wbdl', // LATERAL subquery alias in FunnelTableRepository (line ~79)
   // Dead code: tables dropped but repository code not yet removed (tracked for cleanup)
   'worker_quiz_responses', // dropped in migration 028, QuizResponseRepository is dead code
 ]);

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 
@@ -10,12 +11,12 @@ interface CoberturaMedicaCardProps {
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="flex flex-col">
-      <Typography variant="body" weight="medium" className="text-gray-700">
+      <Text size="sm" weight="medium" color="muted">
         {label}
-      </Typography>
-      <Typography variant="body" className="text-gray-600">
+      </Text>
+      <Text size="sm" color="muted">
         {value ?? '—'}
-      </Typography>
+      </Text>
     </div>
   );
 }
@@ -29,9 +30,9 @@ export function CoberturaMedicaCard({ patient }: CoberturaMedicaCardProps) {
       data-testid="cobertura-medica-card"
     >
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <Typography variant="h1" weight="semibold" as="h3">
+        <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.coverageCard.title')}
-        </Typography>
+        </Heading>
         <Button variant="primary" size="sm" disabled onClick={() => {}}>
           {t('admin.patients.detail.edit')}
         </Button>
@@ -46,7 +47,6 @@ export function CoberturaMedicaCard({ patient }: CoberturaMedicaCardProps) {
           label={t('admin.patients.detail.coverageCard.plan')}
           value={patient.insuranceVerified}
         />
-        {/* TODO: emergencyNumbers — coluna não existe no schema atual */}
         <Field
           label={t('admin.patients.detail.coverageCard.emergencyNumbers')}
           value={null}

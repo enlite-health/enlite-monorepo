@@ -7,3 +7,4 @@ coverage/
 .vscode/
 .idea/
 docs/excel/seeds/999_prod_snapshot.sql
+seeds/.last-snapshot-image-id

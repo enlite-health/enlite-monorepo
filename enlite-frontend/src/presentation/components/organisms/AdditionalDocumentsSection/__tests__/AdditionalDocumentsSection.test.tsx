@@ -19,10 +19,12 @@ vi.mock('lucide-react', () => ({
   Loader2:  (props: Record<string, unknown>) => <svg data-testid="icon-loader" {...props} />,
 }));
 
-// ── Typography atom mock — renders children as a plain span ──────────────────
+// ── Typography atoms mock — renders children as a plain span ─────────────────
 
 vi.mock('@presentation/components/atoms', () => ({
   Typography: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  Heading: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 
 // ── Shared fixtures ──────────────────────────────────────────────────────────

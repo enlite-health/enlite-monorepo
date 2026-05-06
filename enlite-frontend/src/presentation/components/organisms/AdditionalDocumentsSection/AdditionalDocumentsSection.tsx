@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms';
+import { Heading, Text } from '@presentation/components/atoms';
 import { Eye, Trash2, Plus, FileText, Loader2 } from 'lucide-react';
 import type { AdditionalDocument } from '@infrastructure/http/DocumentApiService';
 
@@ -51,9 +51,9 @@ export function AdditionalDocumentsSection({
   return (
     <div className="flex flex-col gap-4 mt-6">
       <div className="flex items-center justify-between">
-        <Typography variant="h2" weight="semibold" color="secondary">
+        <Heading level={2} weight="semibold" color="secondary">
           {t('documents.additionalTitle', 'Otros Documentos')}
-        </Typography>
+        </Heading>
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
@@ -97,7 +97,11 @@ export function AdditionalDocumentsSection({
               {t('documents.upload', 'Subir')}
             </button>
           </div>
-          {error && <p className="font-lexend text-xs text-red-500">{error}</p>}
+          {error && (
+            <Text as="p" size="xs" color="secondary" className="text-red-500">
+              {error}
+            </Text>
+          )}
         </div>
       )}
 
@@ -108,9 +112,9 @@ export function AdditionalDocumentsSection({
           {t('documents.loading', 'Cargando...')}
         </div>
       ) : documents.length === 0 ? (
-        <p className="font-lexend text-sm text-gray-500 italic">
+        <Text as="p" size="sm" color="secondary" className="italic">
           {t('documents.noAdditional', 'No hay documentos adicionales')}
-        </p>
+        </Text>
       ) : (
         <div className="flex flex-col gap-2">
           {documents.map((doc) => (
@@ -120,7 +124,9 @@ export function AdditionalDocumentsSection({
             >
               <div className="flex items-center gap-3 min-w-0">
                 <FileText size={18} className="text-primary shrink-0" />
-                <span className="font-lexend text-sm text-gray-800 truncate">{doc.label}</span>
+                <Text as="span" size="sm" color="secondary" className="truncate">
+                  {doc.label}
+                </Text>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button

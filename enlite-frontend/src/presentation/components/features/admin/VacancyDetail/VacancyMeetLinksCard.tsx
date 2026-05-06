@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertCircle, Circle, Loader2, ExternalLink } from 'lucide-react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
@@ -119,9 +119,9 @@ export function VacancyMeetLinksCard({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      <Typography variant="h3" weight="semibold" className="text-[#737373]">
+      <Heading level={3} weight="semibold" color="secondary">
         {t('admin.vacancyDetail.meetLinksCard.title')}
-      </Typography>
+      </Heading>
 
       <div className="flex flex-col gap-4">
         {rows.map((row, i) => {

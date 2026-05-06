@@ -10,6 +10,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    restart: on-failure
     command: >
       sh -c "node scripts/run-migrations-docker.js &&
              node scripts/run-seeds-docker.js &&

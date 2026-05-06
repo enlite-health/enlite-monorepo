@@ -22,12 +22,18 @@ export class VacancyMatchController {
   async triggerMatch(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const topN                 = req.query.top_n             ? parseInt(req.query.top_n as string)       : 20;
-      const radiusKm             = req.query.radius_km         ? parseInt(req.query.radius_km as string)   : null;
+      const topN                   = req.query.top_n     ? parseInt(req.query.top_n as string)     : 20;
+      const radiusKm               = req.query.radius_km ? parseInt(req.query.radius_km as string) : undefined;
       const excludeWithActiveCases = req.query.exclude_active === 'true';
+      const useScoring             = req.query.use_scoring === 'true';
 
       const matchingService = new MatchmakingService();
-      const result = await matchingService.matchWorkersForJob(id, topN, radiusKm, excludeWithActiveCases);
+      const result = await matchingService.matchWorkersForJob(id, {
+        topN,
+        radiusKm,
+        excludeWithActiveCases,
+        useScoring,
+      });
 
       res.status(200).json({ success: true, data: result });
     } catch (error: any) {
@@ -63,11 +69,11 @@ export class VacancyMatchController {
            w.last_name_encrypted,
            w.occupation,
            w.status,
-           wl.work_zone,
+           wsa.work_zone,
            CASE
-             WHEN wl.location IS NOT NULL AND jp.service_location IS NOT NULL
+             WHEN wsa.location IS NOT NULL AND pa.lat IS NOT NULL AND pa.lng IS NOT NULL
              THEN ROUND(
-               (ST_Distance(wl.location, jp.service_location) / 1000.0)::numeric,
+               (ST_Distance(wsa.location, ST_MakePoint(pa.lng, pa.lat)::geography) / 1000.0)::numeric,
                1
              )::float
              ELSE NULL
@@ -83,7 +89,8 @@ export class VacancyMatchController {
          FROM worker_job_applications wja
          JOIN workers w    ON w.id  = wja.worker_id
          JOIN job_postings jp ON jp.id = wja.job_posting_id
-         LEFT JOIN worker_locations wl ON wl.worker_id = w.id
+         LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
+         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
          WHERE wja.job_posting_id = $1
          ORDER BY wja.match_score DESC NULLS LAST
          LIMIT $2 OFFSET $3`,

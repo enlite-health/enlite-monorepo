@@ -71,10 +71,11 @@ describe('Vacancies API', () => {
       expect(res.data.success).toBe(true);
       expect(res.data.data.id).toBeTruthy();
       expect(res.data.data.case_number).toBe(99901);
-      expect(res.data.data.status).toBe('SEARCHING');
+      // Default status when not provided is PENDING_ACTIVATION (task 1.4b)
+      expect(res.data.data.status).toBe('PENDING_ACTIVATION');
     });
 
-    it('nova vaga aparece no banco com status SEARCHING', async () => {
+    it('nova vaga aparece no banco com status PENDING_ACTIVATION (default quando status não enviado)', async () => {
       const body = {
         case_number: 99902,
         title: 'Caso E2E Banco',
@@ -88,7 +89,8 @@ describe('Vacancies API', () => {
         [res.data.data.id],
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0].status).toBe('SEARCHING');
+      // Default status is PENDING_ACTIVATION (task 1.4b)
+      expect(rows[0].status).toBe('PENDING_ACTIVATION');
       expect(rows[0].case_number).toBe(99902);
     });
 
@@ -209,6 +211,21 @@ describe('Vacancies API', () => {
       expect(res.status).toBe(200);
       expect(res.data.success).toBe(true);
       expect(res.data.data.id).toBe(createdId);
+    });
+
+    it('retorna patient_address_formatted/raw resolvidos do patient_addresses da vaga', async () => {
+      if (!createdId) return;
+      const res = await api.get(
+        `/api/admin/vacancies/${createdId}`,
+        authHeaders(adminToken),
+      );
+      expect(res.status).toBe(200);
+      // Vaga sem patient_address_id retorna null nos campos derivados,
+      // mas o shape do DTO precisa expor as chaves para o frontend não
+      // cair em "—" silencioso quando o address existir em produção.
+      expect(res.data.data).toHaveProperty('patient_address_id');
+      expect(res.data.data).toHaveProperty('patient_address_formatted');
+      expect(res.data.data).toHaveProperty('patient_address_raw');
     });
 
     it('retorna 404 para UUID inexistente', async () => {
@@ -387,10 +404,10 @@ describe('Vacancies API', () => {
     // Sintoma: Após criar uma vaga, o servidor caía — todas as requisições
     //          seguintes retornavam ECONNRESET.
     // Causa:   Erros síncronos lançados dentro do callback do setImmediate
-    //          (ex: GROQ_API_KEY ausente ao instanciar serviço) se tornavam
+    //          (ex: GEMINI_API_KEY ausente ao instanciar serviço) se tornavam
     //          exceções não-capturadas que derrubavam o processo Node.js.
     // Fix:     try-catch envolvendo todo o callback do setImmediate.
-    it('servidor permanece saudável após criar vaga sem GROQ_API_KEY configurado', async () => {
+    it('servidor permanece saudável após criar vaga sem GEMINI_API_KEY configurado', async () => {
       // Cria a vaga — dispara o setImmediate com match em background
       const createRes = await api.post(
         '/api/admin/vacancies',
@@ -595,6 +612,121 @@ describe('Vacancies API', () => {
           ).resolves.not.toThrow();
         }
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Short-link auto-publish hook — Phase 3
+  //
+  // When a vacancy is created or updated to a public status (ACTIVE, SEARCHING,
+  // SEARCHING_REPLACEMENT, RAPID_RESPONSE), tryEnsureShortLink runs in a
+  // setImmediate background callback.
+  //
+  // In the E2E environment SHORT_IO_API_KEY is not set, so the hook logs a warn
+  // and exits without generating a real link. The tests below verify:
+  //   - Non-blocking: 201/200 is returned regardless of SHORT_IO state
+  //   - Server stays healthy after the hook runs (no unhandled exception)
+  //   - CLOSED vacancy does NOT trigger the hook (social_short_links stays null)
+  //   - ACTIVE vacancy with pre-existing site link: use case is idempotent
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('Short-link auto-publish hook (Phase 3)', () => {
+    it('criar vaga com status ACTIVE retorna 201 (hook roda sem bloquear)', async () => {
+      const res = await api.post(
+        '/api/admin/vacancies',
+        { case_number: 66601, title: 'Short-link hook ACTIVE', status: 'ACTIVE' },
+        authHeaders(adminToken),
+      );
+      expect(res.status).toBe(201);
+      expect(res.data.success).toBe(true);
+    });
+
+    it('servidor permanece saudável após criar vaga ACTIVE sem SHORT_IO configurado', async () => {
+      const createRes = await api.post(
+        '/api/admin/vacancies',
+        { case_number: 66602, title: 'Short-link hook resilience', status: 'ACTIVE' },
+        authHeaders(adminToken),
+      );
+      expect(createRes.status).toBe(201);
+
+      // Give setImmediate time to complete
+      await new Promise(r => setTimeout(r, 300));
+
+      const healthRes = await api.get('/health');
+      expect(healthRes.status).toBe(200);
+    });
+
+    it('criar vaga com status CLOSED não popula social_short_links', async () => {
+      const createRes = await api.post(
+        '/api/admin/vacancies',
+        { case_number: 66603, title: 'Short-link hook CLOSED', status: 'CLOSED' },
+        authHeaders(adminToken),
+      );
+      expect(createRes.status).toBe(201);
+      const id = createRes.data.data.id as string;
+
+      // Allow any background work to settle
+      await new Promise(r => setTimeout(r, 200));
+
+      const { rows } = await pool.query<{ social_short_links: Record<string, unknown> | null }>(
+        `SELECT social_short_links FROM job_postings WHERE id = $1`,
+        [id],
+      );
+      // CLOSED → hook is skipped → no site link written.
+      // Column DEFAULT is '{}' (migration 115), so it's never NULL —
+      // the meaningful assertion is that no 'site' key was populated.
+      expect(rows[0].social_short_links?.['site']).toBeUndefined();
+    });
+
+    it('atualizar vaga PENDING_ACTIVATION → ACTIVE retorna 200 (hook roda sem bloquear)', async () => {
+      const createRes = await api.post(
+        '/api/admin/vacancies',
+        { case_number: 66604, title: 'Short-link update hook' },
+        authHeaders(adminToken),
+      );
+      expect(createRes.status).toBe(201);
+      const id = createRes.data.data.id as string;
+
+      const updateRes = await api.put(
+        `/api/admin/vacancies/${id}`,
+        { status: 'ACTIVE' },
+        authHeaders(adminToken),
+      );
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.data.success).toBe(true);
+    });
+
+    it('vaga ACTIVE com site link pré-existente: use case idempotente (não falha)', async () => {
+      // Insert a vacancy with a pre-existing site link directly in DB
+      const { rows: vnRows } = await pool.query<{ vn: string }>(
+        "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
+      );
+      const vn = vnRows[0].vn;
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO job_postings (vacancy_number, case_number, title, status, social_short_links)
+         VALUES ($1, 66605, 'Short-link idempotent', 'ACTIVE', '{"site": {"url":"https://srt.io/existing","id":"abc"}}')
+         RETURNING id`,
+        [parseInt(vn)],
+      );
+      const id = rows[0].id;
+
+      // Trigger update — hook should detect existing link and return early
+      const updateRes = await api.put(
+        `/api/admin/vacancies/${id}`,
+        { title: 'Short-link idempotent updated' },
+        authHeaders(adminToken),
+      );
+      expect(updateRes.status).toBe(200);
+
+      // Allow hook to settle
+      await new Promise(r => setTimeout(r, 200));
+
+      // site link must remain unchanged (not overwritten)
+      const { rows: check } = await pool.query<{ social_short_links: Record<string, unknown> }>(
+        `SELECT social_short_links FROM job_postings WHERE id = $1`,
+        [id],
+      );
+      const siteLink = check[0].social_short_links?.site as { url: string } | undefined;
+      expect(siteLink?.url).toBe('https://srt.io/existing');
     });
   });
 });

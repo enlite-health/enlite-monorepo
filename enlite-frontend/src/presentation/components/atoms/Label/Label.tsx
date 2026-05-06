@@ -15,7 +15,7 @@ export function Label({
 }: LabelProps): JSX.Element {
   return (
     <label
-      className={`font-lexend font-semibold text-gray-800 text-base leading-[150%] ${className}`}
+      className={`font-['Lexend'] font-medium text-[18px] leading-[1.3] text-[#737373] ${className}`}
       {...props}
     >
       {children}

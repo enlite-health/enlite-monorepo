@@ -1,24 +1,29 @@
 import { Request, Response } from 'express';
-import multer from 'multer';
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { MatchmakingService } from '../../infrastructure/MatchmakingService';
-import { GeminiVacancyParserService } from '@modules/integration';
 import { buildInsertQuery, buildInsertParams } from './vacancyCrudHelpers';
+import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
+import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
 
-const MAX_PDF_SIZE = 20 * 1024 * 1024; // 20 MB
+const PUBLIC_STATUSES = new Set([
+  'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
+]);
 
-export const pdfUploadMiddleware = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_PDF_SIZE },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only PDF files are accepted'));
-    }
-  },
-}).single('pdf');
+async function tryEnsureShortLink(pool: Pool, vacancyId: string, status: string | null | undefined): Promise<void> {
+  if (!status || !PUBLIC_STATUSES.has(status)) return;
+  const svc = ShortLinkService.fromEnv();
+  if (!svc) {
+    console.warn('[VacancyCrud] SHORT_IO not configured — skipping short-link generation');
+    return;
+  }
+  try {
+    const uc = new EnsureVacancyShortLinkUseCase(pool, svc);
+    await uc.execute(vacancyId, 'site');
+  } catch (err: any) {
+    console.error(`[VacancyCrud] Short-link generation failed for ${vacancyId}: ${err.message}`);
+  }
+}
 
 /**
  * VacancyCrudController
@@ -53,26 +58,25 @@ export class VacancyCrudController {
         payment_day,
         daily_obs,
         patient_address_id,
+        status: bodyStatus,
+        published_at,
+        closes_at,
         updatePatient,
       } = req.body;
 
-      // Validate patient_address_id belongs to the patient (if provided)
-      if (patient_address_id) {
+      // Validate patient_address_id belongs to the patient_id (if both provided)
+      if (patient_address_id && patient_id) {
         const ownerCheck = await this.db.query(
           `SELECT 1
            FROM patient_addresses pa
            WHERE pa.id = $1
-             AND pa.patient_id = (
-               SELECT patient_id FROM job_postings
-               WHERE case_number = $2 AND deleted_at IS NULL
-               ORDER BY created_at DESC LIMIT 1
-             )`,
-          [patient_address_id, case_number],
+             AND pa.patient_id = $2`,
+          [patient_address_id, patient_id],
         );
         if (ownerCheck.rows.length === 0) {
-          res.status(422).json({
+          res.status(400).json({
             success: false,
-            error: 'patient_address_id does not belong to this patient',
+            error: 'patient_address_id não pertence ao patient_id informado',
           });
           return;
         }
@@ -95,6 +99,9 @@ export class VacancyCrudController {
         worker_profile_sought, required_experience, worker_attributes,
         schedule, work_schedule, providers_needed, salary_text, payment_day,
         daily_obs, patient_address_id,
+        status: bodyStatus || undefined,
+        published_at: published_at ?? null,
+        closes_at: closes_at ?? null,
       };
 
       let newVacancy: any;
@@ -113,12 +120,13 @@ export class VacancyCrudController {
       setImmediate(() => {
         try {
           const matchingService = new MatchmakingService();
-          matchingService.matchWorkersForJob(newVacancy.id)
+          matchingService.matchWorkersForJob(newVacancy.id, {})
             .then(r => console.log(`[VacancyCrud] Auto-match done for ${newVacancy.id}: ${r.candidates.length} candidates`))
             .catch(err => console.error(`[VacancyCrud] Auto-match error for ${newVacancy.id}:`, err.message));
         } catch (err: any) {
           console.warn(`[VacancyCrud] Background match unavailable for ${newVacancy.id}: ${err.message}`);
         }
+        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status).catch(() => {});
       });
 
       res.status(201).json({ success: true, data: newVacancy });
@@ -212,13 +220,14 @@ export class VacancyCrudController {
       }
 
       const allowedFields = [
-        'title', 'case_number', 'patient_id',
+        'title', 'case_number', 'patient_id', 'patient_address_id',
         'required_professions', 'required_sex',
         'age_range_min', 'age_range_max',
         'worker_profile_sought', 'required_experience', 'worker_attributes',
         'schedule', 'work_schedule',
         'providers_needed', 'salary_text', 'payment_day',
         'daily_obs', 'status',
+        'published_at', 'closes_at',
       ];
 
       const jsonbFields = new Set(['schedule']);
@@ -255,54 +264,15 @@ export class VacancyCrudController {
         return;
       }
 
-      res.status(200).json({ success: true, data: result.rows[0] });
+      const updated = result.rows[0];
+      setImmediate(() => {
+        tryEnsureShortLink(this.db, id, updated.status).catch(() => {});
+      });
+
+      res.status(200).json({ success: true, data: updated });
     } catch (error: any) {
       console.error('[VacancyCrud] Error updating vacancy:', error);
       res.status(500).json({ success: false, error: 'Failed to update vacancy', details: error.message });
-    }
-  }
-
-  async parseFromText(req: Request, res: Response): Promise<void> {
-    try {
-      const { text, workerType } = req.body;
-
-      if (!text || typeof text !== 'string' || text.trim().length === 0) {
-        res.status(400).json({ success: false, error: 'text is required' });
-        return;
-      }
-      if (!workerType || !['AT', 'CUIDADOR'].includes(workerType)) {
-        res.status(400).json({ success: false, error: 'workerType must be AT or CUIDADOR' });
-        return;
-      }
-
-      const service = new GeminiVacancyParserService();
-      const result = await service.parseFromText(text.trim(), workerType);
-      res.status(200).json({ success: true, data: result });
-    } catch (error: any) {
-      console.error('[VacancyCrud] Error parsing vacancy from text:', error);
-      res.status(500).json({ success: false, error: 'Failed to parse vacancy text', details: error.message });
-    }
-  }
-
-  async parseFromPdf(req: Request, res: Response): Promise<void> {
-    try {
-      if (!req.file) {
-        res.status(400).json({ success: false, error: 'PDF file is required' });
-        return;
-      }
-      const { workerType } = req.body;
-      if (!workerType || !['AT', 'CUIDADOR'].includes(workerType)) {
-        res.status(400).json({ success: false, error: 'workerType must be AT or CUIDADOR' });
-        return;
-      }
-
-      const pdfBase64 = req.file.buffer.toString('base64');
-      const service = new GeminiVacancyParserService();
-      const result = await service.parseFromPdf(pdfBase64, workerType);
-      res.status(200).json({ success: true, data: result });
-    } catch (error: any) {
-      console.error('[VacancyCrud] Error parsing vacancy from PDF:', error);
-      res.status(500).json({ success: false, error: 'Failed to parse vacancy PDF', details: error.message });
     }
   }
 
