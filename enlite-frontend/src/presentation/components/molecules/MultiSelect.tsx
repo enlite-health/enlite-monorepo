@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 
 interface MultiSelectOption {
   value: string;
@@ -48,9 +48,9 @@ export function MultiSelect({ options, value, onChange, placeholder, error, labe
   return (
     <div className="flex flex-col gap-1 flex-1 grow" ref={containerRef}>
       {label && (
-        <Typography variant="label" color="tertiary" as="label" className="relative w-fit mt-[-1.00px]">
+        <Text size="base" color="tertiary" as="span" className="relative w-fit mt-[-1.00px]">
           {label}
-        </Typography>
+        </Text>
       )}
       <div className="relative">
         <div
@@ -59,13 +59,14 @@ export function MultiSelect({ options, value, onChange, placeholder, error, labe
           className="flex items-center h-12 px-4 relative w-full rounded-[10px] border-[1.5px] border-solid border-[#D9D9D9] focus-within:border-primary transition-colors bg-white cursor-pointer"
         >
           <div className="flex justify-between w-full items-center relative">
-            <Typography 
-              variant="body" 
+            <Text
+              size="sm"
               weight="medium"
+              color="inherit"
               className={value.length === 0 ? 'text-gray-600' : 'text-[#374151]'}
             >
               {getDisplayText()}
-            </Typography>
+            </Text>
             <img
               className={`w-3 h-[7px] pointer-events-none transition-transform ${isOpen ? 'rotate-180' : ''}`}
               alt="Vector"
@@ -92,13 +93,13 @@ export function MultiSelect({ options, value, onChange, placeholder, error, labe
                     </svg>
                   )}
                 </div>
-                <Typography variant="body" weight="medium" color="tertiary">{option.label}</Typography>
+                <Text size="sm" weight="medium" color="tertiary">{option.label}</Text>
               </div>
             ))}
           </div>
         )}
       </div>
-      {error && <Typography variant="caption" className="text-red-500">{error}</Typography>}
+      {error && <Text size="xs" color="inherit" className="text-red-500">{error}</Text>}
     </div>
   );
 }
