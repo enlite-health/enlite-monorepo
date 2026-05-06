@@ -213,6 +213,21 @@ describe('Vacancies API', () => {
       expect(res.data.data.id).toBe(createdId);
     });
 
+    it('retorna patient_address_formatted/raw resolvidos do patient_addresses da vaga', async () => {
+      if (!createdId) return;
+      const res = await api.get(
+        `/api/admin/vacancies/${createdId}`,
+        authHeaders(adminToken),
+      );
+      expect(res.status).toBe(200);
+      // Vaga sem patient_address_id retorna null nos campos derivados,
+      // mas o shape do DTO precisa expor as chaves para o frontend não
+      // cair em "—" silencioso quando o address existir em produção.
+      expect(res.data.data).toHaveProperty('patient_address_id');
+      expect(res.data.data).toHaveProperty('patient_address_formatted');
+      expect(res.data.data).toHaveProperty('patient_address_raw');
+    });
+
     it('retorna 404 para UUID inexistente', async () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
       const res = await api.get(

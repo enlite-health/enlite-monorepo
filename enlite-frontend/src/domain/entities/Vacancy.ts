@@ -63,6 +63,13 @@ export interface AdminVacancyDetail {
   patient_zone: string | null;
   patient_city: string | null;
   patient_neighborhood: string | null;
+  /** FK para patient_addresses — identifica QUAL endereço do paciente esta vaga usa.
+   *  Um paciente pode ter vários endereços; cada vaga aponta pra um específico. */
+  patient_address_id: string | null;
+  /** Endereço formatado (Google Places) do patient_addresses linkado em patient_address_id */
+  patient_address_formatted: string | null;
+  /** Endereço cru (texto livre) do patient_addresses linkado em patient_address_id */
+  patient_address_raw: string | null;
   required_sex: string | null;
   required_professions: string[] | null;
   age_range_min: number | null;
