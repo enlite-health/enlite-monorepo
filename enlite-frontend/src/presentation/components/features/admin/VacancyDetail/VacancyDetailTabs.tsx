@@ -15,6 +15,15 @@ const TAB_I18N_KEYS: Record<VacancyTab, string> = {
   links: 'admin.vacancyDetail.tabs.links',
 };
 
+const tabActive =
+  'bg-primary text-white px-5 h-10 rounded-pill ' +
+  'font-poppins font-semibold text-base whitespace-nowrap ' +
+  'shadow-[0px_4px_20px_0px_rgba(0,0,0,0.4)] transition-colors flex items-center';
+const tabInactive =
+  'text-gray-800 hover:text-primary px-5 h-10 rounded-pill ' +
+  'font-poppins font-semibold text-base whitespace-nowrap ' +
+  'transition-colors flex items-center';
+
 export function VacancyDetailTabs({ activeTab, onTabChange }: VacancyDetailTabsProps) {
   const { t } = useTranslation();
 
@@ -24,14 +33,7 @@ export function VacancyDetailTabs({ activeTab, onTabChange }: VacancyDetailTabsP
         <button
           key={tab}
           onClick={() => onTabChange(tab)}
-          className={`
-            px-5 py-2 rounded-card font-lexend text-base font-medium transition-all whitespace-nowrap
-            ${
-              activeTab === tab
-                ? 'bg-primary text-white shadow-[0px_4px_20px_0px_rgba(0,0,0,0.4)]'
-                : 'text-gray-800 hover:text-primary'
-            }
-          `}
+          className={activeTab === tab ? tabActive : tabInactive}
         >
           {t(TAB_I18N_KEYS[tab])}
         </button>

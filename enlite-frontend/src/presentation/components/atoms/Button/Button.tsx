@@ -14,17 +14,28 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean;
 }
 
-const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-white border-primary',
-  outline: 'bg-transparent border-2',
-  ghost: 'bg-transparent border-0',
+// Tokens canônicos (Figma source of truth):
+// - md (default): 40px height, 16px Poppins SemiBold (1.35 lh) — botão padrão "Editar"
+// - sm:           32px height, 14px Poppins SemiBold — pills/ações secundárias
+// - lg:           48px height, 16px Poppins SemiBold — CTAs principais
+const sizeStyles: Record<ButtonSize, string> = {
+  sm: 'h-8 px-4 text-sm',
+  md: 'h-10 px-6 text-base',
+  lg: 'h-12 px-8 text-base',
 };
 
-const sizeStyles: Record<ButtonSize, string> = {
-  sm: 'px-4 py-2 text-sm h-10',
-  md: 'px-6 py-3 text-base h-12',
-  lg: 'px-6 py-4 text-lg min-h-[56px]',
+const variantStyles: Record<ButtonVariant, string> = {
+  primary: 'bg-primary text-white border border-primary hover:bg-primary/90',
+  outline: 'bg-transparent text-primary border-2 border-primary hover:bg-primary/5',
+  ghost: 'bg-transparent text-primary border-0 hover:bg-primary/5',
 };
+
+const baseStyles =
+  'inline-flex items-center justify-center gap-2 rounded-full overflow-hidden ' +
+  'font-poppins font-semibold leading-[1.35] tracking-normal text-center ' +
+  'transition-colors duration-200 ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed ' +
+  'focus:outline-none focus:ring-2 focus:ring-primary/50';
 
 export const Button = ({
   variant = 'primary',
@@ -39,15 +50,26 @@ export const Button = ({
   ...props
 }: ButtonProps) => {
   const { t } = useTranslation();
-  const baseStyles = 'rounded-full overflow-hidden border-solid transition-all duration-200 font-head-web-head-16-web font-[number:var(--head-web-head-16-web-font-weight)] text-[length:var(--head-web-head-16-web-font-size)] text-center tracking-[var(--head-web-head-16-web-letter-spacing)] leading-[var(--head-web-head-16-web-line-height)] [font-style:var(--head-web-head-16-web-font-style)] flex items-center justify-center';
-  
+
   const widthStyle = fullWidth ? 'w-full' : '';
   const customBorderColor = borderColor ? `border-[${borderColor}]` : '';
   const customTextColor = textColor ? `text-[${textColor}]` : '';
-  
+
+  const classes = [
+    baseStyles,
+    sizeStyles[size],
+    variantStyles[variant],
+    widthStyle,
+    customBorderColor,
+    customTextColor,
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <button
-      className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyle} ${customBorderColor} ${customTextColor} ${className}`}
+      className={classes}
       disabled={disabled || isLoading}
       {...props}
     >

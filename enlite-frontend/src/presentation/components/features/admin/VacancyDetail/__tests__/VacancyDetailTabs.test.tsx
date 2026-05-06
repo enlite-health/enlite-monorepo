@@ -13,11 +13,13 @@ function renderTabs(activeTab: 'encuadres' | 'talentum' | 'links' = 'encuadres')
   return render(<VacancyDetailTabs activeTab={activeTab} onTabChange={onTabChange} />);
 }
 
+function getTabButton(name: string): HTMLButtonElement {
+  return screen.getByRole('button', { name }) as HTMLButtonElement;
+}
+
 beforeEach(() => {
   onTabChange.mockClear();
 });
-
-// ── Rendering ────────────────────────────────────────────────────────────────
 
 describe('VacancyDetailTabs — rendering', () => {
   it('renders exactly 3 tab buttons', () => {
@@ -42,47 +44,43 @@ describe('VacancyDetailTabs — rendering', () => {
   });
 });
 
-// ── Active tab styling ───────────────────────────────────────────────────────
-
 describe('VacancyDetailTabs — active tab styling', () => {
   it('active tab has bg-primary class', () => {
     renderTabs('encuadres');
-    const activeButton = screen.getByText('admin.vacancyDetail.tabs.encuadres');
+    const activeButton = getTabButton('admin.vacancyDetail.tabs.encuadres');
     expect(activeButton.className).toContain('bg-primary');
     expect(activeButton.className).toContain('text-white');
   });
 
   it('inactive tabs do NOT have bg-primary class', () => {
     renderTabs('encuadres');
-    const talentumButton = screen.getByText('admin.vacancyDetail.tabs.talentum');
-    const linksButton = screen.getByText('admin.vacancyDetail.tabs.links');
+    const talentumButton = getTabButton('admin.vacancyDetail.tabs.talentum');
+    const linksButton = getTabButton('admin.vacancyDetail.tabs.links');
     expect(talentumButton.className).not.toContain('bg-primary');
     expect(linksButton.className).not.toContain('bg-primary');
   });
 
   it('talentum tab is active when activeTab is talentum', () => {
     renderTabs('talentum');
-    const talentumButton = screen.getByText('admin.vacancyDetail.tabs.talentum');
+    const talentumButton = getTabButton('admin.vacancyDetail.tabs.talentum');
     expect(talentumButton.className).toContain('bg-primary');
 
-    const encuadresButton = screen.getByText('admin.vacancyDetail.tabs.encuadres');
+    const encuadresButton = getTabButton('admin.vacancyDetail.tabs.encuadres');
     expect(encuadresButton.className).not.toContain('bg-primary');
   });
 
   it('links tab is active when activeTab is links', () => {
     renderTabs('links');
-    const linksButton = screen.getByText('admin.vacancyDetail.tabs.links');
+    const linksButton = getTabButton('admin.vacancyDetail.tabs.links');
     expect(linksButton.className).toContain('bg-primary');
   });
 
   it('active tab has shadow class', () => {
     renderTabs('encuadres');
-    const activeButton = screen.getByText('admin.vacancyDetail.tabs.encuadres');
+    const activeButton = getTabButton('admin.vacancyDetail.tabs.encuadres');
     expect(activeButton.className).toContain('shadow-');
   });
 });
-
-// ── Interaction ──────────────────────────────────────────────────────────────
 
 describe('VacancyDetailTabs — interaction', () => {
   it('clicking Talentum tab calls onTabChange with "talentum"', async () => {
@@ -103,8 +101,6 @@ describe('VacancyDetailTabs — interaction', () => {
     expect(onTabChange).toHaveBeenCalledWith('encuadres');
   });
 });
-
-// ── Accessibility ────────────────────────────────────────────────────────────
 
 describe('VacancyDetailTabs — accessibility', () => {
   it('all tabs are <button> elements', () => {

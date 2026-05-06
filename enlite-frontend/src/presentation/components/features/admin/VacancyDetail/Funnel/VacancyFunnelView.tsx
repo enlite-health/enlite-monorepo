@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@presentation/components/atoms/Button';
 import type { FunnelBucket } from '@domain/entities/Funnel';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
 import { VacancyFunnelToggle } from './VacancyFunnelToggle';
@@ -75,9 +76,19 @@ export function VacancyFunnelView({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      {/* Toggle Lista | Kanban */}
-      <div className="flex items-center">
+      {/* Linha 1: toggle (esquerda) + Enviar invitaciones (direita, só em modo lista) */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />
+        {isListView && (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleDispatchInvites}
+            className="flex-shrink-0"
+          >
+            {t('admin.vacancyDetail.funnelView.dispatchInvitesButton')}
+          </Button>
+        )}
       </div>
 
       {/* List view content */}
@@ -87,7 +98,6 @@ export function VacancyFunnelView({
             activeBucket={activeBucket}
             counts={data?.counts}
             onBucketChange={handleBucketChange}
-            onDispatchInvites={handleDispatchInvites}
           />
           <div
             role="tabpanel"

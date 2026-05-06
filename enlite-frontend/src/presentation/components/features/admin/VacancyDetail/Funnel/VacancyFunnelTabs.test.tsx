@@ -24,7 +24,6 @@ describe('VacancyFunnelTabs', () => {
         activeBucket="INVITED"
         counts={mockCounts}
         onBucketChange={vi.fn()}
-        onDispatchInvites={vi.fn()}
       />,
     );
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.invited/ })).toBeInTheDocument();
@@ -40,7 +39,6 @@ describe('VacancyFunnelTabs', () => {
         activeBucket="POSTULATED"
         counts={mockCounts}
         onBucketChange={vi.fn()}
-        onDispatchInvites={vi.fn()}
       />,
     );
     const postulatedTab = screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.postulated/ });
@@ -53,7 +51,6 @@ describe('VacancyFunnelTabs', () => {
         activeBucket="INVITED"
         counts={mockCounts}
         onBucketChange={vi.fn()}
-        onDispatchInvites={vi.fn()}
       />,
     );
     const postulatedTab = screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.postulated/ });
@@ -67,7 +64,6 @@ describe('VacancyFunnelTabs', () => {
         activeBucket="INVITED"
         counts={mockCounts}
         onBucketChange={onBucketChange}
-        onDispatchInvites={vi.fn()}
       />,
     );
     await userEvent.click(
@@ -82,40 +78,9 @@ describe('VacancyFunnelTabs', () => {
         activeBucket="INVITED"
         counts={mockCounts}
         onBucketChange={vi.fn()}
-        onDispatchInvites={vi.fn()}
       />,
     );
     // Count 5 for INVITED
     expect(screen.getByText(/\(5\)/)).toBeInTheDocument();
-  });
-
-  it('renders dispatch invites button', () => {
-    render(
-      <VacancyFunnelTabs
-        activeBucket="INVITED"
-        counts={mockCounts}
-        onBucketChange={vi.fn()}
-        onDispatchInvites={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByText('admin.vacancyDetail.funnelView.dispatchInvitesButton'),
-    ).toBeInTheDocument();
-  });
-
-  it('calls onDispatchInvites when dispatch button is clicked', async () => {
-    const onDispatchInvites = vi.fn();
-    render(
-      <VacancyFunnelTabs
-        activeBucket="INVITED"
-        counts={mockCounts}
-        onBucketChange={vi.fn()}
-        onDispatchInvites={onDispatchInvites}
-      />,
-    );
-    await userEvent.click(
-      screen.getByText('admin.vacancyDetail.funnelView.dispatchInvitesButton'),
-    );
-    expect(onDispatchInvites).toHaveBeenCalled();
   });
 });

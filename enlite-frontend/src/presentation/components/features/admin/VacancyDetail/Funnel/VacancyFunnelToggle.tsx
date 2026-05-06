@@ -3,6 +3,15 @@ import { useTranslation } from 'react-i18next';
 
 export type FunnelView = 'list' | 'kanban';
 
+const toggleActive =
+  'bg-primary text-white px-5 h-10 rounded-pill ' +
+  'font-poppins font-semibold text-base ' +
+  'flex items-center gap-2 shadow-[0px_4px_10px_rgba(0,0,0,0.4)] transition-colors';
+const toggleInactive =
+  'text-gray-800 hover:text-primary px-5 h-10 rounded-pill ' +
+  'font-poppins font-semibold text-base ' +
+  'flex items-center gap-2 transition-colors';
+
 interface ToggleButtonProps {
   active: boolean;
   icon: React.ReactNode;
@@ -24,11 +33,7 @@ function ToggleButton({
       aria-label={ariaLabel}
       aria-pressed={active}
       onClick={onClick}
-      className={
-        active
-          ? 'bg-primary text-white px-5 py-2 rounded-pill font-lexend font-medium text-base flex items-center gap-2 shadow-[0px_4px_10px_rgba(0,0,0,0.4)] transition-colors'
-          : 'text-gray-800 hover:text-primary px-5 py-2 rounded-pill font-lexend font-medium text-base flex items-center gap-2 transition-colors'
-      }
+      className={active ? toggleActive : toggleInactive}
     >
       {icon}
       {label}
