@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
@@ -6,6 +6,12 @@ import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
 interface ServiceAreaMapProps {
   lat?: number | null;
   lng?: number | null;
+  /**
+   * Fallback address text used to geocode client-side when `lat`/`lng` are
+   * missing. Recovers legacy `patient_addresses` rows whose coordinates were
+   * never backfilled — no DB write, just a one-shot Geocoder call per change.
+   */
+  address?: string | null;
   className?: string;
 }
 
@@ -18,23 +24,65 @@ function isValidCoordinates(
 
 /**
  * Renders a Google Maps embed with a Marker at the given coordinates.
- * Loads the Maps script on demand via `loadGoogleMaps`. Coordinates are
- * authoritative — they're populated by the backend at upsert time
- * (PatientService.replaceAddresses) and backfilled by the geocoding script
- * for legacy rows. If lat/lng are missing the placeholder card is shown
- * instead of geocoding client-side.
+ * Loads the Maps script on demand via `loadGoogleMaps`. Backend-supplied
+ * coordinates take precedence; when missing, falls back to client-side
+ * geocoding of the `address` prop so the pin still shows for legacy rows.
+ * Only when both fail does the placeholder card render.
  */
 export function ServiceAreaMap({
   lat,
   lng,
+  address,
   className = '',
 }: ServiceAreaMapProps): JSX.Element {
   const { t } = useTranslation();
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
+  const [resolved, setResolved] = useState<{ lat: number; lng: number } | null>(null);
 
-  const valid = isValidCoordinates(lat, lng);
+  const propsValid = isValidCoordinates(lat, lng);
+  const effectiveLat = propsValid ? (lat as number) : resolved?.lat ?? null;
+  const effectiveLng = propsValid ? (lng as number) : resolved?.lng ?? null;
+  const valid = effectiveLat != null && effectiveLng != null;
+
+  // Client-side geocoding fallback. Runs when the backend didn't supply
+  // coords but we have an address string. Resets on address change so the
+  // marker doesn't lag the user's selection.
+  useEffect(() => {
+    if (propsValid) return;
+    setResolved(null);
+    const query = address?.trim();
+    if (!query) return;
+    let cancelled = false;
+
+    loadGoogleMaps()
+      .then(() => {
+        if (cancelled) return;
+        const geocoder = new google.maps.Geocoder();
+        return geocoder.geocode({ address: query, region: 'AR' });
+      })
+      .then((res) => {
+        if (cancelled || !res) return;
+        const loc = res.results?.[0]?.geometry.location;
+        if (loc) setResolved({ lat: loc.lat(), lng: loc.lng() });
+      })
+      .catch(() => {
+        // Geocoding failed (no key, quota, no result). Placeholder remains.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address, propsValid]);
+
+  // Drop stale Map/Marker refs when the map div unmounts (valid → invalid),
+  // otherwise the next mount would try to setCenter on a detached instance.
+  useEffect(() => {
+    if (valid) return;
+    mapInstanceRef.current = null;
+    markerRef.current = null;
+  }, [valid]);
 
   useEffect(() => {
     if (!valid) return;
@@ -43,7 +91,7 @@ export function ServiceAreaMap({
     loadGoogleMaps()
       .then(() => {
         if (cancelled || !mapDivRef.current) return;
-        const position = { lat: lat as number, lng: lng as number };
+        const position = { lat: effectiveLat as number, lng: effectiveLng as number };
 
         if (!mapInstanceRef.current) {
           mapInstanceRef.current = new google.maps.Map(mapDivRef.current, {
@@ -72,7 +120,7 @@ export function ServiceAreaMap({
     return () => {
       cancelled = true;
     };
-  }, [lat, lng, valid]);
+  }, [effectiveLat, effectiveLng, valid]);
 
   if (!valid) {
     return (

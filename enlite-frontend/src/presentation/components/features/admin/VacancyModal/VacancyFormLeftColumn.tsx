@@ -5,23 +5,26 @@
  * Patient-derived fields show a gray background (and are unclickable) until a case is selected.
  *
  * Design-system components used:
- *   - FormField  → replaces FieldGroup (label + children + error)
- *   - SelectField → replaces raw <select> + SELECT_CLS (via Controller)
- *   - InputWithIcon → replaces raw <input> + INPUT_CLS
+ *   - FormField  → label + children + error
+ *   - SelectField → simple selects via Controller
+ *   - SearchableSelect → case-number picker (typeable filter for many cases)
+ *   - InputWithIcon → date inputs
  */
 
 import { useState, useEffect } from 'react';
-import { UseFormRegister, Control, Controller, FieldErrors } from 'react-hook-form';
+import { UseFormRegister, Control, Controller, FieldErrors, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Search, Loader2 } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { CaseOption } from '@hooks/admin/useVacancyModalFlow';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
+import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
+import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { PROFESSION_OPTIONS, SEX_OPTIONS, AGE_RANGE_OPTIONS } from '../vacancy-form-schema';
-import { SELECT_CLS, TEXTAREA_CLS, READONLY_CLS } from './vacancyFormShared';
+import { TEXTAREA_CLS, READONLY_CLS } from './vacancyFormShared';
 import { MeetLinksField } from './MeetLinksField';
 
 // ---------------------------------------------------------------------------
@@ -66,7 +69,6 @@ export function VacancyFormLeftColumn({
   const [cases, setCases] = useState<CaseOption[]>([]);
   const [isLoadingCases, setIsLoadingCases] = useState(mode === 'create');
   const [casesError, setCasesError] = useState<string | null>(null);
-  const [selectedAgeRange, setSelectedAgeRange] = useState<string>('');
 
   useEffect(() => {
     if (mode !== 'create') return;
@@ -79,12 +81,20 @@ export function VacancyFormLeftColumn({
       .finally(() => setIsLoadingCases(false));
   }, [mode]);
 
-  const handleCaseChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
+  const handleCaseChange = (val: string): void => {
     if (!val) return;
     const found = cases.find((c) => c.caseNumber === Number(val));
     if (found) selectCase(found.caseNumber, found.patientId);
   };
+
+  // Derive the displayed age-range bucket from the form's numeric values so the
+  // dropdown stays in sync with edit-mode initial data and external resets.
+  const ageRangeMin = useWatch({ control, name: 'age_range_min' });
+  const ageRangeMax = useWatch({ control, name: 'age_range_max' });
+  const selectedAgeKey =
+    AGE_RANGE_OPTIONS.find(
+      (o) => (o.min ?? null) === (ageRangeMin ?? null) && (o.max ?? null) === (ageRangeMax ?? null),
+    )?.key ?? '';
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
@@ -110,31 +120,19 @@ export function VacancyFormLeftColumn({
             ) : casesError ? (
               <p className="text-red-500 text-sm">{casesError}</p>
             ) : (
-              <div className="flex items-center min-h-[56px] px-4 rounded-[10px] border-[1.5px] border-[#D9D9D9] bg-white focus-within:border-primary transition-colors">
-                <div className="flex justify-between w-full items-center relative">
-                  <select
-                    className={SELECT_CLS}
-                    value={selectedCaseNumber ?? ''}
-                    onChange={handleCaseChange}
-                    data-testid="case-select"
-                  >
-                    <option value="">
-                      {t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
-                    </option>
-                    {cases.map((c) => (
-                      <option key={c.caseNumber} value={c.caseNumber}>
-                        {t('admin.vacancyModal.caseSelectStep.caseOptionLabel', {
-                          caseNumber: c.caseNumber,
-                        })}
-                      </option>
-                    ))}
-                  </select>
-                  <img
-                    className="absolute right-0 w-3 h-[7px] pointer-events-none z-0"
-                    alt="Dropdown"
-                    src="https://c.animaapp.com/Bbli6X7n/img/vector-9.svg"
-                  />
-                </div>
+              <div data-testid="case-select">
+                <SearchableSelect
+                  value={selectedCaseNumber != null ? String(selectedCaseNumber) : ''}
+                  onChange={handleCaseChange}
+                  options={cases.map((c) => ({
+                    value: String(c.caseNumber),
+                    label: t('admin.vacancyModal.caseSelectStep.caseOptionLabel', {
+                      caseNumber: c.caseNumber,
+                    }),
+                  }))}
+                  placeholder={t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
+                  searchPlaceholder={t('common.search', 'Buscar...')}
+                />
               </div>
             )
           ) : (
@@ -152,7 +150,9 @@ export function VacancyFormLeftColumn({
         </FormField>
       </div>
 
-      {/* 3. Professional type — Controller to write single value into array */}
+      {/* 3. Professional type — multi-select via inline checkboxes. The
+          backend matches workers by `requiredProfessions.includes(occupation)`,
+          so checking both AT and Cuidador naturally expresses "indistinto". */}
       <div className={patientDis}>
         <FormField
           label={tp('professionalType')}
@@ -167,21 +167,31 @@ export function VacancyFormLeftColumn({
             name="required_professions"
             control={control}
             render={({ field }) => (
-              <SelectField
-                value={field.value[0] ?? ''}
-                onChange={(v) => field.onChange(v ? [v] : [])}
-                options={PROFESSION_OPTIONS.map((p) => ({
-                  value: p,
-                  label: tf(`professionOptions.${p}`),
-                }))}
-                placeholder={tp('professionalTypePlaceholder')}
-                error={
-                  errors.required_professions
-                    ? tf('validation.requiredProfessionsMin')
-                    : undefined
-                }
-                data-testid="profession-select"
-              />
+              <div
+                className={`flex items-center gap-8 min-h-[60px] px-5 rounded-[10px] border-2 bg-white transition-colors ${
+                  errors.required_professions ? 'border-red-500' : 'border-[#D9D9D9] focus-within:border-[#180149]'
+                }`}
+                data-testid="profession-checkboxes"
+              >
+                {PROFESSION_OPTIONS.map((p) => {
+                  const checked = field.value?.includes(p) ?? false;
+                  return (
+                    <Checkbox
+                      key={p}
+                      id={`profession-${p}`}
+                      label={tf(`professionOptions.${p}`)}
+                      checked={checked}
+                      onChange={() => {
+                        const current = field.value ?? [];
+                        field.onChange(
+                          checked ? current.filter((v) => v !== p) : [...current, p],
+                        );
+                      }}
+                      data-testid={`profession-checkbox-${p}`}
+                    />
+                  );
+                })}
+              </div>
             )}
           />
         </FormField>
@@ -241,22 +251,16 @@ export function VacancyFormLeftColumn({
         </FormField>
       </div>
 
-      {/* 8. Age range — single select with text labels */}
+      {/* 8. Age range — bucket select. All buckets respect the schema floor (min ≥ 18). */}
       <FormField label={tp('ageRange')}>
         <SelectField
-          value={selectedAgeRange}
-          onChange={(label) => {
-            setSelectedAgeRange(label);
-            const opt = AGE_RANGE_OPTIONS.find((o) => o.label === label);
-            if (opt) {
-              setValue('age_range_min', opt.min);
-              setValue('age_range_max', opt.max);
-            } else {
-              setValue('age_range_min', undefined);
-              setValue('age_range_max', undefined);
-            }
+          value={selectedAgeKey}
+          onChange={(key) => {
+            const opt = AGE_RANGE_OPTIONS.find((o) => o.key === key);
+            setValue('age_range_min', opt?.min);
+            setValue('age_range_max', opt?.max);
           }}
-          options={AGE_RANGE_OPTIONS.map((o) => ({ value: o.label, label: o.label }))}
+          options={AGE_RANGE_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
           placeholder="—"
           data-testid="age-range-select"
         />
