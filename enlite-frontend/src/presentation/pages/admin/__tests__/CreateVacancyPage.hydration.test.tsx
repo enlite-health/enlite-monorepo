@@ -11,7 +11,7 @@
  * Mockamos AdminApiService no boundary do component — sem rede, sem auth.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -79,6 +79,17 @@ function renderPage() {
   );
 }
 
+// case-select is a SearchableSelect (custom dropdown), not a native <select>.
+// To pick a case: click the trigger button to open the listbox, then click the
+// option with the matching label.
+async function pickCase(caseLabel: string): Promise<void> {
+  const wrapper = await screen.findByTestId('case-select');
+  const trigger = within(wrapper).getByRole('button');
+  await userEvent.click(trigger);
+  const option = await screen.findByRole('option', { name: caseLabel });
+  await userEvent.click(option);
+}
+
 describe('CreateVacancyPage — patient hydration smoke', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,13 +99,13 @@ describe('CreateVacancyPage — patient hydration smoke', () => {
     renderPage();
 
     // Wait for the case dropdown to be populated
-    const select = await screen.findByTestId('case-select');
+    await screen.findByTestId('case-select');
     await waitFor(() => {
       expect(AdminApiService.getCasesForSelect).toHaveBeenCalled();
     });
 
-    // Pick the case
-    await userEvent.selectOptions(select, '99');
+    // Pick the case (custom dropdown — click trigger, then option)
+    await pickCase('CASO 99');
 
     // Patient detail fetched + addresses listed
     await waitFor(() => {
@@ -131,8 +142,7 @@ describe('CreateVacancyPage — patient hydration smoke', () => {
     const saveBtn = await screen.findByTestId('create-vacancy-save-btn');
     expect(saveBtn).toBeDisabled();
 
-    const select = await screen.findByTestId('case-select');
-    await userEvent.selectOptions(select, '99');
+    await pickCase('CASO 99');
 
     // Picking a case is necessary but not sufficient — schedule, profession,
     // meet link and address are still required by the schema.
