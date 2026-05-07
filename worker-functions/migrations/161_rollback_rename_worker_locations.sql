@@ -18,6 +18,31 @@
 --   - Possivel reaplicar a 160 (com novo numero) quando o codigo for de fato migrado
 --     e validado em producao
 
-ALTER TABLE worker_locations_deprecated_20260506 RENAME TO worker_locations;
+-- Idempotente: em prod a 160 nunca foi aplicada, entao worker_locations ja
+-- esta no nome correto e a tabela _deprecated_20260506 nao existe. Em dev
+-- (onde 160 rodou) a deprecated existe e precisamos renomear de volta.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public'
+       AND table_name = 'worker_locations_deprecated_20260506'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public'
+       AND table_name = 'worker_locations'
+  ) THEN
+    EXECUTE 'ALTER TABLE worker_locations_deprecated_20260506 RENAME TO worker_locations';
+  END IF;
+END $$;
 
-COMMENT ON TABLE worker_locations IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public'
+       AND table_name = 'worker_locations'
+  ) THEN
+    EXECUTE 'COMMENT ON TABLE worker_locations IS NULL';
+  END IF;
+END $$;
