@@ -179,11 +179,11 @@ describe('TalentumDescriptionService', () => {
       delete process.env.GEMINI_MODEL;
       const service = createService();
       expect(service).toBeDefined();
-      // Internal model defaults to 'gemini-2.5-flash' — verified via URL check
+      // Internal model defaults to 'gemini-2.5-pro' — verified via URL check
     });
 
     it('uses custom GEMINI_MODEL when set', () => {
-      process.env.GEMINI_MODEL = 'gemini-2.5-pro';
+      process.env.GEMINI_MODEL = 'gemini-custom';
       const service = createService();
       expect(service).toBeDefined();
     });
@@ -330,7 +330,7 @@ describe('TalentumDescriptionService', () => {
       await service.generateDescription('job-model');
 
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain('gemini-2.5-flash');
+      expect(url).toContain('gemini-2.5-pro');
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.generationConfig.temperature).toBe(0.3);
       expect(body.generationConfig.maxOutputTokens).toBe(2048);
@@ -343,7 +343,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('sends custom model from GEMINI_MODEL env', async () => {
-      process.env.GEMINI_MODEL = 'gemini-2.5-pro';
+      process.env.GEMINI_MODEL = 'gemini-custom-model';
       mockQuery
         .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
         .mockResolvedValueOnce({ rows: [] });
@@ -353,7 +353,7 @@ describe('TalentumDescriptionService', () => {
       await service.generateDescription('job-custom-model');
 
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain('gemini-2.5-pro');
+      expect(url).toContain('gemini-custom-model');
     });
 
     it('puts API key in URL query string', async () => {
@@ -411,13 +411,15 @@ describe('TalentumDescriptionService', () => {
       expect(mockGetPrompt).toHaveBeenCalledWith('test-cuidador-doc-id');
     });
 
-    it('throws on Gemini HTTP error', async () => {
+    it('throws on Gemini HTTP error after exhausting retries', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
-      mockFetch.mockResolvedValueOnce(mockGeminiError(429, 'Rate limit exceeded'));
+      // 429 is transient — retried 3 times before bubbling up.
+      mockFetch.mockResolvedValue(mockGeminiError(429, 'Rate limit exceeded'));
 
       const service = createService();
       await expect(service.generateDescription('job-rate-limit'))
         .rejects.toThrow('Gemini API error 429');
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('throws on empty Gemini response (no content)', async () => {

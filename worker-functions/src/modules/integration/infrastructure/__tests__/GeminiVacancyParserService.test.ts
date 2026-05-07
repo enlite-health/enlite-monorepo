@@ -268,8 +268,9 @@ describe('GeminiVacancyParserService', () => {
       ).rejects.toThrow('GEMINI_API_KEY');
     });
 
-    it('deve lancar erro quando Gemini retorna HTTP error', async () => {
-      mockFetch.mockResolvedValueOnce({
+    it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
+      // 429 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      mockFetch.mockResolvedValue({
         ok: false,
         status: 429,
         text: () => Promise.resolve('Rate limit exceeded'),
@@ -278,6 +279,7 @@ describe('GeminiVacancyParserService', () => {
       await expect(
         service.parseFromTalentumDescription('desc', 'CASO 1'),
       ).rejects.toThrow('Gemini API error 429');
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('deve lancar erro quando Gemini retorna resposta vazia', async () => {
@@ -429,14 +431,16 @@ describe('GeminiVacancyParserService', () => {
       expect(systemPrompt).toContain('Prompt template para AT/CUIDADOR');
     });
 
-    it('deve lancar erro quando Gemini retorna HTTP error', async () => {
-      mockFetch.mockResolvedValueOnce({
+    it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
+      // 500 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
         text: () => Promise.resolve('Internal server error'),
       });
 
       await expect(service.parseFromPdf('dGVzdA==', 'AT')).rejects.toThrow('Gemini API error 500');
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('deve lancar erro quando Gemini retorna resposta vazia', async () => {
@@ -570,7 +574,7 @@ describe('GeminiVacancyParserService', () => {
   // ── URL e configuracao ───────────────────────────────────────
 
   describe('configuracao', () => {
-    it('deve usar modelo default gemini-2.5-flash quando GEMINI_MODEL nao definido', () => {
+    it('deve usar modelo default gemini-2.5-pro quando GEMINI_MODEL nao definido', () => {
       delete process.env.GEMINI_MODEL;
       const svc = new GeminiVacancyParserService();
 
@@ -578,7 +582,7 @@ describe('GeminiVacancyParserService', () => {
       mockFetch.mockResolvedValueOnce(makeGeminiResponse(makeTalentumVacancyOutput()));
       svc.parseFromTalentumDescription('desc', 'CASO 1').then(() => {
         const url = mockFetch.mock.calls[0][0] as string;
-        expect(url).toContain('gemini-2.5-flash');
+        expect(url).toContain('gemini-2.5-pro');
       });
     });
 

@@ -28,7 +28,7 @@ services:
       USE_KMS_ENCRYPTION: "false"
       INTERNAL_TOKEN_SECRET: dev-secret-local
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
       PROMPT_DOC_ID_AT: ${PROMPT_DOC_ID_AT}
       PROMPT_DOC_ID_CUIDADOR: ${PROMPT_DOC_ID_CUIDADOR}
       GOOGLE_APPLICATION_CREDENTIALS: /app/.keys/enlite-prd-e7b9624315e8.json

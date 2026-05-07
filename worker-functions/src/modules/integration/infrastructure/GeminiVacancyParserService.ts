@@ -23,6 +23,7 @@ import {
   detectMissingFields,
   retryMissingFields,
 } from './GeminiVacancyParserHelpers';
+import { fetchGeminiWithRetry } from './gemini-fetch';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -85,7 +86,7 @@ export class GeminiVacancyParserService {
 
   constructor() {
     this.apiKey = process.env.GEMINI_API_KEY ?? '';
-    this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.promptProvider = new GoogleDocsPromptProvider();
   }
 
@@ -209,28 +210,24 @@ export class GeminiVacancyParserService {
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: userParts }],
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: 8192,
-          responseMimeType: 'application/json',
-          responseSchema: VACANCY_RESPONSE_SCHEMA,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.text();
-      console.error(
-        `[GeminiParser] Gemini API error HTTP ${response.status}: ${errBody}`,
-      );
-      throw new Error(`Gemini API error ${response.status}: ${errBody}`);
-    }
+    const response = await fetchGeminiWithRetry(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: userParts }],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json',
+            responseSchema: VACANCY_RESPONSE_SCHEMA,
+          },
+        }),
+      },
+      'GeminiParser',
+    );
 
     const data = (await response.json()) as {
       candidates: Array<{

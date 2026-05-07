@@ -151,7 +151,7 @@ describe('GeminiVacancyParserService', () => {
     });
 
     it('uses custom GEMINI_MODEL when set', () => {
-      process.env.GEMINI_MODEL = 'gemini-2.5-flash';
+      process.env.GEMINI_MODEL = 'gemini-custom';
       const service = createService();
       expect(service).toBeDefined();
     });
@@ -273,14 +273,14 @@ describe('GeminiVacancyParserService', () => {
       expect(url).toContain('key=my-secret-key');
     });
 
-    it('sends correct model in URL (default gemini-2.0-pro)', async () => {
+    it('sends correct model in URL (default gemini-2.5-pro)', async () => {
       mockFetch.mockResolvedValueOnce(mockGeminiResponse(VALID_GEMINI_RESPONSE));
 
       const service = createService();
       await service.parseFromText('Test', 'AT');
 
       const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain('gemini-2.5-flash');
+      expect(url).toContain('gemini-2.5-pro');
     });
 
     it('uses custom model from GEMINI_MODEL env', async () => {
@@ -333,11 +333,13 @@ describe('GeminiVacancyParserService', () => {
       await expect(service.parseFromText('Test', 'AT')).rejects.toThrow('GEMINI_API_KEY');
     });
 
-    it('throws on Gemini HTTP error', async () => {
-      mockFetch.mockResolvedValueOnce(mockGeminiError(429, 'Rate limit'));
+    it('throws on Gemini HTTP error after exhausting retries', async () => {
+      // 429 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      mockFetch.mockResolvedValue(mockGeminiError(429, 'Rate limit'));
 
       const service = createService();
       await expect(service.parseFromText('Test', 'AT')).rejects.toThrow('Gemini API error 429');
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('throws on empty Gemini response (no candidates)', async () => {

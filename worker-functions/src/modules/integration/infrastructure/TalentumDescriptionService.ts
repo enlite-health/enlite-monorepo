@@ -1,7 +1,7 @@
 /**
  * TalentumDescriptionService
  *
- * Uses Gemini (default `gemini-2.5-flash`) to generate the formatted vacancy
+ * Uses Gemini (default `gemini-2.5-pro`) to generate the formatted vacancy
  * description that Talentum expects when creating a prescreening project.
  *
  * The output has 3 sections:
@@ -16,6 +16,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GoogleDocsPromptProvider } from './GoogleDocsPromptProvider';
+import { fetchGeminiWithRetry } from './gemini-fetch';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -113,7 +114,7 @@ export class TalentumDescriptionService {
   constructor(promptProvider?: GoogleDocsPromptProvider) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.apiKey = process.env.GEMINI_API_KEY ?? '';
-    this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     if (!this.apiKey) throw new Error('GEMINI_API_KEY não configurado');
     this.promptProvider = promptProvider ?? new GoogleDocsPromptProvider();
   }
@@ -139,13 +140,12 @@ export class TalentumDescriptionService {
   }
 
   /**
-   * Generates a Talentum-ready description for a job posting WITHOUT persisting.
-   * Same logic as generateDescription but skips the DB update.
-   * Used by the AI content preview endpoint.
+   * Loads vacancy + patient data needed to build the Talentum prompt.
+   * city/state/service_device_types/pathology_types/dependency_level were
+   * dropped from job_postings in migration 152 — sourced from
+   * patient_addresses (pa) and patients (p) via FKs.
    */
-  async generateDescriptionPreview(jobPostingId: string): Promise<GeneratedDescription> {
-    console.log(`[TalentumDesc] Generating description preview for job_posting ${jobPostingId}`);
-
+  private async loadInput(jobPostingId: string): Promise<{ input: GenerateDescriptionInput; workerType: WorkerType }> {
     const result = await this.db.query(
       `SELECT
          jp.case_number, jp.title,
@@ -191,86 +191,40 @@ export class TalentumDescriptionService {
       paymentDay: row.payment_day ?? undefined,
     };
 
-    const workerType = this.resolveWorkerType(row.required_professions);
+    return { input, workerType: this.resolveWorkerType(row.required_professions) };
+  }
+
+  /**
+   * Generates a Talentum-ready description for a job posting WITHOUT persisting.
+   * Used by the AI content preview endpoint.
+   */
+  async generateDescriptionPreview(jobPostingId: string): Promise<GeneratedDescription> {
+    console.log(`[TalentumDesc] Generating description preview for job_posting ${jobPostingId}`);
+    const { input, workerType } = await this.loadInput(jobPostingId);
     const llmText = await this.callGemini(input, workerType);
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
-
     return { title: input.title, description: fullDescription };
   }
 
   /**
    * Generates a Talentum-ready description for a job posting.
-   * Fetches vacancy + patient data from DB, calls Gemini, appends the fixed
-   * "Marco de Acompañamiento" section, and saves to job_postings.talentum_description.
+   * Calls Gemini, appends the fixed "Marco de Acompañamiento" section,
+   * and saves to job_postings.talentum_description.
    */
   async generateDescription(jobPostingId: string): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description for job_posting ${jobPostingId}`);
-
-    // city/state/service_device_types/pathology_types/dependency_level dropped in migration 152.
-    // Sourced from patient_addresses (pa) and patients (p) via FKs.
-    const result = await this.db.query(
-      `SELECT
-         jp.case_number, jp.title,
-         jp.required_professions, jp.required_sex,
-         jp.required_experience, jp.worker_attributes,
-         jp.age_range_min, jp.age_range_max,
-         jp.providers_needed, jp.schedule, jp.work_schedule,
-         jp.salary_text, jp.payment_day,
-         pa.city, pa.state,
-         p.diagnosis AS pathology_types,
-         p.dependency_level,
-         p.service_type AS service_device_types
-       FROM job_postings jp
-       LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
-       LEFT JOIN patients p ON jp.patient_id = p.id
-       WHERE jp.id = $1`,
-      [jobPostingId]
-    );
-
-    if (result.rows.length === 0) {
-      throw new Error(`Job posting ${jobPostingId} not found`);
-    }
-
-    const row = result.rows[0];
-    const input: GenerateDescriptionInput = {
-      caseNumber: row.case_number?.toString() ?? '',
-      title: row.title ?? `Caso ${row.case_number}`,
-      requiredProfessions: row.required_professions ?? [],
-      requiredSex: row.required_sex ?? undefined,
-      requiredExperience: row.required_experience ?? undefined,
-      workerAttributes: row.worker_attributes ?? undefined,
-      ageRangeMin: row.age_range_min ?? undefined,
-      ageRangeMax: row.age_range_max ?? undefined,
-      providersNeeded: row.providers_needed ?? undefined,
-      schedule: row.schedule ?? undefined,
-      workSchedule: row.work_schedule ?? undefined,
-      city: row.city ?? undefined,
-      state: row.state ?? undefined,
-      serviceDeviceTypes: row.service_device_types ? [row.service_device_types] : undefined,
-      pathologyTypes: row.pathology_types ?? undefined,
-      dependencyLevel: row.dependency_level ?? undefined,
-      salaryText: row.salary_text ?? undefined,
-      paymentDay: row.payment_day ?? undefined,
-    };
-
-    const workerType = this.resolveWorkerType(row.required_professions);
+    const { input, workerType } = await this.loadInput(jobPostingId);
     const llmText = await this.callGemini(input, workerType);
-
-    // Append the fixed institutional section 3
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
 
-    // Persist in job_postings.talentum_description (CA-3.6)
+    // CA-3.6: persist in job_postings.talentum_description
     await this.db.query(
       `UPDATE job_postings SET talentum_description = $1, updated_at = NOW() WHERE id = $2`,
       [fullDescription, jobPostingId]
     );
-
     console.log(`[TalentumDesc] Description saved for job_posting ${jobPostingId}`);
 
-    return {
-      title: input.title,
-      description: fullDescription,
-    };
+    return { title: input.title, description: fullDescription };
   }
 
   private formatSchedule(schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>): string {
@@ -328,26 +282,24 @@ Datos de la vacante:
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 2048,
-          responseMimeType: 'application/json',
-          responseSchema: DESCRIPTION_RESPONSE_SCHEMA,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.text();
-      console.error(`[TalentumDesc] Gemini API error HTTP ${response.status}: ${errBody}`);
-      throw new Error(`Gemini API error ${response.status}: ${errBody}`);
-    }
+    const response = await fetchGeminiWithRetry(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+            responseMimeType: 'application/json',
+            responseSchema: DESCRIPTION_RESPONSE_SCHEMA,
+          },
+        }),
+      },
+      'TalentumDesc',
+    );
 
     const data = (await response.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;

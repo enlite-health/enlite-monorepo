@@ -10,6 +10,7 @@ import {
   TALENTUM_VACANCY_RESPONSE_SCHEMA,
 } from './gemini-vacancy-constants';
 import type { ParsedVacancyResult } from './GeminiVacancyParserService';
+import { fetchGeminiWithRetry } from './gemini-fetch';
 
 // ── parseFromTalentumDescription ─────────────────────────────────────────────
 
@@ -26,28 +27,24 @@ export async function parseFromTalentumDescriptionHelper(
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: TALENTUM_VACANCY_ONLY_INSTRUCTIONS }] },
-      contents: [{ role: 'user', parts: [{ text: `Título del proyecto: ${title}\n\n${description}` }] }],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 4096,
-        responseMimeType: 'application/json',
-        responseSchema: TALENTUM_VACANCY_RESPONSE_SCHEMA,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    console.error(
-      `[GeminiParser] Gemini API error HTTP ${response.status}: ${errBody}`,
-    );
-    throw new Error(`Gemini API error ${response.status}: ${errBody}`);
-  }
+  const response = await fetchGeminiWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: TALENTUM_VACANCY_ONLY_INSTRUCTIONS }] },
+        contents: [{ role: 'user', parts: [{ text: `Título del proyecto: ${title}\n\n${description}` }] }],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+          responseSchema: TALENTUM_VACANCY_RESPONSE_SCHEMA,
+        },
+      }),
+    },
+    'GeminiParser',
+  );
 
   const data = (await response.json()) as {
     candidates: Array<{
