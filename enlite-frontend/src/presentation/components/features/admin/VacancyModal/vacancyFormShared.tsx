@@ -19,7 +19,3 @@ export const TEXTAREA_CLS =
 // readability on the gray background.
 export const READONLY_CLS =
   'min-h-[56px] w-full px-4 py-3 text-base font-medium text-gray-800 border-[1.5px] border-[#D9D9D9] rounded-[10px] bg-[#f3f4f6] cursor-default flex items-center';
-
-// Select used in custom-loading-state cases (case-select wrapper)
-export const SELECT_CLS =
-  'w-full font-lexend font-medium text-[#374151] text-sm leading-[150%] bg-transparent outline-none appearance-none pr-8 cursor-pointer';

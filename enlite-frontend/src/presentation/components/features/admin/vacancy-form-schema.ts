@@ -101,14 +101,25 @@ export const PROFESSION_OPTIONS = ['AT', 'CAREGIVER'] as const;
 
 export const SEX_OPTIONS = ['M', 'F', 'BOTH'] as const;
 
-export const AGE_RANGE_OPTIONS = [
-  { label: 'Bebê', min: 0, max: 2 },
-  { label: 'Criança', min: 3, max: 11 },
-  { label: 'Adolescente', min: 12, max: 17 },
-  { label: 'Adulto Jovem', min: 18, max: 35 },
-  { label: 'Adulto', min: 36, max: 64 },
-  { label: 'Idoso', min: 65, max: 99 },
-] as const;
+/**
+ * Operations only contracts adult workers (≥18). The Zod schema enforces
+ * `age_range_min >= 18` when defined, so all selectable buckets must respect
+ * that floor. "Indistinto" clears both bounds; "45+" leaves max open.
+ */
+export interface AgeRangeOption {
+  key: string;
+  label: string;
+  min?: number;
+  max?: number;
+}
+
+export const AGE_RANGE_OPTIONS: AgeRangeOption[] = [
+  { key: 'ANY', label: 'Indistinto' },
+  { key: '18_25', label: '18 - 25', min: 18, max: 25 },
+  { key: '25_35', label: '25 - 35', min: 25, max: 35 },
+  { key: '35_45', label: '35 - 45', min: 35, max: 45 },
+  { key: '45_PLUS', label: '45+', min: 45 },
+];
 
 export const DEVICE_OPTIONS = [
   'DOMICILIARIO', 'ESCOLAR', 'INSTITUCIONAL', 'COMUNITARIO',

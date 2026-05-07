@@ -192,7 +192,8 @@ export function VacancyFormRightColumn({
 
       {/* 6. Map of the selected address. lat/lng come from the backend
           (PatientService geocodes at upsert; backfill script fills legacy rows).
-          When coords are missing the component shows its placeholder. */}
+          For legacy ClickUp rows without coords we pass `address` so the map
+          can geocode client-side and still show the pin. */}
       <FormField label="">
         {(() => {
           const selected = addresses.find((a) => a.id === selectedAddressId);
@@ -200,6 +201,7 @@ export function VacancyFormRightColumn({
             <ServiceAreaMap
               lat={selected?.lat ?? null}
               lng={selected?.lng ?? null}
+              address={selected?.address_formatted ?? selected?.address_raw ?? null}
             />
           );
         })()}
