@@ -328,6 +328,82 @@ Notas:
 
 ---
 
+### TD-009 — `patients.affiliate_id` é coluna obsoleta (descoberto 2026-05-08)
+
+- **Status:** identificado, não-bloqueante, deprecação pendente
+- **Descoberto em:** 2026-05-08 ao escrever comprehensive fixture test do `ClickUpPatientMapper`
+- **Dono:** backend
+- **Bloqueador?** Não — coluna existe mas está sempre NULL
+
+**Sintoma:**
+
+`patients.affiliate_id` aparece em `PatientIdentityUpsertInput` mas **não é setada por nenhum mapper** ([ClickUpPatientMapper.map()](../worker-functions/src/modules/integration/infrastructure/clickup/ClickUpPatientMapper.ts) não inclui a chave). 0/318 patients em prod local têm valor não-nulo. O conceito ("ID do afiliado no plano de saúde") é coberto por `health_insurance_member_id` desde a [migration 147](../worker-functions/migrations/147_*.sql).
+
+**Causa raiz:**
+
+Coluna criada antes da migration 147 que separou identidade do plano de saúde em campos dedicados (`health_insurance_name`, `health_insurance_member_id`). O `affiliate_id` ficou órfão — é semanticamente equivalente ao novo `health_insurance_member_id` mas nunca foi populado.
+
+**Plano de deprecação (incremental, conforme regra do projeto):**
+
+1. **Migration N**: `ALTER TABLE patients RENAME COLUMN affiliate_id TO affiliate_id_deprecated_20260508` + remover do `INSERT` em `PatientIdentityRepository`. Sem perda de dados (já é null em todos).
+2. **Aguardar 30 dias** sem reclamações (nenhum código deveria estar lendo).
+3. **Migration N+M**: `DROP COLUMN affiliate_id_deprecated_20260508`.
+
+**Risco:** baixo — grep prévio confirma só referências em ClickUp mapper TS (que não usa), não há SQL externo nem backfill scripts referenciando.
+
+---
+
+### TD-010 — Cloud Run prd não está sob Terraform (descoberto 2026-05-08)
+
+- **Status:** aberto, deferred
+- **Descoberto em:** 2026-05-08 durante setup do mirror enlite-stg via Terraform (Fase 1.F)
+- **Dono:** infra
+- **Bloqueador?** Não — prd continua deployando normal via CI/CD
+
+**O que é:**
+
+Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enlite-n8n) foram criados manualmente via gcloud como Cloud Run **v1** (knative-style). O resto da infra está sob TF (Cloud SQL, Secrets, IAM, AR, GCS), mas Cloud Run prd ficou de fora porque importar v1 pra schema v2 do provider Google envolve incompatibilidades (annotations, labels, autogen fields).
+
+**Impacto:** drift potencial entre o que prd tem hoje e o que stg tem (declarado em TF v2). Não bloqueia, mas significa que mudanças manuais em prd não aparecem em stg.
+
+**Plano:** quando estabilizar stg, importar prd Cloud Run pra TF como passo dedicado — provavelmente migrar prd pra Cloud Run v2 no processo (gcloud run services replace + ajustes de manifest).
+
+---
+
+### TD-011 — Cloud SQL prd com `authorized_networks: 0.0.0.0/0` (descoberto 2026-05-08)
+
+- **Status:** aberto, segurança
+- **Descoberto em:** 2026-05-08 ao inspecionar config Cloud SQL para mirror stg
+- **Dono:** infra + sec
+- **Bloqueador?** Não — SSL é obrigatório (sslMode=TRUSTED_CLIENT_CERTIFICATE_REQUIRED), mas o IP público está aberto pra internet
+
+**O que é:**
+
+`enlite-ar-db` em prd está com `authorizedNetworks=[{value: "0.0.0.0/0"}]`, ou seja, qualquer IP do mundo pode tentar TCP no Postgres. SSL + cert client são exigidos, então autenticação não vaza, mas o atacante pode enumerar versão / fazer brute-force / DDoS no listener.
+
+Stg foi configurado com a mesma rule por paridade. Idem `enlite-n8n-db-ar` (que tem `requireSsl=false` — pior ainda, mas o n8n acessa via Cloud SQL Proxy interno, não via IP público; a rule 0.0.0.0/0 não está nesse).
+
+**Plano:** restringir authorized_networks a IPs específicos (Cloud Run NAT, GitHub Actions runners, IPs do escritório) ou migrar pra Private IP exclusivamente. Cloud SQL Proxy via service account já cobre acesso via aplicação.
+
+---
+
+### TD-012 — Pipeline de anonimização prd→stg pendente (descoberto 2026-05-08)
+
+- **Status:** aberto, faz parte do plano original de stg
+- **Descoberto em:** 2026-05-08 setup do mirror staging
+- **Dono:** infra + dados
+- **Bloqueador?** Não — stg pode rodar com seeds sintéticos enquanto isso
+
+**O que é:**
+
+A decisão da sessão de setup foi que stg deveria receber dump anonimizado de prd para reprodução de bugs com dados realistas. A Fase 3 do plano (`scripts/anonymize-prod-to-stg.sh`) ainda não foi escrita. Por hora, stg vai com seeds sintéticos via runner do worker-functions.
+
+**Plano:** criar `scripts/anonymization/*.sql` com regras determinísticas (Faker BR mantendo FKs, scrubbing de PHI, hash de identificadores) + runner que dump → restore temp → anonymize → dump → restore stg. Documentar em RUNBOOK auditável.
+
+**Risco LGPD:** alto se for executado sem cuidado — qualquer leak de PII em stg é incidente. Implementação deve ter dry-run obrigatório com sample antes do run completo.
+
+---
+
 ## Decisões Pendentes (precisam de alinhamento operacional)
 
 ### DP-001 — Split shifts: 1 vaga ou 2 vagas?
