@@ -290,7 +290,6 @@ export class VacanciesController {
         FROM patients p
         WHERE p.case_number IS NOT NULL
           AND p.deleted_at IS NULL
-          AND p.needs_attention = false
           AND p.status IN ('ACTIVE', 'PENDING_ADMISSION', 'ADMISSION')
           AND EXISTS (
             SELECT 1 FROM patient_addresses pa WHERE pa.patient_id = p.id
