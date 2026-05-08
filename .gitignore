@@ -18,6 +18,7 @@ build/
 
 # Secrets / credentials
 .keys/
+.mcp.json
 
 # RAG local (vector DB + models cache)
 .rag/

@@ -5,7 +5,7 @@
       "command": "npx",
       "args": ["-y", "@hauptsache.net/clickup-mcp"],
       "env": {
-        "CLICKUP_API_KEY": "pk_90830332_0LA6P3Q4BY87CF8UC27AQ7TDHTQB3QBE",
+        "CLICKUP_API_KEY": "pk_REPLACE_ME",
         "CLICKUP_TEAM_ID": "9013274709",
         "CLICKUP_MCP_MODE": "read",
         "MAX_IMAGES": "16"
@@ -28,7 +28,7 @@
       "type": "http",
       "url": "https://api.githubcopilot.com/mcp/",
       "headers": {
-        "Authorization": "Bearer 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"
+        "Authorization": "Bearer ghp_REPLACE_ME"
       }
     },
     "local-rag": {

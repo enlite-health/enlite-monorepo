@@ -182,12 +182,20 @@ export class PatientService {
     addresses: PatientAddress[],
     client: import('pg').PoolClient,
   ): Promise<void> {
-    await client.query(
-      'DELETE FROM patient_addresses WHERE patient_id = $1',
+    // Merge by (patient_id, display_order) instead of DELETE+INSERT so that
+    // existing IDs survive the upsert. job_postings.patient_address_id has
+    // ON DELETE RESTRICT, so dropping a referenced address aborts the whole
+    // sync transaction.
+    const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
+
+    const { rows: existing } = await client.query<{ id: string; display_order: number }>(
+      'SELECT id, display_order FROM patient_addresses WHERE patient_id = $1',
       [patientId],
     );
+    const existingByOrder = new Map<number, string>(
+      existing.map(r => [r.display_order, r.id]),
+    );
 
-    const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
     if (valid.length === 0) return;
 
     // Best-effort geocoding — never blocks the upsert. Failures persist
@@ -197,31 +205,71 @@ export class PatientService {
       timeoutMs: 8000,
     });
 
-    const values: unknown[] = [];
-    const placeholders = geocoded.map((g, i) => {
-      const base = i * 10;
+    for (const g of geocoded) {
       const a = g.address;
-      values.push(
-        patientId,
-        a.addressType,
-        a.addressFormatted ?? null,
-        a.addressRaw ?? null,
-        a.displayOrder,
-        a.state ?? null,
-        a.city ?? null,
-        a.neighborhood ?? null,
-        g.lat,
-        g.lng,
-      );
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
-    });
+      const existingId = existingByOrder.get(a.displayOrder);
 
-    await client.query(
-      `INSERT INTO patient_addresses
-         (patient_id, address_type, address_formatted, address_raw, display_order, state, city, neighborhood, lat, lng)
-       VALUES ${placeholders.join(', ')}`,
-      values,
-    );
+      if (existingId) {
+        await client.query(
+          `UPDATE patient_addresses SET
+             address_type      = $2,
+             address_formatted = $3,
+             address_raw       = $4,
+             state             = $5,
+             city              = $6,
+             neighborhood      = $7,
+             lat               = $8,
+             lng               = $9
+           WHERE id = $1`,
+          [
+            existingId,
+            a.addressType,
+            a.addressFormatted ?? null,
+            a.addressRaw ?? null,
+            a.state ?? null,
+            a.city ?? null,
+            a.neighborhood ?? null,
+            g.lat,
+            g.lng,
+          ],
+        );
+      } else {
+        await client.query(
+          `INSERT INTO patient_addresses
+             (patient_id, address_type, address_formatted, address_raw, display_order, state, city, neighborhood, lat, lng)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            patientId,
+            a.addressType,
+            a.addressFormatted ?? null,
+            a.addressRaw ?? null,
+            a.displayOrder,
+            a.state ?? null,
+            a.city ?? null,
+            a.neighborhood ?? null,
+            g.lat,
+            g.lng,
+          ],
+        );
+      }
+    }
+
+    const newOrders = new Set(geocoded.map(g => g.address.displayOrder));
+    const obsoleteIds = existing
+      .filter(r => !newOrders.has(r.display_order))
+      .map(r => r.id);
+
+    if (obsoleteIds.length > 0) {
+      await client.query(
+        `DELETE FROM patient_addresses
+         WHERE id = ANY($1::uuid[])
+           AND NOT EXISTS (
+             SELECT 1 FROM job_postings jp
+             WHERE jp.patient_address_id = patient_addresses.id
+           )`,
+        [obsoleteIds],
+      );
+    }
   }
 
   private async replaceProfessionals(

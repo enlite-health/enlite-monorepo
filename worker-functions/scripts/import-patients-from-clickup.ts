@@ -31,6 +31,12 @@ import { Pool } from 'pg';
 import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
+import { SyncPatientFromClickUpTaskUseCase } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import {
+  checkExistingTaskIds,
+  processDryRun,
+  type DryRunCounters,
+} from './import-patients-dry-run';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -127,43 +133,34 @@ async function fetchAllTasks(): Promise<ClickUpTask[]> {
   return all;
 }
 
-// ── Dry-run DB check (classify create vs update) ──────────────────────────────
-
-async function checkExistingTaskIds(
-  pool: Pool,
-  taskIds: string[],
-): Promise<Set<string>> {
-  if (taskIds.length === 0) return new Set();
-  const { rows } = await pool.query<{ clickup_task_id: string }>(
-    `SELECT clickup_task_id FROM patients WHERE clickup_task_id = ANY($1)`,
-    [taskIds],
-  );
-  return new Set(rows.map(r => r.clickup_task_id));
-}
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  // Lazy-load PatientService (imports DatabaseConnection → needs DATABASE_URL)
-  // Only in live mode; avoids DB connection in pure dry-run.
-  let patientService: import('@modules/case').PatientService | null = null;
+  // Lazy-load PatientService (imports DatabaseConnection → needs DATABASE_URL).
+  // Only in live mode; avoids a DB connection in pure dry-run.
+  let useCase: SyncPatientFromClickUpTaskUseCase | null = null;
   let pool: Pool | null = null;
 
   if (!isDryRun) {
     const { PatientService } = await import('@modules/case');
-    patientService = new PatientService();
+    const patientService = new PatientService();
+    const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
+    const mapper = new ClickUpPatientMapper(resolver);
+    useCase = new SyncPatientFromClickUpTaskUseCase({ mapper, patientService });
     pool = new Pool({ connectionString: DATABASE_URL });
   }
 
-  // For dry-run with DATABASE_URL available, we can classify create/update.
-  // If DATABASE_URL is the default fallback and we're in dry-run, still try.
+  // For dry-run with DATABASE_URL available we can classify create vs update.
   let dryRunPool: Pool | null = null;
+  let dryRunMapper: ClickUpPatientMapper | null = null;
   if (isDryRun) {
     try {
       dryRunPool = new Pool({ connectionString: DATABASE_URL });
     } catch {
-      // Not critical — dry-run will just report "would upsert" without classification
+      // Not critical — dry-run will report "would upsert" without classification
     }
+    const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
+    dryRunMapper = new ClickUpPatientMapper(resolver);
   }
 
   // Step 1: Fetch all tasks
@@ -178,21 +175,15 @@ async function main(): Promise<void> {
   // Step 3: Apply limit
   const tasksToProcess = limit !== null ? filteredTasks.slice(0, limit) : filteredTasks;
 
-  const modeStr = isDryRun ? 'dry-run=true' : 'live (DB writes enabled)';
-  const limitStr = limit !== null ? `limit=${limit}` : 'no limit';
+  const modeStr   = isDryRun ? 'dry-run=true' : 'live (DB writes enabled)';
+  const limitStr  = limit !== null ? `limit=${limit}` : 'no limit';
   const statusStr = statusFilter.length > 0 ? `status=${statusFilter.join(',')}` : 'all statuses';
   console.log(`Processing with flags: ${modeStr} ${limitStr} ${statusStr}`);
 
-  // Step 4: Build resolver + mapper once
-  const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN });
-  const mapper = new ClickUpPatientMapper(resolver);
-
-  // Step 5: Pre-classify for dry-run (SELECT existing task IDs)
+  // Step 4: Pre-classify for dry-run (SELECT existing task IDs)
   let existingIds = new Set<string>();
   if (isDryRun && dryRunPool) {
-    const taskIds = tasksToProcess
-      .filter(t => t.parent === null)
-      .map(t => t.id);
+    const taskIds = tasksToProcess.filter(t => t.parent === null).map(t => t.id);
     try {
       existingIds = await checkExistingTaskIds(dryRunPool, taskIds);
     } catch {
@@ -200,7 +191,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // Step 6: Process tasks
+  // Step 5: Process tasks
   let processed = 0;
   let skippedNoName = 0;
   let skippedSubtask = 0;
@@ -215,110 +206,64 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < tasksToProcess.length; i++) {
     const task = tasksToProcess[i];
-    const num = `[${i + 1}/${tasksToProcess.length}]`;
-
-    // Defensive: skip sub-tasks even though subtasks=false is set in API call
-    if (task.parent !== null) {
-      skippedSubtask++;
-      continue;
-    }
-
-    // Attempt mapping
-    let input: Awaited<ReturnType<ClickUpPatientMapper['map']>>;
-    try {
-      input = mapper.map(task);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  ERROR  task=${task.id} msg=mapper threw: ${msg}`);
-      errors++;
-      continue;
-    }
-
-    if (input === null) {
-      // Distinguish: no name vs some other reason mapper returned null
-      const cfNames = task.custom_fields.map(f => f.name);
-      const hasFirstName = cfNames.includes('Nombre de Paciente') &&
-        task.custom_fields.find(f => f.name === 'Nombre de Paciente')?.value;
-      const hasLastName = cfNames.includes('Apellido del Paciente') &&
-        task.custom_fields.find(f => f.name === 'Apellido del Paciente')?.value;
-
-      if (!hasFirstName && !hasLastName) {
-        console.log(`  ${num} task=${task.id} status=${task.status.status} → SKIPPED (no patient name)`);
-        skippedNoName++;
-      } else {
-        console.log(`  ${num} task=${task.id} status=${task.status.status} → SKIPPED (mapper returned null)`);
-        skippedMapper++;
-      }
-      continue;
-    }
-
-    processed++;
-
-    const lastName  = input.lastName  ?? '';
-    const firstName = input.firstName ?? '';
-    const nameStr   = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '').replace(/,\s*$/, '');
+    const num  = `[${i + 1}/${tasksToProcess.length}]`;
 
     if (isDryRun) {
-      const isUpdate = existingIds.has(task.id);
-      if (isUpdate) wouldUpdate++; else wouldCreate++;
+      const counters: DryRunCounters = {
+        processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate,
+      };
+      processDryRun(task, i, tasksToProcess.length, dryRunMapper!, existingIds, counters, isVerbose);
+      ({ processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate } = counters);
+      continue;
+    }
 
-      const action = existingIds.size > 0
-        ? (isUpdate ? 'would UPDATE' : 'would CREATE')
-        : 'would UPSERT';
+    // Live mode — delegate entirely to the UseCase
+    const result = await useCase!.execute(task);
 
-      const depStr   = input.dependencyLevel     ?? 'null';
-      const svcStr   = input.serviceType         ? `[${input.serviceType.join(',')}]` : '[]';
-      const specStr  = input.clinicalSpecialty    ?? 'null';
-      const resp     = input.responsibles?.[0];
-      const respName = resp
-        ? [resp.firstName, resp.lastName].filter(Boolean).join(' ') || 'none'
-        : 'none';
+    switch (result.kind) {
+      case 'SKIPPED_SUBTASK':
+        skippedSubtask++;
+        break;
 
-      console.log(
-        `  ${num} task=${task.id} status=${task.status.status} → ${nameStr}`,
-      );
-      console.log(
-        `         ${action} (dependency=${depStr}, service_type=${svcStr}, specialty=${specStr}, responsible="${respName}")`,
-      );
+      case 'SKIPPED_NO_PATIENT_NAME':
+        console.log(`  ${num} task=${result.taskId} → SKIPPED (no patient name)`);
+        skippedNoName++;
+        break;
 
-      if (isVerbose) {
-        console.log('         payload:', JSON.stringify(input, null, 2));
-      }
-    } else {
-      // Live upsert — legacy import passes 'flag' so missing-contact records
-      // are persisted with needs_attention=true instead of throwing.
-      try {
-        const result = await patientService!.upsertFromClickUp(input, {
-          onMissingContact: 'flag',
-        });
-        const flagTag = result.flagged ? ' [flagged]' : '';
-        if (result.created) {
-          created++;
-          if (result.flagged) flaggedCreated++;
-          console.log(`  ${num} task=${task.id} → CREATED patient id=${result.id} (${nameStr})${flagTag}`);
-        } else {
-          updated++;
-          if (result.flagged) flaggedUpdated++;
-          console.log(`  ${num} task=${task.id} → UPDATED patient id=${result.id} (${nameStr})${flagTag}`);
-        }
+      case 'SKIPPED_MAPPER_NULL':
+        console.log(`  ${num} task=${result.taskId} → SKIPPED (mapper returned null)`);
+        skippedMapper++;
+        break;
 
-        if (isVerbose) {
-          console.log('         payload:', JSON.stringify(input, null, 2));
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`  ERROR  task=${task.id} name="${nameStr}" msg=${msg}`);
-        if (err instanceof Error && err.stack) {
-          console.log(`         stack: ${err.stack.split('\n').slice(0, 5).join(' | ')}`);
-        } else {
-          console.log(`         err (raw):`, err);
+      case 'ERROR':
+        console.log(`  ERROR  task=${result.taskId} msg=${result.error.message}`);
+        if (result.error.stack) {
+          console.log(`         stack: ${result.error.stack.split('\n').slice(0, 5).join(' | ')}`);
         }
         errors++;
-      }
+        break;
+
+      case 'CREATED':
+        processed++;
+        created++;
+        if (result.flagged) flaggedCreated++;
+        console.log(
+          `  ${num} task=${result.taskId} → CREATED patient id=${result.patientId} (${result.patientName})${result.flagged ? ' [flagged]' : ''}`,
+        );
+        break;
+
+      case 'UPDATED':
+        processed++;
+        updated++;
+        if (result.flagged) flaggedUpdated++;
+        console.log(
+          `  ${num} task=${result.taskId} → UPDATED patient id=${result.patientId} (${result.patientName})${result.flagged ? ' [flagged]' : ''}`,
+        );
+        break;
     }
   }
 
-  // Step 7: Summary
+  // Step 6: Summary
   const totalFetched = allTasks.length;
   const totalSkipped = skippedNoName + skippedSubtask + skippedMapper;
 
@@ -353,16 +298,11 @@ async function main(): Promise<void> {
   if (pool) await pool.end();
   if (dryRunPool) await dryRunPool.end();
 
-  // Cleanup temp file from initial probe (if exists)
   const fs = await import('fs');
   const probePath = '/tmp/clickup-fields-probe.json';
-  if (fs.existsSync(probePath)) {
-    fs.unlinkSync(probePath);
-  }
+  if (fs.existsSync(probePath)) fs.unlinkSync(probePath);
 
-  if (errors > 0 && !isDryRun) {
-    process.exit(1);
-  }
+  if (errors > 0 && !isDryRun) process.exit(1);
 }
 
 main().catch(err => {
