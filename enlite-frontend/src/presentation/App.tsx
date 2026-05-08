@@ -100,6 +100,7 @@ export function App() {
           <Route path="vacancies" element={<AdminVacanciesPage />} />
           <Route path="vacancies/new" element={<CreateVacancyPage />} />
           <Route path="vacancies/pending-address-review" element={<PendingAddressReviewPage />} />
+          <Route path="vacancies/:id/edit" element={<CreateVacancyPage />} />
           <Route path="vacancies/:id/talentum" element={<TalentumConfigPage />} />
           <Route path="vacancies/:id" element={<VacancyDetailPage />} />
           <Route path="vacancies/:id/match" element={<VacancyMatchPage />} />

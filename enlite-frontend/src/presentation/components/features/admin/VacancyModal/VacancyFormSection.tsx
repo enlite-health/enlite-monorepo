@@ -239,14 +239,17 @@ export function VacancyFormSection({
     setApiError(null);
     onValidationFailedFieldsChange?.([]);
     try {
+      // Prefer the user's current selection over the existing vacancy values
+      // — in edit mode the user may have changed the address (and the flow
+      // already hydrates `selectedAddressId` from the existing vacancy on load).
       const patientId =
         mode === 'create'
           ? selectedPatientId
-          : (existingVacancy?.patient_id ?? selectedPatientId);
+          : (selectedPatientId ?? existingVacancy?.patient_id);
       const addressId =
         mode === 'create'
           ? selectedAddressId
-          : (existingVacancy?.patient_address_id ?? selectedAddressId);
+          : (selectedAddressId ?? existingVacancy?.patient_address_id);
 
       const payload = buildVacancyPayload(
         data,

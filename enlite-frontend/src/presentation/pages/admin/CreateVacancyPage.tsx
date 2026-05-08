@@ -1,22 +1,30 @@
 /**
  * CreateVacancyPage
  *
- * Step 1 of the vacancy creation flow:
+ * Step 1 of the vacancy creation flow. Two routes share this page:
+ *   - /admin/vacancies/new           → create mode (blank form)
+ *   - /admin/vacancies/:id/edit      → edit mode (hydrate existing vacancy)
+ *
+ * Edit mode is the entry point for "Atrás" coming back from Step 2 — we load
+ * the persisted vacancy + patient + address so all previously entered data is
+ * preserved across step navigation.
+ *
+ * Steps:
  *   1. Datos de la vacante  ← this page
  *   2. Configuración Talentum  (/admin/vacancies/:id/talentum)
  *   3. Detalle y postulantes   (/admin/vacancies/:id)
  *
  * Wraps the same `VacancyFormSection` used by the legacy `VacancyModal`.
  * On successful submit:
- *   1. Vacancy is created (and meet links saved) inside VacancyFormSection.
+ *   1. Vacancy is created (or updated) and meet links saved inside the form.
  *   2. We block the UI with a "generating AI content" overlay.
  *   3. We POST /vacancies/:id/generate-ai-content to get description+prescreening.
  *   4. Navigate to Step 2 with the generated payload via location.state so the
  *      Talentum page does not have to re-call the AI.
  */
 
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
@@ -30,6 +38,8 @@ import { VacancyFormSection } from '@presentation/components/features/admin/Vaca
 export default function CreateVacancyPage(): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { id: routeVacancyId } = useParams<{ id: string }>();
+  const isEditMode = Boolean(routeVacancyId);
   const v = (k: string) => t(`admin.createVacancyV2.${k}`);
 
   const formRef = useRef<HTMLFormElement>(null);
@@ -38,9 +48,38 @@ export default function CreateVacancyPage(): JSX.Element {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [validationFailedFields, setValidationFailedFields] = useState<string[]>([]);
   const [formComplete, setFormComplete] = useState(false);
+  const [existingVacancy, setExistingVacancy] = useState<any | null>(null);
+  const [isLoadingVacancy, setIsLoadingVacancy] = useState(isEditMode);
+  const [vacancyLoadError, setVacancyLoadError] = useState<string | null>(null);
 
   const flow = useVacancyModalFlow();
-  const patientSelected = flow.selectedCaseNumber != null;
+  const patientSelected = isEditMode || flow.selectedCaseNumber != null;
+
+  // Hydrate edit mode: fetch existing vacancy + seed flow with case/patient/address
+  // so the form pre-fills and the address selector highlights the linked address.
+  useEffect(() => {
+    if (!isEditMode || !routeVacancyId) return;
+    setIsLoadingVacancy(true);
+    setVacancyLoadError(null);
+    AdminApiService.getVacancyById(routeVacancyId)
+      .then((vac) => {
+        setExistingVacancy(vac);
+        if (vac.patient_id) {
+          flow.selectCase(
+            vac.case_number ?? 0,
+            vac.patient_id,
+            vac.patient_address_id ?? null,
+          );
+        }
+      })
+      .catch((err: unknown) =>
+        setVacancyLoadError(err instanceof Error ? err.message : String(err)),
+      )
+      .finally(() => setIsLoadingVacancy(false));
+    // selectCase is stable (useCallback w/ empty deps); re-running the fetch on
+    // every render would refetch the vacancy unnecessarily.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeVacancyId, isEditMode]);
 
   const handleSave = () => {
     formRef.current?.requestSubmit();
@@ -132,25 +171,37 @@ export default function CreateVacancyPage(): JSX.Element {
 
         {/* Form card — side-sheet style */}
         <div className="bg-white rounded-l-[32px] pl-12 pr-6 py-10 shadow-medium">
-          <VacancyFormSection
-            mode="create"
-            existingVacancy={null}
-            selectedCaseNumber={flow.selectedCaseNumber}
-            selectedPatientId={flow.selectedPatientId}
-            selectedAddressId={flow.selectedAddressId}
-            dependencyLevel={flow.dependencyLevel}
-            addresses={flow.addresses}
-            isLoadingPatient={flow.isLoadingPatient}
-            patientError={flow.patientError}
-            patientSelected={patientSelected}
-            formRef={formRef}
-            onSubmittingChange={setSubmitting}
-            onSuccess={handleSuccess}
-            selectCase={flow.selectCase}
-            selectAddress={flow.selectAddress}
-            onValidationFailedFieldsChange={setValidationFailedFields}
-            onCompleteChange={setFormComplete}
-          />
+          {isLoadingVacancy ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-6 h-6 animate-spin text-[#180149]" />
+            </div>
+          ) : vacancyLoadError ? (
+            <div className="bg-red-50 border border-red-200 rounded-[10px] px-5 py-3">
+              <Text size="sm" color="inherit" className="text-red-600">
+                {vacancyLoadError}
+              </Text>
+            </div>
+          ) : (
+            <VacancyFormSection
+              mode={isEditMode ? 'edit' : 'create'}
+              existingVacancy={existingVacancy}
+              selectedCaseNumber={flow.selectedCaseNumber}
+              selectedPatientId={flow.selectedPatientId}
+              selectedAddressId={flow.selectedAddressId}
+              dependencyLevel={flow.dependencyLevel}
+              addresses={flow.addresses}
+              isLoadingPatient={flow.isLoadingPatient}
+              patientError={flow.patientError}
+              patientSelected={patientSelected}
+              formRef={formRef}
+              onSubmittingChange={setSubmitting}
+              onSuccess={handleSuccess}
+              selectCase={flow.selectCase}
+              selectAddress={flow.selectAddress}
+              onValidationFailedFieldsChange={setValidationFailedFields}
+              onCompleteChange={setFormComplete}
+            />
+          )}
         </div>
       </div>
 

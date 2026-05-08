@@ -192,7 +192,7 @@ export default function TalentumConfigPage(): JSX.Element {
             initialQuestions={prescreeningQuestions}
             initialFaq={prescreeningFaq}
             onNext={handlePrescreeningNext}
-            onBack={() => navigate(`/admin/vacancies/new`)}
+            onBack={() => navigate(`/admin/vacancies/${vacancyId}/edit`)}
             isProcessing={false}
           />
         </div>
