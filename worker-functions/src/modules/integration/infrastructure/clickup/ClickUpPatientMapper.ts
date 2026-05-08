@@ -79,14 +79,14 @@ export class ClickUpPatientMapper {
       clickupTaskId:      task.id,
       firstName:          firstName ?? '',
       lastName:           lastName  ?? '',
-      birthDate:          this.parseDate(this.asString(cf['Fecha de Nacimiento'])),
+      birthDate:          this.parseClickUpDate(cf['Fecha de Nacimiento']),
       documentType:       mapClickUpDocumentType(docTypeLabel),
       documentNumber:     this.asString(cf['Número de Documento Paciente']),
       sex:                mapClickUpSex(sexLabel),
       phoneWhatsapp:      this.cleanPhone(this.asString(cf['Número de WhatsApp Paciente'])),
-      hasCud:             cf['Posee CUD'] === true,
-      hasConsent:         cf['Consentimiento'] === true,
-      hasJudicialProtection: cf['Amparo Judicial'] === true,
+      hasCud:             this.parseClickUpBoolean(cf['Posee CUD']),
+      hasConsent:         this.parseClickUpBoolean(cf['Consentimiento']),
+      hasJudicialProtection: this.parseClickUpBoolean(cf['Amparo Judicial']),
       country:            'AR',
 
       // Clinical
@@ -247,7 +247,7 @@ export class ClickUpPatientMapper {
   }
 
   private buildProfessionals(cf: CustomFieldMap, isTeamFlag: unknown): PatientProfessional[] {
-    const isTeam = isTeamFlag === true || this.asString(isTeamFlag as unknown as string) === 'Sí';
+    const isTeam = this.parseClickUpBoolean(isTeamFlag) || this.asString(isTeamFlag as unknown as string) === 'Sí';
     const slots  = [
       { nameCf: 'Profesional Tratante Principal', phoneCf: 'Tel Profesional Tratante Principal', emailCf: 'Email Profesional Tratante Principal', order: 1 },
       { nameCf: 'Profesional Tratante 2',         phoneCf: 'Tel Profesional Tratante 2',         emailCf: 'Email Profesional Tratante 2',         order: 2 },
@@ -280,10 +280,45 @@ export class ClickUpPatientMapper {
     return raw.trim();
   }
 
-  private parseDate(value: string | null): Date | null {
-    if (!value) return null;
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? null : d;
+  /**
+   * Parses a ClickUp checkbox/boolean custom field. ClickUp serializes
+   * checkboxes as STRING `"true"`/`"false"` in production payloads, not as
+   * native booleans. Accepts both shapes; everything else (null, undefined,
+   * unrecognized string) returns false.
+   */
+  private parseClickUpBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1';
+    }
+    return false;
+  }
+
+  /**
+   * Parses a ClickUp date custom field. ClickUp serializes Date fields as a
+   * STRING containing the ms-epoch in production payloads (e.g. "828082800000"),
+   * but some fixtures or other API shapes may send number or ISO string.
+   * Returns null for any other shape (boolean, object, NaN, malformed).
+   */
+  private parseClickUpDate(value: unknown): Date | null {
+    if (value == null) return null;
+    if (typeof value === 'number') {
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const trimmed = value.trim();
+      // ClickUp prod: epoch ms as string ("828082800000"); not parseable by Date directly.
+      if (/^-?\d+$/.test(trimmed)) {
+        const d = new Date(parseInt(trimmed, 10));
+        return isNaN(d.getTime()) ? null : d;
+      }
+      // Otherwise: ISO string or anything Date can parse natively.
+      const d = new Date(trimmed);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
   }
 
   private asString(value: unknown): string | null {

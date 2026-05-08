@@ -663,6 +663,315 @@ describe('ClickUpPatientMapper', () => {
   });
 });
 
+// ── Comprehensive fixture ─────────────────────────────────────────────────────
+
+describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () => {
+  /**
+   * Dropdown orderindex stubs: the resolver stub maps orderindex→label so the
+   * real mapping functions (mapClickUpSex, mapClickUpDependencyLevel, …) can run.
+   *
+   * Index values are arbitrary integers — only the label returned matters.
+   */
+  const DROPDOWN_INDEXES = {
+    sex: { 0: 'Femenino' },
+    documentType: { 1: 'DNI' },
+    documentTypeResponsible: { 1: 'DNI' },
+    dependency: { 2: 'MODERADA' },
+    specialty: { 3: 'AT para Pacientes con Trastornos Psiquiátricos' },
+    service: { 4: 'Acompañante Terapéutico' },
+    relationship: { 5: 'Pareja' },
+  } as const;
+
+  const comprehensiveResolver = makeResolver({
+    'Sexo Asignado al Nacer (Uso Clínico)':   DROPDOWN_INDEXES.sex as Record<number, string>,
+    'Tipo de Documento Paciente':               DROPDOWN_INDEXES.documentType as Record<number, string>,
+    'Tipo de Documento Responsable':            DROPDOWN_INDEXES.documentTypeResponsible as Record<number, string>,
+    'Dependencia':                              DROPDOWN_INDEXES.dependency as Record<number, string>,
+    'Segmentos Clínicos':                       DROPDOWN_INDEXES.specialty as Record<number, string>,
+    'Servicio':                                 DROPDOWN_INDEXES.service as Record<number, string>,
+    'Relación con el Paciente':                 DROPDOWN_INDEXES.relationship as Record<number, string>,
+  });
+
+  const comprehensiveMapper = new ClickUpPatientMapper(comprehensiveResolver);
+
+  function buildFullPatientTaskFixture(): ClickUpTask {
+    return makeTask(
+      '86ahbkqb6-fixture',
+      'Álvarez Romero, Noelia Soledad',
+      'busqueda',
+      [
+        // Identity
+        { name: 'Nombre de Paciente',                         value: 'Noelia Soledad' },
+        { name: 'Apellido del Paciente',                      value: 'Álvarez Romero' },
+        // Fecha de Nacimiento: ClickUp envia ms epoch como STRING (confirmado em prod
+        // via curl em 86ahbkqb6: value="828082800000"). parseClickUpDate detecta string-de-dígitos.
+        { name: 'Fecha de Nacimiento',                        value: '828086400000' },
+        { name: 'Tipo de Documento Paciente',                 value: 1 },
+        { name: 'Número de Documento Paciente',               value: '39.470.550' },
+        { name: 'Sexo Asignado al Nacer (Uso Clínico)',       value: 0 },
+        { name: 'Número de WhatsApp Paciente',                value: '+54 9 11 3207 5033' },
+        // Clinical
+        { name: 'Diagnóstico (si lo conoce)',                 value: 'Trastorno Bipolar' },
+        { name: 'Dependencia',                                value: 2 },
+        { name: 'Segmentos Clínicos',                         value: 3 },
+        { name: 'Servicio',                                   value: 4 },
+        { name: 'Comentarios Adicionales Paciente',           value: 'Paciente con episodios maníacos frecuentes' },
+        { name: 'Posee CUD',                                  value: true },
+        { name: 'Consentimiento',                             value: true },
+        { name: 'Amparo Judicial',                            value: false },
+        // Health insurance
+        { name: 'Cobertura Informada',                        value: 'OSPICHA' },
+        { name: 'Número ID Afiliado Paciente',                value: '12345678' },
+        // Operational identifier
+        { name: 'Caso Número',                                value: '766' },
+        // Multidisciplinary team flag
+        { name: 'Equipo Tratante Multidisciplinario',         value: false },
+        // Responsible
+        { name: 'Nombre de Responsable',                      value: 'Andres' },
+        { name: 'Apellido de Responsable',                    value: 'Rodriguez' },
+        { name: 'Relación con el Paciente',                   value: 5 },
+        { name: 'Número de WhatsApp Responsable',             value: '+54 9 11 3207 5033' },
+        { name: 'Email del Responsable',                      value: 'andres@example.com' },
+        { name: 'Tipo de Documento Responsable',              value: 1 },
+        { name: 'Número de Documento Responsable',            value: '29064022' },
+        // Primary address
+        {
+          name:  'Domicilio 1 Principal Paciente',
+          value: locationField('Av. Hipólito Yrigoyen 123, Temperley, Buenos Aires', [
+            { long_name: 'Temperley', short_name: 'Temperley', types: ['locality', 'political'] },
+            { long_name: 'Buenos Aires', short_name: 'BA', types: ['administrative_area_level_1', 'political'] },
+          ]),
+        },
+        { name: 'Domicilio Informado Paciente 1',             value: 'Hipólito Yrigoyen 123, Temperley' },
+        // Patient-level location metadata
+        {
+          name:  'Provincia del Paciente',
+          value: locationField('Buenos Aires, Argentina', [
+            { long_name: 'Buenos Aires', short_name: 'BA', types: ['administrative_area_level_1', 'political'] },
+          ]),
+        },
+        {
+          name:  'Ciudad / Localidad del Paciente',
+          value: locationField('Temperley, Buenos Aires, Argentina', [
+            { long_name: 'Temperley', short_name: 'Temperley', types: ['locality', 'political'] },
+          ]),
+        },
+        { name: 'Zona o Barrio Paciente',                     value: 'Temperley' },
+        // Treating professional
+        { name: 'Profesional Tratante Principal',             value: 'Marcela Psicóloga' },
+        { name: 'Tel Profesional Tratante Principal',         value: '+54 11 5555 9999' },
+        { name: 'Email Profesional Tratante Principal',       value: 'marcela@clinica.com' },
+      ],
+    );
+  }
+
+  it('mapeia todas as ~30 propriedades de uma task ClickUp completa para PatientServiceUpsertInput', () => {
+    const task   = buildFullPatientTaskFixture();
+    const result = comprehensiveMapper.map(task);
+
+    expect(result).not.toBeNull();
+    if (!result) throw new Error('expected non-null result');
+
+    // Identity
+    expect(result.clickupTaskId).toBe('86ahbkqb6-fixture');
+    expect(result.firstName).toBe('Noelia Soledad');
+    expect(result.lastName).toBe('Álvarez Romero');
+    // birthDate: parseClickUpDate aceita number (ms epoch ClickUp). Confere data exata.
+    expect(result.birthDate).toEqual(new Date(828086400000));
+    expect(result.documentType).toBe('DNI');
+    // documentNumber: asString() preserves raw value (trim only, no digit cleaning)
+    expect(result.documentNumber).toBe('39.470.550');
+    expect(result.sex).toBe('FEMALE');
+    expect(result.phoneWhatsapp).toBe('+54 9 11 3207 5033');
+
+    // Country
+    expect(result.country).toBe('AR');
+
+    // Lifecycle status
+    expect(result.status).toBe('ACTIVE');
+
+    // Operational identifier
+    expect(result.caseNumber).toBe(766);
+
+    // Clinical
+    expect(result.diagnosis).toBe('Trastorno Bipolar');
+    expect(result.dependencyLevel).toBe('MODERATE');
+    expect(result.clinicalSpecialty).toBe('PSYCHIATRIC');
+    expect(result.serviceType).toEqual(['AT']);
+    expect(result.additionalComments).toBe('Paciente con episodios maníacos frecuentes');
+    expect(result.hasCud).toBe(true);
+    expect(result.hasConsent).toBe(true);
+    expect(result.hasJudicialProtection).toBe(false);
+
+    // Health insurance
+    expect(result.healthInsuranceName).toBe('OSPICHA');
+    expect(result.healthInsuranceMemberId).toBe('12345678');
+
+    // Responsibles
+    expect(result.responsibles).toHaveLength(1);
+    expect(result.responsibles![0]).toMatchObject({
+      firstName:    'Andres',
+      lastName:     'Rodriguez',
+      relationship: 'PARTNER',
+      phone:        '+54 9 11 3207 5033',
+      email:        'andres@example.com',
+      documentType: 'DNI',
+      documentNumber: '29064022',
+      isPrimary:    true,
+      displayOrder: 1,
+      source:       'clickup',
+    });
+
+    // Addresses — primary slot with location metadata
+    expect(result.addresses).toHaveLength(1);
+    expect(result.addresses![0]).toMatchObject({
+      addressType:      'primary',
+      addressFormatted: 'Av. Hipólito Yrigoyen 123, Temperley, Buenos Aires',
+      addressRaw:       'Hipólito Yrigoyen 123, Temperley',
+      displayOrder:     1,
+      state:            'Buenos Aires',
+      city:             'Temperley',
+      neighborhood:     'Temperley',
+    });
+
+    // Professionals — one treating professional
+    expect(result.professionals).toHaveLength(1);
+    expect(result.professionals![0]).toMatchObject({
+      name:         'Marcela Psicóloga',
+      phone:        '+54 11 5555 9999',
+      email:        'marcela@clinica.com',
+      displayOrder: 1,
+      isTeam:       false,
+    });
+  });
+
+  it('detecta campo novo em PatientServiceUpsertInput: falha se mapper produzir key inesperada', () => {
+    /**
+     * Defensive regression test: lists exactly the keys the mapper sets on its output.
+     * If the mapper gains a new field without this list being updated, unexpectedKeys
+     * will be non-empty and the test fails — forcing the author to update both.
+     *
+     * Keys intentionally NOT listed (optional fields the mapper never sets):
+     *   affiliateId, insuranceInformed, insuranceVerified, cityLocality, province,
+     *   zoneNeighborhood, needsAttention, attentionReasons, clinicalSegments, deviceType
+     */
+    const MAPPER_OUTPUT_KEYS = [
+      'clickupTaskId',
+      'firstName', 'lastName', 'birthDate',
+      'documentType', 'documentNumber',
+      'sex', 'phoneWhatsapp',
+      'country',
+      'status', 'caseNumber',
+      'diagnosis', 'dependencyLevel', 'clinicalSpecialty',
+      'serviceType', 'additionalComments',
+      'hasCud', 'hasConsent', 'hasJudicialProtection',
+      'healthInsuranceName', 'healthInsuranceMemberId',
+      'responsibles', 'addresses', 'professionals',
+    ].sort();
+
+    const task   = buildFullPatientTaskFixture();
+    const result = comprehensiveMapper.map(task)!;
+
+    const actualKeys     = Object.keys(result).sort();
+    const unexpectedKeys = actualKeys.filter(k => !MAPPER_OUTPUT_KEYS.includes(k));
+    const missingKeys    = MAPPER_OUTPUT_KEYS.filter(k => !actualKeys.includes(k));
+
+    expect(unexpectedKeys).toEqual(
+      [],
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    );
+    expect(missingKeys).toEqual(
+      [],
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    );
+  });
+
+  // ── parseClickUpDate (testado via mapper.map() porque é privado) ──────────────
+
+  it('Fecha de Nacimiento como STRING numérica (ms epoch ClickUp prod real) → birthDate populado', () => {
+    const fixture = buildFullPatientTaskFixture();
+    const fields  = fixture.custom_fields.map(f =>
+      f.name === 'Fecha de Nacimiento' ? { ...f, value: '828086400000' } : f
+    );
+    const task    = { ...fixture, custom_fields: fields };
+    const result  = comprehensiveMapper.map(task);
+    expect(result?.birthDate).toEqual(new Date(828086400000));
+  });
+
+  it('Fecha de Nacimiento como NUMBER puro (ms epoch — fixtures legacy) → birthDate populado', () => {
+    const fixture = buildFullPatientTaskFixture();
+    const fields  = fixture.custom_fields.map(f =>
+      f.name === 'Fecha de Nacimiento' ? { ...f, value: 828086400000 } : f
+    );
+    const task    = { ...fixture, custom_fields: fields };
+    const result  = comprehensiveMapper.map(task);
+    expect(result?.birthDate).toEqual(new Date(828086400000));
+  });
+
+  it('Fecha de Nacimiento como STRING ISO → birthDate populado (legacy fixtures)', () => {
+    const fixture = buildFullPatientTaskFixture();
+    const fields  = fixture.custom_fields.map(f =>
+      f.name === 'Fecha de Nacimiento' ? { ...f, value: '1996-03-29' } : f
+    );
+    const task    = { ...fixture, custom_fields: fields };
+    const result  = comprehensiveMapper.map(task);
+    expect(result?.birthDate).toEqual(new Date('1996-03-29'));
+  });
+
+  it('Posee CUD como STRING "true" (ClickUp prod real) → hasCud true', () => {
+    const fixture = buildFullPatientTaskFixture();
+    const fields  = fixture.custom_fields.map(f =>
+      f.name === 'Posee CUD' ? { ...f, value: 'true' } : f
+    );
+    const task    = { ...fixture, custom_fields: fields };
+    const result  = comprehensiveMapper.map(task);
+    expect(result?.hasCud).toBe(true);
+  });
+
+  it('Booleanos como NATIVE true/false → mapeados sem crash (legacy fixtures)', () => {
+    const fixture = buildFullPatientTaskFixture();
+    const fields  = fixture.custom_fields.map(f => {
+      if (f.name === 'Posee CUD')         return { ...f, value: true  };
+      if (f.name === 'Consentimiento')    return { ...f, value: false };
+      if (f.name === 'Amparo Judicial')   return { ...f, value: true  };
+      return f;
+    });
+    const task    = { ...fixture, custom_fields: fields };
+    const result  = comprehensiveMapper.map(task);
+    expect(result?.hasCud).toBe(true);
+    expect(result?.hasConsent).toBe(false);
+    expect(result?.hasJudicialProtection).toBe(true);
+  });
+
+  it('Booleanos NULL/undefined/string lixo → false (sem crash)', () => {
+    const fixture = buildFullPatientTaskFixture();
+    const fields  = fixture.custom_fields.map(f => {
+      if (f.name === 'Posee CUD')         return { ...f, value: null };
+      if (f.name === 'Consentimiento')    return { ...f, value: 'maybe' };
+      if (f.name === 'Amparo Judicial')   return { ...f, value: undefined };
+      return f;
+    });
+    const task    = { ...fixture, custom_fields: fields };
+    const result  = comprehensiveMapper.map(task);
+    expect(result?.hasCud).toBe(false);
+    expect(result?.hasConsent).toBe(false);
+    expect(result?.hasJudicialProtection).toBe(false);
+  });
+
+  it('Fecha de Nacimiento inválida (boolean, NaN, vazia) → birthDate null sem crash', () => {
+    const cases: unknown[] = [true, false, NaN, '', '   ', { foo: 'bar' }, []];
+    for (const value of cases) {
+      const fixture = buildFullPatientTaskFixture();
+      const fields  = fixture.custom_fields.map(f =>
+        f.name === 'Fecha de Nacimiento' ? { ...f, value } : f
+      );
+      const task    = { ...fixture, custom_fields: fields };
+      const result  = comprehensiveMapper.map(task);
+      expect(result?.birthDate).toBeNull();
+    }
+  });
+});
+
 // ── extractCaseNumber unit tests ──────────────────────────────────────────────
 
 describe('extractCaseNumber', () => {
