@@ -22,13 +22,7 @@
 import { MatchmakingService } from '../src/modules/matching/infrastructure/MatchmakingService';
 
 const JOB_IDS: string[] = [
-  // 760-559 fica fora — user dispara via UI pra validar manualmente
-  'aa25bb81-2f36-424a-8496-0e56e976d781', // CASO 760-554
-  'a336899a-888c-4670-9215-dc48a5553d47', // CASO 760-544
-  'd2aab7a6-f609-4a70-b248-24ac7bad76d2', // CASO 760-541
-  '827e6d6f-6d03-494b-b847-16dc8c72e01d', // CASO 759-537
-  '564f21ce-b3b6-49da-bf71-13d2b9ccf722', // CASO 760-525
-  'b8477e00-82cc-4529-ac8f-4565be40ba42', // CASO 760-520
+  '77479ee4-aeb2-4639-80b8-42c68c3a0b5a', // CASO 760-559
 ];
 
 const isDryRun = process.argv.includes('--dry-run');

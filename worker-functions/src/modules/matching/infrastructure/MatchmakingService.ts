@@ -256,7 +256,7 @@ export class MatchmakingService {
          AND bl.id IS NULL
          AND (
            $2::JSONB IS NULL
-           OR $2::JSONB ? w.occupation
+           OR $2::JSONB ? COALESCE(w.occupation, w.profession)
          )
          AND (
            NOT $3::BOOLEAN
