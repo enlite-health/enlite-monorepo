@@ -25,7 +25,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -72,10 +72,13 @@ describe('Interview Slots API — Wave 2', () => {
       ON CONFLICT (slug) DO NOTHING
     `);
 
+    // patient_id é obrigatório no POST /api/admin/vacancies — fixture primeiro.
+    const patientId = await createPatientFixture(pool, 'interview-slots');
+
     // Cria uma vaga via API para usar nos testes
     const vacancyRes = await api.post(
       '/api/admin/vacancies',
-      { case_number: 77701, title: 'Caso E2E Interview Slots' },
+      { patient_id: patientId, case_number: 77701, title: 'Caso E2E Interview Slots' },
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
     expect(vacancyRes.status).toBe(201);

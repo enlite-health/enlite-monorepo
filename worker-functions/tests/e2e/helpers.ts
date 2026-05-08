@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { Pool } from 'pg';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const FIREBASE_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || 'localhost:9099';
@@ -61,6 +62,38 @@ async function getFirebaseEmulatorToken(
   }
 
   return res.data.idToken;
+}
+
+/**
+ * Cria um patient mínimo via SQL direto e retorna o id gerado.
+ *
+ * Necessário porque após o webhook ClickUp ter virado source-of-truth para
+ * pacientes, o controller `POST /api/admin/vacancies` exige `patient_id`
+ * preexistente no body. Testes E2E que criavam vacancies "soltas" agora
+ * precisam de um patient prévio.
+ *
+ * Uso típico:
+ *   const patientId = await createPatientFixture(pool, 'meet-links');
+ *   await api.post('/api/admin/vacancies', { patient_id: patientId, case_number: 99801, title: '...' });
+ */
+export async function createPatientFixture(
+  pool: Pool,
+  slug: string,
+  overrides: { firstName?: string; lastName?: string; status?: string } = {},
+): Promise<string> {
+  const clickupTaskId = `e2e-${slug}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const result = await pool.query(
+    `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+     VALUES ($1, $2, $3, 'AR', $4)
+     RETURNING id`,
+    [
+      clickupTaskId,
+      overrides.firstName ?? `E2E-${slug}`,
+      overrides.lastName ?? 'Patient',
+      overrides.status ?? 'ACTIVE',
+    ],
+  );
+  return result.rows[0].id as string;
 }
 
 export async function waitForBackend(api: AxiosInstance, maxRetries = 30): Promise<void> {

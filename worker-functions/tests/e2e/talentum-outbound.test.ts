@@ -18,7 +18,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -30,6 +30,7 @@ describe('Talentum Outbound API', () => {
   let workerToken: string;
   let pool: Pool;
   let vacancyId: string;
+  let patientId: string;
 
   beforeAll(async () => {
     await waitForBackend(api);
@@ -48,10 +49,14 @@ describe('Talentum Outbound API', () => {
 
     pool = new Pool({ connectionString: DATABASE_URL });
 
+    // patient_id é obrigatório no POST /api/admin/vacancies — cria paciente de referência primeiro.
+    patientId = await createPatientFixture(pool, 'talentum-outbound');
+
     // Create a vacancy to use in all tests
     const res = await api.post(
       '/api/admin/vacancies',
       {
+        patient_id: patientId,
         case_number: 77701,
         title: 'Caso E2E Talentum Outbound',
         worker_profile_sought: 'AT con experiencia en TEA',
@@ -176,7 +181,7 @@ describe('Talentum Outbound API', () => {
       // Create a temporary vacancy + question, then delete the vacancy
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 77799, title: 'Caso Cascade Test' },
+        { patient_id: patientId, case_number: 77799, title: 'Caso Cascade Test' },
         auth(adminToken),
       );
       const tempId = createRes.data.data?.id;
@@ -203,7 +208,7 @@ describe('Talentum Outbound API', () => {
       // Create two vacancies, set same talentum_project_id → should fail
       const res2 = await api.post(
         '/api/admin/vacancies',
-        { case_number: 77798, title: 'Unique Index Test' },
+        { patient_id: patientId, case_number: 77798, title: 'Unique Index Test' },
         auth(adminToken),
       );
       const otherId = res2.data.data?.id;
@@ -1076,7 +1081,7 @@ describe('Talentum Outbound API', () => {
       // Create and soft-delete a vacancy
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 77797, title: 'Caso Soft Delete' },
+        { patient_id: patientId, case_number: 77797, title: 'Caso Soft Delete' },
         auth(adminToken),
       );
       const deletedId = createRes.data.data?.id;
