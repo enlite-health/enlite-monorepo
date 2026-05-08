@@ -49,6 +49,11 @@ export function createWebhookRoutes(
       clickupHmac.verify(),
       (req: Request, res: Response) => clickupPatientController.handle(req, res),
     );
+    // Liveness probe — sem auth, sem PII; usar em uptime check
+    router.get(
+      '/clickup/patient/_health',
+      (req: Request, res: Response) => clickupPatientController.health(req, res),
+    );
   }
 
   return router;

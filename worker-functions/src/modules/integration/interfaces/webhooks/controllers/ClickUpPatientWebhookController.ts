@@ -41,6 +41,19 @@ export class ClickUpPatientWebhookController {
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
   ) {}
 
+  /**
+   * Liveness probe (no auth — only exposes structural state, no PII or counters).
+   * Use in Cloud Monitoring uptime checks; does NOT validate ClickUp connectivity.
+   */
+  health(_req: Request, res: Response): void {
+    res.status(200).json({
+      status: 'ok',
+      service: 'clickup-patient-webhook',
+      patientListId: PATIENT_LIST_ID,
+      uptimeSeconds: Math.floor(process.uptime()),
+    });
+  }
+
   static async create(): Promise<ClickUpPatientWebhookController> {
     const token = process.env.CLICKUP_API_TOKEN;
     if (!token) throw new Error('CLICKUP_API_TOKEN missing');

@@ -370,6 +370,32 @@ describe('ClickUpPatientWebhookController', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // health() — liveness probe
+  // ─────────────────────────────────────────────────────────────────
+
+  describe('health()', () => {
+    it('retorna 200 com status ok + estrutural info (sem PII)', () => {
+      const ctrl = new ClickUpPatientWebhookController(
+        'tok',
+        {} as ClickUpFieldResolver,
+        new ClickUpPatientMapper({} as ClickUpFieldResolver),
+        new PatientService(),
+        { query: mockDbQuery } as unknown as Pool,
+      );
+      const { res, statusCode, body } = makeMockRes();
+
+      ctrl.health({} as Request, res as Response);
+
+      expect(statusCode()).toBe(200);
+      const payload = body() as Record<string, unknown>;
+      expect(payload.status).toBe('ok');
+      expect(payload.service).toBe('clickup-patient-webhook');
+      expect(payload.patientListId).toBe(PATIENT_LIST_ID);
+      expect(typeof payload.uptimeSeconds).toBe('number');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // ClickUpPatientWebhookController.create() (factory)
   // ─────────────────────────────────────────────────────────────────
 

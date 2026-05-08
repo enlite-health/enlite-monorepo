@@ -7,6 +7,11 @@
  *     service retries without caseNumber, returns conflict flag + CASE_NUMBER_CONFLICT reason
  *  3. Other DB errors propagate unchanged
  *  4. MISSING_INFO reason is preserved alongside CASE_NUMBER_CONFLICT
+ *  5. patient_service.upsert.start emitted before INSERT
+ *  6. patient_service.upsert.completed emitted on success with correlationId
+ *  7. patient_service.case_number_conflict_retry emitted before retry
+ *  8. patient_service.upsert.failed emitted on generic error
+ *  9. PII guard — firstName/lastName never appear in logger calls
  */
 
 // ── Mocks (must appear before imports) ───────────────────────────────────────
@@ -65,6 +70,23 @@ jest.mock('../../infrastructure/geocodePatientAddresses', () => ({
 
 jest.mock('../../../../infrastructure/services/GeocodingService', () => ({
   GeocodingService: jest.fn().mockImplementation(() => ({})),
+}));
+
+jest.mock('../PatientRelatedWriter', () => ({
+  replacePatientAddresses:    jest.fn().mockResolvedValue(undefined),
+  replacePatientProfessionals: jest.fn().mockResolvedValue(undefined),
+}));
+
+const mockLoggerInfo  = jest.fn();
+const mockLoggerWarn  = jest.fn();
+const mockLoggerError = jest.fn();
+
+jest.mock('firebase-functions', () => ({
+  logger: {
+    info:  (...args: unknown[]) => mockLoggerInfo(...args),
+    warn:  (...args: unknown[]) => mockLoggerWarn(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+  },
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
@@ -217,5 +239,115 @@ describe('PatientService.upsertFromClickUp', () => {
     const retryInput = mockIdentityUpsert.mock.calls[1][0] as PatientServiceUpsertInput;
     expect(retryInput.attentionReasons).toContain('MISSING_INFO');
     expect(retryInput.attentionReasons).toContain('CASE_NUMBER_CONFLICT');
+  });
+
+  // ── 5. patient_service.upsert.start emitted before INSERT ──────────────────
+
+  it('5. emits patient_service.upsert.start before the identity upsert', async () => {
+    const callOrder: string[] = [];
+    mockLoggerInfo.mockImplementation((event: string) => { callOrder.push(event); });
+    mockIdentityUpsert.mockImplementation(async () => {
+      callOrder.push('identity.upsert');
+      return { id: 'patient-005', created: true };
+    });
+
+    await service.upsertFromClickUp(makeInput({ caseNumber: 10 }), { correlationId: 'cid-start' });
+
+    expect(callOrder[0]).toBe('patient_service.upsert.start');
+    expect(callOrder[1]).toBe('identity.upsert');
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      'patient_service.upsert.start',
+      expect.objectContaining({ clickupTaskId: 'task-abc', caseNumber: 10, correlationId: 'cid-start' }),
+    );
+  });
+
+  // ── 6. patient_service.upsert.completed emitted on success with correlationId
+
+  it('6. emits patient_service.upsert.completed with correlationId on success', async () => {
+    mockIdentityUpsert.mockResolvedValueOnce({ id: 'patient-006', created: false });
+
+    await service.upsertFromClickUp(makeInput(), { correlationId: 'cid-completed' });
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      'patient_service.upsert.completed',
+      expect.objectContaining({
+        clickupTaskId: 'task-abc',
+        patientId:     'patient-006',
+        created:       false,
+        flagged:       false,
+        correlationId: 'cid-completed',
+      }),
+    );
+    // durationMs must be a non-negative number
+    const completedCall = mockLoggerInfo.mock.calls.find(
+      (c: unknown[]) => c[0] === 'patient_service.upsert.completed',
+    );
+    const payload = completedCall![1] as Record<string, unknown>;
+    expect(typeof payload['durationMs']).toBe('number');
+    expect(payload['durationMs'] as number).toBeGreaterThanOrEqual(0);
+  });
+
+  // ── 7. patient_service.case_number_conflict_retry emitted before retry ──────
+
+  it('7. emits patient_service.case_number_conflict_retry on 23505 conflict', async () => {
+    mockIdentityUpsert
+      .mockRejectedValueOnce(makePgUniqueError())
+      .mockResolvedValueOnce({ id: 'patient-007', created: true });
+
+    await service.upsertFromClickUp(makeInput({ caseNumber: 99 }), { correlationId: 'cid-conflict' });
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      'patient_service.case_number_conflict_retry',
+      expect.objectContaining({
+        clickupTaskId:      'task-abc',
+        rejectedCaseNumber: 99,
+        correlationId:      'cid-conflict',
+      }),
+    );
+  });
+
+  // ── 8. patient_service.upsert.failed emitted on generic error ──────────────
+
+  it('8. emits patient_service.upsert.failed and rethrows on generic DB error', async () => {
+    const dbError = new Error('connection reset');
+    mockIdentityUpsert.mockRejectedValueOnce(dbError);
+
+    await expect(
+      service.upsertFromClickUp(makeInput(), { correlationId: 'cid-fail' }),
+    ).rejects.toThrow('connection reset');
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'patient_service.upsert.failed',
+      expect.objectContaining({
+        clickupTaskId: 'task-abc',
+        error:         'connection reset',
+        correlationId: 'cid-fail',
+      }),
+    );
+    const failCall = mockLoggerError.mock.calls.find(
+      (c: unknown[]) => c[0] === 'patient_service.upsert.failed',
+    );
+    const payload = failCall![1] as Record<string, unknown>;
+    expect(typeof payload['durationMs']).toBe('number');
+  });
+
+  // ── 9. PII guard ────────────────────────────────────────────────────────────
+
+  it('9. never logs firstName, lastName, phoneWhatsapp, or documentNumber', async () => {
+    mockIdentityUpsert.mockResolvedValueOnce({ id: 'patient-009', created: true });
+
+    await service.upsertFromClickUp(
+      makeInput({ firstName: 'PII_FIRST', lastName: 'PII_LAST', phoneWhatsapp: '+5491100000000' }),
+      { correlationId: 'cid-pii' },
+    );
+
+    const allLogArgs = JSON.stringify([
+      ...mockLoggerInfo.mock.calls,
+      ...mockLoggerWarn.mock.calls,
+      ...mockLoggerError.mock.calls,
+    ]);
+    expect(allLogArgs).not.toContain('PII_FIRST');
+    expect(allLogArgs).not.toContain('PII_LAST');
+    expect(allLogArgs).not.toContain('+5491100000000');
   });
 });

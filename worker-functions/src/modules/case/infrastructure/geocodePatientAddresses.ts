@@ -1,3 +1,4 @@
+import * as functions from 'firebase-functions';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import type { PatientAddress } from '../../../infrastructure/repositories/PatientRepository';
 
@@ -73,7 +74,28 @@ export async function geocodePatientAddressesBestEffort(
     setTimeout(() => resolve(null), timeoutMs),
   );
 
-  const settled = await Promise.race([batchPromise, timeoutPromise]).catch(() => null);
+  let timedOut = false;
+  const settled = await Promise.race([
+    batchPromise,
+    timeoutPromise.then(() => { timedOut = true; return null; }),
+  ]).catch((err: unknown) => {
+    functions.logger.warn('geocoding.failed', {
+      queryLength:  queriesToResolve[0]?.length ?? 0,
+      hasFormatted: indexedToResolve.some(x => !!addresses[x.i].addressFormatted),
+      hasRaw:       indexedToResolve.some(x => !!addresses[x.i].addressRaw),
+      state:        addresses[0]?.state ?? null,
+      city:         addresses[0]?.city  ?? null,
+      error:        err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
+
+  if (timedOut) {
+    functions.logger.warn('geocoding.batch_timeout', {
+      totalAddresses: addresses.length,
+      timeoutMs,
+    });
+  }
 
   // Map results back to original input order
   const out: GeocodedPatientAddress[] = addresses.map((address) => ({
@@ -88,6 +110,16 @@ export async function geocodePatientAddressesBestEffort(
       if (res) {
         out[originalIdx].lat = res.latitude;
         out[originalIdx].lng = res.longitude;
+      } else {
+        const a = addresses[originalIdx];
+        functions.logger.warn('geocoding.failed', {
+          queryLength:  indexedToResolve[idx].q.length,
+          hasFormatted: !!a.addressFormatted,
+          hasRaw:       !!a.addressRaw,
+          state:        a.state ?? null,
+          city:         a.city  ?? null,
+          error:        'null result (ZERO_RESULTS or precision rejected)',
+        });
       }
     });
   }

@@ -125,6 +125,7 @@ export class SyncPatientFromClickUpTaskUseCase {
     try {
       const result = await this.deps.patientService.upsertFromClickUp(input, {
         onMissingContact: opts.onMissingContact ?? 'flag',
+        correlationId:    cid,
       });
 
       const patientName = formatPatientName(input.firstName, input.lastName);

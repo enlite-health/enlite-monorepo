@@ -98,6 +98,26 @@ Isso dispara um novo revision automaticamente. Aguarde 30-60s.
 
 ### 6. Verificar saúde do webhook
 
+**Liveness probe (sem auth):**
+
+```bash
+curl -s https://<worker-url>/api/webhooks/clickup/patient/_health
+# {"status":"ok","service":"clickup-patient-webhook","patientListId":"901304883903","uptimeSeconds":N}
+```
+
+Use em Cloud Monitoring uptime check apontando pra `/api/webhooks/clickup/patient/_health`. Não valida conectividade ClickUp — só confirma que a rota está registrada e o servidor responde.
+
+**Smoke test ponta-a-ponta** (após Cloud SQL Proxy estar rodando):
+
+```bash
+cd worker-functions
+npx ts-node -r tsconfig-paths/register scripts/smoke-test-clickup-webhook.ts --target prod
+```
+
+Roda 4 sub-tests: happy path (`updated_at` avança), HMAC inválido → 401, lista errada → skip, task fake → fetch_failed.
+
+**Logs estruturados:**
+
 ```bash
 # Logs do Cloud Run filtrando por clickup_webhook
 gcloud run services logs read worker-functions \

@@ -1,14 +1,15 @@
+import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { PatientIdentityRepository, PatientIdentityUpsertInput } from '../infrastructure/PatientIdentityRepository';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
-import { geocodePatientAddressesBestEffort } from '../infrastructure/geocodePatientAddresses';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import {
   PatientResponsibleInput,
   validateContactChannel,
 } from '../domain/PatientResponsible';
 import { PatientAddress, PatientProfessional } from '../../../infrastructure/repositories/PatientRepository';
+import { replacePatientAddresses, replacePatientProfessionals } from './PatientRelatedWriter';
 import type { DependencyLevel } from '../domain/enums/DependencyLevel';
 import type { ClinicalSpecialty } from '../domain/enums/ClinicalSpecialty';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
@@ -32,6 +33,8 @@ export interface UpsertFromClickUpOptions {
    *              (used by legacy bulk imports where ops will review & complete)
    */
   onMissingContact?: MissingContactStrategy;
+  /** Propagated from the upstream event (webhook request-id or batch correlation). */
+  correlationId?: string;
 }
 
 export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
@@ -78,8 +81,8 @@ export class PatientService {
   private geocoder: GeocodingService;
 
   constructor(geocoder?: GeocodingService) {
-    this.identityRepo   = new PatientIdentityRepository();
-    this.clinicalRepo   = new PatientClinicalRepository();
+    this.identityRepo    = new PatientIdentityRepository();
+    this.clinicalRepo    = new PatientClinicalRepository();
     this.responsibleRepo = new PatientResponsibleRepository();
     // Injected for tests; defaults to a real instance that no-ops when
     // GOOGLE_MAPS_API_KEY is missing (see GeocodingService.geocode).
@@ -99,6 +102,15 @@ export class PatientService {
     input: PatientServiceUpsertInput,
     opts: UpsertFromClickUpOptions = {},
   ): Promise<{ id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' }> {
+    const cid     = opts.correlationId;
+    const startMs = Date.now();
+
+    functions.logger.info('patient_service.upsert.start', {
+      clickupTaskId: input.clickupTaskId,
+      caseNumber:    input.caseNumber ?? null,
+      correlationId: cid,
+    });
+
     const strategy: MissingContactStrategy = opts.onMissingContact ?? 'error';
     let flagged = false;
     const attentionReasons = new Set<AttentionReason>(input.attentionReasons ?? []);
@@ -123,27 +135,48 @@ export class PatientService {
 
     const identityInput: PatientIdentityUpsertInput = {
       ...input,
-      needsAttention:        (input.needsAttention ?? false) || flagged,
-      attentionReasons:      Array.from(attentionReasons),
-      healthInsuranceName:   input.healthInsuranceName,
+      needsAttention:          (input.needsAttention ?? false) || flagged,
+      attentionReasons:        Array.from(attentionReasons),
+      healthInsuranceName:     input.healthInsuranceName,
       healthInsuranceMemberId: input.healthInsuranceMemberId,
     };
 
-    const result = await this.runUpsertTransaction(identityInput, input, flagged);
+    try {
+      const result = await this.runUpsertTransaction(identityInput, input, flagged, cid);
 
-    if (result.conflict === 'CASE_NUMBER_CONFLICT') {
-      return result;
+      if (result.conflict === 'CASE_NUMBER_CONFLICT') {
+        return result;
+      }
+
+      functions.logger.info('patient_service.upsert.completed', {
+        clickupTaskId: input.clickupTaskId,
+        patientId:     result.id,
+        created:       result.created,
+        flagged,
+        durationMs:    Date.now() - startMs,
+        correlationId: cid,
+      });
+
+      return { id: result.id, created: result.created, flagged };
+    } catch (err) {
+      functions.logger.error('patient_service.upsert.failed', {
+        clickupTaskId: input.clickupTaskId,
+        error:         err instanceof Error ? err.message : String(err),
+        stack:         err instanceof Error ? err.stack   : undefined,
+        durationMs:    Date.now() - startMs,
+        correlationId: cid,
+      });
+      throw err;
     }
-
-    return { id: result.id, created: result.created, flagged };
   }
 
   private async runUpsertTransaction(
     identityInput: PatientIdentityUpsertInput,
     input: PatientServiceUpsertInput,
     flagged: boolean,
+    cid: string | undefined,
   ): Promise<{ id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' }> {
-    const db = DatabaseConnection.getInstance();
+    const db     = DatabaseConnection.getInstance();
     const client = await db.getClient();
 
     try {
@@ -160,6 +193,11 @@ export class PatientService {
           // Constraint blocks the write — rollback this attempt and retry without case_number.
           await client.query('ROLLBACK');
           client.release();
+          functions.logger.warn('patient_service.case_number_conflict_retry', {
+            clickupTaskId:       input.clickupTaskId,
+            rejectedCaseNumber:  input.caseNumber ?? null,
+            correlationId:       cid,
+          });
           return this.retryWithoutCaseNumber(identityInput, input);
         }
         throw err;
@@ -192,7 +230,7 @@ export class PatientService {
       attentionReasons: Array.from(attentionReasons),
     };
 
-    const db = DatabaseConnection.getInstance();
+    const db     = DatabaseConnection.getInstance();
     const client = await db.getClient();
 
     try {
@@ -236,145 +274,11 @@ export class PatientService {
     }
 
     if (input.addresses !== undefined) {
-      await this.replaceAddresses(patientId, input.addresses, client);
+      await replacePatientAddresses(patientId, input.addresses, client, this.geocoder);
     }
 
     if (input.professionals !== undefined) {
-      await this.replaceProfessionals(patientId, input.professionals, client);
+      await replacePatientProfessionals(patientId, input.professionals, client);
     }
-  }
-
-  // ── Private helpers (mirrors PatientRepository for addresses/professionals) ──
-
-  private async replaceAddresses(
-    patientId: string,
-    addresses: PatientAddress[],
-    client: import('pg').PoolClient,
-  ): Promise<void> {
-    // Merge by (patient_id, display_order) instead of DELETE+INSERT so that
-    // existing IDs survive the upsert. job_postings.patient_address_id has
-    // ON DELETE RESTRICT, so dropping a referenced address aborts the whole
-    // sync transaction.
-    const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
-
-    const { rows: existing } = await client.query<{ id: string; display_order: number }>(
-      'SELECT id, display_order FROM patient_addresses WHERE patient_id = $1',
-      [patientId],
-    );
-    const existingByOrder = new Map<number, string>(
-      existing.map(r => [r.display_order, r.id]),
-    );
-
-    if (valid.length === 0) return;
-
-    // Best-effort geocoding — never blocks the upsert. Failures persist
-    // lat/lng=NULL so the backfill job can recover them later.
-    const geocoded = await geocodePatientAddressesBestEffort(valid, this.geocoder, {
-      delayMs: 0,
-      timeoutMs: 8000,
-    });
-
-    for (const g of geocoded) {
-      const a = g.address;
-      const existingId = existingByOrder.get(a.displayOrder);
-
-      if (existingId) {
-        await client.query(
-          `UPDATE patient_addresses SET
-             address_type      = $2,
-             address_formatted = $3,
-             address_raw       = $4,
-             state             = $5,
-             city              = $6,
-             neighborhood      = $7,
-             lat               = $8,
-             lng               = $9
-           WHERE id = $1`,
-          [
-            existingId,
-            a.addressType,
-            a.addressFormatted ?? null,
-            a.addressRaw ?? null,
-            a.state ?? null,
-            a.city ?? null,
-            a.neighborhood ?? null,
-            g.lat,
-            g.lng,
-          ],
-        );
-      } else {
-        await client.query(
-          `INSERT INTO patient_addresses
-             (patient_id, address_type, address_formatted, address_raw, display_order, state, city, neighborhood, lat, lng)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            patientId,
-            a.addressType,
-            a.addressFormatted ?? null,
-            a.addressRaw ?? null,
-            a.displayOrder,
-            a.state ?? null,
-            a.city ?? null,
-            a.neighborhood ?? null,
-            g.lat,
-            g.lng,
-          ],
-        );
-      }
-    }
-
-    const newOrders = new Set(geocoded.map(g => g.address.displayOrder));
-    const obsoleteIds = existing
-      .filter(r => !newOrders.has(r.display_order))
-      .map(r => r.id);
-
-    if (obsoleteIds.length > 0) {
-      await client.query(
-        `DELETE FROM patient_addresses
-         WHERE id = ANY($1::uuid[])
-           AND NOT EXISTS (
-             SELECT 1 FROM job_postings jp
-             WHERE jp.patient_address_id = patient_addresses.id
-           )`,
-        [obsoleteIds],
-      );
-    }
-  }
-
-  private async replaceProfessionals(
-    patientId: string,
-    professionals: PatientProfessional[],
-    client: import('pg').PoolClient,
-  ): Promise<void> {
-    const { KMSEncryptionService } = await import('@shared/security/KMSEncryptionService');
-    const encryptionService = new KMSEncryptionService();
-
-    await client.query(
-      'DELETE FROM patient_professionals WHERE patient_id = $1',
-      [patientId],
-    );
-
-    const valid = professionals.filter(p => p.name?.trim());
-    if (valid.length === 0) return;
-
-    const encrypted = await Promise.all(
-      valid.map(async p => ({
-        phoneEnc: await encryptionService.encrypt(p.phone ?? null),
-        emailEnc: await encryptionService.encrypt(p.email ?? null),
-      })),
-    );
-
-    const values: unknown[] = [];
-    const placeholders = valid.map((p, i) => {
-      const base = i * 6;
-      values.push(patientId, p.name, encrypted[i].phoneEnc, encrypted[i].emailEnc, p.displayOrder, p.isTeam ?? false);
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
-    });
-
-    await client.query(
-      `INSERT INTO patient_professionals (patient_id, name, phone_encrypted, email_encrypted, display_order, is_team)
-       VALUES ${placeholders.join(', ')}`,
-      values,
-    );
   }
 }

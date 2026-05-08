@@ -42,6 +42,10 @@ services:
       ALLOWED_ORIGIN: "http://localhost:5173"
       # Apontar Firebase Admin SDK para o emulador local
       FIREBASE_AUTH_EMULATOR_HOST: "firebase-emulator:9099"
+      # ClickUp integration — defaults vazios; setar no shell para habilitar
+      # (CLICKUP_WEBHOOK_SECRET necessário para registrar a rota do webhook)
+      CLICKUP_API_TOKEN: ${CLICKUP_API_TOKEN:-}
+      CLICKUP_WEBHOOK_SECRET: ${CLICKUP_WEBHOOK_SECRET:-}
     ports:
       - "8080:8080"
     depends_on:
