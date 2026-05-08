@@ -47,7 +47,13 @@ export function VacancyModal({
       AdminApiService.getVacancyById(vacancyId)
         .then((v) => {
           setExistingVacancy(v);
-          if (v.patient_id) flow.selectCase(v.case_number ?? 0, v.patient_id);
+          if (v.patient_id) {
+            flow.selectCase(
+              v.case_number ?? 0,
+              v.patient_id,
+              v.patient_address_id ?? null,
+            );
+          }
         })
         .catch((err: unknown) =>
           setLoadError(err instanceof Error ? err.message : String(err)),

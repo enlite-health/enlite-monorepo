@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
+import { Text } from '@presentation/components/atoms/Text';
 
 interface ServiceAreaMapProps {
   lat?: number | null;
@@ -125,14 +126,14 @@ export function ServiceAreaMap({
   if (!valid) {
     return (
       <div
-        className={`flex flex-col items-center justify-center gap-2 w-full rounded-[10px] bg-gray-100 border border-dashed border-gray-300 ${className}`}
+        className={`flex flex-col items-center justify-center gap-2 w-full rounded-[10px] bg-gray-100 border border-dashed border-gray-400 ${className}`}
         style={{ height: 300 }}
         data-testid="service-area-map-placeholder"
       >
-        <MapPin size={32} className="text-gray-400" />
-        <span className="font-lexend text-sm text-gray-500 text-center px-4">
+        <MapPin size={32} className="text-gray-700" />
+        <Text size="sm" color="secondary" className="text-center px-4">
           {t('workerRegistration.serviceAddress.mapPlaceholder')}
-        </span>
+        </Text>
       </div>
     );
   }

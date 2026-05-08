@@ -334,8 +334,7 @@ export function VacancyFormSection({
           patientError={patientError}
           cityLocality={
             summarizeAddress(
-              addresses.find((a) => a.id === selectedAddressId)?.address_formatted
-                ?? addresses[0]?.address_formatted,
+              addresses.find((a) => a.id === selectedAddressId)?.address_formatted,
             ) || null
           }
           serviceType={patientDetail?.serviceType ?? null}
