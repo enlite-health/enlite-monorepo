@@ -27,6 +27,14 @@ resource "google_cloud_run_v2_service" "this" {
         cpu_idle          = var.cpu_throttling
         startup_cpu_boost = var.startup_cpu_boost
       }
+
+      dynamic "volume_mounts" {
+        for_each = length(var.cloud_sql_instances) > 0 ? [1] : []
+        content {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
     }
 
     dynamic "volumes" {

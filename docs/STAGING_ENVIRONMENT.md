@@ -52,11 +52,26 @@ done
 
 ### Refresh de schema (rodar migrations)
 
+**Schema inicial já aplicado em 2026-05-08** — 168/168 migrations, 44 tables.
+Stg está 4 migrations à frente de prd (163-166 ainda não applicadas em prd).
+
+Para aplicar uma migration nova:
+
 ```bash
 ./scripts/run-migration-stg.sh worker-functions/migrations/<arquivo>.sql
 ```
 
-Pra rodar todas em sequência, usar o runner do worker-functions ajustado pra apontar pra stg (ver Fase 2 do plano).
+Para rerodar tudo do zero (drop schema), usar o runner do worker-functions
+com Cloud SQL Proxy ativo:
+
+```bash
+cloud-sql-proxy --port 5436 enlite-stg:southamerica-west1:enlite-ar-db &
+APP_PASS=$(gcloud secrets versions access latest --secret=enlite-ar-db-password --project=enlite-stg)
+DATABASE_URL="postgresql://enlite_app:${APP_PASS}@localhost:5436/enlite_ar" \
+  node worker-functions/scripts/run-migrations-docker.js
+```
+
+O runner é idempotente (tabela `schema_migrations` track o que já foi aplicado).
 
 ### Refresh de dados (dump anonimizado de prd)
 

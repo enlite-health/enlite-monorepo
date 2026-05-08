@@ -25,6 +25,12 @@ module "secret_enlite_ar_db_password" {
   replication_locations = ["southamerica-west1"]
 }
 
+module "secret_postgres_root_password" {
+  source     = "../../modules/secret"
+  project_id = var.project_id
+  secret_id  = "enlite-postgres-root-password"
+}
+
 module "secrets_automatic" {
   source     = "../../modules/secret"
   for_each   = toset(local.automatic_secrets)
