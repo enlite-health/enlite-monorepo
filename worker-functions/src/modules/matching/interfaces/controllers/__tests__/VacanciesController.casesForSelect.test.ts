@@ -7,16 +7,15 @@
  * - shape de resposta preservado: { caseNumber, patientId, dependencyLevel }
  *
  * Cenários:
- *   1. ACTIVE + needs_attention=false + case_number + endereço → aparece
+ *   1. ACTIVE + case_number + endereço → aparece
  *   2. ACTIVE sem vaga → aparece (motivação central da reescrita)
  *   3. ACTIVE com vaga → aparece (legado continua funcionando)
  *   4. DISCONTINUED → não aparece
- *   5. needs_attention=true → não aparece
- *   6. case_number IS NULL → não aparece
- *   7. sem endereço → não aparece
- *   8. deleted_at IS NOT NULL → não aparece
- *   9. SQL usa p.case_number e p.deleted_at (invariante estrutural)
- *  10. retorna 500 quando query lança exceção
+ *   5. case_number IS NULL → não aparece
+ *   6. sem endereço → não aparece
+ *   7. deleted_at IS NOT NULL → não aparece
+ *   8. SQL usa p.case_number e p.deleted_at (invariante estrutural)
+ *   9. retorna 500 quando query lança exceção
  */
 
 const mockQuery = jest.fn();
@@ -157,7 +156,7 @@ describe('VacanciesController.getCasesForSelect', () => {
 
   // ── cenário 7: invariante estrutural — SQL parte de patients ───────────────
 
-  it('SQL usa FROM patients (não job_postings) com filtros deleted_at, status, needs_attention', async () => {
+  it('SQL usa FROM patients (não job_postings) com filtros deleted_at e status', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const [req, res] = mockReqRes();
@@ -168,7 +167,7 @@ describe('VacanciesController.getCasesForSelect', () => {
 
     expect(sql).toContain('FROM patients p');
     expect(sql).toContain('p.deleted_at IS NULL');
-    expect(sql).toContain('p.needs_attention = false');
+    expect(sql).not.toContain('p.needs_attention');
     expect(sql).toContain("p.status IN ('ACTIVE', 'PENDING_ADMISSION', 'ADMISSION')");
     expect(sql).toContain('p.case_number IS NOT NULL');
     expect(sql).toContain('ORDER BY p.case_number DESC');
