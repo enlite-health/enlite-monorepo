@@ -122,7 +122,11 @@ export default function CreateVacancyPage(): JSX.Element {
             variant="primary"
             size="sm"
             onClick={handleSave}
-            disabled={isBusy || !formComplete}
+            // In edit mode the vacancy already passed validation when it was
+            // created — relying on `formComplete` here causes the button to
+            // get stuck disabled while RHF/flow rehydrate from `existingVacancy`.
+            // Let RHF validate on submit and surface errors via the banner.
+            disabled={isBusy || (!isEditMode && !formComplete)}
             isLoading={isBusy}
             className="h-10 w-40 rounded-full bg-[#180149] text-white font-['Poppins'] font-semibold text-[16px] hover:bg-[#180149]/90 active:bg-[#180149]/80"
             data-testid="create-vacancy-save-btn"
