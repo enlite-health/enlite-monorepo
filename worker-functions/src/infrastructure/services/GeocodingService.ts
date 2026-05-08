@@ -1,5 +1,34 @@
 import { Client, GeocodeResult, Status } from '@googlemaps/google-maps-services-js';
 
+/**
+ * Decide se um resultado do Geocoding é específico o suficiente pra ser
+ * persistido. Rejeita:
+ *   - Resultados cujo top-level type é country/admin_area_level_1/level_2
+ *     (Google retornou centroide quando não achou o endereço).
+ *   - location_type APPROXIMATE combinado com types administrativos coarse.
+ * Aceita:
+ *   - ROOFTOP, RANGE_INTERPOLATED, GEOMETRIC_CENTER em qualquer types.
+ *   - APPROXIMATE em locality/sublocality (centro do bairro é aceitável).
+ */
+function isPreciseEnough(result: GeocodeResult): boolean {
+  const types = (result.types ?? []) as string[];
+  const locType = (result.geometry?.location_type ?? '') as string;
+
+  const adminCoarseTypes = new Set([
+    'country',
+    'administrative_area_level_1',
+    'administrative_area_level_2',
+  ]);
+  if (types.length > 0 && adminCoarseTypes.has(types[0])) return false;
+
+  if (locType === 'APPROXIMATE') {
+    const allowedApprox = new Set(['locality', 'sublocality', 'sublocality_level_1', 'neighborhood']);
+    return types.some((t) => allowedApprox.has(t));
+  }
+
+  return true;
+}
+
 export interface GeocodedAddress {
   formattedAddress: string;
   city: string | null;
@@ -25,7 +54,9 @@ export class GeocodingService {
 
   /**
    * Geocodifica um endereço usando Google Maps Geocoding API.
-   * Retorna null para endereços não encontrados (ZERO_RESULTS).
+   * Retorna null para endereços não encontrados (ZERO_RESULTS) ou quando
+   * o Google só conseguiu resolver no nível de país/região (centroide
+   * fallback que distorce match por proximidade).
    * Lança erro para problemas de API (REQUEST_DENIED, OVER_QUERY_LIMIT).
    */
   async geocode(address: string, country = 'AR'): Promise<GeocodedAddress | null> {
@@ -51,7 +82,15 @@ export class GeocodingService {
       throw new Error(`Geocoding API error: ${status} — ${response.data.error_message ?? ''}`);
     }
 
-    return this.parseGeocodeResult(response.data.results[0], country);
+    const top = response.data.results[0];
+
+    // Reject country-level / region-level fallback results — quando o Google
+    // não acha o endereço específico ele retorna o centroide do país/província
+    // com types=['country',...] e location_type=APPROXIMATE. Isso quebra
+    // qualquer match por proximidade no banco — preferimos NULL.
+    if (!isPreciseEnough(top)) return null;
+
+    return this.parseGeocodeResult(top, country);
   }
 
   /**
