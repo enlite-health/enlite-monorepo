@@ -12,7 +12,6 @@
 
 const mockQuery = jest.fn();
 const mockPool = { query: mockQuery };
-const mockGetPrompt = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -21,15 +20,6 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
     }),
   },
 }));
-
-jest.mock(
-  '../../../src/modules/integration/infrastructure/GoogleDocsPromptProvider',
-  () => ({
-    GoogleDocsPromptProvider: jest.fn().mockImplementation(() => ({
-      getPrompt: mockGetPrompt,
-    })),
-  }),
-);
 
 const originalFetch = global.fetch;
 const mockFetch = jest.fn();
@@ -45,11 +35,6 @@ afterAll(() => {
 beforeEach(() => {
   mockFetch.mockReset();
   mockQuery.mockReset();
-  mockGetPrompt.mockReset();
-  // Default: every test gets a non-empty prompt unless it overrides this
-  mockGetPrompt.mockResolvedValue(
-    'Sos un especialista en redacción de propuestas. Generá Descripción de la Propuesta y Perfil Profesional Sugerido.',
-  );
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -129,14 +114,10 @@ const MARCO_EXPECTED = 'El Marco de Acompañamiento:\nEnLite Health Solutions of
 describe('TalentumDescriptionService', () => {
   const origKey = process.env.GEMINI_API_KEY;
   const origModel = process.env.GEMINI_MODEL;
-  const origDocAt = process.env.PROMPT_DOC_ID_AT;
-  const origDocCuid = process.env.PROMPT_DOC_ID_CUIDADOR;
 
   beforeEach(() => {
     process.env.GEMINI_API_KEY = 'test-gemini-key';
     delete process.env.GEMINI_MODEL;
-    process.env.PROMPT_DOC_ID_AT = 'test-at-doc-id';
-    process.env.PROMPT_DOC_ID_CUIDADOR = 'test-cuidador-doc-id';
   });
 
   afterEach(() => {
@@ -144,10 +125,6 @@ describe('TalentumDescriptionService', () => {
     else delete process.env.GEMINI_API_KEY;
     if (origModel !== undefined) process.env.GEMINI_MODEL = origModel;
     else delete process.env.GEMINI_MODEL;
-    if (origDocAt !== undefined) process.env.PROMPT_DOC_ID_AT = origDocAt;
-    else delete process.env.PROMPT_DOC_ID_AT;
-    if (origDocCuid !== undefined) process.env.PROMPT_DOC_ID_CUIDADOR = origDocCuid;
-    else delete process.env.PROMPT_DOC_ID_CUIDADOR;
   });
 
   // Need fresh import after mocks
@@ -333,7 +310,8 @@ describe('TalentumDescriptionService', () => {
       expect(url).toContain('gemini-2.5-pro');
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.generationConfig.temperature).toBe(0.3);
-      expect(body.generationConfig.maxOutputTokens).toBe(2048);
+      // 4096 leaves enough budget for 2.5-pro thinking + ~500 tokens of JSON
+      expect(body.generationConfig.maxOutputTokens).toBe(4096);
       expect(body.generationConfig.responseMimeType).toBe('application/json');
       // Schema forces structured output with the two fields we control
       expect(body.generationConfig.responseSchema.required).toEqual([
@@ -370,7 +348,7 @@ describe('TalentumDescriptionService', () => {
       expect(url).toContain('key=my-secret-key');
     });
 
-    it('sends system prompt in Spanish about Talentum description', async () => {
+    it('sends inline system prompt with description-relevant rules', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
         .mockResolvedValueOnce({ rows: [] });
@@ -381,34 +359,47 @@ describe('TalentumDescriptionService', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       const sysText = body.systemInstruction.parts[0].text as string;
-      expect(sysText).toContain('Descripción de la Propuesta');
-      expect(sysText).toContain('Perfil Profesional Sugerido');
+      // Inline prompt must include the rules we extracted from the Drive doc
+      expect(sysText).toContain('EnLite Health Solutions');
+      expect(sysText).toContain('Voseo');
+      expect(sysText).toContain('Privacidad');
+      expect(sysText).toContain('"propuesta"');
+      expect(sysText).toContain('"perfilProfesional"');
     });
 
-    it('loads PROMPT_DOC_ID_AT when professions does not include CAREGIVER', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ required_professions: ['AT'] })] })
-        .mockResolvedValueOnce({ rows: [] });
-      mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
-
-      const service = createService();
-      await service.generateDescription('job-at');
-
-      expect(mockGetPrompt).toHaveBeenCalledWith('test-at-doc-id');
-    });
-
-    it('loads PROMPT_DOC_ID_CUIDADOR when professions includes CAREGIVER', async () => {
+    it('does not depend on PROMPT_DOC_ID env vars (no Drive fetch)', async () => {
+      // Regression guard: switching to the inline prompt removed the
+      // GoogleDocsPromptProvider dependency. Description must work even
+      // when PROMPT_DOC_ID_AT / PROMPT_DOC_ID_CUIDADOR are unset.
+      delete process.env.PROMPT_DOC_ID_AT;
+      delete process.env.PROMPT_DOC_ID_CUIDADOR;
       mockQuery
         .mockResolvedValueOnce({
-          rows: [makeVacancyRow({ required_professions: ['CAREGIVER'] })],
+          rows: [makeVacancyRow({ required_professions: ['AT', 'CAREGIVER'] })],
         })
         .mockResolvedValueOnce({ rows: [] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
-      await service.generateDescription('job-cuidador');
+      await expect(service.generateDescription('job-multi')).resolves.toBeDefined();
+    });
 
-      expect(mockGetPrompt).toHaveBeenCalledWith('test-cuidador-doc-id');
+    it('rejects refusal-string responses instead of saving them as description', async () => {
+      // Defense-in-depth: if a future doc edit or code path leaks the
+      // "Regla #7" refusal text into this service, throw a descriptive
+      // error instead of silently publishing the refusal on Talentum.
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      mockFetch.mockResolvedValueOnce(
+        mockGeminiResponse({
+          propuesta: 'Se debe generar una vacante para cuidador en otro chat',
+          perfilProfesional: 'Se debe generar una vacante para cuidador en otro chat',
+        }),
+      );
+
+      const service = createService();
+      await expect(service.generateDescription('job-refusal')).rejects.toThrow(
+        /refusal instead of a description/,
+      );
     });
 
     it('throws on Gemini HTTP error after exhausting retries', async () => {
