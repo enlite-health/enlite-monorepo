@@ -22,3 +22,12 @@ build/
 
 # RAG local (vector DB + models cache)
 .rag/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+# .terraform.lock.hcl is intentionally committed (provider version pinning)
