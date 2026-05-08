@@ -34,6 +34,8 @@ import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProc
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createWebhookRoutes, PartnerAuthMiddleware, GoogleApiKeyValidator, WebhookPartnerRepository } from '@modules/integration';
+import { ClickUpPatientWebhookController } from '@modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController';
+import { ClickUpHmacMiddleware } from '@modules/integration/interfaces/webhooks/middleware/ClickUpHmacMiddleware';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
@@ -76,7 +78,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Partner-Key'],
 }));
 
-app.use(express.json({ limit: '60mb' }));
+app.use(express.json({
+  limit: '60mb',
+  verify: (req, _res, buf) => {
+    if (req.url?.startsWith('/api/webhooks/clickup')) {
+      (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
+    }
+  },
+}));
 app.use(express.urlencoded({ limit: '60mb', extended: true }));
 
 
@@ -296,32 +305,6 @@ app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware)
 // ========== Recruitment (extracted router) ==========
 app.use('/api', createRecruitmentRoutes(recruitmentController, authMiddleware));
 
-// ========== Webhooks — Partner Auth ==========
-const googleValidator = new GoogleApiKeyValidator();
-const webhookPartnerRepo = new WebhookPartnerRepository();
-const partnerAuth = new PartnerAuthMiddleware(googleValidator, webhookPartnerRepo);
-
-const googleCalendarService = new GoogleCalendarService();
-const bookSlotUseCase = new BookSlotFromWhatsAppUseCase(
-  DatabaseConnection.getInstance().getPool(),
-  new PubSubClient(),
-  new CloudTasksClient(),
-  googleCalendarService,
-);
-const handleReminderResponseUseCase = new HandleReminderResponseUseCase(
-  DatabaseConnection.getInstance().getPool(),
-  new PubSubClient(),
-  googleCalendarService,
-);
-const inboundWhatsAppController = new InboundWhatsAppController(
-  DatabaseConnection.getInstance().getPool(),
-  bookSlotUseCase,
-  handleReminderResponseUseCase,
-);
-
-app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController));
-app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController));
-
 // ========== Messaging Routes ==========
 app.use('/api/admin/messaging', authMiddleware.requireStaff(), createMessagingRoutes(messagingService, templateRepo));
 
@@ -342,17 +325,62 @@ const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService
 const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler);
 app.use('/api/internal', createInternalRoutes(internalController));
 
-// ========== Start Server ==========
-const PORT = process.env.PORT || 8080;
+// ========== Webhooks + Server start (async: ClickUp controller init) ==========
+(async () => {
+  // ── Partner Auth (sync) ────────────────────────────────────────────────────
+  const googleValidator = new GoogleApiKeyValidator();
+  const webhookPartnerRepo = new WebhookPartnerRepository();
+  const partnerAuth = new PartnerAuthMiddleware(googleValidator, webhookPartnerRepo);
 
-console.log('[EventDriven] Services wired — no polling timers');
+  const googleCalendarService = new GoogleCalendarService();
+  const bookSlotUseCase = new BookSlotFromWhatsAppUseCase(
+    DatabaseConnection.getInstance().getPool(),
+    new PubSubClient(),
+    new CloudTasksClient(),
+    googleCalendarService,
+  );
+  const handleReminderResponseUseCase = new HandleReminderResponseUseCase(
+    DatabaseConnection.getInstance().getPool(),
+    new PubSubClient(),
+    googleCalendarService,
+  );
+  const inboundWhatsAppController = new InboundWhatsAppController(
+    DatabaseConnection.getInstance().getPool(),
+    bookSlotUseCase,
+    handleReminderResponseUseCase,
+  );
 
-const server = app.listen(PORT, () => {
-  console.log(`Enlite Backend running on port ${PORT}`);
-  console.log(`Authorization engine: ${useCerbos ? 'Cerbos' : 'Local'}`);
-});
+  // ── ClickUp Patient webhook (async: fetches field definitions from ClickUp API) ──
+  const clickupSecret = process.env.CLICKUP_WEBHOOK_SECRET;
+  let clickupPatientController: ClickUpPatientWebhookController | undefined;
+  let clickupHmac: ClickUpHmacMiddleware | undefined;
+  if (clickupSecret) {
+    try {
+      clickupPatientController = await ClickUpPatientWebhookController.create();
+      clickupHmac = new ClickUpHmacMiddleware(clickupSecret);
+    } catch (err) {
+      console.error('[startup] ClickUp webhook controller init failed — route will be unavailable:', err);
+    }
+  } else {
+    console.warn('[startup] CLICKUP_WEBHOOK_SECRET not set — ClickUp webhook route will be unavailable');
+  }
 
-server.timeout = 300000; // 5 minutos
-server.keepAliveTimeout = 310000;
-server.headersTimeout = 320000;
+  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac));
+  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac));
+
+  // ── Start Server ────────────────────────────────────────────────────────────
+  const PORT = process.env.PORT || 8080;
+
+  console.log('[EventDriven] Services wired — no polling timers');
+
+  const server = app.listen(PORT, () => {
+    console.log(`Enlite Backend running on port ${PORT}`);
+    console.log(`Authorization engine: ${useCerbos ? 'Cerbos' : 'Local'}`);
+  });
+
+  server.timeout = 300000; // 5 minutos
+  server.keepAliveTimeout = 310000;
+  server.headersTimeout = 320000;
+})();
+
 export { app };

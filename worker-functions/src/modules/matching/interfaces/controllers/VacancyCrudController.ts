@@ -64,6 +64,26 @@ export class VacancyCrudController {
         updatePatient,
       } = req.body;
 
+      if (!patient_id || typeof patient_id !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'patient_id é obrigatório. Cadastre o paciente no ClickUp antes de criar a vaga.',
+        });
+        return;
+      }
+
+      const patientCheck = await this.db.query<{ id: string }>(
+        'SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL',
+        [patient_id],
+      );
+      if (patientCheck.rows.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'patient_id inválido — paciente não encontrado ou foi removido.',
+        });
+        return;
+      }
+
       // Validate patient_address_id belongs to the patient_id (if both provided)
       if (patient_address_id && patient_id) {
         const ownerCheck = await this.db.query(
@@ -217,6 +237,28 @@ export class VacancyCrudController {
           error: `Invalid status value "${updates.status}". Must be one of: ${[...CANONICAL_STATUSES].join(', ')}`,
         });
         return;
+      }
+
+      if ('patient_id' in req.body) {
+        const newPatientId = req.body.patient_id;
+        if (newPatientId === null || newPatientId === '' || typeof newPatientId !== 'string') {
+          res.status(400).json({
+            success: false,
+            error: 'patient_id não pode ser removido de uma vaga existente.',
+          });
+          return;
+        }
+        const patientCheck = await this.db.query<{ id: string }>(
+          'SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL',
+          [newPatientId],
+        );
+        if (patientCheck.rows.length === 0) {
+          res.status(400).json({
+            success: false,
+            error: 'patient_id inválido — paciente não encontrado ou foi removido.',
+          });
+          return;
+        }
       }
 
       const allowedFields = [

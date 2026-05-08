@@ -42,7 +42,11 @@ export type { CreateJobPostingFromTalentumInput, CreateJobPostingFromTalentumRes
 
 // Interfaces / Webhooks
 export { TalentumWebhookController } from './interfaces/webhooks/controllers/TalentumWebhookController';
+export { ClickUpPatientWebhookController } from './interfaces/webhooks/controllers/ClickUpPatientWebhookController';
 export { PartnerAuthMiddleware } from './interfaces/webhooks/middleware/PartnerAuthMiddleware';
+export { ClickUpHmacMiddleware } from './interfaces/webhooks/middleware/ClickUpHmacMiddleware';
 export { createWebhookRoutes } from './interfaces/webhooks/routes/webhookRoutes';
 export { TalentumPrescreeningPayloadSchema } from './interfaces/webhooks/validators/talentumPrescreeningSchema';
 export type { TalentumPrescreeningPayloadInput, TalentumPrescreeningPayloadParsed, TalentumPrescreeningCreatedParsed, TalentumPrescreeningResponseParsed } from './interfaces/webhooks/validators/talentumPrescreeningSchema';
+export { ClickUpWebhookBodySchema, ClickUpEventSchema } from './interfaces/webhooks/validators/clickupWebhookSchema';
+export type { ClickUpWebhookBody } from './interfaces/webhooks/validators/clickupWebhookSchema';

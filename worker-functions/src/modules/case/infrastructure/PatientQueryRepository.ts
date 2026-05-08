@@ -214,6 +214,7 @@ export class PatientQueryRepository {
         AND ($${attentionReasonIdx}::text IS NULL OR $${attentionReasonIdx} = ANY(p.attention_reasons))
         AND ($${clinicalSpecialtyIdx}::text IS NULL OR p.clinical_specialty = $${clinicalSpecialtyIdx})
         AND ($${dependencyLevelIdx}::text IS NULL OR p.dependency_level = $${dependencyLevelIdx})
+        AND p.deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
@@ -267,6 +268,7 @@ export class PatientQueryRepository {
         )::int                                                                       AS created_yesterday,
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int        AS created_last_7_days
       FROM patients
+      WHERE deleted_at IS NULL
     `);
 
     const row = result.rows[0];

@@ -49,6 +49,7 @@ const PATIENT_DETAIL_SQL = `
     p.updated_at               AS "updatedAt"
   FROM patients p
   WHERE p.id = $1
+    AND p.deleted_at IS NULL
 `;
 
 async function fetchRelated(pool: Pool, patientId: string) {

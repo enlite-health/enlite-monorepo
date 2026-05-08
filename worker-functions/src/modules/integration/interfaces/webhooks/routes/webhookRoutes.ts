@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { PartnerAuthMiddleware } from '../middleware/PartnerAuthMiddleware';
 import { TalentumWebhookController } from '../controllers/TalentumWebhookController';
+import { ClickUpPatientWebhookController } from '../controllers/ClickUpPatientWebhookController';
+import { ClickUpHmacMiddleware } from '../middleware/ClickUpHmacMiddleware';
 import { TwilioWebhookController } from '@modules/notification/interfaces/controllers/TwilioWebhookController';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
 
@@ -12,6 +14,8 @@ import { InboundWhatsAppController } from '@modules/notification/interfaces/cont
 export function createWebhookRoutes(
   partnerAuth: PartnerAuthMiddleware,
   inboundWhatsAppController?: InboundWhatsAppController,
+  clickupPatientController?: ClickUpPatientWebhookController,
+  clickupHmac?: ClickUpHmacMiddleware,
 ): Router {
   const router = Router();
   const talentumController = new TalentumWebhookController();
@@ -35,6 +39,15 @@ export function createWebhookRoutes(
     router.post(
       '/twilio/inbound',
       (req: Request, res: Response) => inboundWhatsAppController.handleInbound(req, res),
+    );
+  }
+
+  // ── ClickUp Patient — autenticado via HMAC X-Signature ──────────
+  if (clickupPatientController && clickupHmac) {
+    router.post(
+      '/clickup/patient',
+      clickupHmac.verify(),
+      (req: Request, res: Response) => clickupPatientController.handle(req, res),
     );
   }
 
