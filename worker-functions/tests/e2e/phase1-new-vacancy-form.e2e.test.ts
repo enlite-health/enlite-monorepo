@@ -311,26 +311,34 @@ describe('Phase1 — New Vacancy Form', () => {
       vacancyIds.push(res.data.data.id);
     });
 
-    it('succeeds (no validation) when patient_id is absent', async () => {
-      // Orphan vacancy: no patient, no address — should still create fine
+    it('returns 400 when patient_id is absent (now required after ClickUp sync)', async () => {
+      // patient_id virou obrigatório quando o webhook ClickUp passou a ser source-of-truth.
+      // Vagas órfãs (sem paciente) deixaram de ser permitidas via API.
       const res = await api.post(
         '/api/admin/vacancies',
         { case_number: 77102 },
         auth(),
       );
 
-      expect(res.status).toBe(201);
-      vacancyIds.push(res.data.data.id);
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error).toMatch(/patient_id/i);
     });
   });
 
   // ── 1.4b — default status PENDING_ACTIVATION ─────────────────────────────
 
   describe('1.4b POST /api/admin/vacancies default status = PENDING_ACTIVATION', () => {
+    let patientForStatusTests: string;
+
+    beforeAll(async () => {
+      patientForStatusTests = await seedPatient({ firstName: 'StatusTest', lastName: 'Phase1' });
+    });
+
     it('creates vacancy with PENDING_ACTIVATION when status not provided', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 77200, title: 'Phase1 default status' },
+        { patient_id: patientForStatusTests, case_number: 77200, title: 'Phase1 default status' },
         auth(),
       );
 
@@ -349,7 +357,7 @@ describe('Phase1 — New Vacancy Form', () => {
     it('creates vacancy with PENDING_ACTIVATION when status is empty string', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 77201, status: '' },
+        { patient_id: patientForStatusTests, case_number: 77201, status: '' },
         auth(),
       );
 
@@ -361,7 +369,7 @@ describe('Phase1 — New Vacancy Form', () => {
     it('respects explicit status when provided and valid', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 77202, status: 'SEARCHING' },
+        { patient_id: patientForStatusTests, case_number: 77202, status: 'SEARCHING' },
         auth(),
       );
 

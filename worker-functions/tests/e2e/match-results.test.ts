@@ -286,7 +286,7 @@ describe('GET /api/admin/vacancies/:id/match-results', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Integração com POST /match (se GROQ não configurado, verifica estrutura)
+  // Integração com POST /match (se Groq não configurado, verifica estrutura)
   // ─────────────────────────────────────────────────────────────────────────
   describe('integração POST /match → GET /match-results', () => {
     it('GET /match-results após POST /match reflete estado da tabela', async () => {

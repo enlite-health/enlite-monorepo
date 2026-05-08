@@ -19,7 +19,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -54,10 +54,13 @@ describe('Vacancy Meet Links API', () => {
 
     pool = new Pool({ connectionString: DATABASE_URL });
 
+    // patient_id é obrigatório no POST /api/admin/vacancies — cria paciente de referência primeiro.
+    const patientId = await createPatientFixture(pool, 'meet-links');
+
     // Cria vaga de referência para os testes
     const vacancyRes = await api.post(
       '/api/admin/vacancies',
-      { case_number: 99801, title: 'Caso E2E Meet Links' },
+      { patient_id: patientId, case_number: 99801, title: 'Caso E2E Meet Links' },
       { headers: { Authorization: `Bearer ${adminToken}` } }
     );
     expect(vacancyRes.status).toBe(201);

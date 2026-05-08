@@ -14,7 +14,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -25,6 +25,9 @@ describe('Vacancies API', () => {
   let adminToken: string;
   let workerToken: string;
   let pool: Pool;
+  // patient_id virou obrigatório no POST /api/admin/vacancies; um único paciente
+  // de fixture serve para todos os casos felizes deste arquivo.
+  let defaultPatientId: string;
 
   beforeAll(async () => {
     await waitForBackend(api);
@@ -42,6 +45,7 @@ describe('Vacancies API', () => {
     });
 
     pool = new Pool({ connectionString: DATABASE_URL });
+    defaultPatientId = await createPatientFixture(pool, 'vacancies-api');
   });
 
   afterAll(async () => {
@@ -58,6 +62,7 @@ describe('Vacancies API', () => {
   describe('POST /api/admin/vacancies', () => {
     it('cria vaga com campos mínimos → 201 + id retornado', async () => {
       const body = {
+        patient_id: defaultPatientId,
         case_number: 99901,
         title: 'Caso E2E Teste',
         worker_profile_sought: 'AT com experiência em adultos mayores',
@@ -77,6 +82,7 @@ describe('Vacancies API', () => {
 
     it('nova vaga aparece no banco com status PENDING_ACTIVATION (default quando status não enviado)', async () => {
       const body = {
+        patient_id: defaultPatientId,
         case_number: 99902,
         title: 'Caso E2E Banco',
       };
@@ -196,7 +202,7 @@ describe('Vacancies API', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 99903, title: 'Caso E2E Detalhe' },
+        { patient_id: defaultPatientId, case_number: 99903, title: 'Caso E2E Detalhe' },
         authHeaders(adminToken),
       );
       createdId = res.data.data?.id;
@@ -252,7 +258,7 @@ describe('Vacancies API', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 99904, title: 'Caso E2E Update' },
+        { patient_id: defaultPatientId, case_number: 99904, title: 'Caso E2E Update' },
         authHeaders(adminToken),
       );
       vacancyId = res.data.data?.id;
@@ -316,7 +322,7 @@ describe('Vacancies API', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 99905, title: 'Caso E2E Delete' },
+        { patient_id: defaultPatientId, case_number: 99905, title: 'Caso E2E Delete' },
         authHeaders(adminToken),
       );
       vacancyId = res.data.data?.id;
@@ -380,7 +386,7 @@ describe('Vacancies API', () => {
     it('POST sem diagnosis no body não retorna 500 (coluna removida de job_postings em migration 039)', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 88801, title: 'Regressão Bug 1' },
+        { patient_id: defaultPatientId, case_number: 88801, title: 'Regressão Bug 1' },
         authHeaders(adminToken),
       );
       // Antes do fix: 500 com "column diagnosis does not exist"
@@ -411,7 +417,7 @@ describe('Vacancies API', () => {
       // Cria a vaga — dispara o setImmediate com match em background
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 88802, title: 'Regressão Bug 2' },
+        { patient_id: defaultPatientId, case_number: 88802, title: 'Regressão Bug 2' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
@@ -436,10 +442,12 @@ describe('Vacancies API', () => {
     // Fix:     Substituído p.* por campos nomeados com aliases explícitos;
     //          adicionado jp.id as id para garantir precedência.
     it('GET /:id retorna o id da vaga, não do paciente (jp.id não sobrescrito por p.id)', async () => {
-      // Cria vaga SEM patient_id — o cenário que expunha o bug
+      // O bug aparecia em qualquer vaga: SELECT jp.*, p.* fazia p.id (do JOIN com patients)
+      // sobrescrever jp.id no objeto retornado pelo driver. patient_id virou obrigatório,
+      // mas a invariante (jp.id ≠ p.id) continua sendo o que este teste verifica.
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 88803, title: 'Regressão Bug 3 — sem paciente' },
+        { patient_id: defaultPatientId, case_number: 88803, title: 'Regressão Bug 3' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
@@ -465,7 +473,7 @@ describe('Vacancies API', () => {
       const res = await api.post(
         '/api/admin/vacancies',
         // Intencionalmente omite description
-        { case_number: 88804, title: 'Regressão Bug 4 — sem description' },
+        { patient_id: defaultPatientId, case_number: 88804, title: 'Regressão Bug 4 — sem description' },
         authHeaders(adminToken),
       );
       // Antes do fix: 500 com "null value in column description..."
@@ -497,7 +505,7 @@ describe('Vacancies API', () => {
       beforeAll(async () => {
         const res = await api.post(
           '/api/admin/vacancies',
-          { case_number: 88805, title: 'Regressão Bug 5 — status legado' },
+          { patient_id: defaultPatientId, case_number: 88805, title: 'Regressão Bug 5 — status legado' },
           authHeaders(adminToken),
         );
         vacancyId = res.data.data?.id;
@@ -633,7 +641,7 @@ describe('Vacancies API', () => {
     it('criar vaga com status ACTIVE retorna 201 (hook roda sem bloquear)', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { case_number: 66601, title: 'Short-link hook ACTIVE', status: 'ACTIVE' },
+        { patient_id: defaultPatientId, case_number: 66601, title: 'Short-link hook ACTIVE', status: 'ACTIVE' },
         authHeaders(adminToken),
       );
       expect(res.status).toBe(201);
@@ -643,7 +651,7 @@ describe('Vacancies API', () => {
     it('servidor permanece saudável após criar vaga ACTIVE sem SHORT_IO configurado', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 66602, title: 'Short-link hook resilience', status: 'ACTIVE' },
+        { patient_id: defaultPatientId, case_number: 66602, title: 'Short-link hook resilience', status: 'ACTIVE' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
@@ -658,7 +666,7 @@ describe('Vacancies API', () => {
     it('criar vaga com status CLOSED não popula social_short_links', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 66603, title: 'Short-link hook CLOSED', status: 'CLOSED' },
+        { patient_id: defaultPatientId, case_number: 66603, title: 'Short-link hook CLOSED', status: 'CLOSED' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
@@ -680,7 +688,7 @@ describe('Vacancies API', () => {
     it('atualizar vaga PENDING_ACTIVATION → ACTIVE retorna 200 (hook roda sem bloquear)', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { case_number: 66604, title: 'Short-link update hook' },
+        { patient_id: defaultPatientId, case_number: 66604, title: 'Short-link update hook' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
