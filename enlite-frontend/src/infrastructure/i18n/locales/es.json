@@ -1294,6 +1294,7 @@
     "talentumConfig": {
       "pageTitle": "Configurar publicación",
       "pageSubtitle": "Revisá el contenido antes de publicar en Talentum",
+      "backButton": "Volver",
       "publishButton": "Publicar en Talentum",
       "publishing": "Publicando...",
       "generatingAI": "Generando contenido con IA...",

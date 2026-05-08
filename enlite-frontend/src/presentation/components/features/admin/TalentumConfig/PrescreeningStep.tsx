@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
 
@@ -30,9 +30,6 @@ export interface FaqItem {
 interface PrescreeningStepProps {
   initialQuestions: PrescreeningQuestion[];
   initialFaq: FaqItem[];
-  onNext: (data: { questions: PrescreeningQuestion[]; faq: FaqItem[] }) => void;
-  onBack: () => void;
-  isProcessing: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,16 +215,13 @@ function FaqCard({
 // ---------------------------------------------------------------------------
 
 export function PrescreeningStep({
-  initialQuestions, initialFaq, onNext, onBack, isProcessing,
+  initialQuestions, initialFaq,
 }: PrescreeningStepProps) {
   const { t } = useTranslation();
   const ps = 'admin.vacancyDetail.prescreening';
-  const cc = 'admin.createVacancy';
 
   const [questions, setQuestions] = useState<PrescreeningQuestion[]>(initialQuestions);
   const [faq, setFaq] = useState<FaqItem[]>(initialFaq);
-  const [validationErrors, setValidationErrors] = useState<Array<Record<string, string>>>([]);
-  const [globalError, setGlobalError] = useState<string | null>(null);
   const [expandedAdvanced, setExpandedAdvanced] = useState<Set<number>>(new Set());
 
   const toggleAdvanced = (i: number) => setExpandedAdvanced((prev) => {
@@ -238,13 +232,10 @@ export function PrescreeningStep({
 
   const addQuestion = () => {
     setQuestions((p) => [...p, defaultQuestion()]);
-    setValidationErrors((p) => [...p, {}]);
-    setGlobalError(null);
   };
 
   const removeQuestion = (idx: number) => {
     setQuestions((p) => p.filter((_, i) => i !== idx));
-    setValidationErrors((p) => p.filter((_, i) => i !== idx));
     setExpandedAdvanced((prev) => {
       const next = new Set<number>();
       prev.forEach((i) => { if (i < idx) next.add(i); else if (i > idx) next.add(i - 1); });
@@ -254,35 +245,10 @@ export function PrescreeningStep({
 
   const updateQuestion = (idx: number, updated: PrescreeningQuestion) => {
     setQuestions((p) => p.map((q, i) => (i === idx ? updated : q)));
-    if (validationErrors[idx] && Object.keys(validationErrors[idx]).length > 0) {
-      setValidationErrors((p) => p.map((e, i) => (i === idx ? {} : e)));
-    }
-    setGlobalError(null);
   };
 
   const updateFaq = (idx: number, field: keyof FaqItem, value: string) => {
     setFaq((p) => p.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
-  };
-
-  const validate = (): boolean => {
-    if (questions.length === 0) {
-      setGlobalError(t(`${cc}.prescreeningMinQuestion`));
-      return false;
-    }
-    const errors = questions.map((q) => {
-      const err: Record<string, string> = {};
-      if (!q.question.trim()) err.question = t(`${ps}.validation.questionRequired`);
-      if (!q.desiredResponse.trim()) err.desiredResponse = t(`${ps}.validation.desiredResponseRequired`);
-      if (q.weight < 1 || q.weight > 10) err.weight = t(`${ps}.validation.weightRange`);
-      return err;
-    });
-    setValidationErrors(errors);
-    return errors.every((e) => Object.keys(e).length === 0);
-  };
-
-  const handleNext = () => {
-    if (!validate()) return;
-    onNext({ questions, faq });
   };
 
   return (
@@ -306,7 +272,7 @@ export function PrescreeningStep({
             onToggleExpanded={() => toggleAdvanced(i)}
             onChange={(u) => updateQuestion(i, u)}
             onDelete={() => removeQuestion(i)}
-            errors={validationErrors[i] ?? {}} />
+            errors={{}} />
         ))}
         <Button type="button" variant="outline" size="sm" onClick={addQuestion}
           className="flex items-center gap-2 w-fit">
@@ -330,27 +296,6 @@ export function PrescreeningStep({
           onClick={() => setFaq((p) => [...p, { question: '', answer: '' }])}
           className="flex items-center gap-2 w-fit">
           <Plus className="w-4 h-4" />{t(`${ps}.addFaq`)}
-        </Button>
-      </div>
-
-      {/* Global error */}
-      {globalError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-          <span className="text-sm text-red-600">{globalError}</span>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-        <Button type="button" variant="outline" size="sm" onClick={onBack} disabled={isProcessing}
-          className="rounded-pill border-2 border-slate-200 hover:border-slate-300">
-          {t(`${cc}.back`)}
-        </Button>
-        <Button type="button" variant="primary" size="sm"
-          onClick={handleNext} disabled={isProcessing}
-          className="rounded-pill shadow-small flex items-center gap-2">
-          {isProcessing && <Loader2 className="w-4 h-4 animate-spin" />}
-          {isProcessing ? t(`${cc}.processing`) : t(`${cc}.next`)}
         </Button>
       </div>
       </div>

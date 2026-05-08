@@ -61,7 +61,6 @@ export default function TalentumConfigPage(): JSX.Element {
     publishError,
     setDescription,
     generateAIContent,
-    savePrescreening,
     publish,
   } = useTalentumConfig(vacancyId, preloaded);
 
@@ -73,13 +72,6 @@ export default function TalentumConfigPage(): JSX.Element {
       generateAIContent();
     }
   }, [isLoadingVacancy, vacancyError, hasGeneratedContent, generateStatus, generateAIContent]);
-
-  const handlePrescreeningNext = async (data: {
-    questions: typeof prescreeningQuestions;
-    faq: typeof prescreeningFaq;
-  }) => {
-    await savePrescreening(data);
-  };
 
   const handlePublish = async () => {
     try {
@@ -133,16 +125,27 @@ export default function TalentumConfigPage(): JSX.Element {
                 {publishError}
               </Text>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handlePublish}
-              disabled={isPublishing}
-              className="h-10 w-[200px] rounded-full bg-[#180149] text-white font-['Poppins'] font-semibold text-[16px] hover:bg-[#180149]/90 active:bg-[#180149]/80 flex items-center justify-center gap-2"
-            >
-              {isPublishing && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isPublishing ? tc('publishing') : tc('publishButton')}
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/admin/vacancies/${vacancyId}/edit`)}
+                disabled={isPublishing}
+                className="h-10 w-[120px] rounded-full"
+              >
+                {tc('backButton')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handlePublish}
+                disabled={isPublishing}
+                className="h-10 w-[200px] rounded-full bg-[#180149] text-white font-['Poppins'] font-semibold text-[16px] hover:bg-[#180149]/90 active:bg-[#180149]/80 flex items-center justify-center gap-2"
+              >
+                {isPublishing && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isPublishing ? tc('publishing') : tc('publishButton')}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -191,9 +194,6 @@ export default function TalentumConfigPage(): JSX.Element {
           <PrescreeningStep
             initialQuestions={prescreeningQuestions}
             initialFaq={prescreeningFaq}
-            onNext={handlePrescreeningNext}
-            onBack={() => navigate(`/admin/vacancies/${vacancyId}/edit`)}
-            isProcessing={false}
           />
         </div>
 
