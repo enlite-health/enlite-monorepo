@@ -62,11 +62,16 @@ export function useVacancyModalFlow(): VacancyModalFlowState & VacancyModalFlowA
 
   const selectCase = useCallback(
     (caseNumber: number, patientId: string, preferredAddressId?: string | null) => {
+      // Set `selectedAddressId` IMMEDIATELY from the caller's preferred id
+      // (e.g. edit mode passing `vacancy.patient_address_id`) so downstream
+      // gates like `formComplete` don't flip false during the address fetch.
+      // The async `.then` below validates the id actually exists in the
+      // fetched list and falls back to addresses[0] if not.
       setState((prev) => ({
         ...prev,
         selectedCaseNumber: caseNumber,
         selectedPatientId: patientId,
-        selectedAddressId: null,
+        selectedAddressId: preferredAddressId ?? null,
         addresses: [],
         dependencyLevel: null,
         isLoadingPatient: true,
@@ -78,15 +83,15 @@ export function useVacancyModalFlow(): VacancyModalFlowState & VacancyModalFlowA
         AdminApiService.listPatientAddresses(patientId),
       ])
         .then(([patient, addresses]) => {
-          const preferred =
-            preferredAddressId && addresses.some((a) => a.id === preferredAddressId)
-              ? preferredAddressId
-              : null;
+          const preferredExists =
+            preferredAddressId != null && addresses.some((a) => a.id === preferredAddressId);
           setState((prev) => ({
             ...prev,
             dependencyLevel: patient.dependencyLevel ?? null,
             addresses,
-            selectedAddressId: preferred ?? addresses[0]?.id ?? null,
+            selectedAddressId: preferredExists
+              ? (preferredAddressId as string)
+              : (addresses[0]?.id ?? null),
             isLoadingPatient: false,
           }));
         })
