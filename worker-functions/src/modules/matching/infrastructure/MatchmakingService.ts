@@ -309,15 +309,22 @@ export class MatchmakingService {
       avgQualityRating: row.avg_quality_rating ? parseFloat(row.avg_quality_rating as string) : null,
     }));
 
+    const requiredSexCode = normalizeSexCode(job.requiredSex);
+
     const filteredCandidates: WorkerCandidate[] = [];
     for (const candidate of candidates) {
       // Sex match (conservador): vaga BOTH/null aceita qualquer; vaga M/F
       // exige worker com sex cadastrado E batendo. Worker sem sex_encrypted
       // (null) é EXCLUÍDO quando a vaga restringe.
-      if (job.requiredSex && job.requiredSex !== 'BOTH') {
+      // Normaliza ambos os lados pra evitar mismatch entre forma curta da
+      // vaga ('M'/'F') e forma extensa do worker ('male'/'female') —
+      // o sex_encrypted é gravado como palavra completa lowercase em
+      // produção mas required_sex usa single-letter uppercase.
+      if (requiredSexCode) {
         if (!candidate.sexEncrypted) continue;
         const workerSex = await this.kms.decrypt(candidate.sexEncrypted);
-        if (workerSex !== job.requiredSex) continue;
+        const workerSexCode = normalizeSexCode(workerSex);
+        if (workerSexCode !== requiredSexCode) continue;
       }
       // Distance: só exclui se TODOS os 4 (vaga lat+lng, worker lat+lng)
       // estão presentes E a distância passa do raio. Worker sem coords ou
@@ -357,6 +364,22 @@ export class MatchmakingService {
       );
     }
   }
+}
+
+/**
+ * Normaliza um valor de sexo para o canônico interno 'M' | 'F' | null.
+ * Aceita as várias formas que aparecem em produção:
+ *   - vaga.required_sex: 'M', 'F', 'MALE', 'FEMALE' (UPPERCASE inglês curto/extenso)
+ *   - sex_encrypted decifrado: 'male', 'female' (lowercase inglês)
+ *   - eventual entrada manual: 'masculino', 'femenino', 'femenina'
+ * Retorna null pra valores desconhecidos / vazios / 'BOTH' / 'OTHER'.
+ */
+function normalizeSexCode(value: string | null | undefined): 'M' | 'F' | null {
+  if (!value) return null;
+  const v = value.trim().toUpperCase();
+  if (v === 'M' || v === 'MALE' || v === 'MASCULINO') return 'M';
+  if (v === 'F' || v === 'FEMALE' || v === 'FEMENINO' || v === 'FEMENINA') return 'F';
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {
