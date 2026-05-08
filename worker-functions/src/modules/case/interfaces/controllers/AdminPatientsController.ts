@@ -6,6 +6,7 @@ import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
@@ -33,11 +34,13 @@ export class AdminPatientsController {
   private readonly repo: PatientQueryRepository;
   private readonly getPatientByIdUseCase: GetPatientByIdUseCase;
   private readonly db: Pool;
+  private readonly geocoder: GeocodingService;
 
-  constructor() {
+  constructor(geocoder?: GeocodingService) {
     this.repo = new PatientQueryRepository();
     this.getPatientByIdUseCase = new GetPatientByIdUseCase(this.repo);
     this.db = DatabaseConnection.getInstance().getPool();
+    this.geocoder = geocoder ?? new GeocodingService();
   }
 
   /** GET /api/admin/patients */
@@ -143,17 +146,32 @@ export class AdminPatientsController {
 
     try {
       const displayOrderValue = display_order ?? null;
+
+      // Best-effort geocode — failures persist with lat/lng=NULL and the
+      // backfill job recovers later.
+      let lat: number | null = null;
+      let lng: number | null = null;
+      try {
+        const res = await this.geocoder.geocode(address_formatted);
+        if (res) {
+          lat = res.latitude;
+          lng = res.longitude;
+        }
+      } catch {
+        // best-effort
+      }
+
       const result = await this.db.query<{
         id: string; patient_id: string; address_formatted: string;
         address_raw: string | null; address_type: string;
       }>(
         `INSERT INTO patient_addresses
-           (patient_id, address_formatted, address_raw, address_type, display_order, source)
+           (patient_id, address_formatted, address_raw, address_type, display_order, source, lat, lng)
          VALUES ($1, $2, $3, $4,
            COALESCE($5, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1)),
-           'admin_manual')
+           'admin_manual', $6, $7)
          RETURNING id, patient_id, address_formatted, address_raw, address_type`,
-        [patientId, address_formatted, address_raw ?? null, address_type, displayOrderValue],
+        [patientId, address_formatted, address_raw ?? null, address_type, displayOrderValue, lat, lng],
       );
 
       res.status(201).json({ success: true, data: result.rows[0] });

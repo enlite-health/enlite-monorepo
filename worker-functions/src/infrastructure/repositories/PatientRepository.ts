@@ -11,6 +11,8 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { GeocodingService } from '../services/GeocodingService';
+import { geocodePatientAddressesBestEffort } from '../../modules/case/infrastructure/geocodePatientAddresses';
 
 export interface PatientAddress {
   addressType: string;         // 'primary' | 'secondary' | 'tertiary'
@@ -87,10 +89,12 @@ export interface PatientClickUpData {
 export class PatientRepository {
   private pool: Pool;
   private encryptionService: KMSEncryptionService;
+  private geocoder: GeocodingService;
 
-  constructor() {
+  constructor(geocoder?: GeocodingService) {
     this.pool = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
+    this.geocoder = geocoder ?? new GeocodingService();
   }
 
   async upsertFromClickUp(data: PatientClickUpData): Promise<{ id: string; created: boolean }> {
@@ -186,15 +190,23 @@ export class PatientRepository {
     const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
     if (valid.length === 0) return;
 
+    // Best-effort geocode — errors persist with lat/lng=null and the
+    // backfill job recovers later (mirrors PatientService.replaceAddresses).
+    const geocoded = await geocodePatientAddressesBestEffort(valid, this.geocoder, {
+      delayMs: 0,
+      timeoutMs: 8000,
+    });
+
     const values: unknown[] = [];
-    const placeholders = valid.map((a, i) => {
-      const base = i * 5;
-      values.push(patientId, a.addressType, a.addressFormatted ?? null, a.addressRaw ?? null, a.displayOrder);
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+    const placeholders = geocoded.map((g, i) => {
+      const base = i * 7;
+      const a = g.address;
+      values.push(patientId, a.addressType, a.addressFormatted ?? null, a.addressRaw ?? null, a.displayOrder, g.lat, g.lng);
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
     });
 
     await this.pool.query(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, display_order)
+      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, display_order, lat, lng)
        VALUES ${placeholders.join(', ')}`,
       values,
     );

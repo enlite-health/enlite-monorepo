@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 
 /**
  * VacancyAddressReviewController
@@ -29,9 +30,11 @@ const resolveAddressBodySchema = z.union([
 
 export class VacancyAddressReviewController {
   private readonly db: Pool;
+  private readonly geocoder: GeocodingService;
 
-  constructor() {
+  constructor(geocoder?: GeocodingService) {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.geocoder = geocoder ?? new GeocodingService();
   }
 
   /** POST /api/admin/vacancies/:id/resolve-address-review */
@@ -77,12 +80,25 @@ export class VacancyAddressReviewController {
           return;
         }
 
+        // Best-effort geocode — failures persist with lat/lng=NULL.
+        let lat: number | null = null;
+        let lng: number | null = null;
+        try {
+          const geo = await this.geocoder.geocode(address_formatted);
+          if (geo) {
+            lat = geo.latitude;
+            lng = geo.longitude;
+          }
+        } catch {
+          // best-effort
+        }
+
         const insertResult = await this.db.query<{ id: string }>(
           `INSERT INTO patient_addresses
-             (patient_id, address_formatted, address_raw, address_type, source)
-           VALUES ($1, $2, $3, $4, 'admin_review')
+             (patient_id, address_formatted, address_raw, address_type, source, lat, lng)
+           VALUES ($1, $2, $3, $4, 'admin_review', $5, $6)
            RETURNING id`,
-          [patientId, address_formatted, address_raw ?? null, address_type],
+          [patientId, address_formatted, address_raw ?? null, address_type, lat, lng],
         );
 
         resolvedAddressId = insertResult.rows[0].id;
