@@ -17,6 +17,12 @@ import type { Profession } from '../../worker/domain/enums/Profession';
 /** Strategy for handling missing contact channel during upsert. */
 export type MissingContactStrategy = 'error' | 'flag';
 
+function isCaseNumberConflict(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: string; constraint?: string };
+  return e.code === '23505' && e.constraint === 'patients_case_number_active_unique';
+}
+
 export interface UpsertFromClickUpOptions {
   /**
    * How to behave when the patient has no phone/email AND the primary
@@ -92,7 +98,7 @@ export class PatientService {
   async upsertFromClickUp(
     input: PatientServiceUpsertInput,
     opts: UpsertFromClickUpOptions = {},
-  ): Promise<{ id: string; created: boolean; flagged: boolean }> {
+  ): Promise<{ id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' }> {
     const strategy: MissingContactStrategy = opts.onMissingContact ?? 'error';
     let flagged = false;
     const attentionReasons = new Set<AttentionReason>(input.attentionReasons ?? []);
@@ -123,55 +129,118 @@ export class PatientService {
       healthInsuranceMemberId: input.healthInsuranceMemberId,
     };
 
+    const result = await this.runUpsertTransaction(identityInput, input, flagged);
+
+    if (result.conflict === 'CASE_NUMBER_CONFLICT') {
+      return result;
+    }
+
+    return { id: result.id, created: result.created, flagged };
+  }
+
+  private async runUpsertTransaction(
+    identityInput: PatientIdentityUpsertInput,
+    input: PatientServiceUpsertInput,
+    flagged: boolean,
+  ): Promise<{ id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' }> {
     const db = DatabaseConnection.getInstance();
     const client = await db.getClient();
 
     try {
       await client.query('BEGIN');
 
-      // 1. Upsert identity fields
-      const { id: patientId, created } = await this.identityRepo.upsert(identityInput, client);
+      let patientId: string;
+      let created: boolean;
+      let conflict: 'CASE_NUMBER_CONFLICT' | undefined;
 
-      // 2. Upsert clinical fields
-      await this.clinicalRepo.upsert(
-        {
-          patientId,
-          diagnosis:             input.diagnosis,
-          dependencyLevel:       input.dependencyLevel,
-          clinicalSpecialty:     input.clinicalSpecialty,
-          clinicalSegments:      input.clinicalSegments,
-          serviceType:           input.serviceType,
-          deviceType:            input.deviceType,
-          additionalComments:    input.additionalComments,
-          hasJudicialProtection: input.hasJudicialProtection,
-          hasCud:                input.hasCud,
-          hasConsent:            input.hasConsent,
-        },
-        client,
-      );
-
-      // 3. Replace responsibles if provided
-      if (input.responsibles !== undefined) {
-        await this.responsibleRepo.replaceAll(patientId, input.responsibles, client);
+      try {
+        ({ id: patientId, created } = await this.identityRepo.upsert(identityInput, client));
+      } catch (err) {
+        if (isCaseNumberConflict(err)) {
+          // Constraint blocks the write — rollback this attempt and retry without case_number.
+          await client.query('ROLLBACK');
+          client.release();
+          return this.retryWithoutCaseNumber(identityInput, input);
+        }
+        throw err;
       }
 
-      // 4. Replace addresses if provided (delegate to pool — ok inside same connection)
-      if (input.addresses !== undefined) {
-        await this.replaceAddresses(patientId, input.addresses, client);
-      }
-
-      // 5. Replace professionals if provided
-      if (input.professionals !== undefined) {
-        await this.replaceProfessionals(patientId, input.professionals, client);
-      }
+      await this.upsertRelated(patientId, input, client);
 
       await client.query('COMMIT');
-      return { id: patientId, created, flagged };
+      return { id: patientId, created, flagged, conflict };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      // Only release if client hasn't been released already (conflict path releases early).
+      try { client.release(); } catch { /* already released */ }
+    }
+  }
+
+  private async retryWithoutCaseNumber(
+    identityInput: PatientIdentityUpsertInput,
+    input: PatientServiceUpsertInput,
+  ): Promise<{ id: string; created: boolean; flagged: boolean; conflict: 'CASE_NUMBER_CONFLICT' }> {
+    const attentionReasons = new Set<AttentionReason>(identityInput.attentionReasons ?? []);
+    attentionReasons.add('CASE_NUMBER_CONFLICT');
+
+    const safeIdentityInput: PatientIdentityUpsertInput = {
+      ...identityInput,
+      caseNumber:       null,
+      needsAttention:   true,
+      attentionReasons: Array.from(attentionReasons),
+    };
+
+    const db = DatabaseConnection.getInstance();
+    const client = await db.getClient();
+
+    try {
+      await client.query('BEGIN');
+      const { id: patientId, created } = await this.identityRepo.upsert(safeIdentityInput, client);
+      await this.upsertRelated(patientId, input, client);
+      await client.query('COMMIT');
+      return { id: patientId, created, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
+    }
+  }
+
+  private async upsertRelated(
+    patientId: string,
+    input: PatientServiceUpsertInput,
+    client: import('pg').PoolClient,
+  ): Promise<void> {
+    await this.clinicalRepo.upsert(
+      {
+        patientId,
+        diagnosis:             input.diagnosis,
+        dependencyLevel:       input.dependencyLevel,
+        clinicalSpecialty:     input.clinicalSpecialty,
+        clinicalSegments:      input.clinicalSegments,
+        serviceType:           input.serviceType,
+        deviceType:            input.deviceType,
+        additionalComments:    input.additionalComments,
+        hasJudicialProtection: input.hasJudicialProtection,
+        hasCud:                input.hasCud,
+        hasConsent:            input.hasConsent,
+      },
+      client,
+    );
+
+    if (input.responsibles !== undefined) {
+      await this.responsibleRepo.replaceAll(patientId, input.responsibles, client);
+    }
+
+    if (input.addresses !== undefined) {
+      await this.replaceAddresses(patientId, input.addresses, client);
+    }
+
+    if (input.professionals !== undefined) {
+      await this.replaceProfessionals(patientId, input.professionals, client);
     }
   }
 

@@ -30,7 +30,7 @@
  *   (s) healthInsuranceMemberId empty string → null
  */
 
-import { ClickUpPatientMapper } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
 // ── Mock ClickUpFieldResolver ─────────────────────────────────────────────────
@@ -558,5 +558,154 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result!.country).toBe('AR');
+  });
+
+  // ── status mapping from ClickUp task.status ───────────────────────────────
+
+  it('(v1) ClickUp status "busqueda" → patient status ACTIVE', () => {
+    const task = makeTask('task-v1', 'Pérez, Ana', 'busqueda', [
+      { name: 'Nombre de Paciente', value: 'Ana' },
+      { name: 'Apellido del Paciente', value: 'Pérez' },
+    ]);
+
+    const result = mapper.map(task);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('ACTIVE');
+  });
+
+  it('(v2) ClickUp status "admisión" → patient status ADMISSION', () => {
+    const task = makeTask('task-v2', 'García, Luis', 'admisión', [
+      { name: 'Nombre de Paciente', value: 'Luis' },
+      { name: 'Apellido del Paciente', value: 'García' },
+    ]);
+
+    const result = mapper.map(task);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('ADMISSION');
+  });
+
+  it('(v3) ClickUp status "baja" → patient status DISCONTINUED', () => {
+    const task = makeTask('task-v3', 'Torres, María', 'baja', [
+      { name: 'Nombre de Paciente', value: 'María' },
+      { name: 'Apellido del Paciente', value: 'Torres' },
+    ]);
+
+    const result = mapper.map(task);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('DISCONTINUED');
+  });
+
+  it('(v4) unknown ClickUp status → patient status null (no crash)', () => {
+    // Simulate a new status ops added to ClickUp that is not yet mapped.
+    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { /* suppress */ });
+
+    const task = makeTask('task-v4', 'Romero, Pablo', 'nuevo_estado_desconocido', [
+      { name: 'Nombre de Paciente', value: 'Pablo' },
+      { name: 'Apellido del Paciente', value: 'Romero' },
+    ]);
+
+    const result = mapper.map(task);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBeNull();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[ClickUpPatientMapper] Unknown ClickUp status:',
+      expect.objectContaining({ statusRaw: 'nuevo_estado_desconocido', taskId: 'task-v4' }),
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it('(v5) task.status is undefined → patient status null (no crash)', () => {
+    // Edge case: malformed task with no status object.
+    const taskWithNoStatus: import('../../../src/modules/integration/infrastructure/clickup/ClickUpTask').ClickUpTask = {
+      id:           'task-v5',
+      name:         'Fernández, Rosa',
+      status:       undefined as unknown as { status: string; color: string; type: string },
+      parent:       null,
+      custom_fields: [
+        { id: 'cf-nom', name: 'Nombre de Paciente',    type: 'text', value: 'Rosa' },
+        { id: 'cf-ape', name: 'Apellido del Paciente', type: 'text', value: 'Fernández' },
+      ],
+      url:          'https://app.clickup.com/t/task-v5',
+      date_created: '1700000000000',
+      date_updated: '1700100000000',
+    };
+
+    const result = mapper.map(taskWithNoStatus);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBeNull();
+  });
+
+  // ── caseNumber via map() ──────────────────────────────────────────────────
+
+  it('(t) "Caso Número" present with string value → caseNumber parsed as number', () => {
+    const task = makeTask('task-t', 'Díaz, Carmen', 'Activo', [
+      { name: 'Nombre de Paciente', value: 'Carmen' },
+      { name: 'Apellido del Paciente', value: 'Díaz' },
+      { name: 'Caso Número', value: '766' },
+    ]);
+
+    const result = mapper.map(task);
+    expect(result).not.toBeNull();
+    expect(result!.caseNumber).toBe(766);
+  });
+
+  it('(u) "Caso Número" absent → caseNumber is null', () => {
+    const task = makeTask('task-u', 'Ramos, Felipe', 'Activo', [
+      { name: 'Nombre de Paciente', value: 'Felipe' },
+      { name: 'Apellido del Paciente', value: 'Ramos' },
+      // No "Caso Número" field
+    ]);
+
+    const result = mapper.map(task);
+    expect(result).not.toBeNull();
+    expect(result!.caseNumber).toBeNull();
+  });
+});
+
+// ── extractCaseNumber unit tests ──────────────────────────────────────────────
+
+describe('extractCaseNumber', () => {
+  function taskWithCf(value: unknown): ClickUpTask {
+    return makeTask('task-cn', 'Test', 'Activo', [
+      { name: 'Caso Número', value },
+    ]);
+  }
+
+  it('parses a plain numeric string to integer', () => {
+    expect(extractCaseNumber(taskWithCf('766'))).toBe(766);
+  });
+
+  it('parses a numeric string with leading zeros', () => {
+    expect(extractCaseNumber(taskWithCf('007'))).toBe(7);
+  });
+
+  it('returns null when field is absent', () => {
+    const task = makeTask('task-cn-absent', 'Test', 'Activo', []);
+    expect(extractCaseNumber(task)).toBeNull();
+  });
+
+  it('returns null when value is null', () => {
+    expect(extractCaseNumber(taskWithCf(null))).toBeNull();
+  });
+
+  it('returns null when value is empty string', () => {
+    expect(extractCaseNumber(taskWithCf(''))).toBeNull();
+  });
+
+  it('returns null when value contains no digits', () => {
+    expect(extractCaseNumber(taskWithCf('abc'))).toBeNull();
+  });
+
+  it('extracts first digit sequence from mixed string (e.g. "12abc")', () => {
+    expect(extractCaseNumber(taskWithCf('12abc'))).toBe(12); // regex picks first digit run
+  });
+
+  it('extracts digits from "Caso 766" (realistic ops format)', () => {
+    expect(extractCaseNumber(taskWithCf('Caso 766'))).toBe(766);
+  });
+
+  it('extracts first digit sequence from "abc12def"', () => {
+    expect(extractCaseNumber(taskWithCf('abc12def'))).toBe(12);
   });
 });

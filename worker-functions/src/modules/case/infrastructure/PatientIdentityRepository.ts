@@ -4,6 +4,7 @@ import { PatientIdentity } from '../domain/PatientIdentity';
 import type { Sex } from '../domain/enums/Sex';
 import type { DocumentType } from '../domain/enums/DocumentType';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
+import type { PatientStatus } from '../domain/enums/PatientStatus';
 
 export interface PatientIdentityUpsertInput {
   clickupTaskId: string;
@@ -33,6 +34,19 @@ export interface PatientIdentityUpsertInput {
    * Fill-only: COALESCE(existing, $new) — never overwrites a populated value.
    */
   healthInsuranceMemberId?: string | null;
+  /**
+   * Identificador PII-safe operacional (ClickUp "Caso Número"). Migration 164.
+   * Origem: string no payload ClickUp; aqui já parseado para number.
+   * UNIQUE entre patients ativos (deleted_at IS NULL) — conflito é tratado
+   * no handler do webhook (próxima etapa).
+   */
+  caseNumber?: number | null;
+  /**
+   * Lifecycle status derived from ClickUp task status (migration 143).
+   * Mapped via vacancyStatusMap.ts: patientStatus field.
+   * null when the ClickUp status is unrecognised (new/unlisted status).
+   */
+  status?: PatientStatus | null;
 }
 
 /**
@@ -64,9 +78,11 @@ export class PatientIdentityRepository {
         city_locality, province, zone_neighborhood,
         country,
         needs_attention, attention_reasons,
-        health_insurance_name, health_insurance_member_id
+        health_insurance_name, health_insurance_member_id,
+        case_number,
+        status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
       )
       ON CONFLICT (clickup_task_id) DO UPDATE SET
         first_name          = EXCLUDED.first_name,
@@ -87,6 +103,9 @@ export class PatientIdentityRepository {
         -- fill-only: only update when the current DB value is NULL
         health_insurance_name       = COALESCE(patients.health_insurance_name, EXCLUDED.health_insurance_name),
         health_insurance_member_id  = COALESCE(patients.health_insurance_member_id, EXCLUDED.health_insurance_member_id),
+        case_number         = EXCLUDED.case_number,
+        -- status: always overwrite — ClickUp is the source of truth for patient lifecycle
+        status              = EXCLUDED.status,
         updated_at          = NOW()
       RETURNING id, xmax::text`,
       [
@@ -109,6 +128,8 @@ export class PatientIdentityRepository {
         input.attentionReasons ? [...input.attentionReasons] : [],
         input.healthInsuranceName      ?? null,
         input.healthInsuranceMemberId  ?? null,
+        input.caseNumber       ?? null,
+        input.status           ?? null,
       ],
     );
 

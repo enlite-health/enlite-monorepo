@@ -11,10 +11,19 @@
  * reasons can be added here and used immediately, no migration required.
  */
 export type AttentionReason =
-  | 'MISSING_INFO';
+  | 'MISSING_INFO'
+  /**
+   * Patient sync attempted to set case_number that's already taken by
+   * another active patient (UNIQUE constraint patients_case_number_active_unique
+   * blocks the write). The patient is persisted with case_number=null + this flag
+   * for ops to investigate (typically: duplicate ClickUp task with the same
+   * case_number, or a typo in the ClickUp custom field).
+   */
+  | 'CASE_NUMBER_CONFLICT';
 
 export const ATTENTION_REASONS: readonly AttentionReason[] = [
   'MISSING_INFO',
+  'CASE_NUMBER_CONFLICT',
 ] as const;
 
 export function isAttentionReason(value: unknown): value is AttentionReason {

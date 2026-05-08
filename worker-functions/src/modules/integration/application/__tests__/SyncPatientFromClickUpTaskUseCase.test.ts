@@ -10,8 +10,9 @@
  *  6. UPDATED — upsert returns created=false, flagged=false
  *  7. CREATED flagged — upsert returns created=true, flagged=true
  *  8. ERROR (upsert throws) — patientService.upsertFromClickUp throws
- *  9. correlationId forwarded when provided
- * 10. correlationId auto-generated when not provided
+ *  9. CASE_NUMBER_CONFLICT — upsert returns conflict='CASE_NUMBER_CONFLICT'
+ * 10. correlationId forwarded when provided
+ * 11. correlationId auto-generated when not provided
  */
 
 // ── Mocks (before imports) ────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ function makeTask(overrides: Partial<ClickUpTask> = {}): ClickUpTask {
 
 function makeDeps(overrides: Partial<{
   mapResult: PatientServiceUpsertInput | null | Error;
-  upsertResult: { id: string; created: boolean; flagged: boolean } | Error;
+  upsertResult: { id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' } | Error;
 }>): SyncPatientDeps {
   const mapper = {
     map: jest.fn(() => {
@@ -290,9 +291,48 @@ describe('SyncPatientFromClickUpTaskUseCase', () => {
     );
   });
 
-  // ── 9. correlationId forwarded ─────────────────────────────────────────────
+  // ── 9. CASE_NUMBER_CONFLICT ───────────────────────────────────────────────
 
-  it('9. forwards provided correlationId to all logger calls', async () => {
+  it('9. returns CASE_NUMBER_CONFLICT when upsertFromClickUp returns conflict field', async () => {
+    const input: PatientServiceUpsertInput = {
+      ...makeUpsertInput('Valentín', 'Ojeda Noha'),
+      caseNumber: 695,
+    } as unknown as PatientServiceUpsertInput;
+
+    const deps = makeDeps({
+      mapResult:    input,
+      upsertResult: { id: 'patient-conflict-01', created: false, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' },
+    });
+    useCase = new SyncPatientFromClickUpTaskUseCase(deps);
+
+    const result = await useCase.execute(makeTask(), {}, 'corr-conflict-01');
+
+    expect(result.kind).toBe('CASE_NUMBER_CONFLICT');
+    if (result.kind === 'CASE_NUMBER_CONFLICT') {
+      expect(result.patientId).toBe('patient-conflict-01');
+      expect(result.taskId).toBe('task-001');
+      expect(result.caseNumber).toBe(695);
+      expect(result.patientName).toBe('Ojeda Noha, Valentín');
+    }
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      'clickup_patient_sync.case_number_conflict',
+      expect.objectContaining({
+        taskId:        'task-001',
+        caseNumber:    695,
+        patientId:     'patient-conflict-01',
+        correlationId: 'corr-conflict-01',
+      }),
+    );
+    // Must NOT log the normal completed event
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+      'clickup_patient_sync.completed',
+      expect.anything(),
+    );
+  });
+
+  // ── 10. correlationId forwarded ───────────────────────────────────────────
+
+  it('10. forwards provided correlationId to all logger calls', async () => {
     const input = makeUpsertInput();
     const deps = makeDeps({
       mapResult:    input,
@@ -312,9 +352,9 @@ describe('SyncPatientFromClickUpTaskUseCase', () => {
     );
   });
 
-  // ── 10. correlationId auto-generated ──────────────────────────────────────
+  // ── 11. correlationId auto-generated ─────────────────────────────────────
 
-  it('10. auto-generates correlationId when not provided', async () => {
+  it('11. auto-generates correlationId when not provided', async () => {
     const input = makeUpsertInput();
     const deps = makeDeps({
       mapResult:    input,

@@ -172,6 +172,17 @@ describe('mapClickUpVacancyStatus', () => {
     });
   });
 
+  it('"En espera" → ACTIVE / ON_HOLD', () => {
+    expect(mapClickUpVacancyStatus('En espera')).toEqual({
+      patientStatus: 'ACTIVE',
+      jobPostingStatus: 'ON_HOLD',
+    });
+    expect(mapClickUpVacancyStatus('en espera')).toEqual({
+      patientStatus: 'ACTIVE',
+      jobPostingStatus: 'ON_HOLD',
+    });
+  });
+
   it('normaliza espaços em branco ao redor do status', () => {
     expect(mapClickUpVacancyStatus('  Baja  ')).toEqual({
       patientStatus: 'DISCONTINUED',
@@ -185,6 +196,7 @@ describe('mapClickUpVacancyStatus', () => {
       'activo',
       'admisión',
       'admision',
+      'en espera',
       'equipe de resposta rápida',
       'equipo de respuesta rapida',
       'equipo respuesta rápida',

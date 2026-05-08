@@ -202,6 +202,7 @@ async function main(): Promise<void> {
   let updated = 0;
   let flaggedCreated = 0;
   let flaggedUpdated = 0;
+  let caseNumberConflicts = 0;
   let errors = 0;
 
   for (let i = 0; i < tasksToProcess.length; i++) {
@@ -241,6 +242,14 @@ async function main(): Promise<void> {
           console.log(`         stack: ${result.error.stack.split('\n').slice(0, 5).join(' | ')}`);
         }
         errors++;
+        break;
+
+      case 'CASE_NUMBER_CONFLICT':
+        processed++;
+        caseNumberConflicts++;
+        console.log(
+          `  ${num} task=${result.taskId} case=${result.caseNumber ?? 'unknown'} → CONFLICT (patient persisted without case_number, needs_attention)`,
+        );
         break;
 
       case 'CREATED':
@@ -288,6 +297,9 @@ async function main(): Promise<void> {
     const totalFlagged = flaggedCreated + flaggedUpdated;
     if (totalFlagged > 0) {
       console.log(`  Flagged:       ${totalFlagged} (needs_attention=true, reason=MISSING_INFO)`);
+    }
+    if (caseNumberConflicts > 0) {
+      console.log(`  Conflicts:     ${caseNumberConflicts} (case_number duplicate — persisted with case_number=null, needs_attention=CASE_NUMBER_CONFLICT)`);
     }
   }
 

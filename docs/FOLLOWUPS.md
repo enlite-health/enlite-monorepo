@@ -233,6 +233,101 @@ if (caseNumber != null) {
 
 ---
 
+**Atualização 2026-05-08 (continuação) — design do select estava invertido:**
+
+Após relinkar as 5 vagas, descoberta: **3 dos 6 patients novos sincronizados hoje (Héctor Arnaldo Montenegro, Susana Collia, Noelia Soledad Álvarez Romero — cases 764, 765, 766) continuaram invisíveis no select** mesmo passando todos os filtros (`needs_attention=false`, com endereço, etc.). Causa: a query `cases-for-select` é populada por `job_postings.case_number`, então **paciente sem nenhuma vaga jamais aparece** — e justamente patient novo (cenário comum: "criar primeira vaga pra paciente que acabou de entrar") não entra na lista.
+
+Diagnóstico em prod (2026-05-08):
+- **8 patients** em prod sem vaga e não-flagged → invisíveis no select. Inclui os 3 novos de hoje + 5 mais antigos (Castillo, Avalos, Gimenez, Maciel, Ojeda).
+- **Bug adicional descoberto:** `ClickUpPatientMapper` **não captura `task.status`** em nenhum lugar ([ClickUpPatientMapper.ts](../worker-functions/src/modules/integration/infrastructure/clickup/ClickUpPatientMapper.ts) — zero refs). Resultado: 37/311 patients sincronizados com `status=''` em prod (incluindo TODOS os 6 criados pelo sync de hoje). O `vacancyStatusMap` que faz `'busqueda' → ACTIVE` etc. está usado só pelo `ClickUpVacancyMapper`.
+
+**Confirmação do PO (Gabriel, 2026-05-08):** o select da tela "Nova Vacante" **deve listar pacientes**, não vagas — porque vaga é criada **justamente para pacientes que ainda não têm**. Status que devem aparecer: `ACTIVE`, `PENDING_ADMISSION`, `ADMISSION` (não `SUSPENDED`/`DISCONTINUED`/`DISCHARGED`).
+
+**Plano revisado (substitui o anterior — Frente 3 deixa de ser obrigatória, ganha-se Frente 0 e 4):**
+
+### Frente 0 — `ClickUpPatientMapper` capturar `status` *(novo, crítico)*
+
+Sem isso o filtro por status no select não funciona pra patients que vieram do sync.
+
+```ts
+// Em ClickUpPatientMapper.map(task):
+import { mapClickUpStatusToCanonical } from './mappings/vacancyStatusMap'; // exportar o helper se ainda não estiver exposto
+const canonical = mapClickUpStatusToCanonical(task.status?.status);
+input.status = canonical?.patientStatus ?? null;
+```
+
+Backfill one-shot: rodar contra os 37 patients com status vazio (consultar ClickUp API por `clickup_task_id`, mapear `task.status.status` → `PatientStatus`, UPDATE).
+
+### Frente 1 — Validação `patient_id` no backend *(mantida)*
+
+Inalterada. Com Frente 4 funcionando, operador sempre seleciona patient antes de submeter, então o guard só serve como defensa de profundidade contra bugs de form.
+
+### Frente 2 — `patients.case_number` *(promovida a pré-requisito)*
+
+Antes era nice-to-have, agora é **obrigatória** porque a query nova do select (Frente 4) precisa dela. Schema/mapper/backfill como descrito acima.
+
+### Frente 3 — Auto-relink no webhook *(rebaixada)*
+
+Não é mais necessária pra **prevenir** órfãs futuras (Frente 1 + 4 cobrem). Continua relevante apenas como **cleanup** de órfãs já-existentes (5 mitigadas hoje + 6 históricas pendentes). Pode ser deletada do escopo OU implementada como cron one-shot/admin endpoint (`POST /admin/vacancies/relink-orphans`) que roda manualmente quando operação pedir.
+
+### Frente 4 — Reescrever `cases-for-select` para puxar de `patients` *(novo, central)*
+
+Substitui o `INNER JOIN` que pega case de `job_postings`:
+
+```sql
+-- Em VacanciesController.getCasesForSelect()
+SELECT
+  p.case_number   AS "caseNumber",
+  p.id            AS "patientId",
+  COALESCE(p.dependency_level, '') AS "dependencyLevel"
+FROM patients p
+WHERE p.case_number IS NOT NULL
+  AND p.needs_attention = false
+  AND p.status IN ('ACTIVE', 'PENDING_ADMISSION', 'ADMISSION')
+  AND EXISTS (
+    SELECT 1 FROM patient_addresses pa WHERE pa.patient_id = p.id
+  )
+ORDER BY p.case_number DESC;
+```
+
+Notas:
+- Sem JOIN com `job_postings` — patients novos sem vaga são listáveis.
+- `p.case_number` requer Frente 2 aplicada antes (caso contrário todos viram NULL e a lista fica vazia).
+- `p.status` requer Frente 0 aplicada antes (caso contrário 37 patients legacy ficam de fora).
+- Mantém `p.needs_attention=false` e `EXISTS patient_addresses` — operação só cria vaga quando o paciente tem dado completo + endereço.
+
+**Ordem de implementação obrigatória:** Frente 0 → Frente 2 → Frente 4 (eles têm dependência). Frente 1 pode entrar paralela. Frente 3 fica fora ou no fim.
+
+**Critérios de aceite atualizados:**
+
+- `patients.status` populado pra ≥99% dos patients sincronizados (alguns podem ter status ClickUp não-mapeado e ficar null — log de warning)
+- `patients.case_number` populado pra ≥99% dos patients sincronizados
+- POST/PUT `/api/admin/vacancies` rejeita `patient_id=null` com 400
+- Após sync de patient novo (via webhook ou script), o paciente aparece no select da tela de "Nova Vacante" em ≤1s, **sem precisar de vaga prévia**
+- E2E novo: sync de paciente ACTIVE sem vaga → verifica que `cases-for-select` retorna ele
+
+**Estimativa revisada:** 2-3 dias. Frentes 0, 2 e 4 são changes pequenas e localizadas. Frente 1 mantém escopo mínimo. Total fica próximo do estimate anterior porque Frente 3 (que era a mais cara em auditoria) sai do escopo MVP.
+
+---
+
+### TD-008 — case_number duplicado entre patients (descoberto 2026-05-08)
+
+- **Status:** mitigado por código (constraint UNIQUE parcial + handling no PatientService); 2 cases pendentes de resolução operacional no ClickUp
+- **Descoberto em:** 2026-05-08 durante re-sync após implementar `patients.case_number`
+- **Dono provável:** operação (resolver duplicidade no ClickUp)
+- **Bloqueador?** Não — código persiste paciente com `case_number=NULL` + `needs_attention='CASE_NUMBER_CONFLICT'`
+
+**Casos identificados em 2026-05-08:**
+
+| case_number | Tasks ClickUp | Diagnóstico |
+|---|---|---|
+| 695 | `86aebfbdq` (Ojeda Noha Valentín — com acento) vs `86aeb40w6` (Ojeda Noha Valentin — sem acento) | Mesma pessoa cadastrada 2x. Ops deve deletar a duplicada |
+| 759 | `86ah4khcj` (Páez Sofía Jeanette) vs `86ah2uub7` (Krncsek Benicio) | Pessoas diferentes, case_number digitado igual por engano. Ops deve corrigir um dos dois |
+
+**Ação operacional:** revisar ambos os casos no ClickUp e corrigir. Após correção, rodar `import-patients-from-clickup.ts --live --status "<status_relevante>"` pra re-sync.
+
+---
+
 ## Decisões Pendentes (precisam de alinhamento operacional)
 
 ### DP-001 — Split shifts: 1 vaga ou 2 vagas?

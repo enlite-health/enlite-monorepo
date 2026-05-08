@@ -11,6 +11,7 @@ import {
   mapClickUpClinicalSpecialty,
   mapClickUpService,
 } from './mappings';
+import { mapClickUpVacancyStatus } from './mappings/vacancyStatusMap';
 import {
   extractStateFromLocation,
   extractCityFromLocation,
@@ -63,6 +64,17 @@ export class ClickUpPatientMapper {
 
     const serviceTypes = mapClickUpService(serviceLabel);
 
+    // Derive patient status from ClickUp task status.
+    // task.status.status is the raw ClickUp label (lowercase, e.g. "busqueda", "admisión").
+    // mapClickUpVacancyStatus handles whitespace trimming and lowercasing internally.
+    const statusRaw      = task.status?.status;
+    const statusMapping  = mapClickUpVacancyStatus(statusRaw);
+    const patientStatus  = statusMapping?.patientStatus ?? null;
+    if (statusRaw && !statusMapping) {
+      // Unknown ClickUp status — ops may have added a new value. Log it so it can be mapped.
+      console.warn('[ClickUpPatientMapper] Unknown ClickUp status:', { statusRaw, taskId: task.id });
+    }
+
     const input: PatientServiceUpsertInput = {
       clickupTaskId:      task.id,
       firstName:          firstName ?? '',
@@ -89,6 +101,11 @@ export class ClickUpPatientMapper {
       healthInsuranceName:     this.asString(cf['Cobertura Informada']),
       // ClickUp: "Número ID Afiliado Paciente"
       healthInsuranceMemberId: this.asString(cf['Número ID Afiliado Paciente']),
+      // ClickUp: "Caso Número" — PII-safe operational identifier. Migration 164.
+      caseNumber:              extractCaseNumber(task),
+      // Lifecycle status derived from ClickUp task status (migration 143).
+      // null when ClickUp status is unrecognised — loggable above.
+      status:                  patientStatus,
 
       // Related records
       responsibles:  this.buildResponsibles(cf),
@@ -287,4 +304,17 @@ export class ClickUpPatientMapper {
     const loc = location as Record<string, unknown>;
     return typeof loc['formatted_address'] === 'string' ? loc['formatted_address'] : null;
   }
+}
+
+/**
+ * Extracts the operational case number from the ClickUp "Caso Número" custom field.
+ * Uses a regex to extract the first digit sequence, so values like "Caso 766" or
+ * "766" both yield 766.  Returns null when the field is absent, empty, or contains
+ * no digits at all.
+ */
+export function extractCaseNumber(task: ClickUpTask): number | null {
+  const raw = task.custom_fields.find(f => f.name === 'Caso Número')?.value;
+  if (raw == null || raw === '') return null;
+  const match = String(raw).match(/\d+/);
+  return match ? parseInt(match[0], 10) : null;
 }

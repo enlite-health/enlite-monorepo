@@ -58,6 +58,9 @@ export const CLICKUP_TO_VACANCY_STATUS: Record<string, VacancyStatusMapping> = {
   'baja':                   { patientStatus: 'DISCONTINUED', jobPostingStatus: 'CLOSED' },
   // ClickUp: "Alta"
   'alta':                   { patientStatus: 'DISCHARGED', jobPostingStatus: 'CLOSED' },
+  // ClickUp: "En espera" — paciente ativo, vaga pausada por razão operacional
+  // (distinto de 'suspendido temporalmente' que é suspensão clínica). Migration 166.
+  'en espera':              { patientStatus: 'ACTIVE', jobPostingStatus: 'ON_HOLD' },
   // ClickUp: "Busqueda" (sin tilde)
   'busqueda':               { patientStatus: 'ACTIVE', jobPostingStatus: 'SEARCHING' },
   // ClickUp: "Búsqueda" (con tilde)

@@ -18,6 +18,7 @@ import type { PatientService } from '../../case/application/PatientService';
 export type SyncPatientResult =
   | { kind: 'CREATED'; patientId: string; flagged: boolean; taskId: string; patientName: string }
   | { kind: 'UPDATED'; patientId: string; flagged: boolean; taskId: string; patientName: string }
+  | { kind: 'CASE_NUMBER_CONFLICT'; patientId: string; taskId: string; caseNumber: number | null; patientName: string }
   | { kind: 'SKIPPED_SUBTASK'; taskId: string }
   | { kind: 'SKIPPED_NO_PATIENT_NAME'; taskId: string }
   | { kind: 'SKIPPED_MAPPER_NULL'; taskId: string }
@@ -127,8 +128,29 @@ export class SyncPatientFromClickUpTaskUseCase {
       });
 
       const patientName = formatPatientName(input.firstName, input.lastName);
+
+      if (result.conflict === 'CASE_NUMBER_CONFLICT') {
+        functions.logger.warn('clickup_patient_sync.case_number_conflict', {
+          taskId,
+          caseNumber: input.caseNumber ?? null,
+          patientId:  result.id,
+          durationMs: Date.now() - startMs,
+          correlationId: cid,
+          // PII: patientName not logged here
+        });
+        return {
+          kind:        'CASE_NUMBER_CONFLICT',
+          patientId:   result.id,
+          taskId,
+          caseNumber:  input.caseNumber ?? null,
+          patientName,
+        };
+      }
+
       const kind: 'CREATED' | 'UPDATED' = result.created ? 'CREATED' : 'UPDATED';
 
+      // PII: não logar patientName aqui — vai pro Cloud Logging.
+      // patientName fica apenas no SyncPatientResult retornado pro CLI script.
       functions.logger.info('clickup_patient_sync.completed', {
         taskId,
         kind,
