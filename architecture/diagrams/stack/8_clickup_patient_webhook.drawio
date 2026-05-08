@@ -1,0 +1,176 @@
+<mxfile host="app.diagrams.net" modified="2026-05-08T16:00:00.000Z" agent="Claude" version="24.0.0">
+  <diagram id="webhook-macro" name="8A - Webhook ClickUp (macro)">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="EnLite — 8A Webhook ClickUp → Patients (sync em tempo real)&#xa;Como uma edição no ClickUp vira UPDATE no banco em segundos" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#202124;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="story" value="HISTÓRIA&#xa;&#xa;Operação trabalha primeiro no ClickUp (cadastra paciente, muda status). Antes, o sync só rodava manualmente a cada X horas — gap operacional.&#xa;Agora um webhook do ClickUp dispara em ~1s pra cada edição. O Cloud Run valida HMAC, busca a task completa, mapeia, persiste idempotente.&#xa;Falha de boolean/data silenciosa? Não mais — comprehensive test detecta. Sem PII em log. CLI continua como backfill quando webhook fica offline." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF7C3;strokeColor=#F59E0B;fontSize=13;fontColor=#78350F;align=center;verticalAlign=middle;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="clickup_box" value="ClickUp&#xa;&#xa;Lista &quot;Estado de Pacientes&quot;&#xa;(901304883903)&#xa;&#xa;Task pai = paciente&#xa;Child tasks = vagas (ignoradas)&#xa;&#xa;~30 custom_fields&#xa;Status: 11 valores&#xa;&#xa;(SaaS externo)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#EF6C00;fontSize=12;fontColor=#E65100;strokeWidth=3;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="260" width="220" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="event_label" value="taskCreated&#xa;taskUpdated&#xa;taskStatusUpdated&#xa;taskMoved&#xa;taskDeleted" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#5F6368;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="290" y="290" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="hmac_label" value="POST + X-Signature&#xa;(HMAC-SHA256)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#1565C0;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="290" y="380" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="webhook_box" value="worker-functions / Cloud Run&#xa;&#xa;POST /api/webhooks/clickup/patient&#xa;&#xa;5 camadas de filtragem:&#xa;1. HMAC verify (X-Signature)&#xa;2. body.list_id correto&#xa;3. GET task completa (re-fetch)&#xa;4. task.list.id confere&#xa;5. parent === null (não-subtask)&#xa;&#xa;(nosso código + GCP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=12;fontColor=#0D47A1;strokeWidth=3;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="260" width="280" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="usecase_box" value="SyncPatientFromClickUpTaskUseCase&#xa;&#xa;Orquestra:&#xa;• ClickUpPatientMapper.map(task)&#xa;• PatientService.upsertFromClickUp&#xa;&#xa;Retorna kind: CREATED / UPDATED&#xa;SKIPPED_* / CASE_NUMBER_CONFLICT / ERROR&#xa;&#xa;CorrelationId em todos os logs&#xa;PII-safe (sem patientName)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=12;fontColor=#0D47A1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="740" y="260" width="280" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="db_box" value="Cloud SQL — Postgres&#xa;&#xa;patients (clickup_task_id UNIQUE)&#xa;+ case_number UNIQUE parcial&#xa;+ deleted_at (soft-delete)&#xa;+ status canônico (ACTIVE/...)&#xa;&#xa;patient_addresses (geocoded)&#xa;patient_responsibles&#xa;patient_professionals&#xa;vacancy_relink_audit&#xa;&#xa;(GCP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=12;fontColor=#B71C1C;strokeWidth=3;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="260" width="280" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="logs_box" value="Cloud Logging&#xa;&#xa;18 eventos estruturados:&#xa;clickup_webhook.received / hmac_invalid / skip_other_list / fetch_task_failed / task_deleted&#xa;clickup_patient_sync.start / completed / skipped / error / case_number_conflict&#xa;patient_service.upsert.start / completed / failed / case_number_conflict_retry&#xa;geocoding.failed / geocoding.batch_timeout&#xa;&#xa;Todos com correlationId, sem PII (firstName/lastName/phone)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=12;fontColor=#1B5E20;strokeWidth=3;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="540" width="640" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="tests_box" value="Suite de validação (3 níveis)&#xa;&#xa;Nível 1 — Comprehensive fixture (unit, &lt;1s)&#xa;&#xa;Nível 2 — Real ClickUp → DB roundtrip (integration, ~5s)&#xa;Task seed 86ahcdkx2 [E2E_TEST_DO_NOT_EDIT]&#xa;&#xa;Nível 3 — E2E webhook (HMAC + handler + UseCase + DB, ~5s)&#xa;&#xa;1510 unit + 15 E2E + 4 smoke ao vivo passing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=12;fontColor=#4A148C;strokeWidth=3;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="540" width="620" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="cli_box" value="CLI script (backfill)&#xa;&#xa;import-patients-from-clickup.ts&#xa;Replay quando webhook offline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontSize=11;fontColor=#F57F17;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="780" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="smoke_box" value="Smoke test executável&#xa;&#xa;scripts/smoke-test-clickup-webhook.ts&#xa;--target prod (HMAC simulado, valida updated_at)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontSize=11;fontColor=#F57F17;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="780" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="health_box" value="Health endpoint&#xa;&#xa;GET /api/webhooks/clickup/patient/_health&#xa;Pra Cloud Monitoring uptime check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontSize=11;fontColor=#F57F17;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="780" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="secret_box" value="Secret Manager&#xa;&#xa;clickup-webhook-secret&#xa;Mounted via --update-secrets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontSize=11;fontColor=#F57F17;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="780" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_clickup_webhook" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="clickup_box" target="webhook_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_webhook_usecase" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="webhook_box" target="usecase_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_usecase_db" style="endArrow=classic;html=1;rounded=0;strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="usecase_box" target="db_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_webhook_logs" style="endArrow=classic;html=1;rounded=0;strokeColor=#2E7D32;strokeWidth=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="webhook_box" target="logs_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_usecase_logs" style="endArrow=classic;html=1;rounded=0;strokeColor=#2E7D32;strokeWidth=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="usecase_box" target="logs_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_secret_webhook" style="endArrow=classic;html=1;rounded=0;strokeColor=#F57F17;strokeWidth=1;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="secret_box" target="webhook_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_cli_db" style="endArrow=classic;html=1;rounded=0;strokeColor=#F57F17;strokeWidth=1;dashed=1;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="cli_box" target="usecase_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="🟧 SaaS / GCP externo    🟦 Nosso código    🟥 Banco de dados    🟩 Observabilidade    🟪 Testes    🟨 Ferramentas ops" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#5F6368;" vertex="1" parent="1">
+          <mxGeometry x="40" y="870" width="1320" height="20" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="webhook-flow" name="8B - 5 camadas + tratamento de erro">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="EnLite — 8B Webhook: 5 camadas de filtragem + tratamento de erro&#xa;O que cada camada faz e que código HTTP devolve" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#202124;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="story_b" value="HISTÓRIA&#xa;&#xa;ClickUp pode mandar evento errado, requisição maliciosa, task de outra lista, child task (vaga), task com case_number duplicado.&#xa;Cada uma das 5 camadas decide: rejeita (401/400) ou aceita+skip (200) ou processa (200 synced). Nada chega no DB sem passar pelas 5.&#xa;Se algo der errado depois das camadas (rede, geocoding, conflict), o handler decide: retry storm (sempre 200 + log) ou deixar propagar (raro)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF7C3;strokeColor=#F59E0B;fontSize=13;fontColor=#78350F;align=center;verticalAlign=middle;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="entry" value="Request entra&#xa;POST /api/webhooks/clickup/patient&#xa;Body: { event, webhook_id, task_id, list_id, history_items }&#xa;Header: X-Signature" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#EF6C00;fontSize=12;fontColor=#E65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="380" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="layer1" value="Camada 1 — HMAC verify&#xa;(ClickUpHmacMiddleware)&#xa;&#xa;HMAC-SHA256(rawBody, secret)&#xa;timing-safe compare&#xa;&#xa;Inválido → 401&#xa;Sem header → 401" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;strokeWidth=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="330" width="220" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="layer2" value="Camada 2 — Schema body&#xa;(Zod parse)&#xa;&#xa;ClickUpWebhookBodySchema&#xa;event, webhook_id, task_id obrigatórios&#xa;&#xa;Inválido → 400" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;strokeWidth=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="330" width="220" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="layer3" value="Camada 3 — list_id payload&#xa;(rapid filter)&#xa;&#xa;body.list_id === &apos;901304883903&apos;?&#xa;&#xa;Outra lista → 200&#xa;{ action: &apos;skipped_other_list&apos; }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;strokeWidth=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="330" width="220" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="layer4" value="Camada 4 — GET task ClickUp&#xa;(re-fetch full)&#xa;&#xa;Payload só traz delta;&#xa;preciso da task completa&#xa;&#xa;Falha rede / 5xx → 200&#xa;{ action: &apos;fetch_failed&apos; }&#xa;(evita retry storm)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;strokeWidth=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="330" width="220" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="layer5" value="Camada 5 — task.list.id&#xa;e task.parent === null&#xa;&#xa;list errada → 200 skip&#xa;subtask (vaga) → SKIPPED_SUBTASK&#xa;&#xa;(taskDeleted pula essa camada e&#xa;vai direto pro UPDATE deleted_at)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;strokeWidth=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="330" width="220" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="usecase" value="UseCase + PatientService&#xa;&#xa;mapper.map(task) → input&#xa;&#xa;upsertFromClickUp:&#xa;  INSERT/UPDATE patients&#xa;  ↓ on UNIQUE conflict (case_number)&#xa;  ROLLBACK + retry sem case_number&#xa;  needs_attention=CASE_NUMBER_CONFLICT&#xa;&#xa;Persiste em transação:&#xa;  patients + addresses (merge by display_order)&#xa;  + responsibles + professionals&#xa;&#xa;200 { action: &apos;synced&apos;, kind: CREATED / UPDATED / CASE_NUMBER_CONFLICT / SKIPPED_*}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=12;fontColor=#0D47A1;strokeWidth=3;fontStyle=1;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="280" y="540" width="940" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="taskDeleted_branch" value="taskDeleted&#xa;&#xa;UPDATE patients&#xa;SET deleted_at = NOW()&#xa;WHERE clickup_task_id = $1&#xa;&#xa;200 { action: soft_deleted, affectedRows }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;strokeWidth=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="220" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="bugs_found" value="Bugs latentes que esses tests detectaram (descobertos 2026-05-08)&#xa;&#xa;🔴 birth_date silenciosamente null em 311/311 patients&#xa;    Causa: ClickUp envia epoch como STRING &apos;828082800000&apos;, parseDate rejeitava&#xa;    Fix: parseClickUpDate(value) detecta string-de-dígitos via regex&#xa;&#xa;🔴 has_cud / has_consent / has_judicial sempre false em 0/311&#xa;    Causa: ClickUp envia checkbox como STRING &apos;true&apos;, mapper fazia `=== true`&#xa;    Fix: parseClickUpBoolean(value) aceita boolean OU &apos;true&apos;/&apos;1&apos;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;strokeWidth=2;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="800" width="660" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="commits" value="6 commits no main (não pushed)&#xa;&#xa;1b26b8e   chore: untrack .mcp.json + extract UseCase + fix replaceAddresses&#xa;f9ff438   feat: pipeline patients (case_number + status canônico + CASE_NUMBER_CONFLICT)&#xa;8d99514   feat: webhook + 5 camadas + soft-delete + hardening + cases-for-select rewrite&#xa;f040665   feat: observabilidade end-to-end (logs + smoke + health + runbook)&#xa;762dd1a   fix: birth_date silenciosamente null (parseClickUpDate)&#xa;67fe111   fix: booleans hasCud/hasConsent/hasJudicial sempre false (parseClickUpBoolean)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=10;fontColor=#4A148C;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;verticalAlign=top;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="720" y="800" width="640" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_entry_layer1" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="entry" target="layer1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_l1_l2" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="layer1" target="layer2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_l2_l3" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="layer2" target="layer3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_l3_l4" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="layer3" target="layer4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_l4_l5" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;" edge="1" parent="1" source="layer4" target="layer5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_l5_uc" style="endArrow=classic;html=1;rounded=0;strokeColor=#1565C0;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="layer5" target="usecase">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow_l3_taskdel" style="endArrow=classic;html=1;rounded=0;strokeColor=#C62828;strokeWidth=2;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="layer3" target="taskDeleted_branch">
+          <mxGeometry relative="1" as="geometry" />
+          <mxCell value="event === &apos;taskDeleted&apos;" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#C62828;" vertex="1" connectable="0" parent="1">
+            <mxGeometry x="270" y="490" width="140" height="20" as="geometry" />
+          </mxCell>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="webhook-validation" name="8C - Suite de validação (3 níveis)">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="EnLite — 8C Suite de validação do sync ClickUp&#xa;3 níveis complementares + observabilidade pós-deploy" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#202124;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="story_c" value="HISTÓRIA&#xa;&#xa;Como saber se 30 propriedades estão chegando do ClickUp e indo certinho pro DB? E que o webhook não cai silencioso em prod?&#xa;Combinação de 3 níveis + obs: (1) fixture local valida cada campo &quot;de cabeça&quot;; (2) task seed real valida pipeline ClickUp→DB; (3) HMAC + handler completo.&#xa;Ao vivo: smoke test + health endpoint + 18 logs com correlationId. Esses tests pegaram 2 bugs ocultos há meses (birth_date + booleans)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF7C3;strokeColor=#F59E0B;fontSize=13;fontColor=#78350F;align=center;verticalAlign=middle;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="level1" value="Nível 1 — Comprehensive fixture (unit, &lt; 1s)&#xa;&#xa;tests/unit/__tests__/ClickUpPatientMapper.test.ts&#xa;&#xa;• 1 fixture massive com TODOS os ~30 custom_fields&#xa;• Valida cada propriedade de PatientServiceUpsertInput&#xa;• Defensive Object.keys check (alerta se shape mudou)&#xa;• 49 tests no arquivo (11 do parseClickUpDate + parseClickUpBoolean)&#xa;&#xa;Cobre: mapper isolado, tipos, dropdowns, transforms&#xa;Falha quando: alguém adiciona campo no Input mas esquece no mapper" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=11;fontColor=#4A148C;strokeWidth=3;fontStyle=1;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="430" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="level2" value="Nível 2 — Real ClickUp → DB roundtrip (integration, ~5s)&#xa;&#xa;tests/e2e/clickup-mapper-roundtrip.test.ts&#xa;&#xa;• Task seed dedicada 86ahcdkx2 [E2E_TEST_DO_NOT_EDIT]&#xa;• Vive em prod ClickUp (lista 901)&#xa;• 12 custom_fields populados via API&#xa;• Test: fetch task → mapeia → persiste → lê DB → valida coluna&#xa;• 3 cenários (mapping, roundtrip, idempotência)&#xa;&#xa;Cobre: serialização real ClickUp + INSERT do repo + triggers DB&#xa;Falha quando: drift entre tipo ClickUp e código (descobriu 2 bugs!)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=11;fontColor=#4A148C;strokeWidth=3;fontStyle=1;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="490" y="240" width="430" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="level3" value="Nível 3 — E2E webhook completo (HTTP, ~5s)&#xa;&#xa;tests/e2e/clickup-patient-webhook.test.ts&#xa;&#xa;• Express local + supertest + global fetch mockado&#xa;• 12 cenários: HMAC inválido, body inválido, 5 camadas, taskDeleted,&#xa;  CASE_NUMBER_CONFLICT, fetch failure, idempotência&#xa;• Cleanup por prefix &apos;cu-e2e-webhook-test-&apos;&#xa;&#xa;Cobre: HTTP + auth + filtragem + handler + UseCase + DB&#xa;Falha quando: regressão no fluxo end-to-end" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=11;fontColor=#4A148C;strokeWidth=3;fontStyle=1;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="940" y="240" width="420" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="prod_obs" value="Pós-deploy em prod — Observabilidade ao vivo&#xa;&#xa;Health endpoint:        GET /api/webhooks/clickup/patient/_health → { status, uptimeSeconds }&#xa;Smoke test executável:  scripts/smoke-test-clickup-webhook.ts --target prod (4 sub-tests, ~7s)&#xa;Logs estruturados:      18 eventos no Cloud Logging com correlationId, sem PII&#xa;Cloud Monitoring:       saved queries no RUNBOOK (alertar conflicts &gt;1/d, hmac_invalid &gt;5/min, fetch_failed &gt;3/min)&#xa;CLI backfill:           import-patients-from-clickup.ts --live (replay quando webhook offline)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=12;fontColor=#1B5E20;strokeWidth=3;fontStyle=1;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="1320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="counts" value="Cobertura final&#xa;&#xa;1510 unit tests (era 1437 antes do sprint — +73 desta sprint)&#xa;15 E2E (12 webhook + 3 roundtrip)&#xa;4 smoke ao vivo (validados local 2026-05-08)&#xa;0 testes falhando, tsc clean, lint clean" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=12;fontColor=#0D47A1;strokeWidth=2;fontStyle=1;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="640" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="td_pendentes" value="Débitos técnicos abertos (FOLLOWUPS.md)&#xa;&#xa;TD-008 — case_number duplicado no ClickUp&#xa;  Cases 695 (Ojeda x2) + 759 (Páez vs Krncsek)&#xa;  Resolução: ops corrige no ClickUp&#xa;&#xa;TD-009 — patients.affiliate_id obsoleto (sempre null)&#xa;  Plano: rename _deprecated_ → wait 30d → drop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontSize=11;fontColor=#F57F17;strokeWidth=2;align=left;spacingLeft=10;spacingTop=10;verticalAlign=top;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="700" width="660" height="160" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

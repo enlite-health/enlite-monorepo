@@ -20,6 +20,7 @@ Alternativa: abra direto no VS Code com a extensão **Draw.io Integration** (hed
 | `7C_backend.drawio` | Zoom no backend (NestJS, 9 microsserviços, Cloud Run, GKE) | Quando perguntarem "qual framework do servidor?" |
 | `7D_database.drawio` | Zoom nos bancos (Postgres, Healthcare API, Storage, Redis, BigQuery) | Quando perguntarem "onde ficam os dados?" |
 | `7E_security_ops.drawio` | Zoom em segurança + observabilidade + DevOps | Quando perguntarem "como é seguro?" ou "como publica?" |
+| `8_clickup_patient_webhook.drawio` | **3 páginas** — fluxo macro do webhook ClickUp → patients (8A), 5 camadas de filtragem com tratamento de erro (8B), suite de validação 3-níveis + observabilidade pós-deploy (8C) | Quando perguntarem "como funciona o sync de pacientes em tempo real?" ou "como sabemos que o webhook está OK?" |
 
 ## Princípios seguidos
 
