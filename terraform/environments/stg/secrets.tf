@@ -11,7 +11,6 @@ locals {
     "sendgrid-api-key",
     "short-io-api-key",
     "short-io-domain",
-    "smtp-app-password",
     "talentum-api-email",
     "talentum-api-password",
     "twilio-auth-token",
