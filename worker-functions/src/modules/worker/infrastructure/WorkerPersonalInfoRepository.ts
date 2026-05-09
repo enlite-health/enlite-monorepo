@@ -9,10 +9,12 @@ import { Pool } from 'pg';
 import { Worker, SavePersonalInfoDTO } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { BlindIndexService } from '@shared/security/BlindIndexService';
 
 export async function updatePersonalInfo(
   pool: Pool,
   encryptionService: KMSEncryptionService,
+  blindIndexService: BlindIndexService,
   data: Omit<SavePersonalInfoDTO, 'termsAccepted' | 'privacyAccepted'> & {
     termsAccepted: boolean;
     privacyAccepted: boolean;
@@ -31,6 +33,7 @@ export async function updatePersonalInfo(
       encryptedDocumentNumber,
       encryptedPhotoUrl,
       encryptedLanguages,
+      nameBidxBuffers,
     ] = await Promise.all([
       encryptionService.encrypt(data.firstName),
       encryptionService.encrypt(data.lastName),
@@ -43,7 +46,9 @@ export async function updatePersonalInfo(
       encryptionService.encrypt(
         data.languages && data.languages.length > 0 ? JSON.stringify(data.languages) : null,
       ),
+      blindIndexService.generateNameTrigramBidx(data.firstName, data.lastName),
     ]);
+    const nameBidxLiteral = blindIndexService.serializeForPg(nameBidxBuffers);
 
     const query = `
       UPDATE workers SET
@@ -67,6 +72,7 @@ export async function updatePersonalInfo(
         preferred_age_range = $19,
         terms_accepted_at = CASE WHEN $20 THEN NOW() ELSE terms_accepted_at END,
         privacy_accepted_at = CASE WHEN $21 THEN NOW() ELSE privacy_accepted_at END,
+        name_trgm_bidx = $22::bytea[],
         updated_at = NOW()
       WHERE id = $1
       RETURNING
@@ -118,6 +124,7 @@ export async function updatePersonalInfo(
       data.preferredAgeRange,
       data.termsAccepted,
       data.privacyAccepted,
+      nameBidxLiteral,
     ];
 
     const result = await pool.query(query, values);

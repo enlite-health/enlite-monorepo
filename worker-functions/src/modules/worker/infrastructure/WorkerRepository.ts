@@ -4,6 +4,7 @@ import { Worker, WorkerStatus, CreateWorkerDTO, SavePersonalInfoDTO } from '../d
 import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -21,10 +22,12 @@ import {
 export class WorkerRepository implements IWorkerRepository {
   private pool: Pool;
   private encryptionService: KMSEncryptionService;
+  private blindIndexService: BlindIndexService;
 
   constructor() {
     this.pool = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
+    this.blindIndexService = new BlindIndexService();
   }
 
   async create(data: CreateWorkerDTO): Promise<Result<Worker>> {
@@ -129,7 +132,7 @@ export class WorkerRepository implements IWorkerRepository {
       privacyAccepted: boolean;
     },
   ): Promise<Result<Worker>> {
-    return _updatePersonalInfo(this.pool, this.encryptionService, data);
+    return _updatePersonalInfo(this.pool, this.encryptionService, this.blindIndexService, data);
   }
 
   async delete(workerId: string): Promise<Result<void>> {
@@ -194,7 +197,7 @@ export class WorkerRepository implements IWorkerRepository {
   }
 
   async updateFromImport(workerId: string, data: WorkerImportData): Promise<void> {
-    return _updateFromImport(this.pool, this.encryptionService, workerId, data, (id) =>
+    return _updateFromImport(this.pool, this.encryptionService, this.blindIndexService, workerId, data, (id) =>
       this.recalculateStatus(id),
     );
   }

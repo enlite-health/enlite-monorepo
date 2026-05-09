@@ -37,6 +37,7 @@ import { ClickUpEncuadreMapper } from '../src/modules/integration/infrastructure
 import type { EncuadreMapperEntry } from '../src/modules/integration/infrastructure/clickup/ClickUpEncuadreMapper';
 import { normalizePhoneAR } from '../src/shared/utils/phoneNormalization';
 import { KMSEncryptionService } from '../src/shared/security/KMSEncryptionService';
+import { BlindIndexService } from '../src/shared/security/BlindIndexService';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import type { CreateEncuadreDTO } from '../src/modules/matching/domain/Encuadre';
 import { upsertWorkerFromEncuadre } from './encuadres-worker-upsert';
@@ -167,11 +168,13 @@ async function main(): Promise<void> {
   // DB connections — lazy; dry-run tries optionally (not critical)
   let pool: Pool | null = null;
   let encService: KMSEncryptionService | null = null;
+  let bidxService: BlindIndexService | null = null;
   let encuadreRepo: import('../src/modules/matching/infrastructure/EncuadreRepository').EncuadreRepository | null = null;
 
   if (!isDryRun) {
-    pool       = new Pool({ connectionString: DATABASE_URL });
-    encService = new KMSEncryptionService();
+    pool         = new Pool({ connectionString: DATABASE_URL });
+    encService   = new KMSEncryptionService();
+    bidxService  = new BlindIndexService();
     const { EncuadreRepository } = await import('../src/modules/matching/infrastructure/EncuadreRepository');
     encuadreRepo = new EncuadreRepository();
   } else {
@@ -243,6 +246,7 @@ async function main(): Promise<void> {
         { ...wData, phone: normalizedPhone, clickupTaskId: task.id },
         pool!,
         encService!,
+        bidxService!,
       );
       if (wResult.created) { workersCreated++; } else { workersUpdated++; }
 

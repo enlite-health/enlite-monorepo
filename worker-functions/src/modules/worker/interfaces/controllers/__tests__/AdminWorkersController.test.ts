@@ -48,6 +48,21 @@ jest.mock('../../../infrastructure/GCSStorageService', () => ({
   })),
 }));
 
+jest.mock('@shared/security/BlindIndexService', () => ({
+  BlindIndexService: jest.fn().mockImplementation(() => ({
+    generateSearchTrigramBidx: jest.fn().mockImplementation((term: string) => {
+      const trimmed = term.trim();
+      const tokens = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
+      const valid = tokens.filter((t) => t.length >= 3);
+      if (valid.length === 0) {
+        return Promise.reject(new Error('Search term must have at least 3 characters'));
+      }
+      return Promise.resolve([Buffer.from('fakebidx')]);
+    }),
+    serializeForPg: jest.fn().mockReturnValue('{"\\\\xfakebidx"}'),
+  })),
+}));
+
 import { AdminWorkersController } from '../AdminWorkersController';
 import { AdminWorkersAuxController } from '../AdminWorkersAuxController';
 import { Request, Response } from 'express';
@@ -209,6 +224,7 @@ describe('AdminWorkersController — listWorkers', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -448,9 +464,9 @@ describe('AdminWorkersController — listWorkers', () => {
       mockQuery.mockResolvedValueOnce({ rows });
     }
 
-    it('busca "Sn" — encontra John Snow pelo sobrenome (case-insensitive)', async () => {
+    it('busca "Sno" — encontra John Snow pelo sobrenome (>= 3 chars)', async () => {
       setupSearchRows([makeJohnRow(), makeAryaRow()]);
-      const [req, res] = mockReqRes({}, { search: 'Sn' } as any);
+      const [req, res] = mockReqRes({}, { search: 'Sno' } as any);
 
       await controller.listWorkers(req, res);
 
@@ -462,9 +478,20 @@ describe('AdminWorkersController — listWorkers', () => {
       expect(body.data[0].name).toBe('John Snow');
     });
 
-    it('busca "Jo" — encontra John Snow pelo primeiro nome (case-insensitive)', async () => {
+    it('busca "Sn" (< 3 chars) — retorna 400', async () => {
+      const [req, res] = mockReqRes({}, { search: 'Sn' } as any);
+
+      await controller.listWorkers(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(false);
+      expect(body.error).toMatch(/3 characters/i);
+    });
+
+    it('busca "Joh" — encontra John Snow pelo primeiro nome (>= 3 chars)', async () => {
       setupSearchRows([makeJohnRow(), makeAryaRow()]);
-      const [req, res] = mockReqRes({}, { search: 'Jo' } as any);
+      const [req, res] = mockReqRes({}, { search: 'Joh' } as any);
 
       await controller.listWorkers(req, res);
 
@@ -474,9 +501,19 @@ describe('AdminWorkersController — listWorkers', () => {
       expect(body.data[0].id).toBe(JOHN_ID);
     });
 
-    it('busca "21" — encontra John Snow pelo email parcial', async () => {
+    it('busca "Jo" (< 3 chars) — retorna 400', async () => {
+      const [req, res] = mockReqRes({}, { search: 'Jo' } as any);
+
+      await controller.listWorkers(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(false);
+    });
+
+    it('busca "sno" — encontra John Snow pelo email parcial (domínio snow)', async () => {
       setupSearchRows([makeJohnRow(), makeAryaRow()]);
-      const [req, res] = mockReqRes({}, { search: '21' } as any);
+      const [req, res] = mockReqRes({}, { search: 'sno' } as any);
 
       await controller.listWorkers(req, res);
 
@@ -484,6 +521,16 @@ describe('AdminWorkersController — listWorkers', () => {
       expect(body.total).toBe(1);
       expect(body.data).toHaveLength(1);
       expect(body.data[0].id).toBe(JOHN_ID);
+    });
+
+    it('busca "21" (< 3 chars) — retorna 400', async () => {
+      const [req, res] = mockReqRes({}, { search: '21' } as any);
+
+      await controller.listWorkers(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(false);
     });
 
     it('busca "gmail" — encontra John Snow pelo domínio do email', async () => {
@@ -533,21 +580,23 @@ describe('AdminWorkersController — listWorkers', () => {
 
     it('busca genérica retorna múltiplos resultados quando há match', async () => {
       setupSearchRows([makeJohnRow(), makeAryaRow()]);
-      const [req, res] = mockReqRes({}, { search: 'a' } as any);
+      const [req, res] = mockReqRes({}, { search: 'ark' } as any);
 
       await controller.listWorkers(req, res);
 
       const body = (res.json as jest.Mock).mock.calls[0][0];
-      // "a" está em "Arya", "Stark", "arya@winterfell.com" e "john.snow.21@gmail.com"
-      expect(body.total).toBe(2);
-      expect(body.data).toHaveLength(2);
+      // "ark" está em "Stark" (Arya) e "john.snow.21@gmail.com" não; só Arya matcha
+      expect(body.success).toBe(true);
+      expect(body.total).toBe(1);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].id).toBe(ARYA_ID);
     });
 
     it('busca com paginação respeita offset e limit', async () => {
       const rows = [makeJohnRow(), makeAryaRow()];
       setupSearchRows(rows);
-      // ambos matcham "a" — pedir página 2 com limit=1
-      const [req, res] = mockReqRes({}, { search: 'a', limit: '1', offset: '1' } as any);
+      // ambos matcham "com" (gmail.com / winterfell.com) — pedir página 2 com limit=1
+      const [req, res] = mockReqRes({}, { search: 'com', limit: '1', offset: '1' } as any);
 
       await controller.listWorkers(req, res);
 
@@ -624,6 +673,7 @@ describe('AdminWorkersAuxController — getWorkerDateStats', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     controller = new AdminWorkersAuxController();
   });
 
@@ -683,6 +733,7 @@ describe('AdminWorkersController — getWorkerById', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     controller = new AdminWorkersController();
   });
 
@@ -1375,6 +1426,7 @@ describe('AdminWorkersController — getWorkerByPhone', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -1564,6 +1616,7 @@ describe('AdminWorkersAuxController — listCaseOptions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     controller = new AdminWorkersAuxController();
   });
 
@@ -1646,6 +1699,7 @@ describe('AdminWorkersController — listWorkers filtro case_id e busca por phon
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -1757,22 +1811,16 @@ describe('AdminWorkersController — listWorkers filtro case_id e busca por phon
       expect(countParams).toContain('%5491155551234%');
     });
 
-    it('search curto (<4 dígitos) cai no fluxo legado de decrypt', async () => {
-      // Fluxo legado: uma única query que retorna rows pra decriptar
-      mockQuery.mockResolvedValueOnce({
-        rows: [
-          makeListRow({ phone: '+549112155551234', email: 'a@a.com',
-            first_name_encrypted: 'enc_X', last_name_encrypted: 'enc_Y' }),
-        ],
-      });
+    it('search curto (<3 chars, não phone, não email) retorna 400', async () => {
+      // "21" tem 2 chars: não é phone (< 4 dígitos), não é email (sem @) — blind index rejeita
       const [req, res] = mockReqRes({}, { search: '21' } as any);
 
       await controller.listWorkers(req, res);
 
-      // Legacy path chama 1 query só (sem count separado)
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-      const sql = mockQuery.mock.calls[0][0] as string;
-      expect(sql).not.toContain('ILIKE');
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockQuery).not.toHaveBeenCalled();
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(false);
     });
   });
 
