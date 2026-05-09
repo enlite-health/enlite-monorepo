@@ -2,11 +2,11 @@ name: CI/CD Worker Functions
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "stage" ]
     paths:
       - 'worker-functions/**'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "stage" ]
     paths:
       - 'worker-functions/**'
 
@@ -46,8 +46,9 @@ jobs:
 
   build-and-deploy:
     needs: quality-gate
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/stage')
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     defaults:
       run:
         working-directory: worker-functions
@@ -117,7 +118,7 @@ jobs:
             GOOGLE_IDENTITY_API_KEY=${{ secrets.GOOGLE_IDENTITY_API_KEY }}
             EMAIL_FROM=enlite@enlite.health
             N8N_WEBHOOK_URL=https://n8n.enlite.health/webhook/worker-events
-            CLOUD_RUN_SERVICE_URL=https://worker-functions-121472682203.southamerica-west1.run.app
+            CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
