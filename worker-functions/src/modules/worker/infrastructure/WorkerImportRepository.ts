@@ -13,6 +13,7 @@ import { Pool } from 'pg';
 import { Worker, WorkerStatus } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { BlindIndexService } from '@shared/security/BlindIndexService';
 
 export async function findByCuit(pool: Pool, cuit: string): Promise<Result<Worker | null>> {
   try {
@@ -52,6 +53,7 @@ export type WorkerImportData = Partial<{
 export async function updateFromImport(
   pool: Pool,
   encryptionService: KMSEncryptionService,
+  blindIndexService: BlindIndexService,
   workerId: string,
   data: WorkerImportData,
   recalcFn: (workerId: string) => Promise<WorkerStatus | null>,
@@ -136,6 +138,29 @@ export async function updateFromImport(
       sets.push(`birth_date_encrypted = COALESCE($${idx++}, birth_date_encrypted)`);
       values.push(encrypted.birthDate);
     }
+  }
+
+  // Blind index: recalculate name_trgm_bidx if firstName or lastName changed.
+  // When only one arrives, fetch the current value to compose the full name.
+  const nameChanged = data.firstName !== undefined || data.lastName !== undefined;
+  if (nameChanged) {
+    const currentRow = await pool.query<{
+      first_name_encrypted: string | null;
+      last_name_encrypted: string | null;
+    }>(
+      'SELECT first_name_encrypted, last_name_encrypted FROM workers WHERE id = $1',
+      [workerId],
+    );
+    const [currentFirstName, currentLastName] = await Promise.all([
+      encryptionService.decrypt(currentRow.rows[0]?.first_name_encrypted ?? ''),
+      encryptionService.decrypt(currentRow.rows[0]?.last_name_encrypted ?? ''),
+    ]);
+    const finalFirstName = data.firstName ?? currentFirstName ?? null;
+    const finalLastName  = data.lastName  ?? currentLastName  ?? null;
+    const bidxBuffers = await blindIndexService.generateNameTrigramBidx(finalFirstName, finalLastName);
+    const bidxLiteral = blindIndexService.serializeForPg(bidxBuffers);
+    sets.push(`name_trgm_bidx = $${idx++}::bytea[]`);
+    values.push(bidxLiteral);
   }
 
   if (sets.length === 0) return;

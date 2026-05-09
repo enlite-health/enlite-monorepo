@@ -1,7 +1,5 @@
-/** Remove diacríticos (acentos) para busca normalizada: "José" → "jose" */
-export function normalizeSearch(text: string): string {
-  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
+export { normalizeSearch } from '@shared/utils/normalizeSearch';
+import { normalizeSearch } from '@shared/utils/normalizeSearch';
 
 export function mapPlatformLabel(dataSources: string[]): string {
   if (!dataSources || dataSources.length === 0) return 'enlite_app';

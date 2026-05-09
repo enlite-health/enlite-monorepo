@@ -8,6 +8,7 @@
 import { Pool } from 'pg';
 import { generatePhoneCandidates } from '../src/shared/utils/phoneNormalization';
 import { KMSEncryptionService } from '../src/shared/security/KMSEncryptionService';
+import { BlindIndexService } from '../src/shared/security/BlindIndexService';
 
 export interface WorkerUpsertInput {
   email:          string | null;
@@ -35,6 +36,7 @@ export async function upsertWorkerFromEncuadre(
   data: WorkerUpsertInput,
   pool: Pool,
   enc: KMSEncryptionService,
+  bidx: BlindIndexService,
 ): Promise<WorkerUpsertResult> {
   // ── Lookup: email → phone candidates ─────────────────────────────────────────
   let existingId: string | null = null;
@@ -59,11 +61,11 @@ export async function upsertWorkerFromEncuadre(
   }
 
   if (existingId) {
-    await fillMissingWorkerFields(existingId, data, pool, enc);
+    await fillMissingWorkerFields(existingId, data, pool, enc, bidx);
     return { id: existingId, created: false };
   }
 
-  return insertNewWorker(data, pool, enc);
+  return insertNewWorker(data, pool, enc, bidx);
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -73,6 +75,7 @@ async function fillMissingWorkerFields(
   data: WorkerUpsertInput,
   pool: Pool,
   enc: KMSEncryptionService,
+  bidx: BlindIndexService,
 ): Promise<void> {
   const current = await pool.query(
     `SELECT email, phone, first_name_encrypted, last_name_encrypted,
@@ -128,6 +131,23 @@ async function fillMissingWorkerFields(
     if (encrypted.birthDate) { sets.push(`birth_date_encrypted = $${p++}`);  vals.push(encrypted.birthDate); }
   }
 
+  // Blind index: recalculate if either name is being written for the first time.
+  // Fetch the current encrypted names to compose the full name (one side may already be set).
+  const writingFirstName = !row.first_name_encrypted && data.firstName !== null && data.firstName !== undefined;
+  const writingLastName  = !row.last_name_encrypted  && data.lastName  !== null && data.lastName  !== undefined;
+  if (writingFirstName || writingLastName) {
+    const [currentFirstName, currentLastName] = await Promise.all([
+      row.first_name_encrypted ? enc.decrypt(row.first_name_encrypted) : Promise.resolve(null),
+      row.last_name_encrypted  ? enc.decrypt(row.last_name_encrypted)  : Promise.resolve(null),
+    ]);
+    const finalFirstName = writingFirstName ? (data.firstName ?? null) : (currentFirstName ?? null);
+    const finalLastName  = writingLastName  ? (data.lastName  ?? null) : (currentLastName  ?? null);
+    const bidxBuffers = await bidx.generateNameTrigramBidx(finalFirstName, finalLastName);
+    const bidxLiteral = bidx.serializeForPg(bidxBuffers);
+    sets.push(`name_trgm_bidx = $${p++}::bytea[]`);
+    vals.push(bidxLiteral);
+  }
+
   // Always append data_source (idempotent via DISTINCT)
   sets.push(
     `data_sources = ARRAY(SELECT DISTINCT unnest(array_append(COALESCE(data_sources, '{}'), 'encuadres_clickup'::text)))`,
@@ -142,6 +162,7 @@ async function insertNewWorker(
   data: WorkerUpsertInput,
   pool: Pool,
   enc: KMSEncryptionService,
+  bidx: BlindIndexService,
 ): Promise<WorkerUpsertResult> {
   const toEncrypt: Record<string, string> = {};
   if (data.firstName)  toEncrypt.firstName  = data.firstName;
@@ -149,9 +170,13 @@ async function insertNewWorker(
   if (data.gender)     toEncrypt.gender     = data.gender;
   if (data.birthDate)  toEncrypt.birthDate  = data.birthDate.toISOString().split('T')[0];
 
-  const encrypted = Object.keys(toEncrypt).length > 0
-    ? await enc.encryptBatch(toEncrypt)
-    : {} as Record<string, string | null>;
+  const [encrypted, nameBidxBuffers] = await Promise.all([
+    Object.keys(toEncrypt).length > 0
+      ? enc.encryptBatch(toEncrypt)
+      : Promise.resolve({} as Record<string, string | null>),
+    bidx.generateNameTrigramBidx(data.firstName ?? null, data.lastName ?? null),
+  ]);
+  const nameBidxLiteral = bidx.serializeForPg(nameBidxBuffers);
 
   const authUid = `clickup_encuadre_${data.clickupTaskId}`;
 
@@ -159,8 +184,8 @@ async function insertNewWorker(
     `INSERT INTO workers (
        auth_uid, email, phone,
        first_name_encrypted, last_name_encrypted, gender_encrypted, birth_date_encrypted,
-       profession, status, country, data_sources
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'INCOMPLETE_REGISTER','AR',ARRAY['encuadres_clickup'])
+       profession, name_trgm_bidx, status, country, data_sources
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::bytea[],'INCOMPLETE_REGISTER','AR',ARRAY['encuadres_clickup'])
      ON CONFLICT (auth_uid) DO UPDATE SET
        email                = COALESCE(workers.email,                EXCLUDED.email),
        phone                = COALESCE(workers.phone,                EXCLUDED.phone),
@@ -169,6 +194,10 @@ async function insertNewWorker(
        gender_encrypted     = COALESCE(workers.gender_encrypted,     EXCLUDED.gender_encrypted),
        birth_date_encrypted = COALESCE(workers.birth_date_encrypted, EXCLUDED.birth_date_encrypted),
        profession           = COALESCE(workers.profession,           EXCLUDED.profession),
+       name_trgm_bidx       = CASE
+                                WHEN EXCLUDED.name_trgm_bidx IS NOT NULL THEN EXCLUDED.name_trgm_bidx
+                                ELSE workers.name_trgm_bidx
+                              END,
        data_sources         = ARRAY(SELECT DISTINCT unnest(array_append(COALESCE(workers.data_sources, '{}'), 'encuadres_clickup'::text))),
        updated_at           = NOW()
      RETURNING id, (xmax = 0) AS inserted`,
@@ -177,7 +206,7 @@ async function insertNewWorker(
       data.email, data.phone,
       encrypted.firstName ?? null, encrypted.lastName ?? null,
       encrypted.gender ?? null, encrypted.birthDate ?? null,
-      data.profession,
+      data.profession, nameBidxLiteral,
     ],
   );
 

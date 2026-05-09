@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { mapPlatformLabel, matchesSearch, WorkerListItem } from './AdminWorkersControllerHelpers';
@@ -70,11 +71,13 @@ const ExportQuerySchema = z.object({
 export class AdminWorkersController {
   private db: Pool;
   private encryptionService: KMSEncryptionService;
+  private blindIndexService: BlindIndexService;
   private readonly gcs = new GCSStorageService();
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
+    this.blindIndexService = new BlindIndexService();
   }
 
   private async decryptWorkerListRow(row: any): Promise<{ firstName: string; lastName: string; phone: string; worker: WorkerListItem }> {
@@ -153,18 +156,36 @@ export class AdminWorkersController {
 
       const searchRaw = search?.trim();
       const searchTerm = searchRaw?.toLowerCase();
-      // Fast paths: email (contém "@") e telefone (somente dígitos) são colunas em claro,
-      // então filtramos no SQL sem decriptar a base toda. Busca por nome cai no fluxo
-      // legado que decripta os 500 workers mais recentes — limitação conhecida do KMS.
       const isEmailSearch = !!searchRaw && searchRaw.includes('@');
       const phoneDigits = searchRaw?.replace(/[\s+\-()]/g, '') ?? '';
       const isPhoneSearch = !isEmailSearch && /^\d{4,}$/.test(phoneDigits);
+      const isNameSearch = !!searchTerm && !isEmailSearch && !isPhoneSearch;
 
       if (searchTerm && (isEmailSearch || isPhoneSearch)) {
         const likeField = isEmailSearch ? 'w.email' : 'w.phone';
         const likeValue = `%${isEmailSearch ? searchTerm : phoneDigits}%`;
         whereClause += ` AND ${likeField} ILIKE $${paramIndex}`;
         params.push(likeValue);
+        paramIndex++;
+      }
+
+      if (isNameSearch) {
+        let searchBidxLiteral: string | null;
+        try {
+          const buffers = await this.blindIndexService.generateSearchTrigramBidx(searchRaw!);
+          searchBidxLiteral = this.blindIndexService.serializeForPg(buffers);
+        } catch (err: any) {
+          res.status(400).json({ success: false, error: err.message ?? 'Invalid search term' });
+          return;
+        }
+
+        if (searchBidxLiteral === null) {
+          res.status(400).json({ success: false, error: 'Search term must have at least 3 characters' });
+          return;
+        }
+
+        whereClause += ` AND w.name_trgm_bidx @> $${paramIndex}::bytea[]`;
+        params.push(searchBidxLiteral);
         paramIndex++;
       }
 
@@ -180,14 +201,17 @@ export class AdminWorkersController {
         GROUP BY w.id, wd.documents_status
       `;
 
-      if (searchTerm && !isEmailSearch && !isPhoneSearch) {
-        // Nome: decripta N mais recentes e filtra em memória (custo de KMS).
-        const fetchParams = [...params, 500];
-        const result = await this.db.query(`${baseQuery} ORDER BY w.created_at DESC LIMIT $${paramIndex}`, fetchParams);
+      if (isNameSearch) {
+        const CANDIDATE_LIMIT = 200;
+        const fetchParams = [...params, CANDIDATE_LIMIT];
+        const result = await this.db.query(
+          `${baseQuery} ORDER BY w.created_at DESC LIMIT $${paramIndex}`,
+          fetchParams,
+        );
 
         const decryptedAll = await Promise.all(result.rows.map((row) => this.decryptWorkerListRow(row)));
         const filtered = decryptedAll.filter(
-          ({ firstName, lastName, worker, phone }) => matchesSearch(searchTerm, [firstName, lastName, worker.email, phone]),
+          ({ firstName, lastName, worker, phone }) => matchesSearch(searchTerm!, [firstName, lastName, worker.email, phone]),
         );
 
         const paginatedOffset = parseInt(offset, 10);

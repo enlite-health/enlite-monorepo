@@ -17,6 +17,7 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import type { TalentumDashboardProfile } from '../domain/ITalentumApiClient';
 
@@ -42,10 +43,12 @@ export interface WorkerSyncReport {
 export class SyncTalentumWorkersUseCase {
   private db: Pool;
   private encryptionService: KMSEncryptionService;
+  private blindIndexService: BlindIndexService;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
+    this.blindIndexService = new BlindIndexService();
   }
 
   async execute(): Promise<WorkerSyncReport> {
@@ -137,17 +140,19 @@ export class SyncTalentumWorkersUseCase {
     const firstName = profile.firstName?.trim() || null;
     const lastName = profile.lastName?.trim() || null;
 
-    const [firstNameEnc, lastNameEnc] = await Promise.all([
-      firstName ? this.encryptionService.encrypt(firstName) : null,
-      lastName ? this.encryptionService.encrypt(lastName) : null,
+    const [firstNameEnc, lastNameEnc, nameBidxBuffers] = await Promise.all([
+      firstName ? this.encryptionService.encrypt(firstName) : Promise.resolve(null),
+      lastName ? this.encryptionService.encrypt(lastName) : Promise.resolve(null),
+      this.blindIndexService.generateNameTrigramBidx(firstName, lastName),
     ]);
+    const nameBidxLiteral = this.blindIndexService.serializeForPg(nameBidxBuffers);
 
     try {
       const result = await this.db.query(
-        `INSERT INTO workers (auth_uid, email, phone, first_name_encrypted, last_name_encrypted, status, country)
-         VALUES ($1, $2, $3, $4, $5, 'INCOMPLETE_REGISTER', 'AR')
+        `INSERT INTO workers (auth_uid, email, phone, first_name_encrypted, last_name_encrypted, name_trgm_bidx, status, country)
+         VALUES ($1, $2, $3, $4, $5, $6::bytea[], 'INCOMPLETE_REGISTER', 'AR')
          RETURNING id`,
-        [authUid, email, phone, firstNameEnc, lastNameEnc],
+        [authUid, email, phone, firstNameEnc, lastNameEnc, nameBidxLiteral],
       );
       return result.rows[0].id;
     } catch (err: any) {
@@ -196,7 +201,8 @@ export class SyncTalentumWorkersUseCase {
 
     // First name — fill only if missing/empty
     const firstName = profile.firstName?.trim() || null;
-    if ((!row.first_name_encrypted || row.first_name_encrypted === '') && firstName) {
+    const fillFirstName = (!row.first_name_encrypted || row.first_name_encrypted === '') && firstName !== null;
+    if (fillFirstName) {
       const enc = await this.encryptionService.encrypt(firstName);
       updates.push(`first_name_encrypted = $${paramIdx++}`);
       values.push(enc);
@@ -204,10 +210,29 @@ export class SyncTalentumWorkersUseCase {
 
     // Last name — fill only if missing/empty
     const lastName = profile.lastName?.trim() || null;
-    if ((!row.last_name_encrypted || row.last_name_encrypted === '') && lastName) {
+    const fillLastName = (!row.last_name_encrypted || row.last_name_encrypted === '') && lastName !== null;
+    if (fillLastName) {
       const enc = await this.encryptionService.encrypt(lastName);
       updates.push(`last_name_encrypted = $${paramIdx++}`);
       values.push(enc);
+    }
+
+    // Blind index: recalculate if either name is being written
+    if (fillFirstName || fillLastName) {
+      const [currentFirstName, currentLastName] = await Promise.all([
+        row.first_name_encrypted
+          ? this.encryptionService.decrypt(row.first_name_encrypted)
+          : Promise.resolve(null),
+        row.last_name_encrypted
+          ? this.encryptionService.decrypt(row.last_name_encrypted)
+          : Promise.resolve(null),
+      ]);
+      const finalFirstName = fillFirstName ? firstName : (currentFirstName ?? null);
+      const finalLastName  = fillLastName  ? lastName  : (currentLastName  ?? null);
+      const bidxBuffers = await this.blindIndexService.generateNameTrigramBidx(finalFirstName, finalLastName);
+      const bidxLiteral = this.blindIndexService.serializeForPg(bidxBuffers);
+      updates.push(`name_trgm_bidx = $${paramIdx++}::bytea[]`);
+      values.push(bidxLiteral);
     }
 
     // auth_uid — fill if missing (worker was created from import, not Talentum)
