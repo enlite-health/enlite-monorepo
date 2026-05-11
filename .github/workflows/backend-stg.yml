@@ -1,0 +1,137 @@
+name: Backend — Staging
+
+on:
+  push:
+    branches: [ "stage" ]
+    paths:
+      - 'worker-functions/**'
+  pull_request:
+    branches: [ "stage" ]
+    paths:
+      - 'worker-functions/**'
+
+concurrency:
+  group: backend-stg
+  cancel-in-progress: false
+
+env:
+  REGION: southamerica-west1
+  REGISTRY_REGION: southamerica-west1
+  SERVICE_NAME: worker-functions
+  REPOSITORY: worker-functions
+
+jobs:
+  quality:
+    uses: ./.github/workflows/_backend-quality.yml
+
+  deploy:
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stage'
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: worker-functions
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Create Artifact Registry repo (if needed)'
+        run: |
+          gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
+            --location=${{ env.REGISTRY_REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format="value(name)" 2>/dev/null || \
+          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+            --repository-format=docker \
+            --location=${{ env.REGISTRY_REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
+
+      - name: 'Docker Auth'
+        run: gcloud auth configure-docker ${{ env.REGISTRY_REGION }}-docker.pkg.dev
+
+      - name: 'Validate Dockerfile'
+        run: |
+          if grep -q 'nginx' Dockerfile; then
+            echo "::error::Dockerfile contains 'nginx' — wrong image for backend!"
+            exit 1
+          fi
+
+      - name: 'Build and Push Container'
+        run: |
+          IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          docker build --no-cache -t $IMAGE_TAG .
+          docker push $IMAGE_TAG
+
+      - name: 'Deploy to Cloud Run'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          env_vars: |
+            NODE_ENV=production
+            GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+            DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
+            DB_NAME=enlite_ar
+            DB_USER=enlite_app
+            TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
+            TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+            TWILIO_STATUS_CALLBACK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/status
+            TWILIO_INBOUND_WEBHOOK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/inbound
+            GOOGLE_CALENDAR_IMPERSONATE_EMAIL=enlite@enlite.health
+            GOOGLE_CALENDAR_ID=primary
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
+            EMAIL_FROM=enlite-stg@enlite.health
+            N8N_WEBHOOK_URL=https://enlite-n8n-vtf37eainq-tl.a.run.app/webhook/worker-events
+            CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
+            CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+            PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
+            PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
+          secrets: |
+            DB_PASSWORD=enlite-ar-db-password:latest
+            GROQ_API_KEY=groq-api-key:latest
+            TWILIO_AUTH_TOKEN=twilio-auth-token:latest
+            INTERNAL_TOKEN_SECRET=internal-token-secret:latest
+            SENDGRID_API_KEY=sendgrid-api-key:latest
+          flags: >-
+            --allow-unauthenticated
+            --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+            --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
+            --memory=512Mi
+            --cpu=1
+            --timeout=600s
+            --concurrency=40
+            --max-instances=3
+            --min-instances=0
+
+      - name: 'Verify deploy (health check)'
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(status.url)')
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$SERVICE_URL/health")
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Health check failed with status $STATUS"
+            exit 1
+          fi
+          echo "Health check passed ($STATUS)"

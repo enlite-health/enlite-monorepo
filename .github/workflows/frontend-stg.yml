@@ -1,0 +1,95 @@
+name: Frontend — Staging
+
+on:
+  push:
+    branches: [ "stage" ]
+    paths:
+      - 'enlite-frontend/**'
+  pull_request:
+    branches: [ "stage" ]
+    paths:
+      - 'enlite-frontend/**'
+
+concurrency:
+  group: frontend-stg
+  cancel-in-progress: false
+
+env:
+  REGION: southamerica-west1
+  REGISTRY_REGION: us-central1
+  SERVICE_NAME: enlite-frontend
+  REPOSITORY: enlite-frontend
+
+jobs:
+  quality:
+    uses: ./.github/workflows/_frontend-quality.yml
+
+  deploy:
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stage'
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: enlite-frontend
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Create Artifact Registry repo (if needed)'
+        run: |
+          gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
+            --location=${{ env.REGISTRY_REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format="value(name)" 2>/dev/null || \
+          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+            --repository-format=docker \
+            --location=${{ env.REGISTRY_REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
+
+      - name: 'Docker Auth'
+        run: gcloud auth configure-docker ${{ env.REGISTRY_REGION }}-docker.pkg.dev
+
+      - name: 'Build and Push Container'
+        run: |
+          IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          docker build \
+            --no-cache \
+            --build-arg VITE_FIREBASE_API_KEY="${{ secrets.VITE_FIREBASE_API_KEY }}" \
+            --build-arg VITE_FIREBASE_AUTH_DOMAIN="${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" \
+            --build-arg VITE_FIREBASE_PROJECT_ID="${{ secrets.VITE_FIREBASE_PROJECT_ID }}" \
+            --build-arg VITE_FIREBASE_STORAGE_BUCKET="${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" \
+            --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" \
+            --build-arg VITE_FIREBASE_APP_ID="${{ secrets.VITE_FIREBASE_APP_ID }}" \
+            --build-arg VITE_API_WORKER_FUNCTIONS_URL="${{ secrets.VITE_API_WORKER_FUNCTIONS_URL }}" \
+            --build-arg VITE_GOOGLE_MAPS_API_KEY="${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" \
+            -t $IMAGE_TAG .
+          docker push $IMAGE_TAG
+
+      - name: 'Deploy to Cloud Run'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          flags: >-
+            --allow-unauthenticated
+            --memory=512Mi
+            --cpu=1
+            --max-instances=3
+            --min-instances=0
