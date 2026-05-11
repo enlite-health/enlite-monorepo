@@ -54,13 +54,14 @@ INVITED → INITIATED → IN_PROGRESS → COMPLETED → CONFIRMED → INTERVIEWI
 
 | application_funnel_stage | Coluna kanban | Notas |
 |--------------------------|---------------|-------|
-| `INITIATED` | INITIATED | Clicou no link, entrou no WhatsApp |
+| `INVITED` | INVITED | Auto-match (sistema convidou o worker) ou sem interação |
+| `INITIATED` | INITIATED | Self-application (clicou "postularse" no painel público) **ou** clicou no link Talentum / entrou no WhatsApp |
 | `IN_PROGRESS` | IN_PROGRESS | Respondeu pelo menos 1 pergunta |
 | `COMPLETED` | COMPLETED | Terminou todas as perguntas |
 | `QUALIFIED` | COMPLETED | Talentum aprovou — aguarda convite WhatsApp |
 | `IN_DOUBT` | COMPLETED | Talentum em dúvida — aguarda revisão |
 | `NOT_QUALIFIED` | REJECTED | Auto-rejeitado com motivo TALENTUM_NOT_QUALIFIED |
-| `null` (sem registro) | INVITED | Lógica original — sem interação com Talentum |
+| `null` (sem registro) | INVITED | Sem WJA — fallback (raro) |
 
 ---
 

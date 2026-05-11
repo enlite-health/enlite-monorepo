@@ -234,8 +234,8 @@ INVITED -> INITIATED -> IN_PROGRESS -> COMPLETED -> CONFIRMED -> SELECTED
 
 | Coluna | application_funnel_stage | Cor | Drag-drop? |
 |--------|------------------------|-----|------------|
-| Invitados | null ou sem WJA | bg-blue-400 | Nao |
-| Iniciado | INITIATED | bg-violet-400 | Nao |
+| Invitados | INVITED (auto-match ou sem WJA) | bg-blue-400 | Nao |
+| Iniciado | INITIATED (self-application OU Talentum link clicado) | bg-violet-400 | Nao |
 | En Progreso | IN_PROGRESS | bg-violet-500 | Nao |
 | Completado | COMPLETED, QUALIFIED, IN_DOUBT, NOT_QUALIFIED | bg-violet-600 | Nao |
 | Confirmados | CONFIRMED | bg-cyan-400 | Sim |

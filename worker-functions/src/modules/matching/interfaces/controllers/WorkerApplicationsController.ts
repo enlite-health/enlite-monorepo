@@ -85,12 +85,12 @@ export class WorkerApplicationsController {
         return;
       }
 
-      // Upsert WJA: sets funnel_stage='INVITED' (migration 131 adds to CHECK).
+      // Upsert WJA: worker self-applied via public link, lands in INITIATED column.
       // ON CONFLICT: only sets acquisition_channel if currently NULL (first-touch wins).
       await this.db.query(
         `INSERT INTO worker_job_applications
            (worker_id, job_posting_id, application_status, source, acquisition_channel, application_funnel_stage)
-         VALUES ($1, $2, 'applied', 'manual', $3, 'INVITED')
+         VALUES ($1, $2, 'applied', 'manual', $3, 'INITIATED')
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            acquisition_channel = CASE
              WHEN worker_job_applications.acquisition_channel IS NULL THEN EXCLUDED.acquisition_channel
@@ -100,7 +100,7 @@ export class WorkerApplicationsController {
         [worker.id, jobPostingId, channel],
       );
 
-      // Ensure encuadre exists so the worker appears in the Kanban INVITED column.
+      // Ensure encuadre exists so the worker appears in the Kanban INITIATED column.
       // Uses decrypted worker name. Only creates if no encuadre exists (preserves Talentum encuadres).
       const dedupHash = crypto.createHash('md5')
         .update(`social-link|${worker.id}|${jobPostingId}`)
