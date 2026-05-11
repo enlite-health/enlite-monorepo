@@ -422,6 +422,37 @@ describe('GET /api/public/v1/jobs', () => {
     expect(ids).not.toContain(IDS.pendingActivation);
   });
 
+  /**
+   * Regression: PublicJobsQueryBuilder.ts line 11 — PENDING_ACTIVATION must never
+   * appear in /api/public/v1/jobs even when social_short_links.site is populated
+   * AND the vacancy has a row in job_postings_clickup_sync (i.e. ClickUp-synced).
+   */
+  it('PENDING_ACTIVATION with site link AND clickup_sync row is NOT returned (regression PublicJobsQueryBuilder:11)', async () => {
+    const syncedPendingId = 'dd110001-0000-0000-0002-000000000099';
+    const syncedVacancyNumber = 9099;
+    try {
+      await pool.query(
+        `INSERT INTO job_postings (id, case_number, vacancy_number, title, status, description, patient_id, social_short_links, country)
+         VALUES ($1, 9099, $2, 'CASO 9099-9099', 'PENDING_ACTIVATION', 'Draft synced from ClickUp', $3, '{"site":"https://srt.io/synced-pending"}'::jsonb, 'AR')
+         ON CONFLICT (id) DO NOTHING`,
+        [syncedPendingId, syncedVacancyNumber, IDS.patient],
+      );
+      await pool.query(
+        `INSERT INTO job_postings_clickup_sync (job_posting_id, clickup_task_id)
+         VALUES ($1, 'clickup-regression-task-001')
+         ON CONFLICT DO NOTHING`,
+        [syncedPendingId],
+      );
+
+      const res = await api.get('/api/public/v1/jobs');
+      const ids = (res.data.data as Array<{ id: string }>).map(j => j.id);
+      expect(ids).not.toContain(syncedPendingId);
+    } finally {
+      await pool.query(`DELETE FROM job_postings_clickup_sync WHERE job_posting_id = $1`, [syncedPendingId]).catch(() => {});
+      await pool.query(`DELETE FROM job_postings WHERE id = $1`, [syncedPendingId]).catch(() => {});
+    }
+  });
+
   it('returns ONLY vacancies with the 4 allowed statuses', async () => {
     const ALLOWED = new Set(['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE']);
     const res = await api.get('/api/public/v1/jobs');

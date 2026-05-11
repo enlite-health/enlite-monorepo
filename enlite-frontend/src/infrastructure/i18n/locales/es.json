@@ -1373,6 +1373,15 @@
         "save": "Guardar",
         "cancel": "Cancelar"
       },
+      "resumeDraftDialog": {
+        "titleSingular": "Vacante en curso encontrada",
+        "titlePlural": "Vacantes en curso encontradas",
+        "description": "Identificamos {{count}} vacante(s) en proceso de creación para este paciente. ¿Querés retomar alguna o crear una nueva?",
+        "lastEditedLabel": "Última edición:",
+        "resume": "Retomar",
+        "createNew": "Crear nueva vacante",
+        "cancel": "Cancelar"
+      },
       "form": {
         "patientLabel": "Paciente",
         "diagnosisLabel": "Diagnóstico",
@@ -1805,7 +1814,7 @@
     "sexLabels": {
       "M": "Hombre",
       "F": "Mujer",
-      "BOTH": "Hombre y Mujer"
+      "BOTH": "Indistinto"
     },
     "diagnosticHypothesis": "Hipótesis Diagnóstica - CIE:",
     "jobDescription": "Descripción del trabajo:",

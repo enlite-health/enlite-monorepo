@@ -12,12 +12,8 @@ import {
   AdminWorkerDocsApiService,
   type AdminAdditionalDocument,
 } from './AdminWorkerDocsApiService';
-import {
-  AdminPatientsApiService,
-} from './AdminPatientsApiService';
-import {
-  AdminVacancyParseApiService,
-} from './AdminVacancyParseApiService';
+import { AdminPatientsApiService } from './AdminPatientsApiService';
+import { AdminVacancyParseApiService } from './AdminVacancyParseApiService';
 import {
   AdminVacancyAddressApiService,
   type ResolveAddressBody,
@@ -26,6 +22,8 @@ import {
   AdminTalentumApiService,
   type AIContentResult,
 } from './AdminTalentumApiService';
+import { AdminVacancyDraftsApiService } from './AdminVacancyDraftsApiService';
+import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
 import type {
   ParseVacancyFullResult,
   PatientAddressCreateInput,
@@ -37,6 +35,7 @@ export type { WorkerDateStats, AdminAdditionalDocument };
 export type { ParseVacancyFullResult, PatientAddressCreateInput, PatientAddressRow };
 export type { PendingAddressReviewItem, ResolveAddressBody };
 export type { AIContentResult };
+export type { VacancyDraftSummary };
 
 interface ApiSuccessResponse<T> {
   success: true;
@@ -391,6 +390,9 @@ class AdminApiServiceClass {
   listPendingAddressReview(statusFilter?: string) { return AdminVacancyAddressApiService.listPendingAddressReview(statusFilter); }
   resolveAddressReview(vacancyId: string, body: ResolveAddressBody) { return AdminVacancyAddressApiService.resolveAddressReview(vacancyId, body); }
   listPatientAddresses(patientId: string) { return AdminVacancyAddressApiService.listPatientAddresses(patientId); }
+
+  // ========== Vacancy Drafts — delegated to AdminVacancyDraftsApiService ==========
+  listDraftsForPatient(patientId: string): Promise<VacancyDraftSummary[]> { return AdminVacancyDraftsApiService.listDraftsForPatient(patientId); }
 }
 
 export const AdminApiService = new AdminApiServiceClass();

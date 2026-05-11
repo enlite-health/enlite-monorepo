@@ -51,6 +51,8 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
     updateVacancyMeetLinks: vi.fn(),
+    // Draft-check: return empty so the resume dialog never opens in these tests
+    listDraftsForPatient: vi.fn().mockResolvedValue([]),
   },
 }));
 

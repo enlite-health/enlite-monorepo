@@ -944,10 +944,10 @@
           "AT_AND_CAREGIVER": "AT e Cuidador"
         },
         "sexOptions": {
-          "unspecified": "Indiferente",
+          "unspecified": "Indistinto",
           "M": "Masculino",
           "F": "Feminino",
-          "BOTH": "Indiferente"
+          "BOTH": "Indistinto"
         },
         "deviceOptions": {
           "DOMICILIARIO": "Domiciliar",
@@ -1293,6 +1293,15 @@
         "addressTypeSecondary": "Secundário",
         "addressTypeService": "Serviço",
         "save": "Salvar",
+        "cancel": "Cancelar"
+      },
+      "resumeDraftDialog": {
+        "titleSingular": "Vaga em andamento encontrada",
+        "titlePlural": "Vagas em andamento encontradas",
+        "description": "Identificamos {{count}} vaga(s) em processo de criação para este paciente. Quer retomar alguma ou criar uma nova?",
+        "lastEditedLabel": "Última edição:",
+        "resume": "Retomar",
+        "createNew": "Criar nova vaga",
         "cancel": "Cancelar"
       },
       "form": {
@@ -1727,7 +1736,7 @@
     "sexLabels": {
       "M": "Homem",
       "F": "Mulher",
-      "BOTH": "Homem e Mulher"
+      "BOTH": "Indistinto"
     },
     "diagnosticHypothesis": "Hipótese Diagnóstica - CID:",
     "jobDescription": "Descrição do trabalho:",
