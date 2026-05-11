@@ -166,3 +166,5 @@ e trocam o Authorization header pelo token `mock_<base64>`, exceto:
 - `e2e/integration/full-create-vacancy.integration.e2e.ts` — happy path completo
 - `e2e/integration/admission-patient-flow.integration.e2e.ts` — ADMISSION + criar endereço inline
 - `e2e/helpers/db-test-helper.ts` — helpers de setup/cleanup direto no DB via `docker exec`
+
+
