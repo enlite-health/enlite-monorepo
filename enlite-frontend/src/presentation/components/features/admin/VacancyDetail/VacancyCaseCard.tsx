@@ -90,9 +90,13 @@ export function VacancyCaseCard({
 }: VacancyCaseCardProps) {
   const { t } = useTranslation();
 
+  const sexLabel = sex
+    ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${sex}`, sex)
+    : null;
+
   const caseParts = [
     profession,
-    sex,
+    sexLabel,
     zone,
   ].filter(Boolean).join(' - ');
 
