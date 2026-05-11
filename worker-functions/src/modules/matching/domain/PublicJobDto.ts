@@ -18,6 +18,7 @@ export interface PublicJobRow {
   job_zone: string | null;           // jp.inferred_zone
   neighborhood: string | null;       // COALESCE(pa.neighborhood, p.zone_neighborhood) — fallback p/ legado ClickUp
   state_city: string | null;         // CONCAT_WS(state, city) — empty string → null in mapper
+  country: string | null;            // jp.country — null-safe for legacy records
 }
 
 export interface PublicJobDto {
@@ -40,4 +41,5 @@ export interface PublicJobDto {
   job_zone: string | null;
   neighborhood: string | null;
   state_city: string | null;
+  country: string | null;
 }

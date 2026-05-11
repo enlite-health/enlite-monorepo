@@ -42,5 +42,6 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     job_zone: row.job_zone ?? null,
     neighborhood: row.neighborhood ?? null,
     state_city: normalizeStateCity(row.state_city),
+    country: row.country ?? null,
   };
 }
