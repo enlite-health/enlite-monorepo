@@ -6,6 +6,8 @@
  *   2. 200 — returns empty array when no matching vacancies
  *   3. 500 — returns error when use case throws
  *   4. Response shape includes success + data fields
+ *   5. 400 — invalid query params return Zod errors
+ *   6. Filters from query are forwarded to the use case
  */
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
@@ -24,8 +26,8 @@ import { Request, Response } from 'express';
 
 const MockedUseCase = ListActivePublicJobsUseCase as jest.MockedClass<typeof ListActivePublicJobsUseCase>;
 
-function mockReqRes(): [Request, Response] {
-  const req = { ip: '127.0.0.1' } as unknown as Request;
+function mockReqRes(query: Record<string, string> = {}): [Request, Response] {
+  const req = { ip: '127.0.0.1', query } as unknown as Request;
   const res = {
     setHeader: jest.fn().mockReturnThis(),
     status: jest.fn().mockReturnThis(),
@@ -127,5 +129,29 @@ describe('PublicJobsController.listActiveJobs', () => {
 
     const response = (res.json as jest.Mock).mock.calls[0][0];
     expect(response.data).toHaveLength(2);
+  });
+
+  it('returns 400 with Zod issues when query params are invalid', async () => {
+    const [req, res] = mockReqRes({ country: 'ARGENTINA' });
+    await controller.listActiveJobs(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('Invalid query params');
+    expect(Array.isArray(body.details)).toBe(true);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('forwards parsed filters (including default country=AR) to the use case', async () => {
+    mockExecute.mockResolvedValueOnce([]);
+    const [req, res] = mockReqRes({ state: 'CABA', worker_sex: 'FEMALE' });
+    await controller.listActiveJobs(req, res);
+
+    expect(mockExecute).toHaveBeenCalledWith({
+      country: 'AR',
+      state: 'CABA',
+      worker_sex: 'FEMALE',
+    });
   });
 });
