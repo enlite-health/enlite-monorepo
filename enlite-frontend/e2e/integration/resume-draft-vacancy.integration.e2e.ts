@@ -524,12 +524,14 @@ test.describe('Retomar rascunho de vaga @integration', () => {
     await page.goto('/admin/vacancies/new');
     await expect(page.getByText(/Nueva Vacante/i)).toBeVisible({ timeout: 15_000 });
 
+    // Aguarda o backend responder ao /in-progress (vazio) antes de assertar.
+    // waitForResponse é determinístico — sem flakiness em CI lento.
+    const inProgressResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/admin/vacancies/in-progress') && res.status() === 200,
+      { timeout: 10_000 },
+    );
     await selectCaseNumber(page, patientNoDraftsCaseNumber);
-
-    // Aguarda a seleção ser processada pelo backend
-    // O useEffect faz a chamada ao /in-progress e o resultado é vazio
-    // Esperamos que o modal NÃO apareça após tempo suficiente
-    await page.waitForTimeout(2_000);
+    await inProgressResponse;
 
     const dialog = page.getByTestId('resume-draft-dialog');
     await expect(dialog).not.toBeVisible();
@@ -544,11 +546,14 @@ test.describe('Retomar rascunho de vaga @integration', () => {
     await page.goto('/admin/vacancies/new');
     await expect(page.getByText(/Nueva Vacante/i)).toBeVisible({ timeout: 15_000 });
 
-    // Seleciona o paciente que tem APENAS rascunho ClickUp-synced
+    // Aguarda o backend responder ao /in-progress (array vazio porque o
+    // único draft foi filtrado pelo JOIN com job_postings_clickup_sync).
+    const inProgressResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/admin/vacancies/in-progress') && res.status() === 200,
+      { timeout: 10_000 },
+    );
     await selectCaseNumber(page, patientClickupCaseNumber);
-
-    // Aguarda tempo suficiente para o /in-progress retornar
-    await page.waitForTimeout(2_000);
+    await inProgressResponse;
 
     // Modal NÃO deve aparecer — o draft ClickUp foi filtrado pelo backend
     const dialog = page.getByTestId('resume-draft-dialog');
@@ -955,10 +960,14 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       // ── Passo 5: Volta a /new e seleciona o mesmo paciente ────────────────
       await page.goto('/admin/vacancies/new');
       await expect(page.getByText(/Nueva Vacante/i)).toBeVisible({ timeout: 15_000 });
-      await selectCaseNumber(page, flowCaseNumber);
 
-      // Aguarda o check /in-progress ser processado
-      await page.waitForTimeout(2_500);
+      // Aguarda o check /in-progress (vazio, pois a vaga agora é SEARCHING)
+      const inProgressResponse = page.waitForResponse(
+        (res) => res.url().includes('/api/admin/vacancies/in-progress') && res.status() === 200,
+        { timeout: 10_000 },
+      );
+      await selectCaseNumber(page, flowCaseNumber);
+      await inProgressResponse;
 
       // ── Passo 6: Modal NÃO deve aparecer — vaga está SEARCHING, não PENDING ─
       const dialogAfter = page.getByTestId('resume-draft-dialog');

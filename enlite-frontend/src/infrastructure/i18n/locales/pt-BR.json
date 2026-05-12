@@ -1019,10 +1019,14 @@
         }
       },
       "statusBadge": {
-        "BUSQUEDA": "Em busca",
-        "ACTIVO": "Ativo",
-        "REEMPLAZOS": "Substituição",
-        "CERRADO": "Encerrado",
+        "SEARCHING": "Em busca",
+        "SEARCHING_REPLACEMENT": "Em substituição",
+        "RAPID_RESPONSE": "Resposta rápida",
+        "PENDING_ACTIVATION": "Aguardando ativação",
+        "ACTIVE": "Ativo",
+        "ON_HOLD": "Em espera",
+        "SUSPENDED": "Suspenso",
+        "CLOSED": "Encerrado",
         "ADMISSION": "Admissão"
       },
       "caseCard": {

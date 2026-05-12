@@ -57,6 +57,8 @@ export interface AdminVacancyDetail {
   status: string;
   case_number: number | null;
   vacancy_number: number | null;
+  /** FK para patients */
+  patient_id: string | null;
   patient_first_name: string | null;
   patient_last_name: string | null;
   patient_diagnosis: string | null;
@@ -74,15 +76,22 @@ export interface AdminVacancyDetail {
   required_professions: string[] | null;
   age_range_min: number | null;
   age_range_max: number | null;
+  required_experience: string | null;
   worker_attributes: string | null;
   service_type: string | null;
   dependency_level: string | null;
   schedule: Record<string, { start: string; end: string }[]> | null;
   schedule_days_hours: string | null;
+  work_schedule: string | null;
   country: string | null;
   city: string | null;
   providers_needed: number | null;
   insurance_verified: boolean | null;
+  salary_text: string | null;
+  payment_day: string | null;
+  daily_obs: string | null;
+  published_at: string | null;
+  closes_at: string | null;
   talentum_description: string | null;
   talentum_project_id: string | null;
   talentum_whatsapp_url: string | null;

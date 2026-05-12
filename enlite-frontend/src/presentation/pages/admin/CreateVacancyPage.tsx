@@ -34,6 +34,7 @@ import { Stepper } from '@presentation/components/molecules/Stepper';
 import { useVacancyModalFlow } from '@hooks/admin/useVacancyModalFlow';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
+import type { AdminVacancyDetail } from '@domain/entities/Vacancy';
 import { VacancyFormSection } from '@presentation/components/features/admin/VacancyModal/VacancyFormSection';
 import { ResumeDraftVacancyDialog } from '@presentation/components/features/admin/VacancyModal/ResumeDraftVacancyDialog';
 
@@ -50,7 +51,7 @@ export default function CreateVacancyPage(): JSX.Element {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [validationFailedFields, setValidationFailedFields] = useState<string[]>([]);
   const [formComplete, setFormComplete] = useState(false);
-  const [existingVacancy, setExistingVacancy] = useState<any | null>(null);
+  const [existingVacancy, setExistingVacancy] = useState<AdminVacancyDetail | null>(null);
   const [isLoadingVacancy, setIsLoadingVacancy] = useState(isEditMode);
   const [vacancyLoadError, setVacancyLoadError] = useState<string | null>(null);
 

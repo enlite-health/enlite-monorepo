@@ -1097,10 +1097,14 @@
         "noDescription": "Sin descripción generada aún. Hacé clic en \"Regenerar\" para crear una."
       },
       "statusBadge": {
-        "BUSQUEDA": "En búsqueda",
-        "ACTIVO": "Activo",
-        "REEMPLAZOS": "Reemplazo",
-        "CERRADO": "Cerrado",
+        "SEARCHING": "En búsqueda",
+        "SEARCHING_REPLACEMENT": "En reemplazo",
+        "RAPID_RESPONSE": "Respuesta rápida",
+        "PENDING_ACTIVATION": "Activación pendiente",
+        "ACTIVE": "Activo",
+        "ON_HOLD": "En espera",
+        "SUSPENDED": "Suspendido",
+        "CLOSED": "Cerrado",
         "ADMISSION": "Admisión"
       },
       "caseCard": {
