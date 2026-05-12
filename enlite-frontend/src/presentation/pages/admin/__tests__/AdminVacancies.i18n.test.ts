@@ -45,28 +45,28 @@ const REQUIRED_KEYS = [
   'searchPlaceholder',
   'noVacancies',
   // Filter labels
-  'clients',
-  'clientPlaceholder',
   'statusLabel',
   'priorityLabel',
-  'statusPlaceholder',
   // Table headers
   'table.case',
   'table.status',
-  'table.dependencyLevel',
+  'table.priority',
   'table.invited',
   'table.applicants',
   'table.selected',
   'table.missing',
   'table.view',
-  // Client options
-  'clientOptions.osde',
-  'clientOptions.swissMedical',
-  // Status options
+  'table.edit',
+  // Status options — 8 valores canônicos do banco
   'statusOptions.all',
+  'statusOptions.searching',
+  'statusOptions.searchingReplacement',
+  'statusOptions.rapidResponse',
+  'statusOptions.pendingActivation',
   'statusOptions.active',
-  'statusOptions.inProcess',
-  'statusOptions.paused',
+  'statusOptions.onHold',
+  'statusOptions.suspended',
+  'statusOptions.closed',
   // Priority options
   'priorityOptions.all',
   'priorityOptions.urgent',
@@ -113,6 +113,20 @@ describe('AdminVacancies i18n — locale parity', () => {
     expect(missingInEs).toEqual([]);
     expect(missingInPtBR).toEqual([]);
   });
+
+  it('keys for the removed Clientes filter are gone from both locales', () => {
+    expect(esVacancies.clients).toBeUndefined();
+    expect(esVacancies.clientPlaceholder).toBeUndefined();
+    expect(esVacancies.clientOptions).toBeUndefined();
+    expect(ptBRVacancies.clients).toBeUndefined();
+    expect(ptBRVacancies.clientPlaceholder).toBeUndefined();
+    expect(ptBRVacancies.clientOptions).toBeUndefined();
+  });
+
+  it('removed dependencyLevel column label is gone from table keys', () => {
+    expect(esVacancies.table.dependencyLevel).toBeUndefined();
+    expect(ptBRVacancies.table.dependencyLevel).toBeUndefined();
+  });
 });
 
 describe('AdminVacancies i18n — translations are user-friendly', () => {
@@ -140,7 +154,7 @@ describe('AdminVacancies i18n — translations are user-friendly', () => {
 const TABLE_HEADER_KEYS = [
   'table.case',
   'table.status',
-  'table.dependencyLevel',
+  'table.priority',
   'table.invited',
   'table.applicants',
   'table.selected',
@@ -178,6 +192,7 @@ describe('AdminVacancies i18n — language-specific content', () => {
     expect(esVacancies.nextPage).toBe('Página siguiente');
     expect(esVacancies.table.case).toBe('Caso - Vacante');
     expect(esVacancies.table.status).toBe('Estado');
+    expect(esVacancies.table.priority).toBe('Prioridad');
   });
 
   it('pt-BR translations contain correct Portuguese labels', () => {
@@ -190,5 +205,6 @@ describe('AdminVacancies i18n — language-specific content', () => {
     expect(ptBRVacancies.nextPage).toBe('Próxima página');
     expect(ptBRVacancies.table.case).toBe('Caso');
     expect(ptBRVacancies.table.status).toBe('Status');
+    expect(ptBRVacancies.table.priority).toBe('Prioridade');
   });
 });

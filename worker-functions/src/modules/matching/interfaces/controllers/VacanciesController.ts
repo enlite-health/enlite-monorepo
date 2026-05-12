@@ -31,10 +31,10 @@ export class VacanciesController {
 
   async listVacancies(req: Request, res: Response): Promise<void> {
     try {
-      const { search, client, status, limit = '20', offset = '0' } = req.query;
+      const { search, status, priority, limit = '20', offset = '0' } = req.query;
 
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
-        search, client, status, limit: limit as string, offset: offset as string,
+        search, status, priority, limit: limit as string, offset: offset as string,
       });
 
       const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;

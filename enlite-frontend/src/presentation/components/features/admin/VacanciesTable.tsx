@@ -10,12 +10,13 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 
+export type VacancyPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
+
 export interface VacancyRow {
   id: string;
   caso: string;
   status: string;
-  grau: string;
-  grauColor: string;
+  priority: VacancyPriority | null;
   diasAberto: string;
   convidados: string;
   postulados: string;
@@ -32,12 +33,35 @@ interface VacanciesTableProps {
 const COLUMNS = [
   { key: 'case', hiddenClass: '' },
   { key: 'status', hiddenClass: '' },
-  { key: 'dependencyLevel', hiddenClass: '' },
+  { key: 'priority', hiddenClass: '' },
   { key: 'invited', hiddenClass: 'hidden md:table-cell' },
   { key: 'applicants', hiddenClass: 'hidden md:table-cell' },
   { key: 'selected', hiddenClass: 'hidden md:table-cell' },
   { key: 'missing', hiddenClass: 'hidden md:table-cell' },
 ] as const;
+
+const PRIORITY_BADGE: Record<VacancyPriority, string> = {
+  URGENT: 'bg-red-100 text-red-700',
+  HIGH:   'bg-orange-100 text-orange-700',
+  NORMAL: 'bg-slate-100 text-slate-700',
+  LOW:    'bg-emerald-100 text-emerald-700',
+};
+
+function PriorityCell({ priority }: { priority: VacancyPriority | null }): JSX.Element {
+  const { t } = useTranslation();
+  if (!priority) {
+    return <Text as="span" size="sm" weight="medium" color="secondary">—</Text>;
+  }
+  const badgeClass = PRIORITY_BADGE[priority];
+  const label = t(`admin.vacancies.priorityOptions.${priority.toLowerCase()}`);
+  return (
+    <span className={`${badgeClass} px-2 py-0.5 rounded-full inline-block`}>
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {label}
+      </Text>
+    </span>
+  );
+}
 
 export function VacanciesTable({ vacancies, onRowClick, onEditClick }: VacanciesTableProps): JSX.Element {
   const { t } = useTranslation();
@@ -89,9 +113,7 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                 <TableCell weight="medium">{row.caso}</TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap">{row.status}</TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
-                  <Text as="span" size="sm" weight="medium" className={row.grauColor}>
-                    {row.grau}
-                  </Text>
+                  <PriorityCell priority={row.priority} />
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.convidados}

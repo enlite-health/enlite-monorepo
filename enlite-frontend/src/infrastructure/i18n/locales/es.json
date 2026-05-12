@@ -720,11 +720,8 @@
       "loading": "Cargando vacantes...",
       "errorLoading": "Error al cargar vacantes",
       "searchPlaceholder": "Buscar por nombre del paciente",
-      "clients": "Clientes",
-      "clientPlaceholder": "Nombre obra social",
       "statusLabel": "Estado",
       "priorityLabel": "Prioridad",
-      "statusPlaceholder": "Activo",
       "noVacancies": "No se encontraron vacantes",
       "stats": {
         "moreThan7Days": "+7 días",
@@ -736,24 +733,25 @@
         "name": "Nombre",
         "case": "Caso - Vacante",
         "status": "Estado",
-        "dependencyLevel": "Grado de Dependencia",
+        "priority": "Prioridad",
         "daysOpen": "Días Abierto",
         "invited": "Invitados",
         "applicants": "Postulados",
         "selected": "Seleccionados",
         "missing": "Faltantes",
-        "view": "Ver"
-      },
-      "clientOptions": {
-        "placeholder": "Nombre obra social",
-        "osde": "OSDE",
-        "swissMedical": "Swiss Medical"
+        "view": "Ver",
+        "edit": "Editar"
       },
       "statusOptions": {
         "all": "Todos",
+        "searching": "Buscando AT",
+        "searchingReplacement": "Buscando Sustituto",
+        "rapidResponse": "Respuesta Rápida",
+        "pendingActivation": "Esperando Activación",
         "active": "Activo",
-        "inProcess": "En Proceso",
-        "paused": "Pausado"
+        "onHold": "En Espera",
+        "suspended": "Suspendido",
+        "closed": "Cerrado"
       },
       "priorityOptions": {
         "all": "Todas",

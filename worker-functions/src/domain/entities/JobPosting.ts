@@ -41,7 +41,8 @@ export type JobPostingStatus =
   | 'RAPID_RESPONSE'        // Emergency fast-response team
   | 'PENDING_ACTIVATION'    // Matched but waiting to start
   | 'ACTIVE'                // AT is operating normally
-  | 'SUSPENDED'             // Temporarily paused
+  | 'ON_HOLD'               // Paused for operational reasons (patient still active)
+  | 'SUSPENDED'             // Temporarily paused (clinical suspension)
   | 'CLOSED';               // Case ended / cancelled / filled
 
 export interface CreateJobPostingDTO {
