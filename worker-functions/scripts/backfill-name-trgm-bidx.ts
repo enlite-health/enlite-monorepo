@@ -111,18 +111,24 @@ async function main(): Promise<void> {
   // ── Execute ────────────────────────────────────────────────────────────────
 
   const summary: Summary = { processed: 0, updated: 0, skipped: 0, errors: 0 };
+  // In-memory skip-list pra evitar loop infinito quando o decrypt retorna empty
+  // ou quando ocorre erro: workers nesses estados são re-pulados nas próximas
+  // queries até o fim da execução.
+  const triedIds = new Set<string>();
   let batchNum = 0;
 
   while (true) {
+    const triedArray = Array.from(triedIds);
     const { rows } = await pool.query<WorkerRow>(
       `SELECT id, first_name_encrypted, last_name_encrypted
          FROM workers
         WHERE name_trgm_bidx IS NULL
           AND merged_into_id IS NULL
           AND (first_name_encrypted IS NOT NULL OR last_name_encrypted IS NOT NULL)
+          AND ($2::uuid[] IS NULL OR id <> ALL($2::uuid[]))
         ORDER BY created_at ASC
         LIMIT $1`,
-      [BATCH_SIZE],
+      [BATCH_SIZE, triedArray.length > 0 ? triedArray : null],
     );
 
     if (rows.length === 0) break;
@@ -147,6 +153,7 @@ async function main(): Promise<void> {
           console.warn(
             `[backfill-name-trgm-bidx] WARN worker ${row.id}: empty after decrypt — skipping`,
           );
+          triedIds.add(row.id);
           summary.skipped++;
           continue;
         }
@@ -167,6 +174,7 @@ async function main(): Promise<void> {
           `[backfill-name-trgm-bidx] ERROR worker ${row.id}:`,
           err instanceof Error ? err.message : err,
         );
+        triedIds.add(row.id);
         summary.errors++;
       }
     }
