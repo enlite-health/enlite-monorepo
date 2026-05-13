@@ -7,7 +7,7 @@
 
 import {
   POSTULATED_STAGES,
-  PRE_SELECTED_STAGES,
+  SELECTED_KANBAN_STAGES,
   toSqlInList,
 } from '../../domain/applicationFunnelStages';
 
@@ -36,7 +36,7 @@ export function mapStatus(status: string | null): string {
 // ── listVacancies query builder ────────────────────────────────────────────────
 
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
-const PRE_SELECTED_SQL = toSqlInList(PRE_SELECTED_STAGES);
+const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
 
 const LIST_VACANCIES_BASE = `
   SELECT
@@ -66,14 +66,14 @@ const LIST_VACANCIES_BASE = `
         AND wja.application_funnel_stage IN (${POSTULATED_SQL})) as postulados,
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
-        AND wja.application_funnel_stage IN (${PRE_SELECTED_SQL})) as selecionados,
+        AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})) as selecionados,
     CASE
       WHEN jp.providers_needed IS NOT NULL AND jp.providers_needed ~ '^[0-9]+$'
       THEN GREATEST(
         jp.providers_needed::INTEGER - (
           SELECT COUNT(*) FROM worker_job_applications wja
           WHERE wja.job_posting_id = jp.id
-            AND wja.application_funnel_stage IN (${PRE_SELECTED_SQL})
+            AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
         ),
         0
       )
