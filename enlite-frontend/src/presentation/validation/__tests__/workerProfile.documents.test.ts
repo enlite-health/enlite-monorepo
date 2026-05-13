@@ -44,12 +44,14 @@ function validateFileSize(file: File): string | null {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('DocumentsGrid — Slots de Documentos', () => {
+  // Labels agora vêm da chave canônica `documentTypes.<docType>` em i18n —
+  // fonte única compartilhada entre worker (DocumentsGrid) e admin (WorkerDocumentsCard).
   const DOCUMENT_SLOTS = [
-    { docType: 'resume_cv', labelKey: 'documents.resumeCv', fallbackLabel: 'Curriculum' },
-    { docType: 'liability_insurance', labelKey: 'documents.liabilityInsurance', fallbackLabel: 'Certificados y/o Títulos constantes del CV' },
-    { docType: 'identity_document', labelKey: 'documents.identity', fallbackLabel: 'DNI - Documento Nacional de Identidade' },
-    { docType: 'professional_registration', labelKey: 'documents.professionalReg', fallbackLabel: 'Constancia de Inscripción en ARCA (ex-AFIP)' },
-    { docType: 'criminal_record', labelKey: 'documents.criminalRecord', fallbackLabel: 'Antecedentes Penales' },
+    { docType: 'resume_cv' },
+    { docType: 'liability_insurance' },
+    { docType: 'identity_document' },
+    { docType: 'professional_registration' },
+    { docType: 'criminal_record' },
   ];
 
   it('deve ter exatamente 5 slots de documento', () => {
@@ -57,32 +59,23 @@ describe('DocumentsGrid — Slots de Documentos', () => {
   });
 
   it.each(DOCUMENT_SLOTS)(
-    'slot "$docType" deve ter labelKey e fallbackLabel definidos',
+    'slot "$docType" deve ter docType definido (label via i18n documentTypes)',
     (slot) => {
-      expect(slot.labelKey).toBeDefined();
-      expect(slot.labelKey.length).toBeGreaterThan(0);
-      expect(slot.fallbackLabel).toBeDefined();
-      expect(slot.fallbackLabel.length).toBeGreaterThan(0);
+      expect(slot.docType).toBeDefined();
+      expect(slot.docType.length).toBeGreaterThan(0);
     },
   );
 
-  it('fallback labels devem ser compreensíveis para o usuário (não códigos)', () => {
+  it('docType segue convenção snake_case do enum backend', () => {
     for (const slot of DOCUMENT_SLOTS) {
-      // Fallback não deve ser um código técnico como "resume_cv" ou "identity_document"
-      expect(slot.fallbackLabel).not.toContain('_');
-      // Deve ter pelo menos 5 caracteres
-      expect(slot.fallbackLabel.length, `Fallback "${slot.fallbackLabel}" é muito curto`).toBeGreaterThanOrEqual(5);
+      expect(slot.docType).toMatch(/^[a-z_]+$/);
+      expect(slot.docType.length, `docType "${slot.docType}" é muito curto`).toBeGreaterThanOrEqual(5);
     }
   });
 
   it('todos os docTypes são únicos', () => {
     const types = DOCUMENT_SLOTS.map((s) => s.docType);
     expect(new Set(types).size).toBe(types.length);
-  });
-
-  it('todos os labelKeys são únicos', () => {
-    const keys = DOCUMENT_SLOTS.map((s) => s.labelKey);
-    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

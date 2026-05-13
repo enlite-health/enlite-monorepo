@@ -7,20 +7,20 @@ import { DocumentType, WorkerDocumentsResponse } from '@infrastructure/http/Docu
 
 interface DocumentSlot {
   docType: DocumentType;
-  labelKey: string;
-  fallbackLabel: string;
   atOnly?: boolean;
 }
 
+// Labels vêm da chave canônica `documentTypes.<docType>` em i18n —
+// fonte única compartilhada com o WorkerDocumentsCard do admin.
 const DOCUMENT_SLOTS: DocumentSlot[] = [
-  { docType: 'resume_cv', labelKey: 'documents.resumeCv', fallbackLabel: 'Curriculum' },
-  { docType: 'liability_insurance', labelKey: 'documents.liabilityInsurance', fallbackLabel: 'Certificados y/o Títulos constantes del CV' },
-  { docType: 'identity_document', labelKey: 'documents.identity', fallbackLabel: 'DNI - Frente' },
-  { docType: 'identity_document_back', labelKey: 'documents.identityBack', fallbackLabel: 'DNI - Dorso' },
-  { docType: 'professional_registration', labelKey: 'documents.professionalReg', fallbackLabel: 'Constancia de Inscripción en ARCA (ex-AFIP)' },
-  { docType: 'criminal_record', labelKey: 'documents.criminalRecord', fallbackLabel: 'Antecedentes Penales' },
-  { docType: 'monotributo_certificate', labelKey: 'documents.monotributo', fallbackLabel: 'Certificado de Monotributo', atOnly: true },
-  { docType: 'at_certificate', labelKey: 'documents.atCertificate', fallbackLabel: 'Certificado de Acompañante Terapéutico', atOnly: true },
+  { docType: 'resume_cv' },
+  { docType: 'liability_insurance' },
+  { docType: 'identity_document' },
+  { docType: 'identity_document_back' },
+  { docType: 'professional_registration' },
+  { docType: 'criminal_record' },
+  { docType: 'monotributo_certificate', atOnly: true },
+  { docType: 'at_certificate', atOnly: true },
 ];
 
 const DOC_URL_MAP: Record<DocumentType, keyof WorkerDocumentsResponse> = {
@@ -77,7 +77,7 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
     return (
       <div key={slot.docType} data-testid={`doc-slot-${slot.docType}`} className={`flex flex-col gap-1 ${className ?? ''}`}>
         <DocumentUploadCard
-          label={t(slot.labelKey, slot.fallbackLabel)}
+          label={t(`documentTypes.${slot.docType}`)}
           isUploaded={!!filePath}
           isLoading={loadingTypes.has(slot.docType)}
           onFileSelect={(file) => withLoading(slot.docType, () => onUpload(slot.docType, file))}

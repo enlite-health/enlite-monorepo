@@ -437,14 +437,24 @@
       "uploadDocuments": "Enviar Documentos"
     }
   },
+  "documentTypes": {
+    "resume_cv": "Currículo",
+    "identity_document": "RG/CPF - Frente",
+    "identity_document_back": "RG/CPF - Verso",
+    "criminal_record": "Antecedentes penais",
+    "professional_registration": "Registro profissional",
+    "liability_insurance": "Seguro de responsabilidade",
+    "monotributo_certificate": "Certificado MEI/Monotributo",
+    "at_certificate": "Certificado de Acompanhante Terapêutico"
+  },
   "documents": {
     "title": "Documentos",
     "resumeCv": "Currículo",
     "identity": "RG/CPF - Frente",
     "identityBack": "RG/CPF - Verso",
-    "criminalRecord": "Antecedentes Criminais",
-    "professionalReg": "Registro Profissional",
-    "liabilityInsurance": "Certificados e/ou Títulos do CV",
+    "criminalRecord": "Antecedentes penais",
+    "professionalReg": "Registro profissional",
+    "liabilityInsurance": "Seguro de responsabilidade",
     "monotributo": "Certificado MEI/Monotributo",
     "atCertificate": "Certificado de Acompanhante Terapêutico",
     "atRequiredWarning": "Como Acompanhante Terapêutico, estes documentos são obrigatórios para completar seu cadastro.",
@@ -1779,7 +1789,7 @@
         "availability": "Disponibilidade de horários",
         "resumeCv": "Currículo",
         "identityDocument": "Documento de identidade",
-        "criminalRecord": "Antecedentes criminais",
+        "criminalRecord": "Antecedentes penais",
         "professionalRegistration": "Registro profissional",
         "liabilityInsurance": "Seguro de responsabilidade civil"
       },
