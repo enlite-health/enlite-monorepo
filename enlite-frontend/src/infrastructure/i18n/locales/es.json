@@ -437,14 +437,24 @@
       "uploadDocuments": "Enviar Documentos"
     }
   },
+  "documentTypes": {
+    "resume_cv": "Currículum",
+    "identity_document": "DNI - Frente",
+    "identity_document_back": "DNI - Dorso",
+    "criminal_record": "Antecedentes penales",
+    "professional_registration": "Registro profesional",
+    "liability_insurance": "Seguro de responsabilidad",
+    "monotributo_certificate": "Certificado de Monotributo",
+    "at_certificate": "Certificado de Acompañante Terapéutico"
+  },
   "documents": {
     "title": "Documentos",
-    "resumeCv": "Curriculum",
+    "resumeCv": "Currículum",
     "identity": "DNI - Frente",
     "identityBack": "DNI - Dorso",
-    "criminalRecord": "Antecedentes Penales",
-    "professionalReg": "Constancia de Inscripción en ARCA (ex-AFIP)",
-    "liabilityInsurance": "Certificados y/o Títulos constantes del CV",
+    "criminalRecord": "Antecedentes penales",
+    "professionalReg": "Registro profesional",
+    "liabilityInsurance": "Seguro de responsabilidad",
     "monotributo": "Certificado de Monotributo",
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",

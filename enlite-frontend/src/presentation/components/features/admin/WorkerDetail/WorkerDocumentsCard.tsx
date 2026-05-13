@@ -9,20 +9,21 @@ import { DocumentValidationBadge } from './DocumentValidationBadge';
 
 interface DocumentSlot {
   docType: AdminDocumentType;
-  labelKey: string;
   urlField: keyof WorkerDocument;
   atOnly?: boolean;
 }
 
+// Labels vêm da chave canônica `documentTypes.<docType>` em i18n —
+// fonte única compartilhada com o DocumentsGrid do worker.
 const DOCUMENT_SLOTS: DocumentSlot[] = [
-  { docType: 'resume_cv', labelKey: 'admin.workerDetail.resume', urlField: 'resumeCvUrl' },
-  { docType: 'identity_document', labelKey: 'admin.workerDetail.identityDoc', urlField: 'identityDocumentUrl' },
-  { docType: 'identity_document_back', labelKey: 'admin.workerDetail.identityDocBack', urlField: 'identityDocumentBackUrl' },
-  { docType: 'criminal_record', labelKey: 'admin.workerDetail.criminalRecord', urlField: 'criminalRecordUrl' },
-  { docType: 'professional_registration', labelKey: 'admin.workerDetail.professionalReg', urlField: 'professionalRegistrationUrl' },
-  { docType: 'liability_insurance', labelKey: 'admin.workerDetail.insurance', urlField: 'liabilityInsuranceUrl' },
-  { docType: 'monotributo_certificate', labelKey: 'admin.workerDetail.monotributo', urlField: 'monotributoCertificateUrl', atOnly: true },
-  { docType: 'at_certificate', labelKey: 'admin.workerDetail.atCertificate', urlField: 'atCertificateUrl', atOnly: true },
+  { docType: 'resume_cv', urlField: 'resumeCvUrl' },
+  { docType: 'identity_document', urlField: 'identityDocumentUrl' },
+  { docType: 'identity_document_back', urlField: 'identityDocumentBackUrl' },
+  { docType: 'criminal_record', urlField: 'criminalRecordUrl' },
+  { docType: 'professional_registration', urlField: 'professionalRegistrationUrl' },
+  { docType: 'liability_insurance', urlField: 'liabilityInsuranceUrl' },
+  { docType: 'monotributo_certificate', urlField: 'monotributoCertificateUrl', atOnly: true },
+  { docType: 'at_certificate', urlField: 'atCertificateUrl', atOnly: true },
 ];
 
 interface WorkerDocumentsCardProps {
@@ -81,7 +82,7 @@ export function WorkerDocumentsCard({
     return (
       <div key={slot.docType} data-testid={`doc-slot-${slot.docType}`} className="flex flex-col gap-1.5">
         <DocumentUploadCard
-          label={t(slot.labelKey)}
+          label={t(`documentTypes.${slot.docType}`)}
           isUploaded={!!filePath}
           isLoading={isLoading}
           onFileSelect={(file) => onUpload(slot.docType, file)}

@@ -51,11 +51,11 @@ export function useWorkerProfileProgress(
       step1Progress.totalFields + step2Progress.totalFields + step3Progress.totalFields;
 
     const documentsSteps = [
-      { id: 'doc1', label: t('documents.resumeCv'), completed: !!documentsData?.resumeCvUrl },
-      { id: 'doc2', label: t('documents.identity'), completed: !!documentsData?.identityDocumentUrl },
-      { id: 'doc3', label: t('documents.criminalRecord'), completed: !!documentsData?.criminalRecordUrl },
-      { id: 'doc4', label: t('documents.professionalReg'), completed: !!documentsData?.professionalRegistrationUrl },
-      { id: 'doc5', label: t('documents.liabilityInsurance'), completed: !!documentsData?.liabilityInsuranceUrl },
+      { id: 'doc1', label: t('documentTypes.resume_cv'), completed: !!documentsData?.resumeCvUrl },
+      { id: 'doc2', label: t('documentTypes.identity_document'), completed: !!documentsData?.identityDocumentUrl },
+      { id: 'doc3', label: t('documentTypes.criminal_record'), completed: !!documentsData?.criminalRecordUrl },
+      { id: 'doc4', label: t('documentTypes.professional_registration'), completed: !!documentsData?.professionalRegistrationUrl },
+      { id: 'doc5', label: t('documentTypes.liability_insurance'), completed: !!documentsData?.liabilityInsuranceUrl },
     ];
 
     const documentsCompleted = documentsSteps.filter((s) => s.completed).length;

@@ -228,11 +228,11 @@ describe('Labels i18n — Aba Disponibilidade', () => {
 describe('Labels i18n — Aba Documentos', () => {
   const DOCUMENT_KEYS = [
     'documents.title',
-    'documents.resumeCv',
-    'documents.identity',
-    'documents.criminalRecord',
-    'documents.professionalReg',
-    'documents.liabilityInsurance',
+    'documentTypes.resume_cv',
+    'documentTypes.identity_document',
+    'documentTypes.criminal_record',
+    'documentTypes.professional_registration',
+    'documentTypes.liability_insurance',
   ];
 
   describe('Espanhol (ES)', () => {
@@ -377,11 +377,11 @@ describe('Consistência entre ES e PT-BR', () => {
     'validation.selectAtLeastOneDay',
     // Documents
     'documents.title',
-    'documents.resumeCv',
-    'documents.identity',
-    'documents.criminalRecord',
-    'documents.professionalReg',
-    'documents.liabilityInsurance',
+    'documentTypes.resume_cv',
+    'documentTypes.identity_document',
+    'documentTypes.criminal_record',
+    'documentTypes.professional_registration',
+    'documentTypes.liability_insurance',
     // Profile
     'profile.title',
     'profile.save',

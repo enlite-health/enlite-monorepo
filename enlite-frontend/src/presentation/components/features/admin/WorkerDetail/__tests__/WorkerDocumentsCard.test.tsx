@@ -57,17 +57,17 @@ describe('WorkerDocumentsCard', () => {
 
   it('renders document cards even when documents is null', () => {
     render(<WorkerDocumentsCard documents={null} {...defaultHandlers} />);
-    expect(screen.getByText('admin.workerDetail.resume')).toBeInTheDocument();
-    expect(screen.getByText('admin.workerDetail.identityDoc')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.resume_cv')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.identity_document')).toBeInTheDocument();
   });
 
   it('renders document labels for all document types', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    expect(screen.getByText('admin.workerDetail.resume')).toBeInTheDocument();
-    expect(screen.getByText('admin.workerDetail.identityDoc')).toBeInTheDocument();
-    expect(screen.getByText('admin.workerDetail.criminalRecord')).toBeInTheDocument();
-    expect(screen.getByText('admin.workerDetail.professionalReg')).toBeInTheDocument();
-    expect(screen.getByText('admin.workerDetail.insurance')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.resume_cv')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.identity_document')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.criminal_record')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.professional_registration')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.liability_insurance')).toBeInTheDocument();
   });
 
   // ── Document card links ───────────────────────────────────────────────────
@@ -173,20 +173,20 @@ describe('WorkerDocumentsCard', () => {
 
   it('shows monotributo and AT certificate slots when profession is AT', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
-    expect(screen.getByText('admin.workerDetail.monotributo')).toBeInTheDocument();
-    expect(screen.getByText('admin.workerDetail.atCertificate')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.monotributo_certificate')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.at_certificate')).toBeInTheDocument();
   });
 
   it('hides monotributo and AT certificate slots when profession is null', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
-    expect(screen.queryByText('admin.workerDetail.monotributo')).not.toBeInTheDocument();
-    expect(screen.queryByText('admin.workerDetail.atCertificate')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.monotributo_certificate')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.at_certificate')).not.toBeInTheDocument();
   });
 
   it('hides monotributo and AT certificate slots when profession is not AT', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="PSICO" />);
-    expect(screen.queryByText('admin.workerDetail.monotributo')).not.toBeInTheDocument();
-    expect(screen.queryByText('admin.workerDetail.atCertificate')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.monotributo_certificate')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.at_certificate')).not.toBeInTheDocument();
   });
 
   it('shows AT warning banner when profession is AT', () => {
@@ -203,7 +203,7 @@ describe('WorkerDocumentsCard', () => {
 
   it('shows identity document back slot label', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    expect(screen.getByText('admin.workerDetail.identityDocBack')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.identity_document_back')).toBeInTheDocument();
   });
 
   it('renders 8 document cards when profession is AT', () => {
