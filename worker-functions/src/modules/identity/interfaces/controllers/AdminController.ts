@@ -242,19 +242,22 @@ export class AdminController {
     try {
       const uid = (req as any).user?.uid;
       if (!uid) {
+        console.warn('[ADMIN-AUTH] /profile called without authenticated uid — returning 401');
         res.status(401).json({ success: false, error: 'Authentication required' });
         return;
       }
 
       const result = await this.getProfileUseCase.execute(uid);
       if (result.isFailure) {
+        console.warn(`[ADMIN-AUTH] /profile denied | uid=${uid} reason=${result.error}`);
         res.status(404).json({ success: false, error: result.error });
         return;
       }
 
       res.status(200).json({ success: true, data: result.getValue() });
     } catch (error) {
-      console.error('Error getting admin profile');
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[ADMIN-AUTH] /profile error | ${msg}`);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

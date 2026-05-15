@@ -4,56 +4,71 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { EnliteRole } from '../domain/EnliteRole';
 import * as admin from 'firebase-admin';
 
+const LOG = '[ADMIN-AUTH]';
+
 export class GetAdminProfileUseCase {
   private adminRepo = new AdminRepository();
   private db = DatabaseConnection.getInstance();
 
   async execute(firebaseUid: string): Promise<Result<any>> {
+    console.log(`${LOG} getProfile start | uid=${firebaseUid}`);
+
     try {
       let adminRecord = await this.adminRepo.findByFirebaseUid(firebaseUid);
 
-      if (!adminRecord) {
+      if (adminRecord) {
+        console.log(`${LOG} lookup hit | uid=${firebaseUid} email=${adminRecord.email} role=${adminRecord.role}`);
+      } else {
+        console.log(`${LOG} lookup miss | uid=${firebaseUid} — entering auto-provision`);
         adminRecord = await this.autoProvisionIfEligible(firebaseUid);
         if (!adminRecord) {
+          console.log(`${LOG} auto-provision returned null | uid=${firebaseUid} — denying`);
           return Result.fail('Admin user not found');
         }
+        console.log(`${LOG} auto-provision ok | uid=${firebaseUid} email=${adminRecord.email} role=${adminRecord.role}`);
       }
 
       await this.adminRepo.updateLastLogin(firebaseUid);
       return Result.ok(adminRecord);
     } catch (error) {
-      return Result.fail(
-        error instanceof Error ? error.message : 'Failed to get admin profile'
-      );
+      const msg = error instanceof Error ? error.message : 'Failed to get admin profile';
+      console.error(`${LOG} getProfile error | uid=${firebaseUid} | ${msg}`);
+      return Result.fail(msg);
     }
   }
 
   /**
-   * Auto-provisions an admin user for @enlite.health emails on first Google login.
-   * Creates the user in the DB and sets Firebase custom claims.
+   * First-login flow for staff. Handles three cases:
+   *  1. Email isn't @enlite.health → reject.
+   *  2. A staff row with this email already exists under a different firebase_uid
+   *     (typical when the user was invited via password reset and now signs in
+   *     with Google, which mints a different uid) → reassign the firebase_uid
+   *     to keep the original role/department, instead of creating a duplicate
+   *     row that would hit the unique constraint on users.email.
+   *  3. Brand-new @enlite.health user → provision with RECRUITER role.
    */
   private async autoProvisionIfEligible(firebaseUid: string): Promise<AdminRecord | null> {
     const firebaseUser = await admin.auth().getUser(firebaseUid);
+    const email = firebaseUser.email;
 
-    // Dev-only: claim seed rows by email when firebase_uid mismatches.
-    // Why: local Docker uses prod Firebase Auth (docker-compose.prod-auth.yml) but a fresh
-    // local DB seeded with placeholder firebase_uid. Without this, every `make reset` would
-    // require re-promoting the seeded admin manually.
-    if (process.env.NODE_ENV === 'development' && firebaseUser.email) {
-      const seedRecord = await this.adminRepo.findByEmail(firebaseUser.email);
-      if (seedRecord && seedRecord.firebaseUid !== firebaseUid) {
-        await this.adminRepo.reassignFirebaseUid(firebaseUser.email, firebaseUid);
-        return this.adminRepo.findByFirebaseUid(firebaseUid);
-      }
-    }
+    console.log(`${LOG} firebase user resolved | uid=${firebaseUid} email=${email ?? '(none)'} providers=${firebaseUser.providerData.map(p => p.providerId).join(',') || '(none)'}`);
 
-    if (!firebaseUser.email?.endsWith('@enlite.health')) {
+    if (!email?.endsWith('@enlite.health')) {
+      console.log(`${LOG} auto-provision rejected — email ${email ?? '(none)'} is not @enlite.health`);
       return null;
     }
 
-    // Default role for new Enlite staff: RECRUITER.
-    // Promotion to ADMIN must be done manually via the admin panel.
+    const existingByEmail = await this.adminRepo.findByEmail(email);
+    if (existingByEmail && existingByEmail.firebaseUid !== firebaseUid) {
+      console.log(`${LOG} reassigning firebase_uid for ${email} | old=${existingByEmail.firebaseUid} new=${firebaseUid} role=${existingByEmail.role}`);
+      await this.adminRepo.reassignFirebaseUid(email, firebaseUid);
+      const refreshed = await this.adminRepo.findByFirebaseUid(firebaseUid);
+      console.log(`${LOG} reassign complete | uid=${firebaseUid} loaded=${refreshed ? 'yes' : 'no'}`);
+      return refreshed;
+    }
+
     const provisionedRole = EnliteRole.RECRUITER;
+    console.log(`${LOG} provisioning new staff | uid=${firebaseUid} email=${email} role=${provisionedRole}`);
 
     await admin.auth().setCustomUserClaims(firebaseUid, { role: provisionedRole });
 
@@ -65,8 +80,8 @@ export class GetAdminProfileUseCase {
         'SELECT create_user_with_role($1, $2, $3, $4, $5, $6) as data',
         [
           firebaseUid,
-          firebaseUser.email,
-          firebaseUser.displayName || firebaseUser.email.split('@')[0],
+          email,
+          firebaseUser.displayName || email.split('@')[0],
           firebaseUser.photoURL || null,
           provisionedRole,
           JSON.stringify({ department: null }),
@@ -74,8 +89,11 @@ export class GetAdminProfileUseCase {
       );
 
       await client.query('COMMIT');
+      console.log(`${LOG} provision committed | uid=${firebaseUid} email=${email}`);
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`${LOG} provision failed | uid=${firebaseUid} email=${email} | ${msg}`);
       throw error;
     } finally {
       client.release();
