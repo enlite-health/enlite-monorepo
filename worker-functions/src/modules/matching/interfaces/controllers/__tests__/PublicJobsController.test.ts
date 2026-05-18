@@ -55,6 +55,9 @@ const SAMPLE_JOB = {
   job_zone: 'NORTE',
   neighborhood: 'Palermo',
   state_city: 'Buenos Aires / CABA',
+  age_range_min: 5,
+  age_range_max: 12,
+  whatsapp_url: 'https://wa.me/5491112345678',
 };
 
 describe('PublicJobsController.listActiveJobs', () => {
@@ -129,6 +132,19 @@ describe('PublicJobsController.listActiveJobs', () => {
 
     const response = (res.json as jest.Mock).mock.calls[0][0];
     expect(response.data).toHaveLength(2);
+  });
+
+  it('response includes age_range_min, age_range_max and whatsapp_url fields', async () => {
+    mockExecute.mockResolvedValueOnce([SAMPLE_JOB]);
+
+    const [req, res] = mockReqRes();
+    await controller.listActiveJobs(req, res);
+
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    const job = body.data[0];
+    expect(job.age_range_min).toBe(5);
+    expect(job.age_range_max).toBe(12);
+    expect(job.whatsapp_url).toBe('https://wa.me/5491112345678');
   });
 
   it('returns 400 with Zod issues when query params are invalid', async () => {

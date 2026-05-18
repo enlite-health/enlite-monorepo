@@ -4,6 +4,8 @@ dist/
 *.log
 .DS_Store
 coverage/
+playwright-report/
+test-results/
 .vscode/
 .idea/
 docs/excel/seeds/999_prod_snapshot.sql
