@@ -7,12 +7,15 @@
  *   - Página renderiza após login admin
  *   - "API Docs" aparece no sidebar
  *   - Spec é fetchado e Swagger UI mostra operações
- *   - requestInterceptor injeta o token Firebase (verificado via interceptação)
+ *   - Authorize button visível (security scheme detectado)
  *   - Screenshot visual obrigatório
+ *
+ * Estratégia de auth: intercepta Firebase SDK via page.route pra redirecionar
+ * ao emulador local (mesmo padrão de vacancy-detail-refactor.e2e.ts) — não
+ * depende de VITE_FIREBASE_AUTH_EMULATOR no dev server.
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { execSync } from 'child_process';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY = 'test-api-key';
@@ -37,9 +40,7 @@ const MOCK_OPENAPI_SPEC = {
         tags: ['Health · Status'],
         summary: 'Liveness probe',
         description: 'Verifica que o processo Node está vivo e respondendo.',
-        responses: {
-          '200': { description: 'OK' },
-        },
+        responses: { '200': { description: 'OK' } },
       },
     },
     '/api/admin/patients': {
@@ -57,22 +58,19 @@ const MOCK_OPENAPI_SPEC = {
   },
   components: {
     securitySchemes: {
-      firebaseAuth: {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-      },
+      firebaseAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
     },
   },
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Auth helper ──────────────────────────────────────────────────────────────
 
-async function seedAdminAndLogin(page: Page): Promise<void> {
+async function loginAsAdmin(page: Page): Promise<void> {
   const rnd = Math.random().toString(36).slice(2, 8);
   const email = `e2e.apidocs.${Date.now()}.${rnd}@test.com`;
   const password = 'TestAdmin123!';
 
+  // 1. Cria usuário no Firebase Emulator via REST
   const signUpRes = await fetch(
     `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
     {
@@ -81,27 +79,50 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
       body: JSON.stringify({ email, password, returnSecureToken: true }),
     },
   );
-  const signUpData = (await signUpRes.json()) as { localId?: string };
-  if (!signUpData.localId) throw new Error(`Firebase sign-up failed`);
+  const signUpData = (await signUpRes.json()) as { localId?: string; error?: { message: string } };
+  if (!signUpData.localId) {
+    throw new Error(`Firebase Emulator sign-up failed: ${JSON.stringify(signUpData)}`);
+  }
   const uid = signUpData.localId;
 
-  const sql = `
-    INSERT INTO users (firebase_uid, email, display_name, role, created_at, updated_at)
-      VALUES ('${uid}', '${email}', 'ApiDocs E2E', 'admin', NOW(), NOW()) ON CONFLICT DO NOTHING;
-    INSERT INTO admins_extension (user_id, must_change_password, created_at, updated_at)
-      VALUES ('${uid}', false, NOW(), NOW()) ON CONFLICT DO NOTHING;
-  `
-    .replace(/\n/g, ' ')
-    .trim();
+  // 2. Intercepta Firebase SDK e redireciona pro emulador (contorna ausência de VITE_FIREBASE_AUTH_EMULATOR)
+  await page.route('**/identitytoolkit.googleapis.com/**', async (route) => {
+    const originalUrl = route.request().url();
+    const parsed = new URL(originalUrl);
+    const emulatorUrl = `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com${parsed.pathname}?${parsed.searchParams
+      .toString()
+      .replace(/key=[^&]+/, `key=${FIREBASE_API_KEY}`)}`;
+    try {
+      const res = await fetch(emulatorUrl, {
+        method: route.request().method(),
+        headers: { 'Content-Type': 'application/json' },
+        body: route.request().postData() ?? undefined,
+      });
+      const body = await res.text();
+      await route.fulfill({ status: res.status, contentType: 'application/json', body });
+    } catch {
+      await route.abort();
+    }
+  });
 
-  try {
-    execSync(`docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c "${sql}"`, {
-      stdio: 'pipe',
+  // 3. Mock refresh token endpoint
+  await page.route('**/securetoken.googleapis.com/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        access_token: 'mock-access-token-e2e',
+        expires_in: '3600',
+        token_type: 'Bearer',
+        refresh_token: 'mock-refresh-token-e2e',
+        id_token: 'mock-id-token-e2e',
+        user_id: uid,
+        project_id: 'enlite-prd',
+      }),
     });
-  } catch {
-    /* fall through to mock */
-  }
+  });
 
+  // 4. Mock /api/admin/auth/profile
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
       status: 200,
@@ -121,6 +142,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
+  // 5. Login via UI
   await page.goto('/admin/login');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
@@ -132,7 +154,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
 
 test.describe('Admin API Docs page', () => {
   test.beforeEach(async ({ page }) => {
-    await seedAdminAndLogin(page);
+    await loginAsAdmin(page);
 
     // Mock spec endpoint que a página chama
     await page.route('**/api/docs/openapi.json', (route) =>
@@ -153,25 +175,19 @@ test.describe('Admin API Docs page', () => {
   test('navega para /admin/api-docs e renderiza Swagger UI com operações', async ({ page }) => {
     await page.goto('/admin/api-docs');
 
-    // Título da página renderizado via i18n
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
       /Documentaci[oó]n de la API|Documenta[çc][ãa]o da API/i,
     );
 
-    // Aguarda Swagger UI montar e renderizar as tags do spec mockado
     await page.waitForSelector('.swagger-ui .opblock-tag', { timeout: 30000 });
-
     const tags = page.locator('.swagger-ui .opblock-tag');
     await expect(tags).toHaveCount(2, { timeout: 10000 });
-
-    // Operações dos dois grupos visíveis
     await expect(page.locator('.swagger-ui .opblock').first()).toBeVisible();
   });
 
-  test('Authorize button está visível (rota com firebaseAuth scheme)', async ({ page }) => {
+  test('Authorize button está visível', async ({ page }) => {
     await page.goto('/admin/api-docs');
     await page.waitForSelector('.swagger-ui .opblock', { timeout: 30000 });
-
     const authBtn = page.locator('.swagger-ui button.authorize').first();
     await expect(authBtn).toBeVisible();
   });
