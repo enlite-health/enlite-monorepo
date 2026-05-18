@@ -126,12 +126,16 @@ export class VacanciesController {
       const result = await this.db.query(`
         SELECT
           jp.*,
+          jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
           p.zone_neighborhood as patient_zone,
-          p.dependency_level as patient_dependency_level,
+          p.dependency_level as dependency_level,
           p.diagnosis as patient_diagnosis,
           p.insurance_verified,
+          array_to_string(p.service_type, ', ') as service_type,
+          COALESCE(pa.city, p.city_locality) as patient_city,
+          COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_neighborhood,
           pa.address_formatted as patient_address_formatted,
           pa.address_raw as patient_address_raw,
           json_agg(
@@ -160,9 +164,7 @@ export class VacanciesController {
         LEFT JOIN workers w ON e.worker_id = w.id
         LEFT JOIN publications pub ON jp.id = pub.job_posting_id
         WHERE jp.id = $1
-        GROUP BY jp.id, p.id, p.first_name, p.last_name, p.zone_neighborhood,
-                 p.dependency_level, p.diagnosis, p.insurance_verified,
-                 pa.id, pa.address_formatted, pa.address_raw
+        GROUP BY jp.id, p.id, pa.id
       `, [id]);
 
       if (result.rows.length === 0) {
