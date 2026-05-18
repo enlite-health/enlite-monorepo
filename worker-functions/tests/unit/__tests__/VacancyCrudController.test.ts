@@ -377,6 +377,26 @@ describe('VacancyCrudController', () => {
       expect(sql).not.toContain('dependency_level');
       expect(sql).not.toContain('service_device_types');
     });
+
+    it('does NOT mention is_draft in INSERT — relies on migration 168 DEFAULT true so every new vacancy starts as a draft', async () => {
+      // Migration 168 sets `is_draft BOOLEAN NOT NULL DEFAULT true`. The
+      // INSERT must NOT pass this column so the default applies. If anyone
+      // ever adds `is_draft` to the SQL (intentional or not), this test fails
+      // loudly — protecting the invariant "newly created vacancies are
+      // drafts until Talentum publish flips them" that fixed the 771-718
+      // regression.
+      mockCreateSuccess();
+      const req = mockReq(FULL_BODY);
+      const res = mockRes();
+
+      await controller.createVacancy(req, res);
+
+      const sql = mockQuery.mock.calls[2][0] as string;
+      const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
+      expect(colMatch).toBeTruthy();
+      const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
+      expect(columns).not.toContain('is_draft');
+    });
   });
 
   // ── updateVacancy ────────────────────────────────────────────────

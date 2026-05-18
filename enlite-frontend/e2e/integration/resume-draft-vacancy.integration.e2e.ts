@@ -3,9 +3,12 @@
  *
  * Full-stack E2E — valida o fluxo "Retomar rascunho de vaga" em /admin/vacancies/new.
  *
- * Quando um paciente é selecionado no CreateVacancyPage e o backend encontra vacâncias
- * PENDING_ACTIVATION criadas pelo app (não pelo ClickUp), abre o ResumeDraftVacancyDialog
- * com as opções: Retomar, Crear nueva vacante, Cancelar.
+ * Quando um paciente é selecionado no CreateVacancyPage e o backend encontra vagas
+ * em rascunho (is_draft = true, migration 168) criadas pelo app (não pelo ClickUp),
+ * abre o ResumeDraftVacancyDialog com as opções: Retomar, Crear nueva vacante,
+ * Cancelar. O draft state é independente do status — a vaga já pode estar marcada
+ * como SEARCHING / SEARCHING_REPLACEMENT / RAPID_RESPONSE e ainda ser rascunho
+ * enquanto não foi publicada no Talentum.
  *
  * Cenários:
  *   1. Happy: 2 rascunhos existentes → modal abre, lista os 2, "Retomar" navega para /edit
@@ -361,7 +364,8 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       patientId: patientNoDraftsId,
       patientAddressId: patientNoDraftsAddressId,
       caseNumber: patientNoDraftsCaseNumber,
-      status: 'SEARCHING', // not PENDING_ACTIVATION → no draft dialog
+      status: 'SEARCHING',
+      isDraft: false, // already published — must NOT appear in draft dialog
     });
 
     // ── Scenario 5: patient with ClickUp-synced PENDING_ACTIVATION ────────────
@@ -376,12 +380,13 @@ test.describe('Retomar rascunho de vaga @integration', () => {
     patientClickupAddressId = patientClickup.addressId ?? '';
     setPatientCaseNumber(patientClickupId, patientClickupCaseNumber);
 
-    // Base vacancy to make patient appear in cases-for-select (SEARCHING)
+    // Base vacancy to make patient appear in cases-for-select (already published)
     baseVacancyClickupId = insertBaseVacancy({
       patientId: patientClickupId,
       patientAddressId: patientClickupAddressId,
       caseNumber: patientClickupCaseNumber,
       status: 'SEARCHING',
+      isDraft: false,
     });
 
     // The ClickUp-synced PENDING_ACTIVATION draft
@@ -680,10 +685,11 @@ test.describe('Retomar rascunho de vaga @integration', () => {
 
   // ── Cenário 8: Vaga publicada não conta como rascunho ────────────────────
   //
-  // O endpoint /in-progress filtra WHERE status = 'PENDING_ACTIVATION'.
-  // Vagas SEARCHING/ACTIVE/CLOSED do mesmo paciente NÃO devem aparecer no modal.
+  // O endpoint /in-progress filtra WHERE is_draft = true (migration 168).
+  // Vagas publicadas (is_draft = false) do mesmo paciente NÃO devem aparecer
+  // no modal, independentemente do status (SEARCHING/ACTIVE/CLOSED).
 
-  test('8. vagas publicadas (SEARCHING/ACTIVE/CLOSED) não aparecem como rascunho — modal lista só a PENDING_ACTIVATION', async ({ page }) => {
+  test('8. vagas publicadas (is_draft = false) não aparecem como rascunho — modal lista só as is_draft = true', async ({ page }) => {
     test.setTimeout(90_000);
 
     // ── Setup: paciente exclusivo com 1 draft real + 3 vagas publicadas/fechadas ─
@@ -700,32 +706,36 @@ test.describe('Retomar rascunho de vaga @integration', () => {
     const publishedAddressId = publishedPatient.addressId ?? '';
     setPatientCaseNumber(publishedPatientId, publishedCaseNumber);
 
-    // O único rascunho real — deve aparecer no modal
+    // O único rascunho real (is_draft = true) — deve aparecer no modal
     const onlyDraftId = insertBaseVacancy({
       patientId: publishedPatientId,
       patientAddressId: publishedAddressId,
       caseNumber: publishedCaseNumber,
       status: 'PENDING_ACTIVATION',
+      isDraft: true,
     });
 
-    // Vagas publicadas/fechadas — NÃO devem aparecer no modal
+    // Vagas publicadas/fechadas (is_draft = false) — NÃO devem aparecer no modal
     const searchingId = insertBaseVacancy({
       patientId: publishedPatientId,
       patientAddressId: publishedAddressId,
       caseNumber: publishedCaseNumber,
       status: 'SEARCHING',
+      isDraft: false,
     });
     const activeId = insertBaseVacancy({
       patientId: publishedPatientId,
       patientAddressId: publishedAddressId,
       caseNumber: publishedCaseNumber,
       status: 'ACTIVE',
+      isDraft: false,
     });
     const closedId = insertBaseVacancy({
       patientId: publishedPatientId,
       patientAddressId: publishedAddressId,
       caseNumber: publishedCaseNumber,
       status: 'CLOSED',
+      isDraft: false,
     });
 
     try {
@@ -823,16 +833,19 @@ test.describe('Retomar rascunho de vaga @integration', () => {
 
   // ── Cenário 9: Fluxo completo — criar → publicar (mock) → voltar a /new → sem modal ──
   //
-  // Valida o ponto crítico: após publicar uma vaga (status muda para SEARCHING),
-  // o modal de rascunho NÃO aparece em nova visita a /new com o mesmo paciente.
+  // Valida o ponto crítico (migration 168): após publicar uma vaga (is_draft
+  // muda para false), o modal de rascunho NÃO aparece em nova visita a /new
+  // com o mesmo paciente. Cobre o invariante "publish ⇒ deixa de ser rascunho"
+  // que protege o caso 771-718 e similares de voltarem a ficar invisíveis para
+  // candidatos depois de já publicados.
   //
   // Estratégia:
-  //   1. Cria draft via DB (simula sessão de criação concluída até o Step 1)
+  //   1. Cria draft via DB (is_draft = true, simula sessão interrompida)
   //   2. Navega diretamente à página do Talentum (/admin/vacancies/:id/talentum)
-  //   3. Mock de publish-talentum captura o ID e atualiza o status no DB
-  //   4. Clica em "Publicar en Talentum" — mock dispara, DB atualiza para SEARCHING
+  //   3. Mock de publish-talentum captura o ID e flipa is_draft no DB
+  //   4. Clica em "Publicar en Talentum" — mock dispara, DB atualiza
   //   5. Volta a /admin/vacancies/new, seleciona o mesmo paciente
-  //   6. Confirma que o modal NÃO aparece (nenhuma vaga PENDING_ACTIVATION restante)
+  //   6. Confirma que o modal NÃO aparece (nenhuma vaga is_draft = true restante)
   //
   // Mock de prescreening-config (POST) é necessário pois o hook auto-salva antes
   // de chamar publish. Sem o mock, o real backend exigiria presença de perguntas.
@@ -889,12 +902,17 @@ test.describe('Retomar rascunho de vaga @integration', () => {
         });
       });
 
-      // Mock publish-talentum — sucesso + atualiza status no banco para SEARCHING.
+      // Mock publish-talentum — sucesso + atualiza status e is_draft no banco.
       // Registrado APÓS installInterceptors para ter prioridade (LIFO).
       await page.route(`**/api/admin/vacancies/${flowDraftId}/publish-talentum`, async (route) => {
         // Atualiza o DB ANTES de responder para que o re-fetch de vacancy
-        // subsequente (feito pelo hook useTalentumConfig) já veja SEARCHING.
-        runSQL(`UPDATE job_postings SET status = 'SEARCHING' WHERE id = '${flowDraftId}'`);
+        // subsequente (feito pelo hook useTalentumConfig) veja o estado final.
+        // is_draft = false espelha o que PublishVacancyToTalentumUseCase faz
+        // em produção (migration 168) — sem isso, o modal continuaria abrindo
+        // mesmo após "publicar".
+        runSQL(
+          `UPDATE job_postings SET status = 'SEARCHING', is_draft = false WHERE id = '${flowDraftId}'`,
+        );
 
         await route.fulfill({
           status: 200,
@@ -911,7 +929,16 @@ test.describe('Retomar rascunho de vaga @integration', () => {
         });
       });
 
-      // ── Passo 1: Verifica que o draft existe e modal aparece em /new ──────
+      // ── Passo 1: Confirma que o draft existe (is_draft = true no DB) ──────
+      const initialDraftRow = runSQL(
+        `SELECT is_draft FROM job_postings WHERE id = '${flowDraftId}'`,
+      );
+      expect(initialDraftRow).toMatch(/\bt\b/); // postgres bool true prints as "t"
+
+      // ── Passo 2: /new → seleciona caso → modal aparece → "Retomar" ─────
+      // Esse é o caminho real do operador: descobre o rascunho a partir da
+      // tela de criação, não navegando direto pela URL. Cobre o fluxo
+      // end-to-end de "vaga em draft → Retomar via modal → /edit → publish".
       await page.goto('/admin/vacancies/new');
       await expect(page.getByText(/Nueva Vacante/i)).toBeVisible({ timeout: 15_000 });
       await selectCaseNumber(page, flowCaseNumber);
@@ -919,11 +946,14 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       const dialogBefore = page.getByTestId('resume-draft-dialog');
       await expect(dialogBefore).toBeVisible({ timeout: 10_000 });
 
-      // Fecha o modal com "Criar nueva" para continuar o fluxo sem retomar
-      await page.getByTestId('resume-draft-create-new').click();
-      await expect(dialogBefore).not.toBeVisible({ timeout: 5_000 });
+      // Clica "Retomar" — UI deve levar pra /admin/vacancies/:id/edit
+      await page.getByTestId(`resume-draft-btn-${flowDraftId}`).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/admin/vacancies/${flowDraftId}/edit`),
+        { timeout: 15_000 },
+      );
 
-      // ── Passo 2: Navega diretamente à página Talentum do draft ────────────
+      // ── Passo 3: Do /edit, navega para a aba Talentum ─────────────────────
       await page.goto(`/admin/vacancies/${flowDraftId}/talentum`);
 
       // Aguarda carregamento — VacancySummaryCard ou heading da página
@@ -951,11 +981,13 @@ test.describe('Retomar rascunho de vaga @integration', () => {
         maxDiffPixels: 10_000,
       });
 
-      // ── Passo 4: Confirma no banco que o status mudou para SEARCHING ───────
+      // ── Passo 4: Confirma no banco que o publish flipou is_draft + status ──
       const updatedRow = runSQL(
-        `SELECT status FROM job_postings WHERE id = '${flowDraftId}'`,
+        `SELECT status, is_draft FROM job_postings WHERE id = '${flowDraftId}'`,
       );
       expect(updatedRow).toContain('SEARCHING');
+      // is_draft = false ⇒ deixou de ser rascunho — invariante da migration 168
+      expect(updatedRow).toMatch(/\bf\b/); // postgres bool false prints as "f"
 
       // ── Passo 5: Volta a /new e seleciona o mesmo paciente ────────────────
       await page.goto('/admin/vacancies/new');
@@ -969,7 +1001,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       await selectCaseNumber(page, flowCaseNumber);
       await inProgressResponse;
 
-      // ── Passo 6: Modal NÃO deve aparecer — vaga está SEARCHING, não PENDING ─
+      // ── Passo 6: Modal NÃO deve aparecer — vaga publicada (is_draft = false) ─
       const dialogAfter = page.getByTestId('resume-draft-dialog');
       await expect(dialogAfter).not.toBeVisible({ timeout: 5_000 });
 
@@ -983,6 +1015,62 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       // ── Cleanup ──────────────────────────────────────────────────────────
       cleanupVacancies([flowDraftId]);
       cleanupTestPatient(flowPatientId);
+    }
+  });
+
+  // ── Cenário 10: regressão do caso 771-718 — SEARCHING + is_draft = true ──
+  //
+  // Este teste codifica o cenário que originou a migration 168:
+  // uma vaga foi criada com modalidade SEARCHING (escolha legítima da operadora)
+  // mas o fluxo de publicação no Talentum nunca foi concluído. Com o contrato
+  // antigo (status = 'PENDING_ACTIVATION' como proxy de rascunho), o endpoint
+  // /in-progress NÃO listava essa vaga e o operador não tinha como descobrir
+  // que ela ficou pela metade. Com o novo contrato (is_draft = true,
+  // independente do status), o modal lista a vaga e o operador pode retomar.
+
+  test('10. vaga SEARCHING + is_draft = true (regressão caso 771-718) → modal lista como rascunho', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const regressionCaseNumber = 977_000 + Math.floor(Math.random() * 9999);
+    const regressionPatient = insertTestPatient({
+      status: 'ACTIVE',
+      firstName: 'Regression771',
+      lastName: `Patient${Date.now()}`,
+      withAddress: true,
+      addressLat: -34.6037,
+      addressLng: -58.3816,
+    });
+    const regressionPatientId = regressionPatient.patientId;
+    const regressionAddressId = regressionPatient.addressId ?? '';
+    setPatientCaseNumber(regressionPatientId, regressionCaseNumber);
+
+    // Vaga em SEARCHING mas ainda em rascunho — exatamente o estado da 771-718
+    // antes do backfill da migration 168.
+    const searchingDraftId = insertBaseVacancy({
+      patientId: regressionPatientId,
+      patientAddressId: regressionAddressId,
+      caseNumber: regressionCaseNumber,
+      status: 'SEARCHING',
+      isDraft: true,
+    });
+
+    try {
+      await loginAsAdmin(page);
+      await page.goto('/admin/vacancies/new');
+      await expect(page.getByText(/Nueva Vacante/i)).toBeVisible({ timeout: 15_000 });
+
+      await selectCaseNumber(page, regressionCaseNumber);
+
+      // Modal abre porque is_draft = true, mesmo com status = SEARCHING
+      const dialog = page.getByTestId('resume-draft-dialog');
+      await expect(dialog).toBeVisible({ timeout: 10_000 });
+
+      // A vaga aparece como item retomável
+      await expect(page.getByTestId(`resume-draft-item-${searchingDraftId}`))
+        .toBeVisible({ timeout: 5_000 });
+    } finally {
+      cleanupVacancies([searchingDraftId]);
+      cleanupTestPatient(regressionPatientId);
     }
   });
 });

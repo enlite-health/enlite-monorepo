@@ -97,6 +97,10 @@ export interface AdminVacancyDetail {
   talentum_whatsapp_url: string | null;
   talentum_slug: string | null;
   talentum_published_at: string | null;
+  /** True while the vacancy has not completed the full publication flow
+   *  (Talentum). Drafts are hidden from the public listing. Flipped to false
+   *  by PublishVacancyToTalentumUseCase. Migration 168. */
+  is_draft?: boolean;
   meet_link_1: string | null;
   meet_datetime_1: string | null;
   meet_link_2: string | null;

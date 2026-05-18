@@ -30,6 +30,7 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
   // ── Fixed base conditions ────────────────────────────────────────────────────
   conditions.push(`jp.status IN ${ACTIVE_STATUSES}`);
   conditions.push(`jp.deleted_at IS NULL`);
+  conditions.push(`jp.is_draft = false`);
   conditions.push(`jp.social_short_links ? 'site'`);
 
   // ── country (always present — default 'AR') ──────────────────────────────────

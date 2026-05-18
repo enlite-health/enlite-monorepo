@@ -359,7 +359,17 @@
       "female": "Femenino",
       "male": "Hombre",
       "indifferent": "Indistinto",
-      "woman": "Mujer"
+      "woman": "Mujer",
+      "FEMALE": "Mujer",
+      "MALE": "Varón",
+      "BOTH": "Indistinto"
+    },
+    "profession": {
+      "AT": "Acompañante Terapéutico",
+      "CAREGIVER": "Cuidador/a",
+      "NURSE": "Enfermero/a",
+      "KINESIOLOGIST": "Kinesiólogo/a",
+      "PSYCHOLOGIST": "Psicólogo/a"
     },
     "fields": {
       "province": "Provincia",
@@ -479,7 +489,12 @@
       "vacancies": "Vacantes",
       "workers": "Prestadores",
       "recruitment": "Reclutamiento",
-      "patients": "Pacientes"
+      "patients": "Pacientes",
+      "apiDocs": "API Docs"
+    },
+    "apiDocs": {
+      "title": "Documentación de la API",
+      "subtitle": "Referencia completa del worker-functions. Todas las llamadas usan tu token de staff actual automáticamente."
     },
     "login": {
       "title": "Panel Administrativo",

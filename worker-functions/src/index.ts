@@ -51,6 +51,7 @@ import { BookSlotFromWhatsAppUseCase } from '@modules/notification/application/B
 import { HandleReminderResponseUseCase } from '@modules/notification/application/HandleReminderResponseUseCase';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
 import { GoogleCalendarService } from '@modules/matching';
+import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 
 const app = express();
 
@@ -149,6 +150,14 @@ const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
+
+// API docs (Swagger UI + spec). Em prod exige staff; em dev/test público.
+app.use(
+  '/api/docs',
+  createSwaggerRouter({
+    guards: shouldGateDocs() ? [authMiddleware.requireStaff()] : [],
+  }),
+);
 
 createMockAuthEndpoints(app);
 

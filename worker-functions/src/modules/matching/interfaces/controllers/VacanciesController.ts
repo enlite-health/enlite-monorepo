@@ -256,8 +256,12 @@ export class VacanciesController {
   /**
    * GET /api/admin/vacancies/in-progress?patient_id=:uuid
    *
-   * Returns PENDING_ACTIVATION vacancies created via the app (not ClickUp-synced)
-   * for the given patient. Used by the frontend to prompt resuming interrupted creation.
+   * Returns draft vacancies (is_draft = true) created via the app
+   * (not ClickUp-synced) for the given patient. Used by the frontend to prompt
+   * resuming interrupted creation. The is_draft flag (migration 168) decouples
+   * "draft" from status, so vacancies whose status the operator already picked
+   * (SEARCHING, SEARCHING_REPLACEMENT, RAPID_RESPONSE) still show up here while
+   * they have not been published to Talentum.
    */
   async listInProgressForPatient(req: Request, res: Response): Promise<void> {
     const parsed = inProgressQuerySchema.safeParse(req.query);
@@ -284,7 +288,7 @@ export class VacanciesController {
         FROM job_postings jp
         LEFT JOIN job_postings_clickup_sync sync ON sync.job_posting_id = jp.id
         WHERE jp.patient_id = $1
-          AND jp.status = 'PENDING_ACTIVATION'
+          AND jp.is_draft = true
           AND jp.deleted_at IS NULL
           AND sync.job_posting_id IS NULL
         ORDER BY jp.updated_at DESC`,

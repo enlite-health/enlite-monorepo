@@ -28,7 +28,16 @@ describe('buildPublicJobsWhere', () => {
 
     expect(whereClause).toContain("jp.status IN ('ACTIVE','SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')");
     expect(whereClause).toContain('jp.deleted_at IS NULL');
+    expect(whereClause).toContain('jp.is_draft = false');
     expect(whereClause).toContain("jp.social_short_links ? 'site'");
+  });
+
+  it('hides drafts from the public listing (is_draft = false guard is non-negotiable)', () => {
+    // Same assertion as above, isolated to fail loudly if anyone removes the
+    // draft filter from the base conditions — protects the "incomplete flow ⇒
+    // not visible to candidates" invariant added by migration 168.
+    const { whereClause } = buildPublicJobsWhere({ country: 'AR' });
+    expect(whereClause).toContain('jp.is_draft = false');
   });
 
   it('adds state ILIKE clause with next placeholder', () => {

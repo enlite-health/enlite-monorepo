@@ -59,6 +59,17 @@ cd /Users/gabrielstein-dev/projects/enlite/enlite-frontend && pnpm run build 2>&
 
 ## Fase 3 — Relatório
 
+### Regra de contexto
+
+**Não dump dos logs completos no output.** Extraia só:
+- Métricas (X passed / Y failed / Z total)
+- Para CADA falha: 1 linha — nome do teste + 1 linha do erro (não a stack inteira)
+- Build error: 1 linha por erro `TS....` (não o trace)
+
+Logs brutos ficam no terminal — o relatório é métricas + assinatura mínima dos erros.
+
+### Formato do relatório
+
 | Projeto          | Tipo  | Total | Passou | Falhou | Status    |
 |------------------|-------|-------|--------|--------|-----------|
 | worker-functions | Unit  |       |        |        | ✅/❌     |
@@ -67,6 +78,13 @@ cd /Users/gabrielstein-dev/projects/enlite/enlite-frontend && pnpm run build 2>&
 | enlite-frontend  | Unit  |       |        |        | ✅/❌     |
 | enlite-frontend  | E2E   |       |        |        | ✅/❌/⚠️ |
 | enlite-frontend  | Build |  —    |  —     |  —     | ✅/❌     |
+
+Se houver falhas, listar abaixo da tabela:
+```
+### Falhas
+- worker-functions/Unit: <test-name> — <1 linha do erro>
+- enlite-frontend/Build: <ts-error-code> em <arquivo:linha>
+```
 
 ---
 
