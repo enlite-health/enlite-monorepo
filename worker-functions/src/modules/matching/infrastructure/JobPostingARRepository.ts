@@ -313,7 +313,10 @@ export class JobPostingARRepository {
          jp.inferred_zone                     AS job_zone,
          COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood,
          NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city,
-         jp.country                           AS country
+         jp.country                           AS country,
+         jp.age_range_min,
+         jp.age_range_max,
+         jp.talentum_whatsapp_url             AS whatsapp_url
        FROM job_postings jp
        LEFT JOIN patients p    ON jp.patient_id = p.id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id

@@ -359,7 +359,17 @@
       "female": "Feminino",
       "male": "Masculino",
       "indifferent": "Indiferente",
-      "woman": "Mulher"
+      "woman": "Mulher",
+      "FEMALE": "Mulher",
+      "MALE": "Homem",
+      "BOTH": "Indiferente"
+    },
+    "profession": {
+      "AT": "Acompanhante Terapêutico",
+      "CAREGIVER": "Cuidador(a)",
+      "NURSE": "Enfermeiro(a)",
+      "KINESIOLOGIST": "Fisioterapeuta",
+      "PSYCHOLOGIST": "Psicólogo(a)"
     },
     "fields": {
       "province": "Província",
