@@ -123,6 +123,11 @@ interface InsertVacancyParams {
   patientAddressId?: string;
   requiredSex?: string;
   requiredProfessions?: string[];
+  /** Migration 168 default is `true` for new rows. Fixtures in this suite
+   *  represent already-published vacancies (the public listing scenario), so
+   *  the helper defaults to `false`. Override to `true` for draft fixtures
+   *  that should be hidden from the public endpoint. */
+  isDraft?: boolean;
 }
 
 let vacancyCounter = 9000;
@@ -137,8 +142,8 @@ async function insertVacancy(p: Pool, params: InsertVacancyParams): Promise<void
     `INSERT INTO job_postings (
        id, case_number, vacancy_number, title, status, description,
        patient_id, patient_address_id, social_short_links,
-       country, required_sex, required_professions
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
+       country, required_sex, required_professions, is_draft
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
      ON CONFLICT (id) DO NOTHING`,
     [
       params.id,
@@ -153,6 +158,7 @@ async function insertVacancy(p: Pool, params: InsertVacancyParams): Promise<void
       params.country ?? 'AR',
       params.requiredSex ?? null,
       params.requiredProfessions ? `{${params.requiredProfessions.join(',')}}` : null,
+      params.isDraft ?? false,
     ],
   );
 }
@@ -246,6 +252,8 @@ describe('GET /api/public/v1/jobs', () => {
       status: 'PENDING_ACTIVATION',
       country: 'AR',
       socialShortLinks: { site: 'https://srt.io/pending' },
+      isDraft: true, // explicit — draft fixture, must be hidden from public listing
+
     });
 
     // ── AR vacancy with filter attributes ────────────────────────────────────
