@@ -166,6 +166,7 @@ export class PublishVacancyToTalentumUseCase {
              talentum_whatsapp_url = $3,
              talentum_slug         = $4,
              talentum_published_at = NOW(),
+             is_draft              = false,
              updated_at            = NOW()
          WHERE id = $5`,
         [projectId, publicId, whatsappUrl, slug, jobPostingId]
@@ -225,6 +226,7 @@ export class PublishVacancyToTalentumUseCase {
              talentum_whatsapp_url = NULL,
              talentum_slug         = NULL,
              talentum_published_at = NULL,
+             is_draft              = true,
              updated_at            = NOW()
          WHERE id = $1`,
         [jobPostingId]
