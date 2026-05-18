@@ -276,6 +276,10 @@ export interface InsertBaseVacancyOpts {
   requiredSex?: 'M' | 'F' | 'BOTH' | null;
   /** Default 'PENDING_ACTIVATION'. Use 'SEARCHING' to enable the funnel. */
   status?: string;
+  /** Default true (mirrors migration 168 default — vacancy is draft until
+   *  Talentum publish flips it). Pass `false` to simulate an already-published
+   *  vacancy (post-publish-flow). */
+  isDraft?: boolean;
 }
 
 /**
@@ -292,6 +296,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
     requiredProfessions = ['AT'],
     requiredSex = null,
     status = 'PENDING_ACTIVATION',
+    isDraft = true,
   } = opts;
 
   const professionsSql =
@@ -305,7 +310,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
       vacancy_number, case_number, title, description,
       patient_id, patient_address_id,
       required_professions, required_sex, providers_needed,
-      status, country, created_at, updated_at
+      status, is_draft, country, created_at, updated_at
     ) VALUES (
       nextval('job_postings_vacancy_number_seq'),
       ${caseNumber},
@@ -317,6 +322,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
       ${sexSql},
       1,
       '${status}',
+      ${isDraft},
       'AR',
       NOW(), NOW()
     )

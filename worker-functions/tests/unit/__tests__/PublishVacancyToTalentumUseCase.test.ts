@@ -343,6 +343,26 @@ describe('PublishVacancyToTalentumUseCase', () => {
       expect(updateCall).toBeDefined();
       expect(updateCall![1]).toEqual(['proj-X', 'pub-X', 'https://wa.me/X', '#slugX', 'job-123']);
     });
+
+    it('flips is_draft to false when publishing (migration 168 contract)', async () => {
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [setupVacancyRow()] })
+        .mockResolvedValueOnce({ rows: setupQuestionsRows() })
+        .mockResolvedValueOnce({ rows: [] });
+
+      mockCreatePrescreening.mockResolvedValue({ projectId: 'p1', publicId: 'u1' });
+      mockGetPrescreening.mockResolvedValue({ whatsappUrl: 'url', slug: 's' });
+      mockClientQuery.mockResolvedValue({ rows: [] });
+
+      const useCase = new PublishVacancyToTalentumUseCase();
+      await useCase.publish({ jobPostingId: 'job-123' });
+
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: any[]) => typeof c[0] === 'string' && c[0].includes('UPDATE job_postings')
+      );
+      expect(updateCall).toBeDefined();
+      expect(updateCall![0]).toMatch(/is_draft\s*=\s*false/);
+    });
   });
 
   // ── publish() error paths ────────────────────────────────────────
@@ -498,6 +518,23 @@ describe('PublishVacancyToTalentumUseCase', () => {
       expect(updateCall).toBeDefined();
       expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
       expect(mockClientRelease).toHaveBeenCalled();
+    });
+
+    it('flips is_draft back to true when unpublishing (migration 168 contract)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{ talentum_project_id: 'proj-X' }],
+      });
+      mockDeletePrescreening.mockResolvedValue(undefined);
+      mockClientQuery.mockResolvedValue({ rows: [] });
+
+      const useCase = new PublishVacancyToTalentumUseCase();
+      await useCase.unpublish({ jobPostingId: 'job-123' });
+
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: any[]) => typeof c[0] === 'string' && c[0].includes('UPDATE job_postings')
+      );
+      expect(updateCall).toBeDefined();
+      expect(updateCall![0]).toMatch(/is_draft\s*=\s*true/);
     });
 
     it('throws 404 when vacancy not found', async () => {

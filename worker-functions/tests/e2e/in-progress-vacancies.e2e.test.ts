@@ -4,9 +4,9 @@
  * Integration tests for GET /api/admin/vacancies/in-progress?patient_id=:uuid
  *
  * Scenarios:
- *   1. Patient with 1 app-only PENDING_ACTIVATION draft → returns it
- *   2. PENDING_ACTIVATION draft with row in job_postings_clickup_sync → filtered out
- *   3. Vacancy with status SEARCHING (not PENDING_ACTIVATION) → filtered out
+ *   1. Patient with 1 app-only draft (is_draft = true) → returns it
+ *   2. Draft (is_draft = true) with row in job_postings_clickup_sync → filtered out
+ *   3. Published vacancy (is_draft = false, any status) → filtered out
  *   4. Patient with no vacancies → empty array
  *   5. Malformed patient_id → 400
  *   6. Missing patient_id → 400
@@ -78,11 +78,16 @@ async function insertVacancy(
   vacancyNumber: number,
   caseNumber: number,
   deletedAt?: string,
+  // Migration 168 default is `true`. Tests that seed "already published"
+  // vacancies (e.g. the SEARCHING fixture used to assert it does NOT appear
+  // in /in-progress) must pass `false` explicitly — otherwise the new
+  // is_draft = true filter would make them surface as drafts.
+  isDraft = true,
 ): Promise<void> {
   await p.query(
     `INSERT INTO job_postings
-       (id, case_number, vacancy_number, title, status, description, patient_id, deleted_at)
-     VALUES ($1, $2, $3, $4, $5, 'E2E draft', $6, $7::timestamptz)
+       (id, case_number, vacancy_number, title, status, description, patient_id, deleted_at, is_draft)
+     VALUES ($1, $2, $3, $4, $5, 'E2E draft', $6, $7::timestamptz, $8)
      ON CONFLICT (id) DO NOTHING`,
     [
       id,
@@ -92,6 +97,7 @@ async function insertVacancy(
       status,
       patientId,
       deletedAt ?? null,
+      isDraft,
     ],
   );
 }
@@ -128,8 +134,12 @@ describe('GET /api/admin/vacancies/in-progress', () => {
       [IDS.clickupDraft],
     );
 
-    // 3. SEARCHING vacancy (wrong status → must be excluded)
-    await insertVacancy(pool, IDS.searchingVac, IDS.patient, 'SEARCHING', nextVac(), 8803);
+    // 3. SEARCHING vacancy already published (is_draft = false) → must be excluded.
+    // With the migration 168 contract, the filter is is_draft = true (not the old
+    // status = PENDING_ACTIVATION proxy), so a SEARCHING vacancy with is_draft =
+    // true would actually appear in /in-progress (regression case 771-718).
+    // Here we want to assert the post-publish state — already non-draft.
+    await insertVacancy(pool, IDS.searchingVac, IDS.patient, 'SEARCHING', nextVac(), 8803, undefined, false);
 
     // 4. Soft-deleted PENDING_ACTIVATION draft (deleted_at IS NOT NULL → excluded)
     await insertVacancy(pool, IDS.deletedDraft, IDS.patient, 'PENDING_ACTIVATION', nextVac(), 8804, '2026-01-01T00:00:00.000Z');
@@ -167,7 +177,7 @@ describe('GET /api/admin/vacancies/in-progress', () => {
 
   // ── scenario 3: wrong status filtered out ────────────────────────────────
 
-  it('does NOT return SEARCHING vacancy', async () => {
+  it('does NOT return published vacancy (is_draft = false), even if status is SEARCHING', async () => {
     const res = await api.get(
       `/api/admin/vacancies/in-progress?patient_id=${IDS.patient}`,
       authHeaders(adminToken),

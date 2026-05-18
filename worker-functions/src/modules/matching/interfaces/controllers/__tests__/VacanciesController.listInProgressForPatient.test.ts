@@ -10,7 +10,7 @@
  *   4. paciente com 2 drafts → retornados ordenados por updated_at DESC
  *   5. draft vindo do ClickUp (row em job_postings_clickup_sync) → filtrado (mock retorna só os app-only)
  *   6. draft com deleted_at → filtrado (mock retorna só não deletados)
- *   7. status diferente de PENDING_ACTIVATION → filtrado (mock retorna só PENDING_ACTIVATION)
+ *   7. is_draft = false → filtrado (mock retorna só rascunhos com is_draft = true)
  *   8. erro de banco → 500
  */
 
@@ -157,10 +157,10 @@ describe('VacanciesController.listInProgressForPatient', () => {
     expect((res.json as jest.Mock).mock.calls[0][0]).toEqual({ success: true, data: [] });
   });
 
-  // ── cenário 7: status != PENDING_ACTIVATION filtrado (SQL: status = 'PENDING_ACTIVATION') ──
+  // ── cenário 7: is_draft = false filtrado (SQL: is_draft = true) ─────────────
 
-  it('draft com status SEARCHING não retorna (mock simula SQL com filtro de status)', async () => {
-    // SQL only returns PENDING_ACTIVATION rows; mock confirms empty result
+  it('vaga com is_draft = false não retorna (mock simula SQL com filtro is_draft)', async () => {
+    // SQL only returns is_draft = true rows; mock confirms empty result
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const req = mockReq({ patient_id: VALID_UUID });
@@ -173,7 +173,7 @@ describe('VacanciesController.listInProgressForPatient', () => {
 
   // ── cenário 8: invariante estrutural — SQL correto ─────────────────────────
 
-  it('SQL contém os filtros obrigatórios (status, deleted_at, LEFT JOIN clickup_sync)', async () => {
+  it('SQL contém os filtros obrigatórios (is_draft, deleted_at, LEFT JOIN clickup_sync)', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const req = mockReq({ patient_id: VALID_UUID });
@@ -183,11 +183,15 @@ describe('VacanciesController.listInProgressForPatient', () => {
     expect(mockQuery).toHaveBeenCalledTimes(1);
     const [sql, bindParams] = mockQuery.mock.calls[0] as [string, unknown[]];
 
-    expect(sql).toContain("jp.status = 'PENDING_ACTIVATION'");
+    expect(sql).toContain('jp.is_draft = true');
     expect(sql).toContain('jp.deleted_at IS NULL');
     expect(sql).toContain('job_postings_clickup_sync');
     expect(sql).toContain('sync.job_posting_id IS NULL');
     expect(sql).toContain('ORDER BY jp.updated_at DESC');
+    // Migration 168 contract: draft is no longer coupled to status =
+    // PENDING_ACTIVATION — that status check would (incorrectly) filter out
+    // vacancies the operator already marked as SEARCHING/RAPID_RESPONSE/etc.
+    expect(sql).not.toContain("jp.status = 'PENDING_ACTIVATION'");
     expect(sql).not.toContain('clickup_task_id'); // não existe em job_postings diretamente
     expect(bindParams).toEqual([VALID_UUID]);
   });
