@@ -3,6 +3,7 @@ import { AdminRepository, AdminRecord } from '../infrastructure/AdminRepository'
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { EnliteRole } from '../domain/EnliteRole';
 import * as admin from 'firebase-admin';
+import { reportError } from '@shared/logging';
 
 const LOG = '[ADMIN-AUTH]';
 
@@ -91,7 +92,7 @@ export class GetAdminProfileUseCase {
       await client.query('COMMIT');
       console.log(`${LOG} provision committed | uid=${firebaseUid} email=${email}`);
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'GetAdminProfileUseCase:rollback' }));
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`${LOG} provision failed | uid=${firebaseUid} email=${email} | ${msg}`);
       throw error;

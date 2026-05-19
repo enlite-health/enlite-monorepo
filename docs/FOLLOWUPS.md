@@ -516,6 +516,29 @@ Conversar com gestão pra alinhar:
 - **Resolveu um item?** Move pra seção `## Resolvidos` no fim do arquivo com data de fechamento + PR/commit.
 - **Bloqueou em algo?** Marca `**Bloqueador?** Sim` e referencia no doc da feature bloqueada.
 
+### TD-017 — `onUserCreate.ts` (Firebase Functions trigger) não propaga traceId via ALS
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-19, durante implementação da Fase 0 do Sprint de Automação de Recrutamento
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — logs do trigger ficam sem `traceId`, mas não quebra funcionalidade
+
+**Contexto:**
+
+O Firebase Functions SDK (`firebase-functions`) não usa Express para despachar triggers como `auth.user().onCreate`. O `AsyncLocalStorage` (`loggingAls`) só propaga contexto dentro de uma cadeia de chamadas iniciada por `loggingAls.run(...)` — o que o `correlationMiddleware` faz para cada request HTTP. Triggers Firebase entram por outro caminho (Node.js callback do SDK), fora de qualquer `run()`, então `loggingAls.getStore()` retorna `undefined` nesses contextos.
+
+**Efeito prático:**
+
+Logs emitidos dentro de `onUserCreate.ts` (ou outros triggers Firebase) não carregam `traceId`, `workerId` etc. São logs válidos (pino JSON estruturado, `severity` correta), mas não agrupáveis por trace.
+
+**Solução futura (opções):**
+
+1. Envolver o corpo do handler em `loggingAls.run({ traceId: uuidv4() }, ...)` manualmente — gera traceId próprio por execução do trigger, sem correlação com a request que originou o evento.
+2. Passar traceId via custom claims no token Firebase e lê-lo no handler — mais complexo, só vale se rastrear a cadeia completa user-creation → trigger for prioritário.
+3. Usar `logger.child({ traceId: uuidv4(), source: 'firebase-trigger' })` localmente no handler — mais simples, mantém isolamento sem tocar no ALS global.
+
+**Recomendação:** opção 3 como curto prazo ao tocar `onUserCreate.ts` pela próxima vez.
+
 ---
 
 ## Resolvidos

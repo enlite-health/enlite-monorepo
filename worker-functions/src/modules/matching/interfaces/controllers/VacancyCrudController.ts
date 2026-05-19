@@ -5,6 +5,7 @@ import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { buildInsertQuery, buildInsertParams } from './vacancyCrudHelpers';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
+import { reportError } from '@shared/logging';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -146,7 +147,7 @@ export class VacancyCrudController {
         } catch (err: any) {
           console.warn(`[VacancyCrud] Background match unavailable for ${newVacancy.id}: ${err.message}`);
         }
-        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status).catch(() => {});
+        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status).catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id }));
       });
 
       res.status(201).json({ success: true, data: newVacancy });
@@ -308,7 +309,7 @@ export class VacancyCrudController {
 
       const updated = result.rows[0];
       setImmediate(() => {
-        tryEnsureShortLink(this.db, id, updated.status).catch(() => {});
+        tryEnsureShortLink(this.db, id, updated.status).catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:update', vacancyId: id }));
       });
 
       res.status(200).json({ success: true, data: updated });

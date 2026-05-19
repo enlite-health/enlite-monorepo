@@ -30,3 +30,7 @@ export * from './utils/phoneNormalization';
 // Services
 export { EventDispatcher } from './services/EventDispatcher';
 export type { WorkerEvent } from './services/EventDispatcher';
+
+// Logging (structured pino + correlationMiddleware + ErrorReporter)
+export { logger, correlationMiddleware, reportError, loggingAls } from './logging';
+export type { LogContext } from './logging';

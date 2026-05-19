@@ -4,6 +4,7 @@ import { AdminRepository } from '../infrastructure/AdminRepository';
 import { EmailService } from '../infrastructure/EmailService';
 import { EnliteRole, StaffRole, isStaffRole } from '../domain/EnliteRole';
 import * as admin from 'firebase-admin';
+import { reportError } from '@shared/logging';
 
 export interface CreateAdminInput {
   email: string;
@@ -78,9 +79,10 @@ export class CreateAdminUserUseCase {
       });
     } catch (error) {
       if (!committed) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'CreateAdminUserUseCase:rollback' }));
         if (firebaseUser) {
-          await admin.auth().deleteUser(firebaseUser.uid).catch(() => {});
+          const uid = firebaseUser.uid;
+          await admin.auth().deleteUser(uid).catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'CreateAdminUserUseCase:firebaseCleanup', userId: uid }));
         }
       }
       return Result.fail(

@@ -2,12 +2,18 @@
 // Prevents unhandled promise rejections (e.g. google-auth-library background
 // retries in environments without ADC) from crashing the process.
 // In production these are logged; orchestrators (Cloud Run) handle restarts.
-process.on('unhandledRejection', (reason: unknown, _promise: Promise<unknown>) => {
-  console.error('[UnhandledRejection]', reason);
+import { reportError } from './shared/logging/ErrorReporter';
+
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+  reportError(
+    reason instanceof Error ? reason : new Error(String(reason)),
+    { source: 'unhandledRejection', promise: String(promise) },
+  );
 });
 
 process.on('uncaughtException', (err: Error) => {
-  console.error('[UncaughtException]', err);
+  reportError(err, { source: 'uncaughtException' });
+  process.exit(1);
 });
 
 import express, { Request, Response } from 'express';
@@ -33,10 +39,9 @@ import { TwilioMessagingService } from '@modules/notification/infrastructure/Twi
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { createWebhookRoutes, PartnerAuthMiddleware, GoogleApiKeyValidator, WebhookPartnerRepository } from '@modules/integration';
-import { ClickUpPatientWebhookController } from '@modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController';
-import { ClickUpHmacMiddleware } from '@modules/integration/interfaces/webhooks/middleware/ClickUpHmacMiddleware';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
+import { correlationMiddleware } from './shared/logging/correlationMiddleware';
+import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
@@ -47,10 +52,6 @@ import { createQualifiedInterviewHandler } from '@shared/events/handlers/Qualifi
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
-import { BookSlotFromWhatsAppUseCase } from '@modules/notification/application/BookSlotFromWhatsAppUseCase';
-import { HandleReminderResponseUseCase } from '@modules/notification/application/HandleReminderResponseUseCase';
-import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
-import { GoogleCalendarService } from '@modules/matching';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 
 const app = express();
@@ -89,6 +90,9 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ limit: '60mb', extended: true }));
 
+// Correlation ID: extracts X-Cloud-Trace-Context or generates UUID.
+// Must run before any auth/business middleware.
+app.use(correlationMiddleware);
 
 app.use(mockAuthMiddleware);
 
@@ -335,61 +339,7 @@ const internalController = new InternalController(domainEventProcessor, outboxPr
 app.use('/api/internal', createInternalRoutes(internalController));
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
-(async () => {
-  // ── Partner Auth (sync) ────────────────────────────────────────────────────
-  const googleValidator = new GoogleApiKeyValidator();
-  const webhookPartnerRepo = new WebhookPartnerRepository();
-  const partnerAuth = new PartnerAuthMiddleware(googleValidator, webhookPartnerRepo);
-
-  const googleCalendarService = new GoogleCalendarService();
-  const bookSlotUseCase = new BookSlotFromWhatsAppUseCase(
-    DatabaseConnection.getInstance().getPool(),
-    new PubSubClient(),
-    new CloudTasksClient(),
-    googleCalendarService,
-  );
-  const handleReminderResponseUseCase = new HandleReminderResponseUseCase(
-    DatabaseConnection.getInstance().getPool(),
-    new PubSubClient(),
-    googleCalendarService,
-  );
-  const inboundWhatsAppController = new InboundWhatsAppController(
-    DatabaseConnection.getInstance().getPool(),
-    bookSlotUseCase,
-    handleReminderResponseUseCase,
-  );
-
-  // ── ClickUp Patient webhook (async: fetches field definitions from ClickUp API) ──
-  const clickupSecret = process.env.CLICKUP_WEBHOOK_SECRET;
-  let clickupPatientController: ClickUpPatientWebhookController | undefined;
-  let clickupHmac: ClickUpHmacMiddleware | undefined;
-  if (clickupSecret) {
-    try {
-      clickupPatientController = await ClickUpPatientWebhookController.create();
-      clickupHmac = new ClickUpHmacMiddleware(clickupSecret);
-    } catch (err) {
-      console.error('[startup] ClickUp webhook controller init failed — route will be unavailable:', err);
-    }
-  } else {
-    console.warn('[startup] CLICKUP_WEBHOOK_SECRET not set — ClickUp webhook route will be unavailable');
-  }
-
-  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac));
-  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac));
-
-  // ── Start Server ────────────────────────────────────────────────────────────
-  const PORT = process.env.PORT || 8080;
-
-  console.log('[EventDriven] Services wired — no polling timers');
-
-  const server = app.listen(PORT, () => {
-    console.log(`Enlite Backend running on port ${PORT}`);
-    console.log(`Authorization engine: ${useCerbos ? 'Cerbos' : 'Local'}`);
-  });
-
-  server.timeout = 300000; // 5 minutos
-  server.keepAliveTimeout = 310000;
-  server.headersTimeout = 320000;
-})();
+// Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).
+startServer(app, useCerbos);
 
 export { app };
