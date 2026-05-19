@@ -1,7 +1,9 @@
 import { Pool } from 'pg';
+import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TokenService } from './TokenService';
+import { loggingAls } from '@shared/logging';
 
 const MAX_ATTEMPTS = 3;
 const BATCH_SIZE = 50;
@@ -12,6 +14,7 @@ interface OutboxRow {
   template_slug: string;
   variables: Record<string, string>;
   attempts: number;
+  trace_id: string | null;
 }
 
 /**
@@ -42,14 +45,18 @@ export class OutboxProcessor {
    */
   async processById(outboxId: string): Promise<void> {
     const result = await this.db.query<OutboxRow>(
-      `SELECT id, worker_id, template_slug, variables, attempts
+      `SELECT id, worker_id, template_slug, variables, attempts, trace_id
        FROM messaging_outbox
        WHERE id = $1 AND status = 'pending' AND attempts < $2
        LIMIT 1`,
       [outboxId, MAX_ATTEMPTS],
     );
     if (result.rows.length === 0) return;
-    await this.processOne(result.rows[0]);
+    const row = result.rows[0];
+    await loggingAls.run(
+      { traceId: row.trace_id ?? uuidv4(), workerId: row.worker_id },
+      () => this.processOne(row),
+    );
   }
 
   /** Processa um batch de registros pending. Pode ser chamado diretamente nos testes. */
@@ -58,13 +65,16 @@ export class OutboxProcessor {
     if (rows.length === 0) return;
 
     for (const row of rows) {
-      await this.processOne(row);
+      await loggingAls.run(
+        { traceId: row.trace_id ?? uuidv4(), workerId: row.worker_id },
+        () => this.processOne(row),
+      );
     }
   }
 
   private async fetchPending(): Promise<OutboxRow[]> {
     const result = await this.db.query<OutboxRow>(
-      `SELECT id, worker_id, template_slug, variables, attempts
+      `SELECT id, worker_id, template_slug, variables, attempts, trace_id
        FROM messaging_outbox
        WHERE status = 'pending' AND attempts < $1
        ORDER BY created_at

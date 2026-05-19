@@ -34,6 +34,7 @@ import {
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, EncuadreFunnelController, EncuadreFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
 import { AdminWorkersController } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
+import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
@@ -137,6 +138,7 @@ const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
+const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
 const adminPatientsController = new AdminPatientsController();
 const publicVacancyController = new PublicVacancyController();
 const interviewSlotsController = new InterviewSlotsController();
@@ -288,6 +290,8 @@ app.get('/api/admin/workers/case-options', staffOnly, (req: Request, res: Respon
 app.post('/api/admin/workers/sync-talentum', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.syncTalentumWorkers(req, res));
 // export MUST be registered before /:id to avoid param capture
 app.get('/api/admin/workers/export', adminOnly, (req: Request, res: Response) => adminWorkersController.exportWorkers(req, res));
+// timeline MUST be registered before /:id to avoid param capture
+app.get('/api/admin/workers/:id/timeline', staffOnly, (req: Request, res: Response) => workerTimelineController.getTimeline(req, res));
 app.get('/api/admin/workers/:id', staffOnly, (req: Request, res: Response) => adminWorkersController.getWorkerById(req, res));
 app.get('/api/admin/workers', staffOnly, (req: Request, res: Response) => adminWorkersController.listWorkers(req, res));
 

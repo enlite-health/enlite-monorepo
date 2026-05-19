@@ -30,6 +30,17 @@ jest.mock('../TokenService', () => ({
   })),
 }));
 
+// Mock loggingAls — run() must execute the callback transparently
+jest.mock('@shared/logging', () => ({
+  loggingAls: {
+    run: jest.fn().mockImplementation(
+      (_ctx: unknown, fn: () => Promise<void>) => fn(),
+    ),
+  },
+}));
+
+import { loggingAls } from '@shared/logging';
+
 describe('OutboxProcessor', () => {
   let mockMessaging: { sendWhatsApp: jest.Mock };
   let mockQuery: jest.Mock;
@@ -62,6 +73,7 @@ describe('OutboxProcessor', () => {
         template_slug: 'welcome',
         variables: { name: 'Juan' },
         attempts: 0,
+        trace_id: 'trace-abc-123',
       };
 
       mockQuery
@@ -104,6 +116,56 @@ describe('OutboxProcessor', () => {
       expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
     });
 
+    it('injeta trace_id da row no contexto ALS', async () => {
+      const outboxRow = {
+        id: 'ob-trace',
+        worker_id: 'w-trace',
+        template_slug: 'tpl',
+        variables: {},
+        attempts: 0,
+        trace_id: 'my-trace-id-xyz',
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911' }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-trace');
+
+      expect(loggingAls.run).toHaveBeenCalledWith(
+        expect.objectContaining({ traceId: 'my-trace-id-xyz', workerId: 'w-trace' }),
+        expect.any(Function),
+      );
+    });
+
+    it('gera traceId UUID quando trace_id é null', async () => {
+      const outboxRow = {
+        id: 'ob-notrace',
+        worker_id: 'w-notrace',
+        template_slug: 'tpl',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911' }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-notrace');
+
+      expect(loggingAls.run).toHaveBeenCalledWith(
+        expect.objectContaining({ workerId: 'w-notrace' }),
+        expect.any(Function),
+      );
+      const ctx = (loggingAls.run as jest.Mock).mock.calls[0][0];
+      // Should be a UUID (not null/undefined)
+      expect(typeof ctx.traceId).toBe('string');
+      expect(ctx.traceId.length).toBeGreaterThan(0);
+    });
+
     it('marca como failed após MAX_ATTEMPTS falhas', async () => {
       const outboxRow = {
         id: 'ob-2',
@@ -111,6 +173,7 @@ describe('OutboxProcessor', () => {
         template_slug: 'reminder',
         variables: {},
         attempts: 2, // Já tem 2 tentativas, esta será a 3ª (MAX)
+        trace_id: null,
       };
 
       mockQuery
@@ -137,8 +200,8 @@ describe('OutboxProcessor', () => {
   describe('processBatch', () => {
     it('processa múltiplas mensagens pending', async () => {
       const rows = [
-        { id: 'ob-10', worker_id: 'w-10', template_slug: 'tpl', variables: {}, attempts: 0 },
-        { id: 'ob-11', worker_id: 'w-11', template_slug: 'tpl', variables: {}, attempts: 0 },
+        { id: 'ob-10', worker_id: 'w-10', template_slug: 'tpl', variables: {}, attempts: 0, trace_id: 'tid-10' },
+        { id: 'ob-11', worker_id: 'w-11', template_slug: 'tpl', variables: {}, attempts: 0, trace_id: null },
       ];
 
       mockQuery
@@ -178,6 +241,7 @@ describe('OutboxProcessor', () => {
         template_slug: 'tpl',
         variables: {},
         attempts: 0,
+        trace_id: null,
       };
 
       mockQuery
@@ -202,6 +266,7 @@ describe('OutboxProcessor', () => {
         template_slug: 'tpl',
         variables: {},
         attempts: 0,
+        trace_id: null,
       };
 
       mockQuery

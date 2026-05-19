@@ -1,6 +1,8 @@
 import { Pool } from 'pg';
+import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
+import { logger } from '@shared/logging';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
@@ -63,6 +65,7 @@ export interface BulkDispatchDetail {
 }
 
 export interface BulkDispatchResult {
+  batchId: string;
   total: number;
   sent: number;
   errors: number;
@@ -85,6 +88,10 @@ export class BulkDispatchIncompleteWorkersUseCase {
 
   async execute(triggeredBy: string, opts: BulkDispatchOptions = {}): Promise<Result<BulkDispatchResult>> {
     const { dryRun = false, limit } = opts;
+    const batchId = uuidv4();
+    const batchLogger = logger.child({ batchId, triggeredBy });
+
+    batchLogger.info('BulkDispatch iniciado');
 
     // 1. Busca workers com cadastro incompleto
     let rows: Array<{ id: string; phone: string }>;
@@ -93,9 +100,10 @@ export class BulkDispatchIncompleteWorkersUseCase {
         INCOMPLETE_WORKERS_QUERY,
       );
       rows = queryResult.rows;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       return Result.fail<BulkDispatchResult>(
-        `Erro ao consultar workers incompletos: ${err.message}`,
+        `Erro ao consultar workers incompletos: ${msg}`,
       );
     }
 
@@ -103,6 +111,8 @@ export class BulkDispatchIncompleteWorkersUseCase {
     if (limit && limit > 0) {
       rows = rows.slice(0, limit);
     }
+
+    batchLogger.info({ total: rows.length, dryRun }, 'Workers elegíveis para dispatch');
 
     // Dry-run: retorna quem receberia sem chamar Twilio nem gravar logs
     if (dryRun) {
@@ -112,6 +122,7 @@ export class BulkDispatchIncompleteWorkersUseCase {
         status: 'sent' as const,
       }));
       return Result.ok<BulkDispatchResult>({
+        batchId,
         total: rows.length,
         sent: 0,
         errors: 0,
@@ -149,8 +160,8 @@ export class BulkDispatchIncompleteWorkersUseCase {
       await this.db
         .query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+             (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             row.id,
             triggeredBy,
@@ -159,18 +170,20 @@ export class BulkDispatchIncompleteWorkersUseCase {
             detail.status,
             detail.twilioSid ?? null,
             detail.error ?? null,
+            batchId,
           ],
         )
         .catch((err: Error) => {
-          console.warn(
-            `[BulkDispatch] Falha ao gravar log para worker=${row.id}: ${err.message}`,
-          );
+          batchLogger.warn({ workerId: row.id, error: err.message }, 'Falha ao gravar log de dispatch');
         });
     }
 
     const sent = details.filter(d => d.status === 'sent').length;
 
+    batchLogger.info({ sent, errors: rows.length - sent }, 'BulkDispatch concluído');
+
     return Result.ok<BulkDispatchResult>({
+      batchId,
       total: rows.length,
       sent,
       errors: rows.length - sent,

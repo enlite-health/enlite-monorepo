@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { v4 as uuidv4 } from 'uuid';
+import { loggingAls } from '@shared/logging';
 
 export type DomainEventHandler = (payload: Record<string, unknown>) => Promise<void>;
 
@@ -26,7 +28,7 @@ export class DomainEventProcessor {
     try {
       // Fetch event — skip if already processed
       const { rows } = await client.query(
-        `SELECT id, event, payload, status FROM domain_events WHERE id = $1`,
+        `SELECT id, event, payload, status, trace_id FROM domain_events WHERE id = $1`,
         [eventId],
       );
 
@@ -35,7 +37,13 @@ export class DomainEventProcessor {
         return { status: 'skipped' };
       }
 
-      const row = rows[0];
+      const row = rows[0] as {
+        id: string;
+        event: string;
+        payload: Record<string, unknown>;
+        status: string;
+        trace_id: string | null;
+      };
       if (row.status === 'processed') {
         console.log(`[DomainEventProcessor] Event ${eventId} already processed, skipping`);
         return { status: 'skipped', event: row.event };
@@ -51,9 +59,12 @@ export class DomainEventProcessor {
         return { status: 'failed', event: row.event };
       }
 
-      // Execute handler
+      // Execute handler inside ALS context so logs carry the trace ID
       try {
-        await handler(row.payload);
+        await loggingAls.run(
+          { traceId: row.trace_id ?? uuidv4() },
+          () => handler(row.payload),
+        );
         await client.query(
           `UPDATE domain_events SET status = 'processed', processed_at = NOW() WHERE id = $1`,
           [eventId],
