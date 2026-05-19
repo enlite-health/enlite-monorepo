@@ -50,6 +50,7 @@ import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
+import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
@@ -335,6 +336,11 @@ const domainEventProcessor = new DomainEventProcessor(dbPool);
 domainEventProcessor.registerHandler(
   'funnel_stage.qualified',
   createQualifiedInterviewHandler(dbPool, pubsubClient, tokenService),
+);
+
+domainEventProcessor.registerHandler(
+  'vacancy.created',
+  createVacancyAutoInviteHandler(dbPool, pubsubClient),
 );
 
 const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);

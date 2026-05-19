@@ -87,6 +87,8 @@ describe('VacancyCrudController', () => {
 
   beforeEach(() => {
     mockQuery.mockReset();
+    // Default: any unspecified call (e.g., domain_events INSERT in setImmediate) resolves safely.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new VacancyCrudController();
   });
 

@@ -1,7 +1,7 @@
 # Sprint: Automação de Recrutamento + Observabilidade Ponta-a-Ponta
 
 > **Status:** EM EXECUÇÃO (criado 2026-05-19)
-> **Progresso:** Fases 0 ✅ + 1 ✅ + 2 ✅ concluídas (2026-05-19) — fases 3-8 pendentes
+> **Progresso:** Fases 0+1+2+3 ✅ concluídas (2026-05-19) — fases 4-8 pendentes
 > **Estimativa:** 1 sprint (8-12 dias úteis) em 8 fases sequenciais
 > **Pré-requisito de:** features futuras de personalização com IA, dashboards de SLA de delivery
 > **Auditoria-base:** mapeamento do architect em 2026-05-19 (no histórico desta conversa)

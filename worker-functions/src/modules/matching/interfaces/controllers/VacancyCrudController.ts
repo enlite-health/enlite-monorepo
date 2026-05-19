@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { buildInsertQuery, buildInsertParams } from './vacancyCrudHelpers';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
-import { reportError } from '@shared/logging';
+import { reportError, loggingAls } from '@shared/logging';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -139,15 +138,20 @@ export class VacancyCrudController {
       }
 
       setImmediate(() => {
-        try {
-          const matchingService = new MatchmakingService();
-          matchingService.matchWorkersForJob(newVacancy.id, {})
-            .then(r => console.log(`[VacancyCrud] Auto-match done for ${newVacancy.id}: ${r.candidates.length} candidates`))
-            .catch(err => console.error(`[VacancyCrud] Auto-match error for ${newVacancy.id}:`, err.message));
-        } catch (err: any) {
-          console.warn(`[VacancyCrud] Background match unavailable for ${newVacancy.id}: ${err.message}`);
-        }
-        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status).catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id }));
+        const traceId = loggingAls.getStore()?.traceId ?? null;
+        this.db.query(
+          `INSERT INTO domain_events (event, payload, trace_id) VALUES ('vacancy.created', $1::jsonb, $2)`,
+          [JSON.stringify({ jobPostingId: newVacancy.id }), traceId],
+        ).catch((err: unknown) => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          reportError(error, { source: 'VacancyCrudController:domainEvent', jobPostingId: newVacancy.id });
+        });
+
+        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status)
+          .catch((err: unknown) => {
+            const error = err instanceof Error ? err : new Error(String(err));
+            reportError(error, { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id });
+          });
       });
 
       res.status(201).json({ success: true, data: newVacancy });

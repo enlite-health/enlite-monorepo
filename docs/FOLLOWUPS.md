@@ -539,6 +539,42 @@ Logs emitidos dentro de `onUserCreate.ts` (ou outros triggers Firebase) não car
 
 **Recomendação:** opção 3 como curto prazo ao tocar `onUserCreate.ts` pela próxima vez.
 
+### TD-018 — Template `vacancy_invited_auto` precisa de `content_sid` Twilio HSM antes do go-live
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-19, durante implementação da Fase 3 do Sprint de Automação de Recrutamento
+- **Dono provável:** Ops + Backend
+- **Bloqueador?** **Sim** pra ir pra produção. Não bloqueia testes/E2E.
+
+**Contexto:**
+
+O template inserido na migration 174 tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. O `OutboxProcessor` vai tentar enviar e receber erro da API Twilio em produção.
+
+**O que precisa antes do deploy:**
+
+1. Ops registra template `vacancy_invited_auto` no Twilio Content Builder com variáveis `worker_name`, `vacancy_case_number`, `distance_km`, `patient_zone`.
+2. Ops obtém aprovação HSM da Meta (pode levar dias).
+3. Backend roda `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'vacancy_invited_auto'` em prod.
+
+### TD-019 — Template `vacancy_invited_auto` usa `workZone` do AT como `patient_zone` (copy enganador)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-19, durante revisão da Fase 3
+- **Dono provável:** Backend + Ops
+- **Bloqueador?** Não — funcional, mas o copy fica enganador
+
+**Contexto:**
+
+A variável `patient_zone` do template recebe `ScoredCandidate.workZone`, que é a zona de TRABALHO do AT (`worker_service_areas.work_zone`), não a zona do paciente. O copy diz "en {{patient_zone}}" implicando localização da vaga.
+
+**Opções de correção:**
+
+1. Renomear a variável no template pra `worker_zone` + ajustar copy: "perto da tua zona ({{worker_zone}})"
+2. Buscar `patient_addresses.barrio_neighborhood` (ou equivalente atualizado) e passar a zona real do paciente
+3. Combinar ambos: "tu zona: {{worker_zone}} • vaga em: {{patient_zone}}"
+
+**Recomendação:** opção 2 — buscar zona real do paciente via JOIN com `patient_addresses` no handler. Mais alinhado semanticamente.
+
 ---
 
 ## Resolvidos
