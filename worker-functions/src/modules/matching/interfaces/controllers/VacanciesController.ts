@@ -7,6 +7,7 @@ import {
   mapVacancyListRow,
   VacancyListRow,
 } from './vacancyListHelpers';
+import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 
 /**
  * VacanciesController
@@ -129,11 +130,11 @@ export class VacanciesController {
           jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
-          p.zone_neighborhood as patient_zone,
+          COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_zone,
           p.dependency_level as dependency_level,
           p.diagnosis as patient_diagnosis,
           p.insurance_verified,
-          array_to_string(p.service_type, ', ') as service_type,
+          p.service_type as service_type,
           COALESCE(pa.city, p.city_locality) as patient_city,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_neighborhood,
           pa.address_formatted as patient_address_formatted,
@@ -171,7 +172,13 @@ export class VacanciesController {
         res.status(404).json({ success: false, error: 'Vacancy not found' });
         return;
       }
-      res.status(200).json({ success: true, data: result.rows[0] });
+
+      const row = result.rows[0];
+      const normalized = {
+        ...row,
+        schedule: normalizeSchedule(row.schedule),
+      };
+      res.status(200).json({ success: true, data: normalized });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('[VacanciesController] Error fetching vacancy:', error);

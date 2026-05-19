@@ -90,9 +90,11 @@ function ScheduleGrid({ schedule }: ScheduleGridProps) {
 interface CharacteristicRowProps {
   label: string;
   value: string | null | undefined;
+  placeholder?: string;
 }
 
-function CharacteristicRow({ label, value }: CharacteristicRowProps) {
+function CharacteristicRow({ label, value, placeholder }: CharacteristicRowProps) {
+  const display = value != null && value !== '' ? value : placeholder;
   return (
     <div className="flex gap-1.5 items-start">
       <Check
@@ -103,9 +105,9 @@ function CharacteristicRow({ label, value }: CharacteristicRowProps) {
       <Text as="span" size="base" color="secondary">
         {label}
       </Text>
-      {value != null && value !== '' && (
+      {display && (
         <Text as="span" size="base" color="primary" weight="medium">
-          {value}
+          {display}
         </Text>
       )}
     </div>
@@ -121,7 +123,7 @@ interface VacancyProfessionCardProps {
   ageRangeMax: number | null;
   zone: string | null;
   workerAttributes: string | null;
-  serviceType: string | null;
+  serviceType: string[] | null;
   schedule: Record<string, TimeSlot[]> | null;
   onEdit?: () => void;
 }
@@ -152,6 +154,17 @@ export function VacancyProfessionCard({
   const ageRange =
     ageRangeMin != null || ageRangeMax != null
       ? [ageRangeMin, ageRangeMax].filter((v) => v != null).join(' - ')
+      : null;
+
+  const ageRangePlaceholder = t('admin.vacancyDetail.professionCard.ageRangeAny');
+
+  const serviceTypeLabel =
+    serviceType && serviceType.length > 0
+      ? serviceType
+          .map((svc) =>
+            t(`admin.patients.detail.contractedServicesCard.serviceTypes.${svc}`, svc),
+          )
+          .join(', ')
       : null;
 
   return (
@@ -214,6 +227,7 @@ export function VacancyProfessionCard({
           <CharacteristicRow
             label={t('admin.vacancyDetail.professionCard.ageRange')}
             value={ageRange}
+            placeholder={ageRangePlaceholder}
           />
           <CharacteristicRow
             label={t('admin.vacancyDetail.professionCard.location')}
@@ -225,7 +239,7 @@ export function VacancyProfessionCard({
           />
           <CharacteristicRow
             label={t('admin.vacancyDetail.professionCard.serviceType')}
-            value={serviceType}
+            value={serviceTypeLabel}
           />
           <CharacteristicRow
             label={t('admin.vacancyDetail.professionCard.daysAndHours')}

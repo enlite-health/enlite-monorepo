@@ -78,7 +78,7 @@ export interface AdminVacancyDetail {
   age_range_max: number | null;
   required_experience: string | null;
   worker_attributes: string | null;
-  service_type: string | null;
+  service_type: string[] | null;
   dependency_level: string | null;
   schedule: Record<string, { start: string; end: string }[]> | null;
   schedule_days_hours: string | null;

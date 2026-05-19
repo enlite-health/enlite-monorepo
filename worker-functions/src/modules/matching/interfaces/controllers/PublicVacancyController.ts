@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 
 /**
  * PublicVacancyController
@@ -13,33 +14,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
  * associado, necessário para o candidato qualificar a vaga.
  */
 
-const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-
 const SLUG_REGEX = /^caso(\d+)-(\d+)$/;
-
-/**
- * Converte o schedule do formato Gemini (array) para o formato do frontend (objeto por dia).
- * Gemini: [{dayOfWeek: 1, startTime: "09:00", endTime: "17:00"}]
- * Frontend: {lunes: [{start: "09:00", end: "17:00"}]}
- */
-function normalizeSchedule(
-  raw: unknown,
-): Record<string, { start: string; end: string }[]> | null {
-  if (!raw) return null;
-
-  // Já no formato objeto (criação manual pelo admin) — retornar como está
-  if (!Array.isArray(raw)) return raw as Record<string, { start: string; end: string }[]>;
-
-  const result: Record<string, { start: string; end: string }[]> = {};
-  for (const slot of raw) {
-    const dayName = DAY_NAMES[slot.dayOfWeek];
-    if (!dayName) continue;
-    if (!result[dayName]) result[dayName] = [];
-    result[dayName].push({ start: slot.startTime, end: slot.endTime });
-  }
-
-  return Object.keys(result).length > 0 ? result : null;
-}
 
 export class PublicVacancyController {
   private readonly db = DatabaseConnection.getInstance().getPool();

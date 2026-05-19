@@ -15,7 +15,7 @@ const defaultProps = {
   ageRangeMax: 45,
   zone: 'Palermo',
   workerAttributes: 'Paciente, empático',
-  serviceType: 'DOMICILIARIO',
+  serviceType: ['AT'],
   schedule: null,
   onEdit: vi.fn(),
 };
