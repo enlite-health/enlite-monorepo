@@ -1075,6 +1075,7 @@
         "description": "Descrição do trabalho:",
         "characteristics": "Características:",
         "ageRange": "Faixa Etária:",
+        "ageRangeAny": "Indistinto",
         "location": "Localização:",
         "profile": "Perfil:",
         "serviceType": "Tipo de serviço:",
