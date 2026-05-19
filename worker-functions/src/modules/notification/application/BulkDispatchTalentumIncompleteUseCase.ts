@@ -16,10 +16,10 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Workers com application_funnel_stage INITIATED ou IN_PROGRESS há >5 dias
- * que não receberam o reminder 'talentum_incomplete_reminder' nos últimos 7 dias.
+ * que não receberam o reminder 'talentum_incomplete_reminder' hoje.
  *
+ * Dedup via NOT EXISTS em worker_reminder_state (slot por dia).
  * Exclui workers desabilitados, sem telefone e contas de import.
- * Dedup via NOT EXISTS em whatsapp_bulk_dispatch_logs (janela 7 dias).
  */
 const TALENTUM_INCOMPLETE_QUERY = `
   SELECT DISTINCT
@@ -36,11 +36,10 @@ const TALENTUM_INCOMPLETE_QUERY = `
     AND w.phone <> ''
     AND w.email NOT LIKE '%@enlite.import'
     AND NOT EXISTS (
-      SELECT 1
-      FROM whatsapp_bulk_dispatch_logs wbdl
-      WHERE wbdl.worker_id = w.id
-        AND wbdl.template_slug = 'talentum_incomplete_reminder'
-        AND wbdl.dispatched_at > NOW() - INTERVAL '7 days'
+      SELECT 1 FROM worker_reminder_state wrs
+      WHERE wrs.worker_id = w.id
+        AND wrs.template_slug = 'talentum_incomplete_reminder'
+        AND wrs.sent_date = CURRENT_DATE
     )
   ORDER BY w.id
 `;
@@ -81,6 +80,22 @@ export class BulkDispatchTalentumIncompleteUseCase {
       if (i > 0) await sleep(delayMs);
 
       try {
+        // 1. Tentar adquirir slot atomic — garante idempotência em execuções paralelas
+        const lockRes = await this.db.query<{ worker_id: string }>(
+          `INSERT INTO worker_reminder_state (worker_id, template_slug, sent_date, status, batch_id)
+           VALUES ($1, $2, CURRENT_DATE, 'pending', $3)
+           ON CONFLICT (worker_id, template_slug, sent_date) DO NOTHING
+           RETURNING worker_id`,
+          [row.worker_id, TEMPLATE_SLUG, batchId],
+        );
+
+        if (lockRes.rows.length === 0) {
+          // Outro processo já adquiriu o slot neste mesmo dia — skip
+          batchLogger.info({ workerId: row.worker_id }, 'Slot já adquirido por outro processo, skip');
+          continue;
+        }
+
+        // 2. Gerar token de nome e enviar WhatsApp
         const workerNameToken = await tokenService.generate(row.worker_id, 'worker_name');
 
         const sendResult = await this.messaging.sendWhatsApp({
@@ -89,7 +104,7 @@ export class BulkDispatchTalentumIncompleteUseCase {
           variables: { worker_name: workerNameToken },
         });
 
-        const status = sendResult.isSuccess ? 'sent' : 'error';
+        const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';
         const externalId = sendResult.isSuccess ? sendResult.getValue()!.externalId : null;
         const errorMsg = sendResult.isFailure ? (sendResult.error ?? null) : null;
 
@@ -100,12 +115,25 @@ export class BulkDispatchTalentumIncompleteUseCase {
           batchLogger.warn({ workerId: row.worker_id, error: errorMsg }, 'Falha ao enviar WhatsApp Talentum');
         }
 
+        // 3. Atualizar worker_reminder_state com resultado real
+        await this.db.query(
+          `UPDATE worker_reminder_state
+           SET status = $1, updated_at = NOW()
+           WHERE worker_id = $2 AND template_slug = $3 AND sent_date = CURRENT_DATE`,
+          [finalStatus, row.worker_id, TEMPLATE_SLUG],
+        ).catch((err: unknown) => {
+          const e = err instanceof Error ? err : new Error(String(err));
+          batchLogger.warn({ workerId: row.worker_id, error: e.message }, 'Falha update worker_reminder_state');
+          reportError(e, { source: 'BulkDispatchTalentum:updateState', workerId: row.worker_id, batchId });
+        });
+
+        // 4. Gravar log de auditoria em whatsapp_bulk_dispatch_logs
         await this.db
           .query(
             `INSERT INTO whatsapp_bulk_dispatch_logs
                (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id, source)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'bulk')`,
-            [row.worker_id, triggeredBy, row.phone, TEMPLATE_SLUG, status, externalId, errorMsg, batchId],
+            [row.worker_id, triggeredBy, row.phone, TEMPLATE_SLUG, finalStatus === 'sent' ? 'sent' : 'error', externalId, errorMsg, batchId],
           )
           .catch((err: unknown) => {
             const e = err instanceof Error ? err : new Error(String(err));

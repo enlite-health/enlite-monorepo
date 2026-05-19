@@ -6,9 +6,10 @@
  *
  * Cenários:
  * 1. 0 workers retornados → resultado com total=0, sent=0, errors=0
- * 2. 1 worker retornado → 1 sendWhatsApp + 1 INSERT em log (status sent)
- * 3. messaging falha → error count++ + INSERT com status='error'
- * 4. log INSERT falha → não bloqueia o fluxo (non-fatal)
+ * 2. 1 worker retornado → INSERT lock + sendWhatsApp + UPDATE state + INSERT log (status sent)
+ * 3. messaging falha → error count++ + UPDATE state 'failed' + INSERT log com status='error'
+ * 4. lock já adquirido (INSERT retorna 0 rows) → skip sem chamar sendWhatsApp
+ * 5. log INSERT falha → não bloqueia o fluxo (non-fatal)
  */
 
 import { BulkDispatchTalentumIncompleteUseCase } from '../BulkDispatchTalentumIncompleteUseCase';
@@ -38,12 +39,6 @@ jest.mock('../../infrastructure/TokenService', () => ({
   })),
 }));
 
-function makeDb(rows: Array<{ worker_id: string; phone: string }> = []): jest.Mocked<Pool> {
-  return {
-    query: jest.fn().mockResolvedValue({ rows }),
-  } as unknown as jest.Mocked<Pool>;
-}
-
 function makeMessaging(
   success = true,
   externalId = 'SM123',
@@ -58,6 +53,26 @@ function makeMessaging(
   } as unknown as jest.Mocked<IMessagingService>;
 }
 
+/**
+ * Cria um Pool mock com sequência de respostas configurável.
+ * Posições padrão por worker (quando lock é adquirido com sucesso):
+ *   0: SELECT workers (eligibility query)
+ *   1: INSERT worker_reminder_state (lock) → rows: [{worker_id}]
+ *   2: UPDATE worker_reminder_state (status)
+ *   3: INSERT whatsapp_bulk_dispatch_logs
+ */
+function makeDbSequence(responses: Array<{ rows: unknown[] } | Error>): jest.Mocked<Pool> {
+  const mockQuery = jest.fn();
+  responses.forEach(resp => {
+    if (resp instanceof Error) {
+      mockQuery.mockRejectedValueOnce(resp);
+    } else {
+      mockQuery.mockResolvedValueOnce(resp);
+    }
+  });
+  return { query: mockQuery } as unknown as jest.Mocked<Pool>;
+}
+
 describe('BulkDispatchTalentumIncompleteUseCase', () => {
   beforeEach(() => {
     process.env.BULK_DISPATCH_DELAY_MS = '0';
@@ -70,7 +85,7 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
 
   describe('execute — 0 workers elegíveis', () => {
     it('retorna total=0, sent=0, errors=0 sem chamar sendWhatsApp', async () => {
-      const db = makeDb([]);
+      const db = makeDbSequence([{ rows: [] }]);
       const messaging = makeMessaging();
 
       const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
@@ -87,13 +102,14 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
   });
 
   describe('execute — 1 worker elegível, envio bem-sucedido', () => {
-    it('chama sendWhatsApp 1x e grava log com status sent', async () => {
+    it('adquire lock, chama sendWhatsApp, atualiza state e grava log', async () => {
       const worker = { worker_id: 'w-uuid-1', phone: '+5511999990001' };
-      // Primeiro query retorna o worker; segundo (INSERT log) retorna vazio
-      const db = makeDb([worker]);
-      (db.query as jest.Mock)
-        .mockResolvedValueOnce({ rows: [worker] }) // SELECT workers
-        .mockResolvedValueOnce({ rows: [] }); // INSERT log
+      const db = makeDbSequence([
+        { rows: [worker] },                     // SELECT eligibility
+        { rows: [{ worker_id: worker.worker_id }] }, // INSERT lock → adquirido
+        { rows: [] },                            // UPDATE state
+        { rows: [] },                            // INSERT log
+      ]);
 
       const messaging = makeMessaging(true, 'SM_success_1');
 
@@ -111,25 +127,38 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
         variables: { worker_name: 'tk_abc123def456' },
       });
 
-      // Verifica que INSERT de log foi chamado com status='sent'
-      const insertCall = (db.query as jest.Mock).mock.calls.find(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('INSERT INTO whatsapp_bulk_dispatch_logs'),
-      );
-      expect(insertCall).toBeDefined();
-      const params = insertCall![1] as unknown[];
-      expect(params[3]).toBe('talentum_incomplete_reminder'); // template_slug
-      expect(params[4]).toBe('sent'); // status
-      expect(params[5]).toBe('SM_success_1'); // twilio_sid
+      const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
+
+      // Verifica INSERT lock
+      const lockCall = calls.find(([sql]) => sql.includes('INSERT INTO worker_reminder_state'));
+      expect(lockCall).toBeDefined();
+      expect(lockCall![1]).toContain(worker.worker_id);
+      expect(lockCall![1]).toContain('talentum_incomplete_reminder');
+
+      // Verifica UPDATE state com 'sent'
+      const updateCall = calls.find(([sql]) => sql.includes('UPDATE worker_reminder_state'));
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toContain('sent');
+
+      // Verifica INSERT log com status='sent'
+      const insertLogCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
+      expect(insertLogCall).toBeDefined();
+      const logParams = insertLogCall![1] as unknown[];
+      expect(logParams[3]).toBe('talentum_incomplete_reminder'); // template_slug
+      expect(logParams[4]).toBe('sent');                         // status
+      expect(logParams[5]).toBe('SM_success_1');                 // twilio_sid
     });
   });
 
   describe('execute — messaging falha', () => {
-    it('incrementa errors e grava log com status error', async () => {
+    it('incrementa errors, atualiza state como failed e grava log com status error', async () => {
       const worker = { worker_id: 'w-uuid-2', phone: '+5511999990002' };
-      const db = makeDb([worker]);
-      (db.query as jest.Mock)
-        .mockResolvedValueOnce({ rows: [worker] })
-        .mockResolvedValueOnce({ rows: [] });
+      const db = makeDbSequence([
+        { rows: [worker] },
+        { rows: [{ worker_id: worker.worker_id }] }, // lock adquirido
+        { rows: [] },                                 // UPDATE state
+        { rows: [] },                                 // INSERT log
+      ]);
 
       const messaging = makeMessaging(false);
 
@@ -140,24 +169,61 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       expect(result.sent).toBe(0);
       expect(result.errors).toBe(1);
 
-      const insertCall = (db.query as jest.Mock).mock.calls.find(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('INSERT INTO whatsapp_bulk_dispatch_logs'),
-      );
-      expect(insertCall).toBeDefined();
-      const params = insertCall![1] as unknown[];
-      expect(params[4]).toBe('error'); // status
-      expect(params[5]).toBeNull(); // twilio_sid null on error
-      expect(params[6]).toBe('Twilio error'); // error_message
+      const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
+
+      // UPDATE state deve ser 'failed'
+      const updateCall = calls.find(([sql]) => sql.includes('UPDATE worker_reminder_state'));
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toContain('failed');
+
+      // INSERT log com status='error'
+      const insertLogCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
+      expect(insertLogCall).toBeDefined();
+      const logParams = insertLogCall![1] as unknown[];
+      expect(logParams[4]).toBe('error'); // status
+      expect(logParams[5]).toBeNull();    // twilio_sid null on error
+      expect(logParams[6]).toBe('Twilio error'); // error_message
+    });
+  });
+
+  describe('execute — slot já adquirido por outro processo', () => {
+    it('skip sem chamar sendWhatsApp quando INSERT lock retorna 0 rows', async () => {
+      const worker = { worker_id: 'w-uuid-3', phone: '+5511999990003' };
+      const db = makeDbSequence([
+        { rows: [worker] },  // SELECT eligibility
+        { rows: [] },        // INSERT lock → 0 rows = já adquirido por outro processo
+      ]);
+
+      const messaging = makeMessaging(true);
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      const result = await useCase.execute('scheduler');
+
+      expect(result.total).toBe(1);
+      expect(result.sent).toBe(0);
+      expect(result.errors).toBe(0);
+
+      // Não deve ter chamado sendWhatsApp
+      expect(messaging.sendWhatsApp).not.toHaveBeenCalled();
+
+      // Não deve ter chamado UPDATE nem INSERT log (pulou o worker)
+      const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
+      const updateCall = calls.find(([sql]) => sql.includes('UPDATE worker_reminder_state'));
+      expect(updateCall).toBeUndefined();
+      const insertLogCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
+      expect(insertLogCall).toBeUndefined();
     });
   });
 
   describe('execute — falha no INSERT de log', () => {
     it('não bloqueia o fluxo e continua contabilizando sent', async () => {
-      const worker = { worker_id: 'w-uuid-3', phone: '+5511999990003' };
-      const db = makeDb([worker]);
-      (db.query as jest.Mock)
-        .mockResolvedValueOnce({ rows: [worker] })
-        .mockRejectedValueOnce(new Error('DB connection lost')); // INSERT log falha
+      const worker = { worker_id: 'w-uuid-4', phone: '+5511999990004' };
+      const db = makeDbSequence([
+        { rows: [worker] },
+        { rows: [{ worker_id: worker.worker_id }] }, // lock adquirido
+        { rows: [] },                                 // UPDATE state
+        new Error('DB connection lost'),              // INSERT log falha
+      ]);
 
       const messaging = makeMessaging(true, 'SM_log_fail');
 
@@ -173,8 +239,8 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
 
   describe('execute — batchId é UUID v4 único', () => {
     it('cada execução gera batchId diferente', async () => {
-      const db1 = makeDb([]);
-      const db2 = makeDb([]);
+      const db1 = makeDbSequence([{ rows: [] }]);
+      const db2 = makeDbSequence([{ rows: [] }]);
       const messaging = makeMessaging();
 
       const useCase1 = new BulkDispatchTalentumIncompleteUseCase(db1, messaging);

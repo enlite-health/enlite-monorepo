@@ -593,6 +593,30 @@ Idêntico ao TD-018 — template `talentum_incomplete_reminder` (migration 175) 
 2. Ops obtém aprovação HSM da Meta (pode levar dias)
 3. Backend roda `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder'` em prod
 
+### TD-021 — `INCOMPLETE_WORKERS_QUERY` quebra com `malformed array literal: ""`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-19, durante implementação da Fase 5 (dedup atomic) do Sprint de Automação de Recrutamento
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Sim pra rodar o fluxo `/api/internal/bulk-dispatch/process` em E2E — endpoint retorna 500
+
+**Contexto:**
+
+A query `INCOMPLETE_WORKERS_QUERY` em `BulkDispatchIncompleteWorkersUseCase.ts` faz comparação `preferred_types = '{}'` (string literal vazia) em coluna que é `TEXT[]` no banco. Postgres rejeita: `malformed array literal: ""`. Bug pré-existente, não introduzido pela Fase 5.
+
+**Por que não foi detectado antes:**
+
+Endpoint não tinha cobertura E2E até a Fase 5. Tinha apenas teste unitário com mock de DB. Migration que mudou `preferred_types` pra `TEXT[]` provavelmente é recente (>100) e o use case não foi atualizado.
+
+**Fix:**
+
+Trocar `preferred_types = '{}'` por `preferred_types = '{}'::text[]` ou `array_length(preferred_types, 1) IS NULL` no SQL. Identificar query exata via grep.
+
+**Validação esperada:**
+
+- E2E `bulk-dispatch.e2e.test.ts` (criar se não existir, análogo ao `bulk-dispatch-talentum.e2e.test.ts`) retorna 200
+- Worker com cadastro incompleto + sem reminder hoje recebe o WhatsApp
+
 ---
 
 ## Resolvidos

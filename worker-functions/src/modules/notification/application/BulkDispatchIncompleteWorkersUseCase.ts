@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
-import { logger } from '@shared/logging';
+import { logger, reportError } from '@shared/logging';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
@@ -15,6 +15,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 // Workers com encuadre que ainda têm documentos ou perfil incompletos
+// Dedup via NOT EXISTS em worker_reminder_state (slot por dia).
 const INCOMPLETE_WORKERS_QUERY = `
   SELECT DISTINCT
     w.id,
@@ -52,6 +53,12 @@ const INCOMPLETE_WORKERS_QUERY = `
       OR w.preferred_age_range IS NULL OR w.preferred_age_range = ''
       OR w.preferred_types IS NULL OR w.preferred_types = '{}'
       OR w.experience_types IS NULL OR w.experience_types = '{}'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM worker_reminder_state wrs
+      WHERE wrs.worker_id = w.id
+        AND wrs.template_slug = 'complete_register_ofc'
+        AND wrs.sent_date = CURRENT_DATE
     )
   ORDER BY w.id
 `;
@@ -93,7 +100,7 @@ export class BulkDispatchIncompleteWorkersUseCase {
 
     batchLogger.info('BulkDispatch iniciado');
 
-    // 1. Busca workers com cadastro incompleto
+    // 1. Busca workers com cadastro incompleto (já exclui quem recebeu hoje via NOT EXISTS)
     let rows: Array<{ id: string; phone: string }>;
     try {
       const queryResult = await this.db.query<{ id: string; phone: string }>(
@@ -141,10 +148,38 @@ export class BulkDispatchIncompleteWorkersUseCase {
       // Aguarda delay entre envios (não aplica antes do primeiro)
       if (i > 0) await sleep(delayMs);
 
+      // 2a. Tentar adquirir slot atomic — garante idempotência em execuções paralelas
+      let lockAcquired = false;
+      try {
+        const lockRes = await this.db.query<{ id: string }>(
+          `INSERT INTO worker_reminder_state (worker_id, template_slug, sent_date, status, batch_id)
+           VALUES ($1, $2, CURRENT_DATE, 'pending', $3)
+           ON CONFLICT (worker_id, template_slug, sent_date) DO NOTHING
+           RETURNING worker_id`,
+          [row.id, TEMPLATE_SLUG, batchId],
+        );
+
+        if (lockRes.rows.length === 0) {
+          // Outro processo já adquiriu o slot neste mesmo dia — skip
+          batchLogger.info({ workerId: row.id }, 'Slot já adquirido por outro processo, skip');
+          continue;
+        }
+
+        lockAcquired = true;
+      } catch (err: unknown) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        batchLogger.warn({ workerId: row.id, error: e.message }, 'Falha ao adquirir slot worker_reminder_state, skip');
+        reportError(e, { source: 'BulkDispatch:acquireLock', workerId: row.id, batchId });
+        continue;
+      }
+
+      // 2b. Enviar WhatsApp
       const sendResult = await this.messaging.sendWhatsApp({
         to: row.phone,
         templateSlug: TEMPLATE_SLUG,
       });
+
+      const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';
 
       const detail: BulkDispatchDetail = {
         workerId: row.id,
@@ -156,7 +191,21 @@ export class BulkDispatchIncompleteWorkersUseCase {
 
       details.push(detail);
 
-      // 3. Persiste log — falhas de log são non-blocking
+      // 2c. Atualizar worker_reminder_state com resultado real
+      if (lockAcquired) {
+        await this.db.query(
+          `UPDATE worker_reminder_state
+           SET status = $1, updated_at = NOW()
+           WHERE worker_id = $2 AND template_slug = $3 AND sent_date = CURRENT_DATE`,
+          [finalStatus, row.id, TEMPLATE_SLUG],
+        ).catch((err: unknown) => {
+          const e = err instanceof Error ? err : new Error(String(err));
+          batchLogger.warn({ workerId: row.id, error: e.message }, 'Falha update worker_reminder_state');
+          reportError(e, { source: 'BulkDispatch:updateState', workerId: row.id, batchId });
+        });
+      }
+
+      // 2d. Persiste log de auditoria — falhas de log são non-blocking
       await this.db
         .query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
@@ -179,14 +228,15 @@ export class BulkDispatchIncompleteWorkersUseCase {
     }
 
     const sent = details.filter(d => d.status === 'sent').length;
+    const errors = details.filter(d => d.status === 'error').length;
 
-    batchLogger.info({ sent, errors: rows.length - sent }, 'BulkDispatch concluído');
+    batchLogger.info({ sent, errors }, 'BulkDispatch concluído');
 
     return Result.ok<BulkDispatchResult>({
       batchId,
       total: rows.length,
       sent,
-      errors: rows.length - sent,
+      errors,
       dryRun: false,
       details,
     });

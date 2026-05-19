@@ -1,0 +1,18 @@
+# Cloud Scheduler: bulk dispatch reminders (cadastro interno incompleto)
+# Horário: 10h BRT (13h UTC), retry 0 (idempotência atomic na app via worker_reminder_state)
+# Requer: Cloud Run worker-functions expondo POST /api/internal/bulk-dispatch/process
+
+name: bulk-dispatch-incomplete
+description: Daily bulk WhatsApp reminder for workers with incomplete registration
+schedule: "0 13 * * *"
+timeZone: Etc/UTC
+httpTarget:
+  uri: ${WORKER_FUNCTIONS_SERVICE_URL}/api/internal/bulk-dispatch/process
+  httpMethod: POST
+  headers:
+    Content-Type: application/json
+    X-Internal-Secret: ${INTERNAL_TOKEN_SECRET}
+  body: e30=  # base64 of '{}'
+attemptDeadline: 600s
+retryConfig:
+  retryCount: 0

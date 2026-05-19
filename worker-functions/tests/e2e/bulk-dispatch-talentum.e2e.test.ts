@@ -104,11 +104,13 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
       );
     }
 
-    // Grava log recente para o worker dedup → deve ser excluído pelo NOT EXISTS
+    // Grava state de hoje para o worker dedup em worker_reminder_state
+    // → deve ser excluído pelo NOT EXISTS (Fase 5: dedup via worker_reminder_state)
     await pool.query(
-      `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status, batch_id, source)
-       VALUES ($1, 'e2e-setup', '+5511999990098', 'talentum_incomplete_reminder', 'sent', gen_random_uuid(), 'bulk')`,
+      `INSERT INTO worker_reminder_state
+         (worker_id, template_slug, sent_date, status)
+       VALUES ($1, 'talentum_incomplete_reminder', CURRENT_DATE, 'sent')
+       ON CONFLICT (worker_id, template_slug, sent_date) DO NOTHING`,
       [dedupWorkerId],
     );
   });
@@ -117,6 +119,10 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
     if (!pool) return;
 
     // Limpa worker elegível
+    await pool.query(
+      `DELETE FROM worker_reminder_state WHERE worker_id = $1`,
+      [eligibleWorkerId],
+    );
     await pool.query(
       `DELETE FROM whatsapp_bulk_dispatch_logs WHERE worker_id = $1`,
       [eligibleWorkerId],
@@ -128,6 +134,10 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
     await pool.query(`DELETE FROM workers WHERE id = $1`, [eligibleWorkerId]);
 
     // Limpa worker dedup
+    await pool.query(
+      `DELETE FROM worker_reminder_state WHERE worker_id = $1`,
+      [dedupWorkerId],
+    );
     await pool.query(
       `DELETE FROM whatsapp_bulk_dispatch_logs WHERE worker_id = $1`,
       [dedupWorkerId],
@@ -183,9 +193,10 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
     expect(rows.length).toBeGreaterThanOrEqual(0);
   });
 
-  it('worker com log recente (<7 dias) não aparece no batch', async () => {
+  it('worker com state em worker_reminder_state hoje não aparece no batch', async () => {
     // Confirma que o worker dedup não está na lista de elegíveis
-    // verificando via query direta que o NOT EXISTS funciona
+    // verificando via query direta que o NOT EXISTS em worker_reminder_state funciona.
+    // Fase 5: dedup lê de worker_reminder_state (não mais de whatsapp_bulk_dispatch_logs).
     const { rows } = await pool.query(
       `SELECT w.id
        FROM workers w
@@ -198,16 +209,15 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
          AND w.phone IS NOT NULL
          AND w.phone <> ''
          AND NOT EXISTS (
-           SELECT 1
-           FROM whatsapp_bulk_dispatch_logs wbdl
-           WHERE wbdl.worker_id = w.id
-             AND wbdl.template_slug = 'talentum_incomplete_reminder'
-             AND wbdl.dispatched_at > NOW() - INTERVAL '7 days'
+           SELECT 1 FROM worker_reminder_state wrs
+           WHERE wrs.worker_id = w.id
+             AND wrs.template_slug = 'talentum_incomplete_reminder'
+             AND wrs.sent_date = CURRENT_DATE
          )`,
       [dedupWorkerId],
     );
 
-    // Worker dedup foi excluído pelo NOT EXISTS (tem log recente)
+    // Worker dedup foi excluído pelo NOT EXISTS (tem state de hoje em worker_reminder_state)
     expect(rows.length).toBe(0);
   });
 });
