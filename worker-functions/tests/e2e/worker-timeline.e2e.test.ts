@@ -242,6 +242,35 @@ describe('GET /api/admin/workers/:id/timeline', () => {
         expect(ev.template_slug).toBe('complete_register_ofc');
       }
     });
+
+    it('whatsapp events include source field populated', async () => {
+      const res = await api.get(`/api/admin/workers/${workerId}/timeline`, {
+        headers: { Authorization: `Bearer ${staffToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const waEvents = res.data.data.filter((e: { kind: string }) => e.kind === 'whatsapp');
+      expect(waEvents.length).toBeGreaterThan(0);
+      for (const ev of waEvents) {
+        // source must be one of the valid enum values; the fixture inserts without explicit source
+        // so it defaults to 'bulk' from migration 172
+        expect(['bulk', 'individual', 'outbox']).toContain(ev.source);
+      }
+    });
+
+    it('non-whatsapp events have source=null', async () => {
+      const res = await api.get(`/api/admin/workers/${workerId}/timeline`, {
+        headers: { Authorization: `Bearer ${staffToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const nonWaEvents = res.data.data.filter(
+        (e: { kind: string }) => e.kind !== 'whatsapp',
+      );
+      for (const ev of nonWaEvents) {
+        expect(ev.source).toBeNull();
+      }
+    });
   });
 
   describe('auth and validation', () => {

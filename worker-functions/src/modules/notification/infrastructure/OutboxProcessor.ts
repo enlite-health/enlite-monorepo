@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TokenService } from './TokenService';
-import { loggingAls } from '@shared/logging';
+import { loggingAls, logger, reportError } from '@shared/logging';
 
 const MAX_ATTEMPTS = 3;
 const BATCH_SIZE = 50;
@@ -129,7 +129,18 @@ export class OutboxProcessor {
         [newAttempts, isFinal ? 'failed' : 'pending', result.error, row.id],
       );
       if (isFinal) {
-        console.warn(`[OutboxProcessor] Falha definitiva outbox=${row.id}: ${result.error}`);
+        logger.warn({ outboxId: row.id, error: result.error }, 'OutboxProcessor falha definitiva');
+        // Log final failure in dispatch audit table — best-effort
+        await this.db.query(
+          `INSERT INTO whatsapp_bulk_dispatch_logs
+             (worker_id, triggered_by, phone, template_slug, status, error_message, source)
+           VALUES ($1, $2, $3, $4, 'error', $5, 'outbox')`,
+          [row.worker_id, `system:outbox:${row.id}`, to, row.template_slug, result.error],
+        ).catch((err: unknown) => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox erro');
+          reportError(error, { source: 'OutboxProcessor:logFailed', outboxId: row.id });
+        });
       }
       return;
     }
@@ -145,6 +156,18 @@ export class OutboxProcessor {
        WHERE id = $3`,
       [row.attempts + 1, externalId, row.id],
     );
+
+    // Log successful dispatch in audit table — best-effort
+    await this.db.query(
+      `INSERT INTO whatsapp_bulk_dispatch_logs
+         (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
+       VALUES ($1, $2, $3, $4, 'sent', $5, 'outbox')`,
+      [row.worker_id, `system:outbox:${row.id}`, to, row.template_slug, externalId],
+    ).catch((err: unknown) => {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox sucesso');
+      reportError(error, { source: 'OutboxProcessor:logSent', outboxId: row.id });
+    });
   }
 
   private async markFailed(id: string, attempts: number, error: string): Promise<void> {

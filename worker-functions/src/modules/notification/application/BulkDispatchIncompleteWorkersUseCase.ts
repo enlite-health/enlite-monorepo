@@ -160,8 +160,8 @@ export class BulkDispatchIncompleteWorkersUseCase {
       await this.db
         .query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+             (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id, source)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'bulk')`,
           [
             row.id,
             triggeredBy,

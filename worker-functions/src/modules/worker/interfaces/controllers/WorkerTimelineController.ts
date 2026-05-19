@@ -18,6 +18,7 @@ type TimelineEvent = {
   application_id: string | null;
   template_slug: string | null;
   occurred_at: string;
+  source: string | null;
 };
 
 const TIMELINE_QUERY = `
@@ -30,7 +31,8 @@ const TIMELINE_QUERY = `
     h.changed_by              AS changed_by,
     NULL::uuid                AS application_id,
     NULL::text                AS template_slug,
-    h.created_at              AS occurred_at
+    h.created_at              AS occurred_at,
+    NULL::text                AS source
   FROM worker_status_history h
   WHERE h.worker_id = $1
 
@@ -45,7 +47,8 @@ const TIMELINE_QUERY = `
     sh.changed_by             AS changed_by,
     sh.application_id         AS application_id,
     NULL::text                AS template_slug,
-    sh.created_at             AS occurred_at
+    sh.created_at             AS occurred_at,
+    NULL::text                AS source
   FROM worker_job_application_stage_history sh
   INNER JOIN worker_job_applications wja ON wja.id = sh.application_id
   WHERE wja.worker_id = $1
@@ -61,7 +64,8 @@ const TIMELINE_QUERY = `
     bdl.triggered_by          AS changed_by,
     NULL::uuid                AS application_id,
     bdl.template_slug         AS template_slug,
-    bdl.dispatched_at         AS occurred_at
+    bdl.dispatched_at         AS occurred_at,
+    bdl.source                AS source
   FROM whatsapp_bulk_dispatch_logs bdl
   WHERE bdl.worker_id = $1
 
@@ -116,6 +120,7 @@ export class WorkerTimelineController {
         application_id: row.application_id,
         template_slug: row.template_slug,
         occurred_at: row.occurred_at,
+        source: row.source,
       }));
 
       const total = parseInt(countRes.rows[0]?.total ?? '0', 10);

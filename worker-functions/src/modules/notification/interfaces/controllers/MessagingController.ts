@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BulkDispatchIncompleteWorkersUseCase } from '../../application/BulkDispatchIncompleteWorkersUseCase';
 import { AuthMiddleware } from '@modules/identity';
+import { logger, reportError } from '@shared/logging';
 
 export class MessagingController {
   private messaging: IMessagingService;
@@ -78,10 +79,25 @@ export class MessagingController {
          SET messaged_at = NOW(), updated_at = NOW()
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [workerId, jobPostingId]
-      ).catch(err => {
-        console.warn(`[MessagingController] Falha ao atualizar messaged_at para worker=${workerId} job=${jobPostingId}:`, err.message);
+      ).catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        logger.warn({ error: error.message, workerId, jobPostingId }, 'Falha ao atualizar messaged_at');
       });
     }
+
+    // Persiste log de envio individual — best-effort, nunca bloqueia a resposta
+    const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
+    const { externalId, to: normalizedTo } = result.getValue()!;
+    await this.db.query(
+      `INSERT INTO whatsapp_bulk_dispatch_logs
+         (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
+       VALUES ($1, $2, $3, $4, 'sent', $5, 'individual')`,
+      [workerId, triggeredBy, normalizedTo, templateSlug.trim(), externalId],
+    ).catch((err: unknown) => {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn({ error: error.message, workerId, templateSlug }, 'Falha ao gravar log individual');
+      reportError(error, { source: 'MessagingController.sendToWorker:log', workerId, templateSlug });
+    });
 
     res.status(200).json(result.getValue());
   }
@@ -116,21 +132,24 @@ export class MessagingController {
     }
 
     const { externalId, to: normalizedTo } = result.getValue()!;
-    const triggeredBy = AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+    const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
 
     const digitsOnly = normalizedTo.replace(/^\+/, '');
     await this.db.query(
       `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status, twilio_sid)
+         (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
        VALUES (
          (SELECT id FROM workers
           WHERE (REGEXP_REPLACE(phone, '^\+', '') = $2)
             AND merged_into_id IS NULL
           LIMIT 1),
-         $1, $3, $4, 'sent', $5
+         $1, $3, $4, 'sent', $5, 'individual'
        )`,
       [triggeredBy, digitsOnly, normalizedTo, templateSlug.trim(), externalId],
-    ).catch(err => console.warn('[MessagingController] sendDirect log error:', err.message));
+    ).catch((err: unknown) => {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn({ error: error.message }, 'MessagingController sendDirect log error');
+    });
 
     res.status(200).json(result.getValue());
   }

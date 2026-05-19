@@ -30,13 +30,20 @@ jest.mock('../TokenService', () => ({
   })),
 }));
 
-// Mock loggingAls — run() must execute the callback transparently
+// Mock loggingAls, logger and reportError
 jest.mock('@shared/logging', () => ({
   loggingAls: {
     run: jest.fn().mockImplementation(
       (_ctx: unknown, fn: () => Promise<void>) => fn(),
     ),
   },
+  logger: {
+    warn: jest.fn(),
+    info: jest.fn(),
+    error: jest.fn(),
+    child: jest.fn().mockReturnThis(),
+  },
+  reportError: jest.fn(),
 }));
 
 import { loggingAls } from '@shared/logging';
@@ -82,6 +89,8 @@ describe('OutboxProcessor', () => {
         // SELECT worker phone
         .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null }] })
         // UPDATE outbox status = 'sent'
+        .mockResolvedValueOnce({ rows: [] })
+        // INSERT whatsapp_bulk_dispatch_logs (source='outbox')
         .mockResolvedValueOnce({ rows: [] });
 
       await processor.processById('ob-1');
@@ -96,6 +105,12 @@ describe('OutboxProcessor', () => {
       const updateCall = mockQuery.mock.calls[2];
       expect(updateCall[0]).toContain("status = 'sent'");
       expect(updateCall[1]).toContain('ob-1');
+
+      // Verifica INSERT de log com source='outbox'
+      const logCall = mockQuery.mock.calls[3];
+      expect(logCall[0]).toContain('whatsapp_bulk_dispatch_logs');
+      expect(logCall[0]).toContain("'outbox'");
+      expect(logCall[1][1]).toBe('system:outbox:ob-1');
     });
 
     it('retorna silenciosamente se mensagem não existe', async () => {
@@ -129,6 +144,8 @@ describe('OutboxProcessor', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [outboxRow] })
         .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        // INSERT log (source='outbox')
         .mockResolvedValueOnce({ rows: [] });
 
       await processor.processById('ob-trace');
@@ -152,6 +169,8 @@ describe('OutboxProcessor', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [outboxRow] })
         .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        // INSERT log (source='outbox')
         .mockResolvedValueOnce({ rows: [] });
 
       await processor.processById('ob-notrace');
@@ -179,7 +198,8 @@ describe('OutboxProcessor', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [outboxRow] })
         .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100002222' }] })
-        .mockResolvedValueOnce({ rows: [] }); // UPDATE
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE outbox status='failed'
+        .mockResolvedValueOnce({ rows: [] }); // INSERT whatsapp_bulk_dispatch_logs status='error'
 
       mockMessaging.sendWhatsApp.mockResolvedValueOnce({
         isFailure: true,
@@ -192,6 +212,13 @@ describe('OutboxProcessor', () => {
       const updateCall = mockQuery.mock.calls[2];
       expect(updateCall[0]).toContain('status = $2');
       expect(updateCall[1][1]).toBe('failed');
+
+      // Verifica INSERT de log com status='error' e source='outbox'
+      const logCall = mockQuery.mock.calls[3];
+      expect(logCall[0]).toContain('whatsapp_bulk_dispatch_logs');
+      expect(logCall[0]).toContain("'error'");
+      expect(logCall[0]).toContain("'outbox'");
+      expect(logCall[1][1]).toBe('system:outbox:ob-2');
     });
   });
 
@@ -211,9 +238,13 @@ describe('OutboxProcessor', () => {
         .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100003333' }] })
         // processOne row 1: UPDATE sent
         .mockResolvedValueOnce({ rows: [] })
+        // processOne row 1: INSERT log (source='outbox')
+        .mockResolvedValueOnce({ rows: [] })
         // processOne row 2: SELECT worker
         .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100004444' }] })
         // processOne row 2: UPDATE sent
+        .mockResolvedValueOnce({ rows: [] })
+        // processOne row 2: INSERT log (source='outbox')
         .mockResolvedValueOnce({ rows: [] });
 
       await processor.processBatch();
