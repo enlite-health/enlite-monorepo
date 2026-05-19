@@ -1,8 +1,8 @@
-name: CI/CD Enlite Frontend
+name: Frontend — Production
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
     paths:
       - 'enlite-frontend/**'
   pull_request:
@@ -10,48 +10,25 @@ on:
     paths:
       - 'enlite-frontend/**'
 
+concurrency:
+  group: frontend-prd
+  cancel-in-progress: false
+
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: southamerica-west1
   REGISTRY_REGION: us-central1
   SERVICE_NAME: enlite-frontend
   REPOSITORY: enlite-frontend
 
 jobs:
-  quality-gate:
+  quality:
+    uses: ./.github/workflows/_frontend-quality.yml
+
+  deploy:
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: enlite-frontend
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'pnpm'
-          cache-dependency-path: enlite-frontend/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Run Tests
-        run: pnpm test:run
-
-  build-and-deploy:
-    needs: quality-gate
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
+    environment: production
     defaults:
       run:
         working-directory: enlite-frontend
@@ -78,7 +55,7 @@ jobs:
 
       - name: 'Build and Push Container'
         run: |
-          IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           docker build \
             --no-cache \
             --build-arg VITE_FIREBASE_API_KEY="${{ secrets.VITE_FIREBASE_API_KEY }}" \
@@ -98,5 +75,6 @@ jobs:
         with:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
-          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           flags: "--allow-unauthenticated"

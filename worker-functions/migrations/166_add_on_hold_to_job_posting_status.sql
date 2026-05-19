@@ -30,3 +30,5 @@ ALTER TABLE job_postings ADD CONSTRAINT job_postings_status_check
   ));
 
 DO $$ BEGIN RAISE NOTICE 'Migration 166: ON_HOLD adicionado ao CHECK de job_postings.status'; END $$;
+
+

@@ -177,7 +177,12 @@ export function VacancyProfessionCard({
           {t('admin.vacancyDetail.professionCard.availableFor')}
         </Text>
         <Text as="span" size="base" color="primary" weight="medium">
-          {requiredSex ?? '—'}
+          {requiredSex
+            ? t(
+                `admin.vacancyDetail.vacancyForm.sexOptions.${requiredSex}`,
+                requiredSex,
+              )
+            : '—'}
         </Text>
       </div>
 

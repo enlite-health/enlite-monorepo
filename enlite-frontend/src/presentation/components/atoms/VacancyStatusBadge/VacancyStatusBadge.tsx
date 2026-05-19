@@ -11,37 +11,64 @@ interface BadgeConfig {
 }
 
 const STATUS_CONFIG: Record<string, BadgeConfig> = {
-  BUSQUEDA: {
-    labelKey: 'admin.vacancyDetail.statusBadge.BUSQUEDA',
+  // ── Canonical statuses (migrations 148 + 166) ─────────────────────────────
+  SEARCHING: {
+    labelKey: 'admin.vacancyDetail.statusBadge.SEARCHING',
     bgClass: 'bg-blue-yonder',
   },
-  ACTIVO: {
-    labelKey: 'admin.vacancyDetail.statusBadge.ACTIVO',
-    bgClass: 'bg-blue-yonder',
+  SEARCHING_REPLACEMENT: {
+    labelKey: 'admin.vacancyDetail.statusBadge.SEARCHING_REPLACEMENT',
+    bgClass: 'bg-wait',
+  },
+  RAPID_RESPONSE: {
+    labelKey: 'admin.vacancyDetail.statusBadge.RAPID_RESPONSE',
+    bgClass: 'bg-wait',
+  },
+  PENDING_ACTIVATION: {
+    labelKey: 'admin.vacancyDetail.statusBadge.PENDING_ACTIVATION',
+    bgClass: 'bg-cyan-focus',
   },
   ACTIVE: {
-    labelKey: 'admin.vacancyDetail.statusBadge.ACTIVO',
+    labelKey: 'admin.vacancyDetail.statusBadge.ACTIVE',
     bgClass: 'bg-blue-yonder',
   },
-  REEMPLAZOS: {
-    labelKey: 'admin.vacancyDetail.statusBadge.REEMPLAZOS',
+  ON_HOLD: {
+    labelKey: 'admin.vacancyDetail.statusBadge.ON_HOLD',
     bgClass: 'bg-wait',
   },
-  REEMPLAZO: {
-    labelKey: 'admin.vacancyDetail.statusBadge.REEMPLAZOS',
-    bgClass: 'bg-wait',
-  },
-  CERRADO: {
-    labelKey: 'admin.vacancyDetail.statusBadge.CERRADO',
+  SUSPENDED: {
+    labelKey: 'admin.vacancyDetail.statusBadge.SUSPENDED',
     bgClass: 'bg-gray-800',
   },
   CLOSED: {
-    labelKey: 'admin.vacancyDetail.statusBadge.CERRADO',
+    labelKey: 'admin.vacancyDetail.statusBadge.CLOSED',
     bgClass: 'bg-gray-800',
   },
+  // ── Patient-level status surfaced on the same badge ───────────────────────
   ADMISSION: {
     labelKey: 'admin.vacancyDetail.statusBadge.ADMISSION',
     bgClass: 'bg-cyan-focus',
+  },
+  // ── Legacy aliases (kept for backward compatibility, pre-migration 148) ───
+  BUSQUEDA: {
+    labelKey: 'admin.vacancyDetail.statusBadge.SEARCHING',
+    bgClass: 'bg-blue-yonder',
+  },
+  ACTIVO: {
+    labelKey: 'admin.vacancyDetail.statusBadge.ACTIVE',
+    bgClass: 'bg-blue-yonder',
+  },
+  REEMPLAZOS: {
+    labelKey: 'admin.vacancyDetail.statusBadge.SEARCHING_REPLACEMENT',
+    bgClass: 'bg-wait',
+  },
+  REEMPLAZO: {
+    labelKey: 'admin.vacancyDetail.statusBadge.SEARCHING_REPLACEMENT',
+    bgClass: 'bg-wait',
+  },
+  CERRADO: {
+    labelKey: 'admin.vacancyDetail.statusBadge.CLOSED',
+    bgClass: 'bg-gray-800',
   },
 };
 

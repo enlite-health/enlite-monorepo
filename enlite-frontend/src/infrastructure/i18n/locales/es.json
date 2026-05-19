@@ -359,7 +359,17 @@
       "female": "Femenino",
       "male": "Hombre",
       "indifferent": "Indistinto",
-      "woman": "Mujer"
+      "woman": "Mujer",
+      "FEMALE": "Mujer",
+      "MALE": "Varón",
+      "BOTH": "Indistinto"
+    },
+    "profession": {
+      "AT": "Acompañante Terapéutico",
+      "CAREGIVER": "Cuidador/a",
+      "NURSE": "Enfermero/a",
+      "KINESIOLOGIST": "Kinesiólogo/a",
+      "PSYCHOLOGIST": "Psicólogo/a"
     },
     "fields": {
       "province": "Provincia",
@@ -437,14 +447,24 @@
       "uploadDocuments": "Enviar Documentos"
     }
   },
+  "documentTypes": {
+    "resume_cv": "Currículum",
+    "identity_document": "DNI - Frente",
+    "identity_document_back": "DNI - Dorso",
+    "criminal_record": "Antecedentes penales",
+    "professional_registration": "Registro profesional",
+    "liability_insurance": "Seguro de responsabilidad",
+    "monotributo_certificate": "Certificado de Monotributo",
+    "at_certificate": "Certificado de Acompañante Terapéutico"
+  },
   "documents": {
     "title": "Documentos",
-    "resumeCv": "Curriculum",
+    "resumeCv": "Currículum",
     "identity": "DNI - Frente",
     "identityBack": "DNI - Dorso",
-    "criminalRecord": "Antecedentes Penales",
-    "professionalReg": "Constancia de Inscripción en ARCA (ex-AFIP)",
-    "liabilityInsurance": "Certificados y/o Títulos constantes del CV",
+    "criminalRecord": "Antecedentes penales",
+    "professionalReg": "Registro profesional",
+    "liabilityInsurance": "Seguro de responsabilidad",
     "monotributo": "Certificado de Monotributo",
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",
@@ -469,7 +489,12 @@
       "vacancies": "Vacantes",
       "workers": "Prestadores",
       "recruitment": "Reclutamiento",
-      "patients": "Pacientes"
+      "patients": "Pacientes",
+      "apiDocs": "API Docs"
+    },
+    "apiDocs": {
+      "title": "Documentación de la API",
+      "subtitle": "Referencia completa del worker-functions. Todas las llamadas usan tu token de staff actual automáticamente."
     },
     "login": {
       "title": "Panel Administrativo",
@@ -720,11 +745,8 @@
       "loading": "Cargando vacantes...",
       "errorLoading": "Error al cargar vacantes",
       "searchPlaceholder": "Buscar por nombre del paciente",
-      "clients": "Clientes",
-      "clientPlaceholder": "Nombre obra social",
       "statusLabel": "Estado",
       "priorityLabel": "Prioridad",
-      "statusPlaceholder": "Activo",
       "noVacancies": "No se encontraron vacantes",
       "stats": {
         "moreThan7Days": "+7 días",
@@ -736,24 +758,25 @@
         "name": "Nombre",
         "case": "Caso - Vacante",
         "status": "Estado",
-        "dependencyLevel": "Grado de Dependencia",
+        "priority": "Prioridad",
         "daysOpen": "Días Abierto",
         "invited": "Invitados",
         "applicants": "Postulados",
         "selected": "Seleccionados",
         "missing": "Faltantes",
-        "view": "Ver"
-      },
-      "clientOptions": {
-        "placeholder": "Nombre obra social",
-        "osde": "OSDE",
-        "swissMedical": "Swiss Medical"
+        "view": "Ver",
+        "edit": "Editar"
       },
       "statusOptions": {
         "all": "Todos",
+        "searching": "Buscando AT",
+        "searchingReplacement": "Buscando Sustituto",
+        "rapidResponse": "Respuesta Rápida",
+        "pendingActivation": "Esperando Activación",
         "active": "Activo",
-        "inProcess": "En Proceso",
-        "paused": "Pausado"
+        "onHold": "En Espera",
+        "suspended": "Suspendido",
+        "closed": "Cerrado"
       },
       "priorityOptions": {
         "all": "Todas",
@@ -1097,10 +1120,14 @@
         "noDescription": "Sin descripción generada aún. Hacé clic en \"Regenerar\" para crear una."
       },
       "statusBadge": {
-        "BUSQUEDA": "En búsqueda",
-        "ACTIVO": "Activo",
-        "REEMPLAZOS": "Reemplazo",
-        "CERRADO": "Cerrado",
+        "SEARCHING": "En búsqueda",
+        "SEARCHING_REPLACEMENT": "En reemplazo",
+        "RAPID_RESPONSE": "Respuesta rápida",
+        "PENDING_ACTIVATION": "Activación pendiente",
+        "ACTIVE": "Activo",
+        "ON_HOLD": "En espera",
+        "SUSPENDED": "Suspendido",
+        "CLOSED": "Cerrado",
         "ADMISSION": "Admisión"
       },
       "caseCard": {
@@ -1371,6 +1398,15 @@
         "addressTypeSecondary": "Secundario",
         "addressTypeService": "Servicio",
         "save": "Guardar",
+        "cancel": "Cancelar"
+      },
+      "resumeDraftDialog": {
+        "titleSingular": "Vacante en curso encontrada",
+        "titlePlural": "Vacantes en curso encontradas",
+        "description": "Identificamos {{count}} vacante(s) en proceso de creación para este paciente. ¿Querés retomar alguna o crear una nueva?",
+        "lastEditedLabel": "Última edición:",
+        "resume": "Retomar",
+        "createNew": "Crear nueva vacante",
         "cancel": "Cancelar"
       },
       "form": {
@@ -1805,7 +1841,7 @@
     "sexLabels": {
       "M": "Hombre",
       "F": "Mujer",
-      "BOTH": "Hombre y Mujer"
+      "BOTH": "Indistinto"
     },
     "diagnosticHypothesis": "Hipótesis Diagnóstica - CIE:",
     "jobDescription": "Descripción del trabajo:",

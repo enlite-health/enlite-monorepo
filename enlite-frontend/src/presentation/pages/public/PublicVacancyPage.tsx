@@ -238,7 +238,7 @@ export default function PublicVacancyPage() {
     sessionStorage.setItem('enlite_vacancy_return_url', location.pathname);
   }, [location.pathname, location.search]);
 
-  // Track acquisition channel on page load (creates encuadre for Kanban INVITED).
+  // Track acquisition channel on page load (creates encuadre for Kanban INITIATED).
   // Fires as soon as the worker is authenticated and vacancy is loaded — no need to wait for Postularse.
   useEffect(() => {
     if (!vacancy?.id || !isAuthenticated) return;

@@ -7,13 +7,15 @@
  *   3. sanitizeDescription — returns sanitized string for real description
  *   4. sanitizeDescription — returns empty string for null
  *   5. sanitizeDescription — trims whitespace
- *   6. mapPublicJobRow — maps all fields correctly (including 5 new fields)
+ *   6. mapPublicJobRow — maps all fields correctly (including 5 new fields + country + age_range + whatsapp_url)
  *   7. mapPublicJobRow — description is sanitized in the output
  *   8. mapPublicJobRow — state_city empty string normalised to null
  *   9. mapPublicJobRow — state_city whitespace-only normalised to null
  *  10. mapPublicJobRow — worker_type empty array normalised to null
  *  11. mapPublicJobRow — new fields pass-through when populated
  *  12. mapPublicJobRow — new fields pass-through as null when absent
+ *  13. mapPublicJobRow — country maps to dto.country
+ *  14. mapPublicJobRow — country null maps to dto.country null
  */
 
 import { sanitizeDescription, mapPublicJobRow } from '../PublicJobMapper';
@@ -73,11 +75,15 @@ describe('mapPublicJobRow', () => {
       job_zone: 'NORTE',
       neighborhood: 'Palermo Soho',
       state_city: 'Buenos Aires / CABA',
+      country: 'AR',
+      age_range_min: 5,
+      age_range_max: 12,
+      whatsapp_url: 'https://wa.me/5491112345678',
       ...overrides,
     };
   }
 
-  it('maps all fields from row to DTO (including 5 new fields)', () => {
+  it('maps all fields from row to DTO (including 5 new fields + country + age_range + whatsapp_url)', () => {
     const row = makeRow();
     const dto = mapPublicJobRow(row);
 
@@ -99,6 +105,10 @@ describe('mapPublicJobRow', () => {
     expect(dto.job_zone).toBe('NORTE');
     expect(dto.neighborhood).toBe('Palermo Soho');
     expect(dto.state_city).toBe('Buenos Aires / CABA');
+    expect(dto.country).toBe('AR');
+    expect(dto.age_range_min).toBe(5);
+    expect(dto.age_range_max).toBe(12);
+    expect(dto.whatsapp_url).toBe('https://wa.me/5491112345678');
   });
 
   it('sanitizes generic description to empty string in DTO', () => {
@@ -169,5 +179,37 @@ describe('mapPublicJobRow', () => {
     expect(dto.job_zone).toBeNull();
     expect(dto.neighborhood).toBeNull();
     expect(dto.state_city).toBeNull();
+  });
+
+  it('passes through age_range_min and age_range_max when populated', () => {
+    const dto = mapPublicJobRow(makeRow({ age_range_min: 18, age_range_max: 35 }));
+    expect(dto.age_range_min).toBe(18);
+    expect(dto.age_range_max).toBe(35);
+  });
+
+  it('passes through age_range_min and age_range_max as null when absent', () => {
+    const dto = mapPublicJobRow(makeRow({ age_range_min: null, age_range_max: null }));
+    expect(dto.age_range_min).toBeNull();
+    expect(dto.age_range_max).toBeNull();
+  });
+
+  it('passes through whatsapp_url when populated', () => {
+    const dto = mapPublicJobRow(makeRow({ whatsapp_url: 'https://wa.me/5491199999999' }));
+    expect(dto.whatsapp_url).toBe('https://wa.me/5491199999999');
+  });
+
+  it('passes through whatsapp_url as null when absent', () => {
+    const dto = mapPublicJobRow(makeRow({ whatsapp_url: null }));
+    expect(dto.whatsapp_url).toBeNull();
+  });
+
+  it('maps country to dto.country', () => {
+    const dto = mapPublicJobRow(makeRow({ country: 'BR' }));
+    expect(dto.country).toBe('BR');
+  });
+
+  it('maps country null to dto.country null', () => {
+    const dto = mapPublicJobRow(makeRow({ country: null }));
+    expect(dto.country).toBeNull();
   });
 });

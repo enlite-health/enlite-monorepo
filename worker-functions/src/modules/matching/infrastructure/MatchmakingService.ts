@@ -258,9 +258,10 @@ export class MatchmakingService {
            $2::JSONB IS NULL
            OR $2::JSONB ? COALESCE(w.occupation, w.profession)
          )
+         AND wsa.location IS NOT NULL
+         AND NOT (wsa.latitude = 0 AND wsa.longitude = 0)
          AND (
            NOT $3::BOOLEAN
-           OR wsa.location IS NULL
            OR ST_DWithin(
              wsa.location,
              ST_MakePoint($4::FLOAT, $5::FLOAT)::geography,
@@ -355,7 +356,7 @@ export class MatchmakingService {
       await this.db.query(
         `INSERT INTO worker_job_applications
            (worker_id, job_posting_id, match_score, application_status, application_funnel_stage, internal_notes)
-         VALUES ($1, $2, $3, 'under_review', 'INITIATED', $4)
+         VALUES ($1, $2, $3, 'under_review', 'INVITED', $4)
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            match_score    = EXCLUDED.match_score,
            internal_notes = EXCLUDED.internal_notes,

@@ -1,4 +1,5 @@
 import { MapPin, User, Briefcase } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import type { VacancyForMatch } from './matchModalHelpers';
 import { buildAddressLabel } from './matchModalHelpers';
@@ -24,7 +25,13 @@ interface MatchCriteriaChipsProps {
 }
 
 export function MatchCriteriaChips({ vacancy }: MatchCriteriaChipsProps) {
-  const sex = vacancy?.required_sex ?? '—';
+  const { t } = useTranslation();
+  const sex = vacancy?.required_sex
+    ? t(
+        `admin.vacancyDetail.vacancyForm.sexOptions.${vacancy.required_sex}`,
+        vacancy.required_sex,
+      )
+    : '—';
   const profession =
     (vacancy?.required_professions as string[] | null)?.[0] ?? '—';
   const address = buildAddressLabel(vacancy);

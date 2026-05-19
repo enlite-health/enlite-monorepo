@@ -7,12 +7,13 @@ import {
   FunnelBucket,
   WhatsAppStatus,
 } from '../domain/FunnelTableRow';
+import {
+  POSTULATED_STAGES_SET,
+  PRE_SELECTED_STAGES_SET,
+  REJECTION_STAGES_SET,
+} from '../domain/applicationFunnelStages';
 
 // ── Bucket classification ────────────────────────────────────────────────────
-
-const POSTULATED_STAGES = new Set(['INITIATED', 'IN_PROGRESS', 'COMPLETED']);
-const PRE_SELECTED_STAGES = new Set(['QUALIFIED', 'CONFIRMED', 'SELECTED', 'PLACED']);
-const REJECTION_STAGES = new Set(['REJECTED', 'NOT_QUALIFIED', 'RECHAZADO']);
 
 /**
  * Classifies a row into one of the five named buckets.
@@ -24,9 +25,9 @@ function classifyBucket(row: FunnelTableRow): Exclude<FunnelBucket, 'ALL'> {
   const ir = row.interviewResponse ?? '';
 
   if (ir === 'declined' || stage === 'REPROGRAM') return 'WITHDREW';
-  if (REJECTION_STAGES.has(stage)) return 'REJECTED';
-  if (PRE_SELECTED_STAGES.has(stage)) return 'PRE_SELECTED';
-  if (POSTULATED_STAGES.has(stage)) return 'POSTULATED';
+  if (REJECTION_STAGES_SET.has(stage)) return 'REJECTED';
+  if (PRE_SELECTED_STAGES_SET.has(stage)) return 'PRE_SELECTED';
+  if (POSTULATED_STAGES_SET.has(stage)) return 'POSTULATED';
   return 'INVITED'; // INVITED or unknown → INVITED
 }
 

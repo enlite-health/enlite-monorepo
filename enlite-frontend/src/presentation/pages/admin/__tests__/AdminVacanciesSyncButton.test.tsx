@@ -36,9 +36,9 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 vi.mock('@hooks/admin/useVacanciesData', () => ({
   useVacanciesData: () => ({
     vacancies: [
-      { id: '1', caso: 'Caso 100', status: 'Activo', dependency_level: 'Grave',
-        grauColor: 'text-[#f9a000]', convidados: '10', postulados: '5',
-        providers_needed: 3, faltantes: '2' },
+      { id: '1', caso: 'Caso 100', status: 'Activo', priority: 'HIGH',
+        diasAberto: '05', convidados: '10', postulados: '5',
+        selecionados: '3', faltantes: '2' },
     ],
     stats: [
       { label: '+7 días', value: '2', icon: 'clock' },

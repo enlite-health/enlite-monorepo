@@ -1,93 +1,5 @@
 import { TFunction } from 'i18next';
-import { VacancyRow } from '@presentation/components/features/admin/VacanciesTable';
-import { SelectOption } from '@presentation/components/molecules/SelectField';
-
-export const mockVacancies: VacancyRow[] = [
-  {
-    id: '1',
-    caso: 'Caso 234',
-    status: 'Em Processo',
-    grau: 'Muito Grave',
-    grauColor: 'text-[#ed0006]',
-    diasAberto: '05',
-    convidados: '00',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-  {
-    id: '2',
-    caso: 'Caso SN21',
-    status: 'Ativo',
-    grau: 'Grave',
-    grauColor: 'text-[#f9a000]',
-    diasAberto: '04',
-    convidados: '17',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-  {
-    id: '3',
-    caso: 'Caso 245',
-    status: 'Em Processo',
-    grau: 'Moderado',
-    grauColor: 'text-[#fdc405]',
-    diasAberto: '07',
-    convidados: '15',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-  {
-    id: '4',
-    caso: 'Caso 265',
-    status: 'Inativo',
-    grau: 'Leve',
-    grauColor: 'text-[#81c784]',
-    diasAberto: '18',
-    convidados: '12',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-  {
-    id: '5',
-    caso: 'Caso 257',
-    status: 'Ativo',
-    grau: 'Leve',
-    grauColor: 'text-[#81c784]',
-    diasAberto: '20',
-    convidados: '02',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-  {
-    id: '6',
-    caso: 'Caso 321',
-    status: 'Esperando Ativação',
-    grau: 'Moderado',
-    grauColor: 'text-[#fdc405]',
-    diasAberto: '25',
-    convidados: '07',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-  {
-    id: '7',
-    caso: 'Caso 314',
-    status: 'Ativo',
-    grau: 'Moderado',
-    grauColor: 'text-[#fdc405]',
-    diasAberto: '22',
-    convidados: '18',
-    postulados: '',
-    selecionados: '',
-    faltantes: '',
-  },
-];
+import { SelectOption } from '@presentation/components/atoms/Select';
 
 export const getStatsData = (t: TFunction) => [
   { label: t('admin.vacancies.stats.moreThan7Days'), value: '2', icon: 'clock' as const },
@@ -96,20 +8,20 @@ export const getStatsData = (t: TFunction) => [
   { label: t('admin.vacancies.stats.totalVacancies'), value: '4,5h', icon: 'user-search' as const },
 ];
 
-export const getClientOptions = (t: TFunction): SelectOption[] => [
-  { value: 'osde', label: t('admin.vacancies.clientOptions.osde') },
-  { value: 'swiss', label: t('admin.vacancies.clientOptions.swissMedical') },
-];
-
 export const getStatusOptions = (t: TFunction): SelectOption[] => [
-  { value: 'ativo', label: t('admin.vacancies.statusOptions.active') },
-  { value: 'processo', label: t('admin.vacancies.statusOptions.inProcess') },
-  { value: 'pausado', label: t('admin.vacancies.statusOptions.paused') },
+  { value: 'SEARCHING',             label: t('admin.vacancies.statusOptions.searching') },
+  { value: 'SEARCHING_REPLACEMENT', label: t('admin.vacancies.statusOptions.searchingReplacement') },
+  { value: 'RAPID_RESPONSE',        label: t('admin.vacancies.statusOptions.rapidResponse') },
+  { value: 'PENDING_ACTIVATION',    label: t('admin.vacancies.statusOptions.pendingActivation') },
+  { value: 'ACTIVE',                label: t('admin.vacancies.statusOptions.active') },
+  { value: 'ON_HOLD',               label: t('admin.vacancies.statusOptions.onHold') },
+  { value: 'SUSPENDED',             label: t('admin.vacancies.statusOptions.suspended') },
+  { value: 'CLOSED',                label: t('admin.vacancies.statusOptions.closed') },
 ];
 
 export const getPriorityOptions = (t: TFunction): SelectOption[] => [
   { value: 'URGENT', label: t('admin.vacancies.priorityOptions.urgent') },
-  { value: 'HIGH', label: t('admin.vacancies.priorityOptions.high') },
+  { value: 'HIGH',   label: t('admin.vacancies.priorityOptions.high') },
   { value: 'NORMAL', label: t('admin.vacancies.priorityOptions.normal') },
-  { value: 'LOW', label: t('admin.vacancies.priorityOptions.low') },
+  { value: 'LOW',    label: t('admin.vacancies.priorityOptions.low') },
 ];

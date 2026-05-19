@@ -359,7 +359,17 @@
       "female": "Feminino",
       "male": "Masculino",
       "indifferent": "Indiferente",
-      "woman": "Mulher"
+      "woman": "Mulher",
+      "FEMALE": "Mulher",
+      "MALE": "Homem",
+      "BOTH": "Indiferente"
+    },
+    "profession": {
+      "AT": "Acompanhante Terapêutico",
+      "CAREGIVER": "Cuidador(a)",
+      "NURSE": "Enfermeiro(a)",
+      "KINESIOLOGIST": "Fisioterapeuta",
+      "PSYCHOLOGIST": "Psicólogo(a)"
     },
     "fields": {
       "province": "Província",
@@ -437,14 +447,24 @@
       "uploadDocuments": "Enviar Documentos"
     }
   },
+  "documentTypes": {
+    "resume_cv": "Currículo",
+    "identity_document": "RG/CPF - Frente",
+    "identity_document_back": "RG/CPF - Verso",
+    "criminal_record": "Antecedentes penais",
+    "professional_registration": "Registro profissional",
+    "liability_insurance": "Seguro de responsabilidade",
+    "monotributo_certificate": "Certificado MEI/Monotributo",
+    "at_certificate": "Certificado de Acompanhante Terapêutico"
+  },
   "documents": {
     "title": "Documentos",
     "resumeCv": "Currículo",
     "identity": "RG/CPF - Frente",
     "identityBack": "RG/CPF - Verso",
-    "criminalRecord": "Antecedentes Criminais",
-    "professionalReg": "Registro Profissional",
-    "liabilityInsurance": "Certificados e/ou Títulos do CV",
+    "criminalRecord": "Antecedentes penais",
+    "professionalReg": "Registro profissional",
+    "liabilityInsurance": "Seguro de responsabilidade",
     "monotributo": "Certificado MEI/Monotributo",
     "atCertificate": "Certificado de Acompanhante Terapêutico",
     "atRequiredWarning": "Como Acompanhante Terapêutico, estes documentos são obrigatórios para completar seu cadastro.",
@@ -469,7 +489,12 @@
       "vacancies": "Vagas",
       "workers": "Prestadores",
       "recruitment": "Recrutamento",
-      "patients": "Pacientes"
+      "patients": "Pacientes",
+      "apiDocs": "API Docs"
+    },
+    "apiDocs": {
+      "title": "Documentação da API",
+      "subtitle": "Referência completa do worker-functions. Todas as chamadas usam seu token de staff atual automaticamente."
     },
     "login": {
       "title": "Painel Administrativo",
@@ -720,11 +745,8 @@
       "loading": "Carregando vagas...",
       "errorLoading": "Erro ao carregar vagas",
       "searchPlaceholder": "Pesquisar pelo nome do paciente",
-      "clients": "Clientes",
-      "clientPlaceholder": "Nome obra social",
       "statusLabel": "Status",
       "priorityLabel": "Prioridade",
-      "statusPlaceholder": "Ativo",
       "noVacancies": "Nenhuma vaga encontrada",
       "stats": {
         "moreThan7Days": "+7 dias",
@@ -736,24 +758,25 @@
         "name": "Nome",
         "case": "Caso",
         "status": "Status",
-        "dependencyLevel": "Grau de Dependência",
+        "priority": "Prioridade",
         "daysOpen": "Dias Aberto",
         "invited": "Convidados",
         "applicants": "Postulados",
         "selected": "Selecionados",
         "missing": "Faltantes",
-        "view": "Ver"
-      },
-      "clientOptions": {
-        "placeholder": "Nome obra social",
-        "osde": "OSDE",
-        "swissMedical": "Swiss Medical"
+        "view": "Ver",
+        "edit": "Editar"
       },
       "statusOptions": {
         "all": "Todos",
+        "searching": "Buscando AT",
+        "searchingReplacement": "Buscando Substituto",
+        "rapidResponse": "Resposta Rápida",
+        "pendingActivation": "Aguardando Ativação",
         "active": "Ativo",
-        "inProcess": "Em Processo",
-        "paused": "Pausado"
+        "onHold": "Em Espera",
+        "suspended": "Suspenso",
+        "closed": "Encerrado"
       },
       "priorityOptions": {
         "all": "Todas",
@@ -944,10 +967,10 @@
           "AT_AND_CAREGIVER": "AT e Cuidador"
         },
         "sexOptions": {
-          "unspecified": "Indiferente",
+          "unspecified": "Indistinto",
           "M": "Masculino",
           "F": "Feminino",
-          "BOTH": "Indiferente"
+          "BOTH": "Indistinto"
         },
         "deviceOptions": {
           "DOMICILIARIO": "Domiciliar",
@@ -1019,10 +1042,14 @@
         }
       },
       "statusBadge": {
-        "BUSQUEDA": "Em busca",
-        "ACTIVO": "Ativo",
-        "REEMPLAZOS": "Substituição",
-        "CERRADO": "Encerrado",
+        "SEARCHING": "Em busca",
+        "SEARCHING_REPLACEMENT": "Em substituição",
+        "RAPID_RESPONSE": "Resposta rápida",
+        "PENDING_ACTIVATION": "Aguardando ativação",
+        "ACTIVE": "Ativo",
+        "ON_HOLD": "Em espera",
+        "SUSPENDED": "Suspenso",
+        "CLOSED": "Encerrado",
         "ADMISSION": "Admissão"
       },
       "caseCard": {
@@ -1293,6 +1320,15 @@
         "addressTypeSecondary": "Secundário",
         "addressTypeService": "Serviço",
         "save": "Salvar",
+        "cancel": "Cancelar"
+      },
+      "resumeDraftDialog": {
+        "titleSingular": "Vaga em andamento encontrada",
+        "titlePlural": "Vagas em andamento encontradas",
+        "description": "Identificamos {{count}} vaga(s) em processo de criação para este paciente. Quer retomar alguma ou criar uma nova?",
+        "lastEditedLabel": "Última edição:",
+        "resume": "Retomar",
+        "createNew": "Criar nova vaga",
         "cancel": "Cancelar"
       },
       "form": {
@@ -1727,7 +1763,7 @@
     "sexLabels": {
       "M": "Homem",
       "F": "Mulher",
-      "BOTH": "Homem e Mulher"
+      "BOTH": "Indistinto"
     },
     "diagnosticHypothesis": "Hipótese Diagnóstica - CID:",
     "jobDescription": "Descrição do trabalho:",
@@ -1768,7 +1804,7 @@
         "availability": "Disponibilidade de horários",
         "resumeCv": "Currículo",
         "identityDocument": "Documento de identidade",
-        "criminalRecord": "Antecedentes criminais",
+        "criminalRecord": "Antecedentes penais",
         "professionalRegistration": "Registro profissional",
         "liabilityInsurance": "Seguro de responsabilidade civil"
       },

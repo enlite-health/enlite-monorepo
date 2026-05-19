@@ -52,6 +52,9 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/pending-address-review', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.listPendingAddressReview(req, res),
   );
+  router.get('/vacancies/in-progress', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacanciesController.listInProgressForPatient(req, res),
+  );
   router.get('/vacancies/:id', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.getVacancyById(req, res),
   );

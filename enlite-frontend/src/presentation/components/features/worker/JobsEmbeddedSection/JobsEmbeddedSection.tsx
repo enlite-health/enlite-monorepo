@@ -17,24 +17,37 @@ import {
   USE_MOCK,
 } from './jobsConstants';
 
-const USE_PUBLIC_API = import.meta.env.VITE_USE_PUBLIC_JOBS_API === 'true';
+function readUsePublicApi(): boolean {
+  if (typeof window !== 'undefined') {
+    const override = (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
+    if (typeof override === 'boolean') return override;
+  }
+  return import.meta.env.VITE_USE_PUBLIC_JOBS_API === 'true';
+}
+
+function formatAgeRange(min: number | null, max: number | null): string {
+  if (min !== null && max !== null) return `${min} a ${max} años`;
+  if (min !== null) return `${min}+ años`;
+  if (max !== null) return `hasta ${max} años`;
+  return '';
+}
 
 function adaptPublicJobListing(dto: PublicJobListing): Job {
   return {
-    code: dto.id,
+    code: String(dto.case_number),
     title: dto.title,
-    workerType: dto.service ?? '',
-    provincia: dto.provincia ?? '',
-    localidad: dto.localidad ?? '',
+    workerType: (dto.worker_type ?? []).join(', '),
+    provincia: dto.state ?? '',
+    localidad: dto.city ?? '',
     barrio: dto.neighborhood ?? '',
-    workerSex: '',
+    workerSex: dto.worker_sex ?? '',
     pathologies: dto.pathologies ?? '',
     description: dto.description,
     service: dto.service ?? '',
     daysAndHours: dto.schedule_days_hours ?? '',
-    ageRange: '',
+    ageRange: formatAgeRange(dto.age_range_min, dto.age_range_max),
     profile: dto.worker_profile_sought ?? '',
-    whatsappLink: '',
+    whatsappLink: dto.whatsapp_url ?? '',
     detailLink: dto.detail_link,
   };
 }
@@ -115,7 +128,7 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
         setJobs(MOCK_JOBS);
         return;
       }
-      if (USE_PUBLIC_API) {
+      if (readUsePublicApi()) {
         const listings = await PublicApiService.getPublicJobs();
         setJobs(listings.map(adaptPublicJobListing));
       } else {
@@ -260,14 +273,16 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
                     <span className="px-2 py-1 bg-[#180149] text-white text-xs rounded font-medium font-lexend">
                       {job.code}
                     </span>
-                    <span className="text-xs text-[#737373] capitalize font-lexend font-medium">{job.workerType}</span>
+                    <span className="text-xs text-[#737373] capitalize font-lexend font-medium">
+                      {job.workerType.split(', ').map(p => t(`jobs.profession.${p}`, { defaultValue: p })).join(', ')}
+                    </span>
                   </div>
                   <h3 className="font-semibold text-[#180149] text-sm font-lexend">
                     {[job.barrio, job.localidad, job.provincia].filter(Boolean).join(' · ')}
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2 flex-shrink-0">
-                  {!USE_PUBLIC_API && job.whatsappLink && (
+                  {job.whatsappLink && (
                     <button
                       onClick={() => handleWhatsAppClick(job)}
                       className="px-3 py-1.5 bg-[#25d366] text-white text-xs rounded hover:bg-[#128c7e] transition-colors font-lexend font-medium"
@@ -286,7 +301,8 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-[#737373] mb-3 font-lexend font-medium">
                 <div>
-                  <span className="text-[#180149] font-semibold">{t('jobs.fields.sex')}:</span> {job.workerSex}
+                  <span className="text-[#180149] font-semibold">{t('jobs.fields.sex')}:</span>{' '}
+                  {t(`jobs.sex.${job.workerSex}`, { defaultValue: job.workerSex })}
                 </div>
                 <div>
                   <span className="text-[#180149] font-semibold">{t('jobs.fields.ageRange')}:</span> {job.ageRange}

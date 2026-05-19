@@ -140,9 +140,30 @@ describe('Vacancies API', () => {
       expect(res.data.data.length).toBeLessThanOrEqual(5);
     });
 
-    it('aceita filtro de status', async () => {
+    it('aceita filtro de status canônico (ACTIVE)', async () => {
+      const res = await api.get(
+        '/api/admin/vacancies?status=ACTIVE',
+        authHeaders(adminToken),
+      );
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.data.data)).toBe(true);
+    });
+
+    it('ignora silenciosamente filtros de status legados/inválidos', async () => {
+      // Filtros antigos ('ativo', 'inativo', 'processo') foram removidos;
+      // a query agora só aceita os 8 valores canônicos do banco e ignora qualquer
+      // outro valor (em vez de quebrar a listagem).
       const res = await api.get(
         '/api/admin/vacancies?status=ativo',
+        authHeaders(adminToken),
+      );
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.data.data)).toBe(true);
+    });
+
+    it('aceita filtro de priority canônico (URGENT)', async () => {
+      const res = await api.get(
+        '/api/admin/vacancies?priority=URGENT',
         authHeaders(adminToken),
       );
       expect(res.status).toBe(200);
@@ -597,13 +618,14 @@ describe('Vacancies API', () => {
         expect(caughtError!.message).toMatch(/job_postings_status_check|check constraint/i);
       });
 
-      it('job_postings_status_check aceita todos os 7 valores canônicos', async () => {
+      it('job_postings_status_check aceita todos os 8 valores canônicos', async () => {
         const canonicalStatuses = [
           'SEARCHING',
           'SEARCHING_REPLACEMENT',
           'RAPID_RESPONSE',
           'PENDING_ACTIVATION',
           'ACTIVE',
+          'ON_HOLD',
           'SUSPENDED',
           'CLOSED',
         ];

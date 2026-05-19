@@ -15,11 +15,15 @@
 
 const mockFindByFirebaseUid = jest.fn();
 const mockUpdateLastLogin = jest.fn();
+const mockFindByEmail = jest.fn();
+const mockReassignFirebaseUid = jest.fn();
 
 jest.mock('../../infrastructure/AdminRepository', () => ({
   AdminRepository: jest.fn().mockImplementation(() => ({
     findByFirebaseUid: mockFindByFirebaseUid,
     updateLastLogin: mockUpdateLastLogin,
+    findByEmail: mockFindByEmail,
+    reassignFirebaseUid: mockReassignFirebaseUid,
   })),
 }));
 
@@ -74,11 +78,13 @@ const makeFirebaseUser = (overrides: Partial<{
   email: string;
   displayName: string | undefined;
   photoURL: string | undefined;
+  providerData: { providerId: string }[];
 }> = {}) => ({
   uid: FIREBASE_UID,
   email: 'joao.silva@enlite.health',
   displayName: 'João Silva',
   photoURL: null,
+  providerData: [{ providerId: 'password' }],
   ...overrides,
 });
 
@@ -90,6 +96,8 @@ describe('GetAdminProfileUseCase', () => {
     jest.clearAllMocks();
     mockUpdateLastLogin.mockResolvedValue(undefined);
     mockSetCustomUserClaims.mockResolvedValue(undefined);
+    mockFindByEmail.mockResolvedValue(null);
+    mockReassignFirebaseUid.mockResolvedValue(undefined);
     mockQuery.mockResolvedValue({ rows: [] });
     mockRelease.mockReset();
     mockConnect.mockResolvedValue({
@@ -376,6 +384,84 @@ describe('GetAdminProfileUseCase', () => {
         (args: unknown[]) => args[0] === 'COMMIT'
       );
       expect(commitCalls).toHaveLength(0);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('Cenário 6 — Reassign de firebase_uid em produção (regressão)', () => {
+    // Staff foi convidado via invitation link (provider password, uid_A) e está
+    // logando com Google pela primeira vez (uid_B). Sem reassign, o backend
+    // tentaria criar nova row e bateria na unique constraint em users.email.
+    const UID_PASSWORD = 'firebase-uid-original-password';
+    const UID_GOOGLE = 'firebase-uid-google-new';
+
+    const seedRecord: AdminRecord = {
+      firebaseUid: UID_PASSWORD,
+      email: 'florencia.uberti@enlite.health',
+      displayName: 'Florencia Uberti',
+      role: 'recruiter',
+      department: null,
+      lastLoginAt: '2026-05-01T10:00:00.000Z',
+      loginCount: 12,
+      createdAt: '2026-03-15T10:00:00.000Z',
+    };
+
+    const reassignedRecord: AdminRecord = { ...seedRecord, firebaseUid: UID_GOOGLE };
+
+    it('deve fazer reassign quando email já existe sob outro firebase_uid', async () => {
+      mockFindByFirebaseUid
+        .mockResolvedValueOnce(null)            // lookup inicial pelo uid Google
+        .mockResolvedValueOnce(reassignedRecord); // após reassign
+      mockGetUser.mockResolvedValue(makeFirebaseUser({
+        email: 'florencia.uberti@enlite.health',
+        providerData: [{ providerId: 'google.com' }],
+      }));
+      mockFindByEmail.mockResolvedValue(seedRecord);
+
+      const useCase = new GetAdminProfileUseCase();
+      const result = await useCase.execute(UID_GOOGLE);
+
+      expect(mockReassignFirebaseUid).toHaveBeenCalledWith(
+        'florencia.uberti@enlite.health',
+        UID_GOOGLE
+      );
+      expect(result.isSuccess).toBe(true);
+      expect(result.getValue()).toEqual(reassignedRecord);
+    });
+
+    it('não deve invocar create_user_with_role quando há reassign', async () => {
+      mockFindByFirebaseUid
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(reassignedRecord);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({
+        email: 'florencia.uberti@enlite.health',
+        providerData: [{ providerId: 'google.com' }],
+      }));
+      mockFindByEmail.mockResolvedValue(seedRecord);
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(UID_GOOGLE);
+
+      const provisionCalls = mockQuery.mock.calls.filter(
+        (args: unknown[]) => typeof args[0] === 'string' && args[0].includes('create_user_with_role')
+      );
+      expect(provisionCalls).toHaveLength(0);
+      expect(mockSetCustomUserClaims).not.toHaveBeenCalled();
+    });
+
+    it('não deve reassign se o firebase_uid já é o mesmo (caso degenerado)', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({
+        email: 'florencia.uberti@enlite.health',
+      }));
+      // findByEmail retorna registro com o MESMO uid que estamos buscando
+      mockFindByEmail.mockResolvedValue({ ...seedRecord, firebaseUid: FIREBASE_UID });
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      expect(mockReassignFirebaseUid).not.toHaveBeenCalled();
     });
   });
 

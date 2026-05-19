@@ -1,54 +1,34 @@
-name: CI/CD Worker Functions
+name: Backend — Production
 
 on:
   push:
-    branches: [ "main", "stage" ]
+    branches: [ "main" ]
     paths:
       - 'worker-functions/**'
   pull_request:
-    branches: [ "main", "stage" ]
+    branches: [ "main" ]
     paths:
       - 'worker-functions/**'
 
+concurrency:
+  group: backend-prd
+  cancel-in-progress: false
+
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: southamerica-west1
   REGISTRY_REGION: southamerica-west1
   SERVICE_NAME: worker-functions
   REPOSITORY: worker-functions
 
 jobs:
-  quality-gate:
+  quality:
+    uses: ./.github/workflows/_backend-quality.yml
+
+  deploy:
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: worker-functions
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: worker-functions/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Run unit tests
-        run: npm test
-
-  build-and-deploy:
-    needs: quality-gate
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/stage')
-    runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    environment: production
     defaults:
       run:
         working-directory: worker-functions
@@ -74,10 +54,12 @@ jobs:
         run: |
           gcloud artifacts repositories describe ${{ env.REPOSITORY }} \
             --location=${{ env.REGISTRY_REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
             --format="value(name)" 2>/dev/null || \
           gcloud artifacts repositories create ${{ env.REPOSITORY }} \
             --repository-format=docker \
-            --location=${{ env.REGISTRY_REGION }}
+            --location=${{ env.REGISTRY_REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
 
       - name: 'Docker Auth'
         run: gcloud auth configure-docker ${{ env.REGISTRY_REGION }}-docker.pkg.dev
@@ -91,7 +73,7 @@ jobs:
 
       - name: 'Build and Push Container'
         run: |
-          IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           docker build --no-cache -t $IMAGE_TAG .
           docker push $IMAGE_TAG
 
@@ -100,7 +82,8 @@ jobs:
         with:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
-          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
@@ -115,7 +98,6 @@ jobs:
             GOOGLE_CALENDAR_ID=primary
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
-            GOOGLE_IDENTITY_API_KEY=${{ secrets.GOOGLE_IDENTITY_API_KEY }}
             EMAIL_FROM=enlite@enlite.health
             N8N_WEBHOOK_URL=https://n8n.enlite.health/webhook/worker-events
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
@@ -132,8 +114,8 @@ jobs:
             SENDGRID_API_KEY=sendgrid-api-key:latest
           flags: >-
             --allow-unauthenticated
-            --service-account=enlite-functions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
-            --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
+            --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+            --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
             --memory=1Gi
             --cpu=2
             --timeout=600s
@@ -144,7 +126,9 @@ jobs:
       - name: 'Verify deploy (health check)'
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} --format='value(status.url)')
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(status.url)')
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$SERVICE_URL/health")
           if [ "$STATUS" != "200" ]; then
             echo "::error::Health check failed with status $STATUS"

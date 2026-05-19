@@ -31,3 +31,7 @@ build/
 *.tfvars
 !*.tfvars.example
 # .terraform.lock.hcl is intentionally committed (provider version pinning)
+
+# Artefatos de execução dos scripts de backfill (one-shot, contêm dados de auditoria)
+worker-functions/backfill-worker-names-unresolved.csv
+worker-functions/scripts/*.csv

@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
 
 const defaultProps = {
   profession: 'AT',
-  requiredSex: 'Femenino',
+  requiredSex: 'F',
   diagnosis: 'TEA',
   talentumDescription: null,
   ageRangeMin: 25,
@@ -61,7 +61,9 @@ describe('VacancyProfessionCard — fields', () => {
 
   it('renders requiredSex value', () => {
     renderCard();
-    expect(screen.getByText('Femenino')).toBeInTheDocument();
+    expect(
+      screen.getByText('admin.vacancyDetail.vacancyForm.sexOptions.F'),
+    ).toBeInTheDocument();
   });
 
   it('renders diagnosis value', () => {

@@ -33,7 +33,10 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Stepper } from '@presentation/components/molecules/Stepper';
 import { useVacancyModalFlow } from '@hooks/admin/useVacancyModalFlow';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
+import type { AdminVacancyDetail } from '@domain/entities/Vacancy';
 import { VacancyFormSection } from '@presentation/components/features/admin/VacancyModal/VacancyFormSection';
+import { ResumeDraftVacancyDialog } from '@presentation/components/features/admin/VacancyModal/ResumeDraftVacancyDialog';
 
 export default function CreateVacancyPage(): JSX.Element {
   const { t } = useTranslation();
@@ -48,9 +51,15 @@ export default function CreateVacancyPage(): JSX.Element {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [validationFailedFields, setValidationFailedFields] = useState<string[]>([]);
   const [formComplete, setFormComplete] = useState(false);
-  const [existingVacancy, setExistingVacancy] = useState<any | null>(null);
+  const [existingVacancy, setExistingVacancy] = useState<AdminVacancyDetail | null>(null);
   const [isLoadingVacancy, setIsLoadingVacancy] = useState(isEditMode);
   const [vacancyLoadError, setVacancyLoadError] = useState<string | null>(null);
+
+  // Draft-resume state
+  const [drafts, setDrafts] = useState<VacancyDraftSummary[]>([]);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
+  const [isCheckingDrafts, setIsCheckingDrafts] = useState(false);
+  const lastCheckedPatientIdRef = useRef<string | null>(null);
 
   const flow = useVacancyModalFlow();
   const patientSelected = isEditMode || flow.selectedCaseNumber != null;
@@ -80,6 +89,50 @@ export default function CreateVacancyPage(): JSX.Element {
     // every render would refetch the vacancy unnecessarily.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeVacancyId, isEditMode]);
+
+  // Check for existing drafts when a patient is selected in create mode
+  useEffect(() => {
+    const patientId = flow.selectedPatientId;
+    if (isEditMode || !patientId || isCheckingDrafts) return;
+    if (lastCheckedPatientIdRef.current === patientId) return;
+
+    lastCheckedPatientIdRef.current = patientId;
+    setIsCheckingDrafts(true);
+
+    AdminApiService.listDraftsForPatient(patientId)
+      .then((found) => {
+        if (found.length > 0) {
+          setDrafts(found);
+          setShowResumeDialog(true);
+        } else {
+          setShowResumeDialog(false);
+        }
+      })
+      .catch((err: unknown) => {
+        // Non-blocking: log but do not prevent vacancy creation
+        console.error('[CreateVacancyPage] draft check failed:', err);
+      })
+      .finally(() => {
+        setIsCheckingDrafts(false);
+      });
+  // isCheckingDrafts intentionally omitted to avoid loop — ref guards re-entry
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flow.selectedPatientId, isEditMode]);
+
+  const handleResumeDialogResume = (vacancyId: string) => {
+    navigate(`/admin/vacancies/${vacancyId}/edit`);
+  };
+
+  const handleResumeDialogCreateNew = () => {
+    setShowResumeDialog(false);
+  };
+
+  const handleResumeDialogCancel = () => {
+    flow.reset();
+    lastCheckedPatientIdRef.current = null;
+    setShowResumeDialog(false);
+    setDrafts([]);
+  };
 
   const handleSave = () => {
     formRef.current?.requestSubmit();
@@ -208,6 +261,15 @@ export default function CreateVacancyPage(): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* Draft-resume dialog */}
+      <ResumeDraftVacancyDialog
+        isOpen={showResumeDialog}
+        drafts={drafts}
+        onResume={handleResumeDialogResume}
+        onCreateNew={handleResumeDialogCreateNew}
+        onCancel={handleResumeDialogCancel}
+      />
 
       {/* Full-screen overlay during AI generation */}
       {generating && (

@@ -9,10 +9,10 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
 import { VacancyFilters } from '@presentation/components/features/admin/VacancyFilters';
-import { VacanciesTable } from '@presentation/components/features/admin/VacanciesTable';
+import { VacanciesTable, VacancyPriority } from '@presentation/components/features/admin/VacanciesTable';
 import { VacancyModal } from '@presentation/components/features/admin/VacancyModal/VacancyModal';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
-import { getClientOptions, getStatusOptions, getPriorityOptions } from './vacanciesData';
+import { getStatusOptions, getPriorityOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 
 interface ModalState {
@@ -21,33 +21,37 @@ interface ModalState {
   vacancyId?: string;
 }
 
+const PRIORITY_SET: ReadonlySet<string> = new Set(['URGENT', 'HIGH', 'NORMAL', 'LOW']);
+
+function toPriority(value: unknown): VacancyPriority | null {
+  return typeof value === 'string' && PRIORITY_SET.has(value)
+    ? (value as VacancyPriority)
+    : null;
+}
+
 export function AdminVacanciesPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const clientOptions = getClientOptions(t);
   const statusOptions = getStatusOptions(t);
   const priorityOptions = getPriorityOptions(t);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedClient, setSelectedClient] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('ativo');
+  const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
 
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
-  const handleClientChange = (v: string) => { setSelectedClient(v); setCurrentPage(1); };
   const handleStatusChange = (v: string) => { setSelectedStatus(v); setCurrentPage(1); };
   const handlePriorityChange = (v: string) => { setSelectedPriority(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
 
   const filters = useMemo(() => ({
     search: searchQuery,
-    client: selectedClient,
     status: selectedStatus,
     priority: selectedPriority,
     limit: itemsPerPage,
     offset: String((currentPage - 1) * parseInt(itemsPerPage)),
-  }), [searchQuery, selectedClient, selectedStatus, selectedPriority, itemsPerPage, currentPage]);
+  }), [searchQuery, selectedStatus, selectedPriority, itemsPerPage, currentPage]);
 
   const { vacancies: rawVacancies, stats, total, isLoading, error, refetch } = useVacanciesData(filters);
 
@@ -134,13 +138,12 @@ export function AdminVacanciesPage(): JSX.Element {
       id: v.id,
       caso: v.caso ? String(v.caso) : v.id,
       status: v.status || '—',
-      grau: '—',
-      grauColor: v.grauColor,
-      diasAberto: '—',
-      convidados: v.convidados || '—',
-      postulados: v.postulados || '—',
-      selecionados: v.providers_needed != null ? String(v.providers_needed) : '—',
-      faltantes: v.faltantes || '—',
+      priority: toPriority(v.priority),
+      diasAberto: v.diasAberto || '—',
+      convidados: v.convidados ?? '—',
+      postulados: v.postulados ?? '—',
+      selecionados: v.selecionados ?? '—',
+      faltantes: v.faltantes ?? '—',
     })),
     [rawVacancies],
   );
@@ -224,13 +227,10 @@ export function AdminVacanciesPage(): JSX.Element {
         <VacancyFilters
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
-          selectedClient={selectedClient}
-          onClientChange={handleClientChange}
           selectedStatus={selectedStatus}
           onStatusChange={handleStatusChange}
           selectedPriority={selectedPriority}
           onPriorityChange={handlePriorityChange}
-          clientOptions={clientOptions}
           statusOptions={statusOptions}
           priorityOptions={priorityOptions}
         />

@@ -3,7 +3,6 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 interface UseVacanciesDataFilters {
   search?: string;
-  client?: string;
   status?: string;
   priority?: string;
   limit?: string;
@@ -43,7 +42,7 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
 
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters?.search, filters?.client, filters?.status, filters?.priority, filters?.limit, filters?.offset, fetchKey]);
+  }, [filters?.search, filters?.status, filters?.priority, filters?.limit, filters?.offset, fetchKey]);
 
   return {
     vacancies,

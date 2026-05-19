@@ -1,18 +1,15 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { SearchInput } from '@presentation/components/molecules/SearchBar/SearchInput';
-import { SelectField, SelectOption } from '@presentation/components/molecules/SelectField';
+import { Select, SelectOption } from '@presentation/components/atoms/Select';
 
 interface VacancyFiltersProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
-  selectedClient: string;
-  onClientChange: (value: string) => void;
   selectedStatus: string;
   onStatusChange: (value: string) => void;
   selectedPriority: string;
   onPriorityChange: (value: string) => void;
-  clientOptions: SelectOption[];
   statusOptions: SelectOption[];
   priorityOptions: SelectOption[];
 }
@@ -20,13 +17,10 @@ interface VacancyFiltersProps {
 export function VacancyFilters({
   searchQuery,
   onSearchChange,
-  selectedClient,
-  onClientChange,
   selectedStatus,
   onStatusChange,
   selectedPriority,
   onPriorityChange,
-  clientOptions,
   statusOptions,
   priorityOptions,
 }: VacancyFiltersProps): JSX.Element {
@@ -42,35 +36,26 @@ export function VacancyFilters({
       />
       <div className="flex items-end gap-4 flex-wrap ml-auto">
         <div className="w-full sm:w-[200px]">
-          <Text size="base" weight="semibold" color="secondary" className="mb-1">
-            {t('admin.vacancies.clients')}
-          </Text>
-          <SelectField
-            options={clientOptions}
-            value={selectedClient}
-            onChange={onClientChange}
-            placeholder={t('admin.vacancies.clientPlaceholder')}
-          />
-        </div>
-        <div className="w-full sm:w-[200px]">
-          <Text size="base" weight="semibold" color="secondary" className="mb-1">
+          <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.statusLabel')}
           </Text>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={statusOptions}
             value={selectedStatus}
-            onChange={onStatusChange}
-            placeholder={t('admin.vacancies.statusPlaceholder')}
+            onValueChange={onStatusChange}
+            placeholder={t('admin.vacancies.statusOptions.all')}
           />
         </div>
         <div className="w-full sm:w-[200px]">
-          <Text size="base" weight="semibold" color="secondary" className="mb-1">
+          <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.priorityLabel')}
           </Text>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={priorityOptions}
             value={selectedPriority}
-            onChange={onPriorityChange}
+            onValueChange={onPriorityChange}
             placeholder={t('admin.vacancies.priorityOptions.all')}
           />
         </div>

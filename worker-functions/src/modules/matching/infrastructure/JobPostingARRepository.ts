@@ -1,6 +1,8 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { PublicJobRow } from '../domain/PublicJobDto';
+import type { PublicJobsFilters } from '../domain/PublicJobsFilters';
+import { buildPublicJobsWhere } from './PublicJobsQueryBuilder';
 
 // ─── Helper: resolve coordinator_name → coordinator_id (findOrCreate) ──────────
 
@@ -290,9 +292,9 @@ export class JobPostingARRepository {
     );
   }
 
-  async findActivePublic(): Promise<PublicJobRow[]> {
-    const result = await this.pool.query<PublicJobRow>(
-      `SELECT
+  async findActivePublic(filters: PublicJobsFilters): Promise<PublicJobRow[]> {
+    const { whereClause, params } = buildPublicJobsWhere(filters);
+    const sql = `SELECT
          jp.id,
          jp.case_number,
          jp.vacancy_number,
@@ -310,15 +312,17 @@ export class JobPostingARRepository {
          jp.required_sex                      AS worker_sex,
          jp.inferred_zone                     AS job_zone,
          COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood,
-         NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city
+         NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city,
+         jp.country                           AS country,
+         jp.age_range_min,
+         jp.age_range_max,
+         jp.talentum_whatsapp_url             AS whatsapp_url
        FROM job_postings jp
        LEFT JOIN patients p    ON jp.patient_id = p.id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
-       WHERE jp.status IN ('ACTIVE','SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
-         AND jp.deleted_at IS NULL
-         AND jp.social_short_links ? 'site'
-       ORDER BY jp.case_number DESC, jp.vacancy_number DESC`,
-    );
+       ${whereClause}
+       ORDER BY jp.case_number DESC, jp.vacancy_number DESC`;
+    const result = await this.pool.query<PublicJobRow>(sql, params);
     return result.rows;
   }
 

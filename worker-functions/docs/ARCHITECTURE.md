@@ -247,3 +247,34 @@ migrations/           → arquivos SQL numerados sequencialmente
 - `GET /api/import/status/:id` → status do ImportJob
 - Respostas de sucesso: `{ success: true, data: T }`
 - Respostas de erro: `{ success: false, error: string }`
+
+---
+
+## 12. Secrets obrigatórios por ambiente (Secret Manager)
+
+Cada ambiente GCP (`enlite-prd`, `enlite-stg`, futuros) **precisa** ter os secrets abaixo criados no Secret Manager + IAM binding `roles/secretmanager.secretAccessor` na service account do Cloud Run (`enlite-functions-sa@<projeto>.iam.gserviceaccount.com`). Esquecer qualquer um desses **quebra fluxos críticos** em produção.
+
+| Secret | Tipo | Usado por |
+|---|---|---|
+| `enlite-ar-db-password` | senha do user `enlite_app` | runtime + scripts de migration |
+| `worker-trgm-hmac-key` | **32 bytes binários random** | `BlindIndexService` (busca de workers por nome) |
+| `internal-token-secret` | HMAC interno | tokens internos do backend |
+| `clickup-api-token`, `clickup-webhook-secret` | tokens ClickUp | integração ClickUp |
+| `talentum-api-email`, `talentum-api-password` | credenciais Talentum | sync de workers |
+| `groq-api-key`, `sendgrid-api-key`, `twilio-auth-token`, `short-io-api-token` | tokens de terceiros | features específicas |
+
+### `worker-trgm-hmac-key` — observações importantes
+
+- A chave gera HMAC-SHA256 dos trigrams do nome do worker (CipherSweet pattern). Cada ambiente **deve ter chave própria** — nunca copiar staging → prod.
+- Se faltar: a busca por nome retorna lista vazia (falha silenciosa no fallback do controller). Foi exatamente o que aconteceu em prod entre 2026-05-09 e 2026-05-13.
+- **Não pode ser rotacionada** sem reprocessar o blind index de todos os workers via `backfill-name-trgm-bidx.ts`.
+- Criar: `openssl rand 32 | gcloud secrets create worker-trgm-hmac-key --replication-policy=automatic --project=<env> --data-file=-`
+- Binding: `gcloud secrets add-iam-policy-binding worker-trgm-hmac-key --member="serviceAccount:enlite-functions-sa@<env>.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor" --project=<env>`
+
+### Checklist de provisionamento de novo ambiente
+
+1. Criar todos os secrets da tabela acima
+2. IAM binding `secretAccessor` pra `enlite-functions-sa` em cada secret
+3. Rodar `npx ts-node scripts/backfill-name-trgm-bidx.ts` se já houver workers com `first_name_encrypted` populado
+4. Rodar `npx ts-node scripts/backfill-worker-names-from-encuadres.ts` se houver workers sem nome encriptado (usa `encuadres.worker_raw_name` + Firebase `displayName`)
+5. Validar visualmente no painel admin que a busca por nome retorna resultados
