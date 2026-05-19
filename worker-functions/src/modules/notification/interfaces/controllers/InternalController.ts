@@ -4,6 +4,8 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
+import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
+import { logger, reportError } from '@shared/logging';
 
 /**
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
@@ -15,6 +17,7 @@ export class InternalController {
     private readonly outboxProcessor: OutboxProcessor,
     private readonly reminderScheduler: ReminderScheduler,
     private readonly bulkDispatchScheduler: BulkDispatchScheduler,
+    private readonly bulkDispatchTalentumScheduler: BulkDispatchTalentumScheduler,
   ) {}
 
   /**
@@ -138,6 +141,23 @@ export class InternalController {
     } catch (err) {
       console.error('[InternalController] processBulkDispatch error:', err);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * POST /api/internal/bulk-dispatch/talentum-incomplete
+   * Trigger: Cloud Scheduler (daily) — lembrete para workers com prescreening Talentum
+   * em INITIATED/IN_PROGRESS há >5 dias.
+   */
+  async processBulkDispatchTalentum(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.bulkDispatchTalentumScheduler.run();
+      res.status(200).json({ success: true, ...result });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ error: error.message }, 'processBulkDispatchTalentum error');
+      reportError(error, { source: 'InternalController:bulkDispatchTalentum' });
+      res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 }

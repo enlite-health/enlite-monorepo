@@ -39,6 +39,7 @@ import { MessageTemplateRepository } from '@modules/notification/infrastructure/
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
+import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
@@ -345,7 +346,8 @@ domainEventProcessor.registerHandler(
 
 const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler);
+const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler);
 app.use('/api/internal', createInternalRoutes(internalController));
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========

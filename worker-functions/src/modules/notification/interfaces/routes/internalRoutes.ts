@@ -46,5 +46,10 @@ export function createInternalRoutes(controller: InternalController): Router {
     controller.processBulkDispatch(req, res);
   });
 
+  // Cloud Scheduler: daily Talentum incomplete reminder
+  router.post('/bulk-dispatch/talentum-incomplete', (req: Request, res: Response) => {
+    controller.processBulkDispatchTalentum(req, res);
+  });
+
   return router;
 }

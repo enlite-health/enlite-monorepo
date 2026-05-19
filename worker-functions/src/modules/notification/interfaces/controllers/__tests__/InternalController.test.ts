@@ -4,6 +4,17 @@ import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { OutboxProcessor } from '../../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../../infrastructure/BulkDispatchScheduler';
+import { BulkDispatchTalentumScheduler } from '../../../infrastructure/BulkDispatchTalentumScheduler';
+
+jest.mock('@shared/logging', () => ({
+  logger: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    child: jest.fn().mockReturnValue({ error: jest.fn(), warn: jest.fn(), info: jest.fn() }),
+  },
+  reportError: jest.fn(),
+}));
 
 function mockRes() {
   return {
@@ -32,6 +43,7 @@ describe('InternalController', () => {
   let outboxProcessor: jest.Mocked<OutboxProcessor>;
   let reminderScheduler: jest.Mocked<ReminderScheduler>;
   let bulkDispatchScheduler: jest.Mocked<BulkDispatchScheduler>;
+  let bulkDispatchTalentumScheduler: jest.Mocked<BulkDispatchTalentumScheduler>;
   let controller: InternalController;
 
   beforeEach(() => {
@@ -58,11 +70,16 @@ describe('InternalController', () => {
       run: jest.fn().mockResolvedValue({ total: 10, sent: 8, errors: 2 }),
     } as unknown as jest.Mocked<BulkDispatchScheduler>;
 
+    bulkDispatchTalentumScheduler = {
+      run: jest.fn().mockResolvedValue({ batchId: 'batch-t-1', total: 5, sent: 4, errors: 1 }),
+    } as unknown as jest.Mocked<BulkDispatchTalentumScheduler>;
+
     controller = new InternalController(
       eventProcessor,
       outboxProcessor,
       reminderScheduler,
       bulkDispatchScheduler,
+      bulkDispatchTalentumScheduler,
     );
   });
 
@@ -275,6 +292,34 @@ describe('InternalController', () => {
       await controller.processBulkDispatch(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── processBulkDispatchTalentum ───────────────────────────────────
+
+  describe('processBulkDispatchTalentum', () => {
+    it('delegates to bulkDispatchTalentumScheduler.run() and returns result', async () => {
+      const res = mockRes();
+      await controller.processBulkDispatchTalentum(mockReq(), res);
+
+      expect(bulkDispatchTalentumScheduler.run).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        batchId: 'batch-t-1',
+        total: 5,
+        sent: 4,
+        errors: 1,
+      });
+    });
+
+    it('returns 500 on error', async () => {
+      bulkDispatchTalentumScheduler.run.mockRejectedValue(new Error('talentum dispatch failed'));
+      const res = mockRes();
+      await controller.processBulkDispatchTalentum(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Internal server error' });
     });
   });
 });

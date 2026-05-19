@@ -577,6 +577,24 @@ A variável `patient_zone` do template recebe `ScoredCandidate.workZone`, que é
 
 ---
 
+### TD-020 — Template `talentum_incomplete_reminder` precisa de `content_sid` Twilio HSM antes do go-live
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-19, durante implementação da Fase 4 do Sprint de Automação de Recrutamento
+- **Dono provável:** Ops + Backend
+- **Bloqueador?** Sim pra produção. Não pra E2E.
+
+**Contexto:**
+
+Idêntico ao TD-018 — template `talentum_incomplete_reminder` (migration 175) tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. O `TwilioMessagingService` vai tentar enviar e receber erro da API Twilio em produção.
+
+**Antes do deploy:**
+1. Ops registra template no Twilio Content Builder com variável `worker_name`
+2. Ops obtém aprovação HSM da Meta (pode levar dias)
+3. Backend roda `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder'` em prod
+
+---
+
 ## Resolvidos
 
 _(vazio por enquanto)_
