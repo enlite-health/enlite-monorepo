@@ -23,9 +23,9 @@ function toGcpSeverity(label: string): string {
   }
 }
 
-const isDev = process.env.NODE_ENV !== 'production';
+const usePretty = process.env.LOG_PRETTY === 'true';
 
-const transport = isDev
+const transport = usePretty
   ? pino.transport({ target: 'pino-pretty', options: { colorize: true } })
   : undefined;
 
