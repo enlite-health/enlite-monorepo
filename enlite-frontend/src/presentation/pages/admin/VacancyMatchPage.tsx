@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Calendar } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -16,7 +17,7 @@ import { useVacancyMatch } from '@hooks/admin/useVacancyMatch';
 import { MatchSummaryBar } from '@presentation/components/features/admin/VacancyMatch/MatchSummaryBar';
 import { MatchCandidateRow } from '@presentation/components/features/admin/VacancyMatch/MatchCandidateRow';
 import { MatchSelectionFooter } from '@presentation/components/features/admin/VacancyMatch/MatchSelectionFooter';
-import { SendMessageModal } from '@presentation/components/features/admin/VacancyMatch/SendMessageModal';
+import { InviteProgressModal } from '@presentation/components/features/admin/VacancyMatch/InviteProgressModal';
 import { ScheduleInterviewModal } from '@presentation/components/features/admin/VacancyMatch/ScheduleInterviewModal';
 import type { SavedCandidate } from '../../../types/match';
 
@@ -25,6 +26,7 @@ import type { SavedCandidate } from '../../../types/match';
 export default function VacancyMatchPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const { vacancy } = useVacancyDetail(id);
   const { results, isLoading, isRunning, error, runMatch, markMessaged } = useVacancyMatch(id);
@@ -79,10 +81,10 @@ export default function VacancyMatchPage() {
   };
 
   const pageTitle = vacancy?.case_number != null && vacancy?.vacancy_number != null
-    ? `Match — Caso ${vacancy.case_number}-${vacancy.vacancy_number}`
+    ? `Match — ${t('admin.match.caseLabel')} ${vacancy.case_number}-${vacancy.vacancy_number}`
     : vacancy?.case_number != null
-      ? `Match — Caso ${vacancy.case_number}`
-      : 'Match de Candidatos';
+      ? `Match — ${t('admin.match.caseLabel')} ${vacancy.case_number}`
+      : t('admin.match.title');
 
   const allFilteredSelected =
     filtered.length > 0 && selected.size === filtered.length;
@@ -98,10 +100,10 @@ export default function VacancyMatchPage() {
           >
             <ArrowLeft className="w-4 h-4" />
             <Text as="span" size="sm" weight="medium" color="inherit">
-              Vaga
+              {t('admin.match.backToVacancy')}
             </Text>
           </button>
-          <span className="text-gray-600">/</span>
+          <Text as="span" size="sm" color="muted">/</Text>
           <Heading level={1} weight="semibold" color="secondary">
             {pageTitle}
           </Heading>
@@ -116,7 +118,7 @@ export default function VacancyMatchPage() {
                 className="flex items-center gap-2"
               >
                 <Calendar className="w-4 h-4" />
-                Agendar Entrevista
+                {t('admin.match.scheduleInterview')}
               </Button>
               <Button
                 variant="primary"
@@ -124,7 +126,7 @@ export default function VacancyMatchPage() {
                 onClick={handleSendBatch}
                 className="flex items-center gap-2"
               >
-                Enviar para {selected.size} selecionado{selected.size !== 1 ? 's' : ''}
+                {t('admin.match.sendToSelected', { count: selected.size })}
               </Button>
             </>
           )}
@@ -136,13 +138,11 @@ export default function VacancyMatchPage() {
             onClick={() => runMatch()}
             className="flex items-center gap-2"
           >
-            {isRunning ? (
-              'Processando…'
-            ) : results ? (
-              'Rodar Novamente'
-            ) : (
-              'Rodar Match'
-            )}
+            {isRunning
+              ? t('admin.match.processing')
+              : results
+              ? t('admin.match.runAgain')
+              : t('admin.match.run')}
           </Button>
         </div>
       </div>
@@ -165,10 +165,10 @@ export default function VacancyMatchPage() {
       {!isLoading && !error && !results && (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
           <Heading level={3} color="secondary">
-            Nenhum match salvo ainda.
+            {t('admin.match.noResultsYet')}
           </Heading>
           <Button variant="primary" size="lg" isLoading={isRunning} onClick={() => runMatch()}>
-            Rodar Match
+            {t('admin.match.run')}
           </Button>
         </div>
       )}
@@ -186,7 +186,7 @@ export default function VacancyMatchPage() {
           {filtered.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Text size="sm" color="secondary">
-                Nenhum candidato com score ≥ {minScore}.
+                {t('admin.match.noResultsWithScore', { score: minScore })}
               </Text>
             </div>
           ) : (
@@ -202,12 +202,12 @@ export default function VacancyMatchPage() {
                     />
                   </TableHead>
                   <TableHead align="center" className="w-10">#</TableHead>
-                  <TableHead className="whitespace-nowrap">Nome</TableHead>
-                  <TableHead className="whitespace-nowrap">Status</TableHead>
-                  <TableHead className="whitespace-nowrap">Ocupação</TableHead>
-                  <TableHead className="whitespace-nowrap">Zona / Dist</TableHead>
-                  <TableHead align="center" className="whitespace-nowrap">Casos</TableHead>
-                  <TableHead className="whitespace-nowrap">Score Final</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('admin.match.colName')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('admin.match.colStatus')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('admin.match.colOccupation')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('admin.match.colZone')}</TableHead>
+                  <TableHead align="center" className="whitespace-nowrap">{t('admin.match.colCases')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('admin.match.colScore')}</TableHead>
                   <TableHead className="w-16" />
                 </TableHeader>
                 <TableBody>
@@ -235,9 +235,9 @@ export default function VacancyMatchPage() {
         onClearSelection={() => setSelected(new Set())}
       />
 
-      {/* Modal de envio */}
+      {/* Modal de convite */}
       {modalCandidates && id && (
-        <SendMessageModal
+        <InviteProgressModal
           candidates={modalCandidates}
           vacancyId={id}
           onClose={closeModal}

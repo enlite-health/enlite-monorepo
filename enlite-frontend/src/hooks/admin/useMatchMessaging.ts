@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type { MessageTemplate, SavedCandidate } from '../../types/match';
+import type { SavedCandidate } from '../../types/match';
 
 const SEND_INTERVAL_MS = 300; // Intervalo entre envios para evitar rate limit do Twilio
 
@@ -12,69 +12,28 @@ export interface SendProgress {
 }
 
 export function useMatchMessaging(vacancyId: string | undefined) {
-  const [templates, setTemplates]         = useState<MessageTemplate[]>([]);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
-  const [isSending, setIsSending]         = useState(false);
-  const [progress, setProgress]           = useState<SendProgress[]>([]);
-
-  const fetchTemplates = useCallback(async () => {
-    try {
-      setIsLoadingTemplates(true);
-      const data = await AdminApiService.getMessageTemplates();
-      setTemplates(data);
-    } catch (err: any) {
-      console.error('[useMatchMessaging] Falha ao carregar templates:', err.message);
-    } finally {
-      setIsLoadingTemplates(false);
-    }
-  }, []);
+  const [isSending, setIsSending] = useState(false);
+  const [progress, setProgress]   = useState<SendProgress[]>([]);
 
   /**
-   * Renderiza o preview do template server-side — texto exato que o
-   * destinatário receberá. Retorna null em erro (UI exibe fallback).
-   */
-  const fetchPreview = useCallback(async (
-    workerId: string,
-    templateSlug: string,
-  ): Promise<string | null> => {
-    if (!vacancyId) return null;
-    try {
-      const data = await AdminApiService.previewWhatsApp(workerId, templateSlug, vacancyId);
-      return data.renderedBody;
-    } catch (err: any) {
-      console.error('[useMatchMessaging] Falha ao carregar preview:', err.message);
-      return null;
-    }
-  }, [vacancyId]);
-
-  /**
-   * Envia WhatsApp para um único worker.
+   * Envia convite de match WhatsApp para um único worker.
+   * O backend decide o slug do template automaticamente (complete vs incomplete).
    * Retorna o timestamp ISO de envio ou lança erro.
    */
-  const sendToOne = useCallback(async (
-    candidate: SavedCandidate,
-    templateSlug: string,
-    variables: Record<string, string>
-  ): Promise<string> => {
-    await AdminApiService.sendWhatsApp(
-      candidate.workerId,
-      templateSlug,
-      variables,
-      vacancyId
-    );
+  const sendToOne = useCallback(async (candidate: SavedCandidate): Promise<string> => {
+    if (!vacancyId) throw new Error('vacancyId obrigatório');
+    await AdminApiService.sendVacancyMatchInvite(candidate.workerId, vacancyId);
     return new Date().toISOString();
   }, [vacancyId]);
 
   /**
-   * Envia WhatsApp em lote para os candidatos selecionados.
+   * Envia convite em lote para os candidatos selecionados.
    * Loop sequencial com intervalo de 300ms para respeitar rate limit do Twilio.
    * `onMessaged` é chamado após cada envio bem-sucedido para atualizar o state pai.
    */
   const sendBatch = useCallback(async (
     candidates: SavedCandidate[],
-    templateSlug: string,
-    buildVariables: (candidate: SavedCandidate) => Record<string, string>,
-    onMessaged: (workerId: string, messagedAt: string) => void
+    onMessaged: (workerId: string, messagedAt: string) => void,
   ) => {
     setIsSending(true);
     setProgress(candidates.map(c => ({
@@ -87,20 +46,21 @@ export function useMatchMessaging(vacancyId: string | undefined) {
       const candidate = candidates[i];
 
       setProgress(prev => prev.map(p =>
-        p.workerId === candidate.workerId ? { ...p, status: 'sending' } : p
+        p.workerId === candidate.workerId ? { ...p, status: 'sending' } : p,
       ));
 
       try {
-        const messagedAt = await sendToOne(candidate, templateSlug, buildVariables(candidate));
+        const messagedAt = await sendToOne(candidate);
         onMessaged(candidate.workerId, messagedAt);
         setProgress(prev => prev.map(p =>
-          p.workerId === candidate.workerId ? { ...p, status: 'sent' } : p
+          p.workerId === candidate.workerId ? { ...p, status: 'sent' } : p,
         ));
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Falha no envio';
         setProgress(prev => prev.map(p =>
           p.workerId === candidate.workerId
-            ? { ...p, status: 'error', error: err.message || 'Falha no envio' }
-            : p
+            ? { ...p, status: 'error', error: message }
+            : p,
         ));
       }
 
@@ -116,12 +76,8 @@ export function useMatchMessaging(vacancyId: string | undefined) {
   const resetProgress = useCallback(() => setProgress([]), []);
 
   return {
-    templates,
-    isLoadingTemplates,
     isSending,
     progress,
-    fetchTemplates,
-    fetchPreview,
     sendToOne,
     sendBatch,
     resetProgress,

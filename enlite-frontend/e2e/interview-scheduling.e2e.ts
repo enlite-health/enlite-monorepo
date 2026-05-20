@@ -173,9 +173,6 @@ async function setupMatchPageMocks(page: Page, slotsResponse = EMPTY_SLOTS_RESPO
   await page.route(`**/api/admin/vacancies/${VACANCY_ID}/match`, route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(POPULATED_MATCH) }),
   );
-  await page.route('**/api/admin/messaging/templates', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
-  );
   await page.route(`**/api/admin/vacancies/${VACANCY_ID}/interview-slots**`, route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(slotsResponse) }),
   );

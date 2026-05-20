@@ -1,17 +1,18 @@
 /**
  * AdminMessagingApiService
  *
- * Endpoints de envio WhatsApp + listagem/preview de templates pro admin panel.
+ * Endpoint de envio WhatsApp para match de vacancy pro admin panel.
+ * O backend decide o slug do template automaticamente com base no workers.status.
  * Extraído do AdminApiService pra respeitar o limite de 400 linhas — callers
  * continuam usando `AdminApiService` (delega transparentemente).
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { MessageTemplate, WhatsAppSentResult } from '../../types/match';
 
-export interface WhatsAppPreviewResult {
-  body: string;
-  renderedBody: string;
-  variables: Record<string, string>;
+export interface VacancyMatchInviteResult {
+  templateSlug: string;
+  externalId: string;
+  status: string;
+  to: string;
 }
 
 interface ApiSuccessResponse<T> {
@@ -29,43 +30,24 @@ export class AdminMessagingApiServiceClass {
   private readonly baseURL: string;
 
   constructor() {
-    this.baseURL = (import.meta as any).env?.VITE_API_WORKER_FUNCTIONS_URL
+    this.baseURL = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_API_WORKER_FUNCTIONS_URL
       || 'http://localhost:8080';
   }
 
-  async sendWhatsApp(
-    workerId: string,
-    templateSlug: string,
-    variables: Record<string, string>,
-    jobPostingId?: string,
-  ): Promise<WhatsAppSentResult> {
-    return this.request<WhatsAppSentResult>('POST', '/api/admin/messaging/whatsapp', {
-      workerId,
-      templateSlug,
-      variables,
-      ...(jobPostingId ? { jobPostingId } : {}),
-    });
-  }
-
   /**
-   * Renderiza o preview do template aplicando variáveis server-side.
-   * `body` = template cru; `renderedBody` = texto final (com PII) que o
-   * destinatário vai receber. Mostre `renderedBody` no UI.
+   * Dispara o convite de match WhatsApp para um worker.
+   * O backend resolve automaticamente o template slug (complete vs incomplete)
+   * baseado no workers.status — o frontend não precisa escolher.
    */
-  async previewWhatsApp(
+  async sendVacancyMatchInvite(
     workerId: string,
-    templateSlug: string,
-    jobPostingId?: string,
-  ): Promise<WhatsAppPreviewResult> {
-    return this.request<WhatsAppPreviewResult>(
+    jobPostingId: string,
+  ): Promise<VacancyMatchInviteResult> {
+    return this.request<VacancyMatchInviteResult>(
       'POST',
-      '/api/admin/messaging/whatsapp/preview',
-      { workerId, templateSlug, ...(jobPostingId ? { jobPostingId } : {}) },
+      '/api/admin/messaging/whatsapp/vacancy-match',
+      { workerId, jobPostingId },
     );
-  }
-
-  async getMessageTemplates(): Promise<MessageTemplate[]> {
-    return this.request<MessageTemplate[]>('GET', '/api/admin/messaging/templates');
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
@@ -83,7 +65,7 @@ export class AdminMessagingApiServiceClass {
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const json: ApiResponse<T> = await response.json();
+    const json: ApiResponse<T> = await response.json() as ApiResponse<T>;
     if (!json.success) {
       throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
     }

@@ -23,18 +23,3 @@ export interface MatchResultsResponse {
   totalCandidates: number;
   candidates: SavedCandidate[];
 }
-
-
-export interface MessageTemplate {
-  slug: string;
-  name: string;
-  body: string;
-  category: string | null;
-  isActive: boolean;
-}
-
-export interface WhatsAppSentResult {
-  externalId: string;
-  status: string;
-  to: string;
-}

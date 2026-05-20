@@ -222,14 +222,10 @@ class AdminApiServiceClass {
   }
 
   // ========== Messaging Methods — delegated to AdminMessagingApiService ==========
-  sendWhatsApp(...args: Parameters<typeof AdminMessagingApiService.sendWhatsApp>) {
-    return AdminMessagingApiService.sendWhatsApp(...args);
-  }
-  previewWhatsApp(...args: Parameters<typeof AdminMessagingApiService.previewWhatsApp>) {
-    return AdminMessagingApiService.previewWhatsApp(...args);
-  }
-  getMessageTemplates() {
-    return AdminMessagingApiService.getMessageTemplates();
+  sendVacancyMatchInvite(
+    ...args: Parameters<typeof AdminMessagingApiService.sendVacancyMatchInvite>
+  ) {
+    return AdminMessagingApiService.sendVacancyMatchInvite(...args);
   }
 
   // ========== Workers Methods ==========

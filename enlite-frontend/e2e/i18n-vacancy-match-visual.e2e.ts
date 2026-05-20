@@ -1,7 +1,7 @@
 /**
  * i18n-vacancy-match-visual.e2e.ts
  *
- * Visual proof that the VacancyMatch feature (SendMessageModal,
+ * Visual proof that the VacancyMatch feature (InviteProgressModal,
  * ScheduleInterviewModal) renders correctly in both es-AR and pt-BR
  * with zero raw i18n keys leaking to the DOM.
  *
@@ -11,8 +11,8 @@
  *
  * Approach:
  *   - Login as admin via Firebase Emulator + seed
- *   - Mock all API responses (vacancy, candidates, templates, slots)
- *   - For each language (es, pt-BR): open SendMessageModal and
+ *   - Mock all API responses (vacancy, candidates, vacancy-match invite, slots)
+ *   - For each language (es, pt-BR): open InviteProgressModal and
  *     ScheduleInterviewModal, screenshot, assert no `admin.<ns>.` text
  *     appears in DOM
  *   - Screenshots saved to e2e/screenshots/i18n-* for manual inspection
@@ -82,17 +82,15 @@ const POPULATED_MATCH_RESULTS = {
   },
 };
 
-const MOCK_TEMPLATES = {
+/** Resposta do endpoint POST /vacancy-match */
+const VACANCY_MATCH_INVITE_SUCCESS = {
   success: true,
-  data: [
-    {
-      slug: 'vacancy_match',
-      name: 'Vaga Match',
-      body: 'Hola {{name}}, tenemos una vacante de {{role}} en {{location}}.',
-      category: 'recruitment',
-      isActive: true,
-    },
-  ],
+  data: {
+    templateSlug: 'ar_vacancy_match_complete',
+    externalId: 'SM999',
+    status: 'queued',
+    to: '+5491100000091',
+  },
 };
 
 const EMPTY_SLOTS = {
@@ -161,11 +159,11 @@ async function setupMocks(page: Page) {
       body: JSON.stringify(POPULATED_MATCH_RESULTS),
     }),
   );
-  await page.route('**/api/admin/messaging/templates', route =>
+  await page.route('**/api/admin/messaging/whatsapp/vacancy-match', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(MOCK_TEMPLATES),
+      body: JSON.stringify(VACANCY_MATCH_INVITE_SUCCESS),
     }),
   );
   await page.route(`**/api/admin/vacancies/${VACANCY_ID}/interview-slots**`, route =>
@@ -198,46 +196,46 @@ test.describe('VacancyMatch i18n visual proof', () => {
   test.setTimeout(60000);
 
   for (const lang of ['es', 'pt-BR'] as const) {
-    test(`${lang}: SendMessageModal renders without raw i18n keys`, async ({ page }) => {
+    test(`${lang}: InviteProgressModal renderiza sem chaves i18n cruas`, async ({ page }) => {
       await seedAdminAndLogin(page);
       await setupMocks(page);
 
       await page.goto(`/admin/vacancies/${VACANCY_ID}/match?lng=${lang}`);
       await expect(page.locator('text=Sofía Martínez').first()).toBeVisible({ timeout: 15000 });
 
-      // Open SendMessageModal via WhatsApp icon
+      // Abre InviteProgressModal via ícone WhatsApp de Sofía (sem messagedAt)
       const sofiaRow = page.locator('tr', { hasText: 'Sofía Martínez' }).first();
       await sofiaRow.getByRole('button').first().click();
 
-      // Wait for modal title to render
-      await expect(page.locator('text=/Enviar WhatsApp/i').first()).toBeVisible({ timeout: 10000 });
+      // Modal abre e dispara envio automaticamente (sem dropdown de template)
+      await expect(page.locator('text=/Enviar invitaci[oó]n|Enviar convite/i').first()).toBeVisible({ timeout: 10000 });
 
-      // Wait for templates list to load (defers raw-key check until t() resolves)
-      await expect(page.locator('text=/Hola Sofía Martínez/i').first()).toBeVisible({ timeout: 10000 });
+      // Aguarda status de progresso aparecer
+      await expect(page.locator('text=/enviado|enviando/i').first()).toBeVisible({ timeout: 10000 });
 
       await page.screenshot({
-        path: `e2e/screenshots/i18n-send-message-${lang}.png`,
+        path: `e2e/screenshots/i18n-invite-progress-${lang}.png`,
         fullPage: true,
       });
 
       await assertNoRawI18nKeys(page);
     });
 
-    test(`${lang}: ScheduleInterviewModal renders without raw i18n keys`, async ({ page }) => {
+    test(`${lang}: ScheduleInterviewModal renderiza sem chaves i18n cruas`, async ({ page }) => {
       await seedAdminAndLogin(page);
       await setupMocks(page);
 
       await page.goto(`/admin/vacancies/${VACANCY_ID}/match?lng=${lang}`);
       await expect(page.locator('text=Sofía Martínez').first()).toBeVisible({ timeout: 15000 });
 
-      // Select a candidate so "Agendar Entrevista" footer button appears
+      // Seleciona um candidato para o botão "Agendar" aparecer
       const sofiaRow = page.locator('tr', { hasText: 'Sofía Martínez' }).first();
       await sofiaRow.locator('input[type="checkbox"]').check();
 
-      // Open ScheduleInterviewModal
-      await page.getByRole('button', { name: /Agendar Entrevista/i }).click();
+      // Abre ScheduleInterviewModal
+      await page.getByRole('button', { name: /Agendar/i }).click();
 
-      // Wait for Phase 1 form: assert at least one i18n-driven label is rendered
+      // Aguarda Phase 1 form
       await expect(page.locator('text=/Configurar slots/i').first()).toBeVisible({ timeout: 10000 });
       await expect(page.locator('text=/Fecha de entrevistas|Data das entrevistas/i').first()).toBeVisible();
 

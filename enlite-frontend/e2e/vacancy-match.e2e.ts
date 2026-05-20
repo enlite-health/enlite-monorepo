@@ -5,16 +5,16 @@
  *
  * Fluxo coberto:
  *   - Página carrega com estado vazio quando não há matches salvos
- *   - Botão "Rodar Match" dispara POST /match e lista aparece
+ *   - Botão "Correr match" dispara POST /match e lista aparece
  *   - Score bar reflete finalScore do candidato
  *   - LLM reasoning expande/colapsa ao clicar na linha
  *   - Checkbox seleciona linha; barra de rodapé aparece
  *   - "Selecionar todos" seleciona apenas workers visíveis
  *   - Filtro de score filtra a lista sem re-fetch
- *   - "Enviar WhatsApp" individual abre modal com nome preenchido
- *   - Modal envia e exibe status por worker
- *   - Badge "Já notificado DD/MM" aparece após envio bem-sucedido
- *   - Re-envio: modal avisa quantos serão re-enviados
+ *   - "Enviar WhatsApp" individual abre modal de progresso (sem dropdown de template)
+ *   - Modal chama POST /vacancy-match e exibe status "enviado"
+ *   - Badge "Notificado" aparece após envio bem-sucedido
+ *   - Re-envio em lote: modal avisa workers já notificados com opções de re-envio
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -124,16 +124,15 @@ const MOCK_MATCH_RESPONSE = {
   },
 };
 
-const MOCK_TEMPLATES = {
+/** Resposta do novo endpoint POST /vacancy-match */
+const VACANCY_MATCH_INVITE_SUCCESS = {
   success: true,
-  data: [
-    { slug: 'vacancy_match', name: 'Vaga Match', body: 'Hola {{name}}, temos uma vaga de {{role}} em {{location}}.', category: 'recruitment', isActive: true },
-  ],
-};
-
-const WHATSAPP_SUCCESS = {
-  success: true,
-  data: { externalId: 'SM123', status: 'queued', to: '+549110000000' },
+  data: {
+    templateSlug: 'ar_vacancy_match_complete',
+    externalId: 'SM123',
+    status: 'queued',
+    to: '+5491100000001',
+  },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -150,7 +149,10 @@ async function seedAdminAndLogin(page: Page): Promise<{ token: string }> {
       body: JSON.stringify({ email, password, returnSecureToken: true }),
     },
   );
-  const { localId: uid, idToken: token } = (await signUpRes.json()) as any;
+  const { localId: uid, idToken: token } = (await signUpRes.json()) as {
+    localId: string;
+    idToken: string;
+  };
 
   const sql = `
     INSERT INTO users (firebase_uid, email, display_name, role, created_at, updated_at) VALUES ('${uid}', '${email}', 'Admin E2E Match', 'admin', NOW(), NOW()) ON CONFLICT DO NOTHING;
@@ -190,9 +192,6 @@ async function setupMatchPageMocks(page: Page, matchResults = EMPTY_MATCH_RESULT
   await page.route(`**/api/admin/vacancies/${VACANCY_ID}/match-results**`, route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(matchResults) }),
   );
-  await page.route('**/api/admin/messaging/templates', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_TEMPLATES) }),
-  );
 }
 
 // ── Testes ────────────────────────────────────────────────────────────────
@@ -208,18 +207,16 @@ test.describe('VacancyMatchPage', () => {
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
 
-    await expect(page.locator('text=/Nenhum match salvo/i').first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('button', { name: /Rodar Match/i }).first()).toBeVisible();
+    await expect(page.locator('text=/Sin match guardado/i').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: /Correr match/i }).first()).toBeVisible();
   });
 
   // ── Rodar Match ───────────────────────────────────────────────────────
 
-  test('botão "Rodar Match" dispara POST /match e lista aparece', async ({ page }) => {
+  test('botão "Correr match" dispara POST /match e lista aparece', async ({ page }) => {
     await seedAdminAndLogin(page);
-    // Estado inicial vazio — sem lastMatchAt nem candidatos
     await setupMatchPageMocks(page, EMPTY_MATCH_RESULTS);
 
-    // POST /match retorna candidatos — runMatch atualiza o estado local sem re-fetch
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}/match`, route => {
       if (route.request().method() === 'POST') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_MATCH_RESPONSE) });
@@ -228,11 +225,10 @@ test.describe('VacancyMatchPage', () => {
     });
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
-    await expect(page.getByRole('button', { name: /^Rodar Match$/i }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: /^Correr match$/i }).first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /^Rodar Match$/i }).first().click();
+    await page.getByRole('button', { name: /^Correr match$/i }).first().click();
 
-    // Lista com candidatos deve aparecer (populada pelo retorno do POST)
     await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
     await expect(page.locator('text=Ana Rodríguez').first()).toBeVisible();
   });
@@ -246,7 +242,6 @@ test.describe('VacancyMatchPage', () => {
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
     await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
 
-    // Score "87" visível na tabela
     await expect(page.locator('text=87').first()).toBeVisible();
   });
 
@@ -257,17 +252,13 @@ test.describe('VacancyMatchPage', () => {
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
     await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
 
-    // O reasoning de Maria começa oculto
     await expect(page.locator('text=/Perfil compatível com TEA/i')).not.toBeVisible();
 
-    // Clica no chevron (botão de expand da linha de Maria)
     const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
     await mariaRow.getByRole('button').last().click();
 
-    // Reasoning agora visível
     await expect(page.locator('text=/Perfil compatível com TEA/i')).toBeVisible({ timeout: 5000 });
 
-    // Clica novamente para colapsar
     await mariaRow.getByRole('button').last().click();
     await expect(page.locator('text=/Perfil compatível com TEA/i')).not.toBeVisible();
   });
@@ -281,14 +272,11 @@ test.describe('VacancyMatchPage', () => {
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
     await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
 
-    // Barra de rodapé não deve estar visível sem seleção
     await expect(page.locator('text=/selecionado/i').last()).not.toBeVisible();
 
-    // Seleciona Maria
     const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
     await mariaRow.locator('input[type="checkbox"]').check();
 
-    // Rodapé aparece com "1 worker selecionado"
     await expect(page.locator('text=/1 worker selecionado/i').first()).toBeVisible({ timeout: 5000 });
   });
 
@@ -299,13 +287,10 @@ test.describe('VacancyMatchPage', () => {
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
     await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
 
-    // Clica no checkbox do header
     await page.locator('thead input[type="checkbox"]').check();
 
-    // Rodapé deve mostrar 3 selecionados (todos os candidatos visíveis)
     await expect(page.locator('text=/3 workers selecionados/i').first()).toBeVisible({ timeout: 5000 });
 
-    // Desseleciona todos
     await page.locator('thead input[type="checkbox"]').uncheck();
     await expect(page.locator('text=/selecionado/i').last()).not.toBeVisible();
   });
@@ -329,57 +314,25 @@ test.describe('VacancyMatchPage', () => {
 
     const callsBefore = matchResultsCallCount;
 
-    // Filtra por score ≥ 80
     const scoreInput = page.locator('input[type="number"]').first();
     await scoreInput.fill('80');
 
-    // Apenas Maria (87) deve estar visível; Ana (74) e João (55) devem sumir
     await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 5000 });
     await expect(page.locator('text=Ana Rodríguez')).not.toBeVisible();
     await expect(page.locator('text=João Pereira')).not.toBeVisible();
 
-    // Não deve ter feito nova chamada à API
     expect(matchResultsCallCount).toBe(callsBefore);
   });
 
-  // ── Envio WhatsApp (modal) ────────────────────────────────────────────
+  // ── Modal de convite (InviteProgressModal) ────────────────────────────
 
-  test('"Enviar WhatsApp" individual abre modal com nome preenchido', async ({ page }) => {
+  test('"Enviar WhatsApp" individual abre modal de progresso sem dropdown de template', async ({ page }) => {
     await seedAdminAndLogin(page);
     await setupMatchPageMocks(page, POPULATED_MATCH_RESULTS);
 
-    await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
-    await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
-
-    // Clica no ícone de WhatsApp de Maria
-    const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
-    await mariaRow.getByTitle('Enviar WhatsApp').click();
-
-    // Modal abre com nome de Maria
-    await expect(page.locator('text=/Enviar WhatsApp/i').first()).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('text=Maria Sánchez').first()).toBeVisible();
-  });
-
-  test('modal exibe preview do template com variáveis preenchidas', async ({ page }) => {
-    await seedAdminAndLogin(page);
-    await setupMatchPageMocks(page, POPULATED_MATCH_RESULTS);
-
-    await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
-    await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
-
-    const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
-    await mariaRow.getByTitle('Enviar WhatsApp').click();
-
-    // Aguarda templates carregarem e preview aparecer
-    await expect(page.locator('text=/Hola Maria Sánchez/i').first()).toBeVisible({ timeout: 10000 });
-  });
-
-  test('modal envia e exibe status "enviado" por worker', async ({ page }) => {
-    await seedAdminAndLogin(page);
-    await setupMatchPageMocks(page, POPULATED_MATCH_RESULTS);
-
-    await page.route('**/api/admin/messaging/whatsapp', route =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(WHATSAPP_SUCCESS) }),
+    // Mock do novo endpoint — responde antes de o modal montar
+    await page.route('**/api/admin/messaging/whatsapp/vacancy-match', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(VACANCY_MATCH_INVITE_SUCCESS) }),
     );
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
@@ -388,21 +341,44 @@ test.describe('VacancyMatchPage', () => {
     const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
     await mariaRow.getByTitle('Enviar WhatsApp').click();
 
-    await expect(page.getByRole('combobox')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('combobox')).toHaveValue('vacancy_match');
-    await page.getByRole('button', { name: /Confirmar env[ií]o/i }).click();
+    // Modal abre — título sem dropdown de template
+    await expect(page.locator('text=/Enviar invitación/i').first()).toBeVisible({ timeout: 5000 });
 
-    // Status "✓ enviado" deve aparecer
+    // Não deve ter combobox/select de template
+    await expect(page.locator('select')).not.toBeVisible();
+
+    // Screenshot do modal de progresso (validação visual obrigatória)
+    await expect(page.locator('.fixed').filter({ hasText: /Enviar invitación/i })).toHaveScreenshot('invite-progress-modal-open.png');
+  });
+
+  test('modal chama POST /vacancy-match e exibe status "enviado"', async ({ page }) => {
+    await seedAdminAndLogin(page);
+    await setupMatchPageMocks(page, POPULATED_MATCH_RESULTS);
+
+    await page.route('**/api/admin/messaging/whatsapp/vacancy-match', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(VACANCY_MATCH_INVITE_SUCCESS) }),
+    );
+
+    await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
+    await expect(page.locator('text=Maria Sánchez').first()).toBeVisible({ timeout: 15000 });
+
+    const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
+    await mariaRow.getByTitle('Enviar WhatsApp').click();
+
+    // Status "✓ enviado" deve aparecer (disparo automático — sem dropdown)
     await expect(page.locator('text=/✓ enviado/i').first()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('text=/Completado/i').first()).toBeVisible({ timeout: 5000 });
+
+    // Screenshot do modal com status de conclusão
+    await expect(page.locator('.fixed').filter({ hasText: /Completado/i })).toHaveScreenshot('invite-progress-modal-done.png');
   });
 
-  test('badge "Já notificado" aparece após envio bem-sucedido', async ({ page }) => {
+  test('badge "Notificado" aparece após envio bem-sucedido', async ({ page }) => {
     await seedAdminAndLogin(page);
     await setupMatchPageMocks(page, POPULATED_MATCH_RESULTS);
 
-    await page.route('**/api/admin/messaging/whatsapp', route =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(WHATSAPP_SUCCESS) }),
+    await page.route('**/api/admin/messaging/whatsapp/vacancy-match', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(VACANCY_MATCH_INVITE_SUCCESS) }),
     );
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
@@ -410,23 +386,17 @@ test.describe('VacancyMatchPage', () => {
 
     const mariaRow = page.locator('tr', { hasText: 'Maria Sánchez' }).first();
     await mariaRow.getByTitle('Enviar WhatsApp').click();
-
-    await expect(page.getByRole('combobox')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('combobox')).toHaveValue('vacancy_match');
-    await page.getByRole('button', { name: /Confirmar env[ií]o/i }).click();
     await expect(page.locator('text=/Completado/i').first()).toBeVisible({ timeout: 10000 });
 
-    // Fecha o modal
     await page.getByRole('button', { name: /Cerrar/i }).last().click();
 
     // Badge "Notificado" deve aparecer na linha de Maria
     await expect(page.locator('text=/Notificado/i').first()).toBeVisible({ timeout: 5000 });
   });
 
-  test('re-envio em lote: modal avisa workers já notificados', async ({ page }) => {
+  test('re-envio em lote: modal avisa workers já notificados com opções', async ({ page }) => {
     await seedAdminAndLogin(page);
 
-    // Um candidato já notificado
     const resultsWithNotified = {
       ...POPULATED_MATCH_RESULTS,
       data: {
@@ -439,8 +409,8 @@ test.describe('VacancyMatchPage', () => {
     };
 
     await setupMatchPageMocks(page, resultsWithNotified);
-    await page.route('**/api/admin/messaging/whatsapp', route =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(WHATSAPP_SUCCESS) }),
+    await page.route('**/api/admin/messaging/whatsapp/vacancy-match', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(VACANCY_MATCH_INVITE_SUCCESS) }),
     );
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}/match`);
@@ -449,11 +419,18 @@ test.describe('VacancyMatchPage', () => {
     // Seleciona ambos
     await page.locator('thead input[type="checkbox"]').check();
 
-    // Clica "Enviar WhatsApp" no rodapé
+    // Clica "Enviar" no rodapé
     const footer = page.locator('[class*="fixed"]').filter({ hasText: /selecionado/i });
-    await footer.getByRole('button', { name: /Enviar WhatsApp/i }).click();
+    await footer.getByRole('button', { name: /Enviar/i }).click();
 
     // Modal deve mostrar aviso sobre re-notificação
-    await expect(page.locator('text=/ya notificad/i').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=/ya recibió este mensaje/i').first()).toBeVisible({ timeout: 10000 });
+
+    // Deve ter botões de escolha
+    await expect(page.getByRole('button', { name: /Sólo nuevos/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Reenviar a todos/i })).toBeVisible();
+
+    // Screenshot do modal de confirmação de re-envio
+    await expect(page.locator('.fixed').filter({ hasText: /ya recibió este mensaje/i })).toHaveScreenshot('invite-progress-modal-renotify.png');
   });
 });

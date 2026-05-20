@@ -5,7 +5,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useVacancyMatch } from '@hooks/admin/useVacancyMatch';
-import { SendMessageModal } from './SendMessageModal';
+import { InviteProgressModal } from './InviteProgressModal';
 import { MatchCriteriaChips } from './MatchCriteriaChips';
 import { MatchBucketSection } from './MatchBucketSection';
 import { MatchMissingMeetLinksAlert } from './MatchMissingMeetLinksAlert';
@@ -168,7 +168,7 @@ export function MatchVacancyModal({
       </div>
 
       {pendingInvites && (
-        <SendMessageModal
+        <InviteProgressModal
           candidates={pendingInvites}
           vacancyId={vacancyId}
           onClose={() => setPendingInvites(null)}
