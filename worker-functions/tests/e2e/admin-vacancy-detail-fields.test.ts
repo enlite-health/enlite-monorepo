@@ -5,7 +5,7 @@
  * VacancyCaseCard / VacancyProfessionCard consomem:
  *   - dependency_level (de patients.dependency_level)
  *   - closed_at        (de job_postings.closes_at)
- *   - service_type     (array_to_string de patients.service_type)
+ *   - service_type     (array bruto de patients.service_type — TEXT[])
  *   - patient_city     (coalesce de patient_addresses.city / patients.city_locality)
  *   - patient_neighborhood (coalesce de pa.neighborhood / p.zone_neighborhood)
  */
@@ -84,7 +84,7 @@ describe('GET /api/admin/vacancies/:id — aliases expostos para o detalhe', () 
 
     expect(data.dependency_level).toBe('SEVERE');
     expect(data.closed_at).toMatch(/^2026-08-15/);
-    expect(data.service_type).toBe('AT, CAREGIVER');
+    expect(data.service_type).toEqual(['AT', 'CAREGIVER']);
     expect(data.patient_city).toBe('CABA-addr');
     expect(data.patient_neighborhood).toBe('Palermo-addr');
   });
