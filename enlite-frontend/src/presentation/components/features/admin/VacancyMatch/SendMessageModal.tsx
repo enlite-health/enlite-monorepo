@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, ChevronDown } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
@@ -7,56 +8,43 @@ import type { SavedCandidate, MessageTemplate } from '../../../../../types/match
 
 interface SendMessageModalProps {
   candidates: SavedCandidate[];
-  vacancy: any;
   vacancyId: string;
   onClose: () => void;
   onMessaged: (workerId: string, messagedAt: string) => void;
 }
 
-// Preenche as variáveis do template com dados reais do candidato e da vaga
-function buildVariables(
-  candidate: SavedCandidate,
-  vacancy: any,
-): Record<string, string> {
-  const role =
-    (vacancy?.required_professions as string[] | null)?.[0] ??
-    vacancy?.title ??
-    '';
-  const location = vacancy?.patient_zone ?? vacancy?.title ?? '';
-  return { name: candidate.workerName, role, location };
-}
-
-// Substitui {{var}} por valores reais para o preview
-function renderPreview(body: string, vars: Record<string, string>): string {
-  return body.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
-}
+// Variables são montadas server-side em /api/admin/messaging/whatsapp/preview e
+// /api/admin/messaging/whatsapp. O frontend não computa nem envia variáveis pra
+// templates `ar_vacancy_match_*` — backend resolve worker_name (PII), vacancy_url
+// e pending_documents a partir do workerId + jobPostingId.
 
 export function SendMessageModal({
   candidates,
-  vacancy,
   vacancyId,
   onClose,
   onMessaged,
 }: SendMessageModalProps) {
+  const { t } = useTranslation();
   const {
     templates,
     isLoadingTemplates,
     isSending,
     progress,
     fetchTemplates,
+    fetchPreview,
     sendBatch,
     resetProgress,
   } = useMatchMessaging(vacancyId);
 
-  const [selectedSlug, setSelectedSlug] = useState('vacancy_match');
+  const [selectedSlug, setSelectedSlug] = useState('ar_vacancy_match_complete');
   const [showConfirmRenotify, setShowConfirmRenotify] = useState(false);
+  const [previewText, setPreviewText] = useState<string>('');
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
-  // Carrega templates ao abrir
   useEffect(() => {
     fetchTemplates();
   }, [fetchTemplates]);
 
-  // Seleciona automaticamente vacancy_match quando os templates carregarem
   useEffect(() => {
     if (templates.length > 0 && !templates.find(t => t.slug === selectedSlug)) {
       setSelectedSlug(templates[0].slug);
@@ -66,6 +54,28 @@ export function SendMessageModal({
   const selectedTemplate: MessageTemplate | undefined = templates.find(
     t => t.slug === selectedSlug,
   );
+
+  // Preview server-side: pega o body exato (com PII resolvida) usando o
+  // primeiro candidato da lista como base. Re-fetch quando template ou
+  // candidato mudam.
+  const previewWorkerId = candidates[0]?.workerId;
+  useEffect(() => {
+    if (!selectedTemplate || !previewWorkerId) {
+      setPreviewText('');
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingPreview(true);
+    fetchPreview(previewWorkerId, selectedSlug)
+      .then(rendered => {
+        if (cancelled) return;
+        setPreviewText(rendered ?? selectedTemplate.body);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingPreview(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedSlug, previewWorkerId, selectedTemplate, fetchPreview]);
 
   const alreadyNotified = candidates.filter(c => c.messagedAt != null);
   const notYetNotified = candidates.filter(c => c.messagedAt == null);
@@ -84,10 +94,12 @@ export function SendMessageModal({
   };
 
   const doSend = (subset?: SavedCandidate[]) => {
+    // Para templates server-side (ar_vacancy_match_*) o backend ignora variables
+    // e monta server-side. Mandamos {} pra preservar a assinatura do sendBatch.
     sendBatch(
       subset ?? candidates,
       selectedSlug,
-      (c) => buildVariables(c, vacancy),
+      () => ({}),
       onMessaged,
     );
   };
@@ -98,40 +110,31 @@ export function SendMessageModal({
     onClose();
   };
 
-  // ── Preview sample: usa o primeiro candidato como exemplo ──────────────
-  const previewVars = candidates[0]
-    ? buildVariables(candidates[0], vacancy)
-    : { name: '…', role: '…', location: '…' };
-  const previewText = selectedTemplate
-    ? renderPreview(selectedTemplate.body, previewVars)
-    : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 flex flex-col gap-5">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <Typography variant="h3" weight="semibold" className="text-[#737373] font-poppins">
-            Enviar WhatsApp
+            {t('admin.messaging.title')}
           </Typography>
           <button
             onClick={handleClose}
             className="text-[#737373] hover:text-red-500 transition-colors text-xl leading-none"
+            aria-label={t('common.close')}
           >
             ×
           </button>
         </div>
 
-        {/* Estado: antes de enviar */}
         {!started && (
           <>
-            {/* Seleção de template */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">Template</label>
+              <label className="text-sm font-medium text-slate-700">{t('admin.messaging.templateLabel')}</label>
               {isLoadingTemplates ? (
                 <div className="flex items-center gap-2 text-sm text-[#737373]">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Carregando templates…
+                  {t('admin.messaging.loadingTemplates')}
                 </div>
               ) : (
                 <div className="relative">
@@ -146,7 +149,7 @@ export function SendMessageModal({
                       </option>
                     ))}
                     {templates.length === 0 && (
-                      <option value="vacancy_match">vacancy_match (padrão)</option>
+                      <option value="vacancy_match">{t('admin.messaging.defaultTemplateLabel')}</option>
                     )}
                   </select>
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373] pointer-events-none" />
@@ -154,48 +157,57 @@ export function SendMessageModal({
               )}
             </div>
 
-            {/* Preview */}
             {selectedTemplate && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-slate-700">
-                  Preview{candidates.length > 1 && (
-                    <span className="font-normal text-[#737373]"> (para {candidates[0]?.workerName})</span>
+                  {t('admin.messaging.previewLabel')}{candidates.length > 1 && candidates[0] && (
+                    <span className="font-normal text-[#737373]">{t('admin.messaging.previewFor', { name: candidates[0].workerName })}</span>
                   )}
                 </label>
-                <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border border-[#D9D9D9]">
-                  {previewText}
+                <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border border-[#D9D9D9] min-h-[3rem]">
+                  {isLoadingPreview ? (
+                    <span className="inline-flex items-center gap-2 text-[#737373]">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('admin.messaging.loadingPreview', { defaultValue: 'Cargando vista previa…' })}
+                    </span>
+                  ) : (
+                    previewText || selectedTemplate.body
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Resumo dos destinatários */}
             <div className="text-sm text-slate-600">
               {candidates.length === 1 ? (
-                <>Enviar para <strong>{candidates[0].workerName}</strong>.</>
+                <>
+                  {t('admin.messaging.sendToOneBefore')}
+                  <strong>{candidates[0].workerName}</strong>
+                  {t('admin.messaging.sendToOneAfter')}
+                </>
               ) : (
-                <>{candidates.length} workers selecionados.</>
+                <>{t('admin.messaging.selectedWorkers', { count: candidates.length })}</>
               )}
               {alreadyNotified.length > 0 && (
                 <span className="ml-1 text-amber-700">
-                  {alreadyNotified.length} já notificado{alreadyNotified.length !== 1 ? 's' : ''}.
+                  {' '}
+                  {t('admin.messaging.alreadyNotified', { count: alreadyNotified.length })}
                 </span>
               )}
             </div>
 
-            {/* Confirmação de re-notificação */}
             {showConfirmRenotify && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
-                <strong>{alreadyNotified.length}</strong> worker{alreadyNotified.length !== 1 ? 's' : ''} já recebeu esta mensagem.
+                {t('admin.messaging.alreadyReceivedMessage', { count: alreadyNotified.length })}
                 {notYetNotified.length > 0 && (
-                  <span> {notYetNotified.length} ainda não recebeu.</span>
+                  <span> {t('admin.messaging.notYetReceived', { count: notYetNotified.length })}</span>
                 )}
-                <span> Deseja re-enviar para todos mesmo assim?</span>
+                <span> {t('admin.messaging.confirmResendQuestion')}</span>
               </div>
             )}
 
             <div className="flex justify-end gap-3">
               <Button variant="outline" size="sm" onClick={handleClose}>
-                Cancelar
+                {t('common.cancel')}
               </Button>
               {showConfirmRenotify ? (
                 <>
@@ -205,22 +217,21 @@ export function SendMessageModal({
                     onClick={() => { setShowConfirmRenotify(false); doSend(notYetNotified); }}
                     className="border-amber-300 text-amber-700 hover:bg-amber-50"
                   >
-                    Só novos ({notYetNotified.length})
+                    {t('admin.messaging.newOnly', { count: notYetNotified.length })}
                   </Button>
                   <Button variant="primary" size="sm" onClick={() => doSend()}>
-                    Re-enviar para todos
+                    {t('admin.messaging.resendAll')}
                   </Button>
                 </>
               ) : (
                 <Button variant="primary" size="sm" onClick={handleConfirmSend}>
-                  Confirmar envio
+                  {t('admin.messaging.confirmSend')}
                 </Button>
               )}
             </div>
           </>
         )}
 
-        {/* Estado: progresso de envio */}
         {started && (
           <div className="flex flex-col gap-2">
             {progress.map(p => (
@@ -238,12 +249,12 @@ export function SendMessageModal({
                   }
                 >
                   {p.status === 'sent'
-                    ? '✓ enviado'
+                    ? t('admin.messaging.statusSent')
                     : p.status === 'error'
-                    ? `✗ ${p.error ?? 'erro'}`
+                    ? `${t('admin.messaging.statusErrorPrefix')}${p.error ?? t('admin.messaging.statusErrorFallback')}`
                     : p.status === 'sending'
-                    ? '…enviando'
-                    : 'aguardando'}
+                    ? t('admin.messaging.statusSending')
+                    : t('admin.messaging.statusWaiting')}
                 </span>
               </div>
             ))}
@@ -251,18 +262,19 @@ export function SendMessageModal({
             {isSending && (
               <div className="flex items-center gap-2 text-primary text-sm mt-1">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Enviando…
+                {t('admin.messaging.sending')}
               </div>
             )}
 
             {done && (
               <div className="mt-2 pt-3 border-t border-[#D9D9D9] flex items-center justify-between">
                 <Typography variant="body" weight="medium" className="text-slate-700">
-                  Concluído: {sentCount} enviado{sentCount !== 1 ? 's' : ''},&nbsp;
-                  {errorCount} falha{errorCount !== 1 ? 's' : ''}
+                  {t('admin.messaging.doneLabel')}{' '}
+                  {t('admin.messaging.doneSent', { count: sentCount })},{' '}
+                  {t('admin.messaging.doneErrors', { count: errorCount })}
                 </Typography>
                 <Button variant="outline" size="sm" onClick={handleClose}>
-                  Fechar
+                  {t('common.close')}
                 </Button>
               </div>
             )}

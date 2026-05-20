@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Calendar, X, Clock, Check, AlertCircle } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
@@ -23,7 +25,6 @@ interface CandidateBookingState {
   errorMessage?: string;
 }
 
-// ── Helper: generate slots from form inputs ────────────────────────────────
 function generateSlotTimes(
   startTime: string,
   durationMin: number,
@@ -45,19 +46,22 @@ function generateSlotTimes(
   return result;
 }
 
-// ── Sub-component: slot option label ──────────────────────────────────────
-function slotLabel(slot: InterviewSlot): string {
+function slotLabel(slot: InterviewSlot, t: TFunction): string {
   const avail = slot.maxCapacity - slot.bookedCount;
-  return `${slot.slotTime} - ${slot.slotEndTime} (${avail} vaga${avail !== 1 ? 's' : ''} disponível${avail !== 1 ? 'is' : ''})`;
+  return t('admin.interviews.slotAvailability', {
+    count: avail,
+    start: slot.slotTime,
+    end: slot.slotEndTime,
+  });
 }
 
-// ── Sub-component: Phase 1 — Slot creation form ───────────────────────────
 interface Phase1Props {
   onCreated: () => void;
   createSlots: ReturnType<typeof useInterviewSlots>['createSlots'];
 }
 
 function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
+  const { t } = useTranslation();
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [duration, setDuration] = useState(30);
@@ -69,7 +73,7 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
 
   const handleSubmit = useCallback(async () => {
     if (!date || !startTime) {
-      setFormError('Data e horário de início são obrigatórios.');
+      setFormError(t('admin.interviews.formErrorRequired'));
       return;
     }
     setFormError(null);
@@ -87,17 +91,17 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
       });
       onCreated();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Erro ao criar slots');
+      setFormError(err instanceof Error ? err.message : t('admin.interviews.createSlotsError'));
     } finally {
       setIsSubmitting(false);
     }
-  }, [date, startTime, duration, count, meetLink, capacity, createSlots, onCreated]);
+  }, [date, startTime, duration, count, meetLink, capacity, createSlots, onCreated, t]);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Fecha de entrevistas</label>
+          <label className="text-sm font-medium text-slate-700">{t('admin.interviews.dateLabel')}</label>
           <input
             type="date"
             value={date}
@@ -107,7 +111,7 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Hora de inicio</label>
+          <label className="text-sm font-medium text-slate-700">{t('admin.interviews.startTimeLabel')}</label>
           <TimeSelect
             value={startTime}
             onChange={e => setStartTime(e.target.value)}
@@ -116,21 +120,21 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Duración por entrevista</label>
+          <label className="text-sm font-medium text-slate-700">{t('admin.interviews.durationLabel')}</label>
           <select
             value={duration}
             onChange={e => setDuration(Number(e.target.value))}
             className="border border-[#D9D9D9] rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
-            <option value={15}>15 minutos</option>
-            <option value={30}>30 minutos</option>
-            <option value={45}>45 minutos</option>
-            <option value={60}>60 minutos</option>
+            <option value={15}>{t('admin.interviews.durationMinutes', { count: 15 })}</option>
+            <option value={30}>{t('admin.interviews.durationMinutes', { count: 30 })}</option>
+            <option value={45}>{t('admin.interviews.durationMinutes', { count: 45 })}</option>
+            <option value={60}>{t('admin.interviews.durationMinutes', { count: 60 })}</option>
           </select>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Cantidad de slots</label>
+          <label className="text-sm font-medium text-slate-700">{t('admin.interviews.slotsCountLabel')}</label>
           <input
             type="number"
             min={1}
@@ -142,7 +146,7 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Capacidad por slot</label>
+          <label className="text-sm font-medium text-slate-700">{t('admin.interviews.capacityLabel')}</label>
           <input
             type="number"
             min={1}
@@ -154,7 +158,7 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Link Meet</label>
+          <label className="text-sm font-medium text-slate-700">{t('admin.interviews.meetLinkLabel')}</label>
           <input
             type="url"
             value={meetLink}
@@ -181,14 +185,13 @@ function SlotCreationForm({ onCreated, createSlots }: Phase1Props) {
           className="flex items-center gap-2"
         >
           <Clock className="w-4 h-4" />
-          Crear Slots
+          {t('admin.interviews.createSlots')}
         </Button>
       </div>
     </div>
   );
 }
 
-// ── Sub-component: Phase 2 — Book candidates ──────────────────────────────
 interface Phase2Props {
   candidates: SavedCandidate[];
   availableSlots: InterviewSlot[];
@@ -197,6 +200,7 @@ interface Phase2Props {
 }
 
 function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: Phase2Props) {
+  const { t } = useTranslation();
   const [bookingStates, setBookingStates] = useState<Record<string, CandidateBookingState>>(
     () => Object.fromEntries(
       candidates.map(c => [
@@ -223,9 +227,6 @@ function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: 
     }));
 
     try {
-      // NOTE: Using workerId as encuadreId — the backend should resolve the active
-      // encuadre for this worker+vacancy. This will be refined when the backend
-      // exposes encuadreId directly in match results.
       await bookSlot(bs.selectedSlotId, candidate.workerId);
       setBookingStates(prev => ({
         ...prev,
@@ -237,11 +238,11 @@ function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: 
         [candidate.workerId]: {
           ...prev[candidate.workerId],
           status: 'error',
-          errorMessage: err instanceof Error ? err.message : 'Erro ao agendar',
+          errorMessage: err instanceof Error ? err.message : t('admin.interviews.scheduleError'),
         },
       }));
     }
-  }, [bookingStates, bookSlot]);
+  }, [bookingStates, bookSlot, t]);
 
   const allDone = candidates.every(
     c => bookingStates[c.workerId]?.status === 'success',
@@ -276,7 +277,7 @@ function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: 
               {isSuccess ? (
                 <div className="flex items-center gap-1 text-green-600 text-sm shrink-0">
                   <Check className="w-4 h-4" />
-                  Agendado
+                  {t('admin.interviews.scheduled')}
                 </div>
               ) : (
                 <div className="flex items-center gap-2 shrink-0">
@@ -287,11 +288,11 @@ function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: 
                     className="border border-[#D9D9D9] rounded-lg px-2 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
                   >
                     {availableSlots.length === 0 && (
-                      <option value="">Nenhum slot disponível</option>
+                      <option value="">{t('admin.interviews.noAvailableSlots')}</option>
                     )}
                     {availableSlots.map(slot => (
                       <option key={slot.id} value={slot.id}>
-                        {slotLabel(slot)}
+                        {slotLabel(slot, t)}
                       </option>
                     ))}
                   </select>
@@ -303,7 +304,7 @@ function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: 
                     disabled={!bs?.selectedSlotId || availableSlots.length === 0}
                     className="text-xs px-3 py-1.5 h-auto"
                   >
-                    Agendar
+                    {t('admin.interviews.schedule')}
                   </Button>
                 </div>
               )}
@@ -314,20 +315,20 @@ function CandidateBookingList({ candidates, availableSlots, bookSlot, onDone }: 
 
       <div className="flex justify-end pt-2 border-t border-[#ECEFF1]">
         <Button variant={allDone ? 'primary' : 'outline'} size="sm" onClick={onDone}>
-          Listo
+          {t('admin.interviews.done')}
         </Button>
       </div>
     </div>
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────
 export function ScheduleInterviewModal({
   vacancyId,
   candidates,
   onClose,
   onScheduled,
 }: ScheduleInterviewModalProps) {
+  const { t } = useTranslation();
   const { slots, createSlots, bookSlot } = useInterviewSlots(vacancyId);
   const [phase, setPhase] = useState<1 | 2>(1);
 
@@ -336,30 +337,28 @@ export function ScheduleInterviewModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 flex flex-col gap-5">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-primary" />
             <Typography variant="h3" weight="semibold" className="text-[#737373] font-poppins">
-              {phase === 1 ? 'Configurar Slots de Entrevista' : 'Agendar Candidatos'}
+              {phase === 1 ? t('admin.interviews.phaseTitle1') : t('admin.interviews.phaseTitle2')}
             </Typography>
           </div>
           <button
             onClick={onClose}
             className="text-[#737373] hover:text-red-500 transition-colors"
+            aria-label={t('common.close')}
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Phase indicator */}
         <div className="flex items-center gap-2 text-xs text-[#737373]">
-          <span className={phase === 1 ? 'font-semibold text-primary' : ''}>1. Criar slots</span>
+          <span className={phase === 1 ? 'font-semibold text-primary' : ''}>{t('admin.interviews.phaseStep1')}</span>
           <span>→</span>
-          <span className={phase === 2 ? 'font-semibold text-primary' : ''}>2. Agendar candidatos</span>
+          <span className={phase === 2 ? 'font-semibold text-primary' : ''}>{t('admin.interviews.phaseStep2')}</span>
         </div>
 
-        {/* Content */}
         {phase === 1 ? (
           <SlotCreationForm
             createSlots={createSlots}

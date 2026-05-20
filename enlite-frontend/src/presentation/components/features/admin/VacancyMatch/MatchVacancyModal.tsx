@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -27,6 +28,7 @@ export function MatchVacancyModal({
   vacancy,
   onClose,
 }: MatchVacancyModalProps) {
+  const { t } = useTranslation();
   const { results, isLoading, isRunning, error, runMatch, markMessaged } =
     useVacancyMatch(vacancyId);
 
@@ -84,12 +86,12 @@ export function MatchVacancyModal({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-400">
           <Heading level={2} weight="semibold" color="primary">
-            Match de candidatos
+            {t('admin.match.title')}
           </Heading>
           <button
             onClick={onClose}
             className="text-gray-800 hover:text-primary transition-colors"
-            aria-label="Cerrar"
+            aria-label={t('admin.match.closeAriaLabel')}
           >
             <X size={24} />
           </button>
@@ -109,7 +111,7 @@ export function MatchVacancyModal({
           {(isLoading || isRunning) && !results && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <Text size="sm" color="muted">Buscando candidatos…</Text>
+              <Text size="sm" color="muted">{t('admin.match.loading')}</Text>
             </div>
           )}
 
@@ -124,7 +126,7 @@ export function MatchVacancyModal({
           {results && totalCandidates === 0 && (
             <div className="text-center py-12">
               <Text size="sm" color="muted">
-                No se encontraron candidatos en un radio de {MATCH_RADIUS_KM} km.
+                {t('admin.match.noResultsInRadius', { km: MATCH_RADIUS_KM })}
               </Text>
             </div>
           )}
@@ -147,11 +149,11 @@ export function MatchVacancyModal({
         {/* Footer */}
         <div className="flex items-center justify-between p-6 border-t border-gray-400">
           <Text size="sm" color="muted">
-            {selectedIds.size} seleccionado{selectedIds.size !== 1 ? 's' : ''}
+            {t('admin.match.selectedCount', { count: selectedIds.size })}
           </Text>
           <div className="flex items-center gap-3">
             <Button variant="outline" size="md" onClick={onClose}>
-              Cerrar
+              {t('admin.match.close')}
             </Button>
             <Button
               variant="primary"
@@ -159,7 +161,7 @@ export function MatchVacancyModal({
               disabled={selectedIds.size === 0 || !meetLinksOk}
               onClick={handleInviteSelected}
             >
-              Invitar seleccionados ({selectedIds.size})
+              {t('admin.match.inviteSelected', { count: selectedIds.size })}
             </Button>
           </div>
         </div>
@@ -168,7 +170,6 @@ export function MatchVacancyModal({
       {pendingInvites && (
         <SendMessageModal
           candidates={pendingInvites}
-          vacancy={vacancy}
           vacancyId={vacancyId}
           onClose={() => setPendingInvites(null)}
           onMessaged={(workerId, messagedAt) => {

@@ -239,7 +239,6 @@ export default function VacancyMatchPage() {
       {modalCandidates && id && (
         <SendMessageModal
           candidates={modalCandidates}
-          vacancy={vacancy}
           vacancyId={id}
           onClose={closeModal}
           onMessaged={handleMessaged}

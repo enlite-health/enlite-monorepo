@@ -24,6 +24,10 @@ export function createMessagingRoutes(
   // POST /api/admin/messaging/whatsapp — envia template ao worker (por workerId)
   router.post('/whatsapp', (req, res) => controller.sendToWorker(req, res));
 
+  // POST /api/admin/messaging/whatsapp/preview — renderiza body com variáveis
+  // server-side (mesmo path do envio, sem chamar Twilio).
+  router.post('/whatsapp/preview', (req, res) => controller.previewMessage(req, res));
+
   // POST /api/admin/messaging/whatsapp/direct — envia template a número direto
   router.post('/whatsapp/direct', (req, res) => controller.sendDirect(req, res));
 

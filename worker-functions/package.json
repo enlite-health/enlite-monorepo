@@ -21,6 +21,8 @@
     "sync:talentum:dry": "ts-node -r dotenv/config scripts/sync-talentum-status.ts --dry-run",
     "sync:ana-care": "ts-node -r dotenv/config scripts/sync-ana-care-status.ts",
     "sync:ana-care:dry": "ts-node -r dotenv/config scripts/sync-ana-care-status.ts --dry-run",
+    "sync:twilio-templates:dry": "ts-node -r dotenv/config scripts/sync-message-templates-twilio.ts --dry-run",
+    "sync:twilio-templates": "ts-node -r dotenv/config scripts/sync-message-templates-twilio.ts --apply",
     "db:rewrap-passthrough": "ts-node -r dotenv/config scripts/rewrap-encrypted-passthrough.ts",
     "dev:local": "docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api",
     "test:e2e:stack:up": "docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml up -d postgres firebase-emulator api",

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { MatchCandidateRow } from './MatchCandidateRow.match';
 import type { DistanceBucket } from './matchModalHelpers';
@@ -16,6 +17,7 @@ export function MatchBucketSection({
   onToggleSelect,
   onInviteOne,
 }: MatchBucketSectionProps) {
+  const { t } = useTranslation();
   const isEmpty = bucket.candidates.length === 0;
   return (
     <div className="border border-gray-400 rounded-card overflow-hidden">
@@ -24,12 +26,12 @@ export function MatchBucketSection({
           {bucket.label}
         </Text>
         <Text as="span" size="xs" color="muted">
-          {bucket.candidates.length} candidato{bucket.candidates.length !== 1 ? 's' : ''}
+          {t('admin.match.candidatesCount', { count: bucket.candidates.length })}
         </Text>
       </div>
       {isEmpty ? (
         <div className="px-4 py-6 text-center">
-          <Text size="sm" color="muted">Sin candidatos en este rango.</Text>
+          <Text size="sm" color="muted">{t('admin.match.emptyBucket')}</Text>
         </div>
       ) : (
         <div className="bg-white">

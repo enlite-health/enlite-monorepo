@@ -2,11 +2,7 @@ import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthServic
 import { AdminUser } from '@domain/entities/AdminUser';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { WorkerDateStats, WorkerDetail, WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
-import type {
-  MatchResultsResponse,
-  MessageTemplate,
-  WhatsAppSentResult,
-} from '../../types/match';
+import type { MatchResultsResponse } from '../../types/match';
 import type { InterviewSlot, CreateSlotsInput, BookSlotResult, InterviewSlotsSummary } from '@domain/entities/InterviewSlot';
 import {
   AdminWorkerDocsApiService,
@@ -18,6 +14,7 @@ import {
   AdminVacancyAddressApiService,
   type ResolveAddressBody,
 } from './AdminVacancyAddressApiService';
+import { AdminMessagingApiService } from './AdminMessagingApiService';
 import {
   AdminTalentumApiService,
   type AIContentResult,
@@ -224,19 +221,15 @@ class AdminApiServiceClass {
     return this.request<MatchResultsResponse>('POST', `/api/admin/vacancies/${vacancyId}/match${qs ? `?${qs}` : ''}`);
   }
 
-  async sendWhatsApp(
-    workerId: string,
-    templateSlug: string,
-    variables: Record<string, string>,
-    jobPostingId?: string
-  ): Promise<WhatsAppSentResult> {
-    return this.request<WhatsAppSentResult>('POST', '/api/admin/messaging/whatsapp', {
-      workerId, templateSlug, variables, ...(jobPostingId ? { jobPostingId } : {}),
-    });
+  // ========== Messaging Methods — delegated to AdminMessagingApiService ==========
+  sendWhatsApp(...args: Parameters<typeof AdminMessagingApiService.sendWhatsApp>) {
+    return AdminMessagingApiService.sendWhatsApp(...args);
   }
-
-  async getMessageTemplates(): Promise<MessageTemplate[]> {
-    return this.request<MessageTemplate[]>('GET', '/api/admin/messaging/templates');
+  previewWhatsApp(...args: Parameters<typeof AdminMessagingApiService.previewWhatsApp>) {
+    return AdminMessagingApiService.previewWhatsApp(...args);
+  }
+  getMessageTemplates() {
+    return AdminMessagingApiService.getMessageTemplates();
   }
 
   // ========== Workers Methods ==========

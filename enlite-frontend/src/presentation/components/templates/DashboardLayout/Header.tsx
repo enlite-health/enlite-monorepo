@@ -1,7 +1,9 @@
 import { useAuth } from '@presentation/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export function Header() {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -17,7 +19,7 @@ export function Header() {
         {user && (
           <div className="user-menu">
             <span>{user.name}</span>
-            <button onClick={handleLogout}>Logout</button>
+            <button onClick={handleLogout}>{t('common.logout')}</button>
           </div>
         )}
       </div>

@@ -211,7 +211,7 @@ describe('CaseSelectStep', () => {
         selectedAddressId={null}
       />
     );
-    expect(screen.getByText('VERY_SEVERE')).toBeInTheDocument();
+    expect(screen.getByText('admin.patients.dependencyOptions.VERY_SEVERE')).toBeInTheDocument();
   });
 
   it('calls selectAddress when address card is clicked', async () => {
