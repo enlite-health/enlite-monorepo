@@ -130,10 +130,21 @@ export class BookSlotFromWhatsAppUseCase {
       [meetLink, meetDatetime, worker.id, application.job_posting_id],
     );
 
-    // 6. Confirmação WhatsApp via outbox
+    // 6. Confirmação WhatsApp via outbox — TD-025: dedup atomic
+    //    Webhook Twilio pode entregar a mesma resposta múltiplas vezes; usuário
+    //    pode tocar no botão repetidas vezes. NOT EXISTS evita N confirmações
+    //    idênticas pra mesma vaga em janela curta (5min).
     const outboxResult = await this.db.query(
       `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-       VALUES ($1, 'qualified_worker_response', $2::jsonb, 'pending', 0)
+       SELECT $1, 'qualified_worker_response', $2::jsonb, 'pending', 0
+       WHERE NOT EXISTS (
+         SELECT 1 FROM messaging_outbox
+         WHERE worker_id = $1
+           AND template_slug = 'qualified_worker_response'
+           AND status IN ('pending', 'sent')
+           AND created_at > NOW() - INTERVAL '5 minutes'
+           AND variables->>'job_posting_id' = $3
+       )
        RETURNING id`,
       [
         worker.id,
@@ -142,8 +153,14 @@ export class BookSlotFromWhatsAppUseCase {
           time: formatTimeUTC(meetDatetime),
           job_posting_id: application.job_posting_id,
         }),
+        application.job_posting_id,
       ],
     );
+
+    if (outboxResult.rows.length === 0) {
+      console.log(`[BookSlotFromWhatsApp] Dedup hit — confirmação já enfileirada nos últimos 5min para worker ${worker.id} / job ${application.job_posting_id}`);
+      return Result.ok();
+    }
 
     const outboxId = outboxResult.rows[0].id;
     await this.pubsub.publish('outbox-enqueued', { outboxId });

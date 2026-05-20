@@ -199,16 +199,30 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
       [worker.id, application.job_posting_id],
     );
 
-    // Enviar mensagem amigável confirmando reagendamento
+    // Enviar mensagem amigável confirmando reagendamento — TD-025: dedup atomic
     const outboxResult = await this.db.query(
       `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-       VALUES ($1, 'qualified_reprogram_confirm', $2::jsonb, 'pending', 0)
+       SELECT $1, 'qualified_reprogram_confirm', $2::jsonb, 'pending', 0
+       WHERE NOT EXISTS (
+         SELECT 1 FROM messaging_outbox
+         WHERE worker_id = $1
+           AND template_slug = 'qualified_reprogram_confirm'
+           AND status IN ('pending', 'sent')
+           AND created_at > NOW() - INTERVAL '5 minutes'
+           AND variables->>'job_posting_id' = $3
+       )
        RETURNING id`,
       [
         worker.id,
         JSON.stringify({ case_number: String(caseNumber), job_posting_id: application.job_posting_id }),
+        application.job_posting_id,
       ],
     );
+
+    if (outboxResult.rows.length === 0) {
+      console.log(`[HandleReminderResponse] Dedup hit — confirmação de reagendamento já enfileirada nos últimos 5min para worker ${worker.id} / job ${application.job_posting_id}`);
+      return Result.ok();
+    }
 
     await this.pubsub.publish('outbox-enqueued', { outboxId: outboxResult.rows[0].id });
 

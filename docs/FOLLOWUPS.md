@@ -516,94 +516,86 @@ Conversar com gestão pra alinhar:
 - **Resolveu um item?** Move pra seção `## Resolvidos` no fim do arquivo com data de fechamento + PR/commit.
 - **Bloqueou em algo?** Marca `**Bloqueador?** Sim` e referencia no doc da feature bloqueada.
 
-### TD-017 — `onUserCreate.ts` (Firebase Functions trigger) não propaga traceId via ALS
+### TD-020 + TD-022 — Template Twilio `talentum_incomplete_reminder` (parcialmente resolvido — aguardando aprovação Meta)
 
-- **Status:** aberto
-- **Descoberto em:** 2026-05-19, durante implementação da Fase 0 do Sprint de Automação de Recrutamento
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não — logs do trigger ficam sem `traceId`, mas não quebra funcionalidade
+- **Status:** parcialmente resolvido
+- **Descoberto em:** 2026-05-19/20
+- **Resolvido em:** 2026-05-20 (criado + submetido) — aguardando aprovação Meta (1-3d)
+- **Dono provável:** Meta (aprovação automática), depois Backend (1 UPDATE)
+- **Bloqueador?** Sim pra ativação real do cron Talentum — sim, mas auto-resolvido quando Meta aprovar
 
-**Contexto:**
+**O que foi feito em 2026-05-20:**
 
-O Firebase Functions SDK (`firebase-functions`) não usa Express para despachar triggers como `auth.user().onCreate`. O `AsyncLocalStorage` (`loggingAls`) só propaga contexto dentro de uma cadeia de chamadas iniciada por `loggingAls.run(...)` — o que o `correlationMiddleware` faz para cada request HTTP. Triggers Firebase entram por outro caminho (Node.js callback do SDK), fora de qualquer `run()`, então `loggingAls.getStore()` retorna `undefined` nesses contextos.
+1. Template criado no Twilio via Content API:
+   - `friendly_name`: `talentum_incomplete_reminder`
+   - `sid`: `HX90b0cf73ba47f12016c02cfb8d4161df`
+   - `language`: `es_AR`
+   - `variable {{1}}`: `worker_name`
+   - `body`: "¡Hola {{1}}! Tu proceso de selección en EnLite quedó pendiente de completar. Ingresá a https://app.enlite.health para retomarlo. ¡Te esperamos!"
+2. Submetido pra aprovação Meta (category=UTILITY) — status `received`
+3. Aguardando aprovação automática (1-3 dias úteis tipicamente)
 
-**Efeito prático:**
+**Quando Meta aprovar (verificar com `GET /Content/HX90b0cf73ba47f12016c02cfb8d4161df/ApprovalRequests`):**
 
-Logs emitidos dentro de `onUserCreate.ts` (ou outros triggers Firebase) não carregam `traceId`, `workerId` etc. São logs válidos (pino JSON estruturado, `severity` correta), mas não agrupáveis por trace.
-
-**Solução futura (opções):**
-
-1. Envolver o corpo do handler em `loggingAls.run({ traceId: uuidv4() }, ...)` manualmente — gera traceId próprio por execução do trigger, sem correlação com a request que originou o evento.
-2. Passar traceId via custom claims no token Firebase e lê-lo no handler — mais complexo, só vale se rastrear a cadeia completa user-creation → trigger for prioritário.
-3. Usar `logger.child({ traceId: uuidv4(), source: 'firebase-trigger' })` localmente no handler — mais simples, mantém isolamento sem tocar no ALS global.
-
-**Recomendação:** opção 3 como curto prazo ao tocar `onUserCreate.ts` pela próxima vez.
-
-### TD-020 — Template `talentum_incomplete_reminder` precisa de `content_sid` Twilio HSM antes do go-live
-
-- **Status:** aberto
-- **Descoberto em:** 2026-05-19, durante implementação da Fase 4 do Sprint de Automação de Recrutamento
-- **Dono provável:** Ops + Backend
-- **Bloqueador?** Sim pra produção. Não pra E2E.
-
-**Contexto:**
-
-Template `talentum_incomplete_reminder` (migration 175) tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. O `TwilioMessagingService` vai tentar enviar e receber erro da API Twilio em produção.
-
-**Antes do deploy:**
-1. Ops registra template no Twilio Content Builder com variável `worker_name`
-2. Ops obtém aprovação HSM da Meta (pode levar dias)
-3. Backend roda `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder'` em prod
-
-### TD-022 — Template `talentum_incomplete_reminder` precisa ser criado no Twilio Console + aprovado pela Meta
-
-- **Status:** aberto
-- **Descoberto em:** 2026-05-20, durante integração com templates aprovados
-- **Dono provável:** Ops + Backend
-- **Bloqueador?** Sim pra ativação do cron de lembrete Talentum. Não pra outros fluxos.
-
-**Contexto:**
-
-Os outros 3 templates do sprint estão aprovados. `talentum_incomplete_reminder` foi criado em migration 175 com `content_sid = NULL` e ainda não existe no Twilio Console.
-
-**Próximos passos:**
-
-1. Ops cria template no Twilio Content Builder:
-   - friendly_name: `talentum_incomplete_reminder` (ou variante padrão `ar_*`)
-   - Category: UTILITY
-   - Language: es_AR
-   - Variável: `worker_name`
-   - Body sugerido: "¡Hola {{1}}! Tu proceso de selección en EnLite quedó pendiente de completar. Ingresá a https://app.enlite.health para retomarlo."
-2. Submete pra aprovação Meta (~1-3 dias úteis)
-3. Backend roda: `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder';`
-
-### TD-025 — Duplicação de `qualified_worker_response` na origem (4x no mesmo worker em 32min)
-
-- **Status:** aberto
-- **Descoberto em:** 2026-05-20, durante teste end-to-end do Fluxo A em produção
-- **Dono provável:** backend (worker-functions) — `ReminderScheduler` ou caller
-- **Bloqueador?** Não — não envia múltiplos hoje porque ficou stuck pending. Mas ao destravar, mandaria 4 mensagens idênticas pro mesmo worker.
-
-**Evidência (worker `2efe4ef8-...`, 10/abr/2026):**
-
-```
-template_slug              | created_at                       | attempts
-qualified_worker_response  | 2026-04-10 03:35:34              | 2
-qualified_worker_response  | 2026-04-10 03:39:33              | 2
-qualified_worker_response  | 2026-04-10 04:04:13              | 2
-qualified_worker_response  | 2026-04-10 04:07:53              | 2
-qualified_reprogram_confirm| 2026-04-10 10:44:40              | 2
-qualified_reprogram_confirm| 2026-04-10 10:55:00              | 2
+```sql
+UPDATE message_templates
+SET content_sid = 'HX90b0cf73ba47f12016c02cfb8d4161df'
+WHERE slug = 'talentum_incomplete_reminder';
 ```
 
-**Investigar:**
-- Quem chama `messaging_outbox INSERT` com `template_slug='qualified_worker_response'`? Provavelmente `ReminderScheduler` ou handler de webhook Twilio inbound.
-- Duplicações em janela de minutos sugerem: retry automático sem dedup, OU handler processando mesmo evento webhook múltiplas vezes, OU sem unique constraint em (worker_id, template_slug, related_event_id).
-- Fix: dedup atomic via `(worker_id, template_slug, related_event_id)` UNIQUE constraint OU `SELECT EXISTS` antes do INSERT (padrão da Fase 3 `VacancyAutoInviteHandler`).
+Não popular o SID antes da aprovação Meta — Twilio rejeita send com erro, OutboxProcessor marca `status='error'`, gera ruído em logs sem benefício.
 
 ---
 
 ## Resolvidos
+
+### TD-017 — `onUserCreate.ts` (Firebase Functions trigger) sem traceId via ALS (resolvido 2026-05-20)
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-19, durante Fase 0 do Sprint
+- **Resolvido em:** 2026-05-20
+
+**Como foi resolvido:**
+
+Aplicada opção 3 do TD original — envolveu o corpo do handler em `loggingAls.run({ traceId: uuidv4() }, ...)` localmente, gerando traceId próprio por execução do trigger (sem correlação com a request original, aceitável pra esse caso). Também trocou `functions.logger.*` por `logger`/`reportError` de `@shared/logging` pra consistência com o resto do código.
+
+Arquivo: `worker-functions/src/infrastructure/triggers/onUserCreate.ts`
+
+### TD-025 — Dedup atomic em `qualified_worker_response` + `qualified_reprogram_confirm` (resolvido 2026-05-20)
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-20, durante teste end-to-end Fluxo A em prod (worker recebeu 4x confirmação idêntica de entrevista + 2x de reagendamento)
+- **Resolvido em:** 2026-05-20
+
+**O que era:**
+
+Worker pode tocar várias vezes no botão de slot do WhatsApp (ou Twilio retentar webhook), gerando N inserts idênticos no `messaging_outbox` com template `qualified_worker_response` (confirmação de entrevista) ou `qualified_reprogram_confirm` (reagendamento). Sem dedup, todas as N mensagens saem pro AT.
+
+Evidência (worker `2efe4ef8-...`, 10/abr/2026): 4 inserts de `qualified_worker_response` em 32min + 2 de `qualified_reprogram_confirm` em 11min, todos chegando ao AT depois (drenados por sweep manual).
+
+**Como foi resolvido:**
+
+Pattern Fase 3 (`VacancyAutoInviteHandler`) aplicado em ambos callers:
+
+```sql
+INSERT INTO messaging_outbox (...)
+SELECT $1, '<template>', $2::jsonb, 'pending', 0
+WHERE NOT EXISTS (
+  SELECT 1 FROM messaging_outbox
+  WHERE worker_id = $1 AND template_slug = '<template>'
+    AND status IN ('pending', 'sent')
+    AND created_at > NOW() - INTERVAL '5 minutes'
+    AND variables->>'job_posting_id' = $3
+)
+RETURNING id
+```
+
+- Janela: 5 minutos (curta o suficiente pra dedup de double-tap/retry, não bloqueia re-confirmação legítima horas depois)
+- Quando RETURNING vem vazio: log info "Dedup hit" e early return Result.ok() (não publica no Pub/Sub)
+
+Arquivos:
+- `worker-functions/src/modules/notification/application/BookSlotFromWhatsAppUseCase.ts` (qualified_worker_response)
+- `worker-functions/src/modules/notification/application/HandleReminderResponseUseCase.ts` (qualified_reprogram_confirm)
 
 ### TD-023 + TD-024 — Outbox sem auto-expire de pending velho + sweep sem filtro etário (resolvido 2026-05-20)
 
