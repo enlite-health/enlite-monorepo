@@ -63,15 +63,16 @@ export class BuildVacancyMatchVariablesUseCase {
   }
 
   private async fetchPatientZone(jobPostingId: string): Promise<string> {
+    // Fix TD-019: patient_zone foi movida para patients.zone_neighborhood na migration 039.
+    // O campo patient_zone não existe mais em job_postings — fazer JOIN igual ao VacancyAutoInviteHandler.
     const res = await this.db.query<{ patient_zone: string | null }>(
-      `SELECT patient_zone FROM job_postings WHERE id = $1 LIMIT 1`,
+      `SELECT p.zone_neighborhood AS patient_zone
+       FROM job_postings jp
+       LEFT JOIN patients p ON p.id = jp.patient_id
+       WHERE jp.id = $1
+       LIMIT 1`,
       [jobPostingId],
     );
-    return res.rows[0]?.patient_zone ?? '';
+    return res.rows[0]?.patient_zone ?? 'tu zona';
   }
-}
-
-/** Renderiza placeholders nomeados `{{key}}` no body usando o mapa de variables. */
-export function renderTemplateBody(body: string, vars: Record<string, string>): string {
-  return body.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }

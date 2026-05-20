@@ -1,11 +1,9 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage } from '../schemas/common';
 
-const SendToWorkerBody = z.object({
+const SendVacancyMatchBody = z.object({
   workerId: z.string().uuid().openapi({ description: 'UUID do worker destinatário.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
-  templateSlug: z.string().min(1).openapi({ description: 'Slug do template de mensagem.', example: 'vacancy_match' }),
-  variables: z.record(z.string()).optional().openapi({ description: 'Variáveis do template.', example: { nome: 'João', vaga: 'CASO 766-1' } }),
-  jobPostingId: z.string().uuid().optional().openapi({ description: 'UUID da vaga (atualiza messaged_at quando template=vacancy_match).', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
+  jobPostingId: z.string().uuid().openapi({ description: 'UUID da vaga (atualiza messaged_at e grava log).', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
 });
 
 const SendDirectBody = z.object({
@@ -30,20 +28,23 @@ const UpdateTemplateBody = z.object({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/admin/messaging/whatsapp',
+  path: '/api/admin/messaging/whatsapp/vacancy-match',
   tags: ['Admin · Messaging'],
-  summary: 'Envia WhatsApp para worker por ID',
+  summary: 'Envia convite de match de vaga para worker',
   description:
-    'Envia mensagem WhatsApp para um worker usando template e variáveis. ' +
-    'Busca o número via ID do worker (WhatsApp criptografado ou phone).',
+    'Envia WhatsApp de convite de match para um worker. ' +
+    'O template é decidido automaticamente pelo status do worker: ' +
+    'REGISTERED → ar_vacancy_match_complete; ' +
+    'INCOMPLETE_REGISTER → ar_vacancy_match_incomplete; ' +
+    'DISABLED (ou outro) → 422 WORKER_STATUS_INVALID.',
   security: [{ firebaseAuth: [] }],
-  request: { body: { content: { 'application/json': { schema: SendToWorkerBody } } } },
+  request: { body: { content: { 'application/json': { schema: SendVacancyMatchBody } } } },
   responses: {
-    200: { description: 'Mensagem enviada.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: 'workerId ou templateSlug ausente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    200: { description: 'Mensagem enviada. Inclui templateSlug usado.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'workerId ou jobPostingId ausente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    422: { description: 'Worker sem telefone cadastrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    422: { description: 'Worker em status inválido ou sem telefone.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     502: { description: 'Falha no envio via Twilio.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },

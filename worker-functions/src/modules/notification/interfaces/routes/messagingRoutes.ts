@@ -21,17 +21,13 @@ export function createMessagingRoutes(
   const router = Router();
   const controller = new MessagingController(messagingService, templateRepo);
 
-  // POST /api/admin/messaging/whatsapp — envia template ao worker (por workerId)
-  router.post('/whatsapp', (req, res) => controller.sendToWorker(req, res));
-
-  // POST /api/admin/messaging/whatsapp/preview — renderiza body com variáveis
-  // server-side (mesmo path do envio, sem chamar Twilio).
-  router.post('/whatsapp/preview', (req, res) => controller.previewMessage(req, res));
+  // POST /api/admin/messaging/whatsapp/vacancy-match — convite de match (template decidido por status do worker)
+  router.post('/whatsapp/vacancy-match', (req, res) => controller.sendVacancyMatch(req, res));
 
   // POST /api/admin/messaging/whatsapp/direct — envia template a número direto
   router.post('/whatsapp/direct', (req, res) => controller.sendDirect(req, res));
 
-  // GET  /api/admin/messaging/templates — lista templates ativos (?all=true inclui inativos)
+  // GET  /api/admin/messaging/templates — lista templates (?all=true inclui inativos)
   router.get('/templates', (req, res) => controller.listTemplates(req, res));
 
   // POST /api/admin/messaging/templates — cria template (upsert por slug)

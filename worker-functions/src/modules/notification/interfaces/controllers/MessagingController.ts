@@ -5,27 +5,12 @@ import { MessageTemplateRepository } from '../../infrastructure/MessageTemplateR
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BulkDispatchIncompleteWorkersUseCase } from '../../application/BulkDispatchIncompleteWorkersUseCase';
-import {
-  BuildVacancyMatchVariablesUseCase,
-  renderTemplateBody,
-} from '../../application/BuildVacancyMatchVariablesUseCase';
+import { BuildVacancyMatchVariablesUseCase } from '../../application/BuildVacancyMatchVariablesUseCase';
 import { AuthMiddleware } from '@modules/identity';
 import { logger, reportError } from '@shared/logging';
 
-// Slugs disponíveis no dropdown de envio manual (SendMessageModal).
-// Outros templates ficam acessíveis via fluxo automatizado (auto-invite,
-// bulk dispatch, etc.). Mudou? Atualize aqui + scripts/sync-message-templates/constants.ts.
-const MANUAL_DISPATCH_SLUGS = [
-  'ar_vacancy_match_complete',
-  'ar_vacancy_match_incomplete',
-];
-
-// Slugs cujas variáveis são montadas server-side (não confiamos no payload
-// do frontend — PII e jobPosting context são resolvidos via use case).
-const SERVER_SIDE_VARS_SLUGS = new Set([
-  'ar_vacancy_match_complete',
-  'ar_vacancy_match_incomplete',
-]);
+const SLUG_COMPLETE   = 'ar_vacancy_match_complete';
+const SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
 
 export class MessagingController {
   private messaging: IMessagingService;
@@ -41,32 +26,33 @@ export class MessagingController {
   }
 
   /**
-   * POST /api/admin/messaging/whatsapp
-   * Envia mensagem WhatsApp para um worker pelo seu ID.
+   * POST /api/admin/messaging/whatsapp/vacancy-match
+   * Envia convite de match de vaga para um worker.
+   * O template é decidido automaticamente pelo status do worker:
+   *   REGISTERED          → ar_vacancy_match_complete
+   *   INCOMPLETE_REGISTER → ar_vacancy_match_incomplete
+   *   DISABLED (ou outro) → 422 WORKER_STATUS_INVALID
    *
-   * Body:
-   *   workerId: string
-   *   templateSlug: string
-   *   variables?: Record<string, string>
-   *   jobPostingId?: string  — quando informado com template vacancy_match, atualiza messaged_at
+   * Body: { workerId: string, jobPostingId: string }
    */
-  async sendToWorker(req: Request, res: Response): Promise<void> {
-    const { workerId, templateSlug, variables, jobPostingId } = req.body;
+  async sendVacancyMatch(req: Request, res: Response): Promise<void> {
+    const { workerId, jobPostingId } = req.body as Record<string, unknown>;
 
-    if (!workerId || !templateSlug) {
-      res.status(400).json({ error: 'workerId e templateSlug são obrigatórios' });
+    if (!workerId || !jobPostingId) {
+      res.status(400).json({ error: 'workerId e jobPostingId são obrigatórios' });
       return;
     }
 
-    if (typeof templateSlug !== 'string' || templateSlug.trim().length === 0) {
-      res.status(400).json({ error: 'templateSlug não pode ser vazio' });
-      return;
-    }
-    const slug = templateSlug.trim();
-
-    const workerResult = await this.db.query<{ whatsapp_phone_encrypted: string | null; phone: string | null }>(
-      `SELECT whatsapp_phone_encrypted, phone FROM workers WHERE id = $1 LIMIT 1`,
-      [workerId]
+    const workerResult = await this.db.query<{
+      status: string | null;
+      whatsapp_phone_encrypted: string | null;
+      phone: string | null;
+    }>(
+      `SELECT status, whatsapp_phone_encrypted, phone
+       FROM workers
+       WHERE id = $1
+       LIMIT 1`,
+      [workerId],
     );
 
     if (workerResult.rows.length === 0) {
@@ -74,7 +60,23 @@ export class MessagingController {
       return;
     }
 
-    const { whatsapp_phone_encrypted, phone } = workerResult.rows[0];
+    const { status, whatsapp_phone_encrypted, phone } = workerResult.rows[0];
+
+    let slug: string;
+    if (status === 'REGISTERED') {
+      slug = SLUG_COMPLETE;
+    } else if (status === 'INCOMPLETE_REGISTER') {
+      slug = SLUG_INCOMPLETE;
+    } else {
+      res
+        .status(422)
+        .json({
+          error: 'WORKER_STATUS_INVALID',
+          detail: `Worker em status ${status ?? 'desconhecido'} não pode receber convite de match`,
+        });
+      return;
+    }
+
     const whatsappPhone = whatsapp_phone_encrypted
       ? await this.encryptionService.decrypt(whatsapp_phone_encrypted)
       : null;
@@ -85,54 +87,47 @@ export class MessagingController {
       return;
     }
 
-    // Pra slugs server-side, ignora variables do body e monta a partir do
-    // worker + job_posting. Garante o mesmo conteúdo que o auto-invite envia.
-    let effectiveVariables = variables;
-    if (SERVER_SIDE_VARS_SLUGS.has(slug)) {
-      if (!jobPostingId) {
-        res.status(400).json({ error: `jobPostingId é obrigatório para templateSlug=${slug}` });
-        return;
-      }
-      const builder = new BuildVacancyMatchVariablesUseCase(this.db, this.encryptionService);
-      effectiveVariables = await builder.execute(workerId, jobPostingId, slug);
-    }
+    const builder = new BuildVacancyMatchVariablesUseCase(this.db, this.encryptionService);
+    const variables = await builder.execute(String(workerId), String(jobPostingId), slug);
 
-    const result = await this.messaging.sendWhatsApp({ to, templateSlug: slug, variables: effectiveVariables });
+    const result = await this.messaging.sendWhatsApp({ to, templateSlug: slug, variables: variables as unknown as Record<string, string> });
 
     if (result.isFailure) {
       res.status(502).json({ error: result.error });
       return;
     }
 
-    // Rastreia envio de templates de match de vaga (ar_vacancy_match_complete /
-    // ar_vacancy_match_incomplete): atualiza messaged_at na candidatura correspondente.
-    if (slug.startsWith('ar_vacancy_match') && jobPostingId) {
-      await this.db.query(
+    const { externalId, to: normalizedTo } = result.getValue()!;
+    const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
+
+    // Atualiza messaged_at na candidatura — best-effort
+    await this.db
+      .query(
         `UPDATE worker_job_applications
          SET messaged_at = NOW(), updated_at = NOW()
          WHERE worker_id = $1 AND job_posting_id = $2`,
-        [workerId, jobPostingId]
-      ).catch((err: unknown) => {
+        [workerId, jobPostingId],
+      )
+      .catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
         logger.warn({ error: error.message, workerId, jobPostingId }, 'Falha ao atualizar messaged_at');
       });
-    }
 
-    // Persiste log de envio individual — best-effort, nunca bloqueia a resposta
-    const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
-    const { externalId, to: normalizedTo } = result.getValue()!;
-    await this.db.query(
-      `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-       VALUES ($1, $2, $3, $4, 'sent', $5, 'individual')`,
-      [workerId, triggeredBy, normalizedTo, slug, externalId],
-    ).catch((err: unknown) => {
-      const error = err instanceof Error ? err : new Error(String(err));
-      logger.warn({ error: error.message, workerId, templateSlug: slug }, 'Falha ao gravar log individual');
-      reportError(error, { source: 'MessagingController.sendToWorker:log', workerId, templateSlug: slug });
-    });
+    // Persiste log de envio individual — best-effort
+    await this.db
+      .query(
+        `INSERT INTO whatsapp_bulk_dispatch_logs
+           (worker_id, job_posting_id, triggered_by, phone, template_slug, status, twilio_sid, source)
+         VALUES ($1, $2, $3, $4, $5, 'sent', $6, 'individual')`,
+        [workerId, jobPostingId, triggeredBy, normalizedTo, slug, externalId],
+      )
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        logger.warn({ error: error.message, workerId, templateSlug: slug }, 'Falha ao gravar log individual');
+        reportError(error, { source: 'MessagingController.sendVacancyMatch:log', workerId, templateSlug: slug });
+      });
 
-    res.status(200).json({ success: true, data: result.getValue() });
+    res.status(200).json({ success: true, data: { templateSlug: slug, ...result.getValue() } });
   }
 
   /**
@@ -168,88 +163,41 @@ export class MessagingController {
     const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
 
     const digitsOnly = normalizedTo.replace(/^\+/, '');
-    await this.db.query(
-      `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-       VALUES (
-         (SELECT id FROM workers
-          WHERE (REGEXP_REPLACE(phone, '^\+', '') = $2)
-            AND merged_into_id IS NULL
-          LIMIT 1),
-         $1, $3, $4, 'sent', $5, 'individual'
-       )`,
-      [triggeredBy, digitsOnly, normalizedTo, templateSlug.trim(), externalId],
-    ).catch((err: unknown) => {
-      const error = err instanceof Error ? err : new Error(String(err));
-      logger.warn({ error: error.message }, 'MessagingController sendDirect log error');
-    });
+    await this.db
+      .query(
+        `INSERT INTO whatsapp_bulk_dispatch_logs
+           (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
+         VALUES (
+           (SELECT id FROM workers
+            WHERE (REGEXP_REPLACE(phone, '^\\+', '') = $2)
+              AND merged_into_id IS NULL
+            LIMIT 1),
+           $1, $3, $4, 'sent', $5, 'individual'
+         )`,
+        [triggeredBy, digitsOnly, normalizedTo, templateSlug.trim(), externalId],
+      )
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        logger.warn({ error: error.message }, 'MessagingController sendDirect log error');
+      });
 
     res.status(200).json({ success: true, data: result.getValue() });
   }
 
   /**
    * GET /api/admin/messaging/templates
-   * Lista templates utilizáveis no dropdown de envio manual: por padrão,
-   * apenas a whitelist `MANUAL_DISPATCH_SLUGS`. Templates de fluxos
-   * automatizados ficam fora — operação não deve dispará-los manualmente.
+   * Lista todos os templates de mensagem.
    *
    * Query params (admin/gestão):
-   *   ?all=true             — inclui inativos e remove o filtro de whitelist
+   *   ?all=true             — inclui inativos
    *   ?includeUnlinked=true — inclui templates sem content_sid
    */
   async listTemplates(req: Request, res: Response): Promise<void> {
     const adminAll = req.query.all === 'true';
     const onlyActive = !adminAll;
     const requireContentSid = req.query.includeUnlinked !== 'true';
-    const allowedSlugs = adminAll ? undefined : MANUAL_DISPATCH_SLUGS;
-    const templates = await this.templateRepo.findAll(onlyActive, requireContentSid, allowedSlugs);
+    const templates = await this.templateRepo.findAll(onlyActive, requireContentSid);
     res.status(200).json({ success: true, data: templates });
-  }
-
-  /**
-   * POST /api/admin/messaging/whatsapp/preview
-   * Renderiza o body do template aplicando variáveis server-side, do mesmo
-   * jeito que `sendToWorker` faria — só não envia para o Twilio. Permite
-   * mostrar ao operador exatamente o texto que o destinatário receberá.
-   *
-   * Body: { workerId, templateSlug, jobPostingId? }
-   * Response: { body, renderedBody, variables }
-   */
-  async previewMessage(req: Request, res: Response): Promise<void> {
-    const { workerId, templateSlug, jobPostingId } = req.body;
-
-    if (!workerId || !templateSlug) {
-      res.status(400).json({ error: 'workerId e templateSlug são obrigatórios' });
-      return;
-    }
-    const slug = String(templateSlug).trim();
-    if (slug.length === 0) {
-      res.status(400).json({ error: 'templateSlug não pode ser vazio' });
-      return;
-    }
-
-    const template = await this.templateRepo.findBySlug(slug);
-    if (!template) {
-      res.status(404).json({ error: `Template '${slug}' não encontrado ou inativo` });
-      return;
-    }
-
-    let variables: Record<string, string> = {};
-    if (SERVER_SIDE_VARS_SLUGS.has(slug)) {
-      if (!jobPostingId) {
-        res.status(400).json({ error: `jobPostingId é obrigatório para preview de ${slug}` });
-        return;
-      }
-      const builder = new BuildVacancyMatchVariablesUseCase(this.db, this.encryptionService);
-      const built = await builder.execute(workerId, jobPostingId, slug);
-      variables = built as unknown as Record<string, string>;
-    }
-
-    const renderedBody = renderTemplateBody(template.body, variables);
-    res.status(200).json({
-      success: true,
-      data: { body: template.body, renderedBody, variables },
-    });
   }
 
   /**
@@ -307,14 +255,6 @@ export class MessagingController {
     res.status(200).json({ success: true });
   }
 
-  /**
-   * POST /api/admin/messaging/bulk-dispatch-incomplete
-   * Envia WhatsApp (template complete_register_ofc) para todos os workers
-   * com encuadre que possuem documentos ou perfil incompletos.
-   *
-   * Persiste cada envio em whatsapp_bulk_dispatch_logs com o UID do admin
-   * que disparou e o status de sucesso/erro.
-   */
   /**
    * POST /api/admin/messaging/bulk-dispatch-incomplete
    *

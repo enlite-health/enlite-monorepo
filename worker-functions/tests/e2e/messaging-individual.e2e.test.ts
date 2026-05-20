@@ -162,7 +162,7 @@ describe('Fase 2 — whatsapp_bulk_dispatch_logs source column + timeline', () =
     });
   });
 
-  describe('POST /api/admin/messaging/whatsapp — 502 without Twilio, no log written', () => {
+  describe('POST /api/admin/messaging/whatsapp/direct — 502 without Twilio, no log written', () => {
     it('returns 502 (Twilio not configured) and log count is unchanged', async () => {
       const before = await pool.query<{ count: string }>(
         `SELECT COUNT(*) AS count FROM whatsapp_bulk_dispatch_logs
@@ -172,8 +172,8 @@ describe('Fase 2 — whatsapp_bulk_dispatch_logs source column + timeline', () =
       const countBefore = parseInt(before.rows[0].count, 10);
 
       const res = await api.post(
-        '/api/admin/messaging/whatsapp',
-        { workerId, templateSlug: 'talent_search_welcome' },
+        '/api/admin/messaging/whatsapp/direct',
+        { to: '+5511987654321', templateSlug: 'talent_search_welcome' },
         { headers: { Authorization: `Bearer ${staffToken}` } },
       );
 

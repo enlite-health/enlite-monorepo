@@ -27,28 +27,18 @@ export class MessageTemplateRepository {
   //   requireContentSid=true (default): exclui templates sem HSM aprovado
   //     no Twilio (content_sid IS NULL) — esses não chegam ao destinatário
   //     fora da janela de 24h e não devem aparecer em dropdowns de envio.
-  //   allowedSlugs (opcional): restringe a uma whitelist explícita de slugs.
-  //     Usado pelo dropdown de envio manual pra exibir apenas templates
-  //     curados (não os auto-disparados).
   // ─────────────────────────────────────────────────────────────────
   async findAll(
     onlyActive = true,
     requireContentSid = true,
-    allowedSlugs?: string[],
   ): Promise<MessageTemplate[]> {
     const conditions: string[] = [];
-    const params: unknown[] = [];
     if (onlyActive) conditions.push('is_active = true');
     if (requireContentSid) conditions.push('content_sid IS NOT NULL');
-    if (allowedSlugs && allowedSlugs.length > 0) {
-      params.push(allowedSlugs);
-      conditions.push(`slug = ANY($${params.length}::text[])`);
-    }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const result = await this.pool.query<Record<string, any>>(
       `SELECT * FROM message_templates ${where} ORDER BY category, slug`,
-      params,
     );
     return result.rows.map(r => this.mapRow(r));
   }
