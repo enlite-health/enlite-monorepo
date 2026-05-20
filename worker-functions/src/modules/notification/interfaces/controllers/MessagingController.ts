@@ -72,8 +72,9 @@ export class MessagingController {
       return;
     }
 
-    // Rastreia envio de vacancy_match: atualiza messaged_at na candidatura correspondente
-    if (templateSlug.trim() === 'vacancy_match' && jobPostingId) {
+    // Rastreia envio de templates de match de vaga (ar_vacancy_match_complete /
+    // ar_vacancy_match_incomplete): atualiza messaged_at na candidatura correspondente.
+    if (templateSlug.trim().startsWith('ar_vacancy_match') && jobPostingId) {
       await this.db.query(
         `UPDATE worker_job_applications
          SET messaged_at = NOW(), updated_at = NOW()
@@ -99,7 +100,7 @@ export class MessagingController {
       reportError(error, { source: 'MessagingController.sendToWorker:log', workerId, templateSlug });
     });
 
-    res.status(200).json(result.getValue());
+    res.status(200).json({ success: true, data: result.getValue() });
   }
 
   /**
@@ -151,16 +152,23 @@ export class MessagingController {
       logger.warn({ error: error.message }, 'MessagingController sendDirect log error');
     });
 
-    res.status(200).json(result.getValue());
+    res.status(200).json({ success: true, data: result.getValue() });
   }
 
   /**
    * GET /api/admin/messaging/templates
-   * Lista templates. Query param ?all=true inclui inativos.
+   * Lista templates utilizáveis no UI de envio: ativos + com content_sid
+   * (HSM aprovado no Twilio). Templates sem content_sid são ocultados porque
+   * não chegam ao destinatário fora da janela de 24h do WhatsApp Business.
+   *
+   * Query params (admin/gestão):
+   *   ?all=true             — inclui inativos
+   *   ?includeUnlinked=true — inclui templates sem content_sid
    */
   async listTemplates(req: Request, res: Response): Promise<void> {
     const onlyActive = req.query.all !== 'true';
-    const templates = await this.templateRepo.findAll(onlyActive);
+    const requireContentSid = req.query.includeUnlinked !== 'true';
+    const templates = await this.templateRepo.findAll(onlyActive, requireContentSid);
     res.status(200).json({ success: true, data: templates });
   }
 

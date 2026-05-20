@@ -22,13 +22,20 @@ export class MessageTemplateRepository {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // findAll — lista todos; onlyActive=true por padrão
+  // findAll — lista templates.
+  //   onlyActive=true (default): exclui is_active=false
+  //   requireContentSid=true (default): exclui templates sem HSM aprovado
+  //     no Twilio (content_sid IS NULL) — esses não chegam ao destinatário
+  //     fora da janela de 24h e não devem aparecer em dropdowns de envio.
   // ─────────────────────────────────────────────────────────────────
-  async findAll(onlyActive = true): Promise<MessageTemplate[]> {
+  async findAll(onlyActive = true, requireContentSid = true): Promise<MessageTemplate[]> {
+    const conditions: string[] = [];
+    if (onlyActive) conditions.push('is_active = true');
+    if (requireContentSid) conditions.push('content_sid IS NOT NULL');
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
     const result = await this.pool.query<Record<string, any>>(
-      onlyActive
-        ? `SELECT * FROM message_templates WHERE is_active = true ORDER BY category, slug`
-        : `SELECT * FROM message_templates ORDER BY category, slug`,
+      `SELECT * FROM message_templates ${where} ORDER BY category, slug`,
     );
     return result.rows.map(r => this.mapRow(r));
   }
