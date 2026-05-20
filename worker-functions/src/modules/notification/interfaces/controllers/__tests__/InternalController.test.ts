@@ -283,7 +283,7 @@ describe('InternalController', () => {
 
       expect(bulkDispatchScheduler.run).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ status: 'ok', total: 10, sent: 8, errors: 2 });
+      expect(res.json).toHaveBeenCalledWith({ success: true, total: 10, sent: 8, errors: 2 });
     });
 
     it('returns 500 on error', async () => {

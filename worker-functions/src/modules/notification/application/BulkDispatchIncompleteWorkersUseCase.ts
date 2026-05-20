@@ -34,9 +34,9 @@ const INCOMPLETE_WORKERS_QUERY = `
     CASE WHEN w.sex_encrypted IS NULL THEN 'SIM' ELSE 'não' END AS falta_sexo,
     CASE WHEN w.first_name_encrypted IS NULL THEN 'SIM' ELSE 'não' END AS falta_nome,
     CASE WHEN w.profession IS NULL OR w.profession = '' THEN 'SIM' ELSE 'não' END AS falta_profissao,
-    CASE WHEN w.preferred_age_range IS NULL OR w.preferred_age_range = '' THEN 'SIM' ELSE 'não' END AS falta_age_range,
-    CASE WHEN w.preferred_types IS NULL OR w.preferred_types = '{}' THEN 'SIM' ELSE 'não' END AS falta_preferred_types,
-    CASE WHEN w.experience_types IS NULL OR w.experience_types = '{}' THEN 'SIM' ELSE 'não' END AS falta_experience_types
+    CASE WHEN w.preferred_age_range IS NULL OR w.preferred_age_range = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_age_range,
+    CASE WHEN w.preferred_types IS NULL OR w.preferred_types = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_preferred_types,
+    CASE WHEN w.experience_types IS NULL OR w.experience_types = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_experience_types
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
   LEFT JOIN worker_documents wd ON wd.worker_id = w.id
@@ -50,9 +50,9 @@ const INCOMPLETE_WORKERS_QUERY = `
       OR w.sex_encrypted IS NULL
       OR w.first_name_encrypted IS NULL
       OR w.profession IS NULL OR w.profession = ''
-      OR w.preferred_age_range IS NULL OR w.preferred_age_range = ''
-      OR w.preferred_types IS NULL OR w.preferred_types = '{}'
-      OR w.experience_types IS NULL OR w.experience_types = '{}'
+      OR w.preferred_age_range IS NULL OR w.preferred_age_range = '{}'::text[]
+      OR w.preferred_types IS NULL OR w.preferred_types = '{}'::text[]
+      OR w.experience_types IS NULL OR w.experience_types = '{}'::text[]
     )
     AND NOT EXISTS (
       SELECT 1 FROM worker_reminder_state wrs

@@ -1,6 +1,11 @@
 import { Pool } from 'pg';
 import { IMessagingService } from '../domain/IMessagingService';
-import { BulkDispatchIncompleteWorkersUseCase } from '../application/BulkDispatchIncompleteWorkersUseCase';
+import {
+  BulkDispatchIncompleteWorkersUseCase,
+  BulkDispatchOptions,
+  BulkDispatchResult,
+} from '../application/BulkDispatchIncompleteWorkersUseCase';
+import { logger } from '@shared/logging';
 
 /**
  * BulkDispatchScheduler — dispara bulk dispatch de workers incompletos.
@@ -15,19 +20,17 @@ export class BulkDispatchScheduler {
   ) {}
 
   /** Executa o bulk dispatch. Stateless — chamado via Cloud Scheduler. */
-  async run(): Promise<{ total: number; sent: number; errors: number }> {
-    console.log('[BulkDispatchScheduler] Iniciando disparo...');
+  async run(options: BulkDispatchOptions = {}): Promise<BulkDispatchResult> {
+    logger.info({ dryRun: options.dryRun, limit: options.limit }, 'BulkDispatchScheduler iniciando');
 
     const useCase = new BulkDispatchIncompleteWorkersUseCase(this.db, this.messaging);
-    const result = await useCase.execute('scheduler');
+    const result = await useCase.execute('scheduler', options);
 
     if (result.isFailure) {
-      console.error('[BulkDispatchScheduler] Falha no disparo:', result.error);
+      logger.error({ error: result.error }, 'BulkDispatchScheduler falhou');
       throw new Error(result.error);
     }
 
-    const { total, sent, errors } = result.getValue()!;
-    console.log(`[BulkDispatchScheduler] Concluído — total=${total} sent=${sent} errors=${errors}`);
-    return { total, sent, errors };
+    return result.getValue()!;
   }
 }

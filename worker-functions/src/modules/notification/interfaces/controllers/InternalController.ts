@@ -136,11 +136,14 @@ export class InternalController {
    */
   async processBulkDispatch(req: Request, res: Response): Promise<void> {
     try {
-      const result = await this.bulkDispatchScheduler.run();
-      res.status(200).json({ status: 'ok', ...result });
+      const body = (req.body ?? {}) as { dryRun?: boolean; limit?: number };
+      const result = await this.bulkDispatchScheduler.run({ dryRun: body.dryRun, limit: body.limit });
+      res.status(200).json({ success: true, ...result });
     } catch (err) {
-      console.error('[InternalController] processBulkDispatch error:', err);
-      res.status(500).json({ error: 'Internal server error' });
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ error: error.message }, 'processBulkDispatch error');
+      reportError(error, { source: 'InternalController:processBulkDispatch' });
+      res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 

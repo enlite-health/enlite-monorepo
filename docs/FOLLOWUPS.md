@@ -539,44 +539,6 @@ Logs emitidos dentro de `onUserCreate.ts` (ou outros triggers Firebase) não car
 
 **Recomendação:** opção 3 como curto prazo ao tocar `onUserCreate.ts` pela próxima vez.
 
-### TD-018 — Template `vacancy_invited_auto` precisa de `content_sid` Twilio HSM antes do go-live
-
-- **Status:** aberto
-- **Descoberto em:** 2026-05-19, durante implementação da Fase 3 do Sprint de Automação de Recrutamento
-- **Dono provável:** Ops + Backend
-- **Bloqueador?** **Sim** pra ir pra produção. Não bloqueia testes/E2E.
-
-**Contexto:**
-
-O template inserido na migration 174 tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. O `OutboxProcessor` vai tentar enviar e receber erro da API Twilio em produção.
-
-**O que precisa antes do deploy:**
-
-1. Ops registra template `vacancy_invited_auto` no Twilio Content Builder com variáveis `worker_name`, `vacancy_case_number`, `distance_km`, `patient_zone`.
-2. Ops obtém aprovação HSM da Meta (pode levar dias).
-3. Backend roda `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'vacancy_invited_auto'` em prod.
-
-### TD-019 — Template `vacancy_invited_auto` usa `workZone` do AT como `patient_zone` (copy enganador)
-
-- **Status:** aberto
-- **Descoberto em:** 2026-05-19, durante revisão da Fase 3
-- **Dono provável:** Backend + Ops
-- **Bloqueador?** Não — funcional, mas o copy fica enganador
-
-**Contexto:**
-
-A variável `patient_zone` do template recebe `ScoredCandidate.workZone`, que é a zona de TRABALHO do AT (`worker_service_areas.work_zone`), não a zona do paciente. O copy diz "en {{patient_zone}}" implicando localização da vaga.
-
-**Opções de correção:**
-
-1. Renomear a variável no template pra `worker_zone` + ajustar copy: "perto da tua zona ({{worker_zone}})"
-2. Buscar `patient_addresses.barrio_neighborhood` (ou equivalente atualizado) e passar a zona real do paciente
-3. Combinar ambos: "tu zona: {{worker_zone}} • vaga em: {{patient_zone}}"
-
-**Recomendação:** opção 2 — buscar zona real do paciente via JOIN com `patient_addresses` no handler. Mais alinhado semanticamente.
-
----
-
 ### TD-020 — Template `talentum_incomplete_reminder` precisa de `content_sid` Twilio HSM antes do go-live
 
 - **Status:** aberto
@@ -586,39 +548,111 @@ A variável `patient_zone` do template recebe `ScoredCandidate.workZone`, que é
 
 **Contexto:**
 
-Idêntico ao TD-018 — template `talentum_incomplete_reminder` (migration 175) tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. O `TwilioMessagingService` vai tentar enviar e receber erro da API Twilio em produção.
+Template `talentum_incomplete_reminder` (migration 175) tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. O `TwilioMessagingService` vai tentar enviar e receber erro da API Twilio em produção.
 
 **Antes do deploy:**
 1. Ops registra template no Twilio Content Builder com variável `worker_name`
 2. Ops obtém aprovação HSM da Meta (pode levar dias)
 3. Backend roda `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder'` em prod
 
-### TD-021 — `INCOMPLETE_WORKERS_QUERY` quebra com `malformed array literal: ""`
+### TD-022 — Template `talentum_incomplete_reminder` precisa ser criado no Twilio Console + aprovado pela Meta
 
 - **Status:** aberto
-- **Descoberto em:** 2026-05-19, durante implementação da Fase 5 (dedup atomic) do Sprint de Automação de Recrutamento
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Sim pra rodar o fluxo `/api/internal/bulk-dispatch/process` em E2E — endpoint retorna 500
+- **Descoberto em:** 2026-05-20, durante integração com templates aprovados
+- **Dono provável:** Ops + Backend
+- **Bloqueador?** Sim pra ativação do cron de lembrete Talentum. Não pra outros fluxos.
 
 **Contexto:**
 
-A query `INCOMPLETE_WORKERS_QUERY` em `BulkDispatchIncompleteWorkersUseCase.ts` faz comparação `preferred_types = '{}'` (string literal vazia) em coluna que é `TEXT[]` no banco. Postgres rejeita: `malformed array literal: ""`. Bug pré-existente, não introduzido pela Fase 5.
+Os outros 3 templates do sprint estão aprovados. `talentum_incomplete_reminder` foi criado em migration 175 com `content_sid = NULL` e ainda não existe no Twilio Console.
 
-**Por que não foi detectado antes:**
+**Próximos passos:**
 
-Endpoint não tinha cobertura E2E até a Fase 5. Tinha apenas teste unitário com mock de DB. Migration que mudou `preferred_types` pra `TEXT[]` provavelmente é recente (>100) e o use case não foi atualizado.
-
-**Fix:**
-
-Trocar `preferred_types = '{}'` por `preferred_types = '{}'::text[]` ou `array_length(preferred_types, 1) IS NULL` no SQL. Identificar query exata via grep.
-
-**Validação esperada:**
-
-- E2E `bulk-dispatch.e2e.test.ts` (criar se não existir, análogo ao `bulk-dispatch-talentum.e2e.test.ts`) retorna 200
-- Worker com cadastro incompleto + sem reminder hoje recebe o WhatsApp
+1. Ops cria template no Twilio Content Builder:
+   - friendly_name: `talentum_incomplete_reminder` (ou variante padrão `ar_*`)
+   - Category: UTILITY
+   - Language: es_AR
+   - Variável: `worker_name`
+   - Body sugerido: "¡Hola {{1}}! Tu proceso de selección en EnLite quedó pendiente de completar. Ingresá a https://app.enlite.health para retomarlo."
+2. Submete pra aprovação Meta (~1-3 dias úteis)
+3. Backend roda: `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder';`
 
 ---
 
 ## Resolvidos
 
-_(vazio por enquanto)_
+### TD-016 — Gap de i18n no feature VacancyMatch (resolvido 2026-05-19)
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-19, durante audit de i18n disparado por bug do chip `SEVERE` cru em `CaseSelectStep.tsx`
+- **Resolvido em:** 2026-05-19 (mesmo dia)
+
+**O que era:**
+
+Audit do `src/presentation/**/*.tsx` (214 arquivos) achou strings hardcoded — concentradas no feature **VacancyMatch** (5 arquivos) + `templates/DashboardLayout/Header.tsx`. Pior: vários textos em **PT-BR** dentro de uma app cujo idioma principal é **es-AR** (ex: "Já candidatou", "Notificado", "Enviar para", "Carregando templates…").
+
+**Como foi resolvido:**
+
+1. Adicionados 3 novos namespaces em `src/infrastructure/i18n/locales/es.json` e `pt-BR.json`:
+   - `admin.match.*` — estados de match, empty/loading states, botões, badges
+   - `admin.messaging.*` — modal de envio de WhatsApp, com `_one`/`_other` pra pluralização (`selectedWorkers`, `alreadyNotified`, `alreadyReceivedMessage`, `notYetReceived`, `doneSent`, `doneErrors`)
+   - `admin.interviews.*` — modal de agendamento, durações via `durationMinutes` com `count`, disponibilidade de slots via `slotAvailability_one/other`
+2. Adicionado `common.cancel`, `common.close`, `common.logout` ao namespace `common` (não existiam ainda no top-level).
+3. Refatorados 7 arquivos:
+   - `VacancyMatch/SendMessageModal.tsx` (reescrito com 20+ chaves)
+   - `VacancyMatch/ScheduleInterviewModal.tsx` (reescrito com 15+ chaves)
+   - `VacancyMatch/MatchVacancyModal.tsx` (header/footer/empty/loading states)
+   - `VacancyMatch/MatchCandidateRow.tsx` (badges + tooltip + locale do `toLocaleDateString` agora segue `i18n.language`)
+   - `VacancyMatch/MatchBucketSection.tsx` (contador + empty bucket)
+   - `VacancyMatch/MatchMissingMeetLinksAlert.tsx` (alerta inteiro)
+   - `templates/DashboardLayout/Header.tsx` (botão Logout)
+4. Decisões de pluralização: `doneSummary` que mistura 2 contadores independentes (`sent` e `errors`) foi splittado em 3 chaves (`doneLabel` + `doneSent_*` + `doneErrors_*`) pra cada um ter seu próprio inflection.
+5. `<h1>Enlite</h1>` no Header mantido literal (marca registrada).
+6. `placeholder="https://meet.google.com/xxx-yyy-zzz"` no ScheduleInterview mantido literal (exemplo de formato técnico, não texto pro user).
+
+**Validação:**
+
+- `pnpm type-check` ✓
+- `pnpm test:run` ✓ 2883/2883 testes verdes
+- `pnpm lint` ✓ sem warnings
+- Grep manual nos 7 arquivos: zero ocorrências de texto cru remanescente
+
+**Fix relacionado já aplicado:**
+
+- Enum cru `{dependencyLevel}` em `VacancyCaseCard.tsx:129` corrigido no mesmo dia (mesmo padrão do fix de `CaseSelectStep.tsx:109`).
+
+---
+
+### TD-019 — Template `vacancy_invited_auto` usa `workZone` do AT como `patient_zone` (copy enganador) — resolvido 2026-05-20
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-19, durante revisão da Fase 3
+- **Resolvido em:** 2026-05-20, PR `fix/twilio-templates-integration`
+
+**Como foi resolvido:**
+
+Refactor de `VacancyAutoInviteHandler.ts`: a primeira query do handler agora faz JOIN `job_postings → patients` para buscar `patients.zone_neighborhood AS patient_zone`. O `workZone` do AT deixou de ser usado como `patient_zone`. Fallback `'tu zona'` mantido quando o campo é NULL no banco.
+
+---
+
+### TD-018 — Template `vacancy_invited_auto` precisa de `content_sid` Twilio HSM antes do go-live — resolvido 2026-05-20
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-19, durante implementação da Fase 3 do Sprint de Automação de Recrutamento
+- **Resolvido em:** 2026-05-20, PR `fix/twilio-templates-integration`
+
+**Como foi resolvido:**
+
+O template `vacancy_invited_auto` (migration 174) foi substituído pelos dois templates aprovados pela Meta (`ar_vacancy_match_complete` via `HXa1ff7c9189b625587929c5f19e4e614f` e `ar_vacancy_match_incomplete` via `HXd8cd5071c998317731286be3e5164854`). Migration 178 inseriu os novos slugs com `content_sid` definitivos e desativou `vacancy_invited_auto` (`is_active=false`). O `VacancyAutoInviteHandler.ts` foi refatorado para escolher entre os dois templates com base em `workers.status`. Nenhum HSM pendente para o Fluxo A.
+
+---
+
+### TD-021 — `INCOMPLETE_WORKERS_QUERY` quebra com `malformed array literal: ""` — resolvido 2026-05-20
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-19, durante implementação da Fase 5 (dedup atomic) do Sprint de Automação de Recrutamento
+- **Resolvido em:** 2026-05-20, PR `fix/twilio-templates-integration`
+
+**Como foi resolvido:**
+
+Substituídas as comparações `preferred_types = '{}'` e `experience_types = '{}'` por `preferred_types = '{}'::text[]` e `experience_types = '{}'::text[]` em `BulkDispatchIncompleteWorkersUseCase.ts`. Postgres agora interpreta corretamente como array literal tipado em vez de string. E2E `bulk-dispatch-incomplete.e2e.test.ts` criado para cobrir o endpoint `/api/internal/bulk-dispatch/process` e prevenir regressão.
