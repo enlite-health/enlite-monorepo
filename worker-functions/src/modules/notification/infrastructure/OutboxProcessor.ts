@@ -12,6 +12,7 @@ const MAX_PENDING_AGE_DAYS = 7;
 interface OutboxRow {
   id: string;
   worker_id: string;
+  job_posting_id: string | null;
   template_slug: string;
   variables: Record<string, string>;
   attempts: number;
@@ -48,7 +49,7 @@ export class OutboxProcessor {
     // TD-024: filtro de idade também no processById — se Pub/Sub push entregar
     // ID de row stale (improvável mas possível), não processa.
     const result = await this.db.query<OutboxRow>(
-      `SELECT id, worker_id, template_slug, variables, attempts, trace_id
+      `SELECT id, worker_id, job_posting_id, template_slug, variables, attempts, trace_id
        FROM messaging_outbox
        WHERE id = $1
          AND status = 'pending'
@@ -110,7 +111,7 @@ export class OutboxProcessor {
     // TD-024: defesa em profundidade — mesmo se markStalePendingAsFailed
     // não rodou (ex: processById direto), nunca processar rows muito velhas.
     const result = await this.db.query<OutboxRow>(
-      `SELECT id, worker_id, template_slug, variables, attempts, trace_id
+      `SELECT id, worker_id, job_posting_id, template_slug, variables, attempts, trace_id
        FROM messaging_outbox
        WHERE status = 'pending'
          AND attempts < $1
@@ -171,9 +172,9 @@ export class OutboxProcessor {
         // Log final failure in dispatch audit table — best-effort
         await this.db.query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status, error_message, source)
-           VALUES ($1, $2, $3, $4, 'error', $5, 'outbox')`,
-          [row.worker_id, `system:outbox:${row.id}`, to, row.template_slug, result.error],
+             (worker_id, job_posting_id, triggered_by, phone, template_slug, status, error_message, source)
+           VALUES ($1, $2, $3, $4, $5, 'error', $6, 'outbox')`,
+          [row.worker_id, row.job_posting_id, `system:outbox:${row.id}`, to, row.template_slug, result.error],
         ).catch((err: unknown) => {
           const error = err instanceof Error ? err : new Error(String(err));
           logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox erro');
@@ -198,9 +199,9 @@ export class OutboxProcessor {
     // Log successful dispatch in audit table — best-effort
     await this.db.query(
       `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-       VALUES ($1, $2, $3, $4, 'sent', $5, 'outbox')`,
-      [row.worker_id, `system:outbox:${row.id}`, to, row.template_slug, externalId],
+         (worker_id, job_posting_id, triggered_by, phone, template_slug, status, twilio_sid, source)
+       VALUES ($1, $2, $3, $4, $5, 'sent', $6, 'outbox')`,
+      [row.worker_id, row.job_posting_id, `system:outbox:${row.id}`, to, row.template_slug, externalId],
     ).catch((err: unknown) => {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox sucesso');
