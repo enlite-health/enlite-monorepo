@@ -423,7 +423,7 @@ test.describe('InterviewScheduling — VacancyMatchPage', () => {
     // Slot cheio — o select deve conter a opção "Nenhum slot disponível" (option element is not visible in DOM sense)
     const slotSelect = page.locator('select').first();
     await expect(slotSelect).toBeVisible({ timeout: 5000 });
-    await expect(slotSelect.locator('option[value=""]')).toContainText(/Nenhum slot disponível/i);
+    await expect(slotSelect.locator('option[value=""]')).toContainText(/Sin slots disponibles/i);
     // Botão "Agendar" deve estar desabilitado
     await expect(page.getByRole('button', { name: /^Agendar$/i }).first()).toBeDisabled();
   });

@@ -126,7 +126,9 @@ export function VacancyCaseCard({
       {dependencyLevel && (
         <span className="inline-flex items-center bg-gray-400 text-cyan-focus px-7 py-2 rounded">
           <Text as="span" size="base" weight="medium" color="inherit">
-            {dependencyLevel}
+            {t(`admin.patients.dependencyOptions.${dependencyLevel}`, {
+              defaultValue: dependencyLevel,
+            })}
           </Text>
         </span>
       )}

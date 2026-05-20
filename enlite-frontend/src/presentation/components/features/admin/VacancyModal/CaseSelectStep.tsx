@@ -106,7 +106,9 @@ export function CaseSelectStep({
                     dependencyLevel === 'MILD'        ? 'bg-green-50 text-green-700 border-green-200' :
                                                         'bg-blue-50 text-blue-700 border-blue-200'
                   }`}>
-                    {dependencyLevel}
+                    {t(`admin.patients.dependencyOptions.${dependencyLevel}`, {
+                      defaultValue: dependencyLevel,
+                    })}
                   </span>
                 </div>
               )}

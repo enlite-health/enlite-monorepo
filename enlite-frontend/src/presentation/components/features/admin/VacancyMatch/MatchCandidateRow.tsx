@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { MatchScoreBar } from './MatchScoreBar';
 import { Text } from '@presentation/components/atoms/Text';
@@ -33,10 +34,11 @@ export function MatchCandidateRow({
   onToggleSelect,
   onSendMessage,
 }: MatchCandidateRowProps) {
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const messagedLabel = candidate.messagedAt
-    ? new Date(candidate.messagedAt).toLocaleDateString('pt-BR', {
+    ? new Date(candidate.messagedAt).toLocaleDateString(i18n.language === 'pt-BR' ? 'pt-BR' : 'es-AR', {
         day: '2-digit',
         month: '2-digit',
       })
@@ -79,12 +81,12 @@ export function MatchCandidateRow({
             </button>
             {candidate.alreadyApplied && (
               <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full whitespace-nowrap">
-                <Text as="span" size="xs" color="inherit">Já candidatou</Text>
+                <Text as="span" size="xs" color="inherit">{t('admin.match.alreadyApplied')}</Text>
               </span>
             )}
             {messagedLabel && (
               <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full whitespace-nowrap">
-                <Text as="span" size="xs" color="inherit">Notificado {messagedLabel}</Text>
+                <Text as="span" size="xs" color="inherit">{t('admin.match.notified', { date: messagedLabel })}</Text>
               </span>
             )}
           </div>
@@ -118,7 +120,8 @@ export function MatchCandidateRow({
           <div className="flex items-center gap-1">
             <button
               onClick={() => onSendMessage(candidate)}
-              title="Enviar WhatsApp"
+              title={t('admin.match.sendWhatsappTooltip')}
+              aria-label={t('admin.match.sendWhatsappTooltip')}
               className="p-1.5 rounded-lg text-gray-800 hover:text-green-600 hover:bg-green-50 transition-colors"
             >
               <MessageCircle className="w-4 h-4" />

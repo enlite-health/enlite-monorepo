@@ -390,11 +390,11 @@ test.describe('VacancyMatchPage', () => {
 
     await expect(page.getByRole('combobox')).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('combobox')).toHaveValue('vacancy_match');
-    await page.getByRole('button', { name: /Confirmar envio/i }).click();
+    await page.getByRole('button', { name: /Confirmar env[ií]o/i }).click();
 
     // Status "✓ enviado" deve aparecer
     await expect(page.locator('text=/✓ enviado/i').first()).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=/Concluído/i').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/Completado/i').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('badge "Já notificado" aparece após envio bem-sucedido', async ({ page }) => {
@@ -413,11 +413,11 @@ test.describe('VacancyMatchPage', () => {
 
     await expect(page.getByRole('combobox')).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('combobox')).toHaveValue('vacancy_match');
-    await page.getByRole('button', { name: /Confirmar envio/i }).click();
-    await expect(page.locator('text=/Concluído/i').first()).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: /Confirmar env[ií]o/i }).click();
+    await expect(page.locator('text=/Completado/i').first()).toBeVisible({ timeout: 10000 });
 
     // Fecha o modal
-    await page.getByRole('button', { name: /Fechar/i }).last().click();
+    await page.getByRole('button', { name: /Cerrar/i }).last().click();
 
     // Badge "Notificado" deve aparecer na linha de Maria
     await expect(page.locator('text=/Notificado/i').first()).toBeVisible({ timeout: 5000 });
@@ -454,6 +454,6 @@ test.describe('VacancyMatchPage', () => {
     await footer.getByRole('button', { name: /Enviar WhatsApp/i }).click();
 
     // Modal deve mostrar aviso sobre re-notificação
-    await expect(page.locator('text=/já notificad/i').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=/ya notificad/i').first()).toBeVisible({ timeout: 10000 });
   });
 });

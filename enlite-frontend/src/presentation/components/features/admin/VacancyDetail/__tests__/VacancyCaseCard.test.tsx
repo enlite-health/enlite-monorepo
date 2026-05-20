@@ -15,7 +15,7 @@ vi.mock('@presentation/components/atoms/VacancyStatusBadge', () => ({
 const defaultProps = {
   status: 'BUSQUEDA',
   caseNumber: 748,
-  dependencyLevel: 'Moderado',
+  dependencyLevel: 'MODERATE',
   profession: 'AT',
   sex: 'M',
   zone: 'Palermo',
@@ -50,7 +50,7 @@ describe('VacancyCaseCard — full data', () => {
 
   it('renders dependency level pill', () => {
     renderCard();
-    expect(screen.getByText('Moderado')).toBeInTheDocument();
+    expect(screen.getByText('admin.patients.dependencyOptions.MODERATE')).toBeInTheDocument();
   });
 
   it('renders net hourly rate value', () => {
@@ -108,7 +108,7 @@ describe('VacancyCaseCard — partial data (missing optional fields)', () => {
 
   it('does NOT render dependency pill when dependencyLevel is null', () => {
     renderCard({ dependencyLevel: null });
-    expect(screen.queryByText('Moderado')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.patients.dependencyOptions.MODERATE')).not.toBeInTheDocument();
   });
 
   it('does NOT render location row when patientCity and patientNeighborhood are null', () => {
