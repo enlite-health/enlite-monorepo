@@ -1,11 +1,16 @@
 # Runbook: Convite Automático Pós-Match (Fluxo A)
 
-> Sprint origem: `docs/SPRINT_RECRUITMENT_AUTOMATION.md` (Fase 3, commit `dbf16f8`)
-> Última atualização: 2026-05-19
+> Sprint origem: `docs/SPRINT_RECRUITMENT_AUTOMATION.md` (Fase 3) + integração templates Twilio aprovados (commit `4774c93`) + suporte INCOMPLETE_REGISTER
+> Última atualização: 2026-05-20
 
 ## O que é
 
-Quando admin cria uma vaga via `POST /api/admin/vacancies`, o sistema dispara automaticamente WhatsApp pra cada AT que deu match (endereço + sexo + tipo de profissão).
+Quando admin cria uma vaga via `POST /api/admin/vacancies`, o sistema dispara automaticamente WhatsApp pra cada AT que deu match (endereço + sexo + tipo de profissão), com **template diferente baseado no status do AT**:
+
+| Worker status | Template Twilio | Copy enviado |
+|---|---|---|
+| `REGISTERED` | `ar_vacancy_match_complete` (HXa1ff...) | "Llegó una nueva oportunidad... Inscribite a la entrevista acá: {vacancy_url}" |
+| `INCOMPLETE_REGISTER` | `ar_vacancy_match_incomplete` (HXd8cd...) | "Llegó una oportunidad... Para postularte, todavía necesitamos: {pending_documents}. Completá tu perfil y postulate acá: {vacancy_url}" |
 
 ## Arquitetura
 
@@ -15,12 +20,17 @@ POST /admin/vacancies
        └─> Pub/Sub topic 'domain-events' (push em segundos)
             └─> POST /api/internal/events/process
                  └─> DomainEventProcessor → VacancyAutoInviteHandler
-                      ├─> MatchmakingService.matchWorkersForJob(jobPostingId)
-                      │     (grava INVITED em worker_job_applications)
+                      ├─> MatchmakingService.matchWorkersForJob(jobPostingId,
+                      │      { includeIncompleteRegister: true })
+                      │     (grava INVITED em worker_job_applications;
+                      │      retorna workers REGISTERED + INCOMPLETE_REGISTER)
                       ├─> filter candidates.alreadyApplied=false
                       ├─> per candidate:
-                      │     - SELECT EXISTS dedup (7 dias)
-                      │     - INSERT messaging_outbox (vacancy_invited_auto)
+                      │     - Decide template por candidate.workerStatus
+                      │     - SELECT EXISTS dedup (7 dias, ambos templates)
+                      │     - Se INCOMPLETE: query worker_documents pra montar
+                      │       pending_documents ("tu CV, tu DNI y tu monotributo")
+                      │     - INSERT messaging_outbox (template escolhido)
                       │     - Pub/Sub 'outbox-enqueued'
                       └─> OutboxProcessor envia WhatsApp + grava log
 ```
@@ -54,23 +64,25 @@ WHERE wja.worker_id = '<workerId>'
 
 ```sql
 -- 3. Confirma idempotência não bloqueou
-SELECT id, status, created_at, processed_at, error
+SELECT id, status, template_slug, created_at, processed_at, error
 FROM messaging_outbox
 WHERE worker_id = '<workerId>'
   AND job_posting_id = '<vacancyId>'
-  AND template_slug = 'vacancy_invited_auto'
+  AND template_slug IN ('ar_vacancy_match_complete', 'ar_vacancy_match_incomplete')
 ORDER BY created_at DESC LIMIT 5;
 -- Sem row: handler pulou (verificar logs do handler)
 -- status='pending': outbox ainda não processou
 -- status='sent': enviou → próximo passo é Twilio webhook
 -- status='failed': ler error
+-- template_slug='ar_vacancy_match_complete': worker REGISTERED
+-- template_slug='ar_vacancy_match_incomplete': worker INCOMPLETE_REGISTER
 ```
 
 ```sql
 -- 4. Confirma envio
 SELECT * FROM whatsapp_bulk_dispatch_logs
 WHERE worker_id = '<workerId>'
-  AND template_slug = 'vacancy_invited_auto'
+  AND template_slug IN ('ar_vacancy_match_complete', 'ar_vacancy_match_incomplete')
 ORDER BY dispatched_at DESC LIMIT 1;
 -- status='sent' + twilio_sid: enviou; delivery_status mostra delivery
 -- status='error': ler error_message
@@ -100,22 +112,19 @@ curl -X POST https://<api>/api/internal/events/sweep \
 
 ## Pré-requisitos de produção
 
-**TD-018 (FOLLOWUPS.md)**: o template `vacancy_invited_auto` tem `content_sid = NULL`. WhatsApp Business rejeita mensagens proativas sem HSM aprovado. Antes do go-live:
+Resolvido em 2026-05-20 (commits `4774c93` + posteriores). Templates Twilio aprovados:
 
-1. Ops registra `vacancy_invited_auto` no Twilio Content Builder
-2. Variables: `worker_name`, `vacancy_case_number`, `distance_km`, `patient_zone`
-3. Submete pra aprovação HSM da Meta (~dias)
-4. Ao receber SID aprovado, rodar em prod:
-   ```sql
-   UPDATE message_templates
-   SET content_sid = 'HX...'
-   WHERE slug = 'vacancy_invited_auto';
-   ```
+| Slug | content_sid Twilio | Status Meta |
+|---|---|---|
+| `ar_vacancy_match_complete` | `HXa1ff7c9189b625587929c5f19e4e614f` | ✅ approved |
+| `ar_vacancy_match_incomplete` | `HXd8cd5071c998317731286be3e5164854` | ✅ approved |
+
+Slug antigo `vacancy_invited_auto` (migration 174) foi desativado (`is_active=false`) — não usado mais.
 
 ## Alertas e SLAs (Cloud Monitoring — DP-006)
 
 Configurar alerta:
-- Métrica: COUNT de `whatsapp_bulk_dispatch_logs` WHERE `source='outbox'` AND `template_slug='vacancy_invited_auto'` AND `status='error'` na última 1h
+- Métrica: COUNT de `whatsapp_bulk_dispatch_logs` WHERE `source='outbox'` AND `template_slug IN ('ar_vacancy_match_complete', 'ar_vacancy_match_incomplete')` AND `status='error'` na última 1h
 - Threshold: > 5 → notificar canal #enlite-alerts
 - Severidade: WARNING
 

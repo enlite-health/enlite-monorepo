@@ -77,9 +77,13 @@ export function createVacancyAutoInviteHandler(
     }
     const patientZone = zoneRes.rows[0].patient_zone ?? 'tu zona';
 
-    // 2. Rodar matchmaking (já grava INVITED em worker_job_applications)
+    // 2. Rodar matchmaking — includeIncompleteRegister=true: workers com cadastro
+    //    pendente também recebem convite (template ar_vacancy_match_incomplete
+    //    avisa que tem vaga + pede pra completar perfil pra postular).
     const matchService = new MatchmakingService();
-    const matchResult = await matchService.matchWorkersForJob(jobPostingId, {});
+    const matchResult = await matchService.matchWorkersForJob(jobPostingId, {
+      includeIncompleteRegister: true,
+    });
 
     // 3. Filtrar candidatos recém-convidados (alreadyApplied=false → inseridos agora)
     const newlyInvited = matchResult.candidates.filter(c => !c.alreadyApplied);

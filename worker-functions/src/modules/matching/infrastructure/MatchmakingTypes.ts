@@ -75,6 +75,19 @@ export interface MatchOptions {
    * preferences) to be reliable. Flip to `true` once the data matures.
    */
   useScoring?: boolean;
+  /**
+   * Inclui workers com `status = 'INCOMPLETE_REGISTER'` no resultado.
+   * Default `false` (admin UI clássico só mostra REGISTERED).
+   *
+   * Usado pelo `VacancyAutoInviteHandler` (Sprint Fluxo A) que envia
+   * convite com template `ar_vacancy_match_incomplete` pra workers
+   * com cadastro pendente — texto fala "Para postularte, todavía
+   * necesitamos: {pending_documents}. Completá tu perfil...".
+   *
+   * Quando true, o filtro SQL fica:
+   *   AND w.status IN ('REGISTERED', 'INCOMPLETE_REGISTER')
+   */
+  includeIncompleteRegister?: boolean;
 }
 
 export interface ScoredCandidate {

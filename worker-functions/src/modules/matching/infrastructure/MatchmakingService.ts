@@ -56,14 +56,15 @@ export class MatchmakingService {
     jobPostingId: string,
     options: MatchOptions = {},
   ): Promise<MatchResult> {
-    const topN                   = options.topN ?? 20;
-    const radiusKm               = options.radiusKm ?? DEFAULT_RADIUS_KM;
-    const excludeWithActiveCases = options.excludeWithActiveCases ?? false;
-    const useScoring             = options.useScoring ?? false;
+    const topN                      = options.topN ?? 20;
+    const radiusKm                  = options.radiusKm ?? DEFAULT_RADIUS_KM;
+    const excludeWithActiveCases    = options.excludeWithActiveCases ?? false;
+    const useScoring                = options.useScoring ?? false;
+    const includeIncompleteRegister = options.includeIncompleteRegister ?? false;
 
     const job = await this.loadJob(jobPostingId);
 
-    const candidates = await this.hardFilter(job, radiusKm, excludeWithActiveCases);
+    const candidates = await this.hardFilter(job, radiusKm, excludeWithActiveCases, includeIncompleteRegister);
     console.log(
       `[Matchmaking] ${candidates.length} candidatos passaram no hard filter para vaga ${jobPostingId}` +
       ` (raio: ${radiusKm}km)` +
@@ -202,6 +203,7 @@ export class MatchmakingService {
     job: JobPosting,
     radiusKm: number | null,
     excludeWithActiveCases: boolean,
+    includeIncompleteRegister: boolean = false,
   ): Promise<WorkerCandidate[]> {
     const requiredProfession = job.requiredProfessions;
     const applyGeo = radiusKm !== null && job.serviceLat !== null && job.serviceLng !== null;
@@ -251,7 +253,7 @@ export class MatchmakingService {
        LEFT JOIN blacklist bl ON bl.worker_id = w.id
        LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
        WHERE w.merged_into_id IS NULL
-         AND w.status = 'REGISTERED'
+         AND w.status = ANY($8::text[])
          AND w.deleted_at IS NULL
          AND bl.id IS NULL
          AND (
@@ -287,6 +289,9 @@ export class MatchmakingService {
         applyGeo ? job.serviceLat : 0,
         radiusKm ?? 0,
         excludeWithActiveCases,
+        includeIncompleteRegister
+          ? ['REGISTERED', 'INCOMPLETE_REGISTER']
+          : ['REGISTERED'],
       ],
     );
 
