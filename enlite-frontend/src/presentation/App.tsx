@@ -24,6 +24,7 @@ import VacancyMatchPage from './pages/admin/VacancyMatchPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
+import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
@@ -108,6 +109,7 @@ export function App() {
           <Route path="vacancies/:id" element={<VacancyDetailPage />} />
           <Route path="vacancies/:id/match" element={<VacancyMatchPage />} />
           <Route path="recruitment" element={<AdminRecruitmentPage />} />
+          <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
           <Route path="workers" element={<AdminWorkersPage />} />
           <Route path="workers/:id" element={<WorkerDetailPage />} />
           <Route path="patients" element={<AdminPatientsPage />} />

@@ -1,4 +1,5 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
+import type { RecruitmentHealthData } from '@domain/entities/RecruitmentHealth';
 
 const authService = new FirebaseAuthService();
 
@@ -69,5 +70,9 @@ export const AdminRecruitmentApiService = {
 
   async calculateReemplazos(): Promise<any> {
     return request<any>('POST', '/api/admin/recruitment/calculate-reemplazos');
+  },
+
+  async getRecruitmentHealth(): Promise<RecruitmentHealthData> {
+    return request<RecruitmentHealthData>('GET', '/api/admin/recruitment/health');
   },
 };

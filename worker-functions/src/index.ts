@@ -55,6 +55,7 @@ import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyA
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
+import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 
 const app = express();
@@ -347,8 +348,14 @@ domainEventProcessor.registerHandler(
 const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
+const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler);
 app.use('/api/internal', createInternalRoutes(internalController));
+
+// ========== Recruitment Health Dashboard ==========
+app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response) =>
+  recruitmentHealthController.getHealth(req, res),
+);
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).

@@ -24,7 +24,10 @@
     "error": "Error",
     "reload": "Recargar página",
     "search": "Buscar...",
-    "noResults": "Sin resultados"
+    "noResults": "Sin resultados",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "logout": "Salir"
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -592,6 +595,32 @@
         "startDate": "Inicio Búsqueda",
         "viewAnalysis": "Ver análisis"
       }
+    },
+    "recruitmentHealth": {
+      "title": "Salud del reclutamiento",
+      "refresh": "Actualizar",
+      "autoInvite": {
+        "title": "Invitaciones automáticas (últimas 24h)",
+        "vacanciesCreated": "Vacantes creadas",
+        "invitesEnqueued": "Invitaciones encoladas",
+        "sent": "Enviadas",
+        "delivered": "Entregadas",
+        "failed": "Fallidas"
+      },
+      "bulkIncomplete": {
+        "title": "Recordatorio de registro incompleto (última ejecución)"
+      },
+      "bulkTalentum": {
+        "title": "Recordatorio de Talentum incompleto (última ejecución)"
+      },
+      "noRuns": "Sin ejecuciones aún",
+      "batchId": "Batch ID",
+      "total": "Total",
+      "errors": "Errores",
+      "startedAt": "Inicio",
+      "finishedAt": "Fin",
+      "loadError": "Error al cargar las métricas",
+      "retry": "Reintentar"
     },
     "kanban": {
       "columns": {
@@ -1830,6 +1859,85 @@
         "typeHome": "Casa",
         "typeOther": "Otro"
       }
+    },
+    "match": {
+      "title": "Match de candidatos",
+      "loading": "Buscando candidatos…",
+      "emptyBucket": "Sin candidatos en este rango.",
+      "candidatesCount_one": "{{count}} candidato",
+      "candidatesCount_other": "{{count}} candidatos",
+      "selectedCount_one": "{{count}} seleccionado",
+      "selectedCount_other": "{{count}} seleccionados",
+      "inviteSelected": "Invitar seleccionados ({{count}})",
+      "noResultsInRadius": "No se encontraron candidatos en un radio de {{km}} km.",
+      "close": "Cerrar",
+      "closeAriaLabel": "Cerrar",
+      "alreadyApplied": "Ya postuló",
+      "notified": "Notificado {{date}}",
+      "sendWhatsappTooltip": "Enviar WhatsApp",
+      "missingMeetLinks": {
+        "title": "Esta vacante aún no tiene enlaces de reunión",
+        "instructionsBefore": "Para invitar candidatos, primero agregá al menos un link de reunión en la pestaña ",
+        "instructionsTab": "Links",
+        "instructionsAfter": ".",
+        "goToLinks": "Ir a Links"
+      }
+    },
+    "messaging": {
+      "title": "Enviar WhatsApp",
+      "templateLabel": "Template",
+      "loadingTemplates": "Cargando templates…",
+      "defaultTemplateLabel": "vacancy_match (predeterminado)",
+      "previewLabel": "Vista previa",
+      "previewFor": " (para {{name}})",
+      "sendToOneBefore": "Enviar a ",
+      "sendToOneAfter": ".",
+      "selectedWorkers_one": "{{count}} worker seleccionado.",
+      "selectedWorkers_other": "{{count}} workers seleccionados.",
+      "alreadyNotified_one": "{{count}} ya notificado.",
+      "alreadyNotified_other": "{{count}} ya notificados.",
+      "alreadyReceivedMessage_one": "{{count}} worker ya recibió este mensaje.",
+      "alreadyReceivedMessage_other": "{{count}} workers ya recibieron este mensaje.",
+      "notYetReceived_one": "{{count}} todavía no la recibió.",
+      "notYetReceived_other": "{{count}} todavía no la recibieron.",
+      "confirmResendQuestion": "¿Deseás reenviarla a todos de todos modos?",
+      "newOnly": "Sólo nuevos ({{count}})",
+      "resendAll": "Reenviar a todos",
+      "confirmSend": "Confirmar envío",
+      "statusSent": "✓ enviado",
+      "statusErrorPrefix": "✗ ",
+      "statusErrorFallback": "error",
+      "statusSending": "…enviando",
+      "statusWaiting": "esperando",
+      "sending": "Enviando…",
+      "doneLabel": "Completado:",
+      "doneSent_one": "{{count}} enviado",
+      "doneSent_other": "{{count}} enviados",
+      "doneErrors_one": "{{count}} fallido",
+      "doneErrors_other": "{{count}} fallidos"
+    },
+    "interviews": {
+      "phaseTitle1": "Configurar slots de entrevista",
+      "phaseTitle2": "Agendar candidatos",
+      "phaseStep1": "1. Crear slots",
+      "phaseStep2": "2. Agendar candidatos",
+      "dateLabel": "Fecha de entrevistas",
+      "startTimeLabel": "Hora de inicio",
+      "durationLabel": "Duración por entrevista",
+      "durationMinutes": "{{count}} minutos",
+      "slotsCountLabel": "Cantidad de slots",
+      "capacityLabel": "Capacidad por slot",
+      "meetLinkLabel": "Link Meet",
+      "createSlots": "Crear slots",
+      "formErrorRequired": "La fecha y la hora de inicio son obligatorias.",
+      "createSlotsError": "Error al crear los slots",
+      "noAvailableSlots": "Sin slots disponibles",
+      "scheduled": "Agendado",
+      "schedule": "Agendar",
+      "scheduleError": "Error al agendar",
+      "done": "Listo",
+      "slotAvailability_one": "{{start}} - {{end}} ({{count}} cupo disponible)",
+      "slotAvailability_other": "{{start}} - {{end}} ({{count}} cupos disponibles)"
     }
   },
   "publicVacancy": {
