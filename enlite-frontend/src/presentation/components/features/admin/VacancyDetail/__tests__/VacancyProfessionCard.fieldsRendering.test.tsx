@@ -102,6 +102,20 @@ describe('VacancyProfessionCard — render fields for CASO 774-784 shape', () =>
   });
 });
 
+describe('VacancyProfessionCard — backend legacy shape (service_type as string)', () => {
+  it('does not throw when serviceType comes as a comma-separated string', () => {
+    i18n.changeLanguage('es');
+    // Backend `array_to_string(p.service_type, ', ')` retornava string em prod
+    // antes do fix. Guard defensivo deve aceitar e renderizar.
+    const legacyProps = {
+      ...caso774Props,
+      serviceType: 'AT, CAREGIVER' as unknown as string[],
+    };
+    expect(() => render(<VacancyProfessionCard {...legacyProps} />)).not.toThrow();
+    expect(screen.getByText(/Acompañante Terapéutico/)).toBeInTheDocument();
+  });
+});
+
 describe('VacancyProfessionCard — degraded shape (CASO 774 sem zone)', () => {
   it('does not render Localización value when zone is null (label still shows)', () => {
     i18n.changeLanguage('es');
