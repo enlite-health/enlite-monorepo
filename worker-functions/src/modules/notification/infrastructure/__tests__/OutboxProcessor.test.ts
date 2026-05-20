@@ -110,7 +110,7 @@ describe('OutboxProcessor', () => {
       const logCall = mockQuery.mock.calls[3];
       expect(logCall[0]).toContain('whatsapp_bulk_dispatch_logs');
       expect(logCall[0]).toContain("'outbox'");
-      expect(logCall[1][1]).toBe('system:outbox:ob-1');
+      expect(logCall[1][2]).toBe('system:outbox:ob-1');
     });
 
     it('retorna silenciosamente se mensagem não existe', async () => {
@@ -218,7 +218,7 @@ describe('OutboxProcessor', () => {
       expect(logCall[0]).toContain('whatsapp_bulk_dispatch_logs');
       expect(logCall[0]).toContain("'error'");
       expect(logCall[0]).toContain("'outbox'");
-      expect(logCall[1][1]).toBe('system:outbox:ob-2');
+      expect(logCall[1][2]).toBe('system:outbox:ob-2');
     });
   });
 

@@ -215,6 +215,30 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       expect(row.whatsappStatus).toBe('READ');
     });
   });
+
+  // ── Scenario 5: dispatch log scoped to ANOTHER vacancy ─────────────────────
+  // Regressão da migration 181: antes do fix, o LATERAL JOIN filtrava só por
+  // worker_id, então um worker que recebeu WhatsApp em qualquer outra vaga
+  // aparecia com status indevido em vagas seguintes. Aqui W1 está INVITED em
+  // jobFull mas só tem dispatch em jobEmpty — deve continuar NOT_SENT.
+
+  describe('Scenario 5: cross-vacancy dispatch isolation', () => {
+    beforeAll(async () => {
+      await pool.query(
+        `INSERT INTO whatsapp_bulk_dispatch_logs
+           (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
+         VALUES ($1, $2, 'fnt-admin', '+5491100000010', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '10 minutes')`,
+        [IDS.w1, IDS.jobEmpty],
+      );
+    });
+
+    it('does not leak dispatch status from one vacancy into another', async () => {
+      const res = await api.get(`/api/admin/vacancies/${IDS.jobFull}/funnel-table`, auth());
+      const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w1);
+
+      expect(row.whatsappStatus).toBe('NOT_SENT');
+    });
+  });
 });
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -292,43 +316,43 @@ async function seedFixtures(pool: Pool): Promise<void> {
     );
   }
 
-  // WhatsApp dispatch logs
+  // WhatsApp dispatch logs (vacancy-scoped: job_posting_id = IDS.jobFull)
   // W2: DELIVERED
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, 'fnt-admin', '+5491100000020', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
-    [IDS.w2],
+       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', '+5491100000020', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
+    [IDS.w2, IDS.jobFull],
   );
 
   // W3: 2 dispatches — older=SENT (no delivery_status), newer=READ
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, 'fnt-admin', '+5491100000030', 'test-tpl', 'sent', NULL, NOW() - INTERVAL '2 hours')`,
-    [IDS.w3],
+       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', '+5491100000030', 'test-tpl', 'sent', NULL, NOW() - INTERVAL '2 hours')`,
+    [IDS.w3, IDS.jobFull],
   );
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, 'fnt-admin', '+5491100000030', 'test-tpl', 'sent', 'read', NOW() - INTERVAL '30 minutes')`,
-    [IDS.w3],
+       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', '+5491100000030', 'test-tpl', 'sent', 'read', NOW() - INTERVAL '30 minutes')`,
+    [IDS.w3, IDS.jobFull],
   );
 
   // W4: dispatch exists (REPLIED override because confirmed)
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, 'fnt-admin', '+5491100000040', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
-    [IDS.w4],
+       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', '+5491100000040', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
+    [IDS.w4, IDS.jobFull],
   );
 
   // W5: dispatch exists (REPLIED override because declined)
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, 'fnt-admin', '+5491100000050', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
-    [IDS.w5],
+       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', '+5491100000050', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
+    [IDS.w5, IDS.jobFull],
   );
 }
 

@@ -16,8 +16,9 @@ export interface FunnelTableRawRow {
   invited_at: string;
   funnel_stage: string | null;
   interview_response: string | null;
-  // Latest whatsapp dispatch for this worker (regardless of vacancy, since
-  // whatsapp_bulk_dispatch_logs has no job_posting_id column)
+  // Latest whatsapp dispatch for this worker AT this vacancy.
+  // job_posting_id passou a ser preenchido pelos inserters vacancy-scoped
+  // (OutboxProcessor, MessagingController.sendToWorker) na migration 181.
   wbdl_dispatched_at: string | null;
   wbdl_delivery_status: string | null;
   wbdl_status: string | null; // 'sent' | 'error'
@@ -29,11 +30,10 @@ export interface FunnelTableRawRow {
  * Fetches all worker_job_applications for a given vacancy, joining:
  *  - workers: name (encrypted), email, phone, avatar (encrypted)
  *  - encuadres: raw_name fallback
- *  - whatsapp_bulk_dispatch_logs: most-recent dispatch per worker
+ *  - whatsapp_bulk_dispatch_logs: most-recent dispatch per (worker, vacancy)
  *
- * Note: whatsapp_bulk_dispatch_logs has no job_posting_id column (migration 062).
- * We therefore fetch the most-recent dispatch per worker across all campaigns.
- * This is the correct source of truth for whether a worker was ever messaged.
+ * Filtra pelo par (worker_id, job_posting_id) — dispatchs sem vaga
+ * (sendDirect, bulk reminders) não interferem no status da aba "Invitados".
  */
 export class FunnelTableRepository {
   private pool: Pool;
@@ -74,6 +74,7 @@ export class FunnelTableRepository {
          SELECT dispatched_at, delivery_status, status
          FROM whatsapp_bulk_dispatch_logs
          WHERE worker_id = wja.worker_id
+           AND job_posting_id = wja.job_posting_id
          ORDER BY dispatched_at DESC
          LIMIT 1
        ) latest_wbdl ON true
