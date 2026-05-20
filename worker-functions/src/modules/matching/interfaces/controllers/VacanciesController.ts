@@ -134,7 +134,7 @@ export class VacanciesController {
           p.dependency_level as dependency_level,
           p.diagnosis as patient_diagnosis,
           p.insurance_verified,
-          array_to_string(p.service_type, ', ') as service_type,
+          p.service_type,
           COALESCE(pa.city, p.city_locality) as patient_city,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_neighborhood,
           pa.address_formatted as patient_address_formatted,

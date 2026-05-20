@@ -158,9 +158,15 @@ export function VacancyProfessionCard({
 
   const ageRangePlaceholder = t('admin.vacancyDetail.professionCard.ageRangeAny');
 
+  const serviceTypeArray: string[] = Array.isArray(serviceType)
+    ? serviceType
+    : typeof serviceType === 'string' && serviceType
+      ? (serviceType as string).split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+
   const serviceTypeLabel =
-    serviceType && serviceType.length > 0
-      ? serviceType
+    serviceTypeArray.length > 0
+      ? serviceTypeArray
           .map((svc) =>
             t(`admin.patients.detail.contractedServicesCard.serviceTypes.${svc}`, svc),
           )
