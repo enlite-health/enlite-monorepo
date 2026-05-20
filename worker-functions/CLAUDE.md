@@ -24,6 +24,29 @@ Backend Node.js/Express/TypeScript/PostgreSQL que gerencia o ciclo de vida de Ac
 - LLM nunca no path síncrono — sempre background
 - Migrações são aditivas: nunca dropar coluna/tabela sem deprecação
 - Testes de repositório usam banco real — nunca mock
+- **Logging**: `logger`/`reportError` de `@shared/logging` — nunca `console.*` em código novo. Padrão completo em [`docs/runbooks/RUNBOOK_OBSERVABILITY.md`](../docs/runbooks/RUNBOOK_OBSERVABILITY.md).
+
+## Logger / Observabilidade
+
+```ts
+import { logger, reportError, loggingAls } from '@shared/logging';
+
+const log = logger.child({ workerId, jobPostingId });
+log.info({ msg: 'started' });
+
+try { /* ... */ }
+catch (err) {
+  const e = err instanceof Error ? err : new Error(String(err));
+  reportError(e, { source: 'MyUseCase:method', workerId });
+}
+
+// Em job assíncrono (handler de domain_event, outbox processor), restaurar contexto:
+await loggingAls.run({ traceId: row.trace_id ?? uuidv4(), workerId }, async () => {
+  await handler(row);
+});
+```
+
+Cloud Logging filtra por `jsonPayload.traceId`, `jsonPayload.workerId`, `jsonPayload.batchId`. Erros vão pro Cloud Error Reporting automaticamente via `severity=ERROR` no log.
 
 ---
 
