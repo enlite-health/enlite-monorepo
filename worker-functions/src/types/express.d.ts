@@ -1,4 +1,5 @@
 import type { AuthContext } from '../modules/identity/domain/Auth';
+import type { ServicePrincipal } from '../modules/mcp/domain/ServicePrincipal';
 
 declare global {
   namespace Express {
@@ -12,6 +13,8 @@ declare global {
         roles?: string[];
         type?: string;
       };
+      servicePrincipal?: ServicePrincipal;
+      onBehalfOfWorkerId?: string;
     }
   }
 }
