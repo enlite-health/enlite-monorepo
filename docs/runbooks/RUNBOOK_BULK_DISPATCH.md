@@ -8,7 +8,7 @@
 Dois fluxos cron que rodam diariamente enviando lembretes WhatsApp:
 
 1. **Cadastro incompleto** (`/api/internal/bulk-dispatch/process`): workers que se cadastraram mas não terminaram o onboarding interno (documentos faltando, perfil incompleto). Template `complete_register_ofc`.
-2. **Talentum incompleto** (`/api/internal/bulk-dispatch/talentum-incomplete`): workers com `application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')` há >5 dias. Template `talentum_incomplete_reminder`.
+2. **Talentum incompleto** (`/api/internal/bulk-dispatch/talentum-incomplete`): workers com `application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')`. Cadência: **1º envio após 1 dia de inatividade + 2º envio 3 dias depois do 1º, cap em 2** (se ainda não completou após 2 tentativas, para). Template `talentum_incomplete_reminder`.
 
 ## Cloud Scheduler
 

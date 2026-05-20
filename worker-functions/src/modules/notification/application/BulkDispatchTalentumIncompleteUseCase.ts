@@ -15,13 +15,28 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Workers com application_funnel_stage INITIATED ou IN_PROGRESS há >5 dias
- * que não receberam o reminder 'talentum_incomplete_reminder' hoje.
+ * Workers com application_funnel_stage INITIATED ou IN_PROGRESS — cadência:
  *
- * Dedup via NOT EXISTS em worker_reminder_state (slot por dia).
+ *   1º envio: app parada há >=1 dia + nunca recebeu o reminder antes
+ *   2º envio: app continua parada + último envio foi há >=3 dias + total enviados < 2
+ *   Cap:       máximo 2 envios por worker
+ *
+ * Dedup via NOT EXISTS em worker_reminder_state (slot por dia, defesa contra
+ * dupla execução do scheduler no mesmo dia).
+ * Histórico via whatsapp_bulk_dispatch_logs (source of truth pra send_count + last_sent).
+ *
  * Exclui workers desabilitados, sem telefone e contas de import.
  */
 const TALENTUM_INCOMPLETE_QUERY = `
+  WITH talentum_send_stats AS (
+    SELECT
+      worker_id,
+      COUNT(*) FILTER (WHERE status = 'sent') AS send_count,
+      MAX(dispatched_at) FILTER (WHERE status = 'sent') AS last_sent_at
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE template_slug = 'talentum_incomplete_reminder'
+    GROUP BY worker_id
+  )
   SELECT DISTINCT
     w.id AS worker_id,
     w.phone AS phone
@@ -29,12 +44,20 @@ const TALENTUM_INCOMPLETE_QUERY = `
   INNER JOIN worker_job_applications wja
     ON wja.worker_id = w.id
     AND wja.application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')
-    AND wja.updated_at < NOW() - INTERVAL '5 days'
+  LEFT JOIN talentum_send_stats tss ON tss.worker_id = w.id
   WHERE
     w.status != 'DISABLED'
     AND w.phone IS NOT NULL
     AND w.phone <> ''
     AND w.email NOT LIKE '%@enlite.import'
+    AND (
+      -- 1º envio: nunca enviou + app parada há >=1 dia
+      (tss.send_count IS NULL AND wja.updated_at < NOW() - INTERVAL '1 day')
+      OR
+      -- 2º envio: enviou 1x + foi há >=3 dias (app continua parada implicitamente
+      -- porque application_funnel_stage ainda é INITIATED/IN_PROGRESS)
+      (tss.send_count = 1 AND tss.last_sent_at < NOW() - INTERVAL '3 days')
+    )
     AND NOT EXISTS (
       SELECT 1 FROM worker_reminder_state wrs
       WHERE wrs.worker_id = w.id
