@@ -30,6 +30,24 @@ export function useMatchMessaging(vacancyId: string | undefined) {
   }, []);
 
   /**
+   * Renderiza o preview do template server-side — texto exato que o
+   * destinatário receberá. Retorna null em erro (UI exibe fallback).
+   */
+  const fetchPreview = useCallback(async (
+    workerId: string,
+    templateSlug: string,
+  ): Promise<string | null> => {
+    if (!vacancyId) return null;
+    try {
+      const data = await AdminApiService.previewWhatsApp(workerId, templateSlug, vacancyId);
+      return data.renderedBody;
+    } catch (err: any) {
+      console.error('[useMatchMessaging] Falha ao carregar preview:', err.message);
+      return null;
+    }
+  }, [vacancyId]);
+
+  /**
    * Envia WhatsApp para um único worker.
    * Retorna o timestamp ISO de envio ou lança erro.
    */
@@ -103,6 +121,7 @@ export function useMatchMessaging(vacancyId: string | undefined) {
     isSending,
     progress,
     fetchTemplates,
+    fetchPreview,
     sendToOne,
     sendBatch,
     resetProgress,

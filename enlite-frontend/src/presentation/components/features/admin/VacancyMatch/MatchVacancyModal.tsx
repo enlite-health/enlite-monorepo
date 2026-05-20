@@ -170,7 +170,6 @@ export function MatchVacancyModal({
       {pendingInvites && (
         <SendMessageModal
           candidates={pendingInvites}
-          vacancy={vacancy}
           vacancyId={vacancyId}
           onClose={() => setPendingInvites(null)}
           onMessaged={(workerId, messagedAt) => {

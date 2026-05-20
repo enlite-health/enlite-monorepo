@@ -8,31 +8,18 @@ import type { SavedCandidate, MessageTemplate } from '../../../../../types/match
 
 interface SendMessageModalProps {
   candidates: SavedCandidate[];
-  vacancy: any;
   vacancyId: string;
   onClose: () => void;
   onMessaged: (workerId: string, messagedAt: string) => void;
 }
 
-function buildVariables(
-  candidate: SavedCandidate,
-  vacancy: any,
-): Record<string, string> {
-  const role =
-    (vacancy?.required_professions as string[] | null)?.[0] ??
-    vacancy?.title ??
-    '';
-  const location = vacancy?.patient_zone ?? vacancy?.title ?? '';
-  return { name: candidate.workerName, role, location };
-}
-
-function renderPreview(body: string, vars: Record<string, string>): string {
-  return body.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
-}
+// Variables são montadas server-side em /api/admin/messaging/whatsapp/preview e
+// /api/admin/messaging/whatsapp. O frontend não computa nem envia variáveis pra
+// templates `ar_vacancy_match_*` — backend resolve worker_name (PII), vacancy_url
+// e pending_documents a partir do workerId + jobPostingId.
 
 export function SendMessageModal({
   candidates,
-  vacancy,
   vacancyId,
   onClose,
   onMessaged,
@@ -44,12 +31,15 @@ export function SendMessageModal({
     isSending,
     progress,
     fetchTemplates,
+    fetchPreview,
     sendBatch,
     resetProgress,
   } = useMatchMessaging(vacancyId);
 
   const [selectedSlug, setSelectedSlug] = useState('ar_vacancy_match_complete');
   const [showConfirmRenotify, setShowConfirmRenotify] = useState(false);
+  const [previewText, setPreviewText] = useState<string>('');
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   useEffect(() => {
     fetchTemplates();
@@ -64,6 +54,28 @@ export function SendMessageModal({
   const selectedTemplate: MessageTemplate | undefined = templates.find(
     t => t.slug === selectedSlug,
   );
+
+  // Preview server-side: pega o body exato (com PII resolvida) usando o
+  // primeiro candidato da lista como base. Re-fetch quando template ou
+  // candidato mudam.
+  const previewWorkerId = candidates[0]?.workerId;
+  useEffect(() => {
+    if (!selectedTemplate || !previewWorkerId) {
+      setPreviewText('');
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingPreview(true);
+    fetchPreview(previewWorkerId, selectedSlug)
+      .then(rendered => {
+        if (cancelled) return;
+        setPreviewText(rendered ?? selectedTemplate.body);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingPreview(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedSlug, previewWorkerId, selectedTemplate, fetchPreview]);
 
   const alreadyNotified = candidates.filter(c => c.messagedAt != null);
   const notYetNotified = candidates.filter(c => c.messagedAt == null);
@@ -82,10 +94,12 @@ export function SendMessageModal({
   };
 
   const doSend = (subset?: SavedCandidate[]) => {
+    // Para templates server-side (ar_vacancy_match_*) o backend ignora variables
+    // e monta server-side. Mandamos {} pra preservar a assinatura do sendBatch.
     sendBatch(
       subset ?? candidates,
       selectedSlug,
-      (c) => buildVariables(c, vacancy),
+      () => ({}),
       onMessaged,
     );
   };
@@ -96,12 +110,6 @@ export function SendMessageModal({
     onClose();
   };
 
-  const previewVars = candidates[0]
-    ? buildVariables(candidates[0], vacancy)
-    : { name: '…', role: '…', location: '…' };
-  const previewText = selectedTemplate
-    ? renderPreview(selectedTemplate.body, previewVars)
-    : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -156,8 +164,15 @@ export function SendMessageModal({
                     <span className="font-normal text-[#737373]">{t('admin.messaging.previewFor', { name: candidates[0].workerName })}</span>
                   )}
                 </label>
-                <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border border-[#D9D9D9]">
-                  {previewText}
+                <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border border-[#D9D9D9] min-h-[3rem]">
+                  {isLoadingPreview ? (
+                    <span className="inline-flex items-center gap-2 text-[#737373]">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('admin.messaging.loadingPreview', { defaultValue: 'Cargando vista previa…' })}
+                    </span>
+                  ) : (
+                    previewText || selectedTemplate.body
+                  )}
                 </div>
               </div>
             )}
