@@ -1,4 +1,5 @@
 import { OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
+import type { OpenAPIObject } from 'openapi3-ts/oas30';
 import { registry } from './registry';
 import './registrations';
 
@@ -65,7 +66,7 @@ const SECURITY_SCHEMES = {
   },
 };
 
-export function buildOpenApiDocument() {
+export function buildOpenApiDocument(): OpenAPIObject {
   registerSecuritySchemes();
 
   const generator = new OpenApiGeneratorV3(registry.definitions);
