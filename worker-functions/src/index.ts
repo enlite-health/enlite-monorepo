@@ -363,6 +363,12 @@ app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response
   recruitmentHealthController.getHealth(req, res),
 );
 
+// ========== MCP Server (feature-gated via MCP_ENABLED=true) ==========
+if (process.env.MCP_ENABLED === 'true') {
+  const { mountMcpRoutes } = require('@modules/mcp/bootstrap/mountMcpRoutes') as typeof import('@modules/mcp/bootstrap/mountMcpRoutes');
+  mountMcpRoutes(app, dbPool);
+}
+
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).
 startServer(app, useCerbos);
