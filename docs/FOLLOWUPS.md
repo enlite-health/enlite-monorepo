@@ -845,6 +845,27 @@ Tipos: `WorkerSummary.id: number` no triage também precisa ser corrigido pra `s
 
 ---
 
+### TD-032 — `worker-functions-mcp` em prd não está sob Terraform
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 5 do Sprint MCP Internal Server
+- **Dono provável:** infra/devops
+- **Bloqueador?** Não — alinhado com pattern existente (prd inteiro não está sob Terraform, ver TD-010)
+
+**O que é:**
+
+O service `worker-functions-mcp` foi criado em prd via `gcloud run deploy` no workflow `.github/workflows/backend-mcp-prd.yml`, sem instanciação Terraform. Em stg o módulo existe em `terraform/environments/stg/cloud_run.tf` (`module "cloud_run_worker_functions_mcp"`). Replica a mesma decisão arquitetural pré-existente descrita em TD-010 (prd inteiro não está sob IaC).
+
+**Impacto:**
+
+Drift potencial entre stg e prd. Mudanças manuais em prd no service `worker-functions-mcp` não são rastreadas em código. Mesma situação dos outros 3 services prd (worker-functions, enlite-frontend, enlite-n8n).
+
+**Proposta de solução:**
+
+Quando o TD-010 geral de "prd sob Terraform" for atacado (importar Cloud Run v1 → v2), incluir `worker-functions-mcp` no mesmo esforço de import. Não fazer em separado — o esforço de migrar v1→v2 é compartilhado entre todos os services.
+
+---
+
 ### TD-031 — `ENLITE_API_KEYS` não documentada em `.env.example`
 
 - **Status:** aberto

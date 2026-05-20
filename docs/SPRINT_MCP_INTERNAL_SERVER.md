@@ -209,12 +209,19 @@ Lista cronológica das decisões tomadas durante o refinamento, com o "porquê" 
 │  ← triage-service (via Direct VPC Egress)                         │
 │  Rotas: /mcp/v1 apenas                                            │
 │                                                                   │
-│  Mesma imagem Docker; diferença = env MCP_ONLY=true               │
+│  Mesma imagem Docker; diferença = env MCP_ENABLED=true            │
 │  Mesma conexão DB (Cloud SQL via private IP)                      │
 │                                                                   │
-│  Secret Manager: mcp-internal-token-triage (multi-version)        │
+│  Secret Manager: internal-token-secret (multi-version)            │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**Estratégia de deploy por ambiente (PR 5):**
+
+- **prd:** deploy via `.github/workflows/backend-mcp-prd.yml` (gcloud run deploy, workflow_run trigger após backend-prd.yml). Decisão de não-IaC alinhada com pattern existente — prd inteiro não está sob Terraform (ver TD-010 e TD-032 em FOLLOWUPS.md).
+- **stg:** deploy via `terraform apply` para criar o service skeleton (`terraform/environments/stg/cloud_run.tf`, módulo `cloud_run_worker_functions_mcp`) + workflow `backend-mcp-stg.yml` popula image e env vars (mesmo pattern do `cloud_run_worker_functions` stg).
+
+**Smoke test:** `worker-functions/scripts/mcp-smoke-test.sh` — executar manualmente após deploy ou via pipeline de validação pós-deploy.
 
 ### 3.2 Estrutura de módulo (worker-functions)
 
@@ -280,7 +287,7 @@ Pra cada tool call:
 | 2 | Domain + infra do MCP (sem rotas) | ⚪ | 2 |
 | 3 | Middleware MCP + auth de principal | ⚪ | 1 |
 | 4 | MCP server stateless + capabilities de read | ⚪ | 2 |
-| 5 | Deploy MCP em Cloud Run separado (terraform + Direct VPC Egress) | ⚪ | 1.5 |
+| 5 | Deploy MCP em Cloud Run separado (terraform + Direct VPC Egress) | ✅ | 1.5 |
 | 6 | Capabilities de write (`profile.update` Zod whitelist + `documents.upload`) | ⚪ | 2 |
 | 7 | Triage-service migra de HTTP pra MCP client | ⚪ | 1.5 |
 | 8 | Cleanup HTTP antigo no worker-functions | ⚪ | 0.5 |
