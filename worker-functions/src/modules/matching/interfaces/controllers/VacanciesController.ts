@@ -8,6 +8,8 @@ import {
   VacancyListRow,
 } from './vacancyListHelpers';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
+import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
+import { reportError } from '@shared/logging';
 
 /**
  * VacanciesController
@@ -178,6 +180,25 @@ export class VacanciesController {
         ...row,
         schedule: normalizeSchedule(row.schedule),
       };
+
+      // Observe-only contract check: log shape drift without breaking requests.
+      // After a stable window with no drift logged, promote to .parse() (strict).
+      const parseResult = AdminVacancyDetailSchema.safeParse(normalized);
+      if (!parseResult.success) {
+        reportError(
+          new Error('AdminVacancyDetail response shape drift'),
+          {
+            source: 'VacanciesController:getVacancyById',
+            vacancyId: id,
+            issues: parseResult.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              code: i.code,
+              message: i.message,
+            })),
+          },
+        );
+      }
+
       res.status(200).json({ success: true, data: normalized });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
