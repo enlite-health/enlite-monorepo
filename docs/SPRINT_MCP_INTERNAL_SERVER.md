@@ -281,18 +281,37 @@ Pra cada tool call:
 
 ## 4. Plano de 8 PRs
 
-| # | Título | Estado | Dias |
-|---|---|---|---|
-| 1 | Use cases que faltam em prod + middleware híbrido + migration timezone | 🟡 em dev | 3.5 |
-| 2 | Domain + infra do MCP (sem rotas) | ⚪ | 2 |
-| 3 | Middleware MCP + auth de principal | ⚪ | 1 |
-| 4 | MCP server stateless + capabilities de read | ⚪ | 2 |
-| 5 | Deploy MCP em Cloud Run separado (terraform + Direct VPC Egress) | ✅ | 1.5 |
-| 6 | Capabilities de write (`profile.update` Zod whitelist + `documents.upload`) | ⚪ | 2 |
-| 7 | Triage-service migra de HTTP pra MCP client | ⚪ | 1.5 |
-| 8 | Cleanup HTTP antigo no worker-functions | ⚪ | 0.5 |
+| # | Título | Estado | Dias | PR |
+|---|---|---|---|---|
+| 1 | Use cases que faltam em prod + middleware híbrido + migration timezone | ✅ | 3.5 | [#24](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/24) |
+| 2 | Domain + infra do MCP (sem rotas) | ✅ | 2 | [#25](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/25) |
+| 3 | Middleware MCP + auth de principal | ✅ | 1 | [#26](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/26) |
+| 4 | MCP server stateless + capabilities de read | ✅ | 2 | [#27](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/27) |
+| 5 | Deploy MCP em Cloud Run separado (terraform + workflows) | ✅ | 1.5 | [#28](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/28) |
+| 6 | Capabilities de write (`profile.update` Zod whitelist + `documents.upload`) | ✅ | 2 | [#29](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/29) |
+| 7 | Triage-service migra de HTTP pra MCP client | ⛔ **pendente** | 1.5 | — |
+| 8 | Cleanup HTTP antigo no worker-functions | ⛔ **pendente** | 0.5 | — |
 
-**Total dev:** ~14 dias (revisto de 12.5d após parecer do Architect). Review estimado: +5 dias. Calendário: ~3 semanas com buffer.
+**Total entregue:** PRs 1-6 (~12 dias dev). PRs 7-8 ficam pendentes.
+
+### 4.x PRs 7 e 8 — pendentes (bloqueio temporário)
+
+**Motivo do bloqueio:** O `triage-service/` está atualmente untracked (não commitado em git) no worktree de trabalho do user (`/Users/gabrielstein-dev/projects/enlite/infra/`). Pra fazer a migração do canal HTTP→MCP no triage, o repositório do triage precisa estar em git — ou o user commita primeiro nesse worktree, ou move pro worktree do MCP, ou define onde o triage-service vive como sub-repo/módulo.
+
+**Pré-requisitos pra desbloquear:**
+1. Commitar o `triage-service/` em alguma branch do monorepo (ou em repo separado, se decidido)
+2. Decidir se `triage-service/` vive no monorepo (atual) ou vira repo separado
+
+**Escopo do PR 7 (quando desbloquear):**
+- Criar `triage-service/src/modules/worker-context/infrastructure/McpEnliteGateway.ts` usando `@modelcontextprotocol/sdk` client
+- Substituir `HttpEnliteGateway` por `McpEnliteGateway` via feature flag `USE_MCP_GATEWAY=true`
+- Coexistência durante migração
+- Testes integration contra o MCP server em staging
+
+**Escopo do PR 8 (depende do PR 7 estável em prod ≥ 7 dias):**
+- Remover `HttpEnliteGateway`
+- Remover endpoints HTTP `/api/admin/workers/:id/{current-interview,available-vacancies,documents/ingest-from-url}` do worker-functions (após grep universal confirmar zero outros consumidores)
+- Remover `ENLITE_API_KEY` do triage env
 
 ### 4.1 PR 1 — Escopo detalhado (em implementação)
 
