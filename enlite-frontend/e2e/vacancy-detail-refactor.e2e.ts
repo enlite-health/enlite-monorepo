@@ -41,7 +41,7 @@ const MOCK_VACANCY = {
   dependency_level: 'Dependencia total',
   required_sex: 'Mujer',
   required_professions: ['AT'],
-  service_type: 'Domiciliar',
+  service_type: ['Domiciliar'],
   worker_attributes: null,
   age_range_min: null,
   age_range_max: null,
