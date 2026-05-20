@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { PubSubClient } from '../PubSubClient';
+import { CloudTasksClient } from '../CloudTasksClient';
 import { MatchmakingService } from '../../../modules/matching/infrastructure/MatchmakingService';
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
 import { logger, reportError, loggingAls } from '../../logging';
@@ -7,6 +7,11 @@ import { logger, reportError, loggingAls } from '../../logging';
 const TEMPLATE_SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const TEMPLATE_SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
 const IDEMPOTENCY_DAYS = 7;
+
+// Queue dedicada com rate limit 0.5 msg/sec (config GCP) — paced pra
+// evitar burst que Meta classificaria como spam. Veja:
+// gcloud tasks queues describe whatsapp-paced --location=southamerica-east1
+const WHATSAPP_PACED_QUEUE = process.env.WHATSAPP_PACED_QUEUE ?? 'whatsapp-paced';
 
 interface VacancyCreatedPayload {
   jobPostingId?: string;
@@ -51,7 +56,7 @@ interface WorkerDocumentsRow {
  */
 export function createVacancyAutoInviteHandler(
   db: Pool,
-  pubsub: PubSubClient,
+  cloudTasks: CloudTasksClient,
 ): (payload: Record<string, unknown>) => Promise<void> {
   return async (payload: Record<string, unknown>): Promise<void> => {
     const { jobPostingId } = payload as VacancyCreatedPayload;
@@ -168,8 +173,15 @@ export function createVacancyAutoInviteHandler(
           ],
         );
 
-        // Publicar Pub/Sub para processamento imediato (sweep 5 min é safety net)
-        await pubsub.publish('outbox-enqueued', { outboxId: insertRes.rows[0].id });
+        // Agendar Cloud Task na queue whatsapp-paced — rate limit 0.5/s
+        // configurado no GCP previne burst que Meta classificaria como spam.
+        // Queue gerencia retry (max 3, backoff exponencial). Sweep 5min é
+        // safety net pra casos extremos onde a task falhou todas as tentativas.
+        await cloudTasks.schedule({
+          queue: WHATSAPP_PACED_QUEUE,
+          url: '/api/internal/outbox/process-paced',
+          body: { outboxId: insertRes.rows[0].id },
+        });
         enqueued++;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));

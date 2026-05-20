@@ -74,7 +74,7 @@ const makeMatchResult = (candidates: ReturnType<typeof makeScoredCandidate>[]) =
 describe('VacancyAutoInviteHandler', () => {
   let mockQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
-  let mockPubsub: { publish: jest.Mock };
+  let mockCloudTasks: { schedule: jest.Mock };
   let mockMatchWorkersForJob: jest.Mock;
   let mockGenerate: jest.Mock;
 
@@ -83,7 +83,7 @@ describe('VacancyAutoInviteHandler', () => {
 
     mockQuery = jest.fn();
     mockDb = { query: mockQuery };
-    mockPubsub = { publish: jest.fn().mockResolvedValue(null) };
+    mockCloudTasks = { schedule: jest.fn().mockResolvedValue(null) };
 
     mockMatchWorkersForJob = jest.fn().mockResolvedValue(makeMatchResult([]));
     (MatchmakingService as jest.MockedClass<typeof MatchmakingService>).mockImplementation(() => ({
@@ -98,7 +98,7 @@ describe('VacancyAutoInviteHandler', () => {
 
   // 1
   it('lança erro se jobPostingId estiver ausente no payload', async () => {
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await expect(handler({})).rejects.toThrow('Missing jobPostingId in vacancy.created payload');
   });
 
@@ -106,12 +106,12 @@ describe('VacancyAutoInviteHandler', () => {
   it('retorna early se job posting não encontrado', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] }); // SELECT patient_zone
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(mockMatchWorkersForJob).not.toHaveBeenCalled();
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
   });
 
   // 3
@@ -121,11 +121,11 @@ describe('VacancyAutoInviteHandler', () => {
     const alreadyApplied = makeScoredCandidate({ alreadyApplied: true });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([alreadyApplied]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     expect(mockQuery).toHaveBeenCalledTimes(1); // só SELECT patient_zone
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
   });
 
   // 4
@@ -137,10 +137,10 @@ describe('VacancyAutoInviteHandler', () => {
     const candidate = makeScoredCandidate();
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
     expect(mockGenerate).not.toHaveBeenCalled();
   });
 
@@ -154,7 +154,7 @@ describe('VacancyAutoInviteHandler', () => {
     const candidate = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     const insertCall = mockQuery.mock.calls[2];
@@ -169,7 +169,11 @@ describe('VacancyAutoInviteHandler', () => {
     expect(vars.vacancy_url).toBe('https://app.enlite.health/vacancies/job-1');
     expect(vars.pending_documents).toBeUndefined(); // NÃO deve existir para template complete
 
-    expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-99' });
+    expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
+      queue: 'whatsapp-paced',
+      url: '/api/internal/outbox/process-paced',
+      body: { outboxId: 'outbox-99' },
+    });
   });
 
   // 5b
@@ -190,7 +194,7 @@ describe('VacancyAutoInviteHandler', () => {
     const candidate = makeScoredCandidate({ workerId: 'worker-2', workerStatus: 'INCOMPLETE_REGISTER' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     const insertCall = mockQuery.mock.calls[3];
@@ -208,7 +212,11 @@ describe('VacancyAutoInviteHandler', () => {
     expect(vars.pending_documents).not.toContain('tu DNI');
     expect(vars.pending_documents).not.toContain('matrícula');
 
-    expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-incomplete-1' });
+    expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
+      queue: 'whatsapp-paced',
+      url: '/api/internal/outbox/process-paced',
+      body: { outboxId: 'outbox-incomplete-1' },
+    });
   });
 
   // 6
@@ -218,12 +226,12 @@ describe('VacancyAutoInviteHandler', () => {
     const candidate = makeScoredCandidate({ workerStatus: null });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     // Apenas a query inicial — sem SELECT EXISTS, sem INSERT
     expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
   });
 
   // 7
@@ -238,11 +246,15 @@ describe('VacancyAutoInviteHandler', () => {
     const c2 = makeScoredCandidate({ workerId: 'worker-2', workerStatus: 'REGISTERED' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([c1, c2]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await expect(handler({ jobPostingId: 'job-1' })).resolves.toBeUndefined();
 
-    expect(mockPubsub.publish).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-2' });
+    expect(mockCloudTasks.schedule).toHaveBeenCalledTimes(1);
+    expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
+      queue: 'whatsapp-paced',
+      url: '/api/internal/outbox/process-paced',
+      body: { outboxId: 'outbox-2' },
+    });
   });
 
   // 8 — patient_zone agora vem do DB (JOIN com patients), não do AT workZone
@@ -255,7 +267,7 @@ describe('VacancyAutoInviteHandler', () => {
     const candidate = makeScoredCandidate({ workerStatus: 'REGISTERED' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     const vars = JSON.parse(mockQuery.mock.calls[2][1][3]);
@@ -272,7 +284,7 @@ describe('VacancyAutoInviteHandler', () => {
     const candidate = makeScoredCandidate({ workerId: 'worker-xyz', workerStatus: 'REGISTERED' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
 
-    const handler = createVacancyAutoInviteHandler(mockDb as never, mockPubsub as never);
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
     expect(mockGenerate).toHaveBeenCalledWith('worker-xyz', 'worker_name');

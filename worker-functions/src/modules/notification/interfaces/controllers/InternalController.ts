@@ -61,6 +61,33 @@ export class InternalController {
   }
 
   /**
+   * POST /api/internal/outbox/process-paced
+   * Trigger: Cloud Tasks (queue: whatsapp-paced)
+   * Body: { outboxId } — direto, sem envelope Pub/Sub
+   *
+   * Endpoint dedicado pra Cloud Tasks com rate limit no nível da queue
+   * (0.5 msg/s). Auto-invite usa este caminho pra evitar burst que
+   * Meta classificaria como spam.
+   */
+  async processOutboxPaced(req: Request, res: Response): Promise<void> {
+    try {
+      const { outboxId } = req.body as { outboxId?: string };
+      if (!outboxId) {
+        res.status(400).json({ error: 'Missing outboxId' });
+        return;
+      }
+
+      await this.outboxProcessor.processById(outboxId);
+      res.status(200).json({ success: true, outboxId });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ error: error.message }, 'processOutboxPaced error');
+      reportError(error, { source: 'InternalController:processOutboxPaced' });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  /**
    * POST /api/internal/outbox/sweep
    * Trigger: Cloud Scheduler (every 5min) — safety net for orphaned outbox messages.
    */

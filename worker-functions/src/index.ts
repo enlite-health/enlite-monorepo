@@ -342,7 +342,7 @@ domainEventProcessor.registerHandler(
 
 domainEventProcessor.registerHandler(
   'vacancy.created',
-  createVacancyAutoInviteHandler(dbPool, pubsubClient),
+  createVacancyAutoInviteHandler(dbPool, cloudTasksClient),
 );
 
 const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);

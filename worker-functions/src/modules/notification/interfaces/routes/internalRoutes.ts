@@ -21,6 +21,11 @@ export function createInternalRoutes(controller: InternalController): Router {
     controller.processOutbox(req, res);
   });
 
+  // Cloud Tasks (queue: whatsapp-paced) — rate-limited outbox processing
+  router.post('/outbox/process-paced', (req: Request, res: Response) => {
+    controller.processOutboxPaced(req, res);
+  });
+
   // Cloud Scheduler safety net: orphaned outbox messages
   router.post('/outbox/sweep', (req: Request, res: Response) => {
     controller.sweepOutbox(req, res);
