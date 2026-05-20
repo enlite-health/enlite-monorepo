@@ -232,6 +232,8 @@ describe('OutboxProcessor', () => {
       ];
 
       mockQuery
+        // markStalePendingAsFailed (TD-023)
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         // fetchPending
         .mockResolvedValueOnce({ rows })
         // processOne row 1: SELECT worker
@@ -253,12 +255,32 @@ describe('OutboxProcessor', () => {
     });
 
     it('não faz nada quando não há mensagens pending', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery
+        // markStalePendingAsFailed (TD-023) — 0 rows neutralizadas
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        // fetchPending — vazio
+        .mockResolvedValueOnce({ rows: [] });
 
       await processor.processBatch();
 
       expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
-      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+    });
+
+    it('TD-023: loga warn quando markStalePendingAsFailed neutraliza rows velhas', async () => {
+      mockQuery
+        // markStalePendingAsFailed neutraliza 3 rows
+        .mockResolvedValueOnce({ rows: [{ id: 'old-1' }, { id: 'old-2' }, { id: 'old-3' }], rowCount: 3 })
+        // fetchPending — vazio (todas as velhas foram marcadas)
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processBatch();
+
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      // Confirma que primeira query é o UPDATE de markStale, segunda é o SELECT de pending
+      const calls = mockQuery.mock.calls;
+      expect(calls[0][0]).toContain("auto-failed: pending exceeded");
+      expect(calls[1][0]).toContain("FROM messaging_outbox");
     });
   });
 

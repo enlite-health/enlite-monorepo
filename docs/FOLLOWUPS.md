@@ -577,9 +577,64 @@ Os outros 3 templates do sprint estão aprovados. `talentum_incomplete_reminder`
 2. Submete pra aprovação Meta (~1-3 dias úteis)
 3. Backend roda: `UPDATE message_templates SET content_sid = 'HX...' WHERE slug = 'talentum_incomplete_reminder';`
 
+### TD-025 — Duplicação de `qualified_worker_response` na origem (4x no mesmo worker em 32min)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante teste end-to-end do Fluxo A em produção
+- **Dono provável:** backend (worker-functions) — `ReminderScheduler` ou caller
+- **Bloqueador?** Não — não envia múltiplos hoje porque ficou stuck pending. Mas ao destravar, mandaria 4 mensagens idênticas pro mesmo worker.
+
+**Evidência (worker `2efe4ef8-...`, 10/abr/2026):**
+
+```
+template_slug              | created_at                       | attempts
+qualified_worker_response  | 2026-04-10 03:35:34              | 2
+qualified_worker_response  | 2026-04-10 03:39:33              | 2
+qualified_worker_response  | 2026-04-10 04:04:13              | 2
+qualified_worker_response  | 2026-04-10 04:07:53              | 2
+qualified_reprogram_confirm| 2026-04-10 10:44:40              | 2
+qualified_reprogram_confirm| 2026-04-10 10:55:00              | 2
+```
+
+**Investigar:**
+- Quem chama `messaging_outbox INSERT` com `template_slug='qualified_worker_response'`? Provavelmente `ReminderScheduler` ou handler de webhook Twilio inbound.
+- Duplicações em janela de minutos sugerem: retry automático sem dedup, OU handler processando mesmo evento webhook múltiplas vezes, OU sem unique constraint em (worker_id, template_slug, related_event_id).
+- Fix: dedup atomic via `(worker_id, template_slug, related_event_id)` UNIQUE constraint OU `SELECT EXISTS` antes do INSERT (padrão da Fase 3 `VacancyAutoInviteHandler`).
+
 ---
 
 ## Resolvidos
+
+### TD-023 + TD-024 — Outbox sem auto-expire de pending velho + sweep sem filtro etário (resolvido 2026-05-20)
+
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-20, durante teste end-to-end em prod (sweep drenou 6 mensagens stuck de 40 dias atrás junto com o teste novo)
+- **Resolvido em:** 2026-05-20 (mesmo dia)
+
+**O que era:**
+
+`messaging_outbox` não tinha mecanismo de auto-expire pra rows que ficavam stuck em `status='pending'` por dias/semanas. Quando o sweep rodava após período de inatividade, processava lixo histórico e enviava mensagens stale (vagas que não existem mais, slots de entrevista vencidos, etc).
+
+No teste prod do Fluxo A, 6 outbox rows de 10/abril (40 dias antes) foram drenadas junto com o teste novo, gerando 6 mensagens WhatsApp irrelevantes pro worker.
+
+**Como foi resolvido:**
+
+1. `OutboxProcessor.markStalePendingAsFailed()` — novo método que roda no início de `processBatch()`, marca como `failed` qualquer row em `pending` com `created_at < NOW() - 7 days` e loga `warn` com count
+2. `OutboxProcessor.fetchPending()` — query agora filtra `created_at > NOW() - 7 days` (defesa em profundidade — mesmo se markStale não rodou)
+3. `OutboxProcessor.processById()` — mesmo filtro etário, pra cobrir Pub/Sub push de IDs stale
+4. Constante `MAX_PENDING_AGE_DAYS = 7` centraliza o limite
+
+**Validação:**
+
+- 1633/1633 unit tests passing (1 novo cenário "TD-023: loga warn quando neutraliza rows velhas")
+- 1112/1112 E2E passing
+- tsc --noEmit zero erros
+
+**Cleanup manual aplicado no momento da descoberta:**
+
+- 29 rows em `pending` de 7-8/abril marcadas `failed` via UPDATE direto
+- 2 rows de 14-18/maio (`qualified_worker_request` slot vencido) idem
+- Total: 31 rows neutralizadas em produção
 
 ### TD-016 — Gap de i18n no feature VacancyMatch (resolvido 2026-05-19)
 

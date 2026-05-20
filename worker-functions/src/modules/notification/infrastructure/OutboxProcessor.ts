@@ -7,6 +7,7 @@ import { loggingAls, logger, reportError } from '@shared/logging';
 
 const MAX_ATTEMPTS = 3;
 const BATCH_SIZE = 50;
+const MAX_PENDING_AGE_DAYS = 7;
 
 interface OutboxRow {
   id: string;
@@ -44,12 +45,17 @@ export class OutboxProcessor {
    * Retorna silenciosamente se a mensagem não existir ou já foi processada.
    */
   async processById(outboxId: string): Promise<void> {
+    // TD-024: filtro de idade também no processById — se Pub/Sub push entregar
+    // ID de row stale (improvável mas possível), não processa.
     const result = await this.db.query<OutboxRow>(
       `SELECT id, worker_id, template_slug, variables, attempts, trace_id
        FROM messaging_outbox
-       WHERE id = $1 AND status = 'pending' AND attempts < $2
+       WHERE id = $1
+         AND status = 'pending'
+         AND attempts < $2
+         AND created_at > NOW() - ($3::text || ' days')::interval
        LIMIT 1`,
-      [outboxId, MAX_ATTEMPTS],
+      [outboxId, MAX_ATTEMPTS, MAX_PENDING_AGE_DAYS],
     );
     if (result.rows.length === 0) return;
     const row = result.rows[0];
@@ -61,6 +67,10 @@ export class OutboxProcessor {
 
   /** Processa um batch de registros pending. Pode ser chamado diretamente nos testes. */
   async processBatch(): Promise<void> {
+    // TD-023: auto-expire stale pending antes de processar (defesa contra
+    // mensagens que ficaram presas por dias/semanas e perderam relevância).
+    await this.markStalePendingAsFailed();
+
     const rows = await this.fetchPending();
     if (rows.length === 0) return;
 
@@ -72,14 +82,42 @@ export class OutboxProcessor {
     }
   }
 
+  /**
+   * Marca como 'failed' qualquer outbox row em 'pending' há mais de
+   * MAX_PENDING_AGE_DAYS dias. Previne re-envio de mensagens stale quando
+   * o sweep roda após período de inatividade do processor.
+   */
+  private async markStalePendingAsFailed(): Promise<void> {
+    const result = await this.db.query<{ id: string }>(
+      `UPDATE messaging_outbox
+       SET status = 'failed',
+           error = 'auto-failed: pending exceeded ' || $1::text || ' days',
+           processed_at = NOW()
+       WHERE status = 'pending'
+         AND created_at < NOW() - ($1::text || ' days')::interval
+       RETURNING id`,
+      [MAX_PENDING_AGE_DAYS],
+    );
+    if (result.rowCount && result.rowCount > 0) {
+      logger.warn(
+        { count: result.rowCount, maxAgeDays: MAX_PENDING_AGE_DAYS },
+        'OutboxProcessor: stale pending rows auto-failed',
+      );
+    }
+  }
+
   private async fetchPending(): Promise<OutboxRow[]> {
+    // TD-024: defesa em profundidade — mesmo se markStalePendingAsFailed
+    // não rodou (ex: processById direto), nunca processar rows muito velhas.
     const result = await this.db.query<OutboxRow>(
       `SELECT id, worker_id, template_slug, variables, attempts, trace_id
        FROM messaging_outbox
-       WHERE status = 'pending' AND attempts < $1
+       WHERE status = 'pending'
+         AND attempts < $1
+         AND created_at > NOW() - ($3::text || ' days')::interval
        ORDER BY created_at
        LIMIT $2`,
-      [MAX_ATTEMPTS, BATCH_SIZE],
+      [MAX_ATTEMPTS, BATCH_SIZE, MAX_PENDING_AGE_DAYS],
     );
     return result.rows;
   }
