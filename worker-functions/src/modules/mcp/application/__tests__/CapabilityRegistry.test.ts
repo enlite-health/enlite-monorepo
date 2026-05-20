@@ -3,7 +3,11 @@ import { WorkerProfileGetCapability } from '../capabilities/WorkerProfileGetCapa
 import { WorkerDocumentsListCapability } from '../capabilities/WorkerDocumentsListCapability';
 import { WorkerVacanciesListCapability } from '../capabilities/WorkerVacanciesListCapability';
 import { WorkerInterviewGetCapability } from '../capabilities/WorkerInterviewGetCapability';
+import { WorkerProfileUpdateCapability } from '../capabilities/WorkerProfileUpdateCapability';
+import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
+import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
+import { RateLimitExceededError } from '../../domain/McpErrors';
 import { createHash } from 'node:crypto';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -11,7 +15,16 @@ import { createHash } from 'node:crypto';
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const WORKER_ID = '123e4567-e89b-12d3-a456-426614174000';
 
-function makePrincipal(capabilities: string[] = ['worker.profile.get']): ServicePrincipal {
+const ALL_CAPS = [
+  'worker.profile.get',
+  'worker.documents.list',
+  'worker.vacancies.list',
+  'worker.interview.get',
+  'worker.profile.update',
+  'worker.documents.upload',
+];
+
+function makePrincipal(capabilities: string[] = ALL_CAPS): ServicePrincipal {
   return new ServicePrincipal({
     name: 'triage-service',
     allowedCapabilities: capabilities,
@@ -40,7 +53,58 @@ function makeCapabilities() {
   const interviewGet = new WorkerInterviewGetCapability({
     execute: jest.fn().mockResolvedValue({ interview: null }),
   } as never);
-  return { profileGet, documentsList, vacanciesList, interviewGet };
+  const profileUpdate = new WorkerProfileUpdateCapability({
+    execute: jest.fn().mockResolvedValue({ workerId: WORKER_ID, fieldsUpdated: ['firstName'] }),
+  } as never);
+  const documentsUpload = new WorkerDocumentsUploadCapability({
+    execute: jest.fn().mockResolvedValue({
+      filePath: `workers/${WORKER_ID}/ingested/resume_cv/123`,
+      documentType: 'resume_cv',
+      workerId: WORKER_ID,
+    }),
+  } as never);
+  return { profileGet, documentsList, vacanciesList, interviewGet, profileUpdate, documentsUpload };
+}
+
+/** Makes a WriteRateLimiter that always allows. */
+function makePermissiveRateLimiter(): WriteRateLimiter {
+  const rl = new WriteRateLimiter();
+  jest.spyOn(rl, 'consume').mockReturnValue({ allowed: true });
+  return rl;
+}
+
+/** Makes a WriteRateLimiter that always denies. */
+function makeDenyingRateLimiter(retryAfterMs = 30_000): WriteRateLimiter {
+  const rl = new WriteRateLimiter();
+  jest.spyOn(rl, 'consume').mockReturnValue({ allowed: false, retryAfterMs });
+  return rl;
+}
+
+function makeRegistry(
+  overrides: Partial<{
+    writeRateLimiter: WriteRateLimiter;
+  }> = {},
+) {
+  const caps = makeCapabilities();
+  const auditor = makeAuditor();
+  const registry = new CapabilityRegistry({
+    ...caps,
+    auditor,
+    writeRateLimiter: overrides.writeRateLimiter,
+  });
+  return { registry, caps, auditor };
+}
+
+// Helper to get handler for a specific tool name
+function getHandler(
+  server: ReturnType<typeof makeMcpServer>,
+  name: string,
+): (args: unknown) => Promise<{ content: Array<{ type: string; text: string }> }> {
+  const call = (server.registerTool.mock.calls as [string, unknown, (args: unknown) => Promise<unknown>][]).find(
+    ([n]) => n === name,
+  );
+  if (!call) throw new Error(`Tool "${name}" not registered`);
+  return call[2] as (args: unknown) => Promise<{ content: Array<{ type: string; text: string }> }>;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -48,23 +112,19 @@ function makeCapabilities() {
 describe('CapabilityRegistry', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  // 1. registerAll chama registerTool 4 vezes
-  it('registerAll registers exactly 4 tools on the server', () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+  // 1. registerAll registers exactly 6 tools
+  it('registerAll registers exactly 6 tools on the server', () => {
+    const { registry } = makeRegistry();
     const server = makeMcpServer();
 
-    registry.registerAll(server as never, () => makePrincipal(['worker.profile.get', 'worker.documents.list', 'worker.vacancies.list', 'worker.interview.get']));
+    registry.registerAll(server as never, () => makePrincipal());
 
-    expect(server.registerTool).toHaveBeenCalledTimes(4);
+    expect(server.registerTool).toHaveBeenCalledTimes(6);
   });
 
-  // 2. registerAll usa os NAMEs corretos de cada capability
+  // 2. registerAll uses correct NAMEs
   it('registers tools with correct names', () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+    const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => undefined);
@@ -72,58 +132,45 @@ describe('CapabilityRegistry', () => {
     const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
       ([name]) => name,
     );
-    expect(registeredNames).toContain('worker.profile.get');
-    expect(registeredNames).toContain('worker.documents.list');
-    expect(registeredNames).toContain('worker.vacancies.list');
-    expect(registeredNames).toContain('worker.interview.get');
+    for (const cap of ALL_CAPS) {
+      expect(registeredNames).toContain(cap);
+    }
   });
 
-  // 3. Wrapper: principal não setado → lança erro
+  // 3. Wrapper: principal not set → throws
   it('wrapper throws when principal is not resolved', async () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+    const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => undefined);
 
-    // Get the handler for the first registered tool
-    const [, , handler] = server.registerTool.mock.calls[0] as [string, unknown, (args: unknown) => Promise<unknown>];
-
+    const handler = getHandler(server, 'worker.profile.get');
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(
       'ServicePrincipal not resolved',
     );
   });
 
-  // 4. Wrapper: principal sem permissão → lança erro com mensagem correta
+  // 4. Wrapper: principal without permission → throws
   it('wrapper throws when capability is not allowed for principal', async () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+    const { registry } = makeRegistry();
     const server = makeMcpServer();
 
-    // Principal com nenhuma capability permitida
     const restrictedPrincipal = makePrincipal([]);
     registry.registerAll(server as never, () => restrictedPrincipal);
 
-    const [, , handler] = server.registerTool.mock.calls[0] as [string, unknown, (args: unknown) => Promise<unknown>];
-
-    await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(
-      /not allowed for/,
-    );
+    const handler = getHandler(server, 'worker.profile.get');
+    await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(/not allowed for/);
   });
 
-  // 5. Happy path → audita outcome=success, retorna content[0].type='text'
+  // 5. Happy path → audits outcome=success, returns text content
   it('happy path: audits success and returns text content', async () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+    const { registry, auditor } = makeRegistry();
     const server = makeMcpServer();
+    const principal = makePrincipal();
 
-    const principal = makePrincipal(['worker.profile.get', 'worker.documents.list', 'worker.vacancies.list', 'worker.interview.get']);
     registry.registerAll(server as never, () => principal);
 
-    const [, , handler] = server.registerTool.mock.calls[0] as [string, unknown, (args: unknown) => Promise<{ content: Array<{ type: string; text: string }> }>];
+    const handler = getHandler(server, 'worker.profile.get');
     const result = await handler({ workerId: WORKER_ID });
 
     expect(result.content).toHaveLength(1);
@@ -134,22 +181,17 @@ describe('CapabilityRegistry', () => {
     );
   });
 
-  // 6. Erro do use case → audita outcome=error com errorCode + errorMessage
+  // 6. Use case error → audits outcome=error with errorCode + errorMessage
   it('use case error: audits with outcome=error and errorCode', async () => {
     const caps = makeCapabilities();
-    // Override profileGet to throw
-    jest.spyOn(caps.profileGet, 'execute').mockRejectedValue(
-      new Error('DB unavailable'),
-    );
+    jest.spyOn(caps.profileGet, 'execute').mockRejectedValue(new Error('DB unavailable'));
     const auditor = makeAuditor();
     const registry = new CapabilityRegistry({ ...caps, auditor });
     const server = makeMcpServer();
 
-    const principal = makePrincipal(['worker.profile.get', 'worker.documents.list', 'worker.vacancies.list', 'worker.interview.get']);
-    registry.registerAll(server as never, () => principal);
+    registry.registerAll(server as never, () => makePrincipal());
 
-    const [, , handler] = server.registerTool.mock.calls[0] as [string, unknown, (args: unknown) => Promise<unknown>];
-
+    const handler = getHandler(server, 'worker.profile.get');
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow('DB unavailable');
     expect(auditor.emit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -160,17 +202,14 @@ describe('CapabilityRegistry', () => {
     );
   });
 
-  // 7. workerId extraído dos args para audit onBehalfOfWorkerId
+  // 7. workerId extracted from args into audit onBehalfOfWorkerId
   it('extracts workerId from args into onBehalfOfWorkerId audit field', async () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+    const { registry, auditor } = makeRegistry();
     const server = makeMcpServer();
 
-    const principal = makePrincipal(['worker.profile.get', 'worker.documents.list', 'worker.vacancies.list', 'worker.interview.get']);
-    registry.registerAll(server as never, () => principal);
+    registry.registerAll(server as never, () => makePrincipal());
 
-    const [, , handler] = server.registerTool.mock.calls[0] as [string, unknown, (args: unknown) => Promise<unknown>];
+    const handler = getHandler(server, 'worker.profile.get');
     await handler({ workerId: WORKER_ID });
 
     expect(auditor.emit).toHaveBeenCalledWith(
@@ -178,21 +217,94 @@ describe('CapabilityRegistry', () => {
     );
   });
 
-  // 8. latencyMs >= 0 no evento de audit
+  // 8. latencyMs >= 0 in audit event
   it('latencyMs in audit event is >= 0', async () => {
-    const caps = makeCapabilities();
-    const auditor = makeAuditor();
-    const registry = new CapabilityRegistry({ ...caps, auditor });
+    const { registry, auditor } = makeRegistry();
     const server = makeMcpServer();
 
-    const principal = makePrincipal(['worker.profile.get', 'worker.documents.list', 'worker.vacancies.list', 'worker.interview.get']);
-    registry.registerAll(server as never, () => principal);
+    registry.registerAll(server as never, () => makePrincipal());
 
-    const [, , handler] = server.registerTool.mock.calls[0] as [string, unknown, (args: unknown) => Promise<unknown>];
+    const handler = getHandler(server, 'worker.profile.get');
     await handler({ workerId: WORKER_ID });
 
     const emitArg = (auditor.emit.mock.calls[0] as [Record<string, unknown>])[0];
     expect(typeof emitArg.latencyMs).toBe('number');
     expect(emitArg.latencyMs as number).toBeGreaterThanOrEqual(0);
+  });
+
+  // 9. Write capability + rate limiter returns allowed:false → throws RateLimitExceededError + audit logged
+  it('write capability blocked by rate limiter throws RateLimitExceededError and logs audit error', async () => {
+    const denyingRl = makeDenyingRateLimiter(25_000);
+    const { registry, auditor } = makeRegistry({ writeRateLimiter: denyingRl });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal());
+
+    const handler = getHandler(server, 'worker.profile.update');
+    await expect(
+      handler({ workerId: WORKER_ID, fields: { firstName: 'Ana' } }),
+    ).rejects.toThrow(RateLimitExceededError);
+
+    expect(auditor.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'error',
+        errorCode: 'RateLimitExceededError',
+        capability: 'worker.profile.update',
+      }),
+    );
+  });
+
+  // 10. Write capability + rate limiter returns allowed:true → execute runs normally
+  it('write capability with allowed rate limit executes normally', async () => {
+    const permissiveRl = makePermissiveRateLimiter();
+    const { registry, auditor } = makeRegistry({ writeRateLimiter: permissiveRl });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal());
+
+    const handler = getHandler(server, 'worker.profile.update');
+    const result = await handler({ workerId: WORKER_ID, fields: { firstName: 'Ana' } });
+
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe('text');
+    expect(auditor.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'success', capability: 'worker.profile.update' }),
+    );
+    expect(permissiveRl.consume).toHaveBeenCalled();
+  });
+
+  // 11. Read capability does NOT consult the rate limiter
+  it('read capability does not call the rate limiter', async () => {
+    const permissiveRl = makePermissiveRateLimiter();
+    const { registry } = makeRegistry({ writeRateLimiter: permissiveRl });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal());
+
+    const handler = getHandler(server, 'worker.profile.get');
+    await handler({ workerId: WORKER_ID });
+
+    expect(permissiveRl.consume).not.toHaveBeenCalled();
+  });
+
+  // 12. documents.upload write capability also goes through rate limiter
+  it('worker.documents.upload write capability consults rate limiter', async () => {
+    const permissiveRl = makePermissiveRateLimiter();
+    const { registry, auditor } = makeRegistry({ writeRateLimiter: permissiveRl });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal());
+
+    const handler = getHandler(server, 'worker.documents.upload');
+    await handler({
+      workerId: WORKER_ID,
+      documentType: 'resume_cv',
+      mediaUrl: 'https://media.twilio.com/file.pdf',
+    });
+
+    expect(permissiveRl.consume).toHaveBeenCalled();
+    expect(auditor.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'success', capability: 'worker.documents.upload' }),
+    );
   });
 });

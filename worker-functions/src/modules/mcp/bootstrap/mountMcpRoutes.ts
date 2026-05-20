@@ -7,11 +7,15 @@ import { WorkerProfileGetCapability } from '../application/capabilities/WorkerPr
 import { WorkerDocumentsListCapability } from '../application/capabilities/WorkerDocumentsListCapability';
 import { WorkerVacanciesListCapability } from '../application/capabilities/WorkerVacanciesListCapability';
 import { WorkerInterviewGetCapability } from '../application/capabilities/WorkerInterviewGetCapability';
+import { WorkerProfileUpdateCapability } from '../application/capabilities/WorkerProfileUpdateCapability';
+import { WorkerDocumentsUploadCapability } from '../application/capabilities/WorkerDocumentsUploadCapability';
 import { GetWorkerByIdUseCase } from '../../worker/application/GetWorkerByIdUseCase';
 import { WorkerRepository } from '../../worker/infrastructure/WorkerRepository';
 import { WorkerDocumentsRepository } from '../../worker/infrastructure/WorkerDocumentsRepository';
 import { GetCurrentInterviewUseCase } from '../../matching/application/GetCurrentInterviewUseCase';
 import { ListAvailableVacanciesForWorkerUseCase } from '../../matching/application/ListAvailableVacanciesForWorkerUseCase';
+import { UpdateWorkerProfileFieldsUseCase } from '../../worker/application/UpdateWorkerProfileFieldsUseCase';
+import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDocumentFromUrlUseCase';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 
 /**
@@ -34,6 +38,12 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     interviewGet: new WorkerInterviewGetCapability(
       new GetCurrentInterviewUseCase(),
+    ),
+    profileUpdate: new WorkerProfileUpdateCapability(
+      new UpdateWorkerProfileFieldsUseCase(),
+    ),
+    documentsUpload: new WorkerDocumentsUploadCapability(
+      new IngestDocumentFromUrlUseCase(),
     ),
     auditor,
   });

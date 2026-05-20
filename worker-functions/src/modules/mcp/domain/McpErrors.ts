@@ -28,3 +28,13 @@ export class McpPrincipalNotFoundError extends Error {
     this.name = 'McpPrincipalNotFoundError';
   }
 }
+
+export class RateLimitExceededError extends Error {
+  constructor(
+    public readonly capability: string,
+    public readonly retryAfterMs: number,
+  ) {
+    super(`Rate limit exceeded for ${capability}. Retry after ${retryAfterMs}ms`);
+    this.name = 'RateLimitExceededError';
+  }
+}
