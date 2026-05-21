@@ -244,4 +244,92 @@ export class EncuadreQueryRepository {
     }
     return history;
   }
+
+  /**
+   * Retorna o próximo encuadre agendado para um worker.
+   * Predicado primário: e.worker_id = $1 (garante isolamento por worker).
+   * Só retorna slots no futuro (respeitando timezone da vaga).
+   *
+   * O campo scheduled_for_utc é calculado no Postgres via AT TIME ZONE:
+   *   (slot_date + slot_time) é tratado como wall-clock local da vaga
+   *   AT TIME ZONE jp.timezone converte pra UTC.
+   * node-postgres devolve o campo como Date JS já em UTC.
+   */
+  async findUpcomingByWorkerId(workerId: string): Promise<{
+    encuadreId: string;
+    slotDate: string;
+    slotTime: string;
+    meetLink: string | null;
+    vacancyId: string;
+    vacancyTitle: string;
+    vacancyTimezone: string;
+    scheduledFor: string;
+  } | null> {
+    const result = await this.pool.query(
+      `SELECT
+         e.id                  AS encuadre_id,
+         is2.slot_date::TEXT   AS slot_date,
+         is2.slot_time::TEXT   AS slot_time,
+         is2.meet_link         AS meet_link,
+         jp.id                 AS vacancy_id,
+         jp.title              AS vacancy_title,
+         jp.timezone           AS vacancy_timezone,
+         ((is2.slot_date::timestamp + is2.slot_time::time) AT TIME ZONE jp.timezone) AS scheduled_for_utc
+       FROM encuadres e
+       JOIN interview_slots is2 ON is2.id = e.interview_slot_id
+       JOIN job_postings jp ON jp.id = e.job_posting_id
+       WHERE e.worker_id = $1
+         AND e.interview_slot_id IS NOT NULL
+         AND e.resultado IS NULL
+         AND ((is2.slot_date::timestamp + is2.slot_time::time) AT TIME ZONE jp.timezone) >= NOW()
+       ORDER BY scheduled_for_utc ASC
+       LIMIT 1`,
+      [workerId],
+    );
+
+    if (!result.rows[0]) return null;
+
+    return this.mapRow(result.rows[0] as {
+      encuadre_id: string;
+      slot_date: string;
+      slot_time: string;
+      meet_link: string | null;
+      vacancy_id: string;
+      vacancy_title: string;
+      vacancy_timezone: string;
+      scheduled_for_utc: Date;
+    });
+  }
+
+  private mapRow(row: {
+    encuadre_id: string;
+    slot_date: string;
+    slot_time: string;
+    meet_link: string | null;
+    vacancy_id: string;
+    vacancy_title: string;
+    vacancy_timezone: string;
+    scheduled_for_utc: Date;
+  }): {
+    encuadreId: string;
+    slotDate: string;
+    slotTime: string;
+    meetLink: string | null;
+    vacancyId: string;
+    vacancyTitle: string;
+    vacancyTimezone: string;
+    scheduledFor: string;
+  } {
+    const scheduledForDate = row.scheduled_for_utc;
+    return {
+      encuadreId: row.encuadre_id,
+      slotDate: row.slot_date,
+      slotTime: row.slot_time,
+      meetLink: row.meet_link,
+      vacancyId: row.vacancy_id,
+      vacancyTitle: row.vacancy_title,
+      vacancyTimezone: row.vacancy_timezone,
+      scheduledFor: scheduledForDate.toISOString(),
+    };
+  }
 }

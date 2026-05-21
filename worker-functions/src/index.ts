@@ -45,6 +45,8 @@ import { createMessagingRoutes } from '@modules/notification/interfaces/routes/m
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
 import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
+import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
+import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
@@ -149,6 +151,7 @@ const vacancyMeetLinksController = new VacancyMeetLinksController();
 const vacancySocialLinksController = new VacancySocialLinksController();
 const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
+const workerContextController = new WorkerContextController();
 
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
@@ -303,6 +306,9 @@ app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsContr
 // ========== Admin Patients ==========
 app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
 
+// ========== Worker Context (triage-service / MCP internal) ==========
+app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware));
+
 // ========== Admin Vacancies (extracted router) ==========
 app.use('/api/admin', createAdminVacanciesRoutes(
   vacanciesController,
@@ -356,6 +362,12 @@ app.use('/api/internal', createInternalRoutes(internalController));
 app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response) =>
   recruitmentHealthController.getHealth(req, res),
 );
+
+// ========== MCP Server (feature-gated via MCP_ENABLED=true) ==========
+if (process.env.MCP_ENABLED === 'true') {
+  const { mountMcpRoutes } = require('@modules/mcp/bootstrap/mountMcpRoutes') as typeof import('@modules/mcp/bootstrap/mountMcpRoutes');
+  mountMcpRoutes(app, dbPool);
+}
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).

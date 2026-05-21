@@ -703,3 +703,284 @@ O template `vacancy_invited_auto` (migration 174) foi substituído pelos dois te
 **Como foi resolvido:**
 
 Substituídas as comparações `preferred_types = '{}'` e `experience_types = '{}'` por `preferred_types = '{}'::text[]` e `experience_types = '{}'::text[]` em `BulkDispatchIncompleteWorkersUseCase.ts`. Postgres agora interpreta corretamente como array literal tipado em vez de string. E2E `bulk-dispatch-incomplete.e2e.test.ts` criado para cobrir o endpoint `/api/internal/bulk-dispatch/process` e prevenir regressão.
+
+---
+
+### TD-026 — Migrar `interview_slots.slot_date + slot_time` para `TIMESTAMPTZ`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — `AT TIME ZONE jp.timezone` no SQL cobre o caso de uso atual
+
+**O que é:**
+
+`interview_slots` guarda `slot_date DATE NOT NULL` + `slot_time TIME NOT NULL` em colunas separadas, sem timezone embedded. PR 1 contorna via `(slot_date::timestamp + slot_time::time) AT TIME ZONE jp.timezone` mas a representação canônica de instante absoluto seria `slot_at TIMESTAMPTZ`.
+
+**Impacto:**
+
+- Queries de range temporal exigem o cast + AT TIME ZONE toda vez (verbose, propenso a esquecer)
+- Mudança de timezone da vaga após criação dos slots não invalida agendamentos (slots ficam com o timezone interpretado errado)
+- Operações de comparação entre múltiplas vagas com timezones diferentes ficam complexas
+
+**Proposta de solução:**
+
+1. Migration aditiva: adicionar `slot_at TIMESTAMPTZ`
+2. Backfill: `UPDATE interview_slots SET slot_at = (slot_date::timestamp + slot_time::time) AT TIME ZONE (SELECT timezone FROM job_postings WHERE id = interview_slots.job_posting_id)`
+3. Deprecar `slot_date+slot_time` (deixar coexistir 1-2 sprints, depois remover)
+4. Atualizar `InterviewSlotRepository`, `ScheduleInterviewsUseCase`, frontend `ScheduleInterviewModal`, E2Es de agendamento
+
+Refactor estrutural — PR próprio, fora do escopo MCP.
+
+---
+
+### TD-027 — Domain event `worker.document.uploaded` pós `IngestDocumentFromUrlUseCase`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — não há consumer definido hoje
+
+**O que é:**
+
+Quando o triage-service envia um documento do AT via WhatsApp, o `IngestDocumentFromUrlUseCase` persiste no GCS e atualiza `worker_documents` sem emitir nenhum domain event. Outros pontos de upload do sistema também não emitem — é gap geral.
+
+**Impacto:**
+
+- Sem ponto de extensão pra notificações pós-upload (ex: alerta pra coordenação que AT enviou doc novo)
+- Sem ponto de extensão pra validações automatizadas (ex: OCR no antecedentes penais, validação de CPF no RG)
+- Auditoria centralizada via event log fica incompleta
+
+**Proposta de solução:**
+
+Emitir `WorkerDocumentUploadedEvent { workerId, documentType, filePath, uploadedAt, source: 'triage' | 'admin' | 'portal' }` ao final do `IngestDocumentFromUrlUseCase.execute()` e em outros pontos de upload. Definir handlers conforme necessidade aparecer (notification, validation, audit).
+
+---
+
+### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (Architect parecer)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — PR 1 evita usar `workers.timezone` e usa `job_postings.timezone`
+
+**O que é:**
+
+A coluna `workers.timezone VARCHAR(50)` foi criada em migration 003 com `DEFAULT 'UTC'`. Nenhum fluxo posterior populou o valor real — todos os ATs do banco têm `'UTC'` (semanticamente errado pra ATs operando em AR/BR).
+
+**Impacto:**
+
+- Qualquer use case futuro que tente derivar fuso horário do AT via `workers.timezone` retornará UTC errado
+- PR 1 contornou usando `job_postings.timezone` (timezone da vaga, não do worker), o que é semanticamente correto pra "current interview"
+- Cenários futuros (ex: notificação proativa "bom dia AT" no fuso local do AT) vão precisar do valor real
+
+**Proposta de solução:**
+
+1. Backfill: derivar de `workers.country` via `countryToTimezone()` (util criada em PR 1, em `src/shared/locale/CountryTimezone.ts`)
+2. Atualizar signup do worker pra capturar/derivar timezone explicitamente
+3. Considerar adicionar coluna `country` consistente com `job_postings.country` se ainda não houver
+
+---
+
+### TD-029 — Critério de update de `bankAccount`/`pix` via WhatsApp com 2FA
+
+- **Status:** aberto (decisão de produto pendente)
+- **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (whitelist LGPD §5.2)
+- **Dono provável:** produto + backend
+- **Bloqueador?** Não — campos atualmente vetados na whitelist do PR 6
+
+**O que é:**
+
+Whitelist de campos editáveis via WhatsApp (sprint MCP §5.2) veta `bankAccount` e `pix` por enquanto, até definir verificação anti-fraude explícita (ex: 2FA, confirmação por canal alternativo, prazo de carência).
+
+**Impacto:**
+
+- AT que precisa atualizar dados bancários pra receber pagamento precisa contatar a operação manualmente (canal humano)
+- Reduz autoatendimento, aumenta carga no time de operações
+
+**Proposta de solução:**
+
+Definir com produto:
+- 2FA via SMS/email pra confirmar update de dados bancários?
+- Prazo de carência (24-48h) entre update e efeito no próximo pagamento?
+- Notificação automatizada pra antifraude/compliance?
+
+Após decisão, adicionar à whitelist do `WorkerProfileUpdateCapability` (PR 6 do sprint MCP).
+
+---
+
+### TD-030 — Triage-service deserializa contrato HTTP wrapped vs direto
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (PO revisão final)
+- **Dono provável:** backend (triage-service)
+- **Bloqueador?** Não — vai ser resolvido naturalmente no PR 7 (triage migra HTTP→MCP)
+
+**O que é:**
+
+O `HttpEnliteGateway` do triage-service em `triage-service/src/modules/worker-context/infrastructure/HttpEnliteGateway.ts` consome respostas dos endpoints `current-interview` e `available-vacancies` como valores diretos:
+
+```typescript
+const { data } = await this.http.get<VacancySummary[]>(...);  // espera array
+const { data } = await this.http.get<InterviewSummary>(...);  // espera objeto direto
+```
+
+Mas os endpoints retornam wrapped:
+- `{ vacancies: VacancyDTO[] }`
+- `{ interview: CurrentInterviewDTO | null }`
+
+**Impacto:**
+
+- Estado atual em prod = 404 (endpoints não existiam). Após PR 1 = 200 com objeto wrapped.
+- Triage não estoura erro mas itera `.map()` em `{ vacancies: [...] }` (objeto) tratando como array — resultado: agente IA do WhatsApp recebe lista vazia ou undefined
+- Não piora vs estado atual (que era 404 e quebra silenciosa também), só desbloqueia parcialmente
+
+**Proposta de solução:**
+
+PR 7 do sprint MCP migra triage de HTTP pra cliente MCP. O contrato MCP é fonte da verdade; o adapter `HttpEnliteGateway` será removido. Resolve-se sozinho ao trocar o canal.
+
+Se necessário antes do PR 7 (ex: produto pede o fix urgente): adicionar `data.vacancies` e `data.interview` no triage — mudança de 2 linhas em `HttpEnliteGateway.ts`.
+
+Tipos: `WorkerSummary.id: number` no triage também precisa ser corrigido pra `string` (UUIDs) — TS runtime não verifica, mas é gap.
+
+---
+
+### TD-032 — `worker-functions-mcp` em prd não está sob Terraform
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 5 do Sprint MCP Internal Server
+- **Dono provável:** infra/devops
+- **Bloqueador?** Não — alinhado com pattern existente (prd inteiro não está sob Terraform, ver TD-010)
+
+**O que é:**
+
+O service `worker-functions-mcp` foi criado em prd via `gcloud run deploy` no workflow `.github/workflows/backend-mcp-prd.yml`, sem instanciação Terraform. Em stg o módulo existe em `terraform/environments/stg/cloud_run.tf` (`module "cloud_run_worker_functions_mcp"`). Replica a mesma decisão arquitetural pré-existente descrita em TD-010 (prd inteiro não está sob IaC).
+
+**Impacto:**
+
+Drift potencial entre stg e prd. Mudanças manuais em prd no service `worker-functions-mcp` não são rastreadas em código. Mesma situação dos outros 3 services prd (worker-functions, enlite-frontend, enlite-n8n).
+
+**Proposta de solução:**
+
+Quando o TD-010 geral de "prd sob Terraform" for atacado (importar Cloud Run v1 → v2), incluir `worker-functions-mcp` no mesmo esforço de import. Não fazer em separado — o esforço de migrar v1→v2 é compartilhado entre todos os services.
+
+---
+
+### TD-031 — `ENLITE_API_KEYS` não documentada em `.env.example`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (PO revisão final)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — provisionamento manual em prod via secret manager funciona
+
+**O que é:**
+
+Env var `ENLITE_API_KEYS` (usada por `ApiKeyAuthStrategy.loadFromEnv()` pra carregar tokens de service principals) não está documentada em `.env.example`. Formato esperado: `triage-service:TOKEN_VALUE,other-principal:OTHER_TOKEN`.
+
+**Impacto:**
+
+- Operação que vai provisionar a env var em produção (Cloud Run env / Secret Manager) precisa adivinhar o formato
+- Risco de configurar errado em ambiente novo (staging) e o triage receber 401 sem causa óbvia
+
+**Proposta de solução:**
+
+Adicionar entrada em `.env.example` no PR 2 (que já vai tocar configuração de service principals):
+
+```bash
+# Service principals para auth interno (API key per principal, separados por vírgula).
+# Formato: <principal-name>:<token>,<other-principal>:<other-token>
+# Exemplo: triage-service:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ENLITE_API_KEYS=
+```
+
+---
+
+### TD-033 — Avaliar remoção dos endpoints HTTP do worker-context (conservador, sem prazo)
+
+- **Status:** aberto, **conservador** — manter por padrão; remover só se evidência forte de zero uso
+- **Descoberto em:** 2026-05-20, durante PR 8 do Sprint MCP Internal Server
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — endpoints continuam ativos com `@deprecated` JSDoc
+
+**Histórico:**
+
+PR 1 do sprint MCP criou 3 endpoints HTTP no worker-functions porque o `triage-service` (em desenvolvimento local) chamava via axios e dois deles não existiam. Foram criados como pré-requisito do sprint, NÃO porque o MCP precisa deles (o MCP propriamente dito usa `/mcp/v1` JSON-RPC stateless, sem endpoints REST adicionais).
+
+**Endpoints especificamente em escopo deste TD (NENHUM outro):**
+
+```
+GET  /api/admin/workers/:id/current-interview
+GET  /api/admin/workers/:id/available-vacancies
+POST /api/admin/workers/:id/documents/ingest-from-url
+```
+
+**NÃO ESTÁ em escopo deste TD** (continuam intocados, sem deprecation, sem cleanup):
+
+- Qualquer outro endpoint de `/api/admin/workers/...` usado pelo frontend admin (`/api/admin/workers/:id`, `/api/admin/workers/:id/documents`, `/api/admin/workers/by-phone`, `/api/admin/workers`, `/api/admin/workers/:id/progress`, etc.)
+- Endpoints de auth, identity, patients, vacancies, matching, etc.
+- Use cases compartilhados (`GetCurrentInterviewUseCase`, `ListAvailableVacanciesForWorkerUseCase`, `IngestDocumentFromUrlUseCase`) — esses ficam, são usados pelas capabilities MCP
+
+**Mudança de postura (2026-05-20, após revisão):**
+
+A versão inicial deste TD propunha cleanup após 7 dias estável em prod. **Postura revisada pra conservadora** com base em 2 fatos:
+
+1. `triage-service` **ainda não está em produção** em `enlite-prd` (confirmado via `gcloud run services list`). Os 3 endpoints HTTP, portanto, nunca tiveram tráfego prd — não há histórico real de uso pra comparar.
+2. Manter código já testado e estável tem custo de manutenção baixo. Recriar depois se outro consumer aparecer é mais caro que manter.
+
+**Critérios pra eventualmente remover (cumulativos, todos obrigatórios):**
+
+1. `triage-service` em produção real (`enlite-prd`) por ≥ 30 dias com `USE_MCP_GATEWAY=true`
+2. **Zero hits** nos 3 endpoints no Cloud Logging por ≥ 30 dias consecutivos (não 7) — filter por path exato
+3. `grep -rE '/api/admin/workers/.+/(current-interview|available-vacancies|documents/ingest-from-url)' enlite-frontend/ n8n-workflows/ worker-functions/scripts/ triage-service/` em **todos** os repos da org retorna zero
+4. Pull request de remoção passa por review com explícito ACK de "ninguém usa, podemos remover"
+
+**Se algum critério falhar, NÃO remover.** Custo de manter é baixo. Custo de remover prematuramente e quebrar consumer escondido é alto.
+
+**Quando (eventualmente) remover, escopo:**
+
+- `src/modules/matching/interfaces/controllers/WorkerContextController.ts`
+- `src/modules/matching/interfaces/routes/workerContextRoutes.ts`
+- Linha de montagem em `src/index.ts`
+- Tests de E2E `tests/e2e/worker-context-api.test.ts`
+
+**Nunca remover** (mesmo se TD for fechado):
+
+- `ApiKeyAuthStrategy`, `requireStaffOrApiKey` middleware (úteis pra futuros service principals)
+- Migration 180 (timezone) — irreversível e útil pra MCP também
+- Use cases base (`GetCurrentInterviewUseCase`, `ListAvailableVacanciesForWorkerUseCase`, `IngestDocumentFromUrlUseCase`) — usados pelas capabilities MCP
+
+---
+
+### TD-034 — Estratégia de repos por serviço (multi-repo)
+
+- **Status:** aberto, decisão de arquitetura
+- **Descoberto em:** 2026-05-20, durante PR 7 do Sprint MCP Internal Server
+- **Dono provável:** Gabriel + futura empresa
+- **Bloqueador?** Não — convive com monorepo atual
+
+**O que é:**
+
+O `triage-service` foi extraído pra repo próprio em `enlite-health/triage-service` durante o sprint MCP. Decisão alinhada com o user: "vamos fazer um repo pra cada um futuramente".
+
+**Serviços que continuam no monorepo `enlite-monorepo`:**
+- `worker-functions/` (backend principal)
+- `enlite-frontend/` (admin)
+- `terraform/` (IaC)
+- `n8n-workflows/` (workflows)
+- `docs/`
+
+**Próximos candidatos a extração (quando fizer sentido):**
+- `worker-functions` (se ficar grande demais — improvável a curto prazo)
+- `enlite-frontend` (deploy independente do backend já justifica)
+- Novos microservices (e.g. notifications, analytics) — nascem em repo próprio
+
+**Critérios pra extrair:**
+1. Serviço tem stack/runtime diferente do resto
+2. Ciclo de vida e deploy independentes
+3. Equipes diferentes (futuro)
+4. Boundary de domínio claro
+
+**Padrão de organização:**
+- Org: `enlite-health` no GitHub (criada 2026-05-20)
+- Naming: `<service-name>` sem prefixo `enlite-` (org já dá contexto)
+- Deploy: cada repo tem seus próprios workflows no `.github/workflows/`

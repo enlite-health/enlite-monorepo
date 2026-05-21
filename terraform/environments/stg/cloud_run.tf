@@ -50,6 +50,26 @@ module "cloud_run_worker_functions" {
   depends_on = [module.sql_enlite_ar_db]
 }
 
+module "cloud_run_worker_functions_mcp" {
+  source                = "../../modules/cloud-run"
+  project_id            = var.project_id
+  name                  = "worker-functions-mcp"
+  location              = "southamerica-west1"
+  image                 = local.placeholder_image
+  service_account_email = module.sa_enlite_functions.email
+  cpu_limit             = "1"
+  memory_limit          = "1Gi"
+  max_scale             = 5
+  min_scale             = 0
+
+  # Ingress restrito: só tráfego VPC interno + serviços GCP do mesmo projeto
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+
+  cloud_sql_instances = [local.cloud_sql_ar]
+
+  depends_on = [module.sql_enlite_ar_db]
+}
+
 module "cloud_run_enlite_n8n" {
   source                = "../../modules/cloud-run"
   project_id            = var.project_id

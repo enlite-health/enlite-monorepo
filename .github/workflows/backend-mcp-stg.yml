@@ -1,0 +1,88 @@
+name: Backend MCP — Staging
+
+on:
+  workflow_run:
+    workflows: ["Backend — Staging"]
+    types: [completed]
+    branches: [stage]
+
+concurrency:
+  group: backend-mcp-stg
+  cancel-in-progress: false
+
+env:
+  REGION: southamerica-west1
+  REGISTRY_REGION: southamerica-west1
+  # Service MCP separado — mesma imagem do worker-functions stg, sem rebuildar
+  SERVICE_NAME: worker-functions-mcp
+  REPOSITORY: worker-functions
+
+jobs:
+  deploy:
+    # Só roda quando o backend-stg concluir com sucesso (garante que o image foi publicado)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: staging
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run (worker-functions-mcp stg)
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          # Reusa exatamente o mesmo image buildado pelo backend-stg.yml no mesmo SHA
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha }}"
+          env_vars: |
+            NODE_ENV=production
+            MCP_ENABLED=true
+            GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+            DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
+            DB_NAME=enlite_ar
+            DB_USER=enlite_app
+            MCP_PRINCIPAL_NAMES=triage-service
+            ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
+          secrets: |
+            DB_PASSWORD=enlite-ar-db-password:latest
+            INTERNAL_TOKEN_SECRET=internal-token-secret:latest
+          flags: >-
+            --ingress=internal
+            --no-allow-unauthenticated
+            --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+            --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
+            --memory=512Mi
+            --cpu=1
+            --timeout=60s
+            --concurrency=40
+            --min-instances=0
+            --max-instances=3
+
+      - name: Verify deploy (health check via gcloud — ingress=internal, sem curl direto)
+        run: |
+          STATUS=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(status.conditions[0].type)')
+          if [ "$STATUS" != "Ready" ]; then
+            echo "::error::Service ${{ env.SERVICE_NAME }} não ficou Ready (status: $STATUS)"
+            exit 1
+          fi
+          echo "Service ${{ env.SERVICE_NAME }} Ready"
