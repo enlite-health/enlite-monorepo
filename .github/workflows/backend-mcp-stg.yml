@@ -65,7 +65,7 @@ jobs:
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
           flags: >-
             --ingress=internal
-            --no-allow-unauthenticated
+            --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
             --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
             --memory=512Mi
