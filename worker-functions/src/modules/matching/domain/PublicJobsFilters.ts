@@ -1,21 +1,28 @@
 /**
  * PublicJobsFilters — input to ListActivePublicJobsUseCase and findActivePublic.
  *
- * All fields are optional except `country`, which always has a default ('AR').
+ * TD-014: source of truth para o filtro de vagas públicas. Schema Zod canônico
+ * vive aqui; controller e OpenAPI registration importam daqui pra evitar drift.
+ *
+ * Schema é parsing-only (sem metadata OpenAPI). A registration em
+ * `shared/openapi/registrations/publicJobs.ts` reusa este schema adicionando
+ * `.openapi()` por campo via `.openapi()` extension method do
+ * `@asteasolutions/zod-to-openapi`.
  */
-export interface PublicJobsFilters {
-  /** CHAR(2) uppercase — always present (default 'AR') */
-  country: string;
-  /** Match exact in patient_addresses.state (ILIKE) */
-  state?: string;
-  /** Match exact in patient_addresses.city (ILIKE) */
-  city?: string;
-  /** Partial match in patients.diagnosis (ILIKE '%val%') */
-  pathology?: string;
-  /** Match exact in job_postings.required_sex */
-  worker_sex?: string;
-  /** Match inside job_postings.required_professions array */
-  worker_type?: string;
-  /** Free-text search across title, diagnosis, neighborhood, state, city */
-  q?: string;
-}
+import { z } from 'zod';
+
+export const PublicJobsFiltersSchema = z.object({
+  country: z
+    .string()
+    .transform((s: string) => s.toUpperCase())
+    .pipe(z.string().regex(/^[A-Z]{2}$/, 'country must be a 2-letter ISO code'))
+    .default('AR'),
+  state: z.string().trim().min(1).optional(),
+  city: z.string().trim().min(1).optional(),
+  pathology: z.string().trim().min(1).optional(),
+  worker_sex: z.enum(['FEMALE', 'MALE', 'BOTH']).optional(),
+  worker_type: z.string().trim().min(1).optional(),
+  q: z.string().trim().min(1).optional(),
+});
+
+export type PublicJobsFilters = z.infer<typeof PublicJobsFiltersSchema>;

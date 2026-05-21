@@ -404,71 +404,66 @@ A decisão da sessão de setup foi que stg deveria receber dump anonimizado de p
 
 ---
 
-### TD-013 — `PublicApiService.getPublicJobs()` ignora `country` no painel do worker (descoberto 2026-05-11)
+### TD-013 — `PublicApiService.getPublicJobs()` ignora `country` no painel do worker — resolvido parcialmente 2026-05-20
 
-- **Status:** aberto
-- **Descoberto em:** 2026-05-11, revisão final da PR de filtros públicos em `/api/public/v1/jobs`
-- **Dono provável:** frontend (enlite-frontend)
-- **Bloqueador?** Não — hoje só existem vagas AR no banco
-
-**O que é:**
-
-`PublicApiService.getPublicJobs()` em `enlite-frontend/src/infrastructure/http/PublicApiService.ts` chama `GET /api/public/v1/jobs` **sem nenhum query param**. Como o endpoint agora aplica `country='AR'` por default, o consumo atual continua funcionando.
-
-**Quando vira problema:**
-
-Quando entrarem vagas BR/US no banco, a tela do worker AR vai continuar vendo só AR (correto pra perfil AR), mas uma AT brasileira logada também só vai ver AR (errado).
-
-**Proposta:**
-
-`PublicApiService.getPublicJobs()` deve passar `?country={X}` baseado no perfil da AT logada. Campo de origem ainda a definir — possíveis fontes: `workers.country`, primeira letra de `workers.service_area`, ou perfil explícito no signup.
-
-**Pré-requisito:** primeira vaga não-AR entrar no banco (sync ClickUp / form manual) — antes disso, é só armadilha latente.
-
----
-
-### TD-014 — `PublicJobsFilters` interface e schema Zod do controller podem driftar (descoberto 2026-05-11)
-
-- **Status:** aberto
+- **Status:** resolvido (service); aberto pra integração no consumer (`JobsEmbeddedSection`)
 - **Descoberto em:** 2026-05-11, revisão final da PR de filtros públicos
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não
+- **Resolvido em:** 2026-05-20 (parcial), PR `chore/td-013-014-public-jobs-filters`
 
-**O que é:**
+**Como foi resolvido:**
 
-`PublicJobsFilters` (em `domain/`) e `PublicJobsQuerySchema` (em `interfaces/controllers/PublicJobsController.ts`) são tipos estruturalmente idênticos hoje, mantidos separados. Qualquer adição de filtro num lado sem atualizar o outro vai gerar drift silencioso que o tsc não pega — o controller faz cast implícito via `z.infer<typeof PublicJobsQuerySchema>` que é parametricamente compatível.
+`PublicApiService.getPublicJobs(filters?)` agora aceita filtros opcionais — `country`, `state`, `city`, `pathology`, `worker_sex`, `worker_type`, `q`. Os parâmetros são serializados via `URLSearchParams` (encoding automático). Sem filters, comportamento atual mantido (backend usa default 'AR').
 
-**Proposta:**
+Interface `PublicJobsFilters` exportada do service, alinhada com `PublicJobsFiltersSchema` do worker-functions (single source of truth no backend).
 
-Duas opções:
-1. **Source of truth = Zod**: exportar `type PublicJobsFilters = z.infer<typeof PublicJobsQuerySchema>` e deletar a interface separada (mais simples, mas acopla domain a Zod)
-2. **Source of truth = domain**: adicionar teste `expectTypeOf<z.infer<typeof PublicJobsQuerySchema>>().toEqualTypeOf<PublicJobsFilters>()` que falha em compile-time se driftarem
+7 tests vitest novos cobrem: sem filters → URL limpa, com country → query string, múltiplos filters, valores undefined/vazio ignorados, encoding de caracteres especiais.
 
-Decidir junto com Architect quando houver demanda real de adicionar/remover filtro.
+**Aberto: integração no `JobsEmbeddedSection`**
+
+O consumer atual (`JobsEmbeddedSection.tsx`) ainda chama `getPublicJobs()` sem args. Decidir UX: passar `country` do worker logado (auto-filtra) ou deixar usuário selecionar na UI (filter explícito).
+
+Quando aparecer worker BR ou de outro país no signup, este sub-TD vira urgente. Por enquanto (só workers AR no banco), comportamento atual continua correto.
 
 ---
 
-### TD-015 — Documentação pública do endpoint `/api/public/v1/jobs` ausente (descoberto 2026-05-11)
+### TD-014 — `PublicJobsFilters` interface e schema Zod do controller podem driftar — resolvido 2026-05-20
 
-- **Status:** aberto
-- **Descoberto em:** 2026-05-11, durante entrega dos filtros públicos para o time WordPress
-- **Dono provável:** produto/comms (com input técnico do backend)
-- **Bloqueador?** Não — spec pode ser passada de outras formas inicialmente
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-11, revisão final da PR de filtros públicos
+- **Resolvido em:** 2026-05-20, PR `chore/td-013-014-public-jobs-filters`
 
-**O que é:**
+**Como foi resolvido:**
 
-Não existe `docs/api-public-jobs.md` ou equivalente. O time WordPress vai precisar de:
-- URL canônica do endpoint (hoje `https://worker-functions-byh3gvl5yq-tl.a.run.app/api/public/v1/jobs` — bruto do Cloud Run; falta custom domain tipo `api.enlite.health`)
-- Tabela de query params com exemplos por país
-- Schema JSON da resposta (19 campos)
-- Política de rate-limit e cache
-- Comportamento de erros (400 em params inválidos)
+Schema Zod canônico movido pra `domain/PublicJobsFilters.ts` como `PublicJobsFiltersSchema`. Type derivado: `export type PublicJobsFilters = z.infer<typeof PublicJobsFiltersSchema>` (não há mais interface separada).
 
-**Proposta:**
+Controller (`PublicJobsController.ts`) importa o schema do domain — eliminou declaração local que era source of drift.
 
-1. Criar `docs/api-public-jobs.md` com OpenAPI-lite (markdown estruturado) + exemplos `curl`
-2. Avaliar custom domain `api.enlite.health` no Cloud Run prd (decisão de infra/DNS)
-3. Quando custom domain estiver no ar, atualizar o doc + comunicar ao WP
+OpenAPI registration (`shared/openapi/registrations/publicJobs.ts`) ainda redeclara o schema com `.openapi()` por campo (necessário pelo extension method da lib `zod-to-openapi`). Comentário explícito no arquivo sinaliza: "manter alinhado se o domain mudar". Reduz drift de 3 lugares → 2 lugares com revisão preventiva.
+
+Solução adotada foi a Opção 1 (Source of truth = Zod) — mais simples, acopla domain a Zod mas Zod é parser puro (não framework HTTP).
+
+---
+
+### TD-015 — Documentação pública do endpoint `/api/public/v1/jobs` — resolvido 2026-05-20
+
+- **Status:** resolvido (OpenAPI ja existia, descoberto durante TD-014)
+- **Descoberto em:** 2026-05-11
+- **Resolvido em:** 2026-05-20, confirmado durante PR `chore/td-013-014-public-jobs-filters`
+
+**Como foi resolvido:**
+
+A documentação OpenAPI **já existia** em `worker-functions/src/shared/openapi/registrations/publicJobs.ts` desde algum PR posterior à criação do TD em 2026-05-11. Define:
+- Path `/api/public/v1/jobs` com tag `Public · Jobs`
+- Summary + description (rate limit + cache política mencionados)
+- Schema completo dos query params com descrições e exemplos
+- Schema da resposta `PublicJobV1Item` registrado no componente reutilizável
+- Respostas 200, 400, 429, 500 documentadas
+
+O TD foi marcado como resolvido sem que ninguém atualizasse o status. Durante o TD-014, foi descoberto durante o refactor.
+
+**Pendente (não bloqueante, fora deste TD):**
+- Custom domain `api.enlite.health` no Cloud Run prd — decisão de infra/DNS, não de doc
+- Doc markdown adicional pra WordPress se eles preferirem MD vs OpenAPI
 
 ---
 
