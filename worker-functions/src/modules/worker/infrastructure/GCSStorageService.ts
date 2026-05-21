@@ -1,6 +1,5 @@
 import admin from 'firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '@shared/logging';
 
 export type DocumentType =
   | 'resume_cv'
@@ -137,29 +136,5 @@ export class GCSStorageService {
     const resolvedPath = this.extractRelativePath(filePath);
     const file = this.getBucket().file(resolvedPath);
     await file.delete({ ignoreNotFound: true });
-  }
-
-  /**
-   * Faz upload de um Buffer diretamente para GCS.
-   * Usado por IngestDocumentFromUrlUseCase para documentos baixados externamente.
-   */
-  async uploadBuffer(buffer: Buffer, filePath: string, contentType: string): Promise<void> {
-    if (this.mockMode) {
-      logger.info({ filePath, bytes: buffer.length }, '[GCSStorageService] Mock uploadBuffer');
-      return;
-    }
-
-    try {
-      const file = this.getBucket().file(filePath);
-      await file.save(buffer, {
-        metadata: { contentType },
-        resumable: false,
-      });
-    } catch (error) {
-      logger.error({ err: error, filePath }, '[GCSStorageService.uploadBuffer] ERROR');
-      throw new Error(
-        `Failed to upload buffer to GCS: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
   }
 }

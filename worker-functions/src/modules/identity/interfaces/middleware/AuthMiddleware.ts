@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { IAuthenticationService } from '../../ports/IAuthenticationService';
 import { IAuthorizationEngine } from '../../ports/IAuthorizationEngine';
 import { AuthContext, Credentials, CredentialType, PrincipalType, RequestMetadata } from '../../domain/Auth';
-import { isStaffRole } from '../../domain/EnliteRole';
-import { MultiAuthService } from '../../infrastructure/MultiAuthService';
 
 /**
  * Express Middleware for Authentication & Authorization
@@ -31,15 +29,10 @@ import { MultiAuthService } from '../../infrastructure/MultiAuthService';
  * ```
  */
 export class AuthMiddleware {
-  private readonly multiAuthService: MultiAuthService | null;
-
   constructor(
     private readonly authService: IAuthenticationService,
     private readonly authzEngine: IAuthorizationEngine
-  ) {
-    // Guarda referência tipada se o serviço for MultiAuthService
-    this.multiAuthService = authService instanceof MultiAuthService ? authService : null;
-  }
+  ) {}
 
   /**
    * Require authentication for the route
@@ -245,78 +238,6 @@ export class AuthMiddleware {
         }
         next();
       });
-    };
-  }
-
-  /**
-   * Híbrido: aceita API key de serviço (triage-service, n8n) OU staff Firebase.
-   * API key é verificada PRIMEIRO (lookup O(1) sem I/O).
-   * Firebase só é chamado se a API key falhar.
-   *
-   * Em USE_MOCK_AUTH=true (E2E): usa req.user do MockAuthMiddleware
-   * e verifica role staff.
-   */
-  requireStaffOrApiKey() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-      // Short-circuit para MockAuth em testes E2E
-      if (process.env.USE_MOCK_AUTH === 'true') {
-        const mockUser = req.user;
-        if (!mockUser?.uid) {
-          res.status(401).end();
-          return;
-        }
-        const staffRoles = ['admin', 'recruiter', 'community_manager'];
-        if (!staffRoles.includes(mockUser.role ?? '')) {
-          res.status(401).end();
-          return;
-        }
-        return next();
-      }
-
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        res.status(401).end();
-        return;
-      }
-      const token = authHeader.slice(7);
-
-      // 1) API key PRIMEIRO (sem I/O, sem log Firebase poluir)
-      if (this.multiAuthService) {
-        const apiKeyContext = this.multiAuthService.tryAuthenticateAsApiKey(token);
-        if (apiKeyContext) {
-          req.authContext = apiKeyContext;
-          return next();
-        }
-      }
-
-      // 2) Firebase só agora
-      if (this.multiAuthService) {
-        try {
-          const firebaseContext = await this.multiAuthService.authenticateGoogleIdToken(token, {
-            ipAddress: req.ip ?? 'unknown',
-            userAgent: req.headers['user-agent'],
-            requestId: this.generateRequestId(),
-            timestamp: new Date(),
-            path: req.path,
-            method: req.method,
-          });
-          if (firebaseContext) {
-            const roles = firebaseContext.principal.roles ?? [];
-            if (roles.some(r => isStaffRole(r))) {
-              req.authContext = firebaseContext;
-              req.user = {
-                uid: firebaseContext.principal.id,
-                roles,
-              };
-              return next();
-            }
-          }
-        } catch {
-          // fallthrough → 401
-        }
-      }
-
-      res.status(401).end();
     };
   }
 

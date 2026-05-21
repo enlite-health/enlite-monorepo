@@ -129,44 +129,4 @@ export class WorkerApplicationRepository {
     }
     return map;
   }
-
-  /**
-   * Lista vagas ativas para um worker, excluindo stages de rejeição.
-   * Inclui city via patient_address e search_start_date da vaga.
-   */
-  async findActiveByWorkerId(workerId: string): Promise<Array<{
-    id: string;
-    title: string;
-    status: string;
-    city?: string;
-    startDate?: string;
-    funnelStage: string;
-  }>> {
-    const result = await this.pool.query(
-      `SELECT
-         jp.id,
-         jp.title,
-         jp.status,
-         pa.city,
-         jp.search_start_date::TEXT AS start_date,
-         wja.application_funnel_stage AS funnel_stage
-       FROM worker_job_applications wja
-       JOIN job_postings jp ON jp.id = wja.job_posting_id
-       LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
-       WHERE wja.worker_id = $1
-         AND wja.application_funnel_stage NOT IN ('REJECTED', 'NOT_QUALIFIED', 'RECHAZADO')
-         AND jp.deleted_at IS NULL
-       ORDER BY jp.created_at DESC`,
-      [workerId],
-    );
-
-    return result.rows.map(r => ({
-      id: r.id as string,
-      title: r.title as string,
-      status: r.status as string,
-      city: (r.city as string | null) ?? undefined,
-      startDate: (r.start_date as string | null) ?? undefined,
-      funnelStage: r.funnel_stage as string,
-    }));
-  }
 }
