@@ -64,7 +64,7 @@ jobs:
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
           flags: >-
-            --ingress=internal
+            --ingress=all
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
             --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
