@@ -895,37 +895,59 @@ ENLITE_API_KEYS=
 
 ---
 
-### TD-033 — Cleanup físico dos endpoints HTTP do worker-context (após PR 7 estável em prod)
+### TD-033 — Avaliar remoção dos endpoints HTTP do worker-context (conservador, sem prazo)
 
-- **Status:** aberto (pendente de critério)
+- **Status:** aberto, **conservador** — manter por padrão; remover só se evidência forte de zero uso
 - **Descoberto em:** 2026-05-20, durante PR 8 do Sprint MCP Internal Server
 - **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não — endpoints continuam funcionando via deprecation marker
+- **Bloqueador?** Não — endpoints continuam ativos com `@deprecated` JSDoc
 
-**O que é:**
+**Histórico:**
 
-PR 8 do sprint MCP foi feito em 2 fases:
-- **Fase 1 (✅ entregue):** `@deprecated` JSDoc em `WorkerContextController` + `workerContextRoutes.ts`
-- **Fase 2 (este TD):** Remoção física dos endpoints HTTP + `WorkerContextController` + `workerContextRoutes.ts` + montagem no `index.ts`
+PR 1 do sprint MCP criou 3 endpoints HTTP no worker-functions porque o `triage-service` (em desenvolvimento local) chamava via axios e dois deles não existiam. Foram criados como pré-requisito do sprint, NÃO porque o MCP precisa deles (o MCP propriamente dito usa `/mcp/v1` JSON-RPC stateless, sem endpoints REST adicionais).
 
-**Critérios pra disparar a Fase 2:**
+**Endpoints especificamente em escopo deste TD (NENHUM outro):**
 
-1. `triage-service` (repo separado em `enlite-health/triage-service`) com `USE_MCP_GATEWAY=true` em produção há ≥ 7 dias sem incidentes
-2. `grep -rE '/api/admin/workers/.+/(current-interview|available-vacancies|documents/ingest-from-url)' enlite-frontend/ n8n-workflows/ worker-functions/scripts/` retorna zero referências
-3. Cloud Logging confirma zero hits nesses endpoints nos últimos 7 dias (filter por path)
+```
+GET  /api/admin/workers/:id/current-interview
+GET  /api/admin/workers/:id/available-vacancies
+POST /api/admin/workers/:id/documents/ingest-from-url
+```
 
-**Quando disparar, remover:**
+**NÃO ESTÁ em escopo deste TD** (continuam intocados, sem deprecation, sem cleanup):
+
+- Qualquer outro endpoint de `/api/admin/workers/...` usado pelo frontend admin (`/api/admin/workers/:id`, `/api/admin/workers/:id/documents`, `/api/admin/workers/by-phone`, `/api/admin/workers`, `/api/admin/workers/:id/progress`, etc.)
+- Endpoints de auth, identity, patients, vacancies, matching, etc.
+- Use cases compartilhados (`GetCurrentInterviewUseCase`, `ListAvailableVacanciesForWorkerUseCase`, `IngestDocumentFromUrlUseCase`) — esses ficam, são usados pelas capabilities MCP
+
+**Mudança de postura (2026-05-20, após revisão):**
+
+A versão inicial deste TD propunha cleanup após 7 dias estável em prod. **Postura revisada pra conservadora** com base em 2 fatos:
+
+1. `triage-service` **ainda não está em produção** em `enlite-prd` (confirmado via `gcloud run services list`). Os 3 endpoints HTTP, portanto, nunca tiveram tráfego prd — não há histórico real de uso pra comparar.
+2. Manter código já testado e estável tem custo de manutenção baixo. Recriar depois se outro consumer aparecer é mais caro que manter.
+
+**Critérios pra eventualmente remover (cumulativos, todos obrigatórios):**
+
+1. `triage-service` em produção real (`enlite-prd`) por ≥ 30 dias com `USE_MCP_GATEWAY=true`
+2. **Zero hits** nos 3 endpoints no Cloud Logging por ≥ 30 dias consecutivos (não 7) — filter por path exato
+3. `grep -rE '/api/admin/workers/.+/(current-interview|available-vacancies|documents/ingest-from-url)' enlite-frontend/ n8n-workflows/ worker-functions/scripts/ triage-service/` em **todos** os repos da org retorna zero
+4. Pull request de remoção passa por review com explícito ACK de "ninguém usa, podemos remover"
+
+**Se algum critério falhar, NÃO remover.** Custo de manter é baixo. Custo de remover prematuramente e quebrar consumer escondido é alto.
+
+**Quando (eventualmente) remover, escopo:**
 
 - `src/modules/matching/interfaces/controllers/WorkerContextController.ts`
 - `src/modules/matching/interfaces/routes/workerContextRoutes.ts`
 - Linha de montagem em `src/index.ts`
-- Use cases que ficarem órfãos: rodar grep pra confirmar (alguns podem ter outros consumidores internos)
 - Tests de E2E `tests/e2e/worker-context-api.test.ts`
 
-**Não remover ainda:**
-- `ApiKeyAuthStrategy` (continua útil pra outros service principals futuros)
-- `requireStaffOrApiKey` middleware (continua útil)
+**Nunca remover** (mesmo se TD for fechado):
+
+- `ApiKeyAuthStrategy`, `requireStaffOrApiKey` middleware (úteis pra futuros service principals)
 - Migration 180 (timezone) — irreversível e útil pra MCP também
+- Use cases base (`GetCurrentInterviewUseCase`, `ListAvailableVacanciesForWorkerUseCase`, `IngestDocumentFromUrlUseCase`) — usados pelas capabilities MCP
 
 ---
 
