@@ -1,12 +1,16 @@
 import { GCSStorageService } from '../infrastructure/GCSStorageService';
 import { ExternalMediaDownloader } from '../infrastructure/ExternalMediaDownloader';
 import { WorkerRepository } from '../infrastructure/WorkerRepository';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, loggingAls } from '@shared/logging';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+
+export type DocumentUploadSource = 'triage' | 'admin' | 'portal';
 
 export interface IngestDocumentFromUrlInput {
   workerId: string;
   documentType: string;
   externalUrl: string;
+  source?: DocumentUploadSource;
 }
 
 export interface IngestDocumentFromUrlResult {
@@ -124,7 +128,53 @@ export class IngestDocumentFromUrlUseCase {
 
     log.info({ msg: 'document ingested successfully', filePath });
 
+    // TD-027: emit domain event pra extension points futuros (notification,
+    // validation OCR, audit). Falha do emit não derruba o upload — o doc já
+    // foi persistido com sucesso, evento é best-effort.
+    await this.emitUploadedEvent({
+      workerId,
+      documentType,
+      filePath,
+      source: input.source ?? 'triage',
+    });
+
     return { filePath, documentType, workerId };
+  }
+
+  private async emitUploadedEvent(params: {
+    workerId: string;
+    documentType: string;
+    filePath: string;
+    source: DocumentUploadSource;
+  }): Promise<void> {
+    try {
+      const pool = DatabaseConnection.getInstance().getPool();
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+      await pool.query(
+        `INSERT INTO domain_events (event, payload, trace_id) VALUES ('worker.document.uploaded', $1::jsonb, $2)`,
+        [
+          JSON.stringify({
+            workerId: params.workerId,
+            documentType: params.documentType,
+            filePath: params.filePath,
+            source: params.source,
+            uploadedAt: new Date().toISOString(),
+          }),
+          traceId,
+        ],
+      );
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      // Best-effort: log mas não falha o use case
+      logger.warn(
+        { err: e.message, workerId: params.workerId },
+        'failed to emit worker.document.uploaded event',
+      );
+      reportError(e, {
+        source: 'IngestDocumentFromUrlUseCase:emitUploadedEvent',
+        workerId: params.workerId,
+      });
+    }
   }
 
   private redactQueryString(url: string): string {

@@ -734,26 +734,25 @@ Refactor estrutural — PR próprio, fora do escopo MCP.
 
 ---
 
-### TD-027 — Domain event `worker.document.uploaded` pós `IngestDocumentFromUrlUseCase`
+### TD-027 — Domain event `worker.document.uploaded` pós `IngestDocumentFromUrlUseCase` — resolvido 2026-05-20
 
-- **Status:** aberto
+- **Status:** resolvido (parcialmente — só no IngestDocumentFromUrlUseCase; outros pontos de upload continuam sem emit)
 - **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não — não há consumer definido hoje
+- **Resolvido em:** 2026-05-20, PR `chore/td-027-worker-document-uploaded-event`
 
-**O que é:**
+**Como foi resolvido:**
 
-Quando o triage-service envia um documento do AT via WhatsApp, o `IngestDocumentFromUrlUseCase` persiste no GCS e atualiza `worker_documents` sem emitir nenhum domain event. Outros pontos de upload do sistema também não emitem — é gap geral.
+`IngestDocumentFromUrlUseCase` agora emite `worker.document.uploaded` no `domain_events` table no final do `execute()` (após upload bem-sucedido). Payload: `{ workerId, documentType, filePath, source, uploadedAt }` com `traceId` extraído do `loggingAls`.
 
-**Impacto:**
+**Best-effort emit**: se o INSERT falhar, o use case ainda retorna sucesso (o documento foi persistido no GCS — só o evento perdeu). Logado via `logger.warn` + `reportError`.
 
-- Sem ponto de extensão pra notificações pós-upload (ex: alerta pra coordenação que AT enviou doc novo)
-- Sem ponto de extensão pra validações automatizadas (ex: OCR no antecedentes penais, validação de CPF no RG)
-- Auditoria centralizada via event log fica incompleta
+**Source semântico**: `source: 'triage' | 'admin' | 'portal'` default `'triage'` (já que o use case é primariamente do canal WhatsApp).
 
-**Proposta de solução:**
+**5 testes novos** cobrem: emit no happy path, source explícito tem precedência, falha de DB não derruba use case, emit não acontece quando worker não existe, emit não acontece quando GCS falha.
 
-Emitir `WorkerDocumentUploadedEvent { workerId, documentType, filePath, uploadedAt, source: 'triage' | 'admin' | 'portal' }` ao final do `IngestDocumentFromUrlUseCase.execute()` e em outros pontos de upload. Definir handlers conforme necessidade aparecer (notification, validation, audit).
+**Pendente (não bloqueante):**
+- Outros pontos de upload (signed URL flow do admin, portal direto) também deveriam emitir — escopo separado quando aparecer consumer (notification, OCR validation).
+- Handler do evento: nenhum subscriber definido ainda. Quando aparecer necessidade (ex: notificar coordenação), adicionar handler em `src/shared/events/handlers/` e registrar no `DomainEventProcessor`.
 
 ---
 
