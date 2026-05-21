@@ -370,20 +370,59 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 
 ---
 
-### TD-011 — Cloud SQL prd com `authorized_networks: 0.0.0.0/0` (descoberto 2026-05-08)
+### TD-011 — Cloud SQL prd com `authorized_networks: 0.0.0.0/0` — resolvido 2026-05-21
 
-- **Status:** aberto, segurança
+- **Status:** resolvido
 - **Descoberto em:** 2026-05-08 ao inspecionar config Cloud SQL para mirror stg
-- **Dono:** infra + sec
-- **Bloqueador?** Não — SSL é obrigatório (sslMode=TRUSTED_CLIENT_CERTIFICATE_REQUIRED), mas o IP público está aberto pra internet
+- **Resolvido em:** 2026-05-21
 
-**O que é:**
+**Como foi resolvido:**
 
-`enlite-ar-db` em prd está com `authorizedNetworks=[{value: "0.0.0.0/0"}]`, ou seja, qualquer IP do mundo pode tentar TCP no Postgres. SSL + cert client são exigidos, então autenticação não vaza, mas o atacante pode enumerar versão / fazer brute-force / DDoS no listener.
+Aplicado `--clear-authorized-networks` em ambos `enlite-stg/enlite-ar-db` e `enlite-prd/enlite-ar-db`. Sem necessidade de migração pra Private IP — Cloud Run e n8n (únicos consumers de produção) já conectam via socket Unix (`/cloudsql/...`) com Cloud SQL Auth Proxy embedded, ignorando authorizedNetworks completamente.
 
-Stg foi configurado com a mesma rule por paridade. Idem `enlite-n8n-db-ar` (que tem `requireSsl=false` — pior ainda, mas o n8n acessa via Cloud SQL Proxy interno, não via IP público; a rule 0.0.0.0/0 não está nesse).
+**Inventário pré-aplicação (Cloud Logging, últimos 7d, 2026-05-14 a 2026-05-21):**
 
-**Plano:** restringir authorized_networks a IPs específicos (Cloud Run NAT, GitHub Actions runners, IPs do escritório) ou migrar pra Private IP exclusivamente. Cloud SQL Proxy via service account já cobre acesso via aplicação.
+| Conexão | Via | Afetado? |
+|---|---|---|
+| worker-functions Cloud Run | socket Unix | ❌ Não |
+| enlite-n8n Cloud Run | socket Unix | ❌ Não |
+| Gabriel local (cloud-sql-proxy) | IAM via socket | ❌ Não |
+| Conexões legítimas via IP público | — | **Nenhuma encontrada** |
+
+**Tentativas de invasão observadas pré-fix (não-exhaustivo, limite query):**
+- ≥1000 ataques em 7 dias
+- Top scanners: `186.236.240.56` (260×), `128.185.207.18` (205×), `85.11.167.11` (21×), `79.124.40.174`, `64.89.163.134`
+- Usernames brute-forced: `developer`, `webuser`, `web`, `postgres`, `appuser`, `woglet`, `wog`
+- Todos bloqueados por `pg_hba.conf` (mTLS exigia cert)
+
+**Pós-fix (5 minutos de monitoramento):**
+- Zero ALERTs no Cloud SQL após propagação da config (~2min)
+- worker-functions/health: 200 em 0.18s (Cloud Run não afetado)
+- worker-functions/api/public/v1/jobs: 200 com data real (DB acessível normalmente)
+- n8n: zero erros
+
+**Estado final:**
+
+```yaml
+ipConfiguration:
+  ipv4Enabled: true                    # mantido — Cloud SQL Auth Proxy precisa
+  authorizedNetworks: []               # vazio — bloqueia conexão TCP direta
+  requireSsl: true                     # mTLS obrigatório (defesa em profundidade)
+  sslMode: TRUSTED_CLIENT_CERTIFICATE_REQUIRED
+```
+
+**Quem precisa de acesso direto agora:**
+- `gcloud auth login` + `cloud-sql-proxy enlite-prd:southamerica-west1:enlite-ar-db --port=5432`
+- Conecta no `localhost:5432` via IAM (`roles/cloudsql.client`)
+- Sem necessidade de cert SSL nem IP whitelist
+- Cert `claude-cert` no Secret Manager pode ser deletado em uma próxima limpeza (não mais necessário)
+
+**Rollback (caso necessário, em ~30 segundos):**
+```bash
+gcloud sql instances patch enlite-ar-db \
+  --project=enlite-prd \
+  --authorized-networks=0.0.0.0/0
+```
 
 ---
 
