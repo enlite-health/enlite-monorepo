@@ -13,6 +13,23 @@ interface ApiError {
 
 type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
+/**
+ * Filtros opcionais para /api/public/v1/jobs.
+ * TD-013: shape alinhado com PublicJobsFiltersSchema do worker-functions
+ * (domain/PublicJobsFilters.ts). Mantém em sync via revisão.
+ */
+export interface PublicJobsFilters {
+  /** Código ISO 3166-1 alpha-2 — default 'AR' no backend se ausente */
+  country?: string;
+  state?: string;
+  city?: string;
+  pathology?: string;
+  worker_sex?: 'FEMALE' | 'MALE' | 'BOTH';
+  worker_type?: string;
+  /** Busca textual livre */
+  q?: string;
+}
+
 class PublicApiServiceClass {
   private readonly baseURL: string;
 
@@ -52,10 +69,24 @@ class PublicApiServiceClass {
   /**
    * GET /api/public/v1/jobs
    * Returns public job listings without authentication.
+   *
+   * TD-013: filters opcionais. Sem filtros → backend usa default country='AR'.
+   * Workers de outros países devem passar country explicitamente.
    */
-  async getPublicJobs(): Promise<PublicJobListing[]> {
-    return this.request<PublicJobListing[]>('/api/public/v1/jobs');
+  async getPublicJobs(filters?: PublicJobsFilters): Promise<PublicJobListing[]> {
+    const path = filters ? `/api/public/v1/jobs?${buildQueryString(filters)}` : '/api/public/v1/jobs';
+    return this.request<PublicJobListing[]>(path);
   }
+}
+
+function buildQueryString(filters: PublicJobsFilters): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value));
+    }
+  }
+  return params.toString();
 }
 
 export class VacancyNotFoundError extends Error {
