@@ -305,9 +305,11 @@ app.use('/api', createWorkerEncuadreRoutes(encuadreController, authMiddleware));
 
 // ========== Admin Workers ==========
 const staffOnly = authMiddleware.requireStaff();
+const staffOrApiKey = authMiddleware.requireStaffOrApiKey();
 const adminOnly = authMiddleware.requireAdmin();
 app.get('/api/admin/workers/stats', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.getWorkerDateStats(req, res));
-app.get('/api/admin/workers/by-phone', staffOnly, (req: Request, res: Response) => adminWorkersController.getWorkerByPhone(req, res));
+// by-phone aceita API key (consumido pelo triage-service pra resolver worker do contato)
+app.get('/api/admin/workers/by-phone', staffOrApiKey, (req: Request, res: Response) => adminWorkersController.getWorkerByPhone(req, res));
 app.get('/api/admin/workers/case-options', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.listCaseOptions(req, res));
 app.post('/api/admin/workers/sync-talentum', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.syncTalentumWorkers(req, res));
 // export MUST be registered before /:id to avoid param capture
