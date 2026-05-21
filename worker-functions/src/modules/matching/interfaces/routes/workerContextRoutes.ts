@@ -4,6 +4,13 @@ import { WorkerContextController } from '../controllers/WorkerContextController'
 import { AuthMiddleware } from '@modules/identity';
 
 /**
+ * @deprecated Rotas legadas para o triage-service. Substituídas pelo MCP server
+ * (montado em /mcp/v1 quando `MCP_ENABLED=true`). Mantidas enquanto o triage
+ * tiver `USE_MCP_GATEWAY=false` (default). Remoção física: ver
+ * docs/SPRINT_MCP_INTERNAL_SERVER.md §4.x — PR 8 do sprint.
+ */
+
+/**
  * Rate limit análogo ao workerLookupRateLimit de index.ts: 5 req/min.
  * Ingest de documentos é operação cara — limite conservador.
  *

@@ -289,29 +289,35 @@ Pra cada tool call:
 | 4 | MCP server stateless + capabilities de read | ✅ | 2 | [#27](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/27) |
 | 5 | Deploy MCP em Cloud Run separado (terraform + workflows) | ✅ | 1.5 | [#28](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/28) |
 | 6 | Capabilities de write (`profile.update` Zod whitelist + `documents.upload`) | ✅ | 2 | [#29](https://github.com/gabrielgstein-dev/enlite-monorepo/pull/29) |
-| 7 | Triage-service migra de HTTP pra MCP client | ⛔ **pendente** | 1.5 | — |
-| 8 | Cleanup HTTP antigo no worker-functions | ⛔ **pendente** | 0.5 | — |
+| 7 | Triage-service migra de HTTP pra MCP client | ✅ | 1.5 | [enlite-health/triage-service#1](https://github.com/enlite-health/triage-service/pull/1) |
+| 8 | Cleanup HTTP antigo no worker-functions — **fase 1 (deprecation)** | ✅ | 0.5 | TBD |
+| 8b | Cleanup HTTP — **fase 2 (delete físico)** | ⏳ aguardando PR 7 estável em prod ≥ 7d | 0.5 | — |
 
-**Total entregue:** PRs 1-6 (~12 dias dev). PRs 7-8 ficam pendentes.
+**Total entregue:** PRs 1-8a (todos os escopos). PR 8b condicionado a estabilização em prod.
 
-### 4.x PRs 7 e 8 — pendentes (bloqueio temporário)
+### 4.x Decisão arquitetural — triage-service em repo separado
 
-**Motivo do bloqueio:** O `triage-service/` está atualmente untracked (não commitado em git) no worktree de trabalho do user (`/Users/gabrielstein-dev/projects/enlite/infra/`). Pra fazer a migração do canal HTTP→MCP no triage, o repositório do triage precisa estar em git — ou o user commita primeiro nesse worktree, ou move pro worktree do MCP, ou define onde o triage-service vive como sub-repo/módulo.
+Durante a execução do PR 7, ficou claro que o `triage-service/` (microservice NestJS independente) merece **repo próprio** em vez de viver dentro do monorepo. Razões:
+- Stack diferente (NestJS vs Express direto do worker-functions)
+- Ciclo de vida e deploy independentes
+- Boundary claro entre serviços
+- Onboarding mais simples pra novos devs no domínio de triagem
 
-**Pré-requisitos pra desbloquear:**
-1. Commitar o `triage-service/` em alguma branch do monorepo (ou em repo separado, se decidido)
-2. Decidir se `triage-service/` vive no monorepo (atual) ou vira repo separado
+**Repo:** [github.com/enlite-health/triage-service](https://github.com/enlite-health/triage-service)
 
-**Escopo do PR 7 (quando desbloquear):**
-- Criar `triage-service/src/modules/worker-context/infrastructure/McpEnliteGateway.ts` usando `@modelcontextprotocol/sdk` client
-- Substituir `HttpEnliteGateway` por `McpEnliteGateway` via feature flag `USE_MCP_GATEWAY=true`
-- Coexistência durante migração
-- Testes integration contra o MCP server em staging
+### 4.y PR 8 em duas fases
 
-**Escopo do PR 8 (depende do PR 7 estável em prod ≥ 7 dias):**
-- Remover `HttpEnliteGateway`
-- Remover endpoints HTTP `/api/admin/workers/:id/{current-interview,available-vacancies,documents/ingest-from-url}` do worker-functions (após grep universal confirmar zero outros consumidores)
-- Remover `ENLITE_API_KEY` do triage env
+**Fase 1 (✅ neste PR):** Deprecation markers (`@deprecated` JSDoc) no `WorkerContextController` e em `workerContextRoutes.ts` apontando que os 3 endpoints HTTP serão removidos quando o triage migrar 100% pro canal MCP. Código continua funcionando — apenas sinaliza intenção de remoção.
+
+**Fase 2 (futuro PR, condicionado):** Remoção física dos endpoints HTTP + use cases relacionados. Critérios pra disparar:
+1. `triage-service` rodar com `USE_MCP_GATEWAY=true` em produção ≥ 7 dias sem incidentes
+2. `grep -r '/api/admin/workers/.*/(current-interview|available-vacancies|documents/ingest-from-url)' enlite-frontend/ n8n-workflows/ worker-functions/scripts/` retornar zero referências
+3. Confirmar via Cloud Logging que os endpoints HTTP tiveram zero hits nos últimos 7 dias
+
+Quando o critério for atingido, abrir PR removendo:
+- `WorkerContextController`, `workerContextRoutes`, montagem no `index.ts`
+- Use cases que ficarem órfãos (verificar dependentes antes — alguns podem ser usados internamente)
+- `ENLITE_API_KEYS` do triage env (token vira só via MCP secret manager principal)
 
 ### 4.1 PR 1 — Escopo detalhado (em implementação)
 

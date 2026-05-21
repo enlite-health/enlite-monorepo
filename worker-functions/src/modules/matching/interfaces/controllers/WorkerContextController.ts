@@ -19,6 +19,15 @@ const IngestBodySchema = z.object({
  *   POST /workers/:id/documents/ingest-from-url
  *
  * Responsabilidade exclusiva: parse/validate + delegar ao use case.
+ *
+ * @deprecated Esses endpoints serão removidos quando o triage-service migrar
+ * 100% pro canal MCP (sprint MCP Internal Server, PR 7+).
+ * Mantidos enquanto a feature flag `USE_MCP_GATEWAY` no triage-service
+ * estiver em `false` (default atual). Remover fisicamente após:
+ *   1. triage-service rodar com `USE_MCP_GATEWAY=true` em produção ≥ 7 dias
+ *   2. grep universal em `enlite-frontend/`, `n8n-workflows/`, scripts e
+ *      qualquer outro consumidor confirmar zero referências aos paths.
+ * Detalhes em docs/SPRINT_MCP_INTERNAL_SERVER.md §4.x.
  */
 export class WorkerContextController {
   private readonly getCurrentInterview = new GetCurrentInterviewUseCase();

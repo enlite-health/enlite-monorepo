@@ -10,9 +10,31 @@ A **Enlite** é uma plataforma de saúde que gerencia o ciclo de vida completo d
 enlite-monorepo/
   enlite-frontend/   → Painel administrativo da Enlite (React + Vite + TypeScript + Tailwind)
   worker-functions/  → Backend de recrutamento e operação (Node.js + Express + TypeScript + PostgreSQL + Firebase)
+  terraform/         → IaC (apenas stg — prd ainda manual via gcloud)
+  n8n-workflows/     → Workflows do n8n (chatwoot triage etc.)
+  docs/              → Sprints, roadmaps, runbooks, FOLLOWUPS (TDs)
 ```
 
 Cada projeto tem seu próprio `CLAUDE.md` com regras específicas. **Sempre leia o CLAUDE.md do projeto-alvo antes de modificar qualquer código.**
+
+### Serviços em repos separados (FORA deste monorepo)
+
+A Enlite adota estratégia **multi-repo** pra microservices com ciclo de vida/deploy independentes. Quando precisar mexer em algum dos serviços abaixo, **NÃO procure aqui** — vá pro repo correto:
+
+| Serviço | Path local | Repo GitHub | Stack | O que é |
+|---|---|---|---|---|
+| **triage-service** | `/Users/gabrielstein-dev/projects/enlite/triage-service/` | `enlite-health/triage-service` | NestJS 11 + Vertex AI (Gemini) + Chatwoot + Twilio | Microservice de triagem de mensagens WhatsApp. Consome `worker-functions` via MCP (preferencial) ou HTTP (legado). |
+
+**Integração `triage-service` ↔ `worker-functions`:**
+- Canal preferencial: **MCP** (Model Context Protocol) em `/mcp/v1` no service `worker-functions-mcp` (Cloud Run, ingress=internal)
+- Canal legado: HTTP em `/api/admin/workers/:id/{current-interview,available-vacancies,documents/ingest-from-url}` (marcado `@deprecated`, será removido após PR 7 estável em prod ≥7 dias — ver `docs/FOLLOWUPS.md` TD-033)
+- Feature flag no triage: `USE_MCP_GATEWAY=true` ativa o canal MCP
+
+Detalhes completos em `docs/SPRINT_MCP_INTERNAL_SERVER.md`.
+
+### Política multi-repo
+
+Decisão arquitetural: cada novo microservice nasce em repo próprio na org `enlite-health`. Não estender o monorepo com novos serviços. Detalhes em `docs/FOLLOWUPS.md` TD-034.
 
 ---
 

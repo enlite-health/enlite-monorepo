@@ -892,3 +892,73 @@ Adicionar entrada em `.env.example` no PR 2 (que já vai tocar configuração de
 # Exemplo: triage-service:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ENLITE_API_KEYS=
 ```
+
+---
+
+### TD-033 — Cleanup físico dos endpoints HTTP do worker-context (após PR 7 estável em prod)
+
+- **Status:** aberto (pendente de critério)
+- **Descoberto em:** 2026-05-20, durante PR 8 do Sprint MCP Internal Server
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — endpoints continuam funcionando via deprecation marker
+
+**O que é:**
+
+PR 8 do sprint MCP foi feito em 2 fases:
+- **Fase 1 (✅ entregue):** `@deprecated` JSDoc em `WorkerContextController` + `workerContextRoutes.ts`
+- **Fase 2 (este TD):** Remoção física dos endpoints HTTP + `WorkerContextController` + `workerContextRoutes.ts` + montagem no `index.ts`
+
+**Critérios pra disparar a Fase 2:**
+
+1. `triage-service` (repo separado em `enlite-health/triage-service`) com `USE_MCP_GATEWAY=true` em produção há ≥ 7 dias sem incidentes
+2. `grep -rE '/api/admin/workers/.+/(current-interview|available-vacancies|documents/ingest-from-url)' enlite-frontend/ n8n-workflows/ worker-functions/scripts/` retorna zero referências
+3. Cloud Logging confirma zero hits nesses endpoints nos últimos 7 dias (filter por path)
+
+**Quando disparar, remover:**
+
+- `src/modules/matching/interfaces/controllers/WorkerContextController.ts`
+- `src/modules/matching/interfaces/routes/workerContextRoutes.ts`
+- Linha de montagem em `src/index.ts`
+- Use cases que ficarem órfãos: rodar grep pra confirmar (alguns podem ter outros consumidores internos)
+- Tests de E2E `tests/e2e/worker-context-api.test.ts`
+
+**Não remover ainda:**
+- `ApiKeyAuthStrategy` (continua útil pra outros service principals futuros)
+- `requireStaffOrApiKey` middleware (continua útil)
+- Migration 180 (timezone) — irreversível e útil pra MCP também
+
+---
+
+### TD-034 — Estratégia de repos por serviço (multi-repo)
+
+- **Status:** aberto, decisão de arquitetura
+- **Descoberto em:** 2026-05-20, durante PR 7 do Sprint MCP Internal Server
+- **Dono provável:** Gabriel + futura empresa
+- **Bloqueador?** Não — convive com monorepo atual
+
+**O que é:**
+
+O `triage-service` foi extraído pra repo próprio em `enlite-health/triage-service` durante o sprint MCP. Decisão alinhada com o user: "vamos fazer um repo pra cada um futuramente".
+
+**Serviços que continuam no monorepo `enlite-monorepo`:**
+- `worker-functions/` (backend principal)
+- `enlite-frontend/` (admin)
+- `terraform/` (IaC)
+- `n8n-workflows/` (workflows)
+- `docs/`
+
+**Próximos candidatos a extração (quando fizer sentido):**
+- `worker-functions` (se ficar grande demais — improvável a curto prazo)
+- `enlite-frontend` (deploy independente do backend já justifica)
+- Novos microservices (e.g. notifications, analytics) — nascem em repo próprio
+
+**Critérios pra extrair:**
+1. Serviço tem stack/runtime diferente do resto
+2. Ciclo de vida e deploy independentes
+3. Equipes diferentes (futuro)
+4. Boundary de domínio claro
+
+**Padrão de organização:**
+- Org: `enlite-health` no GitHub (criada 2026-05-20)
+- Naming: `<service-name>` sem prefixo `enlite-` (org já dá contexto)
+- Deploy: cada repo tem seus próprios workflows no `.github/workflows/`
