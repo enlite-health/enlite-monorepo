@@ -5,6 +5,7 @@ import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { countryToTimezone } from '@shared/locale/CountryTimezone';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -46,6 +47,10 @@ export class WorkerRepository implements IWorkerRepository {
                   updated_at as "updatedAt"
       `;
 
+      const country = data.country || 'AR';
+      // TD-028: derivar timezone do country quando ausente (default 'UTC' antigo
+      // resultava em 100% dos workers com timezone errado pra AR/BR).
+      const timezone = data.timezone || countryToTimezone(country);
       const values = [
         data.authUid,
         data.email,
@@ -54,8 +59,8 @@ export class WorkerRepository implements IWorkerRepository {
         consentAt,
         consentAt,
         consentAt,
-        data.country || 'AR',
-        data.timezone || 'UTC',
+        country,
+        timezone,
       ];
       const result = await this.pool.query(query, values);
       const row = result.rows[0];
