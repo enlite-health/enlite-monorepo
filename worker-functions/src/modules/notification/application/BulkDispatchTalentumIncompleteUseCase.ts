@@ -118,13 +118,20 @@ export class BulkDispatchTalentumIncompleteUseCase {
           continue;
         }
 
-        // 2. Gerar token de nome e enviar WhatsApp
+        // 2. Gerar token de nome, resolver pro valor plaintext e enviar WhatsApp.
+        // O TokenService.generate registra o token em messaging_variable_tokens
+        // pra auditoria; resolveVariables troca o token pelo nome decifrado (KMS)
+        // antes de mandar ao Twilio. Pular o resolve fazia o worker receber
+        // literal 'Hola tk_xxx' em vez do nome.
         const workerNameToken = await tokenService.generate(row.worker_id, 'worker_name');
+        const resolvedVars = await tokenService.resolveVariables({
+          worker_name: workerNameToken,
+        });
 
         const sendResult = await this.messaging.sendWhatsApp({
           to: row.phone,
           templateSlug: TEMPLATE_SLUG,
-          variables: { worker_name: workerNameToken },
+          variables: resolvedVars,
         });
 
         const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';

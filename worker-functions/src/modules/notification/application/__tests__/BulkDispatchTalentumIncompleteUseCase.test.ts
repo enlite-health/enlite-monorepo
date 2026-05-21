@@ -32,10 +32,18 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-// Mock do TokenService para não precisar de KMS/banco real
+// Mock do TokenService para não precisar de KMS/banco real.
+// resolveVariables simula a tradução tk_xxx → valor plaintext.
 jest.mock('../../infrastructure/TokenService', () => ({
   TokenService: jest.fn().mockImplementation(() => ({
     generate: jest.fn().mockResolvedValue('tk_abc123def456'),
+    resolveVariables: jest.fn().mockImplementation(async (vars: Record<string, string>) => {
+      const resolved: Record<string, string> = {};
+      for (const [k, v] of Object.entries(vars)) {
+        resolved[k] = v?.startsWith('tk_') ? 'João Silva' : v;
+      }
+      return resolved;
+    }),
   })),
 }));
 
@@ -124,7 +132,7 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
         to: worker.phone,
         templateSlug: 'talentum_incomplete_reminder',
-        variables: { worker_name: 'tk_abc123def456' },
+        variables: { worker_name: 'João Silva' },
       });
 
       const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;

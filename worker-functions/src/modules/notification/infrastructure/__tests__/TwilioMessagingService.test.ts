@@ -444,4 +444,76 @@ describe('TwilioMessagingService', () => {
       });
     });
   });
+
+  // ─── Guard de tokens PII não-resolvidos ───────────────────────
+  // Regressão de 2026-05-21: 167 workers receberam "Hola tk_<hash>" em vez do
+  // nome porque o caller esqueceu de chamar TokenService.resolveVariables.
+  describe('guardUnresolvedTokens', () => {
+    it('sendWhatsApp REJEITA envio quando variables contém tk_ não resolvido', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491176614743',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'tk_1becdd3bd1fea388' },
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toMatch(/Unresolved PII tokens/);
+      expect(result.error).toContain('worker_name=tk_1becdd3bd1fea388');
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('sendWhatsApp ACEITA envio quando variables tem só valores plaintext', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+      mockCreate.mockResolvedValue({ sid: 'SMok', status: 'queued' });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491176614743',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'João Silva' },
+      });
+
+      expect(result.isSuccess).toBe(true);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('sendWithContentSid REJEITA envio quando contentVariables contém tk_', async () => {
+      const result = await service.sendWithContentSid(
+        '+5491176614743',
+        'HXabc',
+        { '1': 'tk_abc123def456' },
+      );
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toMatch(/Unresolved PII tokens/);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('não bloqueia valores que apenas começam com letras parecidas (ex: "tkachenko")', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+      mockCreate.mockResolvedValue({ sid: 'SMok', status: 'queued' });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491176614743',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'Tkachenko' },
+      });
+
+      expect(result.isSuccess).toBe(true);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+  });
 });
