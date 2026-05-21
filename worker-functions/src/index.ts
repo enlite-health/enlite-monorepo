@@ -45,6 +45,8 @@ import { createMessagingRoutes } from '@modules/notification/interfaces/routes/m
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
 import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
+import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
+import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
@@ -149,6 +151,7 @@ const vacancyMeetLinksController = new VacancyMeetLinksController();
 const vacancySocialLinksController = new VacancySocialLinksController();
 const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
+const workerContextController = new WorkerContextController();
 
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
@@ -302,6 +305,9 @@ app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsContr
 
 // ========== Admin Patients ==========
 app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
+
+// ========== Worker Context (triage-service / MCP internal) ==========
+app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware));
 
 // ========== Admin Vacancies (extracted router) ==========
 app.use('/api/admin', createAdminVacanciesRoutes(
