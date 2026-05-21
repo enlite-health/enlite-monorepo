@@ -79,5 +79,11 @@ export function generatePhoneCandidates(phone: string): string[] {
   }
 
   // Filtra candidatos muito curtos (ruído)
-  return Array.from(candidates).filter(c => c.length >= 7);
+  const digitVariants = Array.from(candidates).filter(c => c.length >= 7);
+
+  // Para cada variante dígito-only, também emite versão com prefixo '+'.
+  // Os dados podem estar salvos no banco em qualquer um dos dois formatos
+  // (ex.: contatos vindos de WhatsApp/Twilio costumam ter '+', mas Talentum
+  // sync salva sem). O ANY($1) então cobre os dois universos.
+  return digitVariants.concat(digitVariants.map(c => '+' + c));
 }
