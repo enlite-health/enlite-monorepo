@@ -821,28 +821,21 @@ Emitir `WorkerDocumentUploadedEvent { workerId, documentType, filePath, uploaded
 
 ---
 
-### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos
+### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos — resolvido 2026-05-20
 
-- **Status:** aberto
+- **Status:** resolvido
 - **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (Architect parecer)
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não — PR 1 evita usar `workers.timezone` e usa `job_postings.timezone`
+- **Resolvido em:** 2026-05-20, PR `chore/td-028-workers-timezone-backfill`
 
-**O que é:**
+**Como foi resolvido:**
 
-A coluna `workers.timezone VARCHAR(50)` foi criada em migration 003 com `DEFAULT 'UTC'`. Nenhum fluxo posterior populou o valor real — todos os ATs do banco têm `'UTC'` (semanticamente errado pra ATs operando em AR/BR).
+1. Migration `181_backfill_workers_timezone_by_country.sql` faz backfill dos workers existentes via `workers.country` (AR → America/Argentina/Buenos_Aires, BR → America/Sao_Paulo, outros → UTC). Idempotente (`WHERE timezone = 'UTC'`). `worker_availability.timezone` também é atualizado pra workers cujo timezone mudou.
 
-**Impacto:**
+2. `WorkerRepository.create()` agora deriva `timezone` de `country` via `countryToTimezone()` (util do PR 1 do sprint MCP) quando o caller não passa explicitamente. Antes: `data.timezone || 'UTC'` → agora: `data.timezone || countryToTimezone(country)`.
 
-- Qualquer use case futuro que tente derivar fuso horário do AT via `workers.timezone` retornará UTC errado
-- PR 1 contornou usando `job_postings.timezone` (timezone da vaga, não do worker), o que é semanticamente correto pra "current interview"
-- Cenários futuros (ex: notificação proativa "bom dia AT" no fuso local do AT) vão precisar do valor real
+3. 5 testes unit em `WorkerRepository.create.test.ts` cobrem todos os paths: AR sem timezone → BA, BR → SP, country não mapeado → UTC fallback, timezone explícito tem precedência, country ausente → default AR.
 
-**Proposta de solução:**
-
-1. Backfill: derivar de `workers.country` via `countryToTimezone()` (util criada em PR 1, em `src/shared/locale/CountryTimezone.ts`)
-2. Atualizar signup do worker pra capturar/derivar timezone explicitamente
-3. Considerar adicionar coluna `country` consistente com `job_postings.country` se ainda não houver
+`worker_availability.timezone` continua sendo seteado a partir de `workers.timezone` no flow normal — agora com valor correto.
 
 ---
 
