@@ -37,6 +37,7 @@ import { AdminWorkersAuxController } from './modules/worker/interfaces/controlle
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
+import { ChatwootClient } from '@modules/notification/infrastructure/ChatwootClient';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
@@ -155,8 +156,23 @@ const workerContextController = new WorkerContextController();
 
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
-const messagingService = new TwilioMessagingService(templateRepo);
+const chatwootClient = buildChatwootClient();
+const messagingService = new TwilioMessagingService(templateRepo, chatwootClient);
 const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection.getInstance().getPool());
+
+function buildChatwootClient(): ChatwootClient | null {
+  if (process.env.CHATWOOT_MIRROR_ENABLED !== 'true') return null;
+  const baseUrl = process.env.CHATWOOT_URL;
+  const apiToken = process.env.CHATWOOT_API_TOKEN;
+  const accountId = Number(process.env.CHATWOOT_ACCOUNT_ID || '1');
+  const inboxId = Number(process.env.CHATWOOT_TWILIO_INBOX_ID || '1');
+  if (!baseUrl || !apiToken) {
+    console.warn('[Chatwoot] MIRROR_ENABLED=true mas CHATWOOT_URL/CHATWOOT_API_TOKEN ausentes — espelho desabilitado.');
+    return null;
+  }
+  console.log(`[Chatwoot] Espelho de outbound habilitado (account=${accountId}, inbox=${inboxId})`);
+  return new ChatwootClient({ baseUrl, apiToken, accountId, inboxId });
+}
 
 // ========== Public Routes ==========
 app.get('/health', (_req: Request, res: Response) => {

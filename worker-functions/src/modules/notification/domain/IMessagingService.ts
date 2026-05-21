@@ -7,6 +7,10 @@ export interface SendWhatsAppOptions {
   templateSlug: string;
   /** Variáveis para interpolação — ex: { name: 'Maria' } */
   variables?: Record<string, string>;
+  /** Nome do contato — usado se o Chatwoot precisar criar o contato no espelho. */
+  contactName?: string;
+  /** Email do contato — usado se o Chatwoot precisar criar o contato no espelho. */
+  contactEmail?: string;
 }
 
 export interface MessageSentResult {

@@ -8,7 +8,7 @@
  */
 
 // ─── Domain ──────────────────────────────────────────────────────────────────
-export type { MessageTemplate, UpsertMessageTemplateDTO } from './domain/MessageTemplate';
+export type { MessageTemplate, TemplateButton, UpsertMessageTemplateDTO } from './domain/MessageTemplate';
 export type {
   InterviewSlot,
   InterviewSlotStatus,
@@ -29,6 +29,8 @@ export type {
 export { MessageTemplateRepository } from './infrastructure/MessageTemplateRepository';
 export { InterviewSlotRepository } from './infrastructure/InterviewSlotRepository';
 export { TwilioMessagingService } from './infrastructure/TwilioMessagingService';
+export { ChatwootClient } from './infrastructure/ChatwootClient';
+export type { ChatwootClientConfig, MirrorOutgoingOptions } from './infrastructure/ChatwootClient';
 export { OutboxProcessor } from './infrastructure/OutboxProcessor';
 export { BulkDispatchScheduler } from './infrastructure/BulkDispatchScheduler';
 export { ReminderScheduler } from './infrastructure/ReminderScheduler';

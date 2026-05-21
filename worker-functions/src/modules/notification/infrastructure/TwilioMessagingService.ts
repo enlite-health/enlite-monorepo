@@ -1,7 +1,9 @@
 import twilio from 'twilio';
 import { IMessagingService, MessageSentResult, SendWhatsAppOptions } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
+import { MessageTemplate, TemplateButton } from '../domain/MessageTemplate';
 import { MessageTemplateRepository } from './MessageTemplateRepository';
+import { ChatwootClient } from './ChatwootClient';
 
 // Único arquivo que importa 'twilio'. Para migrar para Cloud Function,
 // apenas este arquivo é substituído — nada mais muda.
@@ -10,9 +12,15 @@ export class TwilioMessagingService implements IMessagingService {
   private fromNumber: string;
   private isConfigured: boolean;
   private templateRepo: MessageTemplateRepository;
+  private chatwootClient: ChatwootClient | null;
+  private chatwootTestNumbers: Set<string>;
 
-  constructor(templateRepo: MessageTemplateRepository) {
+  constructor(
+    templateRepo: MessageTemplateRepository,
+    chatwootClient: ChatwootClient | null = null,
+  ) {
     this.templateRepo = templateRepo;
+    this.chatwootClient = chatwootClient;
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -26,6 +34,13 @@ export class TwilioMessagingService implements IMessagingService {
       this.client = null;
       console.warn('[Twilio] Service not configured - messaging features will be disabled');
     }
+
+    // Whitelist opcional de números pra rollout gradual do espelho no Chatwoot.
+    // CSV de E.164. Quando vazia, espelha pra todos (desde que client esteja injetado).
+    const raw = process.env.CHATWOOT_MIRROR_TEST_NUMBERS || '';
+    this.chatwootTestNumbers = new Set(
+      raw.split(',').map(s => s.trim()).filter(Boolean),
+    );
   }
 
   async sendWhatsApp(options: SendWhatsAppOptions): Promise<Result<MessageSentResult>> {
@@ -74,11 +89,23 @@ export class TwilioMessagingService implements IMessagingService {
         });
       }
 
-      return Result.ok<MessageSentResult>({
+      const result: MessageSentResult = {
         externalId: message.sid,
         status: message.status,
         to,
+      };
+
+      // Espelho no Chatwoot — não bloqueia o envio. Erro só loga.
+      await this.mirrorToChatwoot({
+        phone: to,
+        template,
+        variables: options.variables ?? {},
+        twilioSid: message.sid,
+        contactName: options.contactName,
+        contactEmail: options.contactEmail,
       });
+
+      return Result.ok<MessageSentResult>(result);
     } catch (error: any) {
       return Result.fail<MessageSentResult>(`Twilio error: ${error.message}`);
     }
@@ -87,6 +114,10 @@ export class TwilioMessagingService implements IMessagingService {
   /**
    * Envia mensagem usando Twilio Content API diretamente (sem template lookup).
    * Para callers que já possuem o contentSid e as variáveis em formato posicional.
+   *
+   * Nota: este método NÃO espelha no Chatwoot porque não há body de template
+   * disponível pra renderizar texto humano. Se for usado em produção, deve ser
+   * estendido pra aceitar um body já interpolado.
    */
   async sendWithContentSid(
     to: string,
@@ -121,6 +152,58 @@ export class TwilioMessagingService implements IMessagingService {
     } catch (error: any) {
       return Result.fail<MessageSentResult>(`Twilio error: ${error.message}`);
     }
+  }
+
+  /**
+   * Posta uma cópia da mensagem outgoing no Chatwoot. Idempotente via
+   * source_id=twilio_sid. Erros são logados mas não falham o envio Twilio.
+   */
+  private async mirrorToChatwoot(params: {
+    phone: string;
+    template: MessageTemplate;
+    variables: Record<string, string>;
+    twilioSid: string;
+    contactName?: string;
+    contactEmail?: string;
+  }): Promise<void> {
+    if (!this.chatwootClient) return;
+
+    if (this.chatwootTestNumbers.size > 0 && !this.chatwootTestNumbers.has(params.phone)) {
+      return; // fora do allowlist durante rollout gradual
+    }
+
+    try {
+      const content = this.renderForChatwoot(params.template, params.variables);
+      await this.chatwootClient.mirrorOutgoingMessage({
+        phone: params.phone,
+        name: params.contactName,
+        email: params.contactEmail,
+        content,
+        twilioSid: params.twilioSid,
+      });
+    } catch (err: any) {
+      console.warn(
+        `[Chatwoot mirror] failed to mirror sid=${params.twilioSid} phone=${params.phone}: ${err?.message || err}`,
+      );
+    }
+  }
+
+  /**
+   * Renderiza a string que vai aparecer pra agente humana no Chatwoot:
+   * - body interpolado (sem placeholders {{x}})
+   * - se o template tem buttons, anexa "[Opciones: A | B]" no fim, pra que a
+   *   agente entenda a qual pergunta o worker respondeu.
+   */
+  private renderForChatwoot(
+    template: MessageTemplate,
+    variables: Record<string, string>,
+  ): string {
+    const body = this.interpolate(template.body, variables);
+    const buttons = template.buttons;
+    if (!buttons || buttons.length === 0) return body;
+
+    const labels = buttons.map((b: TemplateButton) => b.label).join(' | ');
+    return `${body}\n\n_Opciones: ${labels}_`;
   }
 
   /** Substitui {{variavel}} pelo valor correspondente; mantém o placeholder se não fornecido. */

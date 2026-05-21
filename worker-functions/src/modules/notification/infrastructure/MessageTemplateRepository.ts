@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { MessageTemplate, UpsertMessageTemplateDTO } from '../domain/MessageTemplate';
+import { MessageTemplate, TemplateButton, UpsertMessageTemplateDTO } from '../domain/MessageTemplate';
 
 export class MessageTemplateRepository {
   private pool: Pool;
@@ -51,14 +51,15 @@ export class MessageTemplateRepository {
   // ─────────────────────────────────────────────────────────────────
   async upsert(dto: UpsertMessageTemplateDTO): Promise<{ entity: MessageTemplate; created: boolean }> {
     const result = await this.pool.query<Record<string, any>>(
-      `INSERT INTO message_templates (slug, name, body, category, is_active, content_sid)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO message_templates (slug, name, body, category, is_active, content_sid, buttons)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (slug) DO UPDATE SET
          name        = EXCLUDED.name,
          body        = EXCLUDED.body,
          category    = EXCLUDED.category,
          is_active   = EXCLUDED.is_active,
          content_sid = EXCLUDED.content_sid,
+         buttons     = EXCLUDED.buttons,
          updated_at  = NOW()
        RETURNING *, (xmax = 0) AS inserted`,
       [
@@ -68,6 +69,7 @@ export class MessageTemplateRepository {
         dto.category ?? null,
         dto.isActive ?? true,
         dto.contentSid ?? null,
+        dto.buttons ? JSON.stringify(dto.buttons) : null,
       ],
     );
 
@@ -75,6 +77,22 @@ export class MessageTemplateRepository {
       entity: this.mapRow(result.rows[0]),
       created: result.rows[0].inserted,
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // updateButtons — atualiza apenas a coluna buttons.
+  // Usado pelo script de população (scripts/populate-template-buttons.ts).
+  // Retorna true se o template existia, false se não encontrado.
+  // ─────────────────────────────────────────────────────────────────
+  async updateButtons(slug: string, buttons: TemplateButton[] | null): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE message_templates
+          SET buttons = $2,
+              updated_at = NOW()
+        WHERE slug = $1`,
+      [slug, buttons ? JSON.stringify(buttons) : null],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -98,6 +116,7 @@ export class MessageTemplateRepository {
       category: row.category,
       isActive: row.is_active,
       contentSid: row.content_sid ?? null,
+      buttons: row.buttons ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
