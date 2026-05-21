@@ -53,6 +53,9 @@ export class TwilioMessagingService implements IMessagingService {
       return Result.fail<MessageSentResult>(`Invalid phone number: ${options.to}`);
     }
 
+    const guard = this.guardUnresolvedTokens(options.variables);
+    if (guard) return Result.fail<MessageSentResult>(guard);
+
     const template = await this.templateRepo.findBySlug(options.templateSlug);
     if (!template) {
       return Result.fail<MessageSentResult>(`Template '${options.templateSlug}' não encontrado ou inativo`);
@@ -133,6 +136,9 @@ export class TwilioMessagingService implements IMessagingService {
       return Result.fail<MessageSentResult>(`Invalid phone number: ${to}`);
     }
 
+    const guard = this.guardUnresolvedTokens(contentVariables);
+    if (guard) return Result.fail<MessageSentResult>(guard);
+
     try {
       const statusCallback = process.env.TWILIO_STATUS_CALLBACK_URL || undefined;
 
@@ -204,6 +210,33 @@ export class TwilioMessagingService implements IMessagingService {
 
     const labels = buttons.map((b: TemplateButton) => b.label).join(' | ');
     return `${body}\n\n_Opciones: ${labels}_`;
+  }
+
+  /**
+   * Guard de segurança: rejeita envios cujas variáveis contenham tokens PII
+   * não resolvidos (tk_<hex>). Tokens são gerados pelo TokenService pra
+   * referenciar PII criptografado no outbox; resolveVariables() troca cada
+   * token pelo plaintext via KMS antes do envio. Se um caller esquecer o
+   * resolve, o worker receberia algo como "Hola tk_1becdd3bd1fea388" no
+   * WhatsApp — bug histórico (167 envios afetados em 2026-05-21).
+   * Retorna mensagem de erro pra Result.fail, ou null se tudo ok.
+   */
+  private guardUnresolvedTokens(
+    vars: Record<string, string> | undefined,
+  ): string | null {
+    if (!vars) return null;
+    const offenders: string[] = [];
+    for (const [key, value] of Object.entries(vars)) {
+      if (typeof value === 'string' && value.startsWith('tk_')) {
+        offenders.push(`${key}=${value}`);
+      }
+    }
+    if (offenders.length === 0) return null;
+    const msg =
+      `Unresolved PII tokens in message variables (${offenders.join(', ')}). ` +
+      `Caller must call TokenService.resolveVariables() before sendWhatsApp.`;
+    console.error(`[Twilio] BLOCKED — ${msg}`);
+    return msg;
   }
 
   /** Substitui {{variavel}} pelo valor correspondente; mantém o placeholder se não fornecido. */
