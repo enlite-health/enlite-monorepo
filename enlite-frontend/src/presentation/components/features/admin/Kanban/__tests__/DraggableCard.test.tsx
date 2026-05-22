@@ -30,7 +30,7 @@ describe('DraggableCard', () => {
 
     render(<DraggableCard id="enc-1"><span>Card</span></DraggableCard>);
 
-    const card = screen.getByTestId('kanban-card-enc-1');
+    const card = screen.getByTestId('kanban-draggable-enc-1');
     expect(card.style.transform).toBe('');
   });
 
@@ -39,7 +39,7 @@ describe('DraggableCard', () => {
 
     render(<DraggableCard id="enc-1"><span>Card</span></DraggableCard>);
 
-    const card = screen.getByTestId('kanban-card-enc-1');
+    const card = screen.getByTestId('kanban-draggable-enc-1');
     expect(card.className).toContain('opacity-30');
   });
 
@@ -48,7 +48,7 @@ describe('DraggableCard', () => {
 
     render(<DraggableCard id="enc-1"><span>Card</span></DraggableCard>);
 
-    const card = screen.getByTestId('kanban-card-enc-1');
+    const card = screen.getByTestId('kanban-draggable-enc-1');
     expect(card.className).not.toContain('opacity-30');
   });
 

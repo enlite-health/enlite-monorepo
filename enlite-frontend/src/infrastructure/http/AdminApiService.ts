@@ -34,17 +34,8 @@ export type { PendingAddressReviewItem, ResolveAddressBody };
 export type { AIContentResult };
 export type { VacancyDraftSummary };
 
-interface ApiSuccessResponse<T> {
-  success: true;
-  data: T;
-}
-
-interface ApiErrorResponse {
-  success: false;
-  error: string;
-}
-
-type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
+export { ApiError } from './ApiError';
 
 class AdminApiServiceClass {
   private readonly authService = new FirebaseAuthService();
@@ -74,7 +65,7 @@ class AdminApiServiceClass {
     const json: ApiResponse<T> = await response.json();
 
     if (!json.success) {
-      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+      throw new ApiError(json as ApiErrorResponse, response.status);
     }
     return (json as ApiSuccessResponse<T>).data;
   }

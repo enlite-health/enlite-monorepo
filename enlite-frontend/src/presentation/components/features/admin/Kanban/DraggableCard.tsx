@@ -11,7 +11,7 @@ export function DraggableCard({ id, children }: DraggableCardProps) {
   return (
     <div
       ref={setNodeRef}
-      data-testid={`kanban-card-${id}`}
+      data-testid={`kanban-draggable-${id}`}
       className={isDragging ? 'opacity-30' : ''}
       {...listeners}
       {...attributes}

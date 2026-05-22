@@ -1,4 +1,5 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
+import { ApiError } from '@infrastructure/http/ApiError';
 
 /** Shape returned by GET /api/workers/me */
 export interface WorkerProgressResponse {
@@ -79,6 +80,9 @@ interface ApiSuccessResponse<T> {
 interface ApiErrorResponse {
   success: false;
   error: string;
+  code?: string;
+  reason?: string;
+  workerStatus?: string | null;
 }
 
 type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
@@ -121,7 +125,7 @@ class WorkerApiServiceClass {
     const json: ApiResponse<T> = await response.json();
 
     if (!json.success) {
-      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+      throw new ApiError(json as ApiErrorResponse, response.status);
     }
     return (json as ApiSuccessResponse<T>).data;
   }
