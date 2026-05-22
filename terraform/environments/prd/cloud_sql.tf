@@ -33,10 +33,10 @@ module "sql_enlite_n8n_db_ar" {
 # Volume previsto: ~500 conv/dia × 3 msgs = ~45k embeddings/mês.
 # db-f1-micro aguenta até ~5k conv/dia sem upgrade.
 # Detalhes: triage-service/docs/MEMORY_DESIGN.md
-module "sql_triage_memory_prd" {
+module "sql_triage_memory" {
   source     = "../../modules/cloud-sql"
   project_id = var.project_id
-  name       = "triage-memory-prd"
+  name       = "triage-memory"
   region     = "southamerica-west1"
   zone       = "southamerica-west1-b"
   tier       = "db-f1-micro"
@@ -57,7 +57,7 @@ module "sql_triage_memory_prd" {
 # Database `triage_memory` dentro da instance.
 resource "google_sql_database" "triage_memory_db" {
   project  = var.project_id
-  instance = module.sql_triage_memory_prd.name
+  instance = module.sql_triage_memory.name
   name     = "triage_memory"
 }
 
@@ -70,7 +70,7 @@ resource "random_password" "triage_memory_db_password" {
 
 resource "google_sql_user" "triage_memory_user" {
   project  = var.project_id
-  instance = module.sql_triage_memory_prd.name
+  instance = module.sql_triage_memory.name
   name     = "triage"
   password = random_password.triage_memory_db_password.result
 }
