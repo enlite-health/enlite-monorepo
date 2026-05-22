@@ -92,7 +92,10 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
   const primaryResponsible = patient.responsibles?.find((r) => r.isPrimary) ?? patient.responsibles?.[0] ?? null;
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div
+      className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4"
+      data-testid="patient-identity-card"
+    >
       <div className="flex items-center gap-4 mb-2">
         <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 shrink-0">
           <User className="w-8 h-8" />

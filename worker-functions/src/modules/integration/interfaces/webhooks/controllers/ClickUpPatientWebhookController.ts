@@ -113,19 +113,28 @@ export class ClickUpPatientWebhookController {
       return;
     }
 
-    // ── Layer 4: GET full task from ClickUp ───────────────────────────────────
+    // ── Layer 4: GET full task from ClickUp (or use injected task in test mode) ─
     let task: ClickUpTask;
-    try {
-      task = await this.fetchTask(body.task_id);
-    } catch (err) {
-      functions.logger.error('clickup_webhook.fetch_task_failed', {
-        correlationId,
-        taskId: body.task_id,
-        error:  err instanceof Error ? err.message : String(err),
-      });
-      // Return 200 to avoid ClickUp retry storms; logged as error for investigation.
-      res.status(200).json({ success: false, action: 'fetch_failed' });
-      return;
+
+    // _injectedTask: test-only bypass to avoid real ClickUp API calls in E2E.
+    // Only honoured when NODE_ENV=test; silently ignored in production.
+    const injected = process.env.NODE_ENV === 'test' ? body._injectedTask : undefined;
+    if (injected && typeof injected === 'object') {
+      task = injected as ClickUpTask;
+      functions.logger.info('clickup_webhook.injected_task', { correlationId, taskId: body.task_id });
+    } else {
+      try {
+        task = await this.fetchTask(body.task_id);
+      } catch (err) {
+        functions.logger.error('clickup_webhook.fetch_task_failed', {
+          correlationId,
+          taskId: body.task_id,
+          error:  err instanceof Error ? err.message : String(err),
+        });
+        // Return 200 to avoid ClickUp retry storms; logged as error for investigation.
+        res.status(200).json({ success: false, action: 'fetch_failed' });
+        return;
+      }
     }
 
     // ── Layer 5: confirm fetched task is in patient list ──────────────────────

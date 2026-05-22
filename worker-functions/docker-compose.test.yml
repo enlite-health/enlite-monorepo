@@ -55,6 +55,8 @@ services:
       OPENAPI_PUBLIC: "true"
       # Habilita a rota condicional de webhook ClickUp pro teste de cobertura
       CLICKUP_WEBHOOK_SECRET: "test-secret-clickup-e2e-only"
+      # Token fake para E2E — ClickUpFieldResolver.fromList() usa fallback vazio em NODE_ENV=test
+      CLICKUP_API_TOKEN: "fake-e2e-token-do-not-use-in-prod"
 
 volumes:
   firebase_emulator_data:

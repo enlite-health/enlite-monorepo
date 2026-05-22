@@ -61,11 +61,30 @@ export class ClickUpFieldResolver {
       throw new Error('CLICKUP_API_TOKEN missing (set it in .env or pass via opts.token).');
     }
 
+    // In test mode, if the ClickUp API call fails (e.g. fake token), return an
+    // empty resolver instead of throwing. This allows the webhook route to mount
+    // in E2E test stacks without a real ClickUp token. All dropdown fields will
+    // resolve to null (acceptable — text-only fields still work).
+    const isTestMode = process.env.NODE_ENV === 'test';
+
     const doFetch = opts.fetchImpl ?? fetch;
-    const res = await doFetch(`${CLICKUP_API_BASE}/list/${listId}/field`, {
-      headers: { Authorization: token },
-    });
+    let res: Response;
+    try {
+      res = await doFetch(`${CLICKUP_API_BASE}/list/${listId}/field`, {
+        headers: { Authorization: token },
+      });
+    } catch (err) {
+      if (isTestMode) {
+        console.warn('[ClickUpFieldResolver] API unreachable in test mode — using empty resolver:', err);
+        return new ClickUpFieldResolver({}, {}, {});
+      }
+      throw err;
+    }
     if (!res.ok) {
+      if (isTestMode) {
+        console.warn(`[ClickUpFieldResolver] API returned HTTP ${res.status} in test mode — using empty resolver`);
+        return new ClickUpFieldResolver({}, {}, {});
+      }
       throw new Error(`ClickUp /field API failed: HTTP ${res.status} ${res.statusText}`);
     }
 
