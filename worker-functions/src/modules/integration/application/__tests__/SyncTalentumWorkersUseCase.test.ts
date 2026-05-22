@@ -280,6 +280,8 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })                 // findByEmail → found
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         // linkToCases
         .mockResolvedValueOnce({ rows: [{ id: 'jp-681' }] })              // find job_posting by case_number
         .mockResolvedValueOnce({ rows: [{ id: 'wja-1' }], rowCount: 1 })  // INSERT wja
@@ -289,40 +291,46 @@ describe('SyncTalentumWorkersUseCase', () => {
 
       expect(report.linked).toBe(1);
 
-      // Verify WJA insert — no funnel stage (DB default INITIATED is used)
+      // Verify WJA insert — funnel stage mapped from profile.status (TD-035 fix)
       const wjaCall = mockQuery.mock.calls.find(
         (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
       );
       expect(wjaCall).toBeDefined();
       expect(wjaCall![1]).toContain('w-1');      // worker_id
       expect(wjaCall![1]).toContain('jp-681');   // job_posting_id
-      // Should NOT contain profile status — funnel stage left to DB default
+      // application_funnel_stage deve ser setado com o stage mapeado de profile.status
       const sql = wjaCall![0] as string;
-      expect(sql).not.toContain('application_funnel_stage');
+      expect(sql).toContain('application_funnel_stage');
+      // profile.status = 'QUALIFIED' (default do makeProfile) → stage = 'QUALIFIED'
+      expect(wjaCall![1]).toContain('QUALIFIED');
     });
 
-    it('deve usar ON CONFLICT DO NOTHING para wja (nao sobrescrever stage existente)', async () => {
+    it('deve usar ON CONFLICT DO UPDATE com precedência para wja (não regredir stage)', async () => {
       const profile = makeProfile();
       mockListAllDashboardProfiles.mockResolvedValue([profile]);
 
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         .mockResolvedValueOnce({ rows: [{ id: 'jp-681' }] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 0 })                 // DO NOTHING (already exists)
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })                 // UPDATE set (already exists, no new row returned)
         .mockResolvedValueOnce({ rows: [] });
 
       const report = await useCase.execute();
 
-      expect(report.linked).toBe(0); // not counted because DO NOTHING
+      // rowCount 0 from DO UPDATE without RETURNING new row → not counted as linked
+      expect(report.linked).toBe(0);
 
       const wjaCall = mockQuery.mock.calls.find(
         (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
       );
       const wjaSql = wjaCall?.[0] as string;
       expect(wjaSql).toContain('ON CONFLICT');
-      expect(wjaSql).toContain('DO NOTHING');
-      expect(wjaSql).not.toContain('application_funnel_stage');
+      expect(wjaSql).toContain('DO UPDATE SET');
+      expect(wjaSql).toContain('application_funnel_stage');
+      expect(wjaSql).toContain('funnel_stage_precedence');
     });
 
     it('deve criar encuadre com dedup_hash baseado em dashboard|profileId|caseNumber', async () => {
@@ -332,6 +340,8 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         .mockResolvedValueOnce({ rows: [{ id: 'jp-681' }] })
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [] });                              // encuadre INSERT
@@ -358,6 +368,8 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })                 // findByEmail
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         // CASO 681
         .mockResolvedValueOnce({ rows: [{ id: 'jp-681' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'wja-1' }], rowCount: 1 })
@@ -382,7 +394,8 @@ describe('SyncTalentumWorkersUseCase', () => {
 
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
-        .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] });
+        .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // linkToCases status check
 
       const report = await useCase.execute();
 
@@ -398,11 +411,42 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         .mockResolvedValueOnce({ rows: [] });                              // job_posting not found
 
       const report = await useCase.execute();
 
       expect(report.linked).toBe(0);
+    });
+
+    it('deve skipar linkToCases quando worker.status != REGISTERED (INCOMPLETE_REGISTER)', async () => {
+      const profile = makeProfile({
+        projects: [{ projectId: null, title: 'CASO 681', active: true }],
+      });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })                 // findByEmail → found
+        .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'INCOMPLETE_REGISTER' }] }); // status check → bloqueia
+
+      const report = await useCase.execute();
+
+      // linkToCases retorna 0 — sem buscar job_posting nem inserir wja
+      expect(report.linked).toBe(0);
+      expect(report.skippedIncompleteRegistration).toBe(1);
+
+      // Nenhuma chamada de jp lookup ou wja insert
+      const jpCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('case_number = $1'),
+      );
+      expect(jpCall).toBeUndefined();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      expect(wjaCall).toBeUndefined();
     });
   });
 
@@ -589,6 +633,8 @@ describe('SyncTalentumWorkersUseCase', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'w-by-email' }] })     // findByEmail → found!
         // fillMissingData
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         // linkToCases
         .mockResolvedValueOnce({ rows: [] });
 
@@ -695,6 +741,8 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         .mockResolvedValueOnce({ rows: [{ id: 'jp-681' }] })
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [] });
@@ -716,6 +764,8 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         .mockResolvedValueOnce({ rows: [{ id: 'jp-754' }] })
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [] });
@@ -737,6 +787,8 @@ describe('SyncTalentumWorkersUseCase', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
         .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
         .mockResolvedValueOnce({ rows: [{ id: 'jp-712' }] })
         .mockResolvedValueOnce({ rows: [], rowCount: 0 })
         .mockResolvedValueOnce({ rows: [] });
@@ -747,6 +799,102 @@ describe('SyncTalentumWorkersUseCase', () => {
         (call: any[]) => (call[0] as string).includes('case_number = $1'),
       );
       expect(jpCall![1][0]).toBe(712);
+    });
+  });
+
+  // ── 11. Mapeamento de application_funnel_stage (TD-035) ────
+
+  describe('mapeamento de application_funnel_stage via profile.status', () => {
+    function mockRegisteredWorkerFlow(opts: { statusLabel: string }): void {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })         // findByEmail → found
+        .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [] }) // loadPrescreeningsForWorker
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-681' }] })       // find job_posting
+        .mockResolvedValueOnce({ rows: [{ id: 'wja-1' }], rowCount: 1 })  // INSERT wja
+        .mockResolvedValueOnce({ rows: [] });                       // INSERT encuadre
+    }
+
+    it('profile.status=INITIATED → application_funnel_stage=INITIATED no INSERT', async () => {
+      const profile = makeProfile({ status: 'INITIATED' });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockRegisteredWorkerFlow({ statusLabel: 'INITIATED' });
+
+      await useCase.execute();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      expect(wjaCall![1]).toContain('INITIATED');
+    });
+
+    it('profile.status=IN_PROGRESS → application_funnel_stage=IN_PROGRESS no INSERT', async () => {
+      const profile = makeProfile({ status: 'IN_PROGRESS' });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockRegisteredWorkerFlow({ statusLabel: 'IN_PROGRESS' });
+
+      await useCase.execute();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      expect(wjaCall![1]).toContain('IN_PROGRESS');
+    });
+
+    it('profile.status=QUALIFIED → application_funnel_stage=QUALIFIED no INSERT', async () => {
+      const profile = makeProfile({ status: 'QUALIFIED' });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockRegisteredWorkerFlow({ statusLabel: 'QUALIFIED' });
+
+      await useCase.execute();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      expect(wjaCall![1]).toContain('QUALIFIED');
+    });
+
+    it('profile.status=NOT_QUALIFIED → application_funnel_stage=NOT_QUALIFIED no INSERT', async () => {
+      const profile = makeProfile({ status: 'NOT_QUALIFIED' });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockRegisteredWorkerFlow({ statusLabel: 'NOT_QUALIFIED' });
+
+      await useCase.execute();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      expect(wjaCall![1]).toContain('NOT_QUALIFIED');
+    });
+
+    it('profile.status desconhecido → fallback para INITIATED (conservador)', async () => {
+      const profile = makeProfile({ status: 'UNKNOWN_STATUS_XYZ' });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockRegisteredWorkerFlow({ statusLabel: 'INITIATED' });
+
+      await useCase.execute();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      expect(wjaCall![1]).toContain('INITIATED');
+    });
+
+    it('INSERT usa ON CONFLICT DO UPDATE SET com funnel_stage_precedence', async () => {
+      const profile = makeProfile({ status: 'COMPLETED' });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockRegisteredWorkerFlow({ statusLabel: 'COMPLETED' });
+
+      await useCase.execute();
+
+      const wjaCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('INSERT INTO worker_job_applications'),
+      );
+      const sql = wjaCall![0] as string;
+      expect(sql).toContain('ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET');
+      expect(sql).toContain('funnel_stage_precedence');
+      expect(sql).not.toContain('DO NOTHING');
     });
   });
 });

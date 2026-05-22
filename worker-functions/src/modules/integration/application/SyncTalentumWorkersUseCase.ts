@@ -19,9 +19,18 @@ import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
+import { logger } from '@shared/logging';
 import type { TalentumDashboardProfile } from '../domain/ITalentumApiClient';
+import { TalentumFunnelStageMapper } from '../domain/TalentumFunnelStageMapper';
+import { TalentumSyncStageDecider } from './TalentumSyncStageDecider';
+import type { FunnelStage } from '@modules/matching/domain/FunnelStageMapper';
 
 const TAG = '[SyncTalentumWorkers]';
+
+const funnelStageMapper = new TalentumFunnelStageMapper();
+
+// INITIATED é o stage menos avançado — sempre seguro aplicar sem risco semântico
+const SAFE_DEFAULT_STAGE: FunnelStage = 'INITIATED';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -33,6 +42,8 @@ export interface WorkerSyncReport {
   updated: number;
   skipped: number;
   linked: number;
+  /** Workers cujo linkToCases foi pulado porque status != REGISTERED (cadastro/docs incompletos) */
+  skippedIncompleteRegistration: number;
   errors: Array<{ profileId: string; name: string; error: string }>;
 }
 
@@ -44,37 +55,43 @@ export class SyncTalentumWorkersUseCase {
   private db: Pool;
   private encryptionService: KMSEncryptionService;
   private blindIndexService: BlindIndexService;
+  private stageDecider: TalentumSyncStageDecider;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
     this.blindIndexService = new BlindIndexService();
+    this.stageDecider = new TalentumSyncStageDecider(this.db);
   }
 
   async execute(): Promise<WorkerSyncReport> {
     const report: WorkerSyncReport = {
-      total: 0, created: 0, updated: 0, skipped: 0, linked: 0, errors: [],
+      total: 0, created: 0, updated: 0, skipped: 0, linked: 0,
+      skippedIncompleteRegistration: 0, errors: [],
     };
 
     const talentumClient = await TalentumApiClient.create();
     const profiles = await talentumClient.listAllDashboardProfiles();
     report.total = profiles.length;
-    console.log(`${TAG} Fetched ${profiles.length} profiles from Talentum dashboard`);
+    logger.info({ msg: `${TAG} Fetched ${profiles.length} profiles from Talentum dashboard` });
 
     for (const profile of profiles) {
       try {
         await this.processProfile(profile, report);
-      } catch (err: any) {
-        console.error(`${TAG} Error processing profile ${profile._id} (${profile.fullName}):`, err.message);
-        report.errors.push({ profileId: profile._id, name: profile.fullName, error: err.message });
+      } catch (err: unknown) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        logger.error({ msg: `${TAG} Error processing profile ${profile._id} (${profile.fullName})`, error: e.message });
+        report.errors.push({ profileId: profile._id, name: profile.fullName, error: e.message });
       }
     }
 
-    console.log(
-      `${TAG} Done: total=${report.total} created=${report.created} ` +
-      `updated=${report.updated} skipped=${report.skipped} linked=${report.linked} ` +
-      `errors=${report.errors.length}`,
-    );
+    logger.info({
+      msg: `${TAG} Done`,
+      total: report.total, created: report.created,
+      updated: report.updated, skipped: report.skipped, linked: report.linked,
+      skippedIncompleteRegistration: report.skippedIncompleteRegistration,
+      errors: report.errors.length,
+    });
     return report;
   }
 
@@ -102,7 +119,7 @@ export class SyncTalentumWorkersUseCase {
 
     const workerId = existingId ?? await this.findExistingWorker(email, phone, profile._id);
     if (workerId && profile.projects?.length) {
-      const linked = await this.linkToCases(workerId, profile);
+      const linked = await this.linkToCases(workerId, profile, report);
       report.linked += linked;
     }
   }
@@ -257,8 +274,31 @@ export class SyncTalentumWorkersUseCase {
 
   // ── Case linking ─────────────────────────────────────────────────
 
-  private async linkToCases(workerId: string, profile: TalentumDashboardProfile): Promise<number> {
+  private async linkToCases(
+    workerId: string, profile: TalentumDashboardProfile, report: WorkerSyncReport,
+  ): Promise<number> {
     let linked = 0;
+
+    // Worker precisa estar com cadastro + documentos completos (status='REGISTERED')
+    // pra ser linkado a casos. Sync de Talentum não cria application pra worker incompleto.
+    const statusRow = await this.db.query<{ status: string }>(
+      'SELECT status FROM workers WHERE id = $1',
+      [workerId],
+    );
+    const workerStatus = statusRow.rows[0]?.status ?? null;
+    if (workerStatus !== 'REGISTERED') {
+      report.skippedIncompleteRegistration++;
+      logger.warn({ msg: `${TAG} linkToCases: skipping worker`, workerId, workerStatus, reason: 'registration/documents incomplete' });
+      return 0;
+    }
+
+    // Opção B do TD-035: carregar todos os prescreenings do worker UMA VEZ,
+    // fora do loop de vagas. O decider aplica filtro em memória — evita N+1.
+    const prescreenings = await this.stageDecider.loadPrescreeningsForWorker(workerId);
+
+    // profile.status é per-worker (global), não per-vaga.
+    // Resolução do stage acontece dentro do loop, condicionada à decisão do decider.
+    const globalMappedStage: FunnelStage = this.resolveProfileFunnelStage(profile.status);
 
     for (const project of profile.projects) {
       try {
@@ -270,17 +310,44 @@ export class SyncTalentumWorkersUseCase {
           [caseNumber],
         );
         if (!jp.rows[0]) continue;
-        const jobPostingId = jp.rows[0].id;
+        const jobPostingId: string = jp.rows[0].id;
 
-        // worker_job_application — INSERT only if not exists, let DB default (INITIATED)
-        // We don't set funnel stage because the dashboard status is per-profile, not per-case
-        const wjaResult = await this.db.query(
-          `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-           VALUES ($1, $2, 'applied', 'talentum')
-           ON CONFLICT (worker_id, job_posting_id) DO NOTHING
-           RETURNING id`,
-          [workerId, jobPostingId],
-        );
+        // Decide se profile.status global pode ser aplicado para esta vaga específica.
+        // Ver TalentumSyncStageDecider para regras detalhadas.
+        const decision = this.stageDecider.decide(workerId, jobPostingId, prescreenings);
+
+        let wjaResult: { rowCount: number | null };
+
+        if (decision.action === 'apply_global_status') {
+          // Sem prescreening conflitante — aplica stage mapeado do profile.status global.
+          // ON CONFLICT: avança só se o novo stage tem precedência >= atual
+          // (usa função SQL funnel_stage_precedence — migration 185).
+          wjaResult = await this.db.query(
+            `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, application_funnel_stage, source)
+             VALUES ($1, $2, 'applied', $3, 'talentum')
+             ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+               application_funnel_stage = CASE
+                 WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
+                      >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)
+                 THEN EXCLUDED.application_funnel_stage
+                 ELSE worker_job_applications.application_funnel_stage
+               END,
+               updated_at = NOW()
+             RETURNING id`,
+            [workerId, jobPostingId, globalMappedStage],
+          );
+        } else {
+          // Webhook canônico per-vaga é dono, ou profile.status é de outra vaga.
+          // Garante que WJA existe mas NÃO muta o stage (deixa default INITIATED
+          // no INSERT inicial; ON CONFLICT DO NOTHING mantém stage existente intacto).
+          wjaResult = await this.db.query(
+            `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, application_funnel_stage, source)
+             VALUES ($1, $2, 'applied', $3, 'talentum')
+             ON CONFLICT (worker_id, job_posting_id) DO NOTHING
+             RETURNING id`,
+            [workerId, jobPostingId, SAFE_DEFAULT_STAGE],
+          );
+        }
 
         // encuadre — idempotent via dedup_hash
         const workerName = profile.fullName || `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim();
@@ -298,12 +365,27 @@ export class SyncTalentumWorkersUseCase {
         );
 
         if (wjaResult.rowCount && wjaResult.rowCount > 0) linked++;
-      } catch (err: any) {
-        console.warn(`${TAG} linkToCases: failed for project "${project.title}":`, err.message);
+      } catch (err: unknown) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        logger.warn({ msg: `${TAG} linkToCases: failed for project`, title: project.title, error: e.message });
       }
     }
 
     return linked;
+  }
+
+  /**
+   * Traduz profile.status (dashboard Talentum) para FunnelStage canônico.
+   * Fallback conservador em INITIATED quando status é desconhecido ou ausente.
+   */
+  private resolveProfileFunnelStage(profileStatus: string | undefined | null): FunnelStage {
+    if (!profileStatus) return 'INITIATED';
+    const mapped = funnelStageMapper.mapToInternalStage(profileStatus);
+    if (mapped === null) {
+      logger.warn({ msg: `${TAG} Unknown profile.status from Talentum dashboard — falling back to INITIATED`, profileStatus });
+      return 'INITIATED';
+    }
+    return mapped;
   }
 
   private extractCaseNumber(title: string): number | null {

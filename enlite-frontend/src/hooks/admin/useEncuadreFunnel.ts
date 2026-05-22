@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { ApiError } from '@infrastructure/http/ApiError';
+
+export interface MoveEncuadreError {
+  message: string;
+  code?: string;
+  reason?: string;
+  workerStatus?: string | null;
+}
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -75,15 +83,27 @@ export function useEncuadreFunnel(vacancyId: string | undefined) {
     encuadreId: string,
     targetStage: string,
     rejectionReasonCategory?: string,
-  ) => {
+  ): Promise<MoveEncuadreError | null> => {
     try {
       await AdminApiService.moveEncuadre(encuadreId, {
         targetStage,
         rejectionReasonCategory,
       });
       await fetchFunnel();
+      return null;
     } catch (err) {
       console.error('Failed to move encuadre:', err);
+      if (err instanceof ApiError) {
+        return {
+          message: err.message,
+          code: err.code,
+          reason: err.reason,
+          workerStatus: err.workerStatus,
+        };
+      }
+      return {
+        message: err instanceof Error ? err.message : 'Erro desconhecido',
+      };
     }
   }, [fetchFunnel]);
 

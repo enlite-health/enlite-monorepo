@@ -91,7 +91,7 @@ function emptyStages(): FunnelStages {
   };
 }
 
-const noop = vi.fn(async () => {});
+const noop = vi.fn(async () => null);
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ describe('KanbanBoard — column rendering', () => {
   it('renders columns in correct order (INVITED → INITIATED → IN_PROGRESS → COMPLETED → CONFIRMED → ...)', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
-    const columns = screen.getAllByTestId(/^kanban-column-/);
+    const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
 
     expect(ids).toEqual([
@@ -216,7 +216,7 @@ describe('KanbanBoard — edge cases', () => {
   it('renders gracefully with all stages empty', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
-    const columns = screen.getAllByTestId(/^kanban-column-/);
+    const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     expect(columns).toHaveLength(7);
   });
 
