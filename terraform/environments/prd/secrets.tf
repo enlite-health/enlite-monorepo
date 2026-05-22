@@ -24,6 +24,28 @@ module "secret_enlite_ar_db_password" {
   replication_locations = ["southamerica-west1"]
 }
 
+module "secret_triage_memory_db_password" {
+  source                = "../../modules/secret"
+  project_id            = var.project_id
+  secret_id             = "triage-memory-db-password"
+  replication_locations = ["southamerica-west1"]
+}
+
+# Versão inicial do secret com a senha randômica gerada pelo TF.
+# Rotações futuras serão manuais via `gcloud secrets versions add`.
+resource "google_secret_manager_secret_version" "triage_memory_db_password_v1" {
+  secret      = module.secret_triage_memory_db_password.id
+  secret_data = random_password.triage_memory_db_password.result
+}
+
+# Permite triage-service-sa ler o secret da senha (Cloud Run lê em runtime).
+resource "google_secret_manager_secret_iam_member" "triage_memory_db_password_accessor" {
+  project   = var.project_id
+  secret_id = module.secret_triage_memory_db_password.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:triage-service-sa@${var.project_id}.iam.gserviceaccount.com"
+}
+
 module "secrets_automatic" {
   source     = "../../modules/secret"
   for_each   = toset(local.automatic_secrets)
