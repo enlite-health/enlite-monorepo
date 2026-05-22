@@ -129,7 +129,6 @@ const mockVacancy = {
   patient_zone: 'Palermo',
   patient_city: null,
   patient_neighborhood: null,
-  insurance_verified: true,
   dependency_level: null,
   required_sex: 'M',
   required_professions: ['AT'],

@@ -43,8 +43,6 @@ const PATIENT_DETAIL = {
   diagnosis: 'TEA leve',
   dependencyLevel: 'SEVERE',
   serviceType: ['AT'],
-  cityLocality: 'CABA',
-  province: 'Buenos Aires',
   lastCaseNumber: 77,
   responsibles: [],
 };

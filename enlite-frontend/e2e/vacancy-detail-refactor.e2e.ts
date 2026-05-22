@@ -54,7 +54,6 @@ const MOCK_VACANCY = {
   talentum_whatsapp_url: null,
   talentum_slug: null,
   talentum_published_at: null,
-  insurance_verified: false,
   publications: [],
   social_short_links: null,
   meet_link_1: 'https://meet.google.com/nox-yqex-sdj',

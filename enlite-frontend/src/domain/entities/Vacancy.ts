@@ -86,7 +86,6 @@ export interface AdminVacancyDetail {
   country: string | null;
   city: string | null;
   providers_needed: number | null;
-  insurance_verified: boolean | null;
   salary_text: string | null;
   payment_day: string | null;
   daily_obs: string | null;

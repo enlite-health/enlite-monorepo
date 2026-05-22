@@ -52,6 +52,14 @@ export interface PatientProfessionalDetail {
   isTeam: boolean;
 }
 
+export interface PatientHealthInsuranceDetail {
+  providerName: string | null;
+  plan: string | null;
+  memberId: string | null;
+  emergencyNumbers: string[];
+  source: 'clickup' | 'manual';
+}
+
 export interface PatientDetailRow {
   // Identity
   id: string;
@@ -61,7 +69,6 @@ export interface PatientDetailRow {
   birthDate: Date | null;
   documentType: string | null;
   documentNumber: string | null;
-  affiliateId: string | null;
   sex: string | null;
   phoneWhatsapp: string | null;
   // Clinical
@@ -75,13 +82,10 @@ export interface PatientDetailRow {
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;
-  // Coverage
-  insuranceInformed: string | null;
-  insuranceVerified: string | null;
+  // Coverage — migrated to patient_health_insurance (migration 184)
+  healthInsurance: PatientHealthInsuranceDetail | null;
   // Location
-  cityLocality: string | null;
   province: string | null;
-  zoneNeighborhood: string | null;
   country: string;
   // Status / flags
   status: string | null;

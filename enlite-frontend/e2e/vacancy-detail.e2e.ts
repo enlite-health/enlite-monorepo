@@ -35,7 +35,6 @@ const MOCK_VACANCY = {
   patient_first_name: 'Paciente',
   patient_last_name: 'Teste',
   patient_zone: 'Palermo',
-  insurance_verified: false,
   required_professions: ['Acompañante Terapéutico', 'Enfermero'],
   required_sex: 'Indistinto',
   pathology_types: 'TEA leve',

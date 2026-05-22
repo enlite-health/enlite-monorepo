@@ -53,13 +53,9 @@ function formatDate(iso: string | null, locale = 'es-AR'): string | null {
 
 function buildAddress(patient: PatientDetail): string | null {
   const addr = patient.addresses?.[0];
-  if (addr?.fullAddress) return addr.fullAddress;
-  const parts = [
-    patient.zoneNeighborhood,
-    patient.cityLocality,
-    patient.province,
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(', ') : null;
+  if (addr?.addressFormatted) return addr.addressFormatted;
+  if (addr?.addressRaw) return addr.addressRaw;
+  return null;
 }
 
 function ResponsibleSection({ responsible, t }: { responsible: PatientResponsibleDetail; t: (k: string) => string }) {

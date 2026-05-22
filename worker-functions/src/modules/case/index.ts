@@ -47,9 +47,14 @@ export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';
 export { PatientClinicalRepository } from './infrastructure/PatientClinicalRepository';
 export { PatientResponsibleRepository } from './infrastructure/PatientResponsibleRepository';
+export { PatientHealthInsuranceRepository } from './infrastructure/PatientHealthInsuranceRepository';
 export { PatientQueryRepository } from './infrastructure/PatientQueryRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
+export type {
+  PatientHealthInsuranceUpsertInput,
+  PatientHealthInsurance,
+} from './infrastructure/PatientHealthInsuranceRepository';
 export type {
   PatientListRow,
   PatientStatsRow,

@@ -237,9 +237,9 @@ describe('PublicVacancyController.getById', () => {
     // diagnosis exposed only as anonymized 'pathologies' alias — not the raw name/surname
     expect(sql).toContain('p.diagnosis AS pathologies');
 
-    // Coarse location: bairro + cidade + província (estruturado de pa.*, fallback pra texto-livre)
+    // Coarse location: bairro + cidade + província — somente de patient_addresses (Fase 3b)
     expect(sql).toContain('pa.neighborhood');
-    expect(sql).toContain('p.zone_neighborhood');
+    expect(sql).not.toContain('p.zone_neighborhood'); // deprecated column removed in Fase 3b
     expect(sql).toContain('pa.city');
     expect(sql).toContain('pa.state');
     expect(sql).toContain('patient_zone');

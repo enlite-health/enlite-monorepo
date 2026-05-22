@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { PatientIdentityRepository, PatientIdentityUpsertInput } from '../infrastructure/PatientIdentityRepository';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
+import { PatientHealthInsuranceRepository } from '../infrastructure/PatientHealthInsuranceRepository';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import {
   PatientResponsibleInput,
@@ -52,15 +53,16 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
   hasCud?: boolean | null;
   hasConsent?: boolean | null;
   /**
-   * Cobertura médica informada (ClickUp: "Cobertura Informada").
-   * Fill-only: persisted via COALESCE(existing, $new). Migration 147.
+   * Health insurance coverage sourced from ClickUp sync.
+   * Persisted to patient_health_insurance (migration 184) within the transaction.
+   * Fill-only semantics for providerName and memberId (COALESCE in repo).
+   * plan and emergencyNumbers are NOT accepted here — those are UI-only (source='manual').
+   * Skipped entirely when undefined or both providerName and memberId are falsy.
    */
-  healthInsuranceName?: string | null;
-  /**
-   * Número de ID de afiliado (ClickUp: "Número ID Afiliado Paciente").
-   * Fill-only: persisted via COALESCE(existing, $new). Migration 147.
-   */
-  healthInsuranceMemberId?: string | null;
+  healthInsurance?: {
+    providerName?: string | null;
+    memberId?: string | null;
+  };
   // Responsibles (replaces legacy responsible_* columns)
   responsibles?: PatientResponsibleInput[];
   // Related records (unchanged from existing PatientRepository contract)
@@ -78,12 +80,14 @@ export class PatientService {
   private identityRepo: PatientIdentityRepository;
   private clinicalRepo: PatientClinicalRepository;
   private responsibleRepo: PatientResponsibleRepository;
+  private phiRepo: PatientHealthInsuranceRepository;
   private geocoder: GeocodingService;
 
   constructor(geocoder?: GeocodingService) {
     this.identityRepo    = new PatientIdentityRepository();
     this.clinicalRepo    = new PatientClinicalRepository();
     this.responsibleRepo = new PatientResponsibleRepository();
+    this.phiRepo         = new PatientHealthInsuranceRepository();
     // Injected for tests; defaults to a real instance that no-ops when
     // GOOGLE_MAPS_API_KEY is missing (see GeocodingService.geocode).
     this.geocoder = geocoder ?? new GeocodingService();
@@ -135,10 +139,8 @@ export class PatientService {
 
     const identityInput: PatientIdentityUpsertInput = {
       ...input,
-      needsAttention:          (input.needsAttention ?? false) || flagged,
-      attentionReasons:        Array.from(attentionReasons),
-      healthInsuranceName:     input.healthInsuranceName,
-      healthInsuranceMemberId: input.healthInsuranceMemberId,
+      needsAttention:   (input.needsAttention ?? false) || flagged,
+      attentionReasons: Array.from(attentionReasons),
     };
 
     try {
@@ -252,6 +254,22 @@ export class PatientService {
     input: PatientServiceUpsertInput,
     client: import('pg').PoolClient,
   ): Promise<void> {
+    // Health insurance — only when provided and at least one field has a value
+    if (
+      input.healthInsurance !== undefined &&
+      (input.healthInsurance.providerName || input.healthInsurance.memberId)
+    ) {
+      await this.phiRepo.upsert(
+        {
+          patientId,
+          providerName: input.healthInsurance.providerName,
+          memberId:     input.healthInsurance.memberId,
+          source:       'clickup',
+        },
+        client,
+      );
+    }
+
     await this.clinicalRepo.upsert(
       {
         patientId,

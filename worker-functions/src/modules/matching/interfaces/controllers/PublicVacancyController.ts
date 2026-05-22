@@ -56,7 +56,7 @@ export class PublicVacancyController {
           jp.created_at,
           COALESCE(
             NULLIF(CONCAT_WS(', ',
-              COALESCE(pa.neighborhood, p.zone_neighborhood),
+              pa.neighborhood,
               pa.city,
               pa.state
             ), ''),

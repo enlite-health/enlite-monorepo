@@ -96,11 +96,14 @@ export class ClickUpPatientMapper {
       serviceType:        serviceTypes.length > 0 ? serviceTypes : null,
       additionalComments: this.asString(cf['Comentarios Adicionales Paciente']),
 
-      // Health insurance (fill-only via COALESCE in PatientIdentityRepository)
-      // ClickUp: "Cobertura Informada"
-      healthInsuranceName:     this.asString(cf['Cobertura Informada']),
-      // ClickUp: "Número ID Afiliado Paciente"
-      healthInsuranceMemberId: this.asString(cf['Número ID Afiliado Paciente']),
+      // Health insurance (written to patient_health_insurance via PatientHealthInsuranceRepository)
+      // Fill-only semantics enforced in the repo (COALESCE). Migration 184.
+      // The string literal 'null' is a serialization bug observed in 38 prod records —
+      // sanitized here at the boundary so NULL propagates correctly to the DB.
+      healthInsurance: {
+        providerName: this.sanitizeNullLiteral(this.asString(cf['Cobertura Informada'])),
+        memberId:     this.sanitizeNullLiteral(this.asString(cf['Número ID Afiliado Paciente'])),
+      },
       // ClickUp: "Caso Número" — PII-safe operational identifier. Migration 164.
       caseNumber:              extractCaseNumber(task),
       // Lifecycle status derived from ClickUp task status (migration 143).
@@ -325,6 +328,18 @@ export class ClickUpPatientMapper {
     if (value === null || value === undefined) return null;
     if (typeof value === 'string') return value.trim() || null;
     return null;
+  }
+
+  /**
+   * Sanitizes the string literal 'null' that ClickUp sometimes serializes
+   * instead of a true SQL NULL. Observed in 38 prod records (migration 184 comment).
+   * The literal is case-insensitive to be defensive against future variations.
+   * Returns null when input is null, empty, or the string 'null'/'NULL'/etc.
+   */
+  private sanitizeNullLiteral(value: string | null): string | null {
+    if (value === null) return null;
+    if (value.toLowerCase() === 'null') return null;
+    return value;
   }
 
   /** Converts a custom-field value to a number suitable for resolveDropdown(). */

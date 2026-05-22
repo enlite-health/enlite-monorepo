@@ -63,12 +63,12 @@ export class BuildVacancyMatchVariablesUseCase {
   }
 
   private async fetchPatientZone(jobPostingId: string): Promise<string> {
-    // Fix TD-019: patient_zone foi movida para patients.zone_neighborhood na migration 039.
-    // O campo patient_zone não existe mais em job_postings — fazer JOIN igual ao VacancyAutoInviteHandler.
+    // Fase 3b: patient_zone lida de patient_addresses.neighborhood (slot primário).
+    // patients.zone_neighborhood deprecated (migration 083, 100% NULL em prod).
     const res = await this.db.query<{ patient_zone: string | null }>(
-      `SELECT p.zone_neighborhood AS patient_zone
+      `SELECT pa.neighborhood AS patient_zone
        FROM job_postings jp
-       LEFT JOIN patients p ON p.id = jp.patient_id
+       LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
        WHERE jp.id = $1
        LIMIT 1`,
       [jobPostingId],

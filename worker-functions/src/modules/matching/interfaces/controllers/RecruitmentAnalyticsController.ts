@@ -115,9 +115,10 @@ export class RecruitmentAnalyticsController {
           p.last_name as patient_last_name,
           p.dependency_level,
           p.diagnosis as patient_diagnosis,
-          p.zone_neighborhood
+          pa.neighborhood as zone_neighborhood
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id
+        LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
         WHERE jp.case_number = $1
           AND jp.deleted_at IS NULL
       `;
@@ -218,7 +219,7 @@ export class RecruitmentAnalyticsController {
     try {
       const query = `
         SELECT
-          COALESCE(p.zone_neighborhood, 'Sin Zona') as zone,
+          COALESCE(pa.neighborhood, 'Sin Zona') as zone,
           COUNT(*) as case_count,
           COUNT(*) FILTER (WHERE status IN ('SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE')) as active_count,
           json_agg(
@@ -232,9 +233,10 @@ export class RecruitmentAnalyticsController {
           ) as cases
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id
+        LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
         WHERE jp.case_number IS NOT NULL
           AND jp.deleted_at IS NULL
-        GROUP BY COALESCE(p.zone_neighborhood, 'Sin Zona')
+        GROUP BY COALESCE(pa.neighborhood, 'Sin Zona')
         ORDER BY case_count DESC
       `;
 

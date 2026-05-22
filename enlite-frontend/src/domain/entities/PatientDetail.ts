@@ -34,17 +34,15 @@ export interface AddressAvailability {
 
 export interface PatientAddressDetail {
   id: string;
-  street: string | null;
-  number: string | null;
+  /** 'primary' | 'secondary' — slot type, mirrors patient_addresses.address_type. */
+  addressType: string | null;
+  /** Canonical formatted address (Google "formatted_address" when geocoded). */
+  addressFormatted: string | null;
+  /** Free-text address as typed/imported (fallback when not geocoded). */
+  addressRaw: string | null;
   /** Address complement (Depto, Piso, andar). Migration 157. */
   complement: string | null;
-  neighborhood: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  zipCode: string | null;
-  fullAddress: string | null;
-  // Extended fields for vacancy creation form
+  displayOrder?: number;
   lat?: number | null;
   lng?: number | null;
   isPrimary?: boolean;
@@ -59,6 +57,14 @@ export interface PatientProfessionalDetail {
   specialty: string | null;
 }
 
+export interface PatientHealthInsurance {
+  providerName: string | null;
+  plan: string | null;
+  memberId: string | null;
+  emergencyNumbers: string[];
+  source: 'clickup' | 'manual';
+}
+
 export interface PatientDetail {
   id: string;
   clickupTaskId: string;
@@ -67,7 +73,6 @@ export interface PatientDetail {
   birthDate: string | null; // ISO string
   documentType: string | null; // 'DNI'|'PASSPORT'|'CEDULA'|'LE_LC'|'CPF'
   documentNumber: string | null;
-  affiliateId: string | null;
   sex: string | null; // 'MALE'|'FEMALE'|'INTERSEX'|'UNDISCLOSED'
   phoneWhatsapp: string | null;
   diagnosis: string | null;
@@ -80,11 +85,8 @@ export interface PatientDetail {
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;
-  insuranceInformed: string | null;
-  insuranceVerified: string | null;
-  cityLocality: string | null;
-  province: string | null;
-  zoneNeighborhood: string | null;
+  /** Health insurance data from dedicated table (Fase 3a backend). Null when no coverage on file. */
+  healthInsurance: PatientHealthInsurance | null;
   country: string;
   status: string | null; // 'PENDING_ADMISSION'|'ACTIVE'|'SUSPENDED'|'DISCONTINUED'|'DISCHARGED'
   needsAttention: boolean;

@@ -6,8 +6,8 @@
  *   - dependency_level (de patients.dependency_level)
  *   - closed_at        (de job_postings.closes_at)
  *   - service_type     (array bruto de patients.service_type — TEXT[])
- *   - patient_city     (coalesce de patient_addresses.city / patients.city_locality)
- *   - patient_neighborhood (coalesce de pa.neighborhood / p.zone_neighborhood)
+ *   - patient_city     (de patient_addresses.city — Fase 3b: sem fallback legado)
+ *   - patient_neighborhood (de patient_addresses.neighborhood — Fase 3b: sem fallback legado)
  */
 
 import { Pool } from 'pg';
@@ -38,9 +38,9 @@ describe('GET /api/admin/vacancies/:id — aliases expostos para o detalhe', () 
     const patient = await pool.query(
       `INSERT INTO patients
          (clickup_task_id, first_name, last_name, country, status,
-          dependency_level, service_type, city_locality, zone_neighborhood, diagnosis)
+          dependency_level, service_type, diagnosis)
        VALUES ($1, 'E2E', 'Detail', 'AR', 'ACTIVE',
-               'SEVERE', ARRAY['AT', 'CAREGIVER'], 'CABA-fallback', 'Palermo-fallback', 'TEA F84.0')
+               'SEVERE', ARRAY['AT', 'CAREGIVER'], 'TEA F84.0')
        RETURNING id`,
       [clickupTaskId],
     );
@@ -89,7 +89,10 @@ describe('GET /api/admin/vacancies/:id — aliases expostos para o detalhe', () 
     expect(data.patient_neighborhood).toBe('Palermo-addr');
   });
 
-  it('cai no campo do paciente quando patient_addresses não tem city/neighborhood', async () => {
+  it('retorna null para patient_city e patient_neighborhood quando patient_addresses não tem city/neighborhood', async () => {
+    // Fase 3b: sem COALESCE de fallback — campos null em patient_addresses → null no response.
+    // As colunas legadas patients.city_locality / patients.zone_neighborhood foram deprecadas
+    // na migration 083 e confirmadas 100% NULL em prod.
     await pool.query(
       `UPDATE patient_addresses SET city = NULL, neighborhood = NULL WHERE id = $1`,
       [patientAddressId],
@@ -98,7 +101,7 @@ describe('GET /api/admin/vacancies/:id — aliases expostos para o detalhe', () 
       `/api/admin/vacancies/${vacancyId}`,
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
-    expect(res.data.data.patient_city).toBe('CABA-fallback');
-    expect(res.data.data.patient_neighborhood).toBe('Palermo-fallback');
+    expect(res.data.data.patient_city).toBeNull();
+    expect(res.data.data.patient_neighborhood).toBeNull();
   });
 });

@@ -127,7 +127,6 @@ export default function VacancyDetailPage() {
             lastName={vacancy.patient_last_name ?? null}
             diagnosis={vacancy.patient_diagnosis ?? null}
             zone={vacancy.patient_zone ?? null}
-            insuranceVerified={vacancy.insurance_verified ?? null}
           />
         </div>
 

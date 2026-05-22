@@ -41,19 +41,23 @@ export function CoberturaMedicaCard({ patient }: CoberturaMedicaCardProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
         <Field
           label={t('admin.patients.detail.coverageCard.providerName')}
-          value={patient.insuranceInformed}
+          value={patient.healthInsurance?.providerName ?? null}
         />
         <Field
           label={t('admin.patients.detail.coverageCard.plan')}
-          value={patient.insuranceVerified}
+          value={patient.healthInsurance?.plan ?? null}
         />
         <Field
           label={t('admin.patients.detail.coverageCard.emergencyNumbers')}
-          value={null}
+          value={
+            patient.healthInsurance?.emergencyNumbers?.length
+              ? patient.healthInsurance.emergencyNumbers.join(', ')
+              : null
+          }
         />
         <Field
           label={t('admin.patients.detail.coverageCard.credential')}
-          value={patient.affiliateId}
+          value={patient.healthInsurance?.memberId ?? null}
         />
       </div>
     </div>

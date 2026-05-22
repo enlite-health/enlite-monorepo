@@ -67,11 +67,11 @@ export function createVacancyAutoInviteHandler(
     const log = logger.child({ jobPostingId, handler: 'VacancyAutoInvite' });
     log.info('Starting auto-invite');
 
-    // 1. Buscar zona do paciente via JOIN (fix TD-019: não usa workZone do AT)
+    // 1. Buscar zona do paciente via patient_addresses (slot primário)
     const zoneRes = await db.query<PatientZoneRow>(
-      `SELECT p.zone_neighborhood AS patient_zone
+      `SELECT pa.neighborhood AS patient_zone
        FROM job_postings jp
-       LEFT JOIN patients p ON p.id = jp.patient_id
+       LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
        WHERE jp.id = $1
        LIMIT 1`,
       [jobPostingId],

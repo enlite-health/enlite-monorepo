@@ -191,10 +191,11 @@ describe('GAP 1 — deleted_at IS NULL filter on job_postings', () => {
   });
 
   it('zone analysis excludes soft-deleted job postings', async () => {
+    // Fase 3b: zone lida de patient_addresses.neighborhood (não mais de patients.zone_neighborhood)
     const result = await pool.query(
-      `SELECT COALESCE(p.zone_neighborhood, 'Sin Zona') as zone, COUNT(*) as cnt
+      `SELECT COALESCE(pa.neighborhood, 'Sin Zona') as zone, COUNT(*) as cnt
        FROM job_postings jp
-       LEFT JOIN patients p ON jp.patient_id = p.id
+       LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
        WHERE jp.case_number IS NOT NULL AND jp.deleted_at IS NULL
        GROUP BY zone`
     );
@@ -733,12 +734,13 @@ describe('D6 residual — ClickUpCaseRepository queries exclude soft-deleted', (
   });
 
   it('countByZone excludes deleted job_postings', async () => {
+    // Fase 3b: zone lida de patient_addresses.neighborhood (não mais de patients.zone_neighborhood)
     const result = await pool.query(
-      `SELECT p.zone_neighborhood AS zone, COUNT(*)::int AS count
+      `SELECT pa.neighborhood AS zone, COUNT(*)::int AS count
        FROM job_postings jp
-       LEFT JOIN patients p ON p.id = jp.patient_id
+       LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
        WHERE jp.country = 'AR' AND jp.deleted_at IS NULL
-       GROUP BY p.zone_neighborhood`
+       GROUP BY pa.neighborhood`
     );
     const total = result.rows.reduce((s, r) => s + r.count, 0);
 

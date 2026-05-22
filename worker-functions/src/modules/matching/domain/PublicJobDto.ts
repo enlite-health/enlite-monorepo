@@ -16,7 +16,7 @@ export interface PublicJobRow {
   worker_type: string[] | null;      // jp.required_professions (PG array)
   worker_sex: string | null;         // jp.required_sex
   job_zone: string | null;           // jp.inferred_zone
-  neighborhood: string | null;       // COALESCE(pa.neighborhood, p.zone_neighborhood) — fallback p/ legado ClickUp
+  neighborhood: string | null;       // pa.neighborhood — Fase 3b: sem fallback p.zone_neighborhood (deprecated)
   state_city: string | null;         // CONCAT_WS(state, city) — empty string → null in mapper
   country: string | null;            // jp.country — null-safe for legacy records
   age_range_min: number | null;      // jp.age_range_min — AT professional age range

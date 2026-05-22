@@ -311,7 +311,7 @@ export class JobPostingARRepository {
          jp.required_professions              AS worker_type,
          jp.required_sex                      AS worker_sex,
          jp.inferred_zone                     AS job_zone,
-         COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood,
+         pa.neighborhood                                AS neighborhood,
          NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city,
          jp.country                           AS country,
          jp.age_range_min,

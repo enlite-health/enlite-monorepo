@@ -62,7 +62,7 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
     // Single placeholder reused across OR branches
     const p = push(term);
     conditions.push(
-      `(jp.title ILIKE ${p} OR p.diagnosis ILIKE ${p} OR COALESCE(pa.neighborhood, p.zone_neighborhood) ILIKE ${p} OR pa.state ILIKE ${p} OR pa.city ILIKE ${p})`,
+      `(jp.title ILIKE ${p} OR p.diagnosis ILIKE ${p} OR pa.neighborhood ILIKE ${p} OR pa.state ILIKE ${p} OR pa.city ILIKE ${p})`,
     );
   }
 

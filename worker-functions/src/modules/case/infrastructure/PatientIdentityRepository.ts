@@ -25,16 +25,6 @@ export interface PatientIdentityUpsertInput {
   needsAttention?: boolean;
   attentionReasons?: readonly AttentionReason[];
   /**
-   * Cobertura médica informada (ClickUp: "Cobertura Informada"). Migration 147.
-   * Fill-only: COALESCE(existing, $new) — never overwrites a populated value.
-   */
-  healthInsuranceName?: string | null;
-  /**
-   * Número de ID de afiliado (ClickUp: "Número ID Afiliado Paciente"). Migration 147.
-   * Fill-only: COALESCE(existing, $new) — never overwrites a populated value.
-   */
-  healthInsuranceMemberId?: string | null;
-  /**
    * Identificador PII-safe operacional (ClickUp "Caso Número"). Migration 164.
    * Origem: string no payload ClickUp; aqui já parseado para number.
    * UNIQUE entre patients ativos (deleted_at IS NULL) — conflito é tratado
@@ -78,11 +68,10 @@ export class PatientIdentityRepository {
         city_locality, province, zone_neighborhood,
         country,
         needs_attention, attention_reasons,
-        health_insurance_name, health_insurance_member_id,
         case_number,
         status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
       )
       ON CONFLICT (clickup_task_id) DO UPDATE SET
         first_name          = EXCLUDED.first_name,
@@ -100,9 +89,6 @@ export class PatientIdentityRepository {
         zone_neighborhood   = EXCLUDED.zone_neighborhood,
         needs_attention     = EXCLUDED.needs_attention,
         attention_reasons   = EXCLUDED.attention_reasons,
-        -- fill-only: only update when the current DB value is NULL
-        health_insurance_name       = COALESCE(patients.health_insurance_name, EXCLUDED.health_insurance_name),
-        health_insurance_member_id  = COALESCE(patients.health_insurance_member_id, EXCLUDED.health_insurance_member_id),
         case_number         = EXCLUDED.case_number,
         -- status: always overwrite — ClickUp is the source of truth for patient lifecycle
         status              = EXCLUDED.status,
@@ -110,26 +96,24 @@ export class PatientIdentityRepository {
       RETURNING id, xmax::text`,
       [
         input.clickupTaskId,
-        input.firstName        ?? null,
-        input.lastName         ?? null,
-        input.birthDate        ?? null,
-        input.documentType     ?? null,
-        input.documentNumber   ?? null,
-        input.affiliateId      ?? null,
-        input.sex              ?? null,
-        input.phoneWhatsapp    ?? null,
+        input.firstName         ?? null,
+        input.lastName          ?? null,
+        input.birthDate         ?? null,
+        input.documentType      ?? null,
+        input.documentNumber    ?? null,
+        input.affiliateId       ?? null,
+        input.sex               ?? null,
+        input.phoneWhatsapp     ?? null,
         input.insuranceInformed ?? null,
         input.insuranceVerified ?? null,
         input.cityLocality      ?? null,
         input.province          ?? null,
         input.zoneNeighborhood  ?? null,
         country,
-        input.needsAttention   ?? false,
+        input.needsAttention    ?? false,
         input.attentionReasons ? [...input.attentionReasons] : [],
-        input.healthInsuranceName      ?? null,
-        input.healthInsuranceMemberId  ?? null,
-        input.caseNumber       ?? null,
-        input.status           ?? null,
+        input.caseNumber        ?? null,
+        input.status            ?? null,
       ],
     );
 
@@ -143,10 +127,8 @@ export class PatientIdentityRepository {
         id, clickup_task_id AS "clickupTaskId",
         first_name AS "firstName", last_name AS "lastName",
         birth_date AS "birthDate", document_type AS "documentType",
-        document_number AS "documentNumber", affiliate_id AS "affiliateId",
+        document_number AS "documentNumber",
         sex, phone_whatsapp AS "phoneWhatsapp",
-        insurance_informed AS "insuranceInformed",
-        insurance_verified AS "insuranceVerified",
         city_locality AS "cityLocality", province,
         zone_neighborhood AS "zoneNeighborhood",
         country,

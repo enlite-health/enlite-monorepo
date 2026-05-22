@@ -96,14 +96,11 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
     await pool.query(`DELETE FROM workers WHERE email LIKE '%@autoinvite.e2e'`);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE 'e2e-autoinvite-%'`);
 
-    // 1. Criar paciente com zone_neighborhood (usado como patient_zone no template)
+    // 1. Criar paciente
     patientId = await createPatientFixture(pool, 'autoinvite');
-    await pool.query(
-      `UPDATE patients SET zone_neighborhood = 'Palermo' WHERE id = $1`,
-      [patientId],
-    );
 
     // 2. Criar endereço do paciente com lat/lng (CABA, Buenos Aires)
+    // Fase 3b: patient_zone no template vem de patient_addresses.neighborhood (não mais de patients.zone_neighborhood)
     const addrRes = await pool.query<{ id: string }>(
       `INSERT INTO patient_addresses
          (patient_id, address_type, city, neighborhood, address_formatted, lat, lng)

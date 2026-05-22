@@ -27,8 +27,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
       diagnosis: 'TEA leve',
       dependencyLevel: 'SEVERE',
       serviceType: ['AT'],
-      cityLocality: 'CABA',
-      province: 'Buenos Aires',
       responsibles: [],
     }),
     listPatientAddresses: vi.fn().mockResolvedValue([

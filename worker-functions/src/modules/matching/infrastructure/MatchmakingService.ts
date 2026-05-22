@@ -167,7 +167,7 @@ export class MatchmakingService {
       `SELECT jp.id, jp.worker_profile_sought, jp.schedule_days_hours,
               pa.lat  AS service_lat, pa.lng  AS service_lng,
               jp.required_sex, jp.required_professions,
-              p.diagnosis, p.zone_neighborhood AS patient_zone
+              p.diagnosis, pa.neighborhood AS patient_zone
        FROM job_postings jp
        LEFT JOIN patients p ON jp.patient_id = p.id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id

@@ -62,10 +62,7 @@ export function LocalizacoesCard({ addresses }: LocalizacoesCardProps) {
                   })}
                 </TableCell>
                 <TableCell>
-                  {addr.fullAddress
-                    ?? ([addr.street, addr.number, addr.city, addr.state]
-                        .filter(Boolean)
-                        .join(', ') || empty)}
+                  {addr.addressFormatted ?? addr.addressRaw ?? empty}
                 </TableCell>
                 <TableCell className="text-gray-600">{addr.complement ?? empty}</TableCell>
               </TableRow>

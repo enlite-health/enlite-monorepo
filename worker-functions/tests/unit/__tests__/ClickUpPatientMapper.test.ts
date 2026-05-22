@@ -1,17 +1,17 @@
 /**
  * ClickUpPatientMapper — Unit Tests (Fase 1, Sprint refactor de vagas)
  *
- * 100% coverage of mapper logic including new fields from migration 147:
- *   - healthInsuranceName      (ClickUp: "Cobertura Informada")
- *   - healthInsuranceMemberId  (ClickUp: "Número ID Afiliado Paciente")
- *   - addresses[].state        (ClickUp: "Provincia del Paciente")
- *   - addresses[].city         (ClickUp: "Ciudad / Localidad del Paciente")
- *   - addresses[].neighborhood (ClickUp: "Zona o Barrio Paciente")
+ * 100% coverage of mapper logic including new fields from migration 184:
+ *   - healthInsurance.providerName  (ClickUp: "Cobertura Informada")
+ *   - healthInsurance.memberId      (ClickUp: "Número ID Afiliado Paciente")
+ *   - addresses[].state             (ClickUp: "Provincia del Paciente")
+ *   - addresses[].city              (ClickUp: "Ciudad / Localidad del Paciente")
+ *   - addresses[].neighborhood      (ClickUp: "Zona o Barrio Paciente")
  *
  * Coverage plan:
  *   (a) Full task: all new fields present → output populated
- *   (b) healthInsuranceName absent → null in output
- *   (c) healthInsuranceMemberId absent → null in output
+ *   (b) healthInsurance.providerName absent → null in output
+ *   (c) healthInsurance.memberId absent → null in output
  *   (d) Provincia present with address_components → state extracted from component
  *   (e) Provincia present with formatted_address only → state from formatted_address
  *   (f) Provincia absent/null → state null in address
@@ -26,8 +26,8 @@
  *   (o) Responsibles built correctly (single responsible)
  *   (p) No addresses filled → empty addresses array
  *   (q) Multiple address slots: only slot 1 gets patient-level location metadata
- *   (r) healthInsuranceName with whitespace → trimmed
- *   (s) healthInsuranceMemberId empty string → null
+ *   (r) healthInsurance.providerName with whitespace → trimmed
+ *   (s) healthInsurance.memberId empty string → null
  */
 
 import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
@@ -131,8 +131,8 @@ describe('ClickUpPatientMapper', () => {
     const result = mapper.map(task);
 
     expect(result).not.toBeNull();
-    expect(result!.healthInsuranceName).toBe('OSDE 210');
-    expect(result!.healthInsuranceMemberId).toBe('1234567890');
+    expect(result!.healthInsurance?.providerName).toBe('OSDE 210');
+    expect(result!.healthInsurance?.memberId).toBe('1234567890');
 
     // Address populated on primary slot
     expect(result!.addresses).toHaveLength(1);
@@ -143,7 +143,7 @@ describe('ClickUpPatientMapper', () => {
 
   // ── (b) healthInsuranceName absent ────────────────────────────────────────
 
-  it('(b) "Cobertura Informada" absent → healthInsuranceName null', () => {
+  it('(b) "Cobertura Informada" absent → healthInsurance.providerName null', () => {
     const task = makeTask('task-b', 'García, Ana', 'Activo', [
       { name: 'Nombre de Paciente', value: 'Ana' },
       { name: 'Apellido del Paciente', value: 'García' },
@@ -153,13 +153,13 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result).not.toBeNull();
-    expect(result!.healthInsuranceName).toBeNull();
-    expect(result!.healthInsuranceMemberId).toBe('999');
+    expect(result!.healthInsurance?.providerName).toBeNull();
+    expect(result!.healthInsurance?.memberId).toBe('999');
   });
 
   // ── (c) healthInsuranceMemberId absent ────────────────────────────────────
 
-  it('(c) "Número ID Afiliado Paciente" absent → healthInsuranceMemberId null', () => {
+  it('(c) "Número ID Afiliado Paciente" absent → healthInsurance.memberId null', () => {
     const task = makeTask('task-c', 'López, Pedro', 'Activo', [
       { name: 'Nombre de Paciente', value: 'Pedro' },
       { name: 'Apellido del Paciente', value: 'López' },
@@ -169,8 +169,8 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result).not.toBeNull();
-    expect(result!.healthInsuranceName).toBe('Swiss Medical');
-    expect(result!.healthInsuranceMemberId).toBeNull();
+    expect(result!.healthInsurance?.providerName).toBe('Swiss Medical');
+    expect(result!.healthInsurance?.memberId).toBeNull();
   });
 
   // ── (d) Provincia with address_components → state from component ──────────
@@ -475,7 +475,7 @@ describe('ClickUpPatientMapper', () => {
     ]);
 
     const result = mapper.map(task);
-    expect(result!.healthInsuranceName).toBe('IOMA');
+    expect(result!.healthInsurance?.providerName).toBe('IOMA');
   });
 
   // ── (s) healthInsuranceMemberId empty string → null ───────────────────────
@@ -488,7 +488,7 @@ describe('ClickUpPatientMapper', () => {
     ]);
 
     const result = mapper.map(task);
-    expect(result!.healthInsuranceMemberId).toBeNull();
+    expect(result!.healthInsurance?.memberId).toBeNull();
   });
 
   // ── Additional: invalid location value (not an object) ────────────────────
@@ -804,8 +804,8 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     expect(result.hasJudicialProtection).toBe(false);
 
     // Health insurance
-    expect(result.healthInsuranceName).toBe('OSPICHA');
-    expect(result.healthInsuranceMemberId).toBe('12345678');
+    expect(result.healthInsurance?.providerName).toBe('OSPICHA');
+    expect(result.healthInsurance?.memberId).toBe('12345678');
 
     // Responsibles
     expect(result.responsibles).toHaveLength(1);
@@ -865,7 +865,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       'diagnosis', 'dependencyLevel', 'clinicalSpecialty',
       'serviceType', 'additionalComments',
       'hasCud', 'hasConsent', 'hasJudicialProtection',
-      'healthInsuranceName', 'healthInsuranceMemberId',
+      'healthInsurance',
       'responsibles', 'addresses', 'professionals',
     ].sort();
 

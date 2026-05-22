@@ -46,7 +46,8 @@ export interface VacancyFormRightColumnProps {
   selectedAddressId: string | null;
   isLoadingPatient: boolean;
   patientError: string | null;
-  cityLocality?: string | null;
+  /** Read-only location label derived from the selected patient address (address_formatted summarized). */
+  locationLabel?: string | null;
   /** Patient's service_type from ClickUp (Profession[]). Drives the read-only "Tipo de servicio" field. */
   serviceType?: string[] | null;
   selectAddress: (addressId: string) => void;
@@ -64,7 +65,7 @@ export function VacancyFormRightColumn({
   selectedAddressId,
   isLoadingPatient,
   patientError,
-  cityLocality,
+  locationLabel,
   serviceType,
   selectAddress,
 }: VacancyFormRightColumnProps): JSX.Element {
@@ -131,11 +132,11 @@ export function VacancyFormRightColumn({
         </FormField>
       </div>
 
-      {/* 3. Location — read-only from patient (city_locality / zone_neighborhood) */}
+      {/* 3. Location — read-only label derived from selected patient address */}
       <div className={patientDis}>
         <FormField label={tp('location')}>
           <div className={READONLY_CLS}>
-            {cityLocality ?? '—'}
+            {locationLabel ?? '—'}
           </div>
         </FormField>
       </div>

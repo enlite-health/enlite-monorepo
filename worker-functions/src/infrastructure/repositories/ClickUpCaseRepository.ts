@@ -45,13 +45,14 @@ const BASE_SELECT = `
     jp.worker_profile_sought, jp.schedule_days_hours,
     cs.source_created_at, cs.source_updated_at, jp.due_date,
     jp.search_start_date, cs.last_clickup_comment AS last_comment, jp.country,
-    -- Patient fields via JOIN
+    -- Patient location fields via patient_addresses (primary slot)
     p.diagnosis,
-    p.zone_neighborhood  AS patient_zone,
-    p.city_locality      AS patient_neighborhood
+    pa.neighborhood      AS patient_zone,
+    pa.city              AS patient_neighborhood
   FROM job_postings jp
   LEFT JOIN job_postings_clickup_sync cs ON cs.job_posting_id = jp.id
   LEFT JOIN patients p ON p.id = jp.patient_id
+  LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
 `;
 
 export class ClickUpCaseRepository {
@@ -86,12 +87,12 @@ export class ClickUpCaseRepository {
   /** Distribuição de casos por zona geográfica (lida do paciente) */
   async countByZone(country: string = 'AR'): Promise<ZoneCount[]> {
     const result = await this.pool.query(
-      `SELECT p.zone_neighborhood AS zone, COUNT(*)::int AS count
+      `SELECT pa.neighborhood AS zone, COUNT(*)::int AS count
        FROM job_postings jp
-       LEFT JOIN patients p ON p.id = jp.patient_id
+       LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
        WHERE jp.country = $1
          AND jp.deleted_at IS NULL
-       GROUP BY p.zone_neighborhood
+       GROUP BY pa.neighborhood
        ORDER BY count DESC`,
       [country]
     );

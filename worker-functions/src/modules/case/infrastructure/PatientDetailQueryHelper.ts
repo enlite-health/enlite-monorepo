@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type {
   PatientDetailRow,
+  PatientHealthInsuranceDetail,
   PatientResponsibleDetail,
   PatientAddressDetail,
   PatientProfessionalDetail,
@@ -21,7 +22,6 @@ const PATIENT_DETAIL_SQL = `
     birth_date               AS "birthDate",
     document_type            AS "documentType",
     document_number          AS "documentNumber",
-    affiliate_id             AS "affiliateId",
     sex,
     phone_whatsapp           AS "phoneWhatsapp",
     diagnosis,
@@ -34,11 +34,7 @@ const PATIENT_DETAIL_SQL = `
     has_judicial_protection  AS "hasJudicialProtection",
     has_cud                  AS "hasCud",
     has_consent              AS "hasConsent",
-    insurance_informed       AS "insuranceInformed",
-    insurance_verified       AS "insuranceVerified",
-    city_locality            AS "cityLocality",
     province,
-    zone_neighborhood        AS "zoneNeighborhood",
     country,
     status,
     needs_attention          AS "needsAttention",
@@ -86,6 +82,13 @@ async function fetchRelated(pool: Pool, patientId: string) {
         WHERE pa.patient_id = $1
           AND jp.status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE','ACTIVE')
           AND jp.deleted_at IS NULL`,
+      [patientId],
+    ),
+    // Health insurance — migrated from patients columns to dedicated table (migration 184)
+    pool.query(
+      `SELECT provider_name, plan, member_id, emergency_numbers, source
+         FROM patient_health_insurance
+        WHERE patient_id = $1`,
       [patientId],
     ),
   ]);
@@ -170,9 +173,10 @@ export async function fetchPatientDetail(
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows, vacancyRows] = await fetchRelated(pool, id);
+  const [responsibleRows, addressRows, professionalRows, vacancyRows, hiRows] =
+    await fetchRelated(pool, id);
 
-  const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
+  const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: { id: string; patient_address_id: string; status: string; schedule: unknown }) => ({
     id: v.id,
     patient_address_id: v.patient_address_id,
     status: v.status,
@@ -186,6 +190,24 @@ export async function fetchPatientDetail(
 
   const addresses = mapAddresses(addressRows.rows, vacancies);
 
+  const hiRow = hiRows.rows[0] as {
+    provider_name: string | null;
+    plan: string | null;
+    member_id: string | null;
+    emergency_numbers: string[];
+    source: 'clickup' | 'manual';
+  } | undefined;
+
+  const healthInsurance: PatientHealthInsuranceDetail | null = hiRow
+    ? {
+        providerName: hiRow.provider_name,
+        plan: hiRow.plan,
+        memberId: hiRow.member_id,
+        emergencyNumbers: hiRow.emergency_numbers ?? [],
+        source: hiRow.source,
+      }
+    : null;
+
   return {
     id: p.id,
     clickupTaskId: p.clickupTaskId,
@@ -194,7 +216,6 @@ export async function fetchPatientDetail(
     birthDate: p.birthDate,
     documentType: p.documentType,
     documentNumber: p.documentNumber,
-    affiliateId: p.affiliateId,
     sex: p.sex,
     phoneWhatsapp: p.phoneWhatsapp,
     diagnosis: p.diagnosis,
@@ -207,11 +228,8 @@ export async function fetchPatientDetail(
     hasJudicialProtection: p.hasJudicialProtection,
     hasCud: p.hasCud,
     hasConsent: p.hasConsent,
-    insuranceInformed: p.insuranceInformed,
-    insuranceVerified: p.insuranceVerified,
-    cityLocality: p.cityLocality,
+    healthInsurance,
     province: p.province,
-    zoneNeighborhood: p.zoneNeighborhood,
     country: p.country,
     status: p.status,
     needsAttention: p.needsAttention,

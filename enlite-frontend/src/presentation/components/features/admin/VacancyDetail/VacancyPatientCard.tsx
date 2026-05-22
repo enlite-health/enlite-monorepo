@@ -10,8 +10,6 @@ interface VacancyPatientCardProps {
   diagnosis?: string | null;
   /** Kept for backward compat — no longer displayed in the Figma layout */
   zone?: string | null;
-  /** Kept for backward compat — no longer displayed in the Figma layout */
-  insuranceVerified?: boolean | null;
 }
 
 export function VacancyPatientCard({

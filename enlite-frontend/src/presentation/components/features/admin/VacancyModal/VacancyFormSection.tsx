@@ -161,7 +161,7 @@ export function VacancyFormSection({
     }
   }, [isComplete, onCompleteChange]);
 
-  // Fetch patient detail when patient is selected (for diagnosis / cityLocality)
+  // Fetch patient detail when patient is selected (for diagnosis / serviceType)
   useEffect(() => {
     if (!selectedPatientId) {
       setPatientDetail(null);
@@ -335,7 +335,7 @@ export function VacancyFormSection({
           selectedAddressId={selectedAddressId}
           isLoadingPatient={isLoadingPatient}
           patientError={patientError}
-          cityLocality={
+          locationLabel={
             summarizeAddress(
               addresses.find((a) => a.id === selectedAddressId)?.address_formatted,
             ) || null

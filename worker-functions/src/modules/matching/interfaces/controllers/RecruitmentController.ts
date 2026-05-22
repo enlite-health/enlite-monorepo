@@ -44,8 +44,8 @@ export class RecruitmentController {
           jp.status,
           jp.priority,
           p.diagnosis as diagnosis,
-          p.zone_neighborhood as patient_zone,
-          p.city_locality as patient_neighborhood,
+          pa.neighborhood as patient_zone,
+          pa.city as patient_neighborhood,
           jp.worker_profile_sought,
           jp.schedule_days_hours,
           cs.source_created_at,
@@ -70,10 +70,11 @@ export class RecruitmentController {
           p.dependency_level,
           p.clinical_segments,
           p.service_type,
-          p.zone_neighborhood as patient_zone_detail
+          pa.neighborhood as patient_zone_detail
         FROM job_postings jp
         LEFT JOIN job_postings_clickup_sync cs ON cs.job_posting_id = jp.id
         LEFT JOIN patients p ON jp.patient_id = p.id
+        LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
         LEFT JOIN coordinators c ON c.id = jp.coordinator_id
         WHERE jp.case_number IS NOT NULL
           AND jp.deleted_at IS NULL
@@ -233,10 +234,10 @@ export class RecruitmentController {
           p.id, p.channel, p.group_name, p.group_geographic_zone,
           p.recruiter_name, p.published_at, p.observations, p.created_at,
           jp.case_number, jp.title,
-          pt.zone_neighborhood as patient_zone
+          pa.neighborhood as patient_zone
         FROM publications p
         LEFT JOIN job_postings jp ON p.job_posting_id = jp.id AND jp.deleted_at IS NULL
-        LEFT JOIN patients pt ON jp.patient_id = pt.id
+        LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
         WHERE 1=1
       `;
 
@@ -291,12 +292,12 @@ export class RecruitmentController {
           e.obs_reclutamiento, e.obs_encuadre, e.obs_adicionales,
           e.created_at, e.updated_at,
           jp.case_number, jp.title,
-          p.zone_neighborhood as patient_zone,
+          pa.neighborhood as patient_zone,
           w.email as worker_email, w.phone as worker_phone
         FROM encuadres e
         LEFT JOIN job_postings jp ON e.job_posting_id = jp.id AND jp.deleted_at IS NULL
         LEFT JOIN workers w ON e.worker_id = w.id
-        LEFT JOIN patients p ON jp.patient_id = p.id
+        LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
         LEFT JOIN coordinators c ON c.id = e.coordinator_id
         WHERE 1=1
       `;

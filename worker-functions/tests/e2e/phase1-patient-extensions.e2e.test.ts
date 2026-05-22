@@ -3,20 +3,20 @@
  *
  * Integration tests for Phase 1 of the vacancies refactor sprint:
  *   - Migration 147: patient_addresses.state/city/neighborhood columns
- *   - Migration 147: patients.health_insurance_name / health_insurance_member_id
+ *   - Migration 184: patient_health_insurance table (replaces columns in patients)
  *   - Migration 147: patients.status ADMISSION value
- *   - Fill-only semantics: PatientIdentityRepository COALESCE on health insurance fields
+ *   - Fill-only semantics: PatientHealthInsuranceRepository COALESCE on provider_name/member_id
  *   - PatientService.replaceAddresses writes state/city/neighborhood
  *
  * Uses real Postgres (Docker E2E stack). No mocks.
  *
  * Invariants:
  *   I1: patient_addresses has state, city, neighborhood columns (migration 147)
- *   I2: patients has health_insurance_name, health_insurance_member_id columns (migration 147)
+ *   I2: patient_health_insurance table exists with expected columns (migration 184)
  *   I3: patients.status CHECK accepts ADMISSION (migration 147)
- *   I4: PatientService writes health insurance fields on INSERT
- *   I5: PatientService fill-only: does NOT overwrite existing health_insurance_name on UPDATE
- *   I6: PatientService fill-only: does NOT overwrite existing health_insurance_member_id on UPDATE
+ *   I4: PatientService writes health insurance to patient_health_insurance on INSERT
+ *   I5: PatientService fill-only: does NOT overwrite existing provider_name on UPDATE
+ *   I6: PatientService fill-only: does NOT overwrite existing member_id on UPDATE
  *   I7: PatientService.replaceAddresses writes state/city/neighborhood
  *   I8: PatientService.replaceAddresses does NOT write state/city/neighborhood when absent
  */
@@ -93,25 +93,22 @@ describe('I1: patient_addresses has state/city/neighborhood columns (migration 1
 });
 
 // =============================================================================
-// I2: patients has health_insurance_name, health_insurance_member_id columns
+// I2: patient_health_insurance table exists (migration 184)
 // =============================================================================
 
-describe('I2: patients has health insurance columns (migration 147)', () => {
-  it('health_insurance_name column exists in patients', async () => {
-    const res = await pool.query<{ column_name: string }>(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'patients' AND column_name = 'health_insurance_name'`,
-    );
-    expect(res.rows).toHaveLength(1);
-  });
+describe('I2: patient_health_insurance table exists with expected columns (migration 184)', () => {
+  const EXPECTED_COLUMNS = ['id', 'patient_id', 'provider_name', 'plan', 'member_id', 'emergency_numbers', 'source', 'created_at', 'updated_at'];
 
-  it('health_insurance_member_id column exists in patients', async () => {
-    const res = await pool.query<{ column_name: string }>(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'patients' AND column_name = 'health_insurance_member_id'`,
-    );
-    expect(res.rows).toHaveLength(1);
-  });
+  for (const col of EXPECTED_COLUMNS) {
+    it(`column ${col} exists in patient_health_insurance`, async () => {
+      const res = await pool.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'patient_health_insurance' AND column_name = $1`,
+        [col],
+      );
+      expect(res.rows).toHaveLength(1);
+    });
+  }
 });
 
 // =============================================================================
@@ -166,17 +163,19 @@ describe('I3: patients.status CHECK constraint accepts ADMISSION (migration 147)
 // I4: PatientService writes health insurance on INSERT
 // =============================================================================
 
-describe('I4: PatientService writes health_insurance_name/member_id on INSERT', () => {
-  it('creates patient with health insurance fields populated', async () => {
+describe('I4: PatientService writes health insurance to patient_health_insurance on INSERT', () => {
+  it('creates patient_health_insurance row with providerName + memberId', async () => {
     const service = new PatientService();
 
     await service.upsertFromClickUp({
-      clickupTaskId:           TASK.i4,
-      firstName:               'Test',
-      lastName:                'Patient',
-      country:                 'AR',
-      healthInsuranceName:     'OSDE 210',
-      healthInsuranceMemberId: '9876543210',
+      clickupTaskId: TASK.i4,
+      firstName:     'Test',
+      lastName:      'Patient',
+      country:       'AR',
+      healthInsurance: {
+        providerName: 'OSDE 210',
+        memberId:     '9876543210',
+      },
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Test',
@@ -188,17 +187,19 @@ describe('I4: PatientService writes health_insurance_name/member_id on INSERT', 
     }, { onMissingContact: 'flag' });
 
     const row = await pool.query<{
-      health_insurance_name: string | null;
-      health_insurance_member_id: string | null;
+      provider_name: string | null;
+      member_id: string | null;
     }>(
-      `SELECT health_insurance_name, health_insurance_member_id
-       FROM patients WHERE clickup_task_id = $1`,
+      `SELECT phi.provider_name, phi.member_id
+       FROM patient_health_insurance phi
+       JOIN patients p ON p.id = phi.patient_id
+       WHERE p.clickup_task_id = $1`,
       [TASK.i4],
     );
 
     expect(row.rows).toHaveLength(1);
-    expect(row.rows[0].health_insurance_name).toBe('OSDE 210');
-    expect(row.rows[0].health_insurance_member_id).toBe('9876543210');
+    expect(row.rows[0].provider_name).toBe('OSDE 210');
+    expect(row.rows[0].member_id).toBe('9876543210');
   });
 });
 
@@ -206,18 +207,20 @@ describe('I4: PatientService writes health_insurance_name/member_id on INSERT', 
 // I5: Fill-only: does NOT overwrite existing health_insurance_name on UPDATE
 // =============================================================================
 
-describe('I5: fill-only — existing health_insurance_name NOT overwritten on update', () => {
-  it('updates patient but keeps original health_insurance_name when new value differs', async () => {
+describe('I5: fill-only — existing provider_name NOT overwritten on update', () => {
+  it('updates patient but keeps original provider_name when new value differs', async () => {
     const service = new PatientService();
 
     // First upsert: establish original value
     await service.upsertFromClickUp({
-      clickupTaskId:           TASK.i5,
-      firstName:               'Fill',
-      lastName:                'Only',
-      country:                 'AR',
-      healthInsuranceName:     'Swiss Medical',
-      healthInsuranceMemberId: '111000',
+      clickupTaskId: TASK.i5,
+      firstName:     'Fill',
+      lastName:      'Only',
+      country:       'AR',
+      healthInsurance: {
+        providerName: 'Swiss Medical',
+        memberId:     '111000',
+      },
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Fill',
@@ -230,11 +233,13 @@ describe('I5: fill-only — existing health_insurance_name NOT overwritten on up
 
     // Second upsert: simulate ClickUp sync with a DIFFERENT value (should NOT overwrite)
     await service.upsertFromClickUp({
-      clickupTaskId:           TASK.i5,
-      firstName:               'Fill',
-      lastName:                'Only',
-      country:                 'AR',
-      healthInsuranceName:     'IOMA', // different — should NOT replace existing 'Swiss Medical'
+      clickupTaskId: TASK.i5,
+      firstName:     'Fill',
+      lastName:      'Only',
+      country:       'AR',
+      healthInsurance: {
+        providerName: 'IOMA', // different — should NOT replace existing 'Swiss Medical'
+      },
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Fill',
@@ -245,13 +250,16 @@ describe('I5: fill-only — existing health_insurance_name NOT overwritten on up
       }],
     }, { onMissingContact: 'flag' });
 
-    const row = await pool.query<{ health_insurance_name: string | null }>(
-      `SELECT health_insurance_name FROM patients WHERE clickup_task_id = $1`,
+    const row = await pool.query<{ provider_name: string | null }>(
+      `SELECT phi.provider_name
+       FROM patient_health_insurance phi
+       JOIN patients p ON p.id = phi.patient_id
+       WHERE p.clickup_task_id = $1`,
       [TASK.i5],
     );
 
     // Fill-only: original value preserved
-    expect(row.rows[0].health_insurance_name).toBe('Swiss Medical');
+    expect(row.rows[0].provider_name).toBe('Swiss Medical');
   });
 });
 
@@ -259,18 +267,20 @@ describe('I5: fill-only — existing health_insurance_name NOT overwritten on up
 // I6: Fill-only: does NOT overwrite existing health_insurance_member_id on UPDATE
 // =============================================================================
 
-describe('I6: fill-only — existing health_insurance_member_id NOT overwritten on update', () => {
-  it('updates patient but keeps original health_insurance_member_id when new value differs', async () => {
+describe('I6: fill-only — existing member_id NOT overwritten on update', () => {
+  it('updates patient but keeps original member_id when new value differs', async () => {
     const service = new PatientService();
 
     // First upsert: establish original value
     await service.upsertFromClickUp({
-      clickupTaskId:           TASK.i6,
-      firstName:               'Afl',
-      lastName:                'Id',
-      country:                 'AR',
-      healthInsuranceName:     'Galeno',
-      healthInsuranceMemberId: '777888999',
+      clickupTaskId: TASK.i6,
+      firstName:     'Afl',
+      lastName:      'Id',
+      country:       'AR',
+      healthInsurance: {
+        providerName: 'Galeno',
+        memberId:     '777888999',
+      },
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Afl',
@@ -283,11 +293,13 @@ describe('I6: fill-only — existing health_insurance_member_id NOT overwritten 
 
     // Second upsert: simulate with DIFFERENT member ID (should NOT overwrite)
     await service.upsertFromClickUp({
-      clickupTaskId:           TASK.i6,
-      firstName:               'Afl',
-      lastName:                'Id',
-      country:                 'AR',
-      healthInsuranceMemberId: '000000001', // different — should NOT replace existing
+      clickupTaskId: TASK.i6,
+      firstName:     'Afl',
+      lastName:      'Id',
+      country:       'AR',
+      healthInsurance: {
+        memberId: '000000001', // different — should NOT replace existing
+      },
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Afl',
@@ -298,13 +310,16 @@ describe('I6: fill-only — existing health_insurance_member_id NOT overwritten 
       }],
     }, { onMissingContact: 'flag' });
 
-    const row = await pool.query<{ health_insurance_member_id: string | null }>(
-      `SELECT health_insurance_member_id FROM patients WHERE clickup_task_id = $1`,
+    const row = await pool.query<{ member_id: string | null }>(
+      `SELECT phi.member_id
+       FROM patient_health_insurance phi
+       JOIN patients p ON p.id = phi.patient_id
+       WHERE p.clickup_task_id = $1`,
       [TASK.i6],
     );
 
     // Fill-only: original value preserved
-    expect(row.rows[0].health_insurance_member_id).toBe('777888999');
+    expect(row.rows[0].member_id).toBe('777888999');
   });
 });
 

@@ -47,8 +47,6 @@ const PATIENT_DETAIL = {
   diagnosis: 'TEA moderado',
   dependencyLevel: 'SEVERE',
   serviceType: ['AT'],
-  cityLocality: 'Vicente López',
-  province: 'Buenos Aires',
   lastCaseNumber: CASE_OPTION.caseNumber,
   responsibles: [],
 };

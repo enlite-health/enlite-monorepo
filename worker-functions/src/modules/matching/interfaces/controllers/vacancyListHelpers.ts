@@ -46,7 +46,7 @@ const LIST_VACANCIES_BASE = `
     jp.title,
     jp.status,
     jp.priority,
-    p.zone_neighborhood as patient_zone,
+    pa.neighborhood as patient_zone,
     jp.search_start_date,
     jp.created_at,
     jp.updated_at,
@@ -81,6 +81,7 @@ const LIST_VACANCIES_BASE = `
     END as faltantes
   FROM job_postings jp
   LEFT JOIN patients p ON jp.patient_id = p.id
+  LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
   WHERE jp.case_number IS NOT NULL
     AND jp.deleted_at IS NULL
 `;

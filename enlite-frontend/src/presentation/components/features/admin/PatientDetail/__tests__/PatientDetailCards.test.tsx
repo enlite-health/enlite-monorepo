@@ -442,9 +442,13 @@ describe('FamiliaresCard', () => {
 describe('CoberturaMedicaCard', () => {
   const withInsurance = {
     ...patientDetailFixture,
-    insuranceInformed: 'UNIMED',
-    insuranceVerified: 'Plano Unimed Empresarial',
-    affiliateId: '0000000000000000',
+    healthInsurance: {
+      providerName: 'UNIMED',
+      plan: 'Plano Unimed Empresarial',
+      memberId: '0000000000000000',
+      emergencyNumbers: ['0800-123-4567', '0800-765-4321'],
+      source: 'manual' as const,
+    },
   };
 
   it('renders card title', () => {
@@ -452,28 +456,46 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.getByText('Cobertura Médica')).toBeInTheDocument();
   });
 
-  it('renders provider name from insuranceInformed', () => {
+  it('renders provider name from healthInsurance.providerName', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
     expect(screen.getByText('UNIMED')).toBeInTheDocument();
   });
 
-  it('renders plan from insuranceVerified', () => {
+  it('renders plan from healthInsurance.plan', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
     expect(screen.getByText('Plano Unimed Empresarial')).toBeInTheDocument();
   });
 
-  it('renders affiliateId as credential', () => {
+  it('renders memberId as credential', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
     expect(screen.getByText('0000000000000000')).toBeInTheDocument();
   });
 
-  it('renders "—" for emergency numbers (column missing in schema)', () => {
+  it('renders emergency numbers joined by comma', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    // Multiple "—" may exist; assert the label is present at least
-    expect(screen.getByText('Números de Emergência')).toBeInTheDocument();
+    expect(screen.getByText('0800-123-4567, 0800-765-4321')).toBeInTheDocument();
   });
 
-  it('renders "—" when insurance fields are null', () => {
+  it('renders "—" for emergency numbers when array is empty', () => {
+    const noEmergency = {
+      ...withInsurance,
+      healthInsurance: { ...withInsurance.healthInsurance, emergencyNumbers: [] },
+    };
+    render(<CoberturaMedicaCard patient={noEmergency} />);
+    expect(screen.getByText('Números de Emergência')).toBeInTheDocument();
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders fixture healthInsurance data (OSDE / Plan 410)', () => {
+    render(<CoberturaMedicaCard patient={patientDetailFixture} />);
+    expect(screen.getByText('OSDE')).toBeInTheDocument();
+    expect(screen.getByText('Plan 410')).toBeInTheDocument();
+    expect(screen.getByText('12345678')).toBeInTheDocument();
+    expect(screen.getByText('0800-555-1234')).toBeInTheDocument();
+  });
+
+  it('renders "—" for all fields when healthInsurance is null', () => {
     render(<CoberturaMedicaCard patient={patientDetailMinimal} />);
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThanOrEqual(4);
@@ -494,10 +516,10 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByText('Localizações')).toBeInTheDocument();
   });
 
-  it('renders address fullAddress from fixture', () => {
+  it('renders addressFormatted from fixture', () => {
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
     expect(
-      screen.getByText('Rua Augusta, 975 - São Paulo/SP. Torre A, Ap. 701'),
+      screen.getByText('Rua Augusta, 975 - São Paulo/SP'),
     ).toBeInTheDocument();
   });
 
@@ -527,15 +549,12 @@ describe('LocalizacoesCard', () => {
       ...patientDetailFixture.addresses,
       {
         id: 'addr2',
-        street: 'Rua B',
-        number: '10',
+        addressType: 'secondary',
+        addressFormatted: 'Rua B, 10, SP, SP',
+        addressRaw: 'Rua B, 10',
         complement: null,
-        neighborhood: null,
-        city: 'SP',
-        state: 'SP',
-        country: 'BR',
-        zipCode: null,
-        fullAddress: 'Rua B, 10, SP, SP',
+        displayOrder: 2,
+        isPrimary: false,
       },
     ];
     render(<LocalizacoesCard addresses={many} />);
