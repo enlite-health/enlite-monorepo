@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
-import type { FunnelStages } from '@hooks/admin/useEncuadreFunnel';
+import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useEncuadreFunnel';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { DraggableCard } from './DraggableCard';
@@ -10,7 +10,7 @@ import { RejectionReasonSelect } from './RejectionReasonSelect';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
-  onMove: (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => Promise<void>;
+  onMove: (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => Promise<MoveEncuadreError | null>;
 }
 
 const COLUMN_CONFIG = [
@@ -80,7 +80,7 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
   return (
     <>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div data-testid="kanban-board" className="flex gap-3 overflow-x-auto pb-4">
           {COLUMN_CONFIG.map((col) => {
             const items = stages[col.id as keyof FunnelStages] ?? [];
             return (

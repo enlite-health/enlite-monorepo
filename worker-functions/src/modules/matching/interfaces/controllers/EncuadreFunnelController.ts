@@ -1,6 +1,10 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import {
+  assertWorkerCanApply,
+  WorkerNotEligibleError,
+} from '../../domain/WorkerApplicationEligibility';
 
 
 /**
@@ -168,6 +172,22 @@ export class EncuadreFunnelController {
       if (!workerId || !jobPostingId) {
         res.status(400).json({ success: false, error: 'Encuadre has no linked worker or job posting' });
         return;
+      }
+
+      try {
+        await assertWorkerCanApply(this.db, workerId);
+      } catch (err) {
+        if (err instanceof WorkerNotEligibleError) {
+          res.status(err.status).json({
+            success: false,
+            error: 'registration_incomplete',
+            code: err.code,
+            reason: err.reason,
+            workerStatus: err.workerStatus,
+          });
+          return;
+        }
+        throw err;
       }
 
       // 2. Atualizar application_funnel_stage (fonte de verdade)

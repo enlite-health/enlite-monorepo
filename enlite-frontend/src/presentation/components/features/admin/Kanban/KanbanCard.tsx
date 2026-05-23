@@ -40,6 +40,7 @@ const TALENTUM_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
 };
 
 export function KanbanCard({
+  id,
   workerId,
   workerName,
   workerPhone,
@@ -71,7 +72,11 @@ export function KanbanCard({
     : null;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
+    <div
+      data-testid={`kanban-card-${id}`}
+      data-stage={stage}
+      className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
+    >
       <div className="flex items-start justify-between gap-2">
         {workerId && onWorkerClick ? (
           <button

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@presentation/hooks/useAuth';
 import { WorkerApiService, WorkerProgressResponse, AvailabilitySlotResponse } from '@infrastructure/http/WorkerApiService';
 import { DocumentApiService, WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
+import { ApiError } from '@infrastructure/http/ApiError';
 
 const SESSION_KEY_UTM = 'enlite_utm_source';
 const SESSION_KEY_RETURN_URL = 'enlite_vacancy_return_url';
@@ -98,16 +99,32 @@ export function usePostularseAction(
         return;
       }
 
-      // Track acquisition channel (fire-and-forget — must not block postularse)
+      // Track acquisition channel — blocking. Se o backend bloquear (403 com
+      // code='WORKER_NOT_ELIGIBLE'), reabre o modal com missing fields atualizados
+      // ao invés de mandar pro WhatsApp. Cobre race-condition: o status do worker
+      // pode ter mudado entre o client-side check acima e o submit ao backend.
       const channel = sessionStorage.getItem(SESSION_KEY_UTM);
       if (channel && jobPostingId) {
-        WorkerApiService.trackAcquisitionChannel(jobPostingId, channel)
-          .then(() => {
-            sessionStorage.removeItem(SESSION_KEY_UTM);
-          })
-          .catch((err) => {
-            console.warn('[usePostularseAction] trackAcquisitionChannel failed:', err);
-          });
+        try {
+          await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
+          sessionStorage.removeItem(SESSION_KEY_UTM);
+        } catch (err) {
+          if (err instanceof ApiError && err.code === 'WORKER_NOT_ELIGIBLE') {
+            // Re-fetch progresso/docs/availability pra mostrar campos faltantes no modal
+            const [workerData2, documentsData2, availabilityData2] = await Promise.all([
+              WorkerApiService.getProgress(),
+              DocumentApiService.getDocuments(),
+              WorkerApiService.getAvailability(),
+            ]);
+            setMissingFields({
+              registration: detectRegistrationFields(workerData2, availabilityData2),
+              documents: detectDocumentFields(documentsData2),
+            });
+            setState('incomplete');
+            return;
+          }
+          console.warn('[usePostularseAction] trackAcquisitionChannel failed:', err);
+        }
       }
 
       window.open(whatsappUrl, '_blank');

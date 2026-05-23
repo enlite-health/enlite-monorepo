@@ -155,7 +155,12 @@ export class TalentumPrescreeningRepository {
          source
        ) VALUES ($1, $2, $3, $4, 'applied', 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-         application_funnel_stage = EXCLUDED.application_funnel_stage,
+         application_funnel_stage = CASE
+           WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
+                >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)
+           THEN EXCLUDED.application_funnel_stage
+           ELSE worker_job_applications.application_funnel_stage
+         END,
          match_score              = EXCLUDED.match_score,
          application_status       = COALESCE(worker_job_applications.application_status, EXCLUDED.application_status),
          source                   = COALESCE(NULLIF(worker_job_applications.source, 'manual'), EXCLUDED.source),

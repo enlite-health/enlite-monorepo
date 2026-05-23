@@ -929,7 +929,14 @@
         "dispatchInvitesButton": "Enviar invitaciones",
         "kanban": {
           "totalEncuadres": "encuadres totales",
-          "refresh": "Actualizar"
+          "refresh": "Actualizar",
+          "moveErrorTitle": "No se pudo mover el encuadre",
+          "workerNotEligibleTitle": "Worker con registro incompleto",
+          "workerEligibilityReason": {
+            "registration_incomplete": "El worker todavía no completó su registro o no envió todos los documentos obligatorios. Solicítale completar el perfil antes de avanzar en el embudo.",
+            "worker_disabled": "El worker está desactivado en el sistema y no puede ser movido en el embudo.",
+            "worker_not_found": "El worker no fue encontrado o fue fusionado con otro registro."
+          }
         }
       },
       "funnelTabs": {

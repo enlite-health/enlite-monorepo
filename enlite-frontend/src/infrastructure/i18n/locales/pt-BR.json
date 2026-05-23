@@ -913,7 +913,14 @@
         "dispatchInvitesButton": "Disparar novos convites",
         "kanban": {
           "totalEncuadres": "encuadres totais",
-          "refresh": "Atualizar"
+          "refresh": "Atualizar",
+          "moveErrorTitle": "Não foi possível mover o encuadre",
+          "workerNotEligibleTitle": "Worker com cadastro incompleto",
+          "workerEligibilityReason": {
+            "registration_incomplete": "O worker ainda não completou o cadastro ou não enviou todos os documentos obrigatórios. Peça ao worker pra completar o perfil antes de avançar no funil.",
+            "worker_disabled": "O worker está desativado no sistema e não pode ser movido no funil.",
+            "worker_not_found": "Worker não encontrado ou fundido com outro registro."
+          }
         }
       },
       "funnelTabs": {

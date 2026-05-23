@@ -4,6 +4,10 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase, WorkerRepository } from '@modules/worker';
+import {
+  assertWorkerCanApply,
+  WorkerNotEligibleError,
+} from '../../domain/WorkerApplicationEligibility';
 
 const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
 
@@ -85,12 +89,29 @@ export class WorkerApplicationsController {
         return;
       }
 
-      // Upsert WJA: worker self-applied via public link, lands in INITIATED column.
+      try {
+        await assertWorkerCanApply(this.db, worker.id);
+      } catch (err) {
+        if (err instanceof WorkerNotEligibleError) {
+          res.status(err.status).json({
+            success: false,
+            error: 'registration_incomplete',
+            code: err.code,
+            reason: err.reason,
+            workerStatus: err.workerStatus,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      // Upsert WJA: worker self-applied via public link, lands in INVITED column.
+      // (Clicou no link, ainda não entrou no WhatsApp Talentum — INITIATED só via webhook.)
       // ON CONFLICT: only sets acquisition_channel if currently NULL (first-touch wins).
       await this.db.query(
         `INSERT INTO worker_job_applications
            (worker_id, job_posting_id, application_status, source, acquisition_channel, application_funnel_stage)
-         VALUES ($1, $2, 'applied', 'manual', $3, 'INITIATED')
+         VALUES ($1, $2, 'applied', 'manual', $3, 'INVITED')
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            acquisition_channel = CASE
              WHEN worker_job_applications.acquisition_channel IS NULL THEN EXCLUDED.acquisition_channel

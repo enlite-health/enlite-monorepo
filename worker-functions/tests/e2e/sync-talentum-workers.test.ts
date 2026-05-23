@@ -297,11 +297,13 @@ describe('Talentum Workers Sync API', () => {
       await pool.query('DELETE FROM job_postings WHERE id = $1', [jobPostingId]).catch(() => {});
     });
 
-    it('creates worker_job_application with DB default funnel stage (INITIATED)', async () => {
-      // Sync only sets worker_id, job_posting_id, status, source — no funnel stage
+    it('creates worker_job_application with funnel stage INVITED (sync sets INVITED explicitly)', async () => {
+      // After migration 187: sync sets application_funnel_stage = 'INVITED' explicitly.
+      // INVITED = worker detected in Talentum dashboard, no evidence of WhatsApp entry.
       await pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-         VALUES ($1, $2, 'applied', 'talentum')
+        `INSERT INTO worker_job_applications
+           (worker_id, job_posting_id, application_status, application_funnel_stage, source)
+         VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [workerId, jobPostingId],
       );
@@ -313,7 +315,7 @@ describe('Talentum Workers Sync API', () => {
         [workerId, jobPostingId],
       );
 
-      expect(rows[0].application_funnel_stage).toBe('INITIATED'); // DB default
+      expect(rows[0].application_funnel_stage).toBe('INVITED');
       expect(rows[0].application_status).toBe('applied');
       expect(rows[0].source).toBe('talentum');
     });
@@ -321,8 +323,9 @@ describe('Talentum Workers Sync API', () => {
     it('ON CONFLICT DO NOTHING preserves existing record', async () => {
       // Try to insert again — should not create duplicate
       await pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-         VALUES ($1, $2, 'applied', 'talentum')
+        `INSERT INTO worker_job_applications
+           (worker_id, job_posting_id, application_status, application_funnel_stage, source)
+         VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [workerId, jobPostingId],
       );
@@ -333,7 +336,7 @@ describe('Talentum Workers Sync API', () => {
         [workerId, jobPostingId],
       );
 
-      expect(rows[0].application_funnel_stage).toBe('INITIATED'); // preserved
+      expect(rows[0].application_funnel_stage).toBe('INVITED'); // preserved
     });
 
     it('creates encuadre with Talentum origen and dedup_hash', async () => {
