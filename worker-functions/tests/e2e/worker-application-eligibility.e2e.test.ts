@@ -246,8 +246,9 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     it('INSERT com worker INCOMPLETE_REGISTER + source=planilla_operativa → permitido (bypass histórico)', async () => {
       await expect(
         pool.query(
-          `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-           VALUES ($1, $2, 'applied', 'planilla_operativa')`,
+          `INSERT INTO worker_job_applications
+             (worker_id, job_posting_id, application_status, source, application_funnel_stage)
+           VALUES ($1, $2, 'applied', 'planilla_operativa', 'INVITED')`,
           [W.INC, vacancyId],
         ),
       ).resolves.toBeDefined();
@@ -262,8 +263,9 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     it('INSERT com worker REGISTERED → permitido', async () => {
       await expect(
         pool.query(
-          `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-           VALUES ($1, $2, 'applied', 'manual')`,
+          `INSERT INTO worker_job_applications
+             (worker_id, job_posting_id, application_status, source, application_funnel_stage)
+           VALUES ($1, $2, 'applied', 'manual', 'INVITED')`,
           [W.REG, vacancyId],
         ),
       ).resolves.toBeDefined();

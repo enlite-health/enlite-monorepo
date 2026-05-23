@@ -10,6 +10,13 @@
  *   2. If not found → create with INCOMPLETE_REGISTER status
  *   3. If found → fill NULL/empty fields (name, phone)
  *   4. Link to job_postings via case_number extracted from project titles
+ *
+ * application_funnel_stage is set to INVITED for new rows (worker detected in Talentum
+ * dashboard project, but no evidence of WhatsApp entry yet). The canonical upgrade to
+ * INITIATED+ is exclusive to the PRESCREENING_RESPONSE webhook.
+ * ON CONFLICT DO NOTHING: webhook-set stage is preserved for existing rows.
+ *
+ * TD-035 (simplified): StageDecider removed — see docs/FOLLOWUPS.md
  */
 
 import * as crypto from 'crypto';
@@ -21,16 +28,8 @@ import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { logger } from '@shared/logging';
 import type { TalentumDashboardProfile } from '../domain/ITalentumApiClient';
-import { TalentumFunnelStageMapper } from '../domain/TalentumFunnelStageMapper';
-import { TalentumSyncStageDecider } from './TalentumSyncStageDecider';
-import type { FunnelStage } from '@modules/matching/domain/FunnelStageMapper';
 
 const TAG = '[SyncTalentumWorkers]';
-
-const funnelStageMapper = new TalentumFunnelStageMapper();
-
-// INITIATED é o stage menos avançado — sempre seguro aplicar sem risco semântico
-const SAFE_DEFAULT_STAGE: FunnelStage = 'INITIATED';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -55,13 +54,11 @@ export class SyncTalentumWorkersUseCase {
   private db: Pool;
   private encryptionService: KMSEncryptionService;
   private blindIndexService: BlindIndexService;
-  private stageDecider: TalentumSyncStageDecider;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
     this.blindIndexService = new BlindIndexService();
-    this.stageDecider = new TalentumSyncStageDecider(this.db);
   }
 
   async execute(): Promise<WorkerSyncReport> {
@@ -172,8 +169,9 @@ export class SyncTalentumWorkersUseCase {
         [authUid, email, phone, firstNameEnc, lastNameEnc, nameBidxLiteral],
       );
       return result.rows[0].id;
-    } catch (err: any) {
-      if (err.code === '23505') {
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      if ((e as NodeJS.ErrnoException & { code?: string }).code === '23505') {
         // Unique violation — race condition, worker was created concurrently
         const existing = await this.db.query(
           'SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1',
@@ -274,6 +272,19 @@ export class SyncTalentumWorkersUseCase {
 
   // ── Case linking ─────────────────────────────────────────────────
 
+  /**
+   * Ensures WJA + encuadre bond for each (worker, project) pair.
+   *
+   * Sync sets application_funnel_stage = INVITED for new rows (worker detected in
+   * Talentum dashboard, no evidence of WhatsApp entry yet). The canonical upgrade to
+   * INITIATED+ is exclusive to the PRESCREENING_RESPONSE webhook.
+   *
+   * WJA INSERT uses ON CONFLICT DO NOTHING:
+   *   - New row → INVITED (explicit, no default dependency)
+   *   - Existing row → no mutation (webhook-set stage preserved)
+   *
+   * profile.status (global per-worker, not per-encuadre) is intentionally ignored.
+   */
   private async linkToCases(
     workerId: string, profile: TalentumDashboardProfile, report: WorkerSyncReport,
   ): Promise<number> {
@@ -292,14 +303,6 @@ export class SyncTalentumWorkersUseCase {
       return 0;
     }
 
-    // Opção B do TD-035: carregar todos os prescreenings do worker UMA VEZ,
-    // fora do loop de vagas. O decider aplica filtro em memória — evita N+1.
-    const prescreenings = await this.stageDecider.loadPrescreeningsForWorker(workerId);
-
-    // profile.status é per-worker (global), não per-vaga.
-    // Resolução do stage acontece dentro do loop, condicionada à decisão do decider.
-    const globalMappedStage: FunnelStage = this.resolveProfileFunnelStage(profile.status);
-
     for (const project of profile.projects) {
       try {
         const caseNumber = this.extractCaseNumber(project.title);
@@ -312,42 +315,17 @@ export class SyncTalentumWorkersUseCase {
         if (!jp.rows[0]) continue;
         const jobPostingId: string = jp.rows[0].id;
 
-        // Decide se profile.status global pode ser aplicado para esta vaga específica.
-        // Ver TalentumSyncStageDecider para regras detalhadas.
-        const decision = this.stageDecider.decide(workerId, jobPostingId, prescreenings);
-
-        let wjaResult: { rowCount: number | null };
-
-        if (decision.action === 'apply_global_status') {
-          // Sem prescreening conflitante — aplica stage mapeado do profile.status global.
-          // ON CONFLICT: avança só se o novo stage tem precedência >= atual
-          // (usa função SQL funnel_stage_precedence — migration 185).
-          wjaResult = await this.db.query(
-            `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-             VALUES ($1, $2, 'applied', $3, 'talentum')
-             ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-               application_funnel_stage = CASE
-                 WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
-                      >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)
-                 THEN EXCLUDED.application_funnel_stage
-                 ELSE worker_job_applications.application_funnel_stage
-               END,
-               updated_at = NOW()
-             RETURNING id`,
-            [workerId, jobPostingId, globalMappedStage],
-          );
-        } else {
-          // Webhook canônico per-vaga é dono, ou profile.status é de outra vaga.
-          // Garante que WJA existe mas NÃO muta o stage (deixa default INITIATED
-          // no INSERT inicial; ON CONFLICT DO NOTHING mantém stage existente intacto).
-          wjaResult = await this.db.query(
-            `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-             VALUES ($1, $2, 'applied', $3, 'talentum')
-             ON CONFLICT (worker_id, job_posting_id) DO NOTHING
-             RETURNING id`,
-            [workerId, jobPostingId, SAFE_DEFAULT_STAGE],
-          );
-        }
+        // Ensure WJA exists. Sync detected this worker is enrolled in a project on the
+        // Talentum dashboard — apenas o vínculo, sem garantia de que entrou no WhatsApp.
+        // Stage = INVITED. ON CONFLICT DO NOTHING: webhook canônico (INITIATED+) preserva.
+        const wjaResult = await this.db.query(
+          `INSERT INTO worker_job_applications
+             (worker_id, job_posting_id, application_status, application_funnel_stage, source)
+           VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+           ON CONFLICT (worker_id, job_posting_id) DO NOTHING
+           RETURNING id`,
+          [workerId, jobPostingId],
+        );
 
         // encuadre — idempotent via dedup_hash
         const workerName = profile.fullName || `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim();
@@ -364,6 +342,8 @@ export class SyncTalentumWorkersUseCase {
           [workerId, jobPostingId, workerName, rawPhone, dedupHash],
         );
 
+        logger.info({ msg: `${TAG} ensured WJA + encuadre bond`, workerId, jobPostingId, caseNumber });
+
         if (wjaResult.rowCount && wjaResult.rowCount > 0) linked++;
       } catch (err: unknown) {
         const e = err instanceof Error ? err : new Error(String(err));
@@ -372,20 +352,6 @@ export class SyncTalentumWorkersUseCase {
     }
 
     return linked;
-  }
-
-  /**
-   * Traduz profile.status (dashboard Talentum) para FunnelStage canônico.
-   * Fallback conservador em INITIATED quando status é desconhecido ou ausente.
-   */
-  private resolveProfileFunnelStage(profileStatus: string | undefined | null): FunnelStage {
-    if (!profileStatus) return 'INITIATED';
-    const mapped = funnelStageMapper.mapToInternalStage(profileStatus);
-    if (mapped === null) {
-      logger.warn({ msg: `${TAG} Unknown profile.status from Talentum dashboard — falling back to INITIATED`, profileStatus });
-      return 'INITIATED';
-    }
-    return mapped;
   }
 
   private extractCaseNumber(title: string): number | null {

@@ -32,7 +32,7 @@ export class WorkerApplicationRepository {
     workerId: string,
     jobPostingId: string,
     source = 'talent_search',
-    funnelStage: ApplicationFunnelStage = 'INITIATED',
+    funnelStage: ApplicationFunnelStage,
   ): Promise<{ created: boolean }> {
     const hasSource = await this.hasSourceColumn();
 

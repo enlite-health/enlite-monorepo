@@ -518,8 +518,9 @@ describe('vacancy-match — messaged_at atualizado após envio bem-sucedido', ()
     vacancyId = r2.rows[0].id;
 
     await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status)
-       VALUES ($1, $2, 'under_review')
+      `INSERT INTO worker_job_applications
+         (worker_id, job_posting_id, application_status, application_funnel_stage)
+       VALUES ($1, $2, 'under_review', 'INVITED')
        ON CONFLICT DO NOTHING`,
       [workerId, vacancyId],
     );

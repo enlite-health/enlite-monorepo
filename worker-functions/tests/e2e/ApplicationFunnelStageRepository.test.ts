@@ -33,9 +33,11 @@ const TEST_EMAIL_DOMAIN = '@appfunnelstagerepo.test';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function insertTestWorker(suffix: string): Promise<string> {
+  // status='REGISTERED' é obrigatório: trigger enforce_worker_registered_for_application
+  // (migration 183) bloqueia INSERT em worker_job_applications se status != 'REGISTERED'.
   const result = await pool.query(
-    `INSERT INTO workers (auth_uid, email, country, timezone)
-     VALUES ($1, $2, 'BR', 'America/Sao_Paulo')
+    `INSERT INTO workers (auth_uid, email, country, timezone, status)
+     VALUES ($1, $2, 'BR', 'America/Sao_Paulo', 'REGISTERED')
      RETURNING id`,
     [`uid-${suffix}`, `worker-${suffix}${TEST_EMAIL_DOMAIN}`],
   );
@@ -52,27 +54,18 @@ async function insertTestJobPosting(suffix: string): Promise<string> {
   return result.rows[0].id as string;
 }
 
-/** Insere application com stage explícito. Omitir stage usa o DEFAULT do banco. */
+/** Insere application com stage explícito. Omitir stage usa 'INVITED' como fallback seguro. */
 async function insertApplication(
   workerId: string,
   jobPostingId: string,
   stage?: string,
 ): Promise<string> {
-  if (stage !== undefined) {
-    const result = await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
-       VALUES ($1, $2, $3)
-       RETURNING id`,
-      [workerId, jobPostingId, stage],
-    );
-    return result.rows[0].id as string;
-  }
-
+  const resolvedStage = stage ?? 'INVITED';
   const result = await pool.query(
-    `INSERT INTO worker_job_applications (worker_id, job_posting_id)
-     VALUES ($1, $2)
+    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
+     VALUES ($1, $2, $3)
      RETURNING id`,
-    [workerId, jobPostingId],
+    [workerId, jobPostingId, resolvedStage],
   );
   return result.rows[0].id as string;
 }
@@ -315,25 +308,38 @@ describe('AF9 — Listar applications por stage', () => {
   });
 });
 
-// ── AF10: DEFAULT do stage ─────────────────────────────────────────────────────
+// ── AF10: Sem DEFAULT — INSERT sem stage deve falhar (migration 187) ────────────
 
-describe('AF10 — DEFAULT do application_funnel_stage ao INSERT sem especificar', () => {
-  it('deve usar o DEFAULT definido na migration (não deve ser um valor antigo como APPLIED)', async () => {
+describe('AF10 — INSERT sem application_funnel_stage falha com NOT NULL (migration 187)', () => {
+  it('INSERT sem application_funnel_stage deve falhar com violação de NOT NULL', async () => {
     // Arrange
     const s = makeSuffix();
     const workerId = await insertTestWorker(s);
     const jobId = await insertTestJobPosting(s);
 
-    // Act — INSERT sem especificar application_funnel_stage
-    const appId = await insertApplication(workerId, jobId);
+    // Act / Assert — migration 187 removeu o DEFAULT e forçou NOT NULL.
+    // Usa source='planilla_operativa' para bypasser o trigger enforce_worker_registered
+    // (migration 183) e isolar o teste de NOT NULL constraint (código 23502).
+    await expect(
+      pool.query(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, source)
+         VALUES ($1, $2, 'planilla_operativa') RETURNING id`,
+        [workerId, jobId],
+      ),
+    ).rejects.toMatchObject({ code: '23502' }); // 23502 = not_null_violation
+  });
 
-    // Assert — qualquer que seja o DEFAULT, deve ser um valor válido da constraint nova
+  it('INSERT com stage explícito INVITED deve ter sucesso', async () => {
+    // Arrange
+    const s = makeSuffix();
+    const workerId = await insertTestWorker(s);
+    const jobId = await insertTestJobPosting(s);
+
+    // Act — INSERT com stage explícito (obrigatório após migration 187)
+    const appId = await insertApplication(workerId, jobId, 'INVITED');
+
+    // Assert
     const stage = await getApplicationStage(appId);
-    const VALID_STAGES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'NOT_QUALIFIED', 'PLACED'];
-    expect(VALID_STAGES).toContain(stage);
-
-    // E NÃO deve ser nenhum dos valores antigos
-    const INVALID_STAGES = ['APPLIED', 'PRE_SCREENING', 'INTERVIEW_SCHEDULED', 'INTERVIEWED', 'HIRED', 'REJECTED'];
-    expect(INVALID_STAGES).not.toContain(stage);
+    expect(stage).toBe('INVITED');
   });
 });
