@@ -160,14 +160,6 @@ export function KanbanCard({
         </div>
       )}
 
-      {funnelStage === 'RECHAZADO' && (
-        <div className="mt-2">
-          <span data-testid="rechazado-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600">
-            ✕ RECHAZADO
-          </span>
-        </div>
-      )}
-
       {rejectionReasonCategory && (
         <div className="mt-2">
           <span data-testid="rejection-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600">

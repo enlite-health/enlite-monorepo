@@ -116,7 +116,7 @@ export class EncuadreFunnelController {
         // Classificação direta por application_funnel_stage
         if (stage === 'SELECTED' || stage === 'PLACED') {
           stages.SELECTED.push(item);
-        } else if (stage === 'REJECTED' || stage === 'RECHAZADO') {
+        } else if (stage === 'REJECTED') {
           stages.REJECTED.push(item);
         } else if (stage === 'CONFIRMED') {
           stages.CONFIRMED.push(item);

@@ -229,7 +229,7 @@ describe('HandleReminderResponseUseCase', () => {
   describe('executeTextResponse', () => {
     const REASON_APP = { ...CONFIRMED_APP, interview_response: 'awaiting_reason' };
 
-    it('captura motivo, marca RECHAZADO, decline no Calendar e envia agradecimento', async () => {
+    it('captura motivo, marca REJECTED, decline no Calendar e envia agradecimento', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [WORKER] })                        // find worker
         .mockResolvedValueOnce({ rows: [REASON_APP] })                    // find awaiting_reason app
@@ -240,7 +240,7 @@ describe('HandleReminderResponseUseCase', () => {
       const result = await useCase.executeTextResponse('whatsapp:+5491112345678', 'No tengo tiempo');
 
       expect(result.isSuccess).toBe(true);
-      expect(mockQuery.mock.calls[3][0]).toContain("'RECHAZADO'");
+      expect(mockQuery.mock.calls[3][0]).toContain("'REJECTED'");
       expect(mockQuery.mock.calls[3][0]).toContain('interview_decline_reason');
       expect(mockQuery.mock.calls[3][1]).toContain('No tengo tiempo');
       expect(mockCalendar.declineAttendee).toHaveBeenCalledWith(

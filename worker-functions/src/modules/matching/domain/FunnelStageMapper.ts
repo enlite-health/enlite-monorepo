@@ -22,8 +22,7 @@ export type FunnelStage =
   | 'CONFIRMED'
   | 'SELECTED'
   | 'PLACED'
-  | 'REJECTED'
-  | 'RECHAZADO';
+  | 'REJECTED';
 
 export interface FunnelStageMapper<TProviderState> {
   /**

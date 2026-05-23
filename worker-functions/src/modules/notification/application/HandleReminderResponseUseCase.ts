@@ -14,7 +14,7 @@ import { HandleReminderResponseQueries, PendingApplication } from './HandleRemin
  *   confirm_no      → pergunta se quer reagendar (awaiting_reschedule)
  *   reschedule_yes  → marca REPROGRAM, remove do Calendar
  *   reschedule_no   → pergunta motivo (awaiting_reason)
- *   texto livre     → captura motivo, marca RECHAZADO, remove do Calendar
+ *   texto livre     → captura motivo, marca REJECTED, remove do Calendar
  *
  * Usa InterviewStateMachine para validar transições.
  * Query helpers herdados de HandleReminderResponseQueries (split por validate:lines).
@@ -57,7 +57,7 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
   }
 
   /**
-   * Processa texto livre do worker como motivo de recusa (RECHAZADO).
+   * Processa texto livre do worker como motivo de recusa (REJECTED).
    * Chamado quando worker está em estado awaiting_reason.
    */
   async executeTextResponse(fromPhone: string, bodyText: string): Promise<Result<void>> {
@@ -273,7 +273,7 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
 
   /**
    * Texto livre: Worker enviou o motivo da recusa.
-   * → Salva motivo, remove do Calendar, marca RECHAZADO
+   * → Salva motivo, remove do Calendar, marca REJECTED
    */
   private async handleDeclineWithReason(
     worker: { id: string; email: string | null },
@@ -304,11 +304,11 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
       );
     }
 
-    // Salvar declínio com motivo → RECHAZADO
+    // Salvar declínio com motivo → REJECTED
     await this.db.query(
       `UPDATE worker_job_applications
        SET interview_response        = 'declined',
-           application_funnel_stage  = 'RECHAZADO',
+           application_funnel_stage  = 'REJECTED',
            interview_decline_reason  = $3,
            interview_responded_at    = NOW(),
            interview_meet_link       = NULL,

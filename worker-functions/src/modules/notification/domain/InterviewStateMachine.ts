@@ -23,7 +23,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
  *   confirmed → awaiting_reschedule (worker disse "No" no reminder)
  *   awaiting_reschedule → pending   (worker quer reagendar → REPROGRAM)
  *   awaiting_reschedule → declined  (worker não quer reagendar → envia motivo)
- *   awaiting_reason → declined      (motivo capturado → RECHAZADO)
+ *   awaiting_reason → declined      (motivo capturado → REJECTED)
  */
 export function canTransition(from: string, to: string): boolean {
   return VALID_TRANSITIONS[from]?.includes(to) ?? false;

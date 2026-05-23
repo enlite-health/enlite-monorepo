@@ -192,7 +192,7 @@ export class WorkerApplicationRepository {
        JOIN job_postings jp ON jp.id = wja.job_posting_id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
        WHERE wja.worker_id = $1
-         AND wja.application_funnel_stage NOT IN ('REJECTED', 'NOT_QUALIFIED', 'RECHAZADO')
+         AND wja.application_funnel_stage NOT IN ('REJECTED', 'NOT_QUALIFIED')
          AND jp.deleted_at IS NULL
        ORDER BY jp.created_at DESC`,
       [workerId],

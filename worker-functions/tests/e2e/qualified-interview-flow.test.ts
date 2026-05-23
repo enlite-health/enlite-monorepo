@@ -527,7 +527,7 @@ describe('Qualified Interview Flow — Full E2E (Steps 4-8)', () => {
         [workerId, rechazadoJobId],
       );
       expect(rows[0].interview_response).toBe('declined');
-      expect(rows[0].application_funnel_stage).toBe('RECHAZADO');
+      expect(rows[0].application_funnel_stage).toBe('REJECTED');
       expect(rows[0].interview_decline_reason).toBe('No tengo tiempo para la entrevista');
       expect(rows[0].interview_meet_link).toBeNull();
       expect(rows[0].interview_datetime).toBeNull();
