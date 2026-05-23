@@ -993,6 +993,8 @@ O `triage-service` foi extraído pra repo próprio em `enlite-health/triage-serv
 - **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (ver [`POSTMORTEM_KANBAN_FUNNEL_BUGS.md`](POSTMORTEM_KANBAN_FUNNEL_BUGS.md) bug #3)
 - **Dono:** backend (worker-functions)
 
+> **Atualização 2026-05-23:** consolidado em [features/worker-job-applications/](features/worker-job-applications/README.md). Pipeline `EncuadreRepository.syncToWorkerJobApplications` será deprecado integralmente em F6 do plano.
+
 **Histórico de execução:**
 
 1. **Iteração 1 (Opção B)** — implementado decider que aplicava `profile.status` global do TalentumDashboardProfile quando o worker não tinha prescreening em vaga nenhuma. 35/35 testes passing.
@@ -1017,6 +1019,8 @@ O `triage-service` foi extraído pra repo próprio em `enlite-health/triage-serv
 ---
 
 ### TD-036 — Admin/canais alternativos criam WJA sem `encuadre`
+
+> **SUPERSEDED 2026-05-23:** invariante WJA-com-encuadre garantida pelo trigger 189 (commit `be5c06d`). Detalhes em [features/worker-job-applications/06-regra-cardinalidade.md](features/worker-job-applications/06-regra-cardinalidade.md).
 
 - **Status:** aberto
 - **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (bugs #1 e #2 do postmortem)
@@ -1048,6 +1052,8 @@ Quebra por origem:
 ---
 
 ### TD-037 — Funil interno abstrato + mappers por provider
+
+> **Atualização 2026-05-23:** mapper já implementado (TD-035 item 3). Sub-item 5 endereçado por [features/worker-job-applications/04-estados-funil-kanban.md](features/worker-job-applications/04-estados-funil-kanban.md) (Kanban de 5 colunas + badges).
 
 - **Status:** decisão tomada 2026-05-22, implementação pendente
 - **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (seção 6 do postmortem)

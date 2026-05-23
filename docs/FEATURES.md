@@ -15,7 +15,7 @@
 | VAC | Gestão de Vagas | CRUD de vagas, enriquecimento LLM, publicações, ciclo de vida | Ativo | [vacancy-management.md](features/vacancy-management.md) |
 | MAT | Matching & Seleção | Matchmaking por score, funil kanban, resultado de encuadre | Ativo | [matching-selection.md](features/matching-selection.md) |
 | INT | Entrevistas & Agendamento | Slots de entrevista, Google Meet links, booking | Ativo | [interview-scheduling.md](features/interview-scheduling.md) |
-| IMP | Importação de Dados | Pipeline multi-fonte (Talentum, ClickUp, Planilla, Ana Care) | Ativo | [data-import.md](features/data-import.md) |
+| IMP | Importação de Dados | Pipeline multi-fonte (Talentum, ClickUp, Ana Care) | Ativo | [data-import.md](features/data-import.md) |
 | MSG | Mensageria & Notificações | WhatsApp via Twilio, templates, bulk dispatch, lembretes | Ativo | [messaging.md](features/messaging.md) |
 | ANL | Analytics & Dashboards | Métricas de recrutamento, coordenadores, alertas, conversão | Ativo | [analytics-dashboards.md](features/analytics-dashboards.md) |
 | WBH | Webhooks & Integrações | Talentum prescreening, Twilio callbacks, partner auth | Ativo | [webhooks-integrations.md](features/webhooks-integrations.md) |
@@ -59,12 +59,15 @@
 | GET | `/api/admin/vacancies/stats` | Estatísticas de vagas |
 
 ### MAT
+
+> **Feature canônica:** [features/worker-job-applications/](features/worker-job-applications/README.md)
+
 | Método | Rota | Função |
 |--------|------|--------|
 | POST | `/api/admin/vacancies/:id/match` | Executar matchmaking |
 | GET | `/api/admin/vacancies/:id/match-results` | Resultados do match |
 | GET | `/api/admin/vacancies/:id/funnel` | Funil kanban |
-| PUT | `/api/admin/encuadres/:id/move` | Mover encuadre no kanban |
+| PUT | `/api/admin/encuadres/:id/move` | Mover encuadre no kanban | <!-- endpoint usa nome legado; opera sobre WJA -->
 
 ### INT
 | Método | Rota | Função |

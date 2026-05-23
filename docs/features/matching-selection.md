@@ -38,21 +38,11 @@ Resultados ordenados por score
   |  Salvos em worker_job_applications (application_status=under_review)
 ```
 
-### Funil Kanban (7 colunas)
+### Funil Kanban
 
-```
-INVITED -> INITIATED -> IN_PROGRESS -> COMPLETED -> CONFIRMED -> SELECTED
-                                                              -> REJECTED
-```
+Ver [04-estados-funil-kanban.md](worker-job-applications/04-estados-funil-kanban.md) — Kanban-alvo de 5 colunas + badges.
 
-**Logica de classificacao** (baseada em `application_funnel_stage`):
-- **SELECTED**: stage = SELECTED ou PLACED
-- **REJECTED**: stage = REJECTED
-- **CONFIRMED**: stage = CONFIRMED
-- **COMPLETED**: stage = COMPLETED, QUALIFIED, IN_DOUBT ou NOT_QUALIFIED
-- **IN_PROGRESS**: stage = IN_PROGRESS
-- **INITIATED**: stage = INITIATED
-- **INVITED**: stage null ou sem WJA (fallback)
+> **Histórico (pré-2026-05-23):** o Kanban tinha 7 colunas e a lógica de classificação mapeava stages legados (`SELECTED`, `PLACED`) para colunas próprias. Esses stages estão sendo removidos do enum em F2+F7 — ver doc canônico.
 
 > Detalhes completos do fluxo Talentum + Kanban: ver `docs/features/talentum-prescreening-kanban.md`
 
@@ -68,6 +58,8 @@ PUT /api/admin/encuadres/:id/move
   v
 Atualiza application_funnel_stage (WJA) + encuadre.resultado para estados terminais
 ```
+
+> Nota: o endpoint usa o nome legado `encuadres` mas opera sobre WJA — ver [08-pipelines.md](worker-job-applications/08-pipelines.md). `encuadres.resultado` é write-back legado (sem authority sobre o stage do funil).
 
 Colunas Talentum (INITIATED, IN_PROGRESS, COMPLETED) nao aceitam drag — status controlado pelo webhook.
 
@@ -94,8 +86,8 @@ Colunas Talentum (INITIATED, IN_PROGRESS, COMPLETED) nao aceitam drag — status
 | `src/interfaces/controllers/VacanciesController.ts` | Trigger match + results |
 | `src/interfaces/controllers/EncuadreController.ts` | Historico encuadres |
 | `src/application/use-cases/UpdateEncuadreResultUseCase.ts` | Logica de atualizacao |
-| `src/infrastructure/repositories/EncuadreRepository.ts` | Persistencia encuadres |
-| `src/domain/entities/Encuadre.ts` | Entidade encuadre |
+| `src/infrastructure/repositories/EncuadreRepository.ts` | Persistencia encuadres — **LEGADO em deprecação progressiva** (ver [07-tabelas-envolvidas.md](worker-job-applications/07-tabelas-envolvidas.md)) |
+| `src/domain/entities/Encuadre.ts` | Entidade encuadre — **LEGADO em deprecação progressiva** (ver [07-tabelas-envolvidas.md](worker-job-applications/07-tabelas-envolvidas.md)) |
 | `src/domain/entities/WorkerJobApplication.ts` | Entidade match result |
 
 ### Frontend
@@ -110,7 +102,7 @@ Colunas Talentum (INITIATED, IN_PROGRESS, COMPLETED) nao aceitam drag — status
 
 ## Regras de negocio
 
-- **Resultados validos**: SELECCIONADO, RECHAZADO, AT_NO_ACEPTA, REPROGRAMAR, REEMPLAZO, BLACKLIST, PENDIENTE
+- **Valores narrativos em `encuadres.resultado` (legado, sem authority sobre stage)** — não confundir com stages do enum WJA: SELECCIONADO, RECHAZADO, AT_NO_ACEPTA, REPROGRAMAR, REEMPLAZO, BLACKLIST, PENDIENTE
 - **Categorias de rejeicao**: DISTANCE, SCHEDULE_INCOMPATIBLE, INSUFFICIENT_EXPERIENCE, SALARY_EXPECTATION, WORKER_DECLINED, OVERQUALIFIED, DEPENDENCY_MISMATCH, OTHER
 - **rejectionReasonCategory**: obrigatorio ao rejeitar
 - **Score de penalizacao**: historico de rejeicoes penaliza -10 a -20 pontos

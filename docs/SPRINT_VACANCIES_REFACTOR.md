@@ -195,6 +195,7 @@ Vaga **não tem dados próprios** que duplicam paciente. Ela só:
 
 Avaliados 3 caminhos:
 - **A** Schema intacto, endpoint usa COALESCE — rejeitado: dívida arquitetural permanece
+  > **Atualização 2026-05-23:** COALESCE será removido em F4-F6 de [features/worker-job-applications/](features/worker-job-applications/README.md).
 - **B** Cirúrgico (FK + JOIN, sem dropar) — rejeitado: schema feio para sempre
 - **C** Refactor completo (FK + JOIN + drop columns deprecadas) — **escolhido**
 
@@ -644,7 +645,7 @@ Itens que precisam decisão durante a sprint:
 | Vaga / Vacante / Job Posting | Linha em `job_postings` — solicitação ativa por um prestador (AT/Caregiver) |
 | Caso / Case Number | Identificador clínico do paciente (não único, vagas podem compartilhar) |
 | Vacancy Number | Identificador único de cada vaga (sequência) |
-| Encuadre | Entrevista de matching AT ↔ paciente (entidade separada `encuadres`) |
+| Encuadre | Vocabulário operacional para uma candidatura worker↔vaga (WJA). Tabela `encuadres` é LEGADA — ver [features/worker-job-applications/02-vocabulario.md](features/worker-job-applications/02-vocabulario.md) |
 | Recrutadora / Recruiter | Operador que cria a vaga via upload de PDF |
 | Postularse | Ação do AT/candidato de se inscrever numa vaga (entidade `worker_job_applications`) |
 | ClickUp `Estado de Pacientes` | Lista (901304883903) onde operações cadastra cada paciente — fonte de verdade |

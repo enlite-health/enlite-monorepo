@@ -1,4 +1,6 @@
-# Talentum Prescreening & Kanban de Encuadres
+# Talentum Prescreening (pipeline de origem)
+
+> Para o modelo canônico do funil/Kanban ver [features/worker-job-applications/](worker-job-applications/README.md). Este doc cobre apenas a integração Talentum → ProcessTalentumPrescreening.
 
 > Fluxo completo: webhook Talentum -> persistencia -> sincronizacao com funil -> visualizacao Kanban com polling.
 
@@ -29,7 +31,7 @@ TalentumWebhookController (discriminated union por action)
       1. Resolver worker (email -> phone -> cuil -> auto-create)
       2. Resolver job_posting (ILIKE em title com "CASO NNN")
       3. Persistir prescreening (upsert talentum_prescreenings)
-      4. Sincronizar funil (upsert worker_job_applications + encuadre)
+      4. Sincronizar funil (upsert worker_job_applications — encuadre é nome operacional para a mesma WJA)
       5. Persistir perguntas e respostas
         |
         v
@@ -205,95 +207,9 @@ O Talentum e a fonte de verdade para `application_funnel_stage` — sempre sobre
 
 ---
 
-## Encuadre (entrada no Kanban)
+## Kanban — ver doc canônico
 
-O encuadre e o registro que torna o candidato **visivel no Kanban**. Sem encuadre, o candidato nao aparece.
-
-**Criacao:** `ensureEncuadre` no `ProcessTalentumPrescreening`
-
-```sql
-INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
-VALUES ($1, $2, $3, $4, 'Talentum', $5)
-ON CONFLICT (dedup_hash) DO UPDATE SET
-  worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id),
-  updated_at = NOW()
-```
-
-**dedup_hash:** `md5("talentum|{prescreening.id}|{profile.id}")` — unico por candidato x prescreening.
-
----
-
-## Kanban — Frontend
-
-### Colunas (7 colunas atuais)
-
-```
-INVITED -> INITIATED -> IN_PROGRESS -> COMPLETED -> CONFIRMED -> SELECTED
-                                                              -> REJECTED
-```
-
-| Coluna | application_funnel_stage | Cor | Drag-drop? |
-|--------|------------------------|-----|------------|
-| Invitados | INVITED (auto-match ou sem WJA) | bg-blue-400 | Nao |
-| Iniciado | INITIATED (self-application OU Talentum link clicado) | bg-violet-400 | Nao |
-| En Progreso | IN_PROGRESS | bg-violet-500 | Nao |
-| Completado | COMPLETED, QUALIFIED, IN_DOUBT, NOT_QUALIFIED | bg-violet-600 | Nao |
-| Confirmados | CONFIRMED | bg-cyan-400 | Sim |
-| Seleccionados | SELECTED, PLACED | bg-green-500 | Sim |
-| Rechazados | REJECTED | bg-red-400 | Sim |
-
-**Regra:** colunas Talentum (INITIATED, IN_PROGRESS, COMPLETED) nao aceitam drag — status controlado automaticamente pelo webhook.
-
-### Query do Kanban (backend)
-
-```sql
-SELECT e.*, wja.application_funnel_stage AS funnel_stage,
-  CASE WHEN wja.source = 'talentum' THEN wja.application_funnel_stage ELSE NULL END AS talentum_status
-FROM encuadres e
-LEFT JOIN workers w ON w.id = e.worker_id
-LEFT JOIN worker_job_applications wja ON wja.worker_id = e.worker_id AND wja.job_posting_id = e.job_posting_id
-LEFT JOIN worker_locations wl ON wl.worker_id = e.worker_id
-WHERE e.job_posting_id = $1
-ORDER BY wja.updated_at DESC NULLS LAST, e.created_at DESC
-```
-
-**Ponto critico:** O Kanban faz `FROM encuadres` — sem encuadre, o candidato NAO aparece. O `worker_job_applications` entra via LEFT JOIN para determinar a coluna.
-
-### Classificacao no backend
-
-```typescript
-// Prioridade: resultado terminal > funnel_stage > fallback
-if (stage === 'SELECTED' || stage === 'PLACED') -> SELECTED
-else if (stage === 'REJECTED')                   -> REJECTED
-else if (stage === 'CONFIRMED')                  -> CONFIRMED
-else if (['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'NOT_QUALIFIED'].includes(stage)) -> COMPLETED
-else if (stage === 'IN_PROGRESS')                -> IN_PROGRESS
-else if (stage === 'INITIATED')                  -> INITIATED
-else                                             -> INVITED (fallback)
-```
-
-### Polling (simulated realtime)
-
-**Hook:** `enlite-frontend/src/hooks/admin/useEncuadreFunnel.ts`
-
-- Polling a cada **5 segundos** via `setInterval`
-- Fetch silencioso (sem flicker de loading)
-- Guard contra overlap (ref `isFetchingRef` evita requests acumulando)
-- Cleanup automatico no unmount (usuario sai da tela -> `clearInterval`)
-- Botao "Actualizar" manual continua disponivel
-
-### Talentum badge no card
-
-Cada card exibe um badge com o status Talentum (so se `source = 'talentum'`):
-
-| Badge | Cor |
-|-------|-----|
-| Iniciado | slate |
-| En Progreso | amber |
-| Completado | blue |
-| Calificado | green |
-| En Duda | orange |
-| No Calificado | red |
+O Kanban opera diretamente sobre `worker_job_applications`. Ver [04-estados-funil-kanban.md](worker-job-applications/04-estados-funil-kanban.md) e [08-pipelines.md](worker-job-applications/08-pipelines.md).
 
 ---
 
@@ -302,7 +218,9 @@ Cada card exibe um badge com o status Talentum (so se `source = 'talentum'`):
 **Endpoint:** `PUT /api/admin/encuadres/:id/move`
 **Body:** `{ targetStage, rejectionReasonCategory?, rejectionReason? }`
 
-Stages validos para mover: `INITIATED, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT, NOT_QUALIFIED, CONFIRMED, SELECTED, REJECTED`
+Stages validos para mover: `INITIATED, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT, NOT_QUALIFIED, CONFIRMED, REJECTED`
+
+> Nota: lista será reduzida em F2+F7; ver [02-vocabulario.md](worker-job-applications/02-vocabulario.md).
 
 Efeitos colaterais:
 - `SELECTED` -> atualiza `encuadre.resultado = 'SELECCIONADO'`

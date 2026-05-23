@@ -50,6 +50,7 @@ GET /api/import/history?page=1&limit=20&status=done
       "workersCreated": 42,
       "encuadresCreated": 18,
       "encuadresSkipped": 3,
+      "_comment": "histórico — importador de planilla descontinuado em 2026-05-23",
       "errorRows": 1,
       "createdBy": "admin@enlite.health",
       "createdAt": "2026-03-25T20:00:00Z",
