@@ -172,7 +172,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     // Call 0 = worker lookup, 1 = eligibility check, 2 = WJA upsert
     const upsertCall = mockQuery.mock.calls[2];
     expect(upsertCall[0]).toContain('worker_job_applications');
-    expect(upsertCall[0]).toContain("'INITIATED'");
+    expect(upsertCall[0]).toContain("'INVITED'");
     expect(upsertCall[0]).toContain('acquisition_channel IS NULL');
     expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'facebook']);
   });
