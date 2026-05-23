@@ -200,6 +200,7 @@ export class ProcessTalentumPrescreening {
         prescreening.jobPostingId,
         funnelStage,
         payload.data.response.score ?? 0,
+        prescreening.id,
       );
     } else {
       console.log(`${TAG} syncFunnel: skipped WJA upsert (ANALYZED without statusLabel)`);
@@ -219,6 +220,7 @@ export class ProcessTalentumPrescreening {
     jobPostingId: string,
     funnelStage: string,
     matchScore: number,
+    prescreeningId?: string,
   ): Promise<void> {
     let qualifiedEventId: string | null = null;
     const client = await this.pool.connect();
@@ -233,7 +235,7 @@ export class ProcessTalentumPrescreening {
       console.log(`${TAG} WJA: ${previousStage ?? 'NEW'} → ${funnelStage} | worker=${workerId} | job=${jobPostingId} | score=${matchScore}`);
 
       qualifiedEventId = await this.handleQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage);
-      await this.handleNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage);
+      await this.handleNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId);
 
       await client.query('COMMIT');
     } catch (err) {
@@ -262,10 +264,12 @@ export class ProcessTalentumPrescreening {
 
   private async handleNotQualifiedTransition(
     client: PoolClient, workerId: string, jobPostingId: string, funnelStage: string, previousStage: string | null,
+    prescreeningId?: string,
   ): Promise<void> {
-    if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'NOT_QUALIFIED') return;
+    // Guard: skip if not NOT_QUALIFIED transition, or already auto-rejected (prevents re-execution on duplicate webhook)
+    if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'REJECTED') return;
 
-    console.log(`${TAG} NOT_QUALIFIED transition → marking encuadre RECHAZADO`);
+    console.log(`${TAG} NOT_QUALIFIED transition → marking encuadre RECHAZADO + auto-rejecting WJA`);
     await client.query(
       `UPDATE encuadres
        SET resultado = 'RECHAZADO', rejection_reason_category = 'TALENTUM_NOT_QUALIFIED', updated_at = NOW()
@@ -276,6 +280,19 @@ export class ProcessTalentumPrescreening {
       `INSERT INTO domain_events (event, payload) VALUES ('funnel_stage.not_qualified', $1::jsonb)`,
       [JSON.stringify({ workerId, jobPostingId })],
     );
+
+    // Auto-reject: immediately promote WJA to REJECTED so NOT_QUALIFIED is never persisted
+    await client.query(
+      `UPDATE worker_job_applications
+       SET application_funnel_stage = 'REJECTED', updated_at = NOW()
+       WHERE worker_id = $1 AND job_posting_id = $2`,
+      [workerId, jobPostingId],
+    );
+    await client.query(
+      `INSERT INTO domain_events (event, payload) VALUES ('funnel_stage.rejected', $1::jsonb)`,
+      [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, source: 'auto_not_qualified' })],
+    );
+    console.log(`${TAG} NOT_QUALIFIED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
   }
 
   private async publishQualifiedEvent(eventId: string | null): Promise<void> {

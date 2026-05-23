@@ -74,6 +74,8 @@ describe('EncuadreFunnelController', () => {
 
   describe('getEncuadreFunnel', () => {
     it('classifica encuadres nas 7 colunas por funnel_stage', async () => {
+      // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
+      // Teste usa apenas stages canônicos pós-migration 191
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: null }),
@@ -82,11 +84,10 @@ describe('EncuadreFunnelController', () => {
           makeRow({ id: 'e4', funnel_stage: 'COMPLETED', talentum_status: 'COMPLETED' }),
           makeRow({ id: 'e5', funnel_stage: 'QUALIFIED', talentum_status: 'QUALIFIED' }),
           makeRow({ id: 'e6', funnel_stage: 'IN_DOUBT', talentum_status: 'IN_DOUBT' }),
-          makeRow({ id: 'e7', funnel_stage: 'NOT_QUALIFIED', talentum_status: 'NOT_QUALIFIED' }),
-          makeRow({ id: 'e8', funnel_stage: 'CONFIRMED' }),
-          makeRow({ id: 'e9', funnel_stage: 'SELECTED' }),
-          makeRow({ id: 'e10', funnel_stage: 'REJECTED' }),
-          makeRow({ id: 'e11', funnel_stage: 'PLACED' }),
+          makeRow({ id: 'e7', funnel_stage: 'CONFIRMED' }),
+          makeRow({ id: 'e8', funnel_stage: 'SELECTED' }),
+          makeRow({ id: 'e9', funnel_stage: 'REJECTED' }),
+          makeRow({ id: 'e10', funnel_stage: 'PLACED' }),
         ],
       });
 
@@ -95,7 +96,7 @@ describe('EncuadreFunnelController', () => {
 
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
-      expect(response.data.totalEncuadres).toBe(11);
+      expect(response.data.totalEncuadres).toBe(10);
 
       const { stages } = response.data;
 
@@ -111,35 +112,34 @@ describe('EncuadreFunnelController', () => {
       expect(stages.IN_PROGRESS).toHaveLength(1);
       expect(stages.IN_PROGRESS[0].id).toBe('e3');
 
-      // COMPLETED agrupa COMPLETED + QUALIFIED + IN_DOUBT + NOT_QUALIFIED
-      expect(stages.COMPLETED).toHaveLength(4);
+      // COMPLETED agrupa COMPLETED + QUALIFIED + IN_DOUBT + REPROGRAM (F3: NOT_QUALIFIED removido)
+      expect(stages.COMPLETED).toHaveLength(3);
       const completedIds = stages.COMPLETED.map((e: any) => e.id);
       expect(completedIds).toContain('e4');
       expect(completedIds).toContain('e5');
       expect(completedIds).toContain('e6');
-      expect(completedIds).toContain('e7');
 
       // CONFIRMED
       expect(stages.CONFIRMED).toHaveLength(1);
-      expect(stages.CONFIRMED[0].id).toBe('e8');
+      expect(stages.CONFIRMED[0].id).toBe('e7');
 
       // SELECTED agrupa SELECTED + PLACED
       expect(stages.SELECTED).toHaveLength(2);
       const selectedIds = stages.SELECTED.map((e: any) => e.id);
-      expect(selectedIds).toContain('e9');
-      expect(selectedIds).toContain('e11');
+      expect(selectedIds).toContain('e8');
+      expect(selectedIds).toContain('e10');
 
       // REJECTED
       expect(stages.REJECTED).toHaveLength(1);
-      expect(stages.REJECTED[0].id).toBe('e10');
+      expect(stages.REJECTED[0].id).toBe('e9');
     });
 
     it('preserva talentumStatus como tag para diferenciar dentro de COMPLETED', async () => {
+      // F3: NOT_QUALIFIED removido do bucket COMPLETED — apenas QUALIFIED e IN_DOUBT agrupados
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: 'QUALIFIED', talentum_status: 'QUALIFIED' }),
           makeRow({ id: 'e2', funnel_stage: 'IN_DOUBT', talentum_status: 'IN_DOUBT' }),
-          makeRow({ id: 'e3', funnel_stage: 'NOT_QUALIFIED', talentum_status: 'NOT_QUALIFIED' }),
         ],
       });
 
@@ -148,13 +148,12 @@ describe('EncuadreFunnelController', () => {
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
 
-      // Todos vão para COMPLETED
-      expect(stages.COMPLETED).toHaveLength(3);
+      // Ambos vão para COMPLETED
+      expect(stages.COMPLETED).toHaveLength(2);
 
-      // Mas cada um tem sua talentumStatus preservada
+      // Cada um tem sua talentumStatus preservada
       expect(stages.COMPLETED.find((e: any) => e.id === 'e1').talentumStatus).toBe('QUALIFIED');
       expect(stages.COMPLETED.find((e: any) => e.id === 'e2').talentumStatus).toBe('IN_DOUBT');
-      expect(stages.COMPLETED.find((e: any) => e.id === 'e3').talentumStatus).toBe('NOT_QUALIFIED');
     });
 
     it('retorna 7 stages vazios quando não há encuadres', async () => {
@@ -384,10 +383,11 @@ describe('EncuadreFunnelController', () => {
       expect(updateCall[1]).toContain('DISTANCE');
     });
 
-    it('aceita todos os targetStage válidos', async () => {
+    it('aceita todos os targetStage válidos (F3: NOT_QUALIFIED removido)', async () => {
+      // NOT_QUALIFIED removido em F3 — operador admin não pode mover manualmente para esse stage
       const validStages = [
         'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
-        'NOT_QUALIFIED', 'CONFIRMED', 'SELECTED', 'REJECTED',
+        'CONFIRMED', 'SELECTED', 'REJECTED',
       ];
 
       for (const stage of validStages) {

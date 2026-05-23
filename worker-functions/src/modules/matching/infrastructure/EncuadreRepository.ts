@@ -200,7 +200,7 @@ export class EncuadreRepository {
         END,
         CASE
           WHEN e.resultado IN ('SELECCIONADO', 'REEMPLAZO') THEN 'QUALIFIED'
-          WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'NOT_QUALIFIED'
+          WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'REJECTED'
           WHEN e.attended = true THEN 'IN_PROGRESS'
           WHEN e.interview_date IS NOT NULL OR e.resultado = 'REPROGRAMAR' THEN 'IN_PROGRESS'
           ELSE 'INITIATED'

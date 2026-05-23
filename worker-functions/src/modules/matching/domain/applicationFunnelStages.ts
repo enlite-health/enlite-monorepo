@@ -11,7 +11,7 @@
 
 export const POSTULATED_STAGES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED'] as const;
 export const PRE_SELECTED_STAGES = ['QUALIFIED', 'CONFIRMED', 'SELECTED', 'PLACED'] as const;
-export const REJECTION_STAGES = ['REJECTED', 'NOT_QUALIFIED'] as const;
+export const REJECTION_STAGES = ['REJECTED'] as const;
 
 /**
  * Stages que aparecem na coluna "Selecionados" do kanban (EncuadreFunnelController).

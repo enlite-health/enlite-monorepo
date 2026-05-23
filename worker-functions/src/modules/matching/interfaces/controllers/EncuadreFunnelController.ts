@@ -82,7 +82,7 @@ export class EncuadreFunnelController {
         INVITED: [],
         INITIATED: [],
         IN_PROGRESS: [],
-        COMPLETED: [],     // agrupa COMPLETED + QUALIFIED + IN_DOUBT + NOT_QUALIFIED (tag diferencia)
+        COMPLETED: [],     // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia). NOT_QUALIFIED foi auto-rejeitado em F3 (migration 191)
         CONFIRMED: [],
         SELECTED: [],
         REJECTED: [],
@@ -120,7 +120,7 @@ export class EncuadreFunnelController {
           stages.REJECTED.push(item);
         } else if (stage === 'CONFIRMED') {
           stages.CONFIRMED.push(item);
-        } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'NOT_QUALIFIED', 'REPROGRAM'].includes(stage)) {
+        } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'REPROGRAM'].includes(stage)) {
           stages.COMPLETED.push(item);
         } else if (stage === 'IN_PROGRESS') {
           stages.IN_PROGRESS.push(item);
@@ -162,7 +162,7 @@ export class EncuadreFunnelController {
 
       const validStages = [
         'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
-        'NOT_QUALIFIED', 'CONFIRMED', 'SELECTED', 'REJECTED',
+        'CONFIRMED', 'SELECTED', 'REJECTED',
       ];
 
       if (!targetStage || !validStages.includes(targetStage)) {

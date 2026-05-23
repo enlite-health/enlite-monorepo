@@ -29,11 +29,16 @@ Stages têm ordem fixa — uma WJA nunca regride espontaneamente para um estado 
 
 ```
 INVITED(0) < INITIATED(1) < IN_PROGRESS(2) < COMPLETED(3)
-< ANALYZED(4) = IN_DOUBT(4)
-< QUALIFIED(5) = NOT_QUALIFIED(5) = REPROGRAM(5)
+< IN_DOUBT(4)
+< QUALIFIED(5) = REPROGRAM(5)
 < CONFIRMED(6)
-< SELECTED(7) = PLACED(7) = REJECTED(7) = RECHAZADO(7)
+< SELECTED(7) = PLACED(7) = REJECTED(7)
 ```
+
+Stages removidos do enum em fases anteriores:
+- `RECHAZADO` — consolidado em `REJECTED` na F2 (migration 190)
+- `NOT_QUALIFIED` — auto-rejeitado pra `REJECTED` na F3 (migration 191)
+- `ANALYZED` — pendente de remoção em F7
 
 Qualquer upsert que tente baixar a precedência é silenciosamente ignorado pelo SQL — não levanta erro, apenas mantém o estado atual.
 

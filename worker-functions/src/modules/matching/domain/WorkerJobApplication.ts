@@ -38,10 +38,9 @@ export type ApplicationFunnelStage =
   | 'COMPLETED'      // concluiu o processo Talentum
   | 'QUALIFIED'      // aprovado pela Talentum
   | 'IN_DOUBT'       // em dúvida
-  | 'NOT_QUALIFIED'  // não qualificado
   | 'CONFIRMED'      // worker confirmou slot de encuadre
   | 'SELECTED'       // selecionado no encuadre
-  | 'REJECTED'       // rejeitado no encuadre
+  | 'REJECTED'       // rejeitado no encuadre (inclui auto-rejeição por NOT_QUALIFIED Talentum — migration 191)
   | 'PLACED';        // worker está atualmente atuando nessa vaga
 
 export interface CreateWorkerJobApplicationDTO {
