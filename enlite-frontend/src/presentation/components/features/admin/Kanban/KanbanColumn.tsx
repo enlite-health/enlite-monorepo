@@ -28,7 +28,10 @@ export function KanbanColumn({ id, title, count, color, droppable = true, childr
             {title}
           </Typography>
         </div>
-        <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600">
+        <span
+          data-testid={`kanban-column-${id}-count`}
+          className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600"
+        >
           {count}
         </span>
       </div>
