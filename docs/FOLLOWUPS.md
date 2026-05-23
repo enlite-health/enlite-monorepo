@@ -984,3 +984,179 @@ O `triage-service` foi extraído pra repo próprio em `enlite-health/triage-serv
 - Org: `enlite-health` no GitHub (criada 2026-05-20)
 - Naming: `<service-name>` sem prefixo `enlite-` (org já dá contexto)
 - Deploy: cada repo tem seus próprios workflows no `.github/workflows/`
+
+---
+
+### TD-035 — `SyncTalentumWorkersUseCase` cria WJA sem `application_funnel_stage` — **CONCLUÍDO 2026-05-22**
+
+- **Status:** concluído (com reescopo)
+- **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (ver [`POSTMORTEM_KANBAN_FUNNEL_BUGS.md`](POSTMORTEM_KANBAN_FUNNEL_BUGS.md) bug #3)
+- **Dono:** backend (worker-functions)
+
+**Histórico de execução:**
+
+1. **Iteração 1 (Opção B)** — implementado decider que aplicava `profile.status` global do TalentumDashboardProfile quando o worker não tinha prescreening em vaga nenhuma. 35/35 testes passing.
+2. **Reescopo durante revisão arquitetural** — dono do produto esclareceu que webhook `PRESCREENING_RESPONSE` é a **única fonte canônica per-encuadre**. `profile.status` global não tem semântica per-(worker, vaga) — usá-lo como fonte do funil contamina dado clínico.
+3. **Iteração 2 (final)** — `TalentumSyncStageDecider` removido. `SyncTalentumWorkersUseCase` simplificado: nunca seta `application_funnel_stage`. Único caminho: `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source) VALUES (...) ON CONFLICT DO NOTHING`. Stage cai no default `INITIATED` até webhook canônico chegar.
+
+**O que ficou (mudanças em produção):**
+
+1. ✓ Migration 185 — função SQL `funnel_stage_precedence(text) RETURNS int IMMUTABLE` reutilizável
+2. ✓ Migration 183 — `enforce_worker_registered_for_application` adiciona `'talentum'` no bypass
+3. ✓ `FunnelStageMapper` interface + `TalentumFunnelStageMapper` (usados pelo webhook em `ProcessTalentumPrescreening`)
+4. ✓ Webhook usa `funnel_stage_precedence` no UPSERT (extraído do CASE inline anterior — bug #4 da Fase 5)
+5. ✓ Guard `source='talentum' immutable` removido em `EncuadreRepository.syncToWorkerJobApplications` — precedência canônica protege contra regressão sem acoplamento de fonte
+6. ✓ `SyncTalentumWorkersUseCase` simplificado: nunca seta `application_funnel_stage`
+7. ✓ Suite E2E 21/21 passing (8 transition + 4 regression + 6 edge-cases + 3 sync simplificado)
+
+**Impacto sobre os 1.332 presos:**
+
+- Não vão ser corrigidos por backfill — **estado é correto operacionalmente**. São candidatos cadastrados via dashboard que nunca tiveram webhook canônico per-encuadre (não entraram no WhatsApp daquela vaga específica ou abandonaram antes).
+- Sintoma operacional ("vaga com 20 em INITIATED parece estagnada") é endereçado pelo TD-040 (UI feedback), não por mudança no banco.
+
+---
+
+### TD-036 — Admin/canais alternativos criam WJA sem `encuadre`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (bugs #1 e #2 do postmortem)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — afeta UX do Kanban mas não dado crítico
+
+**O que é:**
+
+215 WJAs em estados `POSTULATED` (INITIATED/IN_PROGRESS/COMPLETED) **não têm linha correspondente em `encuadres`**. Como o Kanban faz `FROM encuadres LEFT JOIN worker_job_applications`, esses 215 não aparecem no Kanban — mas aparecem na lista (que lê de `worker_job_applications` direto). Daí a queixa "20 na lista, 0 no Kanban".
+
+Quebra por origem:
+
+| source | qtd | encuadre criado por qual path? |
+|---|---|---|
+| manual | 183 | path admin não chama `ensureEncuadre` |
+| talentum | 30 | edge case no `ProcessTalentumPrescreening.ensureEncuadre` (provavelmente exception swallowed) |
+| candidatos | 1 | path desconhecido |
+| talent_search | 1 | path desconhecido |
+
+**Proposta de solução:**
+
+1. Identificar TODOS os pontos de inserção em `worker_job_applications` (grep `INSERT INTO worker_job_applications`)
+2. Para cada um que ainda não chama `ensureEncuadre`: ou chama, ou marca como exceção documentada com motivo
+3. Para os 30 do webhook Talentum: instrumentar `ensureEncuadre` com `reportError` para capturar a exceção real
+4. Backfill SQL pontual pros 215 órfãos (criar encuadre com `origen='backfill-TD-036'`) — pode ir junto com o RUNBOOK_BACKFILL ou separado
+
+**Cuidado:** atenção pra não criar encuadres duplicados em fluxos que já têm encuadre via outra rota. Sempre `ON CONFLICT (dedup_hash) DO NOTHING`.
+
+---
+
+### TD-037 — Funil interno abstrato + mappers por provider
+
+- **Status:** decisão tomada 2026-05-22, implementação pendente
+- **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (seção 6 do postmortem)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — desacopla domínio do Talentum sem mudar comportamento atual
+
+**O que é:**
+
+`worker_job_applications.application_funnel_stage` foi criado copiando o vocabulário do Talentum 1:1 (`INITIATED`, `IN_PROGRESS`, `COMPLETED`, `QUALIFIED`, `NOT_QUALIFIED`). Hoje o webhook Talentum joga esses valores direto, sem tradução ([`ProcessTalentumPrescreening.deriveFunnelStage`](../worker-functions/src/modules/matching/application/ProcessTalentumPrescreening.ts) é identity). E há guards no código (`source='talentum' is immutable`) que codificam Talentum como autoridade exclusiva.
+
+A operação aprovou em 2026-05-22 (após o postmortem) que **o vocabulário Talentum vira referência canônica do funil interno Enlite**. Futuros providers de triagem (já decidido que virão) traduzem seus estados pra esse mesmo vocabulário via mapper próprio.
+
+**Implicações concretas a executar:**
+
+1. **Conceitual:** documentar em `docs/ARCHITECTURE.md` (ou criar `docs/DOMAIN_FUNNEL.md`) que `application_funnel_stage` é vocabulário Enlite, não Talentum, embora coincidam por origem histórica.
+2. **Interface:** criar `FunnelStageMapper` interface com método `mapToInternalStage(providerPayload): FunnelStage`. Implementações: `TalentumFunnelStageMapper` (identity), futuros providers vão herdar.
+3. **Refactor:** `ProcessTalentumPrescreening.deriveFunnelStage` vira chamada ao `TalentumFunnelStageMapper.mapToInternalStage(payload)`.
+4. **Guards removidas:** o CASE `source='talentum' immutable` em `EncuadreRepository.syncToWorkerJobApplications` sai (alinhado com TD-035). Proteção contra regressão fica APENAS no CASE de precedência canônica.
+5. **API:** `EncuadreFunnelController` linha 51-53 deve parar de derivar `talentum_status` do `application_funnel_stage` — passar a ler direto de `talentum_prescreenings.status`. Quando outro provider entrar, ele terá sua própria tabela e a API retornará `provider_status: { provider: 'talentum', status: 'ANALYZED' }` ou similar.
+6. **Memory atualizada:** `feedback_qualified_only_talentum.md` precisa virar `feedback_qualified_only_via_certified_provider.md` quando o 2º provider chegar.
+
+**Referência da decisão:** `memory/project_funnel_internal_abstract.md`.
+
+Esse TD é **arquitetural** — não precisa ser executado de uma vez. Pode ir junto com o TD-035 (que já faz o passo 4 e parte do passo 2).
+
+---
+
+### TD-038 — `DraggableCard` e `KanbanCard` compartilham mesmo `data-testid`
+
+- **Status:** aberto, low prio
+- **Descoberto em:** 2026-05-22, durante criação dos testes E2E visuais do Kanban
+- **Dono provável:** frontend (enlite-frontend)
+- **Bloqueador?** Não — testes lidam com a duplicação via seletor `[data-stage]`
+
+**O que é:**
+
+[`DraggableCard.tsx:14`](../enlite-frontend/src/presentation/components/features/admin/Kanban/DraggableCard.tsx#L14) atribui `data-testid="kanban-card-${id}"` no wrapper. [`KanbanCard.tsx:76`](../enlite-frontend/src/presentation/components/features/admin/Kanban/KanbanCard.tsx#L76) atribui o **mesmo `data-testid`** no inner. Resultado: o DOM tem 2 elementos com o mesmo testid pra cada card, e `page.locator('[data-testid="kanban-card-xxx"]')` retorna o primeiro (wrapper, que não tem `data-stage`).
+
+Workaround atual nos testes: usar seletor `[data-testid="kanban-card-${id}"][data-stage]` pra filtrar só o inner. Funciona, mas é frágil — se alguém adicionar `data-stage` no wrapper, quebra.
+
+**Proposta de solução:**
+
+Opção A (simples): renomear testid do wrapper pra `kanban-card-${id}-draggable` ou remover (se não houver teste usando).
+Opção B (semântica): mover `data-stage` pro wrapper junto com `data-testid` — wrapper passa a representar a "posição do card no kanban", inner passa a ser estritamente conteúdo.
+
+Verificar antes: quais testes usam `kanban-card-{id}` hoje (grep em `e2e/`). Se nenhum precisa do wrapper, opção A é trivial.
+
+---
+
+### TD-039 — Suite E2E integration do frontend não roda em CI
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-22, durante validação visual do funil Kanban
+- **Dono provável:** DevOps / frontend
+- **Bloqueador?** Não — testes rodam localmente, snapshots commitados
+
+**O que é:**
+
+`worker-functions/.github/workflows/e2e.yml` roda os testes E2E do backend em todo PR. O frontend tem `pnpm test:e2e` em CI **apenas para os projetos chromium/firefox/webkit** (mockados). A suite `integration` (full-stack: backend Docker + frontend dev server + DB real) — incluindo os 7 cenários visuais do Kanban Talentum criados em 2026-05-22 — **não roda em CI**.
+
+**Proposta:**
+
+1. Adicionar job em `enlite-frontend/.github/workflows/e2e-integration.yml` que:
+   - Sobe `worker-functions` Docker stack
+   - Sobe Vite dev server do `enlite-frontend`
+   - Roda `pnpm test:e2e:integration`
+   - Sobe artefatos de screenshot diff em falha
+2. Definir trigger — provavelmente só em PRs com label `integration` ou em push pra `main` (custo de CI alto pra Docker stack)
+3. Manter snapshots em git (já estão) — CI vira validação contra eles
+
+**Risco de flake:** screenshots têm `maxDiffPixelRatio: 0.05`. Avaliar se aumenta em CI (fontes podem renderizar diferente em Linux vs Mac, onde os baselines foram gerados — `vacancy-kanban-*-integration-darwin.png`). Pode precisar de baseline `-linux.png` separado.
+
+---
+
+### TD-040 — UI feedback "candidato cadastrado sem retorno do worker"
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-22, durante reescopo do TD-035 (ver [`POSTMORTEM_KANBAN_FUNNEL_BUGS.md`](POSTMORTEM_KANBAN_FUNNEL_BUGS.md) §5)
+- **Dono provável:** frontend (enlite-frontend) + design
+- **Bloqueador?** Não — operacional, não técnico
+
+**O que é:**
+
+Após simplificação do TD-035, ficou claro que workers em `application_funnel_stage='INITIATED'` com `source='talentum'` e sem registro em `talentum_prescreenings` são **estado correto** do modelo — não bug. Representam candidatos cadastrados via dashboard Talentum cujos webhooks `PRESCREENING_RESPONSE` nunca chegaram (provavelmente o worker não entrou no WhatsApp daquela vaga ou abandonou antes da 1ª pergunta).
+
+Hoje, no Kanban, esses cards ficam indistinguíveis de "worker que acabou de iniciar triagem agora" — daí a queixa operacional "vaga com 20 em INITIATED parece estagnada".
+
+**Proposta de solução (mínima):**
+
+1. No card do Kanban (KanbanCard.tsx), quando o card está em `INITIATED` há mais de 7 dias **e** o worker não tem `talentum_prescreenings.status` registrada pra essa vaga, exibir badge/ícone "sem retorno do worker" (texto em es-AR: *"Sin respuesta del prestador"*).
+2. Tooltip explicando: "Candidato cadastrado via Talentum há X dias mas não iniciou o prescreening desta vaga."
+3. Opcional fase 2: filtro no Kanban "ocultar candidatos sem retorno" pra reduzir poluição visual.
+
+**API necessária:**
+
+O endpoint `GET /api/admin/vacancies/:id/funnel` (no [`EncuadreFunnelController.ts`](../worker-functions/src/modules/matching/interfaces/controllers/EncuadreFunnelController.ts)) já retorna `talentumStatus` per card — basta o frontend usar:
+
+```ts
+const isStale =
+  card.funnelStage === 'INITIATED'
+  && card.talentumStatus === null
+  && daysSince(card.updatedAt) > 7;
+```
+
+Sem mudança de backend necessária.
+
+**Cobertura de teste:**
+
+- Unit test no KanbanCard que valida renderização do badge condicional
+- E2E visual integration adicionando 1 cenário ao [`vacancy-kanban-talentum-webhook.integration.e2e.ts`](../enlite-frontend/e2e/integration/vacancy-kanban-talentum-webhook.integration.e2e.ts): worker com WJA criada há 10 dias, sem prescreening — assert badge visível + screenshot.
+
+**Métrica de sucesso:** operação consegue, sem perguntar pra eng, distinguir "vaga com 20 candidatos triando" de "vaga com 20 cadastros frios sem retorno".
