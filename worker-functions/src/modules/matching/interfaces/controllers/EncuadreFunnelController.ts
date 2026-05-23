@@ -27,8 +27,11 @@ export class EncuadreFunnelController {
   /**
    * GET /api/admin/vacancies/:id/funnel
    *
-   * Returns encuadres for a vacancy grouped by funnel stage.
-   * Each item includes acquisitionChannel (null when not recorded).
+   * Returns all worker_job_applications for a vacancy grouped by funnel stage.
+   * WJA is the primary source; encuadre is joined LATERAL (optional) to enrich
+   * cards that already have one. Orphan WJAs (no encuadre) are now visible.
+   *
+   * Card identifier: wja.id (always present). encuadreId: e.id (null for orphans).
    */
   async getEncuadreFunnel(req: Request, res: Response): Promise<void> {
     try {
@@ -36,9 +39,9 @@ export class EncuadreFunnelController {
 
       const result = await this.db.query(
         `SELECT
-           e.id,
-           e.worker_id,
-           e.worker_raw_name AS worker_name,
+           wja.id,
+           wja.worker_id,
+           COALESCE(e.worker_raw_name, w.first_name_encrypted) AS worker_name,
            COALESCE(w.phone, e.worker_raw_phone) AS worker_phone,
            e.occupation_raw,
            COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::date, e.interview_date) AS interview_date,
@@ -49,20 +52,28 @@ export class EncuadreFunnelController {
            e.rejection_reason_category,
            e.rejection_reason,
            e.redireccionamiento,
+           e.id AS encuadre_id,
            wja.match_score,
            wja.acquisition_channel,
            wja.application_funnel_stage AS funnel_stage,
            CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
-             WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = e.worker_id AND tp.job_posting_id = e.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
+             WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
              ELSE wja.application_funnel_stage END AS talentum_status,
            wsa.work_zone
-         FROM encuadres e
-         LEFT JOIN workers w ON w.id = e.worker_id
-         LEFT JOIN worker_job_applications wja
-           ON wja.worker_id = e.worker_id AND wja.job_posting_id = e.job_posting_id
-         LEFT JOIN worker_service_areas wsa ON wsa.worker_id = e.worker_id AND wsa.deleted_at IS NULL
-         WHERE e.job_posting_id = $1
-         ORDER BY wja.updated_at DESC NULLS LAST, e.created_at DESC`,
+         FROM worker_job_applications wja
+         LEFT JOIN workers w ON w.id = wja.worker_id
+         LEFT JOIN LATERAL (
+           SELECT id, worker_raw_name, worker_raw_phone, occupation_raw,
+                  interview_date, interview_time, meet_link, resultado, attended,
+                  rejection_reason_category, rejection_reason, redireccionamiento
+           FROM encuadres
+           WHERE worker_id = wja.worker_id AND job_posting_id = wja.job_posting_id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) e ON true
+         LEFT JOIN worker_service_areas wsa ON wsa.worker_id = wja.worker_id AND wsa.deleted_at IS NULL
+         WHERE wja.job_posting_id = $1
+         ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
         [id]
       );
 
@@ -78,10 +89,11 @@ export class EncuadreFunnelController {
       };
 
       for (const row of result.rows) {
-        const stage = row.funnel_stage;
+        const stage = row.funnel_stage as string | null;
 
         const item = {
           id: row.id,
+          encuadreId: row.encuadre_id ?? null,
           workerId: row.worker_id ?? null,
           workerName: row.worker_name,
           workerPhone: row.worker_phone,
@@ -108,7 +120,7 @@ export class EncuadreFunnelController {
           stages.REJECTED.push(item);
         } else if (stage === 'CONFIRMED') {
           stages.CONFIRMED.push(item);
-        } else if (['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'NOT_QUALIFIED', 'REPROGRAM'].includes(stage)) {
+        } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'NOT_QUALIFIED', 'REPROGRAM'].includes(stage)) {
           stages.COMPLETED.push(item);
         } else if (stage === 'IN_PROGRESS') {
           stages.IN_PROGRESS.push(item);
@@ -125,7 +137,7 @@ export class EncuadreFunnelController {
         success: true,
         data: {
           stages,
-          totalEncuadres: result.rows.length,
+          totalEncuadres: result.rows.length, // kept for backward-compat; equals total WJAs now
         },
       });
     } catch (error) {

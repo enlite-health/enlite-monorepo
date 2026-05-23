@@ -2,11 +2,17 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { DraggableCard } from '../DraggableCard';
 
-// Track what useDraggable returns so we can simulate drag states
+// Track what useDraggable receives so we can assert disabled propagation
 const mockUseDraggable = vi.fn();
 
 vi.mock('@dnd-kit/core', () => ({
   useDraggable: (args: unknown) => mockUseDraggable(args),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
 }));
 
 function setupDraggable(overrides: Record<string, unknown> = {}) {
@@ -20,7 +26,7 @@ function setupDraggable(overrides: Record<string, unknown> = {}) {
   });
 }
 
-describe('DraggableCard', () => {
+describe('DraggableCard — enabled (default)', () => {
   it('does not apply inline transform style when dragging (DragOverlay handles it)', () => {
     // Simulate active drag — dnd-kit provides a non-null transform
     setupDraggable({
@@ -58,5 +64,66 @@ describe('DraggableCard', () => {
     render(<DraggableCard id="enc-1"><span>My Card Content</span></DraggableCard>);
 
     expect(screen.getByText('My Card Content')).toBeInTheDocument();
+  });
+
+  it('passes disabled=false to useDraggable by default', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="enc-2"><span>Card</span></DraggableCard>);
+
+    expect(mockUseDraggable).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'enc-2', disabled: false }),
+    );
+  });
+});
+
+describe('DraggableCard — disabled (orphan card)', () => {
+  it('passes disabled=true to useDraggable when disabled prop is true', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="orphan-1" disabled><span>Card</span></DraggableCard>);
+
+    expect(mockUseDraggable).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'orphan-1', disabled: true }),
+    );
+  });
+
+  it('sets data-drag-disabled="true" on the wrapper', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="orphan-1" disabled><span>Card</span></DraggableCard>);
+
+    const wrapper = screen.getByTestId('kanban-draggable-orphan-1');
+    expect(wrapper.getAttribute('data-drag-disabled')).toBe('true');
+  });
+
+  it('applies cursor-not-allowed class on the wrapper when disabled', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="orphan-1" disabled><span>Card</span></DraggableCard>);
+
+    const wrapper = screen.getByTestId('kanban-draggable-orphan-1');
+    expect(wrapper.className).toContain('cursor-not-allowed');
+  });
+
+  it('shows tooltip title with i18n key when disabled', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="orphan-1" disabled><span>Card</span></DraggableCard>);
+
+    const wrapper = screen.getByTestId('kanban-draggable-orphan-1');
+    expect(wrapper.getAttribute('title')).toBe('admin.kanban.orphanDragTooltip');
+  });
+
+  it('renders children inside pointer-events-none opacity wrapper when disabled', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="orphan-1" disabled><span>Orphan Content</span></DraggableCard>);
+
+    expect(screen.getByText('Orphan Content')).toBeInTheDocument();
+    // Inner wrapper that blocks pointer events
+    const inner = screen.getByText('Orphan Content').parentElement;
+    expect(inner?.className).toContain('pointer-events-none');
+    expect(inner?.className).toContain('opacity-70');
   });
 });

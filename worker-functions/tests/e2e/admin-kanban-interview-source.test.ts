@@ -55,11 +55,12 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
 
     // Cenário moderno: WhatsApp gravou em worker_job_applications,
     // encuadres ficou sem data/meet_link (fonte legada vazia).
+    // source='talentum' bypasses the INCOMPLETE_REGISTER trigger guard.
     await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage,
-          interview_datetime, interview_meet_link, interview_response)
-       VALUES ($1, $2, 'CONFIRMED', '2026-06-01 14:30:00+00', 'https://meet.google.com/abc-defg-hij', 'confirmed')`,
+          interview_datetime, interview_meet_link, interview_response, source)
+       VALUES ($1, $2, 'CONFIRMED', '2026-06-01 14:30:00+00', 'https://meet.google.com/abc-defg-hij', 'confirmed', 'talentum')`,
       [workerId, vacancyId],
     );
 
@@ -90,7 +91,10 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
     );
     expect(res.status).toBe(200);
     const confirmed = res.data.data.stages.CONFIRMED as Array<Record<string, unknown>>;
-    const card = confirmed.find((c) => c.id === encuadreId);
+
+    // Phase 1 fix: card.id is now wja.id; card.encuadreId holds the encuadre id.
+    // Match by encuadreId (the encuadre created in beforeAll).
+    const card = confirmed.find((c) => c.encuadreId === encuadreId);
     expect(card).toBeDefined();
 
     const interviewDate = card!.interviewDate as string;

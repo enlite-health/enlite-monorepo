@@ -54,6 +54,7 @@ const cleanupWorkerIds: string[] = [];
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);
   test.use({ viewport: { width: 1920, height: 1080 } });
 

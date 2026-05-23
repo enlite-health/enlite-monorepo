@@ -653,6 +653,7 @@
         "OTHER": "Otro"
       },
       "noName": "Sin nombre",
+      "orphanDragTooltip": "Pendiente de registro de encuadre — el arrastre estará disponible en breve",
       "acquisitionChannel": {
         "facebook": "Facebook",
         "instagram": "Instagram",

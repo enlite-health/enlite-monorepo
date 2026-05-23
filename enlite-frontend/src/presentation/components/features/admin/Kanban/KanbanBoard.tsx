@@ -30,6 +30,8 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeId, setActiveId] = useState<string | null>(null);
+  /** Stores the encuadreId (not wja.id) of the card being dragged */
+  const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
 
   function handleWorkerClick(workerId: string) {
@@ -50,17 +52,34 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
     : null;
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveId(String(event.active.id));
+    const wjaId = String(event.active.id);
+    setActiveId(wjaId);
+    // Resolve encuadreId from the card data — may be null for orphans
+    const encuadreId = (Object.values(stages) as FunnelStages[keyof FunnelStages][])
+      .flat()
+      .find((c) => c.id === wjaId)?.encuadreId ?? null;
+    setActiveDragEncuadreId(encuadreId);
   }
 
   async function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
-    const { active, over } = event;
-    if (!over) return;
+    const { over } = event;
+    if (!over) {
+      setActiveDragEncuadreId(null);
+      return;
+    }
 
-    const encuadreId = String(active.id);
+    // Orphan cards (encuadreId=null) are drag-disabled via DraggableCard, but
+    // guard here as well so no stale state can trigger a request.
+    if (!activeDragEncuadreId) {
+      setActiveDragEncuadreId(null);
+      return;
+    }
+
+    const encuadreId = activeDragEncuadreId;
+    setActiveDragEncuadreId(null);
+
     const targetStage = String(over.id);
-
     if (!DROPPABLE_STAGES.has(targetStage)) return;
 
     // If moving to REJECTED, show rejection reason select
@@ -86,7 +105,7 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
             return (
               <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable}>
                 {items.map((enc) => (
-                  <DraggableCard key={enc.id} id={enc.id}>
+                  <DraggableCard key={enc.id} id={enc.id} disabled={!enc.encuadreId}>
                     <KanbanCard
                       id={enc.id}
                       workerId={enc.workerId}

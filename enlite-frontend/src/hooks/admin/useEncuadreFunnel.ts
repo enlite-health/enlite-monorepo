@@ -13,6 +13,8 @@ const POLL_INTERVAL_MS = 5_000;
 
 interface FunnelEncuadre {
   id: string;
+  /** encuadreId is null for WJAs that have no encuadre yet (orphans). Drag is blocked in that case. */
+  encuadreId: string | null;
   workerId: string | null;
   workerName: string | null;
   workerPhone: string | null;
