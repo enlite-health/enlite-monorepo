@@ -1,5 +1,10 @@
 # Postmortem — Bugs do Funil/Kanban da vaga (Talentum)
 
+> ⚠️ **Documento histórico (2026-05-22).** Originou a consolidação WJA ≡ Encuadre.
+> Para o modelo canônico do funil hoje, ver **[features/worker-job-applications/](features/worker-job-applications/README.md)**.
+> Trechos que descreviam encuadre como entidade separada de WJA, pipeline `encuadres → WJA`,
+> ou Kanban com 7+ colunas foram superados pela decisão de 2026-05-23.
+
 > **Data do diagnóstico:** 2026-05-22
 > **Severidade:** Alta — afeta visibilidade operacional do estado de candidatos
 > **Status:** 2 bugs corrigidos em código, 2 bugs pendentes de fix, 1 backfill pendente

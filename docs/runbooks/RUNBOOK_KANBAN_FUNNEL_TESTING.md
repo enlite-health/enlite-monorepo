@@ -1,5 +1,8 @@
 # Runbook — Suite de Testes do Funil Kanban (Talentum)
 
+> ⚠️ **Runbook histórico.** Modelo canônico do funil em **[../features/worker-job-applications/](../features/worker-job-applications/README.md)**.
+> Suite cobre o fluxo WJA atual; cenários que assumiam encuadre como entidade separada foram ajustados.
+
 > Como rodar a rede de segurança criada para o funil/Kanban da vaga.
 > Contexto e motivação: [`../POSTMORTEM_KANBAN_FUNNEL_BUGS.md`](../POSTMORTEM_KANBAN_FUNNEL_BUGS.md).
 

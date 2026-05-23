@@ -1,5 +1,8 @@
 # Runbook — Backfill do funil Kanban (Talentum)
 
+> ⚠️ **Runbook histórico.** Modelo canônico do funil em **[../features/worker-job-applications/](../features/worker-job-applications/README.md)**.
+> Procedimentos aqui descritos pressupõem WJA como SSOT — alinhado com a decisão de 2026-05-23.
+
 > **Quando rodar:** uma única vez, após o fix do bug #8 (ProcessTalentumPrescreening — já corrigido na Fase 5).
 > **Quem pode rodar:** engenheiro com acesso a `gcloud` no projeto `enlite-prd` + credencial do secret `enlite-ar-db-password`.
 > **Tempo estimado:** 10 minutos.
