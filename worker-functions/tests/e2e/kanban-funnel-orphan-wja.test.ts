@@ -195,7 +195,14 @@ async function seedFixtures(pool: Pool): Promise<string> {
     );
   }
 
-  // WJAs for 5 orphans (no encuadre created for these)
+  // WJAs for 5 "orphans" — disable Fase 2 trigger so encuadres are NOT auto-created.
+  // This preserves the Fase 1 test scenario: WJAs without encuadres must still appear
+  // in the Kanban (query inversion fix). Fase 2 trigger is tested separately in
+  // kanban-fase2-invariant.test.ts.
+  await pool.query(
+    'ALTER TABLE worker_job_applications DISABLE TRIGGER trg_ensure_encuadre_on_wja_insert',
+  );
+
   const orphanRows: Array<{ id: string; stage: string }> = [
     { id: IDS.wOrphan1, stage: 'INVITED' },
     { id: IDS.wOrphan2, stage: 'INITIATED' },
@@ -213,6 +220,10 @@ async function seedFixtures(pool: Pool): Promise<string> {
       [id, IDS.vacancy, stage],
     );
   }
+
+  await pool.query(
+    'ALTER TABLE worker_job_applications ENABLE TRIGGER trg_ensure_encuadre_on_wja_insert',
+  );
 
   // WJA for control positive (INVITED)
   await pool.query(

@@ -169,8 +169,11 @@ export async function waitForCardInStage(
 }
 
 /**
- * Busca o ID do encuadre criado pelo webhook para um worker+vacancy específicos.
- * Usa a API do backend (com mock token) para não criar dependência de DB direto.
+ * Busca o id da worker_job_application (wja.id = card.id) para um worker+vacancy.
+ * Após PR #41, card.id = wja.id — use esta função para obter o id do DraggableCard.
+ *
+ * ATENÇÃO: o nome "getEncuadreId" é legado. Após PR #41 este helper retorna wja.id,
+ * não encuadre.id. Use `getRealEncuadreId` para obter o UUID do encuadre real.
  */
 export async function getEncuadreId(
   request: APIRequestContext,
@@ -185,7 +188,7 @@ export async function getEncuadreId(
 
   const body = (await res.json()) as {
     success: boolean;
-    data: { stages: Record<string, Array<{ id: string; workerId: string | null }>> };
+    data: { stages: Record<string, Array<{ id: string; encuadreId: string | null; workerId: string | null }>> };
   };
 
   if (!body.success) return 'unknown';
@@ -193,6 +196,37 @@ export async function getEncuadreId(
   for (const items of Object.values(body.data.stages)) {
     const found = items.find((item) => item.workerId === workerId);
     if (found) return found.id;
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Busca o encuadreId REAL (UUID do encuadre) para um worker+vacancy via funnel API.
+ * Distinto do wja.id retornado por getEncuadreId. Necessário para validar URLs
+ * de PUT /api/admin/encuadres/<encuadreId>/move.
+ */
+export async function getRealEncuadreId(
+  request: APIRequestContext,
+  workerId: string,
+  vacancyId: string,
+): Promise<string> {
+  const res = await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}/funnel`, {
+    headers: { Authorization: `Bearer ${MOCK_TOKEN}` },
+  });
+
+  if (res.status() !== 200) return 'unknown';
+
+  const body = (await res.json()) as {
+    success: boolean;
+    data: { stages: Record<string, Array<{ id: string; encuadreId: string | null; workerId: string | null }>> };
+  };
+
+  if (!body.success) return 'unknown';
+
+  for (const items of Object.values(body.data.stages)) {
+    const found = items.find((item) => item.workerId === workerId);
+    if (found) return found.encuadreId ?? 'unknown';
   }
 
   return 'unknown';

@@ -5,6 +5,7 @@ import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { TalentumResponseSource } from '../domain/TalentumPrescreening';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { reportError } from '@shared/logging';
 
 const TAG = '[ProcessTalentumPrescreening]';
 
@@ -311,7 +312,8 @@ export class ProcessTalentumPrescreening {
       );
       console.log(`${TAG} ensureEncuadre → done`);
     } catch (err) {
-      console.error(`${TAG} ALERT: ensureEncuadre FAILED — worker=${workerId} | job=${jobPostingId} | error=${(err as Error)?.message}. Candidate will be INVISIBLE in Kanban!`);
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'ProcessTalentumPrescreening:ensureEncuadre', workerId, jobPostingId });
     }
   }
 

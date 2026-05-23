@@ -1,5 +1,7 @@
+import * as crypto from 'crypto';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { logger } from '@shared/logging';
 import { ApplicationFunnelStage } from '../domain/WorkerJobApplication';
 
 // =====================================================
@@ -53,9 +55,45 @@ export class WorkerApplicationRepository {
             [workerId, jobPostingId, funnelStage],
           );
 
-      return { created: (result.rowCount ?? 0) > 0 };
+      const created = (result.rowCount ?? 0) > 0;
+
+      // Defesa em camadas (TD-036 Fase 2): criar encuadre mínimo explícito quando
+      // um novo WJA é inserido via talent_search. Trigger da migration 189 cobre
+      // o path como fallback, mas esta chamada usa origen='talent_search' para
+      // rastreabilidade fina no campo origen da tabela encuadres.
+      // WHERE NOT EXISTS guard — idempotente, preserva encuadres ricos pré-existentes.
+      if (created) {
+        const dedupHash = crypto.createHash('md5')
+          .update(`talent-search|${workerId}|${jobPostingId}`)
+          .digest('hex');
+
+        await this.pool.query(
+          `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+           SELECT $1, $2, 'talent_search', $3
+           WHERE NOT EXISTS (
+             SELECT 1 FROM encuadres e
+             WHERE e.worker_id = $1 AND e.job_posting_id = $2
+           )
+           ON CONFLICT (dedup_hash) DO NOTHING`,
+          [workerId, jobPostingId, dedupHash],
+        );
+
+        logger.info({
+          msg: 'WorkerApplicationRepository.upsert: encuadre ensured for new WJA',
+          workerId,
+          jobPostingId,
+          origen: 'talent_search',
+        });
+      }
+
+      return { created };
     } catch (err) {
-      console.error(`[WorkerApplicationRepo.upsert] ERROR | ${(err as Error).message} | workerId: ${workerId} | jobPostingId: ${jobPostingId}`);
+      logger.error({
+        msg: 'WorkerApplicationRepository.upsert: ERROR',
+        workerId,
+        jobPostingId,
+        error: (err instanceof Error ? err.message : String(err)),
+      });
       throw err;
     }
   }
