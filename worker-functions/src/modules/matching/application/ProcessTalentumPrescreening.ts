@@ -191,6 +191,8 @@ export class ProcessTalentumPrescreening {
     const funnelStage = this.deriveFunnelStage(payload);
     console.log(`${TAG} syncFunnel | subtype=${payload.subtype} | statusLabel=${payload.data.response.statusLabel ?? 'none'} → funnelStage=${funnelStage} | score=${payload.data.response.score ?? 0}`);
 
+    await this.ensureEncuadre(prescreening.workerId, prescreening.jobPostingId, payload);
+
     if (funnelStage !== 'ANALYZED') {
       await this.upsertApplicationAndEmitEvent(
         prescreening.workerId,
@@ -201,8 +203,6 @@ export class ProcessTalentumPrescreening {
     } else {
       console.log(`${TAG} syncFunnel: skipped WJA upsert (ANALYZED without statusLabel)`);
     }
-
-    await this.ensureEncuadre(prescreening.workerId, prescreening.jobPostingId, payload);
   }
 
   private deriveFunnelStage(payload: TalentumPrescreeningResponseParsed): string {
