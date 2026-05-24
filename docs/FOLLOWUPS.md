@@ -1053,7 +1053,7 @@ Quebra por origem:
 
 ### TD-037 — Funil interno abstrato + mappers por provider
 
-> **Atualização 2026-05-23:** mapper já implementado (TD-035 item 3). Sub-item 5 endereçado por [features/worker-job-applications/04-estados-funil-kanban.md](features/worker-job-applications/04-estados-funil-kanban.md) (Kanban de 5 colunas + badges).
+> **Atualização 2026-05-23:** mapper já implementado (TD-035 item 3). Sub-item 5 endereçado por [features/worker-job-applications/04-estados-funil-kanban.md](features/worker-job-applications/04-estados-funil-kanban.md) (Kanban com badges em COMPLETADO; layout de 7 colunas mantido — revisão 2026-05-24).
 
 - **Status:** decisão tomada 2026-05-22, implementação pendente
 - **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (seção 6 do postmortem)
@@ -1166,3 +1166,59 @@ Sem mudança de backend necessária.
 - E2E visual integration adicionando 1 cenário ao [`vacancy-kanban-talentum-webhook.integration.e2e.ts`](../enlite-frontend/e2e/integration/vacancy-kanban-talentum-webhook.integration.e2e.ts): worker com WJA criada há 10 dias, sem prescreening — assert badge visível + screenshot.
 
 **Métrica de sucesso:** operação consegue, sem perguntar pra eng, distinguir "vaga com 20 candidatos triando" de "vaga com 20 cadastros frios sem retorno".
+
+---
+
+### TD-041 — Remover `dedup_hash` como constraint primária de unicidade após F5 estável
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante refinamento de F5 do plano WJA
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — depende de F5 em produção estável por ≥ 14 dias
+- **Origem:** [ADR-001](adr/001-encuadres-unique-worker-job-posting-constraint.md)
+
+**O que é:**
+
+Após a F5 (UNIQUE `(worker_id, job_posting_id)` em `encuadres` + consolidação de duplicatas) estar em produção por ≥ 14 dias sem incidentes, avaliar se `encuadres.dedup_hash` pode ser rebaixado de `UNIQUE` para campo de auditoria simples — ou migrado para `import_source_audit` em F8.
+
+O ADR-001 mantém `dedup_hash` como `NOT NULL` por enquanto para preservar rastreabilidade do formato de origem (`talentum|...`, `auto-trigger|...` etc.), mas reconhece que a função de árbitro primário de unicidade foi substituída pela nova constraint composta.
+
+**Critério para fechar:**
+
+- F5 em produção sem violações de constraint inesperadas por 14 dias corridos
+- Todos os 6 call sites de INSERT em `encuadres` migrados para `ON CONFLICT (worker_id, job_posting_id)` (não mais para `ON CONFLICT (dedup_hash)`)
+- Decisão tomada sobre o destino final de `dedup_hash`: (a) drop da `UNIQUE` mantendo coluna como auditoria, (b) renomear/mover para `import_source_audit` em F8, ou (c) deprecação total
+
+---
+
+### TD-042 — Concluir deprecação de `encuadres` (F4-F8 do plano WJA)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-23, durante refinamento do plano WJA e auditoria das 7 duplicações entre `encuadres` e `worker_job_applications`
+- **Dono provável:** backend (worker-functions) + frontend (Kanban)
+- **Bloqueador?** Não — sistema funciona no estado atual, mas duplicações continuam custando manutenção
+- **Origem:** [ADR-002](adr/002-wja-canonico-encuadres-deprecada.md)
+
+**O que é:**
+
+F2 e F3 do plano de 8 fases de deprecação de `encuadres` já foram entregues (commits `64d9af8` e `b26e8e2`). As fases restantes são:
+
+- F4 (Kanban: badges + botão rejeitar + drag rules): adicionar badges visuais (QUALIFIED/IN_DOUBT/COMPLETED puro) na coluna COMPLETADO; botão dedicado "Rejeitar" no card com modal de motivo; ajustar drag rules (não droppable: INITIATED/IN_PROGRESS/COMPLETADO — controle Talentum). Kanban mantém 7 colunas (revisão 2026-05-24). Impacto: backend (campo `internal_stage` no payload) + frontend.
+- F5 (REPROGRAMAR edita): REPROGRAMAR passa a editar a linha existente de `encuadres` em vez de criar nova; depende da constraint UNIQUE de ADR-001 já em produção.
+- F6 (matar `syncToWorkerJobApplications`): remover `EncuadreRepository.syncToWorkerJobApplications` do hot path do import; requer auditoria de todos os call sites de JOIN explícito antes do delete.
+- F7 (limpar enum legado): remover valores ANALYZED/REPROGRAM/PLACED/SELECTED/application_status do enum de funil; requer migration com cuidado em linhas históricas.
+- F8 (`origen` → `import_source_audit`): migrar dados de `encuadres.origen` para nova tabela `import_source_audit`; requer janela de manutenção (não pode ser rolling).
+
+Plano completo em `docs/features/worker-job-applications/README.md`.
+
+**Critério para fechar:**
+
+- F4 entregue e validada em produção (Kanban com badges + botão rejeitar + drag rules; 7 colunas mantidas)
+- F5 estável em produção por ≥ 14 dias sem violações de constraint (ver TD-041)
+- F6 concluída: `syncToWorkerJobApplications` removido do pipeline de import e todos os JOIN explícitos auditados
+- F7 concluída: enum limpo sem valores legados, migration aplicada em produção
+- F8 concluída: `encuadres.origen` migrado para `import_source_audit`, dashboards/relatórios externos inventariados e atualizados
+
+**Ver:** [ADR-002](adr/002-wja-canonico-encuadres-deprecada.md) — seção "Follow-up".
+
+**Ver:** [ADR-001](adr/001-encuadres-unique-worker-job-posting-constraint.md) — seção "Follow-up".
