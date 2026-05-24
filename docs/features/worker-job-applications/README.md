@@ -1,7 +1,7 @@
 # Worker Job Applications (Funil de Candidatura)
 
 > **Status:** Feature fechada. Fonte canônica do funil de candidatura de prestadores (workers) a vagas (job postings) na Enlite.
-> **Última atualização:** 2026-05-23
+> **Última atualização:** 2026-05-24
 
 ## Visão executiva
 
@@ -24,8 +24,22 @@ Regras inegociáveis:
 7. [Tabelas envolvidas](07-tabelas-envolvidas.md) — estado-alvo após deprecação progressiva
 8. [Pipelines de escrita](08-pipelines.md) — 6 ativos + 3 deprecados
 
+## Plano de fases
+
+Esta tabela é a **fonte da verdade da numeração das fases**. Qualquer menção a "F2", "F4" etc. nos outros docs deve bater com esta lista.
+
+| Fase | Escopo | Status | Commit / Migration |
+|---|---|---|---|
+| **F1** | Doc canônico desta feature + cleanup de 48 docs com refs ambíguas a encuadre/WJA | ✅ Concluída 2026-05-23 | `5ce2cab`, `3904c3e`, `dc630b1` |
+| **F2** | Consolidar `RECHAZADO` → `REJECTED` no `application_funnel_stage` (CHECK + `funnel_stage_precedence`) | ✅ Concluída 2026-05-23 | `64d9af8` / migration 190 |
+| **F3** | Auto-rejeição `NOT_QUALIFIED` → `REJECTED` no use case + remover `NOT_QUALIFIED` do enum | ✅ Concluída 2026-05-23 | `b26e8e2` / migration 191 |
+| **F4** | Reduzir Kanban pra 5 colunas (INVITADO, INITIATED, IN_PROGRESS, COMPLETADO, CONFIRMADO) + badges visuais (QUALIFIED/IN_DOUBT/COMPLETED puro) | ⏳ Pendente | — |
+| **F5** | REPROGRAMAR edita encuadre existente (não cria nova linha); consolidar duplicatas históricas em `encuadres` + UNIQUE `(worker_id, job_posting_id)` | ⏳ Pendente | — |
+| **F6** | Matar `EncuadreRepository.syncToWorkerJobApplications` como pipeline recorrente (vira backfill one-shot); remover da "sequência obrigatória pós-import" | ⏳ Pendente | — |
+| **F7** | Limpar enum: remover `ANALYZED`, `REPROGRAM`, `PLACED`, `SELECTED` do `application_funnel_stage`. Remover coluna legada `application_status`. Renomear classes/hooks legados (`EncuadreFunnelController` → `WorkerJobApplicationFunnelController` etc.) | ⏳ Pendente | — |
+| **F8** | `encuadres.origen` → `import_source_audit` (auditoria de import histórico apenas, sem authority de classificação) | ⏳ Pendente | — |
+
 ## Referências cruzadas
 
 - Decisão arquitetural: memória `~/.claude/projects/.../memory/project_wja_canonical_encuadres_deprecated.md`
 - Histórico de bugs corrigidos: [POSTMORTEM_KANBAN_FUNNEL_BUGS.md](../../POSTMORTEM_KANBAN_FUNNEL_BUGS.md)
-- Plano de deprecação: 8 fases (F1 documenta → F2 RECHAZADO→REJECTED → ... → F8 origen→import_source_audit)

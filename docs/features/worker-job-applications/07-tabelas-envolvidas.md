@@ -36,7 +36,7 @@ rejection_reason            TEXT
 created_at                  TIMESTAMPTZ
 updated_at                  TIMESTAMPTZ
 
--- Coluna deprecada (remover em F4)
+-- Coluna deprecada (remover em F7)
 -- application_status        VARCHAR(20)   -- legado pré-funil canônico
 ```
 
