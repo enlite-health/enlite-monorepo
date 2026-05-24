@@ -70,7 +70,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
           SELECT 1 FROM encuadres e
           WHERE e.worker_id = wja.worker_id AND e.job_posting_id = wja.job_posting_id
         )
-      ON CONFLICT (dedup_hash) DO NOTHING
+      ON CONFLICT (worker_id, job_posting_id) DO NOTHING
     `;
 
     // Primeira execução
@@ -123,9 +123,10 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
   // F2-3 — WJA com múltiplos encuadres: backfill não cria mais
   // ════════════════════════════════════════════════════════════════════════════
 
-  it('[F2-3] WJA com múltiplos encuadres pré-existentes: backfill não adiciona mais', async () => {
-    // wC tem 2 encuadres (simulando import duplicado histórico).
-    // Backfill não deve criar terceiro (WHERE NOT EXISTS guarda).
+  it('[F2-3] WJA com encuadre existente: backfill não adiciona mais (post-F5 — 1 encuadre por par)', async () => {
+    // Post-F5: UNIQUE (worker_id, job_posting_id) em encuadres impede duplicatas.
+    // wC tem exatamente 1 encuadre (criado pelo trigger no seed).
+    // Backfill não deve criar outro (WHERE NOT EXISTS guard + UNIQUE constraint).
 
     const beforeCount = await pool.query(
       'SELECT COUNT(*)::int AS cnt FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
@@ -144,7 +145,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
            SELECT 1 FROM encuadres e
            WHERE e.worker_id = wja.worker_id AND e.job_posting_id = wja.job_posting_id
          )
-       ON CONFLICT (dedup_hash) DO NOTHING`,
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [IDS.wC, IDS.vacancy],
     );
 
@@ -154,9 +155,9 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
     );
     const countAfter = afterCount.rows[0].cnt as number;
 
-    // Count deve permanecer igual (não criou mais)
+    // Count deve permanecer igual (não criou mais) e exatamente 1 (invariante F5)
     expect(countAfter).toBe(countBefore);
-    expect(countBefore).toBeGreaterThanOrEqual(2);
+    expect(countBefore).toBe(1); // post-F5: UNIQUE constraint garante exatamente 1
   });
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -337,7 +338,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
     await pool.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash, worker_raw_name, resultado)
        VALUES ($1, $2, 'Talentum', $3, 'Worker Rico', 'SELECCIONADO')
-       ON CONFLICT (dedup_hash) DO NOTHING`,
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [wHashWorker, IDS.vacancy, autoHash],
     );
 
@@ -440,21 +441,15 @@ async function seedFixtures(pool: Pool): Promise<void> {
     [IDS.wB, IDS.vacancy],
   );
 
-  // wC: WJA with 2 encuadres (import histórico duplicado)
+  // wC: WJA with encuadre (post-F5: UNIQUE constraint prevents duplicates — only 1 encuadre per pair)
+  // F2-3 test updated: migration 193 UNIQUE (worker_id, job_posting_id) enforces 1 encuadre per pair.
   await pool.query(
     `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
      VALUES ($1, $2, 'COMPLETED', 'kf2-seed')
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.wC, IDS.vacancy],
   );
-  // Trigger created first encuadre; add second one manually with different dedup_hash.
-  // Use explicit casts ($1::uuid, $2::uuid) to resolve parameter type ambiguity.
-  await pool.query(
-    `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
-     VALUES ($1::uuid, $2::uuid, 'import-legacy', md5('legacy|' || $1::text || '|' || $2::text))
-     ON CONFLICT (dedup_hash) DO NOTHING`,
-    [IDS.wC, IDS.vacancy],
-  );
+  // Trigger creates the single encuadre for wC; no second insert (UNIQUE constraint enforces it).
 
   // wD: WJA with encuadre — to test trigger does not duplicate
   await pool.query(

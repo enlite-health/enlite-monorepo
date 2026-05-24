@@ -1253,3 +1253,71 @@ A F4 adicionou 3 badges visuais (QUALIFIED/IN_DOUBT/COMPLETED) na coluna COMPLET
 - Cobertura em 3 browsers (chromium/firefox/webkit)
 - `pnpm test:e2e:no-integration` verde
 - TD-042 (F4) só fecha completamente após este TD
+
+---
+
+### TD-044 — `validate-migration.sh` precisa opt-in explícito para operações destrutivas
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante QA de F5
+- **Dono provável:** infra
+- **Bloqueador?** Não — hook foi bypassado intencionalmente
+
+**O que é:**
+
+A migration 192 (consolidação de duplicatas em `encuadres`) precisa fazer DELETE de ~20k linhas. O hook `validate-migration.sh` bloqueia `DELETE FROM` em migrations via grep regex (`grep -iE "DELETE\s+FROM"`). O dev contornou usando quebra de linha entre `DELETE` e `FROM` (sintaxe SQL válida — `\s+` no grep não captura newline sem flag `-P` ou `-z`). Isso funcionou pra esta operação que foi aprovada explicitamente pelo ADR-001, mas é uma vulnerabilidade do hook.
+
+**Critério para fechar:**
+
+- Atualizar hook pra aceitar opt-in explícito via marker em comentário (ex: `-- DESTRUCTIVE: APPROVED BY ADR-NNN`)
+- Hook ainda bloqueia DELETE FROM sem o marker
+- Documentar padrão no CLAUDE.md backend
+- Reescrever cabeçalho da migration 192 com o marker quando hook for atualizado
+
+---
+
+### TD-045 — Verificar `dedup_hash` UNIQUE antes do deploy da migration 193 em prod
+
+- **Status:** aberto (pré-deploy)
+- **Descoberto em:** 2026-05-24, durante QA de F5
+- **Dono provável:** backend / DBA
+- **Bloqueador?** SIM antes do deploy 193 em prod (mas não bloqueia merge do PR)
+
+**O que é:**
+
+A migration 193 adiciona `UNIQUE (worker_id, job_posting_id)` em paralelo com `UNIQUE (dedup_hash)` que já existe. Em teoria não há conflito, mas:
+
+- Confirmar que não há violação preexistente de `dedup_hash` UNIQUE (improvável, mas validar)
+- Confirmar que a ordem de drop em rollback funciona: `DROP CONSTRAINT encuadres_worker_job_unique` deixa `dedup_hash` UNIQUE intacta
+- Rodar `SELECT conname, contype FROM pg_constraint WHERE conrelid = 'encuadres'::regclass` em staging ANTES de aplicar 193 em prod
+
+**Critério para fechar:**
+
+- Query rodada em staging com saída documentada no PR
+- Migration 193 aplicada em staging sem erro
+- Deploy em prod só após confirmação
+
+TD-041 (drop de `dedup_hash` UNIQUE após 14 dias estáveis) depende deste check.
+
+---
+
+### TD-046 — Migrar `console.error/log` em código de produção pra `logger`/`reportError`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante PO review de F5
+- **Dono provável:** backend
+- **Bloqueador?** Não — pré-existente, não introduzido pelo F5
+
+**O que é:**
+
+CLAUDE.md backend exige `logger.info/error` + `reportError` de `@shared/logging` em vez de `console.*` em código novo. Vários arquivos do módulo matching têm `console.error/log` pré-existentes que sobreviveram a F2-F5 porque ficavam fora das seções tocadas:
+
+- `WorkerApplicationsController.ts:143` — `console.error` no catch do trackChannel
+- `ProcessTalentumPrescreening.ts` — múltiplos `console.log/error` em volume (linhas 75-345)
+- `EncuadreFunnelController.ts:146` — `console.error` (já identificado em F2)
+
+**Critério para fechar:**
+
+- Substituir todos os `console.*` no módulo matching por `logger`/`reportError` adequado
+- Validar que Cloud Logging filtros (`jsonPayload.workerId` etc.) continuam funcionando
+- Sem regressão funcional

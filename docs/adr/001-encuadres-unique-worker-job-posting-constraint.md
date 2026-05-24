@@ -1,9 +1,9 @@
 # ADR 001: Encuadres UNIQUE (worker_id, job_posting_id) Constraint
 
-- **Status:** Proposed
+- **Status:** Accepted (refinado 2026-05-24 — ordem de deploy invertida após análise técnica)
 - **Data:** 2026-05-24
-- **Decisor(es):** architect + PO (aguardando aprovação humana)
-- **Contexto técnico:** worker-functions/src/modules/matching + migrations 192-193
+- **Decisor(es):** architect + PO + Gabriel (decisões pendentes aprovadas 2026-05-24)
+- **Contexto técnico:** worker-functions/src/modules/matching + worker-functions/src/modules/integration + migrations 192-193
 
 ## Context
 
@@ -19,15 +19,26 @@ Adicionar `UNIQUE (worker_id, job_posting_id)` em `encuadres` após consolidaç�
 
 Mudanças concretas:
 
-- Migration 192: consolidar duplicatas (identificar sobrevivente por richness_score + recência, COALESCE campos MANTER, DELETE duplicatas). Pré-condição: backup da tabela.
-- Migration 193: `ALTER TABLE encuadres ADD CONSTRAINT encuadres_worker_job_unique UNIQUE (worker_id, job_posting_id)`. Deploy order: code primeiro, migration depois.
-- `EncuadreRepository.upsert` (EncuadreRepository.ts:62): mudar `ON CONFLICT (dedup_hash)` para `ON CONFLICT (worker_id, job_posting_id)`.
-- `EncuadreRepository.bulkUpsert` (EncuadreRepository.ts:140): mesma mudança.
-- `ProcessTalentumPrescreening.ts:323-328` (ensureEncuadre inline): mudar `ON CONFLICT (dedup_hash)` para `ON CONFLICT (worker_id, job_posting_id)`.
-- `SyncTalentumWorkersUseCase.ts:337-342` (ensureEncuadre inline): mesma mudança.
-- `WorkerApplicationsController.ts:130-137`: mesma mudança.
-- `WorkerApplicationRepository.ts:70-78`: mesma mudança (já usa WHERE NOT EXISTS guard, adaptar para consistência).
-- Trigger `fn_ensure_encuadre_on_wja_insert` (migration 189): já usa `WHERE NOT EXISTS` por par lógico — compatível com a nova constraint. Sem mudança necessária.
+- Migration 192: consolidar duplicatas atomicamente (CTE com richness score + recência, INSERT auditoria, DELETE em single transaction, validação `RAISE EXCEPTION` se ainda houver duplicatas). Pré-condições: backup `encuadres_backup_pre_f5` criado antes; rodar em **madrugada AR (00h-05h GMT-3)** para zero tráfego Talentum; retenção do backup: **14 dias** (sincroniza com TD-041).
+- Migration 193: `ALTER TABLE encuadres ADD CONSTRAINT encuadres_worker_job_unique UNIQUE (worker_id, job_posting_id)` + `CREATE OR REPLACE FUNCTION fn_ensure_encuadre_on_wja_insert` atualizando o `ON CONFLICT` target do trigger para o par composto (atomicidade entre constraint e trigger).
+- 6 call sites (não 5 como originalmente listado — `SyncTalentumWorkersUseCase` é o 6º):
+  - `EncuadreRepository.upsert` (EncuadreRepository.ts:62): mudar `ON CONFLICT (dedup_hash)` para `ON CONFLICT (worker_id, job_posting_id)`.
+  - `EncuadreRepository.bulkUpsert` (EncuadreRepository.ts:140): mesma mudança.
+  - `ProcessTalentumPrescreening.ts:323-328` (ensureEncuadre inline): mesma mudança.
+  - `SyncTalentumWorkersUseCase.ts:337-342` (ensureEncuadre inline): mesma mudança.
+  - `WorkerApplicationsController.ts:130-137`: mesma mudança. Manter `WHERE NOT EXISTS` como defesa em camadas.
+  - `WorkerApplicationRepository.ts:70-78`: mesma mudança. Manter `WHERE NOT EXISTS` como defesa em camadas.
+- Trigger `fn_ensure_encuadre_on_wja_insert` (migration 189): atualizado **dentro da migration 193** via `CREATE OR REPLACE` para evitar race condition entre triggers concorrentes que gerariam hashes diferentes para o mesmo par e violariam a UNIQUE composta. Mantém `WHERE NOT EXISTS` como guard primário.
+
+### Ordem de deploy (refinada 2026-05-24)
+
+Proposta original do ADR ("code primeiro, migration depois") está **incorreta**: Postgres rejeita `ON CONFLICT (worker_id, job_posting_id)` com erro `there is no unique constraint matching given keys` se a constraint não existir ainda — todos os 6 call sites quebrariam imediatamente após o deploy. Ordem correta:
+
+1. **Migration 192** (consolidação destrutiva atomica, sem code change) — zero impacto em produção.
+2. **Migration 193** (UNIQUE constraint + atualiza trigger 189) — janela de risco de minutos: webhooks concorrentes com mesmo par recebem constraint violation (capturado pelo `catch` existente em `ProcessTalentumPrescreening`).
+3. **Code deploy** (6 call sites + teste atualizado) — o novo `ON CONFLICT (worker_id, job_posting_id)` agora encontra constraint correspondente.
+
+A janela de risco entre passo 2 e 3 é mitigada por (a) janela de execução em madrugada AR — zero tráfego, e (b) o erro é localizado e capturado, não causa downtime.
 
 ## Consequences
 
@@ -44,7 +55,7 @@ Mudanças concretas:
 - Migration 192 é destrutiva de dados (DELETE de linhas duplicadas). Exige backup pré-migration e script de auditoria para confirmar que nenhum dado MANTER foi perdido antes do DELETE.
 - 6 call sites de INSERT em `encuadres` precisam ser alterados. Volume de mudança moderado mas espalhado em 3 módulos.
 - Testes E2E que inserem `encuadres` sem `dedup_hash` podem quebrar se o par já existir no fixture de setup — precisam de revisão de fixtures.
-- Janela de risco durante deploy: entre a migration 193 e o code deploy os webhooks Talentum antigos (com `ON CONFLICT (dedup_hash)`) funcionam sem problema, mas se dois webhooks concorrentes chegarem para o mesmo par no intervalo em que 193 já está aplicada mas o código ainda usa hash como árbitro, o segundo INSERT falha com constraint violation. O deploy order (código antes de migration) elimina esse risco.
+- Janela de risco durante deploy: entre a migration 193 e o code deploy os webhooks Talentum antigos (com `ON CONFLICT (dedup_hash)`) funcionam sem problema, mas se dois webhooks concorrentes chegarem para o mesmo par no intervalo em que 193 já está aplicada mas o código ainda usa hash como árbitro, o segundo INSERT falha com constraint violation. Mitigado por janela de execução em **madrugada AR (00h-05h GMT-3)** — zero tráfego Talentum — e pelo `catch` existente em `ProcessTalentumPrescreening` que captura o erro sem causar downtime.
 
 ### Neutras
 

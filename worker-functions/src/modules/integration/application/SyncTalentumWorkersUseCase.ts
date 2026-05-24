@@ -337,7 +337,7 @@ export class SyncTalentumWorkersUseCase {
         await this.db.query(
           `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
            VALUES ($1, $2, $3, $4, 'Talentum', $5)
-           ON CONFLICT (dedup_hash) DO UPDATE SET
+           ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
              worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
           [workerId, jobPostingId, workerName, rawPhone, dedupHash],
         );

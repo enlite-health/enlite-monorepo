@@ -133,7 +133,7 @@ export class WorkerApplicationsController {
          WHERE NOT EXISTS (
            SELECT 1 FROM encuadres e WHERE e.worker_id = $1 AND e.job_posting_id = $2
          )
-         ON CONFLICT (dedup_hash) DO NOTHING`,
+         ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [worker.id, jobPostingId, dedupHash, worker.name, worker.phone, channel],
       );
 

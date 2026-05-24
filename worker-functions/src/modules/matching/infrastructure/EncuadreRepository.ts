@@ -59,7 +59,7 @@ export class EncuadreRepository {
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
         $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
       )
-      ON CONFLICT (dedup_hash) DO UPDATE SET
+      ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
         resultado          = EXCLUDED.resultado,
         attended           = EXCLUDED.attended,
         accepts_case       = EXCLUDED.accepts_case,
@@ -137,7 +137,7 @@ export class EncuadreRepository {
         UNNEST($26::text[]),
         UNNEST($27::text[]), UNNEST($28::text[]), UNNEST($29::text[]),
         UNNEST($30::text[]), UNNEST($31::text[]), UNNEST($32::text[])
-      ON CONFLICT (dedup_hash) DO UPDATE SET
+      ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
         resultado          = EXCLUDED.resultado,
         attended           = EXCLUDED.attended,
         accepts_case       = EXCLUDED.accepts_case,

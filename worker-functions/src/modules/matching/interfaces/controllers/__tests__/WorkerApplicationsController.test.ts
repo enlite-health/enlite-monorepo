@@ -192,7 +192,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     const encuadreCall = mockQuery.mock.calls[3];
     expect(encuadreCall[0]).toContain('INSERT INTO encuadres');
     expect(encuadreCall[0]).toContain('NOT EXISTS');
-    expect(encuadreCall[0]).toContain('ON CONFLICT (dedup_hash) DO NOTHING');
+    expect(encuadreCall[0]).toContain('ON CONFLICT (worker_id, job_posting_id) DO NOTHING');
 
     // $1=workerId, $2=jobPostingId, $3=dedupHash, $4=name, $5=phone, $6=channel
     expect(encuadreCall[1][0]).toBe('w-1');
