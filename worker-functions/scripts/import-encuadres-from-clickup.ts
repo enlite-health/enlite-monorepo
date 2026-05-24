@@ -9,7 +9,8 @@
  *   4. 1 candidate → upserts encuadre linked
  *      2+ candidates → upserts encuadre with job_posting_id=null + enqueues to encuadre_ambiguity_queue
  *      0 candidates → logs WARN, skips encuadre (import-vacancies must run first)
- * After all tasks: calls linkWorkersByPhone() + syncToWorkerJobApplications() once.
+ * After all tasks: calls linkWorkersByPhone() once.
+ * (syncToWorkerJobApplications removida em F6 2026-05-24 — pipeline reverso deprecado)
  *
  * ── Pre-requisites ────────────────────────────────────────────────────────────
  *   - CLICKUP_API_TOKEN set in environment
@@ -325,7 +326,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // Post-sync (live only) — sequência obrigatória per CLAUDE.md
+  // Post-sync (live only) — ver "Pipelines de import legados" no CLAUDE.md
   if (!isDryRun && encuadreRepo) {
     try {
       const linked = await encuadreRepo.linkWorkersByPhone();
@@ -335,13 +336,9 @@ async function main(): Promise<void> {
       console.log(`\nERROR linkWorkersByPhone: ${msg}`);
     }
 
-    try {
-      const synced = await encuadreRepo.syncToWorkerJobApplications();
-      console.log(`Post-sync: syncToWorkerJobApplications → ${synced} rows affected`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`\nERROR syncToWorkerJobApplications: ${msg}`);
-    }
+    // F6 (2026-05-24): sync recorrente removida. WJAs são SSOT do funil — populadas via
+    // webhook Talentum / matchmaking / self-service / drag manual. Pipeline reverso
+    // encuadres → WJA está deprecado. Ver docs/features/worker-job-applications/README.md.
   }
 
   // Summary

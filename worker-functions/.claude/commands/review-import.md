@@ -26,8 +26,9 @@ Usado quando: **revisando ou refatorando** qualquer código relacionado ao pipel
   ```typescript
   await encuadreRepo.linkWorkersByPhone();
   await blacklistRepo.linkWorkersByPhone();
-  await encuadreRepo.syncToWorkerJobApplications();
+  // encuadreRepo.syncToWorkerJobApplications() — DEPRECADO F6 (2026-05-24): não chamar
   ```
+  > **F6 (2026-05-24):** `syncToWorkerJobApplications` foi removida da sequência. Imports não devem mais chamar essa função.
 
 ### Script CLI (`scripts/import-*.ts`)
 

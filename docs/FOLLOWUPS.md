@@ -1321,3 +1321,28 @@ CLAUDE.md backend exige `logger.info/error` + `reportError` de `@shared/logging`
 - Substituir todos os `console.*` no módulo matching por `logger`/`reportError` adequado
 - Validar que Cloud Logging filtros (`jsonPayload.workerId` etc.) continuam funcionando
 - Sem regressão funcional
+
+---
+
+### TD-047 — Investigar quem está disparando `import-encuadres-from-clickup.ts`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante pré-trabalho de F6
+- **Dono provável:** infra / ops
+- **Bloqueador?** SIM antes de considerar F6 efetivamente concluída em produção
+
+**O que é:**
+
+User declarou em 2026-05-23 que "a planilha morreu". Mas a query DBA na F6 mostrou que `worker_job_applications` recebeu escrita com `source='planilla_operativa'` em **2026-05-21 17:03 UTC** (3 dias antes da decisão), totalizando 8.975 WJAs vindas dessa source. O script `import-encuadres-from-clickup.ts` continua sendo disparado de algum lugar — pode ser cron job, GitHub Actions schedule, automação n8n, ou operador executando manualmente.
+
+F6 removeu a chamada `syncToWorkerJobApplications()` do script, mas o script ainda pode estar criando encuadres novos (e, indiretamente via trigger 189, WJAs com `source` errada). Sem identificar e desativar o caller, F6 é decisão no papel, não na prática.
+
+**Critério para fechar:**
+
+- Identificar quem dispara o script (audit em GitHub Actions, Cloud Scheduler, n8n workflows, Cloud Run jobs, doc interno de runbooks)
+- Se for automação: desativar e documentar a remoção
+- Se for operador manual: comunicar à equipe que o script é deprecado
+- Confirmar via `SELECT MAX(updated_at) FROM worker_job_applications WHERE source='planilla_operativa'` que não há escritas novas por ≥ 7 dias
+- Após confirmado, F6 pode ser considerada concluída em produção e fase F8 pode prosseguir com remoção de `encuadres.origen` legado
+
+**Relacionado:** ADR-002, plano F6, TD-042 (deprecação encuadres)

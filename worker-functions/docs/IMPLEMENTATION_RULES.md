@@ -368,12 +368,14 @@ async upsert(dto: CreateEncuadreDTO): Promise<{ entity: Encuadre; created: boole
 
 **Regra:** `linkWorkersByPhone()` e `syncToWorkerJobApplications()` são operações do repositório, não do importer. O importer apenas as chama após o upsert em lote.
 
-Sequência obrigatória pós-import:
+Sequência pós-import:
 ```typescript
 await encuadreRepo.linkWorkersByPhone();     // 1. Liga encuadres a workers
 await blacklistRepo.linkWorkersByPhone();    // 2. Liga blacklist a workers
-await encuadreRepo.syncToWorkerJobApplications(); // 3. Sincroniza tabela canônica // DEPRECADO em F6 — vira backfill one-shot
+// encuadreRepo.syncToWorkerJobApplications() — DEPRECADO F6 (2026-05-24): não chamar
 ```
+
+> **F6 entregue 2026-05-24:** call site recorrente em `import-encuadres-from-clickup.ts` removido. Função mantida com `@deprecated` para backfill manual se necessário. Ver README do plano WJA.
 
 ---
 

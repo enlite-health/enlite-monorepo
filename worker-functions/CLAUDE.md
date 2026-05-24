@@ -68,13 +68,13 @@ Toda vez que um controller, route, use case ou converter for criado ou modificad
 
 ---
 
-## Sequência obrigatória pós-import
+## Pipelines de import legados
 
-```typescript
-await encuadreRepo.linkWorkersByPhone();
-await blacklistRepo.linkWorkersByPhone();
-await encuadreRepo.syncToWorkerJobApplications();
-```
+**ATENÇÃO:** scripts em `scripts/import-encuadres-from-clickup.ts` (e similares de planilha operativa) são **legados e em deprecação**. Não devem ser executados regularmente.
+
+A função `EncuadreRepository.syncToWorkerJobApplications` foi deprecada em F6 (2026-05-24) — pipeline reverso `encuadres → WJA` está morto. WJAs são populadas exclusivamente via webhook Talentum, matchmaking automático, self-service de link público, ou drag manual no Kanban. Ver `docs/features/worker-job-applications/README.md`.
+
+Se precisar rodar import histórico (backfill manual), executar com cuidado e confirmar com PO antes.
 
 ---
 

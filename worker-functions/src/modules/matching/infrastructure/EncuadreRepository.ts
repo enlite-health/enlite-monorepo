@@ -182,6 +182,14 @@ export class EncuadreRepository {
     return { created, updated: result.rows.length - created };
   }
 
+  /**
+   * @deprecated F6 (2026-05-24): pipeline reverso encuadres → WJA está deprecado.
+   * WJA é SSOT do funil, populada via webhook Talentum / matchmaking / self-service.
+   * Mantido apenas como referência histórica + backfill one-shot manual se necessário.
+   * Ver docs/features/worker-job-applications/README.md e ADR-002.
+   *
+   * NÃO chamar em código novo. NÃO chamar em pipelines recorrentes.
+   */
   async syncToWorkerJobApplications(): Promise<number> {
     const result = await this.pool.query(`
       INSERT INTO worker_job_applications (
