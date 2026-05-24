@@ -1326,23 +1326,85 @@ CLAUDE.md backend exige `logger.info/error` + `reportError` de `@shared/logging`
 
 ### TD-047 — Investigar quem está disparando `import-encuadres-from-clickup.ts`
 
-- **Status:** aberto
+- **Status:** mitigado (guard adicionado em 2026-05-24); investigação em prod pendente
 - **Descoberto em:** 2026-05-24, durante pré-trabalho de F6
-- **Dono provável:** infra / ops
-- **Bloqueador?** SIM antes de considerar F6 efetivamente concluída em produção
+- **Dono provável:** infra / ops + você (Gabriel)
+- **Bloqueador?** Mitigação ativa (script bloqueia execução `--live` sem override consciente); fechar definitivo requer ação em prod
 
 **O que é:**
 
-User declarou em 2026-05-23 que "a planilha morreu". Mas a query DBA na F6 mostrou que `worker_job_applications` recebeu escrita com `source='planilla_operativa'` em **2026-05-21 17:03 UTC** (3 dias antes da decisão), totalizando 8.975 WJAs vindas dessa source. O script `import-encuadres-from-clickup.ts` continua sendo disparado de algum lugar — pode ser cron job, GitHub Actions schedule, automação n8n, ou operador executando manualmente.
+User declarou em 2026-05-23 que "a planilha morreu". Mas a query DBA na F6 mostrou que `worker_job_applications` recebeu escrita com `source='planilla_operativa'` em **2026-05-21 17:03 UTC** (3 dias antes da decisão), totalizando 8.975 WJAs vindas dessa source. O script `import-encuadres-from-clickup.ts` continua sendo disparado de algum lugar.
 
-F6 removeu a chamada `syncToWorkerJobApplications()` do script, mas o script ainda pode estar criando encuadres novos (e, indiretamente via trigger 189, WJAs com `source` errada). Sem identificar e desativar o caller, F6 é decisão no papel, não na prática.
+F6 removeu a chamada `syncToWorkerJobApplications()` do script, mas o script ainda pode estar criando encuadres novos (e, indiretamente via trigger 189, WJAs com `source` errada).
+
+**Investigação Explore (2026-05-24) confirmou:**
+
+- ❌ Nenhum GitHub Actions workflow dispara o script
+- ❌ Nenhum `google_cloud_scheduler_job` no Terraform
+- ❌ Nenhum workflow n8n versionado chama o script
+- ❌ Nenhum Cloud Run job / Pub/Sub trigger no IaC
+- ❌ Nenhum script npm em `package.json` invoca o script
+- ❌ Nenhum service em `docker-compose*.yml` roda o script
+- ❌ `triage-service` não chama
+
+**Hipóteses restantes** (todas requerem ação em prod, fora do versionamento):
+
+1. Operador manual via SSH/shell direto em Cloud Run instance
+2. Cron job system-level (`crontab -l` no SO da instância)
+3. Cloud Scheduler criado direto no GCP Console (não-IaC)
+4. n8n workflow criado direto na UI (não versionado)
+
+**Mitigação aplicada (commit a ser registrado):**
+
+Adicionado guard no script (linhas ~91-110) que bloqueia execução `--live` sem variável de ambiente `I_UNDERSTAND_F6_DEPRECATION=true`. Quem dispara automaticamente vai falhar com mensagem clara apontando pra este TD. Operador manual precisa override consciente.
+
+**Checklist concreto pra fechar (ação humana em prod):**
+
+```bash
+# 1. Identificar Cloud Scheduler criado direto no Console (não-IaC)
+gcloud scheduler jobs list --location=southamerica-east1 --project=enlite-prd
+gcloud scheduler jobs list --location=us-central1 --project=enlite-prd
+
+# 2. Buscar nos logs do Cloud Run últimas execuções do script
+gcloud logging read 'resource.type="cloud_run_revision" AND textPayload=~"import-encuadres-from-clickup"' \
+  --limit=50 --project=enlite-prd --freshness=14d
+
+# 3. Buscar nos logs gerais por evidência da execução
+gcloud logging read 'textPayload=~"import-encuadres" OR jsonPayload.message=~"import-encuadres"' \
+  --limit=50 --project=enlite-prd --freshness=14d
+
+# 4. Verificar IAM de quem pode invocar Cloud Run jobs / scheduler
+gcloud projects get-iam-policy enlite-prd --flatten="bindings[].members" \
+  --format="table(bindings.role,bindings.members)" \
+  --filter="bindings.role:roles/cloudscheduler.admin OR bindings.role:roles/run.invoker"
+
+# 5. Se houver acesso SSH à instância (improvável em Cloud Run, mas validar):
+ssh prod-instance "crontab -l && sudo crontab -l && ls /etc/cron.d/"
+
+# 6. n8n UI — buscar workflows que mencionem "import", "encuadre", "clickup"
+# (acessar https://<n8n-prod>/workflows e fazer busca textual)
+
+# 7. Perguntar à equipe direto:
+# Slack #ops, #engineering: "Alguém roda o script import-encuadres-from-clickup.ts manualmente
+# ou agendou em algum lugar não versionado? F6 (2026-05-24) marcou como deprecado e adicionou
+# guard. Se rodar agora vai falhar com mensagem clara."
+
+# 8. Validar mitigação eficaz após 7 dias
+SELECT MAX(updated_at) AS last_write, COUNT(*) AS total
+FROM worker_job_applications
+WHERE source = 'planilla_operativa';
+-- Esperado após 7 dias: last_write < (commit_date - 1 hora)
+-- Se houve escrita posterior ao commit do guard, alguém usou override I_UNDERSTAND_F6_DEPRECATION=true
+```
 
 **Critério para fechar:**
 
-- Identificar quem dispara o script (audit em GitHub Actions, Cloud Scheduler, n8n workflows, Cloud Run jobs, doc interno de runbooks)
-- Se for automação: desativar e documentar a remoção
-- Se for operador manual: comunicar à equipe que o script é deprecado
-- Confirmar via `SELECT MAX(updated_at) FROM worker_job_applications WHERE source='planilla_operativa'` que não há escritas novas por ≥ 7 dias
-- Após confirmado, F6 pode ser considerada concluída em produção e fase F8 pode prosseguir com remoção de `encuadres.origen` legado
+- Disparador identificado e desativado (ou confirmado como CLI manual sem reincidência)
+- Query #8 mostra `last_write` anterior ao commit do guard, mantido por ≥ 7 dias
+- Se houver override legítimo (backfill aprovado pelo PO), documentar quando/por que/quem
 
-**Relacionado:** ADR-002, plano F6, TD-042 (deprecação encuadres)
+**Critério para reabrir:**
+
+- Se query #8 mostrar escrita posterior ao commit do guard SEM justificativa documentada do PO, reabrir como bug em vez de TD (alguém driblou o guard)
+
+**Relacionado:** ADR-002, plano F6 (commit `616ff1c`), TD-042 (deprecação encuadres)

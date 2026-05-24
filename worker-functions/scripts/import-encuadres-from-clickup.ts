@@ -88,6 +88,34 @@ if (!isDryRun && !process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+// F6 (2026-05-24) guard — script é legado e em deprecação.
+// Pipeline reverso encuadres → WJA está morto. Novos imports criam encuadres
+// sem WJA correspondente — viram lixo invisível no Kanban.
+// Override consciente para backfill manual aprovado pelo PO:
+//   export I_UNDERSTAND_F6_DEPRECATION=true
+// Ver TD-047 em docs/FOLLOWUPS.md e docs/features/worker-job-applications/README.md
+if (!isDryRun && process.env.I_UNDERSTAND_F6_DEPRECATION !== 'true') {
+  console.error(`
+╔════════════════════════════════════════════════════════════════════╗
+║ ⚠️  SCRIPT DEPRECADO em F6 (2026-05-24)                            ║
+║                                                                    ║
+║ import-encuadres-from-clickup.ts está em deprecação. Pipeline      ║
+║ reverso encuadres → WJA foi removido (F6). Novos imports criam     ║
+║ encuadres SEM WJA correspondente — viram LIXO invisível no Kanban  ║
+║ (Kanban lê de worker_job_applications, não de encuadres).          ║
+║                                                                    ║
+║ Se você TEM CERTEZA que precisa rodar (backfill manual aprovado    ║
+║ pelo PO + plano de mitigação dos órfãos), exporte:                 ║
+║                                                                    ║
+║   export I_UNDERSTAND_F6_DEPRECATION=true                          ║
+║                                                                    ║
+║ Caso contrário, NÃO RODAR. Investigar disparador via TD-047 em     ║
+║ docs/FOLLOWUPS.md (checklist de gcloud/SSH/n8n).                   ║
+╚════════════════════════════════════════════════════════════════════╝
+`);
+  process.exit(1);
+}
+
 // ── ClickUp pagination ────────────────────────────────────────────────────────
 
 interface TasksPage { tasks: ClickUpTask[]; last_page: boolean; }
