@@ -40,9 +40,9 @@ Resultados ordenados por score
 
 ### Funil Kanban
 
-Ver [04-estados-funil-kanban.md](worker-job-applications/04-estados-funil-kanban.md) — Kanban-alvo de 5 colunas + badges.
+Ver [04-estados-funil-kanban.md](worker-job-applications/04-estados-funil-kanban.md) — Kanban com 7 colunas + badges em COMPLETADO + drag rules (revisão 2026-05-24).
 
-> **Histórico (pré-2026-05-23):** o Kanban tinha 7 colunas e a lógica de classificação mapeava stages legados (`SELECTED`, `PLACED`) para colunas próprias. Esses stages estão sendo removidos do enum em F2+F7 — ver doc canônico.
+> **Nota:** SELECTED agrupa SELECTED + PLACED (PLACED será removido do enum em F7). Drag NÃO permitido em INITIATED/IN_PROGRESS/COMPLETADO (controle Talentum via webhook).
 
 > Detalhes completos do fluxo Talentum + Kanban: ver `docs/features/talentum-prescreening-kanban.md`
 
