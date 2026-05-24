@@ -9,9 +9,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// ── Typography mock ──────────────────────────────────────────────────────────
-vi.mock('@presentation/components/atoms/Typography', () => ({
-  Typography: ({ children, ...props }: { children: React.ReactNode; [k: string]: unknown }) => (
+// ── Text atom mock ───────────────────────────────────────────────────────────
+vi.mock('@presentation/components/atoms/Text', () => ({
+  Text: ({ children, ...props }: { children: React.ReactNode; [k: string]: unknown }) => (
     <span {...props}>{children}</span>
   ),
 }));
@@ -357,6 +357,90 @@ describe('KanbanCard — acquisition channel badge', () => {
     render(<KanbanCard {...defaultProps} acquisitionChannel="tiktok" />);
     expect(screen.queryByTestId('acquisition-channel-badge')).not.toBeInTheDocument();
   });
+});
+
+// ── Completado Badge (COMPLETED stage internalStage) ────────────────────────
+
+describe('KanbanCard — completado badge', () => {
+  it('renders completado badge when stage is COMPLETED and internalStage is QUALIFIED', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="QUALIFIED" />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.completadoBadge.QUALIFIED');
+    expect(badge.className).toContain('bg-green-50');
+    expect(badge.className).toContain('text-green-700');
+  });
+
+  it('renders completado badge when stage is COMPLETED and internalStage is IN_DOUBT', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="IN_DOUBT" />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.completadoBadge.IN_DOUBT');
+    expect(badge.className).toContain('bg-orange-50');
+    expect(badge.className).toContain('text-orange-700');
+  });
+
+  it('renders completado badge when stage is COMPLETED and internalStage is COMPLETED', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="COMPLETED" />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.completadoBadge.COMPLETED');
+    expect(badge.className).toContain('bg-blue-50');
+    expect(badge.className).toContain('text-blue-700');
+  });
+
+  it('does NOT render completado badge when stage is COMPLETED but internalStage is null', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage={null} />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render completado badge when stage is not COMPLETED', () => {
+    render(<KanbanCard {...defaultProps} stage="CONFIRMED" internalStage="QUALIFIED" />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render completado badge for unknown internalStage value', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="UNKNOWN" />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+});
+
+// ── Reject Button ────────────────────────────────────────────────────────────
+
+describe('KanbanCard — reject button', () => {
+  it('renders reject button when onReject is provided and stage is not REJECTED', () => {
+    const onReject = vi.fn();
+    render(<KanbanCard {...defaultProps} stage="INVITED" onReject={onReject} />);
+    expect(screen.getByTestId('reject-button')).toBeInTheDocument();
+    expect(screen.getByTestId('reject-button')).toHaveTextContent('admin.kanban.rejectButton');
+  });
+
+  it('does NOT render reject button when stage is REJECTED', () => {
+    const onReject = vi.fn();
+    render(<KanbanCard {...defaultProps} stage="REJECTED" onReject={onReject} />);
+    expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render reject button when onReject is undefined', () => {
+    render(<KanbanCard {...defaultProps} stage="INVITED" />);
+    expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
+  });
+
+  it('calls onReject when reject button is clicked', () => {
+    const onReject = vi.fn();
+    render(<KanbanCard {...defaultProps} stage="CONFIRMED" onReject={onReject} />);
+    fireEvent.click(screen.getByTestId('reject-button'));
+    expect(onReject).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED'])(
+    'renders reject button in %s stage when onReject is provided',
+    (stage) => {
+      const onReject = vi.fn();
+      render(<KanbanCard {...defaultProps} stage={stage} onReject={onReject} />);
+      expect(screen.getByTestId('reject-button')).toBeInTheDocument();
+    },
+  );
 });
 
 // ── Interview Schedule Tag (CONFIRMED stage) ────────────────────────────────

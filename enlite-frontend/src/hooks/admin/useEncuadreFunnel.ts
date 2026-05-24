@@ -32,6 +32,7 @@ interface FunnelEncuadre {
   redireccionamiento: string | null;
   funnelStage: string | null;
   acquisitionChannel?: string | null;
+  internalStage?: string | null;
 }
 
 export interface FunnelStages {

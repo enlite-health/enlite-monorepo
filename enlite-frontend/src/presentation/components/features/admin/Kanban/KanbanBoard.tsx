@@ -14,7 +14,7 @@ interface KanbanBoardProps {
 }
 
 const COLUMN_CONFIG = [
-  { id: 'INVITED', color: 'bg-blue-400', droppable: false },
+  { id: 'INVITED', color: 'bg-blue-400', droppable: true },
   { id: 'INITIATED', color: 'bg-violet-400', droppable: false },
   { id: 'IN_PROGRESS', color: 'bg-violet-500', droppable: false },
   { id: 'COMPLETED', color: 'bg-violet-600', droppable: false },
@@ -24,7 +24,7 @@ const COLUMN_CONFIG = [
 ] as const;
 
 // Droppable columns map directly to application_funnel_stage values
-const DROPPABLE_STAGES = new Set(['CONFIRMED', 'SELECTED', 'REJECTED']);
+const DROPPABLE_STAGES = new Set(['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED']);
 
 export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
   const { t } = useTranslation();
@@ -121,7 +121,9 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                       stage={col.id}
                       funnelStage={enc.funnelStage}
                       acquisitionChannel={enc.acquisitionChannel}
+                      internalStage={enc.internalStage ?? null}
                       onWorkerClick={handleWorkerClick}
+                      onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
                     />
                   </DraggableCard>
                 ))}
@@ -147,6 +149,7 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                 interviewTime={activeCardInfo.card.interviewTime}
                 stage={activeCardInfo.stage}
                 funnelStage={activeCardInfo.card.funnelStage}
+                internalStage={activeCardInfo.card.internalStage ?? null}
                 acquisitionChannel={activeCardInfo.card.acquisitionChannel}
               />
             </div>

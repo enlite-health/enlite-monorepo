@@ -178,30 +178,38 @@ describe('KanbanBoard — column rendering', () => {
 // ── Drag & Drop Behavior ─────────────────────────────────────────────────────
 
 describe('KanbanBoard — drag & drop rules', () => {
-  it('disables droppable on Talentum-driven and INVITED columns', () => {
+  it('disables droppable on Talentum-driven columns (INITIATED, IN_PROGRESS, COMPLETED)', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const nonDroppable = droppableIds.filter((d) =>
-      ['INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED'].includes(d.id),
+      ['INITIATED', 'IN_PROGRESS', 'COMPLETED'].includes(d.id),
     );
 
-    expect(nonDroppable).toHaveLength(4);
+    expect(nonDroppable).toHaveLength(3);
     for (const col of nonDroppable) {
       expect(col.disabled).toBe(true);
     }
   });
 
-  it('keeps droppable enabled on CONFIRMED, SELECTED, and REJECTED columns', () => {
+  it('keeps droppable enabled on INVITED, CONFIRMED, SELECTED, and REJECTED columns', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const droppableColumns = droppableIds.filter((d) =>
-      ['CONFIRMED', 'SELECTED', 'REJECTED'].includes(d.id),
+      ['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED'].includes(d.id),
     );
 
-    expect(droppableColumns).toHaveLength(3);
+    expect(droppableColumns).toHaveLength(4);
     for (const col of droppableColumns) {
       expect(col.disabled).toBe(false);
     }
+  });
+
+  it('INVITED column is droppable (F4 change)', () => {
+    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+
+    const invitedDroppable = droppableIds.find((d) => d.id === 'INVITED');
+    expect(invitedDroppable).toBeTruthy();
+    expect(invitedDroppable?.disabled).toBe(false);
   });
 
   it('renders draggable cards inside Talentum columns (drag FROM is allowed)', () => {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 import { CalendarClock, MapPin, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 
@@ -18,7 +18,9 @@ interface KanbanCardProps {
   stage: string;
   funnelStage: string | null;
   acquisitionChannel?: string | null;
+  internalStage?: string | null;
   onWorkerClick?: (workerId: string) => void;
+  onReject?: () => void;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -39,6 +41,16 @@ const TALENTUM_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   NOT_QUALIFIED: { bg: 'bg-red-50', text: 'text-red-600' },
 };
 
+const COMPLETADO_BADGE_STYLE: Record<string, string> = {
+  QUALIFIED: 'bg-green-50 text-green-700',
+  IN_DOUBT: 'bg-orange-50 text-orange-700',
+  COMPLETED: 'bg-blue-50 text-blue-700',
+};
+
+function completadoBadgeStyle(internalStage: string): string {
+  return COMPLETADO_BADGE_STYLE[internalStage] ?? '';
+}
+
 export function KanbanCard({
   id,
   workerId,
@@ -54,7 +66,9 @@ export function KanbanCard({
   stage,
   funnelStage,
   acquisitionChannel,
+  internalStage,
   onWorkerClick,
+  onReject,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -84,14 +98,14 @@ export function KanbanCard({
             className="text-left truncate"
             onClick={handleNameClick}
           >
-            <Typography variant="body" weight="semibold" className="text-[#180149] text-sm truncate hover:underline">
+            <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
               {workerName ?? t('admin.kanban.noName')}
-            </Typography>
+            </Text>
           </button>
         ) : (
-          <Typography variant="body" weight="semibold" className="text-[#180149] text-sm truncate">
+          <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate">
             {workerName ?? t('admin.kanban.noName')}
-          </Typography>
+          </Text>
         )}
         {matchScore !== null && (
           <div className="flex items-center gap-0.5 shrink-0">
@@ -119,6 +133,15 @@ export function KanbanCard({
       {talentumStyle && (
         <span data-testid="talentum-badge" className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${talentumStyle.bg} ${talentumStyle.text}`}>
           {t(`admin.kanban.talentumStatus.${talentumStatus}`)}
+        </span>
+      )}
+
+      {stage === 'COMPLETED' && internalStage && completadoBadgeStyle(internalStage) && (
+        <span
+          data-testid="completado-badge"
+          className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${completadoBadgeStyle(internalStage)}`}
+        >
+          {t(`admin.kanban.completadoBadge.${internalStage}`)}
         </span>
       )}
 
@@ -155,7 +178,7 @@ export function KanbanCard({
       {funnelStage === 'REPROGRAM' && (
         <div className="mt-2">
           <span data-testid="reprogram-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">
-            🔄 REMARCADO
+            {t('admin.kanban.reprogramBadge')}
           </span>
         </div>
       )}
@@ -166,6 +189,20 @@ export function KanbanCard({
             {t(`admin.kanban.rejectionLabels.${rejectionReasonCategory}`, rejectionReasonCategory)}
           </span>
         </div>
+      )}
+
+      {onReject && stage !== 'REJECTED' && (
+        <button
+          data-testid="reject-button"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReject();
+          }}
+          className="mt-2 w-full text-left px-2 py-1 rounded-lg text-[10px] font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors border border-transparent hover:border-red-100"
+        >
+          {t('admin.kanban.rejectButton')}
+        </button>
       )}
     </div>
   );

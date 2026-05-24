@@ -1,13 +1,12 @@
 /**
  * EncuadreFunnelController.test.ts
  *
- * Tests the kanban funnel endpoints — now driven by application_funnel_stage
+ * Tests the getEncuadreFunnel kanban endpoint — driven by application_funnel_stage
  * as the single source of truth.
  *
- * Scenarios:
- * 1. getEncuadreFunnel — classifies by funnel_stage
- * 2. moveEncuadre — updates application_funnel_stage + syncs resultado for terminal states
- * 3. getCoordinatorCapacity / getAlerts — unchanged
+ * moveEncuadre tests live in EncuadreFunnelController.moveEncuadre.test.ts (split
+ * to keep both files ≤400 lines).
+ * Dashboard tests (getCoordinatorCapacity, getAlerts) live here too as they are small.
  */
 
 const mockQuery = jest.fn();
@@ -156,6 +155,38 @@ describe('EncuadreFunnelController', () => {
       expect(stages.COMPLETED.find((e: any) => e.id === 'e2').talentumStatus).toBe('IN_DOUBT');
     });
 
+    it('expõe internalStage igual a funnelStage em cada item do payload', async () => {
+      // F4: internalStage é alias explícito de funnelStage — frontend usa pra renderizar badge
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          makeRow({ id: 'e1', funnel_stage: 'QUALIFIED' }),
+          makeRow({ id: 'e2', funnel_stage: 'IN_PROGRESS' }),
+          makeRow({ id: 'e3', funnel_stage: null }),
+        ],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+
+      const e1 = stages.COMPLETED.find((e: any) => e.id === 'e1');
+      expect(e1).toBeDefined();
+      expect(e1.internalStage).toBe('QUALIFIED');
+      expect(e1.internalStage).toBe(e1.funnelStage);
+
+      const e2 = stages.IN_PROGRESS.find((e: any) => e.id === 'e2');
+      expect(e2).toBeDefined();
+      expect(e2.internalStage).toBe('IN_PROGRESS');
+      expect(e2.internalStage).toBe(e2.funnelStage);
+
+      // null stage: internalStage deve ser null (não undefined)
+      const e3 = stages.INVITED.find((e: any) => e.id === 'e3');
+      expect(e3).toBeDefined();
+      expect(e3.internalStage).toBeNull();
+      expect(e3.internalStage).toBe(e3.funnelStage);
+    });
+
     it('retorna 7 stages vazios quando não há encuadres', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
@@ -218,196 +249,6 @@ describe('EncuadreFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  // moveEncuadre — atualiza application_funnel_stage
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe('moveEncuadre', () => {
-    it('retorna 400 quando targetStage está ausente', async () => {
-      const [req, res] = mockReqRes({ id: 'e1' }, {});
-      await controller.moveEncuadre(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('retorna 400 para targetStage inválido', async () => {
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVALID_STAGE' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('retorna 404 quando encuadre não existe', async () => {
-      mockQuery.mockResolvedValueOnce({ rowCount: 0, rows: [] });
-
-      const [req, res] = mockReqRes({ id: 'e-nonexistent' }, { targetStage: 'CONFIRMED' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    it('retorna 400 quando encuadre não tem worker_id', async () => {
-      mockQuery.mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ worker_id: null, job_posting_id: 'jp-1' }],
-      });
-
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('move para CONFIRMED — atualiza application_funnel_stage sem tocar resultado', async () => {
-      // Query 1: SELECT encuadre
-      mockQuery.mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
-      });
-      // Query 2: SELECT status FROM workers (eligibility check)
-      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // Query 3: INSERT/UPDATE worker_job_applications
-      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
-
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: { encuadreId: 'e1', targetStage: 'CONFIRMED' },
-      });
-
-      // Deve ter feito exatamente 3 queries (SELECT + eligibility + upsert wja)
-      expect(mockQuery).toHaveBeenCalledTimes(3);
-
-      // Terceira query: upsert em worker_job_applications com stage CONFIRMED
-      const upsertCall = mockQuery.mock.calls[2];
-      expect(upsertCall[0]).toContain('worker_job_applications');
-      expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'CONFIRMED']);
-    });
-
-    it('retorna 403 quando worker.status = INCOMPLETE_REGISTER', async () => {
-      // Query 1: SELECT encuadre
-      mockQuery.mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
-      });
-      // Query 2: SELECT status — INCOMPLETE
-      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'INCOMPLETE_REGISTER' }] });
-
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(403);
-      const body = (res.json as jest.Mock).mock.calls[0][0];
-      expect(body.code).toBe('WORKER_NOT_ELIGIBLE');
-      expect(body.reason).toBe('registration_incomplete');
-      // Não deve ter chamado upsert
-      expect(mockQuery).toHaveBeenCalledTimes(2);
-    });
-
-    it('retorna 403 quando worker.status = DISABLED', async () => {
-      mockQuery.mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
-      });
-      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'DISABLED' }] });
-
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'SELECTED' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(403);
-      const body = (res.json as jest.Mock).mock.calls[0][0];
-      expect(body.reason).toBe('worker_disabled');
-      expect(mockQuery).toHaveBeenCalledTimes(2);
-    });
-
-    it('move para SELECTED — atualiza funnel_stage E resultado do encuadre', async () => {
-      // Query 1: SELECT encuadre
-      mockQuery.mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
-      });
-      // Query 2: eligibility check
-      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // Query 3: upsert wja
-      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
-      // Query 4: UPDATE encuadre resultado = SELECCIONADO
-      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
-
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'SELECTED' });
-      await controller.moveEncuadre(req, res);
-
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: { encuadreId: 'e1', targetStage: 'SELECTED' },
-      });
-
-      // 4 queries: SELECT + eligibility + upsert wja + UPDATE encuadre
-      expect(mockQuery).toHaveBeenCalledTimes(4);
-
-      // Quarta query: UPDATE resultado = SELECCIONADO
-      const updateCall = mockQuery.mock.calls[3];
-      expect(updateCall[0]).toContain('SELECCIONADO');
-    });
-
-    it('move para REJECTED — atualiza funnel_stage, resultado E rejection_reason_category', async () => {
-      mockQuery.mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
-      });
-      // eligibility
-      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // upsert wja
-      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
-      // UPDATE encuadre resultado = RECHAZADO
-      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
-
-      const [req, res] = mockReqRes(
-        { id: 'e1' },
-        { targetStage: 'REJECTED', rejectionReasonCategory: 'DISTANCE' },
-      );
-      await controller.moveEncuadre(req, res);
-
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: { encuadreId: 'e1', targetStage: 'REJECTED' },
-      });
-
-      // Quarta query: UPDATE resultado = RECHAZADO com category
-      const updateCall = mockQuery.mock.calls[3];
-      expect(updateCall[0]).toContain('RECHAZADO');
-      expect(updateCall[1]).toContain('DISTANCE');
-    });
-
-    it('aceita todos os targetStage válidos (F3: NOT_QUALIFIED removido)', async () => {
-      // NOT_QUALIFIED removido em F3 — operador admin não pode mover manualmente para esse stage
-      const validStages = [
-        'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
-        'CONFIRMED', 'SELECTED', 'REJECTED',
-      ];
-
-      for (const stage of validStages) {
-        jest.clearAllMocks();
-
-        mockQuery.mockResolvedValueOnce({
-          rowCount: 1,
-          rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
-        });
-        // eligibility OK
-        mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-        mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
-
-        const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: stage });
-        await controller.moveEncuadre(req, res);
-
-        expect(res.json).toHaveBeenCalledWith(
-          expect.objectContaining({ success: true }),
-        );
-      }
     });
   });
 

@@ -660,6 +660,29 @@
         "whatsapp": "WhatsApp",
         "linkedin": "LinkedIn",
         "site": "Portal"
+      },
+      "completadoBadge": {
+        "QUALIFIED": "Aprovado Talentum",
+        "IN_DOUBT": "Em dúvida",
+        "COMPLETED": "Aguardando análise"
+      },
+      "reprogramBadge": "🔄 Remarcado",
+      "rejectButton": "Rejeitar",
+      "rejectionModal": {
+        "title": "Motivo de rejeição",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar"
+      },
+      "rejectionOptions": {
+        "DISTANCE": "Distância do local",
+        "SCHEDULE_INCOMPATIBLE": "Horário incompatível",
+        "INSUFFICIENT_EXPERIENCE": "Experiência insuficiente",
+        "SALARY_EXPECTATION": "Pretensão salarial",
+        "WORKER_DECLINED": "AT não aceita",
+        "OVERQUALIFIED": "Sobrequalificado",
+        "DEPENDENCY_MISMATCH": "Nível de dependência",
+        "TALENTUM_NOT_QUALIFIED": "Talentum: Não qualificado",
+        "OTHER": "Outro motivo"
       }
     },
     "workerDetail": {

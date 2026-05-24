@@ -1222,3 +1222,34 @@ Plano completo em `docs/features/worker-job-applications/README.md`.
 **Ver:** [ADR-002](adr/002-wja-canonico-encuadres-deprecada.md) — seção "Follow-up".
 
 **Ver:** [ADR-001](adr/001-encuadres-unique-worker-job-posting-constraint.md) — seção "Follow-up".
+
+---
+
+### TD-043 — Cobertura visual E2E Playwright para F4 (badges + modal de rejeição)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante QA de F4
+- **Dono provável:** frontend (enlite-frontend)
+- **Bloqueador?** Não — testes unit cobrem lógica; lacuna é apenas cobertura visual
+
+**O que é:**
+
+A F4 adicionou 3 badges visuais (QUALIFIED/IN_DOUBT/COMPLETED) na coluna COMPLETADO + botão "Rejeitar" no card + modal de motivo. Testes unit cobrem a lógica (18 testes novos em KanbanCard.test.tsx + KanbanBoard.test.tsx), mas o CLAUDE.md frontend exige validação visual obrigatória via `toHaveScreenshot()` Playwright. Os mocks atuais em `vacancy-kanban-visual.e2e.ts` não incluem `internalStage` nem `encuadreId`, então os badges/botão não renderizam nos cenários existentes.
+
+7 cenários novos sugeridos pelo QA:
+
+1. `completado-badge-qualified.png` — card COMPLETED com `internalStage="QUALIFIED"` → badge verde visível
+2. `completado-badge-in-doubt.png` — card COMPLETED com `internalStage="IN_DOUBT"` → badge laranja visível
+3. `completado-badge-completed.png` — card COMPLETED com `internalStage="COMPLETED"` → badge azul visível
+4. `reject-button-visible.png` — card com `encuadreId` em coluna não-REJECTED → botão "Rechazar" visível
+5. `reject-button-opens-modal.png` — clicar abre `RejectionReasonSelect` com opções i18n
+6. `reject-button-absent-in-rejected-column.png` — card em REJECTED não exibe botão
+7. `reject-button-absent-orphan.png` — card com `encuadreId=null` não exibe botão
+
+**Critério para fechar:**
+
+- 7 cenários adicionados em `vacancy-kanban-visual.e2e.ts` (ou arquivo dedicado)
+- Baselines geradas via `--update-snapshots` controlado
+- Cobertura em 3 browsers (chromium/firefox/webkit)
+- `pnpm test:e2e:no-integration` verde
+- TD-042 (F4) só fecha completamente após este TD

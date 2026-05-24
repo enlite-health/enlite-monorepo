@@ -111,6 +111,7 @@ export class EncuadreFunnelController {
           workZone: row.work_zone,
           redireccionamiento: row.redireccionamiento,
           funnelStage: stage ?? null,
+          internalStage: stage ?? null, // alias explícito; frontend usa pra renderizar badge
         };
 
         // Classificação direta por application_funnel_stage
