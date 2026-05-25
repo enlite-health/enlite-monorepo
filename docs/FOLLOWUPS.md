@@ -1408,3 +1408,41 @@ WHERE source = 'planilla_operativa';
 - Se query #8 mostrar escrita posterior ao commit do guard SEM justificativa documentada do PO, reabrir como bug em vez de TD (alguém driblou o guard)
 
 **Relacionado:** ADR-002, plano F6 (commit `616ff1c`), TD-042 (deprecação encuadres)
+
+---
+
+### TD-048 — Schema mismatch em `encuadres.rejection_reason` (legacy enum vs texto livre)
+
+**Descoberto em:** 2026-05-25, durante smoke test WJA (commit a ser definido — bug #2 do smoke).
+
+**Problema:** Coluna `encuadres.rejection_reason` é `VARCHAR(30)` com CHECK constraint restritivo (migration 045):
+
+```sql
+CHECK (rejection_reason IS NULL OR rejection_reason IN ('other', 'incompatible_schedule', 'distance'))
+```
+
+Mas o controller `WJAFunnelController.moveEncuadre` aceita o campo via API sem validar:
+
+```typescript
+UPDATE encuadres SET resultado = 'RECHAZADO',
+  rejection_reason_category = COALESCE($2, rejection_reason_category),
+  rejection_reason = COALESCE($3, rejection_reason),   -- ← texto livre vindo da API
+```
+
+Resultado: se algum cliente (frontend, integração, script) mandar `rejectionReason` com texto que não bate com os 3 enum values, o backend retorna 500 (`value too long for type character varying(30)` ou CHECK violation).
+
+**Mitigação aplicada:** o frontend F4 (botão "Rejeitar" no Kanban) usa APENAS `rejectionReasonCategory` (enum maior, com 9 valores cobrindo casos reais). Smoke test atualizado pra espelhar esse uso real.
+
+**O que falta decidir:**
+
+- Opção A: `ALTER COLUMN rejection_reason TYPE TEXT` + drop CHECK → permite texto livre genuíno (ex: motivo descritivo digitado por admin)
+- Opção B: Remover `rejection_reason` da tabela (substituído por `rejection_reason_category` + `rejection_reason_observations TEXT`, novo campo)
+- Opção C: Manter schema atual + adicionar validação na borda do controller pra rejeitar valores fora do enum
+
+**Critério para fechar:**
+
+- Decidir A/B/C com PO
+- Implementar mudança de schema (se A ou B) ou de validação (se C)
+- Atualizar smoke test pra cobrir o caminho permitido
+
+**Relacionado:** F4 (botão Rejeitar), `WJAFunnelController.moveEncuadre`, smoke test `wja-full-flow-2.e2e.test.ts`.

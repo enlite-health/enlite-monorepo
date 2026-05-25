@@ -224,6 +224,9 @@ export class ProcessTalentumPrescreening {
     matchScore: number,
     prescreeningId?: string,
   ): Promise<void> {
+    // F3 (mig 191): NOT_QUALIFIED não existe mais no enum — converter pra REJECTED antes do upsert.
+    const effectiveFunnelStage = funnelStage === 'NOT_QUALIFIED' ? 'REJECTED' : funnelStage;
+
     let qualifiedEventId: string | null = null;
     const client = await this.pool.connect();
 
@@ -231,12 +234,14 @@ export class ProcessTalentumPrescreening {
       await client.query('BEGIN');
 
       const { previousStage } = await this.prescreeningRepo.upsertWorkerJobApplicationFromTalentum(
-        { workerId, jobPostingId, applicationFunnelStage: funnelStage, matchScore },
+        { workerId, jobPostingId, applicationFunnelStage: effectiveFunnelStage, matchScore },
         client,
       );
-      console.log(`${TAG} WJA: ${previousStage ?? 'NEW'} → ${funnelStage} | worker=${workerId} | job=${jobPostingId} | score=${matchScore}`);
+      console.log(`${TAG} WJA: ${previousStage ?? 'NEW'} → ${effectiveFunnelStage} | worker=${workerId} | job=${jobPostingId} | score=${matchScore}`);
 
-      qualifiedEventId = await this.handleQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage);
+      qualifiedEventId = await this.handleQualifiedTransition(client, workerId, jobPostingId, effectiveFunnelStage, previousStage);
+      // Passa o funnelStage ORIGINAL (NOT_QUALIFIED) para handleNotQualifiedTransition identificar a transição,
+      // mas o upsert já gravou REJECTED — handleNotQualifiedTransition só cuida do encuadre + domain events agora.
       await this.handleNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId);
 
       await client.query('COMMIT');

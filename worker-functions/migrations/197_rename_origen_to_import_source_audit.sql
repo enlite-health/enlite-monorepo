@@ -26,4 +26,28 @@ COMMENT ON COLUMN encuadres.import_source_audit IS
   'NUNCA é SSOT de origem da candidatura — SSOT real é worker_job_applications.source. '
   'F8 (2026-05-25, ADR-002): renomeado de "origen" para deixar a semântica explícita.';
 
+-- Recriar função do trigger 189/193 com o nome novo da coluna
+-- (CREATE OR REPLACE FUNCTION é seguro; a função usa o nome antigo internamente)
+CREATE OR REPLACE FUNCTION fn_ensure_encuadre_on_wja_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.worker_id IS NOT NULL AND NEW.job_posting_id IS NOT NULL THEN
+    INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
+    SELECT
+      NEW.worker_id,
+      NEW.job_posting_id,
+      'auto-trigger',
+      md5('auto-trigger|' || NEW.worker_id::text || '|' || NEW.job_posting_id::text)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM encuadres e
+      WHERE e.worker_id = NEW.worker_id AND e.job_posting_id = NEW.job_posting_id
+    )
+    ON CONFLICT (worker_id, job_posting_id) DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
 COMMIT;

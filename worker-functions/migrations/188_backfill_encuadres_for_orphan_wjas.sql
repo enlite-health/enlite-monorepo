@@ -15,10 +15,10 @@
 -- Idempotente: ON CONFLICT (dedup_hash) DO NOTHING. Rodar 2x é seguro.
 -- Risco: LOW. Sem ALTER TABLE, sem lock. INSERT-only.
 -- Rollback manual (executar via psql se necessário):
---   SELECT id FROM encuadres WHERE import_source_audit = 'backfill-td036';
+--   SELECT id FROM encuadres WHERE origen = 'backfill-td036';
 --   -- Depois remover os IDs retornados conforme necessário.
 
-INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
+INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
 SELECT
   wja.worker_id,
   wja.job_posting_id,

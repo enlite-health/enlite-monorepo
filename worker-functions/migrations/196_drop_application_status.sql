@@ -21,7 +21,18 @@ BEGIN
   RAISE NOTICE 'Pre-drop check: % rows com application_status atualizadas nos últimos 5min', recent_writes;
 END $$;
 
--- ── STEP 2: Renomear coluna para padrão de deprecação ──────────────────────────
+-- ── STEP 2: Recriar trigger 183 sem application_status na lista UPDATE ──
+-- Trigger trg_enforce_worker_registered (migration 183) referencia application_status
+-- na clausula UPDATE; precisa ser recriado antes da operacao seguinte.
+DROP TRIGGER IF EXISTS trg_enforce_worker_registered ON worker_job_applications;
+
+CREATE TRIGGER trg_enforce_worker_registered
+  BEFORE INSERT OR UPDATE OF worker_id, job_posting_id, application_funnel_stage
+  ON worker_job_applications
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_worker_registered_for_application();
+
+-- ── STEP 3: Renomear coluna para padrão de deprecação ──────────────────────────
 -- Renomear antes de dropar é o padrão de segurança da Enlite (permite rollback trivial)
 -- O Postgres dropa automaticamente:
 --   - CHECK constraint valid_application_status (referencia apenas essa coluna)
@@ -29,7 +40,7 @@ END $$;
 ALTER TABLE worker_job_applications
   RENAME COLUMN application_status TO application_status_deprecated_20260525;
 
--- ── STEP 3: Drop a coluna renomeada ──────────────────────────────────────────
+-- ── STEP 4: Drop a coluna renomeada ──────────────────────────────────────────
 ALTER TABLE worker_job_applications
   DROP COLUMN IF EXISTS application_status_deprecated_20260525;
 

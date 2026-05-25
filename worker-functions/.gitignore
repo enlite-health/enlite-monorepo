@@ -10,3 +10,4 @@ test-results/
 .idea/
 docs/excel/seeds/999_prod_snapshot.sql
 seeds/.last-snapshot-image-id
+tests/e2e/.wja-full-flow-state.json

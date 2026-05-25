@@ -844,7 +844,7 @@ describe('ProcessTalentumPrescreening', () => {
       );
     });
 
-    it('ANALYZED + NOT_QUALIFIED → upsert WJA com NOT_QUALIFIED + auto-reject para REJECTED', async () => {
+    it('ANALYZED + NOT_QUALIFIED → upsert WJA já com REJECTED (F3 pré-conversão) + auto-reject completa fluxo encuadre', async () => {
       const payload = buildPayload({ status: 'ANALYZED', statusLabel: 'NOT_QUALIFIED' });
       mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
         previousStage: null, // primeira vez → auto-reject ativo
@@ -852,9 +852,11 @@ describe('ProcessTalentumPrescreening', () => {
 
       await useCase.execute(payload);
 
-      // Upsert inicial usa NOT_QUALIFIED (transporte interno do Talentum)
+      // F3 (migration 191): NOT_QUALIFIED foi removido do enum. ProcessTalentumPrescreening
+      // converte NOT_QUALIFIED → REJECTED ANTES do upsert (senão CHECK constraint quebra).
+      // handleNotQualifiedTransition continua rodando depois para encuadre RECHAZADO + domain events.
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalledWith(
-        expect.objectContaining({ applicationFunnelStage: 'NOT_QUALIFIED' }),
+        expect.objectContaining({ applicationFunnelStage: 'REJECTED' }),
         mockPoolClient,
       );
 
