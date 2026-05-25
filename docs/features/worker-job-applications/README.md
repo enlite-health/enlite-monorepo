@@ -1,7 +1,9 @@
 # Worker Job Applications (Funil de Candidatura)
 
 > **Status:** Feature fechada. Fonte canônica do funil de candidatura de prestadores (workers) a vagas (job postings) na Enlite.
-> **Última atualização:** 2026-05-25 (F7.c concluída — application_status dropado + funnelStage redundante removido + ADR-004 prescreening providers plugáveis)
+> **Última atualização:** 2026-05-25 (F8 concluída — todo o plano de 8 fases deployado em prod + auditoria empírica de 12.259 workers validou 100% de integridade em 3 camadas)
+> **Validação:** [09-auditoria-integridade.md](09-auditoria-integridade.md) — 12.259/12.259 workers OK em DB × API × DOM (0 stage_mismatch, 0 temporal_anomaly, 0 no_encuadre)
+> **Deploy:** todas as migrations 190-197 e código F2-F8 deployados em **2026-05-25** via Cloud Run revisão `worker-functions-00283-kxc`
 
 ## Visão executiva
 
@@ -22,7 +24,8 @@ Regras inegociáveis:
 5. [Fluxo de transições (T1→T7)](05-fluxo-transicoes.md) — gatilho, ator, pré/pós, idempotência
 6. [Regra de cardinalidade e REPROGRAMAR](06-regra-cardinalidade.md) — 1:1 worker/vaga; REPROGRAMAR edita, não cria
 7. [Tabelas envolvidas](07-tabelas-envolvidas.md) — estado-alvo após deprecação progressiva
-8. [Pipelines de escrita](08-pipelines.md) — 6 ativos + 3 deprecados
+8. [Pipelines de escrita](08-pipelines.md) — 7 ativos + 3 deprecados
+9. [Auditoria empírica de integridade](09-auditoria-integridade.md) — validação de 12.259 workers em prod (2026-05-25)
 
 ## Plano de fases
 
@@ -37,9 +40,9 @@ Esta tabela é a **fonte da verdade da numeração das fases**. Qualquer mençã
 | **F5** | UNIQUE `(worker_id, job_posting_id)` em `encuadres` + consolidar ~20k duplicatas históricas (richness score + recência) + 6 call sites atualizados de `ON CONFLICT (dedup_hash)` para par composto + trigger 189 atualizado. REPROGRAMAR já edita WJA sem criar encuadre novo (descoberto no Explore — desnecessário mexer no use case) | ✅ Concluída 2026-05-24 | `2cc7d06` |
 | **F6** | Matar `EncuadreRepository.syncToWorkerJobApplications` como pipeline recorrente: chamada removida do script de import + função mantida com `@deprecated`. CLAUDE.md "Sequência obrigatória pós-import" → "Pipelines de import legados". SEM backfill das 19k inconsistências (user aceitou como histórico). SEM converter 1.450 órfãos ClickUp. Bloqueador residual: TD-047 (identificar quem ainda dispara o script) | ✅ Concluída 2026-05-24 | `616ff1c` |
 | **F7.a** | Limpeza enxuta (baixo risco): remover `ANALYZED` da função SQL `funnel_stage_precedence()` (mantém em `FunnelStage` TS como vocab protocolo Talentum); remover `PLACED` totalmente (CHECK + `FunnelStage` + `ApplicationFunnelStage` + arrays); renomear 3 classes (`EncuadreFunnelController` → `WJAFunnelController`, `EncuadreFunnelTableController` → `WJAFunnelTableController`, `useEncuadreFunnel` → `useWJAFunnel`); criar ADR-003 com regra de nomeio. **NÃO toca SELECTED/REPROGRAM/application_status** | ✅ Concluída 2026-05-25 | `a0a95e3` / migration 194 |
-| **F7.b** | Refatorou `HandleReminderResponseUseCase.handleRescheduleYes`: removeu writer de `REPROGRAM`; worker passa a ficar em `CONFIRMED` + `interview_response='awaiting_reschedule'` + `meet_link=NULL` (Opção C — ADR-003 ampliado). State machine ganhou self-transition `awaiting_reschedule → awaiting_reschedule`. Drop REPROGRAM do CHECK + `funnel_stage_precedence()` (migration 195). Consumers atualizados: `WJAFunnelController` (workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED), `KanbanCard` (badge "REMARCADO" derivado de `interview_response='awaiting_reschedule' && meet_link === null`), `GetFunnelTableUseCase` (worker pediu reschedule classifica como PRE_SELECTED, não WITHDREW). E2E `qualified-interview-flow` atualizado. 0 linhas backfill (Discovery DBA). | ✅ Concluída 2026-05-25 | (pendente commit) / migration 195 |
-| **F7.c** | Drop coluna `application_status` (legada, 100% redundante): atualizou 7 writers (MatchmakingService passou a escrever `source='system'`+`acquisition_channel='system'`, demais pararam de escrever); `alreadyApplied` no `/match-results` derivado de `source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'` (Opção 3 combinada); migration 196 dropa CONSTRAINT+INDEX+COLUMN. Também removeu `funnelStage` redundante do payload do Kanban (substituído integralmente por `internalStage`). 12.258 rows sem backfill (info redundante). ADR-004 criada (providers de prescreening plugáveis — Talentum é UM provider descartável). | ✅ Concluída 2026-05-25 | (pendente commit) / migration 196 |
-| **F8** | `encuadres.origen` → `import_source_audit` (auditoria de import histórico apenas, sem authority de classificação) | ✅ Concluída 2026-05-25 | migration 197 |
+| **F7.b** | Refatorou `HandleReminderResponseUseCase.handleRescheduleYes`: removeu writer de `REPROGRAM`; worker passa a ficar em `CONFIRMED` + `interview_response='awaiting_reschedule'` + `meet_link=NULL` (Opção C — ADR-003 ampliado). State machine ganhou self-transition `awaiting_reschedule → awaiting_reschedule`. Drop REPROGRAM do CHECK + `funnel_stage_precedence()` (migration 195). Consumers atualizados: `WJAFunnelController` (workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED), `KanbanCard` (badge "REMARCADO" derivado de `interview_response='awaiting_reschedule' && meet_link === null`), `GetFunnelTableUseCase` (worker pediu reschedule classifica como PRE_SELECTED, não WITHDREW). E2E `qualified-interview-flow` atualizado. 0 linhas backfill (Discovery DBA). | ✅ Concluída 2026-05-25 | `ce52db3` / migration 195 (deploy prod 2026-05-25) |
+| **F7.c** | Drop coluna `application_status` (legada, 100% redundante): atualizou 7 writers (MatchmakingService passou a escrever `source='system'`+`acquisition_channel='system'`, demais pararam de escrever); `alreadyApplied` no `/match-results` derivado de `source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'` (Opção 3 combinada); migration 196 dropa CONSTRAINT+INDEX+COLUMN. Também removeu `funnelStage` redundante do payload do Kanban (substituído integralmente por `internalStage`). 12.258 rows sem backfill (info redundante). ADR-004 criada (providers de prescreening plugáveis — Talentum é UM provider descartável). | ✅ Concluída 2026-05-25 | `411c540` / migration 196 (deploy prod 2026-05-25) |
+| **F8** | `encuadres.origen` → `import_source_audit` (auditoria de import histórico apenas, sem authority de classificação). Trigger 189 recriado pra usar nome novo. | ✅ Concluída 2026-05-25 | `f9db2f3` / migration 197 (deploy prod 2026-05-25) |
 
 ## Referências cruzadas
 

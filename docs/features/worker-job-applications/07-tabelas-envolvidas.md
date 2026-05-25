@@ -43,22 +43,24 @@ updated_at                  TIMESTAMPTZ
 
 ### `worker_job_application_stage_history` — trilha de auditoria
 
-Schema REAL em prod (descoberto pela Discovery F7 DBA, 2026-05-24 — diferente do design originalmente documentado):
+Schema REAL em prod (verificado via psql 2026-05-25 — auditoria 09):
 
 ```
-id           UUID PK
-wja_id       UUID FK worker_job_applications
-field_name   VARCHAR(50)    -- 'application_funnel_stage' (genérico — suporta auditar outros campos no futuro)
-old_value    VARCHAR(100)   -- stage anterior (ex: 'IN_PROGRESS')
-new_value    VARCHAR(100)   -- stage novo (ex: 'COMPLETED')
-reason       VARCHAR(100)   -- TALENTUM_WEBHOOK | ADMIN_DRAG | REPROGRAMAR | AUTO_REJECT_NOT_QUALIFIED
-metadata     JSONB          -- contexto adicional (payload, user_id, etc.)
-created_at   TIMESTAMPTZ DEFAULT NOW()
+id              UUID PK DEFAULT gen_random_uuid()
+application_id  UUID NOT NULL FK worker_job_applications(id)
+field_name      VARCHAR(50) NOT NULL    -- 'application_funnel_stage' (genérico — suporta outros campos)
+old_value       VARCHAR(50)             -- stage anterior (NULL em INSERTs)
+new_value       VARCHAR(50) NOT NULL    -- stage novo
+changed_by      VARCHAR(128)            -- vazio em prod hoje (TD-050)
+change_source   VARCHAR(100)            -- vazio em prod hoje (TD-050)
+created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
+
+**TD-050:** docs anteriores falavam em `reason` e `metadata` — schema real é `changed_by` e `change_source`. Em prod ambas ficam vazias porque trigger usa `current_setting('app.current_uid', true)` mas backend nunca seta esse setting. Funcional pra detectar transições, limitada pra rastrear "quem mudou".
 
 Insert-only. Nunca atualizar nem deletar.
 
-**Limitação conhecida:** dados a partir de 2026-05-20 apenas. Bulk import de março-abril não está rastreado.
+**Limitação conhecida:** dados a partir de 2026-05-20 (data em que trigger 169 foi aplicado em prod). Bulk import de março-abril (7.599 workers) não está rastreado — esperado. Auditoria de 2026-05-25 confirmou **zero workers pós-trigger sem stage_history** (regressão zero). Detalhes em [09-auditoria-integridade.md](09-auditoria-integridade.md).
 
 ### `talentum_prescreenings` — log do estado externo
 
@@ -108,17 +110,24 @@ Criadas pelas migrations 192/193 (commit `2cc7d06`):
 - **`encuadres_backup_pre_f5`** — snapshot completo de `encuadres` antes da consolidação. Retenção: 14 dias após F5 estável em prod (TD-041).
 - **`encuadres_consolidation_audit`** — trilha de quais encuadres duplicados foram fundidos no sobrevivente (richness score + recência). Colunas: `sobrevivente_id`, `deletado_id`, `worker_id`, `job_posting_id`, `sobrevivente_richness`, `deletado_richness`, `sobrevivente_origen`, `deletado_origen`, `deleted_at`.
 
-**Estado atual:** F5 mergeada na branch (`2cc7d06`) mas **migrations 192/193 ainda não rodadas em prod**. Janela de execução: madrugada AR (00h-05h GMT-3). Pré-requisito de prod: TD-045 (verificar conflito `dedup_hash` UNIQUE em staging primeiro).
+**Estado atual:** F5 deployada em prod em **2026-05-25** (migrations 192/193). Tabelas auxiliares populadas; retenção de `encuadres_backup_pre_f5` por 14 dias até estabilidade (TD-041).
 
-## Histórico de migrations recentes (F2-F5)
+## Histórico de migrations deployadas em prod (F2-F8)
 
-| Migration | Fase | Mudança | Status em prod |
+Todas deployadas em **2026-05-25** (Cloud Run revisão `worker-functions-00283-kxc`) com `schema_migrations` sincronizada manualmente após aplicação via `run-migration-prod.sh` (TD-049 documenta o gap do script).
+
+| Migration | Fase | Mudança | Linhas afetadas |
 |---|---|---|---|
-| 190 | F2 | Remove `RECHAZADO` do CHECK + atualiza `funnel_stage_precedence` | Branch — pendente deploy |
-| 191 | F3 | Backfill `NOT_QUALIFIED → REJECTED` (2463 linhas) + remove do CHECK + atualiza função | Branch — pendente deploy |
-| 192 | F5 | Backup + consolidação atomic de ~20k duplicatas em `encuadres` (richness + recência) | Branch — pendente deploy |
-| 193 | F5 | `UNIQUE (worker_id, job_posting_id)` em encuadres + atualiza trigger 189 | Branch — pendente deploy |
-| 194 (em F7.a) | F7.a | Remove `PLACED` do CHECK + UPDATE preventivo defensivo + atualiza `funnel_stage_precedence` (limpa `ANALYZED`) | A criar |
+| 190 | F2 | Remove `RECHAZADO` do CHECK + atualiza `funnel_stage_precedence` | DDL apenas |
+| 191 | F3 | Backfill `NOT_QUALIFIED → REJECTED` (2463 rows) + remove do CHECK + atualiza função. Trigger 183 desabilitado durante backfill (workers INCOMPLETE_REGISTER) | 2.463 |
+| 192 | F5 | Backup + consolidação atomic de duplicatas em `encuadres` (richness + recência) | 20.425 deletados |
+| 193 | F5 | `UNIQUE (worker_id, job_posting_id)` em encuadres + atualiza trigger 189 | DDL apenas |
+| 194 | F7.a | Remove `PLACED` do CHECK + UPDATE preventivo defensivo + atualiza `funnel_stage_precedence` (limpa `ANALYZED`) | DDL (0 rows com PLACED) |
+| 195 | F7.b | Remove `REPROGRAM` do CHECK + atualiza `funnel_stage_precedence` | DDL (0 rows com REPROGRAM) |
+| 196 | F7.c | DROP COLUMN `application_status` (+ recriação do trigger 183 sem essa coluna no UPDATE OF) | Coluna removida (12.258 rows) |
+| 197 | F8 | RENAME `encuadres.origen` → `import_source_audit` + recriação do trigger 189 com nome novo | DDL apenas (34.223 rows) |
+
+**Auditoria pós-deploy:** [09-auditoria-integridade.md](09-auditoria-integridade.md) confirmou em 2026-05-25 que 12.259/12.259 workers em prod estão íntegros em 3 camadas (DB × API × DOM).
 
 ## Tabela legada (em deprecação)
 

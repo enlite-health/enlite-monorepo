@@ -10,7 +10,7 @@ Cada dado da feature tem **uma única fonte da verdade** (Single Source of Truth
 | Agendamento da entrevista — data/hora | `worker_job_applications.interview_datetime` | TIMESTAMPTZ | Substitui `encuadres.interview_date + interview_time`. |
 | Agendamento da entrevista — link Meet | `worker_job_applications.interview_meet_link` | TEXT | Substitui `encuadres.meet_link`. |
 | Agendamento da entrevista — slot escolhido | `worker_job_applications.interview_slot_id` | UUID FK | FK para `interview_slots`. Slot é entidade independente. |
-| Estado da resposta à entrevista | `worker_job_applications.interview_response` | VARCHAR(30) | `pending`, `confirmed`, `declined`, `awaiting_reschedule`, etc. |
+| Estado da resposta à entrevista (micro-estado do agendamento) | `worker_job_applications.interview_response` | VARCHAR(30) | `pending`, `confirmed`, `declined`, `awaiting_reschedule`, `awaiting_reason`, `no_response`. Governado por `InterviewStateMachine` com transições válidas específicas. **SSOT do estado de negociação** — não confundir com `application_funnel_stage` (estado macro do funil). Ambos coexistem na mesma WJA. |
 | Origem da candidatura | `worker_job_applications.source` | VARCHAR(50) | `system` (match automático), `manual` (admin drag ou worker link público), `talentum` (provider externo). ADR-004: providers de prescreening plugáveis — Talentum é um deles. Substitui `encuadres.origen`. |
 | Canal de aquisição | `worker_job_applications.acquisition_channel` | VARCHAR(50) | `system` (match automático), `facebook`/`instagram`/`whatsapp`/`linkedin`/`site` (link público), NULL pros demais. |
 | Score de match | `worker_job_applications.match_score` | NUMERIC | Calculado pelo matchmaking. |
@@ -31,7 +31,7 @@ Antes de 2026-05-23, os seguintes campos tinham authority dupla (dois lugares gr
 | Data/hora da entrevista | `wja.interview_datetime` + `encuadres.interview_date+time` | `wja.interview_datetime` |
 | Link Meet | `wja.interview_meet_link` + `encuadres.meet_link` | `wja.interview_meet_link` |
 | Estado/resultado | `wja.application_funnel_stage` + `encuadres.resultado` | `wja.application_funnel_stage` |
-| Origem | `wja.source` + `encuadres.origen` | `wja.source` |
+| Origem | `wja.source` + `encuadres.origen` | `wja.source` (encuadres.origen renomeado pra `import_source_audit` em F8 — só auditoria de import histórico) |
 
 ## Campos deprecados, sem substituição (apenas removidos)
 

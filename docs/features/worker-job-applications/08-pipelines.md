@@ -2,7 +2,7 @@
 
 Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadres`. Cada pipeline tem responsabilidade única e bem definida. Pipelines deprecados não devem ser invocados em código novo.
 
-## Pipelines ativos (6)
+## Pipelines ativos (7)
 
 ### 1. Talentum webhook → WJA
 
@@ -13,7 +13,7 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 | **Use case** | `ProcessTalentumPrescreening` |
 | **Auth** | Google ID Token (OAuth2Client, n8n → Cloud Function) |
 | **Gerencia** | T3 (INITIATED), T4 (IN_PROGRESS), T5.a (COMPLETED), T5.b (QUALIFIED / IN_DOUBT / NOT_QUALIFIED) |
-| **Escreve em** | `worker_job_applications` (stage), `talentum_prescreenings`, `talentum_prescreening_responses`, `encuadres` (via `ensureEncuadre`, apenas registro mínimo + `origen='Talentum'`) |
+| **Escreve em** | `worker_job_applications` (stage, `source='talentum'`), `talentum_prescreenings`, `talentum_prescreening_responses`, `encuadres` (via `ensureEncuadre`, registro mínimo + `import_source_audit='Talentum'` — F8 renomeou de `origen` via migration 197) |
 | **Emite eventos** | `funnel_stage.qualified`, `funnel_stage.rejected` (após F3) |
 
 ### 2. Matchmaking automático → WJA INVITED
@@ -24,7 +24,7 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 | **Handler** | `VacancyAutoInviteHandler` |
 | **Service** | `MatchmakingService.matchWorkersForJob` → `saveMatchResults` |
 | **Gerencia** | T1 |
-| **Escreve em** | `worker_job_applications` (stage=INVITED, source=talent_search); `messaging_outbox` (template `ar_vacancy_match_complete` ou `ar_vacancy_match_incomplete`) |
+| **Escreve em** | `worker_job_applications` (stage=INVITED, `source='system'`, `acquisition_channel='system'` — F7.c: antes era `source='talent_search'` + acquisition_channel NULL); `messaging_outbox` (template `ar_vacancy_match_complete` ou `ar_vacancy_match_incomplete`) |
 | **Idempotência** | UPSERT `ON CONFLICT (worker_id, job_posting_id) DO NOTHING` |
 
 ### 3. Self-service via link público → WJA INVITED
@@ -34,7 +34,7 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 | **Endpoint** | `POST /api/public/vacancies/:id/apply` |
 | **Controller** | `WorkerApplicationsController.trackChannel` |
 | **Gerencia** | T2 |
-| **Escreve em** | `worker_job_applications` (stage=INVITED, source=manual) |
+| **Escreve em** | `worker_job_applications` (stage=INVITED, `source='manual'`, `acquisition_channel` derivado de query param: `facebook` / `instagram` / `whatsapp` / `linkedin` / `site` ou NULL); `encuadres` via trigger 189 |
 | **Idempotência** | UPSERT respeita precedência; se WJA já existe em stage superior, não regride |
 
 ### 4. Trigger SQL — invariante encuadre↔WJA
@@ -43,7 +43,7 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 |---|---|
 | **Migration** | 189 (`trg_ensure_encuadre_on_wja_insert`), atualizada em 193 (F5) |
 | **Disparo** | AFTER INSERT em `worker_job_applications` |
-| **Escreve em** | `encuadres` (registro mínimo se não existir, `origen='auto-trigger'`, **`ON CONFLICT (worker_id, job_posting_id) DO NOTHING`** após F5 — antes era `ON CONFLICT (dedup_hash)`) |
+| **Escreve em** | `encuadres` (registro mínimo se não existir, `import_source_audit='auto-trigger'` — F8 renomeou de `origen`; **`ON CONFLICT (worker_id, job_posting_id) DO NOTHING`** após F5/F8 — antes era `ON CONFLICT (dedup_hash)`) |
 | **Propósito** | Garantir invariante 1:1 entre WJA e encuadre sem exigir que cada call site crie encuadre manualmente. Após migration 193 em prod, trigger usa par composto pra alinhar com UNIQUE composta de F5. |
 
 ### 5. Drag manual no Kanban — admin override
@@ -66,6 +66,19 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 | **Gerencia** | T7 |
 | **Escreve em** | `worker_job_applications` (stage=CONFIRMED, interview_meet_link, interview_datetime, interview_slot_id, interview_response=confirmed); `interview_slots.booked_count++`; `messaging_outbox` (confirmação WhatsApp) |
 | **Side effects** | Adiciona worker ao Google Calendar do slot; agenda 2 Cloud Tasks (lembrete 24h + 5min) |
+
+### 7. Reschedule via WhatsApp reminder — F7.b (REPROGRAMAR)
+
+| Item | Valor |
+|---|---|
+| **Endpoint** | `POST /api/webhooks/twilio/inbound` (mesmo endpoint do T7, diferentes payloads) |
+| **Controller** | `InboundWhatsAppController` |
+| **Use case** | `HandleReminderResponseUseCase.handleRescheduleYes` |
+| **Gerencia** | T7.b (REPROGRAMAR — re-agendamento via reminder) |
+| **Escreve em** | `worker_job_applications` (**stage permanece CONFIRMED**, `interview_response='awaiting_reschedule'`, `interview_meet_link=NULL`, `interview_datetime=NULL`, `interview_slot_id=NULL`); `interview_slots.booked_count--` (libera slot); `messaging_outbox` (template `qualified_reprogram_confirm`) |
+| **State machine** | `InterviewStateMachine`: `awaiting_reschedule → awaiting_reschedule` (self-loop idempotente — múltiplos cliques OK) |
+| **Sem fluxo automático** | Admin precisa reenviar links manualmente (não há automação de reagendamento — TD-006 do POSTMORTEM) |
+| **Decisão arquitetural** | ADR-003 seção F7.b (Opção C escolhida: CONFIRMED + flag, evita perder semântica do funil) |
 
 ## Pipelines deprecados (3) — NÃO USAR
 

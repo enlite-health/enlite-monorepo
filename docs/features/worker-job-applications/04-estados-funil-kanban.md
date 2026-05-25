@@ -10,7 +10,7 @@ A tela administrativa de vagas exibe um Kanban com **7 colunas fixas**. Estados 
 | 2 | **INITIATED** | `INITIATED` | — | ❌ Não droppable (controle Talentum via webhook) |
 | 3 | **IN_PROGRESS** | `IN_PROGRESS` | — | ❌ Não droppable (controle Talentum via webhook) |
 | 4 | **COMPLETADO** | `COMPLETED`, `QUALIFIED`, `IN_DOUBT` | 🟢 "Aprovado Talentum" (QUALIFIED) · 🟡 "Em dúvida" (IN_DOUBT) · ⚪ "Aguardando análise" (COMPLETED puro) | ❌ Não droppable (controle Talentum via webhook) |
-| 5 | **CONFIRMADO** | `CONFIRMED` | — | ✅ Droppable |
+| 5 | **CONFIRMADO** | `CONFIRMED` | 🔄 "REMARCADO" (badge amber quando `interview_response='awaiting_reschedule' && meet_link === null`, indicando worker pediu reschedule via reminder — F7.b) | ✅ Droppable |
 | 6 | **SELECTED** | `SELECTED` | — | ✅ Droppable |
 | 7 | **REJECTED** | `REJECTED` | — | ✅ Droppable + acesso via botão "Rejeitar" no card |
 
@@ -73,7 +73,7 @@ O endpoint `GET /api/admin/vacancies/:id/funnel` retorna cada card com:
 
 O frontend renderiza o badge a partir de `internal_stage` (apenas quando `kanban_column === 'COMPLETADO'`). A coluna do Kanban vem de `kanban_column` (já agrupado pelo backend).
 
-**Campo `funnelStage`** é mantido por retrocompat durante F4 e será removido em F7 junto com outras limpezas.
+**Campo `funnelStage`** foi removido do payload em F7.c (migration 196 + commit `411c540`). Era alias 100% redundante de `internalStage` (ambos vinham de `application_funnel_stage` no DB). Frontend usa apenas `internalStage` desde F7.c. Não voltar a referenciar em código novo.
 
 **Labels dos badges:**
 

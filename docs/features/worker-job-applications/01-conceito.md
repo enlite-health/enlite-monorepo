@@ -17,6 +17,13 @@ A operação de recrutamento da Enlite precisa rastrear, para cada par `(worker,
 
 Um único registro WJA carrega tudo isso de forma normalizada e consistente.
 
+A WJA tem **dois estados independentes** que trabalham juntos:
+
+- **`application_funnel_stage`** — posição no funil canônico de candidatura (INVITED → INITIATED → IN_PROGRESS → COMPLETED → QUALIFIED/IN_DOUBT → CONFIRMED → SELECTED/REJECTED). Governado pela função SQL `funnel_stage_precedence` (anti-regressão).
+- **`interview_response`** — micro-estado da negociação do agendamento (`pending` | `confirmed` | `declined` | `awaiting_reschedule` | `awaiting_reason` | `no_response`). Governado por `InterviewStateMachine` (TypeScript) com transições válidas específicas.
+
+Essas duas state machines coexistem na mesma WJA. Cenários como "CONFIRMED + awaiting_reschedule" (worker pediu reschedule via WhatsApp, conserva-se no funil mas com flag de pendência) só são representáveis porque há os dois eixos independentes.
+
 ## Cardinalidade — regra dura
 
 **1 WJA por par `(worker_id, job_posting_id)`.** Garantido por:

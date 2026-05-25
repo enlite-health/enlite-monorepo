@@ -81,25 +81,27 @@ A transição `awaiting_reschedule → pending` foi removida em F7.b (era o cami
 Toda transição de stage é registrada em `worker_job_application_stage_history`:
 
 ```sql
--- Schema REAL em prod (descoberto pela Discovery F7 DBA, 2026-05-24)
--- migration 169 + alterações posteriores
+-- Schema REAL em prod (verificado via psql 2026-05-25 — auditoria 09)
+-- Criado pela migration 169_application_stage_history.sql
 CREATE TABLE worker_job_application_stage_history (
-  id              UUID PRIMARY KEY,
-  wja_id          UUID FK worker_job_applications,
-  field_name      VARCHAR(50),    -- 'application_funnel_stage' (genérico — pode rastrear outros campos)
-  old_value       VARCHAR(100),   -- stage anterior (ex: 'IN_PROGRESS')
-  new_value       VARCHAR(100),   -- stage novo (ex: 'COMPLETED')
-  reason          VARCHAR(100),   -- 'TALENTUM_WEBHOOK', 'ADMIN_DRAG', 'REPROGRAMAR', 'AUTO_REJECT_NOT_QUALIFIED', etc.
-  metadata        JSONB,          -- contexto adicional (webhook payload, admin user_id, etc.)
-  created_at      TIMESTAMPTZ DEFAULT NOW()
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id  UUID NOT NULL FK worker_job_applications(id),
+  field_name      VARCHAR(50) NOT NULL,   -- 'application_funnel_stage' (genérico)
+  old_value       VARCHAR(50),            -- stage anterior (NULL em INSERTs)
+  new_value       VARCHAR(50) NOT NULL,   -- stage novo
+  changed_by      VARCHAR(128),           -- vazio em prod hoje (TD-050)
+  change_source   VARCHAR(100),           -- vazio em prod hoje (TD-050)
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
 **Importante:** o schema usa `field_name` / `old_value` / `new_value` (genérico, suporta auditoria de outros campos no futuro), não `from_stage` / `to_stage` (que era o design originalmente documentado mas nunca foi implementado assim).
 
+**Importante 2 (TD-050):** as colunas reais são `changed_by` e `change_source`, NÃO `reason`/`metadata` como descrições anteriores diziam. Em prod ambas ficam **vazias** porque o trigger usa `current_setting('app.current_uid', true)` mas o backend nunca seta esse setting (rastreabilidade limitada — TD-050 propõe correção).
+
 Insert-only. Nunca atualizar ou deletar linhas dessa tabela — é trilha de auditoria.
 
-**Limitação conhecida (Discovery F7 DBA):** o histórico tem dados apenas a partir de 2026-05-20. Transições anteriores (bulk import de março-abril) não estão rastreadas.
+**Limitação conhecida (Discovery F7 DBA + auditoria 09):** o histórico tem dados apenas a partir de 2026-05-20 (data em que o trigger 169 foi aplicado em prod). Transições anteriores (bulk import de março-abril, 7.599 workers) não estão rastreadas — não é bug, é o esperado. Auditoria de 2026-05-25 validou que **zero** workers pós-trigger ficaram sem `stage_history` (regressão zero). Detalhes em [09-auditoria-integridade.md](09-auditoria-integridade.md).
 
 ## Casos-limite e como tratar
 
