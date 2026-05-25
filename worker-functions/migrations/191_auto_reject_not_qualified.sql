@@ -15,10 +15,17 @@
 --   - If migration runs first, concurrent webhook executions will fail CHECK violation
 
 -- Step 1: backfill
+-- Trigger trg_enforce_worker_registered (migration 183) valida workers.status='REGISTERED'
+-- na clausula UPDATE. Migration retroage rows historicas — workers podem ter status
+-- INCOMPLETE_REGISTER hoje. Desativamos o trigger temporariamente apenas para este UPDATE.
+ALTER TABLE worker_job_applications DISABLE TRIGGER trg_enforce_worker_registered;
+
 UPDATE worker_job_applications
 SET application_funnel_stage = 'REJECTED',
     updated_at = NOW()
 WHERE application_funnel_stage = 'NOT_QUALIFIED';
+
+ALTER TABLE worker_job_applications ENABLE TRIGGER trg_enforce_worker_registered;
 
 -- Step 2: CHECK constraint (old one is _deprecated_20260523 — accepted NOT_QUALIFIED)
 ALTER TABLE worker_job_applications
