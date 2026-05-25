@@ -34,14 +34,21 @@ Implicações:
 ## Ciclo de vida
 
 ```
-INVITED → INITIATED → IN_PROGRESS → COMPLETED → (QUALIFIED|IN_DOUBT|NOT_QUALIFIED)
+INVITED → INITIATED → IN_PROGRESS → COMPLETED → (QUALIFIED | IN_DOUBT)
                                                        ↓
-                                                  CONFIRMED  (terminal positivo)
+                                                  CONFIRMED (worker agendou via WhatsApp)
+                                                       ↓
+                                                  SELECTED  (terminal positivo: admin confirmou)
                                                        ou
-                                                  REJECTED   (terminal negativo)
+                                                  REJECTED  (terminal negativo)
 ```
 
-Estados intermediários e a representação visual estão em [04-estados-funil-kanban.md](04-estados-funil-kanban.md).
+Notas:
+- `NOT_QUALIFIED` foi removido em F3 (migration 191) — auto-vira REJECTED automaticamente no `ProcessTalentumPrescreening` quando Talentum reporta esse status.
+- `REPROGRAM` é estado transiente quando worker pede reagendamento via WhatsApp (`HandleReminderResponseUseCase`) — escrito ativamente hoje. Será removido em F7.b após decisão de produto sobre o destino canônico.
+- `ANALYZED` é valor de transporte interno do mapper Talentum; nunca foi persistido em `worker_job_applications.application_funnel_stage`. Será limpo do tipo TS em F7.a.
+
+Estados intermediários e a representação visual completa estão em [04-estados-funil-kanban.md](04-estados-funil-kanban.md).
 
 ## O que WJA NÃO é
 

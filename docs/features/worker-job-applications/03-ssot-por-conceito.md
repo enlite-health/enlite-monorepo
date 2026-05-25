@@ -36,8 +36,11 @@ Antes de 2026-05-23, os seguintes campos tinham authority dupla (dois lugares gr
 
 | Campo | Por quê |
 |---|---|
-| `worker_job_applications.application_status` | Legado pré-funil canônico. Escrito por alguns pipelines, nunca lido pelo Kanban. Remoção em F7. |
-| Estados `ANALYZED`, `REPROGRAM`, `PLACED`, `SELECTED` em `application_funnel_stage` | Stages legado sem uso real após simplificação. Remoção em F7. |
+| `worker_job_applications.application_status` | Legado pré-funil canônico. Writers ATIVOS (`'applied'` 2030 modificações em 7d; `'under_review'` 297 em 7d) — Discovery F7 confirmou. Remoção em **F7.c** (precisa parar writers primeiro + esperar 7-14 dias estáveis antes de drop column). |
+| Estado `ANALYZED` em `application_funnel_stage` | Nunca esteve no CHECK de WJA — só é valor de transporte interno do mapper Talentum (`talentum_prescreenings.status`). Limpeza do tipo TS + `funnel_stage_precedence()` em **F7.a**. |
+| Estado `PLACED` em `application_funnel_stage` | 0 writers ativos (sync deprecada em F6), 0 linhas em prod. Remoção segura em **F7.a** com UPDATE preventivo defensivo. |
+| Estado `REPROGRAM` em `application_funnel_stage` | **Writer ATIVO** em `HandleReminderResponseUseCase.handleRescheduleYes:192` (worker pede reschedule via WhatsApp). Remoção em **F7.b** após decisão de produto (ADR-003 ampliado) sobre destino canônico. |
+| Estado `SELECTED` em `application_funnel_stage` | **MANTÉM** — F4 fixou como coluna do Kanban (estado terminal positivo após admin confirmar candidatura). |
 | `encuadres.origen` (como classificador de origem) | Substituído por `wja.source`. Em F8 vira `import_source_audit` (auditoria de import histórico apenas). |
 
 ## Princípio operacional

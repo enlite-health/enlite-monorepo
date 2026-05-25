@@ -36,24 +36,29 @@ rejection_reason            TEXT
 created_at                  TIMESTAMPTZ
 updated_at                  TIMESTAMPTZ
 
--- Coluna deprecada (remover em F7)
+-- Coluna deprecada (remover em F7.c — writers ativos: 'applied' contínuo, 'under_review' contínuo)
 -- application_status        VARCHAR(20)   -- legado pré-funil canônico
+-- funnelStage               -- campo redundante; remover em F7.c junto com application_status
 ```
 
 ### `worker_job_application_stage_history` — trilha de auditoria
 
+Schema REAL em prod (descoberto pela Discovery F7 DBA, 2026-05-24 — diferente do design originalmente documentado):
+
 ```
 id           UUID PK
 wja_id       UUID FK worker_job_applications
-from_stage   VARCHAR(30)
-to_stage     VARCHAR(30)
+field_name   VARCHAR(50)    -- 'application_funnel_stage' (genérico — suporta auditar outros campos no futuro)
+old_value    VARCHAR(100)   -- stage anterior (ex: 'IN_PROGRESS')
+new_value    VARCHAR(100)   -- stage novo (ex: 'COMPLETED')
 reason       VARCHAR(100)   -- TALENTUM_WEBHOOK | ADMIN_DRAG | REPROGRAMAR | AUTO_REJECT_NOT_QUALIFIED
-metadata     JSONB
-created_at   TIMESTAMPTZ
-created_by   VARCHAR(100)   -- 'system' ou user_id
+metadata     JSONB          -- contexto adicional (payload, user_id, etc.)
+created_at   TIMESTAMPTZ DEFAULT NOW()
 ```
 
 Insert-only. Nunca atualizar nem deletar.
+
+**Limitação conhecida:** dados a partir de 2026-05-20 apenas. Bulk import de março-abril não está rastreado.
 
 ### `talentum_prescreenings` — log do estado externo
 
@@ -94,7 +99,26 @@ status            VARCHAR(20)   -- AVAILABLE | FULL | CANCELLED
 
 ### `encuadre_ambiguity_queue` — fila de resolução manual
 
-Usada por `import-encuadres-from-clickup.ts` quando `case_number` mapeia mais de uma vaga. Mantida sem mudanças.
+Usada por `import-encuadres-from-clickup.ts` (em deprecação após F6 — ver TD-047) quando `case_number` mapeia mais de uma vaga. Mantida sem mudanças.
+
+### Tabelas auxiliares de F5 (consolidação de duplicatas em encuadres)
+
+Criadas pelas migrations 192/193 (commit `2cc7d06`):
+
+- **`encuadres_backup_pre_f5`** — snapshot completo de `encuadres` antes da consolidação. Retenção: 14 dias após F5 estável em prod (TD-041).
+- **`encuadres_consolidation_audit`** — trilha de quais encuadres duplicados foram fundidos no sobrevivente (richness score + recência). Colunas: `sobrevivente_id`, `deletado_id`, `worker_id`, `job_posting_id`, `sobrevivente_richness`, `deletado_richness`, `sobrevivente_origen`, `deletado_origen`, `deleted_at`.
+
+**Estado atual:** F5 mergeada na branch (`2cc7d06`) mas **migrations 192/193 ainda não rodadas em prod**. Janela de execução: madrugada AR (00h-05h GMT-3). Pré-requisito de prod: TD-045 (verificar conflito `dedup_hash` UNIQUE em staging primeiro).
+
+## Histórico de migrations recentes (F2-F5)
+
+| Migration | Fase | Mudança | Status em prod |
+|---|---|---|---|
+| 190 | F2 | Remove `RECHAZADO` do CHECK + atualiza `funnel_stage_precedence` | Branch — pendente deploy |
+| 191 | F3 | Backfill `NOT_QUALIFIED → REJECTED` (2463 linhas) + remove do CHECK + atualiza função | Branch — pendente deploy |
+| 192 | F5 | Backup + consolidação atomic de ~20k duplicatas em `encuadres` (richness + recência) | Branch — pendente deploy |
+| 193 | F5 | `UNIQUE (worker_id, job_posting_id)` em encuadres + atualiza trigger 189 | Branch — pendente deploy |
+| 194 (em F7.a) | F7.a | Remove `PLACED` do CHECK + UPDATE preventivo defensivo + atualiza `funnel_stage_precedence` (limpa `ANALYZED`) | A criar |
 
 ## Tabela legada (em deprecação)
 

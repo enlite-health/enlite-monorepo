@@ -28,10 +28,11 @@ Como REJECTED é estado terminal negativo e exige justificativa, há mecanismo d
 
 | Estado interno | Destino | Razão |
 |---|---|---|
-| `NOT_QUALIFIED` | Auto-move para `REJECTED` | Talentum reprovou. Vira REJECTED automaticamente na F3 (migration 191). |
+| `NOT_QUALIFIED` | Auto-move para `REJECTED` | Talentum reprovou. Vira REJECTED automaticamente na F3 (migration 191). Removido do CHECK. |
 | `RECHAZADO` | Consolidado em `REJECTED` | Duplicata em espanhol do mesmo estado. Eliminado na F2 (migration 190). |
-| `REPROGRAM` | Não exibido; deprecado | Substituído por `interview_response='awaiting_reschedule'` na própria WJA. Sem coluna dedicada. Remoção em F7. |
-| `ANALYZED` | Não exibido; deprecado | Estado transitório interno do Talentum (precedência 4, igual a IN_DOUBT). Sem uso real após F3. Remoção em F7. |
+| `REPROGRAM` | **Exibido na coluna COMPLETADO** (agrupado) com badge amber "REMARCADO" no card | **WRITER ATIVO** em `HandleReminderResponseUseCase.handleRescheduleYes:192` (worker pede reschedule via WhatsApp). Estado transiente. Discovery F7 (2026-05-24) confirmou: 0 linhas no snapshot DBA mas escrita ativa. Remoção em **F7.b** após decisão de produto sobre destino canônico (ADR-003 ampliado). |
+| `ANALYZED` | **Nunca esteve no CHECK de `worker_job_applications`** | É valor de transporte interno do mapper Talentum (`talentum_prescreenings.status`). `ProcessTalentumPrescreening` retorna `'ANALYZED'` quando `statusLabel='PENDING'` mas explicitamente pula upsert em WJA. Limpeza do tipo TS + `funnel_stage_precedence()` em **F7.a** (noop no banco). |
+| `PLACED` | Agrupado com SELECTED na coluna SELECTED (legado) | 0 writers ativos após F6 (única fonte era `syncToWorkerJobApplications` deprecada). 0 linhas em prod. Remoção em **F7.a** com UPDATE preventivo defensivo. |
 
 ## Precedência canônica (não-regressão)
 
@@ -48,7 +49,9 @@ INVITED(0) < INITIATED(1) < IN_PROGRESS(2) < COMPLETED(3)
 Stages removidos do enum em fases anteriores:
 - `RECHAZADO` — consolidado em `REJECTED` na F2 (migration 190)
 - `NOT_QUALIFIED` — auto-rejeitado pra `REJECTED` na F3 (migration 191)
-- `ANALYZED` — pendente de remoção em F7
+- `ANALYZED` — nunca esteve no CHECK de WJA (transporte interno do mapper Talentum). Limpeza de tipo TS + função SQL em F7.a (noop no banco)
+- `PLACED` — pendente de remoção em F7.a (0 writers ativos pós-F6)
+- `REPROGRAM` — pendente de remoção em F7.b (writer ativo via WhatsApp reschedule)
 
 Qualquer upsert que tente baixar a precedência é silenciosamente ignorado pelo SQL — não levanta erro, apenas mantém o estado atual.
 

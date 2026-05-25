@@ -41,19 +41,20 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 
 | Item | Valor |
 |---|---|
-| **Migration** | 189 (`trg_ensure_encuadre_on_wja_insert`) |
+| **Migration** | 189 (`trg_ensure_encuadre_on_wja_insert`), atualizada em 193 (F5) |
 | **Disparo** | AFTER INSERT em `worker_job_applications` |
-| **Escreve em** | `encuadres` (registro mínimo se não existir, `origen='auto-trigger'`, `ON CONFLICT (dedup_hash) DO NOTHING`) |
-| **Propósito** | Garantir invariante 1:1 entre WJA e encuadre sem exigir que cada call site crie encuadre manualmente |
+| **Escreve em** | `encuadres` (registro mínimo se não existir, `origen='auto-trigger'`, **`ON CONFLICT (worker_id, job_posting_id) DO NOTHING`** após F5 — antes era `ON CONFLICT (dedup_hash)`) |
+| **Propósito** | Garantir invariante 1:1 entre WJA e encuadre sem exigir que cada call site crie encuadre manualmente. Após migration 193 em prod, trigger usa par composto pra alinhar com UNIQUE composta de F5. |
 
 ### 5. Drag manual no Kanban — admin override
 
 | Item | Valor |
 |---|---|
-| **Endpoint** | `PUT /api/admin/encuadres/:id/move` |
-| **Controller** | `EncuadreFunnelController.moveEncuadre` |
+| **Endpoint** | `PUT /api/admin/encuadres/:id/move` (path mantido com nome legado por decisão fixada — sem breaking change na API) |
+| **Controller** | `EncuadreFunnelController.moveEncuadre` (após F7.a renomeia pra `WJAFunnelController.moveEncuadre` — endpoint não muda) |
 | **Escreve em** | `worker_job_applications` (stage manual); `encuadres.resultado` como efeito colateral em estados terminais (SELECTED → SELECCIONADO, REJECTED → RECHAZADO); `worker_job_application_stage_history` |
 | **Pode regredir stage** | Sim — drag manual é a única operação que pode contrariar a precedência canônica. Registra em `stage_history` com `reason='ADMIN_DRAG'`. |
+| **Drag rules** | Não droppable em INITIATED/IN_PROGRESS/COMPLETADO (controle Talentum). Droppable em INVITADO/CONFIRMADO/SELECTED/REJECTED (F4). |
 
 ### 6. Booking de slot via WhatsApp — QUALIFIED → CONFIRMED
 
@@ -72,18 +73,21 @@ Inventário dos caminhos que **gravam** em `worker_job_applications` ou `encuadr
 
 | Item | Valor |
 |---|---|
-| **Status** | Deprecado em F6 — vira backfill one-shot, removido da "sequência obrigatória pós-import" |
+| **Status** | Deprecado em **F6 (commit `616ff1c`)** — função mantida com JSDoc `@deprecated`; chamada removida do único call site ativo (`scripts/import-encuadres-from-clickup.ts`) |
 | **Histórico** | Lia `encuadres.resultado` e atualizava `worker_job_applications.application_funnel_stage` |
-| **Problema** | Constituía pipeline reverso, conflitando com WJA como SSOT do stage |
+| **Problema** | Constituía pipeline reverso, conflitando com WJA como SSOT do stage. Discovery DBA F6 detectou 19k inconsistências de stage acumuladas — user aceitou como histórico. |
 | **Substituto** | Stage flui sempre **de** Talentum/matchmaking/self-service/drag **para** WJA. Nunca de encuadre para WJA. |
+| **Backfill manual permitido?** | Sim, função preservada pra rodar uma vez se necessário (com aprovação do PO) |
 
-### D2. Importação de planilha operativa
+### D2. Importação de planilha operativa via `import-encuadres-from-clickup.ts`
 
 | Item | Valor |
 |---|---|
-| **Status** | Morta. Confirmado por Gabriel em 2026-05-23. |
-| **Histórico** | Importava CSV/XLSX da planilha operacional para `encuadres` com `origen='planilla_operativa'` |
-| **Problema** | Fonte original do `encuadres.interview_date/time/meet_link` e da fragmentação de SSOT |
+| **Status** | **MITIGADO mas não fechado.** F6 adicionou guard hard no script (commit `c678efb`): execução `--live` requer `I_UNDERSTAND_F6_DEPRECATION=true` |
+| **Histórico** | Importava ClickUp/CSV/XLSX da planilha operacional para `encuadres` com `origen='planilla_operativa'` |
+| **Achado crítico (Discovery F6)** | User declarou "planilha morreu em 2026-05-23". DBA mostrou escrita em **2026-05-21** (3 dias antes da decisão). 8.975 WJAs vêm dessa source. Script ainda era disparado de **algum lugar fora do versionamento** (Cloud Scheduler não-IaC, cron SO, n8n não-versionado, ou operador manual). |
+| **Mitigação ativa** | Guard hard no script aborta `--live` por padrão. Cron/automação quebra ruidosamente; operador manual precisa override consciente. |
+| **Bloqueador residual** | **TD-047** — investigar quem dispara (checklist gcloud + SSH + n8n + Slack em `docs/FOLLOWUPS.md`). F6 efetivamente concluída em prod só após TD-047 fechado. |
 | **Substituto** | Dados de candidatura entram via Talentum webhook ou matchmaking interno |
 
 ### D3. `ReminderScheduler.processEncuadreReminder`

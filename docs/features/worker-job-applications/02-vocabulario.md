@@ -6,8 +6,8 @@ Esta feature carrega 3 nomes diferentes ao longo do código, do banco e das tela
 
 | Nome | Onde aparece | Idioma / origem | Status |
 |---|---|---|---|
-| **Worker Job Application (WJA)** | Schema (`worker_job_applications`), classes, controllers, tipos TS | Inglês / padrão SaaS de ATS (Aya, Trusted, Vivian) | **Canônico — usar em código novo** |
-| **Encuadre** | Tabela legada `encuadres`, classes legadas (`EncuadreFunnelController`, `EncuadreRepository`), vocabulário operacional da equipe | Espanhol / herança da operação argentina + planilha legada | **Operacional — usar ao falar com a operação. Em código: aceitável em classes existentes; deprecada em novos campos.** |
+| **Worker Job Application (WJA)** | Schema (`worker_job_applications`), classes que tocam o funil (`WJAFunnelController` após F7.a), hooks (`useWJAFunnel`), tipos TS | Inglês / padrão SaaS de ATS (Aya, Trusted, Vivian) | **Canônico — usar em código novo. Prefix `WJA*` (sigla curta) é o padrão estabelecido.** |
+| **Encuadre** | Tabela legada `encuadres`, classes que tocam EXCLUSIVAMENTE essa tabela (`EncuadreController`, `EncuadreRepository`, `EncuadreQueryRepository`, `EncuadreMappers`, `EncuadreControllerHelpers`, `WorkerEncuadresCard`), vocabulário operacional da equipe | Espanhol / herança da operação argentina + planilha legada | **Operacional — usar ao falar com a operação. Em código: MANTÉM em classes que tocam a tabela `encuadres` (regra ADR-003); deprecada em novos campos.** |
 | **Funil de Candidatura** / **Kanban de Candidaturas** | UI (i18n pt-BR/es), labels, textos para usuário final | Português / camada de apresentação | **Apresentação — usar em copy de UI nova** |
 
 ## Por que existem 3 nomes
@@ -24,7 +24,8 @@ Histórico:
 
 ### Em código novo (backend e frontend)
 
-- Nomeie classes, métodos e variáveis usando **WJA** ou **WorkerJobApplication**.
+- Nomeie classes, métodos e variáveis usando o **prefixo `WJA*`** (sigla canônica do projeto). Ex.: `WJAFunnelController`, `useWJAFunnel`, `WJARepository`.
+- Quando a classe TOCA exclusivamente a tabela `encuadres` (campos `has_*`, `obs_*`, `role`, `resultado` narrativo, identidade fallback), MANTÉM o prefixo `Encuadre*`. Regra formalizada em **ADR-003**.
 - Não crie novos campos em `encuadres`. Use `worker_job_applications`.
 - Em comentários explicativos, pode mencionar "(também conhecido como encuadre)" se ajudar clareza.
 

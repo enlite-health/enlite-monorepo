@@ -46,7 +46,7 @@ Sete transições cobrem todo o ciclo de vida da WJA, do convite inicial à conf
 | **Pós-condições** | `application_funnel_stage='IN_PROGRESS'` |
 | **Idempotência** | Precedência bloqueia regressão; webhook duplicado é no-op |
 
-## T5 — Prestador conclui prescreening → COMPLETED → (QUALIFIED|IN_DOUBT|NOT_QUALIFIED)
+## T5 — Prestador conclui prescreening → COMPLETED → (QUALIFIED|IN_DOUBT|REJECTED)
 
 T5 acontece em duas etapas, ambas enviadas pelo Talentum:
 
@@ -58,16 +58,16 @@ T5 acontece em duas etapas, ambas enviadas pelo Talentum:
 | **Pós-condições** | `application_funnel_stage='COMPLETED'` |
 | **Idempotência** | Precedência canônica |
 
-### T5.b — Análise → QUALIFIED / IN_DOUBT / NOT_QUALIFIED
+### T5.b — Análise → QUALIFIED / IN_DOUBT / REJECTED (auto)
 
 | Campo | Valor |
 |---|---|
 | **Gatilho** | Webhook Talentum com `subtype=ANALYZED` + `statusLabel` em `{QUALIFIED, IN_DOUBT, NOT_QUALIFIED, PENDING}` |
-| **Mapeamento** | `TalentumFunnelStageMapper`: QUALIFIED→QUALIFIED, IN_DOUBT→IN_DOUBT, NOT_QUALIFIED→NOT_QUALIFIED, PENDING→ANALYZED |
-| **Pós-condições** | `application_funnel_stage` atualizado conforme statusLabel; se `QUALIFIED`, emite domain event `funnel_stage.qualified`; se `NOT_QUALIFIED`, auto-move para `REJECTED` (F3) |
-| **Idempotência** | Precedência canônica; emissão de `funnel_stage.qualified` só ocorre se transição é genuína (`previousStage !== 'QUALIFIED'`) |
+| **Mapeamento Talentum (transporte interno)** | `TalentumFunnelStageMapper`: QUALIFIED→QUALIFIED, IN_DOUBT→IN_DOUBT, NOT_QUALIFIED→NOT_QUALIFIED, PENDING→ANALYZED |
+| **Pós-condições** | `application_funnel_stage` atualizado: QUALIFIED ou IN_DOUBT persistem direto; **NOT_QUALIFIED é auto-rejeitado pra REJECTED na mesma transação** (F3, migration 191 — `ProcessTalentumPrescreening.handleNotQualifiedTransition`); PENDING/ANALYZED pula upsert (transporte interno, nunca persiste em WJA). Se QUALIFIED, emite domain event `funnel_stage.qualified`. Se REJECTED (via NOT_QUALIFIED), emite `funnel_stage.rejected`. |
+| **Idempotência** | Precedência canônica; emissão de `funnel_stage.qualified` só ocorre se transição é genuína (`previousStage !== 'QUALIFIED'`); auto-rejeição é guard `previousStage === 'REJECTED'` |
 
-**No Kanban**, todos os 3 sub-estados (COMPLETED, QUALIFIED, IN_DOUBT) aparecem na coluna `COMPLETADO` com badges diferenciados. `NOT_QUALIFIED` não aparece — vira `REJECTED` (fora do Kanban).
+**No Kanban**, COMPLETED + QUALIFIED + IN_DOUBT aparecem na coluna `COMPLETADO` com badges diferenciados. `NOT_QUALIFIED` nunca aparece (auto-vira REJECTED no mesmo webhook — F3). `ANALYZED` nunca persiste em WJA (só em `talentum_prescreenings.status`).
 
 ## T6 — QUALIFIED → envio de 3 meet links (sem mudança de stage)
 
