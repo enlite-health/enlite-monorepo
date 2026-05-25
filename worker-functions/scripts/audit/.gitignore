@@ -1,0 +1,6 @@
+# Audit results contém PII (worker_ids, case_numbers) — não commitar.
+# Apenas os scripts e README ficam versionados.
+results-*.json
+stage-history-results-*.json
+visual-prod-results-*.json
+render-prod-*/

@@ -1472,3 +1472,39 @@ PGPASSWORD="$DB_PASSWORD" psql --host="localhost" --port="$PROXY_PORT" \
 **Severidade:** MEDIUM — sem fix, todo deploy futuro que envolva migrations falha primeiro até sync manual.
 
 **Relacionado:** `worker-functions/Dockerfile:31`, `worker-functions/scripts/run-migrations-docker.js`.
+
+---
+
+### TD-050 — Schema docs WJA dizem `reason/metadata` mas real é `changed_by/change_source`
+
+**Descoberto em:** 2026-05-25 durante auditoria de integridade de 12k workers em prod.
+
+**Problema:** O doc `docs/features/worker-job-applications/06-regra-cardinalidade.md` (linhas 70-77 atuais) descreve o schema de `worker_job_application_stage_history` como:
+
+```
+field_name, old_value, new_value, reason, metadata, created_at
+```
+
+Mas o schema REAL em prod (verificado via `\d worker_job_application_stage_history`) é:
+
+```
+id, application_id, field_name, old_value, new_value, changed_by, change_source, created_at
+```
+
+**Diferenças:**
+- `reason` → não existe; existe `change_source` (intenção parecida mas não documentada)
+- `metadata` → não existe (era JSONB documentado mas sem implementação)
+- `changed_by` → não documentado (preenchido por `current_setting('app.current_uid', true)` que está sempre vazio — backend nunca seta esse setting)
+
+**Mitigação:** docs precisam atualizar pra schema real. Adicionalmente, considerar:
+
+- Implementar setamento de `app.current_uid` no backend (via SET LOCAL antes de UPDATE) pra ter rastreabilidade de "quem mudou stage"
+- Documentar `change_source` (use case que disparou a transição — `talentum_webhook`, `admin_drag`, `auto_reject_not_qualified`, etc.) e preencher no trigger
+
+**Severidade:** LOW — não afeta funcionamento, só rastreabilidade.
+
+**Critério para fechar:**
+1. Atualizar `06-regra-cardinalidade.md` com schema real
+2. Decidir: implementar `changed_by`/`change_source` ou removê-los do schema
+
+**Relacionado:** `worker-functions/migrations/169_application_stage_history.sql`, auditoria em `worker-functions/scripts/audit/`.
