@@ -10,10 +10,10 @@
  *
  * Edge cases:
  *   F2-1 — Backfill idempotente: rodar 2x não duplica encuadres
- *   F2-2 — WJA com encuadre pré-existente não recebe encuadre duplicado (origen original preservado)
+ *   F2-2 — WJA com encuadre pré-existente não recebe encuadre duplicado (import_source_audit original preservado)
  *   F2-3 — WJA órfã com múltiplos encuadres existentes — não cria mais
  *   F2-4 — Trigger não cria encuadre duplicado quando encuadre já existe (insert massivo)
- *   F2-5 — Trigger cria encuadre com origen='auto-trigger' para WJA nova sem encuadre
+ *   F2-5 — Trigger cria encuadre com import_source_audit='auto-trigger' para WJA nova sem encuadre
  *   F2-6 — Trigger garante invariante mesmo quando worker_id e job_posting_id são não-null
  *   F2-7 — worker_id NULL: backfill NÃO cria encuadre fantasma (WHERE NOT EXISTS guard)
  *   F2-8 — Dedup hash collision entre backfill e trigger: ON CONFLICT preserva encuadre original
@@ -58,7 +58,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
   it('[F2-1] Backfill idempotente: rodar INSERT backfill 2x mantém mesmo count', async () => {
     // Executa a lógica do backfill (migration 188) manualmente
     const backfillSql = `
-      INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+      INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
       SELECT
         wja.worker_id,
         wja.job_posting_id,
@@ -102,21 +102,21 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
   });
 
   // ════════════════════════════════════════════════════════════════════════════
-  // F2-2 — WJA com encuadre pré-existente: origen original preservado
+  // F2-2 — WJA com encuadre pré-existente: import_source_audit original preservado
   // ════════════════════════════════════════════════════════════════════════════
 
-  it('[F2-2] WJA com encuadre pré-existente: backfill não sobrescreve origen original', async () => {
-    // wB tem encuadre pré-existente com origen='Talentum' (criado no seed)
-    // O backfill não deve criar um segundo encuadre nem mudar o origen
+  it('[F2-2] WJA com encuadre pré-existente: backfill não sobrescreve import_source_audit original', async () => {
+    // wB tem encuadre pré-existente com import_source_audit='Talentum' (criado no seed)
+    // O backfill não deve criar um segundo encuadre nem mudar o import_source_audit
 
     // Verificar que existe exatamente 1 encuadre para wB
     const result = await pool.query(
-      'SELECT origen FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
+      'SELECT import_source_audit FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
       [IDS.wB, IDS.vacancy],
     );
 
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0].origen).toBe('Talentum');
+    expect(result.rows[0].import_source_audit).toBe('Talentum');
   });
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -136,7 +136,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
 
     // Executa backfill restrito ao wC
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
        SELECT wja.worker_id, wja.job_posting_id, 'backfill-td036',
          md5('backfill-td036|' || wja.worker_id::text || '|' || wja.job_posting_id::text)
        FROM worker_job_applications wja
@@ -194,7 +194,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
   // F2-5 — Trigger cria encuadre auto-trigger para WJA nova
   // ════════════════════════════════════════════════════════════════════════════
 
-  it('[F2-5] Trigger cria encuadre com origen=auto-trigger para nova WJA', async () => {
+  it('[F2-5] Trigger cria encuadre com import_source_audit=auto-trigger para nova WJA', async () => {
     // wE não tem WJA nem encuadre no início (seed não criou para wE)
     // Verificar estado inicial
     const initialEnc = await pool.query(
@@ -222,12 +222,12 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
     );
 
     const encResult = await pool.query(
-      'SELECT origen FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
+      'SELECT import_source_audit FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
       [IDS.wE, IDS.vacancy],
     );
 
     expect(encResult.rows.length).toBe(1);
-    expect(encResult.rows[0].origen).toBe('auto-trigger');
+    expect(encResult.rows[0].import_source_audit).toBe('auto-trigger');
   });
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -336,7 +336,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
 
     // Inserir encuadre "rico" com o hash que o trigger geraria
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash, worker_raw_name, resultado)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash, worker_raw_name, resultado)
        VALUES ($1, $2, 'Talentum', $3, 'Worker Rico', 'SELECCIONADO')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [wHashWorker, IDS.vacancy, autoHash],
@@ -352,14 +352,14 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
 
     // Verificar que o encuadre original (rico) foi preservado
     const result = await pool.query(
-      'SELECT origen, worker_raw_name, resultado FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
+      'SELECT import_source_audit, worker_raw_name, resultado FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
       [wHashWorker, IDS.vacancy],
     );
 
     // Exatamente 1 encuadre (não duplicado)
     expect(result.rows.length).toBe(1);
     // Encuadre original preservado (ON CONFLICT DO NOTHING no trigger)
-    expect(result.rows[0].origen).toBe('Talentum');
+    expect(result.rows[0].import_source_audit).toBe('Talentum');
     expect(result.rows[0].worker_raw_name).toBe('Worker Rico');
     expect(result.rows[0].resultado).toBe('SELECCIONADO');
 
@@ -436,7 +436,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // Since trigger fires on insert of wB WJA, encuadre will be auto-trigger.
   // Update it to 'Talentum' to simulate pre-existing rich encuadre.
   await pool.query(
-    `UPDATE encuadres SET origen = 'Talentum'
+    `UPDATE encuadres SET import_source_audit = 'Talentum'
      WHERE worker_id = $1 AND job_posting_id = $2`,
     [IDS.wB, IDS.vacancy],
   );

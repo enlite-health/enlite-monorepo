@@ -59,8 +59,8 @@ export class WorkerApplicationRepository {
 
       // Defesa em camadas (TD-036 Fase 2): criar encuadre mínimo explícito quando
       // um novo WJA é inserido via talent_search. Trigger da migration 189 cobre
-      // o path como fallback, mas esta chamada usa origen='talent_search' para
-      // rastreabilidade fina no campo origen da tabela encuadres.
+      // o path como fallback, mas esta chamada usa import_source_audit='talent_search' para
+      // rastreabilidade fina no campo import_source_audit da tabela encuadres.
       // WHERE NOT EXISTS guard — idempotente, preserva encuadres ricos pré-existentes.
       if (created) {
         const dedupHash = crypto.createHash('md5')
@@ -68,7 +68,7 @@ export class WorkerApplicationRepository {
           .digest('hex');
 
         await this.pool.query(
-          `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+          `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
            SELECT $1, $2, 'talent_search', $3
            WHERE NOT EXISTS (
              SELECT 1 FROM encuadres e
@@ -82,7 +82,7 @@ export class WorkerApplicationRepository {
           msg: 'WorkerApplicationRepository.upsert: encuadre ensured for new WJA',
           workerId,
           jobPostingId,
-          origen: 'talent_search',
+          importSourceAudit: 'talent_search',
         });
       }
 

@@ -38,7 +38,7 @@ export class EncuadreRepository {
     // ON CONFLICT rules:
     //   resultado / attended / accepts_case / rejection_reason → always overwrite
     //   obs_* → always overwrite
-    //   meet_link / origen / id_onboarding / worker_email_encrypted → COALESCE
+    //   meet_link / import_source_audit / id_onboarding / worker_email_encrypted → COALESCE
     //   llm_processed_at → nulled if obs changed (forces re-processing)
     const workerEmailEnc = await this.encryptionService.encrypt(dto.workerEmail ?? null);
 
@@ -53,7 +53,7 @@ export class EncuadreRepository {
         has_cv, has_dni, has_cert_at, has_afip, has_cbu, has_ap, has_seguros,
         worker_email_encrypted,
         obs_reclutamiento, obs_encuadre, obs_adicionales,
-        origen, id_onboarding,
+        import_source_audit, id_onboarding,
         dedup_hash
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
@@ -77,9 +77,9 @@ export class EncuadreRepository {
         obs_reclutamiento  = EXCLUDED.obs_reclutamiento,
         obs_encuadre       = EXCLUDED.obs_encuadre,
         obs_adicionales    = EXCLUDED.obs_adicionales,
-        meet_link          = COALESCE(encuadres.meet_link,      EXCLUDED.meet_link),
-        origen             = COALESCE(encuadres.origen,         EXCLUDED.origen),
-        id_onboarding      = COALESCE(encuadres.id_onboarding,  EXCLUDED.id_onboarding),
+        meet_link            = COALESCE(encuadres.meet_link,             EXCLUDED.meet_link),
+        import_source_audit  = COALESCE(encuadres.import_source_audit,  EXCLUDED.import_source_audit),
+        id_onboarding        = COALESCE(encuadres.id_onboarding,        EXCLUDED.id_onboarding),
         worker_email_encrypted = COALESCE(encuadres.worker_email_encrypted, EXCLUDED.worker_email_encrypted),
         updated_at = NOW()
       RETURNING *, (xmax = 0) AS inserted
@@ -97,7 +97,7 @@ export class EncuadreRepository {
       dto.hasAfip ?? null, dto.hasCbu ?? null, dto.hasAp ?? null, dto.hasSeguros ?? null,
       workerEmailEnc,
       dto.obsReclutamiento ?? null, dto.obsEncuadre ?? null, dto.obsAdicionales ?? null,
-      dto.origen ?? null, dto.idOnboarding ?? null, dto.dedupHash,
+      dto.importSourceAudit ?? null, dto.idOnboarding ?? null, dto.dedupHash,
     ];
 
     const result = await this.pool.query(query, values);
@@ -123,7 +123,7 @@ export class EncuadreRepository {
         has_cv, has_dni, has_cert_at, has_afip, has_cbu, has_ap, has_seguros,
         worker_email_encrypted,
         obs_reclutamiento, obs_encuadre, obs_adicionales,
-        origen, id_onboarding, dedup_hash
+        import_source_audit, id_onboarding, dedup_hash
       )
       SELECT
         UNNEST($1::uuid[]),  UNNEST($2::uuid[]),
@@ -151,9 +151,9 @@ export class EncuadreRepository {
         obs_reclutamiento  = EXCLUDED.obs_reclutamiento,
         obs_encuadre       = EXCLUDED.obs_encuadre,
         obs_adicionales    = EXCLUDED.obs_adicionales,
-        meet_link     = COALESCE(encuadres.meet_link,     EXCLUDED.meet_link),
-        origen        = COALESCE(encuadres.origen,        EXCLUDED.origen),
-        id_onboarding = COALESCE(encuadres.id_onboarding, EXCLUDED.id_onboarding),
+        meet_link           = COALESCE(encuadres.meet_link,            EXCLUDED.meet_link),
+        import_source_audit = COALESCE(encuadres.import_source_audit, EXCLUDED.import_source_audit),
+        id_onboarding       = COALESCE(encuadres.id_onboarding,       EXCLUDED.id_onboarding),
         worker_email_encrypted = COALESCE(encuadres.worker_email_encrypted, EXCLUDED.worker_email_encrypted),
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted
@@ -174,7 +174,7 @@ export class EncuadreRepository {
       dtos.map(d => d.hasCbu ?? null),         dtos.map(d => d.hasAp ?? null),
       dtos.map(d => d.hasSeguros ?? null),     encryptedEmails,
       dtos.map(d => d.obsReclutamiento ?? null),dtos.map(d => d.obsEncuadre ?? null),
-      dtos.map(d => d.obsAdicionales ?? null), dtos.map(d => d.origen ?? null),
+      dtos.map(d => d.obsAdicionales ?? null), dtos.map(d => d.importSourceAudit ?? null),
       dtos.map(d => d.idOnboarding ?? null),   dtos.map(d => d.dedupHash),
     ]);
 

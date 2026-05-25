@@ -54,7 +54,7 @@ export interface EncuadreData {
   rawName:       string | null;
   rawPhone:      string | null;
   resultado:     EncuadreResultado;
-  origen:        string;          // always 'ClickUp'
+  importSourceAudit: string;      // always 'ClickUp'
   dedupHash:     string;          // MD5('clickup|{taskId}|{caseNumber}')
 }
 
@@ -213,7 +213,7 @@ export class ClickUpEncuadreMapper {
         rawName,
         rawPhone:  rawWhatsapp,
         resultado,
-        origen:    'ClickUp',
+        importSourceAudit: 'ClickUp',
         dedupHash,
       };
 

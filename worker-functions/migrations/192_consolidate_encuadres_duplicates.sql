@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS encuadres_consolidation_audit (
 --  com backup idempotente acima e tabela de auditoria para rollback granular.)
 WITH ranked AS (
   SELECT
-    id, worker_id, job_posting_id, origen, created_at,
+    id, worker_id, job_posting_id, import_source_audit AS origen, created_at,
     (
       (CASE WHEN interview_date         IS NOT NULL THEN 1 ELSE 0 END) +
       (CASE WHEN resultado              IS NOT NULL THEN 1 ELSE 0 END) +

@@ -168,8 +168,8 @@ recruitment_date   DATE
 -- ✅ MANTER: deduplicação histórica de import
 dedup_hash         VARCHAR(64) UNIQUE
 
--- 🟡 RENOMEAR em F8: origen → import_source_audit
-origen             VARCHAR(100)
+-- ✅ F8 (2026-05-25): renomeado de 'origen'. Auditoria de import histórico apenas — SSOT real é wja.source.
+import_source_audit  VARCHAR(100)
 
 -- ❌ DEPRECAR (read-only, parar de escrever em novos registros)
 --    Substituídos pelos campos equivalentes em worker_job_applications

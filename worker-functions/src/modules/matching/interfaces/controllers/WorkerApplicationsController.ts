@@ -129,7 +129,7 @@ export class WorkerApplicationsController {
         .digest('hex');
 
       await this.db.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          SELECT $1, $2, $4, $5, $6, $3
          WHERE NOT EXISTS (
            SELECT 1 FROM encuadres e WHERE e.worker_id = $1 AND e.job_posting_id = $2

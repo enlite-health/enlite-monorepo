@@ -338,11 +338,11 @@ describe('Talentum Workers Sync API', () => {
       expect(rows[0].application_funnel_stage).toBe('INVITED'); // preserved
     });
 
-    it('creates encuadre with Talentum origen and dedup_hash', async () => {
+    it('creates encuadre with Talentum import_source_audit and dedup_hash', async () => {
       const dedupHash = 'e2e-sync-test-hash';
 
       await pool.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          VALUES ($1, $2, $3, $4, 'Talentum', $5)
          ON CONFLICT (dedup_hash) DO UPDATE SET
            worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
@@ -350,7 +350,7 @@ describe('Talentum Workers Sync API', () => {
       );
 
       const { rows } = await pool.query(
-        `SELECT worker_id, job_posting_id, worker_raw_name, origen, dedup_hash
+        `SELECT worker_id, job_posting_id, worker_raw_name, import_source_audit, dedup_hash
          FROM encuadres WHERE dedup_hash = $1`,
         [dedupHash],
       );
@@ -359,7 +359,7 @@ describe('Talentum Workers Sync API', () => {
       expect(rows[0].worker_id).toBe(workerId);
       expect(rows[0].job_posting_id).toBe(jobPostingId);
       expect(rows[0].worker_raw_name).toBe('María González');
-      expect(rows[0].origen).toBe('Talentum');
+      expect(rows[0].import_source_audit).toBe('Talentum');
     });
 
     it('encuadre upsert is idempotent via dedup_hash', async () => {
@@ -367,7 +367,7 @@ describe('Talentum Workers Sync API', () => {
 
       // Insert again — should update, not create duplicate
       await pool.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          VALUES ($1, $2, $3, $4, 'Talentum', $5)
          ON CONFLICT (dedup_hash) DO UPDATE SET
            worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,

@@ -9,7 +9,7 @@
  * 3. Missing jobPostingId → 400
  * 4. Worker not found (getProgress fails) → 404
  * 5. Happy path: upserts WJA with channel + funnel_stage='INITIATED'
- * 6. Happy path: creates encuadre with decrypted name and channel as origen
+ * 6. Happy path: creates encuadre with decrypted name and channel as import_source_audit
  * 7. Encuadre dedup_hash is deterministic md5
  * 8. Accepts all valid channels (WJA + encuadre per channel)
  * 9. DB error → 500
@@ -179,7 +179,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
 
   // ── Encuadre creation ──────────────────────────────────────────────────
 
-  it('creates encuadre with decrypted name and channel as origen', async () => {
+  it('creates encuadre with decrypted name and channel as import_source_audit', async () => {
     mockWorkerFound('w-1');
     mockDbSuccess();
 
@@ -198,7 +198,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(encuadreCall[1][0]).toBe('w-1');
     expect(encuadreCall[1][1]).toBe('jp-1');
     expect(encuadreCall[1][3]).toBe('María García');  // decrypted name
-    expect(encuadreCall[1][5]).toBe('instagram');      // origen = channel
+    expect(encuadreCall[1][5]).toBe('instagram');      // import_source_audit = channel
   });
 
   it('generates deterministic md5 dedup_hash from worker+job', async () => {
@@ -231,7 +231,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
 
   // ── All channels ───────────────────────────────────────────────────────
 
-  it('accepts all valid channels and passes each as origen', async () => {
+  it('accepts all valid channels and passes each as import_source_audit', async () => {
     const channels = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
     for (const channel of channels) {
       jest.clearAllMocks();
@@ -244,7 +244,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
 
       expect(res.json).toHaveBeenCalledWith({ success: true });
 
-      // Verify encuadre origen matches channel (call 3: 0=worker, 1=eligibility, 2=WJA, 3=encuadre)
+      // Verify encuadre import_source_audit matches channel (call 3: 0=worker, 1=eligibility, 2=WJA, 3=encuadre)
       const encuadreCall = mockQuery.mock.calls[3];
       expect(encuadreCall[1][5]).toBe(channel);
     }

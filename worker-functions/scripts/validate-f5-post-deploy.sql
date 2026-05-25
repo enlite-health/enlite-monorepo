@@ -21,7 +21,7 @@ WHERE conrelid = 'encuadres'::regclass AND conname = 'encuadres_worker_job_uniqu
 
 -- F6-Q3: Sobreviventes com richness=0
 SELECT COUNT(*) AS encuadres_richness_zero,
-       COUNT(*) FILTER (WHERE origen IN ('backfill-td036','auto-trigger')) AS backfill_only
+       COUNT(*) FILTER (WHERE import_source_audit IN ('backfill-td036','auto-trigger')) AS backfill_only
 FROM encuadres
 WHERE worker_id IS NOT NULL AND job_posting_id IS NOT NULL
   AND (CASE WHEN interview_date IS NOT NULL THEN 1 ELSE 0 END +
@@ -34,7 +34,7 @@ WHERE worker_id IS NOT NULL AND job_posting_id IS NOT NULL
 
 -- F6-Q4: ON CONFLICT funciona (rodar com ROLLBACK automático)
 BEGIN;
-  INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+  INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
   SELECT worker_id, job_posting_id, 'test-conflict', md5('test-conflict|' || random()::text)
   FROM encuadres WHERE worker_id IS NOT NULL AND job_posting_id IS NOT NULL LIMIT 1
   ON CONFLICT (worker_id, job_posting_id) DO NOTHING;

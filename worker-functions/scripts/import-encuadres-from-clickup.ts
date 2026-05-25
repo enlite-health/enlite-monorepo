@@ -317,7 +317,7 @@ async function main(): Promise<void> {
           workerRawPhone: eData.rawPhone,
           workerEmail:    wData.email,
           resultado:      eData.resultado,
-          origen:         eData.origen,
+          importSourceAudit: eData.importSourceAudit,
           dedupHash:      eData.dedupHash,
         };
 

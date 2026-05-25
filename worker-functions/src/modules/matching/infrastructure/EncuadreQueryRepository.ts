@@ -54,9 +54,9 @@ export class EncuadreQueryRepository {
 
     await this.pool.query(
       `UPDATE encuadres SET
-        interview_time    = COALESCE(interview_time,    $2),
-        meet_link         = COALESCE(meet_link,         $3),
-        origen            = COALESCE(origen,            $4),
+        interview_time      = COALESCE(interview_time,      $2),
+        meet_link           = COALESCE(meet_link,           $3),
+        import_source_audit = COALESCE(import_source_audit, $4),
         id_onboarding     = COALESCE(id_onboarding,     $5),
         resultado         = COALESCE(resultado,         $6),
         has_cv            = COALESCE(has_cv,            $7),
@@ -77,7 +77,7 @@ export class EncuadreQueryRepository {
        WHERE id = $1`,
       [
         id,
-        dto.interviewTime ?? null, dto.meetLink ?? null, dto.origen ?? null,
+        dto.interviewTime ?? null, dto.meetLink ?? null, dto.importSourceAudit ?? null,
         dto.idOnboarding ?? null, dto.resultado ?? null,
         dto.hasCv ?? null, dto.hasDni ?? null, dto.hasCertAt ?? null,
         dto.hasAfip ?? null, dto.hasCbu ?? null, dto.hasAp ?? null, dto.hasSeguros ?? null,

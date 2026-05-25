@@ -47,7 +47,7 @@ CREATE OR REPLACE FUNCTION fn_ensure_encuadre_on_wja_insert()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.worker_id IS NOT NULL AND NEW.job_posting_id IS NOT NULL THEN
-    INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+    INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
     SELECT
       NEW.worker_id,
       NEW.job_posting_id,

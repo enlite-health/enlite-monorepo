@@ -59,7 +59,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
 
     // Tentar inserir segundo encuadre com dedup_hash diferente para o mesmo par
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
        VALUES ($1, $2, 'second-attempt', md5('second-attempt|' || $1::text || '|' || $2::text))
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [IDS.workerA, IDS.vacancy],
@@ -77,7 +77,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
     // Confirma que a constraint está ativa: INSERT sem ON CONFLICT deve lançar erro
     await expect(
       pool.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+        `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
          VALUES ($1, $2, 'raw-insert', md5('raw-insert|' || $1::text || '|' || $2::text))`,
         [IDS.workerA, IDS.vacancy],
       ),
@@ -100,7 +100,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
 
     // Upsert com resultado preenchido
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash, resultado)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash, resultado)
        VALUES ($1, $2, 'upsert-test', md5('upsert-test|' || $1::text || '|' || $2::text), 'SELECCIONADO')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          resultado = EXCLUDED.resultado,
@@ -131,7 +131,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
 
     // 1. Inserir encuadre manualmente antes da WJA
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
        VALUES ($1, $2, 'pre-existing', md5('pre-existing|' || $1::text || '|' || $2::text))`,
       [IDS.workerC, IDS.vacancy],
     );
@@ -151,13 +151,13 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
     );
 
     const afterWja = await pool.query(
-      'SELECT COUNT(*)::int AS cnt, MAX(origen) AS origen FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
+      'SELECT COUNT(*)::int AS cnt, MAX(import_source_audit) AS import_source_audit FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2',
       [IDS.workerC, IDS.vacancy],
     );
     // Trigger não criou duplicata — ainda 1 encuadre
     expect(afterWja.rows[0].cnt).toBe(1);
-    // Encuadre pré-existente preservado (origen não sobrescrito pelo trigger)
-    expect(afterWja.rows[0].origen).toBe('pre-existing');
+    // Encuadre pré-existente preservado (import_source_audit não sobrescrito pelo trigger)
+    expect(afterWja.rows[0].import_source_audit).toBe('pre-existing');
   });
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -219,7 +219,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
 
   // workerA: encuadre direto (para F5-1 testar conflito)
   await pool.query(
-    `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+    `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
      VALUES ($1, $2, 'seed-first', md5('seed-first|' || $1::text || '|' || $2::text))
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.workerA, IDS.vacancy],
@@ -232,7 +232,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.workerB, IDS.vacancy],
   );
-  // Trigger cria encuadre com origen='auto-trigger' para workerB — sem resultado (NULL)
+  // Trigger cria encuadre com import_source_audit='auto-trigger' para workerB — sem resultado (NULL)
 
   // workerC: limpo — test F5-3 gerencia o estado diretamente
 }

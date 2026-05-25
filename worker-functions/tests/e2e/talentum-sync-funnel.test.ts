@@ -166,7 +166,7 @@ describe('talentum-sync-funnel (TD-035 simplificado)', () => {
 
     // Primeira inserção
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
        VALUES ($1, $2, $3, $4, 'Talentum', $5)
        ON CONFLICT (dedup_hash) DO UPDATE SET
          worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
@@ -175,7 +175,7 @@ describe('talentum-sync-funnel (TD-035 simplificado)', () => {
 
     // Segunda inserção — mesmo dedup_hash (re-sync idempotente)
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
        VALUES ($1, $2, $3, $4, 'Talentum', $5)
        ON CONFLICT (dedup_hash) DO UPDATE SET
          worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
@@ -183,7 +183,7 @@ describe('talentum-sync-funnel (TD-035 simplificado)', () => {
     );
 
     const { rows } = await pool.query(
-      `SELECT id, worker_id, job_posting_id, origen, dedup_hash
+      `SELECT id, worker_id, job_posting_id, import_source_audit, dedup_hash
        FROM encuadres
        WHERE dedup_hash = $1`,
       [dedupHash],
@@ -193,7 +193,7 @@ describe('talentum-sync-funnel (TD-035 simplificado)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].worker_id).toBe(workerId);
     expect(rows[0].job_posting_id).toBe(jobPostingId);
-    expect(rows[0].origen).toBe('Talentum');
+    expect(rows[0].import_source_audit).toBe('Talentum');
     expect(rows[0].dedup_hash).toBe(dedupHash);
   });
 });

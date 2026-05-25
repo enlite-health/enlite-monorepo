@@ -40,7 +40,7 @@ export async function mapEncuadreRow(
     obsReclutamiento: row.obs_reclutamiento as string | null,
     obsEncuadre: row.obs_encuadre as string | null,
     obsAdicionales: row.obs_adicionales as string | null,
-    origen: row.origen as string | null,
+    importSourceAudit: row.import_source_audit as string | null,
     idOnboarding: row.id_onboarding as string | null,
     dedupHash: row.dedup_hash as string,
     createdAt: new Date(row.created_at as string),

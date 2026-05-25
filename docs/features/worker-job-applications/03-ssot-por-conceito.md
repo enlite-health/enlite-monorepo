@@ -42,7 +42,7 @@ Antes de 2026-05-23, os seguintes campos tinham authority dupla (dois lugares gr
 | Estado `PLACED` em `application_funnel_stage` | 0 writers ativos (sync deprecada em F6), 0 linhas em prod. Remoção segura em **F7.a** com UPDATE preventivo defensivo. |
 | Estado `REPROGRAM` em `application_funnel_stage` | **Writer ATIVO** em `HandleReminderResponseUseCase.handleRescheduleYes:192` (worker pede reschedule via WhatsApp). Remoção em **F7.b** após decisão de produto (ADR-003 ampliado) sobre destino canônico. |
 | Estado `SELECTED` em `application_funnel_stage` | **MANTÉM** — F4 fixou como coluna do Kanban (estado terminal positivo após admin confirmar candidatura). |
-| `encuadres.origen` (como classificador de origem) | Substituído por `wja.source`. Em F8 vira `import_source_audit` (auditoria de import histórico apenas). |
+| `encuadres.origen` (como classificador de origem) | Substituído por `wja.source`. **F8 (2026-05-25)**: renomeado para `encuadres.import_source_audit` — auditoria de import histórico apenas, sem authority de classificação de origem. SSOT real é `wja.source`. |
 
 ## Princípio operacional
 

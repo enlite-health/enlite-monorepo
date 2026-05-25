@@ -725,7 +725,7 @@ describe('ProcessTalentumPrescreening', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('auto-criação de encuadre (Step 3.6)', () => {
-    it('cria encuadre com origen=Talentum e dedup_hash baseado no prescreeningId', async () => {
+    it('cria encuadre com import_source_audit=Talentum e dedup_hash baseado no prescreeningId', async () => {
       const payload = buildPayload({ status: 'IN_PROGRESS', prescreeningId: 'tp-abc' });
       (payload.data.response as any).statusLabel = undefined;
 

@@ -185,7 +185,7 @@ export class EncuadreDashboardController {
     try {
       const result = await this.db.query(`
         SELECT
-          COALESCE(e.origen, 'Desconocido') AS channel,
+          COALESCE(e.import_source_audit, 'Desconocido') AS channel,
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE e.resultado = 'SELECCIONADO')::int AS selected,
           COUNT(*) FILTER (WHERE e.attended = true)::int AS attended,
@@ -196,7 +196,7 @@ export class EncuadreDashboardController {
           ) AS conversion_rate
         FROM encuadres e
         WHERE e.job_posting_id IS NOT NULL
-        GROUP BY COALESCE(e.origen, 'Desconocido')
+        GROUP BY COALESCE(e.import_source_audit, 'Desconocido')
         ORDER BY total DESC
       `);
 

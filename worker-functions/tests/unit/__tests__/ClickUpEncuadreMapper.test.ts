@@ -203,7 +203,7 @@ describe('ClickUpEncuadreMapper', () => {
     expect(encuadre).not.toBeNull();
     expect(encuadre!.caseNumber).toBe(690);
     expect(encuadre!.resultado).toBe('SELECCIONADO');
-    expect(encuadre!.origen).toBe('ClickUp');
+    expect(encuadre!.importSourceAudit).toBe('ClickUp');
     expect(worker.email).toBe('juan@test.com');
     expect(worker.firstName).toBe('Juan');
     expect(worker.lastName).toBe('García');
