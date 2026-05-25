@@ -64,11 +64,12 @@ async function run() {
   // Teste extra: tentar INSERT com worker_id inexistente
   console.log("\n  Teste de integridade: INSERT com worker_id inexistente...");
   try {
+    // F7.c (ADR-004): application_status removido — apenas testa FK de worker_id
     await client.query(`
-      INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status)
+      INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
       VALUES ('00000000-0000-0000-0000-000000000000',
               (SELECT id FROM job_postings LIMIT 1),
-              'applied')
+              'INVITED', 'system')
     `);
     console.log("  ⚠️  INSERT com worker_id inexistente foi ACEITO — FK não está funcionando!");
     findings.C1_INSERT_TEST = "FAIL";

@@ -108,10 +108,11 @@ export class WorkerApplicationsController {
       // Upsert WJA: worker self-applied via public link, lands in INVITED column.
       // (Clicou no link, ainda não entrou no WhatsApp Talentum — INITIATED só via webhook.)
       // ON CONFLICT: only sets acquisition_channel if currently NULL (first-touch wins).
+      // F7.c (ADR-004): application_status removido.
       await this.db.query(
         `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, application_status, source, acquisition_channel, application_funnel_stage)
-         VALUES ($1, $2, 'applied', 'manual', $3, 'INVITED')
+           (worker_id, job_posting_id, source, acquisition_channel, application_funnel_stage)
+         VALUES ($1, $2, 'manual', $3, 'INVITED')
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            acquisition_channel = CASE
              WHEN worker_job_applications.acquisition_channel IS NULL THEN EXCLUDED.acquisition_channel

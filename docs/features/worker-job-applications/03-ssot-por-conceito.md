@@ -11,7 +11,8 @@ Cada dado da feature tem **uma única fonte da verdade** (Single Source of Truth
 | Agendamento da entrevista — link Meet | `worker_job_applications.interview_meet_link` | TEXT | Substitui `encuadres.meet_link`. |
 | Agendamento da entrevista — slot escolhido | `worker_job_applications.interview_slot_id` | UUID FK | FK para `interview_slots`. Slot é entidade independente. |
 | Estado da resposta à entrevista | `worker_job_applications.interview_response` | VARCHAR(30) | `pending`, `confirmed`, `declined`, `awaiting_reschedule`, etc. |
-| Origem da candidatura | `worker_job_applications.source` | VARCHAR(50) | `talent_search`, `manual`, `talentum`. Substitui `encuadres.origen`. |
+| Origem da candidatura | `worker_job_applications.source` | VARCHAR(50) | `system` (match automático), `manual` (admin drag ou worker link público), `talentum` (provider externo). ADR-004: providers de prescreening plugáveis — Talentum é um deles. Substitui `encuadres.origen`. |
+| Canal de aquisição | `worker_job_applications.acquisition_channel` | VARCHAR(50) | `system` (match automático), `facebook`/`instagram`/`whatsapp`/`linkedin`/`site` (link público), NULL pros demais. |
 | Score de match | `worker_job_applications.match_score` | NUMERIC | Calculado pelo matchmaking. |
 | Histórico de transições de stage | `worker_job_application_stage_history` | tabela completa | Trilha de auditoria (insert-only). |
 | Estado externo no Talentum | `talentum_prescreenings.status` | VARCHAR | Log do que o Talentum reporta. Não confundir com `wja.application_funnel_stage` (que é o estado interno derivado). |
@@ -36,7 +37,7 @@ Antes de 2026-05-23, os seguintes campos tinham authority dupla (dois lugares gr
 
 | Campo | Por quê |
 |---|---|
-| `worker_job_applications.application_status` | Legado pré-funil canônico. Writers ATIVOS (`'applied'` 2030 modificações em 7d; `'under_review'` 297 em 7d) — Discovery F7 confirmou. Remoção em **F7.c** (precisa parar writers primeiro + esperar 7-14 dias estáveis antes de drop column). |
+| `worker_job_applications.application_status` | **REMOVIDO em F7.c (migration 196)** — legado pré-funil canônico, 100% redundante com `application_funnel_stage + source`. Discovery DBA mostrou 12.258 rows com divergências estruturais (448 rows `applied + QUALIFIED`, 3 rows `rejected + QUALIFIED`) — campo nunca foi atualizado após INSERT, virou stale. `alreadyApplied` no `/match-results` derivado de `source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'`. |
 | Estado `ANALYZED` em `application_funnel_stage` | Nunca esteve no CHECK de WJA — só é valor de transporte interno do mapper Talentum (`talentum_prescreenings.status`). Limpeza do tipo TS + `funnel_stage_precedence()` em **F7.a**. |
 | Estado `PLACED` em `application_funnel_stage` | 0 writers ativos (sync deprecada em F6), 0 linhas em prod. Remoção segura em **F7.a** com UPDATE preventivo defensivo. |
 | Estado `REPROGRAM` em `application_funnel_stage` | **Writer ATIVO** em `HandleReminderResponseUseCase.handleRescheduleYes:192` (worker pede reschedule via WhatsApp). Remoção em **F7.b** após decisão de produto (ADR-003 ampliado) sobre destino canônico. |

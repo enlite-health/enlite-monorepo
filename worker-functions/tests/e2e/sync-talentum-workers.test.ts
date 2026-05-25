@@ -302,21 +302,20 @@ describe('Talentum Workers Sync API', () => {
       // INVITED = worker detected in Talentum dashboard, no evidence of WhatsApp entry.
       await pool.query(
         `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-         VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+           (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'talentum')
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [workerId, jobPostingId],
       );
 
       const { rows } = await pool.query(
-        `SELECT application_funnel_stage, application_status, source
+        `SELECT application_funnel_stage, source
          FROM worker_job_applications
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [workerId, jobPostingId],
       );
 
       expect(rows[0].application_funnel_stage).toBe('INVITED');
-      expect(rows[0].application_status).toBe('applied');
       expect(rows[0].source).toBe('talentum');
     });
 
@@ -324,8 +323,8 @@ describe('Talentum Workers Sync API', () => {
       // Try to insert again — should not create duplicate
       await pool.query(
         `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-         VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+           (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'talentum')
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [workerId, jobPostingId],
       );

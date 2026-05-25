@@ -14,8 +14,8 @@ UNIQUE (worker_id, job_posting_id)
 
 -- Funil
 application_funnel_stage    VARCHAR(30)   -- SSOT do estado
-source                      VARCHAR(50)   -- talent_search | manual | talentum
-acquisition_channel         VARCHAR(50)
+source                      VARCHAR(50)   -- system (match auto) | manual (admin/link público) | talentum (provider externo, ADR-004)
+acquisition_channel         VARCHAR(50)   -- system | facebook | instagram | whatsapp | linkedin | site | NULL
 match_score                 NUMERIC
 messaged_at                 TIMESTAMPTZ
 
@@ -36,9 +36,9 @@ rejection_reason            TEXT
 created_at                  TIMESTAMPTZ
 updated_at                  TIMESTAMPTZ
 
--- Coluna deprecada (remover em F7.c — writers ativos: 'applied' contínuo, 'under_review' contínuo)
--- application_status        VARCHAR(20)   -- legado pré-funil canônico
--- funnelStage               -- campo redundante; remover em F7.c junto com application_status
+-- F7.c (2026-05-25): application_status DROPADO (migration 196). Era legado pré-funil canônico,
+-- 100% redundante com application_funnel_stage + source. ADR-004.
+-- Campo funnelStage no payload da API também removido (era alias redundante de internalStage).
 ```
 
 ### `worker_job_application_stage_history` — trilha de auditoria

@@ -291,7 +291,7 @@ describe('Worker Context API (triage-service endpoints)', () => {
         expect(vac).toHaveProperty('id');
         expect(vac).toHaveProperty('title');
         expect(vac).toHaveProperty('status');
-        expect(vac).toHaveProperty('funnelStage');
+        expect(vac).toHaveProperty('internalStage');
       } finally {
         await pool.query(
           'DELETE FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2',

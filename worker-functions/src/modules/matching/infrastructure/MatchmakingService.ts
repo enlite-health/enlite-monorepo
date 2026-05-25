@@ -358,10 +358,11 @@ export class MatchmakingService {
       const matchScore = candidate.llmScore !== null || candidate.structuredScore !== 0
         ? candidate.finalScore
         : null;
+      // F7.c (ADR-004): application_status removido. source/acquisition_channel='system' adicionados.
       await this.db.query(
         `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, match_score, application_status, application_funnel_stage, internal_notes)
-         VALUES ($1, $2, $3, 'under_review', 'INVITED', $4)
+           (worker_id, job_posting_id, match_score, application_funnel_stage, source, acquisition_channel, internal_notes)
+         VALUES ($1, $2, $3, 'INVITED', 'system', 'system', $4)
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            match_score    = EXCLUDED.match_score,
            internal_notes = EXCLUDED.internal_notes,

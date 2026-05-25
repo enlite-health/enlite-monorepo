@@ -254,9 +254,10 @@ export class WorkerDeduplicationService {
       );
 
       // 2b. Re-linka worker_job_applications (ignora conflitos de unique)
+      // F7.c (ADR-004): application_status removido do SELECT e INSERT.
       await client.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-         SELECT $1, job_posting_id, application_status, application_funnel_stage, source
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         SELECT $1, job_posting_id, application_funnel_stage, source
          FROM worker_job_applications WHERE worker_id = $2
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [canonicalId, duplicateId],

@@ -119,7 +119,6 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                       interviewDate={enc.interviewDate}
                       interviewTime={enc.interviewTime}
                       stage={col.id}
-                      funnelStage={enc.funnelStage}
                       interviewResponse={enc.interviewResponse}
                       meetLink={enc.meetLink}
                       acquisitionChannel={enc.acquisitionChannel}
@@ -150,7 +149,6 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                 interviewDate={activeCardInfo.card.interviewDate}
                 interviewTime={activeCardInfo.card.interviewTime}
                 stage={activeCardInfo.stage}
-                funnelStage={activeCardInfo.card.funnelStage}
                 interviewResponse={activeCardInfo.card.interviewResponse}
                 meetLink={activeCardInfo.card.meetLink}
                 internalStage={activeCardInfo.card.internalStage ?? null}

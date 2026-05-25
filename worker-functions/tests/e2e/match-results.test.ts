@@ -183,11 +183,11 @@ describe('GET /api/admin/vacancies/:id/match-results', () => {
       // Insere candidatos com scores diferentes
       await pool.query(`
         INSERT INTO worker_job_applications
-          (worker_id, job_posting_id, application_status, application_funnel_stage, match_score, created_at, updated_at)
+          (worker_id, job_posting_id, application_funnel_stage, match_score, created_at, updated_at)
         VALUES
-          ($1, $4, 'under_review', 'INVITED', 87, NOW(), NOW()),
-          ($2, $4, 'under_review', 'INVITED', 45, NOW(), NOW()),
-          ($3, $4, 'under_review', 'INVITED', 72, NOW(), NOW())
+          ($1, $4, 'INVITED', 87, NOW(), NOW()),
+          ($2, $4, 'INVITED', 45, NOW(), NOW()),
+          ($3, $4, 'INVITED', 72, NOW(), NOW())
         ON CONFLICT DO NOTHING
       `, [workerIdA, workerIdB, workerIdC, vacancyId]);
     });
@@ -237,7 +237,7 @@ describe('GET /api/admin/vacancies/:id/match-results', () => {
       expect(candidate).toHaveProperty('workerName');
       expect(candidate).toHaveProperty('workerPhone');
       expect(candidate).toHaveProperty('matchScore');
-      expect(candidate).toHaveProperty('applicationStatus');
+      // removido em F7.c — applicationStatus não existe mais no payload (migration 196)
       expect(candidate).toHaveProperty('alreadyApplied');
       expect(candidate).toHaveProperty('messagedAt');
     });

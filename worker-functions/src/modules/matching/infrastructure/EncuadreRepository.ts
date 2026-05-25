@@ -191,21 +191,15 @@ export class EncuadreRepository {
    * NÃO chamar em código novo. NÃO chamar em pipelines recorrentes.
    */
   async syncToWorkerJobApplications(): Promise<number> {
+    // F7.c (ADR-004): application_status removido do INSERT e DO UPDATE SET (dead code cleanup).
     const result = await this.pool.query(`
       INSERT INTO worker_job_applications (
         worker_id, job_posting_id,
-        application_status, application_funnel_stage,
+        application_funnel_stage,
         applied_at, rejection_reason, source
       )
       SELECT
         e.worker_id, e.job_posting_id,
-        CASE
-          WHEN e.resultado IN ('SELECCIONADO', 'REEMPLAZO') THEN 'approved'
-          WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'rejected'
-          WHEN e.resultado = 'REPROGRAMAR' THEN 'interview_scheduled'
-          WHEN e.resultado IS NOT NULL OR e.attended = true THEN 'under_review'
-          ELSE 'applied'
-        END,
         CASE
           WHEN e.resultado IN ('SELECCIONADO', 'REEMPLAZO') THEN 'QUALIFIED'
           WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'REJECTED'
@@ -231,7 +225,6 @@ export class EncuadreRepository {
           COALESCE(recruitment_date, created_at::date) DESC NULLS LAST
       ) e
       ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-        application_status       = EXCLUDED.application_status,
         application_funnel_stage = CASE
           WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
                >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)

@@ -156,8 +156,9 @@ describe('WJAFunnelController', () => {
       expect(stages.COMPLETED.find((e: any) => e.id === 'e2').talentumStatus).toBe('IN_DOUBT');
     });
 
-    it('expõe internalStage igual a funnelStage em cada item do payload', async () => {
-      // F4: internalStage é alias explícito de funnelStage — frontend usa pra renderizar badge
+    it('expõe internalStage em cada item do payload (F7.c: funnelStage removido)', async () => {
+      // F7.c (ADR-004): funnelStage era alias 100% redundante de internalStage — removido.
+      // Frontend usa apenas internalStage para renderizar badge.
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: 'QUALIFIED' }),
@@ -174,18 +175,18 @@ describe('WJAFunnelController', () => {
       const e1 = stages.COMPLETED.find((e: any) => e.id === 'e1');
       expect(e1).toBeDefined();
       expect(e1.internalStage).toBe('QUALIFIED');
-      expect(e1.internalStage).toBe(e1.funnelStage);
+      expect(e1.funnelStage).toBeUndefined(); // F7.c: removido
 
       const e2 = stages.IN_PROGRESS.find((e: any) => e.id === 'e2');
       expect(e2).toBeDefined();
       expect(e2.internalStage).toBe('IN_PROGRESS');
-      expect(e2.internalStage).toBe(e2.funnelStage);
+      expect(e2.funnelStage).toBeUndefined(); // F7.c: removido
 
       // null stage: internalStage deve ser null (não undefined)
       const e3 = stages.INVITED.find((e: any) => e.id === 'e3');
       expect(e3).toBeDefined();
       expect(e3.internalStage).toBeNull();
-      expect(e3.internalStage).toBe(e3.funnelStage);
+      expect(e3.funnelStage).toBeUndefined(); // F7.c: removido
     });
 
     it('retorna 7 stages vazios quando não há encuadres', async () => {

@@ -44,7 +44,7 @@ interface KanbanCard {
   id: string;
   encuadreId: string | null;
   workerId: string;
-  funnelStage: string | null;
+  internalStage: string | null;
   resultado: string | null;
 }
 
@@ -90,7 +90,7 @@ describe('GET /api/admin/vacancies/:id/funnel — WJA órfã aparece no Kanban (
     const card = stages.INVITED.find((c) => c.workerId === IDS.wOrphan1);
     expect(card).toBeDefined();
     expect(card!.encuadreId).toBeNull();
-    expect(card!.funnelStage).toBe('INVITED');
+    expect(card!.internalStage).toBe('INVITED');
   });
 
   it('[O2] WJA órfã em INITIATED aparece na coluna INITIATED com encuadreId=null', async () => {
@@ -98,7 +98,7 @@ describe('GET /api/admin/vacancies/:id/funnel — WJA órfã aparece no Kanban (
     const card = stages.INITIATED.find((c) => c.workerId === IDS.wOrphan2);
     expect(card).toBeDefined();
     expect(card!.encuadreId).toBeNull();
-    expect(card!.funnelStage).toBe('INITIATED');
+    expect(card!.internalStage).toBe('INITIATED');
   });
 
   it('[O3] WJA órfã em IN_PROGRESS aparece na coluna IN_PROGRESS com encuadreId=null', async () => {
@@ -106,7 +106,7 @@ describe('GET /api/admin/vacancies/:id/funnel — WJA órfã aparece no Kanban (
     const card = stages.IN_PROGRESS.find((c) => c.workerId === IDS.wOrphan3);
     expect(card).toBeDefined();
     expect(card!.encuadreId).toBeNull();
-    expect(card!.funnelStage).toBe('IN_PROGRESS');
+    expect(card!.internalStage).toBe('IN_PROGRESS');
   });
 
   it('[O4] WJA órfã em COMPLETED aparece na coluna COMPLETED com encuadreId=null', async () => {
@@ -114,7 +114,7 @@ describe('GET /api/admin/vacancies/:id/funnel — WJA órfã aparece no Kanban (
     const card = stages.COMPLETED.find((c) => c.workerId === IDS.wOrphan4);
     expect(card).toBeDefined();
     expect(card!.encuadreId).toBeNull();
-    expect(card!.funnelStage).toBe('COMPLETED');
+    expect(card!.internalStage).toBe('COMPLETED');
   });
 
   it('[O5] WJA órfã em CONFIRMED aparece na coluna CONFIRMED com encuadreId=null', async () => {
@@ -122,7 +122,7 @@ describe('GET /api/admin/vacancies/:id/funnel — WJA órfã aparece no Kanban (
     const card = stages.CONFIRMED.find((c) => c.workerId === IDS.wOrphan5);
     expect(card).toBeDefined();
     expect(card!.encuadreId).toBeNull();
-    expect(card!.funnelStage).toBe('CONFIRMED');
+    expect(card!.internalStage).toBe('CONFIRMED');
   });
 
   // ── P1: Controle positivo preserva dados do encuadre ─────────────────────
@@ -214,8 +214,8 @@ async function seedFixtures(pool: Pool): Promise<string> {
   for (const { id, stage } of orphanRows) {
     await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_funnel_stage, application_status, source)
-       VALUES ($1, $2, $3, 'applied', 'talentum')
+         (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, $3, 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [id, IDS.vacancy, stage],
     );
@@ -228,8 +228,8 @@ async function seedFixtures(pool: Pool): Promise<string> {
   // WJA for control positive (INVITED)
   await pool.query(
     `INSERT INTO worker_job_applications
-       (worker_id, job_posting_id, application_funnel_stage, application_status, source)
-     VALUES ($1, $2, 'INVITED', 'applied', 'talentum')
+       (worker_id, job_posting_id, application_funnel_stage, source)
+     VALUES ($1, $2, 'INVITED', 'talentum')
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.wControl, IDS.vacancy],
   );

@@ -121,11 +121,10 @@ export class TalentumPrescreeningRepository {
   //                                (Talentum é a fonte de verdade para a etapa do funil)
   //     match_score              → sempre sobrescreve com o score do Talentum
   //                                (score pode mudar a cada POST ANALYZED)
-  //     application_status       → COALESCE: preserva o status existente se já preenchido;
-  //                                defaults para 'applied' somente no INSERT (não regride)
   //     updated_at               → sempre NOW()
   //     acquisition_channel      → NUNCA modificado aqui (first-touch wins via track-channel
   //                                endpoint; Talentum não conhece canal social)
+  //   F7.c (ADR-004): application_status removido — funnel_stage + source carregam toda a informação.
   //   Retorna previousStage para detectar transições (ex: SCREENED → QUALIFIED)
   //   Aceita client opcional para executar dentro de uma transação existente.
   // ─────────────────────────────────────────────────────────────────
@@ -151,9 +150,8 @@ export class TalentumPrescreeningRepository {
          job_posting_id,
          application_funnel_stage,
          match_score,
-         application_status,
          source
-       ) VALUES ($1, $2, $3, $4, 'applied', 'talentum')
+       ) VALUES ($1, $2, $3, $4, 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          application_funnel_stage = CASE
            WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
@@ -162,7 +160,6 @@ export class TalentumPrescreeningRepository {
            ELSE worker_job_applications.application_funnel_stage
          END,
          match_score              = EXCLUDED.match_score,
-         application_status       = COALESCE(worker_job_applications.application_status, EXCLUDED.application_status),
          source                   = COALESCE(NULLIF(worker_job_applications.source, 'manual'), EXCLUDED.source),
          updated_at               = NOW()
        RETURNING (SELECT application_funnel_stage FROM previous) AS previous_stage`,

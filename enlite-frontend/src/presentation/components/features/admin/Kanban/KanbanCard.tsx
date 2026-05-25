@@ -16,7 +16,6 @@ interface KanbanCardProps {
   interviewDate: string | null;
   interviewTime: string | null;
   stage: string;
-  funnelStage: string | null;
   /** F7.b: interview_response from WJA — 'awaiting_reschedule' triggers the reschedule badge */
   interviewResponse?: string | null;
   /** F7.b: meet link assigned to the WJA — null means no slot assigned yet */

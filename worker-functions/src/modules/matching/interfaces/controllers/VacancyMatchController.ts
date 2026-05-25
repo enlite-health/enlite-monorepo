@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { reportError } from '@shared/logging';
 import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
@@ -36,9 +37,10 @@ export class VacancyMatchController {
       });
 
       res.status(200).json({ success: true, data: result });
-    } catch (error: any) {
-      console.error('[VacancyMatch] Error triggering match:', error);
-      res.status(500).json({ success: false, error: 'Failed to run matchmaking', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'VacancyMatchController:triggerMatch' });
+      res.status(500).json({ success: false, error: 'Failed to run matchmaking', details: e.message });
     }
   }
 
@@ -57,12 +59,15 @@ export class VacancyMatchController {
       const totalCandidates = parseInt(metaResult.rows[0]?.total || '0');
       const lastMatchAt     = metaResult.rows[0]?.last_match_at ?? null;
 
+      // F7.c (ADR-004): application_status removido do SELECT; source + application_funnel_stage
+      // adicionados para derivar alreadyApplied sem depender do campo depreciado.
       const result = await this.db.query(
         `SELECT
            wja.worker_id,
            wja.match_score,
            wja.internal_notes,
-           wja.application_status,
+           wja.source,
+           wja.application_funnel_stage,
            wja.messaged_at,
            w.phone,
            w.first_name_encrypted,
@@ -117,8 +122,13 @@ export class VacancyMatchController {
             workerStatus:      row.status,
             matchScore:        row.match_score !== null ? parseFloat(row.match_score) : null,
             internalNotes:     row.internal_notes,
-            applicationStatus: row.application_status,
-            alreadyApplied:    row.application_status === 'applied',
+            // F7.c (ADR-004): applicationStatus REMOVIDO. alreadyApplied agora deriva da combinação
+            // source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'.
+            // Lógica: "worker chegou por canal ≠ match, OU já foi contatado, OU já avançou no funil".
+            alreadyApplied:
+              row.source !== 'system'
+              || row.messaged_at !== null
+              || row.application_funnel_stage !== 'INVITED',
             messagedAt:        row.messaged_at,
           };
         })
@@ -128,9 +138,10 @@ export class VacancyMatchController {
         success: true,
         data: { jobPostingId: id, lastMatchAt, totalCandidates, candidates },
       });
-    } catch (error: any) {
-      console.error('[VacancyMatch] Error fetching match results:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch match results', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'VacancyMatchController:getMatchResults' });
+      res.status(500).json({ success: false, error: 'Failed to fetch match results', details: e.message });
     }
   }
 

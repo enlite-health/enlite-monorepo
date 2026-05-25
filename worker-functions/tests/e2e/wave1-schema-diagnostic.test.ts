@@ -73,8 +73,8 @@ beforeAll(async () => {
   );
 
   await pool.query(
-    `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_status, application_funnel_stage)
-     VALUES ($1, $2, $3, 'applied', 'INVITED'), ($4, $5, $6, 'shortlisted', 'INVITED')
+    `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage)
+     VALUES ($1, $2, $3, 'INVITED'), ($4, $5, $6, 'INVITED')
      ON CONFLICT DO NOTHING`,
     [APP_IDS.a1, WORKER_IDS.w1, JOB_ID, APP_IDS.a2, WORKER_IDS.w2, JOB_ID],
   );
@@ -167,8 +167,8 @@ describe('C1 — FK worker_job_applications.worker_id → workers', () => {
     try {
       await pool.query(
         `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, application_status, application_funnel_stage)
-         VALUES ($1, $2, 'applied', 'INVITED')`,
+           (worker_id, job_posting_id, application_funnel_stage)
+         VALUES ($1, $2, 'INVITED')`,
         [fakeWorkerId, JOB_ID],
       );
       fail('INSERT deveria ter falhado com ForeignKeyViolation');
@@ -193,8 +193,8 @@ describe('C1 — FK worker_job_applications.worker_id → workers', () => {
 
     const result = await pool.query(
       `INSERT INTO worker_job_applications
-         (id, worker_id, job_posting_id, application_status, application_funnel_stage)
-       VALUES ($1, $2, $3, 'applied', 'INVITED') RETURNING id`,
+         (id, worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $2, $3, 'INVITED') RETURNING id`,
       [tempAppId, WORKER_IDS.w3, tempJobId],
     );
 
@@ -219,8 +219,8 @@ describe('C1 — FK worker_job_applications.worker_id → workers', () => {
 
     await pool.query(
       `INSERT INTO worker_job_applications
-         (id, worker_id, job_posting_id, application_status, application_funnel_stage)
-       VALUES ($1, $2, $3, 'applied', 'INVITED')`,
+         (id, worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $2, $3, 'INVITED')`,
       [tmpApp, tmpWorker, JOB_ID],
     );
 

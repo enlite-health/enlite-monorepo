@@ -116,8 +116,9 @@ export class WJAFunnelController {
           talentumStatus: row.talentum_status ?? null,
           workZone: row.work_zone,
           redireccionamiento: row.redireccionamiento,
-          funnelStage: stage ?? null,
-          internalStage: stage ?? null, // alias explícito; frontend usa pra renderizar badge
+          // F7.c (ADR-004): funnelStage removido — era alias 100% redundante de internalStage.
+          // Frontend deve usar apenas internalStage.
+          internalStage: stage ?? null,
         };
 
         // Classificação direta por application_funnel_stage
@@ -211,9 +212,10 @@ export class WJAFunnelController {
       }
 
       // 2. Atualizar application_funnel_stage (fonte de verdade)
+      // F7.c (ADR-004): application_status removido do INSERT.
       await this.db.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, application_status, source)
-         VALUES ($1, $2, $3, 'applied', 'manual')
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, $3, 'manual')
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            application_funnel_stage = $3,
            updated_at = NOW()`,

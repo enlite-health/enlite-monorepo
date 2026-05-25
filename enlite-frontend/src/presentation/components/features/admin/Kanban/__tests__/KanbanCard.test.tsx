@@ -39,7 +39,6 @@ const defaultProps = {
   interviewDate: null as string | null,
   interviewTime: null as string | null,
   stage: 'COMPLETED',
-  funnelStage: null as string | null,
 };
 
 // ── Visual Rendering ─────────────────────────────────────────────────────────
@@ -218,7 +217,6 @@ describe('KanbanCard — combined scenarios', () => {
         interviewDate={null}
         interviewTime={null}
         stage="INVITED"
-        funnelStage={null}
       />,
     );
     // Should still render with fallback name

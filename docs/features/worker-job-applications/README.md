@@ -1,7 +1,7 @@
 # Worker Job Applications (Funil de Candidatura)
 
 > **Status:** Feature fechada. Fonte canônica do funil de candidatura de prestadores (workers) a vagas (job postings) na Enlite.
-> **Última atualização:** 2026-05-25 (F7.b concluída — REPROGRAM removido end-to-end)
+> **Última atualização:** 2026-05-25 (F7.c concluída — application_status dropado + funnelStage redundante removido + ADR-004 prescreening providers plugáveis)
 
 ## Visão executiva
 
@@ -38,14 +38,15 @@ Esta tabela é a **fonte da verdade da numeração das fases**. Qualquer mençã
 | **F6** | Matar `EncuadreRepository.syncToWorkerJobApplications` como pipeline recorrente: chamada removida do script de import + função mantida com `@deprecated`. CLAUDE.md "Sequência obrigatória pós-import" → "Pipelines de import legados". SEM backfill das 19k inconsistências (user aceitou como histórico). SEM converter 1.450 órfãos ClickUp. Bloqueador residual: TD-047 (identificar quem ainda dispara o script) | ✅ Concluída 2026-05-24 | `616ff1c` |
 | **F7.a** | Limpeza enxuta (baixo risco): remover `ANALYZED` da função SQL `funnel_stage_precedence()` (mantém em `FunnelStage` TS como vocab protocolo Talentum); remover `PLACED` totalmente (CHECK + `FunnelStage` + `ApplicationFunnelStage` + arrays); renomear 3 classes (`EncuadreFunnelController` → `WJAFunnelController`, `EncuadreFunnelTableController` → `WJAFunnelTableController`, `useEncuadreFunnel` → `useWJAFunnel`); criar ADR-003 com regra de nomeio. **NÃO toca SELECTED/REPROGRAM/application_status** | ✅ Concluída 2026-05-25 | `a0a95e3` / migration 194 |
 | **F7.b** | Refatorou `HandleReminderResponseUseCase.handleRescheduleYes`: removeu writer de `REPROGRAM`; worker passa a ficar em `CONFIRMED` + `interview_response='awaiting_reschedule'` + `meet_link=NULL` (Opção C — ADR-003 ampliado). State machine ganhou self-transition `awaiting_reschedule → awaiting_reschedule`. Drop REPROGRAM do CHECK + `funnel_stage_precedence()` (migration 195). Consumers atualizados: `WJAFunnelController` (workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED), `KanbanCard` (badge "REMARCADO" derivado de `interview_response='awaiting_reschedule' && meet_link === null`), `GetFunnelTableUseCase` (worker pediu reschedule classifica como PRE_SELECTED, não WITHDREW). E2E `qualified-interview-flow` atualizado. 0 linhas backfill (Discovery DBA). | ✅ Concluída 2026-05-25 | (pendente commit) / migration 195 |
-| **F7.c** | Drop coluna `application_status` (legada): localizar todos os writers (`'applied'` ativo com 2030 modificações em 7d; `'under_review'` ativo com 297 em 7d), remover/redirecionar escritas, deploy, esperar 7-14 dias estáveis, então `ALTER TABLE DROP COLUMN`. Também remover `funnelStage` (campo redundante com `internal_stage` desde F4) | ⏳ Pendente | — |
+| **F7.c** | Drop coluna `application_status` (legada, 100% redundante): atualizou 7 writers (MatchmakingService passou a escrever `source='system'`+`acquisition_channel='system'`, demais pararam de escrever); `alreadyApplied` no `/match-results` derivado de `source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'` (Opção 3 combinada); migration 196 dropa CONSTRAINT+INDEX+COLUMN. Também removeu `funnelStage` redundante do payload do Kanban (substituído integralmente por `internalStage`). 12.258 rows sem backfill (info redundante). ADR-004 criada (providers de prescreening plugáveis — Talentum é UM provider descartável). | ✅ Concluída 2026-05-25 | (pendente commit) / migration 196 |
 | **F8** | `encuadres.origen` → `import_source_audit` (auditoria de import histórico apenas, sem authority de classificação) | ⏳ Pendente | — |
 
 ## Referências cruzadas
 
 - ADR-001 (Accepted 2026-05-24): [`docs/adr/001-encuadres-unique-worker-job-posting-constraint.md`](../../adr/001-encuadres-unique-worker-job-posting-constraint.md) — UNIQUE composta em encuadres (parte da F5)
 - ADR-002 (Proposed 2026-05-23, refinado 2026-05-24): [`docs/adr/002-wja-canonico-encuadres-deprecada.md`](../../adr/002-wja-canonico-encuadres-deprecada.md) — promoção WJA a SSOT canônico + plano de 8 fases
-- ADR-003 (a criar em F7.a): regra de nomeio "toca encuadres → mantém prefix `Encuadre*`; toca WJA → renomeia `WJA*`"
+- ADR-003 (Accepted 2026-05-24, ampliado 2026-05-25 em F7.b): [`docs/adr/003-naming-wja-vs-encuadre.md`](../../adr/003-naming-wja-vs-encuadre.md) — convenção de naming WJA/Encuadre + destino canônico do reschedule (CONFIRMED + awaiting_reschedule)
+- ADR-004 (Accepted 2026-05-25, em F7.c): [`docs/adr/004-prescreening-providers-pluggable.md`](../../adr/004-prescreening-providers-pluggable.md) — providers de prescreening plugáveis; Talentum é UM deles, não o modelo
 - Decisão arquitetural: memória `~/.claude/projects/.../memory/project_wja_canonical_encuadres_deprecated.md`
 - Método de Discovery Profunda (aplicado em F7+): memória `feedback_discovery_profunda_metodo.md`
 - Histórico de bugs corrigidos: [POSTMORTEM_KANBAN_FUNNEL_BUGS.md](../../POSTMORTEM_KANBAN_FUNNEL_BUGS.md)

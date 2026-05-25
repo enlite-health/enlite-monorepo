@@ -236,8 +236,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     it('INSERT direto com worker INCOMPLETE_REGISTER + source=manual → falha', async () => {
       await expect(
         pool.query(
-          `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-           VALUES ($1, $2, 'applied', 'manual')`,
+          `INSERT INTO worker_job_applications (worker_id, job_posting_id, source, application_funnel_stage)
+           VALUES ($1, $2, 'manual', 'INVITED')`,
           [W.INC, vacancyId],
         ),
       ).rejects.toThrow(/cannot apply|REGISTERED|status=INCOMPLETE_REGISTER/);
@@ -247,8 +247,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       await expect(
         pool.query(
           `INSERT INTO worker_job_applications
-             (worker_id, job_posting_id, application_status, source, application_funnel_stage)
-           VALUES ($1, $2, 'applied', 'planilla_operativa', 'INVITED')`,
+             (worker_id, job_posting_id, source, application_funnel_stage)
+           VALUES ($1, $2, 'planilla_operativa', 'INVITED')`,
           [W.INC, vacancyId],
         ),
       ).resolves.toBeDefined();
@@ -264,8 +264,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       await expect(
         pool.query(
           `INSERT INTO worker_job_applications
-             (worker_id, job_posting_id, application_status, source, application_funnel_stage)
-           VALUES ($1, $2, 'applied', 'manual', 'INVITED')`,
+             (worker_id, job_posting_id, source, application_funnel_stage)
+           VALUES ($1, $2, 'manual', 'INVITED')`,
           [W.REG, vacancyId],
         ),
       ).resolves.toBeDefined();
@@ -276,8 +276,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       const workerId = await makeWorker('REGISTERED', 'upd-test');
       try {
         await pool.query(
-          `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source, application_funnel_stage)
-           VALUES ($1, $2, 'applied', 'manual', 'INITIATED')`,
+          `INSERT INTO worker_job_applications (worker_id, job_posting_id, source, application_funnel_stage)
+           VALUES ($1, $2, 'manual', 'INITIATED')`,
           [workerId, vacancyId],
         );
 
@@ -301,8 +301,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     it('UPDATE em WJA com source=planilla_operativa de worker INCOMPLETE → permitido (bypass histórico)', async () => {
       // Cria WJA via bypass histórico
       await pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source, application_funnel_stage)
-         VALUES ($1, $2, 'applied', 'planilla_operativa', 'INITIATED')`,
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, source, application_funnel_stage)
+         VALUES ($1, $2, 'planilla_operativa', 'INITIATED')`,
         [W.INC, vacancyId],
       );
 

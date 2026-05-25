@@ -318,10 +318,11 @@ export class SyncTalentumWorkersUseCase {
         // Ensure WJA exists. Sync detected this worker is enrolled in a project on the
         // Talentum dashboard — apenas o vínculo, sem garantia de que entrou no WhatsApp.
         // Stage = INVITED. ON CONFLICT DO NOTHING: webhook canônico (INITIATED+) preserva.
+        // F7.c (ADR-004): application_status removido.
         const wjaResult = await this.db.query(
           `INSERT INTO worker_job_applications
-             (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-           VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+             (worker_id, job_posting_id, application_funnel_stage, source)
+           VALUES ($1, $2, 'INVITED', 'talentum')
            ON CONFLICT (worker_id, job_posting_id) DO NOTHING
            RETURNING id`,
           [workerId, jobPostingId],

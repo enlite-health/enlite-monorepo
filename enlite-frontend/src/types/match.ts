@@ -12,7 +12,6 @@ export interface SavedCandidate {
   overallStatus: string | null;
   matchScore: number | null;
   internalNotes: string | null;    // llmReasoning salvo em worker_job_applications.internal_notes
-  applicationStatus: string;       // applied | under_review | shortlisted | etc.
   alreadyApplied: boolean;         // true = candidatou-se diretamente (não via match)
   messagedAt: string | null;       // ISO 8601 ou null se nunca notificado
 }

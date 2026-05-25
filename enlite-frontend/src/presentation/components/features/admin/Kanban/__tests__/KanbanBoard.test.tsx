@@ -79,7 +79,6 @@ function makeEncuadre(overrides: Partial<FunnelStages['INVITED'][0]> = {}) {
     talentumStatus: null,
     workZone: 'Palermo',
     redireccionamiento: null,
-    funnelStage: null,
     ...overrides,
   };
 }

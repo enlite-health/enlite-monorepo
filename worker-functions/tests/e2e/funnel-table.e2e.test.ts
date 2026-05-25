@@ -99,7 +99,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w1);
 
       expect(row).toBeDefined();
-      expect(row.funnelStage).toBe('INVITED');
+      expect(row.internalStage).toBe('INVITED');
       expect(row.whatsappStatus).toBe('NOT_SENT');
       expect(row.accepted).toBeNull();
     });
@@ -109,7 +109,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w2);
 
       expect(row).toBeDefined();
-      expect(row.funnelStage).toBe('INITIATED');
+      expect(row.internalStage).toBe('INITIATED');
       expect(row.whatsappStatus).toBe('DELIVERED');
     });
 
@@ -118,7 +118,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w3);
 
       expect(row).toBeDefined();
-      expect(row.funnelStage).toBe('COMPLETED');
+      expect(row.internalStage).toBe('COMPLETED');
       expect(row.whatsappStatus).toBe('READ');
     });
 
@@ -127,7 +127,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w4);
 
       expect(row).toBeDefined();
-      expect(row.funnelStage).toBe('SELECTED');
+      expect(row.internalStage).toBe('SELECTED');
       expect(row.whatsappStatus).toBe('REPLIED');
       expect(row.accepted).toBe(true);
       expect(row.interviewResponse).toBe('confirmed');
@@ -138,7 +138,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w5);
 
       expect(row).toBeDefined();
-      expect(row.funnelStage).toBe('REJECTED');
+      expect(row.internalStage).toBe('REJECTED');
       expect(row.whatsappStatus).toBe('REPLIED');
       expect(row.accepted).toBe(false);
       expect(row.interviewResponse).toBe('declined');
@@ -307,8 +307,8 @@ async function seedFixtures(pool: Pool): Promise<void> {
   for (const row of wjaRows) {
     await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_funnel_stage, application_status, source, interview_response)
-       VALUES ($1, $2, $3, 'applied', 'manual', $4)
+         (worker_id, job_posting_id, application_funnel_stage, source, interview_response)
+       VALUES ($1, $2, $3, 'manual', $4)
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          application_funnel_stage = EXCLUDED.application_funnel_stage,
          interview_response       = EXCLUDED.interview_response`,

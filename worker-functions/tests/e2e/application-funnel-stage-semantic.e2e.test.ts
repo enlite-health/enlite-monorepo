@@ -74,8 +74,8 @@ describe('application_funnel_stage semântica (migration 187)', () => {
   it('[S1] trackChannel: INSERT com stage=INVITED (worker clicou no link público)', async () => {
     await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, source, acquisition_channel, application_funnel_stage)
-       VALUES ($1, $2, 'applied', 'manual', 'site', 'INVITED')
+         (worker_id, job_posting_id, source, acquisition_channel, application_funnel_stage)
+       VALUES ($1, $2, 'manual', 'site', 'INVITED')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          acquisition_channel = CASE
            WHEN worker_job_applications.acquisition_channel IS NULL THEN EXCLUDED.acquisition_channel
@@ -108,8 +108,8 @@ describe('application_funnel_stage semântica (migration 187)', () => {
   it('[S2] sync Talentum: INSERT com stage=INVITED (worker detectado no dashboard)', async () => {
     const result = await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-       VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+         (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'INVITED', 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING
        RETURNING id`,
       [workerId, jobPostingId],
@@ -140,16 +140,16 @@ describe('application_funnel_stage semântica (migration 187)', () => {
     // Pré-popula WJA em INITIATED (veio do webhook)
     await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-       VALUES ($1, $2, 'applied', 'INITIATED', 'talentum')`,
+         (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'INITIATED', 'talentum')`,
       [workerId, jobPostingId],
     );
 
     // Re-sync tenta inserir INVITED — conflito ignora, INITIATED preservado
     const result = await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-       VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+         (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'INVITED', 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING
        RETURNING id`,
       [workerId, jobPostingId],
@@ -179,8 +179,8 @@ describe('application_funnel_stage semântica (migration 187)', () => {
   it('[S4] INSERT sem application_funnel_stage viola NOT NULL constraint (migration 187)', async () => {
     await expect(
       pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status)
-         VALUES ($1, $2, 'applied')`,
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, source)
+         VALUES ($1, $2, 'manual')`,
         [workerId, jobPostingId],
       ),
     ).rejects.toMatchObject({ code: '23502' }); // not_null_violation

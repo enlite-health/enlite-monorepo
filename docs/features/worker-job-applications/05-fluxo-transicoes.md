@@ -10,7 +10,7 @@ Sete transições cobrem todo o ciclo de vida da WJA, do convite inicial à conf
 | **Ator** | `VacancyAutoInviteHandler` → `MatchmakingService.saveMatchResults` |
 | **Endpoint** | (interno, event-driven) |
 | **Pré-condições** | Vaga existe; worker tem perfil ativo com área geográfica compatível; ainda não existe WJA `(worker_id, job_posting_id)` |
-| **Pós-condições** | WJA criada com `application_funnel_stage='INVITED'`, `source='talent_search'`; encuadre mínimo criado pelo trigger 189 |
+| **Pós-condições** | WJA criada com `application_funnel_stage='INVITED'`, `source='system'`, `acquisition_channel='system'` (F7.c, ADR-004); encuadre mínimo criado pelo trigger 189 |
 | **Idempotência** | UPSERT com `ON CONFLICT (worker_id, job_posting_id) DO NOTHING`. Segundo disparo é no-op. |
 
 ## T2 — Prestador cadastrado clica no link público → INVITED

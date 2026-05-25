@@ -53,7 +53,6 @@ const MOCK_FUNNEL = {
           workZone: 'Belgrano',
           redireccionamiento: null,
           acquisitionChannel: null,
-          funnelStage: 'IN_PROGRESS',
         },
       ],
       COMPLETED: [],

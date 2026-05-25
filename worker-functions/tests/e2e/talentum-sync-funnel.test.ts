@@ -85,8 +85,8 @@ describe('talentum-sync-funnel (TD-035 simplificado)', () => {
     // Replicar o INSERT do SyncTalentumWorkersUseCase.linkToCases (application_funnel_stage='INVITED')
     const result = await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-       VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+         (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'INVITED', 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING
        RETURNING id`,
       [workerId, jobPostingId],
@@ -118,16 +118,16 @@ describe('talentum-sync-funnel (TD-035 simplificado)', () => {
   it('[Teste 2] sync NÃO atualiza stage de WJA existente em QUALIFIED — ON CONFLICT DO NOTHING preserva', async () => {
     // Pré-popula WJA em QUALIFIED (estado avançado, veio do webhook)
     await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-       VALUES ($1, $2, 'applied', 'QUALIFIED', 'talentum')`,
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'QUALIFIED', 'talentum')`,
       [workerId, jobPostingId],
     );
 
     // Re-sync: INSERT com ON CONFLICT DO NOTHING — inclui INVITED mas conflito preserva QUALIFIED
     const result = await pool.query(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, application_funnel_stage, source)
-       VALUES ($1, $2, 'applied', 'INVITED', 'talentum')
+         (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'INVITED', 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING
        RETURNING id`,
       [workerId, jobPostingId],
