@@ -11,7 +11,7 @@ A tela administrativa de vagas exibe um Kanban com **7 colunas fixas**. Estados 
 | 3 | **IN_PROGRESS** | `IN_PROGRESS` | — | ❌ Não droppable (controle Talentum via webhook) |
 | 4 | **COMPLETADO** | `COMPLETED`, `QUALIFIED`, `IN_DOUBT` | 🟢 "Aprovado Talentum" (QUALIFIED) · 🟡 "Em dúvida" (IN_DOUBT) · ⚪ "Aguardando análise" (COMPLETED puro) | ❌ Não droppable (controle Talentum via webhook) |
 | 5 | **CONFIRMADO** | `CONFIRMED` | — | ✅ Droppable |
-| 6 | **SELECTED** | `SELECTED`, `PLACED` | — | ✅ Droppable |
+| 6 | **SELECTED** | `SELECTED` | — | ✅ Droppable |
 | 7 | **REJECTED** | `REJECTED` | — | ✅ Droppable + acesso via botão "Rejeitar" no card |
 
 **Regra de drag:** as 3 colunas intermediárias (INITIATED, IN_PROGRESS, COMPLETADO) refletem ações do prestador no fluxo Talentum — só são alteradas via webhook. As outras 4 (INVITADO, CONFIRMADO, SELECTED, REJECTED) aceitam drag manual do admin pra correções, casos especiais ou ações terminais.
@@ -30,9 +30,9 @@ Como REJECTED é estado terminal negativo e exige justificativa, há mecanismo d
 |---|---|---|
 | `NOT_QUALIFIED` | Auto-move para `REJECTED` | Talentum reprovou. Vira REJECTED automaticamente na F3 (migration 191). Removido do CHECK. |
 | `RECHAZADO` | Consolidado em `REJECTED` | Duplicata em espanhol do mesmo estado. Eliminado na F2 (migration 190). |
-| `REPROGRAM` | **Exibido na coluna COMPLETADO** (agrupado) com badge amber "REMARCADO" no card | **WRITER ATIVO** em `HandleReminderResponseUseCase.handleRescheduleYes:192` (worker pede reschedule via WhatsApp). Estado transiente. Discovery F7 (2026-05-24) confirmou: 0 linhas no snapshot DBA mas escrita ativa. Remoção em **F7.b** após decisão de produto sobre destino canônico (ADR-003 ampliado). |
+| `REPROGRAM` | **REMOVIDO em F7.b (migration 195)** | Workers que pediam reschedule via WhatsApp agora ficam em `application_funnel_stage='CONFIRMED'` com `interview_response='awaiting_reschedule'` + `interview_meet_link=NULL` como distinguidor. Badge "🔄 REMARCADO" no card é derivado dessas duas flags (não mais do stage). ADR-003 seção F7.b. |
 | `ANALYZED` | **Nunca esteve no CHECK de `worker_job_applications`** | É valor de transporte interno do mapper Talentum (`talentum_prescreenings.status`). `ProcessTalentumPrescreening` retorna `'ANALYZED'` quando `statusLabel='PENDING'` mas explicitamente pula upsert em WJA. Limpeza do tipo TS + `funnel_stage_precedence()` em **F7.a** (noop no banco). |
-| `PLACED` | Agrupado com SELECTED na coluna SELECTED (legado) | 0 writers ativos após F6 (única fonte era `syncToWorkerJobApplications` deprecada). 0 linhas em prod. Remoção em **F7.a** com UPDATE preventivo defensivo. |
+| `PLACED` | **REMOVIDO em F7.a (migration 194)** | 0 writers ativos após F6 (única fonte era `syncToWorkerJobApplications` deprecada). 0 linhas em prod. |
 
 ## Precedência canônica (não-regressão)
 
@@ -41,17 +41,17 @@ Stages têm ordem fixa — uma WJA nunca regride espontaneamente para um estado 
 ```
 INVITED(0) < INITIATED(1) < IN_PROGRESS(2) < COMPLETED(3)
 < IN_DOUBT(4)
-< QUALIFIED(5) = REPROGRAM(5)
+< QUALIFIED(5)
 < CONFIRMED(6)
-< SELECTED(7) = PLACED(7) = REJECTED(7)
+< SELECTED(7) = REJECTED(7)
 ```
 
 Stages removidos do enum em fases anteriores:
 - `RECHAZADO` — consolidado em `REJECTED` na F2 (migration 190)
 - `NOT_QUALIFIED` — auto-rejeitado pra `REJECTED` na F3 (migration 191)
 - `ANALYZED` — nunca esteve no CHECK de WJA (transporte interno do mapper Talentum). Limpeza de tipo TS + função SQL em F7.a (noop no banco)
-- `PLACED` — pendente de remoção em F7.a (0 writers ativos pós-F6)
-- `REPROGRAM` — pendente de remoção em F7.b (writer ativo via WhatsApp reschedule)
+- `PLACED` — removido em F7.a (migration 194 — 0 writers ativos pós-F6, 0 linhas em prod)
+- `REPROGRAM` — removido em F7.b (migration 195 — writer migrado pra `interview_response='awaiting_reschedule'` com `funnel_stage=CONFIRMED` preservado, 0 linhas em prod)
 
 Qualquer upsert que tente baixar a precedência é silenciosamente ignorado pelo SQL — não levanta erro, apenas mantém o estado atual.
 
@@ -93,4 +93,6 @@ Detalhes da transição em [05-fluxo-transicoes.md](05-fluxo-transicoes.md) (T6)
 
 ## Histórico de decisões
 
-Em 2026-05-23, o user (Gabriel) inicialmente escolheu "CONFIRMADO terminal" — Kanban com 5 colunas e SELECTED/REJECTED fora. Em 2026-05-24, ao detalhar a implementação de F4, a decisão foi revisada para **manter 7 colunas com SELECTED e REJECTED visíveis**, com badges adicionados apenas em COMPLETADO. Razão: visibilidade operacional dos terminais — admin precisa ver quem foi selecionado/rejeitado sem trocar de tela. SELECTED e PLACED continuam agrupados na mesma coluna (PLACED será removido do enum em F7).
+Em 2026-05-23, o user (Gabriel) inicialmente escolheu "CONFIRMADO terminal" — Kanban com 5 colunas e SELECTED/REJECTED fora. Em 2026-05-24, ao detalhar a implementação de F4, a decisão foi revisada para **manter 7 colunas com SELECTED e REJECTED visíveis**, com badges adicionados apenas em COMPLETADO. Razão: visibilidade operacional dos terminais — admin precisa ver quem foi selecionado/rejeitado sem trocar de tela.
+
+Em F7.a (2026-05-24), `PLACED` foi removido do CHECK e da função de precedência (0 linhas em prod, sync F6 morta). Em F7.b (2026-05-25), `REPROGRAM` foi removido do CHECK e do precedence — workers que pedem reschedule agora ficam em `CONFIRMED` + `interview_response='awaiting_reschedule'` (ver ADR-003 seção F7.b). O badge "🔄 REMARCADO" no card permanece, mas é derivado dessas duas flags em vez do stage.

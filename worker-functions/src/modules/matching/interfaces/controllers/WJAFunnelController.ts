@@ -58,6 +58,7 @@ export class WJAFunnelController {
            e.redireccionamiento,
            e.id AS encuadre_id,
            wja.match_score,
+           wja.interview_response,
            wja.acquisition_channel,
            wja.application_funnel_stage AS funnel_stage,
            CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
@@ -110,6 +111,7 @@ export class WJAFunnelController {
           rejectionReasonCategory: row.rejection_reason_category,
           rejectionReason: row.rejection_reason,
           matchScore: row.match_score,
+          interviewResponse: row.interview_response ?? null,
           acquisitionChannel: row.acquisition_channel ?? null,
           talentumStatus: row.talentum_status ?? null,
           workZone: row.work_zone,
@@ -125,7 +127,8 @@ export class WJAFunnelController {
           stages.REJECTED.push(item);
         } else if (stage === 'CONFIRMED') {
           stages.CONFIRMED.push(item);
-        } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'REPROGRAM'].includes(stage)) {
+        } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) {
+          // REPROGRAM removido em F7.b — workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED
           stages.COMPLETED.push(item);
         } else if (stage === 'IN_PROGRESS') {
           stages.IN_PROGRESS.push(item);

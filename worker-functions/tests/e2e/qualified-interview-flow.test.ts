@@ -351,7 +351,7 @@ describe('Qualified Interview Flow — Full E2E (Steps 4-8)', () => {
       expect(outbox).toHaveLength(1);
     });
 
-    it('reschedule_yes → REPROGRAM + interview data cleared', async () => {
+    it('reschedule_yes → awaiting_reschedule + CONFIRMED preservado + interview data cleared (F7.b)', async () => {
       // Simular outbox do reschedule com twilio_sid
       reprogramRescheduleSid = 'SM_REPROGRAM_RESCHED_' + Date.now();
       await pool.query(
@@ -380,8 +380,10 @@ describe('Qualified Interview Flow — Full E2E (Steps 4-8)', () => {
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [workerId, reprogramJobId],
       );
-      expect(rows[0].interview_response).toBe('pending');
-      expect(rows[0].application_funnel_stage).toBe('REPROGRAM');
+      // F7.b (ADR-003): REPROGRAM removido. Worker fica em CONFIRMED com
+      // interview_response='awaiting_reschedule' + meet_link=NULL como distinguidor.
+      expect(rows[0].interview_response).toBe('awaiting_reschedule');
+      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
       expect(rows[0].interview_meet_link).toBeNull();
       expect(rows[0].interview_datetime).toBeNull();
     });

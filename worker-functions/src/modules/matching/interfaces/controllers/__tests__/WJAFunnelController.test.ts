@@ -113,7 +113,7 @@ describe('WJAFunnelController', () => {
       expect(stages.IN_PROGRESS).toHaveLength(1);
       expect(stages.IN_PROGRESS[0].id).toBe('e3');
 
-      // COMPLETED agrupa COMPLETED + QUALIFIED + IN_DOUBT + REPROGRAM (F3: NOT_QUALIFIED removido)
+      // COMPLETED agrupa COMPLETED + QUALIFIED + IN_DOUBT (F3: NOT_QUALIFIED removido; F7.b: REPROGRAM removido)
       expect(stages.COMPLETED).toHaveLength(3);
       const completedIds = stages.COMPLETED.map((e: any) => e.id);
       expect(completedIds).toContain('e4');

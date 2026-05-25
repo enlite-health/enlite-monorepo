@@ -26,36 +26,55 @@ Invariante mantida pelo trigger `trg_ensure_encuadre_on_wja_insert` (migration 1
 - `dedup_hash` UNIQUE em `encuadres` impede duplicatas.
 - Para alcançar 1:1 `encuadres` ↔ `worker_job_applications`, a fase F5 inclui consolidação de duplicatas históricas (query de auditoria + merge guiado).
 
-## REPROGRAMAR — comportamento canônico (HOJE)
+## REPROGRAMAR — comportamento canônico (após F7.b, migration 195)
 
 Quando o prestador pede para reagendar a entrevista via WhatsApp (botão `reschedule_yes` no template Twilio):
 
-### O que acontece HOJE (estado real, descoberto pela Discovery F7)
+### Comportamento atual
 
 1. **Edita a WJA existente.** Não cria nova linha (UNIQUE composta + ON CONFLICT garantem).
-2. `HandleReminderResponseUseCase.handleRescheduleYes:188-198` executa UPDATE:
-   - `application_funnel_stage = 'REPROGRAM'` (writer ATIVO — estado transiente)
-   - `interview_response = 'pending'`
+2. `HandleReminderResponseUseCase.handleRescheduleYes` executa UPDATE:
+   - `application_funnel_stage` **permanece `CONFIRMED`** (não muda)
+   - `interview_response = 'awaiting_reschedule'`
    - `interview_meet_link = NULL`, `interview_datetime = NULL`, `interview_slot_id = NULL` (libera slot)
 3. Libera o slot do `interview_slots` (decrement booked_count).
-4. Envia mensagem WhatsApp de confirmação.
-5. **Worker fica em REPROGRAM** até admin/automação reenviar nova rodada de meet links (não há fluxo automático hoje — admin precisa intervir manualmente via Kanban).
+4. Envia mensagem WhatsApp de confirmação (`qualified_reprogram_confirm` — dedup atomic).
+5. **Worker fica em CONFIRMED + awaiting_reschedule + meet_link=NULL** até admin reenviar nova rodada de meet links manualmente via Kanban (não há fluxo automático).
+
+### Distinguidor entre 3 cenários de CONFIRMED
+
+| Cenário | `funnel_stage` | `interview_response` | `interview_meet_link` |
+|---|---|---|---|
+| Entrevista agendada e confirmada | `CONFIRMED` | `confirmed` | preenchido |
+| "Não confirmo" (confirm_no) — aguardando decisão sobre reschedule | `CONFIRMED` | `awaiting_reschedule` | preenchido (ainda) |
+| Pediu reschedule (reschedule_yes) — aguardando novo slot | `CONFIRMED` | `awaiting_reschedule` | **NULL** |
+
+O Kanban renderiza um badge "🔄 REMARCADO" no card quando `interview_response='awaiting_reschedule' && meet_link === null`.
 
 ### O que NÃO acontece
 
 - ❌ Nova linha em `worker_job_applications` (UNIQUE bloqueia).
-- ❌ Nova linha em `encuadres` (comportamento legado pré-2026-05-23, F5 garantiu via constraint UNIQUE composta).
+- ❌ Nova linha em `encuadres` (F5 — constraint UNIQUE composta).
+- ❌ `application_funnel_stage` NÃO é tocado (permanece CONFIRMED). `REPROGRAM` não existe mais no enum (F7.b).
 
-### O que VAI MUDAR em F7.b
+### State machine
 
-F7.b vai refatorar `HandleReminderResponseUseCase.handleRescheduleYes` após decisão de produto (ADR-003 ampliado):
-- Opção A: stage volta pra `QUALIFIED` (reativa o trigger `funnel_stage.qualified` → novo envio de meet links automático)
-- Opção B: stage vai pra `REJECTED` automaticamente (admin tem que reativar manualmente se quiser dar segunda chance)
-- Opção C: stage fica em `CONFIRMED` mas com `interview_response='awaiting_reschedule'` (flag separado, não muda stage)
+`InterviewStateMachine.canTransition` permite:
+- `confirmed → awaiting_reschedule` (worker disse "No" no reminder)
+- `awaiting_reschedule → awaiting_reschedule` (self-loop idempotente — múltiplos cliques em reschedule_yes)
+- `awaiting_reschedule → declined` (worker não quer reagendar)
 
-A decisão será documentada em **ADR-003** antes da implementação. Após a refatoração, `REPROGRAM` será removido do enum + CHECK + função SQL.
+A transição `awaiting_reschedule → pending` foi removida em F7.b (era o caminho legado para `REPROGRAM`).
 
-> **Nota:** doc anterior afirmava "REPROGRAM substituído por `interview_response='awaiting_reschedule'`" — Discovery F7 (DBA) provou que **`awaiting_reschedule` nunca foi gravado em prod** (0 linhas). A afirmação era estado desejado/futuro, não atual.
+### Histórico da decisão
+
+3 opções foram avaliadas em F7.b (decisão registrada em ADR-003 seção F7.b):
+
+| Opção | Destino | Decisão |
+|---|---|---|
+| A | `QUALIFIED` (volta ao pool) | Rejeitada — perde sinalização de agendamento prévio cancelado |
+| B | `REJECTED` (auto-rejeita) | Rejeitada — pune comportamento desejável (worker quer continuar) |
+| **C ✅** | `CONFIRMED` + `interview_response='awaiting_reschedule'` | **Escolhida** — preserva semântica do funil; flag carrega micro-estado do reagendamento |
 
 ## Histórico de mudanças
 

@@ -1,9 +1,10 @@
-# ADR 003: Convenção de naming — WJA* vs Encuadre*
+# ADR 003: Convenção de naming WJA*/Encuadre* + destino canônico do reschedule
 
 - **Status:** Accepted
-- **Data:** 2026-05-24
-- **Decisor(es):** Gabriel + PO + Architect (decisão tomada em 2026-05-24, aplicada em F7.a)
-- **Contexto técnico:** worker-functions/src/modules/matching + enlite-frontend/src/hooks/admin + enlite-frontend/src/presentation
+- **Data inicial:** 2026-05-24 (F7.a — regra de naming)
+- **Ampliado:** 2026-05-25 (F7.b — destino canônico do reschedule via WhatsApp)
+- **Decisor(es):** Gabriel + PO + Architect
+- **Contexto técnico:** worker-functions/src/modules/matching + worker-functions/src/modules/notification + enlite-frontend/src/hooks/admin + enlite-frontend/src/presentation
 
 ## Context
 
@@ -104,12 +105,103 @@ Evita renomeio mas perpetua a confusão. **Rejeitado:** F6 tornou a separação 
 
 Renomear de volta é puro `git revert` (pure code, sem migration). Imports voltam, classe volta. Sem perda de dados. Shims de re-export em `EncuadreFunnelController.ts` adicionam resiliência extra durante transição.
 
+---
+
+## F7.b — destino canônico do estado `REPROGRAM` (decisão de 2026-05-25)
+
+### Contexto
+
+ADR-002 prevê a remoção do estado `REPROGRAM` do enum `application_funnel_stage` em F7.b. O writer ativo é exclusivamente `HandleReminderResponseUseCase.handleRescheduleYes:188-200` (Discovery Profunda 2026-05-25, 5 fontes), disparado quando o worker clica `reschedule_yes` no template WhatsApp `qualified_reminder_reschedule`.
+
+**Estado em prod:**
+- 0 linhas em `worker_job_applications` com `application_funnel_stage='REPROGRAM'`
+- 0 linhas em `worker_job_application_stage_history` mencionando REPROGRAM
+- Migration 123 (criação do estado) aplicada em 2026-05-24
+- Conclusão: feature recém-criada, sem dívida histórica — refator cirúrgico
+
+**3 opções consideradas para o destino canônico:**
+
+| Opção | funnel_stage | interview_response | Avaliação |
+|---|---|---|---|
+| A | `QUALIFIED` | `pending` | Volta ao pool. Conceitualmente correto (worker continua qualificado), mas perde a sinalização de que houve um agendamento prévio cancelado pelo worker |
+| B | `REJECTED` | `awaiting_reschedule` | Conservador. Pune comportamento desejável (worker quer continuar). Esconde candidato qualificado |
+| **C (escolhida)** | `CONFIRMED` | `awaiting_reschedule` | Worker permanece no funil canônico; o flag em `interview_response` carrega a semântica do reschedule. Aproveita estado já existente da state machine |
+
+### Decision
+
+**O estado REPROGRAM é eliminado. Quando worker clica reschedule_yes, a WJA permanece com `application_funnel_stage='CONFIRMED'` e o estado é representado exclusivamente por `interview_response='awaiting_reschedule'` combinado com `interview_meet_link=NULL`.**
+
+**Diff de comportamento em `handleRescheduleYes`:**
+
+```diff
+ UPDATE worker_job_applications
+-SET interview_response       = 'pending',
+-    application_funnel_stage = 'REPROGRAM',
++SET interview_response       = 'awaiting_reschedule',
++    -- application_funnel_stage NÃO é tocado (permanece CONFIRMED)
+     interview_responded_at   = NOW(),
+     interview_meet_link      = NULL,
+     interview_datetime       = NULL,
+     interview_slot_id        = NULL,
+     updated_at               = NOW()
+```
+
+### Distinguidor entre os 3 cenários de CONFIRMED
+
+| Cenário | `funnel_stage` | `interview_response` | `interview_meet_link` |
+|---|---|---|---|
+| Entrevista agendada e confirmada pelo worker | `CONFIRMED` | `confirmed` | preenchido |
+| Worker disse "não confirmo" (confirm_no) — aguardando resposta sobre reschedule | `CONFIRMED` | `awaiting_reschedule` | preenchido (ainda) |
+| Worker pediu reschedule (reschedule_yes) — aguardando novo agendamento | `CONFIRMED` | `awaiting_reschedule` | **NULL** |
+
+### Mudanças derivadas
+
+1. **`InterviewStateMachine.canTransition`** passa a permitir self-transition `awaiting_reschedule → awaiting_reschedule` (idempotente para múltiplos cliques em reschedule_yes)
+
+2. **`WJAFunnelController.getEncuadreFunnel`** remove `'REPROGRAM'` do array de COMPLETED bucket. Workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED do Kanban (não mais COMPLETADO).
+
+3. **`KanbanCard` (frontend)** muda a condição do badge "🔄 REMARCADO":
+   - **De:** `funnelStage === 'REPROGRAM'`
+   - **Para:** `interviewResponse === 'awaiting_reschedule' && meetLink === null`
+   - Requer expor `interview_response` na response da query do controller
+
+4. **`GetFunnelTableUseCase` audit table** — worker em CONFIRMED+awaiting_reschedule+meet_link=NULL é classificado como **PRE_SELECTED** (não WITHDREW como era REPROGRAM). Justificativa: worker não desistiu, pediu remarcação. Continua candidato ativo.
+
+5. **Type unions** removem `'REPROGRAM'`: `FunnelStage` (FunnelStageMapper.ts), `ApplicationFunnelStage` (WorkerJobApplication.ts), arrays em `applicationFunnelStages.ts`, entry em `TalentumFunnelStageMapper`.
+
+6. **Migration 195** drop REPROGRAM do CHECK constraint em `application_funnel_stage` + remove da função `funnel_stage_precedence()`. **Sem backfill** (0 rows em prod).
+
+7. **`funnel_stage_precedence()`** mantém peso 6 para CONFIRMED (não muda); peso 5 (que era de REPROGRAM/QUALIFIED) fica somente para QUALIFIED.
+
+### Loop de reschedule (cenário não-feliz)
+
+Worker pode clicar reschedule_yes múltiplas vezes (recebe o template `qualified_reprogram_confirm` mas insiste). Self-transition `awaiting_reschedule → awaiting_reschedule` é idempotente — UPDATE simplesmente atualiza `interview_responded_at` + `updated_at`. Não há loop ou regressão.
+
+Reenvio automático de meet links **não** é implementado em F7.b. Admin continua intervindo manualmente no Kanban (mesmo comportamento de antes — REPROGRAM nunca teve automação de reenvio).
+
+### Consequences específicas de F7.b
+
+**Positivas:**
+- 1 estado a menos no enum (de 11 para 10 valores em `application_funnel_stage`)
+- Semântica unificada: estados do funil refletem progresso macro; `interview_response` carrega micro-estados do reagendamento
+- Sem dívida histórica (0 rows pra backfillar)
+- Visualização Kanban mais coerente: worker que pediu reschedule não some no bucket COMPLETADO; continua visível em CONFIRMED com sinalização
+
+**Negativas:**
+- `KanbanCard` agora precisa de 2 campos (`interviewResponse` + `meetLink`) pra decidir badge — antes precisava só de `funnelStage`. Mais acoplado à API
+- Auditoria SQL ad-hoc de "quem pediu reschedule" requer query composta (`ir='awaiting_reschedule' AND meet_link IS NULL`) — antes era um simples `funnel_stage='REPROGRAM'`
+
+**Neutras:**
+- Endpoints HTTP não mudam
+- Frontend continua chamando endpoints atuais; só muda renderização interna do badge
+
 ## Implementation Notes
 
-- Migrations envolvidas: nenhuma específica deste ADR
-- Follow-up TD: nenhum
-- Aplicação inicial: F7.a (3 renomeios + shims de re-export)
-- Futuras aplicações: qualquer nova classe/hook no módulo `matching` segue a regra
+- Migrations envolvidas: **migration 195** (F7.b — drop REPROGRAM do CHECK em `application_funnel_stage` + remove da função `funnel_stage_precedence()`)
+- Follow-up TD: nenhum específico (loops e fluxo manual de reenvio de meet links continuam como antes)
+- Aplicação inicial F7.a (2026-05-24): 3 renomeios + shims removidos
+- Aplicação F7.b (2026-05-25): destino canônico do reschedule + remoção de REPROGRAM end-to-end
+- Futuras aplicações: qualquer nova classe/hook no módulo `matching` segue a regra de naming
 
 ## References
 

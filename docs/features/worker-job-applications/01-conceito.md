@@ -45,8 +45,8 @@ INVITED → INITIATED → IN_PROGRESS → COMPLETED → (QUALIFIED | IN_DOUBT)
 
 Notas:
 - `NOT_QUALIFIED` foi removido em F3 (migration 191) — auto-vira REJECTED automaticamente no `ProcessTalentumPrescreening` quando Talentum reporta esse status.
-- `REPROGRAM` é estado transiente quando worker pede reagendamento via WhatsApp (`HandleReminderResponseUseCase`) — escrito ativamente hoje. Será removido em F7.b após decisão de produto sobre o destino canônico.
-- `ANALYZED` é valor de transporte interno do mapper Talentum; nunca foi persistido em `worker_job_applications.application_funnel_stage`. Será limpo do tipo TS em F7.a.
+- `REPROGRAM` foi removido em F7.b (migration 195). Worker que pede reagendamento via WhatsApp agora fica em `application_funnel_stage='CONFIRMED'` com `interview_response='awaiting_reschedule'` + `interview_meet_link=NULL` como distinguidor. Ver ADR-003 seção F7.b.
+- `ANALYZED` é valor de transporte interno do mapper Talentum; nunca foi persistido em `worker_job_applications.application_funnel_stage`. Limpeza do tipo TS feita em F7.a.
 
 Estados intermediários e a representação visual completa estão em [04-estados-funil-kanban.md](04-estados-funil-kanban.md).
 

@@ -104,4 +104,4 @@ Quando T5.b classifica como `NOT_QUALIFIED`, `ProcessTalentumPrescreening` autom
 
 ## REPROGRAMAR (re-agendamento da entrevista)
 
-Não é transição de stage canônica — é **edição da WJA existente**. Detalhes em [06-regra-cardinalidade.md](06-regra-cardinalidade.md).
+Não é transição de stage canônica — é **edição da WJA existente**. Após F7.b (migration 195), `application_funnel_stage` permanece `CONFIRMED` e o estado é representado por `interview_response='awaiting_reschedule'` + `interview_meet_link=NULL`. Detalhes em [06-regra-cardinalidade.md](06-regra-cardinalidade.md) e ADR-003 seção F7.b.

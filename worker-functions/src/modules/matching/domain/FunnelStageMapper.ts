@@ -23,7 +23,8 @@ export type FunnelStage =
   | 'QUALIFIED'
   | 'NOT_QUALIFIED'
   | 'IN_DOUBT'
-  | 'REPROGRAM'
+  // 'REPROGRAM' removido em F7.b (migration 195) — worker reschedule agora vive em
+  // CONFIRMED + interview_response='awaiting_reschedule' (ADR-003).
   | 'CONFIRMED'
   | 'SELECTED'
   // 'PLACED' removido em F7.a (migration 194) — 0 writers ativos pós-F6,

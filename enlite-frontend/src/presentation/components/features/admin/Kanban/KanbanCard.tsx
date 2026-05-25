@@ -17,6 +17,10 @@ interface KanbanCardProps {
   interviewTime: string | null;
   stage: string;
   funnelStage: string | null;
+  /** F7.b: interview_response from WJA — 'awaiting_reschedule' triggers the reschedule badge */
+  interviewResponse?: string | null;
+  /** F7.b: meet link assigned to the WJA — null means no slot assigned yet */
+  meetLink?: string | null;
   acquisitionChannel?: string | null;
   internalStage?: string | null;
   onWorkerClick?: (workerId: string) => void;
@@ -64,7 +68,8 @@ export function KanbanCard({
   interviewDate,
   interviewTime,
   stage,
-  funnelStage,
+  interviewResponse,
+  meetLink,
   acquisitionChannel,
   internalStage,
   onWorkerClick,
@@ -175,7 +180,8 @@ export function KanbanCard({
         )}
       </div>
 
-      {funnelStage === 'REPROGRAM' && (
+      {/* F7.b: REPROGRAM substituído por (interviewResponse='awaiting_reschedule' && meetLink === null) */}
+      {interviewResponse === 'awaiting_reschedule' && !meetLink && (
         <div className="mt-2">
           <span data-testid="reprogram-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">
             {t('admin.kanban.reprogramBadge')}

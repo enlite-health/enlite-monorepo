@@ -101,6 +101,8 @@ INVITED(0) < INITIATED(1) < IN_PROGRESS(2) < COMPLETED(3)
 
 Eventos com precedência ≥ atual passam; precedência menor mantém o stage atual. Stage desconhecido = -1 (nunca substitui).
 
+> **Nota (snapshot histórico do fix):** a fórmula acima reflete o enum no momento do bug. Após F2/F3/F7.a/F7.b, os valores `RECHAZADO`, `NOT_QUALIFIED`, `PLACED` e `REPROGRAM` foram removidos do CHECK e do `funnel_stage_precedence()`. Forma atual em [features/worker-job-applications/04-estados-funil-kanban.md](features/worker-job-applications/04-estados-funil-kanban.md).
+
 **Cobertura de regressão:**
 - [`talentum-prescreening-funnel-regression.test.ts`](../worker-functions/tests/e2e/talentum-prescreening-funnel-regression.test.ts) — testes D, E, #6, #7
 

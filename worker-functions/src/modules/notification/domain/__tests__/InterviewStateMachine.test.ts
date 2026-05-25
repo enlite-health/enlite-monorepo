@@ -28,8 +28,8 @@ describe('InterviewStateMachine', () => {
       expect(canTransition('confirmed', 'awaiting_reschedule')).toBe(true);
     });
 
-    it('allows awaiting_reschedule → pending (REPROGRAM)', () => {
-      expect(canTransition('awaiting_reschedule', 'pending')).toBe(true);
+    it('allows awaiting_reschedule → awaiting_reschedule (self-loop idempotente F7.b)', () => {
+      expect(canTransition('awaiting_reschedule', 'awaiting_reschedule')).toBe(true);
     });
 
     it('allows awaiting_reschedule → declined (não quer reagendar)', () => {
@@ -40,8 +40,12 @@ describe('InterviewStateMachine', () => {
       expect(canTransition('awaiting_reason', 'declined')).toBe(true);
     });
 
-    it('blocks confirmed → pending directly (precisa passar por awaiting_reschedule)', () => {
+    it('blocks confirmed → pending directly (REPROGRAM removido em F7.b)', () => {
       expect(canTransition('confirmed', 'pending')).toBe(false);
+    });
+
+    it('blocks awaiting_reschedule → pending (REPROGRAM removido em F7.b)', () => {
+      expect(canTransition('awaiting_reschedule', 'pending')).toBe(false);
     });
 
     it('blocks awaiting_reschedule → confirmed', () => {

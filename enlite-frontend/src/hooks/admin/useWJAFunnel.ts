@@ -22,6 +22,8 @@ interface FunnelEncuadre {
   interviewDate: string | null;
   interviewTime: string | null;
   meetLink: string | null;
+  /** F7.b: interview_response from worker_job_applications — 'awaiting_reschedule' signals reschedule request */
+  interviewResponse?: string | null;
   resultado: string | null;
   attended: boolean | null;
   rejectionReasonCategory: string | null;
