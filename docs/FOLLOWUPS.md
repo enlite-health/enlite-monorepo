@@ -1446,3 +1446,29 @@ Resultado: se algum cliente (frontend, integração, script) mandar `rejectionRe
 - Atualizar smoke test pra cobrir o caminho permitido
 
 **Relacionado:** F4 (botão Rejeitar), `WJAFunnelController.moveEncuadre`, smoke test `wja-full-flow-2.e2e.test.ts`.
+
+---
+
+### TD-049 — `run-migration-prod.sh` não registra em `schema_migrations`
+
+**Descoberto em:** 2026-05-25 durante deploy de F2-F8 em prod.
+
+**Problema:** Script `scripts/run-migration-prod.sh` aplica migrations via `psql --file=...` mas não atualiza a tabela `schema_migrations` que rastreia migrations aplicadas. Quando Cloud Run boots com revisão nova, executa `node scripts/run-migrations-docker.js` no startup (Dockerfile CMD), que lê `schema_migrations` e tenta re-aplicar todas as não-registradas — falha se schema já foi modificado por outra migration aplicada pelo script direto.
+
+**Sintoma em 2026-05-25:** após aplicar 190-197 via `run-migration-prod.sh`, deploy do Cloud Run falhou no startup com `column "origen" does not exist ❌ Failed: 192_consolidate_encuadres_duplicates.sql` — migration 192 (já aplicada) tentava ser re-executada e falhava porque migration 197 (também já aplicada) tinha renomeado `origen → import_source_audit`.
+
+**Mitigação manual aplicada:** INSERT direto em `schema_migrations` registrando os 8 filenames.
+
+**Fix proposto:** acrescentar ao final do `run-migration-prod.sh` (e `run-migration-stg.sh`):
+
+```bash
+PGPASSWORD="$DB_PASSWORD" psql --host="localhost" --port="$PROXY_PORT" \
+  --username="$DB_USER" --dbname="$DB_NAME" \
+  -c "INSERT INTO schema_migrations (filename) VALUES ('$(basename $MIGRATION_FILE)') ON CONFLICT (filename) DO NOTHING"
+```
+
+**Critério para fechar:** ambos scripts atualizados + próximo deploy validar.
+
+**Severidade:** MEDIUM — sem fix, todo deploy futuro que envolva migrations falha primeiro até sync manual.
+
+**Relacionado:** `worker-functions/Dockerfile:31`, `worker-functions/scripts/run-migrations-docker.js`.
