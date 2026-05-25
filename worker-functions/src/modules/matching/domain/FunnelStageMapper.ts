@@ -14,6 +14,11 @@ export type FunnelStage =
   | 'INITIATED'
   | 'IN_PROGRESS'
   | 'COMPLETED'
+  // 'ANALYZED' permanece em FunnelStage como vocabulário de protocolo Talentum,
+  // mas NUNCA persiste em worker_job_applications.application_funnel_stage
+  // (ApplicationFunnelStage em WorkerJobApplication.ts não o inclui).
+  // Usado como sentinel em ProcessTalentumPrescreening.deriveFunnelStage()
+  // para pular upsert em WJA quando statusLabel === 'PENDING'.
   | 'ANALYZED'
   | 'QUALIFIED'
   | 'NOT_QUALIFIED'
@@ -21,7 +26,9 @@ export type FunnelStage =
   | 'REPROGRAM'
   | 'CONFIRMED'
   | 'SELECTED'
-  | 'PLACED'
+  // 'PLACED' removido em F7.a (migration 194) — 0 writers ativos pós-F6,
+  // 0 linhas em prod. ADR-002 + ADR-003. Não consta mais em ApplicationFunnelStage
+  // nem é mapeado pelo TalentumFunnelStageMapper.
   | 'REJECTED';
 
 export interface FunnelStageMapper<TProviderState> {

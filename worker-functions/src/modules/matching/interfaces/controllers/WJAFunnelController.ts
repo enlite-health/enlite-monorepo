@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { reportError } from '@shared/logging';
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
@@ -8,16 +9,19 @@ import {
 
 
 /**
- * EncuadreFunnelController
+ * WJAFunnelController
  *
- * Kanban funnel endpoints for vacancy encuadre management.
+ * Kanban funnel endpoints for vacancy WJA management.
  * Dashboard endpoints (coordinator-capacity, alerts, conversion-by-channel)
  * live in EncuadreDashboardController.
  *
- * - GET  /api/admin/vacancies/:id/funnel  — encuadres grouped by stage
- * - PUT  /api/admin/encuadres/:id/move    — move encuadre in kanban
+ * - GET  /api/admin/vacancies/:id/funnel  — WJAs grouped by stage
+ * - PUT  /api/admin/encuadres/:id/move    — move WJA in kanban
+ *
+ * Renamed from EncuadreFunnelController in F7.a (migration 194).
+ * WJA is the canonical entity; encuadre is enrichment data only.
  */
-export class EncuadreFunnelController {
+export class WJAFunnelController {
   private db: Pool;
 
   constructor() {
@@ -84,7 +88,7 @@ export class EncuadreFunnelController {
         IN_PROGRESS: [],
         COMPLETED: [],     // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia). NOT_QUALIFIED foi auto-rejeitado em F3 (migration 191)
         CONFIRMED: [],
-        SELECTED: [],
+        SELECTED: [],      // PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
         REJECTED: [],
       };
 
@@ -115,7 +119,7 @@ export class EncuadreFunnelController {
         };
 
         // Classificação direta por application_funnel_stage
-        if (stage === 'SELECTED' || stage === 'PLACED') {
+        if (stage === 'SELECTED') {
           stages.SELECTED.push(item);
         } else if (stage === 'REJECTED') {
           stages.REJECTED.push(item);
@@ -142,9 +146,9 @@ export class EncuadreFunnelController {
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[EncuadreFunnelController] funnel error:', message);
-      res.status(500).json({ success: false, error: message });
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'WJAFunnelController:getEncuadreFunnel' });
+      res.status(500).json({ success: false, error: e.message });
     }
   }
 

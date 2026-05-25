@@ -50,7 +50,7 @@ interface FunnelData {
   totalEncuadres: number;
 }
 
-export function useEncuadreFunnel(vacancyId: string | undefined) {
+export function useWJAFunnel(vacancyId: string | undefined) {
   const [data, setData] = useState<FunnelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

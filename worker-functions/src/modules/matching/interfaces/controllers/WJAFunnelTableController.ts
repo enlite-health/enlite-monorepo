@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { reportError } from '@shared/logging';
 import { GetFunnelTableUseCase } from '../../application/GetFunnelTableUseCase';
 import { FunnelBucket } from '../../domain/FunnelTableRow';
 
@@ -7,15 +8,17 @@ const VALID_BUCKETS = new Set<FunnelBucket>([
 ]);
 
 /**
- * EncuadreFunnelTableController
+ * WJAFunnelTableController
  *
  * Audit-table endpoint for admin vacancy pages.
- * Complements EncuadreFunnelController (Kanban) — does NOT replace it.
+ * Complements WJAFunnelController (Kanban) — does NOT replace it.
+ *
+ * Renamed from EncuadreFunnelTableController in F7.a (migration 194).
  *
  * GET /api/admin/vacancies/:id/funnel-table
  *   ?bucket=ALL|INVITED|POSTULATED|PRE_SELECTED|REJECTED|WITHDREW  (default ALL)
  */
-export class EncuadreFunnelTableController {
+export class WJAFunnelTableController {
   private useCase: GetFunnelTableUseCase;
 
   constructor() {
@@ -39,9 +42,9 @@ export class EncuadreFunnelTableController {
 
       res.json({ success: true, data: result });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[EncuadreFunnelTableController] funnel-table error:', message);
-      res.status(500).json({ success: false, error: message });
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'WJAFunnelTableController:getEncuadreFunnelTable' });
+      res.status(500).json({ success: false, error: e.message });
     }
   }
 }

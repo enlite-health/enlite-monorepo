@@ -40,8 +40,8 @@ export type ApplicationFunnelStage =
   | 'IN_DOUBT'       // em dúvida
   | 'CONFIRMED'      // worker confirmou slot de encuadre
   | 'SELECTED'       // selecionado no encuadre
-  | 'REJECTED'       // rejeitado no encuadre (inclui auto-rejeição por NOT_QUALIFIED Talentum — migration 191)
-  | 'PLACED';        // worker está atualmente atuando nessa vaga
+  | 'REJECTED';      // rejeitado no encuadre (inclui auto-rejeição por NOT_QUALIFIED Talentum — migration 191)
+  // 'PLACED' removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
 
 export interface CreateWorkerJobApplicationDTO {
   workerId: string;

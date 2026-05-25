@@ -1,8 +1,10 @@
 /**
- * EncuadreFunnelController.moveEncuadre.test.ts
+ * WJAFunnelController.moveEncuadre.test.ts
  *
  * Tests for the moveEncuadre endpoint only.
- * Split from EncuadreFunnelController.test.ts to keep both files ≤400 lines.
+ * Split from WJAFunnelController.test.ts to keep both files ≤400 lines.
+ *
+ * Renamed from EncuadreFunnelController.moveEncuadre.test.ts in F7.a (migration 194).
  *
  * - PUT /api/admin/encuadres/:id/move
  */
@@ -19,7 +21,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
-import { EncuadreFunnelController } from '../EncuadreFunnelController';
+import { WJAFunnelController } from '../WJAFunnelController';
 import { Request, Response } from 'express';
 
 function mockReqRes(params = {}, body = {}): [Request, Response] {
@@ -31,12 +33,12 @@ function mockReqRes(params = {}, body = {}): [Request, Response] {
   return [req, res];
 }
 
-describe('EncuadreFunnelController — moveEncuadre', () => {
-  let controller: EncuadreFunnelController;
+describe('WJAFunnelController — moveEncuadre', () => {
+  let controller: WJAFunnelController;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new EncuadreFunnelController();
+    controller = new WJAFunnelController();
   });
 
   it('retorna 400 quando targetStage está ausente', async () => {
@@ -196,8 +198,9 @@ describe('EncuadreFunnelController — moveEncuadre', () => {
     expect(updateCall[1]).toContain('DISTANCE');
   });
 
-  it('aceita todos os targetStage válidos (F3: NOT_QUALIFIED removido)', async () => {
+  it('aceita todos os targetStage válidos (F3: NOT_QUALIFIED removido; F7.a: PLACED removido)', async () => {
     // NOT_QUALIFIED removido em F3 — operador admin não pode mover manualmente para esse stage
+    // PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
     const validStages = [
       'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
       'CONFIRMED', 'SELECTED', 'REJECTED',

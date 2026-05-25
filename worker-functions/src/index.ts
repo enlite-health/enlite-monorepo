@@ -31,7 +31,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, EncuadreFunnelController, EncuadreFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
 import { AdminWorkersController } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
@@ -138,8 +138,8 @@ const vacanciesController = new VacanciesController();
 const vacancyCrudController = new VacancyCrudController();
 const vacancyTalentumController = new VacancyTalentumController();
 const vacancyMatchController = new VacancyMatchController();
-const funnelController = new EncuadreFunnelController();
-const funnelTableController = new EncuadreFunnelTableController();
+const funnelController = new WJAFunnelController();
+const funnelTableController = new WJAFunnelTableController();
 const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();

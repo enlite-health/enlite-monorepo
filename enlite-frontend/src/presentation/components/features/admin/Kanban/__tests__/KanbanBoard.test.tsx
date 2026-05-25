@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { KanbanBoard } from '../KanbanBoard';
-import type { FunnelStages } from '@hooks/admin/useEncuadreFunnel';
+import type { FunnelStages } from '@hooks/admin/useWJAFunnel';
 
 // ── react-router-dom mock ────────────────────────────────────────────────────
 const mockNavigate = vi.fn();

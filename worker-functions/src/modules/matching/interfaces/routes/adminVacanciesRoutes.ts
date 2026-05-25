@@ -3,8 +3,8 @@ import { VacanciesController } from '../controllers/VacanciesController';
 import { VacancyTalentumController } from '../controllers/VacancyTalentumController';
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
 import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
-import { EncuadreFunnelController } from '../controllers/EncuadreFunnelController';
-import { EncuadreFunnelTableController } from '../controllers/EncuadreFunnelTableController';
+import { WJAFunnelController } from '../controllers/WJAFunnelController';
+import { WJAFunnelTableController } from '../controllers/WJAFunnelTableController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
@@ -26,12 +26,12 @@ export function createAdminVacanciesRoutes(
   vacancyMatchController: VacancyMatchController,
   vacancyMeetLinksController: VacancyMeetLinksController,
   vacancySocialLinksController: VacancySocialLinksController,
-  funnelController: EncuadreFunnelController,
+  funnelController: WJAFunnelController,
   dashboardController: EncuadreDashboardController,
   interviewSlotsController: InterviewSlotsController,
   authMiddleware: AuthMiddleware,
   vacancyAddressReviewController?: VacancyAddressReviewController,
-  funnelTableController?: EncuadreFunnelTableController,
+  funnelTableController?: WJAFunnelTableController,
 ): Router {
   const router = Router();
 
@@ -127,7 +127,7 @@ export function createAdminVacanciesRoutes(
     vacancySocialLinksController.getSocialLinksStats(req, res),
   );
 
-  // ── Encuadre Funnel / Kanban (EncuadreFunnelController) ──────────────────────
+  // ── Encuadre Funnel / Kanban (WJAFunnelController) ───────────────────────────
   router.get('/vacancies/:id/funnel', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.getEncuadreFunnel(req, res),
   );
@@ -135,7 +135,7 @@ export function createAdminVacanciesRoutes(
     funnelController.moveEncuadre(req, res),
   );
 
-  // ── Encuadre Funnel Table — audit table (EncuadreFunnelTableController) ───────
+  // ── Encuadre Funnel Table — audit table (WJAFunnelTableController) ───────────
   if (funnelTableController) {
     router.get('/vacancies/:id/funnel-table', authMiddleware.requireStaff(), (req: Request, res: Response) =>
       funnelTableController!.getEncuadreFunnelTable(req, res),

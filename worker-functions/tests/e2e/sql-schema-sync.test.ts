@@ -436,7 +436,7 @@ describe('SQL ↔ Schema Sync Validation', () => {
     const criticalFiles = [
       'modules/matching/interfaces/controllers/VacanciesController.ts',
       'modules/matching/interfaces/controllers/VacancyCrudController.ts',
-      'modules/matching/interfaces/controllers/EncuadreFunnelController.ts',
+      'modules/matching/interfaces/controllers/WJAFunnelController.ts',
       'modules/worker/interfaces/controllers/AdminWorkersController.ts',
       'modules/matching/interfaces/controllers/RecruitmentController.ts',
       'modules/matching/interfaces/controllers/AnalyticsController.ts',

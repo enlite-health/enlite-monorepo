@@ -10,15 +10,16 @@
  */
 
 export const POSTULATED_STAGES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED'] as const;
-export const PRE_SELECTED_STAGES = ['QUALIFIED', 'CONFIRMED', 'SELECTED', 'PLACED'] as const;
+export const PRE_SELECTED_STAGES = ['QUALIFIED', 'CONFIRMED', 'SELECTED'] as const;
 export const REJECTION_STAGES = ['REJECTED'] as const;
 
 /**
- * Stages que aparecem na coluna "Selecionados" do kanban (EncuadreFunnelController).
+ * Stages que aparecem na coluna "Selecionados" do kanban (WJAFunnelController).
  * Usado pelo contador "Seleccionados" da listagem de vagas para que o número
  * bata exatamente com o que o operador vê ao abrir o kanban.
+ * PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta).
  */
-export const SELECTED_KANBAN_STAGES = ['SELECTED', 'PLACED'] as const;
+export const SELECTED_KANBAN_STAGES = ['SELECTED'] as const;
 
 export const POSTULATED_STAGES_SET: ReadonlySet<string> = new Set(POSTULATED_STAGES);
 export const PRE_SELECTED_STAGES_SET: ReadonlySet<string> = new Set(PRE_SELECTED_STAGES);

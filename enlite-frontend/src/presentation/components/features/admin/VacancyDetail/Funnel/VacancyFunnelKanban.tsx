@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
-import { useEncuadreFunnel, MoveEncuadreError } from '@hooks/admin/useEncuadreFunnel';
+import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 
 interface VacancyFunnelKanbanProps {
   vacancyId: string;
@@ -15,7 +15,7 @@ export function VacancyFunnelKanban({
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
   const { data, isLoading, error, refetch, moveEncuadre } =
-    useEncuadreFunnel(vacancyId);
+    useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
   const handleMove = useCallback(

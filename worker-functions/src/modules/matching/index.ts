@@ -28,8 +28,8 @@ export type { IJobPostingLookup } from './application/ProcessTalentumPrescreenin
 // ── Interface — Controllers ──────────────────────────────────────
 export { EncuadreController } from './interfaces/controllers/EncuadreController';
 export * from './interfaces/controllers/EncuadreControllerHelpers';
-export { EncuadreFunnelController } from './interfaces/controllers/EncuadreFunnelController';
-export { EncuadreFunnelTableController } from './interfaces/controllers/EncuadreFunnelTableController';
+export { WJAFunnelController } from './interfaces/controllers/WJAFunnelController';
+export { WJAFunnelTableController } from './interfaces/controllers/WJAFunnelTableController';
 export { EncuadreDashboardController } from './interfaces/controllers/EncuadreDashboardController';
 export { VacanciesController } from './interfaces/controllers/VacanciesController';
 export { VacancyMatchController } from './interfaces/controllers/VacancyMatchController';

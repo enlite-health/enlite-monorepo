@@ -35,7 +35,7 @@ export class TalentumFunnelStageMapper implements FunnelStageMapper<TalentumProv
     ['REPROGRAM',     'REPROGRAM'],
     ['CONFIRMED',     'CONFIRMED'],
     ['SELECTED',      'SELECTED'],
-    ['PLACED',        'PLACED'],
+    // 'PLACED' removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
     ['REJECTED',      'REJECTED'],
     ['RECHAZADO',     'REJECTED'], // Talentum legacy value → canonical REJECTED (F2, migration 190)
     // PENDING vem como statusLabel em ANALYZED — representa análise em andamento

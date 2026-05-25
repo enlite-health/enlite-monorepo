@@ -1,12 +1,14 @@
 /**
- * EncuadreFunnelController.test.ts
+ * WJAFunnelController.test.ts
  *
  * Tests the getEncuadreFunnel kanban endpoint — driven by application_funnel_stage
  * as the single source of truth.
  *
- * moveEncuadre tests live in EncuadreFunnelController.moveEncuadre.test.ts (split
+ * moveEncuadre tests live in WJAFunnelController.moveEncuadre.test.ts (split
  * to keep both files ≤400 lines).
  * Dashboard tests (getCoordinatorCapacity, getAlerts) live here too as they are small.
+ *
+ * Renamed from EncuadreFunnelController.test.ts in F7.a (migration 194).
  */
 
 const mockQuery = jest.fn();
@@ -21,7 +23,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
-import { EncuadreFunnelController } from '../EncuadreFunnelController';
+import { WJAFunnelController } from '../WJAFunnelController';
 import { EncuadreDashboardController } from '../EncuadreDashboardController';
 import { Request, Response } from 'express';
 
@@ -57,13 +59,13 @@ function makeRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('EncuadreFunnelController', () => {
-  let controller: EncuadreFunnelController;
+describe('WJAFunnelController', () => {
+  let controller: WJAFunnelController;
   let dashboardController: EncuadreDashboardController;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new EncuadreFunnelController();
+    controller = new WJAFunnelController();
     dashboardController = new EncuadreDashboardController();
   });
 
@@ -74,7 +76,8 @@ describe('EncuadreFunnelController', () => {
   describe('getEncuadreFunnel', () => {
     it('classifica encuadres nas 7 colunas por funnel_stage', async () => {
       // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
-      // Teste usa apenas stages canônicos pós-migration 191
+      // F7.a: PLACED removido (migration 194 — 0 linhas em prod, sync F6 morta)
+      // Teste usa apenas stages canônicos pós-migration 194
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: null }),
@@ -86,7 +89,6 @@ describe('EncuadreFunnelController', () => {
           makeRow({ id: 'e7', funnel_stage: 'CONFIRMED' }),
           makeRow({ id: 'e8', funnel_stage: 'SELECTED' }),
           makeRow({ id: 'e9', funnel_stage: 'REJECTED' }),
-          makeRow({ id: 'e10', funnel_stage: 'PLACED' }),
         ],
       });
 
@@ -95,7 +97,7 @@ describe('EncuadreFunnelController', () => {
 
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
-      expect(response.data.totalEncuadres).toBe(10);
+      expect(response.data.totalEncuadres).toBe(9);
 
       const { stages } = response.data;
 
@@ -122,11 +124,10 @@ describe('EncuadreFunnelController', () => {
       expect(stages.CONFIRMED).toHaveLength(1);
       expect(stages.CONFIRMED[0].id).toBe('e7');
 
-      // SELECTED agrupa SELECTED + PLACED
-      expect(stages.SELECTED).toHaveLength(2);
+      // SELECTED: apenas SELECTED (PLACED removido em F7.a, migration 194)
+      expect(stages.SELECTED).toHaveLength(1);
       const selectedIds = stages.SELECTED.map((e: any) => e.id);
       expect(selectedIds).toContain('e8');
-      expect(selectedIds).toContain('e10');
 
       // REJECTED
       expect(stages.REJECTED).toHaveLength(1);

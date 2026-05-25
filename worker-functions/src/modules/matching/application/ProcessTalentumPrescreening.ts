@@ -209,6 +209,8 @@ export class ProcessTalentumPrescreening {
 
   private deriveFunnelStage(payload: TalentumPrescreeningResponseParsed): string {
     if (payload.subtype === 'ANALYZED' && payload.data.response.statusLabel) {
+      // 'ANALYZED' é sentinel local — usa-se pra pular upsert em WJA quando statusLabel === 'PENDING';
+      // nunca persiste em application_funnel_stage (não consta em ApplicationFunnelStage)
       if (payload.data.response.statusLabel === 'PENDING') return 'ANALYZED';
       return payload.data.response.statusLabel;
     }
