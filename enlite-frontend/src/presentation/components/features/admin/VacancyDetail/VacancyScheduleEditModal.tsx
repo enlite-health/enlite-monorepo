@@ -4,9 +4,10 @@ import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { SchedulePicker } from '../VacancySchedulePicker';
-import { buildScheduleFromVacancy, scheduleToJsonb } from '../vacancy-form-schema';
-import type { ScheduleValue } from '../vacancyScheduleUtils';
+import {
+  DayScheduleEditor,
+  type DayScheduleSlot,
+} from '@presentation/components/molecules/DayScheduleEditor';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 interface VacancyScheduleEditModalProps {
@@ -17,6 +18,53 @@ interface VacancyScheduleEditModalProps {
   onSuccess: () => void;
 }
 
+const DAY_NAME_TO_INDEX: Record<string, number> = {
+  domingo: 0, lunes: 1, martes: 2, miercoles: 3, 'miércoles': 3,
+  jueves: 4, viernes: 5, sabado: 6, 'sábado': 6,
+};
+
+/**
+ * Hidrata os slots no formato JSONB canônico a partir do shape que a vacancy
+ * pode trazer (Array do JSONB OU Record<diaName, slots> normalizado pelo
+ * backend no GET).
+ */
+function hydrateSlots(vacancy: unknown): DayScheduleSlot[] {
+  if (!vacancy || typeof vacancy !== 'object') return [];
+  const raw = (vacancy as { schedule?: unknown }).schedule;
+  if (!raw) return [];
+
+  // Já está no formato Array<{dayOfWeek, startTime, endTime}>
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((s): s is DayScheduleSlot =>
+        s != null && typeof s === 'object'
+        && typeof (s as DayScheduleSlot).dayOfWeek === 'number'
+        && typeof (s as DayScheduleSlot).startTime === 'string'
+        && typeof (s as DayScheduleSlot).endTime === 'string',
+      );
+  }
+
+  // Record<diaName, Array<{start, end}>> (saída do scheduleNormalizer do backend)
+  if (typeof raw === 'object') {
+    const out: DayScheduleSlot[] = [];
+    for (const [dayName, slots] of Object.entries(raw as Record<string, unknown>)) {
+      const dayIndex = DAY_NAME_TO_INDEX[dayName.toLowerCase()];
+      if (dayIndex == null || !Array.isArray(slots)) continue;
+      for (const slot of slots) {
+        if (slot && typeof slot === 'object' && 'start' in slot && 'end' in slot) {
+          out.push({
+            dayOfWeek: dayIndex,
+            startTime: String((slot as { start: unknown }).start),
+            endTime: String((slot as { end: unknown }).end),
+          });
+        }
+      }
+    }
+    return out;
+  }
+  return [];
+}
+
 export function VacancyScheduleEditModal({
   isOpen,
   vacancyId,
@@ -25,22 +73,21 @@ export function VacancyScheduleEditModal({
   onSuccess,
 }: VacancyScheduleEditModalProps): JSX.Element | null {
   const { t } = useTranslation();
-  const [schedule, setSchedule] = useState<ScheduleValue>(() => buildScheduleFromVacancy(vacancy));
+  const [slots, setSlots] = useState<DayScheduleSlot[]>(() => hydrateSlots(vacancy));
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setSchedule(buildScheduleFromVacancy(vacancy));
+      setSlots(hydrateSlots(vacancy));
       setApiError(null);
     }
   }, [isOpen, vacancy]);
 
   if (!isOpen) return null;
 
-  const hasValidSlot = schedule.some(
-    (entry) => entry.days.length > 0 && entry.timeFrom && entry.timeTo,
-  );
+  const hasValidSlot = slots.length > 0
+    && slots.every((s) => s.startTime && s.endTime);
 
   const handleSubmit = async (): Promise<void> => {
     setApiError(null);
@@ -50,7 +97,6 @@ export function VacancyScheduleEditModal({
     }
     setSaving(true);
     try {
-      const slots = scheduleToJsonb(schedule);
       await AdminApiService.updateVacancy(vacancyId, { schedule: slots });
       onSuccess();
     } catch (err) {
@@ -88,7 +134,7 @@ export function VacancyScheduleEditModal({
             {t('admin.vacancyDetail.scheduleEditor.subtitle')}
           </Text>
 
-          <SchedulePicker value={schedule} onChange={setSchedule} />
+          <DayScheduleEditor value={slots} onChange={setSlots} disabled={saving} />
 
           {apiError && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
