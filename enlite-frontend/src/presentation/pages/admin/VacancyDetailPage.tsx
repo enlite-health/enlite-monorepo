@@ -23,7 +23,9 @@ import { VacancyMeetLinksRow } from '@presentation/components/features/admin/Vac
 import { VacancyFunnelView } from '@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView';
 import { VacancyMeetLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard';
 import { VacancySocialLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard';
-import { VacancyFormModal } from '@presentation/components/features/admin/VacancyFormModal';
+import { VacancyScheduleEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal';
+import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
+import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
 import { VacancyDetailTabs, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
@@ -33,8 +35,25 @@ export default function VacancyDetailPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { vacancy, isLoading, error, refetch } = useVacancyDetail(id);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
+
+  const handleStatusChange = async (next: EditableVacancyStatus): Promise<void> => {
+    if (!id) return;
+    setStatusError(null);
+    setStatusSaving(true);
+    try {
+      await AdminApiService.updateVacancy(id, { status: next });
+      await refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusError(msg);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
 
   if (isLoading) return <DetailSkeleton />;
 
@@ -121,7 +140,16 @@ export default function VacancyDetailPage() {
             providersNeeded={vacancy.providers_needed ?? null}
             publishedAt={vacancy.created_at ?? null}
             closedAt={vacancy.closed_at ?? null}
+            onStatusChange={handleStatusChange}
+            isStatusSaving={statusSaving}
           />
+          {statusError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+              <Text size="sm" color="inherit" className="text-red-600">
+                {statusError}
+              </Text>
+            </div>
+          )}
           <VacancyPatientCard
             firstName={vacancy.patient_first_name ?? null}
             lastName={vacancy.patient_last_name ?? null}
@@ -146,7 +174,7 @@ export default function VacancyDetailPage() {
           workerAttributes={vacancy.worker_attributes ?? null}
           serviceType={vacancy.service_type ?? null}
           schedule={vacancy.schedule ?? null}
-          onEdit={() => setShowEditModal(true)}
+          onEditSchedule={() => setShowScheduleModal(true)}
         />
       </div>
 
@@ -253,15 +281,16 @@ export default function VacancyDetailPage() {
         </>
       )}
 
-      {vacancy && (
-        <VacancyFormModal
-          isOpen={showEditModal}
-          onClose={() => setShowEditModal(false)}
+      {vacancy && id && (
+        <VacancyScheduleEditModal
+          isOpen={showScheduleModal}
+          vacancyId={id}
+          vacancy={vacancy}
+          onClose={() => setShowScheduleModal(false)}
           onSuccess={() => {
-            setShowEditModal(false);
+            setShowScheduleModal(false);
             refetch();
           }}
-          vacancy={vacancy}
         />
       )}
     </PageContainer>

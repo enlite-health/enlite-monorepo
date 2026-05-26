@@ -244,7 +244,33 @@ export class VacancyCrudController {
         return;
       }
 
-      if ('patient_id' in req.body) {
+      const currentRow = await this.db.query<{ status: string | null }>(
+        'SELECT status FROM job_postings WHERE id = $1',
+        [id],
+      );
+      if (currentRow.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Vacancy not found' });
+        return;
+      }
+      const currentStatus = currentRow.rows[0].status;
+      const isDraft = currentStatus === 'PENDING_ACTIVATION';
+
+      // Vagas que saíram do rascunho só podem editar horários e status.
+      // PENDING_ACTIVATION mantém edição ampla porque é o wizard de criação.
+      const OPERATIONAL_EDITABLE_FIELDS = new Set(['schedule', 'status']);
+      if (!isDraft) {
+        const requested = Object.keys(updates);
+        const forbidden = requested.filter(f => !OPERATIONAL_EDITABLE_FIELDS.has(f));
+        if (forbidden.length > 0) {
+          res.status(403).json({
+            success: false,
+            error: `Forbidden fields for vacancy in status "${currentStatus}": ${forbidden.join(', ')}. Only schedule and status can be edited.`,
+          });
+          return;
+        }
+      }
+
+      if (isDraft && 'patient_id' in req.body) {
         const newPatientId = req.body.patient_id;
         if (newPatientId === null || newPatientId === '' || typeof newPatientId !== 'string') {
           res.status(400).json({
@@ -266,7 +292,7 @@ export class VacancyCrudController {
         }
       }
 
-      const allowedFields = [
+      const fullAllowedFields = [
         'title', 'case_number', 'patient_id', 'patient_address_id',
         'required_professions', 'required_sex',
         'age_range_min', 'age_range_max',
@@ -276,6 +302,9 @@ export class VacancyCrudController {
         'daily_obs', 'status',
         'published_at', 'closes_at',
       ];
+      const allowedFields = isDraft
+        ? fullAllowedFields
+        : fullAllowedFields.filter(f => OPERATIONAL_EDITABLE_FIELDS.has(f));
 
       const jsonbFields = new Set(['schedule']);
       const setClause: string[] = [];

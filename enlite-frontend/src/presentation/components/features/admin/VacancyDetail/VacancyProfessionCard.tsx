@@ -1,8 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { Check, Pencil } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 
 type WeekdayKey =
   | 'sunday'
@@ -125,7 +124,7 @@ interface VacancyProfessionCardProps {
   workerAttributes: string | null;
   serviceType: string[] | null;
   schedule: Record<string, TimeSlot[]> | null;
-  onEdit?: () => void;
+  onEditSchedule?: () => void;
 }
 
 export function VacancyProfessionCard({
@@ -139,7 +138,7 @@ export function VacancyProfessionCard({
   workerAttributes,
   serviceType,
   schedule,
-  onEdit,
+  onEditSchedule,
 }: VacancyProfessionCardProps) {
   const { t } = useTranslation();
 
@@ -179,16 +178,6 @@ export function VacancyProfessionCard({
         <Heading level={1} color="primary" weight="semibold">
           {cardTitle}
         </Heading>
-        {onEdit && (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={onEdit}
-            className="rounded-full shrink-0"
-          >
-            {t('admin.vacancyDetail.professionCard.edit')}
-          </Button>
-        )}
       </div>
 
       <div className="flex items-baseline gap-2 flex-wrap">
@@ -247,10 +236,23 @@ export function VacancyProfessionCard({
             label={t('admin.vacancyDetail.professionCard.serviceType')}
             value={serviceTypeLabel}
           />
-          <CharacteristicRow
-            label={t('admin.vacancyDetail.professionCard.daysAndHours')}
-            value={null}
-          />
+          <div className="flex items-center justify-between gap-2">
+            <CharacteristicRow
+              label={t('admin.vacancyDetail.professionCard.daysAndHours')}
+              value={null}
+            />
+            {onEditSchedule && (
+              <button
+                type="button"
+                onClick={onEditSchedule}
+                aria-label={t('admin.vacancyDetail.professionCard.editSchedule')}
+                data-testid="vacancy-edit-schedule-trigger"
+                className="text-primary hover:text-primary/70 transition-colors p-1 rounded"
+              >
+                <Pencil className="w-4 h-4" strokeWidth={2} />
+              </button>
+            )}
+          </div>
         </div>
 
         <ScheduleGrid schedule={schedule} />

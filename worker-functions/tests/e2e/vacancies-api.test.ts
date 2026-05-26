@@ -332,6 +332,59 @@ describe('Vacancies API', () => {
       );
       expect(res.status).toBe(401);
     });
+
+    // Após vaga sair do rascunho (status ≠ PENDING_ACTIVATION), só schedule e status
+    // podem ser editados. Outros campos devolvem 403.
+    describe('operational mode (status ≠ PENDING_ACTIVATION)', () => {
+      let opVacancyId: string;
+
+      beforeAll(async () => {
+        const created = await api.post(
+          '/api/admin/vacancies',
+          { patient_id: defaultPatientId, case_number: 99906, title: 'Caso E2E Operacional' },
+          authHeaders(adminToken),
+        );
+        opVacancyId = created.data.data?.id;
+        // Move pra fora do rascunho
+        await pool.query(
+          `UPDATE job_postings SET status = 'SEARCHING' WHERE id = $1`,
+          [opVacancyId],
+        );
+      });
+
+      it('aceita update de schedule + status → 200', async () => {
+        if (!opVacancyId) return;
+        const schedule = [{ dayOfWeek: 1, startTime: '09:00', endTime: '13:00' }];
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { schedule, status: 'SUSPENDED' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(200);
+        expect(res.data.data.status).toBe('SUSPENDED');
+      });
+
+      it('rejeita edição de title em vaga operacional → 403', async () => {
+        if (!opVacancyId) return;
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { title: 'Tentativa Bloqueada' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(403);
+        expect(res.data.error).toContain('title');
+      });
+
+      it('rejeita edição de salary_text em vaga operacional → 403', async () => {
+        if (!opVacancyId) return;
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { salary_text: '9999' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(403);
+      });
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

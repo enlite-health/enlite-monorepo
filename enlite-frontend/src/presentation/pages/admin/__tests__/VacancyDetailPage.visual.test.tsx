@@ -107,9 +107,12 @@ vi.mock(
   }),
 );
 
-vi.mock('@presentation/components/features/admin/VacancyFormModal', () => ({
-  VacancyFormModal: () => null,
-}));
+vi.mock(
+  '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal',
+  () => ({
+    VacancyScheduleEditModal: () => null,
+  }),
+);
 
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import VacancyDetailPage from '../VacancyDetailPage';

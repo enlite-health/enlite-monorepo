@@ -3,6 +3,10 @@ import { MapPin } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import {
+  VacancyStatusEditor,
+  type EditableVacancyStatus,
+} from './VacancyStatusEditor';
 
 interface VacancyCaseCardProps {
   status: string;
@@ -19,6 +23,8 @@ interface VacancyCaseCardProps {
   providersNeeded: number | null;
   publishedAt: string | null;
   closedAt: string | null;
+  onStatusChange?: (next: EditableVacancyStatus) => void | Promise<void>;
+  isStatusSaving?: boolean;
 }
 
 function formatDateAR(dateStr: string | null): string {
@@ -87,6 +93,8 @@ export function VacancyCaseCard({
   providersNeeded,
   publishedAt,
   closedAt,
+  onStatusChange,
+  isStatusSaving,
 }: VacancyCaseCardProps) {
   const { t } = useTranslation();
 
@@ -119,7 +127,15 @@ export function VacancyCaseCard({
         <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.caseLabel')} {caseNumber ?? '—'}
         </Heading>
-        <VacancyStatusBadge status={status} />
+        {onStatusChange ? (
+          <VacancyStatusEditor
+            status={status}
+            isSaving={isStatusSaving}
+            onChange={onStatusChange}
+          />
+        ) : (
+          <VacancyStatusBadge status={status} />
+        )}
       </div>
 
       {/* Dependency level pill */}

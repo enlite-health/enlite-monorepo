@@ -17,7 +17,7 @@ const defaultProps = {
   workerAttributes: 'Paciente, empático',
   serviceType: ['AT'],
   schedule: null,
-  onEdit: vi.fn(),
+  onEditSchedule: vi.fn(),
 };
 
 function renderCard(props = {}) {
@@ -90,9 +90,14 @@ describe('VacancyProfessionCard — fields', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders Editar button', () => {
+  it('renders schedule-edit trigger when onEditSchedule is provided', () => {
     renderCard();
-    expect(screen.getByRole('button')).toBeInTheDocument();
+    expect(screen.getByTestId('vacancy-edit-schedule-trigger')).toBeInTheDocument();
+  });
+
+  it('does NOT render schedule-edit trigger when onEditSchedule is undefined', () => {
+    renderCard({ onEditSchedule: undefined });
+    expect(screen.queryByTestId('vacancy-edit-schedule-trigger')).not.toBeInTheDocument();
   });
 });
 

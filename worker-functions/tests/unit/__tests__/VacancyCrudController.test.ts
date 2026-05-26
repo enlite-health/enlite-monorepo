@@ -405,190 +405,295 @@ describe('VacancyCrudController', () => {
 
   describe('updateVacancy', () => {
 
-    // ── patient_id protection ────────────────────────────────────
+    // Helpers — preceed each test with a SELECT that hydrates current status
+    function mockDraftSelect(): void {
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'PENDING_ACTIVATION' }] });
+    }
+    function mockOperationalSelect(status = 'SEARCHING'): void {
+      mockQuery.mockResolvedValueOnce({ rows: [{ status }] });
+    }
 
-    it('allows update when body does not contain patient_id (no DB check performed)', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 999' }] });
-      const req = mockReq({ title: 'CASO 999' }, { id: 'uuid-123' });
-      const res = mockRes();
+    // ── Draft mode (PENDING_ACTIVATION) — wizard de criação edita tudo ──────
 
-      await controller.updateVacancy(req, res);
+    describe('draft mode (status = PENDING_ACTIVATION)', () => {
+      it('allows update when body does not contain patient_id (no patient check performed)', async () => {
+        mockDraftSelect();
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 999' }] });
+        const req = mockReq({ title: 'CASO 999' }, { id: 'uuid-123' });
+        const res = mockRes();
 
-      expect(res.status).toHaveBeenCalledWith(200);
-      // Only the UPDATE query — no patient existence check
-      expect(mockQuery).toHaveBeenCalledTimes(1);
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        // SELECT current + UPDATE
+        expect(mockQuery).toHaveBeenCalledTimes(2);
+      });
+
+      it('returns 400 when body contains patient_id = null', async () => {
+        mockDraftSelect();
+        const req = mockReq({ title: 'CASO 999', patient_id: null }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining('patient_id não pode ser removido'),
+        }));
+        // Only the initial SELECT — no patient lookup, no UPDATE
+        expect(mockQuery).toHaveBeenCalledTimes(1);
+      });
+
+      it('returns 400 when body contains patient_id = "" (empty string)', async () => {
+        mockDraftSelect();
+        const req = mockReq({ title: 'CASO 999', patient_id: '' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining('patient_id não pode ser removido'),
+        }));
+      });
+
+      it('returns 400 when body contains valid patient_id string but patient does not exist', async () => {
+        mockDraftSelect();
+        mockQuery.mockResolvedValueOnce({ rows: [] }); // patient not found
+        const req = mockReq({ patient_id: 'nonexistent-uuid' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining('paciente não encontrado'),
+        }));
+      });
+
+      it('returns 400 when body contains patient_id for a soft-deleted patient', async () => {
+        mockDraftSelect();
+        mockQuery.mockResolvedValueOnce({ rows: [] });
+        const req = mockReq({ patient_id: 'deleted-patient-uuid' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining('paciente não encontrado'),
+        }));
+      });
+
+      it('allows update when body contains valid patient_id and patient is active', async () => {
+        mockDraftSelect();
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', patient_id: PATIENT_ID }] });
+        const req = mockReq({ patient_id: PATIENT_ID, title: 'CASO 999' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(mockQuery).toHaveBeenCalledTimes(3);
+      });
+
+      it('accepts all allowed fields', async () => {
+        const updates = {
+          title: 'CASO 200',
+          required_professions: ['NURSE'],
+          required_sex: 'M',
+          age_range_min: 20,
+          age_range_max: 50,
+          required_experience: 'x',
+          worker_attributes: 'y',
+          schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+          work_schedule: 'part-time',
+          providers_needed: 3,
+          salary_text: '1000',
+          payment_day: 'Dia 5',
+          daily_obs: 'obs',
+          status: 'ACTIVE',
+          patient_id: PATIENT_ID,
+          worker_profile_sought: 'algo',
+        };
+
+        mockDraftSelect();
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', ...updates }] });
+        const req = mockReq(updates, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        const sql = mockQuery.mock.calls[2][0] as string;
+        expect(sql).toContain('title =');
+        expect(sql).toContain('required_professions =');
+        expect(sql).toContain('schedule =');
+        expect(sql).toContain('status =');
+        expect(res.status).toHaveBeenCalledWith(200);
+      });
+
+      it('does NOT include state, city, pathology_types, dependency_level, service_device_types in UPDATE', async () => {
+        const updates = {
+          title: 'CASO 200',
+          status: 'ACTIVE',
+          state: 'CABA',
+          city: 'Palermo',
+          pathology_types: 'TEA',
+          dependency_level: 'Grave',
+          service_device_types: ['DOMICILIARIO'],
+        };
+
+        mockDraftSelect();
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 200' }] });
+        const req = mockReq(updates, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        const sql = mockQuery.mock.calls[1][0] as string;
+        expect(sql).not.toContain('state');
+        expect(sql).not.toContain('city');
+        expect(sql).not.toContain('pathology_types');
+        expect(sql).not.toContain('dependency_level');
+        expect(sql).not.toContain('service_device_types');
+      });
+
+      it('rejects unknown fields silently', async () => {
+        mockDraftSelect();
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'X' }] });
+        const req = mockReq({ title: 'X', HACKED_FIELD: 'malicious' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        const sql = mockQuery.mock.calls[1][0] as string;
+        expect(sql).not.toContain('HACKED_FIELD');
+        expect(sql).toContain('title =');
+      });
+
+      it('returns 400 when no valid fields provided', async () => {
+        mockDraftSelect();
+        const req = mockReq({ unknown_field: 'value' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+      });
+
+      it('serializes JSONB schedule field', async () => {
+        const schedule = [{ dayOfWeek: 5, startTime: '14:00', endTime: '20:00' }];
+        mockDraftSelect();
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule }] });
+        const req = mockReq({ schedule }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        const params = mockQuery.mock.calls[1][1] as any[];
+        expect(typeof params[0]).toBe('string');
+        expect(JSON.parse(params[0])).toEqual(schedule);
+      });
     });
 
-    it('returns 400 when body contains patient_id = null', async () => {
-      const req = mockReq({ title: 'CASO 999', patient_id: null }, { id: 'uuid-123' });
-      const res = mockRes();
+    // ── Operational mode (non-draft) — só schedule + status ──────────────────
 
-      await controller.updateVacancy(req, res);
+    describe('operational mode (status ≠ PENDING_ACTIVATION)', () => {
+      it.each(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'SUSPENDED', 'CLOSED'])(
+        'allows schedule + status update when current status is %s',
+        async (currentStatus) => {
+          const schedule = [{ dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }];
+          mockOperationalSelect(currentStatus);
+          mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule, status: 'ACTIVE' }] });
+          const req = mockReq({ schedule, status: 'ACTIVE' }, { id: 'uuid-123' });
+          const res = mockRes();
 
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        success: false,
-        error: expect.stringContaining('patient_id não pode ser removido'),
-      }));
-      expect(mockQuery).not.toHaveBeenCalled();
+          await controller.updateVacancy(req, res);
+
+          expect(res.status).toHaveBeenCalledWith(200);
+          const sql = mockQuery.mock.calls[1][0] as string;
+          expect(sql).toContain('schedule =');
+          expect(sql).toContain('status =');
+        },
+      );
+
+      it.each([
+        ['title', 'New title'],
+        ['required_professions', ['NURSE']],
+        ['salary_text', '2000'],
+        ['providers_needed', 5],
+        ['patient_id', PATIENT_ID],
+        ['daily_obs', 'edited'],
+      ])('rejects field "%s" with 403 when vacancy is non-draft', async (field, value) => {
+        mockOperationalSelect('SEARCHING');
+        const req = mockReq({ [field]: value }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining(field),
+        }));
+        // Only the initial SELECT — no UPDATE attempted
+        expect(mockQuery).toHaveBeenCalledTimes(1);
+      });
+
+      it('rejects mixed payload (schedule + status + title) with 403 listing only the forbidden fields', async () => {
+        mockOperationalSelect('ACTIVE');
+        const req = mockReq({
+          schedule: [],
+          status: 'SUSPENDED',
+          title: 'should be ignored',
+          salary_text: '999',
+        }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        const errorMsg = (res.json.mock.calls[0][0] as { error: string }).error;
+        const forbiddenList = errorMsg.split(':')[1].split('.')[0];
+        expect(forbiddenList).toContain('title');
+        expect(forbiddenList).toContain('salary_text');
+        expect(forbiddenList).not.toContain('schedule');
+        expect(forbiddenList).not.toContain('status');
+      });
+
+      it('allows status-only update', async () => {
+        mockOperationalSelect('SEARCHING');
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status: 'SUSPENDED' }] });
+        const req = mockReq({ status: 'SUSPENDED' }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(200);
+      });
+
+      it('allows schedule-only update', async () => {
+        const schedule = [{ dayOfWeek: 0, startTime: '10:00', endTime: '18:00' }];
+        mockOperationalSelect('ACTIVE');
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule }] });
+        const req = mockReq({ schedule }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(200);
+      });
     });
 
-    it('returns 400 when body contains patient_id = "" (empty string)', async () => {
-      const req = mockReq({ title: 'CASO 999', patient_id: '' }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        success: false,
-        error: expect.stringContaining('patient_id não pode ser removido'),
-      }));
-      expect(mockQuery).not.toHaveBeenCalled();
-    });
-
-    it('returns 400 when body contains valid patient_id string but patient does not exist', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] }); // patient not found
-      const req = mockReq({ patient_id: 'nonexistent-uuid' }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        success: false,
-        error: expect.stringContaining('paciente não encontrado'),
-      }));
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-    });
-
-    it('returns 400 when body contains patient_id for a soft-deleted patient', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] }); // deleted_at IS NOT NULL → filtered out
-      const req = mockReq({ patient_id: 'deleted-patient-uuid' }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        success: false,
-        error: expect.stringContaining('paciente não encontrado'),
-      }));
-    });
-
-    it('allows update when body contains valid patient_id and patient is active', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })    // patient check
-        .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', patient_id: PATIENT_ID }] }); // UPDATE
-      const req = mockReq({ patient_id: PATIENT_ID, title: 'CASO 999' }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(mockQuery).toHaveBeenCalledTimes(2);
-    });
-
-    // ── existing tests ───────────────────────────────────────────
-
-    it('accepts all allowed fields', async () => {
-      const updates = {
-        title: 'CASO 200',
-        required_professions: ['NURSE'],
-        required_sex: 'M',
-        age_range_min: 20,
-        age_range_max: 50,
-        required_experience: 'x',
-        worker_attributes: 'y',
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
-        work_schedule: 'part-time',
-        providers_needed: 3,
-        salary_text: '1000',
-        payment_day: 'Dia 5',
-        daily_obs: 'obs',
-        status: 'ACTIVE',
-        patient_id: PATIENT_ID,
-        worker_profile_sought: 'algo',
-      };
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })         // patient check
-        .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', ...updates }] }); // UPDATE
-      const req = mockReq(updates, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      const sql = mockQuery.mock.calls[1][0] as string;
-      expect(sql).toContain('title =');
-      expect(sql).toContain('required_professions =');
-      expect(sql).toContain('schedule =');
-      expect(sql).toContain('status =');
-      expect(res.status).toHaveBeenCalledWith(200);
-    });
-
-    it('does NOT include state, city, pathology_types, dependency_level, service_device_types in UPDATE', async () => {
-      const updates = {
-        title: 'CASO 200',
-        status: 'ACTIVE',
-        // These should be silently ignored (not in allowedFields after migration 152):
-        state: 'CABA',
-        city: 'Palermo',
-        pathology_types: 'TEA',
-        dependency_level: 'Grave',
-        service_device_types: ['DOMICILIARIO'],
-      };
-
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 200' }] });
-      const req = mockReq(updates, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      const sql = mockQuery.mock.calls[0][0] as string;
-      expect(sql).not.toContain('state');
-      expect(sql).not.toContain('city');
-      expect(sql).not.toContain('pathology_types');
-      expect(sql).not.toContain('dependency_level');
-      expect(sql).not.toContain('service_device_types');
-    });
-
-    it('rejects unknown fields silently', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'X' }] });
-      const req = mockReq({ title: 'X', HACKED_FIELD: 'malicious' }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      const sql = mockQuery.mock.calls[0][0] as string;
-      expect(sql).not.toContain('HACKED_FIELD');
-      expect(sql).toContain('title =');
-    });
-
-    it('returns 400 when no valid fields provided', async () => {
-      const req = mockReq({ unknown_field: 'value' }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(mockQuery).not.toHaveBeenCalled();
-    });
-
-    it('serializes JSONB schedule field', async () => {
-      const schedule = [{ dayOfWeek: 5, startTime: '14:00', endTime: '20:00' }];
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule }] });
-      const req = mockReq({ schedule }, { id: 'uuid-123' });
-      const res = mockRes();
-
-      await controller.updateVacancy(req, res);
-
-      const params = mockQuery.mock.calls[0][1] as any[];
-      expect(typeof params[0]).toBe('string');
-      expect(JSON.parse(params[0])).toEqual(schedule);
-    });
-
-    it('returns 404 when vacancy not found', async () => {
+    it('returns 404 when vacancy not found (initial SELECT empty)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       const req = mockReq({ title: 'X' }, { id: 'nonexistent' });
       const res = mockRes();
@@ -610,6 +715,7 @@ describe('VacancyCrudController', () => {
       ];
 
       it.each(CANONICAL_STATUSES)('accepts canonical status "%s" → 200', async (status) => {
+        mockOperationalSelect('SEARCHING');
         mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status }] });
         const req = mockReq({ status }, { id: 'uuid-123' });
         const res = mockRes();
@@ -641,7 +747,8 @@ describe('VacancyCrudController', () => {
         expect(mockQuery).not.toHaveBeenCalled();
       });
 
-      it('does not block update when status is undefined (other field updated normally)', async () => {
+      it('does not block update when status is undefined (other field updated normally in draft)', async () => {
+        mockDraftSelect();
         mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 999' }] });
         const req = mockReq({ title: 'CASO 999' }, { id: 'uuid-123' });
         const res = mockRes();
@@ -649,7 +756,6 @@ describe('VacancyCrudController', () => {
         await controller.updateVacancy(req, res);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        expect(mockQuery).toHaveBeenCalledTimes(1);
       });
     });
   });
