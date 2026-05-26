@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
   assertWorkerCanApply,
@@ -45,7 +46,8 @@ export class WJAFunnelController {
         `SELECT
            wja.id,
            wja.worker_id,
-           COALESCE(e.worker_raw_name, w.first_name_encrypted) AS worker_name,
+           w.first_name_encrypted,
+           w.last_name_encrypted,
            COALESCE(w.phone, e.worker_raw_phone) AS worker_phone,
            e.occupation_raw,
            COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::date, e.interview_date) AS interview_date,
@@ -93,14 +95,31 @@ export class WJAFunnelController {
         REJECTED: [],
       };
 
-      for (const row of result.rows) {
+      // Decriptografa nomes via KMS em paralelo (uso operacional autorizado pra admin
+      // identificar workers no Kanban; LGPD: minimização aplicada — sem fallback de email).
+      // Workers sem first_name_encrypted (~44 em prod, 0.36%) caem pro identificador parcial UUID.
+      const kms = new KMSEncryptionService();
+      const decryptedNames = await Promise.all(result.rows.map(async (row) => {
+        const [firstName, lastName] = await Promise.all([
+          row.first_name_encrypted ? kms.decrypt(row.first_name_encrypted).catch(() => null) : null,
+          row.last_name_encrypted ? kms.decrypt(row.last_name_encrypted).catch(() => null) : null,
+        ]);
+        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+        if (fullName) return fullName;
+        // Fallback LGPD-compliant: identificador parcial UUID (não-PII)
+        const wid = row.worker_id as string | null;
+        return wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação';
+      }));
+
+      for (let i = 0; i < result.rows.length; i++) {
+        const row = result.rows[i];
         const stage = row.funnel_stage as string | null;
 
         const item = {
           id: row.id,
           encuadreId: row.encuadre_id ?? null,
           workerId: row.worker_id ?? null,
-          workerName: row.worker_name,
+          workerName: decryptedNames[i],
           workerPhone: row.worker_phone,
           occupation: row.occupation_raw,
           interviewDate: row.interview_date,

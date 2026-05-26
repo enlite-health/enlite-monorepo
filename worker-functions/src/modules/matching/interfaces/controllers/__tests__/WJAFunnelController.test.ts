@@ -12,6 +12,7 @@
  */
 
 const mockQuery = jest.fn();
+const mockKmsDecrypt = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -21,6 +22,12 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
       }),
     }),
   },
+}));
+
+jest.mock('@shared/security/KMSEncryptionService', () => ({
+  KMSEncryptionService: jest.fn().mockImplementation(() => ({
+    decrypt: mockKmsDecrypt,
+  })),
 }));
 
 import { WJAFunnelController } from '../WJAFunnelController';
@@ -39,7 +46,9 @@ function mockReqRes(params = {}, body = {}): [Request, Response] {
 function makeRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'e1',
-    worker_name: 'Test Worker',
+    worker_id: 'wid-aaaa-bbbb-cccc-12345678',
+    first_name_encrypted: 'encrypted:first',
+    last_name_encrypted: 'encrypted:last',
     worker_phone: '+54911000',
     occupation_raw: 'AT',
     interview_date: null,
@@ -65,6 +74,13 @@ describe('WJAFunnelController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default KMS mock: decrypta prefixo 'encrypted:' → resto. Permite asserts diretos.
+    mockKmsDecrypt.mockImplementation((value: string) => {
+      if (typeof value === 'string' && value.startsWith('encrypted:')) {
+        return Promise.resolve(value.slice('encrypted:'.length));
+      }
+      return Promise.reject(new Error('KMS decrypt failed'));
+    });
     controller = new WJAFunnelController();
     dashboardController = new EncuadreDashboardController();
   });
@@ -187,6 +203,53 @@ describe('WJAFunnelController', () => {
       expect(e3).toBeDefined();
       expect(e3.internalStage).toBeNull();
       expect(e3.funnelStage).toBeUndefined(); // F7.c: removido
+    });
+
+    it('decrypta workerName via KMS; fallback Worker #<uuid-tail> quando sem nome (LGPD: sem email)', async () => {
+      // Cenários: (1) decrypt OK, (2) só firstName, (3) sem first/last → fallback UUID parcial, (4) sem worker_id → "sem identificação"
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          makeRow({
+            id: 'wja-1',
+            worker_id: 'aaaaaaaa-1111-2222-3333-444455556666',
+            first_name_encrypted: 'encrypted:Ana',
+            last_name_encrypted: 'encrypted:Lima',
+            funnel_stage: null,
+          }),
+          makeRow({
+            id: 'wja-2',
+            worker_id: 'bbbbbbbb-1111-2222-3333-777788889999',
+            first_name_encrypted: 'encrypted:Carlos',
+            last_name_encrypted: null,
+            funnel_stage: null,
+          }),
+          makeRow({
+            id: 'wja-3',
+            worker_id: 'cccccccc-aaaa-bbbb-cccc-deadbeef1234',
+            first_name_encrypted: null,
+            last_name_encrypted: null,
+            funnel_stage: null,
+          }),
+          makeRow({
+            id: 'wja-4',
+            worker_id: null,
+            first_name_encrypted: null,
+            last_name_encrypted: null,
+            funnel_stage: null,
+          }),
+        ],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      const items = stages.INVITED as Array<{ id: string; workerName: string }>;
+      expect(items.find(c => c.id === 'wja-1')!.workerName).toBe('Ana Lima');
+      expect(items.find(c => c.id === 'wja-2')!.workerName).toBe('Carlos');
+      // LGPD: sem email; fallback é UUID parcial dos últimos 8 chars (Worker #beef1234)
+      expect(items.find(c => c.id === 'wja-3')!.workerName).toBe('Worker #beef1234');
+      expect(items.find(c => c.id === 'wja-4')!.workerName).toBe('Worker sem identificação');
     });
 
     it('retorna 7 stages vazios quando não há encuadres', async () => {
