@@ -951,6 +951,13 @@
           "kanban": "Kanban"
         },
         "dispatchInvitesButton": "Enviar invitaciones",
+        "dispatchInvitesButtonCount": "Enviar invitaciones ({{count}})",
+        "dispatchConfirm": {
+          "title": "Confirmar envío",
+          "body": "Se enviarán {{count}} mensajes de WhatsApp a candidatos invitados sin notificación previa.",
+          "confirm": "Enviar",
+          "cancel": "Cancelar"
+        },
         "kanban": {
           "totalEncuadres": "encuadres totales",
           "refresh": "Actualizar",
@@ -1219,6 +1226,7 @@
         "serviceType": "Tipo de servicio:",
         "daysAndHours": "Días y Horarios:",
         "edit": "Editar",
+        "editSchedule": "Editar horarios",
         "weekdays": {
           "sunday": "Domingo:",
           "monday": "Lunes:",
@@ -1231,6 +1239,18 @@
       },
       "meetLinksRow": {
         "title": "Fechas para entrevista:"
+      },
+      "statusEditor": {
+        "editLabel": "Editar estado de la vacante"
+      },
+      "scheduleEditor": {
+        "title": "Editar horarios",
+        "subtitle": "Definí los días y horarios en los que la vacante necesita cobertura.",
+        "save": "Guardar",
+        "saving": "Guardando...",
+        "cancel": "Cancelar",
+        "close": "Cerrar",
+        "errorEmpty": "Agregá al menos un horario válido (día + desde + hasta)."
       }
     },
     "vacancyModal": {

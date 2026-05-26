@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type { SavedCandidate } from '../../types/match';
+import type { InviteTarget } from '@presentation/components/features/admin/VacancyMatch/inviteTypes';
 
 const SEND_INTERVAL_MS = 300; // Intervalo entre envios para evitar rate limit do Twilio
 
@@ -20,7 +20,7 @@ export function useMatchMessaging(vacancyId: string | undefined) {
    * O backend decide o slug do template automaticamente (complete vs incomplete).
    * Retorna o timestamp ISO de envio ou lança erro.
    */
-  const sendToOne = useCallback(async (candidate: SavedCandidate): Promise<string> => {
+  const sendToOne = useCallback(async (candidate: InviteTarget): Promise<string> => {
     if (!vacancyId) throw new Error('vacancyId obrigatório');
     await AdminApiService.sendVacancyMatchInvite(candidate.workerId, vacancyId);
     return new Date().toISOString();
@@ -32,7 +32,7 @@ export function useMatchMessaging(vacancyId: string | undefined) {
    * `onMessaged` é chamado após cada envio bem-sucedido para atualizar o state pai.
    */
   const sendBatch = useCallback(async (
-    candidates: SavedCandidate[],
+    candidates: InviteTarget[],
     onMessaged: (workerId: string, messagedAt: string) => void,
   ) => {
     setIsSending(true);

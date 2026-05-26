@@ -4,12 +4,16 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import type { FunnelBucket } from '@domain/entities/Funnel';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
+import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandidates';
+import type { InviteTarget } from '../../VacancyMatch/inviteTypes';
 import { VacancyFunnelToggle } from './VacancyFunnelToggle';
 import type { FunnelView } from './VacancyFunnelToggle';
 import { VacancyFunnelTabs } from './VacancyFunnelTabs';
 import { VacancyFunnelTable } from './VacancyFunnelTable';
 import { VacancyFunnelKanban } from './VacancyFunnelKanban';
+import { DispatchConfirmModal } from './DispatchConfirmModal';
 import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
+import { InviteProgressModal } from '../../VacancyMatch/InviteProgressModal';
 import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
 
 const DEFAULT_BUCKET: FunnelBucket = 'INVITED';
@@ -50,6 +54,9 @@ export function VacancyFunnelView({
   const [activeBucket, setActiveBucket] =
     useState<FunnelBucket>(DEFAULT_BUCKET);
   const [showMatchModal, setShowMatchModal] = useState(false);
+  const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
+  const [showInviteProgress, setShowInviteProgress] = useState(false);
+  const [dispatchSnapshot, setDispatchSnapshot] = useState<InviteTarget[]>([]);
 
   const isListView = view === 'list';
 
@@ -58,6 +65,12 @@ export function VacancyFunnelView({
     activeBucket,
     isListView,
   );
+
+  const {
+    candidates: pendingCandidates,
+    pendingCount,
+    refetch: refetchPending,
+  } = useInvitedPendingCandidates(vacancyId);
 
   function handleViewChange(newView: FunnelView) {
     setView(newView);
@@ -69,8 +82,19 @@ export function VacancyFunnelView({
   }
 
   function handleDispatchInvites() {
-    // TODO TD-XXX: Implement dispatch invites flow — see docs/FOLLOWUPS.md
-    console.log('[FunnelView] dispatch invites clicked');
+    if (pendingCount === 0) return;
+    setDispatchSnapshot(pendingCandidates);
+    setShowDispatchConfirm(true);
+  }
+
+  function handleConfirmDispatch() {
+    setShowDispatchConfirm(false);
+    setShowInviteProgress(true);
+  }
+
+  function handleCloseProgress() {
+    setShowInviteProgress(false);
+    refetchPending();
   }
 
   // Reset bucket when switching back to list view
@@ -99,8 +123,11 @@ export function VacancyFunnelView({
               variant="primary"
               size="md"
               onClick={handleDispatchInvites}
+              disabled={pendingCount === 0}
             >
-              {t('admin.vacancyDetail.funnelView.dispatchInvitesButton')}
+              {t('admin.vacancyDetail.funnelView.dispatchInvitesButtonCount', {
+                count: pendingCount,
+              })}
             </Button>
           </div>
         )}
@@ -144,6 +171,25 @@ export function VacancyFunnelView({
           vacancyId={vacancyId}
           vacancy={vacancy}
           onClose={() => setShowMatchModal(false)}
+        />
+      )}
+
+      {showDispatchConfirm && (
+        <DispatchConfirmModal
+          pendingCount={dispatchSnapshot.length}
+          onConfirm={handleConfirmDispatch}
+          onCancel={() => setShowDispatchConfirm(false)}
+        />
+      )}
+
+      {showInviteProgress && (
+        <InviteProgressModal
+          candidates={dispatchSnapshot}
+          vacancyId={vacancyId}
+          onClose={handleCloseProgress}
+          onMessaged={(_workerId: string, _messagedAt: string) => {
+            // no-op: VacancyFunnelView refetches on modal close
+          }}
         />
       )}
     </div>

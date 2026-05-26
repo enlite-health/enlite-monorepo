@@ -5,10 +5,10 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useMatchMessaging } from '@hooks/admin/useMatchMessaging';
-import type { SavedCandidate } from '../../../../../types/match';
+import type { InviteTarget } from './inviteTypes';
 
 export interface InviteProgressModalProps {
-  candidates: SavedCandidate[];
+  candidates: InviteTarget[];
   vacancyId: string;
   onClose: () => void;
   onMessaged: (workerId: string, messagedAt: string) => void;
