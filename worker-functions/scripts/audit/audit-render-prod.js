@@ -117,9 +117,12 @@ async function loginFirebase() {
       await page.waitForSelector('[data-testid="kanban-board"]', { timeout: 30000 });
       await page.waitForTimeout(2000); // wait cards to settle
 
-      // Screenshot da página inteira
+      // Screenshot focado no Kanban (não a página inteira — Kanban fica no scroll inferior)
       const screenshotPath = path.join(OUTPUT_DIR, `vacancy-${vac.case}-${vac.id.slice(0, 8)}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: true });
+      const kanbanLocator = page.locator('[data-testid="kanban-board"]');
+      await kanbanLocator.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1000);
+      await kanbanLocator.screenshot({ path: screenshotPath });
 
       // Pra cada worker, verificar:
       // 1. card existe no DOM
