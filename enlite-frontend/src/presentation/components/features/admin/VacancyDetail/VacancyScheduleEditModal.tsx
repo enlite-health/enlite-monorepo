@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -107,14 +108,19 @@ export function VacancyScheduleEditModal({
     }
   };
 
-  return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-      onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
-      data-testid="vacancy-schedule-modal"
-    >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 bg-slate-900/60 z-[60]"
+        onClick={() => !saving && onClose()}
+        data-testid="vacancy-schedule-modal-backdrop"
+      />
+
+      <aside
+        className="fixed top-[10px] bottom-[10px] right-0 z-[60] w-full max-w-md bg-white shadow-2xl rounded-tl-2xl rounded-bl-2xl flex flex-col"
+        data-testid="vacancy-schedule-modal"
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 shrink-0">
           <Heading level={3} weight="semibold" color="secondary">
             {t('admin.vacancyDetail.scheduleEditor.title')}
           </Heading>
@@ -129,7 +135,7 @@ export function VacancyScheduleEditModal({
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <Text size="sm" color="secondary">
             {t('admin.vacancyDetail.scheduleEditor.subtitle')}
           </Text>
@@ -143,27 +149,28 @@ export function VacancyScheduleEditModal({
               </Text>
             </div>
           )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>
-              {t('admin.vacancyDetail.scheduleEditor.cancel')}
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={handleSubmit}
-              isLoading={saving}
-              disabled={saving}
-              data-testid="vacancy-schedule-save"
-            >
-              {saving
-                ? t('admin.vacancyDetail.scheduleEditor.saving')
-                : t('admin.vacancyDetail.scheduleEditor.save')}
-            </Button>
-          </div>
         </div>
-      </div>
-    </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 shrink-0">
+          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>
+            {t('admin.vacancyDetail.scheduleEditor.cancel')}
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={handleSubmit}
+            isLoading={saving}
+            disabled={saving}
+            data-testid="vacancy-schedule-save"
+          >
+            {saving
+              ? t('admin.vacancyDetail.scheduleEditor.saving')
+              : t('admin.vacancyDetail.scheduleEditor.save')}
+          </Button>
+        </div>
+      </aside>
+    </>,
+    document.body,
   );
 }
