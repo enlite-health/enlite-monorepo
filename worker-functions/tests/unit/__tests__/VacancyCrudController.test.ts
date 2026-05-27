@@ -405,12 +405,19 @@ describe('VacancyCrudController', () => {
 
   describe('updateVacancy', () => {
 
-    // Helpers — preceed each test with a SELECT that hydrates current status
+    // Helpers — preceed each test with a SELECT that hydrates current state.
+    // Migration 168 added `is_draft` as the canonical "incomplete publication"
+    // flag, decoupled from status. authorizeVacancyUpdate reads both columns;
+    // the helper mocks both so the controller path matches reality.
     function mockDraftSelect(): void {
-      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'PENDING_ACTIVATION' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ status: 'PENDING_ACTIVATION', is_draft: true, patient_id: 'pat-uuid-1' }],
+      });
     }
     function mockOperationalSelect(status = 'SEARCHING'): void {
-      mockQuery.mockResolvedValueOnce({ rows: [{ status }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ status, is_draft: false, patient_id: 'pat-uuid-1' }],
+      });
     }
 
     // ── Draft mode (PENDING_ACTIVATION) — wizard de criação edita tudo ──────
