@@ -6,40 +6,44 @@ import { logger, reportError } from '@shared/logging';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
-// Intervalo entre envios para evitar bloqueio de número pelo WhatsApp/Twilio.
-// Padrão: 1500ms. Sobreposto pela variável de ambiente BULK_DISPATCH_DELAY_MS.
 const DEFAULT_DELAY_MS = 1500;
+
+// Cap: máximo de envios por worker antes de desistir.
+// Meta penaliza números que enviam repetidamente para quem não responde.
+const MAX_SEND_ATTEMPTS = 5;
+
+// Workers com 3+ mensagens undelivered recentes são excluídos —
+// indicam número bloqueado/inativo, continuar piora a reputação.
+const UNDELIVERED_THRESHOLD = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Workers com encuadre que ainda têm documentos ou perfil incompletos
-// Dedup via NOT EXISTS em worker_reminder_state (slot por dia).
 const INCOMPLETE_WORKERS_QUERY = `
+  WITH send_stats AS (
+    SELECT worker_id,
+           COUNT(*) FILTER (WHERE status = 'sent') AS total_sent
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE template_slug = '${TEMPLATE_SLUG}'
+    GROUP BY worker_id
+  ),
+  undelivered_stats AS (
+    SELECT worker_id,
+           COUNT(*) AS undelivered_count
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE delivery_status = 'undelivered'
+      AND dispatched_at > NOW() - INTERVAL '30 days'
+    GROUP BY worker_id
+  )
   SELECT DISTINCT
     w.id,
-    w.phone,
-    w.status,
-    w.profession,
-    w.preferred_age_range,
-    w.preferred_types,
-    w.experience_types,
-    wd.documents_status,
-    CASE WHEN wd.resume_cv_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_curriculo,
-    CASE WHEN wd.identity_document_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_rg_cpf,
-    CASE WHEN wd.criminal_record_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_antecedentes,
-    CASE WHEN wd.professional_registration_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_registro_prof,
-    CASE WHEN wd.liability_insurance_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_seguro,
-    CASE WHEN w.sex_encrypted IS NULL THEN 'SIM' ELSE 'não' END AS falta_sexo,
-    CASE WHEN w.first_name_encrypted IS NULL THEN 'SIM' ELSE 'não' END AS falta_nome,
-    CASE WHEN w.profession IS NULL OR w.profession = '' THEN 'SIM' ELSE 'não' END AS falta_profissao,
-    CASE WHEN w.preferred_age_range IS NULL OR w.preferred_age_range = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_age_range,
-    CASE WHEN w.preferred_types IS NULL OR w.preferred_types = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_preferred_types,
-    CASE WHEN w.experience_types IS NULL OR w.experience_types = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_experience_types
+    w.phone
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
   LEFT JOIN worker_documents wd ON wd.worker_id = w.id
+  LEFT JOIN send_stats ss ON ss.worker_id = w.id
+  LEFT JOIN undelivered_stats us ON us.worker_id = w.id
   WHERE
     w.email NOT LIKE '%@enlite.import'
     AND w.phone IS NOT NULL
@@ -54,11 +58,21 @@ const INCOMPLETE_WORKERS_QUERY = `
       OR w.preferred_types IS NULL OR w.preferred_types = '{}'::text[]
       OR w.experience_types IS NULL OR w.experience_types = '{}'::text[]
     )
+    -- Dedup: não enviar se já recebeu hoje
     AND NOT EXISTS (
       SELECT 1 FROM worker_reminder_state wrs
       WHERE wrs.worker_id = w.id
-        AND wrs.template_slug = 'complete_register_ofc'
+        AND wrs.template_slug = '${TEMPLATE_SLUG}'
         AND wrs.sent_date = CURRENT_DATE
+    )
+    -- Cap: máximo ${MAX_SEND_ATTEMPTS} envios totais por worker
+    AND COALESCE(ss.total_sent, 0) < ${MAX_SEND_ATTEMPTS}
+    -- Excluir números com 3+ undelivered (bloqueado/inativo)
+    AND COALESCE(us.undelivered_count, 0) < ${UNDELIVERED_THRESHOLD}
+    -- Excluir opt-out
+    AND NOT EXISTS (
+      SELECT 1 FROM messaging_opt_out moo
+      WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL
     )
   ORDER BY w.id
 `;

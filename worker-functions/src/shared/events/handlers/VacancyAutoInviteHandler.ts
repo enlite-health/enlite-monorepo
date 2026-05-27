@@ -120,6 +120,34 @@ export function createVacancyAutoInviteHandler(
         const isComplete     = workerStatus === 'REGISTERED';
         const templateSlug   = isComplete ? TEMPLATE_SLUG_COMPLETE : TEMPLATE_SLUG_INCOMPLETE;
 
+        // Opt-out: worker pediu pra não receber mensagens
+        const optOutRes = await db.query<{ exists: boolean }>(
+          `SELECT EXISTS(
+            SELECT 1 FROM messaging_opt_out
+            WHERE worker_id = $1 AND opted_in_at IS NULL
+          ) AS exists`,
+          [candidate.workerId],
+        );
+        if (optOutRes.rows[0]?.exists) {
+          skipped++;
+          continue;
+        }
+
+        // Cooldown global: não enviar se worker recebeu qualquer msg nos últimos 3 dias
+        const cooldownRes = await db.query<{ exists: boolean }>(
+          `SELECT EXISTS(
+            SELECT 1 FROM whatsapp_bulk_dispatch_logs
+            WHERE worker_id = $1
+              AND status = 'sent'
+              AND dispatched_at > NOW() - INTERVAL '3 days'
+          ) AS exists`,
+          [candidate.workerId],
+        );
+        if (cooldownRes.rows[0]?.exists) {
+          skipped++;
+          continue;
+        }
+
         // Idempotência: já enfileirado nos últimos 7 dias para qualquer template ar_vacancy_match_*?
         const existsRes = await db.query<{ exists: boolean }>(
           `SELECT EXISTS(

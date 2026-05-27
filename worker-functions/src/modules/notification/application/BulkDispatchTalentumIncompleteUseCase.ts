@@ -6,9 +6,9 @@ import { logger, reportError } from '@shared/logging';
 
 const TEMPLATE_SLUG = 'talentum_incomplete_reminder';
 
-// Intervalo entre envios para evitar bloqueio de número pelo WhatsApp/Twilio.
-// Padrão: 1500ms. Sobreposto pela variável de ambiente BULK_DISPATCH_DELAY_MS.
 const DEFAULT_DELAY_MS = 1500;
+
+const UNDELIVERED_THRESHOLD = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -36,6 +36,14 @@ const TALENTUM_INCOMPLETE_QUERY = `
     FROM whatsapp_bulk_dispatch_logs
     WHERE template_slug = 'talentum_incomplete_reminder'
     GROUP BY worker_id
+  ),
+  undelivered_stats AS (
+    SELECT worker_id,
+           COUNT(*) AS undelivered_count
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE delivery_status = 'undelivered'
+      AND dispatched_at > NOW() - INTERVAL '30 days'
+    GROUP BY worker_id
   )
   SELECT DISTINCT
     w.id AS worker_id,
@@ -45,17 +53,15 @@ const TALENTUM_INCOMPLETE_QUERY = `
     ON wja.worker_id = w.id
     AND wja.application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')
   LEFT JOIN talentum_send_stats tss ON tss.worker_id = w.id
+  LEFT JOIN undelivered_stats us ON us.worker_id = w.id
   WHERE
     w.status != 'DISABLED'
     AND w.phone IS NOT NULL
     AND w.phone <> ''
     AND w.email NOT LIKE '%@enlite.import'
     AND (
-      -- 1º envio: nunca enviou + app parada há >=1 dia
       (tss.send_count IS NULL AND wja.updated_at < NOW() - INTERVAL '1 day')
       OR
-      -- 2º envio: enviou 1x + foi há >=3 dias (app continua parada implicitamente
-      -- porque application_funnel_stage ainda é INITIATED/IN_PROGRESS)
       (tss.send_count = 1 AND tss.last_sent_at < NOW() - INTERVAL '3 days')
     )
     AND NOT EXISTS (
@@ -63,6 +69,13 @@ const TALENTUM_INCOMPLETE_QUERY = `
       WHERE wrs.worker_id = w.id
         AND wrs.template_slug = 'talentum_incomplete_reminder'
         AND wrs.sent_date = CURRENT_DATE
+    )
+    -- Excluir números com 3+ undelivered (bloqueado/inativo)
+    AND COALESCE(us.undelivered_count, 0) < ${UNDELIVERED_THRESHOLD}
+    -- Excluir opt-out
+    AND NOT EXISTS (
+      SELECT 1 FROM messaging_opt_out moo
+      WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL
     )
   ORDER BY w.id
 `;

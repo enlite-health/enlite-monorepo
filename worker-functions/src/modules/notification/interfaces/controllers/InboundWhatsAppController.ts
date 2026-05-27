@@ -3,6 +3,12 @@ import { Pool } from 'pg';
 import twilio from 'twilio';
 import { BookSlotFromWhatsAppUseCase } from '../../application/BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
+import { logger } from '@shared/logging';
+
+const OPT_OUT_KEYWORDS = new Set([
+  'parar', 'stop', 'cancelar', 'desuscribir', 'desuscribirme',
+  'no quiero', 'basta', 'unsubscribe', 'optout', 'opt-out',
+]);
 
 /** Templates do fluxo qualified interview que este controller sabe rotear */
 const INTERVIEW_INVITE_SLUG = 'qualified_worker_request';
@@ -55,6 +61,14 @@ export class InboundWhatsAppController {
     const from = body['From'] ?? '';
     let buttonPayload = body['ButtonPayload'] ?? '';
     const originalMessageSid = body['OriginalRepliedMessageSid'] ?? '';
+
+    // Opt-out: interceptar PARAR/STOP antes de qualquer roteamento
+    const bodyTextRaw = (body['Body'] ?? '').trim();
+    if (bodyTextRaw && OPT_OUT_KEYWORDS.has(bodyTextRaw.toLowerCase())) {
+      await this.handleOptOut(from, bodyTextRaw);
+      res.status(200).send();
+      return;
+    }
 
     // Fallback: se ButtonPayload vazio, tentar inferir a partir do Body
     // usando o template original (via Twilio Content API) para mapear
@@ -147,6 +161,42 @@ export class InboundWhatsAppController {
 
     // 4. Twilio espera 200 OK
     res.status(200).send();
+  }
+
+  /**
+   * Registra opt-out do worker. Normaliza phone whatsapp:+NNN → +NNN,
+   * busca worker_id, insere em messaging_opt_out (ON CONFLICT = re-opt-out).
+   */
+  private async handleOptOut(from: string, keyword: string): Promise<void> {
+    const phone = from.replace('whatsapp:', '');
+    const log = logger.child({ phone, keyword, handler: 'OptOut' });
+
+    try {
+      const workerRes = await this.db.query<{ id: string }>(
+        `SELECT id FROM workers WHERE phone = $1 LIMIT 1`,
+        [phone],
+      );
+
+      if (workerRes.rows.length === 0) {
+        log.info('Opt-out request from unknown phone, ignoring');
+        return;
+      }
+
+      const workerId = workerRes.rows[0].id;
+
+      await this.db.query(
+        `INSERT INTO messaging_opt_out (worker_id, phone, reason, source)
+         VALUES ($1, $2, 'user_request', 'whatsapp_inbound')
+         ON CONFLICT (worker_id)
+         DO UPDATE SET opted_out_at = NOW(), opted_in_at = NULL, reason = 'user_request'`,
+        [workerId, phone],
+      );
+
+      log.info({ workerId }, 'Worker opted out of WhatsApp messages');
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      log.error({ error: e.message }, 'Failed to process opt-out');
+    }
   }
 
   /**

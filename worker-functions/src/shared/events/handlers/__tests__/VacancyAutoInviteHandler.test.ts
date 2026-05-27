@@ -132,7 +132,9 @@ describe('VacancyAutoInviteHandler', () => {
   it('candidato com EXISTS=true no outbox é skippado (idempotência)', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: 'Villa Crespo' }] }) // SELECT patient_zone
-      .mockResolvedValueOnce({ rows: [{ exists: true }] });                 // SELECT EXISTS outbox
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })                // opt-out check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })                // cooldown check
+      .mockResolvedValueOnce({ rows: [{ exists: true }] });                // SELECT EXISTS outbox
 
     const candidate = makeScoredCandidate();
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
@@ -148,6 +150,8 @@ describe('VacancyAutoInviteHandler', () => {
   it('worker REGISTERED → INSERT outbox com slug=ar_vacancy_match_complete e 3 vars (sem pending_documents)', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] })    // SELECT patient_zone
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })               // opt-out check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })               // cooldown check
       .mockResolvedValueOnce({ rows: [{ exists: false }] })               // SELECT EXISTS outbox
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-99' }] });            // INSERT outbox RETURNING id
 
@@ -157,7 +161,7 @@ describe('VacancyAutoInviteHandler', () => {
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    const insertCall = mockQuery.mock.calls[2];
+    const insertCall = mockQuery.mock.calls[4];
     expect(insertCall[0]).toContain('INSERT INTO messaging_outbox');
     expect(insertCall[1][0]).toBe('worker-1');                     // $1 worker_id
     expect(insertCall[1][1]).toBe('job-1');                        // $2 job_posting_id
@@ -180,6 +184,8 @@ describe('VacancyAutoInviteHandler', () => {
   it('worker INCOMPLETE_REGISTER → slug=ar_vacancy_match_incomplete com 4 vars incluindo pending_documents', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: 'Flores' }] })    // SELECT patient_zone
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })              // opt-out check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })              // cooldown check
       .mockResolvedValueOnce({ rows: [{ exists: false }] })              // SELECT EXISTS outbox
       // formatPendingDocuments query (worker_documents)
       .mockResolvedValueOnce({ rows: [{
@@ -197,18 +203,16 @@ describe('VacancyAutoInviteHandler', () => {
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    const insertCall = mockQuery.mock.calls[3];
+    const insertCall = mockQuery.mock.calls[5];
     expect(insertCall[1][2]).toBe('ar_vacancy_match_incomplete'); // $3 template_slug
 
     const vars = JSON.parse(insertCall[1][3]);
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.patient_zone).toBe('Flores');
     expect(vars.vacancy_url).toBe('https://app.enlite.health/vacancies/job-1');
-    // resume_cv_url=null → tu CV; criminal_record_url=null → tus antecedentes; liability_insurance_url=null → tu seguro
     expect(vars.pending_documents).toContain('tu CV');
     expect(vars.pending_documents).toContain('tus antecedentes penales');
     expect(vars.pending_documents).toContain('tu seguro de responsabilidad civil');
-    // identity_document_url e professional_registration_url preenchidos — não devem aparecer
     expect(vars.pending_documents).not.toContain('tu DNI');
     expect(vars.pending_documents).not.toContain('matrícula');
 
@@ -238,9 +242,12 @@ describe('VacancyAutoInviteHandler', () => {
   it('erro num candidato não bloqueia os próximos (loop continua)', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] })    // SELECT patient_zone
-      .mockRejectedValueOnce(new Error('DB error on candidate 1'))        // EXISTS falha no candidato 1
-      .mockResolvedValueOnce({ rows: [{ exists: false }] })               // EXISTS ok no candidato 2
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-2' }] });             // INSERT candidato 2
+      .mockRejectedValueOnce(new Error('DB error on candidate 1'))        // opt-out falha no candidato 1
+      // candidato 2 segue normalmente:
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })               // opt-out check c2
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })               // cooldown check c2
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })               // EXISTS outbox c2
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-2' }] });             // INSERT c2
 
     const c1 = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
     const c2 = makeScoredCandidate({ workerId: 'worker-2', workerStatus: 'REGISTERED' });
@@ -261,8 +268,10 @@ describe('VacancyAutoInviteHandler', () => {
   it('patient_zone null no DB → usa fallback "tu zona"', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: null }] })  // SELECT patient_zone retorna null
-      .mockResolvedValueOnce({ rows: [{ exists: false }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })        // opt-out check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })        // cooldown check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })        // EXISTS outbox
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });     // INSERT outbox
 
     const candidate = makeScoredCandidate({ workerStatus: 'REGISTERED' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
@@ -270,7 +279,7 @@ describe('VacancyAutoInviteHandler', () => {
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    const vars = JSON.parse(mockQuery.mock.calls[2][1][3]);
+    const vars = JSON.parse(mockQuery.mock.calls[4][1][3]);
     expect(vars.patient_zone).toBe('tu zona');
   });
 
@@ -278,8 +287,10 @@ describe('VacancyAutoInviteHandler', () => {
   it('usa TokenService.generate para worker_name (não plaintext)', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: 'Recoleta' }] })
-      .mockResolvedValueOnce({ rows: [{ exists: false }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })        // opt-out check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })        // cooldown check
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })        // EXISTS outbox
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });     // INSERT outbox
 
     const candidate = makeScoredCandidate({ workerId: 'worker-xyz', workerStatus: 'REGISTERED' });
     mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
@@ -288,7 +299,7 @@ describe('VacancyAutoInviteHandler', () => {
     await handler({ jobPostingId: 'job-1' });
 
     expect(mockGenerate).toHaveBeenCalledWith('worker-xyz', 'worker_name');
-    const vars = JSON.parse(mockQuery.mock.calls[2][1][3]);
+    const vars = JSON.parse(mockQuery.mock.calls[4][1][3]);
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.worker_name).toMatch(/^tk_/);
   });
