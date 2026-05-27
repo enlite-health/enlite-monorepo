@@ -41,7 +41,42 @@ Regras inegociáveis:
 | **F6** | Doc canônico em `docs/features/vacancy-creation/` (este doc + 10 subdocs). | ✅ Concluída 2026-05-26 | (pendente commit) |
 | **F7** | Backend: novo endpoint `GET /api/admin/vacancies/by-address?patient_address_id=X` retornando vagas (não soft-deleted, não CLOSED) que apontam pra aquele endereço. Frontend: `AddressHasVacancyDialog` integrado no `CreateVacancyPage` — quando `selectedAddressId` muda, frontend consulta o endpoint; se houver vagas, dispara modal bloqueante com lista + ações ("Editar a vaga", "Criar nova mesmo assim", "Escolher outro endereço"). Complementa o `ResumeDraftVacancyDialog` (per-patient) já existente. | ✅ Concluída 2026-05-26 | (pendente commit) |
 | **F8** | E2E `vacancy-address-versioning.e2e.test.ts` estendido: adiciona `(it 2)` cobrindo paciente com 2 endereços ativos (slot 1 + slot 2 simultâneos) — operador pode escolher qualquer um. Adiciona assertions na `it 1` cobrindo o endpoint by-address (retorna vaga 1 pra address arquivado, vaga 2 pra address ativo). Total: 2/2 verdes; suite relacionada 132/132 verdes. | ✅ Concluída 2026-05-26 | (pendente commit) |
-| **F9** | **Deploy + re-sync em prod:** rodar `npx ts-node scripts/import-patients-from-clickup.ts --live` depois do deploy do worker-functions. Re-aplica o mapper novo a todos os pacientes; backfilla `neighborhood/city/state` corretos pra todas as rows. Monitorar caso 429 + 5 amostras pós-sync. | ⏳ Pendente | — |
+| **F9** | **Deploy + re-sync em prod:** rodar `npx ts-node scripts/import-patients-from-clickup.ts --live` depois do deploy do worker-functions. Re-aplica o mapper novo a todos os pacientes; backfilla `neighborhood/city/state` corretos pra todas as rows. Monitorar caso 429 + caso 776 + 5 amostras pós-sync. | ⏳ Pendente | — |
+| **F10** | **Fix do prompt da IA (vaga 776):** `formatZoneForPrompt` dedupa neighborhood/city/state antes do prompt; regra 8 no system prompt instrui Gemini a NÃO inferir "capital" de nomes de província. Defense-in-depth pra quando o re-sync da F9 não conseguir corrigir todos os pacientes. 14 unit tests, incluindo regression literal do 776. | ✅ Concluída 2026-05-27 | (pendente commit) |
+
+## Passos pra executar F9 em prod
+
+```bash
+# 1. Confirma que o commit do fix do mapper está em prod (deploy do Cloud Run)
+gcloud run revisions list --service worker-functions --project enlite-prd --limit 3
+
+# 2. Conecta no Cloud SQL via proxy (porta 5435, secret enlite-ar-db-password)
+cloud-sql-proxy enlite-prd:southamerica-east1:enlite-postgres --port 5435
+
+# 3. Roda o re-sync de pacientes — DRY RUN primeiro
+cd worker-functions
+DATABASE_URL=postgresql://enlite_admin:$SECRET@localhost:5435/enlite \
+  npx ts-node scripts/import-patients-from-clickup.ts
+
+# 4. Confere o dry-run no log: pacientes processados + N° de city/state/neighborhood que mudariam
+
+# 5. Aplica
+DATABASE_URL=postgresql://enlite_admin:$SECRET@localhost:5435/enlite \
+  npx ts-node scripts/import-patients-from-clickup.ts --live
+
+# 6. Validação pós-run — queries SQL via DBA:
+#    - patient_addresses WHERE patient_id = <776 patient_id>: city deve ser "Bell Ville" agora
+#    - patient_addresses WHERE patient_id = <429 patient_id>: neighborhood "Av. Entre Ríos 2144, CABA"
+#    - amostra: SELECT city, state, neighborhood FROM patient_addresses
+#               WHERE city = state AND archived_at IS NULL LIMIT 10
+#               (deve diminuir após o re-sync; rows que sobram são pacientes
+#                sem address_components no ClickUp — operador precisa
+#                preencher manualmente o Domicilio Principal lá)
+```
+
+A vaga 776 já com a descrição publicada pode ser corrigida via:
+- Editar manualmente o texto na ficha da vaga (operadora), OU
+- Re-chamar `POST /api/admin/vacancies/:id/generate-ai-content` **depois** da F9 — IA vai usar o `city='Bell Ville'` correto agora e o prompt deduplicado garante que nem com dado errado o "capital" volta.
 
 ## Referências cruzadas
 

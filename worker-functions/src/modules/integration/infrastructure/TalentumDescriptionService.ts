@@ -18,6 +18,13 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { fetchGeminiWithRetry } from './gemini-fetch';
+import {
+  DESCRIPTION_RESPONSE_SCHEMA,
+  DESCRIPTION_SYSTEM_PROMPT,
+  formatZoneForPrompt,
+  MARCO_TEXT,
+  REFUSAL_MARKER,
+} from './talentumDescriptionHelpers';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -37,6 +44,7 @@ export interface GenerateDescriptionInput {
   workSchedule?: string;
   city?: string;
   state?: string;
+  neighborhood?: string;
   serviceDeviceTypes?: string[];
   pathologyTypes?: string;
   dependencyLevel?: string;
@@ -48,75 +56,6 @@ export interface GeneratedDescription {
   title: string;
   description: string;
 }
-
-// ─────────────────────────────────────────────────────────────────
-// Fixed text for section 3 (always appended verbatim)
-// ─────────────────────────────────────────────────────────────────
-
-const MARCO_TEXT =
-  'El Marco de Acompañamiento:\n' +
-  'EnLite Health Solutions ofrece a los prestadores un marco de trabajo ' +
-  'profesional y organizado, donde cada acompañamiento o cuidado se ' +
-  'realiza dentro de un proyecto terapéutico claro, con supervisión ' +
-  'clínica y soporte continuo del equipo de Coordinación Clínica ' +
-  'formado por psicólogas. Nuestra propuesta de valor es brindarles ' +
-  'casos acordes a su perfil y formación, con respaldo administrativo ' +
-  'y clínico, para que puedan enfocarse en lo más importante: el ' +
-  'bienestar del paciente.';
-
-// ─────────────────────────────────────────────────────────────────
-// System prompt — inline, focused on description generation only.
-// Pulls the rules from the Drive doc that are actually relevant for
-// this task (privacy, professional language, voseo, terminology) and
-// drops everything else (prescreening tables, WordPress fields, the
-// Regla #7 mutual-exclusion filter that breaks multi-type vacancies).
-// ─────────────────────────────────────────────────────────────────
-
-const DESCRIPTION_SYSTEM_PROMPT = `Sos un especialista en redacción de propuestas de prestación de servicios terapéuticos para EnLite Health Solutions.
-
-Tu tarea: generar la descripción de una vacante para publicar en Talentum, en formato JSON con dos campos.
-
-Reglas obligatorias:
-1. Privacidad absoluta: NUNCA incluyas datos personales identificables del paciente (nombres, DNI, direcciones exactas). Usá descripciones generales.
-2. Lenguaje profesional: NUNCA uses lenguaje laboral ("contratar", "equipo", "trabajo"). La relación es de "prestación de servicios" o "profesional independiente".
-3. Flexibilidad de horarios: Si el caso tiene múltiples turnos posibles, presentá la propuesta aclarando que el profesional puede postularse para un solo turno o jornada completa.
-4. Voseo argentino: usá "vos" en lugar de "tú". Tono cercano, amable, humano y profesional.
-5. Terminología correcta: usar "Certificado de AT", "Certificación", "Formación en Acompañamiento Terapéutico". NUNCA "Título", "Matrícula", "Habilitante".
-6. Texto plano sin markdown, sin asteriscos, sin encabezados. SIN saludos, introducciones ni despedidas.
-7. NO incluyas el texto del "Marco de Acompañamiento" institucional — el sistema lo agrega automáticamente al final.
-
-Estructura del output:
-- "propuesta": resumen objetivo del caso (tipo de profesional, zona, dispositivo, jornada, días/horarios disponibles, cantidad de prestadores, objetivo del acompañamiento basado en patologías y dependencia). 60-250 palabras.
-- "perfilProfesional": perfil ideal (sexo si excluyente, formación requerida, experiencia, atributos valorados). 60-250 palabras.`;
-
-// Substring that appears in the "Regla #7" refusal text in the Drive prompt
-// docs. Defense-in-depth: if a future code path or doc edit leaks the rule
-// into this service, we reject the response instead of silently saving the
-// refusal as a vacancy description on Talentum.
-const REFUSAL_MARKER = 'generar una vacante para cuidador en otro chat';
-
-const DESCRIPTION_RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    propuesta: {
-      type: 'STRING',
-      description:
-        'Resumen objetivo del caso: tipo de profesional, zona y localidad, ' +
-        'dispositivo de servicio, días y horarios disponibles, jornada, ' +
-        'cantidad de prestadores necesarios y objetivo general del ' +
-        'acompañamiento basado en patologías y nivel de dependencia. ' +
-        'Texto plano sin encabezados ni markdown.',
-    },
-    perfilProfesional: {
-      type: 'STRING',
-      description:
-        'Descripción del perfil ideal: sexo si excluyente, rango etario, ' +
-        'formación requerida, experiencia necesaria, atributos valorados. ' +
-        'Texto plano sin encabezados ni markdown.',
-    },
-  },
-  required: ['propuesta', 'perfilProfesional'],
-} as const;
 
 // ─────────────────────────────────────────────────────────────────
 // Service
@@ -149,7 +88,7 @@ export class TalentumDescriptionService {
          jp.age_range_min, jp.age_range_max,
          jp.providers_needed, jp.schedule, jp.work_schedule,
          jp.salary_text, jp.payment_day,
-         pa.city, pa.state,
+         pa.city, pa.state, pa.neighborhood,
          p.diagnosis AS pathology_types,
          p.dependency_level,
          p.service_type AS service_device_types
@@ -179,6 +118,7 @@ export class TalentumDescriptionService {
       workSchedule: row.work_schedule ?? undefined,
       city: row.city ?? undefined,
       state: row.state ?? undefined,
+      neighborhood: row.neighborhood ?? undefined,
       serviceDeviceTypes: row.service_device_types ? [row.service_device_types] : undefined,
       pathologyTypes: row.pathology_types ?? undefined,
       dependencyLevel: row.dependency_level ?? undefined,
@@ -264,7 +204,7 @@ Datos de la vacante:
 - Experiencia requerida: ${input.requiredExperience || 'No especificado'}
 - Atributos del prestador: ${input.workerAttributes || 'No especificado'}
 - Cantidad de prestadores: ${input.providersNeeded ?? 1}
-- Zona: ${[input.city, input.state].filter(Boolean).join(', ') || 'No especificado'}
+- Zona: ${formatZoneForPrompt({ neighborhood: input.neighborhood, city: input.city, state: input.state })}
 - Dispositivo de servicio: ${devices}
 - Jornada: ${input.workSchedule || 'No especificado'}
 - Horarios: ${this.formatSchedule(input.schedule)}
