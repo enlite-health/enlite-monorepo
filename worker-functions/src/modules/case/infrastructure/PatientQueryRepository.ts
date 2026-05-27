@@ -199,7 +199,8 @@ export class PatientQueryRepository {
         sex,
         needs_attention        AS "needsAttention",
         attention_reasons      AS "attentionReasons",
-        (SELECT COUNT(*) FROM patient_addresses pa WHERE pa.patient_id = p.id)::int
+        (SELECT COUNT(*) FROM patient_addresses pa
+          WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)::int
                                AS "addressesCount",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",

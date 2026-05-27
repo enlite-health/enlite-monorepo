@@ -25,6 +25,10 @@ const inProgressQuerySchema = z.object({
   patient_id: z.string().uuid({ message: 'patient_id must be a valid UUID v4' }),
 });
 
+const byAddressQuerySchema = z.object({
+  patient_address_id: z.string().uuid({ message: 'patient_address_id must be a valid UUID v4' }),
+});
+
 export class VacanciesController {
   private db: Pool;
 
@@ -232,7 +236,9 @@ export class VacanciesController {
           AND p.deleted_at IS NULL
           AND p.status IN ('ACTIVE', 'PENDING_ADMISSION', 'ADMISSION')
           AND EXISTS (
-            SELECT 1 FROM patient_addresses pa WHERE pa.patient_id = p.id
+            SELECT 1 FROM patient_addresses pa
+              WHERE pa.patient_id = p.id
+                AND pa.archived_at IS NULL
           )
         ORDER BY p.case_number DESC
       `);
@@ -330,6 +336,62 @@ export class VacanciesController {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('[VacanciesController] listInProgressForPatient error:', error);
       res.status(500).json({ success: false, error: 'Failed to list in-progress vacancies', details: msg });
+    }
+  }
+
+  /**
+   * GET /api/admin/vacancies/by-address?patient_address_id=:uuid
+   *
+   * Returns existing vacancies that already point to the given patient_address_id
+   * (not soft-deleted). Used by the frontend Step-1 form to warn the operator
+   * when there is already a vacancy targeting the chosen address:
+   *   - `is_draft = true` → operator should resume that draft instead of
+   *     creating a new one (legacy ResumeDraftVacancyDialog already handles
+   *     drafts per-patient; this endpoint adds per-address granularity).
+   *   - `status` in public set (SEARCHING / SEARCHING_REPLACEMENT /
+   *     RAPID_RESPONSE) OR `ACTIVE` → operator must edit the existing vacancy
+   *     or close it before opening a new one.
+   *   - terminal statuses (`CLOSED`) → omitted (no warning needed).
+   *
+   * Documented in: docs/features/vacancy-creation/05-fluxo-criacao.md
+   */
+  async listByAddress(req: Request, res: Response): Promise<void> {
+    const parsed = byAddressQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      res.status(400).json({
+        success: false,
+        error: firstIssue?.message ?? 'patient_address_id must be a valid UUID v4',
+      });
+      return;
+    }
+
+    const { patient_address_id } = parsed.data;
+
+    try {
+      const result = await this.db.query(
+        `SELECT
+          jp.id,
+          jp.case_number,
+          jp.vacancy_number,
+          jp.title,
+          jp.status,
+          jp.is_draft,
+          jp.talentum_published_at,
+          jp.created_at
+        FROM job_postings jp
+        WHERE jp.patient_address_id = $1
+          AND jp.deleted_at IS NULL
+          AND jp.status <> 'CLOSED'
+        ORDER BY jp.created_at DESC`,
+        [patient_address_id],
+      );
+
+      res.status(200).json({ success: true, data: result.rows });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('[VacanciesController] listByAddress error:', error);
+      res.status(500).json({ success: false, error: 'Failed to list vacancies by address', details: msg });
     }
   }
 }

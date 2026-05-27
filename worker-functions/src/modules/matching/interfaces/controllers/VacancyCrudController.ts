@@ -1,7 +1,13 @@
 import { Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { buildInsertQuery, buildInsertParams } from './vacancyCrudHelpers';
+import {
+  authorizeVacancyUpdate,
+  buildInsertQuery,
+  buildInsertParams,
+  FULL_ALLOWED_UPDATE_FIELDS,
+  OPERATIONAL_EDITABLE_FIELDS,
+} from './vacancyCrudHelpers';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
 import { reportError, loggingAls } from '@shared/logging';
@@ -84,19 +90,24 @@ export class VacancyCrudController {
         return;
       }
 
-      // Validate patient_address_id belongs to the patient_id (if both provided)
+      // Validate patient_address_id belongs to the patient_id AND is active
+      // (not archived). New vacancies must reference an active address — the
+      // operator picked it from the form, which filters archived rows.
+      // Migration 198 introduced archived_at for address versioning; see
+      // docs/features/vacancy-creation/06-endereco-servico.md.
       if (patient_address_id && patient_id) {
         const ownerCheck = await this.db.query(
           `SELECT 1
            FROM patient_addresses pa
            WHERE pa.id = $1
-             AND pa.patient_id = $2`,
+             AND pa.patient_id = $2
+             AND pa.archived_at IS NULL`,
           [patient_address_id, patient_id],
         );
         if (ownerCheck.rows.length === 0) {
           res.status(400).json({
             success: false,
-            error: 'patient_address_id não pertence ao patient_id informado',
+            error: 'patient_address_id não pertence ao patient_id informado ou foi arquivado',
           });
           return;
         }
@@ -232,79 +243,14 @@ export class VacancyCrudController {
       const { id } = req.params;
       const updates = req.body;
 
-      const CANONICAL_STATUSES = new Set([
-        'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
-        'PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED',
-      ]);
-      if (updates.status !== undefined && !CANONICAL_STATUSES.has(updates.status)) {
-        res.status(400).json({
-          success: false,
-          error: `Invalid status value "${updates.status}". Must be one of: ${[...CANONICAL_STATUSES].join(', ')}`,
-        });
+      const auth = await authorizeVacancyUpdate(this.db, id, updates);
+      if (auth.kind === 'error') {
+        res.status(auth.status).json({ success: false, error: auth.error });
         return;
       }
-
-      const currentRow = await this.db.query<{ status: string | null }>(
-        'SELECT status FROM job_postings WHERE id = $1',
-        [id],
-      );
-      if (currentRow.rows.length === 0) {
-        res.status(404).json({ success: false, error: 'Vacancy not found' });
-        return;
-      }
-      const currentStatus = currentRow.rows[0].status;
-      const isDraft = currentStatus === 'PENDING_ACTIVATION';
-
-      // Vagas que saíram do rascunho só podem editar horários e status.
-      // PENDING_ACTIVATION mantém edição ampla porque é o wizard de criação.
-      const OPERATIONAL_EDITABLE_FIELDS = new Set(['schedule', 'status']);
-      if (!isDraft) {
-        const requested = Object.keys(updates);
-        const forbidden = requested.filter(f => !OPERATIONAL_EDITABLE_FIELDS.has(f));
-        if (forbidden.length > 0) {
-          res.status(403).json({
-            success: false,
-            error: `Forbidden fields for vacancy in status "${currentStatus}": ${forbidden.join(', ')}. Only schedule and status can be edited.`,
-          });
-          return;
-        }
-      }
-
-      if (isDraft && 'patient_id' in req.body) {
-        const newPatientId = req.body.patient_id;
-        if (newPatientId === null || newPatientId === '' || typeof newPatientId !== 'string') {
-          res.status(400).json({
-            success: false,
-            error: 'patient_id não pode ser removido de uma vaga existente.',
-          });
-          return;
-        }
-        const patientCheck = await this.db.query<{ id: string }>(
-          'SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL',
-          [newPatientId],
-        );
-        if (patientCheck.rows.length === 0) {
-          res.status(400).json({
-            success: false,
-            error: 'patient_id inválido — paciente não encontrado ou foi removido.',
-          });
-          return;
-        }
-      }
-
-      const fullAllowedFields = [
-        'title', 'case_number', 'patient_id', 'patient_address_id',
-        'required_professions', 'required_sex',
-        'age_range_min', 'age_range_max',
-        'worker_profile_sought', 'required_experience', 'worker_attributes',
-        'schedule', 'work_schedule',
-        'providers_needed', 'salary_text', 'payment_day',
-        'daily_obs', 'status',
-        'published_at', 'closes_at',
-      ];
-      const allowedFields = isDraft
-        ? fullAllowedFields
-        : fullAllowedFields.filter(f => OPERATIONAL_EDITABLE_FIELDS.has(f));
+      const allowedFields = auth.isDraft
+        ? FULL_ALLOWED_UPDATE_FIELDS
+        : FULL_ALLOWED_UPDATE_FIELDS.filter(f => OPERATIONAL_EDITABLE_FIELDS.has(f));
 
       const jsonbFields = new Set(['schedule']);
       const setClause: string[] = [];
@@ -356,7 +302,7 @@ export class VacancyCrudController {
     try {
       const { id } = req.params;
       const result = await this.db.query(
-        `UPDATE job_postings SET status = 'CLOSED', updated_at = NOW() WHERE id = $1 RETURNING id`,
+        `UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING id`,
         [id],
       );
 

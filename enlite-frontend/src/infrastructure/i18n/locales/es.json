@@ -1490,6 +1490,15 @@
         "createNew": "Crear nueva vacante",
         "cancel": "Cancelar"
       },
+      "addressHasVacancyDialog": {
+        "titleSingular": "Este domicilio ya tiene una vacante",
+        "titlePlural": "Este domicilio ya tiene vacantes",
+        "description": "Encontramos {{count}} vacante(s) que ya apuntan a este mismo domicilio. Si necesitás actualizar el caso, editá la vacante existente o cerrala antes de crear una nueva.",
+        "draftBadge": "Borrador",
+        "editButton": "Editar la vacante",
+        "continueButton": "Crear nueva igual",
+        "cancelButton": "Elegir otro domicilio"
+      },
       "form": {
         "patientLabel": "Paciente",
         "diagnosisLabel": "Diagnóstico",

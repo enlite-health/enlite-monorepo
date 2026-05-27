@@ -33,10 +33,11 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Stepper } from '@presentation/components/molecules/Stepper';
 import { useVacancyModalFlow } from '@hooks/admin/useVacancyModalFlow';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
+import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 import type { AdminVacancyDetail } from '@domain/entities/Vacancy';
 import { VacancyFormSection } from '@presentation/components/features/admin/VacancyModal/VacancyFormSection';
 import { ResumeDraftVacancyDialog } from '@presentation/components/features/admin/VacancyModal/ResumeDraftVacancyDialog';
+import { AddressHasVacancyDialog } from '@presentation/components/features/admin/VacancyModal/AddressHasVacancyDialog';
 
 export default function CreateVacancyPage(): JSX.Element {
   const { t } = useTranslation();
@@ -60,6 +61,14 @@ export default function CreateVacancyPage(): JSX.Element {
   const [showResumeDialog, setShowResumeDialog] = useState(false);
   const [isCheckingDrafts, setIsCheckingDrafts] = useState(false);
   const lastCheckedPatientIdRef = useRef<string | null>(null);
+
+  // Address-has-vacancy state: warns when the selected patient_address_id is
+  // already linked to another vacancy (not deleted, not CLOSED). Per-address
+  // granularity complements the per-patient draft check above.
+  const [vacanciesAtAddress, setVacanciesAtAddress] = useState<VacancyByAddressSummary[]>([]);
+  const [showAddressHasVacancyDialog, setShowAddressHasVacancyDialog] = useState(false);
+  const lastCheckedAddressIdRef = useRef<string | null>(null);
+  const operatorOverrodeAddressWarningRef = useRef<Set<string>>(new Set());
 
   const flow = useVacancyModalFlow();
   const patientSelected = isEditMode || flow.selectedCaseNumber != null;
@@ -132,6 +141,58 @@ export default function CreateVacancyPage(): JSX.Element {
     lastCheckedPatientIdRef.current = null;
     setShowResumeDialog(false);
     setDrafts([]);
+  };
+
+  // Check existing vacancies attached to the selected address (per-address
+  // warning). Skipped in edit mode (the operator is intentionally editing the
+  // vacancy that already points to this address) and skipped on re-selection
+  // after the operator explicitly chose "Continue creating anyway".
+  useEffect(() => {
+    const addressId = flow.selectedAddressId;
+    if (isEditMode || !addressId) {
+      setShowAddressHasVacancyDialog(false);
+      return;
+    }
+    if (lastCheckedAddressIdRef.current === addressId) return;
+    if (operatorOverrodeAddressWarningRef.current.has(addressId)) {
+      lastCheckedAddressIdRef.current = addressId;
+      return;
+    }
+
+    lastCheckedAddressIdRef.current = addressId;
+
+    AdminApiService.listVacanciesByAddress(addressId)
+      .then((found) => {
+        if (found.length > 0) {
+          setVacanciesAtAddress(found);
+          setShowAddressHasVacancyDialog(true);
+        } else {
+          setShowAddressHasVacancyDialog(false);
+          setVacanciesAtAddress([]);
+        }
+      })
+      .catch((err: unknown) => {
+        console.error('[CreateVacancyPage] address-has-vacancy check failed:', err);
+      });
+  }, [flow.selectedAddressId, isEditMode]);
+
+  const handleAddressHasVacancyEdit = (vacancy: VacancyByAddressSummary) => {
+    setShowAddressHasVacancyDialog(false);
+    navigate(vacancy.is_draft ? `/admin/vacancies/${vacancy.id}/edit` : `/admin/vacancies/${vacancy.id}`);
+  };
+
+  const handleAddressHasVacancyContinue = () => {
+    const addressId = flow.selectedAddressId;
+    if (addressId) operatorOverrodeAddressWarningRef.current.add(addressId);
+    setShowAddressHasVacancyDialog(false);
+  };
+
+  const handleAddressHasVacancyCancel = () => {
+    // Revert: clear address selection so the operator can pick another one.
+    flow.selectAddress('');
+    lastCheckedAddressIdRef.current = null;
+    setShowAddressHasVacancyDialog(false);
+    setVacanciesAtAddress([]);
   };
 
   const handleSave = () => {
@@ -262,13 +323,22 @@ export default function CreateVacancyPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Draft-resume dialog */}
+      {/* Draft-resume dialog (per-patient) */}
       <ResumeDraftVacancyDialog
         isOpen={showResumeDialog}
         drafts={drafts}
         onResume={handleResumeDialogResume}
         onCreateNew={handleResumeDialogCreateNew}
         onCancel={handleResumeDialogCancel}
+      />
+
+      {/* Address-already-has-vacancy dialog (per-address) */}
+      <AddressHasVacancyDialog
+        isOpen={showAddressHasVacancyDialog}
+        vacancies={vacanciesAtAddress}
+        onEditExisting={handleAddressHasVacancyEdit}
+        onContinueCreating={handleAddressHasVacancyContinue}
+        onCancel={handleAddressHasVacancyCancel}
       />
 
       {/* Full-screen overlay during AI generation */}

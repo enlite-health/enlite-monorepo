@@ -1412,6 +1412,15 @@
         "createNew": "Criar nova vaga",
         "cancel": "Cancelar"
       },
+      "addressHasVacancyDialog": {
+        "titleSingular": "Esse endereço já tem uma vaga",
+        "titlePlural": "Esse endereço já tem vagas",
+        "description": "Encontramos {{count}} vaga(s) que já apontam para esse mesmo endereço. Se você precisa atualizar o caso, edite a vaga existente ou encerre-a antes de criar uma nova.",
+        "draftBadge": "Rascunho",
+        "editButton": "Editar a vaga",
+        "continueButton": "Criar nova mesmo assim",
+        "cancelButton": "Escolher outro endereço"
+      },
       "form": {
         "patientLabel": "Paciente",
         "diagnosisLabel": "Diagnóstico",

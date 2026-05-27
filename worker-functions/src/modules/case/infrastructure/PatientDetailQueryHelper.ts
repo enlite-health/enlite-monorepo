@@ -65,9 +65,14 @@ async function fetchRelated(pool: Pool, patientId: string) {
       [patientId],
     ),
     pool.query(
+      // archived_at IS NULL: patient detail shows only active addresses to the
+      // operator. Archived rows still exist in the table to preserve historic
+      // vacancies that point to them — see migration 198 and
+      // docs/features/vacancy-creation/06-endereco-servico.md.
       `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng
          FROM patient_addresses
         WHERE patient_id = $1
+          AND archived_at IS NULL
         ORDER BY display_order ASC`,
       [patientId],
     ),

@@ -14,8 +14,11 @@ import {
 import { mapClickUpVacancyStatus } from './mappings/vacancyStatusMap';
 import {
   extractStateFromLocation,
+  extractStateFromLocationStrict,
   extractCityFromLocation,
+  extractCityFromLocationStrict,
   extractNeighborhood,
+  extractNeighborhoodFromLocation,
 } from './helpers/locationHelpers';
 
 type CustomFieldMap = Record<string, unknown>;
@@ -182,20 +185,27 @@ export class ClickUpPatientMapper {
   private buildAddresses(cf: CustomFieldMap): PatientAddress[] {
     const addresses: PatientAddress[] = [];
 
-    // ClickUp stores structured location values as objects with lat/lng/formatted_address
-    // and also accepts plain text in "Domicilio Informado" fields.
+    // ClickUp stores structured location values as objects with lat/lng,
+    // formatted_address, and (when Google Places returns them) address_components.
+    // The "Domicilio Informado" custom fields carry plain text user input.
     //
-    // Location metadata (state/city/neighborhood) is extracted from dedicated fields:
-    //   "Provincia del Paciente"           → state  (location field)
-    //   "Ciudad / Localidad del Paciente"  → city   (location field)
-    //   "Zona o Barrio Paciente"           → neighborhood (short_text)
-    // These are patient-level fields, not per-address. We populate them on the primary
-    // address (slot 1) only, since the zona/barrio refers to the patient's usual zone.
-    const patientState        = extractStateFromLocation(cf['Provincia del Paciente'])
-                             ?? this.extractFormattedAddress(cf['Provincia del Paciente']);
-    const patientCity         = extractCityFromLocation(cf['Ciudad / Localidad del Paciente'])
-                             ?? this.extractFormattedAddress(cf['Ciudad / Localidad del Paciente']);
-    const patientNeighborhood = extractNeighborhood(cf['Zona o Barrio Paciente']);
+    // Each address row derives its state/city/neighborhood from the SAME location
+    // field that gave the formatted address — this keeps the three derived
+    // columns in sync with `address_formatted` even when the operator does not
+    // update the legacy patient-level custom fields (Provincia / Ciudad / Zona).
+    //
+    // Slot 1 (primary) falls back to the legacy patient-level fields when the
+    // location object does not include structured `address_components` — this
+    // covers historic ClickUp data that arrived as plain string.
+    //
+    // Slots 2 and 3 (secondary) do NOT use the legacy fallback because those
+    // patient-level fields refer to the patient's habitual zone, not a
+    // secondary address.
+    const legacyPatientState        = extractStateFromLocation(cf['Provincia del Paciente'])
+                                   ?? this.extractFormattedAddress(cf['Provincia del Paciente']);
+    const legacyPatientCity         = extractCityFromLocation(cf['Ciudad / Localidad del Paciente'])
+                                   ?? this.extractFormattedAddress(cf['Ciudad / Localidad del Paciente']);
+    const legacyPatientNeighborhood = extractNeighborhood(cf['Zona o Barrio Paciente']);
 
     const slots = [
       {
@@ -203,28 +213,21 @@ export class ClickUpPatientMapper {
         raw:      this.asString(cf['Domicilio Informado Paciente 1']),
         type:     'primary' as const,
         order:    1,
-        // Patient-level location metadata applied to primary address
-        state:        patientState,
-        city:         patientCity,
-        neighborhood: patientNeighborhood,
+        useLegacyFallback: true,
       },
       {
         location: cf['Domicilio 2 Principal Paciente'],
         raw:      this.asString(cf['Domicilio Informado Paciente 2']),
         type:     'secondary' as const,
         order:    2,
-        state:        null,
-        city:         null,
-        neighborhood: null,
+        useLegacyFallback: false,
       },
       {
         location: cf['Domicilio 3 Principal Paciente'],
         raw:      this.asString(cf['Domicilio Informado Paciente 3']),
         type:     'secondary' as const,
         order:    3,
-        state:        null,
-        city:         null,
-        neighborhood: null,
+        useLegacyFallback: false,
       },
     ];
 
@@ -232,14 +235,25 @@ export class ClickUpPatientMapper {
       const formatted = this.extractFormattedAddress(slot.location);
       if (!formatted && !slot.raw) continue;
 
+      // STRICT extraction from the slot's own location: only address_components
+      // are honored. Formatted-address fallback is disabled because the
+      // slot's formatted_address is a full street address (first comma segment
+      // is the street, not the city/state).
+      const state = extractStateFromLocationStrict(slot.location)
+                 ?? (slot.useLegacyFallback ? legacyPatientState : null);
+      const city = extractCityFromLocationStrict(slot.location)
+                ?? (slot.useLegacyFallback ? legacyPatientCity : null);
+      const neighborhood = extractNeighborhoodFromLocation(slot.location)
+                        ?? (slot.useLegacyFallback ? legacyPatientNeighborhood : null);
+
       addresses.push({
         addressType:      slot.type,
         addressFormatted: formatted ?? undefined,
         addressRaw:       slot.raw   ?? undefined,
         displayOrder:     slot.order,
-        state:            slot.state ?? undefined,
-        city:             slot.city ?? undefined,
-        neighborhood:     slot.neighborhood ?? undefined,
+        state:            state ?? undefined,
+        city:             city ?? undefined,
+        neighborhood:     neighborhood ?? undefined,
       });
     }
 

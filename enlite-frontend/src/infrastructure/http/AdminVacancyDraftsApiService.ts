@@ -9,7 +9,7 @@
  */
 
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
+import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 
 interface ApiSuccessResponse<T> {
   success: true;
@@ -54,6 +54,19 @@ class AdminVacancyDraftsApiServiceClass {
     return this.request<VacancyDraftSummary[]>(
       'GET',
       `/api/admin/vacancies/in-progress?patient_id=${encodeURIComponent(patientId)}`,
+    );
+  }
+
+  /**
+   * Lists existing vacancies that already point to a given patient_address_id
+   * (not soft-deleted, not CLOSED). Used to warn the operator before creating
+   * a new vacancy targeting the same address — covers both drafts and already
+   * published vacancies.
+   */
+  async listByAddress(patientAddressId: string): Promise<VacancyByAddressSummary[]> {
+    return this.request<VacancyByAddressSummary[]>(
+      'GET',
+      `/api/admin/vacancies/by-address?patient_address_id=${encodeURIComponent(patientAddressId)}`,
     );
   }
 }

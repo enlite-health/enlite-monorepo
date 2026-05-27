@@ -106,10 +106,15 @@ export class VacancyAddressReviewController {
         resolvedAddressId = bodyResult.data.patient_address_id as string;
       }
 
-      // 4. Validate the address belongs to the vacancy's patient
+      // 4. Validate the address belongs to the vacancy's patient AND is active
+      // (archived_at IS NULL). Archived addresses are kept around to preserve
+      // historic vacancies — they must not be selectable for new bindings.
       if (patientId) {
         const ownerCheck = await this.db.query<{ exists: boolean }>(
-          `SELECT 1 FROM patient_addresses WHERE id = $1 AND patient_id = $2`,
+          `SELECT 1 FROM patient_addresses
+            WHERE id = $1
+              AND patient_id = $2
+              AND archived_at IS NULL`,
           [resolvedAddressId, patientId],
         );
 

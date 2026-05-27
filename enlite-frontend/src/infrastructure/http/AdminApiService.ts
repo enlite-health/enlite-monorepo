@@ -20,7 +20,7 @@ import {
   type AIContentResult,
 } from './AdminTalentumApiService';
 import { AdminVacancyDraftsApiService } from './AdminVacancyDraftsApiService';
-import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
+import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 import type {
   ParseVacancyFullResult,
   PatientAddressCreateInput,
@@ -32,7 +32,7 @@ export type { WorkerDateStats, AdminAdditionalDocument };
 export type { ParseVacancyFullResult, PatientAddressCreateInput, PatientAddressRow };
 export type { PendingAddressReviewItem, ResolveAddressBody };
 export type { AIContentResult };
-export type { VacancyDraftSummary };
+export type { VacancyDraftSummary, VacancyByAddressSummary };
 
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 export { ApiError } from './ApiError';
@@ -373,6 +373,7 @@ class AdminApiServiceClass {
 
   // ========== Vacancy Drafts — delegated to AdminVacancyDraftsApiService ==========
   listDraftsForPatient(patientId: string): Promise<VacancyDraftSummary[]> { return AdminVacancyDraftsApiService.listDraftsForPatient(patientId); }
+  listVacanciesByAddress(patientAddressId: string): Promise<VacancyByAddressSummary[]> { return AdminVacancyDraftsApiService.listByAddress(patientAddressId); }
 }
 
 export const AdminApiService = new AdminApiServiceClass();

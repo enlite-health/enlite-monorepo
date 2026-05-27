@@ -345,9 +345,11 @@ describe('Vacancies API', () => {
           authHeaders(adminToken),
         );
         opVacancyId = created.data.data?.id;
-        // Move pra fora do rascunho
+        // Move pra fora do rascunho. Migration 168 decoupled draft state
+        // (is_draft) from operational state (status). The lock on wide edits
+        // is governed by is_draft — set both to mirror a published vacancy.
         await pool.query(
-          `UPDATE job_postings SET status = 'SEARCHING' WHERE id = $1`,
+          `UPDATE job_postings SET status = 'SEARCHING', is_draft = false WHERE id = $1`,
           [opVacancyId],
         );
       });

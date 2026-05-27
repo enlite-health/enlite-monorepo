@@ -168,7 +168,7 @@ export class AdminPatientsController {
         `INSERT INTO patient_addresses
            (patient_id, address_formatted, address_raw, address_type, display_order, source, lat, lng)
          VALUES ($1, $2, $3, $4,
-           COALESCE($5, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1)),
+           COALESCE($5, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL)),
            'admin_manual', $6, $7)
          RETURNING id, patient_id, address_formatted, address_raw, address_type`,
         [patientId, address_formatted, address_raw ?? null, address_type, displayOrderValue, lat, lng],
@@ -211,9 +211,15 @@ export class AdminPatientsController {
         lat: string | null;
         lng: string | null;
       }>(
+        // archived_at IS NULL: o form de criação de vaga e o detalhe do
+        // paciente só veem endereços ativos. Endereços arquivados continuam
+        // existindo na tabela pra preservar o histórico das vagas antigas
+        // que apontam pra eles (ver migration 198 e docs/features/
+        // vacancy-creation/06-endereco-servico.md).
         `SELECT id, address_formatted, address_raw, address_type, display_order, source, complement, lat, lng
          FROM patient_addresses
          WHERE patient_id = $1
+           AND archived_at IS NULL
          ORDER BY display_order ASC, created_at ASC`,
         [patientId],
       );

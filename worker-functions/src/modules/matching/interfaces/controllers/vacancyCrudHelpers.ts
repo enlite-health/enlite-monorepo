@@ -5,6 +5,8 @@
  * Extracted to keep VacancyCrudController within the 400-line limit.
  */
 
+import type { Pool } from 'pg';
+
 export interface VacancyInsertParams {
   vacancyNumber: number;
   case_number: any;
@@ -32,7 +34,7 @@ export interface VacancyInsertParams {
   closes_at?: string | null;
 }
 
-const CANONICAL_STATUSES = new Set([
+export const CANONICAL_STATUSES = new Set([
   'SEARCHING',
   'SEARCHING_REPLACEMENT',
   'RAPID_RESPONSE',
@@ -41,6 +43,121 @@ const CANONICAL_STATUSES = new Set([
   'SUSPENDED',
   'CLOSED',
 ]);
+
+export const OPERATIONAL_EDITABLE_FIELDS = new Set(['schedule', 'status']);
+
+export const FULL_ALLOWED_UPDATE_FIELDS = [
+  'title', 'case_number', 'patient_id', 'patient_address_id',
+  'required_professions', 'required_sex',
+  'age_range_min', 'age_range_max',
+  'worker_profile_sought', 'required_experience', 'worker_attributes',
+  'schedule', 'work_schedule',
+  'providers_needed', 'salary_text', 'payment_day',
+  'daily_obs', 'status',
+  'published_at', 'closes_at',
+];
+
+export type UpdateAuthorizationResult =
+  | { kind: 'error'; status: number; error: string }
+  | { kind: 'ok'; isDraft: boolean; currentStatus: string | null };
+
+/**
+ * Validates that a PUT /api/admin/vacancies/:id is allowed:
+ *   - status (when present) must be canonical
+ *   - vacancy must exist
+ *   - when is_draft=false: only OPERATIONAL_EDITABLE_FIELDS are allowed
+ *   - when is_draft=true and patient_id is changing: new patient must exist
+ *   - when is_draft=true and patient_address_id is changing: address must
+ *     belong to the (current or new) patient AND be active (archived_at IS NULL)
+ *
+ * is_draft is the canonical "incomplete publication" flag (migration 168).
+ * Decoupled from status — operator may pick a public status on Step 1 and
+ * still have is_draft=true until Talentum publish flips it.
+ */
+export async function authorizeVacancyUpdate(
+  db: Pool,
+  vacancyId: string,
+  updates: Record<string, unknown>,
+): Promise<UpdateAuthorizationResult> {
+  if (updates.status !== undefined && !CANONICAL_STATUSES.has(updates.status as string)) {
+    return {
+      kind: 'error',
+      status: 400,
+      error: `Invalid status value "${updates.status}". Must be one of: ${[...CANONICAL_STATUSES].join(', ')}`,
+    };
+  }
+
+  const currentRow = await db.query<{
+    status: string | null;
+    is_draft: boolean | null;
+    patient_id: string | null;
+  }>(
+    'SELECT status, is_draft, patient_id FROM job_postings WHERE id = $1',
+    [vacancyId],
+  );
+  if (currentRow.rows.length === 0) {
+    return { kind: 'error', status: 404, error: 'Vacancy not found' };
+  }
+  const currentStatus = currentRow.rows[0].status;
+  const isDraft = currentRow.rows[0].is_draft === true;
+  const effectivePatientId =
+    typeof updates.patient_id === 'string' && updates.patient_id
+      ? (updates.patient_id as string)
+      : currentRow.rows[0].patient_id;
+
+  if (!isDraft) {
+    const forbidden = Object.keys(updates).filter(f => !OPERATIONAL_EDITABLE_FIELDS.has(f));
+    if (forbidden.length > 0) {
+      return {
+        kind: 'error',
+        status: 403,
+        error: `Forbidden fields for vacancy in status "${currentStatus}": ${forbidden.join(', ')}. Only schedule and status can be edited.`,
+      };
+    }
+  }
+
+  if (isDraft && 'patient_id' in updates) {
+    const newPatientId = updates.patient_id;
+    if (newPatientId === null || newPatientId === '' || typeof newPatientId !== 'string') {
+      return {
+        kind: 'error',
+        status: 400,
+        error: 'patient_id não pode ser removido de uma vaga existente.',
+      };
+    }
+    const patientCheck = await db.query<{ id: string }>(
+      'SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL',
+      [newPatientId],
+    );
+    if (patientCheck.rows.length === 0) {
+      return {
+        kind: 'error',
+        status: 400,
+        error: 'patient_id inválido — paciente não encontrado ou foi removido.',
+      };
+    }
+  }
+
+  if (isDraft && 'patient_address_id' in updates && updates.patient_address_id) {
+    const ownerCheck = await db.query(
+      `SELECT 1
+         FROM patient_addresses pa
+        WHERE pa.id = $1
+          AND pa.patient_id = $2
+          AND pa.archived_at IS NULL`,
+      [updates.patient_address_id, effectivePatientId],
+    );
+    if (ownerCheck.rows.length === 0) {
+      return {
+        kind: 'error',
+        status: 400,
+        error: 'patient_address_id não pertence ao patient_id informado ou foi arquivado',
+      };
+    }
+  }
+
+  return { kind: 'ok', isDraft, currentStatus };
+}
 
 export function buildInsertQuery(): string {
   // `published_at` defaults to NOW() when the caller passes NULL — matches the
