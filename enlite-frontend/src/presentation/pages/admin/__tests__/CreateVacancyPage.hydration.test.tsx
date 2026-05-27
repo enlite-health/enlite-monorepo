@@ -53,6 +53,8 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     updateVacancyMeetLinks: vi.fn(),
     // Draft-check: return empty so the resume dialog never opens in these tests
     listDraftsForPatient: vi.fn().mockResolvedValue([]),
+    // Address-has-vacancy guard: return empty so the dialog never opens in these tests
+    listVacanciesByAddress: vi.fn().mockResolvedValue([]),
   },
 }));
 
