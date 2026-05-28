@@ -4,7 +4,7 @@ import { ChevronDown } from 'lucide-react';
 interface TimeSelectProps {
   value?: string;
   onChange?: (e: { target: { value: string } }) => void;
-  step?: 15 | 30 | 60;
+  step?: 5 | 15 | 30 | 60;
   className?: string;
   disabled?: boolean;
   placeholder?: string;
@@ -39,7 +39,7 @@ function normalizeTime(val: string): string {
 export function TimeSelect({
   value = '',
   onChange,
-  step = 30,
+  step = 5,
   className = '',
   disabled = false,
   placeholder = '--:--',
