@@ -192,20 +192,22 @@ export class VacancyTalentumController {
         state: row.state,
       };
 
-      // 2. Generate description (without persisting)
+      // 2+3. Generate description and prescreening (questions + FAQ) in parallel.
+      // Both are independent Gemini calls; serial execution exceeds Firebase Hosting's
+      // 60s rewrite timeout (causing 502 to the client). See FOLLOWUPS TD-035.
       const descService = new TalentumDescriptionService();
-      const descResult = await descService.generateDescriptionPreview(id);
-
-      // 3. Generate prescreening questions + FAQ
       const geminiService = new GeminiVacancyParserService();
       const professions: string[] = vacancyData.required_professions ?? [];
       const workerType = professions.includes('CUIDADOR') ? 'CUIDADOR' : 'AT';
-      const prescreeningResult = await geminiService.generateFromVacancyData(
-        vacancyData,
-        patientData,
-        addressData,
-        workerType,
-      );
+      const [descResult, prescreeningResult] = await Promise.all([
+        descService.generateDescriptionPreview(id),
+        geminiService.generateFromVacancyData(
+          vacancyData,
+          patientData,
+          addressData,
+          workerType,
+        ),
+      ]);
 
       // 4. Return without persisting
       res.status(200).json({

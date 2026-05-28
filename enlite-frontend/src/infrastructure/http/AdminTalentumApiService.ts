@@ -49,6 +49,11 @@ const authService = new FirebaseAuthService();
 const baseURL = (): string =>
   (import.meta as any).env?.VITE_API_WORKER_FUNCTIONS_URL || 'http://localhost:8080';
 
+// Direct Cloud Run URL — bypasses Firebase Hosting's 60s rewrite timeout.
+// Used only by long-running endpoints (Gemini calls etc.). Falls back to baseURL.
+const directBaseURL = (): string =>
+  (import.meta as any).env?.VITE_API_WORKER_FUNCTIONS_DIRECT_URL || baseURL();
+
 async function getHeaders(): Promise<Record<string, string>> {
   const token = await authService.getIdToken();
   return {
@@ -57,9 +62,10 @@ async function getHeaders(): Promise<Record<string, string>> {
   };
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, opts?: { useDirectURL?: boolean }): Promise<T> {
   const headers = await getHeaders();
-  const response = await fetch(`${baseURL()}${path}`, {
+  const base = opts?.useDirectURL ? directBaseURL() : baseURL();
+  const response = await fetch(`${base}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -106,6 +112,8 @@ export const AdminTalentumApiService = {
     return request<AIContentResult>(
       'POST',
       `/api/admin/vacancies/${vacancyId}/generate-ai-content`,
+      undefined,
+      { useDirectURL: true },
     );
   },
 
