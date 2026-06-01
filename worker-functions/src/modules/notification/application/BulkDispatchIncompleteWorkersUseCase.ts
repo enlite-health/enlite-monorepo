@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
+import { CadencePolicy } from '../domain/CadencePolicy';
 import { Result } from '@shared/utils/Result';
 import { logger, reportError } from '@shared/logging';
 
@@ -8,13 +9,20 @@ const TEMPLATE_SLUG = 'complete_register_ofc';
 
 const DEFAULT_DELAY_MS = 1500;
 
-// Cap: máximo de envios por worker antes de desistir.
-// Meta penaliza números que enviam repetidamente para quem não responde.
-const MAX_SEND_ATTEMPTS = 5;
+// Cadência combinada: envio inicial, +3 dias o 2º, +7 dias o 3º, e para (cap 3).
+// Meta penaliza números que enviam repetidamente para quem não responde — a
+// ausência dessa cadência (reenvio em dias consecutivos) causou o flag de spam.
+// Ver docs/INCIDENT_WHATSAPP_SPAM.md no triage-service.
+const CADENCE = new CadencePolicy([3, 7]);
 
 // Workers com 3+ mensagens undelivered recentes são excluídos —
 // indicam número bloqueado/inativo, continuar piora a reputação.
 const UNDELIVERED_THRESHOLD = 3;
+
+// FREEZE do incidente de spam: workers já contatados com este template ANTES
+// desta data (encerramento do incidente) NÃO são recontatados — eram a coorte
+// que recebeu a mensagem repetidamente. Workers novos seguem a CADENCE acima.
+const INCIDENT_FREEZE_CUTOFF = '2026-06-02T00:00:00Z';
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -23,7 +31,8 @@ function sleep(ms: number): Promise<void> {
 const INCOMPLETE_WORKERS_QUERY = `
   WITH send_stats AS (
     SELECT worker_id,
-           COUNT(*) FILTER (WHERE status = 'sent') AS total_sent
+           COUNT(*) FILTER (WHERE status = 'sent') AS total_sent,
+           MAX(dispatched_at) FILTER (WHERE status = 'sent') AS last_sent_at
     FROM whatsapp_bulk_dispatch_logs
     WHERE template_slug = '${TEMPLATE_SLUG}'
     GROUP BY worker_id
@@ -65,14 +74,22 @@ const INCOMPLETE_WORKERS_QUERY = `
         AND wrs.template_slug = '${TEMPLATE_SLUG}'
         AND wrs.sent_date = CURRENT_DATE
     )
-    -- Cap: máximo ${MAX_SEND_ATTEMPTS} envios totais por worker
-    AND COALESCE(ss.total_sent, 0) < ${MAX_SEND_ATTEMPTS}
+    -- Cadência (1º envio → +3d → +7d → para; cap ${CADENCE.maxSends}). Sem reenvio em dias consecutivos.
+    AND ${CADENCE.toSqlEligibility('COALESCE(ss.total_sent, 0)', 'ss.last_sent_at')}
     -- Excluir números com 3+ undelivered (bloqueado/inativo)
     AND COALESCE(us.undelivered_count, 0) < ${UNDELIVERED_THRESHOLD}
     -- Excluir opt-out
     AND NOT EXISTS (
       SELECT 1 FROM messaging_opt_out moo
       WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL
+    )
+    -- FREEZE do incidente de spam: não recontatar quem já recebeu este template
+    -- antes do encerramento do incidente (ver INCIDENT_FREEZE_CUTOFF).
+    AND NOT EXISTS (
+      SELECT 1 FROM whatsapp_bulk_dispatch_logs frz
+      WHERE frz.worker_id = w.id
+        AND frz.template_slug = '${TEMPLATE_SLUG}'
+        AND frz.dispatched_at < '${INCIDENT_FREEZE_CUTOFF}'
     )
   ORDER BY w.id
 `;

@@ -253,6 +253,30 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
     });
   });
 
+  describe('query de elegibilidade — cadência e freeze', () => {
+    it('inclui a cadência 3d/7d e o cap 3, sem dias consecutivos', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, makeMessaging());
+      await uc.execute('scheduler');
+
+      const selectSql = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(selectSql).toContain("INTERVAL '3 days'");
+      expect(selectSql).toContain("INTERVAL '7 days'");
+      expect(selectSql).toContain('COALESCE(ss.total_sent, 0) < 3');
+      expect(selectSql).not.toContain("INTERVAL '1 days'");
+    });
+
+    it('inclui o freeze da coorte do incidente (não recontatar quem já recebeu)', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, makeMessaging());
+      await uc.execute('scheduler');
+
+      const selectSql = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(selectSql).toContain('2026-06-02T00:00:00Z');
+      expect(selectSql).toMatch(/NOT EXISTS[\s\S]*whatsapp_bulk_dispatch_logs frz/);
+    });
+  });
+
   describe('falha no INSERT de log', () => {
     it('não bloqueia o fluxo — sent ainda é contabilizado', async () => {
       const db = makeDbSequence([
