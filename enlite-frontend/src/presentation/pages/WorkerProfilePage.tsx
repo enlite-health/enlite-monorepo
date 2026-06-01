@@ -65,8 +65,11 @@ export function WorkerProfilePage(): JSX.Element {
         }
       } catch {
         try {
-          const newWorker = await initWorker({});
-          if (!cancelled) {
+          const initResponse = await initWorker({});
+          // Onda 2: initWorker returns { status: 'ok', worker } or { status: 'claim_pending', ... }
+          // WorkerProfilePage only proceeds if status is 'ok'.
+          const newWorker = initResponse.status === 'ok' ? initResponse.worker : null;
+          if (!cancelled && newWorker) {
             hydrateFromServer(newWorker);
             updateGeneralInfo({
               email: user.email,

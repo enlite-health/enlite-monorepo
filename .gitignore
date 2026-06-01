@@ -35,3 +35,6 @@ build/
 # Artefatos de execução dos scripts de backfill (one-shot, contêm dados de auditoria)
 worker-functions/backfill-worker-names-unresolved.csv
 worker-functions/scripts/*.csv
+
+# Exports do DBA (contêm PII — emails, telefones, nomes de pacientes/prestadores)
+data/dba-exports/

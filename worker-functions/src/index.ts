@@ -60,6 +60,8 @@ import { InternalController } from '@modules/notification/interfaces/controllers
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
 import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
+import { createClaimController } from './bootstrap/createClaimController';
+import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
 
 const app = express();
 
@@ -154,6 +156,8 @@ const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
 const workerContextController = new WorkerContextController();
 
+const claimController = createClaimController();
+
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
 const chatwootClient = buildChatwootClient();
@@ -192,6 +196,8 @@ createMockAuthEndpoints(app);
 app.post('/api/workers/init', (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
+
+app.use('/api', createClaimRoutes(claimController));
 
 const workerLookupRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute

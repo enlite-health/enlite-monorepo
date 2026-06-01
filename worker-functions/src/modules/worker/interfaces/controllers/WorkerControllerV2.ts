@@ -12,6 +12,7 @@ import { QuizResponseRepository } from '../../infrastructure/QuizResponseReposit
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { EventDispatcher } from '@shared/services/EventDispatcher';
+import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
 export class WorkerControllerV2 {
   private initWorkerUseCase: InitWorkerUseCase;
@@ -30,7 +31,8 @@ export class WorkerControllerV2 {
     const availabilityRepository = new AvailabilityRepository();
     const eventDispatcher = new EventDispatcher();
 
-    this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, eventDispatcher);
+    const twilioVerifyService = new TwilioVerifyService();
+    this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, eventDispatcher, twilioVerifyService);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository, eventDispatcher);
     this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository);
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
@@ -57,7 +59,10 @@ export class WorkerControllerV2 {
       if (!existingResult.isFailure) {
         res.status(200).json({
           success: true,
-          data: existingResult.getValue(),
+          data: {
+            status: 'ok',
+            worker: existingResult.getValue(),
+          },
         });
         return;
       }
@@ -79,10 +84,29 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const worker = result.getValue();
+      const output = result.getValue();
+
+      // claim_pending: OTP foi disparado via Twilio Verify;
+      // o frontend deve mostrar o ecrã de confirmação OTP antes de prosseguir.
+      if (output.status === 'claim_pending') {
+        res.status(200).json({
+          success: true,
+          data: {
+            status: 'claim_pending',
+            candidateWorkerId: output.candidateWorkerId,
+            phoneMasked: output.phoneMasked,
+            verificationSid: output.verificationSid,
+          },
+        });
+        return;
+      }
+
       res.status(201).json({
         success: true,
-        data: worker,
+        data: {
+          status: 'ok',
+          worker: output.worker,
+        },
       });
     } catch (error: any) {
       res.status(500).json({
