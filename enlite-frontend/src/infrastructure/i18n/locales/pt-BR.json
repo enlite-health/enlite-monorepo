@@ -1,4 +1,10 @@
 {
+  "app": {
+    "newVersion": {
+      "message": "Há uma nova versão disponível. Recarregue a página para aplicar as melhorias.",
+      "reload": "Recarregar agora"
+    }
+  },
   "common": {
     "home": "Início",
     "communication": "Comunicação",
@@ -846,6 +852,8 @@
       "viewMatch": "Ver Match →",
       "case": "Caso",
       "vacancy": "Vaga",
+      "publishedRedirectBanner": "Esta vaga já foi publicada. Edite horário pelo lápis ao lado de \"Días y Horarios\" e o estado clicando no badge — não é preciso abrir o formulário completo.",
+      "dismissBanner": "Fechar aviso",
       "statusCard": {
         "title": "Status da Vaga",
         "status": "Status",

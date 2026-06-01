@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
@@ -33,12 +33,24 @@ import { VacancyDetailTabs, type VacancyTab } from '@presentation/components/fea
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { vacancy, isLoading, error, refetch } = useVacancyDetail(id);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
+  const [showPublishedRedirectBanner, setShowPublishedRedirectBanner] = useState(false);
+
+  // Operador foi redirecionado pra cá pelo VacancyFormSection após receber 403 do PUT
+  // (vaga já publicada). Mostra banner amigável + limpa o state pra não persistir num refresh.
+  useEffect(() => {
+    const state = location.state as { publishedVacancyRedirect?: boolean } | null;
+    if (state?.publishedVacancyRedirect) {
+      setShowPublishedRedirectBanner(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
 
   const handleStatusChange = async (next: EditableVacancyStatus): Promise<void> => {
     if (!id) return;
@@ -89,6 +101,29 @@ export default function VacancyDetailPage() {
 
   return (
     <PageContainer>
+      {/* Banner: operador foi redirecionado do form de edição completa porque a vaga
+          já saiu do rascunho. Edição localizada (lápis em "Días y Horarios" + dropdown
+          do status badge) é o caminho correto a partir daqui. */}
+      {showPublishedRedirectBanner && (
+        <div
+          className="mb-6 bg-amber-50 border border-amber-300 rounded-xl px-5 py-4 flex items-start justify-between gap-4"
+          data-testid="published-redirect-banner"
+        >
+          <Text size="sm" color="inherit" className="text-amber-900">
+            {t('admin.vacancyDetail.publishedRedirectBanner')}
+          </Text>
+          <button
+            type="button"
+            onClick={() => setShowPublishedRedirectBanner(false)}
+            className="text-amber-700 hover:text-amber-900 transition-colors shrink-0"
+            aria-label={t('admin.vacancyDetail.dismissBanner')}
+            data-testid="published-redirect-banner-dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">

@@ -250,6 +250,17 @@ test.describe('AdminVacanciesPage — edit routing por is_draft @integration', (
           schedule = '[{"dayOfWeek": 5, "startTime": "16:30", "endTime": "18:30"}]'::jsonb
       WHERE id = '${nonDraftVacancyId}'
     `);
+
+    // Mesma hidratação para a draft — o cenário 4 abre o modal grande e submete,
+    // e o schema Zod exige schedule + meet_link válidos. Sem isso, o submit nem
+    // chega ao PUT (validation barra antes) e a defesa do 403 não é exercitada.
+    runSQL(`
+      UPDATE job_postings
+      SET meet_link_1 = 'https://meet.google.com/abc-defg-hij',
+          schedule = '[{"dayOfWeek": 1, "startTime": "09:00", "endTime": "17:00"}]'::jsonb,
+          providers_needed = 1
+      WHERE id = '${draftVacancyId}'
+    `);
   });
 
   test.afterAll(() => {
@@ -344,6 +355,11 @@ test.describe('AdminVacanciesPage — edit routing por is_draft @integration', (
     // ── Status DEVE ser 200, NÃO 403 ─────────────────────────────────────────
     expect(res.status()).toBe(200);
   });
+
+  // Nota: a defesa do 403 no submit (VacancyFormSection.onSubmit interceptando
+  // "Forbidden fields" e redirecionando para o detalhe) é coberta por unit test
+  // em VacancyFormSection.defense.test.tsx — mockar updateVacancy pra retornar
+  // 403 sem precisar passar pelo schema Zod do form completo é mais reliable.
 });
 
 // ── Backend connectivity ─────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
+import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
@@ -44,6 +45,7 @@ const AdminFallback = () => (
 export function App() {
   return (
     <BrowserRouter>
+      <NewVersionBanner />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

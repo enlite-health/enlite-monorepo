@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
@@ -58,7 +59,14 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof VacancyModal
     onSuccess: vi.fn(),
     ...overrides,
   };
-  return { ...render(<VacancyModal {...defaults} />), props: defaults };
+  return {
+    ...render(
+      <MemoryRouter>
+        <VacancyModal {...defaults} />
+      </MemoryRouter>,
+    ),
+    props: defaults,
+  };
 }
 
 // ── Visibility ──────────────────────────────────────────────────────────────

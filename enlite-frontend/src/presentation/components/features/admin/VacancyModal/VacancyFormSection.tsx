@@ -12,11 +12,13 @@
  */
 
 import { useState, useEffect, useRef, RefObject } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { handlePublishedVacancyForbidden } from './vacancyFormDefense';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import {
@@ -104,6 +106,7 @@ export function VacancyFormSection({
   onCompleteChange,
 }: VacancyFormSectionProps): JSX.Element {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -278,6 +281,12 @@ export function VacancyFormSection({
 
       onSuccess(vacancyId);
     } catch (err: unknown) {
+      if (
+        mode === 'edit'
+        && handlePublishedVacancyForbidden(err, navigate, existingVacancy?.id)
+      ) {
+        return;
+      }
       setApiError(
         err instanceof Error
           ? err.message
