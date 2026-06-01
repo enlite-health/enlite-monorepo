@@ -1,5 +1,16 @@
 echo "Pre-push: verificando build e testes completos..."
 
+# Husky/git hooks não herdam PATH do shell interativo — adiciona o NVM bin.
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  NODE_BIN=$(ls -d "$HOME/.nvm/versions/node"/v*/bin 2>/dev/null | tail -1)
+  if [ -n "$NODE_BIN" ]; then
+    export PATH="$NODE_BIN:$PATH"
+  fi
+fi
+
+# Heap default 2GB causa Abort trap 6 em test runs com muitos workers paralelos.
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096"
+
 echo ""
 echo "========================================="
 echo "  enlite-frontend: build (tsc + vite)"
