@@ -4,6 +4,8 @@ import type { WorkerDocumentsListCapability } from './capabilities/WorkerDocumen
 import type { WorkerVacanciesListCapability } from './capabilities/WorkerVacanciesListCapability';
 import type { WorkerInterviewGetCapability } from './capabilities/WorkerInterviewGetCapability';
 import type { WorkerProfileUpdateCapability } from './capabilities/WorkerProfileUpdateCapability';
+import type { WorkerProfileProposeUpdateCapability } from './capabilities/WorkerProfileProposeUpdateCapability';
+import type { WorkerProfileConfirmUpdateCapability } from './capabilities/WorkerProfileConfirmUpdateCapability';
 import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocumentsUploadCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
@@ -27,6 +29,8 @@ interface RegistryDeps {
   vacanciesList: WorkerVacanciesListCapability;
   interviewGet: WorkerInterviewGetCapability;
   profileUpdate: WorkerProfileUpdateCapability;
+  profilePropose: WorkerProfileProposeUpdateCapability;
+  profileConfirm: WorkerProfileConfirmUpdateCapability;
   documentsUpload: WorkerDocumentsUploadCapability;
   auditor: IAuditEmitter;
   writeRateLimiter?: WriteRateLimiter;
@@ -35,6 +39,8 @@ interface RegistryDeps {
 /** Capabilities that mutate state and require rate limiting. */
 const WRITE_CAPABILITY_NAMES = new Set([
   'worker.profile.update',
+  'worker.profile.proposeUpdate',
+  'worker.profile.confirmUpdate',
   'worker.documents.upload',
 ]);
 
@@ -64,6 +70,8 @@ export class CapabilityRegistry {
       vacanciesList,
       interviewGet,
       profileUpdate,
+      profilePropose,
+      profileConfirm,
       documentsUpload,
     } = this.deps;
 
@@ -118,6 +126,30 @@ export class CapabilityRegistry {
           (profileUpdate.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ??
           {},
         execute: (args) => profileUpdate.execute(args),
+      },
+      {
+        name:
+          (profilePropose.constructor as { NAME?: string }).NAME ??
+          'worker.profile.proposeUpdate',
+        description:
+          (profilePropose.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Propose a worker profile update.',
+        inputShape:
+          (profilePropose.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => profilePropose.execute(args),
+      },
+      {
+        name:
+          (profileConfirm.constructor as { NAME?: string }).NAME ??
+          'worker.profile.confirmUpdate',
+        description:
+          (profileConfirm.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Confirm a proposed worker profile update.',
+        inputShape:
+          (profileConfirm.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => profileConfirm.execute(args),
       },
       {
         name:

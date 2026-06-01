@@ -4,6 +4,7 @@ import type { McpAuditEvent } from '../domain/McpAuditEvent';
 const PII_FIELDS = new Set([
   'cpf',
   'rg',
+  'documentNumber',
   'email',
   'phone',
   'birthDate',
@@ -50,7 +51,7 @@ export class McpAuditLogger {
   }
 
   private redactStringByField(field: string, value: string): string {
-    if (field === 'cpf' || field === 'rg') {
+    if (field === 'cpf' || field === 'rg' || field === 'documentNumber') {
       return value.length >= 4 ? `***${value.slice(-4)}` : '***';
     }
     if (field === 'email') {

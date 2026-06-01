@@ -4,6 +4,8 @@ import { WorkerDocumentsListCapability } from '../capabilities/WorkerDocumentsLi
 import { WorkerVacanciesListCapability } from '../capabilities/WorkerVacanciesListCapability';
 import { WorkerInterviewGetCapability } from '../capabilities/WorkerInterviewGetCapability';
 import { WorkerProfileUpdateCapability } from '../capabilities/WorkerProfileUpdateCapability';
+import { WorkerProfileProposeUpdateCapability } from '../capabilities/WorkerProfileProposeUpdateCapability';
+import { WorkerProfileConfirmUpdateCapability } from '../capabilities/WorkerProfileConfirmUpdateCapability';
 import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
@@ -21,6 +23,8 @@ const ALL_CAPS = [
   'worker.vacancies.list',
   'worker.interview.get',
   'worker.profile.update',
+  'worker.profile.proposeUpdate',
+  'worker.profile.confirmUpdate',
   'worker.documents.upload',
 ];
 
@@ -56,6 +60,20 @@ function makeCapabilities() {
   const profileUpdate = new WorkerProfileUpdateCapability({
     execute: jest.fn().mockResolvedValue({ workerId: WORKER_ID, fieldsUpdated: ['firstName'] }),
   } as never);
+  const profilePropose = new WorkerProfileProposeUpdateCapability({
+    execute: jest.fn().mockResolvedValue({
+      handle: '223e4567-e89b-12d3-a456-426614174999',
+      expiresAt: '2026-06-01T00:05:00.000Z',
+      summary: [{ field: 'firstName', newValue: 'João' }],
+    }),
+  } as never);
+  const profileConfirm = new WorkerProfileConfirmUpdateCapability({
+    execute: jest.fn().mockResolvedValue({
+      applied: true,
+      workerId: WORKER_ID,
+      fieldsUpdated: ['firstName'],
+    }),
+  } as never);
   const documentsUpload = new WorkerDocumentsUploadCapability({
     execute: jest.fn().mockResolvedValue({
       filePath: `workers/${WORKER_ID}/ingested/resume_cv/123`,
@@ -63,7 +81,16 @@ function makeCapabilities() {
       workerId: WORKER_ID,
     }),
   } as never);
-  return { profileGet, documentsList, vacanciesList, interviewGet, profileUpdate, documentsUpload };
+  return {
+    profileGet,
+    documentsList,
+    vacanciesList,
+    interviewGet,
+    profileUpdate,
+    profilePropose,
+    profileConfirm,
+    documentsUpload,
+  };
 }
 
 /** Makes a WriteRateLimiter that always allows. */
@@ -112,14 +139,14 @@ function getHandler(
 describe('CapabilityRegistry', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  // 1. registerAll registers exactly 6 tools
-  it('registerAll registers exactly 6 tools on the server', () => {
+  // 1. registerAll registers exactly 8 tools
+  it('registerAll registers exactly 8 tools on the server', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => makePrincipal());
 
-    expect(server.registerTool).toHaveBeenCalledTimes(6);
+    expect(server.registerTool).toHaveBeenCalledTimes(8);
   });
 
   // 2. registerAll uses correct NAMEs

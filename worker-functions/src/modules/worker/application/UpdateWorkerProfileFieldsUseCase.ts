@@ -27,6 +27,10 @@ export interface WorkerProfilePatch {
   cpf?: string;
   /** RG (BR) — stored as document_number_encrypted when documentType=RG */
   rg?: string;
+  /** Generic document number (DNI/CEDULA/LE_LC/PASSPORT, Latam) — stored as document_number_encrypted */
+  documentNumber?: string;
+  /** Canonical document type (DNI, PASSPORT, CEDULA, LE_LC, CPF) — plaintext document_type column */
+  documentType?: string;
   /** ISO date YYYY-MM-DD */
   birthDate?: string;
   meiNumber?: string;
@@ -110,6 +114,13 @@ export class UpdateWorkerProfileFieldsUseCase {
       fieldsUpdated.push('email');
     }
 
+    // document_type — plaintext indicator column (DNI/CPF/CEDULA/LE_LC/PASSPORT)
+    if (fields.documentType !== undefined) {
+      sets.push(`document_type = $${idx++}`);
+      values.push(fields.documentType);
+      fieldsUpdated.push('documentType');
+    }
+
     // meiNumber, meiCnpj — plaintext columns (operational, not PII-encrypted)
     if (fields.meiNumber !== undefined) {
       sets.push(`mei_number = $${idx++}`);
@@ -127,9 +138,10 @@ export class UpdateWorkerProfileFieldsUseCase {
     if (fields.firstName !== undefined) toEncrypt.firstName = fields.firstName;
     if (fields.lastName  !== undefined) toEncrypt.lastName  = fields.lastName;
     if (fields.birthDate !== undefined) toEncrypt.birthDate = fields.birthDate;
-    // cpf maps to document_number_encrypted (CPF is the primary document number in BR)
-    if (fields.cpf !== undefined) toEncrypt.documentNumber = fields.cpf;
-    // rg: if present without cpf, also maps to document_number_encrypted
+    // document number maps to document_number_encrypted.
+    // Precedence: generic documentNumber (Latam) > cpf > rg (all the same column).
+    if (fields.documentNumber !== undefined) toEncrypt.documentNumber = fields.documentNumber;
+    else if (fields.cpf !== undefined) toEncrypt.documentNumber = fields.cpf;
     else if (fields.rg !== undefined) toEncrypt.documentNumber = fields.rg;
 
     if (Object.keys(toEncrypt).length > 0) {
@@ -160,7 +172,8 @@ export class UpdateWorkerProfileFieldsUseCase {
       if (encrypted.documentNumber != null) {
         sets.push(`document_number_encrypted = $${idx++}`);
         values.push(encrypted.documentNumber);
-        if (fields.cpf !== undefined) fieldsUpdated.push('cpf');
+        if (fields.documentNumber !== undefined) fieldsUpdated.push('documentNumber');
+        else if (fields.cpf !== undefined) fieldsUpdated.push('cpf');
         else if (fields.rg !== undefined) fieldsUpdated.push('rg');
       }
     }

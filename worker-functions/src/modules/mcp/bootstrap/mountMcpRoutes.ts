@@ -8,6 +8,8 @@ import { WorkerDocumentsListCapability } from '../application/capabilities/Worke
 import { WorkerVacanciesListCapability } from '../application/capabilities/WorkerVacanciesListCapability';
 import { WorkerInterviewGetCapability } from '../application/capabilities/WorkerInterviewGetCapability';
 import { WorkerProfileUpdateCapability } from '../application/capabilities/WorkerProfileUpdateCapability';
+import { WorkerProfileProposeUpdateCapability } from '../application/capabilities/WorkerProfileProposeUpdateCapability';
+import { WorkerProfileConfirmUpdateCapability } from '../application/capabilities/WorkerProfileConfirmUpdateCapability';
 import { WorkerDocumentsUploadCapability } from '../application/capabilities/WorkerDocumentsUploadCapability';
 import { GetWorkerByIdUseCase } from '../../worker/application/GetWorkerByIdUseCase';
 import { WorkerRepository } from '../../worker/infrastructure/WorkerRepository';
@@ -15,6 +17,11 @@ import { WorkerDocumentsRepository } from '../../worker/infrastructure/WorkerDoc
 import { GetCurrentInterviewUseCase } from '../../matching/application/GetCurrentInterviewUseCase';
 import { ListAvailableVacanciesForWorkerUseCase } from '../../matching/application/ListAvailableVacanciesForWorkerUseCase';
 import { UpdateWorkerProfileFieldsUseCase } from '../../worker/application/UpdateWorkerProfileFieldsUseCase';
+import { ProposeWorkerProfileUpdateUseCase } from '../../worker/application/ProposeWorkerProfileUpdateUseCase';
+import { ConfirmWorkerProfileUpdateUseCase } from '../../worker/application/ConfirmWorkerProfileUpdateUseCase';
+import { PendingProfileChangeRepository } from '../../worker/infrastructure/PendingProfileChangeRepository';
+import { ProfileChangeAuditRepository } from '../../worker/infrastructure/ProfileChangeAuditRepository';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDocumentFromUrlUseCase';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 
@@ -25,6 +32,11 @@ import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   const principalRepo = new ServicePrincipalSecretManagerRepo();
   const auditor = new McpAuditLogger();
+
+  // Shared deps for the propose/confirm profile-update flow (Luz).
+  const kms = new KMSEncryptionService();
+  const pendingProfileRepo = new PendingProfileChangeRepository(dbPool);
+  const profileAuditRepo = new ProfileChangeAuditRepository(dbPool);
 
   const registry = new CapabilityRegistry({
     profileGet: new WorkerProfileGetCapability(
@@ -41,6 +53,17 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     profileUpdate: new WorkerProfileUpdateCapability(
       new UpdateWorkerProfileFieldsUseCase(),
+    ),
+    profilePropose: new WorkerProfileProposeUpdateCapability(
+      new ProposeWorkerProfileUpdateUseCase(pendingProfileRepo, kms),
+    ),
+    profileConfirm: new WorkerProfileConfirmUpdateCapability(
+      new ConfirmWorkerProfileUpdateUseCase(
+        pendingProfileRepo,
+        profileAuditRepo,
+        kms,
+        new UpdateWorkerProfileFieldsUseCase(),
+      ),
     ),
     documentsUpload: new WorkerDocumentsUploadCapability(
       new IngestDocumentFromUrlUseCase(),
