@@ -23,6 +23,7 @@ const MOCK_VACANCIES: VacancyRow[] = [
     postulados: '5',
     selecionados: '3',
     faltantes: '2',
+    isDraft: false,
   },
 ];
 

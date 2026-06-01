@@ -57,9 +57,17 @@ export function AdminVacanciesPage(): JSX.Element {
 
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false, mode: 'create' });
 
-  const openEditModal = useCallback((vacancyId: string) => {
+  const openEditModal = useCallback((vacancyId: string, isDraft: boolean) => {
+    // Vacancies que já saíram do rascunho (is_draft=false) só permitem editar
+    // schedule e status — fluxo localizado vive em /admin/vacancies/:id
+    // (VacancyScheduleEditModal + VacancyStatusEditor, ADR-equivalente ao commit b2d518f).
+    // O modal grande aqui só vale para drafts em criação interrompida.
+    if (!isDraft) {
+      navigate(`/admin/vacancies/${vacancyId}`);
+      return;
+    }
     setModalState({ isOpen: true, mode: 'edit', vacancyId });
-  }, []);
+  }, [navigate]);
 
   const closeModal = useCallback(() => {
     setModalState((prev) => ({ ...prev, isOpen: false }));
@@ -144,6 +152,7 @@ export function AdminVacanciesPage(): JSX.Element {
       postulados: v.postulados ?? '—',
       selecionados: v.selecionados ?? '—',
       faltantes: v.faltantes ?? '—',
+      isDraft: v.is_draft === true,
     })),
     [rawVacancies],
   );

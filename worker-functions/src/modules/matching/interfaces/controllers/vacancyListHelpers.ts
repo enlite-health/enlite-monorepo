@@ -45,6 +45,7 @@ const LIST_VACANCIES_BASE = `
     jp.vacancy_number,
     jp.title,
     jp.status,
+    jp.is_draft,
     jp.priority,
     p.zone_neighborhood as patient_zone,
     jp.search_start_date,
@@ -153,6 +154,7 @@ export interface VacancyListRow {
   case_number: number;
   vacancy_number: number;
   status: string | null;
+  is_draft: boolean | null;
   priority: string | null;
   dias_aberto: number | null;
   convidados: number | string | null;
@@ -171,6 +173,7 @@ export function mapVacancyListRow(row: VacancyListRow) {
     vacancyNumber: row.vacancy_number,
     status: mapStatus(row.status),
     statusRaw: row.status,
+    is_draft: row.is_draft === true,
     priority: row.priority,
     diasAberto: row.dias_aberto?.toString().padStart(2, '0') ?? '00',
     convidados: row.convidados?.toString().padStart(2, '0') ?? '00',

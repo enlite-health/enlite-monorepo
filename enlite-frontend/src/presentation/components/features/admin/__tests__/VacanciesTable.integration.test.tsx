@@ -15,6 +15,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         postulados: '115',
         selecionados: '27',
         faltantes: '00',
+        isDraft: false,
       },
       {
         id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
@@ -26,6 +27,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         postulados: '52',
         selecionados: '06',
         faltantes: '00',
+        isDraft: false,
       },
     ];
 

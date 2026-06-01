@@ -130,6 +130,16 @@ describe('Vacancies API', () => {
       expect(res.data).toHaveProperty('offset');
     });
 
+    it('cada row expõe is_draft (usado pelo frontend para escolher fluxo de edição)', async () => {
+      const res = await api.get('/api/admin/vacancies?limit=5', authHeaders(adminToken));
+      expect(res.status).toBe(200);
+      if (res.data.data.length === 0) return;
+      for (const row of res.data.data) {
+        expect(row).toHaveProperty('is_draft');
+        expect(typeof row.is_draft).toBe('boolean');
+      }
+    });
+
     it('aceita paginação via limit e offset', async () => {
       const res = await api.get(
         '/api/admin/vacancies?limit=5&offset=0',

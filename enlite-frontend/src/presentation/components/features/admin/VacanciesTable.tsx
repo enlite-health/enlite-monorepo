@@ -22,12 +22,13 @@ export interface VacancyRow {
   postulados: string;
   selecionados: string;
   faltantes: string;
+  isDraft: boolean;
 }
 
 interface VacanciesTableProps {
   vacancies: VacancyRow[];
   onRowClick?: (id: string) => void;
-  onEditClick?: (id: string) => void;
+  onEditClick?: (id: string, isDraft: boolean) => void;
 }
 
 const COLUMNS = [
@@ -100,7 +101,7 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                     {onEditClick && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onEditClick(row.id); }}
+                        onClick={(e) => { e.stopPropagation(); onEditClick(row.id, row.isDraft); }}
                         className="p-0.5 hover:text-primary transition-colors"
                         aria-label={t('admin.vacancies.table.edit')}
                         data-testid={`edit-vacancy-${row.id}`}
