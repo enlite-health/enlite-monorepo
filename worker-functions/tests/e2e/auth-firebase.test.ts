@@ -130,9 +130,9 @@ describe('Firebase Authentication E2E', () => {
       
       if (response.status === 200 || response.status === 201) {
         expect(response.data.success).toBe(true);
-        expect(response.data.data).toHaveProperty('id');
-        expect(response.data.data).toHaveProperty('authUid');
-        expect(response.data.data.email).toBe(testEmail);
+        expect(response.data.data.worker).toHaveProperty('id');
+        expect(response.data.data.worker).toHaveProperty('authUid');
+        expect(response.data.data.worker.email).toBe(testEmail);
       }
     });
 
@@ -152,7 +152,7 @@ describe('Firebase Authentication E2E', () => {
         }
       );
 
-      const workerId = initResponse.data.data.id;
+      const workerId = initResponse.data.data.worker.id;
 
       // Then save a step
       const stepResponse = await api.put(
