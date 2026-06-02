@@ -100,9 +100,10 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
       // Assert — HTTP
       expect(res.status).toBe(201);
       expect(res.data.success).toBe(true);
-      expect(res.data.data).toHaveProperty('id');
+      expect(res.data.data.status).toBe('ok');
+      expect(res.data.data.worker).toHaveProperty('id');
 
-      workerId = res.data.data.id as string;
+      workerId = res.data.data.worker.id as string;
 
       // Assert — banco
       const dbResult = await pool.query('SELECT status FROM workers WHERE id = $1', [workerId]);
