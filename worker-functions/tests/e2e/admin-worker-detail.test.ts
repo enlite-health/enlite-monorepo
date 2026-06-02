@@ -63,7 +63,7 @@ describe('GET /api/admin/workers/:id', () => {
       );
     }
 
-    seededWorkerId = initRes.data.data.id;
+    seededWorkerId = initRes.data.data.worker.id;
 
     // Seed: salva dados pessoais para que campos PII estejam presentes
     const workerSeedToken = await getMockToken(api, {

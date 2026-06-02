@@ -97,6 +97,26 @@
     "lgpdLink": "Más información sobre nuestra política de privacidad",
     "phonePrefilledHint": "Tu número está precargado desde tu perfil"
   },
+  "claim": {
+    "otpModal": {
+      "title": "Detectamos tu ficha preexistente",
+      "subtitle": "Enviamos un código por SMS al número {{phoneMasked}}. Ingresá los 6 dígitos para confirmar y recuperar tu registro.",
+      "inputLabel": "Código de verificación",
+      "confirmButton": "Confirmar",
+      "cancelButton": "Cancelar",
+      "errorInvalid": "El código ingresado es incorrecto. Verificá e intentá de nuevo.",
+      "errorExpired": "El código expiró. Volvé a intentar el registro para recibir uno nuevo.",
+      "errorNotFound": "No pudimos encontrar tu ficha. Continuá con la creación de cuenta nueva."
+    }
+  },
+  "completeWhatsapp": {
+    "title": "Completá tu WhatsApp",
+    "subtitle": "Necesitamos tu número de WhatsApp para vincularlo con tu ficha (si ya existe) y enviarte actualizaciones importantes.",
+    "continueButton": "Continuar",
+    "skipButton": "Saltar — completar después",
+    "noCandidateMessage": "¡Listo! Tu cuenta fue creada exitosamente.",
+    "startError": "Algo salió mal. Intentalo de nuevo."
+  },
   "auth": {
     "google": {
       "login": "Entrar con Google",

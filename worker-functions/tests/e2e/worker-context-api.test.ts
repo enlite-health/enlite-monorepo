@@ -72,7 +72,7 @@ describe('Worker Context API (triage-service endpoints)', () => {
     if (initRes.status !== 200 && initRes.status !== 201) {
       throw new Error(`Seed worker failed: ${JSON.stringify(initRes.data)}`);
     }
-    seededWorkerId = initRes.data.data.id;
+    seededWorkerId = initRes.data.data.worker.id;
   });
 
   afterAll(async () => {

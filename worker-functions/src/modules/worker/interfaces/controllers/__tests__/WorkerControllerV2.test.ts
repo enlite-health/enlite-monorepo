@@ -167,7 +167,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: expect.objectContaining({ status: 'ok', worker: mockWorker }),
         })
       );
       expect(initSpy).not.toHaveBeenCalled();
@@ -178,7 +178,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValue(Result.fail('Worker not found'));
 
       jest.spyOn(controller['initWorkerUseCase'], 'execute')
-        .mockResolvedValue(Result.ok(mockWorker));
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
 
       const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL });
 
@@ -188,7 +188,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: expect.objectContaining({ status: 'ok', worker: mockWorker }),
         })
       );
     });
@@ -198,7 +198,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValue(Result.fail('Worker not found'));
 
       const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute')
-        .mockResolvedValue(Result.ok(mockWorker));
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
 
       const [req, res] = mockReqRes({
         authUid: AUTH_UID,
@@ -349,7 +349,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValueOnce(Result.ok({ ...mockWorker, authUid: AUTH_UID_ROUND_TRIP })); // chamada direta de getProgress
 
       jest.spyOn(controller['initWorkerUseCase'], 'execute')
-        .mockResolvedValue(Result.ok({ ...mockWorker, authUid: AUTH_UID_ROUND_TRIP }));
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: { ...mockWorker, authUid: AUTH_UID_ROUND_TRIP } }));
 
       // 1. Chama initWorker
       const [initReq, initRes] = mockReqRes({ authUid: AUTH_UID_ROUND_TRIP, email: WORKER_EMAIL });

@@ -3,6 +3,7 @@ import { useAuth } from '@presentation/hooks/useAuth';
 import {
   WorkerApiService,
   InitWorkerPayload,
+  InitWorkerResponse,
   SaveStepPayload,
   WorkerProgressResponse,
   AvailabilitySlotResponse,
@@ -16,7 +17,7 @@ export function useWorkerApi() {
   const { user } = useAuth();
 
   const initWorker = useCallback(
-    async (extras: Omit<InitWorkerPayload, 'authUid' | 'email'>): Promise<WorkerProgressResponse> => {
+    async (extras: Omit<InitWorkerPayload, 'authUid' | 'email'>): Promise<InitWorkerResponse> => {
       if (!user) throw new Error('User must be authenticated to init worker');
       return WorkerApiService.initWorker({
         authUid: user.id,

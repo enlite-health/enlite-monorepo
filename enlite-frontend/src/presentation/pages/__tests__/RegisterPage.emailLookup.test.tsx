@@ -63,7 +63,14 @@ vi.mock('@infrastructure/http/WorkerApiService', () => ({
 }));
 
 vi.mock('@presentation/components/features/auth/GoogleLoginButton', () => ({
-  GoogleLoginButton: () => <button data-testid="google-btn">Google</button>,
+  GoogleLoginButton: ({ onSuccess }: any) => (
+    <button data-testid="google-btn" onClick={onSuccess}>Google</button>
+  ),
+}));
+
+vi.mock('@presentation/components/features/auth/ClaimOtpModal', () => ({
+  ClaimOtpModal: ({ open }: any) =>
+    open ? <div data-testid="claim-otp-modal" /> : null,
 }));
 
 vi.mock('@presentation/components/shared/PhoneInputIntl', () => ({
@@ -153,7 +160,8 @@ describe('RegisterPage — Email Lookup', () => {
     sessionStorage.clear();
     mockWorkerEmailLookupState = { found: null, isLoading: false };
     mockRegister.mockResolvedValue({ id: 'uid-123', email: 'worker@example.com' });
-    mockInitWorker.mockResolvedValue({});
+    // Onda 2: initWorker returns discriminated union { status: 'ok', worker }
+    mockInitWorker.mockResolvedValue({ status: 'ok', worker: {} });
   });
 
   // ── Gap 1: auth/email-already-in-use + workerFound=true → redirect /login ──
@@ -261,7 +269,7 @@ describe('RegisterPage — Email Lookup', () => {
   // ── Gap 2: phone mascarado NÃO é enviado no payload de initWorker ──────────
 
   describe('Gap 2: phone mascarado NÃO é enviado no payload quando campo está desabilitado', () => {
-    it('initWorker é chamado com whatsappPhone: undefined quando phone está mascarado/desabilitado', async () => {
+    it('initWorker é chamado com whatsappPhone: undefined e phone: undefined quando phone está mascarado/desabilitado', async () => {
       // Arrange: worker existente com phone mascarado
       mockWorkerEmailLookupState = { found: true, phoneMasked: 'xxxxxxxxxx978', isLoading: false };
       mockRegister.mockResolvedValue({ id: 'uid-123', email: 'worker@example.com' });
@@ -284,6 +292,8 @@ describe('RegisterPage — Email Lookup', () => {
       expect(callArgs.whatsappPhone).not.toBe('xxxxxxxxxx978');
       // Com string vazia, whatsapp || undefined resulta em undefined
       expect(callArgs.whatsappPhone).toBeUndefined();
+      // phone também deve ser undefined (mesmo campo de origem)
+      expect(callArgs.phone).toBeUndefined();
     });
 
     it('initWorker NÃO recebe o valor mascarado como whatsappPhone em nenhuma circunstância', async () => {
@@ -328,6 +338,8 @@ describe('RegisterPage — Email Lookup', () => {
 
       const callArgs = mockInitWorker.mock.calls[0][0];
       expect(callArgs.whatsappPhone).toBe('+5491112345678');
+      // phone deve ter o mesmo valor que whatsappPhone (duplo envio para reconciliação no backend)
+      expect(callArgs.phone).toBe('+5491112345678');
     });
 
     it('campo de phone fica desabilitado e exibe valor mascarado quando workerFound=true com phoneMasked', () => {
@@ -394,11 +406,12 @@ describe('RegisterPage — Email Lookup', () => {
         );
       });
 
-      // Step 5: initWorker é chamado SEM o phone mascarado
+      // Step 5: initWorker é chamado SEM o phone mascarado (phone e whatsappPhone undefined)
       await waitFor(() => {
         expect(mockInitWorker).toHaveBeenCalledWith(
           expect.objectContaining({
             email: 'existing@example.com',
+            phone: undefined,
             whatsappPhone: undefined,
           }),
         );

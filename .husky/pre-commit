@@ -1,5 +1,13 @@
 echo "Pre-commit: verificando tipos e lint..."
 
+# Husky/git hooks não herdam PATH do shell interativo — adiciona o NVM bin.
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  NODE_BIN=$(ls -d "$HOME/.nvm/versions/node"/v*/bin 2>/dev/null | tail -1)
+  if [ -n "$NODE_BIN" ]; then
+    export PATH="$NODE_BIN:$PATH"
+  fi
+fi
+
 echo ""
 echo "========================================="
 echo "  enlite-frontend: type-check (tsc)"

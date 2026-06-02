@@ -41,7 +41,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
       email: testEmail,
       country: 'AR',
     });
-    workerId = res.data.data.id;
+    workerId = res.data.data.worker.id;
 
     // Gerar token mock para requests autenticados
     const tokenRes = await api.post('/api/test/auth/token', {

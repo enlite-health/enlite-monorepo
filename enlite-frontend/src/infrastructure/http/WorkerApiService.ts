@@ -1,6 +1,15 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { ApiError } from '@infrastructure/http/ApiError';
 
+/**
+ * Discriminated union returned by POST /api/workers/init (Onda 2).
+ * - 'ok': worker created/fetched normally
+ * - 'claim_pending': a candidate with matching phone was found — OTP verification required
+ */
+export type InitWorkerResponse =
+  | { status: 'ok'; worker: WorkerProgressResponse }
+  | { status: 'claim_pending'; candidateWorkerId: string; phoneMasked: string; verificationSid: string };
+
 /** Shape returned by GET /api/workers/me */
 export interface WorkerProgressResponse {
   id: string;
@@ -154,9 +163,10 @@ class WorkerApiServiceClass {
    * POST /api/workers/init
    * Initialises the worker record on first registration.
    * Idempotent — if worker already exists, returns existing record.
+   * Onda 2: may return { status: 'claim_pending', ... } when a phone match is detected.
    */
-  async initWorker(payload: InitWorkerPayload): Promise<WorkerProgressResponse> {
-    return this.request<WorkerProgressResponse>('POST', '/api/workers/init', payload);
+  async initWorker(payload: InitWorkerPayload): Promise<InitWorkerResponse> {
+    return this.request<InitWorkerResponse>('POST', '/api/workers/init', payload);
   }
 
   /**
