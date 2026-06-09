@@ -20,6 +20,14 @@ jest.mock('../../../src/modules/integration/infrastructure/GoogleDocsPromptProvi
   })),
 }));
 
+// Vertex AI auth via ADC — mock GoogleAuth so tests don't hit the metadata server.
+jest.mock('google-auth-library', () => ({
+  GoogleAuth: jest.fn().mockImplementation(() => ({
+    getAccessToken: jest.fn().mockResolvedValue('test-access-token'),
+    getProjectId: jest.fn().mockResolvedValue('test-project'),
+  })),
+}));
+
 const originalFetch = global.fetch;
 const mockFetch = jest.fn();
 
@@ -261,16 +269,17 @@ describe('GeminiVacancyParserService', () => {
 
   // ── Gemini API interaction ───────────────────────────────────────
   describe('Gemini API interaction', () => {
-    it('sends correct URL with API key', async () => {
-      process.env.GEMINI_API_KEY = 'my-secret-key';
+    it('sends request to Vertex endpoint via ADC (no API key)', async () => {
       mockFetch.mockResolvedValueOnce(mockGeminiResponse(VALID_GEMINI_RESPONSE));
 
       const service = createService();
       await service.parseFromText('Test', 'AT');
 
       const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain('generativelanguage.googleapis.com');
-      expect(url).toContain('key=my-secret-key');
+      const init = mockFetch.mock.calls[0][1];
+      expect(url).toContain('aiplatform.googleapis.com');
+      expect(url).not.toContain('key=');
+      expect(init.headers.Authorization).toBe('Bearer test-access-token');
     });
 
     it('sends correct model in URL (default gemini-2.5-pro)', async () => {
@@ -324,13 +333,6 @@ describe('GeminiVacancyParserService', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.contents[0].parts[0].text).toBe('Caso 42, paciente adulto mayor');
-    });
-
-    it('throws when GEMINI_API_KEY is empty', async () => {
-      process.env.GEMINI_API_KEY = '';
-
-      const service = createService();
-      await expect(service.parseFromText('Test', 'AT')).rejects.toThrow('GEMINI_API_KEY');
     });
 
     it('throws on Gemini HTTP error after exhausting retries', async () => {
