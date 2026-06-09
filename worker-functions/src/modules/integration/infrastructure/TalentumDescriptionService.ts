@@ -17,7 +17,7 @@
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { fetchGeminiWithRetry } from './gemini-fetch';
+import { generateContentVertex } from './vertex-gemini';
 import {
   DESCRIPTION_RESPONSE_SCHEMA,
   DESCRIPTION_SYSTEM_PROMPT,
@@ -63,14 +63,11 @@ export interface GeneratedDescription {
 
 export class TalentumDescriptionService {
   private db: Pool;
-  private apiKey: string;
   private model: string;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
-    this.apiKey = process.env.GEMINI_API_KEY ?? '';
     this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
-    if (!this.apiKey) throw new Error('GEMINI_API_KEY não configurado');
   }
 
   /**
@@ -213,26 +210,19 @@ Datos de la vacante:
 - Salario: ${input.salaryText || 'A convenir'}
 - Día de pago: ${input.paymentDay || 'No especificado'}`;
 
-    const url =
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-
     // 2.5-pro spends thinking tokens within maxOutputTokens; 4096 leaves
     // ~3.5k for thinking and still fits ~500 tokens of JSON output.
-    const response = await fetchGeminiWithRetry(
-      url,
+    const response = await generateContentVertex(
+      this.model,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: DESCRIPTION_SYSTEM_PROMPT }] },
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 4096,
-            responseMimeType: 'application/json',
-            responseSchema: DESCRIPTION_RESPONSE_SCHEMA,
-          },
-        }),
+        systemInstruction: { parts: [{ text: DESCRIPTION_SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+          responseSchema: DESCRIPTION_RESPONSE_SCHEMA,
+        },
       },
       'TalentumDesc',
     );

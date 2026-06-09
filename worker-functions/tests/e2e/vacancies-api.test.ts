@@ -496,10 +496,13 @@ describe('Vacancies API', () => {
     // Sintoma: Após criar uma vaga, o servidor caía — todas as requisições
     //          seguintes retornavam ECONNRESET.
     // Causa:   Erros síncronos lançados dentro do callback do setImmediate
-    //          (ex: GEMINI_API_KEY ausente ao instanciar serviço) se tornavam
+    //          (ex: falha ao instanciar/usar o serviço de IA) se tornavam
     //          exceções não-capturadas que derrubavam o processo Node.js.
     // Fix:     try-catch envolvendo todo o callback do setImmediate.
-    it('servidor permanece saudável após criar vaga sem GEMINI_API_KEY configurado', async () => {
+    // Nota:    pós-migração p/ Vertex (ADC), a falha de IA no e2e vem da
+    //          resolução de credenciais, não mais do constructor — o guard
+    //          de saúde do servidor continua válido como regressão.
+    it('servidor permanece saudável quando a geração de IA falha em background', async () => {
       // Cria a vaga — dispara o setImmediate com match em background
       const createRes = await api.post(
         '/api/admin/vacancies',

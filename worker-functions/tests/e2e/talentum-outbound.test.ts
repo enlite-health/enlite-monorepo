@@ -816,8 +816,10 @@ describe('Talentum Outbound API', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('POST /api/admin/vacancies/:id/generate-talentum-description', () => {
-    it('returns 500 without GEMINI_API_KEY configured', async () => {
-      // In test environment, GEMINI_API_KEY is not set → service constructor throws
+    it('returns 500 without Vertex AI credentials configured', async () => {
+      // Generation uses Vertex AI via ADC. The e2e env has no ADC (empty
+      // .keys, no GOOGLE_CLOUD_PROJECT, no metadata server), so the Vertex
+      // call fails to resolve a token/project → controller returns 500.
       const res = await api.post(
         `/api/admin/vacancies/${vacancyId}/generate-talentum-description`,
         {},

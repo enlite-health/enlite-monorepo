@@ -23,7 +23,7 @@ import {
   detectMissingFields,
   retryMissingFields,
 } from './GeminiVacancyParserHelpers';
-import { fetchGeminiWithRetry } from './gemini-fetch';
+import { generateContentVertex } from './vertex-gemini';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -80,12 +80,10 @@ export type WorkerType = 'AT' | 'CUIDADOR';
 // ─────────────────────────────────────────────────────────────────
 
 export class GeminiVacancyParserService {
-  private apiKey: string;
   private model: string;
   private promptProvider: GoogleDocsPromptProvider;
 
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY ?? '';
     this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.promptProvider = new GoogleDocsPromptProvider();
   }
@@ -94,10 +92,6 @@ export class GeminiVacancyParserService {
     text: string,
     workerType: WorkerType,
   ): Promise<ParsedVacancyResult> {
-    if (!this.apiKey) {
-      throw new Error('GEMINI_API_KEY não configurado');
-    }
-
     console.log(
       `[GeminiParser] Parsing vacancy text, workerType=${workerType}, len=${text.length}`,
     );
@@ -110,10 +104,6 @@ export class GeminiVacancyParserService {
     pdfBase64: string,
     workerType: WorkerType,
   ): Promise<ParsedVacancyResult> {
-    if (!this.apiKey) {
-      throw new Error('GEMINI_API_KEY não configurado');
-    }
-
     const sizeKB = Math.round((pdfBase64.length * 3) / 4 / 1024);
     console.log(
       `[GeminiParser] Parsing PDF, workerType=${workerType}, sizeKB=${sizeKB}`,
@@ -196,10 +186,7 @@ export class GeminiVacancyParserService {
     description: string,
     title: string,
   ): Promise<ParsedVacancyResult['vacancy']> {
-    if (!this.apiKey) {
-      throw new Error('GEMINI_API_KEY não configurado');
-    }
-    return parseFromTalentumDescriptionHelper(this.apiKey, this.model, description, title);
+    return parseFromTalentumDescriptionHelper(this.model, description, title);
   }
 
   private async callGeminiAndParse(
@@ -207,24 +194,18 @@ export class GeminiVacancyParserService {
     workerType: WorkerType,
   ): Promise<ParsedVacancyResult> {
     const systemPrompt = await this.buildSystemPrompt(workerType);
-    const url =
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
-    const response = await fetchGeminiWithRetry(
-      url,
+    const response = await generateContentVertex(
+      this.model,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: userParts }],
-          generationConfig: {
-            temperature: 0,
-            maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-            responseSchema: VACANCY_RESPONSE_SCHEMA,
-          },
-        }),
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: userParts }],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json',
+          responseSchema: VACANCY_RESPONSE_SCHEMA,
+        },
       },
       'GeminiParser',
     );
@@ -271,7 +252,6 @@ export class GeminiVacancyParserService {
           `[GeminiParser] Missing fields detected: ${missing.join(', ')}. Retrying...`,
         );
         parsed.vacancy = await retryMissingFields(
-          this.apiKey,
           this.model,
           parsed.vacancy,
           originalText,

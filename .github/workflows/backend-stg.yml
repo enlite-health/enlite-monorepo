@@ -102,8 +102,8 @@ jobs:
             N8N_WEBHOOK_URL=https://enlite-n8n-vtf37eainq-tl.a.run.app/webhook/worker-events
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+            VERTEX_LOCATION=global
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
           secrets: |
