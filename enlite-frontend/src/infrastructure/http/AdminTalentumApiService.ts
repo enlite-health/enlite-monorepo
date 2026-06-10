@@ -42,7 +42,7 @@ export interface AIContentResult {
 // ---------------------------------------------------------------------------
 
 interface ApiSuccessResponse<T> { success: true; data: T }
-interface ApiErrorResponse { success: false; error: string }
+interface ApiErrorResponse { success: false; error: string; details?: string }
 type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 const authService = new FirebaseAuthService();
@@ -72,7 +72,12 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
   });
   const json: ApiResponse<T> = await response.json();
   if (!json.success) {
-    throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+    const err = json as ApiErrorResponse;
+    // Surface the backend `details` (real cause) instead of only the generic
+    // `error` — e.g. "Failed to generate AI content: Vertex AI: could not
+    // obtain an ADC access token". Operators were blind to the actual reason.
+    const base = err.error || `HTTP ${response.status}`;
+    throw new Error(err.details ? `${base}: ${err.details}` : base);
   }
   return (json as ApiSuccessResponse<T>).data;
 }

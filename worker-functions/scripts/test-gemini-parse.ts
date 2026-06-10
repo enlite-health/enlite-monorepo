@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import {
   VACANCY_RESPONSE_SCHEMA,
   JSON_OUTPUT_INSTRUCTIONS,
-} from '../src/infrastructure/services/gemini-vacancy-constants';
+} from '../src/modules/integration/infrastructure/gemini-vacancy-constants';
+import { generateContentVertex } from '../src/modules/integration/infrastructure/vertex-gemini';
 
 function loadEnv(p: string) {
   const lines = fs.readFileSync(p, 'utf8').split('\n');
@@ -15,11 +16,9 @@ function loadEnv(p: string) {
 loadEnv('/Users/gabrielstein-dev/projects/enlite/infra/.env');
 
 const PDF_PATH = '/Users/gabrielstein-dev/Downloads/Pinto, Facundo Matias _ #86a6ekaby (1).pdf';
-const API_KEY = process.env.GEMINI_API_KEY ?? '';
 
 async function runOne(model: string) {
   const pdfBase64 = fs.readFileSync(PDF_PATH).toString('base64');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
 
   const body = {
     systemInstruction: { parts: [{ text: JSON_OUTPUT_INSTRUCTIONS }] },
@@ -39,19 +38,17 @@ async function runOne(model: string) {
     },
   };
 
+  // Vertex AI via ADC (sem API key). generateContentVertex lança em não-ok.
   const start = Date.now();
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const elapsed = Date.now() - start;
-
-  if (!res.ok) {
-    console.log(`\n=== ${model} FAILED (${res.status}) in ${elapsed}ms ===`);
-    console.log(await res.text());
+  let res: Response;
+  try {
+    res = await generateContentVertex(model, body, 'test-parse');
+  } catch (err) {
+    console.log(`\n=== ${model} FAILED in ${Date.now() - start}ms ===`);
+    console.log(err instanceof Error ? err.message : String(err));
     return;
   }
+  const elapsed = Date.now() - start;
 
   const data = (await res.json()) as any;
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -76,7 +73,6 @@ async function runOne(model: string) {
 }
 
 (async () => {
-  if (!API_KEY) { console.error('GEMINI_API_KEY not set'); process.exit(1); }
   if (!fs.existsSync(PDF_PATH)) { console.error('PDF not found'); process.exit(1); }
   console.log('PDF:', PDF_PATH, `(${(fs.statSync(PDF_PATH).size / 1024).toFixed(1)} KB)`);
   await runOne('gemini-2.5-flash');
