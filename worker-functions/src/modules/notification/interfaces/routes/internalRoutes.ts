@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { internalAuthMiddleware } from '../middleware/InternalAuthMiddleware';
 import { InternalController } from '../controllers/InternalController';
+import { pingVertex } from '@modules/integration/infrastructure/vertex-health';
 
 /**
  * Routes for internal endpoints — Pub/Sub push, Cloud Tasks, Cloud Scheduler.
@@ -10,6 +11,21 @@ export function createInternalRoutes(controller: InternalController): Router {
   const router = Router();
 
   router.use(internalAuthMiddleware);
+
+  // Post-deploy smoke probe: verifies the running revision can reach Vertex AI
+  // via ADC (the path that broke when the API key was revoked). The deploy
+  // gate calls this and fails the rollout on non-200 — catching IAM drift,
+  // region/model unavailability or broken ADC before users hit it.
+  router.get('/vertex-health', async (_req: Request, res: Response) => {
+    try {
+      const result = await pingVertex();
+      res.status(200).json({ status: 'ok', ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[VertexHealth] probe failed:', message);
+      res.status(503).json({ status: 'error', error: message });
+    }
+  });
 
   // Pub/Sub push: domain events
   router.post('/events/process', (req: Request, res: Response) => {

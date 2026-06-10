@@ -40,6 +40,21 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
     expect(res.data.error).toContain('Missing eventId');
   });
 
+  // ─── Vertex AI smoke probe (post-deploy gate) ───────────────────────
+  // Auth gate só (determinístico). O sucesso/falha do pingVertex é coberto no
+  // unit test vertex-health.test.ts — não exercitamos a chamada real aqui pra
+  // não depender de ADC/metadata server no container de CI.
+
+  it('vertex-health returns 403 without auth', async () => {
+    try {
+      await axios.get(`${API_URL}/api/internal/vertex-health`);
+      fail('Expected 403');
+    } catch (err) {
+      const e = err as AxiosError;
+      expect(e.response?.status).toBe(403);
+    }
+  });
+
   // ─── Domain Events ──────────────────────────────────────────────────
 
   it('processes a domain event end-to-end', async () => {

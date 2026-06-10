@@ -14,6 +14,7 @@ module "sa_enlite_functions" {
   display_name = "Enlite Functions Service Account"
   project_roles = [
     google_project_iam_custom_role.api_keys_lookup.name,
+    "roles/aiplatform.user", # Vertex AI (geração de descrição + prescreening via ADC)
     "roles/cloudsql.client",
     "roles/cloudtasks.enqueuer",
     "roles/firebase.admin",
