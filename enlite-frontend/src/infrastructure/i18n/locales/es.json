@@ -1194,6 +1194,7 @@
         "description": "Descripción generada",
         "regenerate": "Regenerar descripción",
         "generating": "Generando…",
+        "generatingHint": "Generando contenido con IA… puede tardar hasta 1 minuto. No cierres ni recargues la página.",
         "publishSwitch": "Publicar en Talentum",
         "noQuestions": "Configurá al menos 1 pregunta antes de publicar",
         "confirmPublish": "Esto creará un pre-screening en Talentum. ¿Continuar?",
