@@ -17,9 +17,9 @@
  *   npx ts-node -r dotenv/config scripts/verify-gemini-retry.ts
  *
  * Pré-reqs:
- *   - GEMINI_API_KEY no .env
+ *   - ADC com roles/aiplatform.user (gcloud auth application-default login,
+ *     ou GOOGLE_APPLICATION_CREDENTIALS apontando pra chave do SA)
  *   - PROMPT_DOC_ID_AT setado e doc compartilhado com o service account
- *   - GOOGLE_APPLICATION_CREDENTIALS apontando pra chave do SA
  */
 
 import * as http from 'http';
@@ -84,11 +84,8 @@ Salario: $400.000 mensuales.
 Día de pago: día 5.`;
 
 async function verifyRealCall(): Promise<void> {
-  if (!process.env.GEMINI_API_KEY) {
-    console.error('✗ real-call: GEMINI_API_KEY ausente, pulando');
-    process.exitCode = 1;
-    return;
-  }
+  // Auth é via ADC (Vertex AI) — sem GEMINI_API_KEY. Falha de credencial
+  // aparece como erro da chamada abaixo, capturado no catch.
   if (!process.env.PROMPT_DOC_ID_AT) {
     console.error('✗ real-call: PROMPT_DOC_ID_AT ausente, pulando');
     process.exitCode = 1;

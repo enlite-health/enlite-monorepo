@@ -102,8 +102,8 @@ jobs:
             N8N_WEBHOOK_URL=https://enlite-n8n-vtf37eainq-tl.a.run.app/webhook/worker-events
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+            VERTEX_LOCATION=global
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
           secrets: |
@@ -135,3 +135,22 @@ jobs:
             exit 1
           fi
           echo "Health check passed ($STATUS)"
+
+      - name: 'Smoke test — Vertex AI reachable (gera IA)'
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(status.url)')
+          SECRET=$(gcloud secrets versions access latest \
+            --secret=internal-token-secret \
+            --project=${{ secrets.GCP_PROJECT_ID }})
+          STATUS=$(curl -s -o /tmp/vertex-health.json -w '%{http_code}' \
+            -H "x-internal-secret: $SECRET" \
+            "$SERVICE_URL/api/internal/vertex-health")
+          echo "Vertex health: $(cat /tmp/vertex-health.json)"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Vertex AI smoke FALHOU ($STATUS) — geração de IA não funcionaria. Cheque roles/aiplatform.user na enlite-functions-sa e disponibilidade do modelo/região."
+            exit 1
+          fi
+          echo "Vertex AI smoke passed ($STATUS)"

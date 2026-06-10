@@ -7,8 +7,11 @@
  * Default: PREVIEW only (no DB write).
  * With --persist: calls generateDescription (UPDATEs talentum_description).
  *
+ * Auth: usa Vertex AI via ADC (sem API key). Localmente rode antes:
+ *   gcloud auth application-default login   (conta com roles/aiplatform.user)
+ *
  * Usage:
- *   DATABASE_URL=... GEMINI_API_KEY=... \
+ *   DATABASE_URL=... \
  *     npx ts-node -r tsconfig-paths/register scripts/regen-vacancy-description.ts <vacancy_id> [--persist]
  */
 

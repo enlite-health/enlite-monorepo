@@ -21,6 +21,14 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
+// Vertex AI auth via ADC — mock GoogleAuth so tests don't hit the metadata server.
+jest.mock('google-auth-library', () => ({
+  GoogleAuth: jest.fn().mockImplementation(() => ({
+    getAccessToken: jest.fn().mockResolvedValue('test-access-token'),
+    getProjectId: jest.fn().mockResolvedValue('test-project'),
+  })),
+}));
+
 const originalFetch = global.fetch;
 const mockFetch = jest.fn();
 
@@ -136,20 +144,10 @@ describe('TalentumDescriptionService', () => {
 
   // ── Constructor ──────────────────────────────────────────────────
   describe('constructor', () => {
-    it('initializes with GEMINI_API_KEY from env', () => {
-      process.env.GEMINI_API_KEY = 'my-api-key';
+    it('initializes without requiring an API key (Vertex via ADC)', () => {
+      delete process.env.GEMINI_API_KEY;
       const service = createService();
       expect(service).toBeDefined();
-    });
-
-    it('throws when GEMINI_API_KEY is missing', () => {
-      delete process.env.GEMINI_API_KEY;
-      expect(() => createService()).toThrow('GEMINI_API_KEY');
-    });
-
-    it('throws when GEMINI_API_KEY is empty string', () => {
-      process.env.GEMINI_API_KEY = '';
-      expect(() => createService()).toThrow('GEMINI_API_KEY');
     });
 
     it('uses default model when GEMINI_MODEL not set', () => {
@@ -334,8 +332,7 @@ describe('TalentumDescriptionService', () => {
       expect(url).toContain('gemini-custom-model');
     });
 
-    it('puts API key in URL query string', async () => {
-      process.env.GEMINI_API_KEY = 'my-secret-key';
+    it('calls the Vertex endpoint with an ADC bearer token (no API key in URL)', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
         .mockResolvedValueOnce({ rows: [] });
@@ -345,7 +342,10 @@ describe('TalentumDescriptionService', () => {
       await service.generateDescription('job-auth');
 
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain('key=my-secret-key');
+      const init = mockFetch.mock.calls[0][1];
+      expect(url).toContain('aiplatform.googleapis.com');
+      expect(url).not.toContain('key=');
+      expect(init.headers.Authorization).toBe('Bearer test-access-token');
     });
 
     it('sends inline system prompt with description-relevant rules', async () => {
