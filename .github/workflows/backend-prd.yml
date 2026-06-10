@@ -103,6 +103,7 @@ jobs:
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+            GEMINI_MODEL_FAST=gemini-2.5-flash
             VERTEX_LOCATION=global
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA

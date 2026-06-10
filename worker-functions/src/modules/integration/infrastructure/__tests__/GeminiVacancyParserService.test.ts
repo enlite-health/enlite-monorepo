@@ -588,5 +588,17 @@ describe('GeminiVacancyParserService', () => {
       const url = mockFetch.mock.calls[0][0] as string;
       expect(url).toContain('gemini-test');
     });
+
+    it('override do constructor precede o GEMINI_MODEL do env (modelo rápido)', async () => {
+      mockFetch.mockResolvedValueOnce(makeGeminiResponse(makeTalentumVacancyOutput()));
+
+      // process.env.GEMINI_MODEL = 'gemini-test', mas o override deve vencer.
+      const svc = new GeminiVacancyParserService('gemini-2.5-flash');
+      await svc.parseFromTalentumDescription('desc', 'CASO 1');
+
+      const url = mockFetch.mock.calls[0][0] as string;
+      expect(url).toContain('models/gemini-2.5-flash');
+      expect(url).not.toContain('gemini-test');
+    });
   });
 });
