@@ -65,9 +65,9 @@ export class TalentumDescriptionService {
   private db: Pool;
   private model: string;
 
-  constructor() {
+  constructor(modelOverride?: string) {
     this.db = DatabaseConnection.getInstance().getPool();
-    this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
+    this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
   }
 
   /**

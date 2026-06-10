@@ -83,8 +83,8 @@ export class GeminiVacancyParserService {
   private model: string;
   private promptProvider: GoogleDocsPromptProvider;
 
-  constructor() {
-    this.model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
+  constructor(modelOverride?: string) {
+    this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.promptProvider = new GoogleDocsPromptProvider();
   }
 

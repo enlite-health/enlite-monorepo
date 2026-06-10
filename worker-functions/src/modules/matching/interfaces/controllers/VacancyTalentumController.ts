@@ -195,8 +195,16 @@ export class VacancyTalentumController {
       // 2+3. Generate description and prescreening (questions + FAQ) in parallel.
       // Both are independent Gemini calls; serial execution exceeds Firebase Hosting's
       // 60s rewrite timeout (causing 502 to the client). See FOLLOWUPS TD-035.
-      const descService = new TalentumDescriptionService();
-      const geminiService = new GeminiVacancyParserService();
+      //
+      // Synchronous, operator-facing path → usa o modelo rápido (gemini-2.5-flash
+      // por default). É geração de texto a partir de dados estruturados (não
+      // extração), e o operador revisa/edita antes de publicar — flash corta a
+      // latência de ~40s (pro, com thinking) para ~15s. Parsing de PDF (extração,
+      // sensível a acurácia) segue no modelo padrão (pro), pois constrói os
+      // services sem override.
+      const fastModel = process.env.GEMINI_MODEL_FAST ?? 'gemini-2.5-flash';
+      const descService = new TalentumDescriptionService(fastModel);
+      const geminiService = new GeminiVacancyParserService(fastModel);
       const professions: string[] = vacancyData.required_professions ?? [];
       const workerType = professions.includes('CUIDADOR') ? 'CUIDADOR' : 'AT';
       const [descResult, prescreeningResult] = await Promise.all([
