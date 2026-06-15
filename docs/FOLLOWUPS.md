@@ -510,6 +510,56 @@ Conversar com gestão pra alinhar:
 
 ---
 
+### DP-002 — Slot "Monotributo" escondido por `profession=NULL` → ATs sobem doc no campo "Registro Profesional"
+
+- **Status:** aberto
+- **Descoberto em:** 2026-06-15, report do Javier (recrutamento) + diagnóstico DBA em prod
+- **Dono provável:** Gabriel (eng) + Recrutamento (classificação) + Gestão (regra de visibilidade)
+- **Bloqueador?** Não — mas degrada qualidade de dados de documentos
+
+**Contexto (verificado):**
+
+Os slots de documento `monotributo_certificate` e `at_certificate` têm flag `atOnly: true` e só renderizam quando `profession === 'AT'` (string exata) — `WorkerDocumentsCard.tsx:57` (admin) e `DocumentsGrid.tsx:49` (worker). Em prod, **4.664 de 6.900 workers (67,6%) têm `profession=NULL`** (constraint CHECK garante que quem é AT é exatamente `'AT'`, sem variação de texto). Com profession NULL, o slot de Monotributo nunca aparece → ATs sobem o Monotributo no slot visível mais próximo (`professional_registration`). **47 workers** têm `professional_registration_url` preenchido com `profession != 'AT'`/NULL.
+
+**Não confundir com falta de edição:** a app **não permite edição de perfil pelo operador de propósito** — pra forçar o recrutamento a contatar o worker e completar o cadastro (profissão). Ver memória `project_no_worker_edit_intentional`. Logo, a resolução tem componente de **processo** (contato), não só de código.
+
+**Decisão pendente (precisa de Gestão/Recrutamento):**
+
+1. Regra de visibilidade do slot Monotributo: **sempre visível** (todo prestador) ou **gated** por classificação? (Monotributo é obrigatório só pra AT, mas esconder o campo gera o bug atual.)
+2. Como a `profession` é classificada em escala pros 4.664 NULL: backfill assistido + contato de recrutamento? Há sinal externo (ClickUp/Talentum) pra inferir?
+3. Edição de profissão, quando existir, fica em **nível alto (Super Admin)** — alinhar com a feature de permissões ABAC (`project_permissions_abac_feature`).
+
+**Plano de resolução + teste (não deixar só registrado — resolver ao construir):**
+
+- Ao implementar a classificação de `profession` (ou a feature de permissões), **resolver junto**: definir a regra de visibilidade e migrar os 47 docs subidos no campo errado se a decisão permitir.
+- **Teste de não-recorrência (obrigatório):** teste de componente + **visual (Playwright `toHaveScreenshot`)** garantindo que, para a regra escolhida, o slot de Monotributo aparece quando deve — incluindo o caso `profession=NULL` se a decisão for "sempre visível". Sem esse teste, o follow-up não fecha.
+
+**Relacionado:** `project_worker_profession_null_bug`, `project_no_worker_edit_intentional`, `project_workers_duplication_state` (qualidade de dados de workers).
+
+---
+
+### DP-003 — Estratégia de ABAC camada DATA (departamento, zona) para Cerbos principal.attr
+
+- **Status:** PLANEJADO (roadmap) — Fase 8 da feature permissões (`docs/features/permissions/00-master-plan.md §8`). NÃO é débito aberto: capacidade futura comprometida, gatilho = caso de uso real + sign-off D-P3.
+- **Descoberto em:** 2026-06-15, durante formulação do ADR-006 (Cerbos PDP — grupos dinâmicos via principal attributes)
+- **Aguardando:** Gabriel (sign-off sobre semântica de departamento, D-P3 em docs/features/permissions/01-requirements.md)
+- **Bloqueador?** Não — fora do escopo da feature atual por decisão (D-P5); roadmap Fase 8
+- **Origem:** [ADR-006](adr/006-cerbos-pdp-grupos-dinamicos-via-principal-attributes.md)
+
+**Pergunta a responder:**
+
+Quando o caso de uso de ABAC por dados surgir (ex: "coordenador do departamento X só vê workers da zona Y"), quais atributos entram em `principal.attr` além de `permissions[]`? Como `department[]` e `zone[]` são calculados e emitidos no JWT? A semântica de "departamento" no contexto Enlite ainda não está definida formalmente em 01-requirements.md (item D-P3 pendente de sign-off do Gabriel).
+
+**Opções em consideração:**
+
+- A: Adicionar `department[]` e `zone[]` como arrays no JWT custom claim, calculados via SQL junto com `permissions[]` no login/refresh — mesmo padrão de `permissions[]`
+- B: Manter ABAC de dados fora do JWT; resolver via resource-policy Cerbos com lookup dinâmico em tempo de avaliação (requer Cerbos storage driver configurado)
+- C: Adiar ABAC de dados até extração do permission-service (NestJS), onde o PDP terá contexto de request completo
+
+**Ver:** [ADR-006](adr/006-cerbos-pdp-grupos-dinamicos-via-principal-attributes.md).
+
+---
+
 ## Como usar este doc
 
 - **Adicionou um item?** Coloca data, contexto e dono.
@@ -1508,3 +1558,57 @@ id, application_id, field_name, old_value, new_value, changed_by, change_source,
 2. Decidir: implementar `changed_by`/`change_source` ou removê-los do schema
 
 **Relacionado:** `worker-functions/migrations/169_application_stage_history.sql`, auditoria em `worker-functions/scripts/audit/`.
+
+---
+
+### TD-051 — 14 suites E2E backend quebradas em banco limpo (drift de fixtures vs migrations 183/191/194)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-06-10, durante validação da feature de contact notes (suite E2E completa em Docker limpo)
+- **Dono provável:** backend
+- **Bloqueador?** Não — pré-existente; as suites das áreas tocadas (funnel-table, contact-notes, vacancies-list) passam
+
+**O que é:**
+
+Rodando `npx jest --config jest.config.e2e.js` contra stack Docker recém-criado: **14 suites / 37 testes falham** por fixtures escritos antes de constraints/triggers recentes — não por bug de produto. Suites: `ApplicationFunnelStageRepository`, `admin-kanban-interview-source`, `auto-invite`, `interview-slots`, `kanban-funnel-orphan-wja`, `message-templates`, `phase2-encuadres-invariants`, `phase5-encuadres-unique-constraint`, `sync-talentum-workers`, `talentum-prescreening-funnel-regression`, `talentum-prescreening-funnel-transition`, `wave7-operational`, `whatsapp-messaging`, `worker-status`.
+
+Causas agrupadas (log 2026-06-10):
+- 36× `duplicate key value violates unique constraint "encuadres_worker_job_unique"` (constraint do ADR-001 posterior aos fixtures)
+- 10× `inconsistent types deduced for parameter $1` (query de fixture)
+- 6× CHECK `worker_job_applications_application_funnel_stage_check` (fixtures inserem `PLACED`/`NOT_QUALIFIED`, removidos nas migrations 191/194)
+- 4× expectativa `NOT_QUALIFIED` (auto-rejeitado desde migration 191)
+- 2× trigger `enforce_worker_registered_for_application` (migration 183 — workers de fixture sem `status='REGISTERED'`)
+
+Em 2026-06-10 a mesma classe de drift foi corrigida em 3 suites que estavam no caminho de features: `admin-vacancies-list-counters` (REGISTERED + remoção de PLACED), `funnel-table.e2e` (REGISTERED + `internalStage`→`funnelStage`) e baselines/mocks do Playwright frontend. As 14 restantes seguem o mesmo receituário.
+
+**Critério para fechar:**
+- `npx jest --config jest.config.e2e.js` 100% verde contra Docker recém-criado (`down -v` + `up`)
+- Fixtures inserindo workers com `status='REGISTERED'` (ou `source` de bypass) e apenas stages válidos pós-194
+
+---
+
+### TD-052 — Isolamento full das queries de domínio por tenant (workers, job_postings, patients)
+
+- **Status:** PLANEJADO (roadmap) — Fase 7 da feature permissões (`docs/features/permissions/00-master-plan.md §8`). NÃO é débito aberto: fase comprometida, gatilho = incorporação do 2º tenant.
+- **Descoberto em:** 2026-06-15, durante formulação do ADR-005 (multi-tenant IAM foundation)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — gated por flag `MULTI_TENANT_DOMAIN_ISOLATION` (default off); tabelas de domínio funcionam sem filtro enquanto Enlite é single-tenant
+- **Origem:** [ADR-005](adr/005-multi-tenant-iam-foundation-worker-functions.md)
+
+**O que é:**
+
+A migration 205 (ADR-005) adiciona `tenant_id` nas tabelas IAM e em `users`, mas as queries de domínio (`workers`, `job_postings`, `patients`) ainda não filtram por `tenant_id`. Isso é proposital enquanto Enlite operar como single-tenant, mas quando o segundo tenant for incorporado, todas as queries de domínio precisam de `AND tenant_id = $1` em application layer.
+
+A flag `MULTI_TENANT_DOMAIN_ISOLATION` (default off) sinaliza quando ativar esse filtro. Antes de ligar a flag, é necessário: (1) adicionar `tenant_id` nas tabelas de domínio (`workers`, `job_postings`, `patients`) via migrations aditivas, (2) backfill para o tenant canônico `00000000-0000-0000-0000-000000000001`, (3) revisar todos os use cases de domínio para garantir que `WHERE tenant_id=$1` está presente.
+
+Risco principal: use case novo escrito sem o filtro passa em testes single-tenant e vaza dados em ambiente multi-tenant silenciosamente. Considerar lint rule ou interceptor de repositório que exija `tenant_id` quando a flag estiver ativa.
+
+**Critério para fechar:**
+
+- `MULTI_TENANT_DOMAIN_ISOLATION=true` ativo em staging sem regressão nos testes E2E
+- Todas as queries de domínio (workers, job_postings, patients) com `WHERE tenant_id=$1` auditadas e cobertas por teste de isolamento
+- Migrations de `tenant_id` nas tabelas de domínio aplicadas e backfill validado em prod
+
+**Ver:** [ADR-005](adr/005-multi-tenant-iam-foundation-worker-functions.md) — seção "Follow-up".
+
+**Relacionado:** migrations 183/191/194, ADR-001, memória `feedback_all_tests_pass_before_commit`.
