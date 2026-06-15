@@ -841,6 +841,7 @@
         "daysOpen": "Dias Aberto",
         "invited": "Convidados",
         "applicants": "Postulados",
+        "confirmed": "Confirmados",
         "selected": "Selecionados",
         "missing": "Faltantes",
         "view": "Ver",
@@ -996,11 +997,27 @@
           "phone": "TELEFONE",
           "inviteDate": "DATA DO CONVITE",
           "whatsapp": "WHATSAPP",
-          "accepted": "ACEITO"
+          "accepted": "ACEITOU",
+          "registration": "CADASTRO",
+          "notes": "NOTAS"
         },
         "acceptedYes": "Sim",
         "acceptedNo": "Não",
-        "emptyState": "Nenhum candidato neste estágio ainda."
+        "emptyState": "Nenhum candidato neste estágio ainda.",
+        "registration": {
+          "complete": "Completo",
+          "incomplete": "Incompleto"
+        },
+        "contactNotes": {
+          "modalTitle": "Notas de contato",
+          "emptyState": "Sem notas registradas.",
+          "textareaPlaceholder": "Escreva uma nota sobre este candidato…",
+          "charCounter": "{{count}}/240",
+          "registerButton": "Registrar",
+          "registering": "Registrando…",
+          "loadError": "Erro ao carregar as notas.",
+          "createError": "Erro ao registrar a nota."
+        }
       },
       "whatsappStatus": {
         "notSent": "Não enviado",

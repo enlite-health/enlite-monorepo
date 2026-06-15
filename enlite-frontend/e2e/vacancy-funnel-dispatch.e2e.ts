@@ -85,6 +85,8 @@ function makeRow(
     whatsappLastDispatchedAt,
     accepted: null,
     interviewResponse: null,
+    registrationComplete: true,
+    contactNotesCount: 0,
   };
 }
 
@@ -357,8 +359,9 @@ test.describe('VacancyFunnelView — Dispatch Invites Button', () => {
 
     await page.getByRole('button', { name: /^Enviar$/ }).click();
 
+    // Título atual do InviteProgressModal é admin.messaging.title ("Enviar invitación")
     await expect(
-      page.getByRole('heading', { name: /WhatsApp/i }),
+      page.getByRole('heading', { name: /Enviar invitación/i }),
     ).toBeVisible({ timeout: 5_000 });
 
     await expect(page).toHaveScreenshot('dispatch-progress-modal.png', {

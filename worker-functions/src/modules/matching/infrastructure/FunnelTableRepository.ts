@@ -22,6 +22,8 @@ export interface FunnelTableRawRow {
   wbdl_dispatched_at: string | null;
   wbdl_delivery_status: string | null;
   wbdl_status: string | null; // 'sent' | 'error'
+  worker_status: string | null;
+  contact_notes_count: number | string | null;
 }
 
 /**
@@ -58,7 +60,10 @@ export class FunnelTableRepository {
          wja.interview_response,
          latest_wbdl.dispatched_at::text                  AS wbdl_dispatched_at,
          latest_wbdl.delivery_status                      AS wbdl_delivery_status,
-         latest_wbdl.status                               AS wbdl_status
+         latest_wbdl.status                               AS wbdl_status,
+         w.status                                          AS worker_status,
+         (SELECT COUNT(*)::int FROM wja_contact_notes cn
+          WHERE cn.worker_job_application_id = wja.id)    AS contact_notes_count
        FROM worker_job_applications wja
        LEFT JOIN workers w
          ON w.id = wja.worker_id

@@ -6,6 +6,7 @@
  */
 
 import {
+  CONFIRMED_KANBAN_STAGES,
   POSTULATED_STAGES,
   SELECTED_KANBAN_STAGES,
   toSqlInList,
@@ -36,6 +37,7 @@ export function mapStatus(status: string | null): string {
 // ── listVacancies query builder ────────────────────────────────────────────────
 
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
+const CONFIRMED_KANBAN_SQL = toSqlInList(CONFIRMED_KANBAN_STAGES);
 const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
 
 const LIST_VACANCIES_BASE = `
@@ -65,6 +67,9 @@ const LIST_VACANCIES_BASE = `
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
         AND wja.application_funnel_stage IN (${POSTULATED_SQL})) as postulados,
+    (SELECT COUNT(*) FROM worker_job_applications wja
+      WHERE wja.job_posting_id = jp.id
+        AND wja.application_funnel_stage IN (${CONFIRMED_KANBAN_SQL})) as confirmados,
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
         AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})) as selecionados,
@@ -159,6 +164,7 @@ export interface VacancyListRow {
   dias_aberto: number | null;
   convidados: number | string | null;
   postulados: number | string | null;
+  confirmados: number | string | null;
   selecionados: number | string | null;
   faltantes: number | string | null;
 }
@@ -178,6 +184,7 @@ export function mapVacancyListRow(row: VacancyListRow) {
     diasAberto: row.dias_aberto?.toString().padStart(2, '0') ?? '00',
     convidados: row.convidados?.toString().padStart(2, '0') ?? '00',
     postulados: row.postulados?.toString().padStart(2, '0') ?? '00',
+    confirmados: row.confirmados?.toString().padStart(2, '0') ?? '00',
     selecionados: row.selecionados?.toString().padStart(2, '0') ?? '00',
     faltantes: row.faltantes != null ? row.faltantes.toString().padStart(2, '0') : null,
   };

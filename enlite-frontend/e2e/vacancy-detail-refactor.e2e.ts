@@ -186,11 +186,20 @@ function buildFunnelTableResponse(bucket: string) {
     ALL: 7,
   };
 
+  // Campos novos da funnel-table (badge de registro + contador de notas):
+  // variedade nos valores pra exercitar os dois estados do badge e o contador.
+  const withNewFields = (rows: typeof rows5) =>
+    rows.map((r, i) => ({
+      ...r,
+      registrationComplete: i % 2 === 0,
+      contactNotesCount: i === 0 ? 2 : 0,
+    }));
+
   if (bucket === 'INVITED') {
-    return { rows: rows5, counts: baseCounts };
+    return { rows: withNewFields(rows5), counts: baseCounts };
   }
   if (bucket === 'POSTULATED') {
-    return { rows: rows2, counts: baseCounts };
+    return { rows: withNewFields(rows2), counts: baseCounts };
   }
   return { rows: [], counts: baseCounts };
 }
@@ -500,8 +509,10 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Botão Editar no card de profissão
-    await expect(page.getByRole('button', { name: /Editar/i })).toBeVisible();
+    // Triggers de edição (status + horarios) — o card de profissão não tem
+    // mais botão "Editar" próprio; era stub removido em refactor anterior.
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toBeVisible();
+    await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible();
 
     // Sexo requerido
     await expect(page.locator('text=Mujer').first()).toBeVisible();
@@ -688,15 +699,11 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible({ timeout: 10_000 });
   });
 
-  test('B7 — clique em "Enviar invitaciones" não navega nem exibe erro', async ({
+  test('B7 — clique em "Enviar invitaciones" não navega e abre modal de confirmação', async ({
     page,
   }) => {
     await loginAsAdmin(page);
     await mockVacancyApis(page);
-
-    // Captura mensagens de console para verificar o stub
-    const consoleLogs: string[] = [];
-    page.on('console', (msg) => consoleLogs.push(msg.text()));
 
     await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
     await expect(page.locator('text=226').first()).toBeVisible({
@@ -710,12 +717,11 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       new RegExp(`/admin/vacancies/${MOCK_VACANCY_ID}`),
     );
 
-    // Console log do stub deve conter a mensagem esperada
-    await page.waitForTimeout(300);
-    const dispatchLog = consoleLogs.find((l) =>
-      l.includes('dispatch invites clicked'),
-    );
-    expect(dispatchLog).toBeTruthy();
+    // O stub de console foi substituído pelo fluxo real de dispatch:
+    // o clique abre o DispatchConfirmModal (fluxo coberto em vacancy-funnel-dispatch.e2e.ts)
+    await expect(
+      page.getByRole('heading', { name: /Confirmar envío/i }),
+    ).toBeVisible({ timeout: 5_000 });
   });
 
   // ── C. Funil — toggle Kanban ─────────────────────────────────────────────────
@@ -888,12 +894,172 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       page.locator('text=/Sin candidatos en esta etapa/i').first(),
     ).toBeVisible({ timeout: 15_000 });
 
-    await expect(page).toHaveScreenshot(
+    // Screenshot por LOCATOR (não fullPage): o scroll da página fica num
+    // container interno e o offset do fullPage varia entre runs → flaky.
+    // No empty state a tabela não renderiza — o container é o role="status".
+    await expect(page.locator('[role="status"]')).toHaveScreenshot(
       'vacancy-detail-refactor-list-desistentes-empty.png',
       {
-        fullPage: true,
-        maxDiffPixelRatio: 0.03,
+        maxDiffPixelRatio: 0.02,
       },
     );
+  });
+
+  test('E1 — coluna Registro mostra badge e ícone de notas abre modal com histórico', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
+    await mockVacancyApis(page);
+
+    const notes = [
+      {
+        id: 'note-2',
+        workerJobApplicationId: 'inv-1',
+        noteText: 'Llamé de nuevo, quedó en responder mañana.',
+        createdByAdminId: 'op-uid-1',
+        createdByAdminEmail: 'operadora@enlite.test',
+        createdAt: '2026-06-09T14:32:00Z',
+      },
+      {
+        id: 'note-1',
+        workerJobApplicationId: 'inv-1',
+        noteText: 'Primer contacto por WhatsApp, sin respuesta.',
+        createdByAdminId: 'op-uid-1',
+        createdByAdminEmail: 'operadora@enlite.test',
+        createdAt: '2026-06-08T10:05:00Z',
+      },
+    ];
+    let postedBody: { noteText?: string } | null = null;
+    await page.route(
+      `**/api/admin/vacancies/${MOCK_VACANCY_ID}/applications/*/contact-notes`,
+      async (route) => {
+        if (route.request().method() === 'POST') {
+          postedBody = route.request().postDataJSON() as { noteText?: string };
+          return route.fulfill({
+            status: 201,
+            contentType: 'application/json',
+            body: JSON.stringify({ success: true, data: notes[0] }),
+          });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, data: notes }),
+        });
+      },
+    );
+
+    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
+    await expect(page.locator('text=226').first()).toBeVisible({ timeout: 15_000 });
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
+
+    // Badges de registro (rows com registrationComplete alternado i%2===0)
+    await expect(page.locator('text=Completo').first()).toBeVisible();
+    await expect(page.locator('text=Incompleto').first()).toBeVisible();
+
+    // Contador de notas na primeira linha (contactNotesCount: 2)
+    const notesButton = page
+      .locator('[role="table"] tbody tr')
+      .first()
+      .getByRole('button', { name: /Notas/i });
+    await expect(notesButton).toContainText('2');
+
+    // Abre o modal e valida histórico
+    await notesButton.click();
+    await expect(page.locator('text=Notas de contacto')).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator('text=Llamé de nuevo, quedó en responder mañana.'),
+    ).toBeVisible();
+    await expect(page.locator('text=operadora@enlite.test').first()).toBeVisible();
+
+    // Cria nota nova e valida o POST
+    await page
+      .getByPlaceholder(/Escribí una nota/i)
+      .fill('Contactada por teléfono hoy.');
+    await page.getByRole('button', { name: /Registrar/i }).click();
+    await expect
+      .poll(() => postedBody?.noteText, { timeout: 10_000 })
+      .toBe('Contactada por teléfono hoy.');
+  });
+
+  test('E2 — VISUAL — modal de notas de contacto aberto com histórico', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
+    await mockVacancyApis(page);
+
+    await page.route(
+      `**/api/admin/vacancies/${MOCK_VACANCY_ID}/applications/*/contact-notes`,
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: [
+              {
+                id: 'note-2',
+                workerJobApplicationId: 'inv-1',
+                noteText: 'Llamé de nuevo, quedó en responder mañana.',
+                createdByAdminId: 'op-uid-1',
+                createdByAdminEmail: 'operadora@enlite.test',
+                createdAt: '2026-06-09T14:32:00Z',
+              },
+              {
+                id: 'note-1',
+                workerJobApplicationId: 'inv-1',
+                noteText: 'Primer contacto por WhatsApp, sin respuesta.',
+                createdByAdminId: 'op-uid-1',
+                createdByAdminEmail: 'operadora@enlite.test',
+                createdAt: '2026-06-08T10:05:00Z',
+              },
+            ],
+          }),
+        }),
+    );
+
+    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
+    await expect(page.locator('text=226').first()).toBeVisible({ timeout: 15_000 });
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
+
+    await page
+      .locator('[role="table"] tbody tr')
+      .first()
+      .getByRole('button', { name: /Notas/i })
+      .click();
+    await expect(page.locator('text=Notas de contacto')).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator('text=Llamé de nuevo, quedó en responder mañana.'),
+    ).toBeVisible();
+
+    await expect(page).toHaveScreenshot('vacancy-detail-contact-notes-modal.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('E3 — VISUAL — tabela do funil (locator) com colunas Registro e Notas', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
+    await mockVacancyApis(page);
+
+    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
+    await expect(page.locator('text=226').first()).toBeVisible({ timeout: 15_000 });
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const table = page.locator('[role="table"]');
+    await expect(table).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('text=Completo').first()).toBeVisible();
+
+    // Screenshot do ELEMENTO (não fullPage): captura a tabela inteira mesmo
+    // com o scroll da página num container interno — os fullPage D1/D3/D4
+    // não alcançam a região do funil (página tem inner scroll).
+    await expect(table).toHaveScreenshot('vacancy-funnel-table.png', {
+      maxDiffPixelRatio: 0.02,
+    });
   });
 });

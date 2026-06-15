@@ -21,6 +21,13 @@ export const REJECTION_STAGES = ['REJECTED'] as const;
  */
 export const SELECTED_KANBAN_STAGES = ['SELECTED'] as const;
 
+/**
+ * Stages que aparecem na coluna "Confirmados" do kanban (WJAFunnelController).
+ * Usado pelo contador "Confirmados" da listagem de vagas para que o número
+ * bata exatamente com o que o operador vê ao abrir o kanban.
+ */
+export const CONFIRMED_KANBAN_STAGES = ['CONFIRMED'] as const;
+
 export const POSTULATED_STAGES_SET: ReadonlySet<string> = new Set(POSTULATED_STAGES);
 export const PRE_SELECTED_STAGES_SET: ReadonlySet<string> = new Set(PRE_SELECTED_STAGES);
 export const REJECTION_STAGES_SET: ReadonlySet<string> = new Set(REJECTION_STAGES);

@@ -150,6 +150,7 @@ export function AdminVacanciesPage(): JSX.Element {
       diasAberto: v.diasAberto || '—',
       convidados: v.convidados ?? '—',
       postulados: v.postulados ?? '—',
+      confirmados: v.confirmados ?? '—',
       selecionados: v.selecionados ?? '—',
       faltantes: v.faltantes ?? '—',
       isDraft: v.is_draft === true,

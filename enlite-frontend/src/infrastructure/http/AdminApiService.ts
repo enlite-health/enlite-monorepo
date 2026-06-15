@@ -20,6 +20,7 @@ import {
   type AIContentResult,
 } from './AdminTalentumApiService';
 import { AdminVacancyDraftsApiService } from './AdminVacancyDraftsApiService';
+import { AdminContactNotesApiService } from './AdminContactNotesApiService';
 import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 import type {
   ParseVacancyFullResult,
@@ -293,6 +294,14 @@ class AdminApiServiceClass {
       'GET',
       `/api/admin/vacancies/${vacancyId}/funnel-table${qs}`,
     );
+  }
+
+  // ========== Contact Notes — delegated to AdminContactNotesApiService ==========
+  getContactNotes(...args: Parameters<typeof AdminContactNotesApiService.getContactNotes>) {
+    return AdminContactNotesApiService.getContactNotes(...args);
+  }
+  createContactNote(...args: Parameters<typeof AdminContactNotesApiService.createContactNote>) {
+    return AdminContactNotesApiService.createContactNote(...args);
   }
 
   // ========== Interview Slots Methods ==========

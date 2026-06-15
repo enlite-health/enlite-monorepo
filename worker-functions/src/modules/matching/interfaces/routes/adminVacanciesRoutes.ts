@@ -5,6 +5,7 @@ import { VacancyMatchController } from '../controllers/VacancyMatchController';
 import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
 import { WJAFunnelController } from '../controllers/WJAFunnelController';
 import { WJAFunnelTableController } from '../controllers/WJAFunnelTableController';
+import { WJAContactNotesController } from '../controllers/WJAContactNotesController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
@@ -168,6 +169,19 @@ export function createAdminVacanciesRoutes(
   );
   router.delete('/interview-slots/:slotId', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     interviewSlotsController.cancelSlot(req, res),
+  );
+
+  // ── WJA Contact Notes (WJAContactNotesController) ────────────────────────────
+  const contactNotesController = new WJAContactNotesController();
+  router.get(
+    '/vacancies/:vacancyId/applications/:wjaId/contact-notes',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => contactNotesController.list(req, res),
+  );
+  router.post(
+    '/vacancies/:vacancyId/applications/:wjaId/contact-notes',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => contactNotesController.create(req, res),
   );
 
   return router;

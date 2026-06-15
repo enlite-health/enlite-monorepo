@@ -19,6 +19,17 @@ vi.mock('@presentation/components/atoms/WhatsappStatusBadge', () => ({
   ),
 }));
 
+vi.mock('@hooks/admin/useContactNotes', () => ({
+  useContactNotes: () => ({
+    notes: [],
+    isLoading: false,
+    isCreating: false,
+    error: null,
+    fetchNotes: vi.fn().mockResolvedValue(undefined),
+    createNote: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 const mockRows: FunnelTableRow[] = [
   {
     id: 'row-1',
@@ -33,6 +44,8 @@ const mockRows: FunnelTableRow[] = [
     whatsappLastDispatchedAt: null,
     accepted: true,
     interviewResponse: null,
+    registrationComplete: true,
+    contactNotesCount: 2,
   },
   {
     id: 'row-2',
@@ -47,18 +60,21 @@ const mockRows: FunnelTableRow[] = [
     whatsappLastDispatchedAt: null,
     accepted: null,
     interviewResponse: null,
+    registrationComplete: false,
+    contactNotesCount: 0,
   },
 ];
 
+const defaultProps = {
+  vacancyId: 'vac-1',
+  rows: mockRows,
+  isLoading: false,
+  activeBucket: 'INVITED' as const,
+};
+
 describe('VacancyFunnelTable', () => {
-  it('renders table headers', () => {
-    render(
-      <VacancyFunnelTable
-        rows={mockRows}
-        isLoading={false}
-        activeBucket="INVITED"
-      />,
-    );
+  it('renders table headers including new ones', () => {
+    render(<VacancyFunnelTable {...defaultProps} />);
     expect(
       screen.getByText('admin.vacancyDetail.funnelTable.headers.name'),
     ).toBeInTheDocument();
@@ -74,28 +90,43 @@ describe('VacancyFunnelTable', () => {
     expect(
       screen.getByText('admin.vacancyDetail.funnelTable.headers.accepted'),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.headers.registration'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.headers.notes'),
+    ).toBeInTheDocument();
   });
 
   it('renders rows', () => {
-    render(
-      <VacancyFunnelTable
-        rows={mockRows}
-        isLoading={false}
-        activeBucket="INVITED"
-      />,
-    );
-    // Name appears in both WorkerAvatar mock and the name span; use getAllByText
+    render(<VacancyFunnelTable {...defaultProps} />);
     expect(screen.getAllByText('Juan Pérez').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Maria García').length).toBeGreaterThan(0);
   });
 
+  it('renders registration complete badge', () => {
+    render(<VacancyFunnelTable {...defaultProps} />);
+    expect(
+      screen.getByText(
+        'admin.vacancyDetail.funnelTable.registration.complete',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'admin.vacancyDetail.funnelTable.registration.incomplete',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders contactNotesCount for row with notes', () => {
+    render(<VacancyFunnelTable {...defaultProps} />);
+    // row-1 has contactNotesCount=2
+    expect(screen.getByText('2')).toBeInTheDocument();
+  });
+
   it('renders empty state when rows is empty', () => {
     render(
-      <VacancyFunnelTable
-        rows={[]}
-        isLoading={false}
-        activeBucket="INVITED"
-      />,
+      <VacancyFunnelTable {...defaultProps} rows={[]} />,
     );
     expect(
       screen.getByText('admin.vacancyDetail.funnelTable.emptyState'),
@@ -104,23 +135,13 @@ describe('VacancyFunnelTable', () => {
 
   it('renders spinner when loading and no rows', () => {
     const { container } = render(
-      <VacancyFunnelTable
-        rows={[]}
-        isLoading={true}
-        activeBucket="INVITED"
-      />,
+      <VacancyFunnelTable {...defaultProps} rows={[]} isLoading={true} />,
     );
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
   it('renders table with role=table', () => {
-    render(
-      <VacancyFunnelTable
-        rows={mockRows}
-        isLoading={false}
-        activeBucket="INVITED"
-      />,
-    );
+    render(<VacancyFunnelTable {...defaultProps} />);
     expect(screen.getByRole('table')).toBeInTheDocument();
   });
 });

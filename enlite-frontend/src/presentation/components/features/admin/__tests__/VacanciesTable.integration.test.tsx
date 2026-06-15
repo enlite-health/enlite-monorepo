@@ -13,6 +13,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         diasAberto: '05',
         convidados: '329',
         postulados: '115',
+        confirmados: '43',
         selecionados: '27',
         faltantes: '00',
         isDraft: false,
@@ -25,6 +26,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         diasAberto: '03',
         convidados: '164',
         postulados: '52',
+        confirmados: '09',
         selecionados: '06',
         faltantes: '00',
         isDraft: false,
@@ -49,9 +51,11 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     // GARANTIA 4: Dados numéricos visíveis
     expect(screen.getByText('329')).toBeVisible();
     expect(screen.getByText('115')).toBeVisible();
+    expect(screen.getByText('43')).toBeVisible();
     expect(screen.getByText('27')).toBeVisible();
     expect(screen.getByText('164')).toBeVisible();
     expect(screen.getByText('52')).toBeVisible();
+    expect(screen.getByText('09')).toBeVisible();
     expect(screen.getByText('06')).toBeVisible();
 
     // GARANTIA 5: 2 linhas de dados

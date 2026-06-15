@@ -841,6 +841,7 @@
         "daysOpen": "Días Abierto",
         "invited": "Invitados",
         "applicants": "Postulados",
+        "confirmed": "Confirmados",
         "selected": "Seleccionados",
         "missing": "Faltantes",
         "view": "Ver",
@@ -1010,13 +1011,29 @@
         "headers": {
           "name": "NOMBRE",
           "phone": "TELÉFONO",
-          "inviteDate": "DATA DO CONVITE",
+          "inviteDate": "FECHA DE INVITACIÓN",
           "whatsapp": "WHATSAPP",
-          "accepted": "ACEITO"
+          "accepted": "ACEPTÓ",
+          "registration": "REGISTRO",
+          "notes": "NOTAS"
         },
         "acceptedYes": "Sí",
         "acceptedNo": "No",
-        "emptyState": "Sin candidatos en esta etapa todavía."
+        "emptyState": "Sin candidatos en esta etapa todavía.",
+        "registration": {
+          "complete": "Completo",
+          "incomplete": "Incompleto"
+        },
+        "contactNotes": {
+          "modalTitle": "Notas de contacto",
+          "emptyState": "Sin notas registradas.",
+          "textareaPlaceholder": "Escribí una nota sobre este candidato…",
+          "charCounter": "{{count}}/240",
+          "registerButton": "Registrar",
+          "registering": "Registrando…",
+          "loadError": "Error al cargar las notas.",
+          "createError": "Error al registrar la nota."
+        }
       },
       "whatsappStatus": {
         "notSent": "No enviado",

@@ -52,6 +52,7 @@ const MOCK_VACANCIES = [
     diasAberto: '05',
     convidados: '12',
     postulados: '07',
+    confirmados: '03',
     selecionados: '02',
     faltantes: '01',
   },
@@ -64,6 +65,7 @@ const MOCK_VACANCIES = [
     diasAberto: '12',
     convidados: '20',
     postulados: '08',
+    confirmados: '02',
     selecionados: '01',
     faltantes: '00',
   },
@@ -76,6 +78,7 @@ const MOCK_VACANCIES = [
     diasAberto: '02',
     convidados: '02',
     postulados: '01',
+    confirmados: '00',
     selecionados: '00',
     faltantes: '02',
   },
@@ -217,6 +220,9 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
 
     // New column must be visible
     await expect(page.getByRole('columnheader', { name: /Prioridad/i })).toBeVisible();
+
+    // Confirmados counter column (stage CONFIRMED) between Postulados and Seleccionados
+    await expect(page.getByRole('columnheader', { name: /^Confirmados$/i })).toBeVisible();
 
     // Removed Clientes filter
     await expect(page.getByText(/^Clientes$/)).toHaveCount(0);

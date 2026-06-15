@@ -127,6 +127,8 @@ export class GetFunnelTableUseCase {
       whatsappLastDispatchedAt: raw.wbdl_dispatched_at ?? null,
       accepted,
       interviewResponse: ir,
+      registrationComplete: raw.worker_status === 'REGISTERED',
+      contactNotesCount: Number(raw.contact_notes_count ?? 0),
     };
   }
 

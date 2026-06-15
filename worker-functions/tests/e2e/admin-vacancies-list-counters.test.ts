@@ -1,10 +1,11 @@
 /**
  * admin-vacancies-list-counters.test.ts
  *
- * Valida que o contador "selecionados" da listagem GET /api/admin/vacancies
- * conta apenas os workers que estão na coluna SELECTED do kanban
- * (application_funnel_stage IN ('SELECTED', 'PLACED')) — não os 4 stages
+ * Valida que os contadores "selecionados" e "confirmados" da listagem
+ * GET /api/admin/vacancies contam apenas os workers que estão nas colunas
+ * SELECTED e CONFIRMED do kanban, respectivamente — não os 3 stages
  * agregados em PRE_SELECTED_STAGES (que ainda é usado pelo detalhe).
+ * PLACED foi removido do CHECK em F7.a (migration 194).
  */
 
 import { Pool } from 'pg';
@@ -40,12 +41,12 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     );
     vacancyId = vacancy.rows[0].id as string;
 
-    const stages = ['SELECTED', 'PLACED', 'QUALIFIED', 'CONFIRMED'];
+    const stages = ['SELECTED', 'QUALIFIED', 'CONFIRMED'];
     for (const stage of stages) {
       const suffix = `${stage.toLowerCase()}-${Date.now()}`;
       const w = await pool.query(
-        `INSERT INTO workers (auth_uid, email, country, timezone)
-         VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires')
+        `INSERT INTO workers (auth_uid, email, country, timezone, status)
+         VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires', 'REGISTERED')
          RETURNING id`,
         [`uid-${suffix}`, `worker-${suffix}@counters.test`],
       );
@@ -67,7 +68,7 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     }
   });
 
-  it('selecionados conta só SELECTED + PLACED (não QUALIFIED nem CONFIRMED)', async () => {
+  it('selecionados conta só SELECTED (não QUALIFIED nem CONFIRMED)', async () => {
     const res = await api.get(
       `/api/admin/vacancies?search=${uniqueCaseNumber}`,
       { headers: { Authorization: `Bearer ${adminToken}` } },
@@ -75,15 +76,26 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     expect(res.status).toBe(200);
     const row = res.data.data.find((v: { id: string }) => v.id === vacancyId);
     expect(row).toBeDefined();
-    expect(row.selecionados).toBe('02');
+    expect(row.selecionados).toBe('01');
   });
 
-  it('faltantes desconta apenas os de SELECTED + PLACED do providers_needed', async () => {
+  it('confirmados conta só CONFIRMED (mesma semântica da coluna do kanban)', async () => {
+    const res = await api.get(
+      `/api/admin/vacancies?search=${uniqueCaseNumber}`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(res.status).toBe(200);
+    const row = res.data.data.find((v: { id: string }) => v.id === vacancyId);
+    expect(row).toBeDefined();
+    expect(row.confirmados).toBe('01');
+  });
+
+  it('faltantes desconta apenas os de SELECTED do providers_needed', async () => {
     const res = await api.get(
       `/api/admin/vacancies?search=${uniqueCaseNumber}`,
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
     const row = res.data.data.find((v: { id: string }) => v.id === vacancyId);
-    expect(row.faltantes).toBe('02');
+    expect(row.faltantes).toBe('03');
   });
 });
