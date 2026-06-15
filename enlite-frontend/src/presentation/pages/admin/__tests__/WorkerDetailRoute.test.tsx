@@ -195,6 +195,7 @@ describe('WorkerDetailPage — back button navigates to /admin/workers', () => {
     vi.doMock('react-router-dom', () => ({
       useParams: () => ({ id: 'worker-123' }),
       useNavigate: () => mockNavigate,
+      useLocation: () => ({ state: null }),
     }));
 
     vi.doMock('@hooks/admin/useWorkerDetail', () => ({
