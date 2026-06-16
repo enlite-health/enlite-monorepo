@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "enlite-prd"
+    "default": "enlite-prd",
+    "stg": "enlite-stg"
   }
 }

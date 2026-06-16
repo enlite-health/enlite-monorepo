@@ -147,6 +147,7 @@ export function VacancyFunnelView({
             aria-labelledby={`funnel-tab-${activeBucket}`}
           >
             <VacancyFunnelTable
+              vacancyId={vacancyId}
               rows={data?.rows ?? []}
               isLoading={isLoading}
               activeBucket={activeBucket}

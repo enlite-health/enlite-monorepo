@@ -27,6 +27,8 @@ function makeRow(
     whatsappLastDispatchedAt,
     accepted: null,
     interviewResponse: null,
+    registrationComplete: false,
+    contactNotesCount: 0,
   };
 }
 

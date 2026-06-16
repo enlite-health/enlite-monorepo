@@ -12,6 +12,7 @@ describe('VacanciesTable', () => {
       diasAberto: '05',
       convidados: '329',
       postulados: '115',
+      confirmados: '43',
       selecionados: '27',
       faltantes: '00',
       isDraft: false,
@@ -24,13 +25,14 @@ describe('VacanciesTable', () => {
       diasAberto: '03',
       convidados: '164',
       postulados: '52',
+      confirmados: '09',
       selecionados: '06',
       faltantes: '00',
       isDraft: false,
     },
   ];
 
-  it('should render table headers (case, status, priority, invited, applicants, selected, missing)', () => {
+  it('should render table headers (case, status, priority, invited, applicants, confirmed, selected, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
@@ -38,6 +40,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.table.priority')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.invited')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.applicants')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.table.confirmed')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.selected')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.missing')).toBeInTheDocument();
   });
@@ -75,9 +78,11 @@ describe('VacanciesTable', () => {
 
     expect(screen.getByText('329')).toBeInTheDocument();
     expect(screen.getByText('115')).toBeInTheDocument();
+    expect(screen.getByText('43')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
     expect(screen.getByText('164')).toBeInTheDocument();
     expect(screen.getByText('52')).toBeInTheDocument();
+    expect(screen.getByText('09')).toBeInTheDocument();
     expect(screen.getByText('06')).toBeInTheDocument();
   });
 

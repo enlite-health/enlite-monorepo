@@ -20,6 +20,7 @@ export interface VacancyRow {
   diasAberto: string;
   convidados: string;
   postulados: string;
+  confirmados: string;
   selecionados: string;
   faltantes: string;
   isDraft: boolean;
@@ -37,6 +38,7 @@ const COLUMNS = [
   { key: 'priority', hiddenClass: '' },
   { key: 'invited', hiddenClass: 'hidden md:table-cell' },
   { key: 'applicants', hiddenClass: 'hidden md:table-cell' },
+  { key: 'confirmed', hiddenClass: 'hidden md:table-cell' },
   { key: 'selected', hiddenClass: 'hidden md:table-cell' },
   { key: 'missing', hiddenClass: 'hidden md:table-cell' },
 ] as const;
@@ -121,6 +123,9 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.postulados}
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {row.confirmados}
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.selecionados}

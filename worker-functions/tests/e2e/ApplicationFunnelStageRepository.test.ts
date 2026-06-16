@@ -54,7 +54,11 @@ async function insertTestJobPosting(suffix: string): Promise<string> {
   return result.rows[0].id as string;
 }
 
-/** Insere application com stage explícito. Omitir stage usa 'INVITED' como fallback seguro. */
+/** Insere application com stage explícito. Omitir stage usa 'INVITED' como fallback seguro.
+ * Usa source='talentum' para bypass do trigger enforce_worker_registered_for_application
+ * (migration 183) — o trigger só valida status='REGISTERED' para sources não confiáveis.
+ * Fixtures de teste não precisam satisfazer essa invariante de negócio.
+ */
 async function insertApplication(
   workerId: string,
   jobPostingId: string,
@@ -62,8 +66,8 @@ async function insertApplication(
 ): Promise<string> {
   const resolvedStage = stage ?? 'INVITED';
   const result = await pool.query(
-    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
-     VALUES ($1, $2, $3)
+    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+     VALUES ($1, $2, $3, 'talentum')
      RETURNING id`,
     [workerId, jobPostingId, resolvedStage],
   );
@@ -114,14 +118,18 @@ describe('AF1 — INSERT com application_funnel_stage = INITIATED', () => {
 // ── AF2: UPDATE para cada um dos 7 stages válidos ─────────────────────────────
 
 describe('AF2 — UPDATE para cada um dos 7 stages válidos', () => {
+  // Stages válidos pós-migration 191/194: NOT_QUALIFIED e PLACED foram removidos do CHECK.
+  // Stages atuais: INVITED, INITIATED, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT,
+  //                CONFIRMED, SELECTED, REJECTED
   const VALID_STAGES = [
     'INITIATED',
     'IN_PROGRESS',
     'COMPLETED',
     'QUALIFIED',
     'IN_DOUBT',
-    'NOT_QUALIFIED',
-    'PLACED',
+    'CONFIRMED',
+    'SELECTED',
+    'REJECTED',
   ] as const;
 
   it.each(VALID_STAGES)(
@@ -249,7 +257,8 @@ describe('AF9 — Listar applications por stage', () => {
 
     await insertApplication(workerId, jobId1, 'INITIATED');
     await insertApplication(workerId, jobId2, 'QUALIFIED');
-    await insertApplication(workerId, jobId3, 'NOT_QUALIFIED');
+    // NOT_QUALIFIED foi removido do CHECK pós-migration 191/194; usar IN_DOUBT (válido)
+    await insertApplication(workerId, jobId3, 'IN_DOUBT');
 
     // Act — busca apenas stage = QUALIFIED para este worker
     const result = await pool.query(

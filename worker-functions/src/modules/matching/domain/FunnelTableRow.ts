@@ -35,6 +35,8 @@ export interface FunnelTableRow {
   whatsappLastDispatchedAt: string | null;
   accepted: boolean | null;
   interviewResponse: string | null;
+  registrationComplete: boolean;
+  contactNotesCount: number;
 }
 
 export interface FunnelTableCounts {

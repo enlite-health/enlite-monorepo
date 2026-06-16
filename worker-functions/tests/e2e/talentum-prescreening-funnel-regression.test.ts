@@ -346,8 +346,9 @@ describe('BUG #4 — regressões out-of-order', () => {
   // DEVE FALHAR enquanto o bug não for corrigido.
   // ─────────────────────────────────────────────────────────────────
 
-  it('[BUG #4 / TESTE #7] NOT_QUALIFIED + COMPLETED tardio NÃO deve regredir WJA para COMPLETED', async () => {
-    // Step 1: ANALYZED+NOT_QUALIFIED estabelece WJA em NOT_QUALIFIED
+  it('[BUG #4 / TESTE #7] REJECTED (NOT_QUALIFIED pós-191) + COMPLETED tardio NÃO deve regredir WJA para COMPLETED', async () => {
+    // F3 (mig 191): NOT_QUALIFIED do Talentum → auto-rejeição → WJA gravada como REJECTED.
+    // Step 1: ANALYZED+NOT_QUALIFIED estabelece WJA em REJECTED (comportamento pós-migration 191).
     const res1 = await api.post(ENDPOINT, envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC_EXT_ID_F7, name: JOB_TITLE_F7 },
@@ -362,7 +363,8 @@ describe('BUG #4 — regressões out-of-order', () => {
       [workerIdF7, jobPostingIdF7],
     );
     expect(r1).toHaveLength(1);
-    expect(r1[0].application_funnel_stage).toBe('NOT_QUALIFIED');
+    // Pós-migration 191: NOT_QUALIFIED é convertido para REJECTED
+    expect(r1[0].application_funnel_stage).toBe('REJECTED');
 
     // Step 2: COMPLETED chega fora de ordem (retransmissão atrasada)
     const res2 = await api.post(ENDPOINT, envelope({
@@ -378,7 +380,7 @@ describe('BUG #4 — regressões out-of-order', () => {
       [workerIdF7, jobPostingIdF7],
     );
     expect(r2).toHaveLength(1);
-    // BUG #4: UPSERT sobrescreve NOT_QUALIFIED com COMPLETED — DEVE FALHAR sem fix.
-    expect(r2[0].application_funnel_stage).toBe('NOT_QUALIFIED');
+    // O guard out-of-order deve impedir que COMPLETED regride REJECTED → COMPLETED.
+    expect(r2[0].application_funnel_stage).toBe('REJECTED');
   });
 });

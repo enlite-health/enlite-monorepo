@@ -99,7 +99,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w1);
 
       expect(row).toBeDefined();
-      expect(row.internalStage).toBe('INVITED');
+      expect(row.funnelStage).toBe('INVITED');
       expect(row.whatsappStatus).toBe('NOT_SENT');
       expect(row.accepted).toBeNull();
     });
@@ -109,7 +109,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w2);
 
       expect(row).toBeDefined();
-      expect(row.internalStage).toBe('INITIATED');
+      expect(row.funnelStage).toBe('INITIATED');
       expect(row.whatsappStatus).toBe('DELIVERED');
     });
 
@@ -118,7 +118,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w3);
 
       expect(row).toBeDefined();
-      expect(row.internalStage).toBe('COMPLETED');
+      expect(row.funnelStage).toBe('COMPLETED');
       expect(row.whatsappStatus).toBe('READ');
     });
 
@@ -127,7 +127,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w4);
 
       expect(row).toBeDefined();
-      expect(row.internalStage).toBe('SELECTED');
+      expect(row.funnelStage).toBe('SELECTED');
       expect(row.whatsappStatus).toBe('REPLIED');
       expect(row.accepted).toBe(true);
       expect(row.interviewResponse).toBe('confirmed');
@@ -138,7 +138,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w5);
 
       expect(row).toBeDefined();
-      expect(row.internalStage).toBe('REJECTED');
+      expect(row.funnelStage).toBe('REJECTED');
       expect(row.whatsappStatus).toBe('REPLIED');
       expect(row.accepted).toBe(false);
       expect(row.interviewResponse).toBe('declined');
@@ -280,12 +280,14 @@ async function seedFixtures(pool: Pool): Promise<void> {
     [IDS.jobFull, vn2, IDS.patient],
   );
 
-  // Workers (no encrypted fields — KMS returns null for null input)
+  // Workers (no encrypted fields — KMS returns null for null input).
+  // status=REGISTERED no INSERT: trigger 183 bloqueia WJA de worker não-REGISTERED
+  // (o guard da migration 111 só roda em UPDATE OF status, então o INSERT passa).
   for (const [idx, wid] of [IDS.w1, IDS.w2, IDS.w3, IDS.w4, IDS.w5].entries()) {
     const authUid = `fnt-worker-${idx + 1}`;
     await pool.query(
       `INSERT INTO workers (id, auth_uid, email, phone, status, country)
-       VALUES ($1, $2, $3, $4, 'INCOMPLETE_REGISTER', 'AR')
+       VALUES ($1, $2, $3, $4, 'REGISTERED', 'AR')
        ON CONFLICT (id) DO NOTHING`,
       [wid, authUid, `fnt-w${idx + 1}@e2e.local`, `+5491100000${idx + 1}0`],
     );
