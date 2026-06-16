@@ -20,8 +20,10 @@ env:
 
 jobs:
   deploy:
-    # Só roda quando o backend-stg concluir com sucesso (garante que o image foi publicado)
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Roda no workflow_run (após backend-stg success) OU via workflow_dispatch manual.
+    # workflow_dispatch DEVE ser feito com --ref stage (contexto stage passa o WIF/environment;
+    # workflow_run roda em contexto main e é rejeitado pelo attribute condition do WIF).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: staging
 
@@ -32,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - id: auth
         name: Authenticate to Google Cloud
@@ -51,7 +53,7 @@ jobs:
           region: ${{ env.REGION }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           # Reusa exatamente o mesmo image buildado pelo backend-stg.yml no mesmo SHA
-          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha }}"
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha || github.sha }}"
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true
