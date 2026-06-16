@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { MatchScoreBar } from './MatchScoreBar';
 import { Text } from '@presentation/components/atoms/Text';
 import { TableRow, TableCell } from '@presentation/components/atoms/Table';
+import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge';
 import type { SavedCandidate } from '../../../../../types/match';
 
 interface MatchCandidateRowProps {
@@ -35,7 +37,16 @@ export function MatchCandidateRow({
   onSendMessage,
 }: MatchCandidateRowProps) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [expanded, setExpanded] = useState(false);
+
+  const handleWorkerClick = (): void => {
+    if (!candidate.workerId) return;
+    navigate(`/admin/workers/${candidate.workerId}`, {
+      state: { from: `${location.pathname}${location.search}` },
+    });
+  };
 
   const messagedLabel = candidate.messagedAt
     ? new Date(candidate.messagedAt).toLocaleDateString(i18n.language === 'pt-BR' ? 'pt-BR' : 'es-AR', {
@@ -72,8 +83,11 @@ export function MatchCandidateRow({
         <TableCell unwrapped>
           <div className="flex items-center gap-2">
             <button
-              className="text-left hover:text-primary transition-colors"
-              onClick={() => hasExpansion && setExpanded(!expanded)}
+              type="button"
+              data-testid="match-worker-link"
+              className="text-left rounded-sm hover:underline hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={handleWorkerClick}
+              title={candidate.workerName ?? undefined}
             >
               <Text as="span" size="sm" weight="medium" color="secondary">
                 {candidate.workerName}
@@ -98,6 +112,10 @@ export function MatchCandidateRow({
               {candidate.overallStatus ?? '—'}
             </Text>
           </span>
+        </TableCell>
+
+        <TableCell unwrapped className="whitespace-nowrap">
+          <DocsStatusBadge status={candidate.documentStatus} />
         </TableCell>
 
         <TableCell unwrapped>
@@ -144,7 +162,7 @@ export function MatchCandidateRow({
 
       {expanded && candidate.internalNotes && (
         <TableRow className="bg-gray-50">
-          <TableCell unwrapped colSpan={9} className="px-6 py-3">
+          <TableCell unwrapped colSpan={10} className="px-6 py-3">
             <Text size="sm" color="muted" className="italic leading-relaxed">
               {candidate.internalNotes}
             </Text>

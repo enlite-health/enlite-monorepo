@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
@@ -22,7 +22,9 @@ import { WorkerAvailabilityCard } from '@presentation/components/features/admin/
 export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
+  const backTarget = (location.state as { from?: string } | null)?.from ?? '/admin/workers';
   const { worker, isLoading, error, patchDocuments, patchDocumentValidations } = useWorkerDetail(id);
   const [activeTab, setActiveTab] = useState<WorkerTab>('documents');
   const docsOptions = useMemo(
@@ -43,7 +45,7 @@ export default function WorkerDetailPage() {
         <Heading level={3} color="inherit" className="text-red-600">
           {error ?? t('admin.workerDetail.notFound')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => navigate('/admin/workers')}>
+        <Button variant="outline" size="sm" onClick={() => navigate(backTarget)}>
           {t('admin.workerDetail.back')}
         </Button>
       </div>
@@ -58,7 +60,7 @@ export default function WorkerDetailPage() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate('/admin/workers')}
+            onClick={() => navigate(backTarget)}
             className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />

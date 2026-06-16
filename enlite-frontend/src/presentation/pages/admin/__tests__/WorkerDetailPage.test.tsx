@@ -14,10 +14,12 @@ vi.mock('react-i18next', () => ({
 // ── react-router-dom mocks ────────────────────────────────────────────────────
 const mockNavigate = vi.fn();
 const mockUseParams = vi.fn(() => ({ id: 'worker-123' }));
+const mockUseLocation = vi.fn<[], { state: unknown }>(() => ({ state: null }));
 
 vi.mock('react-router-dom', () => ({
   useParams: () => mockUseParams(),
   useNavigate: () => mockNavigate,
+  useLocation: () => mockUseLocation(),
 }));
 
 // ── useWorkerDetail hook mock ─────────────────────────────────────────────────
@@ -152,6 +154,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockNavigate.mockReset();
   mockUseParams.mockReturnValue({ id: 'worker-123' });
+  mockUseLocation.mockReturnValue({ state: null });
 });
 
 // ── Loading state ─────────────────────────────────────────────────────────────
@@ -260,7 +263,7 @@ describe('WorkerDetailPage — success state', () => {
     expect(backButtons.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('navigates to /admin/workers when the back button is clicked', async () => {
+  it('navigates to /admin/workers when the back button is clicked (no origin state)', async () => {
     const user = userEvent.setup();
     render(<WorkerDetailPage />);
 
@@ -268,6 +271,17 @@ describe('WorkerDetailPage — success state', () => {
     await user.click(backButtons[0]);
 
     expect(mockNavigate).toHaveBeenCalledWith('/admin/workers');
+  });
+
+  it('navigates back to the origin path from location.state when present', async () => {
+    mockUseLocation.mockReturnValue({ state: { from: '/admin/vacancies/vac-123' } });
+    const user = userEvent.setup();
+    render(<WorkerDetailPage />);
+
+    const backButtons = screen.getAllByText('admin.workerDetail.back');
+    await user.click(backButtons[0]);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/vacancies/vac-123');
   });
 
   it('calls useWorkerDetail with the id from useParams', () => {
