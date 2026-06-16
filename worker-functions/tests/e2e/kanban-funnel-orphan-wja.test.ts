@@ -234,10 +234,15 @@ async function seedFixtures(pool: Pool): Promise<string> {
     [IDS.wControl, IDS.vacancy],
   );
 
-  // Encuadre ONLY for control positive worker — verifies enrichment still works
+  // Encuadre ONLY for control positive worker — verifies enrichment still works.
+  // O trigger trg_ensure_encuadre_on_wja_insert pode já ter criado um encuadre ao
+  // inserir a WJA do wControl. Usar ON CONFLICT para obter o id existente (ou criar).
   const encRes = await pool.query<{ id: string }>(
     `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado)
      VALUES ($1, $2, 'Worker Control Positivo', 'PENDIENTE')
+     ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+       worker_raw_name = EXCLUDED.worker_raw_name,
+       resultado = EXCLUDED.resultado
      RETURNING id`,
     [IDS.wControl, IDS.vacancy],
   );

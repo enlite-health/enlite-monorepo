@@ -268,7 +268,9 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
     expect(rows[0].application_funnel_stage).toBe('COMPLETED');
   });
 
-  it('[#4 happy] COMPLETED → ANALYZED+NOT_QUALIFIED: WJA finaliza em NOT_QUALIFIED', async () => {
+  it('[#4 happy] COMPLETED → ANALYZED+NOT_QUALIFIED: WJA finaliza em REJECTED (pós-migration 191)', async () => {
+    // F3 (mig 191): NOT_QUALIFIED do Talentum → auto-rejeição → WJA gravada como REJECTED.
+    // O comportamento correto é REJECTED, não NOT_QUALIFIED (enum removido do CHECK).
     await api.post(ENDPOINT, envelope({
       subtype: 'COMPLETED', prescreening: { id: PSC.HP4, name: JOB.HP4 },
       profile: { id: PROF.HP4, email: EMAIL.HP4, phoneNumber: '+5491143000001', cuil: '20-43000001-1' },
@@ -284,7 +286,8 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
       [wid.HP4, jid.HP4],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].application_funnel_stage).toBe('NOT_QUALIFIED');
+    // Pós-migration 191: NOT_QUALIFIED do Talentum é convertido para REJECTED no banco
+    expect(rows[0].application_funnel_stage).toBe('REJECTED');
   });
 
   it('[#5 happy] COMPLETED → ANALYZED+IN_DOUBT: WJA finaliza em IN_DOUBT', async () => {
