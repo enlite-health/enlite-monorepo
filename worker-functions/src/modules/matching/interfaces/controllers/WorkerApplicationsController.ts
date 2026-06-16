@@ -3,21 +3,29 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { logger } from '@shared/logging';
 import { GetWorkerProgressUseCase, WorkerRepository } from '@modules/worker';
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
+import { RecordBlockedAttemptUseCase } from '../../application/RecordBlockedAttemptUseCase';
 
 const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
 
 const TrackChannelSchema = z.object({
   jobPostingId: z.string().min(1, 'jobPostingId is required'),
-  channel: z.enum(VALID_CHANNELS, {
-    errorMap: () => ({
-      message: `channel must be one of: ${VALID_CHANNELS.join(', ')}`,
-    }),
-  }),
+  // channel é opcional/nullable: a postulação é registrada em TODO clique (mesmo sem
+  // UTM). Quando presente, deve ser um canal válido; ausente/null → acquisition_channel
+  // fica NULL. Um valor de canal inválido continua sendo rejeitado (400).
+  channel: z
+    .enum(VALID_CHANNELS, {
+      errorMap: () => ({
+        message: `channel must be one of: ${VALID_CHANNELS.join(', ')}`,
+      }),
+    })
+    .nullable()
+    .default(null),
 });
 
 /**
@@ -32,10 +40,12 @@ const TrackChannelSchema = z.object({
 export class WorkerApplicationsController {
   private readonly db: Pool;
   private readonly getProgressUseCase: GetWorkerProgressUseCase;
+  private readonly recordBlockedAttemptUseCase: RecordBlockedAttemptUseCase;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.getProgressUseCase = new GetWorkerProgressUseCase(new WorkerRepository());
+    this.recordBlockedAttemptUseCase = new RecordBlockedAttemptUseCase();
   }
 
   private getAuthUid(req: Request): string | null {
@@ -93,6 +103,17 @@ export class WorkerApplicationsController {
         await assertWorkerCanApply(this.db, worker.id);
       } catch (err) {
         if (err instanceof WorkerNotEligibleError) {
+          // Instrumenta a tentativa bloqueada. Awaited de propósito: em Cloud Run,
+          // trabalho em background após o response é estrangulado/descartado, o que
+          // perderia a gravação. A conexão já está quente (assertWorkerCanApply acima)
+          // e o upsert é single-row indexado (latência sub-ms). O use case é à prova de
+          // falha (try/catch interno, nunca lança), então o 403 nunca é bloqueado por erro.
+          await this.recordBlockedAttemptUseCase.execute({
+            workerId: worker.id,
+            jobPostingId,
+            reason: err.reason,
+            acquisitionChannel: channel,
+          });
           res.status(err.status).json({
             success: false,
             error: 'registration_incomplete',
@@ -141,7 +162,7 @@ export class WorkerApplicationsController {
       res.status(200).json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[WorkerApplicationsController] trackChannel error:', message);
+      logger.error({ msg: '[WorkerApplicationsController] trackChannel error', error: message });
       res.status(500).json({ success: false, error: message });
     }
   }

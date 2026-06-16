@@ -19,8 +19,9 @@ import { useDashboardData } from '@hooks/recruitment/useDashboardData';
 import { useGlobalMetrics } from '@hooks/recruitment/useGlobalMetrics';
 import { useActiveCases } from '@hooks/recruitment/useActiveCases';
 import type { DateFilterType } from '@domain/entities/RecruitmentData';
-import { BarChart3, MapPin, FileSpreadsheet } from 'lucide-react';
+import { BarChart3, MapPin, FileSpreadsheet, ShieldX } from 'lucide-react';
 import { DashboardSkeleton } from '@presentation/components/ui/skeletons';
+import { Link } from 'react-router-dom';
 
 type TabType = 'global' | 'caso' | 'zona';
 
@@ -66,15 +67,24 @@ export function AdminRecruitmentPage(): JSX.Element {
             {t('admin.recruitment.title')}
           </Typography>
         </div>
-        <div className="flex items-center gap-2">
-          <img
-            className="w-7 h-5"
-            alt="Argentina"
-            src="https://c.animaapp.com/UVSSEdVv/img/group-237688.svg"
-          />
-          <Typography variant="body" weight="medium" className="text-[#737373]">
-            {t('common.country')}
-          </Typography>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/recruitment/blocked-attempts"
+            className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-primary transition-colors"
+          >
+            <ShieldX className="w-4 h-4" />
+            {t('admin.blockedAttempts.linkFromRecruitment')}
+          </Link>
+          <div className="flex items-center gap-2">
+            <img
+              className="w-7 h-5"
+              alt="Argentina"
+              src="https://c.animaapp.com/UVSSEdVv/img/group-237688.svg"
+            />
+            <Typography variant="body" weight="medium" className="text-[#737373]">
+              {t('common.country')}
+            </Typography>
+          </div>
         </div>
       </div>
 

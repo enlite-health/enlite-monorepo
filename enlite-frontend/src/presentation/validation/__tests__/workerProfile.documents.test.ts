@@ -46,12 +46,15 @@ function validateFileSize(file: File): string | null {
 describe('DocumentsGrid — Slots de Documentos', () => {
   // Labels agora vêm da chave canônica `documentTypes.<docType>` em i18n —
   // fonte única compartilhada entre worker (DocumentsGrid) e admin (WorkerDocumentsCard).
+  //
+  // Nota: estes slots são apenas os docTypes conhecidos usados no grid de exibição.
+  // A política de obrigatoriedade por profissão está em workerDocumentRequirements.ts.
   const DOCUMENT_SLOTS = [
     { docType: 'resume_cv' },
-    { docType: 'liability_insurance' },
     { docType: 'identity_document' },
-    { docType: 'professional_registration' },
+    { docType: 'identity_document_back' },
     { docType: 'criminal_record' },
+    { docType: 'at_certificate' },
   ];
 
   it('deve ter exatamente 5 slots de documento', () => {
@@ -216,15 +219,17 @@ describe('Validação de tamanho de arquivo', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Mapeamento docType ↔ URL key', () => {
+  // Mapeamento canônico dos docs obrigatórios (AT + Cuidador).
+  // professional_registration e liability_insurance NÃO são mais obrigatórios.
   const DOC_URL_MAP: Record<string, string> = {
     resume_cv: 'resumeCvUrl',
     identity_document: 'identityDocumentUrl',
+    identity_document_back: 'identityDocumentBackUrl',
     criminal_record: 'criminalRecordUrl',
-    professional_registration: 'professionalRegistrationUrl',
-    liability_insurance: 'liabilityInsuranceUrl',
+    at_certificate: 'atCertificateUrl',
   };
 
-  it('todos os 5 document types têm mapeamento de URL', () => {
+  it('todos os 5 document types obrigatórios (AT) têm mapeamento de URL', () => {
     expect(Object.keys(DOC_URL_MAP)).toHaveLength(5);
   });
 
@@ -238,8 +243,8 @@ describe('Mapeamento docType ↔ URL key', () => {
     },
   );
 
-  it('docTypes no mapeamento correspondem aos slots de documento', () => {
-    const expectedTypes = ['resume_cv', 'identity_document', 'criminal_record', 'professional_registration', 'liability_insurance'];
+  it('docTypes no mapeamento correspondem aos docs obrigatórios AT', () => {
+    const expectedTypes = ['resume_cv', 'identity_document', 'identity_document_back', 'criminal_record', 'at_certificate'];
     for (const type of expectedTypes) {
       expect(DOC_URL_MAP[type], `docType "${type}" não encontrado no mapeamento`).toBeDefined();
     }

@@ -21,6 +21,9 @@ export interface WorkerDocument {
   liabilityInsuranceUrl: string | null;
   monotributoCertificateUrl: string | null;
   atCertificateUrl: string | null;
+  aptoPsicofisicoUrl?: string | null;
+  analiticoUniversitarioUrl?: string | null;
+  cartaRecomendacionUrl?: string | null;
   additionalCertificatesUrls: string[];
   documentsStatus: string;
   reviewNotes: string | null;

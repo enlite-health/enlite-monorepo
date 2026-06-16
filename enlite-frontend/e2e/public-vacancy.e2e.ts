@@ -135,6 +135,32 @@ async function mockVacancyNotFound(page: Page): Promise<void> {
 }
 
 /**
+ * Mocks POST /api/worker-applications/track-channel.
+ * Pass status=403 + code='WORKER_NOT_ELIGIBLE' para simular worker inelegível;
+ * omita (padrão 200) para simular worker elegível.
+ */
+async function mockTrackChannel(
+  page: Page,
+  opts: { status?: number; code?: string } = {},
+): Promise<void> {
+  const { status = 200, code } = opts;
+  await page.route('**/api/worker-applications/track-channel', (route) => {
+    if (status === 200) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: null }),
+      });
+    }
+    return route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: false, error: 'Worker not eligible', code }),
+    });
+  });
+}
+
+/**
  * Creates a worker in the Firebase emulator and injects auth state into the
  * browser via addInitScript so that the Firebase SDK sees a logged-in session.
  */
@@ -318,6 +344,9 @@ test.describe('PublicVacancyPage', () => {
     await createWorkerAndLogin(page);
     await mockVacancySuccess(page);
 
+    // track-channel: backend rejeita worker inelegível → hook exibe modal
+    await mockTrackChannel(page, { status: 403, code: 'WORKER_NOT_ELIGIBLE' });
+
     // Mock /api/workers/me com registrationCompleted: false
     await page.route('**/api/workers/me', (route) => {
       // Ignorar chamadas de documento que passam por esta rota
@@ -362,6 +391,9 @@ test.describe('PublicVacancyPage', () => {
     // Injetar auth antes da navegação
     await createWorkerAndLogin(page);
     await mockVacancySuccess(page);
+
+    // track-channel: backend confirma elegibilidade → hook abre WhatsApp
+    await mockTrackChannel(page);
 
     // Mock /api/workers/me com registrationCompleted: true
     await page.route('**/api/workers/me', (route) => {

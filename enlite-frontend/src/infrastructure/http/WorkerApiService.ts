@@ -220,10 +220,13 @@ class WorkerApiServiceClass {
 
   /**
    * POST /api/worker-applications/track-channel
-   * Registers the acquisition channel (social origin) for a job application.
-   * First-touch: backend will not overwrite an existing channel.
+   * Registers the acquisition channel (social origin) for a job application attempt.
+   * Always called when jobPostingId is present — backend decides eligibility and
+   * records blocked attempts (worker_blocked_applications). First-touch: backend
+   * will not overwrite an existing channel. `channel` is nullable (direct links
+   * have no UTM).
    */
-  async trackAcquisitionChannel(jobPostingId: string, channel: string): Promise<void> {
+  async trackAcquisitionChannel(jobPostingId: string, channel: string | null): Promise<void> {
     await this.request<unknown>('POST', '/api/worker-applications/track-channel', {
       jobPostingId,
       channel,

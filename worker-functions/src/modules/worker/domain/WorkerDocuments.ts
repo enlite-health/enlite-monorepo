@@ -6,7 +6,10 @@ export type DocumentType =
   | 'professional_registration'
   | 'liability_insurance'
   | 'monotributo_certificate'
-  | 'at_certificate';
+  | 'at_certificate'
+  | 'apto_psicofisico'
+  | 'analitico_universitario'
+  | 'carta_recomendacion';
 
 export interface DocumentValidationEntry {
   validatedBy: string;
@@ -28,6 +31,11 @@ export interface WorkerDocuments {
   liabilityInsuranceUrl?: string;
   monotributoCertificateUrl?: string;
   atCertificateUrl?: string;
+
+  // New optional document columns (migration 207)
+  aptoPsicofisicoUrl?: string;
+  analiticoUniversitarioUrl?: string;
+  cartaRecomendacionUrl?: string;
 
   // Additional certificates (legacy — migrated to worker_additional_documents)
   additionalCertificatesUrls: string[];
@@ -70,6 +78,9 @@ export interface CreateWorkerDocumentsDTO {
   liabilityInsuranceUrl?: string;
   monotributoCertificateUrl?: string;
   atCertificateUrl?: string;
+  aptoPsicofisicoUrl?: string;
+  analiticoUniversitarioUrl?: string;
+  cartaRecomendacionUrl?: string;
   additionalCertificatesUrls?: string[];
 }
 
@@ -83,6 +94,9 @@ export interface UpdateWorkerDocumentsDTO {
   liabilityInsuranceUrl?: string;
   monotributoCertificateUrl?: string;
   atCertificateUrl?: string;
+  aptoPsicofisicoUrl?: string;
+  analiticoUniversitarioUrl?: string;
+  cartaRecomendacionUrl?: string;
   additionalCertificatesUrls?: string[];
   documentsStatus?: DocumentsStatus;
 }

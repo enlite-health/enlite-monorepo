@@ -7,20 +7,32 @@ import { DocumentType, WorkerDocumentsResponse } from '@infrastructure/http/Docu
 
 interface DocumentSlot {
   docType: DocumentType;
+  /** Apenas visível para profissão AT */
   atOnly?: boolean;
+  /** Apenas visível para Cuidador (profissão diferente de AT) */
+  cuidadorOnly?: boolean;
 }
 
 // Labels vêm da chave canônica `documentTypes.<docType>` em i18n —
 // fonte única compartilhada com o WorkerDocumentsCard do admin.
+//
+// Regras de visibilidade por profissão:
+//   Universal  : resume_cv, liability_insurance, identity_document,
+//                identity_document_back, criminal_record, monotributo_certificate
+//   atOnly     : at_certificate, apto_psicofisico, analitico_universitario
+//   cuidadorOnly: carta_recomendacion
+//   Oculto     : professional_registration (slot removido da UI)
 const DOCUMENT_SLOTS: DocumentSlot[] = [
   { docType: 'resume_cv' },
   { docType: 'liability_insurance' },
   { docType: 'identity_document' },
   { docType: 'identity_document_back' },
-  { docType: 'professional_registration' },
   { docType: 'criminal_record' },
-  { docType: 'monotributo_certificate', atOnly: true },
+  { docType: 'monotributo_certificate' },
   { docType: 'at_certificate', atOnly: true },
+  { docType: 'apto_psicofisico', atOnly: true },
+  { docType: 'analitico_universitario', atOnly: true },
+  { docType: 'carta_recomendacion', cuidadorOnly: true },
 ];
 
 const DOC_URL_MAP: Record<DocumentType, keyof WorkerDocumentsResponse> = {
@@ -32,6 +44,9 @@ const DOC_URL_MAP: Record<DocumentType, keyof WorkerDocumentsResponse> = {
   liability_insurance: 'liabilityInsuranceUrl',
   monotributo_certificate: 'monotributoCertificateUrl',
   at_certificate: 'atCertificateUrl',
+  apto_psicofisico: 'aptoPsicofisicoUrl',
+  analitico_universitario: 'analiticoUniversitarioUrl',
+  carta_recomendacion: 'cartaRecomendacionUrl',
 };
 
 interface DocumentsGridProps {
@@ -48,7 +63,13 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
   const [cardErrors, setCardErrors] = useState<Partial<Record<DocumentType, string>>>({});
   const isAT = profession === 'AT';
 
-  const visibleSlots = DOCUMENT_SLOTS.filter((s) => !s.atOnly || isAT);
+  // Mostrar slot se:
+  //   - não tem flag exclusiva (universal), OU
+  //   - atOnly E é AT, OU
+  //   - cuidadorOnly E não é AT
+  const visibleSlots = DOCUMENT_SLOTS.filter(
+    (s) => (!s.atOnly && !s.cuidadorOnly) || (s.atOnly && isAT) || (s.cuidadorOnly && !isAT),
+  );
 
   const withLoading = async (docType: DocumentType, fn: () => Promise<void>): Promise<void> => {
     setLoadingTypes((prev) => new Set(prev).add(docType));

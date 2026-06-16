@@ -483,8 +483,11 @@
     "criminal_record": "Antecedentes penales",
     "professional_registration": "Registro profesional",
     "liability_insurance": "Seguro de responsabilidad",
-    "monotributo_certificate": "Certificado de Monotributo",
-    "at_certificate": "Certificado de Acompañante Terapéutico"
+    "monotributo_certificate": "Constancia de ARCA",
+    "at_certificate": "Certificado de Acompañante Terapéutico",
+    "apto_psicofisico": "Apto psicofísico",
+    "analitico_universitario": "Analítico universitario",
+    "carta_recomendacion": "Carta de recomendación"
   },
   "documents": {
     "title": "Documentos",
@@ -620,6 +623,65 @@
         "status": "Estado",
         "startDate": "Inicio Búsqueda",
         "viewAnalysis": "Ver análisis"
+      }
+    },
+    "blockedAttempts": {
+      "title": "Intentos de postulación bloqueados",
+      "subtitle": "Registros de workers que intentaron postularse y fueron bloqueados",
+      "refresh": "Actualizar",
+      "linkFromRecruitment": "Ver intentos bloqueados",
+      "loading": "Cargando intentos bloqueados...",
+      "loadError": "Error al cargar los intentos bloqueados",
+      "retry": "Reintentar",
+      "noAttempts": "No hay intentos de postulación bloqueados",
+      "noAttemptsDesc": "Cuando un worker intente postularse y sea bloqueado, aparecerá aquí.",
+      "aggregates": {
+        "totalBlocked": "Total de bloqueados",
+        "byReason": "Por motivo"
+      },
+      "filters": {
+        "vacancy": "Filtrar por vacante",
+        "vacancyPlaceholder": "ID de vacante (UUID)",
+        "reason": "Motivo",
+        "allReasons": "Todos los motivos"
+      },
+      "table": {
+        "worker": "Worker",
+        "vacancy": "Vacante",
+        "reason": "Motivo de bloqueo",
+        "missingFields": "Campos faltantes",
+        "attempts": "Intentos",
+        "lastAttempt": "Último intento",
+        "unknownWorker": "Worker desconocido",
+        "unknownVacancy": "Vacante desconocida"
+      },
+      "reason": {
+        "registration_incomplete": "Registro incompleto",
+        "worker_disabled": "Worker desactivado",
+        "worker_not_found": "Worker no encontrado"
+      },
+      "missingField": {
+        "profession": "Profesión",
+        "worker_documents": "Documentos",
+        "phone": "Teléfono",
+        "worker_availability": "Disponibilidad",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "birthDate": "Fecha de nacimiento",
+        "sex": "Sexo",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "serviceAddress": "Dirección",
+        "resumeCv": "CV",
+        "identityDocument": "Documento de identidad",
+        "criminalRecord": "Antecedentes penales",
+        "professionalRegistration": "Matrícula profesional",
+        "liabilityInsurance": "Seguro de responsabilidad"
+      },
+      "pagination": {
+        "previous": "Anterior",
+        "next": "Siguiente",
+        "page": "Página {{page}} de {{total}}"
       }
     },
     "recruitmentHealth": {

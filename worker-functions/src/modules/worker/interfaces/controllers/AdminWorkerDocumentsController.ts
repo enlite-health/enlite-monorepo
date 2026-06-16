@@ -11,22 +11,35 @@ const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
   'professional_registration', 'liability_insurance',
   'monotributo_certificate', 'at_certificate',
+  'apto_psicofisico', 'analitico_universitario', 'carta_recomendacion',
 ];
 
 const DOC_JS_FIELD: Record<DocumentType, string> = {
-  resume_cv: 'resumeCvUrl', identity_document: 'identityDocumentUrl',
+  resume_cv: 'resumeCvUrl',
+  identity_document: 'identityDocumentUrl',
   identity_document_back: 'identityDocumentBackUrl',
-  criminal_record: 'criminalRecordUrl', professional_registration: 'professionalRegistrationUrl',
+  criminal_record: 'criminalRecordUrl',
+  professional_registration: 'professionalRegistrationUrl',
   liability_insurance: 'liabilityInsuranceUrl',
-  monotributo_certificate: 'monotributoCertificateUrl', at_certificate: 'atCertificateUrl',
+  monotributo_certificate: 'monotributoCertificateUrl',
+  at_certificate: 'atCertificateUrl',
+  apto_psicofisico: 'aptoPsicofisicoUrl',
+  analitico_universitario: 'analiticoUniversitarioUrl',
+  carta_recomendacion: 'cartaRecomendacionUrl',
 };
 
 const DOC_SQL_COL: Record<DocumentType, string> = {
-  resume_cv: 'resume_cv_url', identity_document: 'identity_document_url',
+  resume_cv: 'resume_cv_url',
+  identity_document: 'identity_document_url',
   identity_document_back: 'identity_document_back_url',
-  criminal_record: 'criminal_record_url', professional_registration: 'professional_registration_url',
+  criminal_record: 'criminal_record_url',
+  professional_registration: 'professional_registration_url',
   liability_insurance: 'liability_insurance_url',
-  monotributo_certificate: 'monotributo_certificate_url', at_certificate: 'at_certificate_url',
+  monotributo_certificate: 'monotributo_certificate_url',
+  at_certificate: 'at_certificate_url',
+  apto_psicofisico: 'apto_psicofisico_url',
+  analitico_universitario: 'analitico_universitario_url',
+  carta_recomendacion: 'carta_recomendacion_url',
 };
 
 interface AdminUser {

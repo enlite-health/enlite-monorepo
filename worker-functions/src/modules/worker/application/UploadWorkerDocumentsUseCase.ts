@@ -1,46 +1,45 @@
 import { IWorkerDocumentsRepository } from '../infrastructure/WorkerDocumentsRepository';
 import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { CreateWorkerDocumentsDTO, UpdateWorkerDocumentsDTO, WorkerDocuments } from '../domain/WorkerDocuments';
+import { logger } from '@shared/logging';
 
 export class UploadWorkerDocumentsUseCase {
   constructor(
     private workerDocumentsRepository: IWorkerDocumentsRepository,
-    private workerRepository: IWorkerRepository
+    private workerRepository: IWorkerRepository,
   ) {}
 
   async execute(dto: CreateWorkerDocumentsDTO | UpdateWorkerDocumentsDTO): Promise<WorkerDocuments> {
-    console.log('[UploadWorkerDocumentsUseCase] START | workerId:', dto.workerId, '| fields:', Object.keys(dto).filter(k => k !== 'workerId').join(', '));
+    const log = logger.child({ workerId: dto.workerId });
+    const fields = Object.keys(dto).filter((k) => k !== 'workerId').join(', ');
+    log.info({ msg: '[UploadWorkerDocumentsUseCase] START', fields });
 
-    // Verify worker exists
     const workerResult = await this.workerRepository.findById(dto.workerId);
     if (!workerResult.isSuccess || !workerResult.getValue()) {
-      console.error('[UploadWorkerDocumentsUseCase] FAIL: Worker not found for id:', dto.workerId);
+      log.info({ msg: '[UploadWorkerDocumentsUseCase] FAIL: worker not found' });
       throw new Error('Worker not found');
     }
-    console.log('[UploadWorkerDocumentsUseCase] worker verified OK');
 
-    // Check if documents already exist
     const existing = await this.workerDocumentsRepository.findByWorkerId(dto.workerId);
-    console.log('[UploadWorkerDocumentsUseCase] existing documents:', existing ? 'YES (status: ' + existing.documentsStatus + ')' : 'NO (will create)');
+    log.info({
+      msg: '[UploadWorkerDocumentsUseCase] existing documents',
+      found: !!existing,
+      status: existing?.documentsStatus,
+    });
 
     let documents: WorkerDocuments;
 
     if (existing) {
-      // Update existing documents
-      console.log('[UploadWorkerDocumentsUseCase] updating existing documents...');
       documents = await this.workerDocumentsRepository.update(dto as UpdateWorkerDocumentsDTO);
     } else {
-      // Create new documents record
-      console.log('[UploadWorkerDocumentsUseCase] creating new documents record...');
       documents = await this.workerDocumentsRepository.create(dto as CreateWorkerDocumentsDTO);
     }
 
-    console.log('[UploadWorkerDocumentsUseCase] documents saved | newStatus:', documents.documentsStatus,
-      '| docs filled:', [documents.resumeCvUrl, documents.identityDocumentUrl, documents.criminalRecordUrl, documents.professionalRegistrationUrl, documents.liabilityInsuranceUrl].filter(Boolean).length, '/5');
+    log.info({ msg: '[UploadWorkerDocumentsUseCase] documents saved', newStatus: documents.documentsStatus });
 
     await this.workerRepository.recalculateStatus(dto.workerId);
 
-    console.log('[UploadWorkerDocumentsUseCase] DONE | workerId:', dto.workerId, '| finalStatus:', documents.documentsStatus);
+    log.info({ msg: '[UploadWorkerDocumentsUseCase] DONE', finalStatus: documents.documentsStatus });
     return documents;
   }
 }

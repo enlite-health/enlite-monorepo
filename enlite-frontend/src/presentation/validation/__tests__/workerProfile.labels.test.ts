@@ -226,11 +226,17 @@ describe('Labels i18n — Aba Disponibilidade', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Labels i18n — Aba Documentos', () => {
+  // Inclui todos os tipos exibidos no grid (obrigatórios e opcionais).
+  // Obrigatórios para AT: resume_cv, identity_document, identity_document_back, criminal_record, at_certificate.
+  // Obrigatórios para Cuidador: identity_document, identity_document_back, criminal_record.
+  // Opcionais (presentes no grid mas não obrigatórios): professional_registration, liability_insurance.
   const DOCUMENT_KEYS = [
     'documents.title',
     'documentTypes.resume_cv',
     'documentTypes.identity_document',
+    'documentTypes.identity_document_back',
     'documentTypes.criminal_record',
+    'documentTypes.at_certificate',
     'documentTypes.professional_registration',
     'documentTypes.liability_insurance',
   ];
@@ -379,7 +385,9 @@ describe('Consistência entre ES e PT-BR', () => {
     'documents.title',
     'documentTypes.resume_cv',
     'documentTypes.identity_document',
+    'documentTypes.identity_document_back',
     'documentTypes.criminal_record',
+    'documentTypes.at_certificate',
     'documentTypes.professional_registration',
     'documentTypes.liability_insurance',
     // Profile

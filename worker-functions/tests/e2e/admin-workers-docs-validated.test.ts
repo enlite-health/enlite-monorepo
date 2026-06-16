@@ -11,24 +11,30 @@
  *   GET /api/admin/workers/export?docs_validated=all_validated&format=csv&columns=email
  *   GET /api/admin/workers/export?docs_validated=pending_validation&format=csv&columns=email
  *
+ * Slugs obrigatórios após a migration 207 (nova política):
+ *   AT       : identity_document, identity_document_back, criminal_record, resume_cv, at_certificate (5)
+ *   Cuidador : identity_document, identity_document_back, criminal_record (3)
+ *   NULL     : identity_document, identity_document_back, criminal_record (3)
+ *
  * Cenários all_validated:
- *   1. Worker AT com as 8 keys validadas → retornado
- *   2. Worker AT com 7 keys (falta at_certificate) → NÃO retornado
- *   3. Worker base (profession = null) com 6 keys validadas → retornado
- *   4. Worker sem linha em worker_documents → NÃO retornado
- *   5. Combinação com case_id → aplica AND corretamente
- *   6. Export também respeita o filtro
+ *   1. Worker AT com as 5 keys validadas → retornado
+ *   2. Worker AT com 4 keys (falta at_certificate) → NÃO retornado
+ *   3. Worker Cuidador com 3 keys validadas → retornado
+ *   4. Worker base (profession = null) com 3 keys validadas → retornado
+ *   5. Worker sem linha em worker_documents → NÃO retornado
+ *   6. Combinação com case_id → aplica AND corretamente
+ *   7. Export também respeita o filtro
  *
  * Cenários pending_validation:
- *   7. Worker AT com 7/8 → aparece em pending, NÃO em all_validated
- *   8. Worker base com 5/6 → aparece em pending
- *   9. Worker sem linha worker_documents → aparece em pending
- *  10. Worker AT completo (8/8) → NÃO aparece em pending
- *  11. Combinação docs_complete=complete AND pending_validation → cadastro completo mas validação pendente
- *  12. Export com pending_validation retorna mesmo conjunto da lista
+ *   8.  Worker AT com 4/5 → aparece em pending, NÃO em all_validated
+ *   9.  Worker Cuidador com 2/3 → aparece em pending
+ *  10.  Worker sem linha worker_documents → aparece em pending
+ *  11.  Worker AT completo (5/5) → NÃO aparece em pending
+ *  12.  Combinação docs_complete=complete AND pending_validation
+ *  13.  Export com pending_validation retorna mesmo conjunto da lista
  *
  * Validação de schema:
- *  13. docs_validated=true (valor antigo) → 400 Bad Request
+ *  14. docs_validated=true (valor antigo) → 400 Bad Request
  */
 
 import { Pool } from 'pg';
@@ -38,30 +44,31 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
-/** All 8 doc slugs that must be present for an AT worker. */
+/**
+ * All 5 required doc slugs for AT workers (new policy after migration 207).
+ * Removed: professional_registration, liability_insurance, monotributo_certificate
+ * Added: resume_cv, at_certificate (were AT_EXTRA; now included in the 5-slug AT set)
+ */
 const AT_ALL_SLUGS = [
-  'resume_cv',
   'identity_document',
   'identity_document_back',
   'criminal_record',
-  'professional_registration',
-  'liability_insurance',
-  'monotributo_certificate',
+  'resume_cv',
   'at_certificate',
 ];
 
-/** 6 base doc slugs for non-AT workers. */
+/**
+ * 3 required doc slugs for non-AT / NULL profession workers (new policy).
+ * Removed: resume_cv, professional_registration, liability_insurance
+ */
 const BASE_SLUGS = [
-  'resume_cv',
   'identity_document',
   'identity_document_back',
   'criminal_record',
-  'professional_registration',
-  'liability_insurance',
 ];
 
-/** 5 of 6 base slugs (missing liability_insurance). */
-const BASE_FIVE_SLUGS = BASE_SLUGS.filter((s) => s !== 'liability_insurance');
+/** 2 of 3 base slugs (missing criminal_record). Used to simulate incomplete Cuidador. */
+const BASE_TWO_SLUGS = BASE_SLUGS.filter((s) => s !== 'criminal_record');
 
 /** Build a JSONB-compatible object where each slug maps to a minimal validation entry. */
 function makeValidations(slugs: string[]): Record<string, unknown> {
@@ -76,16 +83,18 @@ describe('docs_validated filter — list and export', () => {
   let pool: Pool;
 
   // Worker IDs seeded for this suite
-  let atFullId: string;         // AT with all 8 slugs — all_validated: YES, pending: NO
+  let atFullId: string;         // AT with all 5 slugs — all_validated: YES, pending: NO
   let atMissingId: string;      // AT missing at_certificate — all_validated: NO, pending: YES
-  let baseFullId: string;       // non-AT with 6 base slugs — all_validated: YES, pending: NO
-  let baseMissingId: string;    // non-AT with 5/6 slugs — all_validated: NO, pending: YES
+  let cuidadorFullId: string;   // Cuidador with 3 base slugs — all_validated: YES, pending: NO
+  let baseFullId: string;       // profession=null with 3 base slugs — all_validated: YES, pending: NO
+  let baseMissingId: string;    // profession=null with 2/3 slugs — all_validated: NO, pending: YES
   let noDocsId: string;         // no worker_documents row — all_validated: NO, pending: YES
 
   // Unique emails so we can verify presence/absence in CSV body
   const ts = Date.now();
   const atFullEmail = `dv-at-full-${ts}@e2e.local`;
   const atMissingEmail = `dv-at-missing-${ts}@e2e.local`;
+  const cuidadorFullEmail = `dv-cuidador-full-${ts}@e2e.local`;
   const baseFullEmail = `dv-base-full-${ts}@e2e.local`;
   const baseMissingEmail = `dv-base-missing-${ts}@e2e.local`;
   const noDocsEmail = `dv-no-docs-${ts}@e2e.local`;
@@ -101,7 +110,7 @@ describe('docs_validated filter — list and export', () => {
 
     pool = new Pool({ connectionString: DATABASE_URL });
 
-    // 1. AT worker — all 8 slugs validated
+    // 1. AT worker — all 5 required slugs validated (new policy)
     const r1 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, 'AT', 'REGISTERED') RETURNING id`,
@@ -114,59 +123,73 @@ describe('docs_validated filter — list and export', () => {
       [atFullId, JSON.stringify(makeValidations(AT_ALL_SLUGS))],
     );
 
-    // 2. AT worker — 7 slugs (missing at_certificate)
+    // 2. AT worker — 4 slugs (missing at_certificate)
     const r2 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, 'AT', 'REGISTERED') RETURNING id`,
       [`dv-at-missing-${ts}`, atMissingEmail],
     );
     atMissingId = r2.rows[0].id;
-    const sevenSlugs = AT_ALL_SLUGS.filter((s) => s !== 'at_certificate');
+    const atFourSlugs = AT_ALL_SLUGS.filter((s) => s !== 'at_certificate');
     await pool.query(
       `INSERT INTO worker_documents (worker_id, document_validations)
        VALUES ($1, $2::jsonb)`,
-      [atMissingId, JSON.stringify(makeValidations(sevenSlugs))],
+      [atMissingId, JSON.stringify(makeValidations(atFourSlugs))],
     );
 
-    // 3. Base worker (profession = null) — all 6 base slugs validated
+    // 3. Cuidador (profession != 'AT') — all 3 base slugs validated
+    // ClickUp: "Cuidador" → canonical UPPERCASE EN: 'CAREGIVER'
     const r3 = await pool.query(
+      `INSERT INTO workers (auth_uid, email, profession, status)
+       VALUES ($1, $2, 'CAREGIVER', 'REGISTERED') RETURNING id`,
+      [`dv-cuidador-full-${ts}`, cuidadorFullEmail],
+    );
+    cuidadorFullId = r3.rows[0].id;
+    await pool.query(
+      `INSERT INTO worker_documents (worker_id, document_validations)
+       VALUES ($1, $2::jsonb)`,
+      [cuidadorFullId, JSON.stringify(makeValidations(BASE_SLUGS))],
+    );
+
+    // 4. Base worker (profession = null) — all 3 base slugs validated
+    const r4 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, NULL, 'REGISTERED') RETURNING id`,
       [`dv-base-full-${ts}`, baseFullEmail],
     );
-    baseFullId = r3.rows[0].id;
+    baseFullId = r4.rows[0].id;
     await pool.query(
       `INSERT INTO worker_documents (worker_id, document_validations)
        VALUES ($1, $2::jsonb)`,
       [baseFullId, JSON.stringify(makeValidations(BASE_SLUGS))],
     );
 
-    // 4. Base worker — 5/6 slugs (missing liability_insurance)
-    const r4 = await pool.query(
+    // 5. Base worker — 2/3 slugs (missing criminal_record)
+    const r5 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, NULL, 'REGISTERED') RETURNING id`,
       [`dv-base-missing-${ts}`, baseMissingEmail],
     );
-    baseMissingId = r4.rows[0].id;
+    baseMissingId = r5.rows[0].id;
     await pool.query(
       `INSERT INTO worker_documents (worker_id, document_validations)
        VALUES ($1, $2::jsonb)`,
-      [baseMissingId, JSON.stringify(makeValidations(BASE_FIVE_SLUGS))],
+      [baseMissingId, JSON.stringify(makeValidations(BASE_TWO_SLUGS))],
     );
 
-    // 5. Worker without any worker_documents row
-    const r5 = await pool.query(
+    // 6. Worker without any worker_documents row
+    const r6 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, NULL, 'REGISTERED') RETURNING id`,
       [`dv-no-docs-${ts}`, noDocsEmail],
     );
-    noDocsId = r5.rows[0].id;
+    noDocsId = r6.rows[0].id;
     // Intentionally no worker_documents insert
   });
 
   afterAll(async () => {
     if (!pool) return;
-    const ids = [atFullId, atMissingId, baseFullId, baseMissingId, noDocsId].filter(Boolean);
+    const ids = [atFullId, atMissingId, cuidadorFullId, baseFullId, baseMissingId, noDocsId].filter(Boolean);
     for (const id of ids) {
       await pool.query('DELETE FROM worker_documents WHERE worker_id = $1', [id]);
       await pool.query('DELETE FROM workers WHERE id = $1', [id]);
@@ -193,8 +216,8 @@ describe('docs_validated filter — list and export', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('docs_validated=all_validated', () => {
-    // ── 1. AT worker with all 8 slugs → INCLUDED ─────────────────────────────
-    it('AT worker com todas as 8 chaves validadas é retornado', async () => {
+    // ── 1. AT worker with all 5 slugs → INCLUDED ─────────────────────────────
+    it('AT worker com todas as 5 chaves validadas é retornado', async () => {
       const ids = await listWithFilter('all_validated');
       expect(ids).toContain(atFullId);
     });
@@ -205,29 +228,36 @@ describe('docs_validated filter — list and export', () => {
       expect(ids).not.toContain(atMissingId);
     });
 
-    // ── 3. Base worker (profession = null) with 6 slugs → INCLUDED ───────────
-    it('Worker base com as 6 chaves validadas é retornado', async () => {
+    // ── 3. Cuidador with 3 base slugs → INCLUDED ─────────────────────────────
+    it('Worker Cuidador com as 3 chaves base validadas é retornado', async () => {
+      const ids = await listWithFilter('all_validated');
+      expect(ids).toContain(cuidadorFullId);
+    });
+
+    // ── 4. Base worker (profession = null) with 3 slugs → INCLUDED ───────────
+    it('Worker base (profession=null) com as 3 chaves validadas é retornado', async () => {
       const ids = await listWithFilter('all_validated');
       expect(ids).toContain(baseFullId);
     });
 
-    // ── 4. Worker without worker_documents row → EXCLUDED ────────────────────
+    // ── 5. Worker without worker_documents row → EXCLUDED ────────────────────
     it('Worker sem linha em worker_documents NÃO é retornado', async () => {
       const ids = await listWithFilter('all_validated');
       expect(ids).not.toContain(noDocsId);
     });
 
-    // ── 5. Combination with case_id filter ────────────────────────────────────
+    // ── 6. Combination with case_id filter ────────────────────────────────────
     it('combinação com case_id inexistente retorna lista vazia (AND aplicado corretamente)', async () => {
       const fakeUuid = '00000000-0000-0000-0000-000000000000';
       const ids = await listWithFilter('all_validated', `&case_id=${fakeUuid}`);
       expect(ids).not.toContain(atFullId);
       expect(ids).not.toContain(baseFullId);
+      expect(ids).not.toContain(cuidadorFullId);
     });
 
-    // ── 6. Export endpoint — docs_validated=all_validated ─────────────────────
+    // ── 7. Export endpoint — docs_validated=all_validated ─────────────────────
     describe('GET /api/admin/workers/export?docs_validated=all_validated', () => {
-      it('CSV inclui worker AT completo e worker base completo', async () => {
+      it('CSV inclui worker AT completo, Cuidador completo e worker base completo', async () => {
         const res = await api.get(
           '/api/admin/workers/export?format=csv&columns=email&docs_validated=all_validated',
           { ...authHeaders(adminToken), responseType: 'text' },
@@ -235,6 +265,7 @@ describe('docs_validated filter — list and export', () => {
         expect(res.status).toBe(200);
         const body = res.data as string;
         expect(body).toContain(atFullEmail);
+        expect(body).toContain(cuidadorFullEmail);
         expect(body).toContain(baseFullEmail);
       });
 
@@ -258,7 +289,7 @@ describe('docs_validated filter — list and export', () => {
 
       it('resultados do export batem com a lista (mesmos IDs)', async () => {
         const listIds = await listWithFilter('all_validated');
-        const ourIds = new Set([atFullId, atMissingId, baseFullId, baseMissingId, noDocsId]);
+        const ourIds = new Set([atFullId, atMissingId, cuidadorFullId, baseFullId, baseMissingId, noDocsId]);
         const relevantFromList = listIds.filter((id) => ourIds.has(id)).sort();
 
         const res = await api.get(
@@ -272,6 +303,7 @@ describe('docs_validated filter — list and export', () => {
 
         if (relevantFromList.includes(atFullId)) expect(inExport(atFullEmail)).toBe(true);
         if (!relevantFromList.includes(atMissingId)) expect(inExport(atMissingEmail)).toBe(false);
+        if (relevantFromList.includes(cuidadorFullId)) expect(inExport(cuidadorFullEmail)).toBe(true);
         if (relevantFromList.includes(baseFullId)) expect(inExport(baseFullEmail)).toBe(true);
         if (!relevantFromList.includes(noDocsId)) expect(inExport(noDocsEmail)).toBe(false);
       });
@@ -283,36 +315,36 @@ describe('docs_validated filter — list and export', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('docs_validated=pending_validation', () => {
-    // ── 7. AT worker com 7/8 → aparece em pending, NÃO em all_validated ──────
-    it('AT worker com 7/8 slugs aparece em pending_validation', async () => {
+    // ── 8. AT worker com 4/5 → aparece em pending, NÃO em all_validated ──────
+    it('AT worker com 4/5 slugs aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).toContain(atMissingId);
     });
 
-    it('AT worker com 7/8 slugs NÃO aparece em all_validated', async () => {
+    it('AT worker com 4/5 slugs NÃO aparece em all_validated', async () => {
       const ids = await listWithFilter('all_validated');
       expect(ids).not.toContain(atMissingId);
     });
 
-    // ── 8. Worker base com 5/6 slugs → aparece em pending ────────────────────
-    it('Worker base com 5/6 slugs aparece em pending_validation', async () => {
+    // ── 9. Worker base com 2/3 slugs → aparece em pending ────────────────────
+    it('Worker base com 2/3 slugs aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).toContain(baseMissingId);
     });
 
-    // ── 9. Worker sem linha worker_documents → aparece em pending ──────────────
+    // ── 10. Worker sem linha worker_documents → aparece em pending ─────────────
     it('Worker sem linha em worker_documents aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).toContain(noDocsId);
     });
 
-    // ── 10. AT completo (8/8) → NÃO aparece em pending ───────────────────────
-    it('AT worker completo (8/8) NÃO aparece em pending_validation', async () => {
+    // ── 11. AT completo (5/5) → NÃO aparece em pending ───────────────────────
+    it('AT worker completo (5/5) NÃO aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).not.toContain(atFullId);
     });
 
-    // ── 11. docs_complete=complete AND pending_validation ─────────────────────
+    // ── 12. docs_complete=complete AND pending_validation ─────────────────────
     it('combinação docs_complete=complete AND pending_validation retorna cadastros completos com validação pendente', async () => {
       // atMissingId and baseMissingId have status=REGISTERED (docs_complete=complete)
       // but are missing required slugs (pending_validation).
@@ -327,9 +359,10 @@ describe('docs_validated filter — list and export', () => {
       // fully validated workers must NOT appear
       expect(ids).not.toContain(atFullId);
       expect(ids).not.toContain(baseFullId);
+      expect(ids).not.toContain(cuidadorFullId);
     });
 
-    // ── 12. Export com pending_validation bate com a lista ────────────────────
+    // ── 13. Export com pending_validation bate com a lista ────────────────────
     describe('GET /api/admin/workers/export?docs_validated=pending_validation', () => {
       it('CSV inclui workers com validação pendente', async () => {
         const res = await api.get(
@@ -351,12 +384,13 @@ describe('docs_validated filter — list and export', () => {
         expect(res.status).toBe(200);
         const body = res.data as string;
         expect(body).not.toContain(atFullEmail);
+        expect(body).not.toContain(cuidadorFullEmail);
         expect(body).not.toContain(baseFullEmail);
       });
 
       it('resultados do export batem com a lista pending_validation', async () => {
         const listIds = await listWithFilter('pending_validation');
-        const ourIds = new Set([atFullId, atMissingId, baseFullId, baseMissingId, noDocsId]);
+        const ourIds = new Set([atFullId, atMissingId, cuidadorFullId, baseFullId, baseMissingId, noDocsId]);
         const relevantFromList = listIds.filter((id) => ourIds.has(id));
 
         const res = await api.get(
@@ -374,6 +408,7 @@ describe('docs_validated filter — list and export', () => {
         if (relevantFromList.includes(noDocsId)) expect(inExport(noDocsEmail)).toBe(true);
         // validated workers must appear in neither
         if (!relevantFromList.includes(atFullId)) expect(inExport(atFullEmail)).toBe(false);
+        if (!relevantFromList.includes(cuidadorFullId)) expect(inExport(cuidadorFullEmail)).toBe(false);
         if (!relevantFromList.includes(baseFullId)) expect(inExport(baseFullEmail)).toBe(false);
       });
     });

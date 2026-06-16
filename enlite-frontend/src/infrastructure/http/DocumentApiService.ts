@@ -8,7 +8,10 @@ export type DocumentType =
   | 'professional_registration'
   | 'liability_insurance'
   | 'monotributo_certificate'
-  | 'at_certificate';
+  | 'at_certificate'
+  | 'apto_psicofisico'
+  | 'analitico_universitario'
+  | 'carta_recomendacion';
 
 export interface WorkerDocumentsResponse {
   id: string;
@@ -21,6 +24,9 @@ export interface WorkerDocumentsResponse {
   liabilityInsuranceUrl: string | null;
   monotributoCertificateUrl: string | null;
   atCertificateUrl: string | null;
+  aptoPsicofisicoUrl: string | null;
+  analiticoUniversitarioUrl: string | null;
+  cartaRecomendacionUrl: string | null;
   documentsStatus: string;
   submittedAt: string | null;
   updatedAt: string;
