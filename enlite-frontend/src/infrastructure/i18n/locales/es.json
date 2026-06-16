@@ -1601,7 +1601,10 @@
         "complete": "Completo",
         "rejected": "Rechazado",
         "pending": "Pendiente",
-        "incomplete": "Incompleto"
+        "incomplete": "Incompleto",
+        "submitted": "Enviado",
+        "under_review": "En revisión",
+        "approved": "Aprobado"
       },
       "stats": {
         "today": "Registros Hoy",
@@ -1975,6 +1978,7 @@
       "noResultsWithScore": "Sin candidatos con score ≥ {{score}}.",
       "colName": "Nombre",
       "colStatus": "Estado",
+      "colDocs": "Documentos",
       "colOccupation": "Ocupación",
       "colZone": "Zona / Dist",
       "colCases": "Casos",

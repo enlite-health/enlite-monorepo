@@ -65,7 +65,7 @@ vi.mock('@hooks/admin/useMatchMessaging', () => ({
 const candidateNew: SavedCandidate = {
   workerId: 'w-001', workerName: 'Maria Sánchez', workerPhone: '+549111',
   occupation: 'AT', workZone: 'Palermo', distanceKm: 2.1,
-  activeCasesCount: 0, overallStatus: 'REGISTERED', matchScore: 87,
+  activeCasesCount: 0, overallStatus: 'REGISTERED', documentStatus: 'approved', matchScore: 87,
   internalNotes: null,
   alreadyApplied: false, messagedAt: null,
 };
@@ -73,7 +73,7 @@ const candidateNew: SavedCandidate = {
 const candidateAlreadyNotified: SavedCandidate = {
   workerId: 'w-002', workerName: 'Ana Rodríguez', workerPhone: '+549222',
   occupation: 'AT', workZone: 'Caballito', distanceKm: 4.3,
-  activeCasesCount: 1, overallStatus: 'REGISTERED', matchScore: 74,
+  activeCasesCount: 1, overallStatus: 'REGISTERED', documentStatus: 'pending', matchScore: 74,
   internalNotes: null,
   alreadyApplied: false, messagedAt: '2026-03-25T10:00:00Z',
 };

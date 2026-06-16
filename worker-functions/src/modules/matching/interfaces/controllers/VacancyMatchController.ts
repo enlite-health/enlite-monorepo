@@ -74,6 +74,7 @@ export class VacancyMatchController {
            w.last_name_encrypted,
            w.occupation,
            w.status,
+           wd.documents_status,
            wsa.work_zone,
            CASE
              WHEN wsa.location IS NOT NULL AND pa.lat IS NOT NULL AND pa.lng IS NOT NULL
@@ -94,6 +95,7 @@ export class VacancyMatchController {
          FROM worker_job_applications wja
          JOIN workers w    ON w.id  = wja.worker_id
          JOIN job_postings jp ON jp.id = wja.job_posting_id
+         LEFT JOIN worker_documents wd ON wd.worker_id = w.id
          LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
          LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
          WHERE wja.job_posting_id = $1
@@ -120,6 +122,7 @@ export class VacancyMatchController {
             distanceKm:        row.distance_km,
             activeCasesCount:  row.active_cases_count ?? 0,
             workerStatus:      row.status,
+            documentStatus:    row.documents_status ?? null,
             matchScore:        row.match_score !== null ? parseFloat(row.match_score) : null,
             internalNotes:     row.internal_notes,
             // F7.c (ADR-004): applicationStatus REMOVIDO. alreadyApplied agora deriva da combinação

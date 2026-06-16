@@ -4,6 +4,7 @@ import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { MatchScoreBar } from './MatchScoreBar';
 import { Text } from '@presentation/components/atoms/Text';
 import { TableRow, TableCell } from '@presentation/components/atoms/Table';
+import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge';
 import type { SavedCandidate } from '../../../../../types/match';
 
 interface MatchCandidateRowProps {
@@ -100,6 +101,10 @@ export function MatchCandidateRow({
           </span>
         </TableCell>
 
+        <TableCell unwrapped className="whitespace-nowrap">
+          <DocsStatusBadge status={candidate.documentStatus} />
+        </TableCell>
+
         <TableCell unwrapped>
           <Text as="span" size="sm" color="muted">{candidate.occupation ?? '—'}</Text>
         </TableCell>
@@ -144,7 +149,7 @@ export function MatchCandidateRow({
 
       {expanded && candidate.internalNotes && (
         <TableRow className="bg-gray-50">
-          <TableCell unwrapped colSpan={9} className="px-6 py-3">
+          <TableCell unwrapped colSpan={10} className="px-6 py-3">
             <Text size="sm" color="muted" className="italic leading-relaxed">
               {candidate.internalNotes}
             </Text>

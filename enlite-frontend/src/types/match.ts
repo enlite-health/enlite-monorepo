@@ -10,6 +10,7 @@ export interface SavedCandidate {
   distanceKm: number | null;
   activeCasesCount: number;
   overallStatus: string | null;
+  documentStatus: string | null;  // worker_documents.documents_status ('pending'|'incomplete'|'submitted'|'under_review'|'approved'|'rejected') ou null
   matchScore: number | null;
   internalNotes: string | null;    // llmReasoning salvo em worker_job_applications.internal_notes
   alreadyApplied: boolean;         // true = candidatou-se diretamente (não via match)

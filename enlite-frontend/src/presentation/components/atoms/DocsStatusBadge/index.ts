@@ -1,0 +1,1 @@
+export { DocsStatusBadge } from './DocsStatusBadge';

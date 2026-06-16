@@ -204,6 +204,7 @@ export default function VacancyMatchPage() {
                   <TableHead align="center" className="w-10">#</TableHead>
                   <TableHead className="whitespace-nowrap">{t('admin.match.colName')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('admin.match.colStatus')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('admin.match.colDocs')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('admin.match.colOccupation')}</TableHead>
                   <TableHead className="whitespace-nowrap">{t('admin.match.colZone')}</TableHead>
                   <TableHead align="center" className="whitespace-nowrap">{t('admin.match.colCases')}</TableHead>

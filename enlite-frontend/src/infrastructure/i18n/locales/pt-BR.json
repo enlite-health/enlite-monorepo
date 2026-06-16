@@ -1522,7 +1522,10 @@
         "complete": "Completo",
         "rejected": "Rejeitado",
         "pending": "Pendente",
-        "incomplete": "Incompleto"
+        "incomplete": "Incompleto",
+        "submitted": "Enviado",
+        "under_review": "Em análise",
+        "approved": "Aprovado"
       },
       "stats": {
         "today": "Cadastros Hoje",
@@ -1896,6 +1899,7 @@
       "noResultsWithScore": "Nenhum candidato com score ≥ {{score}}.",
       "colName": "Nome",
       "colStatus": "Status",
+      "colDocs": "Documentos",
       "colOccupation": "Ocupação",
       "colZone": "Zona / Dist",
       "colCases": "Casos",
