@@ -63,10 +63,12 @@ DATA (ABAC puro — depende de atributos do contexto). Multi-tenant e
 
 ## 5. Fases
 
-- **Fase 0 — Preparação de ambiente** (pré-requisito, não-ABAC)
-  - Triagem das 45 mudanças no working tree → feature branch → PR → lint+type-check+E2E → merge na main (= deploy prod, com cuidado).
-  - Reset `stage` → `main` (seguro, verificado) + deploy enlite-stg.
-  - Validar staging OK.
+- **Fase 0 — Preparação de ambiente** (pré-requisito, não-ABAC) — ✅ **CONCLUÍDA 2026-06-16**
+  - ✅ Feature contact-notes + confirmados → PR #47 → main (prod).
+  - ✅ TD-051 resolvido (16 suites E2E) + bug auto-invite corrigido (migration 205) no caminho.
+  - ✅ Reset `stage` → `main` (verificado) + Frontend/Backend Staging deployados.
+  - ✅ `workflow_dispatch` adicionado aos workflows de staging (disparo manual).
+  - Relato completo: `docs/HANDOFF_2026-06-16.md`. (MCP-staging aberto, não-bloqueante — TD-053.)
 - **Fase 1 — Arquitetura & design detalhado** (Architect + PO)
   - Parecer técnico: estratégia multi-tenant (onde `tenant_id`, como propaga no JWT/queries), ponte Cerbos↔grupos-dinâmicos, modelo de dados final (schema `iam`-ready), matriz recurso×ação v1.
   - Resolver as dúvidas abertas (§6). ADR(s) para D1/D2.

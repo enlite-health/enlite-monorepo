@@ -1561,9 +1561,9 @@ id, application_id, field_name, old_value, new_value, changed_by, change_source,
 
 ---
 
-### TD-051 — 14 suites E2E backend quebradas em banco limpo (drift de fixtures vs migrations 183/191/194)
+### TD-051 — 16 suites E2E backend quebradas em banco limpo (drift de fixtures vs migrations 183/191/194) — ✅ RESOLVIDO
 
-- **Status:** aberto
+- **Status:** ✅ **RESOLVIDO 2026-06-16** (PR #47 — fixes do #49 combinados). Eram 16 suites (não 14): as 14 originais + funnel-table + admin-vacancies-list-counters. Todas verdes na `main` (validado local com E2E destravado + CI). Inclui a correção do bug de prod do auto-invite (migration 205). Ver `docs/HANDOFF_2026-06-16.md §1.3/1.4`.
 - **Descoberto em:** 2026-06-10, durante validação da feature de contact notes (suite E2E completa em Docker limpo)
 - **Dono provável:** backend
 - **Bloqueador?** Não — pré-existente; as suites das áreas tocadas (funnel-table, contact-notes, vacancies-list) passam
@@ -1612,3 +1612,26 @@ Risco principal: use case novo escrito sem o filtro passa em testes single-tenan
 **Ver:** [ADR-005](adr/005-multi-tenant-iam-foundation-worker-functions.md) — seção "Follow-up".
 
 **Relacionado:** migrations 183/191/194, ADR-001, memória `feedback_all_tests_pass_before_commit`.
+
+---
+
+### TD-053 — Deploy do `worker-functions-mcp` em staging nunca funcionou (pipeline)
+
+- **Status:** aberto — **não-bloqueante** (só o triage-service usa o MCP; fora do escopo do ABAC e do app admin).
+- **Descoberto em:** 2026-06-16, ao tentar deixar staging 100% atual.
+- **Dono provável:** infra / backend (precisa de acesso ao GCP enlite-stg).
+- **Bloqueador?** Não.
+
+**O que é:**
+
+O workflow `backend-mcp-stg.yml` nunca deployou com sucesso. Diagnóstico em camadas (resolvidas as 2 primeiras nesta sessão):
+
+1. ✅ **Environment protection:** o `staging` só permitia a branch `stage`; `workflow_run` roda em contexto `main`. (Mitigado: o deploy via `workflow_dispatch --ref stage` roda em contexto stage.)
+2. ✅ **WIF attribute condition:** o provider WIF do GCP rejeitava o contexto `main` (`unauthorized_client: rejected by attribute condition`). Em contexto `stage` passa (provado pelo backend-stg).
+3. ❌ **Imagem no GAR:** o deploy do mcp falha com `Image worker-functions:<sha> not found`, mesmo o backend-stg dando "success" no mesmo SHA. Inconsistência no build/push do backend-stg que precisa de inspeção do GAR (`gcloud artifacts docker images list`) — não resolvível sem acesso ao GCP enlite-stg.
+
+**O que já foi feito:** adicionado `workflow_dispatch` aos workflows de staging (backend/frontend/mcp) e fallback de SHA no mcp-stg (`github.sha`) — então o disparo manual em contexto stage funciona até a camada de imagem.
+
+**Critério para fechar:** mcp-stg deploya `worker-functions-mcp` em enlite-stg via `gh workflow run backend-mcp-stg.yml --ref stage` (após backend-stg buildar a imagem do mesmo SHA). Investigar por que `worker-functions:<sha>` não aparece no GAR apesar do backend-stg success.
+
+**Gatilho:** quando o triage-service precisar do MCP em staging. **Ver:** `docs/HANDOFF_2026-06-16.md §6`.
