@@ -1,6 +1,7 @@
 name: Frontend — Staging
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "stage" ]
     paths:
