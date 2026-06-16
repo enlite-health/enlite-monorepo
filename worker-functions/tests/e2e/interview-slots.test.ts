@@ -108,7 +108,7 @@ describe('Interview Slots API — Wave 2', () => {
     // Cria um encuadre para workerId + vacancy (worker principal)
     const encuadreInsert = await pool.query(`
       INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-      VALUES ($1, $2, 'Worker Slots E2E', 'PENDIENTE', md5('slots-main-' || $1::text || $2::text), NOW(), NOW())
+      VALUES ($1, $2, 'Worker Slots E2E', 'PENDIENTE', md5('slots-main-' || $1::uuid::text || $2::uuid::text), NOW(), NOW())
       ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
       RETURNING id
     `, [workerId, vacancyId]);
@@ -359,7 +359,7 @@ describe('Interview Slots API — Wave 2', () => {
       // para o mesmo par worker+vaga, então usa workerBId para o segundo candidato)
       const otherEncuadre = await pool.query(`
         INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-        VALUES ($1, $2, 'Worker 2 E2E', 'PENDIENTE', md5('slots-b-' || $1::text || $2::text), NOW(), NOW())
+        VALUES ($1, $2, 'Worker 2 E2E', 'PENDIENTE', md5('slots-b-' || $1::uuid::text || $2::uuid::text), NOW(), NOW())
         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
         RETURNING id
       `, [workerBId, vacancyId]);
@@ -390,7 +390,7 @@ describe('Interview Slots API — Wave 2', () => {
       // workerCId: terceiro worker distinto para o teste de invite (evita unique constraint)
       const encuadreWithWorker = await pool.query(`
         INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-        VALUES ($1, $2, 'Worker Invite E2E', 'PENDIENTE', md5('slots-c-' || $1::text || $2::text), NOW(), NOW())
+        VALUES ($1, $2, 'Worker Invite E2E', 'PENDIENTE', md5('slots-c-' || $1::uuid::text || $2::uuid::text), NOW(), NOW())
         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
         RETURNING id
       `, [workerCId, vacancyId]);
@@ -472,7 +472,7 @@ describe('Interview Slots API — Wave 2', () => {
       // workerDId: quarto worker distinto para o teste de cancelamento (evita unique constraint)
       const enc = await pool.query(`
         INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-        VALUES ($1, $2, 'Worker Cancel E2E', 'PENDIENTE', md5('slots-d-' || $1::text || $2::text), NOW(), NOW())
+        VALUES ($1, $2, 'Worker Cancel E2E', 'PENDIENTE', md5('slots-d-' || $1::uuid::text || $2::uuid::text), NOW(), NOW())
         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
         RETURNING id
       `, [workerDId, vacancyId]);

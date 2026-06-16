@@ -48,7 +48,7 @@ const TASK_REIMPORT    = 'ph2-task-reimport-001';
 const CASE_SINGLE      = 9101;
 const CASE_MULTI_A     = 9201;
 const CASE_MULTI_B     = 9202;
-const CASE_REIMPORT_1  = 9301;
+const CASE_REIMPORT_1  = 9401; // 9301 já usado por I11 (CASE_MULTI_A+100)
 
 let pool: Pool;
 

@@ -60,7 +60,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
     // Tentar inserir segundo encuadre com dedup_hash diferente para o mesmo par
     await pool.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
-       VALUES ($1, $2, 'second-attempt', md5('second-attempt|' || $1::text || '|' || $2::text))
+       VALUES ($1, $2, 'second-attempt', md5('second-attempt|' || $1::uuid::text || '|' || $2::uuid::text))
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [IDS.workerA, IDS.vacancy],
     );
@@ -78,7 +78,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
     await expect(
       pool.query(
         `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
-         VALUES ($1, $2, 'raw-insert', md5('raw-insert|' || $1::text || '|' || $2::text))`,
+         VALUES ($1, $2, 'raw-insert', md5('raw-insert|' || $1::uuid::text || '|' || $2::uuid::text))`,
         [IDS.workerA, IDS.vacancy],
       ),
     ).rejects.toThrow(/unique|duplicate/i);
@@ -101,7 +101,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
     // Upsert com resultado preenchido
     await pool.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash, resultado)
-       VALUES ($1, $2, 'upsert-test', md5('upsert-test|' || $1::text || '|' || $2::text), 'SELECCIONADO')
+       VALUES ($1, $2, 'upsert-test', md5('upsert-test|' || $1::uuid::text || '|' || $2::uuid::text), 'SELECCIONADO')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          resultado = EXCLUDED.resultado,
          updated_at = NOW()`,
@@ -132,7 +132,7 @@ describe('F5 — Invariante UNIQUE (worker_id, job_posting_id) em encuadres (ADR
     // 1. Inserir encuadre manualmente antes da WJA
     await pool.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
-       VALUES ($1, $2, 'pre-existing', md5('pre-existing|' || $1::text || '|' || $2::text))`,
+       VALUES ($1, $2, 'pre-existing', md5('pre-existing|' || $1::uuid::text || '|' || $2::uuid::text))`,
       [IDS.workerC, IDS.vacancy],
     );
 
@@ -220,7 +220,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // workerA: encuadre direto (para F5-1 testar conflito)
   await pool.query(
     `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
-     VALUES ($1, $2, 'seed-first', md5('seed-first|' || $1::text || '|' || $2::text))
+     VALUES ($1, $2, 'seed-first', md5('seed-first|' || $1::uuid::text || '|' || $2::uuid::text))
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.workerA, IDS.vacancy],
   );

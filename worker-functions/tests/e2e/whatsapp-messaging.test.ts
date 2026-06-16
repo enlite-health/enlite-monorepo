@@ -274,15 +274,17 @@ describe('GET /api/admin/messaging/templates — lista templates', () => {
     api = axios.create({ baseURL: API_URL, validateStatus: () => true });
     adminToken = await getToken(api, 'admin-tpl-list-uid', 'admin-tpl-list@e2e.test', 'admin');
 
-    // findAll() filtra por content_sid IS NOT NULL por default (templates sem HSM aprovado
-    // não chegam ao destinatário fora da janela de 24h). Adicionar content_sid de teste
-    // aos templates de seed para que apareçam na listagem padrão.
+    // O setup.ts trunca message_templates antes de cada suite. Precisamos re-inserir
+    // os templates de seed com content_sid para que findAll() (que filtra IS NOT NULL) os retorne.
     seedPool = new Pool({ connectionString: DATABASE_URL });
     await seedPool.query(`
-      UPDATE message_templates
-      SET content_sid = 'HXe2e_test_' || slug
-      WHERE slug IN ('talent_search_welcome', 'vacancy_match', 'encuadre_scheduled')
-        AND content_sid IS NULL
+      INSERT INTO message_templates (slug, name, body, is_active, content_sid)
+      VALUES
+        ('talent_search_welcome', 'Bienvenida Búsqueda de Talentos', 'Hola {{workerName}}! Te invitamos a conocer la vacante.', true, 'HXe2e_test_talent_search_welcome'),
+        ('vacancy_match', 'Match de Vacante', 'Hola {{workerName}}, tenemos una vacante para vos.', true, 'HXe2e_test_vacancy_match')
+      ON CONFLICT (slug) DO UPDATE
+        SET content_sid = EXCLUDED.content_sid,
+            is_active = true
     `);
   });
 

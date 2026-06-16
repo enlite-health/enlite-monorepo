@@ -166,10 +166,12 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
       );
       jobPostingId = jpResult.rows[0].id as string;
 
-      // Act — inserir application com stage explícito
+      // Act — inserir application com stage explícito.
+      // source='import' bypassa o trigger enforce_worker_registered_for_application
+      // (workers de fixture podem estar INCOMPLETE_REGISTER em contexto de seed).
       const appResult = await pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
-         VALUES ($1, $2, 'INITIATED')
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INITIATED', 'import')
          RETURNING id, application_funnel_stage`,
         [workerId, jobPostingId],
       );
