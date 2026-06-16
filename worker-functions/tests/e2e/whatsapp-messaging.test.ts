@@ -268,10 +268,34 @@ describe('POST /api/admin/messaging/whatsapp/direct — HTTP layer', () => {
 describe('GET /api/admin/messaging/templates — lista templates', () => {
   let api: AxiosInstance;
   let adminToken: string;
+  let seedPool: Pool;
 
   beforeAll(async () => {
     api = axios.create({ baseURL: API_URL, validateStatus: () => true });
     adminToken = await getToken(api, 'admin-tpl-list-uid', 'admin-tpl-list@e2e.test', 'admin');
+
+    // findAll() filtra por content_sid IS NOT NULL por default (templates sem HSM aprovado
+    // não chegam ao destinatário fora da janela de 24h). Adicionar content_sid de teste
+    // aos templates de seed para que apareçam na listagem padrão.
+    seedPool = new Pool({ connectionString: DATABASE_URL });
+    await seedPool.query(`
+      UPDATE message_templates
+      SET content_sid = 'HXe2e_test_' || slug
+      WHERE slug IN ('talent_search_welcome', 'vacancy_match', 'encuadre_scheduled')
+        AND content_sid IS NULL
+    `);
+  });
+
+  afterAll(async () => {
+    if (seedPool) {
+      // Limpa content_sid de teste para não poluir outros testes
+      await seedPool.query(`
+        UPDATE message_templates
+        SET content_sid = NULL
+        WHERE content_sid LIKE 'HXe2e_test_%'
+      `).catch(() => {});
+      await seedPool.end();
+    }
   });
 
   it('retorna 401 sem Authorization header', async () => {

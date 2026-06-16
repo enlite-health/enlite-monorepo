@@ -188,8 +188,11 @@ describe('MessageTemplateRepository.findBySlug()', () => {
 });
 
 describe('MessageTemplateRepository.findAll()', () => {
-  it('retorna apenas templates ativos por padrão', async () => {
-    const templates = await repo.findAll();
+  // findAll agora tem requireContentSid=true por default (filtra templates sem HSM aprovado).
+  // Os templates de seed não têm content_sid → passar requireContentSid=false nos testes.
+
+  it('retorna apenas templates ativos por padrão (sem filtro content_sid)', async () => {
+    const templates = await repo.findAll(true, false);
     expect(templates.every(t => t.isActive)).toBe(true);
     expect(templates.length).toBeGreaterThanOrEqual(3);
   });
@@ -200,8 +203,8 @@ describe('MessageTemplateRepository.findAll()', () => {
       `UPDATE message_templates SET is_active = false WHERE slug = 'encuadre_scheduled'`,
     );
 
-    const ativos = await repo.findAll(true);
-    const todos = await repo.findAll(false);
+    const ativos = await repo.findAll(true, false);
+    const todos = await repo.findAll(false, false);
 
     expect(todos.length).toBeGreaterThan(ativos.length);
 
@@ -212,7 +215,7 @@ describe('MessageTemplateRepository.findAll()', () => {
   });
 
   it('resultado contém os campos mapeados corretamente', async () => {
-    const templates = await repo.findAll();
+    const templates = await repo.findAll(true, false);
     for (const t of templates) {
       expect(typeof t.id).toBe('string');
       expect(typeof t.slug).toBe('string');

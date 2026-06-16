@@ -44,6 +44,9 @@ describe('Interview Slots API — Wave 2', () => {
   // IDs criados no beforeAll e reutilizados nos testes
   let vacancyId: string;
   let workerId: string;
+  let workerBId: string; // segundo worker para subtestes que precisam de encuadre extra
+  let workerCId: string; // terceiro worker para subteste de invite
+  let workerDId: string; // quarto worker para subteste de cancelamento
   let encuadreId: string;
 
   beforeAll(async () => {
@@ -84,19 +87,29 @@ describe('Interview Slots API — Wave 2', () => {
     expect(vacancyRes.status).toBe(201);
     vacancyId = vacancyRes.data.data.id;
 
-    // Cria um worker diretamente no banco (sem passar pelo fluxo de registro)
-    const workerInsert = await pool.query(`
-      INSERT INTO workers (auth_uid, email, phone, status, created_at, updated_at)
-      VALUES ('slots-worker-uid-e2e', 'slots-worker@e2e.local', '+5491199990001', 'REGISTERED', NOW(), NOW())
-      ON CONFLICT (auth_uid) DO UPDATE SET email = EXCLUDED.email
-      RETURNING id
-    `);
-    workerId = workerInsert.rows[0].id;
+    // Cria workers REGISTERED para os testes.
+    // Pós-ADR-001 UNIQUE (worker_id, job_posting_id) em encuadres: cada encuadre
+    // precisa de um worker distinto para a mesma vaga.
+    const insertWorker = async (authUid: string, email: string, phone: string) => {
+      const r = await pool.query(`
+        INSERT INTO workers (auth_uid, email, phone, status, created_at, updated_at)
+        VALUES ($1, $2, $3, 'REGISTERED', NOW(), NOW())
+        ON CONFLICT (auth_uid) DO UPDATE SET email = EXCLUDED.email
+        RETURNING id
+      `, [authUid, email, phone]);
+      return r.rows[0].id as string;
+    };
 
-    // Cria um encuadre vinculando worker + vacancy
+    workerId  = await insertWorker('slots-worker-uid-e2e',  'slots-worker@e2e.local',   '+5491199990001');
+    workerBId = await insertWorker('slots-workerB-uid-e2e', 'slots-workerB@e2e.local',  '+5491199990002');
+    workerCId = await insertWorker('slots-workerC-uid-e2e', 'slots-workerC@e2e.local',  '+5491199990003');
+    workerDId = await insertWorker('slots-workerD-uid-e2e', 'slots-workerD@e2e.local',  '+5491199990004');
+
+    // Cria um encuadre para workerId + vacancy (worker principal)
     const encuadreInsert = await pool.query(`
       INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-      VALUES ($1, $2, 'Worker Slots E2E', 'PENDIENTE', md5(random()::text), NOW(), NOW())
+      VALUES ($1, $2, 'Worker Slots E2E', 'PENDIENTE', md5('slots-main-' || $1::text || $2::text), NOW(), NOW())
+      ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
       RETURNING id
     `, [workerId, vacancyId]);
     encuadreId = encuadreInsert.rows[0].id;
@@ -342,12 +355,14 @@ describe('Interview Slots API — Wave 2', () => {
     });
 
     it('retorna 400 ao tentar reservar slot já lotado', async () => {
-      // Cria outro encuadre para tentar reservar o mesmo slot cheio
+      // Cria encuadre para workerB (worker distinto — unique constraint impede 2 encuadres
+      // para o mesmo par worker+vaga, então usa workerBId para o segundo candidato)
       const otherEncuadre = await pool.query(`
         INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-        VALUES ($1, $2, 'Worker 2 E2E', 'PENDIENTE', md5(random()::text), NOW(), NOW())
+        VALUES ($1, $2, 'Worker 2 E2E', 'PENDIENTE', md5('slots-b-' || $1::text || $2::text), NOW(), NOW())
+        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
         RETURNING id
-      `, [workerId, vacancyId]);
+      `, [workerBId, vacancyId]);
       const otherId = otherEncuadre.rows[0].id;
 
       const res = await api.post(
@@ -372,16 +387,19 @@ describe('Interview Slots API — Wave 2', () => {
       );
       const inviteSlotId = slotRes.data.data[0].id;
 
+      // workerCId: terceiro worker distinto para o teste de invite (evita unique constraint)
       const encuadreWithWorker = await pool.query(`
         INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-        VALUES ($1, $2, 'Worker Invite E2E', 'PENDIENTE', md5(random()::text), NOW(), NOW())
+        VALUES ($1, $2, 'Worker Invite E2E', 'PENDIENTE', md5('slots-c-' || $1::text || $2::text), NOW(), NOW())
+        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
         RETURNING id
-      `, [workerId, vacancyId]);
+      `, [workerCId, vacancyId]);
       const inviteEncuadreId = encuadreWithWorker.rows[0].id;
 
+      // workerCId é o worker do encuadre de invite — checar a outbox dele
       const outboxBefore = await pool.query(
         `SELECT COUNT(*) FROM messaging_outbox WHERE worker_id = $1 AND template_slug = 'encuadre_invitation'`,
-        [workerId],
+        [workerCId],
       );
       const countBefore = parseInt(outboxBefore.rows[0].count, 10);
 
@@ -394,10 +412,10 @@ describe('Interview Slots API — Wave 2', () => {
       expect(res.status).toBe(200);
       expect(res.data.data.invitationQueued).toBe(true);
 
-      // Verifica que o registro na outbox foi criado
+      // Verifica que o registro na outbox foi criado para workerCId
       const outboxAfter = await pool.query(
         `SELECT COUNT(*) FROM messaging_outbox WHERE worker_id = $1 AND template_slug = 'encuadre_invitation'`,
-        [workerId],
+        [workerCId],
       );
       const countAfter = parseInt(outboxAfter.rows[0].count, 10);
       expect(countAfter).toBe(countBefore + 1);
@@ -451,12 +469,13 @@ describe('Interview Slots API — Wave 2', () => {
       );
       cancelSlotId = slotRes.data.data[0].id;
 
-      // Cria encuadre e agenda no slot
+      // workerDId: quarto worker distinto para o teste de cancelamento (evita unique constraint)
       const enc = await pool.query(`
         INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado, dedup_hash, created_at, updated_at)
-        VALUES ($1, $2, 'Worker Cancel E2E', 'PENDIENTE', md5(random()::text), NOW(), NOW())
+        VALUES ($1, $2, 'Worker Cancel E2E', 'PENDIENTE', md5('slots-d-' || $1::text || $2::text), NOW(), NOW())
+        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
         RETURNING id
-      `, [workerId, vacancyId]);
+      `, [workerDId, vacancyId]);
       cancelEncuadreId = enc.rows[0].id;
 
       await api.post(

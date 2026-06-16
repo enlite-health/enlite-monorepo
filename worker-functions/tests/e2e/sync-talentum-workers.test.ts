@@ -341,18 +341,25 @@ describe('Talentum Workers Sync API', () => {
     it('creates encuadre with Talentum import_source_audit and dedup_hash', async () => {
       const dedupHash = 'e2e-sync-test-hash';
 
+      // O trigger trg_ensure_encuadre_on_wja_insert já criou um encuadre ao inserir a WJA.
+      // Usar ON CONFLICT (worker_id, job_posting_id) para atualizar o encuadre existente
+      // com os dados do Talentum (import_source_audit, dedup_hash, worker_raw_name).
       await pool.query(
         `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          VALUES ($1, $2, $3, $4, 'Talentum', $5)
-         ON CONFLICT (dedup_hash) DO UPDATE SET
-           worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
+         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+           worker_raw_name     = EXCLUDED.worker_raw_name,
+           worker_raw_phone    = EXCLUDED.worker_raw_phone,
+           import_source_audit = EXCLUDED.import_source_audit,
+           dedup_hash          = EXCLUDED.dedup_hash,
+           updated_at          = NOW()`,
         [workerId, jobPostingId, 'María González', '+5491100000000', dedupHash],
       );
 
       const { rows } = await pool.query(
         `SELECT worker_id, job_posting_id, worker_raw_name, import_source_audit, dedup_hash
-         FROM encuadres WHERE dedup_hash = $1`,
-        [dedupHash],
+         FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2`,
+        [workerId, jobPostingId],
       );
 
       expect(rows).toHaveLength(1);
@@ -362,21 +369,23 @@ describe('Talentum Workers Sync API', () => {
       expect(rows[0].import_source_audit).toBe('Talentum');
     });
 
-    it('encuadre upsert is idempotent via dedup_hash', async () => {
+    it('encuadre upsert is idempotent via (worker_id, job_posting_id)', async () => {
       const dedupHash = 'e2e-sync-test-hash';
 
-      // Insert again — should update, not create duplicate
+      // Insert again — should update, not create duplicate.
+      // Usa ON CONFLICT (worker_id, job_posting_id) pois a ADR-001 garante unique nesse par.
       await pool.query(
         `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          VALUES ($1, $2, $3, $4, 'Talentum', $5)
-         ON CONFLICT (dedup_hash) DO UPDATE SET
-           worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
+         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+           worker_raw_name = EXCLUDED.worker_raw_name,
+           updated_at      = NOW()`,
         [workerId, jobPostingId, 'María González Updated', '+5491100000000', dedupHash],
       );
 
       const { rows } = await pool.query(
-        `SELECT COUNT(*)::int as cnt FROM encuadres WHERE dedup_hash = $1`,
-        [dedupHash],
+        `SELECT COUNT(*)::int as cnt FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2`,
+        [workerId, jobPostingId],
       );
 
       expect(rows[0].cnt).toBe(1); // no duplicate

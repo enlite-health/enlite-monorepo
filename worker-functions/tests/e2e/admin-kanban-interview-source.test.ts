@@ -64,9 +64,12 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
       [workerId, vacancyId],
     );
 
+    // O trigger trg_ensure_encuadre_on_wja_insert já criou um encuadre ao inserir a WJA.
+    // Fazemos upsert para obter o id do encuadre existente (ou criar se ainda não existe).
     const enc = await pool.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name)
        VALUES ($1, $2, 'Worker Kanban E2E')
+       ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
        RETURNING id`,
       [workerId, vacancyId],
     );

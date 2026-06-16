@@ -181,14 +181,15 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
     });
   });
 
-  // ── Cenário 4: Atualizar stage para PLACED ────────────────────────────────────
+  // ── Cenário 4: Atualizar stage para SELECTED ─────────────────────────────────
+  // PLACED foi removido do CHECK pós-migration 191/194; usar SELECTED (válido atualmente).
 
-  describe('Cenário 4 — Atualizar application_funnel_stage → PLACED', () => {
-    it('deve persistir stage = PLACED no banco após UPDATE', async () => {
+  describe('Cenário 4 — Atualizar application_funnel_stage → SELECTED', () => {
+    it('deve persistir stage = SELECTED no banco após UPDATE', async () => {
       // Act
       await pool.query(
         `UPDATE worker_job_applications
-         SET application_funnel_stage = 'PLACED'
+         SET application_funnel_stage = 'SELECTED'
          WHERE id = $1`,
         [applicationId],
       );
@@ -198,7 +199,7 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
         'SELECT application_funnel_stage FROM worker_job_applications WHERE id = $1',
         [applicationId],
       );
-      expect(result.rows[0].application_funnel_stage).toBe('PLACED');
+      expect(result.rows[0].application_funnel_stage).toBe('SELECTED');
     });
 
     it('deve rejeitar UPDATE para stage antigo "HIRED"', async () => {

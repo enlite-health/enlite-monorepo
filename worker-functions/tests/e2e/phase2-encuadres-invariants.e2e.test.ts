@@ -134,13 +134,19 @@ async function simulateEncuadreImport(
 
   const rawName = opts.rawName ?? `ph2-test-${opts.caseNumber}`;
 
+  // Quando job_posting_id é não-nulo: conflito primário é (worker_id, job_posting_id) — ADR-001.
+  // Quando job_posting_id é null (ambíguo): não há UNIQUE (worker_id, null) em Postgres,
+  // então usamos ON CONFLICT (dedup_hash) para idempotência.
+  const conflictClause =
+    opts.jobPostingId !== null
+      ? 'ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET resultado = EXCLUDED.resultado, updated_at = NOW()'
+      : 'ON CONFLICT (dedup_hash) DO UPDATE SET resultado = EXCLUDED.resultado, updated_at = NOW()';
+
   const res = await p.query<{ id: string; inserted: boolean }>(
     `INSERT INTO encuadres (
        worker_id, job_posting_id, worker_raw_name, resultado, import_source_audit, dedup_hash
      ) VALUES ($1, $2, $3, $4, 'ClickUp', $5)
-     ON CONFLICT (dedup_hash) DO UPDATE SET
-       resultado  = EXCLUDED.resultado,
-       updated_at = NOW()
+     ${conflictClause}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       opts.workerId,
