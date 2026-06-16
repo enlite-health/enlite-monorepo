@@ -16,6 +16,11 @@ describe('DocsStatusBadge — null / empty status', () => {
     render(<DocsStatusBadge status="" />);
     expect(screen.getByText('—')).toBeInTheDocument();
   });
+
+  it('renders an em dash when status is undefined (does not crash)', () => {
+    render(<DocsStatusBadge status={undefined} />);
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
 });
 
 describe('DocsStatusBadge — complete (green) statuses', () => {

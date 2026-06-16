@@ -28,6 +28,7 @@ const candidate: SavedCandidate = {
   internalNotes: null,
   alreadyApplied: false,
   messagedAt: null,
+  documentStatus: 'approved',
 };
 
 function renderRow(c: SavedCandidate, initialPath = '/admin/vacancies/vac-123/match') {

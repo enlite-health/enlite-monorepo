@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { MatchCandidateRow } from '../MatchCandidateRow';
 import { Table, TableBody } from '@presentation/components/atoms/Table';
 import type { SavedCandidate } from '../../../../../../types/match';
@@ -32,17 +33,19 @@ function makeCandidate(overrides: Partial<SavedCandidate> = {}): SavedCandidate 
 
 function renderRow(candidate: SavedCandidate) {
   return render(
-    <Table>
-      <TableBody>
-        <MatchCandidateRow
-          candidate={candidate}
-          rank={1}
-          isSelected={false}
-          onToggleSelect={() => {}}
-          onSendMessage={() => {}}
-        />
-      </TableBody>
-    </Table>,
+    <MemoryRouter initialEntries={['/admin/vacancies/vac-123/match']}>
+      <Table>
+        <TableBody>
+          <MatchCandidateRow
+            candidate={candidate}
+            rank={1}
+            isSelected={false}
+            onToggleSelect={() => {}}
+            onSendMessage={() => {}}
+          />
+        </TableBody>
+      </Table>
+    </MemoryRouter>,
   );
 }
 

@@ -22,6 +22,7 @@ const candidate: SavedCandidate = {
   internalNotes: null,
   alreadyApplied: false,
   messagedAt: null,
+  documentStatus: null,
 };
 
 describe('MatchCandidateRow.match — worker profile link (modal)', () => {

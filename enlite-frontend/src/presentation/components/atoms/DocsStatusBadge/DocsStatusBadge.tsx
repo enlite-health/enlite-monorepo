@@ -30,8 +30,8 @@ type DocumentsStatus =
   | 'rejected';
 
 interface DocsStatusBadgeProps {
-  /** Status cru de worker_documents.documents_status, ou null se não existir registro. */
-  status: string | null;
+  /** Status cru de worker_documents.documents_status, ou null/undefined se não existir registro. */
+  status: string | null | undefined;
   /**
    * Override explícito de "documentação completa" (verde). Quando omitido, a
    * completude é derivada do próprio `status`.
@@ -57,7 +57,7 @@ function isDocumentsStatus(value: string): value is DocumentsStatus {
 export function DocsStatusBadge({ status, complete }: DocsStatusBadgeProps): JSX.Element {
   const { t } = useTranslation();
 
-  if (status === null || status === '') {
+  if (!status) {
     return (
       <Text as="span" size="xs" color="muted">
         —
