@@ -48,6 +48,15 @@ jest.mock('@modules/integration', () => ({
   GeminiVacancyParserService: jest.fn().mockImplementation(() => ({
     generateFromVacancyData: mockGenerateFromVacancyData,
   })),
+  GeminiApiError: class GeminiApiError extends Error {
+    constructor(public status: number, public body: string) {
+      super(`Gemini API error ${status}: ${body}`);
+      this.name = 'GeminiApiError';
+    }
+    get isTransient(): boolean {
+      return this.status === 429 || (this.status >= 500 && this.status <= 599);
+    }
+  },
 }));
 
 import { VacancyTalentumController } from '../../../src/modules/matching/interfaces/controllers/VacancyTalentumController';

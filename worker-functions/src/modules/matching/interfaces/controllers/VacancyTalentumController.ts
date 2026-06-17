@@ -7,6 +7,7 @@ import {
   SyncTalentumVacanciesUseCase,
   TalentumDescriptionService,
   GeminiVacancyParserService,
+  GeminiApiError,
 } from '@modules/integration';
 
 /**
@@ -20,6 +21,30 @@ export class VacancyTalentumController {
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+  }
+
+  /**
+   * Maps an AI-generation failure to an HTTP response. A transient Gemini
+   * error (429 DSQ/quota or 5xx overload) is surfaced as a retryable 503
+   * with a friendly message — NOT the raw API JSON, which leaked to
+   * operators before (e.g. "Gemini API error 429: { RESOURCE_EXHAUSTED }").
+   * Any other error keeps the generic 500 + `details` for diagnosability.
+   */
+  private respondAIError(res: Response, error: unknown, fallbackError: string): void {
+    if (error instanceof GeminiApiError && error.isTransient) {
+      res.status(503).json({
+        success: false,
+        error:
+          'El servicio de IA está temporalmente sobrecargado. ' +
+          'Esperá unos segundos y volvé a intentar.',
+      });
+      return;
+    }
+    res.status(500).json({
+      success: false,
+      error: fallbackError,
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 
   async publishToTalentum(req: Request, res: Response): Promise<void> {
@@ -60,9 +85,9 @@ export class VacancyTalentumController {
       const descService = new TalentumDescriptionService();
       const result = await descService.generateDescription(id);
       res.status(200).json({ success: true, data: { description: result.description } });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[VacancyTalentum] Error generating Talentum description:', error);
-      res.status(500).json({ success: false, error: 'Failed to generate description', details: error.message });
+      this.respondAIError(res, error, 'Failed to generate description');
     }
   }
 
@@ -228,13 +253,9 @@ export class VacancyTalentumController {
           },
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[VacancyTalentum] Error generating AI content:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to generate AI content',
-        details: error.message,
-      });
+      this.respondAIError(res, error, 'Failed to generate AI content');
     }
   }
 
