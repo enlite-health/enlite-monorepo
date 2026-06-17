@@ -177,6 +177,33 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'facebook']);
   });
 
+  // GUARD do gatilho: postulação sem UTM (channel ausente ou null) NÃO pode dar 400.
+  // É o caminho principal — o frontend chama track-channel a cada clique mesmo sem UTM,
+  // mandando channel=null. Se o schema voltar a exigir channel, o gatilho quebra silencioso.
+  it('accepts request WITHOUT channel (no UTM) — proceeds, persists acquisition_channel=null', async () => {
+    mockWorkerFound('w-1');
+    mockDbSuccess();
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(mockQuery.mock.calls[2][1]).toEqual(['w-1', 'jp-1', null]);
+  });
+
+  it('accepts explicit channel=null (no UTM) — proceeds, persists acquisition_channel=null', async () => {
+    mockWorkerFound('w-1');
+    mockDbSuccess();
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: null }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(mockQuery.mock.calls[2][1]).toEqual(['w-1', 'jp-1', null]);
+  });
+
   // ── Encuadre creation ──────────────────────────────────────────────────
 
   it('creates encuadre with decrypted name and channel as import_source_audit', async () => {
