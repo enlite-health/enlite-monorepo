@@ -170,7 +170,7 @@ describe('VacancyAutoInviteHandler', () => {
     const vars = JSON.parse(insertCall[1][3]);
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.patient_zone).toBe('Palermo');
-    expect(vars.vacancy_url).toBe('https://app.enlite.health/vacancies/job-1');
+    expect(vars.vacancy_url).toBe('https://app.enlite.health/vacantes/job-1');
     expect(vars.pending_documents).toBeUndefined(); // NÃO deve existir para template complete
 
     expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
@@ -211,7 +211,7 @@ describe('VacancyAutoInviteHandler', () => {
     const vars = JSON.parse(insertCall[1][3]);
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.patient_zone).toBe('Flores');
-    expect(vars.vacancy_url).toBe('https://app.enlite.health/vacancies/job-1');
+    expect(vars.vacancy_url).toBe('https://app.enlite.health/vacantes/job-1');
     // Deve mencionar o que está faltando (antecedentes, CV, certificado AT)
     expect(vars.pending_documents).toContain('tus antecedentes penales');
     expect(vars.pending_documents).toContain('tu CV');

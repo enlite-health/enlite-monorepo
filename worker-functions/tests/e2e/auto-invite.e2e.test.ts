@@ -18,7 +18,7 @@
  *   - domain_events tem row com event='vacancy.created'
  *   - messaging_outbox tem row com template_slug='ar_vacancy_match_complete' para REGISTERED
  *   - messaging_outbox tem row com template_slug='ar_vacancy_match_incomplete' para INCOMPLETE_REGISTER
- *   - variables.vacancy_url = 'https://app.enlite.health/vacancies/<id>'
+ *   - variables.vacancy_url = 'https://app.enlite.health/vacantes/<id>'
  *   - variables.worker_name começa com 'tk_' (token PII)
  *   - Idempotência: re-processar evento não duplica outbox
  *
@@ -239,7 +239,7 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
       const vars = rows[0].variables as Record<string, string>;
       expect(vars.worker_name).toMatch(/^tk_/);
       expect(vars.patient_zone).toBeDefined();
-      expect(vars.vacancy_url).toBe(`https://app.enlite.health/vacancies/${vacancyId}`);
+      expect(vars.vacancy_url).toBe(`https://app.enlite.health/vacantes/${vacancyId}`);
       expect(vars.pending_documents).toBeUndefined(); // NÃO deve ter no template complete
     }
   });
@@ -259,7 +259,7 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
       const vars = rows[0].variables as Record<string, string>;
       expect(vars.worker_name).toMatch(/^tk_/);
       expect(vars.patient_zone).toBeDefined();
-      expect(vars.vacancy_url).toBe(`https://app.enlite.health/vacancies/${vacancyId}`);
+      expect(vars.vacancy_url).toBe(`https://app.enlite.health/vacantes/${vacancyId}`);
       expect(typeof vars.pending_documents).toBe('string');
       expect(vars.pending_documents.length).toBeGreaterThan(0);
     }
