@@ -10,20 +10,35 @@ import { DocumentValidationBadge } from './DocumentValidationBadge';
 interface DocumentSlot {
   docType: AdminDocumentType;
   urlField: keyof WorkerDocument;
+  /** Só visível para AT */
   atOnly?: boolean;
+  /** Só visível para trabalhadores que NÃO são AT (ex: Cuidador) */
+  cuidadorOnly?: boolean;
+  /** Nunca exibido na UI (slot oculto por política ABAC) */
+  hidden?: boolean;
 }
 
-// Labels vêm da chave canônica `documentTypes.<docType>` em i18n —
-// fonte única compartilhada com o DocumentsGrid do worker.
+// Regras de visibilidade por profissão (política ABAC de documentos):
+//   Universal     : resume_cv, identity_document, identity_document_back, criminal_record,
+//                   liability_insurance, monotributo_certificate
+//   atOnly        : at_certificate, apto_psicofisico, analitico_universitario
+//   cuidadorOnly  : carta_recomendacion
+//   Oculto (ABAC) : professional_registration — removido da UI para todos os perfis
 const DOCUMENT_SLOTS: DocumentSlot[] = [
   { docType: 'resume_cv', urlField: 'resumeCvUrl' },
   { docType: 'identity_document', urlField: 'identityDocumentUrl' },
   { docType: 'identity_document_back', urlField: 'identityDocumentBackUrl' },
   { docType: 'criminal_record', urlField: 'criminalRecordUrl' },
-  { docType: 'professional_registration', urlField: 'professionalRegistrationUrl' },
   { docType: 'liability_insurance', urlField: 'liabilityInsuranceUrl' },
-  { docType: 'monotributo_certificate', urlField: 'monotributoCertificateUrl', atOnly: true },
+  { docType: 'monotributo_certificate', urlField: 'monotributoCertificateUrl' },
+  // professional_registration: oculto para todos os perfis por política ABAC
+  { docType: 'professional_registration', urlField: 'professionalRegistrationUrl', hidden: true },
+  // atOnly — documentos exclusivos para Acompañantes Terapéuticos
   { docType: 'at_certificate', urlField: 'atCertificateUrl', atOnly: true },
+  { docType: 'apto_psicofisico', urlField: 'aptoPsicofisicoUrl', atOnly: true },
+  { docType: 'analitico_universitario', urlField: 'analiticoUniversitarioUrl', atOnly: true },
+  // cuidadorOnly — documentos exclusivos para Cuidadores (non-AT)
+  { docType: 'carta_recomendacion', urlField: 'cartaRecomendacionUrl', cuidadorOnly: true },
 ];
 
 interface WorkerDocumentsCardProps {
@@ -55,7 +70,18 @@ export function WorkerDocumentsCard({
 }: WorkerDocumentsCardProps) {
   const { t } = useTranslation();
   const isAT = profession === 'AT';
-  const visibleSlots = DOCUMENT_SLOTS.filter((s) => !s.atOnly || isAT);
+
+  // Filtra slots pela política ABAC de visibilidade por profissão:
+  //   - hidden: sempre oculto
+  //   - atOnly: visível apenas para AT
+  //   - cuidadorOnly: visível apenas para não-AT
+  //   - nenhuma flag: universal
+  const visibleSlots = DOCUMENT_SLOTS.filter((s) => {
+    if (s.hidden) return false;
+    if (s.atOnly) return isAT;
+    if (s.cuidadorOnly) return !isAT;
+    return true;
+  });
 
   const statusColor = documents ? ({
     approved: 'bg-turquoise/20 text-primary',
@@ -68,7 +94,7 @@ export function WorkerDocumentsCard({
 
   const getUrl = (slot: DocumentSlot): string | null => {
     if (!documents) return null;
-    return (documents[slot.urlField] as string | null) ?? null;
+    return (documents[slot.urlField] as string | null | undefined) ?? null;
   };
 
   const row1 = visibleSlots.slice(0, 3);

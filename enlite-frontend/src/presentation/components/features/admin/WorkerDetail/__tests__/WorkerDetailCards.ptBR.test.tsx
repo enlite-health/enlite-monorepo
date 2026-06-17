@@ -384,7 +384,8 @@ describe('WorkerDocumentsCard — pt-BR labels', () => {
     expect(screen.getByText('Currículo')).toBeInTheDocument();
     expect(screen.getByText('RG/CPF - Frente')).toBeInTheDocument();
     expect(screen.getByText('Antecedentes penais')).toBeInTheDocument();
-    expect(screen.getByText('Registro profissional')).toBeInTheDocument();
+    // professional_registration oculto por política ABAC — não deve aparecer
+    expect(screen.queryByText('Registro profissional')).not.toBeInTheDocument();
     expect(screen.getByText('Seguro de responsabilidade')).toBeInTheDocument();
   });
 
@@ -403,9 +404,9 @@ describe('WorkerDocumentsCard — pt-BR labels', () => {
     expect(screen.getByText('Antecedentes penais')).toBeInTheDocument();
   });
 
-  it('renders document type "Registro profissional"', () => {
+  it('does not render "Registro profissional" (oculto por política ABAC)', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...docHandlers} />);
-    expect(screen.getByText('Registro profissional')).toBeInTheDocument();
+    expect(screen.queryByText('Registro profissional')).not.toBeInTheDocument();
   });
 
   it('renders document type "Seguro de responsabilidade"', () => {

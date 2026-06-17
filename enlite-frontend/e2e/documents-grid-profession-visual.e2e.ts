@@ -4,9 +4,9 @@
  * Playwright E2E — Testes visuais (screenshot assertions) para o DocumentsGrid
  * acessado via painel admin (WorkerDocumentsCard em /admin/workers/:id).
  *
- * Estratégia de auth: login via UI admin com Firebase REAL (enlite-prd).
+ * Estratégia de auth: fake Firebase auth via page.route() — SEM emulator, SEM
+ * conta real. Técnica idêntica à usada em blocked-attempts-visual.e2e.ts.
  * API admin e dados do worker são 100% mockados via page.route().
- * NÃO usa Firebase Emulator (proibido neste projeto).
  *
  * Cobre:
  *   1. AT — slot at_certificate presente + banner âmbar + slots atOnly visíveis
@@ -15,10 +15,31 @@
  *   4. Label "Constancia de ARCA" para monotributo_certificate (Cuidador)
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Route } from '@playwright/test';
 
-const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
-const FIREBASE_API_KEY = 'test-api-key';
+// ── Auth constants ─────────────────────────────────────────────────────────────
+
+const MOCK_ADMIN = {
+  uid: 'docs-grid-vis-admin-uid',
+  email: 'docs.grid.visual@e2e.test',
+  role: 'superadmin',
+};
+
+const FAKE_ID_TOKEN =
+  'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
+  Buffer.from(
+    JSON.stringify({
+      sub: MOCK_ADMIN.uid,
+      email: MOCK_ADMIN.email,
+      iss: 'https://securetoken.google.com/enlite-prd',
+      aud: 'enlite-prd',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }),
+  ).toString('base64url') +
+  '.';
+
+// ── Deterministic fixture IDs ─────────────────────────────────────────────────
 
 const WORKER_AT_ID = 'worker-at-grid-visual-001';
 const WORKER_CUIDADOR_ID = 'worker-cuidador-grid-visual-001';
@@ -106,34 +127,62 @@ function makeDocsEmpty(workerId: string): Record<string, unknown> {
   };
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Auth helper (no emulator, no real Firebase) ───────────────────────────────
 
-/**
- * Faz login admin via UI com Firebase REAL.
- * Mocka /api/admin/auth/profile para o app reconhecer o usuário como superadmin.
- * NÃO usa Firebase Emulator.
- */
-async function loginAdmin(page: Page): Promise<void> {
-  const rnd = Math.random().toString(36).slice(2, 8);
-  const email = `e2e.docs.grid.visual.${Date.now()}.${rnd}@test.com`;
-  const password = 'TestAdmin123!';
+async function installFakeFirebaseAuth(page: Page): Promise<void> {
+  await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
+    const url = route.request().url();
+    if (url.includes('signInWithPassword') || url.includes('signUp')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          localId: MOCK_ADMIN.uid,
+          email: MOCK_ADMIN.email,
+          idToken: FAKE_ID_TOKEN,
+          refreshToken: 'fake-refresh-token',
+          expiresIn: '3600',
+          registered: true,
+        }),
+      });
+      return;
+    }
+    if (url.includes('token') || url.includes('securetoken')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id_token: FAKE_ID_TOKEN,
+          access_token: FAKE_ID_TOKEN,
+          expires_in: '3600',
+          token_type: 'Bearer',
+          refresh_token: 'fake-refresh-token',
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        users: [{ localId: MOCK_ADMIN.uid, email: MOCK_ADMIN.email, emailVerified: true }],
+      }),
+    });
+  });
 
-  // Cria usuário no Firebase Emulator (necessário para login via UI)
-  const signUpRes = await fetch(
-    `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
-  );
-  const signUpData = (await signUpRes.json()) as Record<string, unknown>;
-  if (!signUpData.localId) {
-    throw new Error(`Firebase sign-up failed: ${JSON.stringify(signUpData)}`);
-  }
-  const uid = signUpData.localId as string;
+  await page.route('**/securetoken.googleapis.com/**', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id_token: FAKE_ID_TOKEN,
+        expires_in: '3600',
+        token_type: 'Bearer',
+        refresh_token: 'fake-refresh-token',
+      }),
+    });
+  });
 
-  // Mock do perfil admin para bypassar autorização real
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
       status: 200,
@@ -141,9 +190,9 @@ async function loginAdmin(page: Page): Promise<void> {
       body: JSON.stringify({
         success: true,
         data: {
-          id: uid,
-          email,
-          role: 'superadmin',
+          id: MOCK_ADMIN.uid,
+          email: MOCK_ADMIN.email,
+          role: MOCK_ADMIN.role,
           firstName: 'Grid',
           lastName: 'Visual',
           isActive: true,
@@ -152,33 +201,20 @@ async function loginAdmin(page: Page): Promise<void> {
       }),
     }),
   );
+}
 
-  // Mock de endpoints auxiliares
-  await page.route('**/api/admin/workers/stats', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: { today: 0, yesterday: 0, sevenDaysAgo: 0 } }),
-    }),
-  );
-  await page.route('**/api/admin/workers/case-options', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: [] }),
-    }),
-  );
-
+async function loginAsAdmin(page: Page): Promise<void> {
+  await installFakeFirebaseAuth(page);
   await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
+  await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
+  await page.locator('input[type="password"]').fill('TestAdmin123!');
+  await page.getByRole('button', { name: /Iniciar sesión/i }).click();
+  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
 }
 
 /**
  * Registra mocks da API do worker e navega para a aba de Documentos.
- * Deve ser chamado APÓS loginAdmin().
+ * Deve ser chamado APÓS loginAsAdmin().
  */
 async function navigateToWorkerDocuments(
   page: Page,
@@ -232,7 +268,7 @@ test.describe('DocumentsGrid — Visibilidade por Profissão (Visual)', () => {
   // ── 1. AT — slots atOnly + banner âmbar ───────────────────────────────────────
 
   test('AT: exibe slot at_certificate e banner âmbar de obrigatoriedade', async ({ page }) => {
-    await loginAdmin(page);
+    await loginAsAdmin(page);
     const workerAT = makeWorker(WORKER_AT_ID, 'AT');
     await navigateToWorkerDocuments(page, WORKER_AT_ID, workerAT);
 
@@ -250,10 +286,14 @@ test.describe('DocumentsGrid — Visibilidade por Profissão (Visual)', () => {
     await expect(docsCard.locator('.bg-amber-50.border-amber-200')).toBeVisible();
 
     // professional_registration NÃO deve aparecer
-    await expect(docsCard.locator('[data-testid="doc-slot-professional_registration"]')).not.toBeVisible();
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-professional_registration"]'),
+    ).not.toBeVisible();
 
     // carta_recomendacion NÃO deve aparecer para AT
-    await expect(docsCard.locator('[data-testid="doc-slot-carta_recomendacion"]')).not.toBeVisible();
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-carta_recomendacion"]'),
+    ).not.toBeVisible();
 
     // Screenshot visual — AT com banner âmbar
     await expect(docsCard).toHaveScreenshot('documents-grid-at-with-amber-banner.png');
@@ -261,8 +301,10 @@ test.describe('DocumentsGrid — Visibilidade por Profissão (Visual)', () => {
 
   // ── 2. Cuidador — slots cuidadorOnly + sem banner âmbar ──────────────────────
 
-  test('Cuidador: exibe carta_recomendacion, oculta slots atOnly e não exibe banner âmbar', async ({ page }) => {
-    await loginAdmin(page);
+  test('Cuidador: exibe carta_recomendacion, oculta slots atOnly e não exibe banner âmbar', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
     const workerCuidador = makeWorker(WORKER_CUIDADOR_ID, 'CUIDADOR');
     await navigateToWorkerDocuments(page, WORKER_CUIDADOR_ID, workerCuidador);
 
@@ -277,12 +319,20 @@ test.describe('DocumentsGrid — Visibilidade por Profissão (Visual)', () => {
     await expect(docsCard.locator('[data-testid="doc-slot-criminal_record"]')).toBeVisible();
 
     // Slots atOnly ausentes
-    await expect(docsCard.locator('[data-testid="doc-slot-at_certificate"]')).not.toBeVisible();
-    await expect(docsCard.locator('[data-testid="doc-slot-apto_psicofisico"]')).not.toBeVisible();
-    await expect(docsCard.locator('[data-testid="doc-slot-analitico_universitario"]')).not.toBeVisible();
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-at_certificate"]'),
+    ).not.toBeVisible();
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-apto_psicofisico"]'),
+    ).not.toBeVisible();
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-analitico_universitario"]'),
+    ).not.toBeVisible();
 
     // professional_registration NÃO deve aparecer
-    await expect(docsCard.locator('[data-testid="doc-slot-professional_registration"]')).not.toBeVisible();
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-professional_registration"]'),
+    ).not.toBeVisible();
 
     // Banner âmbar NÃO deve aparecer para Cuidador
     await expect(docsCard.locator('.bg-amber-50.border-amber-200')).not.toBeVisible();
@@ -294,7 +344,7 @@ test.describe('DocumentsGrid — Visibilidade por Profissão (Visual)', () => {
   // ── 3. Label "Constancia de ARCA" para monotributo_certificate ───────────────
 
   test('Cuidador: monotributo_certificate exibe label "Constancia de ARCA"', async ({ page }) => {
-    await loginAdmin(page);
+    await loginAsAdmin(page);
     const workerCuidador = makeWorker(WORKER_CUIDADOR_ID, 'CUIDADOR');
     await navigateToWorkerDocuments(page, WORKER_CUIDADOR_ID, workerCuidador);
 
@@ -310,11 +360,13 @@ test.describe('DocumentsGrid — Visibilidade por Profissão (Visual)', () => {
   // ── 4. AT — professional_registration absolutamente ausente ──────────────────
 
   test('AT: professional_registration não é renderizado no grid', async ({ page }) => {
-    await loginAdmin(page);
+    await loginAsAdmin(page);
     const workerAT = makeWorker(WORKER_AT_ID, 'AT');
     await navigateToWorkerDocuments(page, WORKER_AT_ID, workerAT);
 
     const docsCard = page.locator('[data-testid="worker-documents-card"]');
-    await expect(docsCard.locator('[data-testid="doc-slot-professional_registration"]')).toHaveCount(0);
+    await expect(
+      docsCard.locator('[data-testid="doc-slot-professional_registration"]'),
+    ).toHaveCount(0);
   });
 });
