@@ -268,7 +268,8 @@
       "ageRangeAdolescents": "Adolescentes (13-17 anos)",
       "ageRangeAdults": "Adultos (18-59 anos)",
       "ageRangeElderly": "Idosos",
-      "saveError": "Erro ao salvar. Tente novamente."
+      "saveError": "Erro ao salvar. Tente novamente.",
+      "phoneNotAvailable": "O telefone informado não pode ser utilizado."
     },
     "serviceAddress": {
       "city": "Cidade",

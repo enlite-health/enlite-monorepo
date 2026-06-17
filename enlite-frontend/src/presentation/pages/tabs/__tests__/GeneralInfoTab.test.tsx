@@ -3,6 +3,20 @@ import { render, fireEvent, waitFor } from '@testing-library/react';
 import { GeneralInfoTab } from '../GeneralInfoTab';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
+import { ApiError } from '@infrastructure/http/ApiError';
+
+// i18n determinístico: t(key, defaultValue) → defaultValue (texto amigável).
+// Mantém os demais exports (ex.: initReactI18next, usado por config.ts).
+vi.mock('react-i18next', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-i18next')>();
+  return {
+    ...actual,
+    useTranslation: () => ({
+      t: (key: string, def?: string) => def ?? key,
+      i18n: { language: 'es', changeLanguage: vi.fn() },
+    }),
+  };
+});
 
 const mockTriggerSave = vi.fn();
 const mockSaveGeneralInfo = vi.fn().mockResolvedValue(undefined);
@@ -143,6 +157,39 @@ describe('GeneralInfoTab - Auto Save & Scroll', () => {
         behavior: 'smooth',
         block: 'start',
       });
+    });
+  });
+
+  // Regressão: o erro de telefone duplicado NUNCA pode mostrar SQL cru ao worker.
+  describe('erro de telefone (PHONE_NOT_AVAILABLE)', () => {
+    it('mostra mensagem amigável e NUNCA o SQL cru quando o backend retorna code PHONE_NOT_AVAILABLE', async () => {
+      const apiError = new ApiError(
+        {
+          success: false,
+          // mesmo que o backend mandasse uma mensagem feia, o code manda:
+          error: 'El teléfono ingresado no puede ser utilizado.',
+          code: 'PHONE_NOT_AVAILABLE',
+        },
+        409,
+      );
+      mockSaveGeneralInfo.mockRejectedValueOnce(apiError);
+
+      const { container } = render(<GeneralInfoTab />);
+      await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
+
+      fireEvent.submit(container.querySelector('form')!);
+
+      const errorBox = await waitFor(() => {
+        const el = container.querySelector('.bg-red-50');
+        expect(el).not.toBeNull();
+        return el!;
+      });
+
+      expect(errorBox.textContent).toContain('no puede ser utilizado');
+      // Garantia central: jamais expor detalhes de SQL/constraint.
+      expect(errorBox.textContent?.toLowerCase()).not.toContain('duplicate key');
+      expect(errorBox.textContent?.toLowerCase()).not.toContain('constraint');
+      expect(errorBox.textContent?.toLowerCase()).not.toContain('idx_workers_phone_unique');
     });
   });
 });

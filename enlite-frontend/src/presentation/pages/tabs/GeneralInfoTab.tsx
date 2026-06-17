@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrationStore';
 import { generalInfoSchema, GeneralInfoFormData } from '@presentation/validation/workerRegistrationSchemas';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
+import { ApiError } from '@infrastructure/http/ApiError';
 import { compressImage } from '@presentation/utils/imageCompression';
 import { formatDateFromISO, parseDateToISO } from '@presentation/hooks/useMask';
 import { Button } from '@presentation/components/atoms/Button';
@@ -112,13 +113,27 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     privacyAccepted: true,
   });
 
+  // Traduz o erro de salvamento para uma mensagem amigável.
+  // Erros com código conhecido (ex.: PHONE_NOT_AVAILABLE) viram mensagem
+  // localizada — nunca expomos a mensagem crua do backend (que pode conter
+  // detalhes de SQL/constraint) diretamente ao worker.
+  const resolveSaveErrorMessage = (error: unknown): string => {
+    if (error instanceof ApiError && error.code === 'PHONE_NOT_AVAILABLE') {
+      return t(
+        'workerRegistration.generalInfo.phoneNotAvailable',
+        'El teléfono ingresado no puede ser utilizado.',
+      );
+    }
+    return error instanceof Error ? error.message : t('workerRegistration.generalInfo.saveError');
+  };
+
   const triggerSave = useAutoSave(
     async () => {
       await saveGeneralInfo(buildSavePayload(getValues()));
     },
     500,
     (error) => {
-      setSaveError(error instanceof Error ? error.message : t('workerRegistration.generalInfo.saveError'));
+      setSaveError(resolveSaveErrorMessage(error));
     },
   );
 
@@ -132,7 +147,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : t('workerRegistration.generalInfo.saveError'));
+      setSaveError(resolveSaveErrorMessage(err));
       formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } finally {
       setIsSaving(false);

@@ -7,6 +7,7 @@
 
 import { Pool } from 'pg';
 import { Worker, SavePersonalInfoDTO } from '../domain/Worker';
+import { WORKER_ERROR_CODES } from '../domain/workerErrors';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
@@ -40,7 +41,9 @@ export async function updatePersonalInfo(
       encryptionService.encrypt(data.birthDate),
       encryptionService.encrypt(data.sex),
       encryptionService.encrypt(data.gender),
-      encryptionService.encrypt(data.phone),
+      // Quando phone vier vazio (use case decidiu manter o atual), encriptar
+      // null para que phone_encrypted seja preservado via COALESCE abaixo.
+      encryptionService.encrypt(data.phone || null),
       encryptionService.encrypt(data.documentNumber),
       encryptionService.encrypt(data.profilePhotoUrl),
       encryptionService.encrypt(
@@ -60,7 +63,7 @@ export async function updatePersonalInfo(
         document_type = $7,
         document_number_encrypted = $8,
         phone = COALESCE($9, phone),
-        phone_encrypted = $10,
+        phone_encrypted = COALESCE($10, phone_encrypted),
         profile_photo_url_encrypted = $11,
         languages_encrypted = $12,
         profession = $13,
@@ -135,6 +138,14 @@ export async function updatePersonalInfo(
 
     return Result.ok<Worker>(result.rows[0]);
   } catch (error: any) {
+    // Rede de segurança: o use case já evita colisões de telefone, mas se uma
+    // escapar (ex.: corrida ou formato inesperado), traduzimos a violação da
+    // constraint única para um código de domínio estável — NUNCA vazamos a
+    // mensagem crua do Postgres ("duplicate key ... idx_workers_phone_unique")
+    // para o cliente.
+    if (error?.code === '23505' && error?.constraint === 'idx_workers_phone_unique') {
+      return Result.fail<Worker>(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE);
+    }
     return Result.fail<Worker>(`Failed to update personal info: ${error.message}`);
   }
 }
