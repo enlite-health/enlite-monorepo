@@ -141,13 +141,18 @@ test('jornada worker completa via UI real → REGISTERED → wa.me', async ({ pa
   await goTab(/documento/i);
   await page.waitForTimeout(1000);
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
-  const inputs = page.locator('input[type="file"]');
-  const n = await inputs.count();
-  for (let i = 0; i < n; i++) {
-    await inputs.nth(i).setInputFiles({ name: `doc${i}.pdf`, mimeType: 'application/pdf', buffer: pdf }).catch(() => undefined);
-    await page.waitForTimeout(2200);
+  // Upload por SLOT (pula o verso quando SKIP_VERSO=1 — prova que o verso é OPCIONAL)
+  const slots = page.locator('[data-testid^="doc-slot-"]');
+  const ns = await slots.count();
+  let uploaded = 0; let skipped = '';
+  for (let i = 0; i < ns; i++) {
+    const slot = slots.nth(i);
+    const testid = await slot.getAttribute('data-testid');
+    if (process.env.SKIP_VERSO && testid === 'doc-slot-identity_document_back') { skipped = testid; continue; }
+    const inp = slot.locator('input[type="file"]');
+    if (await inp.count()) { await inp.first().setInputFiles({ name: `doc${i}.pdf`, mimeType: 'application/pdf', buffer: pdf }).catch(() => undefined); uploaded++; await page.waitForTimeout(2200); }
   }
-  console.log(`[EV] documentos: ${n} inputs`);
+  console.log(`[EV] documentos: ${ns} slots, ${uploaded} subidos, pulado=${skipped || 'nenhum'}`);
 
   // status via API
   await page.waitForTimeout(2000);
