@@ -67,6 +67,7 @@ const MOCK_ATTEMPT = {
   createdAt: '2026-06-01T10:00:00Z',
   updatedAt: '2026-06-15T14:30:00Z',
   workerName: 'Ana García',
+  workerPhone: '+5491112345678',
   vacancyTitle: 'CASO 766-1',
   vacancyCaseNumber: 766,
 };
@@ -199,19 +200,47 @@ describe('BlockedAttemptsPage — missing fields edge cases', () => {
 });
 
 describe('BlockedAttemptsPage — unknown worker/vacancy resolution', () => {
-  it('shows unknownWorker label when workerName is null', async () => {
+  it('shows worker name when present', async () => {
+    mockUseBlockedAttempts.mockReturnValue(POPULATED_STATE);
+    await renderAndWait();
+    expect(document.body.textContent).toContain('Ana García');
+  });
+
+  it('shows phone fallback when workerName is null but phone is available', async () => {
     mockUseBlockedAttempts.mockReturnValue({
       ...POPULATED_STATE,
-      attempts: [{ ...MOCK_ATTEMPT, workerName: null }],
+      attempts: [{ ...MOCK_ATTEMPT, workerName: null, workerPhone: '+5491112345678' }],
     });
     await renderAndWait();
-    expect(document.body.textContent).toContain('admin.blockedAttempts.table.unknownWorker');
+    expect(document.body.textContent).toContain('+5491112345678');
+    expect(document.body.textContent).not.toContain('Ana García');
+  });
+
+  it('shows noName i18n fallback when workerName and workerPhone are both null', async () => {
+    mockUseBlockedAttempts.mockReturnValue({
+      ...POPULATED_STATE,
+      attempts: [{ ...MOCK_ATTEMPT, workerName: null, workerPhone: null }],
+    });
+    await renderAndWait();
+    expect(document.body.textContent).toContain('admin.blockedAttempts.table.noName');
   });
 
   it('worker link still present when workerName is null', async () => {
     mockUseBlockedAttempts.mockReturnValue({
       ...POPULATED_STATE,
-      attempts: [{ ...MOCK_ATTEMPT, workerName: null }],
+      attempts: [{ ...MOCK_ATTEMPT, workerName: null, workerPhone: null }],
+    });
+    await renderAndWait();
+    const link = screen.getAllByRole('link').find(
+      (el) => el.getAttribute('href') === '/admin/workers/w-0001',
+    );
+    expect(link).toBeDefined();
+  });
+
+  it('worker link still present when only phone fallback is shown', async () => {
+    mockUseBlockedAttempts.mockReturnValue({
+      ...POPULATED_STATE,
+      attempts: [{ ...MOCK_ATTEMPT, workerName: null, workerPhone: '+5491112345678' }],
     });
     await renderAndWait();
     const link = screen.getAllByRole('link').find(

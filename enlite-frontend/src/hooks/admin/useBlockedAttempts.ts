@@ -17,6 +17,8 @@ import type {
 
 export interface ResolvedAttempt extends BlockedAttempt {
   workerName: string | null;
+  /** Phone number kept as fallback display when the worker has no name. */
+  workerPhone: string | null;
   vacancyTitle: string | null;
   vacancyCaseNumber: number | null;
 }
@@ -41,13 +43,19 @@ const DEFAULT_PAGINATION: BlockedAttemptsPagination = {
   hasPrev: false,
 };
 
+interface WorkerIdentity {
+  name: string | null;
+  phone: string | null;
+}
+
 /**
- * Resolves a set of worker IDs → { firstName, lastName } in parallel,
+ * Resolves a set of worker IDs → { name, phone } in parallel,
  * deduplicating IDs to avoid N+1.
+ * `phone` is kept as a display fallback when the worker has no name.
  */
-async function resolveWorkerNames(
+async function resolveWorkerIdentities(
   ids: string[],
-): Promise<Record<string, string | null>> {
+): Promise<Record<string, WorkerIdentity>> {
   const unique = [...new Set(ids)];
   const results = await Promise.all(
     unique.map(async (id) => {
@@ -57,9 +65,10 @@ async function resolveWorkerNames(
           w.firstName && w.lastName
             ? `${w.firstName} ${w.lastName}`
             : (w.firstName ?? w.lastName ?? null);
-        return [id, name] as const;
+        const phone = w.phone ?? w.whatsappPhone ?? null;
+        return [id, { name, phone }] as [string, WorkerIdentity];
       } catch {
-        return [id, null] as const;
+        return [id, { name: null, phone: null }] as [string, WorkerIdentity];
       }
     }),
   );
@@ -123,8 +132,8 @@ export function useBlockedAttempts(
         const workerIds = raw.map((a) => a.workerId);
         const vacancyIds = raw.map((a) => a.jobPostingId);
 
-        const [workerNames, vacancies] = await Promise.all([
-          resolveWorkerNames(workerIds),
+        const [workerIdentities, vacancies] = await Promise.all([
+          resolveWorkerIdentities(workerIds),
           resolveVacancies(vacancyIds),
         ]);
 
@@ -132,7 +141,8 @@ export function useBlockedAttempts(
 
         const resolved: ResolvedAttempt[] = raw.map((a) => ({
           ...a,
-          workerName: workerNames[a.workerId] ?? null,
+          workerName: workerIdentities[a.workerId]?.name ?? null,
+          workerPhone: workerIdentities[a.workerId]?.phone ?? null,
           vacancyTitle: vacancies[a.jobPostingId]?.title ?? null,
           vacancyCaseNumber: vacancies[a.jobPostingId]?.caseNumber ?? null,
         }));
