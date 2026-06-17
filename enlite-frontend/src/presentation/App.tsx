@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/features/auth/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RoleBasedHome } from './pages/home/RoleBasedHome';
@@ -44,6 +44,22 @@ const AdminFallback = () => (
   </div>
 );
 
+/**
+ * Alias EN → ES para a rota pública de vaga.
+ * O link correto é /vacantes/:id (espanhol). Mensagens disparadas antes do fix
+ * no backend (VacancyAutoInviteHandler) saíram com /vacancies/:id em inglês e
+ * caíam em tela branca. Este redirect resgata esses links já enviados,
+ * preservando id e query string.
+ */
+export function VacancyEnAliasRedirect() {
+  const { id } = useParams();
+  const { search } = useLocation();
+  // Limpa ponto/espaço no fim — links pré-migration 178/210 saíram como
+  // /vacancies/<id>. (autolink do WhatsApp colava o ponto na URL).
+  const cleanId = (id ?? '').replace(/[.\s]+$/, '');
+  return <Navigate to={`/vacantes/${cleanId}${search}`} replace />;
+}
+
 export function App() {
   return (
     <BrowserRouter>
@@ -61,6 +77,8 @@ export function App() {
             </Suspense>
           }
         />
+        {/* Alias EN → ES: resgata links antigos enviados como /vacancies/:id */}
+        <Route path="/vacancies/:id" element={<VacancyEnAliasRedirect />} />
         <Route
           path="/worker-registration"
           element={<Navigate to="/worker/profile" replace />}

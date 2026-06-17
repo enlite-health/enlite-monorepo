@@ -105,7 +105,7 @@ export function createVacancyAutoInviteHandler(
     // 4. TokenService para PII (worker_name)
     const tokenService = new TokenService(db);
 
-    const vacancyUrl = `https://app.enlite.health/vacancies/${jobPostingId}`;
+    const vacancyUrl = `https://app.enlite.health/vacantes/${jobPostingId}`;
 
     let enqueued = 0;
     let skipped = 0;
