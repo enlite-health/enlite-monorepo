@@ -349,7 +349,7 @@ describe('formatPendingDocuments', () => {
     expect(result).toBe('tu CV y tu certificado de AT');
   });
 
-  it('AT faltando tudo → lista todos os 5 obrigatórios sem seguro/matrícula', async () => {
+  it('AT faltando tudo → lista os 4 obrigatórios (verso opcional) sem seguro/matrícula', async () => {
     const db = makeDb([{
       profession: 'AT',
       has_documents: true,
@@ -361,7 +361,7 @@ describe('formatPendingDocuments', () => {
     }]);
     const result = await formatPendingDocuments(db, 'worker-at');
     expect(result).toContain('tu DNI');
-    expect(result).toContain('el dorso de tu DNI');
+    expect(result).not.toContain('el dorso'); // verso OPCIONAL desde mig 212
     expect(result).toContain('tus antecedentes penales');
     expect(result).toContain('tu CV');
     expect(result).toContain('tu certificado de AT');
@@ -403,7 +403,7 @@ describe('formatPendingDocuments', () => {
     expect(result).not.toContain('matrícula');
   });
 
-  it('Cuidador faltando DNI frente e verso → lista ambos', async () => {
+  it('Cuidador faltando DNI frente (verso opcional) → lista só a frente', async () => {
     const db = makeDb([{
       profession: 'CUIDADOR',
       has_documents: true,
@@ -414,12 +414,12 @@ describe('formatPendingDocuments', () => {
       at_certificate_url: null,
     }]);
     const result = await formatPendingDocuments(db, 'worker-cuidador');
-    expect(result).toBe('tu DNI y el dorso de tu DNI');
+    expect(result).toBe('tu DNI'); // verso OPCIONAL desde mig 212 — não listado
   });
 
   // ─── Profession null (UNKNOWN → trata como Cuidador) ───────────────────────
 
-  it('profession null → usa base set (3 docs), NÃO cita CV nem at_certificate', async () => {
+  it('profession null → usa base set (2 docs), NÃO cita CV nem at_certificate', async () => {
     const db = makeDb([{
       profession: null,
       has_documents: true,
@@ -437,7 +437,7 @@ describe('formatPendingDocuments', () => {
 
   // ─── Sem linha em worker_documents ──────────────────────────────────────────
 
-  it('AT sem linha em worker_documents → lista todos os 5 obrigatórios', async () => {
+  it('AT sem linha em worker_documents → lista os 4 obrigatórios (verso opcional)', async () => {
     const db = makeDb([{
       profession: 'AT',
       has_documents: false,
@@ -449,7 +449,7 @@ describe('formatPendingDocuments', () => {
     }]);
     const result = await formatPendingDocuments(db, 'worker-at-nodocs');
     expect(result).toContain('tu DNI');
-    expect(result).toContain('el dorso de tu DNI');
+    expect(result).not.toContain('el dorso'); // verso OPCIONAL desde mig 212
     expect(result).toContain('tus antecedentes penales');
     expect(result).toContain('tu CV');
     expect(result).toContain('tu certificado de AT');
@@ -457,7 +457,7 @@ describe('formatPendingDocuments', () => {
     expect(result).not.toContain('matrícula');
   });
 
-  it('Cuidador sem linha em worker_documents → lista os 3 obrigatórios base', async () => {
+  it('Cuidador sem linha em worker_documents → lista os 2 obrigatórios base (verso opcional)', async () => {
     const db = makeDb([{
       profession: 'CUIDADOR',
       has_documents: false,
@@ -469,18 +469,18 @@ describe('formatPendingDocuments', () => {
     }]);
     const result = await formatPendingDocuments(db, 'worker-cuidador-nodocs');
     expect(result).toContain('tu DNI');
-    expect(result).toContain('el dorso de tu DNI');
+    expect(result).not.toContain('el dorso'); // verso OPCIONAL desde mig 212
     expect(result).toContain('tus antecedentes penales');
     expect(result).not.toContain('CV');
     expect(result).not.toContain('certificado');
   });
 
-  it('worker não encontrado (rows vazio) → lista base set (3 docs)', async () => {
+  it('worker não encontrado (rows vazio) → lista base set (2 docs, verso opcional)', async () => {
     const db = makeDb([]);
     const result = await formatPendingDocuments(db, 'worker-missing');
     // profession null → UNKNOWN → base set: DNI + verso + antecedentes
     expect(result).toContain('tu DNI');
-    expect(result).toContain('el dorso de tu DNI');
+    expect(result).not.toContain('el dorso'); // verso OPCIONAL desde mig 212
     expect(result).toContain('tus antecedentes penales');
     expect(result).not.toContain('CV');
     expect(result).not.toContain('certificado');

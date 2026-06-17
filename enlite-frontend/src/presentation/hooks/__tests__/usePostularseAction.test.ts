@@ -41,14 +41,15 @@ const WHATSAPP_URL = 'https://wa.me/5511999999999';
 const JOB_POSTING_ID = 'vacancy-123';
 
 // COMPLETE_WORKER tem profession: 'caregiver' (não-AT).
-// Docs obrigatórios para Cuidador: identityDocumentUrl, identityDocumentBackUrl, criminalRecordUrl.
-// professionalRegistrationUrl e liabilityInsuranceUrl NÃO são mais obrigatórios.
+// Docs obrigatórios para Cuidador: identityDocumentUrl, criminalRecordUrl.
+// identityDocumentBackUrl (DNI verso) é OPCIONAL — não bloqueia postulação.
+// professionalRegistrationUrl e liabilityInsuranceUrl NÃO são obrigatórios.
 const COMPLETE_DOCS = {
   id: 'doc-1',
   workerId: 'w-1',
   resumeCvUrl: null,
   identityDocumentUrl: 'https://example.com/id.pdf',
-  identityDocumentBackUrl: 'https://example.com/id-back.pdf',
+  identityDocumentBackUrl: null,
   criminalRecordUrl: 'https://example.com/cr.pdf',
   professionalRegistrationUrl: null,
   liabilityInsuranceUrl: null,
@@ -264,13 +265,13 @@ describe('usePostularseAction', () => {
   // -------------------------------------------------------------------------
 
   // Docs obrigatórios para Cuidador (profession: 'caregiver'):
-  // identityDocumentUrl, identityDocumentBackUrl, criminalRecordUrl.
-  // professionalRegistration e liabilityInsurance NÃO são mais obrigatórios.
+  // identityDocumentUrl, criminalRecordUrl.
+  // identityDocumentBackUrl (DNI verso) é OPCIONAL — ausência NÃO bloqueia.
+  // professionalRegistration e liabilityInsurance NÃO são obrigatórios.
   // Chaves em missingFields.documents são o nome do campo sem o sufixo "Url"
   // (ex: identityDocumentUrl → identityDocument), conforme detectDocumentFields.
   it.each([
     ['identityDocumentUrl', 'identityDocument', { identityDocumentUrl: null }],
-    ['identityDocumentBackUrl', 'identityDocumentBack', { identityDocumentBackUrl: null }],
     ['criminalRecordUrl', 'criminalRecord', { criminalRecordUrl: null }],
   ])(
     'sets state to incomplete when %s is missing (no jobPostingId)',
@@ -289,6 +290,20 @@ describe('usePostularseAction', () => {
       expect(window.open).not.toHaveBeenCalled();
     },
   );
+
+  it('identityDocumentBackUrl absent does NOT block postulation (DNI verso is optional)', async () => {
+    mockGetDocuments.mockResolvedValue({ ...COMPLETE_DOCS, identityDocumentBackUrl: null });
+
+    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    // Worker has all required docs (identityDocument + criminalRecord) — verso absent → still eligible
+    expect(result.current.state).toBe('idle');
+    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+  });
 
   // -------------------------------------------------------------------------
   // 5. Authenticated + complete + sem jobPostingId → WhatsApp direto

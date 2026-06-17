@@ -3,7 +3,7 @@
  *
  * Testes de integração com banco REAL para fn_worker_missing_fields().
  *
- * Cobre TODAS as branches da função SQL (migration 209):
+ * Cobre TODAS as branches da função SQL (migration 212):
  *   - worker inexistente → ["worker_not_found"]
  *   - worker mesclado (merged_into_id != null) → ["worker_not_found"]
  *   - cada grupo de campo pessoal faltando (first_name, phone, etc.)
@@ -11,9 +11,13 @@
  *   - worker_availability ausente
  *   - worker_documents: não-AT com básicos incompletos
  *   - worker_documents: AT sem resume_cv e at_certificate
- *   - worker_documents: não-AT com básicos completos → NÃO falta
- *   - worker_documents: AT com todos obrigatórios → NÃO falta
- *   - worker completo → [] (elegível)
+ *   - worker_documents: não-AT com apenas frente+antecedentes (sem verso) → NÃO falta
+ *   - worker_documents: AT com todos obrigatórios (sem verso) → NÃO falta
+ *   - worker_documents: AT com apenas frente+antecedentes (sem cv+cert+verso) → FALTA
+ *   - worker completo (sem verso) → [] (elegível)
+ *
+ * identity_document_back_url: OPCIONAL desde migration 212. Ausência do verso
+ * NÃO deve aparecer em missing_fields para nenhuma profissão.
  *
  * Não usa API — acessa pool diretamente.
  */
@@ -117,20 +121,35 @@ describe('fn_worker_missing_fields — branches SQL (banco real)', () => {
     expect(await callFn(workerId)).toContain('worker_documents');
   });
 
-  it('AT com apenas documentos básicos (sem resume_cv + at_certificate) → inclui "worker_documents"', async () => {
+  it('AT com apenas frente+antecedentes (sem resume_cv + at_certificate + verso) → inclui "worker_documents"', async () => {
+    // verso é opcional; a ausência de cv e cert AT é que bloqueia o AT
     const workerId = await makeWorker('INCOMPLETE_REGISTER', 'at-no-extra', 'AT');
 
     await pool.query(
-      `INSERT INTO worker_documents (worker_id, identity_document_url, identity_document_back_url, criminal_record_url)
-       VALUES ($1, 'http://e.com/id', 'http://e.com/id-back', 'http://e.com/cr')`,
+      `INSERT INTO worker_documents (worker_id, identity_document_url, criminal_record_url)
+       VALUES ($1, 'http://e.com/id', 'http://e.com/cr')`,
       [workerId],
     );
 
     expect(await callFn(workerId)).toContain('worker_documents');
   });
 
-  it('não-AT com documentos básicos completos → NÃO inclui "worker_documents"', async () => {
-    const workerId = await makeWorker('REGISTERED', 'caregiver-docs', 'CAREGIVER');
+  it('não-AT com frente+antecedentes (SEM verso) → NÃO inclui "worker_documents" (verso opcional desde mig 212)', async () => {
+    // Prova central da migration 212: verso ausente não bloqueia
+    const workerId = await makeWorker('REGISTERED', 'caregiver-no-back', 'CAREGIVER');
+
+    await pool.query(
+      `INSERT INTO worker_documents (worker_id, identity_document_url, criminal_record_url)
+       VALUES ($1, 'http://e.com/id', 'http://e.com/cr')`,
+      [workerId],
+    );
+
+    expect(await callFn(workerId)).not.toContain('worker_documents');
+  });
+
+  it('não-AT com frente+verso+antecedentes (verso presente) → NÃO inclui "worker_documents"', async () => {
+    // verso presente ainda é aceito normalmente (é opcional, não proibido)
+    const workerId = await makeWorker('REGISTERED', 'caregiver-with-back', 'CAREGIVER');
 
     await pool.query(
       `INSERT INTO worker_documents (worker_id, identity_document_url, identity_document_back_url, criminal_record_url)
@@ -141,7 +160,24 @@ describe('fn_worker_missing_fields — branches SQL (banco real)', () => {
     expect(await callFn(workerId)).not.toContain('worker_documents');
   });
 
-  it('AT com todos os documentos obrigatórios → NÃO inclui "worker_documents"', async () => {
+  it('AT com frente+antecedentes+cv+cert (SEM verso) → NÃO inclui "worker_documents" (verso opcional desde mig 212)', async () => {
+    // AT: verso ausente não bloqueia; cv+cert presentes satisfazem o gate
+    const workerId = await makeWorker('REGISTERED', 'at-no-back', 'AT');
+
+    await pool.query(
+      `INSERT INTO worker_documents
+         (worker_id, identity_document_url, criminal_record_url,
+          resume_cv_url, at_certificate_url)
+       VALUES ($1, 'http://e.com/id', 'http://e.com/cr',
+               'http://e.com/cv', 'http://e.com/cert')`,
+      [workerId],
+    );
+
+    expect(await callFn(workerId)).not.toContain('worker_documents');
+  });
+
+  it('AT com todos os campos (com verso) → NÃO inclui "worker_documents"', async () => {
+    // Verso presente ainda é aceito
     const workerId = await makeWorker('REGISTERED', 'at-all-docs', 'AT');
 
     await pool.query(
@@ -156,8 +192,9 @@ describe('fn_worker_missing_fields — branches SQL (banco real)', () => {
     expect(await callFn(workerId)).not.toContain('worker_documents');
   });
 
-  it('worker com TODOS os campos preenchidos → [] (elegível)', async () => {
-    const workerId = await makeWorker('REGISTERED', 'complete', 'CAREGIVER');
+  it('worker CAREGIVER completo (SEM verso) → [] (elegível — mig 212)', async () => {
+    // Prova end-to-end: worker completamente preenchido SEM verso → array vazio
+    const workerId = await makeWorker('REGISTERED', 'complete-no-back', 'CAREGIVER');
 
     await pool.query(
       `UPDATE workers SET
@@ -169,7 +206,7 @@ describe('fn_worker_missing_fields — branches SQL (banco real)', () => {
          document_number_encrypted = 'enc-doc',
          document_type             = 'DNI',
          languages_encrypted       = 'enc-lang',
-         phone                     = '+5411999999999',
+         phone                     = '+5411888888888',
          knowledge_level           = 'BASIC',
          title_certificate         = 'DEGREE',
          years_experience          = '3-5',
@@ -192,10 +229,11 @@ describe('fn_worker_missing_fields — branches SQL (banco real)', () => {
       [workerId],
     );
 
+    // Somente frente + antecedentes — sem verso
     await pool.query(
       `INSERT INTO worker_documents
-         (worker_id, identity_document_url, identity_document_back_url, criminal_record_url)
-       VALUES ($1, 'http://e.com/id', 'http://e.com/id-back', 'http://e.com/cr')`,
+         (worker_id, identity_document_url, criminal_record_url)
+       VALUES ($1, 'http://e.com/id', 'http://e.com/cr')`,
       [workerId],
     );
 

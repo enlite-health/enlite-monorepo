@@ -211,14 +211,14 @@ export async function recalculateStatus(
          EXISTS (
            SELECT 1 FROM worker_documents wd
            WHERE wd.worker_id = w.id
-             AND wd.identity_document_url      IS NOT NULL
-             AND wd.identity_document_back_url IS NOT NULL
-             AND wd.criminal_record_url        IS NOT NULL
+             AND wd.identity_document_url IS NOT NULL
+             AND wd.criminal_record_url   IS NOT NULL
              AND (
                w.profession != 'AT'
                OR (wd.resume_cv_url IS NOT NULL AND wd.at_certificate_url IS NOT NULL)
              )
          )
+         -- identity_document_back_url: OPCIONAL desde migration 212
        ) AS is_complete
      FROM workers w
      WHERE w.id = $1`,
