@@ -21,7 +21,7 @@ const BASE_URL =
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: '**/staging-full-journey.e2e.ts',
+  testMatch: '**/staging-journey-clean.e2e.ts',
 
   // Sem globalSetup — staging não precisa verificar Docker local
   globalSetup: undefined,
