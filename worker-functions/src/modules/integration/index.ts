@@ -17,6 +17,7 @@ export { TalentumDescriptionService } from './infrastructure/TalentumDescription
 export type { GenerateDescriptionInput, GeneratedDescription } from './infrastructure/TalentumDescriptionService';
 export { GeminiVacancyParserService } from './infrastructure/GeminiVacancyParserService';
 export type { ParsedVacancyResult, WorkerType } from './infrastructure/GeminiVacancyParserService';
+export { GeminiApiError } from './infrastructure/gemini-fetch';
 export {
   parseFromTalentumDescriptionHelper,
   detectMissingFields,

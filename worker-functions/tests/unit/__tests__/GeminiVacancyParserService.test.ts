@@ -336,12 +336,12 @@ describe('GeminiVacancyParserService', () => {
     });
 
     it('throws on Gemini HTTP error after exhausting retries', async () => {
-      // 429 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      // 429 is transient — fetchGeminiWithRetry retries up to MAX_ATTEMPTS (5) then throws.
       mockFetch.mockResolvedValue(mockGeminiError(429, 'Rate limit'));
 
       const service = createService();
       await expect(service.parseFromText('Test', 'AT')).rejects.toThrow('Gemini API error 429');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('throws on empty Gemini response (no candidates)', async () => {

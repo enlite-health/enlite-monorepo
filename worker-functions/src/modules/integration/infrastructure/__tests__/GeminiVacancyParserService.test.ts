@@ -271,7 +271,7 @@ describe('GeminiVacancyParserService', () => {
 
   describe('tratamento de erros', () => {
     it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
-      // 429 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      // 429 is transient — fetchGeminiWithRetry retries up to MAX_ATTEMPTS (5) then throws.
       mockFetch.mockResolvedValue({
         ok: false,
         status: 429,
@@ -281,7 +281,7 @@ describe('GeminiVacancyParserService', () => {
       await expect(
         service.parseFromTalentumDescription('desc', 'CASO 1'),
       ).rejects.toThrow('Gemini API error 429');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('deve lancar erro quando Gemini retorna resposta vazia', async () => {
@@ -430,7 +430,7 @@ describe('GeminiVacancyParserService', () => {
     });
 
     it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
-      // 500 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      // 500 is transient — fetchGeminiWithRetry retries up to MAX_ATTEMPTS (5) then throws.
       mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
@@ -438,7 +438,7 @@ describe('GeminiVacancyParserService', () => {
       });
 
       await expect(service.parseFromPdf('dGVzdA==', 'AT')).rejects.toThrow('Gemini API error 500');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('deve lancar erro quando Gemini retorna resposta vazia', async () => {

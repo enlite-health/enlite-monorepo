@@ -13,12 +13,15 @@
 // ── Mocks ────────────────────────────────────────────────────────
 
 const mockExecute = jest.fn();
+const mockQuery = jest.fn().mockResolvedValue({ rows: [] });
+const mockGenerateDescriptionPreview = jest.fn();
+const mockGenerateFromVacancyData = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
       getPool: jest.fn().mockReturnValue({
-        query: jest.fn().mockResolvedValue({ rows: [] }),
+        query: mockQuery,
         connect: jest.fn().mockResolvedValue({
           query: jest.fn().mockResolvedValue({ rows: [] }),
           release: jest.fn(),
@@ -27,6 +30,18 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
     }),
   },
 }));
+
+// Mirrors the real GeminiApiError shape (status + isTransient getter) so the
+// controller's `instanceof` + transient-mapping branch is exercised faithfully.
+class MockGeminiApiError extends Error {
+  constructor(readonly status: number, readonly body: string) {
+    super(`Gemini API error ${status}: ${body}`);
+    this.name = 'GeminiApiError';
+  }
+  get isTransient(): boolean {
+    return this.status === 429 || (this.status >= 500 && this.status <= 599);
+  }
+}
 
 jest.mock('@modules/integration', () => ({
   SyncTalentumVacanciesUseCase: jest.fn().mockImplementation(() => ({
@@ -45,7 +60,12 @@ jest.mock('@modules/integration', () => ({
   },
   TalentumDescriptionService: jest.fn().mockImplementation(() => ({
     generateDescription: jest.fn(),
+    generateDescriptionPreview: mockGenerateDescriptionPreview,
   })),
+  GeminiVacancyParserService: jest.fn().mockImplementation(() => ({
+    generateFromVacancyData: mockGenerateFromVacancyData,
+  })),
+  GeminiApiError: MockGeminiApiError,
 }));
 
 // ── Imports ──────────────────────────────────────────────────────
@@ -239,5 +259,76 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
       expect(data).toHaveProperty('errors');
       expect(data.errors).toEqual([]);
     });
+  });
+});
+
+// ── generateAIContent — mapeamento de erro de IA ───────────────────
+//
+// Não-recorrência do incidente de 2026-06-17: um 429 RESOURCE_EXHAUSTED do
+// Vertex (DSQ saturada) vazava o JSON cru da API pro operador. Deve virar
+// 503 retryable com mensagem amigável, sem `details`.
+describe('VacancyTalentumController — generateAIContent', () => {
+  let controller: VacancyTalentumController;
+
+  const vacancyRow = {
+    rows: [{
+      id: 'vac-1', title: 'CASO 701-1546', case_number: 701,
+      required_professions: ['AT'], required_sex: null,
+      age_range_min: null, age_range_max: null, required_experience: null,
+      worker_attributes: null, schedule: null, work_schedule: null,
+      providers_needed: 1, salary_text: null, payment_day: null, daily_obs: null,
+      address_formatted: null, city: null, state: null,
+      diagnosis: null, dependency_level: null, service_type: null,
+    }],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'error').mockImplementation();
+    mockQuery.mockResolvedValue({ rows: [] });
+    controller = new VacancyTalentumController();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('deve retornar 503 amigável (sem details) quando Gemini 429 (DSQ)', async () => {
+    mockQuery.mockResolvedValueOnce(vacancyRow);
+    mockGenerateDescriptionPreview.mockRejectedValue(
+      new MockGeminiApiError(429, '{ "error": { "status": "RESOURCE_EXHAUSTED" } }'),
+    );
+    mockGenerateFromVacancyData.mockResolvedValue({
+      prescreening: { questions: [], faq: [] },
+    });
+
+    const req = { ...makeMockReq(), params: { id: 'vac-1' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.generateAIContent(req as Request, res as Response);
+
+    expect(getStatus()).toBe(503);
+    expect(getBody().success).toBe(false);
+    expect(getBody().error).toContain('sobrecargado');
+    // Crítico: NÃO vaza o JSON cru da API.
+    expect(getBody().details).toBeUndefined();
+    expect(getBody().error).not.toContain('RESOURCE_EXHAUSTED');
+  });
+
+  it('deve manter 500 + details para erro não-transitório (não-Gemini)', async () => {
+    mockQuery.mockResolvedValueOnce(vacancyRow);
+    mockGenerateDescriptionPreview.mockRejectedValue(new Error('boom interno'));
+    mockGenerateFromVacancyData.mockResolvedValue({
+      prescreening: { questions: [], faq: [] },
+    });
+
+    const req = { ...makeMockReq(), params: { id: 'vac-1' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.generateAIContent(req as Request, res as Response);
+
+    expect(getStatus()).toBe(500);
+    expect(getBody().error).toBe('Failed to generate AI content');
+    expect(getBody().details).toBe('boom interno');
   });
 });

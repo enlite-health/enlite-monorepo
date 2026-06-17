@@ -404,13 +404,13 @@ describe('TalentumDescriptionService', () => {
 
     it('throws on Gemini HTTP error after exhausting retries', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
-      // 429 is transient — retried 3 times before bubbling up.
+      // 429 is transient — retried up to MAX_ATTEMPTS (5) before bubbling up.
       mockFetch.mockResolvedValue(mockGeminiError(429, 'Rate limit exceeded'));
 
       const service = createService();
       await expect(service.generateDescription('job-rate-limit'))
         .rejects.toThrow('Gemini API error 429');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('throws on empty Gemini response (no content)', async () => {
