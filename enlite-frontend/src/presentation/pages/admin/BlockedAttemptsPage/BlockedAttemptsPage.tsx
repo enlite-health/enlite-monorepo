@@ -107,7 +107,10 @@ function AttemptRow({ attempt }: AttemptRowProps): JSX.Element {
   const reasonColor =
     REASON_BADGE_COLORS[attempt.blockedReason] ?? 'bg-slate-100 text-slate-700';
 
-  const workerLabel = attempt.workerName ?? ba('table.unknownWorker');
+  const workerLabel =
+    attempt.workerName ??
+    attempt.workerPhone ??
+    t('admin.blockedAttempts.table.noName', { id: attempt.workerId.slice(0, 8) });
   const vacancyLabel =
     attempt.vacancyTitle ??
     (attempt.vacancyCaseNumber

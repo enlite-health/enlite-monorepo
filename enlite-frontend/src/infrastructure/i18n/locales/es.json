@@ -654,7 +654,8 @@
         "attempts": "Intentos",
         "lastAttempt": "Último intento",
         "unknownWorker": "Worker desconocido",
-        "unknownVacancy": "Vacante desconocida"
+        "unknownVacancy": "Vacante desconocida",
+        "noName": "Sin nombre · {{id}}"
       },
       "reason": {
         "registration_incomplete": "Registro incompleto",
