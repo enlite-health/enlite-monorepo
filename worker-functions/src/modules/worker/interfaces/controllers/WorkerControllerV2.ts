@@ -13,6 +13,14 @@ import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepositor
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { WORKER_ERROR_CODES } from '../../domain/workerErrors';
+
+/**
+ * Mensagem amigável (pt-BR fallback do backend) para PHONE_NOT_AVAILABLE.
+ * Por privacidade NÃO revela que o número pertence a outra conta. O frontend
+ * localiza a partir do `code`; esta string é a rede de segurança caso não o faça.
+ */
+const PHONE_NOT_AVAILABLE_MESSAGE = 'El teléfono ingresado no puede ser utilizado.';
 
 export class WorkerControllerV2 {
   private initWorkerUseCase: InitWorkerUseCase;
@@ -168,10 +176,9 @@ export class WorkerControllerV2 {
       }
 
       if (result.isFailure) {
-        res.status(400).json({
-          success: false,
-          error: result.error,
-        });
+        // step 2 (info pessoal) pode retornar PHONE_NOT_AVAILABLE — mapeia para
+        // 409 + code; demais erros caem no 400 genérico.
+        this.sendPersonalInfoFailure(res, result.error);
         return;
       }
 
@@ -230,6 +237,23 @@ export class WorkerControllerV2 {
     return result.getValue()!.id;
   }
 
+  /**
+   * Traduz a falha de salvamento de info pessoal para a resposta HTTP.
+   * Códigos de domínio conhecidos (ex.: PHONE_NOT_AVAILABLE) viram status +
+   * `code` + mensagem amigável; qualquer outro erro mantém o 400 genérico.
+   */
+  private sendPersonalInfoFailure(res: Response, error: string | undefined): void {
+    if (error === WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) {
+      res.status(409).json({
+        success: false,
+        code: WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE,
+        error: PHONE_NOT_AVAILABLE_MESSAGE,
+      });
+      return;
+    }
+    res.status(400).json({ success: false, error });
+  }
+
   async saveGeneralInfo(req: Request, res: Response): Promise<void> {
     try {
       const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
@@ -247,7 +271,7 @@ export class WorkerControllerV2 {
       const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body });
 
       if (result.isFailure) {
-        res.status(400).json({ success: false, error: result.error });
+        this.sendPersonalInfoFailure(res, result.error);
         return;
       }
 
