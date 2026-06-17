@@ -26,6 +26,7 @@ import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
+import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
@@ -114,6 +115,7 @@ export function App() {
           <Route path="vacancies/:id/match" element={<VacancyMatchPage />} />
           <Route path="recruitment" element={<AdminRecruitmentPage />} />
           <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
+          <Route path="recruitment/blocked-attempts" element={<BlockedAttemptsPage />} />
           <Route path="workers" element={<AdminWorkersPage />} />
           <Route path="workers/:id" element={<WorkerDetailPage />} />
           <Route path="patients" element={<AdminPatientsPage />} />

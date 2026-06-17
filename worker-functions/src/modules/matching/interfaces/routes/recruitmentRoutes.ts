@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { RecruitmentController } from '../controllers/RecruitmentController';
 import { RecruitmentAnalyticsController } from '../controllers/RecruitmentAnalyticsController';
+import { RecruitmentBlockedController } from '../controllers/RecruitmentBlockedController';
 import { AuthMiddleware } from '@modules/identity';
 
 /**
@@ -15,6 +16,7 @@ export function createRecruitmentRoutes(
 ): Router {
   const router = Router();
   const analyticsController = new RecruitmentAnalyticsController();
+  const blockedController = new RecruitmentBlockedController();
 
   // ── Temporary test routes (No Auth) ──────────────────────────────────────────
   // TODO: Remove in production
@@ -64,6 +66,9 @@ export function createRecruitmentRoutes(
   );
   router.post('/admin/recruitment/calculate-reemplazos', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     analyticsController.calculateReemplazos(req, res),
+  );
+  router.get('/admin/recruitment/blocked-attempts', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    blockedController.listBlockedAttempts(req, res),
   );
 
   return router;

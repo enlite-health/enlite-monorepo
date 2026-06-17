@@ -3,6 +3,7 @@ import { CloudTasksClient } from '../CloudTasksClient';
 import { MatchmakingService } from '../../../modules/matching/infrastructure/MatchmakingService';
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
 import { logger, reportError, loggingAls } from '../../logging';
+import { getRequiredColumns } from '../../../modules/worker/application/workerDocumentPolicy';
 
 const TEMPLATE_SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const TEMPLATE_SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
@@ -22,11 +23,13 @@ interface PatientZoneRow {
 }
 
 interface WorkerDocumentsRow {
-  resume_cv_url:                string | null;
-  identity_document_url:        string | null;
-  criminal_record_url:          string | null;
-  professional_registration_url: string | null;
-  liability_insurance_url:       string | null;
+  profession:                    string | null;
+  has_documents:                 boolean;
+  identity_document_url:         string | null;
+  identity_document_back_url:    string | null;
+  criminal_record_url:           string | null;
+  resume_cv_url:                 string | null;
+  at_certificate_url:            string | null;
 }
 
 /**
@@ -227,47 +230,77 @@ export function createVacancyAutoInviteHandler(
   };
 }
 
+/** Maps required SQL column names to their Spanish labels used in WhatsApp messages. */
+const COLUMN_TO_LABEL: Record<string, string> = {
+  identity_document_url:      'tu DNI',
+  identity_document_back_url: 'el dorso de tu DNI',
+  criminal_record_url:        'tus antecedentes penales',
+  resume_cv_url:              'tu CV',
+  at_certificate_url:         'tu certificado de AT',
+};
+
 /**
  * Monta a string de documentos pendentes para o template ar_vacancy_match_incomplete.
  *
- * Consulta worker_documents e lista campos NULL como itens separados por " y ".
+ * Faz JOIN com workers para obter a profissão do worker e determina quais colunas
+ * são obrigatórias conforme workerDocumentPolicy.getRequiredColumns(profession).
+ * Lista apenas as obrigatórias que estiverem NULL.
+ *
  * Se TUDO está preenchido (caso raro com status='INCOMPLETE_REGISTER'), retorna
  * o fallback "completar tu perfil".
  */
 export async function formatPendingDocuments(db: Pool, workerId: string): Promise<string> {
   const res = await db.query<WorkerDocumentsRow>(
-    `SELECT resume_cv_url,
-            identity_document_url,
-            criminal_record_url,
-            professional_registration_url,
-            liability_insurance_url
-     FROM worker_documents
-     WHERE worker_id = $1
+    `SELECT w.profession,
+            (wd.worker_id IS NOT NULL) AS has_documents,
+            wd.identity_document_url,
+            wd.identity_document_back_url,
+            wd.criminal_record_url,
+            wd.resume_cv_url,
+            wd.at_certificate_url
+     FROM workers w
+     LEFT JOIN worker_documents wd ON wd.worker_id = w.id
+     WHERE w.id = $1
      LIMIT 1`,
     [workerId],
   );
 
-  const pending: string[] = [];
+  const requiredColumns = getRequiredColumns(res.rows[0]?.profession ?? null);
 
-  if (res.rows.length === 0) {
-    // Sem linha em worker_documents — todos os documentos estão faltando
-    return 'tu CV, tu DNI, tus antecedentes penales, tu matrícula profesional y tu seguro de responsabilidad civil';
+  if (res.rows.length === 0 || !res.rows[0].has_documents) {
+    // Worker não encontrado ou sem linha em worker_documents — todos obrigatórios faltando
+    const allLabels = requiredColumns.map(col => COLUMN_TO_LABEL[col]).filter(Boolean);
+    return joinWithY(allLabels) || 'completar tu perfil';
   }
 
   const row = res.rows[0];
-  if (!row.resume_cv_url)                pending.push('tu CV');
-  if (!row.identity_document_url)        pending.push('tu DNI');
-  if (!row.criminal_record_url)          pending.push('tus antecedentes penales');
-  if (!row.professional_registration_url) pending.push('tu matrícula profesional');
-  if (!row.liability_insurance_url)      pending.push('tu seguro de responsabilidad civil');
+  const pending: string[] = [];
+
+  for (const col of requiredColumns) {
+    const value = row[col as keyof WorkerDocumentsRow];
+    if (!value) {
+      const label = COLUMN_TO_LABEL[col];
+      if (label) pending.push(label);
+    }
+  }
 
   if (pending.length === 0) {
-    // Caso raro: status=INCOMPLETE_REGISTER mas todos os docs preenchidos
+    // Caso raro: status=INCOMPLETE_REGISTER mas todos os docs obrigatórios preenchidos
     return 'completar tu perfil';
   }
 
-  // Concatena com " y " entre os últimos dois e ", " entre os demais
-  if (pending.length === 1) return pending[0];
-  const last = pending.pop()!;
-  return `${pending.join(', ')} y ${last}`;
+  return joinWithY(pending);
+}
+
+/**
+ * Concatena itens com ", " entre os primeiros e " y " antes do último.
+ * Ex: ['a', 'b', 'c'] → 'a, b y c'
+ *     ['a']           → 'a'
+ */
+function joinWithY(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  const last = items[items.length - 1];
+  const rest = items.slice(0, -1);
+  return `${rest.join(', ')} y ${last}`;
 }

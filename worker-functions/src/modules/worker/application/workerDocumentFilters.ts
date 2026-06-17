@@ -8,46 +8,40 @@
  * worker_documents.document_validations — not the camelCase TS field names
  * from WorkerDocumentsRepository.
  *
- * camelCase ↔ slug mapping:
- *   resumeCvUrl                → resume_cv
- *   identityDocumentUrl        → identity_document
- *   identityDocumentBackUrl    → identity_document_back
- *   criminalRecordUrl          → criminal_record
- *   professionalRegistrationUrl→ professional_registration
- *   liabilityInsuranceUrl      → liability_insurance
- *   monotributoCertificateUrl  → monotributo_certificate  (AT-only)
- *   atCertificateUrl           → at_certificate           (AT-only)
+ * Required slugs per profession are delegated to workerDocumentPolicy
+ * (single source of truth). The constants below are re-exported for consumers
+ * that need to reference them directly (e.g. E2E tests).
+ *
+ * Uses `jsonb_exists_all()` (the function form of `?&`) to avoid the `pg`
+ * driver mis-interpreting `?` as a positional parameter placeholder.
  */
 
-/** Base required doc slugs for all workers (profession != 'AT' or NULL). */
-export const REQUIRED_DOC_SLUGS_BASE: readonly string[] = [
-  'resume_cv',
-  'identity_document',
-  'identity_document_back',
-  'criminal_record',
-  'professional_registration',
-  'liability_insurance',
-] as const;
+import { getRequiredSlugs } from './workerDocumentPolicy';
 
-/** Extra required doc slugs when profession = 'AT' (appended to base). */
-export const REQUIRED_DOC_SLUGS_AT_EXTRA: readonly string[] = [
-  'monotributo_certificate',
-  'at_certificate',
-] as const;
+/** Required doc slugs for AT workers (re-exported for test convenience). */
+export const REQUIRED_DOC_SLUGS_AT: readonly string[] = getRequiredSlugs('AT');
+
+/** Required doc slugs for non-AT workers / profession=NULL (re-exported for test convenience). */
+export const REQUIRED_DOC_SLUGS_BASE: readonly string[] = getRequiredSlugs(null);
 
 /**
  * Internal: returns the bare CASE…END fragment (no outer parentheses, no IS NOT NULL guard).
  * Public functions wrap this with the IS NOT NULL check and optionally negate it.
+ *
+ * Branches:
+ *   profession='AT'          → AT slugs  (identity_document, identity_document_back,
+ *                                          criminal_record, resume_cv, at_certificate)
+ *   profession IS NOT NULL    → base slugs (identity_document, identity_document_back,
+ *                                          criminal_record)
+ *   profession IS NULL        → base slugs (same as non-AT)
  */
 function _allValidatedFragment(wdAlias: string): string {
+  const atSlugs = REQUIRED_DOC_SLUGS_AT.map((s) => `'${s}'`).join(', ');
   const baseSlugs = REQUIRED_DOC_SLUGS_BASE.map((s) => `'${s}'`).join(', ');
-  const allSlugs = [...REQUIRED_DOC_SLUGS_BASE, ...REQUIRED_DOC_SLUGS_AT_EXTRA]
-    .map((s) => `'${s}'`)
-    .join(', ');
 
   return (
     `CASE WHEN w.profession = 'AT'` +
-    ` THEN jsonb_exists_all(${wdAlias}.document_validations, array[${allSlugs}])` +
+    ` THEN jsonb_exists_all(${wdAlias}.document_validations, array[${atSlugs}])` +
     ` ELSE jsonb_exists_all(${wdAlias}.document_validations, array[${baseSlugs}])` +
     ` END`
   );
@@ -60,9 +54,6 @@ function _allValidatedFragment(wdAlias: string): string {
  * Assumptions (matching the existing list/export queries):
  *   - The `workers` table is always aliased as `w`.
  *   - The `worker_documents` table alias is passed via `wdAlias` (typically 'wd').
- *
- * Uses `jsonb_exists_all()` (the function form of `?&`) to avoid the `pg`
- * driver mis-interpreting `?` as a positional parameter placeholder.
  *
  * Usage in WHERE:
  *   `AND ${buildAllValidatedClause('wd')}`

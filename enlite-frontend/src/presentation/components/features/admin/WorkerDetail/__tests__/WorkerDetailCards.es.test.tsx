@@ -363,7 +363,8 @@ describe('WorkerDocumentsCard — es labels', () => {
     expect(screen.getByText('Currículum')).toBeInTheDocument();
     expect(screen.getByText('DNI - Frente')).toBeInTheDocument();
     expect(screen.getByText('Antecedentes penales')).toBeInTheDocument();
-    expect(screen.getByText('Registro profesional')).toBeInTheDocument();
+    // professional_registration oculto por política ABAC — não deve aparecer
+    expect(screen.queryByText('Registro profesional')).not.toBeInTheDocument();
     expect(screen.getByText('Seguro de responsabilidad')).toBeInTheDocument();
   });
 
@@ -382,9 +383,9 @@ describe('WorkerDocumentsCard — es labels', () => {
     expect(screen.getByText('Antecedentes penales')).toBeInTheDocument();
   });
 
-  it('renders document type "Registro profesional"', () => {
+  it('does not render "Registro profesional" (oculto por política ABAC)', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...docHandlers} />);
-    expect(screen.getByText('Registro profesional')).toBeInTheDocument();
+    expect(screen.queryByText('Registro profesional')).not.toBeInTheDocument();
   });
 
   it('renders document type "Seguro de responsabilidad"', () => {

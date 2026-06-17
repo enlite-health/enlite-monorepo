@@ -10,7 +10,10 @@ export type DocumentType =
   | 'professional_registration'
   | 'liability_insurance'
   | 'monotributo_certificate'
-  | 'at_certificate';
+  | 'at_certificate'
+  | 'apto_psicofisico'
+  | 'analitico_universitario'
+  | 'carta_recomendacion';
 
 export interface SignedUploadResult {
   signedUrl: string;

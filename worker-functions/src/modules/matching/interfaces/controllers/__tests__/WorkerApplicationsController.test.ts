@@ -177,6 +177,33 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'facebook']);
   });
 
+  // GUARD do gatilho: postulação sem UTM (channel ausente ou null) NÃO pode dar 400.
+  // É o caminho principal — o frontend chama track-channel a cada clique mesmo sem UTM,
+  // mandando channel=null. Se o schema voltar a exigir channel, o gatilho quebra silencioso.
+  it('accepts request WITHOUT channel (no UTM) — proceeds, persists acquisition_channel=null', async () => {
+    mockWorkerFound('w-1');
+    mockDbSuccess();
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(mockQuery.mock.calls[2][1]).toEqual(['w-1', 'jp-1', null]);
+  });
+
+  it('accepts explicit channel=null (no UTM) — proceeds, persists acquisition_channel=null', async () => {
+    mockWorkerFound('w-1');
+    mockDbSuccess();
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: null }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(mockQuery.mock.calls[2][1]).toEqual(['w-1', 'jp-1', null]);
+  });
+
   // ── Encuadre creation ──────────────────────────────────────────────────
 
   it('creates encuadre with decrypted name and channel as import_source_audit', async () => {
@@ -302,6 +329,9 @@ describe('WorkerApplicationsController — trackChannel', () => {
   it('returns 403 when worker.status = INCOMPLETE_REGISTER', async () => {
     mockWorkerFound('w-1');
     mockWorkerEligible('INCOMPLETE_REGISTER');
+    // RecordBlockedAttemptUseCase chama fn_worker_missing_fields (query extra, fire-and-forget)
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["phone"]' }] }); // fn_worker_missing_fields
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });                      // INSERT worker_blocked_applications
 
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
     await controller.trackChannel(req, res);
@@ -311,13 +341,20 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(body.code).toBe('WORKER_NOT_ELIGIBLE');
     expect(body.reason).toBe('registration_incomplete');
     expect(body.workerStatus).toBe('INCOMPLETE_REGISTER');
-    // Não deve ter chamado upsert/encuadre
-    expect(mockQuery).toHaveBeenCalledTimes(2); // só worker lookup + eligibility check
+    // NÃO deve ter chamado WJA upsert nem encuadre insert — só worker lookup + eligibility +
+    // fn_worker_missing_fields + INSERT worker_blocked_applications (fire-and-forget)
+    expect(mockQuery).toHaveBeenCalledTimes(4);
+    // Confirma que WJA upsert nunca foi chamado
+    const queryCalls = mockQuery.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(queryCalls.some(q => q.includes('worker_job_applications'))).toBe(false);
   });
 
   it('returns 403 when worker.status = DISABLED', async () => {
     mockWorkerFound('w-1');
     mockWorkerEligible('DISABLED');
+    // RecordBlockedAttemptUseCase para worker_disabled NÃO chama fn_worker_missing_fields
+    // mas chama o INSERT (query extra, fire-and-forget)
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 }); // INSERT worker_blocked_applications
 
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'instagram' }, 'uid-1');
     await controller.trackChannel(req, res);
@@ -325,7 +362,11 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     const body = (res.json as jest.Mock).mock.calls[0][0];
     expect(body.reason).toBe('worker_disabled');
-    expect(mockQuery).toHaveBeenCalledTimes(2);
+    // 2 (lookup + eligibility) + 1 (INSERT blocked — sem fn_worker_missing_fields para DISABLED)
+    expect(mockQuery).toHaveBeenCalledTimes(3);
+    // Confirma que WJA upsert nunca foi chamado
+    const queryCalls = mockQuery.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(queryCalls.some(q => q.includes('worker_job_applications'))).toBe(false);
   });
 
   it('returns 403 when worker row disappears between progress and eligibility (race)', async () => {

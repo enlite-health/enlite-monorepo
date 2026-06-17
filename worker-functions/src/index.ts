@@ -17,7 +17,7 @@ process.on('uncaughtException', (err: Error) => {
 });
 
 import express, { Request, Response } from 'express';
-import cors from 'cors';
+import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
 import { AdminPatientsController, createAdminPatientsRoutes } from '@modules/case';
@@ -65,29 +65,8 @@ import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
 
 const app = express();
 
-// CORS configuration
-const allowedOrigins = [
-  'https://enlite-frontend-121472682203.southamerica-west1.run.app',
-  'https://app.enlite.health',
-  'https://enlite-n8n-121472682203.southamerica-west1.run.app',
-  'https://n8n.enlite.health',
-  'http://localhost:3000', // Local development
-  'http://localhost:5173', // Vite default port
-];
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Partner-Key'],
-}));
+// CORS — origens default + CORS_ALLOWED_ORIGINS (CSV). Ver shared/http/corsConfig.
+app.use(corsMiddleware());
 
 app.use(express.json({
   limit: '60mb',

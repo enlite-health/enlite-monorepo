@@ -7,6 +7,10 @@
  *
  * API mockada via page.route() — não requer Docker stack.
  * Usa o storageState de autenticação gerado pelo auth.setup.ts.
+ *
+ * Cenário: worker sem profissão definida (tratado como CUIDADOR).
+ * Docs obrigatórios para CUIDADOR: identity_document, identity_document_back, criminal_record.
+ * Seção documentos: (0/3) — NÃO inclui AFIP nem seguro de responsabilidade civil.
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -20,22 +24,19 @@ const CARD_TITLE         = 'Complete su Perfil Profesional';
 const SECTION_REGISTRO   = 'Registro Básico';
 const SECTION_DOCUMENTOS = 'Documentos Profesionales';
 
-const STEP_LABELS = [
-  'Información General',
-  'Dirección de Atención',
-  'Disponibilidad',
-  'Cargue su currículum en PDF',
-  'Cargue su DNI en PDF',
-  'Cargue sus antecedentes penales en PDF',
-  'Cargue su constancia de registro en AFIP en PDF',
-  'Cargue su póliza de seguro de responsabilidad civil en PDF',
+// Worker sem profissão = CUIDADOR → 3 docs obrigatórios.
+// Labels via t('documentTypes.<slug>') conforme es.json.
+const DOC_STEP_LABELS = [
+  'DNI - Frente',
+  'DNI - Dorso',
+  'Antecedentes penales',
 ] as const;
 
 const BTN_COMPLETAR = 'Completar Registro';
 
 // ── Mocks de API ─────────────────────────────────────────────────────────────
 
-/** Worker com perfil vazio — garante que o card apareça com todas as seções */
+/** Worker com perfil vazio e sem profissão — cai no caminho CUIDADOR */
 const EMPTY_WORKER_MOCK = {
   id: 'test-worker-id',
   authUid: 'test-uid',
@@ -47,22 +48,33 @@ const EMPTY_WORKER_MOCK = {
   timezone: 'America/Argentina/Buenos_Aires',
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  // profession não definida → classifyProfession → CUIDADOR
 };
 
+/** Documentos vazios — todos os campos null */
 const EMPTY_DOCUMENTS_MOCK = {
   id: 'test-docs-id',
   workerId: 'test-worker-id',
   resumeCvUrl: null,
   identityDocumentUrl: null,
+  identityDocumentBackUrl: null,
   criminalRecordUrl: null,
   professionalRegistrationUrl: null,
   liabilityInsuranceUrl: null,
+  monotributoCertificateUrl: null,
+  atCertificateUrl: null,
+  aptoPsicofisicoUrl: null,
+  analiticoUniversitarioUrl: null,
+  cartaRecomendacionUrl: null,
+  documentsStatus: 'pending',
+  submittedAt: null,
+  updatedAt: new Date().toISOString(),
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function mockApis(page: Page): Promise<void> {
-  // Mock GET /api/workers/me — retorna worker com perfil vazio
+  // Mock GET /api/workers/me — retorna worker com perfil vazio (sem profissão)
   await page.route('**/api/workers/me', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.continue();
@@ -111,8 +123,8 @@ async function assertSectionsVisible(page: Page): Promise<void> {
   await expect(page.getByText(SECTION_DOCUMENTOS)).toBeVisible();
 }
 
-async function assertAllStepsVisible(page: Page): Promise<void> {
-  for (const label of STEP_LABELS) {
+async function assertDocumentStepsVisible(page: Page): Promise<void> {
+  for (const label of DOC_STEP_LABELS) {
     await expect(page.getByText(label)).toBeVisible();
   }
 }
@@ -125,7 +137,7 @@ async function assertAllItemsVisible(page: Page): Promise<void> {
   await assertCardVisible(page);
   await assertTitleAndPercentage(page);
   await assertSectionsVisible(page);
-  await assertAllStepsVisible(page);
+  await assertDocumentStepsVisible(page);
   await assertActionButton(page);
 }
 
@@ -153,10 +165,12 @@ test.describe('ProfileCompletionCard — presença visual', () => {
       await expect(page.getByText('(0/3)')).toBeVisible();
     });
 
-    test('seção Documentos Profesionales (0/5) está visível', async ({ page }) => {
+    // CUIDADOR sem profissão → 3 docs obrigatórios (identity_document, identity_document_back, criminal_record)
+    test('seção Documentos Profesionales (0/3) está visível — CUIDADOR sem profissão', async ({ page }) => {
       await expect(page.getByTestId('section-documents')).toBeVisible();
       await expect(page.getByText(SECTION_DOCUMENTOS)).toBeVisible();
-      await expect(page.getByText('(0/5)')).toBeVisible();
+      // (0/3) ocorre duas vezes na tela (Registro Básico e Documentos)
+      await expect(page.getByText('(0/3)').first()).toBeVisible();
     });
 
     test('steps de Registro Básico estão visíveis', async ({ page }) => {
@@ -165,12 +179,12 @@ test.describe('ProfileCompletionCard — presença visual', () => {
       await expect(page.getByText('Disponibilidad')).toBeVisible();
     });
 
-    test('steps de Documentos Profesionales estão visíveis', async ({ page }) => {
-      await expect(page.getByText('Cargue su currículum en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue su DNI en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue sus antecedentes penales en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue su constancia de registro en AFIP en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue su póliza de seguro de responsabilidad civil en PDF')).toBeVisible();
+    // CUIDADOR: identity_document, identity_document_back, criminal_record
+    // NÃO incluir AFIP (professional_registration) nem seguro (liability_insurance)
+    test('steps de Documentos Profesionales CUIDADOR estão visíveis', async ({ page }) => {
+      await expect(page.getByText('DNI - Frente')).toBeVisible();
+      await expect(page.getByText('DNI - Dorso')).toBeVisible();
+      await expect(page.getByText('Antecedentes penales')).toBeVisible();
     });
 
     test('botão Completar Registro está visível', async ({ page }) => {
@@ -203,10 +217,11 @@ test.describe('ProfileCompletionCard — presença visual', () => {
       await expect(page.getByText('(0/3)')).toBeVisible();
     });
 
-    test('seção Documentos Profesionales (0/5) está visível', async ({ page }) => {
+    // CUIDADOR sem profissão → 3 docs obrigatórios
+    test('seção Documentos Profesionales (0/3) está visível — CUIDADOR sem profissão', async ({ page }) => {
       await expect(page.getByTestId('section-documents')).toBeVisible();
       await expect(page.getByText(SECTION_DOCUMENTOS)).toBeVisible();
-      await expect(page.getByText('(0/5)')).toBeVisible();
+      await expect(page.getByText('(0/3)').first()).toBeVisible();
     });
 
     test('steps de Registro Básico estão visíveis', async ({ page }) => {
@@ -215,12 +230,11 @@ test.describe('ProfileCompletionCard — presença visual', () => {
       await expect(page.getByText('Disponibilidad')).toBeVisible();
     });
 
-    test('steps de Documentos Profesionales estão visíveis — scroll se necessário', async ({ page }) => {
-      await expect(page.getByText('Cargue su currículum en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue su DNI en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue sus antecedentes penales en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue su constancia de registro en AFIP en PDF')).toBeVisible();
-      await expect(page.getByText('Cargue su póliza de seguro de responsabilidad civil en PDF')).toBeVisible();
+    // CUIDADOR: identity_document, identity_document_back, criminal_record — sem AFIP/seguro
+    test('steps de Documentos Profesionales CUIDADOR estão visíveis — scroll se necessário', async ({ page }) => {
+      await expect(page.getByText('DNI - Frente')).toBeVisible();
+      await expect(page.getByText('DNI - Dorso')).toBeVisible();
+      await expect(page.getByText('Antecedentes penales')).toBeVisible();
     });
 
     test('botão Completar Registro está visível', async ({ page }) => {

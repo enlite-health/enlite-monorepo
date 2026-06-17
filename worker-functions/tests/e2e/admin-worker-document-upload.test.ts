@@ -133,6 +133,9 @@ describe('Admin Worker Document Upload API', () => {
       ['liability_insurance',        'liability_insurance_url'],
       ['monotributo_certificate',    'monotributo_certificate_url'],
       ['at_certificate',             'at_certificate_url'],
+      ['apto_psicofisico',           'apto_psicofisico_url'],
+      ['analitico_universitario',    'analitico_universitario_url'],
+      ['carta_recomendacion',        'carta_recomendacion_url'],
     ] as const)(
       'persiste %s_url no banco após upload',
       async (docType, sqlCol) => {

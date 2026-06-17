@@ -4,6 +4,7 @@ import { useAuth } from '@presentation/hooks/useAuth';
 import { WorkerApiService, WorkerProgressResponse, AvailabilitySlotResponse } from '@infrastructure/http/WorkerApiService';
 import { DocumentApiService, WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
+import { getRequiredDocFields } from '@presentation/utils/workerDocumentRequirements';
 
 const SESSION_KEY_UTM = 'enlite_utm_source';
 const SESSION_KEY_RETURN_URL = 'enlite_vacancy_return_url';
@@ -49,14 +50,35 @@ function detectRegistrationFields(
   };
 }
 
-function detectDocumentFields(data: WorkerDocumentsResponse | null): Record<string, boolean> {
-  return {
-    resumeCv: !!data?.resumeCvUrl,
-    identityDocument: !!data?.identityDocumentUrl,
-    criminalRecord: !!data?.criminalRecordUrl,
-    professionalRegistration: !!data?.professionalRegistrationUrl,
-    liabilityInsurance: !!data?.liabilityInsuranceUrl,
-  };
+/**
+ * Detecta quais documentos obrigatórios estão presentes, de acordo com a profissão.
+ * Usa getRequiredDocFields (workerDocumentRequirements) como fonte única da política.
+ */
+function detectDocumentFields(
+  data: WorkerDocumentsResponse | null,
+  profession?: string | null,
+): Record<string, boolean> {
+  const requiredFields = getRequiredDocFields(profession);
+  const result: Record<string, boolean> = {};
+  for (const field of requiredFields) {
+    // Converte camelCase (ex: resumeCvUrl) → chave sem "Url" no sufixo (ex: resumeCv)
+    const key = (field as string).replace(/Url$/, '');
+    result[key] = !!data?.[field];
+  }
+  return result;
+}
+
+async function fetchWorkerSnapshot(): Promise<{
+  workerData: WorkerProgressResponse;
+  documentsData: WorkerDocumentsResponse | null;
+  availabilityData: AvailabilitySlotResponse[];
+}> {
+  const [workerData, documentsData, availabilityData] = await Promise.all([
+    WorkerApiService.getProgress(),
+    DocumentApiService.getDocuments(),
+    WorkerApiService.getAvailability(),
+  ]);
+  return { workerData, documentsData, availabilityData };
 }
 
 export function usePostularseAction(
@@ -80,51 +102,51 @@ export function usePostularseAction(
     }
 
     setState('loading');
+
     try {
-      const [workerData, documentsData, availabilityData] = await Promise.all([
-        WorkerApiService.getProgress(),
-        DocumentApiService.getDocuments(),
-        WorkerApiService.getAvailability(),
-      ]);
+      const { workerData, documentsData, availabilityData } = await fetchWorkerSnapshot();
 
       const registration = detectRegistrationFields(workerData, availabilityData);
-      const documents = detectDocumentFields(documentsData);
-
+      const documents = detectDocumentFields(documentsData, workerData.profession);
       const allRegistrationComplete = Object.values(registration).every(Boolean);
       const allDocsComplete = Object.values(documents).every(Boolean);
 
-      if (!allRegistrationComplete || !allDocsComplete) {
-        setMissingFields({ registration, documents });
-        setState('incomplete');
-        return;
-      }
-
-      // Track acquisition channel — blocking. Se o backend bloquear (403 com
-      // code='WORKER_NOT_ELIGIBLE'), reabre o modal com missing fields atualizados
-      // ao invés de mandar pro WhatsApp. Cobre race-condition: o status do worker
-      // pode ter mudado entre o client-side check acima e o submit ao backend.
-      const channel = sessionStorage.getItem(SESSION_KEY_UTM);
-      if (channel && jobPostingId) {
+      if (jobPostingId) {
+        // Sempre registra a tentativa no backend quando há jobPostingId.
+        // O backend é a fonte de verdade sobre elegibilidade (grava
+        // worker_blocked_applications + incrementa attempt_count).
+        // channel é opcional: direto/bookmark não tem UTM.
+        const channel = sessionStorage.getItem(SESSION_KEY_UTM);
         try {
           await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
+          // Backend confirmou elegibilidade — limpa UTM e abre WhatsApp.
           sessionStorage.removeItem(SESSION_KEY_UTM);
-        } catch (err) {
-          if (err instanceof ApiError && err.code === 'WORKER_NOT_ELIGIBLE') {
-            // Re-fetch progresso/docs/availability pra mostrar campos faltantes no modal
-            const [workerData2, documentsData2, availabilityData2] = await Promise.all([
-              WorkerApiService.getProgress(),
-              DocumentApiService.getDocuments(),
-              WorkerApiService.getAvailability(),
-            ]);
+          window.open(whatsappUrl, '_blank');
+          setState('idle');
+          return;
+        } catch (trackErr) {
+          if (trackErr instanceof ApiError && trackErr.code === 'WORKER_NOT_ELIGIBLE') {
+            // Backend rejeitou: re-fetch para dados frescos e exibe modal.
+            const { workerData: wd2, documentsData: dd2, availabilityData: ad2 } =
+              await fetchWorkerSnapshot();
             setMissingFields({
-              registration: detectRegistrationFields(workerData2, availabilityData2),
-              documents: detectDocumentFields(documentsData2),
+              registration: detectRegistrationFields(wd2, ad2),
+              documents: detectDocumentFields(dd2, wd2.profession),
             });
             setState('incomplete');
             return;
           }
-          console.warn('[usePostularseAction] trackAcquisitionChannel failed:', err);
+          // Falha de rede ou erro inesperado: instrumentação best-effort.
+          // Não interrompe o fluxo — cai no fallback client-side abaixo.
         }
+      }
+
+      // Fallback client-side: usado quando não há jobPostingId, ou quando
+      // o track falhou por motivo que não é WORKER_NOT_ELIGIBLE (rede etc.).
+      if (!allRegistrationComplete || !allDocsComplete) {
+        setMissingFields({ registration, documents });
+        setState('incomplete');
+        return;
       }
 
       window.open(whatsappUrl, '_blank');

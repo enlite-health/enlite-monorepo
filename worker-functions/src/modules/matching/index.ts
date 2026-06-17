@@ -17,6 +17,9 @@ export { WorkerLocationRepository } from './infrastructure/WorkerLocationReposit
 export { JobPostingARRepository } from './infrastructure/JobPostingARRepository';
 export { MatchmakingService } from './infrastructure/MatchmakingService';
 export { GoogleCalendarService, googleCalendarService } from './infrastructure/GoogleCalendarService';
+export { BlockedApplicationRepository } from './infrastructure/BlockedApplicationRepository';
+export { BlockedApplicationQueryRepository } from './infrastructure/BlockedApplicationQueryRepository';
+export type { BlockedAttemptDto, BlockedAggregates } from './infrastructure/BlockedApplicationQueryRepository';
 
 // ── Application ──────────────────────────────────────────────────
 export { GetFunnelTableUseCase } from './application/GetFunnelTableUseCase';
@@ -24,6 +27,8 @@ export { UpdateEncuadreResultUseCase } from './application/UpdateEncuadreResultU
 export { ScheduleInterviewsUseCase } from './application/ScheduleInterviewsUseCase';
 export { ProcessTalentumPrescreening } from './application/ProcessTalentumPrescreening';
 export type { IJobPostingLookup } from './application/ProcessTalentumPrescreening';
+export { RecordBlockedAttemptUseCase } from './application/RecordBlockedAttemptUseCase';
+export type { RecordBlockedAttemptParams } from './application/RecordBlockedAttemptUseCase';
 
 // ── Interface — Controllers ──────────────────────────────────────
 export { EncuadreController } from './interfaces/controllers/EncuadreController';
@@ -46,6 +51,7 @@ export { VacancyCrudController } from './interfaces/controllers/VacancyCrudContr
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
 export { VacancySocialLinksController } from './interfaces/controllers/VacancySocialLinksController';
 export { WorkerApplicationsController } from './interfaces/controllers/WorkerApplicationsController';
+export { RecruitmentBlockedController } from './interfaces/controllers/RecruitmentBlockedController';
 
 export { PublicJobsController } from './interfaces/controllers/PublicJobsController';
 export { ListActivePublicJobsUseCase } from './application/ListActivePublicJobsUseCase';

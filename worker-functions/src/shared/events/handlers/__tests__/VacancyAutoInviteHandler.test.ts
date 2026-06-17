@@ -12,7 +12,7 @@
  *  7.  Erro num candidato não bloqueia os próximos (loop continua)
  *  8.  workZone null → patient_zone usa fallback 'tu zona' (vem do JOIN do paciente, não do AT)
  *  9.  Usa TokenService.generate para worker_name (não plaintext)
- * 10.  formatPendingDocuments — helper retorna string correta dado worker_documents fictício
+ * 10.  formatPendingDocuments — helper retorna string correta dado worker_documents fictício (por profissão)
  */
 
 import { createVacancyAutoInviteHandler, formatPendingDocuments } from '../VacancyAutoInviteHandler';
@@ -181,19 +181,21 @@ describe('VacancyAutoInviteHandler', () => {
   });
 
   // 5b
-  it('worker INCOMPLETE_REGISTER → slug=ar_vacancy_match_incomplete com 4 vars incluindo pending_documents', async () => {
+  it('worker INCOMPLETE_REGISTER → slug=ar_vacancy_match_incomplete com 4 vars incluindo pending_documents (sem seguro/matrícula)', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ patient_zone: 'Flores' }] })    // SELECT patient_zone
       .mockResolvedValueOnce({ rows: [{ exists: false }] })              // opt-out check
       .mockResolvedValueOnce({ rows: [{ exists: false }] })              // cooldown check
       .mockResolvedValueOnce({ rows: [{ exists: false }] })              // SELECT EXISTS outbox
-      // formatPendingDocuments query (worker_documents)
+      // formatPendingDocuments: JOIN workers + worker_documents (AT sem CV e sem at_certificate)
       .mockResolvedValueOnce({ rows: [{
-        resume_cv_url: null,
+        profession: 'AT',
+        has_documents: true,
         identity_document_url: 'http://example.com/rg.pdf',
+        identity_document_back_url: 'http://example.com/rg-verso.pdf',
         criminal_record_url: null,
-        professional_registration_url: 'http://example.com/mat.pdf',
-        liability_insurance_url: null,
+        resume_cv_url: null,
+        at_certificate_url: null,
       }] })
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-incomplete-1' }] }); // INSERT outbox
 
@@ -210,10 +212,12 @@ describe('VacancyAutoInviteHandler', () => {
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.patient_zone).toBe('Flores');
     expect(vars.vacancy_url).toBe('https://app.enlite.health/vacancies/job-1');
-    expect(vars.pending_documents).toContain('tu CV');
+    // Deve mencionar o que está faltando (antecedentes, CV, certificado AT)
     expect(vars.pending_documents).toContain('tus antecedentes penales');
-    expect(vars.pending_documents).toContain('tu seguro de responsabilidad civil');
-    expect(vars.pending_documents).not.toContain('tu DNI');
+    expect(vars.pending_documents).toContain('tu CV');
+    expect(vars.pending_documents).toContain('tu certificado de AT');
+    // NÃO deve citar seguro ou matrícula (não são obrigatórios)
+    expect(vars.pending_documents).not.toContain('seguro');
     expect(vars.pending_documents).not.toContain('matrícula');
 
     expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
@@ -308,77 +312,223 @@ describe('VacancyAutoInviteHandler', () => {
 // ─── formatPendingDocuments unit tests ───────────────────────────────────────
 
 describe('formatPendingDocuments', () => {
-  it('sem linha em worker_documents → todos os campos faltando', async () => {
-    const mockDb = { query: jest.fn().mockResolvedValue({ rows: [] }) } as never;
-    const result = await formatPendingDocuments(mockDb, 'worker-x');
-    expect(result).toContain('tu CV');
-    expect(result).toContain('tu DNI');
-    expect(result).toContain('tus antecedentes penales');
-    expect(result).toContain('tu matrícula profesional');
-    expect(result).toContain('tu seguro de responsabilidad civil');
+  // Helper to build a mock db that returns the given row for the JOIN query
+  const makeDb = (rows: object[]) => ({
+    query: jest.fn().mockResolvedValue({ rows }),
+  }) as never;
+
+  // ─── Worker AT ─────────────────────────────────────────────────────────────
+
+  it('AT sem at_certificate → cita "tu certificado de AT", NÃO cita seguro nem matrícula', async () => {
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: 'http://antec.pdf',
+      resume_cv_url: 'http://cv.pdf',
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-at');
+    expect(result).toBe('tu certificado de AT');
+    expect(result).not.toContain('seguro');
+    expect(result).not.toContain('matrícula');
   });
 
-  it('1 campo faltando → retorna string simples sem vírgulas', async () => {
-    const mockDb = {
-      query: jest.fn().mockResolvedValue({
-        rows: [{
-          resume_cv_url: 'http://cv.pdf',
-          identity_document_url: 'http://rg.pdf',
-          criminal_record_url: null,
-          professional_registration_url: 'http://mat.pdf',
-          liability_insurance_url: 'http://seg.pdf',
-        }],
-      }),
-    } as never;
-    const result = await formatPendingDocuments(mockDb, 'worker-x');
+  it('AT faltando CV e at_certificate → lista ambos com "y"', async () => {
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: 'http://antec.pdf',
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-at');
+    expect(result).toBe('tu CV y tu certificado de AT');
+  });
+
+  it('AT faltando tudo → lista todos os 5 obrigatórios sem seguro/matrícula', async () => {
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: null,
+      identity_document_back_url: null,
+      criminal_record_url: null,
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-at');
+    expect(result).toContain('tu DNI');
+    expect(result).toContain('el dorso de tu DNI');
+    expect(result).toContain('tus antecedentes penales');
+    expect(result).toContain('tu CV');
+    expect(result).toContain('tu certificado de AT');
+    expect(result).not.toContain('seguro');
+    expect(result).not.toContain('matrícula');
+  });
+
+  it('AT com todos os docs preenchidos → fallback "completar tu perfil"', async () => {
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: 'http://antec.pdf',
+      resume_cv_url: 'http://cv.pdf',
+      at_certificate_url: 'http://at-cert.pdf',
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-at');
+    expect(result).toBe('completar tu perfil');
+  });
+
+  // ─── Worker Cuidador ────────────────────────────────────────────────────────
+
+  it('Cuidador faltando apenas antecedentes → cita só antecedentes, NÃO cita CV nem at_certificate', async () => {
+    const db = makeDb([{
+      profession: 'CUIDADOR',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: null,
+      resume_cv_url: null,          // NULL mas não obrigatório para Cuidador
+      at_certificate_url: null,     // NULL mas não obrigatório para Cuidador
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-cuidador');
     expect(result).toBe('tus antecedentes penales');
+    expect(result).not.toContain('CV');
+    expect(result).not.toContain('certificado');
+    expect(result).not.toContain('seguro');
+    expect(result).not.toContain('matrícula');
+  });
+
+  it('Cuidador faltando DNI frente e verso → lista ambos', async () => {
+    const db = makeDb([{
+      profession: 'CUIDADOR',
+      has_documents: true,
+      identity_document_url: null,
+      identity_document_back_url: null,
+      criminal_record_url: 'http://antec.pdf',
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-cuidador');
+    expect(result).toBe('tu DNI y el dorso de tu DNI');
+  });
+
+  // ─── Profession null (UNKNOWN → trata como Cuidador) ───────────────────────
+
+  it('profession null → usa base set (3 docs), NÃO cita CV nem at_certificate', async () => {
+    const db = makeDb([{
+      profession: null,
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: null,
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-unknown');
+    expect(result).toBe('tus antecedentes penales');
+    expect(result).not.toContain('CV');
+    expect(result).not.toContain('certificado');
+  });
+
+  // ─── Sem linha em worker_documents ──────────────────────────────────────────
+
+  it('AT sem linha em worker_documents → lista todos os 5 obrigatórios', async () => {
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: false,
+      identity_document_url: null,
+      identity_document_back_url: null,
+      criminal_record_url: null,
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-at-nodocs');
+    expect(result).toContain('tu DNI');
+    expect(result).toContain('el dorso de tu DNI');
+    expect(result).toContain('tus antecedentes penales');
+    expect(result).toContain('tu CV');
+    expect(result).toContain('tu certificado de AT');
+    expect(result).not.toContain('seguro');
+    expect(result).not.toContain('matrícula');
+  });
+
+  it('Cuidador sem linha em worker_documents → lista os 3 obrigatórios base', async () => {
+    const db = makeDb([{
+      profession: 'CUIDADOR',
+      has_documents: false,
+      identity_document_url: null,
+      identity_document_back_url: null,
+      criminal_record_url: null,
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-cuidador-nodocs');
+    expect(result).toContain('tu DNI');
+    expect(result).toContain('el dorso de tu DNI');
+    expect(result).toContain('tus antecedentes penales');
+    expect(result).not.toContain('CV');
+    expect(result).not.toContain('certificado');
+  });
+
+  it('worker não encontrado (rows vazio) → lista base set (3 docs)', async () => {
+    const db = makeDb([]);
+    const result = await formatPendingDocuments(db, 'worker-missing');
+    // profession null → UNKNOWN → base set: DNI + verso + antecedentes
+    expect(result).toContain('tu DNI');
+    expect(result).toContain('el dorso de tu DNI');
+    expect(result).toContain('tus antecedentes penales');
+    expect(result).not.toContain('CV');
+    expect(result).not.toContain('certificado');
+  });
+
+  // ─── Concatenação ───────────────────────────────────────────────────────────
+
+  it('1 campo faltando → retorna string simples sem vírgulas nem "y"', async () => {
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: 'http://antec.pdf',
+      resume_cv_url: 'http://cv.pdf',
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-x');
+    expect(result).toBe('tu certificado de AT');
+    expect(result).not.toContain(',');
+    expect(result).not.toContain(' y ');
   });
 
   it('2 campos faltando → concatena com " y "', async () => {
-    const mockDb = {
-      query: jest.fn().mockResolvedValue({
-        rows: [{
-          resume_cv_url: null,
-          identity_document_url: null,
-          criminal_record_url: 'http://antec.pdf',
-          professional_registration_url: 'http://mat.pdf',
-          liability_insurance_url: 'http://seg.pdf',
-        }],
-      }),
-    } as never;
-    const result = await formatPendingDocuments(mockDb, 'worker-x');
-    expect(result).toBe('tu CV y tu DNI');
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: 'http://antec.pdf',
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-x');
+    expect(result).toBe('tu CV y tu certificado de AT');
   });
 
   it('3 campos faltando → vírgula entre os primeiros, "y" antes do último', async () => {
-    const mockDb = {
-      query: jest.fn().mockResolvedValue({
-        rows: [{
-          resume_cv_url: null,
-          identity_document_url: null,
-          criminal_record_url: null,
-          professional_registration_url: 'http://mat.pdf',
-          liability_insurance_url: 'http://seg.pdf',
-        }],
-      }),
-    } as never;
-    const result = await formatPendingDocuments(mockDb, 'worker-x');
-    expect(result).toBe('tu CV, tu DNI y tus antecedentes penales');
-  });
-
-  it('todos os campos preenchidos → fallback "completar tu perfil"', async () => {
-    const mockDb = {
-      query: jest.fn().mockResolvedValue({
-        rows: [{
-          resume_cv_url: 'http://cv.pdf',
-          identity_document_url: 'http://rg.pdf',
-          criminal_record_url: 'http://antec.pdf',
-          professional_registration_url: 'http://mat.pdf',
-          liability_insurance_url: 'http://seg.pdf',
-        }],
-      }),
-    } as never;
-    const result = await formatPendingDocuments(mockDb, 'worker-x');
-    expect(result).toBe('completar tu perfil');
+    const db = makeDb([{
+      profession: 'AT',
+      has_documents: true,
+      identity_document_url: 'http://rg.pdf',
+      identity_document_back_url: 'http://rg-verso.pdf',
+      criminal_record_url: null,
+      resume_cv_url: null,
+      at_certificate_url: null,
+    }]);
+    const result = await formatPendingDocuments(db, 'worker-x');
+    expect(result).toBe('tus antecedentes penales, tu CV y tu certificado de AT');
   });
 });
