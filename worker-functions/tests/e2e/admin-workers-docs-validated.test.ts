@@ -11,25 +11,30 @@
  *   GET /api/admin/workers/export?docs_validated=all_validated&format=csv&columns=email
  *   GET /api/admin/workers/export?docs_validated=pending_validation&format=csv&columns=email
  *
- * Slugs obrigatórios após a migration 207 (nova política):
- *   AT       : identity_document, identity_document_back, criminal_record, resume_cv, at_certificate (5)
- *   Cuidador : identity_document, identity_document_back, criminal_record (3)
- *   NULL     : identity_document, identity_document_back, criminal_record (3)
+ * Slugs obrigatórios (migration 212 — verso OPCIONAL):
+ *   AT       : identity_document, criminal_record, resume_cv, at_certificate (4 obrigatórios)
+ *   Cuidador : identity_document, criminal_record (2 obrigatórios)
+ *   NULL     : identity_document, criminal_record (2 obrigatórios)
+ *   identity_document_back: OPCIONAL para todos
+ *
+ * Nota: as fixtures deste teste inserem identity_document_back como slug validado
+ * em todos os workers (herdado da migration 207). Isso é inofensivo — um slug
+ * extra em document_validations não quebra nenhuma asserção.
  *
  * Cenários all_validated:
- *   1. Worker AT com as 5 keys validadas → retornado
- *   2. Worker AT com 4 keys (falta at_certificate) → NÃO retornado
- *   3. Worker Cuidador com 3 keys validadas → retornado
- *   4. Worker base (profession = null) com 3 keys validadas → retornado
+ *   1. Worker AT com todos os slugs obrigatórios validados (incluindo back extra) → retornado
+ *   2. Worker AT com slugs sem at_certificate → NÃO retornado
+ *   3. Worker Cuidador com slugs obrigatórios validados (incluindo back extra) → retornado
+ *   4. Worker base (profession = null) com slugs obrigatórios validados → retornado
  *   5. Worker sem linha em worker_documents → NÃO retornado
  *   6. Combinação com case_id → aplica AND corretamente
  *   7. Export também respeita o filtro
  *
  * Cenários pending_validation:
- *   8.  Worker AT com 4/5 → aparece em pending, NÃO em all_validated
- *   9.  Worker Cuidador com 2/3 → aparece em pending
+ *   8.  Worker AT sem at_certificate → aparece em pending, NÃO em all_validated
+ *   9.  Worker Cuidador sem criminal_record → aparece em pending
  *  10.  Worker sem linha worker_documents → aparece em pending
- *  11.  Worker AT completo (5/5) → NÃO aparece em pending
+ *  11.  Worker AT completo → NÃO aparece em pending
  *  12.  Combinação docs_complete=complete AND pending_validation
  *  13.  Export com pending_validation retorna mesmo conjunto da lista
  *
@@ -45,29 +50,31 @@ const DATABASE_URL =
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
 /**
- * All 5 required doc slugs for AT workers (new policy after migration 207).
- * Removed: professional_registration, liability_insurance, monotributo_certificate
- * Added: resume_cv, at_certificate (were AT_EXTRA; now included in the 5-slug AT set)
+ * Slugs para AT: 4 obrigatórios (migration 212 — verso OPCIONAL).
+ * identity_document_back mantido COMO SLUG EXTRA na fixture — é inofensivo
+ * (documenta que o verso pode ser validado mesmo sendo opcional).
+ * Apenas criminal_record + identity_document + resume_cv + at_certificate são exigidos.
  */
 const AT_ALL_SLUGS = [
   'identity_document',
-  'identity_document_back',
+  'identity_document_back', // opcional desde mig 212 — extra na fixture
   'criminal_record',
   'resume_cv',
   'at_certificate',
 ];
 
 /**
- * 3 required doc slugs for non-AT / NULL profession workers (new policy).
- * Removed: resume_cv, professional_registration, liability_insurance
+ * Slugs para não-AT / NULL: 2 obrigatórios (migration 212 — verso OPCIONAL).
+ * identity_document_back mantido COMO SLUG EXTRA na fixture — inofensivo.
+ * Apenas criminal_record + identity_document são exigidos.
  */
 const BASE_SLUGS = [
   'identity_document',
-  'identity_document_back',
+  'identity_document_back', // opcional desde mig 212 — extra na fixture
   'criminal_record',
 ];
 
-/** 2 of 3 base slugs (missing criminal_record). Used to simulate incomplete Cuidador. */
+/** identity_document + identity_document_back (falta criminal_record). Simula Cuidador incompleto. */
 const BASE_TWO_SLUGS = BASE_SLUGS.filter((s) => s !== 'criminal_record');
 
 /** Build a JSONB-compatible object where each slug maps to a minimal validation entry. */
@@ -83,11 +90,11 @@ describe('docs_validated filter — list and export', () => {
   let pool: Pool;
 
   // Worker IDs seeded for this suite
-  let atFullId: string;         // AT with all 5 slugs — all_validated: YES, pending: NO
+  let atFullId: string;         // AT with 4+1 slugs (verso extra) — all_validated: YES, pending: NO
   let atMissingId: string;      // AT missing at_certificate — all_validated: NO, pending: YES
-  let cuidadorFullId: string;   // Cuidador with 3 base slugs — all_validated: YES, pending: NO
-  let baseFullId: string;       // profession=null with 3 base slugs — all_validated: YES, pending: NO
-  let baseMissingId: string;    // profession=null with 2/3 slugs — all_validated: NO, pending: YES
+  let cuidadorFullId: string;   // Cuidador with 2+1 slugs (verso extra) — all_validated: YES, pending: NO
+  let baseFullId: string;       // profession=null with 2+1 slugs (verso extra) — all_validated: YES, pending: NO
+  let baseMissingId: string;    // profession=null with identity_document+back, missing criminal_record — all_validated: NO, pending: YES
   let noDocsId: string;         // no worker_documents row — all_validated: NO, pending: YES
 
   // Unique emails so we can verify presence/absence in CSV body
@@ -110,7 +117,7 @@ describe('docs_validated filter — list and export', () => {
 
     pool = new Pool({ connectionString: DATABASE_URL });
 
-    // 1. AT worker — all 5 required slugs validated (new policy)
+    // 1. AT worker — 4 required slugs + back (opcional, extra na fixture — mig 212)
     const r1 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, 'AT', 'REGISTERED') RETURNING id`,
@@ -137,7 +144,7 @@ describe('docs_validated filter — list and export', () => {
       [atMissingId, JSON.stringify(makeValidations(atFourSlugs))],
     );
 
-    // 3. Cuidador (profession != 'AT') — all 3 base slugs validated
+    // 3. Cuidador (profession != 'AT') — 2 obrigatórios + verso extra (mig 212)
     // ClickUp: "Cuidador" → canonical UPPERCASE EN: 'CAREGIVER'
     const r3 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
@@ -151,7 +158,7 @@ describe('docs_validated filter — list and export', () => {
       [cuidadorFullId, JSON.stringify(makeValidations(BASE_SLUGS))],
     );
 
-    // 4. Base worker (profession = null) — all 3 base slugs validated
+    // 4. Base worker (profession = null) — 2 obrigatórios + verso extra (mig 212)
     const r4 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, NULL, 'REGISTERED') RETURNING id`,
@@ -164,7 +171,7 @@ describe('docs_validated filter — list and export', () => {
       [baseFullId, JSON.stringify(makeValidations(BASE_SLUGS))],
     );
 
-    // 5. Base worker — 2/3 slugs (missing criminal_record)
+    // 5. Base worker — identity_document + back (verso extra), falta criminal_record
     const r5 = await pool.query(
       `INSERT INTO workers (auth_uid, email, profession, status)
        VALUES ($1, $2, NULL, 'REGISTERED') RETURNING id`,
@@ -228,7 +235,7 @@ describe('docs_validated filter — list and export', () => {
       expect(ids).not.toContain(atMissingId);
     });
 
-    // ── 3. Cuidador with 3 base slugs → INCLUDED ─────────────────────────────
+    // ── 3. Cuidador with required slugs (+ back extra) → INCLUDED ────────────
     it('Worker Cuidador com as 3 chaves base validadas é retornado', async () => {
       const ids = await listWithFilter('all_validated');
       expect(ids).toContain(cuidadorFullId);
@@ -315,7 +322,7 @@ describe('docs_validated filter — list and export', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('docs_validated=pending_validation', () => {
-    // ── 8. AT worker com 4/5 → aparece em pending, NÃO em all_validated ──────
+    // ── 8. AT worker sem at_certificate → aparece em pending, NÃO em all_validated ─
     it('AT worker com 4/5 slugs aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).toContain(atMissingId);
@@ -327,7 +334,7 @@ describe('docs_validated filter — list and export', () => {
     });
 
     // ── 9. Worker base com 2/3 slugs → aparece em pending ────────────────────
-    it('Worker base com 2/3 slugs aparece em pending_validation', async () => {
+    it('Worker base sem criminal_record aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).toContain(baseMissingId);
     });
@@ -338,7 +345,7 @@ describe('docs_validated filter — list and export', () => {
       expect(ids).toContain(noDocsId);
     });
 
-    // ── 11. AT completo (5/5) → NÃO aparece em pending ───────────────────────
+    // ── 11. AT completo (todos obrigatórios + verso extra) → NÃO aparece em pending ─
     it('AT worker completo (5/5) NÃO aparece em pending_validation', async () => {
       const ids = await listWithFilter('pending_validation');
       expect(ids).not.toContain(atFullId);

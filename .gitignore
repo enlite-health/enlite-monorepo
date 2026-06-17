@@ -38,3 +38,4 @@ worker-functions/scripts/*.csv
 
 # Exports do DBA (contêm PII — emails, telefones, nomes de pacientes/prestadores)
 data/dba-exports/
+.claude/worktrees/

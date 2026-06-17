@@ -2,15 +2,17 @@
  * worker-document-status-gate.e2e.test.ts
  *
  * Testa o gate de status REGISTERED/INCOMPLETE_REGISTER via recalculateStatus,
- * cobrindo as novas regras de obrigatoriedade de documentos por profissão:
+ * cobrindo as regras de obrigatoriedade de documentos por profissão
+ * (migration 212 — DNI verso OPCIONAL):
  *
  *   AT  (profession='AT'):
- *     obrigatórios = DNI frente + DNI verso + antecedentes + cert AT + CV
+ *     obrigatórios = DNI frente + antecedentes + cert AT + CV
+ *     OPCIONAL     = DNI verso
  *     → sem liability_insurance / professional_registration / monotributo
  *
  *   CAREGIVER (profession='CAREGIVER' ou outro non-AT non-null):
- *     obrigatórios = DNI frente + DNI verso + antecedentes
- *     → CV é OPCIONAL
+ *     obrigatórios = DNI frente + antecedentes
+ *     OPCIONAL     = DNI verso, CV
  *
  * Cada fixture é um worker com TODOS os campos pessoais preenchidos
  * (first_name_encrypted, knowledge_level, etc.), service_area, availability
@@ -20,10 +22,11 @@
  * o status resultante no banco (recalculateStatus pode sobrescrever a requisição).
  *
  * Fixtures:
- *   1. AT com todos os 5 obrigatórios                  → REGISTERED
- *   2. AT sem at_certificate                            → INCOMPLETE_REGISTER
- *   3. CAREGIVER com DNI frente+verso+antecedentes      → REGISTERED
- *   4. CAREGIVER sem criminal_record                    → INCOMPLETE_REGISTER
+ *   1. AT com 4 obrigatórios (frente+antecedentes+cert AT+CV), sem verso → REGISTERED
+ *   2. AT sem at_certificate                                               → INCOMPLETE_REGISTER
+ *   3. CAREGIVER com DNI frente+antecedentes (sem verso)                  → REGISTERED
+ *   4. CAREGIVER sem criminal_record                                       → INCOMPLETE_REGISTER
+ *   5. CAREGIVER com DNI frente+verso+antecedentes (verso presente)       → REGISTERED
  *
  * Usa MockAuth (USE_MOCK_AUTH=true).
  */
@@ -42,10 +45,11 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
 
   const ts = Date.now();
 
-  let atCompleteId: string;       // AT com 5 obrigatórios + dados pessoais  → REGISTERED
-  let atMissingCertId: string;    // AT sem at_certificate + dados pessoais   → INCOMPLETE_REGISTER
-  let cuidadorCompleteId: string; // CAREGIVER com 3 obrigatórios + pessoais  → REGISTERED
-  let cuidadorMissingId: string;  // CAREGIVER sem criminal_record + pessoais → INCOMPLETE_REGISTER
+  let atCompleteId: string;           // AT frente+antecedentes+cert AT+CV (sem verso) → REGISTERED
+  let atMissingCertId: string;        // AT sem at_certificate                           → INCOMPLETE_REGISTER
+  let cuidadorNoBackId: string;       // CAREGIVER frente+antecedentes (SEM verso)       → REGISTERED (mig 212)
+  let cuidadorMissingId: string;      // CAREGIVER sem criminal_record                   → INCOMPLETE_REGISTER
+  let cuidadorWithBackId: string;     // CAREGIVER frente+verso+antecedentes (verso OK)  → REGISTERED
 
   /**
    * Insere um worker com todos os campos pessoais obrigatórios para
@@ -136,11 +140,11 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
       role: 'admin',
     });
 
-    // ── Fixture 1: AT com todos os 5 obrigatórios ─────────────────────────────
+    // ── Fixture 1: AT com 4 obrigatórios, SEM verso (verso agora OPCIONAL) ────
     atCompleteId = await insertFullWorker('at-complete', 'AT');
     await upsertDocuments(atCompleteId, {
       identity_document_url: 'workers/test/dni-frente.pdf',
-      identity_document_back_url: 'workers/test/dni-verso.pdf',
+      // identity_document_back_url: omitido propositalmente — OPCIONAL desde mig 212
       criminal_record_url: 'workers/test/antecedentes.pdf',
       at_certificate_url: 'workers/test/cert-at.pdf',
       resume_cv_url: 'workers/test/cv.pdf',
@@ -150,34 +154,42 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
     atMissingCertId = await insertFullWorker('at-missing-cert', 'AT');
     await upsertDocuments(atMissingCertId, {
       identity_document_url: 'workers/test/dni-frente.pdf',
-      identity_document_back_url: 'workers/test/dni-verso.pdf',
       criminal_record_url: 'workers/test/antecedentes.pdf',
       resume_cv_url: 'workers/test/cv.pdf',
       // at_certificate_url: omitido propositalmente
     });
 
-    // ── Fixture 3: CAREGIVER com DNI frente+verso + antecedentes ─────────────
+    // ── Fixture 3: CAREGIVER com frente+antecedentes, SEM verso (mig 212) ────
+    // tag 'cgvdr-noback' (12 chars) → phone suffix '12' — sem colisão com demais tags
     // ClickUp: "Cuidador" → canonical UPPERCASE EN: 'CAREGIVER'
-    cuidadorCompleteId = await insertFullWorker('cuidador-complete', 'CAREGIVER');
-    await upsertDocuments(cuidadorCompleteId, {
+    cuidadorNoBackId = await insertFullWorker('cgvdr-noback', 'CAREGIVER');
+    await upsertDocuments(cuidadorNoBackId, {
       identity_document_url: 'workers/test/dni-frente.pdf',
-      identity_document_back_url: 'workers/test/dni-verso.pdf',
+      // identity_document_back_url: omitido propositalmente — OPCIONAL desde mig 212
       criminal_record_url: 'workers/test/antecedentes.pdf',
-      // resume_cv_url: intencional omissão — CV é OPCIONAL pro CAREGIVER
     });
 
     // ── Fixture 4: CAREGIVER sem criminal_record ───────────────────────────────
-    cuidadorMissingId = await insertFullWorker('cuidador-missing', 'CAREGIVER');
+    // tag 'cgvdr-missing' (13 chars) → phone suffix '13'
+    cuidadorMissingId = await insertFullWorker('cgvdr-missing', 'CAREGIVER');
     await upsertDocuments(cuidadorMissingId, {
       identity_document_url: 'workers/test/dni-frente.pdf',
-      identity_document_back_url: 'workers/test/dni-verso.pdf',
       // criminal_record_url: omitido propositalmente
+    });
+
+    // ── Fixture 5: CAREGIVER com verso presente (verso opcional, mas aceito) ──
+    // tag 'cgvdr-withback' (14 chars) → phone suffix '14'
+    cuidadorWithBackId = await insertFullWorker('cgvdr-withback', 'CAREGIVER');
+    await upsertDocuments(cuidadorWithBackId, {
+      identity_document_url: 'workers/test/dni-frente.pdf',
+      identity_document_back_url: 'workers/test/dni-verso.pdf',
+      criminal_record_url: 'workers/test/antecedentes.pdf',
     });
   });
 
   afterAll(async () => {
     if (!pool) return;
-    const ids = [atCompleteId, atMissingCertId, cuidadorCompleteId, cuidadorMissingId].filter(Boolean);
+    const ids = [atCompleteId, atMissingCertId, cuidadorNoBackId, cuidadorMissingId, cuidadorWithBackId].filter(Boolean);
     for (const id of ids) {
       await pool.query('DELETE FROM worker_documents WHERE worker_id = $1', [id]).catch(() => {});
       await pool.query('DELETE FROM worker_availability WHERE worker_id = $1', [id]).catch(() => {});
@@ -211,10 +223,10 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Fixture 1 — AT completo → REGISTERED
+  // Fixture 1 — AT sem verso (verso OPCIONAL desde mig 212) → REGISTERED
   // ────────────────────────────────────────────────────────────────────────────
 
-  it('AT com DNI+verso+antecedentes+cert AT+CV → status REGISTERED', async () => {
+  it('AT com frente+antecedentes+cert AT+CV (sem verso) → status REGISTERED (mig 212)', async () => {
     const status = await triggerRecalculate(atCompleteId);
     expect(status).toBe('REGISTERED');
   });
@@ -229,11 +241,11 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Fixture 3 — CAREGIVER completo (sem CV) → REGISTERED
+  // Fixture 3 — CAREGIVER SEM verso → REGISTERED (prova central mig 212)
   // ────────────────────────────────────────────────────────────────────────────
 
-  it('CAREGIVER com DNI+verso+antecedentes (sem CV) → status REGISTERED', async () => {
-    const status = await triggerRecalculate(cuidadorCompleteId);
+  it('CAREGIVER com frente+antecedentes (SEM verso) → status REGISTERED (mig 212)', async () => {
+    const status = await triggerRecalculate(cuidadorNoBackId);
     expect(status).toBe('REGISTERED');
   });
 
@@ -244,6 +256,15 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
   it('CAREGIVER sem criminal_record → status INCOMPLETE_REGISTER', async () => {
     const status = await triggerRecalculate(cuidadorMissingId);
     expect(status).toBe('INCOMPLETE_REGISTER');
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Fixture 5 — CAREGIVER com verso presente → REGISTERED (verso aceito se enviado)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  it('CAREGIVER com frente+verso+antecedentes (verso presente) → status REGISTERED', async () => {
+    const status = await triggerRecalculate(cuidadorWithBackId);
+    expect(status).toBe('REGISTERED');
   });
 
   // ────────────────────────────────────────────────────────────────────────────

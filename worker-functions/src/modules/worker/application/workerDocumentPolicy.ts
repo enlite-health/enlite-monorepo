@@ -3,12 +3,13 @@
  *
  * Single source of truth for required-document rules per profession.
  *
- * Required fields by profession:
- *   AT      (profession = 'AT')           : DNI frente + DNI verso + Antecedentes + CV + Cert AT
- *   CUIDADOR (profession != 'AT', not null): DNI frente + DNI verso + Antecedentes
+ * Required fields by profession (migration 212 — verso OPCIONAL):
+ *   AT      (profession = 'AT')           : DNI frente + Antecedentes + CV + Cert AT
+ *   CUIDADOR (profession != 'AT', not null): DNI frente + Antecedentes
  *   UNKNOWN (profession = null or '')     : same as CUIDADOR (base set)
  *
- * NOT required for anyone: liability_insurance, professional_registration, monotributo_certificate.
+ * OPTIONAL for everyone: identity_document_back (DNI verso), liability_insurance,
+ *   professional_registration, monotributo_certificate.
  *
  * Three parallel representations are exported for each consumer:
  *   - SQL column names  → WorkerDocumentsRepository / recalculateStatus
@@ -35,7 +36,7 @@ export function classifyProfession(profession: string | null): ProfessionClass {
 /** SQL column names shared by all professions. */
 const BASE_COLUMNS: readonly string[] = [
   'identity_document_url',
-  'identity_document_back_url',
+  // identity_document_back_url: OPCIONAL desde migration 212 — removido do gate obrigatório
   'criminal_record_url',
 ] as const;
 
@@ -48,7 +49,7 @@ const AT_EXTRA_COLUMNS: readonly string[] = [
 /** JSONB slug names shared by all professions. */
 const BASE_SLUGS: readonly string[] = [
   'identity_document',
-  'identity_document_back',
+  // identity_document_back: OPCIONAL desde migration 212 — removido do gate obrigatório
   'criminal_record',
 ] as const;
 
@@ -61,7 +62,7 @@ const AT_EXTRA_SLUGS: readonly string[] = [
 /** camelCase field names shared by all professions. */
 const BASE_CAMEL: readonly string[] = [
   'identityDocumentUrl',
-  'identityDocumentBackUrl',
+  // identityDocumentBackUrl: OPCIONAL desde migration 212 — removido do gate obrigatório
   'criminalRecordUrl',
 ] as const;
 

@@ -7,12 +7,12 @@
  *
  * Regra canônica:
  *   AT       (profession === 'AT')     : resumeCvUrl, identityDocumentUrl,
- *                                        identityDocumentBackUrl, criminalRecordUrl,
- *                                        atCertificateUrl
- *   Cuidador (qualquer outro valor,    : identityDocumentUrl, identityDocumentBackUrl,
- *             incluindo null/undefined): criminalRecordUrl
+ *                                        criminalRecordUrl, atCertificateUrl
+ *   Cuidador (qualquer outro valor,    : identityDocumentUrl, criminalRecordUrl
+ *             incluindo null/undefined)
  *
  * NÃO obrigatórios para ninguém:
+ *   identityDocumentBackUrl (DNI verso — opcional, slot visível mas não exigido),
  *   professionalRegistrationUrl, liabilityInsuranceUrl, monotributoCertificateUrl.
  */
 
@@ -28,7 +28,6 @@ export type ProfessionClass = 'AT' | 'CUIDADOR';
 const REQUIRED_FIELDS_AT: ReadonlyArray<keyof WorkerDocumentsResponse> = [
   'resumeCvUrl',
   'identityDocumentUrl',
-  'identityDocumentBackUrl',
   'criminalRecordUrl',
   'atCertificateUrl',
 ] as const;
@@ -37,7 +36,6 @@ const REQUIRED_FIELDS_AT: ReadonlyArray<keyof WorkerDocumentsResponse> = [
 const REQUIRED_SLUGS_AT: ReadonlyArray<string> = [
   'resume_cv',
   'identity_document',
-  'identity_document_back',
   'criminal_record',
   'at_certificate',
 ] as const;
@@ -45,14 +43,12 @@ const REQUIRED_SLUGS_AT: ReadonlyArray<string> = [
 /** Campos camelCase obrigatórios para Cuidador / não-AT */
 const REQUIRED_FIELDS_CUIDADOR: ReadonlyArray<keyof WorkerDocumentsResponse> = [
   'identityDocumentUrl',
-  'identityDocumentBackUrl',
   'criminalRecordUrl',
 ] as const;
 
 /** Slugs i18n (documentTypes.<slug>) obrigatórios para Cuidador / não-AT */
 const REQUIRED_SLUGS_CUIDADOR: ReadonlyArray<string> = [
   'identity_document',
-  'identity_document_back',
   'criminal_record',
 ] as const;
 

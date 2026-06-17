@@ -64,14 +64,18 @@ describe('classifyProfession', () => {
 // ── getRequiredDocFields ──────────────────────────────────────────────────────
 
 describe('getRequiredDocFields', () => {
-  it('AT → 5 campos obrigatórios', () => {
+  it('AT → 4 campos obrigatórios (DNI verso opcional)', () => {
     const fields = getRequiredDocFields('AT');
-    expect(fields).toHaveLength(5);
+    expect(fields).toHaveLength(4);
     expect(fields).toContain('resumeCvUrl');
     expect(fields).toContain('identityDocumentUrl');
-    expect(fields).toContain('identityDocumentBackUrl');
     expect(fields).toContain('criminalRecordUrl');
     expect(fields).toContain('atCertificateUrl');
+  });
+
+  it('AT → NÃO inclui identityDocumentBackUrl (DNI verso é opcional)', () => {
+    const fields = getRequiredDocFields('AT');
+    expect(fields).not.toContain('identityDocumentBackUrl');
   });
 
   it('AT → NÃO inclui professionalRegistrationUrl nem liabilityInsuranceUrl', () => {
@@ -81,12 +85,16 @@ describe('getRequiredDocFields', () => {
     expect(fields).not.toContain('monotributoCertificateUrl');
   });
 
-  it('CUIDADOR → 3 campos obrigatórios', () => {
+  it('CUIDADOR → 2 campos obrigatórios (DNI verso opcional)', () => {
     const fields = getRequiredDocFields('CUIDADOR');
-    expect(fields).toHaveLength(3);
+    expect(fields).toHaveLength(2);
     expect(fields).toContain('identityDocumentUrl');
-    expect(fields).toContain('identityDocumentBackUrl');
     expect(fields).toContain('criminalRecordUrl');
+  });
+
+  it('CUIDADOR → NÃO inclui identityDocumentBackUrl (DNI verso é opcional)', () => {
+    const fields = getRequiredDocFields('CUIDADOR');
+    expect(fields).not.toContain('identityDocumentBackUrl');
   });
 
   it('CUIDADOR → NÃO inclui resumeCvUrl nem atCertificateUrl', () => {
@@ -97,31 +105,34 @@ describe('getRequiredDocFields', () => {
     expect(fields).not.toContain('liabilityInsuranceUrl');
   });
 
-  it('undefined → mesmos 3 campos do Cuidador', () => {
+  it('undefined → mesmos 2 campos do Cuidador', () => {
     const fields = getRequiredDocFields(undefined);
-    expect(fields).toHaveLength(3);
+    expect(fields).toHaveLength(2);
     expect(fields).toContain('identityDocumentUrl');
-    expect(fields).toContain('identityDocumentBackUrl');
     expect(fields).toContain('criminalRecordUrl');
   });
 
-  it('null → mesmos 3 campos do Cuidador', () => {
+  it('null → mesmos 2 campos do Cuidador', () => {
     const fields = getRequiredDocFields(null);
-    expect(fields).toHaveLength(3);
+    expect(fields).toHaveLength(2);
   });
 });
 
 // ── getRequiredDocSlugs ───────────────────────────────────────────────────────
 
 describe('getRequiredDocSlugs', () => {
-  it('AT → 5 slugs corretos', () => {
+  it('AT → 4 slugs corretos (DNI verso opcional)', () => {
     const slugs = getRequiredDocSlugs('AT');
-    expect(slugs).toHaveLength(5);
+    expect(slugs).toHaveLength(4);
     expect(slugs).toContain('resume_cv');
     expect(slugs).toContain('identity_document');
-    expect(slugs).toContain('identity_document_back');
     expect(slugs).toContain('criminal_record');
     expect(slugs).toContain('at_certificate');
+  });
+
+  it('AT → NÃO inclui identity_document_back (DNI verso é opcional)', () => {
+    const slugs = getRequiredDocSlugs('AT');
+    expect(slugs).not.toContain('identity_document_back');
   });
 
   it('AT → NÃO inclui professional_registration nem liability_insurance', () => {
@@ -131,17 +142,21 @@ describe('getRequiredDocSlugs', () => {
     expect(slugs).not.toContain('monotributo_certificate');
   });
 
-  it('Cuidador → 3 slugs corretos', () => {
+  it('Cuidador → 2 slugs corretos (DNI verso opcional)', () => {
     const slugs = getRequiredDocSlugs('CUIDADOR');
-    expect(slugs).toHaveLength(3);
+    expect(slugs).toHaveLength(2);
     expect(slugs).toContain('identity_document');
-    expect(slugs).toContain('identity_document_back');
     expect(slugs).toContain('criminal_record');
   });
 
-  it('undefined → 3 slugs do Cuidador', () => {
+  it('Cuidador → NÃO inclui identity_document_back (DNI verso é opcional)', () => {
+    const slugs = getRequiredDocSlugs('CUIDADOR');
+    expect(slugs).not.toContain('identity_document_back');
+  });
+
+  it('undefined → 2 slugs do Cuidador', () => {
     const slugs = getRequiredDocSlugs(undefined);
-    expect(slugs).toHaveLength(3);
+    expect(slugs).toHaveLength(2);
   });
 });
 
@@ -149,11 +164,21 @@ describe('getRequiredDocSlugs', () => {
 
 describe('areAllRequiredDocsComplete', () => {
   describe('AT', () => {
-    it('retorna true quando todos os 5 docs AT estão presentes', () => {
+    it('retorna true quando todos os 4 docs AT obrigatórios estão presentes', () => {
       const docs = makeDocuments({
         resumeCvUrl: 'url/cv.pdf',
         identityDocumentUrl: 'url/dni-f.pdf',
-        identityDocumentBackUrl: 'url/dni-b.pdf',
+        criminalRecordUrl: 'url/cr.pdf',
+        atCertificateUrl: 'url/at.pdf',
+      });
+      expect(areAllRequiredDocsComplete(docs, 'AT')).toBe(true);
+    });
+
+    it('DNI verso ausente NÃO bloqueia AT (verso é opcional)', () => {
+      const docs = makeDocuments({
+        resumeCvUrl: 'url/cv.pdf',
+        identityDocumentUrl: 'url/dni-f.pdf',
+        // identityDocumentBackUrl: ausente — deve ser ignorado
         criminalRecordUrl: 'url/cr.pdf',
         atCertificateUrl: 'url/at.pdf',
       });
@@ -164,7 +189,6 @@ describe('areAllRequiredDocsComplete', () => {
       const docs = makeDocuments({
         resumeCvUrl: 'url/cv.pdf',
         identityDocumentUrl: 'url/dni-f.pdf',
-        identityDocumentBackUrl: 'url/dni-b.pdf',
         criminalRecordUrl: 'url/cr.pdf',
       });
       expect(areAllRequiredDocsComplete(docs, 'AT')).toBe(false);
@@ -180,10 +204,18 @@ describe('areAllRequiredDocsComplete', () => {
   });
 
   describe('Cuidador', () => {
-    it('retorna true com apenas DNI frente+verso+antecedentes', () => {
+    it('retorna true com apenas DNI frente + antecedentes (verso opcional)', () => {
       const docs = makeDocuments({
         identityDocumentUrl: 'url/dni-f.pdf',
-        identityDocumentBackUrl: 'url/dni-b.pdf',
+        criminalRecordUrl: 'url/cr.pdf',
+      });
+      expect(areAllRequiredDocsComplete(docs, 'CUIDADOR')).toBe(true);
+    });
+
+    it('DNI verso ausente NÃO bloqueia Cuidador (verso é opcional)', () => {
+      const docs = makeDocuments({
+        identityDocumentUrl: 'url/dni-f.pdf',
+        // identityDocumentBackUrl: ausente — deve ser ignorado
         criminalRecordUrl: 'url/cr.pdf',
       });
       expect(areAllRequiredDocsComplete(docs, 'CUIDADOR')).toBe(true);
@@ -192,7 +224,6 @@ describe('areAllRequiredDocsComplete', () => {
     it('CV vazio NÃO bloqueia Cuidador', () => {
       const docs = makeDocuments({
         identityDocumentUrl: 'url/dni-f.pdf',
-        identityDocumentBackUrl: 'url/dni-b.pdf',
         criminalRecordUrl: 'url/cr.pdf',
         resumeCvUrl: null,
       });
@@ -202,15 +233,13 @@ describe('areAllRequiredDocsComplete', () => {
     it('retorna false quando criminalRecordUrl está ausente', () => {
       const docs = makeDocuments({
         identityDocumentUrl: 'url/dni-f.pdf',
-        identityDocumentBackUrl: 'url/dni-b.pdf',
       });
       expect(areAllRequiredDocsComplete(docs, 'CUIDADOR')).toBe(false);
     });
 
-    it('undefined profession equivale a Cuidador — retorna true com 3 docs', () => {
+    it('undefined profession equivale a Cuidador — retorna true com 2 docs', () => {
       const docs = makeDocuments({
         identityDocumentUrl: 'url/dni-f.pdf',
-        identityDocumentBackUrl: 'url/dni-b.pdf',
         criminalRecordUrl: 'url/cr.pdf',
       });
       expect(areAllRequiredDocsComplete(docs, undefined)).toBe(true);

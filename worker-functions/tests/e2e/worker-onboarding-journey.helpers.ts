@@ -83,10 +83,12 @@ export const COMPLETE_AVAILABILITY = [
   { dayOfWeek: 3, startTime: '08:00', endTime: '18:00', crossesMidnight: false },
 ] as const;
 
-// Documentos para worker CAREGIVER (não-AT): identity_front + back + criminal
+// Documentos para worker CAREGIVER (não-AT): identity_front + criminal.
+// identity_document_back é OPCIONAL desde migration 212 — incluído aqui
+// apenas para validar que o upload de um doc opcional continua funcionando.
 export const DOCS_NON_AT = {
   identity_document:      'gs://e2e-bucket/workers/test/identity_front.pdf',
-  identity_document_back: 'gs://e2e-bucket/workers/test/identity_back.pdf',
+  identity_document_back: 'gs://e2e-bucket/workers/test/identity_back.pdf', // opcional
   criminal_record:        'gs://e2e-bucket/workers/test/criminal_record.pdf',
 } as const;
 
