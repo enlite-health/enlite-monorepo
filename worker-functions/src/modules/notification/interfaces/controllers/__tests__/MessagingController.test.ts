@@ -56,7 +56,7 @@ jest.mock('../../../application/BuildVacancyMatchVariablesUseCase', () => ({
     execute: jest.fn().mockResolvedValue({
       worker_name: 'João',
       patient_zone: 'Palermo',
-      vacancy_url: 'https://app.enlite.health/vacancies/job-1',
+      vacancy_url: 'https://app.enlite.health/vacantes/job-1',
     }),
   })),
 }));
