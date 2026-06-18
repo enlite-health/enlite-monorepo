@@ -8,13 +8,14 @@
  * mais `pending_documents` para o _incomplete.
  *
  * URL base é a mesma usada pelo handler automático
- * (https://app.enlite.health/vacancies/<jobPostingId>) — manter sincronizado.
+ * (https://app.enlite.health/vacantes/<jobPostingId>) — manter sincronizado.
+ * Rota pública é /vacantes (ES); /vacancies (EN) caía em tela branca.
  */
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { formatPendingDocuments } from '@shared/events/handlers/VacancyAutoInviteHandler';
 
-const VACANCY_URL_BASE = 'https://app.enlite.health/vacancies';
+const VACANCY_URL_BASE = 'https://app.enlite.health/vacantes';
 
 export interface VacancyMatchVariables {
   worker_name: string;
