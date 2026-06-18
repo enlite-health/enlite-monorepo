@@ -132,11 +132,11 @@ export class CreateJobPostingFromTalentumUseCase {
     try {
       const insertResult = await this.pool.query<{ id: string }>(
         `INSERT INTO job_postings (
-           vacancy_number, case_number, title, description,
+           vacancy_number, case_number, title,
            status, country,
            talentum_project_id, talentum_published_at
          ) VALUES (
-           $1, $2, $3, '',
+           $1, $2, $3,
            'SEARCHING', 'AR',
            $4, NOW()
          )

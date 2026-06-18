@@ -1,9 +1,9 @@
 /**
  * VacancyCrudController — Unit Tests
  *
- * Validates: INSERT SQL includes all required columns (description, etc.),
- * correct parameter count, field defaults, allowedFields whitelist,
- * JSONB serialization, and error handling.
+ * Validates: INSERT SQL includes all required columns, correct parameter
+ * count, field defaults, allowedFields whitelist, JSONB serialization, and
+ * error handling. (description column dropped in migration 214 — PII purge.)
  *
  * Phase 9 (migration 152): state, city, pathology_types, dependency_level,
  * service_device_types removed from job_postings INSERT/UPDATE.
@@ -198,7 +198,7 @@ describe('VacancyCrudController', () => {
 
     // ── existing tests (query indices shifted by 1 due to patientCheck) ──
 
-    it('INSERT includes description column with empty string default', async () => {
+    it('INSERT does NOT write description column (dropped — PII purge migration 214)', async () => {
       mockCreateSuccess();
       const req = mockReq(FULL_BODY);
       const res = mockRes();
@@ -206,8 +206,9 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req, res);
 
       const sql = mockQuery.mock.calls[2][0] as string;
-      expect(sql).toContain('description');
-      expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*'',/);
+      expect(sql).not.toContain('description');
+      // VALUES now starts with the 4 positional params (no `''` description literal)
+      expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*\$4,/);
     });
 
     it('sends 21 parameters ($1 through $21, including patient_address_id, status, published_at, closes_at)', async () => {
@@ -361,8 +362,9 @@ describe('VacancyCrudController', () => {
       const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
-      // 21 param columns + description (literal '') + country (literal 'AR') = 23 total
-      expect(columns).toHaveLength(23);
+      // 21 param columns + country (literal 'AR') = 22 total
+      // (description column dropped in migration 214 — no longer inserted)
+      expect(columns).toHaveLength(22);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {

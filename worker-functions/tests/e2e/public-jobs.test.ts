@@ -139,8 +139,11 @@ async function insertVacancy(p: Pool, params: InsertVacancyParams): Promise<void
     : null;
 
   await p.query(
+    // Public `description` is served from talentum_description (PII-free); the
+    // legacy raw `description` column was purged in migration 214 and is no
+    // longer read by the endpoint.
     `INSERT INTO job_postings (
-       id, case_number, vacancy_number, title, status, description,
+       id, case_number, vacancy_number, title, status, talentum_description,
        patient_id, patient_address_id, social_short_links,
        country, required_sex, required_professions, is_draft
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
@@ -386,13 +389,13 @@ describe('GET /api/public/v1/jobs', () => {
     expect(job?.detail_link).toBe('https://srt.io/active');
   });
 
-  it('description is sanitized — generic text becomes empty string', async () => {
+  it('description is always a string (null talentum_description maps to empty string)', async () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.rapidResponse);
     expect(typeof job?.description).toBe('string');
   });
 
-  it('returns real description unchanged', async () => {
+  it('returns talentum_description as the public description', async () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
     expect(job?.description).toBe('AT con experiencia en TEA domicilio.');

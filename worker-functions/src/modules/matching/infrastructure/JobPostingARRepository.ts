@@ -87,8 +87,8 @@ export class JobPostingARRepository {
            vacancy_number, case_number, status, priority,
            is_covered, coordinator_name, coordinator_id,
            daily_obs, inferred_zone,
-           country, title, description
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           country, title
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING id`,
         [
           vacancyNumber,
@@ -102,7 +102,6 @@ export class JobPostingARRepository {
           data.inferredZone ?? null,
           data.country ?? 'AR',
           title,
-          `Caso operacional importado. Case #${data.caseNumber}`,
         ],
       );
 
@@ -131,7 +130,6 @@ export class JobPostingARRepository {
     status?: string | null;
     priority?: string | null;
     title?: string | null;
-    description?: string | null;
     workerProfileSought?: string | null;
     scheduleDaysHours?: string | null;
     sourceCreatedAt?: Date | null;
@@ -172,19 +170,18 @@ export class JobPostingARRepository {
            status                    = COALESCE($2, status),
            priority                  = COALESCE(priority, $3),
            title                     = COALESCE(title, $4),
-           description               = COALESCE(description, $5),
-           worker_profile_sought     = COALESCE(worker_profile_sought, $6),
-           schedule_days_hours       = COALESCE(schedule_days_hours, $7),
-           due_date                  = COALESCE(due_date, $8),
-           search_start_date         = COALESCE(search_start_date, $9),
-           assignee                  = COALESCE(assignee, $10),
-           patient_id                = COALESCE(patient_id, $11),
-           weekly_hours              = COALESCE(weekly_hours, $12),
-           providers_needed          = COALESCE(providers_needed, $13),
-           active_providers          = COALESCE(active_providers, $14),
-           authorized_period         = COALESCE(authorized_period, $15),
-           marketing_channel         = COALESCE(marketing_channel, $16),
-           patient_address_id        = COALESCE(patient_address_id, $17),
+           worker_profile_sought     = COALESCE(worker_profile_sought, $5),
+           schedule_days_hours       = COALESCE(schedule_days_hours, $6),
+           due_date                  = COALESCE(due_date, $7),
+           search_start_date         = COALESCE(search_start_date, $8),
+           assignee                  = COALESCE(assignee, $9),
+           patient_id                = COALESCE(patient_id, $10),
+           weekly_hours              = COALESCE(weekly_hours, $11),
+           providers_needed          = COALESCE(providers_needed, $12),
+           active_providers          = COALESCE(active_providers, $13),
+           authorized_period         = COALESCE(authorized_period, $14),
+           marketing_channel         = COALESCE(marketing_channel, $15),
+           patient_address_id        = COALESCE(patient_address_id, $16),
            updated_at                = NOW()
          WHERE id = $1`,
         [
@@ -192,7 +189,6 @@ export class JobPostingARRepository {
           data.status ?? null,
           data.priority ?? null,
           data.title ?? `Caso ${data.caseNumber}`,
-          data.description ?? `Caso operacional importado do ClickUp. Nº ${data.caseNumber}`,
           data.workerProfileSought ?? null,
           data.scheduleDaysHours ?? null,
           data.dueDate ?? null,
@@ -222,7 +218,7 @@ export class JobPostingARRepository {
 
     const insertResult = await this.pool.query<{ id: string }>(
       `INSERT INTO job_postings (
-         vacancy_number, case_number, country, title, description,
+         vacancy_number, case_number, country, title,
          status, priority,
          worker_profile_sought, schedule_days_hours,
          due_date, search_start_date, assignee,
@@ -230,7 +226,7 @@ export class JobPostingARRepository {
          authorized_period, marketing_channel,
          patient_address_id
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
        )
        RETURNING id`,
       [
@@ -238,7 +234,6 @@ export class JobPostingARRepository {
         data.caseNumber,
         country,
         title,
-        data.description ?? `Caso operacional importado do ClickUp. Nº ${data.caseNumber}`,
         data.status ?? null,
         data.priority ?? null,
         data.workerProfileSought ?? null,
@@ -300,7 +295,7 @@ export class JobPostingARRepository {
          jp.vacancy_number,
          jp.title,
          jp.status,
-         jp.description,
+         jp.talentum_description           AS description,
          jp.schedule_days_hours,
          jp.worker_profile_sought,
          p.service_type                       AS service,
