@@ -165,7 +165,7 @@ export function buildInsertQuery(): string {
   // `closes_at` stays NULL when not provided (optional).
   return `
     INSERT INTO job_postings (
-      vacancy_number, case_number, title, description, patient_id,
+      vacancy_number, case_number, title, patient_id,
       required_professions, required_sex,
       age_range_min, age_range_max,
       worker_profile_sought, required_experience, worker_attributes,
@@ -177,7 +177,7 @@ export function buildInsertQuery(): string {
       published_at, closes_at,
       country
     ) VALUES (
-      $1, $2, $3, '', $4,
+      $1, $2, $3, $4,
       $5, $6,
       $7, $8,
       $9, $10, $11,

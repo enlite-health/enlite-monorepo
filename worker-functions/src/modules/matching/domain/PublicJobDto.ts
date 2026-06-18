@@ -4,7 +4,7 @@ export interface PublicJobRow {
   vacancy_number: number;
   title: string;
   status: string;
-  description: string | null;
+  description: string | null;   // sourced from jp.talentum_description (PII-free); legacy `description` column dropped in migration 214
   schedule_days_hours: string | null;
   worker_profile_sought: string | null;
   service: string | null;

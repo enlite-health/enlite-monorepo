@@ -1,39 +1,30 @@
 /**
  * PublicJobMapper.test.ts
  *
+ * Public `description` is sourced from job_postings.talentum_description (PII-free)
+ * since migration 214 dropped the legacy raw `description` column. sanitizeDescription
+ * is now a plain trim/null-guard — no more placeholder-prefix stripping.
+ *
  * Scenarios:
- *   1. sanitizeDescription — returns empty string for generic "Caso operacional importado" prefix
- *   2. sanitizeDescription — returns empty string for "Caso operacional" prefix
- *   3. sanitizeDescription — returns sanitized string for real description
- *   4. sanitizeDescription — returns empty string for null
- *   5. sanitizeDescription — trims whitespace
- *   6. mapPublicJobRow — maps all fields correctly (including 5 new fields + country + age_range + whatsapp_url)
- *   7. mapPublicJobRow — description is sanitized in the output
- *   8. mapPublicJobRow — state_city empty string normalised to null
- *   9. mapPublicJobRow — state_city whitespace-only normalised to null
- *  10. mapPublicJobRow — worker_type empty array normalised to null
- *  11. mapPublicJobRow — new fields pass-through when populated
- *  12. mapPublicJobRow — new fields pass-through as null when absent
- *  13. mapPublicJobRow — country maps to dto.country
- *  14. mapPublicJobRow — country null maps to dto.country null
+ *   1. sanitizeDescription — returns description unchanged for real content
+ *   2. sanitizeDescription — returns empty string for null
+ *   3. sanitizeDescription — trims whitespace
+ *   4. sanitizeDescription — returns empty string for empty string input
+ *   5. mapPublicJobRow — maps all fields correctly (including 5 new fields + country + age_range + whatsapp_url)
+ *   6. mapPublicJobRow — description (from talentum_description) passes through trimmed
+ *   7. mapPublicJobRow — state_city empty string normalised to null
+ *   8. mapPublicJobRow — state_city whitespace-only normalised to null
+ *   9. mapPublicJobRow — worker_type empty array normalised to null
+ *  10. mapPublicJobRow — new fields pass-through when populated
+ *  11. mapPublicJobRow — new fields pass-through as null when absent
+ *  12. mapPublicJobRow — country maps to dto.country
+ *  13. mapPublicJobRow — country null maps to dto.country null
  */
 
 import { sanitizeDescription, mapPublicJobRow } from '../PublicJobMapper';
 import type { PublicJobRow } from '../../domain/PublicJobDto';
 
 describe('sanitizeDescription', () => {
-  it('returns empty string for generic "Caso operacional importado" prefix', () => {
-    expect(sanitizeDescription('Caso operacional importado. Case #42')).toBe('');
-  });
-
-  it('returns empty string for "caso operacional" prefix (case-insensitive)', () => {
-    expect(sanitizeDescription('CASO OPERACIONAL importado do ClickUp. Nº 100')).toBe('');
-  });
-
-  it('returns empty string for exact "Caso operacional" prefix', () => {
-    expect(sanitizeDescription('Caso operacional')).toBe('');
-  });
-
   it('returns description unchanged for real content', () => {
     const real = 'Buscamos AT con experiencia en TEA para trabajo en CABA.';
     expect(sanitizeDescription(real)).toBe(real);
@@ -111,8 +102,14 @@ describe('mapPublicJobRow', () => {
     expect(dto.whatsapp_url).toBe('https://wa.me/5491112345678');
   });
 
-  it('sanitizes generic description to empty string in DTO', () => {
-    const row = makeRow({ description: 'Caso operacional importado. Case #42' });
+  it('passes description (from talentum_description) through trimmed', () => {
+    const row = makeRow({ description: '  AT para paciente con TEA en CABA.  ' });
+    const dto = mapPublicJobRow(row);
+    expect(dto.description).toBe('AT para paciente con TEA en CABA.');
+  });
+
+  it('maps null description to empty string', () => {
+    const row = makeRow({ description: null });
     const dto = mapPublicJobRow(row);
     expect(dto.description).toBe('');
   });

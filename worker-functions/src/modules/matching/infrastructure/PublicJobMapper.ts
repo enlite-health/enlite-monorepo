@@ -1,15 +1,13 @@
 import type { PublicJobRow, PublicJobDto } from '../domain/PublicJobDto';
 
-const GENERIC_DESCRIPTION_PREFIXES = [
-  'caso operacional importado',
-  'caso operacional',
-];
-
+/**
+ * Public `description` is sourced from `job_postings.talentum_description` — the
+ * AI-generated, PII-free description (the only description column that exists).
+ * The legacy `description` column (raw ClickUp dump with patient PII) was dropped
+ * in migration 214. No placeholder stripping needed anymore — just trim/null-guard.
+ */
 export function sanitizeDescription(raw: string | null): string {
-  if (!raw) return '';
-  const lower = raw.trim().toLowerCase();
-  if (GENERIC_DESCRIPTION_PREFIXES.some(p => lower.startsWith(p))) return '';
-  return raw.trim();
+  return raw?.trim() ?? '';
 }
 
 function normalizeStateCity(raw: string | null): string | null {
