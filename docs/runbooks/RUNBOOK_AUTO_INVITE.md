@@ -116,8 +116,13 @@ Resolvido em 2026-05-20 (commits `4774c93` + posteriores). Templates Twilio apro
 
 | Slug | content_sid Twilio | Status Meta |
 |---|---|---|
-| `ar_vacancy_match_complete` | `HXa1ff7c9189b625587929c5f19e4e614f` | ✅ approved |
-| `ar_vacancy_match_incomplete` | `HXd8cd5071c998317731286be3e5164854` | ✅ approved |
+| `ar_vacancy_match_complete` | `HXbd608e95260a97d1da8f9e21c9eae77a` | ✅ approved |
+| `ar_vacancy_match_incomplete` | `HX28e3f10dde62eae90999fe1cf9bf23b3` | ✅ approved |
+
+> **2026-06-18** — content_sids trocados pelos templates `_v2` (migration 211).
+> Os antigos `HXa1ff7c9189b625587929c5f19e4e614f` / `HXd8cd5071c998317731286be3e5164854`
+> tinham o link quebrado (`{{vacancy_url}}.` com ponto colado → tela branca) e foram
+> **deletados** do Twilio. A rota correta é `/vacantes/:id` (ES), não `/vacancies` (EN).
 
 Slug antigo `vacancy_invited_auto` (migration 174) foi desativado (`is_active=false`) — não usado mais.
 
