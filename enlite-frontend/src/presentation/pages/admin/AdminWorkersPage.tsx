@@ -6,7 +6,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { SelectField } from '@presentation/components/molecules/SelectField';
+import { Select } from '@presentation/components/atoms/Select';
 import { WorkerFilters } from '@presentation/components/features/admin/WorkerFilters';
 import { WorkerStatsCards } from '@presentation/components/features/admin/WorkerStatsCards';
 import { WorkersTable } from '@presentation/components/features/admin/WorkersTable';
@@ -223,15 +223,15 @@ export function AdminWorkersPage(): JSX.Element {
         {/* Pagination */}
         <div className="flex flex-wrap items-center justify-end gap-4 mt-6">
           <div className="w-full sm:w-[164px]">
-            <SelectField
+            <Select
+              inputSize="compact"
               options={[
                 { value: '10', label: '10' },
                 { value: '20', label: '20' },
                 { value: '50', label: '50' },
               ]}
               value={itemsPerPage}
-              onChange={handleItemsPerPageChange}
-              placeholder="20"
+              onValueChange={handleItemsPerPageChange}
             />
           </div>
           <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">

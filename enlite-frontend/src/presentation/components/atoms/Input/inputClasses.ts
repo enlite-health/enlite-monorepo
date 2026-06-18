@@ -20,11 +20,11 @@ export const INPUT_SIZE_CONFIG: Record<InputSize, SizeConfig> = {
     borderRadius: 'rounded-[10px]',
   },
   compact: {
-    height: 'h-[42px]',
-    padding: 'px-3 py-2',
+    height: 'h-12',
+    padding: 'px-4 py-2',
     fontSize: 'text-sm',
     lineHeight: 'leading-[1.3]',
-    borderRadius: 'rounded-lg',
+    borderRadius: 'rounded-[10px]',
   },
 };
 
@@ -35,7 +35,7 @@ const DEFAULT_BORDER = 'border-[#d9d9d9]';
 const ERROR_BORDER = 'border-red-500';
 const FOCUS_BORDER = 'focus:border-[#180149]';
 const DEFAULT_BORDER_WIDTH = 'border-2';
-const COMPACT_BORDER_WIDTH = 'border';
+const COMPACT_BORDER_WIDTH = 'border-[1.5px]';
 const DISABLED_CLASSES = 'bg-[#f3f4f6] cursor-not-allowed';
 
 export interface InputClassesOpts {

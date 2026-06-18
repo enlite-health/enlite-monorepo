@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
-import { SelectField, SelectOption } from '@presentation/components/molecules/SelectField';
+import { Select, SelectOption } from '@presentation/components/atoms/Select';
 
 interface PatientFiltersProps {
   searchValue: string;
@@ -74,10 +74,11 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.attentionLabel')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={attentionOptions}
             value={selectedAttention}
-            onChange={onAttentionChange}
+            onValueChange={onAttentionChange}
             placeholder={t('admin.patients.attentionOptions.all')}
           />
         </div>
@@ -88,10 +89,11 @@ export function PatientFilters({
             <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
               {t('admin.patients.reasonLabel')}
             </label>
-            <SelectField
+            <Select
+              inputSize="compact"
               options={reasonOptions}
               value={selectedReason}
-              onChange={onReasonChange}
+              onValueChange={onReasonChange}
               placeholder={t('admin.patients.reasonOptions.all')}
             />
           </div>
@@ -102,10 +104,11 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.specialtyLabel')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={specialtyOptions}
             value={selectedSpecialty}
-            onChange={onSpecialtyChange}
+            onValueChange={onSpecialtyChange}
             placeholder={t('admin.patients.specialtyOptions.all')}
           />
         </div>
@@ -115,10 +118,11 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.dependencyLabel')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={dependencyOptions}
             value={selectedDependency}
-            onChange={onDependencyChange}
+            onValueChange={onDependencyChange}
             placeholder={t('admin.patients.dependencyOptions.all')}
           />
         </div>

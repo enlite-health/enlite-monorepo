@@ -62,10 +62,10 @@ describe('Input', () => {
 
   // ─── Size compact ─────────────────────────────────────────────────────────
 
-  it('aplica h-[42px] quando inputSize=compact', () => {
+  it('aplica h-12 quando inputSize=compact', () => {
     const { container } = render(<Input inputSize="compact" />);
     const input = container.querySelector('input');
-    expect(input?.className).toContain('h-[42px]');
+    expect(input?.className).toContain('h-12');
   });
 
   it('aplica h-[60px] quando inputSize=default (padrão)', () => {

@@ -25,10 +25,10 @@ describe('Textarea', () => {
     expect(textarea?.className).not.toContain('h-[60px]');
   });
 
-  it('NAO aplica h-[42px] no inputSize compact', () => {
+  it('NAO aplica h-12 no inputSize compact', () => {
     const { container } = render(<Textarea inputSize="compact" />);
     const textarea = container.querySelector('textarea');
-    expect(textarea?.className).not.toContain('h-[42px]');
+    expect(textarea?.className).not.toContain('h-12');
   });
 
   // ─── Resize ───────────────────────────────────────────────────────────────

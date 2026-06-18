@@ -13,6 +13,8 @@ interface PhoneInputIntlProps {
   readOnly?: boolean;
   className?: string;
   icon?: React.ReactNode;
+  /** 'default' = ~56px; 'compact' = 48px (alinha com o Select do design system) */
+  inputSize?: 'default' | 'compact';
 }
 
 export function PhoneInputIntl({
@@ -24,7 +26,10 @@ export function PhoneInputIntl({
   readOnly = false,
   className = '',
   icon,
+  inputSize = 'default',
 }: PhoneInputIntlProps): JSX.Element {
+  const minHeightPx = inputSize === 'compact' ? 48 : 56;
+  const inputFontPx = inputSize === 'compact' ? 14 : 16;
   const [country, setCountry] = useState<Country>(defaultCountry);
   const [nationalNumber, setNationalNumber] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,7 +121,7 @@ export function PhoneInputIntl({
         .phone-input-wrapper {
           display: flex;
           align-items: center;
-          min-height: 56px;
+          min-height: ${minHeightPx}px;
           padding: 0 16px;
           border-radius: 10px;
           border: 1.5px solid #D9D9D9;
@@ -165,7 +170,7 @@ export function PhoneInputIntl({
           outline: none;
           background: transparent;
           font-family: 'Lexend', sans-serif;
-          font-size: 16px;
+          font-size: ${inputFontPx}px;
           font-weight: 500;
           color: #374151;
         }

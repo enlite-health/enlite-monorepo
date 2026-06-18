@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useMemo } from 'react';
-import { SelectField } from '@presentation/components/molecules/SelectField';
+import { Select } from '@presentation/components/atoms/Select';
 import { SearchInput } from '@presentation/components/molecules/SearchBar';
 import { PublicApiService } from '@infrastructure/http/PublicApiService';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
@@ -193,40 +193,40 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterType}
-            onChange={setFilterType}
+            onValueChange={setFilterType}
             options={workerTypeOptions}
             placeholder={t('jobs.filters.workerType')}
-            label={t('jobs.filters.workerType')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterProvince}
-            onChange={setFilterProvince}
+            onValueChange={setFilterProvince}
             options={provinceOptions}
             placeholder={t('jobs.filters.province')}
-            label={t('jobs.filters.province')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterLocality}
-            onChange={setFilterLocality}
+            onValueChange={setFilterLocality}
             options={localityOptions}
             placeholder={t('jobs.filters.locality')}
-            label={t('jobs.filters.locality')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterPathology}
-            onChange={setFilterPathology}
+            onValueChange={setFilterPathology}
             options={pathologyOptions}
             placeholder={t('jobs.filters.pathology')}
-            label={t('jobs.filters.pathology')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterSex}
-            onChange={setFilterSex}
+            onValueChange={setFilterSex}
             options={sexOptions}
             placeholder={t('jobs.filters.sex')}
-            label={t('jobs.filters.sex')}
           />
         </div>
 

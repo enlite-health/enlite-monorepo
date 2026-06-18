@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
-import { SelectField, SelectOption } from '@presentation/components/molecules/SelectField';
+import { Select, SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect, SearchableSelectOption } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 
 interface WorkerFiltersProps {
@@ -83,10 +83,11 @@ export function WorkerFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.workers.docsLabel', 'Documentación')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={docsStatusOptions}
             value={selectedDocsStatus}
-            onChange={onDocsStatusChange}
+            onValueChange={onDocsStatusChange}
             placeholder={t('admin.workers.docsOptions.all', 'Todos')}
           />
         </div>
@@ -96,10 +97,11 @@ export function WorkerFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.workers.filters.validation', 'Validación')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={validationStatusOptions}
             value={selectedValidationStatus}
-            onChange={onValidationStatusChange}
+            onValueChange={onValidationStatusChange}
             placeholder={t('admin.workers.docsOptions.all', 'Todos')}
           />
         </div>
