@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { VacanciesController } from '../controllers/VacanciesController';
+import { VacanciesAuxController } from '../controllers/VacanciesAuxController';
 import { VacancyTalentumController } from '../controllers/VacancyTalentumController';
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
 import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
@@ -36,6 +37,9 @@ export function createAdminVacanciesRoutes(
 ): Router {
   const router = Router();
 
+  // Auxiliary controller is instantiated internally — it has no injectable deps.
+  const auxController = new VacanciesAuxController();
+
   // ── Read (VacanciesController) ────────────────────────────────────────────────
   router.get('/vacancies', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.listVacancies(req, res),
@@ -50,14 +54,18 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/cases-for-select', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.getCasesForSelect(req, res),
   );
+  // ── Auxiliary read (VacanciesAuxController) ───────────────────────────────────
+  router.get('/vacancies/filter-options', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    auxController.getFilterOptions(req, res),
+  );
   router.get('/vacancies/pending-address-review', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacanciesController.listPendingAddressReview(req, res),
+    auxController.listPendingAddressReview(req, res),
   );
   router.get('/vacancies/in-progress', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacanciesController.listInProgressForPatient(req, res),
+    auxController.listInProgressForPatient(req, res),
   );
   router.get('/vacancies/by-address', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacanciesController.listByAddress(req, res),
+    auxController.listByAddress(req, res),
   );
   router.get('/vacancies/:id', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.getVacancyById(req, res),

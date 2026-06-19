@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
@@ -8,12 +8,13 @@ import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
-import { VacancyFilters } from '@presentation/components/features/admin/VacancyFilters';
+import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/components/features/admin/VacancyFilters';
 import { VacanciesTable, VacancyPriority } from '@presentation/components/features/admin/VacanciesTable';
 import { VacancyModal } from '@presentation/components/features/admin/VacancyModal/VacancyModal';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
 import { getStatusOptions, getPriorityOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
+import type { SelectOption } from '@presentation/components/atoms/Select';
 
 interface ModalState {
   isOpen: boolean;
@@ -29,39 +30,78 @@ function toPriority(value: unknown): VacancyPriority | null {
     : null;
 }
 
+const INITIAL_ADVANCED: VacancyAdvancedFilters = {
+  workerType: '',
+  state: '',
+  city: '',
+  requiredSex: '',
+  days: [],
+  timeFrom: '',
+  timeTo: '',
+};
+
 export function AdminVacanciesPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const statusOptions = getStatusOptions(t);
   const priorityOptions = getPriorityOptions(t);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
+  const [advancedFilters, setAdvancedFilters] = useState<VacancyAdvancedFilters>(INITIAL_ADVANCED);
+
+  const [stateOptions, setStateOptions] = useState<SelectOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<SelectOption[]>([]);
+
+  useEffect(() => {
+    AdminApiService.getVacancyFilterOptions()
+      .then(({ states, cities }) => {
+        setStateOptions(states.map((s) => ({ value: s, label: s })));
+        setCityOptions(cities.map((c) => ({ value: c, label: c })));
+      })
+      .catch(() => {
+        // silent — dropdowns stay empty
+      });
+  }, []);
 
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
   const handleStatusChange = (v: string) => { setSelectedStatus(v); setCurrentPage(1); };
   const handlePriorityChange = (v: string) => { setSelectedPriority(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
+  const handleAdvancedChange = useCallback((updates: Partial<VacancyAdvancedFilters>) => {
+    setAdvancedFilters((prev) => ({ ...prev, ...updates }));
+    setCurrentPage(1);
+  }, []);
 
-  const filters = useMemo(() => ({
-    search: searchQuery,
-    status: selectedStatus,
-    priority: selectedPriority,
-    limit: itemsPerPage,
-    offset: String((currentPage - 1) * parseInt(itemsPerPage)),
-  }), [searchQuery, selectedStatus, selectedPriority, itemsPerPage, currentPage]);
+  const filters = useMemo(() => {
+    const base: Record<string, string> = {
+      search: searchQuery,
+      status: selectedStatus,
+      priority: selectedPriority,
+      limit: itemsPerPage,
+      offset: String((currentPage - 1) * parseInt(itemsPerPage)),
+    };
+    if (advancedFilters.workerType) base.worker_type = advancedFilters.workerType;
+    if (advancedFilters.state) base.state = advancedFilters.state;
+    if (advancedFilters.city) base.city = advancedFilters.city;
+    if (advancedFilters.requiredSex) base.required_sex = advancedFilters.requiredSex;
+    if (advancedFilters.days.length > 0) base.days = advancedFilters.days.join(',');
+    if (advancedFilters.timeFrom && advancedFilters.timeTo) {
+      base.time_from = advancedFilters.timeFrom;
+      base.time_to = advancedFilters.timeTo;
+    }
+    return base;
+  }, [searchQuery, selectedStatus, selectedPriority, itemsPerPage, currentPage, advancedFilters]);
 
-  const { vacancies: rawVacancies, stats, total, isLoading, error, refetch } = useVacanciesData(filters);
+  const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
+  const stats = rawStats as { label: string; value: string | number; icon: string }[] | null;
 
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false, mode: 'create' });
 
   const openEditModal = useCallback((vacancyId: string, isDraft: boolean) => {
-    // Vacancies que já saíram do rascunho (is_draft=false) só permitem editar
-    // schedule e status — fluxo localizado vive em /admin/vacancies/:id
-    // (VacancyScheduleEditModal + VacancyStatusEditor, ADR-equivalente ao commit b2d518f).
-    // O modal grande aqui só vale para drafts em criação interrompida.
     if (!isDraft) {
       navigate(`/admin/vacancies/${vacancyId}`);
       return;
@@ -99,8 +139,9 @@ export function AdminVacanciesPage(): JSX.Element {
         text: parts.length > 0 ? parts.join(', ') : 'Sin cambios',
       });
       refetch();
-    } catch (err: any) {
-      setSyncMessage({ type: 'error', text: err.message || 'Error al sincronizar' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al sincronizar';
+      setSyncMessage({ type: 'error', text: msg });
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncMessage(null), 6000);
@@ -142,19 +183,22 @@ export function AdminVacanciesPage(): JSX.Element {
   }, []);
 
   const vacancies = useMemo(
-    () => (rawVacancies || []).map((v: any) => ({
-      id: v.id,
-      caso: v.caso ? String(v.caso) : v.id,
-      status: v.status || '—',
-      priority: toPriority(v.priority),
-      diasAberto: v.diasAberto || '—',
-      convidados: v.convidados ?? '—',
-      postulados: v.postulados ?? '—',
-      confirmados: v.confirmados ?? '—',
-      selecionados: v.selecionados ?? '—',
-      faltantes: v.faltantes ?? '—',
-      isDraft: v.is_draft === true,
-    })),
+    () => (rawVacancies || []).map((v: unknown) => {
+      const vac = v as Record<string, unknown>;
+      return {
+        id: vac.id as string,
+        caso: vac.caso ? String(vac.caso) : vac.id as string,
+        status: (vac.status as string) || '—',
+        priority: toPriority(vac.priority),
+        diasAberto: (vac.diasAberto as string) || '—',
+        convidados: vac.convidados != null ? String(vac.convidados) : '—',
+        postulados: vac.postulados != null ? String(vac.postulados) : '—',
+        confirmados: vac.confirmados != null ? String(vac.confirmados) : '—',
+        selecionados: vac.selecionados != null ? String(vac.selecionados) : '—',
+        faltantes: vac.faltantes != null ? String(vac.faltantes) : '—',
+        isDraft: vac.is_draft === true,
+      };
+    }),
     [rawVacancies],
   );
 
@@ -243,6 +287,10 @@ export function AdminVacanciesPage(): JSX.Element {
           onPriorityChange={handlePriorityChange}
           statusOptions={statusOptions}
           priorityOptions={priorityOptions}
+          advancedFilters={advancedFilters}
+          onAdvancedChange={handleAdvancedChange}
+          stateOptions={stateOptions}
+          cityOptions={cityOptions}
         />
 
         {error ? (

@@ -30,6 +30,7 @@ const mockRefetch = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     syncFromTalentum: (...args: unknown[]) => mockSyncFromTalentum(...args),
+    getVacancyFilterOptions: () => Promise.resolve({ states: [], cities: [] }),
   },
 }));
 

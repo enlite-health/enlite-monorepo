@@ -33,7 +33,10 @@
     "noResults": "Sem resultados",
     "cancel": "Cancelar",
     "close": "Fechar",
-    "logout": "Sair"
+    "logout": "Sair",
+    "multiSelect": {
+      "selectedCount": "{{count}} selecionados"
+    }
   },
   "sidebar": {
     "expandMenu": "Expandir menu",
@@ -942,6 +945,35 @@
         "high": "Alta",
         "normal": "Normal",
         "low": "Baixa"
+      },
+      "filters": {
+        "allOption": "Todos",
+        "clear": "Limpar filtros",
+        "type": {
+          "label": "Tipo",
+          "at": "AT",
+          "caregiver": "Cuidador"
+        },
+        "province": {
+          "label": "Província"
+        },
+        "locality": {
+          "label": "Localidade"
+        },
+        "sex": {
+          "label": "Sexo",
+          "f": "Feminino",
+          "m": "Masculino",
+          "both": "Indiferente"
+        },
+        "days": {
+          "label": "Dias"
+        },
+        "time": {
+          "label": "Horário",
+          "from": "De",
+          "to": "Até"
+        }
       }
     },
     "vacancyDetail": {
@@ -964,14 +996,7 @@
       },
       "patientCard": {
         "title": "Paciente",
-        "name": "Nome",
-        "nameLabel": "Nome do paciente:",
-        "diagnosis": "Diagnóstico",
-        "dependencyLevel": "Nível de dependência",
-        "zone": "Zona / Bairro",
-        "insuranceVerified": "Plano verificado",
-        "yes": "Sim",
-        "no": "Não"
+        "nameLabel": "Nome do paciente:"
       },
       "requirementsCard": {
         "title": "Requisitos",
@@ -1252,10 +1277,6 @@
         "dates": "Datas",
         "publishedAt": "Data de publicação:",
         "closedAt": "Data de encerramento:"
-      },
-      "patientCard": {
-        "title": "Paciente",
-        "nameLabel": "Nome do paciente:"
       },
       "professionCard": {
         "title": "Acompanhantes Terapêuticos",

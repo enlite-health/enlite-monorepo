@@ -11,6 +11,11 @@ import {
   SELECTED_KANBAN_STAGES,
   toSqlInList,
 } from '../../domain/applicationFunnelStages';
+import {
+  buildScheduleFilter,
+  parseDaysCsv,
+  parseTimeHHMM,
+} from './vacancyScheduleFilter';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -87,6 +92,7 @@ const LIST_VACANCIES_BASE = `
     END as faltantes
   FROM job_postings jp
   LEFT JOIN patients p ON jp.patient_id = p.id
+  LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
   WHERE jp.case_number IS NOT NULL
     AND jp.deleted_at IS NULL
 `;
@@ -104,10 +110,33 @@ const VALID_STATUSES: ReadonlySet<string> = new Set([
 
 const VALID_PRIORITIES: ReadonlySet<string> = new Set(['URGENT', 'HIGH', 'NORMAL', 'LOW']);
 
+/** Values accepted for the workerType filter (maps to required_professions column). */
+const VALID_WORKER_TYPES: ReadonlySet<string> = new Set(['AT', 'CAREGIVER']);
+
+/** Values accepted for the requiredSex filter. */
+const VALID_REQUIRED_SEX: ReadonlySet<string> = new Set(['F', 'M', 'BOTH']);
+
 export interface ListVacanciesFilters {
   search?: unknown;
   status?: unknown;
   priority?: unknown;
+  /** Filter by required_professions: 'AT' | 'CAREGIVER' */
+  workerType?: unknown;
+  /** Filter by patient_addresses.state (ILIKE exact value). */
+  state?: unknown;
+  /** Filter by patient_addresses.city (ILIKE exact value). */
+  city?: unknown;
+  /** Filter by required_sex: 'F' | 'M' | 'BOTH'. */
+  requiredSex?: unknown;
+  /**
+   * CSV of day-of-week ints (0=Sun … 6=Sat). Vacancy must cover ALL listed days.
+   * Example: "1,2,3"
+   */
+  days?: unknown;
+  /** Start of time window "HH:MM". Both timeFrom AND timeTo must be provided. */
+  timeFrom?: unknown;
+  /** End of time window "HH:MM". Both timeFrom AND timeTo must be provided. */
+  timeTo?: unknown;
   limit: string;
   offset: string;
 }
@@ -145,6 +174,42 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters): ListVaca
     baseQuery += ` AND jp.priority = $${paramIndex}`;
     params.push(filters.priority);
     paramIndex++;
+  }
+
+  if (typeof filters.workerType === 'string' && VALID_WORKER_TYPES.has(filters.workerType)) {
+    baseQuery += ` AND $${paramIndex} = ANY(jp.required_professions)`;
+    params.push(filters.workerType);
+    paramIndex++;
+  }
+
+  if (typeof filters.state === 'string' && filters.state.trim() !== '') {
+    baseQuery += ` AND pa.state ILIKE $${paramIndex}`;
+    params.push(filters.state.trim());
+    paramIndex++;
+  }
+
+  if (typeof filters.city === 'string' && filters.city.trim() !== '') {
+    baseQuery += ` AND pa.city ILIKE $${paramIndex}`;
+    params.push(filters.city.trim());
+    paramIndex++;
+  }
+
+  if (typeof filters.requiredSex === 'string' && VALID_REQUIRED_SEX.has(filters.requiredSex)) {
+    baseQuery += ` AND jp.required_sex = $${paramIndex}`;
+    params.push(filters.requiredSex);
+    paramIndex++;
+  }
+
+  // Schedule filter: days CSV + optional HH:MM window.
+  const days     = parseDaysCsv(filters.days);
+  const timeFrom = parseTimeHHMM(filters.timeFrom);
+  const timeTo   = parseTimeHHMM(filters.timeTo);
+
+  const scheduleResult = buildScheduleFilter({ days, timeFrom, timeTo }, paramIndex);
+  if (scheduleResult.sql) {
+    baseQuery += scheduleResult.sql;
+    params.push(...scheduleResult.params);
+    paramIndex = scheduleResult.nextParamIndex;
   }
 
   return { baseQuery, params, paramIndex };

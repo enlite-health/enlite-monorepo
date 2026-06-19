@@ -8,6 +8,8 @@ export { Input } from './Input';
 export type { InputProps, InputSize } from './Input';
 export { Label } from './Label';
 export { MetricCard } from './MetricCard';
+export { MultiSelect } from './MultiSelect';
+export type { MultiSelectProps } from './MultiSelect';
 export { PageContainer } from './PageContainer';
 export { PercentageDisplay } from './PercentageDisplay';
 export { ProgressBar } from './ProgressBar';

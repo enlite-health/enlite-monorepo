@@ -1,0 +1,230 @@
+/**
+ * vacancyListHelpers.test.ts
+ *
+ * Unit tests for buildListVacanciesQuery.
+ * Covers: each new filter (workerType, state, city, requiredSex, days, time),
+ * existing filters (search, status, priority), and absence of each filter.
+ */
+
+import { buildListVacanciesQuery, ListVacanciesFilters } from '../vacancyListHelpers';
+
+// Minimal filters that satisfy the required fields
+function base(overrides: Partial<ListVacanciesFilters> = {}): ListVacanciesFilters {
+  return { limit: '20', offset: '0', ...overrides };
+}
+
+describe('buildListVacanciesQuery — base query', () => {
+  it('base query includes LEFT JOIN patient_addresses', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+    expect(baseQuery).toContain('LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id');
+  });
+
+  it('returns paramIndex=1 and empty params when no filters', () => {
+    const { params, paramIndex } = buildListVacanciesQuery(base());
+    expect(params).toEqual([]);
+    expect(paramIndex).toBe(1);
+  });
+});
+
+// ── existing filters ───────────────────────────────────────────────────────────
+
+describe('buildListVacanciesQuery — search filter', () => {
+  it('appends ILIKE search clause for valid search string', () => {
+    const { baseQuery, params, paramIndex } = buildListVacanciesQuery(base({ search: 'João' }));
+    expect(baseQuery).toContain('ILIKE $1');
+    expect(params[0]).toBe('%João%');
+    expect(paramIndex).toBe(2);
+  });
+
+  it('ignores falsy search value', () => {
+    const { params } = buildListVacanciesQuery(base({ search: '' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — status filter', () => {
+  it('appends status clause for valid status', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ status: 'SEARCHING' }));
+    expect(baseQuery).toContain('jp.status = $1');
+    expect(params[0]).toBe('SEARCHING');
+  });
+
+  it('ignores invalid status value', () => {
+    const { params } = buildListVacanciesQuery(base({ status: 'INVALID_STATUS' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — priority filter', () => {
+  it('appends priority clause for valid priority', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ priority: 'URGENT' }));
+    expect(baseQuery).toContain('jp.priority = $1');
+    expect(params[0]).toBe('URGENT');
+  });
+
+  it('ignores invalid priority value', () => {
+    const { params } = buildListVacanciesQuery(base({ priority: 'EXTREME' }));
+    expect(params).toEqual([]);
+  });
+});
+
+// ── new filters ────────────────────────────────────────────────────────────────
+
+describe('buildListVacanciesQuery — workerType filter', () => {
+  it('appends ANY(required_professions) clause for "AT"', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ workerType: 'AT' }));
+    expect(baseQuery).toContain('= ANY(jp.required_professions)');
+    expect(params[0]).toBe('AT');
+  });
+
+  it('appends clause for "CAREGIVER"', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ workerType: 'CAREGIVER' }));
+    expect(baseQuery).toContain('= ANY(jp.required_professions)');
+    expect(params[0]).toBe('CAREGIVER');
+  });
+
+  it('ignores invalid workerType (e.g. "PSYCHOLOGIST")', () => {
+    const { params } = buildListVacanciesQuery(base({ workerType: 'PSYCHOLOGIST' }));
+    expect(params).toEqual([]);
+  });
+
+  it('ignores non-string workerType', () => {
+    const { params } = buildListVacanciesQuery(base({ workerType: 42 }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — state filter', () => {
+  it('appends pa.state ILIKE clause for non-empty state', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ state: 'Buenos Aires' }));
+    expect(baseQuery).toContain('pa.state ILIKE $1');
+    expect(params[0]).toBe('Buenos Aires');
+  });
+
+  it('trims state value', () => {
+    const { params } = buildListVacanciesQuery(base({ state: '  Córdoba  ' }));
+    expect(params[0]).toBe('Córdoba');
+  });
+
+  it('ignores empty string state', () => {
+    const { params } = buildListVacanciesQuery(base({ state: '' }));
+    expect(params).toEqual([]);
+  });
+
+  it('ignores whitespace-only state', () => {
+    const { params } = buildListVacanciesQuery(base({ state: '   ' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — city filter', () => {
+  it('appends pa.city ILIKE clause for non-empty city', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ city: 'Rosario' }));
+    expect(baseQuery).toContain('pa.city ILIKE $1');
+    expect(params[0]).toBe('Rosario');
+  });
+
+  it('ignores empty city', () => {
+    const { params } = buildListVacanciesQuery(base({ city: '' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — requiredSex filter', () => {
+  it('appends jp.required_sex = clause for "F"', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ requiredSex: 'F' }));
+    expect(baseQuery).toContain('jp.required_sex = $1');
+    expect(params[0]).toBe('F');
+  });
+
+  it('appends clause for "M"', () => {
+    const { params } = buildListVacanciesQuery(base({ requiredSex: 'M' }));
+    expect(params[0]).toBe('M');
+  });
+
+  it('appends clause for "BOTH"', () => {
+    const { params } = buildListVacanciesQuery(base({ requiredSex: 'BOTH' }));
+    expect(params[0]).toBe('BOTH');
+  });
+
+  it('ignores invalid requiredSex value', () => {
+    const { params } = buildListVacanciesQuery(base({ requiredSex: 'OTHER' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — days filter', () => {
+  it('appends schedule filter SQL for valid days CSV', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(base({ days: '1,2,3' }));
+    expect(baseQuery).toContain('bool_and');
+    expect(params).toContainEqual([1, 2, 3]);
+  });
+
+  it('discards invalid tokens and ignores empty result', () => {
+    const { params } = buildListVacanciesQuery(base({ days: 'abc,xyz' }));
+    expect(params).toEqual([]);
+  });
+
+  it('ignores empty days string', () => {
+    const { params } = buildListVacanciesQuery(base({ days: '' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — time filter (time-only, no days)', () => {
+  it('appends EXISTS time-overlap SQL when days absent and both times valid', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(
+      base({ timeFrom: '08:00', timeTo: '12:00' }),
+    );
+    expect(baseQuery).toContain('EXISTS');
+    expect(baseQuery).toContain('startTime');
+    expect(params).toContain('08:00');
+    expect(params).toContain('12:00');
+  });
+
+  it('ignores partial time (only timeFrom)', () => {
+    const { params } = buildListVacanciesQuery(base({ timeFrom: '08:00' }));
+    expect(params).toEqual([]);
+  });
+
+  it('ignores invalid time format', () => {
+    const { params } = buildListVacanciesQuery(base({ timeFrom: '8:00', timeTo: '18:00' }));
+    expect(params).toEqual([]);
+  });
+});
+
+describe('buildListVacanciesQuery — days + time combined', () => {
+  it('appends bool_and + time-overlap SQL for days=[1] + valid times', () => {
+    const { baseQuery, params } = buildListVacanciesQuery(
+      base({ days: '1', timeFrom: '09:00', timeTo: '17:00' }),
+    );
+    expect(baseQuery).toContain('bool_and');
+    expect(baseQuery).toContain('startTime');
+    expect(params).toContainEqual([1]);
+    expect(params).toContain('09:00');
+    expect(params).toContain('17:00');
+  });
+});
+
+describe('buildListVacanciesQuery — paramIndex sequencing', () => {
+  it('paramIndex advances correctly for multiple filters combined', () => {
+    const { params, paramIndex } = buildListVacanciesQuery(
+      base({ status: 'SEARCHING', workerType: 'AT', state: 'BA', city: 'CABA' }),
+    );
+    // status=$1, workerType=$2, state=$3, city=$4
+    expect(params).toHaveLength(4);
+    expect(paramIndex).toBe(5);
+  });
+
+  it('LIMIT/OFFSET params appended correctly after all filters', () => {
+    const { params: baseParams, paramIndex } = buildListVacanciesQuery(
+      base({ status: 'SEARCHING' }),
+    );
+    // Simulate what the controller does: push LIMIT + OFFSET
+    const allParams = [...baseParams, 20, 0];
+    expect(allParams[0]).toBe('SEARCHING'); // $1
+    expect(allParams[1]).toBe(20);           // $paramIndex (LIMIT)
+    expect(allParams[2]).toBe(0);            // $paramIndex+1 (OFFSET)
+    expect(paramIndex).toBe(2);
+  });
+});

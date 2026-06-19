@@ -46,7 +46,7 @@ describe('useVacanciesData', () => {
 
   it('should refetch when filters change', async () => {
     const mockVacancies = { data: [], total: 0 };
-    const mockStats: any[] = [];
+    const mockStats: unknown[] = [];
     const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
     vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue(mockStats);
 
@@ -117,6 +117,110 @@ describe('useVacanciesData', () => {
 
     await waitFor(() => {
       expect(listSpy).toHaveBeenCalledWith({ status: 'pausado' });
+    });
+  });
+
+  // ── New advanced filter fields ─────────────────────────────────────────────
+
+  it('passes worker_type to listVacancies', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    renderHook(() => useVacanciesData({ worker_type: 'AT' }));
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ worker_type: 'AT' });
+    });
+  });
+
+  it('passes state and city to listVacancies', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    renderHook(() => useVacanciesData({ state: 'Buenos Aires', city: 'Palermo' }));
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ state: 'Buenos Aires', city: 'Palermo' });
+    });
+  });
+
+  it('passes required_sex to listVacancies', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    renderHook(() => useVacanciesData({ required_sex: 'F' }));
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ required_sex: 'F' });
+    });
+  });
+
+  it('passes days CSV to listVacancies', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    renderHook(() => useVacanciesData({ days: '1,3,5' }));
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ days: '1,3,5' });
+    });
+  });
+
+  it('passes time_from and time_to to listVacancies', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    renderHook(() => useVacanciesData({ time_from: '09:00', time_to: '17:00' }));
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ time_from: '09:00', time_to: '17:00' });
+    });
+  });
+
+  it('refetches when days filter changes', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    const { rerender } = renderHook(
+      ({ filters }) => useVacanciesData(filters),
+      { initialProps: { filters: { days: '1' } } },
+    );
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ days: '1' });
+    });
+
+    rerender({ filters: { days: '1,3,5' } });
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ days: '1,3,5' });
+    });
+  });
+
+  it('refetches when time_from changes', async () => {
+    const mockVacancies = { data: [], total: 0 };
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue(mockVacancies);
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    const { rerender } = renderHook(
+      ({ filters }) => useVacanciesData(filters),
+      { initialProps: { filters: { time_from: '08:00', time_to: '16:00' } } },
+    );
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ time_from: '08:00', time_to: '16:00' });
+    });
+
+    rerender({ filters: { time_from: '09:00', time_to: '17:00' } });
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ time_from: '09:00', time_to: '17:00' });
     });
   });
 });

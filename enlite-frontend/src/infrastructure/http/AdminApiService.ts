@@ -21,6 +21,11 @@ import {
 } from './AdminTalentumApiService';
 import { AdminVacancyDraftsApiService } from './AdminVacancyDraftsApiService';
 import { AdminContactNotesApiService } from './AdminContactNotesApiService';
+import {
+  AdminVacancyListApiService,
+  type VacancyListFilters,
+  type VacancyFilterOptions,
+} from './AdminVacancyListApiService';
 import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 import type {
   ParseVacancyFullResult,
@@ -125,18 +130,15 @@ class AdminApiServiceClass {
     return AdminVacancyParseApiService.createPatientAddress(patientId, data);
   }
 
-  // ========== Vacancies Methods ==========
-
-  async listVacancies(filters?: {
-    search?: string; client?: string; status?: string; priority?: string; limit?: string; offset?: string;
-  }): Promise<{ data: any[]; total: number }> {
-    const params = new URLSearchParams(filters as any);
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseURL}/api/admin/vacancies?${params}`, { method: 'GET', headers });
-    const json = await response.json();
-    if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
-    return { data: json.data, total: json.total };
+  // ========== Vacancies List — delegated to AdminVacancyListApiService ==========
+  listVacancies(f?: VacancyListFilters): Promise<{ data: unknown[]; total: number }> {
+    return AdminVacancyListApiService.listVacancies(f);
   }
+  getVacancyFilterOptions(): Promise<VacancyFilterOptions> {
+    return AdminVacancyListApiService.getVacancyFilterOptions();
+  }
+
+  // ========== Vacancies Methods ==========
 
   async getVacanciesStats(): Promise<any[]> {
     return this.request<any[]>('GET', '/api/admin/vacancies/stats');

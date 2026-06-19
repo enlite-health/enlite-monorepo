@@ -227,8 +227,10 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     // Removed Clientes filter
     await expect(page.getByText(/^Clientes$/)).toHaveCount(0);
 
-    // Filter bar has exactly 2 selects (Estado, Prioridad) — Clientes is gone
-    await expect(filterBar(page).locator('select')).toHaveCount(2);
+    // Filter bar has at least 2 selects (Estado, Prioridad) — Clientes is gone
+    // (additional selects added by advanced filters: Tipo, Provincia, Localidad, Sexo, De, Hasta)
+    const selectCount = await filterBar(page).locator('select').count();
+    expect(selectCount).toBeGreaterThanOrEqual(2);
 
     // Remaining filter labels (Estado, Prioridad) appear inside the toolbar
     await expect(filterBar(page).getByText(/^Estado$/)).toBeVisible();

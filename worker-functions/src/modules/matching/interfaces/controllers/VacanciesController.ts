@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
-import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   buildListVacanciesQuery,
@@ -14,20 +13,14 @@ import { reportError } from '@shared/logging';
 /**
  * VacanciesController
  *
- * Read-only endpoints for the AdminVacanciesPage.
+ * Core read-only endpoints for the AdminVacanciesPage.
  *
  * Write endpoints (create/update/delete) → VacancyCrudController
  * Match/enrichment/encuadre endpoints   → VacancyMatchController
  * Talentum/prescreening endpoints        → VacancyTalentumController
+ * Auxiliary read endpoints               → VacanciesAuxController
+ *   (in-progress, by-address, pending-address-review, filter-options)
  */
-
-const inProgressQuerySchema = z.object({
-  patient_id: z.string().uuid({ message: 'patient_id must be a valid UUID v4' }),
-});
-
-const byAddressQuerySchema = z.object({
-  patient_address_id: z.string().uuid({ message: 'patient_address_id must be a valid UUID v4' }),
-});
 
 export class VacanciesController {
   private db: Pool;
@@ -38,10 +31,24 @@ export class VacanciesController {
 
   async listVacancies(req: Request, res: Response): Promise<void> {
     try {
-      const { search, status, priority, limit = '20', offset = '0' } = req.query;
+      const {
+        search, status, priority,
+        worker_type, state, city, required_sex,
+        days, time_from, time_to,
+        limit = '20', offset = '0',
+      } = req.query;
 
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
-        search, status, priority, limit: limit as string, offset: offset as string,
+        search, status, priority,
+        workerType: worker_type,
+        state,
+        city,
+        requiredSex: required_sex,
+        days,
+        timeFrom: time_from,
+        timeTo: time_to,
+        limit: limit as string,
+        offset: offset as string,
       });
 
       const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;
@@ -66,7 +73,10 @@ export class VacanciesController {
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error('[VacanciesController] Error listing vacancies:', error);
+      reportError(
+        error instanceof Error ? error : new Error(msg),
+        { source: 'VacanciesController:listVacancies' },
+      );
       res.status(500).json({ success: false, error: 'Failed to list vacancies', details: msg });
     }
   }
@@ -122,7 +132,10 @@ export class VacanciesController {
       res.status(200).json({ success: true, data: formattedStats });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error('[VacanciesController] Error fetching stats:', error);
+      reportError(
+        error instanceof Error ? error : new Error(msg),
+        { source: 'VacanciesController:getVacanciesStats' },
+      );
       res.status(500).json({ success: false, error: 'Failed to fetch vacancies stats', details: msg });
     }
   }
@@ -206,7 +219,10 @@ export class VacanciesController {
       res.status(200).json({ success: true, data: normalized });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error('[VacanciesController] Error fetching vacancy:', error);
+      reportError(
+        error instanceof Error ? error : new Error(msg),
+        { source: 'VacanciesController:getVacancyById' },
+      );
       res.status(500).json({ success: false, error: 'Failed to fetch vacancy', details: msg });
     }
   }
@@ -219,7 +235,11 @@ export class VacanciesController {
       const nextVacancyNumber = parseInt(result.rows[0].next_vacancy_number);
       res.status(200).json({ success: true, data: { nextVacancyNumber } });
     } catch (error: unknown) {
-      console.error('[VacanciesController] Error getting next vacancy number:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(
+        error instanceof Error ? error : new Error(msg),
+        { source: 'VacanciesController:getNextVacancyNumber' },
+      );
       res.status(500).json({ success: false, error: 'Failed to get next vacancy number' });
     }
   }
@@ -244,154 +264,12 @@ export class VacanciesController {
       `);
       res.status(200).json({ success: true, data: result.rows });
     } catch (error: unknown) {
-      console.error('[VacanciesController] Error fetching cases for select:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(
+        error instanceof Error ? error : new Error(msg),
+        { source: 'VacanciesController:getCasesForSelect' },
+      );
       res.status(500).json({ success: false, error: 'Failed to fetch cases for select' });
-    }
-  }
-
-  async listPendingAddressReview(req: Request, res: Response): Promise<void> {
-    try {
-      const { status } = req.query;
-      const params: unknown[] = [];
-
-      let query = `
-        SELECT
-          jp.id, jp.case_number, jp.vacancy_number, jp.title, jp.status,
-          audit.attempted_match AS legacy_address_hint,
-          p.id AS patient_id,
-          TRIM(COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')) AS patient_name,
-          audit.match_type AS audit_match_type,
-          audit.confidence_score AS audit_confidence_score,
-          audit.attempted_match AS audit_attempted_match
-        FROM job_postings jp
-        LEFT JOIN patients p ON jp.patient_id = p.id
-        LEFT JOIN LATERAL (
-          SELECT match_type, confidence_score, attempted_match
-          FROM _patient_address_match_audit
-          WHERE job_posting_id = jp.id
-          ORDER BY created_at DESC LIMIT 1
-        ) audit ON TRUE
-        WHERE jp.patient_address_id IS NULL AND jp.deleted_at IS NULL
-      `;
-
-      if (status) {
-        params.push(status);
-        query += ` AND jp.status = $${params.length}`;
-      }
-      query += ` ORDER BY jp.case_number ASC`;
-
-      const result = await this.db.query(query, params);
-      res.status(200).json({ success: true, data: result.rows, total: result.rows.length });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error('[VacanciesController] listPendingAddressReview error:', error);
-      res.status(500).json({ success: false, error: 'Failed to list pending address reviews', details: msg });
-    }
-  }
-
-  /**
-   * GET /api/admin/vacancies/in-progress?patient_id=:uuid
-   *
-   * Returns draft vacancies (is_draft = true) created via the app
-   * (not ClickUp-synced) for the given patient. Used by the frontend to prompt
-   * resuming interrupted creation. The is_draft flag (migration 168) decouples
-   * "draft" from status, so vacancies whose status the operator already picked
-   * (SEARCHING, SEARCHING_REPLACEMENT, RAPID_RESPONSE) still show up here while
-   * they have not been published to Talentum.
-   */
-  async listInProgressForPatient(req: Request, res: Response): Promise<void> {
-    const parsed = inProgressQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      const firstIssue = parsed.error.issues[0];
-      res.status(400).json({
-        success: false,
-        error: firstIssue?.message ?? 'patient_id must be a valid UUID v4',
-      });
-      return;
-    }
-
-    const { patient_id } = parsed.data;
-
-    try {
-      const result = await this.db.query(
-        `SELECT
-          jp.id,
-          jp.case_number,
-          jp.vacancy_number,
-          jp.title,
-          jp.created_at,
-          jp.updated_at
-        FROM job_postings jp
-        LEFT JOIN job_postings_clickup_sync sync ON sync.job_posting_id = jp.id
-        WHERE jp.patient_id = $1
-          AND jp.is_draft = true
-          AND jp.deleted_at IS NULL
-          AND sync.job_posting_id IS NULL
-        ORDER BY jp.updated_at DESC`,
-        [patient_id],
-      );
-
-      res.status(200).json({ success: true, data: result.rows });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error('[VacanciesController] listInProgressForPatient error:', error);
-      res.status(500).json({ success: false, error: 'Failed to list in-progress vacancies', details: msg });
-    }
-  }
-
-  /**
-   * GET /api/admin/vacancies/by-address?patient_address_id=:uuid
-   *
-   * Returns existing vacancies that already point to the given patient_address_id
-   * (not soft-deleted). Used by the frontend Step-1 form to warn the operator
-   * when there is already a vacancy targeting the chosen address:
-   *   - `is_draft = true` → operator should resume that draft instead of
-   *     creating a new one (legacy ResumeDraftVacancyDialog already handles
-   *     drafts per-patient; this endpoint adds per-address granularity).
-   *   - `status` in public set (SEARCHING / SEARCHING_REPLACEMENT /
-   *     RAPID_RESPONSE) OR `ACTIVE` → operator must edit the existing vacancy
-   *     or close it before opening a new one.
-   *   - terminal statuses (`CLOSED`) → omitted (no warning needed).
-   *
-   * Documented in: docs/features/vacancy-creation/05-fluxo-criacao.md
-   */
-  async listByAddress(req: Request, res: Response): Promise<void> {
-    const parsed = byAddressQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      const firstIssue = parsed.error.issues[0];
-      res.status(400).json({
-        success: false,
-        error: firstIssue?.message ?? 'patient_address_id must be a valid UUID v4',
-      });
-      return;
-    }
-
-    const { patient_address_id } = parsed.data;
-
-    try {
-      const result = await this.db.query(
-        `SELECT
-          jp.id,
-          jp.case_number,
-          jp.vacancy_number,
-          jp.title,
-          jp.status,
-          jp.is_draft,
-          jp.talentum_published_at,
-          jp.created_at
-        FROM job_postings jp
-        WHERE jp.patient_address_id = $1
-          AND jp.deleted_at IS NULL
-          AND jp.status <> 'CLOSED'
-        ORDER BY jp.created_at DESC`,
-        [patient_address_id],
-      );
-
-      res.status(200).json({ success: true, data: result.rows });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error('[VacanciesController] listByAddress error:', error);
-      res.status(500).json({ success: false, error: 'Failed to list vacancies by address', details: msg });
     }
   }
 }
