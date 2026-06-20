@@ -15,7 +15,6 @@ export { PercentageDisplay } from './PercentageDisplay';
 export { ProgressBar } from './ProgressBar';
 export { Select } from './Select';
 export type { SelectProps, SelectOption } from './Select';
-export { StatusBadge } from './StatusBadge';
 export { VacancyStatusBadge } from './VacancyStatusBadge';
 export {
   Table,

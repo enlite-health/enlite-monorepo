@@ -42,9 +42,13 @@ describe('VacancySummaryCard', () => {
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders status badge text', () => {
+  it('renders status badge via the canonical VacancyStatusBadge', () => {
     renderCard(BASE_DATA);
-    expect(screen.getByText('BUSQUEDA')).toBeInTheDocument();
+    // BUSQUEDA is a legacy alias of SEARCHING in VacancyStatusBadge; the i18n mock
+    // returns the key, proving the canonical label namespace (not raw "BUSQUEDA") is used.
+    expect(
+      screen.getByText('admin.vacancyDetail.statusBadge.SEARCHING'),
+    ).toBeInTheDocument();
   });
 
   it('renders dash when publishedAt is null', () => {
