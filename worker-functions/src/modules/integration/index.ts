@@ -34,6 +34,7 @@ export type { EncuadreMapperEntry, EncuadreWorkerData, EncuadreData } from './in
 
 // Application — use cases
 export { PublishVacancyToTalentumUseCase, PublishError } from './application/PublishVacancyToTalentumUseCase';
+export type { AuditActor } from './application/PublishVacancyToTalentumUseCase';
 export { SyncTalentumVacanciesUseCase } from './application/SyncTalentumVacanciesUseCase';
 export type { SyncReport } from './application/SyncTalentumVacanciesUseCase';
 export { SyncTalentumWorkersUseCase } from './application/SyncTalentumWorkersUseCase';

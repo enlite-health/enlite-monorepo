@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { loggingAls, reportError } from '@shared/logging';
+import { JobPostingAuditRepository } from '../../infrastructure/JobPostingAuditRepository';
 
 const SOCIAL_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
 type SocialChannel = (typeof SOCIAL_CHANNELS)[number];
@@ -27,9 +29,11 @@ const GenerateLinkBodySchema = z.object({
  */
 export class VacancySocialLinksController {
   private db: Pool;
+  private auditRepo: JobPostingAuditRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.auditRepo = new JobPostingAuditRepository();
   }
 
   async generateSocialLink(req: Request, res: Response): Promise<void> {
@@ -130,10 +134,37 @@ export class VacancySocialLinksController {
       }
       updatedLinks[channel] = { url: shortIoData.shortURL, id: String(shortIoData.id) };
 
-      await this.db.query(
-        `UPDATE job_postings SET social_short_links = $1::jsonb, updated_at = NOW() WHERE id = $2`,
-        [JSON.stringify(updatedLinks), id],
-      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const user = (req as any).user as { uid?: string } | undefined;
+      const actorUserId = user?.uid ?? null;
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+
+      // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+      // leaving the surrounding transaction (and the UPDATE above) intact.
+      const client = await this.db.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `UPDATE job_postings SET social_short_links = $1::jsonb, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(updatedLinks), id],
+        );
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId: id,
+          eventType: 'UPDATED',
+          fieldName: 'social_short_links',
+          changes: { before: null, after: { channel, shortURL: shortIoData.shortURL } },
+          actorUserId,
+          actorType: 'HUMAN',
+          actorLabel: 'admin_panel',
+          traceId,
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
 
       res.status(200).json({
         success: true,

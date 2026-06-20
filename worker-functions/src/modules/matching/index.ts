@@ -56,6 +56,7 @@ export { RecruitmentBlockedController } from './interfaces/controllers/Recruitme
 export { PublicJobsController } from './interfaces/controllers/PublicJobsController';
 export { ListActivePublicJobsUseCase } from './application/ListActivePublicJobsUseCase';
 export { EnsureVacancyShortLinkUseCase } from './application/EnsureVacancyShortLinkUseCase';
+export { PurgeVacancyShortLinksUseCase } from './application/PurgeVacancyShortLinksUseCase';
 export { ShortIoClient } from './infrastructure/shortlinks/ShortIoClient';
 export { ShortLinkService } from './infrastructure/shortlinks/ShortLinkService';
 export { mapPublicJobRow } from './infrastructure/PublicJobMapper';

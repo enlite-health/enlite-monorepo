@@ -9,26 +9,45 @@ import {
   GeminiVacancyParserService,
   GeminiApiError,
 } from '@modules/integration';
+import { loggingAls, reportError } from '@shared/logging';
+import {
+  JobPostingAuditRepository,
+} from '../../infrastructure/JobPostingAuditRepository';
+import type { AuditActor } from '@modules/integration';
 
 /**
  * VacancyTalentumController
  *
  * Talentum integration + prescreening configuration endpoints.
  * Split from VacanciesController to respect the 400-line limit.
+ *
+ * Onda B: publishToTalentum / unpublishFromTalentum pass actor to use case.
+ * savePrescreeningConfig audits UPDATED (prescreening_config) best-effort.
  */
 export class VacancyTalentumController {
   private db: Pool;
+  private auditRepo: JobPostingAuditRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.auditRepo = new JobPostingAuditRepository();
+  }
+
+  /** Builds an AuditActor from an authenticated admin request. */
+  private extractActor(req: Request): AuditActor {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const user = (req as any).user as { uid?: string } | undefined;
+    return {
+      actorUserId: user?.uid ?? null,
+      actorType: 'HUMAN',
+      actorLabel: 'admin_panel',
+      traceId: loggingAls.getStore()?.traceId ?? null,
+    };
   }
 
   /**
    * Maps an AI-generation failure to an HTTP response. A transient Gemini
-   * error (429 DSQ/quota or 5xx overload) is surfaced as a retryable 503
-   * with a friendly message — NOT the raw API JSON, which leaked to
-   * operators before (e.g. "Gemini API error 429: { RESOURCE_EXHAUSTED }").
-   * Any other error keeps the generic 500 + `details` for diagnosability.
+   * error (429 DSQ/quota or 5xx overload) is surfaced as a retryable 503.
    */
   private respondAIError(res: Response, error: unknown, fallbackError: string): void {
     if (error instanceof GeminiApiError && error.isTransient) {
@@ -50,43 +69,48 @@ export class VacancyTalentumController {
   async publishToTalentum(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const actor = this.extractActor(req);
       const useCase = new PublishVacancyToTalentumUseCase();
-      const result = await useCase.publish({ jobPostingId: id });
+      const result = await useCase.publish({ jobPostingId: id }, actor);
       res.status(200).json({ success: true, data: result });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof PublishError) {
         res.status(error.statusCode).json({ success: false, error: error.message });
         return;
       }
-      console.error('[VacancyTalentum] Error publishing to Talentum:', error);
-      res.status(500).json({ success: false, error: 'Failed to publish to Talentum', details: error.message });
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:publishToTalentum' });
+      res.status(500).json({ success: false, error: 'Failed to publish to Talentum', details: msg });
     }
   }
 
   async unpublishFromTalentum(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const actor = this.extractActor(req);
       const useCase = new PublishVacancyToTalentumUseCase();
-      await useCase.unpublish({ jobPostingId: id });
+      await useCase.unpublish({ jobPostingId: id }, actor);
       res.status(200).json({ success: true, message: 'Vacancy unpublished from Talentum' });
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof PublishError) {
         res.status(error.statusCode).json({ success: false, error: error.message });
         return;
       }
-      console.error('[VacancyTalentum] Error unpublishing from Talentum:', error);
-      res.status(500).json({ success: false, error: 'Failed to unpublish from Talentum', details: error.message });
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:unpublishFromTalentum' });
+      res.status(500).json({ success: false, error: 'Failed to unpublish from Talentum', details: msg });
     }
   }
 
   async generateTalentumDescription(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const actor = this.extractActor(req);
       const descService = new TalentumDescriptionService();
-      const result = await descService.generateDescription(id);
+      const result = await descService.generateDescription(id, actor);
       res.status(200).json({ success: true, data: { description: result.description } });
     } catch (error: unknown) {
-      console.error('[VacancyTalentum] Error generating Talentum description:', error);
+      reportError(error instanceof Error ? error : new Error(String(error)), { source: 'VacancyTalentumController:generateTalentumDescription' });
       this.respondAIError(res, error, 'Failed to generate description');
     }
   }
@@ -102,14 +126,14 @@ export class VacancyTalentumController {
            FROM job_posting_prescreening_questions
            WHERE job_posting_id = $1
            ORDER BY question_order ASC`,
-          [id]
+          [id],
         ),
         this.db.query(
           `SELECT id, question, answer, faq_order
            FROM job_posting_prescreening_faq
            WHERE job_posting_id = $1
            ORDER BY faq_order ASC`,
-          [id]
+          [id],
         ),
       ]);
 
@@ -133,9 +157,10 @@ export class VacancyTalentumController {
       }));
 
       res.status(200).json({ success: true, data: { questions, faq } });
-    } catch (error: any) {
-      console.error('[VacancyTalentum] Error fetching prescreening config:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch prescreening config', details: error.message });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:getPrescreeningConfig' });
+      res.status(500).json({ success: false, error: 'Failed to fetch prescreening config', details: msg });
     }
   }
 
@@ -145,27 +170,24 @@ export class VacancyTalentumController {
       const useCase = new SyncTalentumVacanciesUseCase();
       const report = await useCase.execute({ force });
       res.status(200).json({ success: true, data: report });
-    } catch (error: any) {
-      const isTalentumError = error.message?.includes('Talentum') || error.message?.includes('tl_auth');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const isTalentumError = msg.includes('Talentum') || msg.includes('tl_auth');
       const status = isTalentumError ? 502 : 500;
       const label = isTalentumError ? 'Talentum communication' : 'sync';
-      console.error(`[VacancyTalentum] Error in syncFromTalentum:`, error);
-      res.status(status).json({ success: false, error: `Failed ${label}`, details: error.message });
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:syncFromTalentum' });
+      res.status(status).json({ success: false, error: `Failed ${label}`, details: msg });
     }
   }
 
   /**
    * POST /api/admin/vacancies/:id/generate-ai-content
-   *
-   * Generates Talentum description + prescreening questions + FAQ for the given
-   * vacancy using the existing AI services. Does NOT persist anything — the
-   * caller is responsible for saving via savePrescreeningConfig.
+   * Generates description + prescreening without persisting.
    */
   async generateAIContent(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
 
-      // 1. Load vacancy + patient + address (read-only)
       const result = await this.db.query(
         `SELECT
            jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
@@ -187,46 +209,18 @@ export class VacancyTalentumController {
       }
 
       const row = result.rows[0];
-
       const vacancyData = {
-        title: row.title,
-        case_number: row.case_number,
-        required_professions: row.required_professions,
-        required_sex: row.required_sex,
-        age_range_min: row.age_range_min,
-        age_range_max: row.age_range_max,
-        required_experience: row.required_experience,
-        worker_attributes: row.worker_attributes,
-        schedule: row.schedule,
-        work_schedule: row.work_schedule,
-        providers_needed: row.providers_needed,
-        salary_text: row.salary_text,
-        payment_day: row.payment_day,
-        daily_obs: row.daily_obs,
+        title: row.title, case_number: row.case_number,
+        required_professions: row.required_professions, required_sex: row.required_sex,
+        age_range_min: row.age_range_min, age_range_max: row.age_range_max,
+        required_experience: row.required_experience, worker_attributes: row.worker_attributes,
+        schedule: row.schedule, work_schedule: row.work_schedule,
+        providers_needed: row.providers_needed, salary_text: row.salary_text,
+        payment_day: row.payment_day, daily_obs: row.daily_obs,
       };
+      const patientData = { diagnosis: row.diagnosis, dependency_level: row.dependency_level, service_type: row.service_type };
+      const addressData = { address_formatted: row.address_formatted, city: row.city, state: row.state };
 
-      const patientData = {
-        diagnosis: row.diagnosis,
-        dependency_level: row.dependency_level,
-        service_type: row.service_type,
-      };
-
-      const addressData = {
-        address_formatted: row.address_formatted,
-        city: row.city,
-        state: row.state,
-      };
-
-      // 2+3. Generate description and prescreening (questions + FAQ) in parallel.
-      // Both are independent Gemini calls; serial execution exceeds Firebase Hosting's
-      // 60s rewrite timeout (causing 502 to the client). See FOLLOWUPS TD-035.
-      //
-      // Synchronous, operator-facing path → usa o modelo rápido (gemini-2.5-flash
-      // por default). É geração de texto a partir de dados estruturados (não
-      // extração), e o operador revisa/edita antes de publicar — flash corta a
-      // latência de ~40s (pro, com thinking) para ~15s. Parsing de PDF (extração,
-      // sensível a acurácia) segue no modelo padrão (pro), pois constrói os
-      // services sem override.
       const fastModel = process.env.GEMINI_MODEL_FAST ?? 'gemini-2.5-flash';
       const descService = new TalentumDescriptionService(fastModel);
       const geminiService = new GeminiVacancyParserService(fastModel);
@@ -234,15 +228,9 @@ export class VacancyTalentumController {
       const workerType = professions.includes('CUIDADOR') ? 'CUIDADOR' : 'AT';
       const [descResult, prescreeningResult] = await Promise.all([
         descService.generateDescriptionPreview(id),
-        geminiService.generateFromVacancyData(
-          vacancyData,
-          patientData,
-          addressData,
-          workerType,
-        ),
+        geminiService.generateFromVacancyData(vacancyData, patientData, addressData, workerType),
       ]);
 
-      // 4. Return without persisting
       res.status(200).json({
         success: true,
         data: {
@@ -254,7 +242,7 @@ export class VacancyTalentumController {
         },
       });
     } catch (error: unknown) {
-      console.error('[VacancyTalentum] Error generating AI content:', error);
+      reportError(error instanceof Error ? error : new Error(String(error)), { source: 'VacancyTalentumController:generateAIContent' });
       this.respondAIError(res, error, 'Failed to generate AI content');
     }
   }
@@ -262,15 +250,16 @@ export class VacancyTalentumController {
   async savePrescreeningConfig(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { questions = [], faq = [] } = req.body;
+      const { questions = [], faq = [] } = req.body as { questions: unknown[]; faq: unknown[] };
+      const actor = this.extractActor(req);
 
       for (let i = 0; i < questions.length; i++) {
-        const q = questions[i];
-        if (!q.question || typeof q.question !== 'string' || q.question.trim() === '') {
+        const q = questions[i] as Record<string, unknown>;
+        if (!q.question || typeof q.question !== 'string' || (q.question as string).trim() === '') {
           res.status(400).json({ success: false, error: `questions[${i}].question is required and must be non-empty` });
           return;
         }
-        if (!q.desiredResponse || typeof q.desiredResponse !== 'string' || q.desiredResponse.trim() === '') {
+        if (!q.desiredResponse || typeof q.desiredResponse !== 'string' || (q.desiredResponse as string).trim() === '') {
           res.status(400).json({ success: false, error: `questions[${i}].desiredResponse is required and must be non-empty` });
           return;
         }
@@ -284,38 +273,45 @@ export class VacancyTalentumController {
       const client = await this.db.connect();
       try {
         await client.query('BEGIN');
-
         await client.query(`DELETE FROM job_posting_prescreening_questions WHERE job_posting_id = $1`, [id]);
         await client.query(`DELETE FROM job_posting_prescreening_faq WHERE job_posting_id = $1`, [id]);
 
         for (let i = 0; i < questions.length; i++) {
-          const q = questions[i];
+          const q = questions[i] as Record<string, unknown>;
           await client.query(
             `INSERT INTO job_posting_prescreening_questions
                (job_posting_id, question_order, question, response_type, desired_response,
                 weight, required, analyzed, early_stoppage)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
-              id, i + 1, q.question.trim(),
+              id, i + 1, (q.question as string).trim(),
               q.responseType ?? ['text', 'audio'],
-              q.desiredResponse.trim(),
-              Number(q.weight),
-              q.required ?? false,
-              q.analyzed ?? true,
-              q.earlyStoppage ?? false,
-            ]
+              (q.desiredResponse as string).trim(),
+              Number(q.weight), q.required ?? false, q.analyzed ?? true, q.earlyStoppage ?? false,
+            ],
+          );
+        }
+        for (let i = 0; i < faq.length; i++) {
+          const f = faq[i] as Record<string, unknown>;
+          await client.query(
+            `INSERT INTO job_posting_prescreening_faq (job_posting_id, faq_order, question, answer)
+             VALUES ($1, $2, $3, $4)`,
+            [id, i + 1, (f.question as string | undefined)?.trim() ?? '', (f.answer as string | undefined)?.trim() ?? ''],
           );
         }
 
-        for (let i = 0; i < faq.length; i++) {
-          const f = faq[i];
-          await client.query(
-            `INSERT INTO job_posting_prescreening_faq
-               (job_posting_id, faq_order, question, answer)
-             VALUES ($1, $2, $3, $4)`,
-            [id, i + 1, f.question?.trim() ?? '', f.answer?.trim() ?? '']
-          );
-        }
+        // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+        // leaving the surrounding transaction (and the DELETE+INSERTs above) intact.
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId: id,
+          eventType: 'UPDATED',
+          fieldName: 'prescreening_config',
+          changes: { before: null, after: { questionsCount: questions.length, faqCount: faq.length } },
+          actorUserId: actor.actorUserId,
+          actorType: actor.actorType,
+          actorLabel: actor.actorLabel,
+          traceId: actor.traceId ?? null,
+        });
 
         await client.query('COMMIT');
       } catch (err) {
@@ -329,17 +325,13 @@ export class VacancyTalentumController {
         this.db.query(
           `SELECT id, question, response_type, desired_response, weight,
                   required, analyzed, early_stoppage, question_order
-           FROM job_posting_prescreening_questions
-           WHERE job_posting_id = $1
-           ORDER BY question_order ASC`,
-          [id]
+           FROM job_posting_prescreening_questions WHERE job_posting_id = $1 ORDER BY question_order ASC`,
+          [id],
         ),
         this.db.query(
-          `SELECT id, question, answer, faq_order
-           FROM job_posting_prescreening_faq
-           WHERE job_posting_id = $1
-           ORDER BY faq_order ASC`,
-          [id]
+          `SELECT id, question, answer, faq_order FROM job_posting_prescreening_faq
+           WHERE job_posting_id = $1 ORDER BY faq_order ASC`,
+          [id],
         ),
       ]);
 
@@ -353,14 +345,14 @@ export class VacancyTalentumController {
             earlyStoppage: row.early_stoppage, questionOrder: row.question_order,
           })),
           faq: savedFaq.rows.map(row => ({
-            id: row.id, question: row.question,
-            answer: row.answer, faqOrder: row.faq_order,
+            id: row.id, question: row.question, answer: row.answer, faqOrder: row.faq_order,
           })),
         },
       });
-    } catch (error: any) {
-      console.error('[VacancyTalentum] Error saving prescreening config:', error);
-      res.status(500).json({ success: false, error: 'Failed to save prescreening config', details: error.message });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:savePrescreeningConfig' });
+      res.status(500).json({ success: false, error: 'Failed to save prescreening config', details: msg });
     }
   }
 }

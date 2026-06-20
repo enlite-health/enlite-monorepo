@@ -5,7 +5,7 @@
 
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StatusBadge } from '@presentation/components/atoms/StatusBadge';
+import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
 import { Text } from '@presentation/components/atoms/Text';
 import {
   Table,
@@ -173,7 +173,7 @@ export function ActiveCasesTable({
                 </Text>
               </TableCell>
               <TableCell unwrapped className="whitespace-nowrap">
-                <StatusBadge status={caseItem.status} />
+                <VacancyStatusBadge status={caseItem.status} />
               </TableCell>
               <TableCell weight="medium" className="whitespace-nowrap">
                 {caseItem.inicioBusqueda}

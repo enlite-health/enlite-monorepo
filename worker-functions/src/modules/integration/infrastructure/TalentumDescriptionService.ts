@@ -25,6 +25,17 @@ import {
   MARCO_TEXT,
   REFUSAL_MARKER,
 } from './talentumDescriptionHelpers';
+import {
+  JobPostingAuditRepository,
+  type AuditActorType,
+} from '../../matching/infrastructure/JobPostingAuditRepository';
+
+export interface DescriptionAuditActor {
+  actorUserId: string | null;
+  actorType: AuditActorType;
+  actorLabel: string;
+  traceId?: string | null;
+}
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -64,10 +75,12 @@ export interface GeneratedDescription {
 export class TalentumDescriptionService {
   private db: Pool;
   private model: string;
+  private auditRepo: JobPostingAuditRepository;
 
   constructor(modelOverride?: string) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
+    this.auditRepo = new JobPostingAuditRepository();
   }
 
   /**
@@ -142,18 +155,49 @@ export class TalentumDescriptionService {
    * Generates a Talentum-ready description for a job posting.
    * Calls Gemini, appends the fixed "Marco de Acompañamiento" section,
    * and saves to job_postings.talentum_description.
+   *
+   * @param actor - Optional audit actor. When provided, an UPDATED audit row
+   *   is inserted inside the same UPDATE transaction (best-effort: audit
+   *   failure is logged but does NOT rollback the description save).
    */
-  async generateDescription(jobPostingId: string): Promise<GeneratedDescription> {
+  async generateDescription(
+    jobPostingId: string,
+    actor?: DescriptionAuditActor,
+  ): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description for job_posting ${jobPostingId}`);
     const input = await this.loadInput(jobPostingId);
     const llmText = await this.callGemini(input);
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
 
-    // CA-3.6: persist in job_postings.talentum_description
-    await this.db.query(
-      `UPDATE job_postings SET talentum_description = $1, updated_at = NOW() WHERE id = $2`,
-      [fullDescription, jobPostingId]
-    );
+    // CA-3.6: persist in job_postings.talentum_description + audit UPDATED
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE job_postings SET talentum_description = $1, updated_at = NOW() WHERE id = $2`,
+        [fullDescription, jobPostingId],
+      );
+      // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+      // leaving the surrounding transaction (and the UPDATE above) intact.
+      if (actor) {
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId,
+          eventType: 'UPDATED',
+          fieldName: 'talentum_description',
+          changes: { before: null, after: '[generated]' },
+          actorUserId: actor.actorUserId,
+          actorType: actor.actorType,
+          actorLabel: actor.actorLabel,
+          traceId: actor.traceId ?? null,
+        });
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
     console.log(`[TalentumDesc] Description saved for job_posting ${jobPostingId}`);
 
     return { title: input.title, description: fullDescription };
