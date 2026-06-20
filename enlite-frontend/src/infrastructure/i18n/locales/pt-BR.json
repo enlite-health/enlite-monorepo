@@ -962,7 +962,8 @@
         "selected": "Selecionados",
         "missing": "Faltantes",
         "view": "Ver",
-        "edit": "Editar"
+        "edit": "Editar",
+        "draftBadge": "Rascunho"
       },
       "statusOptions": {
         "all": "Todos",
