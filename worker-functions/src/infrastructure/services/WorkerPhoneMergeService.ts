@@ -18,7 +18,16 @@
  *   - NUNCA auto-sobrescritos quando divergentes → registrar em exceptions.
  *   - COALESCE seguro: só preenche se o sobrevivente estava NULL.
  *
- * FK reparent: todas as tabelas listadas em FK_TABLES_TO_REPARENT.
+ * FK reparent — DESCOBERTA DINÂMICA (resiliente a drift de schema):
+ *   Em vez de lista hardcoded, o serviço consulta information_schema do banco conectado
+ *   para descobrir todas as tabelas/colunas com FK → workers(id).
+ *   Garante que tabelas inexistentes em prod (drift) não quebrem a transação.
+ *   Ver WorkerPhoneMergeFkDiscovery.ts para a query e a lógica de estratégia.
+ *
+ * Multi-FK por tabela:
+ *   Se uma tabela tiver worker_id + reviewed_by_worker_id apontando para workers(id),
+ *   ambas as colunas são reparentadas para evitar FK órfã.
+ *
  * Auditoria: worker_merge_audit (migration 221).
  */
 
@@ -44,8 +53,9 @@ import {
   resolveGhosts,
   coalesceWorkerFields,
   buildReparentQueries,
+  discoverWorkerFkTables,
+  type FkTableInfo,
 } from './WorkerPhoneMergeHelpers';
-// buildReparentQueries is re-exported from WorkerPhoneMergeReparent via WorkerPhoneMergeHelpers
 
 const log = logger.child({ source: 'WorkerPhoneMergeService' });
 
@@ -109,10 +119,17 @@ export class WorkerPhoneMergeService {
   /**
    * Execução real: aplica os merges em transações atômicas.
    * Idempotente: re-execução não altera workers já mergeados.
+   *
+   * A descoberta de FKs ocorre UMA VEZ antes do loop de merges,
+   * fora de qualquer transação, e o resultado é reutilizado em todos os merges.
    */
   async execute(): Promise<MergeExecutionResult> {
     const executionStartedAt = new Date().toISOString();
     log.info({ msg: 'merge_execute_start' });
+
+    // Descobre FKs uma vez, antes de qualquer merge
+    const knownTables = FK_TABLES_TO_REPARENT.map(t => t.table);
+    const discoveredFks = await discoverWorkerFkTables(this.pool, { knownTables });
 
     const plan = await this.dryRun();
     const errors: MergeError[] = [];
@@ -129,11 +146,12 @@ export class WorkerPhoneMergeService {
       for (const absorbedId of groupPlan.absorbed_ids) {
         try {
           await this.executeSingleMerge({
-            survivorId: groupPlan.survivor_id!,
+            survivorId:           groupPlan.survivor_id!,
             absorbedId,
-            phoneNormalized: groupPlan.phone_normalized,
-            category: groupPlan.category as MergeCategory,
+            phoneNormalized:      groupPlan.phone_normalized,
+            category:             groupPlan.category as MergeCategory,
             legalFieldExceptions: groupPlan.legal_field_exceptions,
+            discoveredFks,
           });
           mergesExecuted++;
         } catch (err) {
@@ -141,9 +159,9 @@ export class WorkerPhoneMergeService {
           reportError(error, { source: 'WorkerPhoneMergeService:execute', absorbedId });
           errors.push({
             phone_normalized: groupPlan.phone_normalized,
-            survivor_id: groupPlan.survivor_id,
-            absorbed_id: absorbedId,
-            error: error.message,
+            survivor_id:      groupPlan.survivor_id,
+            absorbed_id:      absorbedId,
+            error:            error.message,
           });
         }
       }
@@ -153,11 +171,12 @@ export class WorkerPhoneMergeService {
     for (const ghostMatch of plan.ghost_matches) {
       try {
         await this.executeSingleMerge({
-          survivorId: ghostMatch.real_id,
-          absorbedId: ghostMatch.ghost_id,
-          phoneNormalized: ghostMatch.phone_normalized,
-          category: 'ghost',
+          survivorId:           ghostMatch.real_id,
+          absorbedId:           ghostMatch.ghost_id,
+          phoneNormalized:      ghostMatch.phone_normalized,
+          category:             'ghost',
           legalFieldExceptions: [],
+          discoveredFks,
         });
         mergesExecuted++;
       } catch (err) {
@@ -165,38 +184,43 @@ export class WorkerPhoneMergeService {
         reportError(error, { source: 'WorkerPhoneMergeService:execute:ghost', ghostId: ghostMatch.ghost_id });
         errors.push({
           phone_normalized: ghostMatch.phone_normalized,
-          survivor_id: ghostMatch.real_id,
-          absorbed_id: ghostMatch.ghost_id,
-          error: error.message,
+          survivor_id:      ghostMatch.real_id,
+          absorbed_id:      ghostMatch.ghost_id,
+          error:            error.message,
         });
       }
     }
 
     log.info({
-      msg: 'merge_execute_complete',
+      msg:             'merge_execute_complete',
       merges_executed: mergesExecuted,
-      merges_skipped: mergesSkipped,
-      errors: errors.length,
+      merges_skipped:  mergesSkipped,
+      errors:          errors.length,
     });
 
     return {
       plan,
-      merges_executed: mergesExecuted,
-      merges_skipped: mergesSkipped,
+      merges_executed:        mergesExecuted,
+      merges_skipped:         mergesSkipped,
       errors,
-      execution_started_at: executionStartedAt,
-      execution_finished_at: new Date().toISOString(),
+      execution_started_at:   executionStartedAt,
+      execution_finished_at:  new Date().toISOString(),
     };
   }
 
   // ── Core merge transaction ─────────────────────────────────────────────────
 
   async executeSingleMerge(params: {
-    survivorId: string;
-    absorbedId: string;
-    phoneNormalized: string;
-    category: MergeCategory;
+    survivorId:           string;
+    absorbedId:           string;
+    phoneNormalized:      string;
+    category:             MergeCategory;
     legalFieldExceptions: LegalFieldException[];
+    /**
+     * Lista de FKs descobertas dinamicamente.
+     * Se não fornecida (chamada direta em testes), faz a descoberta on-demand.
+     */
+    discoveredFks?: FkTableInfo[];
   }): Promise<void> {
     const { survivorId, absorbedId, phoneNormalized, category, legalFieldExceptions } = params;
 
@@ -218,8 +242,11 @@ export class WorkerPhoneMergeService {
       // 2. COALESCE: preenche campos nulos do sobrevivente com valores do absorvido
       const { fieldsFilled } = await coalesceWorkerFields(client, survivorId, absorbedId);
 
-      // 3. Reparent de todas as tabelas FK
-      const reparentQueries = buildReparentQueries(survivorId, absorbedId);
+      // 3. Reparent de todas as tabelas FK (usa lista descoberta ou descobre on-demand)
+      const fks = params.discoveredFks
+        ?? await discoverWorkerFkTables(this.pool, { knownTables: FK_TABLES_TO_REPARENT.map(t => t.table) });
+
+      const reparentQueries = buildReparentQueries(survivorId, absorbedId, fks);
       for (const q of reparentQueries) {
         await client.query(q.sql, q.params);
       }
@@ -248,11 +275,12 @@ export class WorkerPhoneMergeService {
       await client.query('COMMIT');
 
       log.info({
-        msg: 'merge_executed',
+        msg:          'merge_executed',
         survivorId,
         absorbedId,
         category,
         fields_filled: fieldsFilled.length,
+        fk_tables_reparented: fks.length,
       });
     } catch (err) {
       await client.query('ROLLBACK');

@@ -12,6 +12,7 @@
  *   5. idempotência → rodar 2× não altera nada (merged_into_id já setado)
  *   6. reparent    → 0 FKs órfãs apontando para workers com merged_into_id IS NOT NULL
  *   7. auditoria   → worker_merge_audit tem linhas com category e fields_filled corretos
+ *   8. FK discovery → tabelas reais descobertas dinamicamente; worker_quiz_responses ausente
  *
  * Pré-requisito: Docker stack em pé (make test-integration ou npm run test:e2e).
  */
@@ -19,6 +20,7 @@
 import { Pool, PoolClient } from 'pg';
 import { WorkerPhoneMergeService } from '../../src/infrastructure/services/WorkerPhoneMergeService';
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
+import { discoverWorkerFkTables } from '../../src/infrastructure/services/WorkerPhoneMergeFkDiscovery';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -42,7 +44,7 @@ async function insertWorker(
 ): Promise<void> {
   await client.query(
     `INSERT INTO workers (id, auth_uid, email, phone, status, country, created_at, updated_at)
-     VALUES ($1::uuid, $2, $3, $4, 'PENDING', 'AR', NOW(), NOW())`,
+     VALUES ($1::uuid, $2, $3, $4, 'INCOMPLETE_REGISTER', 'AR', NOW(), NOW())`,
     [params.id, params.auth_uid, params.email, params.phone],
   );
 
@@ -94,53 +96,85 @@ beforeAll(async () => {
 
   const client = await pool.connect();
   try {
+    // Migration 222 criou idx_workers_phone_normalized_unique APÓS os dados duplicados
+    // já existirem em prod. O teste simula esse estado pré-migration-222, onde múltiplos
+    // workers ativos tinham o mesmo phone_normalized. Para reproduzir, removemos
+    // temporariamente o índice único (ele é idempotente, recriado no afterAll).
+    await client.query(`DROP INDEX IF EXISTS idx_workers_phone_normalized_unique`);
     await client.query('BEGIN');
 
+    // NOTA: idx_workers_phone_unique é UNIQUE no campo `phone` bruto.
+    // Para semear múltiplos workers com o mesmo phone_normalized, usamos
+    // variações de formato que normalizam para o mesmo valor canônico:
+    //   - 13 dígitos: '549XXXXXXXXXX'  (já canônico)
+    //   - 10 dígitos: 'XXXXXXXXXX'     (normalize_phone_ar prepend '549')
+    //   - 12 dígitos: '54XXXXXXXXXX'   (normalize_phone_ar prepend '9')
+    // Isso garante phones raw diferentes (não conflitam na UNIQUE) e
+    // phone_normalized idêntico (ativam a lógica de colisão).
+
     // ── Cenário 1: firebase (1 Firebase real + 2 sintéticos) ──────────────
-    const phone1 = `5491100${STAMP.slice(-6)}`;
-    seededPhones.push(phone1);
+    // base10 = 10 dígitos derivados do STAMP (único por execução)
+    const base1 = `1100${STAMP.slice(-6)}`;       // 10 dígitos
+    const phone1_canonical  = `549${base1}`;       // 13 dígitos (canônico)
+    const phone1_raw10      = base1;               // 10 dígitos
+    const phone1_raw12      = `54${base1}`;        // 12 dígitos (54XX…)
+    const phoneNorm1 = phone1_canonical;
+    seededPhones.push(phoneNorm1);
+
     const ids1 = [`00000001-0001-0001-0001-${STAMP.slice(-12)}`,
                    `00000001-0002-0002-0002-${STAMP.slice(-12)}`,
                    `00000001-0003-0003-0003-${STAMP.slice(-12)}`];
     seededWorkerIds.push(...ids1);
 
-    await insertWorker(client, { id: ids1[0], auth_uid: `FirebaseReal_${STAMP}`, email: `fb_real@example.com`, phone: phone1, profession: 'AT' });
-    await insertWorker(client, { id: ids1[1], auth_uid: `base1import_${STAMP}`, email: `import1@enlite.import`, phone: phone1 });
-    await insertWorker(client, { id: ids1[2], auth_uid: `talentum_${STAMP}`,   email: `talentum@enlite.import`, phone: phone1 });
-    await seedCollision(client, phone1, ids1);
+    await insertWorker(client, { id: ids1[0], auth_uid: `FirebaseReal_${STAMP}`, email: `fb_real_${STAMP}@example.com`, phone: phone1_canonical, profession: 'AT' });
+    await insertWorker(client, { id: ids1[1], auth_uid: `base1import_${STAMP}`,  email: `import1_${STAMP}@enlite.import`, phone: phone1_raw10 });
+    await insertWorker(client, { id: ids1[2], auth_uid: `talentum_${STAMP}`,     email: `talentum_${STAMP}@enlite.import`, phone: phone1_raw12 });
+    await seedCollision(client, phoneNorm1, ids1);
 
     // ── Cenário 2: most_complete (0 Firebase, 2 sintéticos, um mais completo) ─
-    const phone2 = `5491200${STAMP.slice(-6)}`;
-    seededPhones.push(phone2);
+    const base2 = `1200${STAMP.slice(-6)}`;
+    const phone2_canonical = `549${base2}`;
+    const phone2_raw10     = base2;
+    const phoneNorm2 = phone2_canonical;
+    seededPhones.push(phoneNorm2);
+
     const ids2 = [`00000002-0001-0001-0001-${STAMP.slice(-12)}`,
                    `00000002-0002-0002-0002-${STAMP.slice(-12)}`];
     seededWorkerIds.push(...ids2);
 
-    await insertWorker(client, { id: ids2[0], auth_uid: `anacareimport_A${STAMP}`, email: `ana_a@enlite.import`, phone: phone2, profession: 'CAREGIVER' });
-    await insertWorker(client, { id: ids2[1], auth_uid: `anacareimport_B${STAMP}`, email: `ana_b@enlite.import`, phone: phone2 });
-    await seedCollision(client, phone2, ids2);
+    await insertWorker(client, { id: ids2[0], auth_uid: `anacareimport_A${STAMP}`, email: `ana_a_${STAMP}@enlite.import`, phone: phone2_canonical, profession: 'CAREGIVER' });
+    await insertWorker(client, { id: ids2[1], auth_uid: `anacareimport_B${STAMP}`, email: `ana_b_${STAMP}@enlite.import`, phone: phone2_raw10 });
+    await seedCollision(client, phoneNorm2, ids2);
 
-    // ── Cenário 3: ghost match (ghost + real com mesmo phone) ─────────────
-    const phone3 = `5491300${STAMP.slice(-6)}`;
-    seededPhones.push(phone3);
+    // ── Cenário 3: ghost match (ghost + real com mesmo phone_normalized) ─────
+    const base3 = `1300${STAMP.slice(-6)}`;
+    const phone3_canonical = `549${base3}`;
+    const phone3_raw10     = base3;
+    const phoneNorm3 = phone3_canonical;
+    seededPhones.push(phoneNorm3);
+
     const idGhost = `00000003-0001-0001-0001-${STAMP.slice(-12)}`;
     const idReal  = `00000003-0002-0002-0002-${STAMP.slice(-12)}`;
     seededWorkerIds.push(idGhost, idReal);
 
-    await insertWorker(client, { id: idGhost, auth_uid: `base1import_ghost${STAMP}`, email: `ghost@enlite.import`, phone: phone3 });
-    await insertWorker(client, { id: idReal,  auth_uid: `FirebaseReal2_${STAMP}`,     email: `real@example.com`,   phone: phone3 });
-    // Ghost não é uma colisão de phone_collisions (não precisa de seed nessa tabela)
+    await insertWorker(client, { id: idGhost, auth_uid: `base1import_ghost${STAMP}`, email: `ghost_${STAMP}@enlite.import`, phone: phone3_raw10 });
+    await insertWorker(client, { id: idReal,  auth_uid: `FirebaseReal2_${STAMP}`,    email: `real_${STAMP}@example.com`,    phone: phone3_canonical });
+    // Ghost match é detectado via resolveGhosts (não precisa de worker_phone_collisions)
 
     // ── Cenário 4: conflict (2 Firebase reais) ────────────────────────────
-    const phone4 = `5491400${STAMP.slice(-6)}`;
-    seededPhones.push(phone4);
+    const base4 = `1400${STAMP.slice(-6)}`;
+    const phone4_canonical = `549${base4}`;
+    const phone4_raw10     = base4;
+    const phoneNorm4 = phone4_canonical;
+    seededPhones.push(phoneNorm4);
+
     const ids4 = [`00000004-0001-0001-0001-${STAMP.slice(-12)}`,
                    `00000004-0002-0002-0002-${STAMP.slice(-12)}`];
     seededWorkerIds.push(...ids4);
 
-    await insertWorker(client, { id: ids4[0], auth_uid: `FirebaseConflict1_${STAMP}`, email: `conf1@example.com`, phone: phone4 });
-    await insertWorker(client, { id: ids4[1], auth_uid: `FirebaseConflict2_${STAMP}`, email: `conf2@example.com`, phone: phone4 });
-    await seedCollision(client, phone4, ids4);
+    await insertWorker(client, { id: ids4[0], auth_uid: `FirebaseConflict1_${STAMP}`, email: `conf1_${STAMP}@example.com`, phone: phone4_canonical });
+    await insertWorker(client, { id: ids4[1], auth_uid: `FirebaseConflict2_${STAMP}`, email: `conf2_${STAMP}@example.com`, phone: phone4_raw10 });
+    await seedCollision(client, phoneNorm4, ids4);
 
     await client.query('COMMIT');
   } catch (err) {
@@ -154,12 +188,18 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!pool) return;
 
-  // Remove dados semeados (auditoria, colisões, workers)
+  // Remove dados semeados (auditoria, colisões, workers) e recria o índice único
   const client = await pool.connect();
   try {
     await client.query(`DELETE FROM worker_merge_audit WHERE survivor_id = ANY($1::uuid[]) OR absorbed_id = ANY($1::uuid[])`, [seededWorkerIds]);
     await client.query(`DELETE FROM worker_phone_collisions WHERE phone_normalized = ANY($1)`, [seededPhones]);
     await client.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [seededWorkerIds]);
+    // Recria o índice único removido no beforeAll para permitir o seed
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_phone_normalized_unique
+        ON workers (phone_normalized)
+        WHERE phone_normalized IS NOT NULL AND merged_into_id IS NULL
+    `);
   } finally {
     client.release();
   }
@@ -368,4 +408,77 @@ describe('Cenário 6: reparent — 0 FK órfãs', () => {
       expect(Number(result.rows[0].cnt)).toBe(0);
     });
   }
+});
+
+// ─── Cenário 7 (novo): descoberta dinâmica de FKs ────────────────────────
+
+describe('Cenário 7 (regressão bug prod): descoberta dinâmica de FKs — resiliente a drift', () => {
+  it('discoverWorkerFkTables retorna ao menos as tabelas essenciais presentes no Docker', async () => {
+    const discovered = await discoverWorkerFkTables(pool);
+
+    // Tabelas essenciais que DEVEM existir no Docker (schema completo com migrations)
+    const essentialTables = [
+      'worker_job_applications',
+      'worker_documents',
+      'worker_payment_info',
+      'worker_availability',
+      'blacklist',
+      'messaging_outbox',
+      'worker_status_history',
+    ];
+
+    const discoveredTableNames = discovered.map(t => t.table);
+    for (const t of essentialTables) {
+      expect(discoveredTableNames).toContain(t);
+    }
+
+    // Todas as entradas têm campos obrigatórios
+    for (const entry of discovered) {
+      expect(entry.table).toBeTruthy();
+      expect(entry.fk_column).toBeTruthy();
+      expect(['update', 'upsert_delete']).toContain(entry.strategy);
+      expect(Array.isArray(entry.unique_cols)).toBe(true);
+    }
+  });
+
+  it('REGRESSÃO: worker_quiz_responses NÃO causa erro — simplesmente ausente se não existir no banco', async () => {
+    // Este é o bug que quebrou todos os merges em prod:
+    // worker_quiz_responses estava na lista hardcoded mas não existia em prod.
+    // Com descoberta dinâmica, se não existir no banco, não aparece na lista — sem erro.
+    const discovered = await discoverWorkerFkTables(pool);
+    const tableNames = discovered.map(t => t.table);
+
+    // Se existir no banco, aparece — sem problema
+    // Se não existir, simplesmente não aparece — isso é o comportamento correto
+    // O teste verifica que a função não lança erro independentemente
+    expect(Array.isArray(tableNames)).toBe(true);
+    // (a tabela pode ou não existir dependendo da migration — ambos são válidos)
+  });
+
+  it('worker_job_applications tem strategy upsert_delete com unique_cols [worker_id, job_posting_id]', async () => {
+    const discovered = await discoverWorkerFkTables(pool);
+    const wja = discovered.find(t => t.table === 'worker_job_applications' && t.fk_column === 'worker_id');
+
+    expect(wja).toBeDefined();
+    expect(wja!.strategy).toBe('upsert_delete');
+    expect(wja!.unique_cols).toContain('worker_id');
+    expect(wja!.unique_cols).toContain('job_posting_id');
+  });
+
+  it('worker_documents tem strategy upsert_delete com unique_cols [worker_id] (1:1)', async () => {
+    const discovered = await discoverWorkerFkTables(pool);
+    const docs = discovered.find(t => t.table === 'worker_documents' && t.fk_column === 'worker_id');
+
+    expect(docs).toBeDefined();
+    expect(docs!.strategy).toBe('upsert_delete');
+    expect(docs!.unique_cols).toEqual(expect.arrayContaining(['worker_id']));
+  });
+
+  it('workers.merged_into_id NÃO está na lista (auto-referência excluída)', async () => {
+    const discovered = await discoverWorkerFkTables(pool);
+    const selfRef = discovered.find(
+      t => t.table === 'workers' && t.fk_column === 'merged_into_id',
+    );
+    expect(selfRef).toBeUndefined();
+  });
 });

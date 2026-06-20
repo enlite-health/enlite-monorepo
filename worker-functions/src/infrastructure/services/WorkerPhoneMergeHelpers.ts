@@ -31,6 +31,8 @@ import {
 // Re-exporta para que WorkerPhoneMergeService importe de um único lugar
 export { buildReparentQueries } from './WorkerPhoneMergeReparent';
 export type { ReparentQuery } from './WorkerPhoneMergeReparent';
+export { discoverWorkerFkTables } from './WorkerPhoneMergeFkDiscovery';
+export type { FkTableInfo } from './WorkerPhoneMergeFkDiscovery';
 
 // ─── Classificação por tier ───────────────────────────────────────────────
 

@@ -13,9 +13,12 @@
  *     - 2 TIER1 = conflict
  *   resolveGhosts             → ghost match + ghost orphan (no_phone + no_real_match)
  *   buildReparentQueries      → contagem de queries, estratégias update e upsert_delete
+ *                               agora recebe FkTableInfo[] (descoberta dinâmica)
+ *   discoverWorkerFkTables    → retorna lista correta a partir de rows do information_schema
  *   WorkerPhoneMergeService:
  *     executeSingleMerge      → idempotência, BEGIN/COMMIT, reparent, auditoria
  *     dryRun                  → estrutura do relatório, sem escrita
+ *     execute                 → chama discoverWorkerFkTables uma vez antes dos merges
  */
 
 // ─── Mocks antes de qualquer import ────────────────────────────────────────
@@ -39,7 +42,19 @@ import {
 import { buildReparentQueries } from '../WorkerPhoneMergeReparent';
 import { WorkerPhoneMergeService } from '../WorkerPhoneMergeService';
 import { FK_TABLES_TO_REPARENT, type WorkerInGroup } from '../WorkerPhoneMergeTypes';
+import { type FkTableInfo } from '../WorkerPhoneMergeFkDiscovery';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+
+// ─── FkTableInfo representativa para os testes de buildReparentQueries ─────
+//
+// Converte a lista legada para o novo shape FkTableInfo, com fk_column='worker_id'.
+// Isso preserva as asserções existentes sem depender de banco real.
+const MOCK_DISCOVERED_FKS: FkTableInfo[] = FK_TABLES_TO_REPARENT.map(cfg => ({
+  table:       cfg.table,
+  fk_column:   'worker_id',
+  strategy:    cfg.strategy,
+  unique_cols: cfg.unique_cols ? [...cfg.unique_cols] : [],
+}));
 
 // ─── Helpers de fixture ────────────────────────────────────────────────────
 
@@ -396,33 +411,38 @@ describe('resolveGhosts', () => {
 // ─── buildReparentQueries ─────────────────────────────────────────────────
 
 describe('buildReparentQueries', () => {
-  it('gera queries para TODAS as tabelas de FK_TABLES_TO_REPARENT', () => {
-    const queries = buildReparentQueries('survivor-id', 'absorbed-id');
+  it('gera queries para TODAS as tabelas em MOCK_DISCOVERED_FKS', () => {
+    const queries = buildReparentQueries('survivor-id', 'absorbed-id', MOCK_DISCOVERED_FKS);
+    // Extrai a tabela do description (formato: "reparent:<strategy>:<table>:<col>")
     const tablesWithQueries = new Set(
-      queries.map(q => q.description.split(':').pop()),
+      queries.map(q => {
+        const parts = q.description.split(':');
+        // parts[2] é a tabela, parts[3] é a coluna
+        return parts[2];
+      }),
     );
 
-    for (const cfg of FK_TABLES_TO_REPARENT) {
+    for (const cfg of MOCK_DISCOVERED_FKS) {
       expect(tablesWithQueries.has(cfg.table)).toBe(true);
     }
   });
 
   it('PEGADINHA: worker_job_applications (N:1) → inclui DELETE de conflitos ANTES do UPDATE', () => {
-    const queries = buildReparentQueries('s', 'a');
+    const queries = buildReparentQueries('s', 'a', MOCK_DISCOVERED_FKS);
     const wjaQueries = queries.filter(q => q.description.includes('worker_job_applications'));
 
     // Deve ter: delete_conflicts + update (2 queries para N:1)
     expect(wjaQueries.length).toBeGreaterThanOrEqual(2);
 
     const deleteIdx = wjaQueries.findIndex(q => q.description.includes('dedup_conflicts'));
-    const updateIdx = wjaQueries.findIndex(q => q.description.includes('update'));
+    const updateIdx = wjaQueries.findIndex(q => q.description.includes('Nto1_update'));
 
     // Delete de conflitos deve vir ANTES do update
     expect(deleteIdx).toBeLessThan(updateIdx);
   });
 
   it('worker_documents (1:1) → UPDATE condicional + DELETE cleanup', () => {
-    const queries = buildReparentQueries('s', 'a');
+    const queries = buildReparentQueries('s', 'a', MOCK_DISCOVERED_FKS);
     const docsQueries = queries.filter(q => q.description.includes('worker_documents'));
 
     expect(docsQueries).toHaveLength(2);
@@ -433,12 +453,124 @@ describe('buildReparentQueries', () => {
   it('PEGADINHA: DELETE cleanup de tabela 1:1 usa apenas [absorbedId] (1 param)', () => {
     // O DELETE FROM worker_documents WHERE worker_id = $1 só precisa do absorbedId.
     // Confirma que o gerador não passa acidentalmente o survivor como parâmetro extra.
-    const queries = buildReparentQueries('surv-uuid', 'abs-uuid');
+    const queries = buildReparentQueries('surv-uuid', 'abs-uuid', MOCK_DISCOVERED_FKS);
     const docsCleanup = queries.find(q =>
-      q.description === 'reparent:1to1_cleanup:worker_documents',
+      q.description === 'reparent:1to1_cleanup:worker_documents:worker_id',
     );
     expect(docsCleanup).toBeDefined();
     expect(docsCleanup!.params).toEqual(['abs-uuid']);
+  });
+
+  it('tabela com fk_column diferente de worker_id gera SQL com a coluna correta', () => {
+    const customFks: FkTableInfo[] = [
+      { table: 'some_audit', fk_column: 'reviewed_by_worker_id', strategy: 'update', unique_cols: [] },
+    ];
+    const queries = buildReparentQueries('surv', 'abs', customFks);
+    expect(queries).toHaveLength(1);
+    expect(queries[0].sql).toMatch(/reviewed_by_worker_id/);
+    expect(queries[0].description).toBe('reparent:update:some_audit:reviewed_by_worker_id');
+  });
+
+  it('multi-FK na mesma tabela gera queries independentes para cada coluna', () => {
+    const multiFks: FkTableInfo[] = [
+      { table: 'some_table', fk_column: 'worker_id',             strategy: 'update', unique_cols: [] },
+      { table: 'some_table', fk_column: 'reviewed_by_worker_id', strategy: 'update', unique_cols: [] },
+    ];
+    const queries = buildReparentQueries('surv', 'abs', multiFks);
+    expect(queries).toHaveLength(2);
+    expect(queries[0].description).toContain('worker_id');
+    expect(queries[1].description).toContain('reviewed_by_worker_id');
+  });
+
+  it('lista vazia de FKs gera 0 queries (banco sem tabelas filho)', () => {
+    const queries = buildReparentQueries('surv', 'abs', []);
+    expect(queries).toHaveLength(0);
+  });
+});
+
+// ─── discoverWorkerFkTables (unit — mock de pool) ─────────────────────────
+
+describe('discoverWorkerFkTables', () => {
+  // Importa a função diretamente para testar a lógica de mapeamento
+  // sem depender de banco real.
+  const { discoverWorkerFkTables: discover } = jest.requireActual(
+    '../WorkerPhoneMergeFkDiscovery',
+  ) as typeof import('../WorkerPhoneMergeFkDiscovery');
+
+  it('retorna lista vazia quando information_schema não retorna FKs', async () => {
+    const fakePool = {
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+    } as unknown as Pool;
+
+    const result = await discover(fakePool);
+    expect(result).toHaveLength(0);
+  });
+
+  it('estratégia update quando unique constraint não existe para a coluna FK', async () => {
+    const fakePool = {
+      query: jest.fn()
+        // 1ª chamada: FK_DISCOVERY_SQL → retorna 1 FK
+        .mockResolvedValueOnce({ rows: [{ fk_table: 'worker_availability', fk_column: 'worker_id' }] })
+        // 2ª chamada: UNIQUE_CONSTRAINT_SQL → sem unique constraint
+        .mockResolvedValueOnce({ rows: [] }),
+    } as unknown as Pool;
+
+    const result = await discover(fakePool);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ table: 'worker_availability', fk_column: 'worker_id', strategy: 'update', unique_cols: [] });
+  });
+
+  it('estratégia upsert_delete quando unique constraint existe para a coluna FK', async () => {
+    const fakePool = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [{ fk_table: 'worker_job_applications', fk_column: 'worker_id' }] })
+        .mockResolvedValueOnce({ rows: [{ cols: ['worker_id', 'job_posting_id'] }] }),
+    } as unknown as Pool;
+
+    const result = await discover(fakePool);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      table:       'worker_job_applications',
+      fk_column:   'worker_id',
+      strategy:    'upsert_delete',
+      unique_cols: ['worker_id', 'job_posting_id'],
+    });
+  });
+
+  it('multi-FK por tabela: retorna uma entrada por (table, fk_column)', async () => {
+    const fakePool = {
+      query: jest.fn()
+        .mockResolvedValueOnce({
+          rows: [
+            { fk_table: 'some_table', fk_column: 'worker_id' },
+            { fk_table: 'some_table', fk_column: 'reviewed_by_worker_id' },
+          ],
+        })
+        // unique check para worker_id: sem constraint
+        .mockResolvedValueOnce({ rows: [] })
+        // unique check para reviewed_by_worker_id: sem constraint
+        .mockResolvedValueOnce({ rows: [] }),
+    } as unknown as Pool;
+
+    const result = await discover(fakePool);
+    expect(result).toHaveLength(2);
+    expect(result[0].fk_column).toBe('worker_id');
+    expect(result[1].fk_column).toBe('reviewed_by_worker_id');
+    // Ambas com strategy update (sem unique constraint)
+    expect(result[0].strategy).toBe('update');
+    expect(result[1].strategy).toBe('update');
+  });
+
+  it('WARN de tabelas conhecidas ausentes (drift de schema) — não lança erro', async () => {
+    const fakePool = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [] }), // FK_DISCOVERY_SQL retorna vazio
+    } as unknown as Pool;
+
+    // Não deve lançar — apenas logar WARN
+    await expect(
+      discover(fakePool, { knownTables: ['worker_quiz_responses', 'worker_availability'] }),
+    ).resolves.toEqual([]);
   });
 });
 
@@ -471,12 +603,14 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
       .mockResolvedValueOnce(undefined)                                   // BEGIN
       .mockResolvedValueOnce({ rows: [{ merged_into_id: 'some-other' }] }); // check
 
+    // Passa discoveredFks explicitamente para não depender de pool.query mock
     await service.executeSingleMerge({
-      survivorId:          's1',
-      absorbedId:          'a1',
-      phoneNormalized:     '5491111111111',
-      category:            'firebase',
+      survivorId:           's1',
+      absorbedId:           'a1',
+      phoneNormalized:      '5491111111111',
+      category:             'firebase',
       legalFieldExceptions: [],
+      discoveredFks:        MOCK_DISCOVERED_FKS,
     });
 
     const calls = mockClient.query.mock.calls.map((c: unknown[]) => String(c[0]));
@@ -492,12 +626,14 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] }) // check idempotência
       .mockResolvedValue({ rows: [{ fields_filled: ['profession'] }] }); // resto
 
+    // Passa discoveredFks explicitamente para não depender de pool.query mock
     await service.executeSingleMerge({
-      survivorId:          's1',
-      absorbedId:          'a1',
-      phoneNormalized:     '5491111111111',
-      category:            'firebase',
+      survivorId:           's1',
+      absorbedId:           'a1',
+      phoneNormalized:      '5491111111111',
+      category:             'firebase',
       legalFieldExceptions: [],
+      discoveredFks:        MOCK_DISCOVERED_FKS,
     });
 
     const calls = mockClient.query.mock.calls.map((c: unknown[]) => String(c[0]));
@@ -514,6 +650,11 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
   });
 
   it('erro no reparent → ROLLBACK, client.release() chamado', async () => {
+    // Usa uma FK artificial para forçar uma query de reparent que vai falhar
+    const oneFk: FkTableInfo[] = [
+      { table: 'worker_availability', fk_column: 'worker_id', strategy: 'update', unique_cols: [] },
+    ];
+
     mockClient.query
       .mockResolvedValueOnce(undefined)                        // BEGIN
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] }) // check
@@ -528,6 +669,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
         phoneNormalized:      '5491111111111',
         category:             'firebase',
         legalFieldExceptions: [],
+        discoveredFks:        oneFk,
       }),
     ).rejects.toThrow('FK constraint failed');
 
