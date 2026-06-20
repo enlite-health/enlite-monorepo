@@ -26,6 +26,8 @@
     "populate:template-buttons:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/populate-template-buttons.ts --dry-run",
     "populate:template-buttons": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/populate-template-buttons.ts",
     "db:rewrap-passthrough": "ts-node -r dotenv/config scripts/rewrap-encrypted-passthrough.ts",
+    "shortlinks:purge-inactive:dry": "ts-node -r dotenv/config scripts/purge-inactive-vacancy-short-links.ts --dry-run",
+    "shortlinks:purge-inactive": "ts-node -r dotenv/config scripts/purge-inactive-vacancy-short-links.ts",
     "dev:local": "docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api",
     "test:e2e:stack:up": "docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml up -d postgres firebase-emulator api",
     "test:e2e:stack:down": "docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml down",

@@ -53,4 +53,9 @@ export class ShortLinkService {
 
     return { ...result, originalURL };
   }
+
+  /** Deletes a stored short link from Short.io by its id. Idempotent. */
+  async delete(id: string): Promise<void> {
+    await this.client.deleteLink(id);
+  }
 }

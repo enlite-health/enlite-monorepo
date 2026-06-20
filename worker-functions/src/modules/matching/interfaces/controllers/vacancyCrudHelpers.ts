@@ -6,6 +6,8 @@
  */
 
 import type { Pool } from 'pg';
+import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
+import type { EntityFieldDiff } from '@shared/audit/types';
 
 export interface VacancyInsertParams {
   vacancyNumber: number;
@@ -191,6 +193,36 @@ export function buildInsertQuery(): string {
     )
     RETURNING *
   `;
+}
+
+// ─── Diff helper (Onda A — pure, no DB) ──────────────────────────────────────
+
+/**
+ * VacancyFieldDiff: alias de EntityFieldDiff para compatibilidade com callers
+ * existentes que importam este tipo daqui.
+ */
+export type VacancyFieldDiff = EntityFieldDiff;
+
+/**
+ * captureVacancyDiff
+ *
+ * Função pura que compara dois snapshots de uma vaga e retorna apenas os campos
+ * que realmente mudaram, filtrados pela lista de campos permitidos.
+ *
+ * Delega para captureEntityDiff (shared/audit) — a lógica de diff mora lá.
+ * API pública preservada: mesma assinatura e tipo de retorno que os callers usam.
+ *
+ * @param before        - Snapshot da vaga antes da mutação (objeto plano).
+ * @param after         - Snapshot da vaga após a mutação (objeto plano).
+ * @param allowedFields - Whitelist de campos a inspecionar (ex: FULL_ALLOWED_UPDATE_FIELDS).
+ * @returns Array de { field, before, after } apenas para campos que mudaram.
+ */
+export function captureVacancyDiff(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  allowedFields: readonly string[],
+): VacancyFieldDiff[] {
+  return captureEntityDiff(before, after, allowedFields);
 }
 
 export function buildInsertParams(p: VacancyInsertParams): unknown[] {

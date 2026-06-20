@@ -169,7 +169,8 @@ describe('PublishVacancyToTalentumUseCase', () => {
       const useCase = new PublishVacancyToTalentumUseCase();
       await useCase.publish({ jobPostingId: 'job-123' });
 
-      expect(mockGenerateDescription).toHaveBeenCalledWith('job-123');
+      // Onda B: generateDescription now receives (jobPostingId, actor?) — actor=undefined when not provided
+      expect(mockGenerateDescription).toHaveBeenCalledWith('job-123', undefined);
     });
 
     it('skips description generation when talentum_description exists', async () => {

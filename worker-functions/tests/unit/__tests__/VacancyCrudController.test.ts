@@ -9,12 +9,44 @@
  * service_device_types removed from job_postings INSERT/UPDATE.
  * pathology_types and dependency_level remain accepted in request body as
  * transit fields (forwarded to patients table via createWithPatientUpdate).
+ *
+ * Onda B (audit-log): mutations now wrap UPDATE/DELETE inside a transaction
+ * using a PoolClient acquired via db.connect(). The mockPool must expose
+ * connect() returning a mockClient with query + release.
+ *
+ * createVacancy (non-patient-update path):
+ *   pool.query[0] → patient check
+ *   pool.query[1] → nextval
+ *   pool.query[2] → INSERT job_postings (RETURNING *)
+ *   client.query  → BEGIN, auditVacancyCreated (SAVEPOINT + INSERT audit), COMMIT
+ *
+ * updateVacancy:
+ *   pool.query[0]       → SELECT is_draft (authorizeVacancyUpdate)
+ *   [pool.query[1]]     → SELECT patient (when patient_id changing in draft)
+ *   client.query[0]     → BEGIN
+ *   client.query[1]     → SELECT * FROM job_postings (before snapshot)
+ *   client.query[2]     → UPDATE job_postings … RETURNING *
+ *   client.query[3..N]  → logFieldChangesSafe (SAVEPOINT + INSERT audit)
+ *   client.query[N+1]   → COMMIT
+ *
+ * deleteVacancy:
+ *   client.query[0]     → BEGIN
+ *   client.query[1]     → SELECT * FROM job_postings … (before snapshot)
+ *   client.query[2]     → UPDATE job_postings SET status = 'CLOSED'
+ *   client.query[3..N]  → logEventSafe (SAVEPOINT + INSERT audit)
+ *   client.query[N+1]   → COMMIT
  */
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
 const mockQuery = jest.fn();
-const mockPool = { query: mockQuery };
+const mockClientQuery = jest.fn();
+const mockClientRelease = jest.fn();
+const mockConnect = jest.fn().mockResolvedValue({
+  query: mockClientQuery,
+  release: mockClientRelease,
+});
+const mockPool = { query: mockQuery, connect: mockConnect };
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -35,14 +67,14 @@ afterEach(() => new Promise(resolve => setImmediate(resolve)));
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function mockReq(body: any = {}, params: any = {}): any {
+function mockReq(body: Record<string, unknown> = {}, params: Record<string, unknown> = {}): Record<string, unknown> {
   return { body, params };
 }
 
-function mockRes(): any {
-  const res: any = {};
-  res.status = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
+function mockRes(): { status: jest.Mock; json: jest.Mock } {
+  const res = { status: jest.fn(), json: jest.fn() };
+  res.status.mockReturnValue(res);
+  res.json.mockReturnValue(res);
   return res;
 }
 
@@ -73,11 +105,12 @@ const FULL_BODY = {
 const VACANCY_ROW = { id: 'uuid-123', ...FULL_BODY, status: 'SEARCHING', country: 'AR' };
 
 /** Mocks for a successful createVacancy: patientCheck → nextval → INSERT */
-function mockCreateSuccess(overrides: { vacancyRow?: any } = {}): void {
+function mockCreateSuccess(overrides: { vacancyRow?: Record<string, unknown> } = {}): void {
   mockQuery
     .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })   // patient existence check
     .mockResolvedValueOnce({ rows: [{ vn: '42' }] })          // nextval
     .mockResolvedValueOnce({ rows: [overrides.vacancyRow ?? VACANCY_ROW] }); // INSERT
+  // Audit client (BEGIN, logEventSafe internals, COMMIT) resolved via beforeEach default.
 }
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -87,8 +120,13 @@ describe('VacancyCrudController', () => {
 
   beforeEach(() => {
     mockQuery.mockReset();
-    // Default: any unspecified call (e.g., domain_events INSERT in setImmediate) resolves safely.
+    mockClientQuery.mockReset();
+    mockClientRelease.mockReset();
+    mockConnect.mockReset();
+    mockConnect.mockResolvedValue({ query: mockClientQuery, release: mockClientRelease });
+    // Default: any unspecified client call (BEGIN/COMMIT/audit queries) resolves safely.
     mockQuery.mockResolvedValue({ rows: [] });
+    mockClientQuery.mockResolvedValue({ rows: [] });
     controller = new VacancyCrudController();
   });
 
@@ -103,7 +141,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq(bodyWithoutPatient);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -117,7 +155,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, patient_id: null });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -131,7 +169,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, patient_id: '' });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -145,7 +183,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, patient_id: 42 });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -160,7 +198,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, patient_id: 'nonexistent-uuid' });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -176,7 +214,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, patient_id: 'deleted-patient-uuid' });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -190,21 +228,22 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: VACANCY_ROW });
     });
 
-    // ── existing tests (query indices shifted by 1 due to patientCheck) ──
+    // ── INSERT SQL and parameter assertions (pool.query[2]) ───────
 
     it('INSERT does NOT write description column (dropped — PII purge migration 214)', async () => {
       mockCreateSuccess();
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
+      // INSERT is still pool.query[2] (not in a client transaction)
       const sql = mockQuery.mock.calls[2][0] as string;
       expect(sql).not.toContain('description');
       // VALUES now starts with the 4 positional params (no `''` description literal)
@@ -216,9 +255,9 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(params).toHaveLength(21);
     });
 
@@ -227,9 +266,9 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       // Positions after Phase 9 (migration 152) — pathology_types, dependency_level,
       // service_device_types, city, state removed from INSERT
       expect(params[0]).toBe(42);                            // vacancy_number (from nextval)
@@ -258,7 +297,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       const sql = mockQuery.mock.calls[2][0] as string;
       // status is now a param ($19), not hardcoded
@@ -266,7 +305,7 @@ describe('VacancyCrudController', () => {
       expect(sql).toContain("'AR'");
 
       // When status not in body, defaults to PENDING_ACTIVATION
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(params[18]).toBe('PENDING_ACTIVATION');
     });
 
@@ -275,11 +314,11 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, schedule: [{ dayOfWeek: 3, startTime: '09:00', endTime: '17:00' }] });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(typeof params[11]).toBe('string');
-      expect(JSON.parse(params[11])).toEqual([{ dayOfWeek: 3, startTime: '09:00', endTime: '17:00' }]);
+      expect(JSON.parse(params[11] as string)).toEqual([{ dayOfWeek: 3, startTime: '09:00', endTime: '17:00' }]);
     });
 
     it('defaults salary_text to "A convenir" when not provided', async () => {
@@ -287,9 +326,9 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, salary_text: undefined });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(params[14]).toBe('A convenir');
     });
 
@@ -298,9 +337,9 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, required_professions: undefined });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(params[4]).toEqual([]);
     });
 
@@ -309,9 +348,9 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, title: '' });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(params[2]).toBe('CASO 100-42');
     });
 
@@ -320,9 +359,9 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, schedule: undefined });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
-      const params = mockQuery.mock.calls[2][1] as any[];
+      const params = mockQuery.mock.calls[2][1] as unknown[];
       expect(params[11]).toBeNull();
     });
 
@@ -331,10 +370,27 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: VACANCY_ROW });
+    });
+
+    it('audit client is acquired and released after INSERT (best-effort audit)', async () => {
+      mockCreateSuccess();
+      const req = mockReq(FULL_BODY);
+      const res = mockRes();
+
+      await controller.createVacancy(req as never, res as never);
+
+      // setImmediate audit client
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+      expect(mockClientRelease).toHaveBeenCalledTimes(1);
+      // Audit transaction lifecycle
+      expect(mockClientQuery).toHaveBeenCalledWith('BEGIN');
+      expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
     });
 
     it('returns 500 on database error', async () => {
@@ -342,7 +398,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith(
@@ -355,7 +411,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       const sql = mockQuery.mock.calls[2][0] as string;
       // Extract column names from INSERT INTO ... (columns) VALUES
@@ -372,7 +428,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ ...FULL_BODY, state: 'CABA', city: 'Palermo' });
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       const sql = mockQuery.mock.calls[2][0] as string;
       expect(sql).not.toContain('state');
@@ -393,7 +449,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq(FULL_BODY);
       const res = mockRes();
 
-      await controller.createVacancy(req, res);
+      await controller.createVacancy(req as never, res as never);
 
       const sql = mockQuery.mock.calls[2][0] as string;
       const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
@@ -422,20 +478,32 @@ describe('VacancyCrudController', () => {
       });
     }
 
+    // Helper to set up client queries for a successful update:
+    // BEGIN → SELECT before → UPDATE → [audit SAVEPOINT queries] → COMMIT
+    function mockClientForUpdate(updatedRow: Record<string, unknown>): void {
+      mockClientQuery
+        .mockResolvedValueOnce({})                            // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: updatedRow.id ?? 'uuid-123', status: 'PENDING_ACTIVATION', is_draft: true }] }) // SELECT before snapshot
+        .mockResolvedValueOnce({ rows: [updatedRow] })        // UPDATE RETURNING *
+        .mockResolvedValue({ rows: [] });                      // audit queries (SAVEPOINT, INSERT, RELEASE), COMMIT
+    }
+
     // ── Draft mode (PENDING_ACTIVATION) — wizard de criação edita tudo ──────
 
     describe('draft mode (status = PENDING_ACTIVATION)', () => {
       it('allows update when body does not contain patient_id (no patient check performed)', async () => {
         mockDraftSelect();
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 999' }] });
+        mockClientForUpdate({ id: 'uuid-123', title: 'CASO 999' });
         const req = mockReq({ title: 'CASO 999' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        // SELECT current + UPDATE
-        expect(mockQuery).toHaveBeenCalledTimes(2);
+        // pool: 1 SELECT (authorizeVacancyUpdate)
+        expect(mockQuery).toHaveBeenCalledTimes(1);
+        // client: BEGIN, SELECT before, UPDATE, [audit], COMMIT
+        expect(mockConnect).toHaveBeenCalledTimes(1);
       });
 
       it('returns 400 when body contains patient_id = null', async () => {
@@ -443,7 +511,7 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ title: 'CASO 999', patient_id: null }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -452,6 +520,7 @@ describe('VacancyCrudController', () => {
         }));
         // Only the initial SELECT — no patient lookup, no UPDATE
         expect(mockQuery).toHaveBeenCalledTimes(1);
+        expect(mockConnect).not.toHaveBeenCalled();
       });
 
       it('returns 400 when body contains patient_id = "" (empty string)', async () => {
@@ -459,7 +528,7 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ title: 'CASO 999', patient_id: '' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -474,7 +543,7 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ patient_id: 'nonexistent-uuid' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -489,7 +558,7 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ patient_id: 'deleted-patient-uuid' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -500,16 +569,17 @@ describe('VacancyCrudController', () => {
 
       it('allows update when body contains valid patient_id and patient is active', async () => {
         mockDraftSelect();
-        mockQuery
-          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
-          .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', patient_id: PATIENT_ID }] });
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] }); // patient found
+        mockClientForUpdate({ id: 'uuid-123', patient_id: PATIENT_ID });
         const req = mockReq({ patient_id: PATIENT_ID, title: 'CASO 999' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        expect(mockQuery).toHaveBeenCalledTimes(3);
+        // pool: 1 SELECT (authorize) + 1 SELECT (patient check)
+        expect(mockQuery).toHaveBeenCalledTimes(2);
+        expect(mockConnect).toHaveBeenCalledTimes(1);
       });
 
       it('accepts all allowed fields', async () => {
@@ -533,15 +603,19 @@ describe('VacancyCrudController', () => {
         };
 
         mockDraftSelect();
-        mockQuery
-          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
-          .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', ...updates }] });
+        mockQuery.mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] }); // patient found
+        mockClientForUpdate({ id: 'uuid-123', ...updates });
         const req = mockReq(updates, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
-        const sql = mockQuery.mock.calls[2][0] as string;
+        // UPDATE SQL is on client, not pool
+        const updateCall = mockClientQuery.mock.calls.find(
+          (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET'),
+        );
+        expect(updateCall).toBeDefined();
+        const sql = updateCall![0] as string;
         expect(sql).toContain('title =');
         expect(sql).toContain('required_professions =');
         expect(sql).toContain('schedule =');
@@ -561,13 +635,17 @@ describe('VacancyCrudController', () => {
         };
 
         mockDraftSelect();
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 200' }] });
+        mockClientForUpdate({ id: 'uuid-123', title: 'CASO 200' });
         const req = mockReq(updates, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
-        const sql = mockQuery.mock.calls[1][0] as string;
+        const updateCall = mockClientQuery.mock.calls.find(
+          (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET'),
+        );
+        expect(updateCall).toBeDefined();
+        const sql = updateCall![0] as string;
         expect(sql).not.toContain('state');
         expect(sql).not.toContain('city');
         expect(sql).not.toContain('pathology_types');
@@ -577,13 +655,17 @@ describe('VacancyCrudController', () => {
 
       it('rejects unknown fields silently', async () => {
         mockDraftSelect();
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'X' }] });
+        mockClientForUpdate({ id: 'uuid-123', title: 'X' });
         const req = mockReq({ title: 'X', HACKED_FIELD: 'malicious' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
-        const sql = mockQuery.mock.calls[1][0] as string;
+        const updateCall = mockClientQuery.mock.calls.find(
+          (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET'),
+        );
+        expect(updateCall).toBeDefined();
+        const sql = updateCall![0] as string;
         expect(sql).not.toContain('HACKED_FIELD');
         expect(sql).toContain('title =');
       });
@@ -593,7 +675,7 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ unknown_field: 'value' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
       });
@@ -601,15 +683,20 @@ describe('VacancyCrudController', () => {
       it('serializes JSONB schedule field', async () => {
         const schedule = [{ dayOfWeek: 5, startTime: '14:00', endTime: '20:00' }];
         mockDraftSelect();
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule }] });
+        mockClientForUpdate({ id: 'uuid-123', schedule });
         const req = mockReq({ schedule }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
-        const params = mockQuery.mock.calls[1][1] as any[];
+        // UPDATE params come from the client, not the pool
+        const updateCall = mockClientQuery.mock.calls.find(
+          (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET'),
+        );
+        expect(updateCall).toBeDefined();
+        const params = updateCall![1] as unknown[];
         expect(typeof params[0]).toBe('string');
-        expect(JSON.parse(params[0])).toEqual(schedule);
+        expect(JSON.parse(params[0] as string)).toEqual(schedule);
       });
     });
 
@@ -621,14 +708,18 @@ describe('VacancyCrudController', () => {
         async (currentStatus) => {
           const schedule = [{ dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }];
           mockOperationalSelect(currentStatus);
-          mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule, status: 'ACTIVE' }] });
+          mockClientForUpdate({ id: 'uuid-123', schedule, status: 'ACTIVE' });
           const req = mockReq({ schedule, status: 'ACTIVE' }, { id: 'uuid-123' });
           const res = mockRes();
 
-          await controller.updateVacancy(req, res);
+          await controller.updateVacancy(req as never, res as never);
 
           expect(res.status).toHaveBeenCalledWith(200);
-          const sql = mockQuery.mock.calls[1][0] as string;
+          const updateCall = mockClientQuery.mock.calls.find(
+            (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET'),
+          );
+          expect(updateCall).toBeDefined();
+          const sql = updateCall![0] as string;
           expect(sql).toContain('schedule =');
           expect(sql).toContain('status =');
         },
@@ -646,15 +737,16 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ [field]: value }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(403);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
           success: false,
-          error: expect.stringContaining(field),
+          error: expect.stringContaining(field as string),
         }));
         // Only the initial SELECT — no UPDATE attempted
         expect(mockQuery).toHaveBeenCalledTimes(1);
+        expect(mockConnect).not.toHaveBeenCalled();
       });
 
       it('rejects mixed payload (schedule + status + title) with 403 listing only the forbidden fields', async () => {
@@ -667,7 +759,7 @@ describe('VacancyCrudController', () => {
         }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(403);
         const errorMsg = (res.json.mock.calls[0][0] as { error: string }).error;
@@ -680,11 +772,11 @@ describe('VacancyCrudController', () => {
 
       it('allows status-only update', async () => {
         mockOperationalSelect('SEARCHING');
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status: 'SUSPENDED' }] });
+        mockClientForUpdate({ id: 'uuid-123', status: 'SUSPENDED' });
         const req = mockReq({ status: 'SUSPENDED' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
       });
@@ -692,11 +784,11 @@ describe('VacancyCrudController', () => {
       it('allows schedule-only update', async () => {
         const schedule = [{ dayOfWeek: 0, startTime: '10:00', endTime: '18:00' }];
         mockOperationalSelect('ACTIVE');
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', schedule }] });
+        mockClientForUpdate({ id: 'uuid-123', schedule });
         const req = mockReq({ schedule }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
       });
@@ -707,7 +799,7 @@ describe('VacancyCrudController', () => {
       const req = mockReq({ title: 'X' }, { id: 'nonexistent' });
       const res = mockRes();
 
-      await controller.updateVacancy(req, res);
+      await controller.updateVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(404);
     });
@@ -725,11 +817,11 @@ describe('VacancyCrudController', () => {
 
       it.each(CANONICAL_STATUSES)('accepts canonical status "%s" → 200', async (status) => {
         mockOperationalSelect('SEARCHING');
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status }] });
+        mockClientForUpdate({ id: 'uuid-123', status });
         const req = mockReq({ status }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
       });
@@ -744,7 +836,7 @@ describe('VacancyCrudController', () => {
         const req = mockReq({ status }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith(
@@ -758,40 +850,123 @@ describe('VacancyCrudController', () => {
 
       it('does not block update when status is undefined (other field updated normally in draft)', async () => {
         mockDraftSelect();
-        mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123', title: 'CASO 999' }] });
+        mockClientForUpdate({ id: 'uuid-123', title: 'CASO 999' });
         const req = mockReq({ title: 'CASO 999' }, { id: 'uuid-123' });
         const res = mockRes();
 
-        await controller.updateVacancy(req, res);
+        await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
       });
+    });
+
+    it('rolls back client transaction and returns 500 on UPDATE error', async () => {
+      mockDraftSelect();
+      mockClientQuery
+        .mockResolvedValueOnce({})   // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status: 'PENDING_ACTIVATION', is_draft: true }] }) // SELECT before
+        .mockRejectedValueOnce(new Error('deadlock'))  // UPDATE fails
+        .mockResolvedValueOnce({});  // ROLLBACK
+
+      const req = mockReq({ title: 'X' }, { id: 'uuid-123' });
+      const res = mockRes();
+
+      await controller.updateVacancy(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClientRelease).toHaveBeenCalled();
     });
   });
 
   // ── deleteVacancy ────────────────────────────────────────────────
 
   describe('deleteVacancy', () => {
-    it('soft-deletes by setting status=CLOSED', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123' }] });
+    function mockClientForDelete(found = true): void {
+      if (found) {
+        mockClientQuery
+          .mockResolvedValueOnce({})  // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status: 'SEARCHING' }] }) // SELECT before
+          .mockResolvedValueOnce({ rows: [{ id: 'uuid-123' }] }) // UPDATE SET status=CLOSED
+          .mockResolvedValue({ rows: [] }); // audit queries + COMMIT
+      } else {
+        mockClientQuery
+          .mockResolvedValueOnce({})  // BEGIN
+          .mockResolvedValueOnce({ rows: [] }) // SELECT before — not found
+          .mockResolvedValueOnce({}); // ROLLBACK
+      }
+    }
+
+    it('soft-deletes by setting status=CLOSED (UPDATE on client, not pool)', async () => {
+      mockClientForDelete(true);
       const req = mockReq({}, { id: 'uuid-123' });
       const res = mockRes();
 
-      await controller.deleteVacancy(req, res);
+      await controller.deleteVacancy(req as never, res as never);
 
-      const sql = mockQuery.mock.calls[0][0] as string;
-      expect(sql).toContain("status = 'CLOSED'");
+      // No pool queries — deleteVacancy acquires client immediately
+      expect(mockQuery).not.toHaveBeenCalled();
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes("status = 'CLOSED'"),
+      );
+      expect(updateCall).toBeDefined();
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
+    it('client transaction includes BEGIN … COMMIT lifecycle', async () => {
+      mockClientForDelete(true);
+      const req = mockReq({}, { id: 'uuid-123' });
+      const res = mockRes();
+
+      await controller.deleteVacancy(req as never, res as never);
+
+      expect(mockClientQuery).toHaveBeenCalledWith('BEGIN');
+      expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
+      expect(mockClientRelease).toHaveBeenCalled();
+    });
+
+    it('audit INSERT is attempted inside the delete transaction', async () => {
+      mockClientForDelete(true);
+      const req = mockReq({}, { id: 'uuid-123' });
+      const res = mockRes();
+
+      await controller.deleteVacancy(req as never, res as never);
+
+      const auditInsert = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('job_posting_audit_log'),
+      );
+      expect(auditInsert).toBeDefined();
+    });
+
     it('returns 404 when vacancy not found', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockClientForDelete(false);
       const req = mockReq({}, { id: 'nonexistent' });
       const res = mockRes();
 
-      await controller.deleteVacancy(req, res);
+      await controller.deleteVacancy(req as never, res as never);
 
       expect(res.status).toHaveBeenCalledWith(404);
+      // ROLLBACK was called
+      expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('rolls back on error and returns 500', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({})  // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'uuid-123', status: 'SEARCHING' }] }) // SELECT before
+        .mockRejectedValueOnce(new Error('disk full')) // UPDATE fails
+        .mockResolvedValueOnce({}); // ROLLBACK
+
+      const req = mockReq({}, { id: 'uuid-123' });
+      const res = mockRes();
+
+      await controller.deleteVacancy(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClientRelease).toHaveBeenCalled();
     });
   });
 });

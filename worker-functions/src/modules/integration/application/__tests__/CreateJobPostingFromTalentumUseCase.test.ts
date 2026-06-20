@@ -29,17 +29,25 @@ function makeInput(overrides: Partial<CreateJobPostingFromTalentumInput> = {}): 
   };
 }
 
-function makePool(queryImpl: jest.Mock): Pool {
-  return { query: queryImpl } as unknown as Pool;
+function makePool(queryImpl: jest.Mock, clientQueryImpl?: jest.Mock): Pool {
+  const clientQuery = clientQueryImpl ?? jest.fn().mockResolvedValue({ rows: [] });
+  const connect = jest.fn().mockResolvedValue({
+    query: clientQuery,
+    release: jest.fn(),
+  });
+  return { query: queryImpl, connect } as unknown as Pool;
 }
 
 // ── Tests ────────────────────────────────────────────────────────
 
 describe('CreateJobPostingFromTalentumUseCase', () => {
   let mockQuery: jest.Mock;
+  let mockClientQuery: jest.Mock;
 
   beforeEach(() => {
     mockQuery = jest.fn();
+    // Default client mock: all client queries (BEGIN, INSERT/UPDATE, audit, COMMIT) resolve safely.
+    mockClientQuery = jest.fn().mockResolvedValue({ rows: [] });
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
   });
@@ -52,13 +60,17 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
   describe('criacao com sucesso', () => {
     it('deve criar job_posting e retornar created=true com jobPostingId, caseNumber e vacancyNumber', async () => {
+      // Pool: anti-loop SELECT, case_number SELECT, nextval; INSERT on client
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT (nao existe) — anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number (nao encontra)
-        .mockResolvedValueOnce({ rows: [{ vn: '42' }] })           // nextval SEQUENCE
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-uuid-1' }] });   // INSERT RETURNING id
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop (not found)
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '42' }] }); // nextval SEQUENCE
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-uuid-1' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit SAVEPOINT + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ _id: 'proj-new', name: 'CASO 230, AT para paciente' }), 'production');
 
       expect(result.created).toBe(true);
@@ -71,12 +83,15 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
     it('deve chamar anti-loop SELECT com talentum_project_id correto', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '10' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-x' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '10' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-x' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(makeInput({ _id: 'my-talentum-id', name: 'CASO 5' }), 'production');
 
       const selectCall = mockQuery.mock.calls[0];
@@ -86,12 +101,15 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
     it('deve usar nextval SEQUENCE para gerar vacancy_number', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '1' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-first' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '1' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                            // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-first' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                     // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ name: 'CASO 100' }), 'production');
 
       expect(result.vacancyNumber).toBe(1);
@@ -108,7 +126,7 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
     it('deve retornar skipped=true sem fazer INSERT quando ja existe', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'jp-existing' }] }); // SELECT encontra
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ _id: 'proj-dup' }), 'production');
 
       expect(result.created).toBe(false);
@@ -118,12 +136,13 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
       // Deve executar apenas 1 query (SELECT) e nenhum INSERT
       expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(mockClientQuery).not.toHaveBeenCalled(); // connect never called
     });
 
     it('deve retornar o id do job_posting existente', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'jp-abc-456' }] });
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput(), 'test');
 
       expect(result.jobPostingId).toBe('jp-abc-456');
@@ -136,14 +155,19 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
     it('deve tratar 23505 como skip e buscar o id inserido concorrentemente', async () => {
       const pgError = Object.assign(new Error('duplicate key value'), { code: '23505' });
 
+      // Pool: anti-loop, case_number lookup, nextval, recovery SELECT (after 23505)
+      // Client: BEGIN, INSERT (throws 23505), ROLLBACK
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                         // SELECT inicial (nao encontra)
-        .mockResolvedValueOnce({ rows: [] })                         // SELECT por case_number (nao encontra)
-        .mockResolvedValueOnce({ rows: [{ vn: '5' }] })             // nextval SEQUENCE
-        .mockRejectedValueOnce(pgError)                              // INSERT — race condition
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-race-winner' }] }); // SELECT de recuperacao
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop (not found)
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '5' }] }) // nextval SEQUENCE
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-race-winner' }] }); // SELECT de recuperacao (pool)
+      mockClientQuery
+        .mockResolvedValueOnce({})                    // BEGIN
+        .mockRejectedValueOnce(pgError)               // INSERT — race condition → 23505
+        .mockResolvedValueOnce({});                   // ROLLBACK (inside catch)
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ _id: 'proj-race', name: 'CASO 10' }), 'production');
 
       expect(result.created).toBe(false);
@@ -156,13 +180,16 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       const pgError = Object.assign(new Error('duplicate key'), { code: '23505' });
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })               // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })               // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '5' }] })   // nextval
-        .mockRejectedValueOnce(pgError)                     // INSERT race
-        .mockResolvedValueOnce({ rows: [] });               // SELECT recovery — no rows
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '5' }] }) // nextval
+        .mockResolvedValueOnce({ rows: [] });         // SELECT recovery — no rows
+      mockClientQuery
+        .mockResolvedValueOnce({})                    // BEGIN
+        .mockRejectedValueOnce(pgError)               // INSERT race
+        .mockResolvedValueOnce({});                   // ROLLBACK
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ _id: 'proj-ghost', name: 'CASO 10' }), 'production');
 
       expect(result.skipped).toBe(true);
@@ -174,17 +201,20 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       const pgError = Object.assign(new Error('duplicate key'), { code: '23505' });
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                         // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                         // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '3' }] })
-        .mockRejectedValueOnce(pgError)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-recovered' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '3' }] }) // nextval
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-recovered' }] }); // SELECT de recuperacao
+      mockClientQuery
+        .mockResolvedValueOnce({})                    // BEGIN
+        .mockRejectedValueOnce(pgError)               // INSERT → 23505
+        .mockResolvedValueOnce({});                   // ROLLBACK
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(makeInput({ _id: 'proj-race-id', name: 'CASO 20' }), 'production');
 
-      // 5a query (calls[4]): SELECT de recuperacao
-      const recoveryCall = mockQuery.mock.calls[4];
+      // Recovery SELECT is now pool calls[3] (anti-loop=0, case_num=1, nextval=2, recovery=3)
+      const recoveryCall = mockQuery.mock.calls[3];
       expect(recoveryCall[0]).toContain('WHERE talentum_project_id = $1');
       expect(recoveryCall[1]).toEqual(['proj-race-id']);
     });
@@ -194,20 +224,28 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
   describe('titulo CASO {caseNumber}-{vacancyNumber}', () => {
     it('deve extrair case_number de data.name e gerar titulo com vacancy_number', async () => {
+      // Pool: anti-loop, case_number SELECT, nextval; INSERT on client
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '99' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-99' }] });
+        .mockResolvedValueOnce({ rows: [] })           // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })           // SELECT por case_number (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '99' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-99' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(
         makeInput({ _id: 'proj-99', name: 'CASO 230, AT para paciente complexo' }),
         'production',
       );
 
-      const insertCall = mockQuery.mock.calls[3];
-      const insertParams = insertCall[1] as any[];
+      // INSERT is on clientQuery (index 1 = after BEGIN)
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const insertParams = insertCall![1] as unknown[];
 
       // vacancy_number = 99, case_number = 230, title = 'CASO 230-99'
       expect(insertParams[0]).toBe(99);    // vacancy_number
@@ -216,19 +254,27 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
     });
 
     it('deve gerar titulo "VACANTE {vacancyNumber}" quando case_number nao encontrado no nome', async () => {
+      // No case_number in name → no case_number lookup; only anti-loop + nextval on pool
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ vn: '50' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-50' }] });
+        .mockResolvedValueOnce({ rows: [] })            // SELECT anti-loop (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '50' }] }); // nextval (no case_number/vacancy_number match)
+      mockClientQuery
+        .mockResolvedValueOnce({})                            // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-50' }] })  // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                     // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(
         makeInput({ _id: 'proj-no-case', name: 'Vaga sem numero de caso' }),
         'production',
       );
 
-      const insertCall = mockQuery.mock.calls[2];
-      const insertParams = insertCall[1] as any[];
+      // INSERT is on clientQuery
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const insertParams = insertCall![1] as unknown[];
 
       expect(insertParams[0]).toBe(50);    // vacancy_number
       expect(insertParams[1]).toBeNull();  // case_number (not found)
@@ -241,16 +287,23 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
   describe('status SEARCHING e country AR', () => {
     it('deve sempre inserir com status SEARCHING e country AR', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '7' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-7' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '7' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-7' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(makeInput({ name: 'CASO 7' }), 'production');
 
-      const insertCall = mockQuery.mock.calls[3];
-      const sql = insertCall[0] as string;
+      // INSERT is on clientQuery — check SQL contains literals
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const sql = insertCall![0] as string;
 
       expect(sql).toContain("'SEARCHING'");
       expect(sql).toContain("'AR'");
@@ -262,17 +315,24 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
   describe('referencia Talentum no INSERT', () => {
     it('deve salvar talentum_project_id no INSERT', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '15' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-15' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '15' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                            // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-15' }] })  // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                     // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(makeInput({ _id: 'talentum-xyz', name: 'CASO 15' }), 'production');
 
-      const insertCall = mockQuery.mock.calls[3];
-      const sql = insertCall[0] as string;
-      const params = insertCall[1] as any[];
+      // INSERT is on clientQuery
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const sql = insertCall![0] as string;
+      const params = insertCall![1] as unknown[];
 
       expect(sql).toContain('talentum_project_id');
       expect(sql).toContain('talentum_published_at');
@@ -281,19 +341,23 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
     it('deve usar NOW() para talentum_published_at (sem parametro explicito)', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '20' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-20' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '20' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                            // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-20' }] })  // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                     // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       await useCase.execute(makeInput({ name: 'CASO 20' }), 'production');
 
-      const insertCall = mockQuery.mock.calls[3];
-      const sql = insertCall[0] as string;
-
-      // talentum_published_at deve ser NOW() no SQL, nao um parametro $N
-      expect(sql).toContain('NOW()');
+      // INSERT is on clientQuery — talentum_published_at deve ser NOW() no SQL
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      expect(insertCall![0] as string).toContain('NOW()');
     });
   });
 
@@ -301,12 +365,17 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
   describe('link de vacante existente (CASO XXX-YY)', () => {
     it('deve vincular vacante existente por vacancy_number quando nome é "CASO 230-42"', async () => {
+      // Pool: anti-loop SELECT (not found), SELECT by vacancy_number (found)
+      // Client: BEGIN + UPDATE talentum_project_id + audit + COMMIT
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                                          // SELECT anti-loop (não existe)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-existing', vacancy_number: 42 }] }) // SELECT por vacancy_number=42
-        .mockResolvedValueOnce({ rows: [] });                                          // UPDATE talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })               // SELECT anti-loop (não existe)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-existing', vacancy_number: 42 }] }); // SELECT vacancy_number=42
+      mockClientQuery
+        .mockResolvedValueOnce({})                         // BEGIN
+        .mockResolvedValueOnce({ rows: [] })               // UPDATE talentum_project_id
+        .mockResolvedValue({ rows: [] });                  // audit SAVEPOINT + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ _id: 'proj-link', name: 'CASO 230-42' }), 'production');
 
       expect(result.created).toBe(false);
@@ -316,19 +385,27 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       expect(result.caseNumber).toBe(230);
       expect(result.vacancyNumber).toBe(42);
 
-      // UPDATE deve ter sido chamado com talentum_project_id
-      const updateCall = mockQuery.mock.calls[2];
-      expect(updateCall[0]).toContain('UPDATE job_postings');
-      expect(updateCall[1]).toEqual(['proj-link', 'jp-existing']);
+      // UPDATE is now on clientQuery (index 1 = after BEGIN)
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings'),
+      );
+      expect(updateCall).toBeDefined();
+      expect(updateCall![0]).toContain('UPDATE job_postings');
+      expect(updateCall![1]).toEqual(['proj-link', 'jp-existing']);
     });
 
     it('deve vincular vacante existente por case_number quando nome é "CASO 230" (sem vacancy_number)', async () => {
+      // Pool: anti-loop (not found), SELECT by case_number (found)
+      // Client: BEGIN + UPDATE + audit + COMMIT
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                                            // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-by-case', vacancy_number: 10 }] })   // SELECT por case_number=230
-        .mockResolvedValueOnce({ rows: [] });                                            // UPDATE
+        .mockResolvedValueOnce({ rows: [] })               // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-by-case', vacancy_number: 10 }] }); // SELECT case_number=230
+      mockClientQuery
+        .mockResolvedValueOnce({})                         // BEGIN
+        .mockResolvedValueOnce({ rows: [] })               // UPDATE
+        .mockResolvedValue({ rows: [] });                  // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ _id: 'proj-link2', name: 'CASO 230' }), 'production');
 
       expect(result.created).toBe(false);
@@ -339,13 +416,17 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
     });
 
     it('deve criar nova vacante quando vacancy_number não encontra match', async () => {
+      // Pool: anti-loop, SELECT by vacancy_number (not found), nextval; INSERT on client
       mockQuery
         .mockResolvedValueOnce({ rows: [] })               // SELECT anti-loop
         .mockResolvedValueOnce({ rows: [] })               // SELECT por vacancy_number=999 (não encontra)
-        .mockResolvedValueOnce({ rows: [{ vn: '60' }] })  // nextval SEQUENCE
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-new' }] }); // INSERT
+        .mockResolvedValueOnce({ rows: [{ vn: '60' }] }); // nextval SEQUENCE
+      mockClientQuery
+        .mockResolvedValueOnce({})                           // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-new' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                    // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ name: 'CASO 230-999' }), 'production');
 
       expect(result.created).toBe(true);
@@ -359,13 +440,17 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
     it('deve relancar erros de DB que nao sao unique_violation', async () => {
       const dbError = Object.assign(new Error('connection refused'), { code: '08006' });
 
+      // Pool: anti-loop, case_number lookup, nextval; INSERT on client throws non-23505
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '50' }] })
-        .mockRejectedValueOnce(dbError);
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '50' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                    // BEGIN
+        .mockRejectedValueOnce(dbError)               // INSERT → non-23505 error
+        .mockResolvedValueOnce({});                   // ROLLBACK (in catch)
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
 
       await expect(
         useCase.execute(makeInput({ name: 'CASO 50' }), 'production'),
@@ -376,12 +461,15 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       const genericError = new Error('network error');
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '50' }] })
-        .mockRejectedValueOnce(genericError);
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '50' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                    // BEGIN
+        .mockRejectedValueOnce(genericError)          // INSERT → generic error
+        .mockResolvedValueOnce({});                   // ROLLBACK (in catch)
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
 
       await expect(
         useCase.execute(makeInput({ name: 'CASO 50' }), 'production'),
@@ -394,30 +482,39 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
   describe('environment nao persistido', () => {
     it('deve aceitar environment sem salva-lo no banco', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT anti-loop
-        .mockResolvedValueOnce({ rows: [] })                        // SELECT por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '30' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-30' }] });
+        .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '30' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                            // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-30' }] })  // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                     // audit + COMMIT
 
-      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery));
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
       const result = await useCase.execute(makeInput({ name: 'CASO 30' }), 'test');
 
       expect(result.created).toBe(true);
 
-      // environment 'test' nao deve aparecer como parametro no INSERT
-      const insertCall = mockQuery.mock.calls[3];
-      const params = insertCall[1] as any[];
+      // INSERT is on clientQuery — environment 'test' nao deve aparecer como parametro
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const params = insertCall![1] as unknown[];
       expect(params).not.toContain('test');
     });
 
     it('deve funcionar igualmente com environment=production e environment=test', async () => {
       const runWith = async (environment: string) => {
         const q = jest.fn()
-          .mockResolvedValueOnce({ rows: [] })                      // SELECT anti-loop
-          .mockResolvedValueOnce({ rows: [] })                      // SELECT por case_number
-          .mockResolvedValueOnce({ rows: [{ vn: '1' }] })
-          .mockResolvedValueOnce({ rows: [{ id: 'jp-env' }] });
-        return new CreateJobPostingFromTalentumUseCase(makePool(q)).execute(makeInput({ name: 'CASO 1' }), environment);
+          .mockResolvedValueOnce({ rows: [] })          // SELECT anti-loop
+          .mockResolvedValueOnce({ rows: [] })          // SELECT por case_number
+          .mockResolvedValueOnce({ rows: [{ vn: '1' }] }); // nextval
+        const cq = jest.fn()
+          .mockResolvedValueOnce({})                            // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 'jp-env' }] }) // INSERT RETURNING id
+          .mockResolvedValue({ rows: [] });                     // audit + COMMIT
+        return new CreateJobPostingFromTalentumUseCase(makePool(q, cq)).execute(makeInput({ name: 'CASO 1' }), environment);
       };
 
       const [prodResult, testResult] = await Promise.all([
