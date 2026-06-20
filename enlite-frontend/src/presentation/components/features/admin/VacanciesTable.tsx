@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Eye, Pencil } from 'lucide-react';
+import { Eye, Pencil, FileText } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import {
   Table,
@@ -114,7 +114,23 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                   </div>
                 </TableCell>
                 <TableCell weight="medium">{row.caso}</TableCell>
-                <TableCell weight="medium" className="whitespace-nowrap">{row.status}</TableCell>
+                <TableCell unwrapped className="whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <Text as="span" size="sm" weight="medium">{row.status}</Text>
+                    {row.isDraft && (
+                      <span
+                        className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"
+                        title={t('admin.vacancies.table.draftBadge')}
+                        data-testid={`vacancy-draft-badge-${row.id}`}
+                      >
+                        <FileText className="w-3 h-3" aria-hidden="true" />
+                        <Text as="span" size="xs" weight="medium" color="inherit">
+                          {t('admin.vacancies.table.draftBadge')}
+                        </Text>
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
                   <PriorityCell priority={row.priority} />
                 </TableCell>

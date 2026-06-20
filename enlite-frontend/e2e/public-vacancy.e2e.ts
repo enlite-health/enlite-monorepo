@@ -321,8 +321,8 @@ test.describe('PublicVacancyPage', () => {
     // Case number visível
     await expect(page.locator('text=CASO 226').first()).toBeVisible({ timeout: 15000 });
 
-    // Status badge visível
-    await expect(page.locator('text=Activo').first()).toBeVisible({ timeout: 5000 });
+    // Status badge visível (BUSQUEDA é alias legado de SEARCHING → "En búsqueda")
+    await expect(page.locator('text=En búsqueda').first()).toBeVisible({ timeout: 5000 });
 
     // Título do card de detalhes com ocupação
     await expect(

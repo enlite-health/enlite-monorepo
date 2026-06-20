@@ -104,4 +104,18 @@ describe('VacanciesTable', () => {
     render(<VacanciesTable vacancies={noPriority} />);
     expect(screen.getByText('—')).toBeInTheDocument();
   });
+
+  it('shows the draft badge only on rows where isDraft is true', () => {
+    const mixed: VacancyRow[] = [
+      { ...realApiData[0], id: 'draft-1', isDraft: true },
+      { ...realApiData[1], id: 'published-1', isDraft: false },
+    ];
+    render(<VacanciesTable vacancies={mixed} />);
+
+    // t() returns the key in test env
+    const badges = screen.getAllByText('admin.vacancies.table.draftBadge');
+    expect(badges).toHaveLength(1);
+    expect(screen.getByTestId('vacancy-draft-badge-draft-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-draft-badge-published-1')).not.toBeInTheDocument();
+  });
 });
