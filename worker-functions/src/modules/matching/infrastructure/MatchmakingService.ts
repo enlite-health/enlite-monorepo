@@ -383,8 +383,8 @@ export class MatchmakingService {
  */
 function normalizeSexCode(value: string | null | undefined): 'M' | 'F' | null {
   const canonical = normalizeSexValue(value);
-  if (canonical === 'male') return 'M';
-  if (canonical === 'female') return 'F';
+  if (canonical === 'MALE') return 'M';
+  if (canonical === 'FEMALE') return 'F';
   return null;
 }
 
