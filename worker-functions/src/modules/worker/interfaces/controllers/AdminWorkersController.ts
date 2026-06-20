@@ -11,6 +11,12 @@ import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
 import { ExportWorkersUseCase } from '../../application/ExportWorkersUseCase';
 import { WORKER_EXPORT_COLUMN_KEYS, WorkerExportColumnKey } from '../../application/export/workerExportColumns';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
+import {
+  buildWorkerListWhereClause,
+  appendSexFilter,
+  appendLanguageFilter,
+} from './AdminWorkersListHelpers';
+import { logger, reportError } from '@shared/logging';
 
 // Campos selecionados para detalhe de worker — compartilhado por getWorkerById e getWorkerByPhone
 const WORKER_DETAIL_COLS = [
@@ -42,6 +48,24 @@ const ListWorkersQuerySchema = z.object({
   case_id: z.string().optional(),
   /** CSV de UUIDs de tags. Filtra workers que possuem TODAS as tags informadas (AND). */
   tag_ids: z.string().optional(),
+  /** CSV de profissões aceitas: AT,CAREGIVER,NURSE,KINESIOLOGIST,PSYCHOLOGIST */
+  profession: z.string().optional(),
+  /** Faixa etária preferida (single value) — ex.: 'children', 'elderly' */
+  preferred_age_range: z.string().optional(),
+  /** Tipo de experiência (single value) — ex.: 'TEA', 'DOWN' */
+  experience_type: z.string().optional(),
+  /** Tipo de atendimento preferido (single value) — ex.: 'home', 'institutional' */
+  preferred_type: z.string().optional(),
+  /** Idioma (single code) — filtro via blind index languages_bidx — ex.: 'es', 'pt' */
+  language: z.string().optional(),
+  /** Sexo do worker — 'male' | 'female' — filtro via blind index sex_bidx */
+  sex: z.string().optional(),
+  /** Província/estado — ILIKE em worker_service_areas.state */
+  state: z.string().optional(),
+  /** Cidade — ILIKE em worker_service_areas.city */
+  city: z.string().optional(),
+  /** CSV de dias da semana (0-6) — ex.: '1,2,3' */
+  days: z.string().optional(),
   limit: z.string().optional(),
   offset: z.string().optional(),
 });
@@ -82,25 +106,25 @@ export class AdminWorkersController {
     this.blindIndexService = new BlindIndexService();
   }
 
-  private async decryptWorkerListRow(row: any): Promise<{ firstName: string; lastName: string; phone: string; worker: WorkerListItem }> {
+  private async decryptWorkerListRow(row: Record<string, unknown>): Promise<{ firstName: string; lastName: string; phone: string; worker: WorkerListItem }> {
     const [firstName, lastName] = await Promise.all([
-      this.encryptionService.decrypt(row.first_name_encrypted),
-      this.encryptionService.decrypt(row.last_name_encrypted),
+      this.encryptionService.decrypt(row.first_name_encrypted as string | null),
+      this.encryptionService.decrypt(row.last_name_encrypted as string | null),
     ]);
     return {
       firstName: firstName ?? '',
       lastName: lastName ?? '',
-      phone: row.phone ?? '',
+      phone: (row.phone as string) ?? '',
       worker: {
-        id: row.id,
-        name: [firstName, lastName].filter(Boolean).join(' ') || row.email,
-        email: row.email,
-        casesCount: parseInt(row.cases_count ?? '0', 10),
-        documentsStatus: row.documents_status,
+        id: row.id as string,
+        name: [firstName, lastName].filter(Boolean).join(' ') || (row.email as string),
+        email: row.email as string,
+        casesCount: parseInt((row.cases_count as string) ?? '0', 10),
+        documentsStatus: row.documents_status as string,
         documentsComplete: row.status === 'REGISTERED',
-        status: row.status,
-        platform: mapPlatformLabel(row.data_sources ?? []),
-        createdAt: row.created_at,
+        status: row.status as string,
+        platform: mapPlatformLabel((row.data_sources as string[]) ?? []),
+        createdAt: row.created_at as string,
       },
     };
   }
@@ -125,37 +149,14 @@ export class AdminWorkersController {
     }
 
     try {
-      const { platform, docs_complete, docs_validated, search, case_id, tag_ids, limit = '20', offset = '0' } = parsed.data;
-      const params: unknown[] = [];
-      let paramIndex = 1;
-      let whereClause = 'WHERE w.merged_into_id IS NULL';
+      const {
+        docs_validated, search,
+        tag_ids, sex, language,
+        limit = '20', offset = '0',
+        ...filterRest
+      } = parsed.data;
 
-      if (platform) {
-        if (platform === 'talentum') {
-          whereClause += ` AND (w.data_sources && ARRAY['candidatos', 'candidatos_no_terminaron']::text[])`;
-        } else if (platform === 'enlite_app') {
-          whereClause += ` AND (w.data_sources IS NULL OR w.data_sources = '{}')`;
-        } else {
-          whereClause += ` AND ($${paramIndex} = ANY(w.data_sources))`;
-          params.push(platform);
-          paramIndex++;
-        }
-      }
-
-      if (docs_complete === 'complete') {
-        whereClause += ` AND w.status = 'REGISTERED'`;
-      } else if (docs_complete === 'incomplete') {
-        whereClause += ` AND w.status = 'INCOMPLETE_REGISTER'`;
-      }
-
-      whereClause = this.applyDocsValidatedFilter(whereClause, docs_validated);
-
-      if (case_id) {
-        whereClause += ` AND EXISTS (SELECT 1 FROM encuadres e2 WHERE e2.worker_id = w.id AND e2.job_posting_id = $${paramIndex})`;
-        params.push(case_id);
-        paramIndex++;
-      }
-
+      // Validate tag UUIDs before building query
       if (tag_ids) {
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const tagArray = tag_ids.split(',').map((t) => t.trim()).filter(Boolean);
@@ -164,14 +165,28 @@ export class AdminWorkersController {
           res.status(400).json({ success: false, error: `Invalid tag UUIDs: ${invalidUuids.join(', ')}` });
           return;
         }
-        if (tagArray.length > 0) {
-          // AND semantics: worker must have ALL provided tags
-          whereClause += ` AND (SELECT COUNT(DISTINCT wt.tag_id) FROM worker_tags wt WHERE wt.worker_id = w.id AND wt.tag_id = ANY($${paramIndex}::uuid[])) = $${paramIndex + 1}`;
-          params.push(tagArray, tagArray.length);
-          paramIndex += 2;
-        }
       }
 
+      // Build synchronous WHERE clause
+      let { whereClause, params, paramIndex } = buildWorkerListWhereClause({
+        ...filterRest,
+        tag_ids,
+        limit,
+        offset,
+      });
+
+      // Apply docs_validated (synchronous)
+      whereClause = this.applyDocsValidatedFilter(whereClause, docs_validated);
+
+      // Apply blind-index filters (async)
+      ({ whereClause, params, paramIndex } = await appendSexFilter(
+        this.blindIndexService, whereClause, params, paramIndex, sex,
+      ));
+      ({ whereClause, params, paramIndex } = await appendLanguageFilter(
+        this.blindIndexService, whereClause, params, paramIndex, language,
+      ));
+
+      // Search filter
       const searchRaw = search?.trim();
       const searchTerm = searchRaw?.toLowerCase();
       const isEmailSearch = !!searchRaw && searchRaw.includes('@');
@@ -192,8 +207,9 @@ export class AdminWorkersController {
         try {
           const buffers = await this.blindIndexService.generateSearchTrigramBidx(searchRaw!);
           searchBidxLiteral = this.blindIndexService.serializeForPg(buffers);
-        } catch (err: any) {
-          res.status(400).json({ success: false, error: err.message ?? 'Invalid search term' });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Invalid search term';
+          res.status(400).json({ success: false, error: msg });
           return;
         }
 
@@ -247,9 +263,10 @@ export class AdminWorkersController {
         const data = (await Promise.all(result.rows.map((row) => this.decryptWorkerListRow(row)))).map(({ worker }) => worker);
         res.status(200).json({ success: true, data, total, limit: parseInt(limit, 10), offset: parseInt(offset, 10) });
       }
-    } catch (error: any) {
-      console.error('[AdminWorkersController] listWorkers error:', error);
-      res.status(500).json({ success: false, error: 'Failed to list workers', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'AdminWorkersController:listWorkers' });
+      res.status(500).json({ success: false, error: 'Failed to list workers', details: e.message });
     }
   }
 
@@ -270,9 +287,10 @@ export class AdminWorkersController {
       }
       const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
       res.status(200).json({ success: true, data });
-    } catch (error: any) {
-      console.error('[AdminWorkersController] getWorkerById error:', error);
-      res.status(500).json({ success: false, error: 'Failed to get worker details', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'AdminWorkersController:getWorkerById' });
+      res.status(500).json({ success: false, error: 'Failed to get worker details', details: e.message });
     }
   }
 
@@ -302,9 +320,10 @@ export class AdminWorkersController {
       }
       const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
       res.status(200).json({ success: true, data });
-    } catch (error: any) {
-      console.error('[AdminWorkersController] getWorkerByPhone error:', error);
-      res.status(500).json({ success: false, error: 'Failed to get worker details', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'AdminWorkersController:getWorkerByPhone' });
+      res.status(500).json({ success: false, error: 'Failed to get worker details', details: e.message });
     }
   }
 
@@ -365,10 +384,11 @@ export class AdminWorkersController {
         res.write(line);
       }
       res.end();
-    } catch (error: any) {
-      console.error('[AdminWorkersController] exportWorkers error:', error);
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      logger.error({ msg: 'exportWorkers error', source: 'AdminWorkersController', err: e.message });
       if (!res.headersSent) {
-        res.status(500).json({ success: false, error: 'Export failed', details: error.message });
+        res.status(500).json({ success: false, error: 'Export failed', details: e.message });
       } else {
         res.end();
       }

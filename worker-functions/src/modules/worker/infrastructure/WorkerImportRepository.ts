@@ -14,6 +14,7 @@ import { Worker, WorkerStatus } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 
 export async function findByCuit(pool: Pool, cuit: string): Promise<Result<Worker | null>> {
   try {
@@ -137,6 +138,19 @@ export async function updateFromImport(
     if ('birthDate' in encrypted && encrypted.birthDate !== null) {
       sets.push(`birth_date_encrypted = COALESCE($${idx++}, birth_date_encrypted)`);
       values.push(encrypted.birthDate);
+    }
+  }
+
+  // Blind index: sex_bidx — generate when sex is present in import data.
+  // normalizeSexValue MUST match what WorkerPersonalInfoRepository uses (write-path parity).
+  if (data.sex !== undefined && data.sex !== null && data.sex !== '') {
+    const canonicalSex = normalizeSexValue(data.sex);
+    if (canonicalSex !== null) {
+      const sexBidxBuffer = await blindIndexService.generateValueBidx(canonicalSex);
+      if (sexBidxBuffer !== null) {
+        sets.push(`sex_bidx = $${idx++}`);
+        values.push(sexBidxBuffer);
+      }
     }
   }
 

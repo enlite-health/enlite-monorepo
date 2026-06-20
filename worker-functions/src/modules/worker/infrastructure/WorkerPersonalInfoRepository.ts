@@ -11,6 +11,7 @@ import { WORKER_ERROR_CODES } from '../domain/workerErrors';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 
 export async function updatePersonalInfo(
   pool: Pool,
@@ -24,6 +25,10 @@ export async function updatePersonalInfo(
   try {
     // Criptografar TODOS os campos sensíveis (PHI/PII) com KMS em paralelo
     // HIPAA 18 Identifiers: Names, Dates, Phone, Email, Document numbers, Photos, Demographics
+    // normalizeSexValue MUST be called before encrypt AND before bidx so that
+    // write-path, filter, and backfill all produce identical HMACs.
+    const canonicalSex = normalizeSexValue(data.sex);
+
     const [
       encryptedFirstName,
       encryptedLastName,
@@ -35,11 +40,13 @@ export async function updatePersonalInfo(
       encryptedPhotoUrl,
       encryptedLanguages,
       nameBidxBuffers,
+      sexBidxBuffer,
+      languagesBidxBuffers,
     ] = await Promise.all([
       encryptionService.encrypt(data.firstName),
       encryptionService.encrypt(data.lastName),
       encryptionService.encrypt(data.birthDate),
-      encryptionService.encrypt(data.sex),
+      encryptionService.encrypt(canonicalSex),
       encryptionService.encrypt(data.gender),
       // Quando phone vier vazio (use case decidiu manter o atual), encriptar
       // null para que phone_encrypted seja preservado via COALESCE abaixo.
@@ -50,8 +57,11 @@ export async function updatePersonalInfo(
         data.languages && data.languages.length > 0 ? JSON.stringify(data.languages) : null,
       ),
       blindIndexService.generateNameTrigramBidx(data.firstName, data.lastName),
+      blindIndexService.generateValueBidx(canonicalSex),
+      blindIndexService.generateValuesBidx(data.languages ?? []),
     ]);
     const nameBidxLiteral = blindIndexService.serializeForPg(nameBidxBuffers);
+    const languagesBidxLiteral = blindIndexService.serializeForPg(languagesBidxBuffers);
 
     const query = `
       UPDATE workers SET
@@ -76,6 +86,8 @@ export async function updatePersonalInfo(
         terms_accepted_at = CASE WHEN $20 THEN NOW() ELSE terms_accepted_at END,
         privacy_accepted_at = CASE WHEN $21 THEN NOW() ELSE privacy_accepted_at END,
         name_trgm_bidx = $22::bytea[],
+        sex_bidx = $23,
+        languages_bidx = $24::bytea[],
         updated_at = NOW()
       WHERE id = $1
       RETURNING
@@ -128,6 +140,8 @@ export async function updatePersonalInfo(
       data.termsAccepted,
       data.privacyAccepted,
       nameBidxLiteral,
+      sexBidxBuffer,
+      languagesBidxLiteral,
     ];
 
     const result = await pool.query(query, values);

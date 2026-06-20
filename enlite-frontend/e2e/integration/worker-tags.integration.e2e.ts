@@ -219,6 +219,16 @@ async function installInterceptors(page: Page, role: string = 'admin'): Promise<
       return ok([]);
     }
 
+    // Worker profile filter-options
+    if (url.includes('/api/admin/workers/filter-options')) {
+      return ok({
+        states: ['Buenos Aires', 'Córdoba', 'Santa Fe'],
+        cities: ['CABA', 'Rosario', 'Córdoba Capital'],
+        experienceTypes: ['TEA', 'Alzheimer', 'Down'],
+        preferredTypes: ['Domicilio', 'Institución'],
+      });
+    }
+
     // Worker date stats
     if (url.includes('/api/admin/workers/stats')) {
       return ok({ total: 1, byDate: [] });
@@ -348,6 +358,57 @@ test.describe('Worker Tags @integration', () => {
     await page.locator('#tag-description').fill('Puede trabajar sábados y domingos');
 
     await expect(page).toHaveScreenshot('tag-create-modal.png', {
+      fullPage: true,
+      maxDiffPixelRatio: 0.05,
+    });
+  });
+
+  test('worker listing exposes profile filters row (profession + ageRange + sex visible)', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto('/admin/workers');
+
+    // Wait for the list to settle.
+    await expect(page.getByText('lucia.fernandez@example.com').first()).toBeVisible({ timeout: 20_000 });
+
+    // Profile filters row must be present (data-testid set on the wrapper div).
+    const profileRow = page.getByTestId('worker-profile-filters');
+    await expect(profileRow).toBeVisible({ timeout: 10_000 });
+
+    // The profession select placeholder "Todos" must be visible (one per Select compact).
+    // We locate via the label text which is unique.
+    await expect(profileRow.getByText('Profesión')).toBeVisible();
+    await expect(profileRow.getByText('Sexo')).toBeVisible();
+    await expect(profileRow.getByText('Provincia')).toBeVisible();
+    await expect(profileRow.getByText('Días')).toBeVisible();
+
+    await expect(page).toHaveScreenshot('worker-list-profile-filters.png', {
+      fullPage: true,
+      maxDiffPixelRatio: 0.05,
+    });
+  });
+
+  test('worker listing profile filter — profession select has AT and Cuidador options', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto('/admin/workers');
+
+    await expect(page.getByText('lucia.fernandez@example.com').first()).toBeVisible({ timeout: 20_000 });
+
+    // The Select atom renders a native <select>. Locate it inside the profile filter row.
+    const profileRow = page.getByTestId('worker-profile-filters');
+    await expect(profileRow).toBeVisible({ timeout: 10_000 });
+
+    // First native <select> in the profile row is the Profesión filter.
+    const professionSelect = profileRow.locator('select').first();
+    await expect(professionSelect).toBeVisible({ timeout: 10_000 });
+
+    // Verify the options exist by their values (native <select> options accessible via selectOption).
+    await professionSelect.selectOption('AT');
+    await expect(professionSelect).toHaveValue('AT');
+
+    await professionSelect.selectOption('CAREGIVER');
+    await expect(professionSelect).toHaveValue('CAREGIVER');
+
+    await expect(page).toHaveScreenshot('worker-list-profile-filters-open.png', {
       fullPage: true,
       maxDiffPixelRatio: 0.05,
     });

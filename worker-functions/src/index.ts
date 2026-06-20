@@ -298,6 +298,8 @@ app.get('/api/admin/workers/stats', staffOnly, (req: Request, res: Response) => 
 // by-phone aceita API key (consumido pelo triage-service pra resolver worker do contato)
 app.get('/api/admin/workers/by-phone', staffOrApiKey, (req: Request, res: Response) => adminWorkersController.getWorkerByPhone(req, res));
 app.get('/api/admin/workers/case-options', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.listCaseOptions(req, res));
+// filter-options MUST be before /:id to avoid param capture
+app.get('/api/admin/workers/filter-options', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.getFilterOptions(req, res));
 app.post('/api/admin/workers/sync-talentum', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.syncTalentumWorkers(req, res));
 // export MUST be registered before /:id to avoid param capture
 app.get('/api/admin/workers/export', adminOnly, (req: Request, res: Response) => adminWorkersController.exportWorkers(req, res));

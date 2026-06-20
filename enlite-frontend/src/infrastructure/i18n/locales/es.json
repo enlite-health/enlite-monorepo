@@ -445,11 +445,6 @@
       "registered": "Inscrito",
       "selected": "Seleccionado"
     },
-    "caseStatus": {
-      "search": "Búsqueda",
-      "replacements": "Reemplazos",
-      "replacement": "Reemplazo"
-    },
     "incompleteModal": {
       "title": "Complete su registro",
       "description": "Para postularse a esta vacante y acceder al WhatsApp y detalles completos, necesita completar su registro y subir los documentos necesarios.",
@@ -1755,7 +1750,49 @@
         "validation": "Validación",
         "tags": "Etiquetas",
         "tagsPlaceholder": "Filtrar por etiqueta...",
-        "tagsAll": "Todas"
+        "tagsAll": "Todas",
+        "profile": {
+          "allOption": "Todos",
+          "clear": "Limpiar filtros",
+          "profession": {
+            "label": "Profesión",
+            "AT": "AT",
+            "CAREGIVER": "Cuidador",
+            "AMBOS": "Ambos"
+          },
+          "ageRange": {
+            "label": "Rango etario",
+            "children": "Niños",
+            "adults": "Adultos",
+            "elderly": "Adultos mayores"
+          },
+          "experienceType": {
+            "label": "Tipo experiencia"
+          },
+          "preferredType": {
+            "label": "Tipo preferido"
+          },
+          "language": {
+            "label": "Idioma",
+            "es": "Español",
+            "pt": "Portugués",
+            "en": "Inglés"
+          },
+          "sex": {
+            "label": "Sexo",
+            "male": "Masculino",
+            "female": "Femenino"
+          },
+          "province": {
+            "label": "Provincia"
+          },
+          "locality": {
+            "label": "Localidad"
+          },
+          "days": {
+            "label": "Días"
+          }
+        }
       },
       "docsStatus": {
         "complete": "Completo",
@@ -2265,6 +2302,9 @@
       "title": "Vacante no encontrada",
       "body": "La vacante que busca no existe o ya no está disponible.",
       "backHome": "Volver al inicio"
+    },
+    "footer": {
+      "tagline": "Marco profesional de Acompañamiento Terapéutico"
     }
   },
   "countries": {

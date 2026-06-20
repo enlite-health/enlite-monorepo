@@ -34,6 +34,16 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     listWorkers: vi.fn().mockResolvedValue({ data: [], total: 0 }),
     getWorkerDateStats: vi.fn().mockResolvedValue({ today: 0, yesterday: 0, sevenDaysAgo: 0 }),
     listWorkerTags: vi.fn().mockResolvedValue([]),
+    // Required by the useEffect that populates profile-filter dropdowns on mount.
+    getWorkerFilterOptions: vi.fn().mockResolvedValue({
+      states: [],
+      cities: [],
+      experienceTypes: [],
+      preferredTypes: [],
+    }),
+    // listCaseOptions is called via useCaseOptions hook (mocked separately),
+    // but include it here for completeness should the hook mock ever be removed.
+    listCaseOptions: vi.fn().mockResolvedValue([]),
   },
 }));
 

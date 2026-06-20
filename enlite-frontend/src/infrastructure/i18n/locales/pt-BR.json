@@ -445,11 +445,6 @@
       "registered": "Inscrito",
       "selected": "Selecionado"
     },
-    "caseStatus": {
-      "search": "Busca",
-      "replacements": "Substituições",
-      "replacement": "Substituição"
-    },
     "incompleteModal": {
       "title": "Complete seu cadastro",
       "description": "Para se candidatar a esta vaga e ter acesso ao WhatsApp e detalhes completos, você precisa completar seu cadastro e fazer o upload dos documentos necessários.",
@@ -1676,7 +1671,49 @@
         "validation": "Validação",
         "tags": "Etiquetas",
         "tagsPlaceholder": "Filtrar por etiqueta...",
-        "tagsAll": "Todas"
+        "tagsAll": "Todas",
+        "profile": {
+          "allOption": "Todos",
+          "clear": "Limpar filtros",
+          "profession": {
+            "label": "Profissão",
+            "AT": "AT",
+            "CAREGIVER": "Cuidador",
+            "AMBOS": "Ambos"
+          },
+          "ageRange": {
+            "label": "Faixa etária",
+            "children": "Crianças",
+            "adults": "Adultos",
+            "elderly": "Idosos"
+          },
+          "experienceType": {
+            "label": "Tipo experiência"
+          },
+          "preferredType": {
+            "label": "Tipo preferido"
+          },
+          "language": {
+            "label": "Idioma",
+            "es": "Espanhol",
+            "pt": "Português",
+            "en": "Inglês"
+          },
+          "sex": {
+            "label": "Sexo",
+            "male": "Masculino",
+            "female": "Feminino"
+          },
+          "province": {
+            "label": "Província"
+          },
+          "locality": {
+            "label": "Localidade"
+          },
+          "days": {
+            "label": "Dias"
+          }
+        }
       },
       "docsStatus": {
         "complete": "Completo",
@@ -2186,6 +2223,9 @@
       "title": "Vaga não encontrada",
       "body": "A vaga que você procura não existe ou não está mais disponível.",
       "backHome": "Voltar ao início"
+    },
+    "footer": {
+      "tagline": "Marco profissional de Acompanhamento Terapêutico"
     }
   },
   "countries": {

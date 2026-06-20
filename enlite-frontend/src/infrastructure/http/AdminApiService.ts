@@ -41,6 +41,12 @@ export type { AIContentResult };
 export type { VacancyDraftSummary, VacancyByAddressSummary };
 
 import { AdminWorkerTagsApiService } from './AdminWorkerTagsApiService';
+import {
+  AdminWorkerListApiService,
+  type WorkerListFilters,
+  type WorkerFilterOptions,
+} from './AdminWorkerListApiService';
+export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 export { ApiError } from './ApiError';
 
@@ -223,36 +229,11 @@ class AdminApiServiceClass {
     return AdminMessagingApiService.sendVacancyMatchInvite(...args);
   }
 
-  // ========== Workers Methods ==========
+  // ========== Workers Methods — listing delegated to AdminWorkerListApiService ==========
 
-  async listCaseOptions(): Promise<{ value: string; label: string }[]> {
-    return this.request<{ value: string; label: string }[]>('GET', '/api/admin/workers/case-options');
-  }
-
-  async listWorkers(filters?: {
-    platform?: string;
-    docs_complete?: string;
-    docs_validated?: 'all_validated' | 'pending_validation';
-    search?: string;
-    case_id?: string;
-    tag_ids?: string;
-    limit?: string;
-    offset?: string;
-  }): Promise<{ data: any[]; total: number }> {
-    const cleanFilters = Object.fromEntries(
-      Object.entries(filters ?? {}).filter(([, v]) => v !== undefined && v !== ''),
-    );
-    const params = new URLSearchParams(cleanFilters as Record<string, string>);
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseURL}/api/admin/workers?${params}`, { method: 'GET', headers });
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('application/json')) {
-      throw new Error(`Erro ao conectar ao servidor (HTTP ${response.status})`);
-    }
-    const json = await response.json();
-    if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
-    return { data: json.data ?? [], total: json.total ?? 0 };
-  }
+  listCaseOptions() { return AdminWorkerListApiService.listCaseOptions(); }
+  getWorkerFilterOptions() { return AdminWorkerListApiService.getWorkerFilterOptions(); }
+  listWorkers(f?: WorkerListFilters) { return AdminWorkerListApiService.listWorkers(f); }
 
   async getWorkerById(id: string): Promise<WorkerDetail> {
     return this.request<WorkerDetail>('GET', `/api/admin/workers/${id}`);

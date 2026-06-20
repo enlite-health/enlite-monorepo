@@ -22,6 +22,23 @@
 const mockQuery = jest.fn();
 const mockDecrypt = jest.fn();
 
+jest.mock('@shared/logging', () => ({
+  logger: {
+    child: jest.fn().mockReturnValue({
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    }),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+  reportError: jest.fn(),
+  loggingAls: {
+    run: jest.fn((_, fn: () => unknown) => fn()),
+  },
+}));
+
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
@@ -59,7 +76,18 @@ jest.mock('@shared/security/BlindIndexService', () => ({
       }
       return Promise.resolve([Buffer.from('fakebidx')]);
     }),
-    serializeForPg: jest.fn().mockReturnValue('{"\\\\xfakebidx"}'),
+    generateValueBidx: jest.fn().mockImplementation((value: string | null | undefined) => {
+      if (!value || value.trim() === '') return Promise.resolve(null);
+      return Promise.resolve(Buffer.from('fakevaluebidx'));
+    }),
+    generateValuesBidx: jest.fn().mockImplementation((values: string[] | null | undefined) => {
+      if (!values || values.length === 0) return Promise.resolve([]);
+      return Promise.resolve(values.map(() => Buffer.from('fakevaluebidx')));
+    }),
+    serializeForPg: jest.fn().mockImplementation((buffers: Buffer[]) => {
+      if (!buffers || buffers.length === 0) return null;
+      return '{"\\\\xfakebidx"}';
+    }),
   })),
 }));
 
@@ -187,7 +215,7 @@ function makeEncuadreRow(overrides: Record<string, unknown> = {}) {
 /**
  * Configura mockQuery para retornar os dados de getWorkerById.
  * Chamada 1: worker query
- * Chamadas 2-6: docs, serviceAreas, locations, encuadres, availability (em Promise.all)
+ * Chamadas 2-7: docs, serviceAreas, locations, encuadres, availability, tags (em Promise.all)
  */
 function setupFullMocks(opts: {
   workerRow?: Record<string, unknown> | null;
@@ -196,6 +224,7 @@ function setupFullMocks(opts: {
   locationRows?: Record<string, unknown>[];
   encuadreRows?: Record<string, unknown>[];
   availabilityRows?: Record<string, unknown>[];
+  tagRows?: Record<string, unknown>[];
 } = {}) {
   const workerRow = opts.workerRow === undefined ? makeWorkerRow() : opts.workerRow;
 
@@ -205,7 +234,8 @@ function setupFullMocks(opts: {
     .mockResolvedValueOnce({ rows: opts.serviceAreaRows ?? [makeServiceAreaRow()] }) // service areas
     .mockResolvedValueOnce({ rows: opts.locationRows ?? [makeLocationRow()] }) // locations
     .mockResolvedValueOnce({ rows: opts.encuadreRows ?? [makeEncuadreRow()] }) // encuadres
-    .mockResolvedValueOnce({ rows: opts.availabilityRows ?? [] }); // availability
+    .mockResolvedValueOnce({ rows: opts.availabilityRows ?? [] }) // availability
+    .mockResolvedValueOnce({ rows: opts.tagRows ?? [] }); // tags
 
   // Default decrypt: remove "enc_" prefix
   mockDecrypt.mockImplementation((val: string | null) =>
@@ -1407,12 +1437,13 @@ describe('AdminWorkersController — getWorkerById', () => {
 
       // Query 1: worker
       expect(mockQuery.mock.calls[0][1]).toEqual([WORKER_ID]);
-      // Queries 2-6: related data (docs, service areas, locations, encuadres, availability)
+      // Queries 2-7: related data (docs, service areas, locations, encuadres, availability, tags)
       expect(mockQuery.mock.calls[1][1]).toEqual([WORKER_ID]);
       expect(mockQuery.mock.calls[2][1]).toEqual([WORKER_ID]);
       expect(mockQuery.mock.calls[3][1]).toEqual([WORKER_ID]);
       expect(mockQuery.mock.calls[4][1]).toEqual([WORKER_ID]);
       expect(mockQuery.mock.calls[5][1]).toEqual([WORKER_ID]);
+      expect(mockQuery.mock.calls[6][1]).toEqual([WORKER_ID]);
     });
   });
 });
@@ -1885,6 +1916,274 @@ describe('AdminWorkersController — listWorkers filtro case_id e busca por phon
 
       const sql = mockQuery.mock.calls[0][0] as string;
       expect(sql).toContain('w.phone');
+    });
+  });
+});
+
+// =============================================================================
+// listWorkers — 9 new profile filters
+// =============================================================================
+
+describe('AdminWorkersController — listWorkers novos filtros de perfil', () => {
+  let controller: AdminWorkersController;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQuery.mockReset();
+    controller = new AdminWorkersController();
+    mockDecrypt.mockImplementation((val: string | null) =>
+      Promise.resolve(val ? val.replace('enc_', '') : null),
+    );
+  });
+
+  function setupCount(total = '0') {
+    mockQuery.mockResolvedValueOnce({ rows: [{ total }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+  }
+
+  // ── profession ──────────────────────────────────────────────────────────────
+
+  it('profession=AT adiciona ANY($n::text[]) no WHERE', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { profession: 'AT' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('w.profession = ANY(');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContainEqual(['AT']);
+  });
+
+  it('profession=AT,CAREGIVER envia array com ambas as profissões', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { profession: 'AT,CAREGIVER' } as any);
+    await controller.listWorkers(req, res);
+
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    const profArray = params.find((p) => Array.isArray(p) && (p as string[]).includes('AT'));
+    expect(profArray).toEqual(['AT', 'CAREGIVER']);
+  });
+
+  it('profession com valor inválido é ignorado silenciosamente', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { profession: 'INVALID' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    // Invalid profession filtered out — no profession clause
+    expect(sql).not.toContain('w.profession = ANY(');
+  });
+
+  // ── preferred_age_range ─────────────────────────────────────────────────────
+
+  it('preferred_age_range=children adiciona = ANY(w.preferred_age_range)', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { preferred_age_range: 'children' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('= ANY(w.preferred_age_range)');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContain('children');
+  });
+
+  // ── experience_type ─────────────────────────────────────────────────────────
+
+  it('experience_type=TEA adiciona = ANY(w.experience_types)', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { experience_type: 'TEA' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('= ANY(w.experience_types)');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContain('TEA');
+  });
+
+  // ── preferred_type ──────────────────────────────────────────────────────────
+
+  it('preferred_type=home adiciona = ANY(w.preferred_types)', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { preferred_type: 'home' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('= ANY(w.preferred_types)');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContain('home');
+  });
+
+  // ── state (province) ───────────────────────────────────────────────────────
+
+  it('state=Buenos Aires adiciona EXISTS em worker_service_areas.state', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { state: 'Buenos Aires' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('worker_service_areas');
+    expect(sql).toContain('wsa.state ILIKE');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContain('Buenos Aires');
+  });
+
+  // ── city ────────────────────────────────────────────────────────────────────
+
+  it('city=Palermo adiciona EXISTS em worker_service_areas.city', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { city: 'Palermo' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('worker_service_areas');
+    expect(sql).toContain('wsa.city ILIKE');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContain('Palermo');
+  });
+
+  // ── days ────────────────────────────────────────────────────────────────────
+
+  it('days=1,3,5 adiciona EXISTS em worker_availability.day_of_week', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { days: '1,3,5' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('worker_availability');
+    expect(sql).toContain('av.day_of_week = ANY(');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    expect(params).toContainEqual([1, 3, 5]);
+  });
+
+  it('days com valores fora de 0-6 são ignorados', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { days: '1,7,8' } as any);
+    await controller.listWorkers(req, res);
+
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    const dayArray = params.find((p) => Array.isArray(p) && (p as number[]).every(
+      (n) => typeof n === 'number',
+    )) as number[] | undefined;
+    // Only day 1 is valid (0-6)
+    expect(dayArray).toEqual([1]);
+  });
+
+  // ── sex (blind index) ───────────────────────────────────────────────────────
+
+  it('sex=male adiciona w.sex_bidx = $n no WHERE', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { sex: 'male' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('w.sex_bidx = $');
+  });
+
+  it('sex=female também adiciona w.sex_bidx = $n no WHERE', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { sex: 'female' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('w.sex_bidx = $');
+  });
+
+  it('sex inválido (ex: BOTH) não adiciona cláusula sex_bidx', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { sex: 'BOTH' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).not.toContain('sex_bidx');
+  });
+
+  // ── language (blind index) ──────────────────────────────────────────────────
+
+  it('language=es adiciona w.languages_bidx @> no WHERE', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { language: 'es' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('w.languages_bidx @>');
+  });
+
+  // ── combined filters ────────────────────────────────────────────────────────
+
+  it('múltiplos filtros combinados geram WHERE composto', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, {
+      profession: 'AT',
+      state: 'Buenos Aires',
+      days: '1,2',
+    } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('w.profession = ANY(');
+    expect(sql).toContain('wsa.state ILIKE');
+    expect(sql).toContain('worker_availability');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  // ── filter-options endpoint ─────────────────────────────────────────────────
+
+  describe('AdminWorkersAuxController — getFilterOptions', () => {
+    let auxController: AdminWorkersAuxController;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockQuery.mockReset();
+      auxController = new AdminWorkersAuxController();
+    });
+
+    it('retorna 200 com states, cities, experienceTypes e preferredTypes', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }, { state: 'Córdoba' }] })
+        .mockResolvedValueOnce({ rows: [{ city: 'Palermo' }, { city: 'Recoleta' }] })
+        .mockResolvedValueOnce({ rows: [{ val: 'TEA' }, { val: 'DOWN' }] })
+        .mockResolvedValueOnce({ rows: [{ val: 'home' }, { val: 'institutional' }] });
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(true);
+      expect(body.data.states).toEqual(['Buenos Aires', 'Córdoba']);
+      expect(body.data.cities).toEqual(['Palermo', 'Recoleta']);
+      expect(body.data.experienceTypes).toEqual(['TEA', 'DOWN']);
+      expect(body.data.preferredTypes).toEqual(['home', 'institutional']);
+    });
+
+    it('retorna listas vazias quando não há dados', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(true);
+      expect(body.data.states).toEqual([]);
+      expect(body.data.cities).toEqual([]);
+      expect(body.data.experienceTypes).toEqual([]);
+      expect(body.data.preferredTypes).toEqual([]);
+    });
+
+    it('retorna 500 em caso de erro de banco', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('db error'));
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, error: 'Failed to fetch filter options' }),
+      );
     });
   });
 });

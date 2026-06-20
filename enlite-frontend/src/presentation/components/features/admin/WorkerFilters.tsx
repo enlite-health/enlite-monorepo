@@ -3,7 +3,11 @@ import { Search, X } from 'lucide-react';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect, SearchableSelectOption } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { WorkerTagMultiSelect } from './WorkerTagMultiSelect';
+import { AdminWorkerProfileFilters } from './AdminWorkerProfileFilters';
+import type { WorkerProfileFilters } from './workerProfileFiltersConfig';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
+
+export type { WorkerProfileFilters };
 
 interface WorkerFiltersProps {
   searchValue: string;
@@ -22,6 +26,13 @@ interface WorkerFiltersProps {
   selectedTagIds: string[];
   onTagIdsChange: (ids: string[]) => void;
   isTagsLoading?: boolean;
+  // profile filters
+  profileFilters: WorkerProfileFilters;
+  onProfileFiltersChange: (updates: Partial<WorkerProfileFilters>) => void;
+  stateOptions: SelectOption[];
+  cityOptions: SelectOption[];
+  experienceTypeOptions: SelectOption[];
+  preferredTypeOptions: SelectOption[];
 }
 
 export function WorkerFilters({
@@ -41,15 +52,33 @@ export function WorkerFilters({
   selectedTagIds,
   onTagIdsChange,
   isTagsLoading = false,
+  profileFilters,
+  onProfileFiltersChange,
+  stateOptions,
+  cityOptions,
+  experienceTypeOptions,
+  preferredTypeOptions,
 }: WorkerFiltersProps): JSX.Element {
   const { t } = useTranslation();
+
+  const hasProfileFilter =
+    profileFilters.profession !== '' ||
+    profileFilters.preferredAgeRange !== '' ||
+    profileFilters.experienceType !== '' ||
+    profileFilters.preferredType !== '' ||
+    profileFilters.language !== '' ||
+    profileFilters.sex !== '' ||
+    profileFilters.state !== '' ||
+    profileFilters.city !== '' ||
+    profileFilters.days.length > 0;
 
   const hasActiveFilters =
     searchValue ||
     selectedDocsStatus ||
     selectedValidationStatus ||
     selectedCaseId ||
-    selectedTagIds.length > 0;
+    selectedTagIds.length > 0 ||
+    hasProfileFilter;
 
   const handleClearAll = () => {
     onSearchChange('');
@@ -57,10 +86,22 @@ export function WorkerFilters({
     onValidationStatusChange('');
     onCaseChange('');
     onTagIdsChange([]);
+    onProfileFiltersChange({
+      profession: '',
+      preferredAgeRange: '',
+      experienceType: '',
+      preferredType: '',
+      language: '',
+      sex: '',
+      state: '',
+      city: '',
+      days: [],
+    });
   };
 
   return (
     <div className="bg-white rounded-b-[20px] border-r-2 border-b-2 border-l-2 border-[#D9D9D9] px-7 py-5">
+      {/* Row 1: search + status filters + clear button */}
       <div className="flex items-end gap-3 flex-wrap">
         {/* Search */}
         <div className="flex-1 min-w-[200px] max-w-[320px]">
@@ -146,6 +187,16 @@ export function WorkerFilters({
           </button>
         )}
       </div>
+
+      {/* Row 2: advanced profile filters */}
+      <AdminWorkerProfileFilters
+        filters={profileFilters}
+        onChange={onProfileFiltersChange}
+        stateOptions={stateOptions}
+        cityOptions={cityOptions}
+        experienceTypeOptions={experienceTypeOptions}
+        preferredTypeOptions={preferredTypeOptions}
+      />
     </div>
   );
 }

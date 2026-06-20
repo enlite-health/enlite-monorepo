@@ -7,6 +7,7 @@
  * Endpoints:
  * - GET  /api/admin/workers/stats          — worker registration date stats
  * - GET  /api/admin/workers/case-options   — job_postings for select inputs
+ * - GET  /api/admin/workers/filter-options — distinct states, cities, experience & preferred types
  * - POST /api/admin/workers/sync-talentum  — bulk sync from Talentum dashboard
  */
 
@@ -14,6 +15,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { SyncTalentumWorkersUseCase } from '@modules/integration';
+import { reportError } from '@shared/logging';
 
 interface WorkerDateStats {
   today: number;
@@ -81,6 +83,71 @@ export class AdminWorkersAuxController {
     } catch (error: any) {
       console.error('[AdminWorkersAuxController] listCaseOptions error:', error);
       res.status(500).json({ success: false, error: 'Failed to list case options', details: error.message });
+    }
+  }
+
+  /**
+   * GET /api/admin/workers/filter-options
+   *
+   * Returns distinct non-empty values for dynamic filter dropdowns:
+   *   - states: distinct worker_service_areas.state values (sorted)
+   *   - cities: distinct worker_service_areas.city values (sorted)
+   *   - experienceTypes: distinct unnested experience_types values (sorted)
+   *   - preferredTypes: distinct unnested preferred_types values (sorted)
+   *
+   * NOT included (fixed enums the frontend already knows):
+   *   profession, sex, languages, preferred_age_range, days
+   */
+  async getFilterOptions(_req: Request, res: Response): Promise<void> {
+    try {
+      const [statesResult, citiesResult, expTypesResult, prefTypesResult] = await Promise.all([
+        this.db.query<{ state: string }>(`
+          SELECT DISTINCT wsa.state
+          FROM worker_service_areas wsa
+          JOIN workers w ON wsa.worker_id = w.id
+          WHERE w.merged_into_id IS NULL
+            AND wsa.state IS NOT NULL
+            AND btrim(wsa.state) <> ''
+          ORDER BY wsa.state
+        `),
+        this.db.query<{ city: string }>(`
+          SELECT DISTINCT wsa.city
+          FROM worker_service_areas wsa
+          JOIN workers w ON wsa.worker_id = w.id
+          WHERE w.merged_into_id IS NULL
+            AND wsa.city IS NOT NULL
+            AND btrim(wsa.city) <> ''
+          ORDER BY wsa.city
+        `),
+        this.db.query<{ val: string }>(`
+          SELECT DISTINCT unnest(experience_types) AS val
+          FROM workers
+          WHERE merged_into_id IS NULL
+            AND experience_types IS NOT NULL
+          ORDER BY val
+        `),
+        this.db.query<{ val: string }>(`
+          SELECT DISTINCT unnest(preferred_types) AS val
+          FROM workers
+          WHERE merged_into_id IS NULL
+            AND preferred_types IS NOT NULL
+          ORDER BY val
+        `),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          states: statesResult.rows.map((r) => r.state),
+          cities: citiesResult.rows.map((r) => r.city),
+          experienceTypes: expTypesResult.rows.map((r) => r.val),
+          preferredTypes: prefTypesResult.rows.map((r) => r.val),
+        },
+      });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'AdminWorkersAuxController:getFilterOptions' });
+      res.status(500).json({ success: false, error: 'Failed to fetch filter options', details: e.message });
     }
   }
 

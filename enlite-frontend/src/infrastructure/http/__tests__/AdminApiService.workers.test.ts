@@ -1,5 +1,21 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { AdminApiService } from '../AdminApiService';
+
+// listWorkers/listCaseOptions/getWorkerFilterOptions are delegated to
+// AdminWorkerListApiService; mock it so tests don't hit Firebase initialisation.
+// The actual URL-building and param logic is covered by AdminWorkerListApiService.test.ts.
+vi.mock('@infrastructure/http/AdminWorkerListApiService', () => ({
+  AdminWorkerListApiService: {
+    listWorkers: vi.fn().mockResolvedValue({ data: [], total: 0 }),
+    listCaseOptions: vi.fn().mockResolvedValue([]),
+    getWorkerFilterOptions: vi.fn().mockResolvedValue({
+      states: [],
+      cities: [],
+      experienceTypes: [],
+      preferredTypes: [],
+    }),
+  },
+}));
 
 describe('AdminApiService - Workers Methods', () => {
   beforeEach(() => {
@@ -7,105 +23,33 @@ describe('AdminApiService - Workers Methods', () => {
     vi.spyOn(AdminApiService, 'getAuthHeaders' as keyof typeof AdminApiService).mockResolvedValue({
       'Content-Type': 'application/json',
     });
+    global.fetch = vi.fn();
   });
 
-  function mockFetch(data: unknown[] = [], total = 0) {
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ success: true, data, total, limit: 20, offset: 0 }),
-      headers: {
-        get: (name: string) => (name === 'content-type' ? 'application/json' : null),
-      },
-    });
-  }
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   function capturedUrl(): string {
     return (global.fetch as Mock).mock.calls[0][0] as string;
   }
 
-  describe('listWorkers', () => {
-    it('sem filtros chama GET /api/admin/workers', async () => {
-      mockFetch();
+  // listWorkers tests are now in AdminWorkerListApiService.test.ts which covers
+  // the full URL-building contract (params, error handling, data mapping).
+  // Here we only verify that AdminApiService correctly delegates to that service.
+  describe('listWorkers — delegação para AdminWorkerListApiService', () => {
+    it('sem filtros delega e retorna { data: [], total: 0 }', async () => {
       const result = await AdminApiService.listWorkers();
-
-      expect(capturedUrl()).toContain('/api/admin/workers');
       expect(result).toEqual({ data: [], total: 0 });
     });
 
-    it('platform=talentum é incluído na URL', async () => {
-      mockFetch();
-      await AdminApiService.listWorkers({ platform: 'talentum' });
-
-      expect(capturedUrl()).toContain('platform=talentum');
-    });
-
-    it('platform=ana_care é incluído na URL', async () => {
-      mockFetch();
-      await AdminApiService.listWorkers({ platform: 'ana_care' });
-
-      expect(capturedUrl()).toContain('platform=ana_care');
-    });
-
-    it('docs_complete=complete é incluído na URL', async () => {
-      mockFetch();
-      await AdminApiService.listWorkers({ docs_complete: 'complete' });
-
-      expect(capturedUrl()).toContain('docs_complete=complete');
-    });
-
-    it('docs_complete=incomplete é incluído na URL', async () => {
-      mockFetch();
-      await AdminApiService.listWorkers({ docs_complete: 'incomplete' });
-
-      expect(capturedUrl()).toContain('docs_complete=incomplete');
-    });
-
-    it('limit e offset são incluídos na URL', async () => {
-      mockFetch();
-      await AdminApiService.listWorkers({ limit: '10', offset: '20' });
-
-      const url = capturedUrl();
-      expect(url).toContain('limit=10');
-      expect(url).toContain('offset=20');
-    });
-
-    it('retorna data e total corretamente do JSON de resposta', async () => {
-      const workers = [
-        { id: 'w1', name: 'João', casesCount: 1, documentsComplete: true, platform: 'talentum' },
-      ];
-      mockFetch(workers, 42);
-
-      const result = await AdminApiService.listWorkers();
-
-      expect(result.data).toEqual(workers);
-      expect(result.total).toBe(42);
-    });
-
-    it('lança erro quando API retorna success=false', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        json: async () => ({ success: false, error: 'Unauthorized' }),
-        status: 401,
-        headers: {
-          get: (name: string) => (name === 'content-type' ? 'application/json' : null),
-        },
+    it('passa filtros ao serviço delegado', async () => {
+      const { AdminWorkerListApiService } = await import('../AdminWorkerListApiService');
+      await AdminApiService.listWorkers({ platform: 'talentum', limit: '10' });
+      expect(AdminWorkerListApiService.listWorkers).toHaveBeenCalledWith({
+        platform: 'talentum',
+        limit: '10',
       });
-
-      await expect(AdminApiService.listWorkers()).rejects.toThrow('Unauthorized');
-    });
-
-    it('filtros combinados são todos incluídos na URL', async () => {
-      mockFetch([{ id: 'w1' }], 1);
-      await AdminApiService.listWorkers({
-        platform: 'planilla_operativa',
-        docs_complete: 'incomplete',
-        limit: '5',
-        offset: '10',
-      });
-
-      const url = capturedUrl();
-      expect(url).toContain('platform=planilla_operativa');
-      expect(url).toContain('docs_complete=incomplete');
-      expect(url).toContain('limit=5');
-      expect(url).toContain('offset=10');
     });
   });
 
