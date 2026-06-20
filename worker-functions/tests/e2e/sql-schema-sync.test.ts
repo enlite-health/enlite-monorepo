@@ -399,6 +399,9 @@ describe('SQL ↔ Schema Sync Validation', () => {
             if (tableName === '__expr__') continue;
             // Single-letter names are subquery aliases, not tables
             if (isSingleLetterAlias(tableName)) continue;
+            // FROM/JOIN <fn>(...) é função set-returning do Postgres (unnest,
+            // jsonb_array_elements, generate_series, etc.), não tabela — pula.
+            if (/^\s*\(/.test(sql.slice(m.index + m[0].length))) continue;
 
             if (!schema.tables.has(tableName)) {
               missingTables.push({
