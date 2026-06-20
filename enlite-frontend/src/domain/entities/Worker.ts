@@ -115,6 +115,7 @@ export interface WorkerDetail {
   location: WorkerLocation | null;
   encuadres: WorkerEncuadre[];
   availability?: WorkerAvailabilitySlot[];
+  tags?: import('./WorkerTag').WorkerTagSummary[];
 }
 
 export interface WorkerAvailabilitySlot {

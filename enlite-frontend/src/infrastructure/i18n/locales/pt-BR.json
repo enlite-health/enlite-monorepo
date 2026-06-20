@@ -526,7 +526,8 @@
       "workers": "Prestadores",
       "recruitment": "Recrutamento",
       "patients": "Pacientes",
-      "apiDocs": "API Docs"
+      "apiDocs": "API Docs",
+      "tags": "Etiquetas"
     },
     "apiDocs": {
       "title": "Documentação da API",
@@ -891,6 +892,46 @@
         "availability": "Disponibilidade",
         "financial": "Financeiro",
         "history": "Histórico"
+      },
+      "tags": {
+        "label": "Etiquetas",
+        "addTag": "+ Etiqueta",
+        "addTagPlaceholder": "Buscar etiqueta...",
+        "noTags": "Sem etiquetas atribuídas",
+        "noOptions": "Sem etiquetas disponíveis",
+        "removeTag": "Remover etiqueta",
+        "assignError": "Erro ao atribuir etiqueta",
+        "removeError": "Erro ao remover etiqueta"
+      }
+    },
+    "tags": {
+      "title": "Etiquetas",
+      "newTag": "Nova Etiqueta",
+      "editTag": "Editar Etiqueta",
+      "deleteTag": "Excluir Etiqueta",
+      "deleteConfirm": "Tem certeza de que deseja excluir esta etiqueta? Ela será removida de todos os prestadores que a tiverem atribuída.",
+      "name": "Nome",
+      "namePlaceholder": "Ex: Prioritário",
+      "color": "Cor",
+      "colorPlaceholder": "#4F46E5",
+      "colorInvalid": "A cor deve ser um valor hexadecimal válido (#RRGGBB)",
+      "description": "Descrição",
+      "descriptionPlaceholder": "Descrição opcional da etiqueta",
+      "preview": "Pré-visualização",
+      "previewPlaceholder": "Nome da etiqueta",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar",
+      "noTags": "Nenhuma etiqueta criada. Clique em \"Nova Etiqueta\" para começar.",
+      "loadError": "Erro ao carregar etiquetas",
+      "createError": "Erro ao criar etiqueta",
+      "updateError": "Erro ao atualizar etiqueta",
+      "deleteError": "Erro ao excluir etiqueta",
+      "table": {
+        "name": "Nome",
+        "color": "Cor",
+        "description": "Descrição",
+        "actions": "Ações"
       }
     },
     "vacancies": {
@@ -1632,7 +1673,10 @@
         "pendingValidation": "Falta validação"
       },
       "filters": {
-        "validation": "Validação"
+        "validation": "Validação",
+        "tags": "Etiquetas",
+        "tagsPlaceholder": "Filtrar por etiqueta...",
+        "tagsAll": "Todas"
       },
       "docsStatus": {
         "complete": "Completo",

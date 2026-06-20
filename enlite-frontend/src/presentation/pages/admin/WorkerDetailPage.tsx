@@ -93,6 +93,7 @@ export default function WorkerDetailPage() {
           updatedAt={worker.updatedAt}
         />
         <WorkerPersonalInfoCard
+          workerId={worker.id}
           birthDate={worker.birthDate}
           sex={worker.sex}
           gender={worker.gender}
@@ -102,6 +103,7 @@ export default function WorkerDetailPage() {
           languages={worker.languages}
           weightKg={worker.weightKg}
           heightCm={worker.heightCm}
+          tags={worker.tags ?? []}
         />
       </div>
 

@@ -526,7 +526,8 @@
       "workers": "Prestadores",
       "recruitment": "Reclutamiento",
       "patients": "Pacientes",
-      "apiDocs": "API Docs"
+      "apiDocs": "API Docs",
+      "tags": "Etiquetas"
     },
     "apiDocs": {
       "title": "Documentación de la API",
@@ -891,6 +892,46 @@
         "availability": "Disponibilidad",
         "financial": "Financiero",
         "history": "Historial"
+      },
+      "tags": {
+        "label": "Etiquetas",
+        "addTag": "+ Etiqueta",
+        "addTagPlaceholder": "Buscar etiqueta...",
+        "noTags": "Sin etiquetas asignadas",
+        "noOptions": "Sin etiquetas disponibles",
+        "removeTag": "Quitar etiqueta",
+        "assignError": "Error al asignar etiqueta",
+        "removeError": "Error al quitar etiqueta"
+      }
+    },
+    "tags": {
+      "title": "Etiquetas",
+      "newTag": "Nueva Etiqueta",
+      "editTag": "Editar Etiqueta",
+      "deleteTag": "Eliminar Etiqueta",
+      "deleteConfirm": "¿Estás seguro de que querés eliminar esta etiqueta? Se quitará de todos los prestadores que la tengan asignada.",
+      "name": "Nombre",
+      "namePlaceholder": "Ej: Prioritario",
+      "color": "Color",
+      "colorPlaceholder": "#4F46E5",
+      "colorInvalid": "El color debe ser un valor hexadecimal válido (#RRGGBB)",
+      "description": "Descripción",
+      "descriptionPlaceholder": "Descripción opcional de la etiqueta",
+      "preview": "Vista previa",
+      "previewPlaceholder": "Nombre de la etiqueta",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar",
+      "noTags": "No hay etiquetas creadas. Hacé clic en \"Nueva Etiqueta\" para comenzar.",
+      "loadError": "Error al cargar etiquetas",
+      "createError": "Error al crear etiqueta",
+      "updateError": "Error al actualizar etiqueta",
+      "deleteError": "Error al eliminar etiqueta",
+      "table": {
+        "name": "Nombre",
+        "color": "Color",
+        "description": "Descripción",
+        "actions": "Acciones"
       }
     },
     "vacancies": {
@@ -1711,7 +1752,10 @@
         "pendingValidation": "Falta validación"
       },
       "filters": {
-        "validation": "Validación"
+        "validation": "Validación",
+        "tags": "Etiquetas",
+        "tagsPlaceholder": "Filtrar por etiqueta...",
+        "tagsAll": "Todas"
       },
       "docsStatus": {
         "complete": "Completo",

@@ -97,6 +97,7 @@ describe('WorkerDetailPage — delete regression', () => {
     vi.clearAllMocks();
     vi.spyOn(AdminApiService, 'getWorkerById').mockResolvedValue(MOCK_WORKER);
     vi.spyOn(AdminApiService, 'getWorkerAdditionalDocs').mockResolvedValue([]);
+    vi.spyOn(AdminApiService, 'listWorkerTags').mockResolvedValue([]);
   });
 
   it('HAPPY PATH: delete com data no response zera APENAS o slot deletado', async () => {

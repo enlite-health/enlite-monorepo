@@ -76,7 +76,7 @@ export async function buildWorkerDetailResponse(
     firstName, lastName, birthDate, sex, gender, documentNumber,
     profilePhotoUrl, languages, whatsappPhone, linkedinUrl,
     sexualOrientation, race, religion, weightKg, heightCm,
-    docsResult, serviceAreasResult, locationResult, encuadresResult, availabilityResult,
+    docsResult, serviceAreasResult, locationResult, encuadresResult, availabilityResult, tagsResult,
   ] = await Promise.all([
     encryptionService.decrypt(w.first_name_encrypted),
     encryptionService.decrypt(w.last_name_encrypted),
@@ -135,6 +135,15 @@ export async function buildWorkerDetailResponse(
       ORDER BY day_of_week ASC, start_time ASC`,
       [w.id],
     ),
+    db.query(
+      `SELECT c.id, c.name, c.color, c.description
+         FROM worker_tags wt
+         JOIN worker_tag_catalog c ON c.id = wt.tag_id
+        WHERE wt.worker_id = $1
+          AND c.deleted_at IS NULL
+        ORDER BY c.name ASC`,
+      [w.id],
+    ),
   ]);
 
   let parsedLanguages: string[] = [];
@@ -191,6 +200,12 @@ export async function buildWorkerDetailResponse(
       endTime: a.end_time,
       timezone: a.timezone,
       crossesMidnight: a.crosses_midnight,
+    })),
+    tags: tagsResult.rows.map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      color: t.color,
+      description: t.description ?? undefined,
     })),
   };
 }

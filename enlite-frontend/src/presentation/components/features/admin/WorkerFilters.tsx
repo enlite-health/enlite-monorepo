@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect, SearchableSelectOption } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
+import { WorkerTagMultiSelect } from './WorkerTagMultiSelect';
+import type { WorkerTag } from '@domain/entities/WorkerTag';
 
 interface WorkerFiltersProps {
   searchValue: string;
@@ -16,6 +18,10 @@ interface WorkerFiltersProps {
   selectedCaseId: string;
   onCaseChange: (value: string) => void;
   isCaseOptionsLoading?: boolean;
+  tagOptions: WorkerTag[];
+  selectedTagIds: string[];
+  onTagIdsChange: (ids: string[]) => void;
+  isTagsLoading?: boolean;
 }
 
 export function WorkerFilters({
@@ -31,16 +37,26 @@ export function WorkerFilters({
   selectedCaseId,
   onCaseChange,
   isCaseOptionsLoading = false,
+  tagOptions,
+  selectedTagIds,
+  onTagIdsChange,
+  isTagsLoading = false,
 }: WorkerFiltersProps): JSX.Element {
   const { t } = useTranslation();
 
-  const hasActiveFilters = searchValue || selectedDocsStatus || selectedValidationStatus || selectedCaseId;
+  const hasActiveFilters =
+    searchValue ||
+    selectedDocsStatus ||
+    selectedValidationStatus ||
+    selectedCaseId ||
+    selectedTagIds.length > 0;
 
   const handleClearAll = () => {
     onSearchChange('');
     onDocsStatusChange('');
     onValidationStatusChange('');
     onCaseChange('');
+    onTagIdsChange([]);
   };
 
   return (
@@ -103,6 +119,19 @@ export function WorkerFilters({
             value={selectedValidationStatus}
             onValueChange={onValidationStatusChange}
             placeholder={t('admin.workers.docsOptions.all', 'Todos')}
+          />
+        </div>
+
+        {/* Tags multi-select filter */}
+        <div className="w-[200px]" data-testid="filter-tags">
+          <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
+            {t('admin.workers.filters.tags', 'Etiquetas')}
+          </label>
+          <WorkerTagMultiSelect
+            tags={tagOptions}
+            selectedIds={selectedTagIds}
+            onChange={onTagIdsChange}
+            disabled={isTagsLoading}
           />
         </div>
 

@@ -40,6 +40,8 @@ const ListWorkersQuerySchema = z.object({
   docs_validated: DocsValidatedEnum.optional(),
   search: z.string().optional(),
   case_id: z.string().optional(),
+  /** CSV de UUIDs de tags. Filtra workers que possuem TODAS as tags informadas (AND). */
+  tag_ids: z.string().optional(),
   limit: z.string().optional(),
   offset: z.string().optional(),
 });
@@ -123,7 +125,7 @@ export class AdminWorkersController {
     }
 
     try {
-      const { platform, docs_complete, docs_validated, search, case_id, limit = '20', offset = '0' } = parsed.data;
+      const { platform, docs_complete, docs_validated, search, case_id, tag_ids, limit = '20', offset = '0' } = parsed.data;
       const params: unknown[] = [];
       let paramIndex = 1;
       let whereClause = 'WHERE w.merged_into_id IS NULL';
@@ -152,6 +154,22 @@ export class AdminWorkersController {
         whereClause += ` AND EXISTS (SELECT 1 FROM encuadres e2 WHERE e2.worker_id = w.id AND e2.job_posting_id = $${paramIndex})`;
         params.push(case_id);
         paramIndex++;
+      }
+
+      if (tag_ids) {
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const tagArray = tag_ids.split(',').map((t) => t.trim()).filter(Boolean);
+        const invalidUuids = tagArray.filter((t) => !UUID_RE.test(t));
+        if (invalidUuids.length > 0) {
+          res.status(400).json({ success: false, error: `Invalid tag UUIDs: ${invalidUuids.join(', ')}` });
+          return;
+        }
+        if (tagArray.length > 0) {
+          // AND semantics: worker must have ALL provided tags
+          whereClause += ` AND (SELECT COUNT(DISTINCT wt.tag_id) FROM worker_tags wt WHERE wt.worker_id = w.id AND wt.tag_id = ANY($${paramIndex}::uuid[])) = $${paramIndex + 1}`;
+          params.push(tagArray, tagArray.length);
+          paramIndex += 2;
+        }
       }
 
       const searchRaw = search?.trim();

@@ -3,8 +3,11 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { getSexLabel, getGenderLabel, getLanguageLabel } from './workerDetailLabels';
+import { WorkerTagsArea } from './WorkerTagsArea';
+import type { WorkerTagSummary } from '@domain/entities/WorkerTag';
 
 interface WorkerPersonalInfoCardProps {
+  workerId: string;
   birthDate: string | null;
   sex: string | null;
   gender: string | null;
@@ -14,6 +17,7 @@ interface WorkerPersonalInfoCardProps {
   languages: string[];
   weightKg: string | null;
   heightCm: string | null;
+  tags?: WorkerTagSummary[];
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -26,6 +30,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 }
 
 export function WorkerPersonalInfoCard({
+  workerId,
   birthDate,
   sex,
   gender,
@@ -35,6 +40,7 @@ export function WorkerPersonalInfoCard({
   languages,
   weightKg,
   heightCm,
+  tags = [],
 }: WorkerPersonalInfoCardProps) {
   const { t } = useTranslation();
 
@@ -63,6 +69,7 @@ export function WorkerPersonalInfoCard({
         <Field label={`${t('admin.workerDetail.languages')}:`} value={languages.length > 0 ? languages.map(l => getLanguageLabel(t, l)).join(', ') : null} />
         <Field label={`${t('admin.workerDetail.weight')}:`} value={weightKg ? `${weightKg}kg` : null} />
         <Field label={`${t('admin.workerDetail.height')}:`} value={heightCm ? `${heightCm}m` : null} />
+        <WorkerTagsArea workerId={workerId} initialTags={tags} />
       </div>
     </div>
   );

@@ -34,6 +34,7 @@ import {
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
 import { AdminWorkersController } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
+import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
@@ -125,6 +126,7 @@ const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
+const adminTagCatalogController = new AdminTagCatalogController();
 const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
 const adminPatientsController = new AdminPatientsController();
 const publicVacancyController = new PublicVacancyController();
@@ -303,6 +305,14 @@ app.get('/api/admin/workers/export', adminOnly, (req: Request, res: Response) =>
 app.get('/api/admin/workers/:id/timeline', staffOnly, (req: Request, res: Response) => workerTimelineController.getTimeline(req, res));
 app.get('/api/admin/workers/:id', staffOnly, (req: Request, res: Response) => adminWorkersController.getWorkerById(req, res));
 app.get('/api/admin/workers', staffOnly, (req: Request, res: Response) => adminWorkersController.listWorkers(req, res));
+
+// ========== Worker Tags ==========
+app.get('/api/admin/worker-tags', staffOnly, (req: Request, res: Response) => adminTagCatalogController.list(req, res));
+app.post('/api/admin/worker-tags', adminOnly, (req: Request, res: Response) => adminTagCatalogController.create(req, res));
+app.patch('/api/admin/worker-tags/:id', adminOnly, (req: Request, res: Response) => adminTagCatalogController.update(req, res));
+app.delete('/api/admin/worker-tags/:id', adminOnly, (req: Request, res: Response) => adminTagCatalogController.delete(req, res));
+app.post('/api/admin/workers/:id/tags/:tagId', staffOnly, (req: Request, res: Response) => adminTagCatalogController.assign(req, res));
+app.delete('/api/admin/workers/:id/tags/:tagId', staffOnly, (req: Request, res: Response) => adminTagCatalogController.remove(req, res));
 
 app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware));
 

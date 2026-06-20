@@ -33,6 +33,7 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     syncTalentumWorkers: (...args: unknown[]) => mockSyncTalentumWorkers(...args),
     listWorkers: vi.fn().mockResolvedValue({ data: [], total: 0 }),
     getWorkerDateStats: vi.fn().mockResolvedValue({ today: 0, yesterday: 0, sevenDaysAgo: 0 }),
+    listWorkerTags: vi.fn().mockResolvedValue([]),
   },
 }));
 

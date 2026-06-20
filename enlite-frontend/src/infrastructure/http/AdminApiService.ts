@@ -40,6 +40,7 @@ export type { PendingAddressReviewItem, ResolveAddressBody };
 export type { AIContentResult };
 export type { VacancyDraftSummary, VacancyByAddressSummary };
 
+import { AdminWorkerTagsApiService } from './AdminWorkerTagsApiService';
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 export { ApiError } from './ApiError';
 
@@ -234,6 +235,7 @@ class AdminApiServiceClass {
     docs_validated?: 'all_validated' | 'pending_validation';
     search?: string;
     case_id?: string;
+    tag_ids?: string;
     limit?: string;
     offset?: string;
   }): Promise<{ data: any[]; total: number }> {
@@ -385,6 +387,13 @@ class AdminApiServiceClass {
   // ========== Vacancy Drafts — delegated to AdminVacancyDraftsApiService ==========
   listDraftsForPatient(patientId: string): Promise<VacancyDraftSummary[]> { return AdminVacancyDraftsApiService.listDraftsForPatient(patientId); }
   listVacanciesByAddress(patientAddressId: string): Promise<VacancyByAddressSummary[]> { return AdminVacancyDraftsApiService.listByAddress(patientAddressId); }
-}
 
+  // ========== Worker Tags — delegated to AdminWorkerTagsApiService ==========
+  listWorkerTags() { return AdminWorkerTagsApiService.listWorkerTags(); }
+  createWorkerTag(...args: Parameters<typeof AdminWorkerTagsApiService.createWorkerTag>) { return AdminWorkerTagsApiService.createWorkerTag(...args); }
+  updateWorkerTag(...args: Parameters<typeof AdminWorkerTagsApiService.updateWorkerTag>) { return AdminWorkerTagsApiService.updateWorkerTag(...args); }
+  deleteWorkerTag(id: string) { return AdminWorkerTagsApiService.deleteWorkerTag(id); }
+  assignTagToWorker(workerId: string, tagId: string) { return AdminWorkerTagsApiService.assignTagToWorker(workerId, tagId); }
+  removeTagFromWorker(workerId: string, tagId: string) { return AdminWorkerTagsApiService.removeTagFromWorker(workerId, tagId); }
+}
 export const AdminApiService = new AdminApiServiceClass();

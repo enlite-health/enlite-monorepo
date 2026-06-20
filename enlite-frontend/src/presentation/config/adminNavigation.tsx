@@ -1,10 +1,14 @@
 import { AppSidebarNavItem } from '@presentation/components/templates/DashboardLayout';
 import { useTranslation } from 'react-i18next';
+import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
+import { EnliteRole } from '@domain/entities/EnliteRole';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
+  const { adminProfile } = useAdminAuth();
+  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
 
-  return [
+  const baseItems: AppSidebarNavItem[] = [
     {
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,4 +64,21 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       href: '/admin/api-docs',
     },
   ];
+
+  // Tags item — visible only to admins
+  const adminItems: AppSidebarNavItem[] = isAdmin
+    ? [
+        {
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+          ),
+          label: t('admin.nav.tags', 'Etiquetas'),
+          href: '/admin/tags',
+        },
+      ]
+    : [];
+
+  return [...baseItems, ...adminItems];
 };

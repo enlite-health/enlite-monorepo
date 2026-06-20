@@ -16,6 +16,7 @@ import { useCaseOptions } from '@hooks/admin/useCaseOptions';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
+import type { WorkerTag } from '@domain/entities/WorkerTag';
 import { getDocsStatusOptions, getValidationStatusOptions } from './workersData';
 
 export function AdminWorkersPage(): JSX.Element {
@@ -32,12 +33,23 @@ export function AdminWorkersPage(): JSX.Element {
   const [selectedDocsStatus, setSelectedDocsStatus] = useState('');
   const [selectedValidationStatus, setSelectedValidationStatus] = useState('');
   const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagOptions, setTagOptions] = useState<WorkerTag[]>([]);
+  const [isTagsLoading, setIsTagsLoading] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const { options: caseOptions, isLoading: isCaseOptionsLoading } = useCaseOptions();
+
+  useEffect(() => {
+    setIsTagsLoading(true);
+    AdminApiService.listWorkerTags()
+      .then(setTagOptions)
+      .catch(() => {/* silently fail — filter shows empty */})
+      .finally(() => setIsTagsLoading(false));
+  }, []);
 
   const handleSearchChange = (v: string) => {
     setSearchInput(v);
@@ -50,6 +62,7 @@ export function AdminWorkersPage(): JSX.Element {
   const handleValidationStatusChange = (v: string) => { setSelectedValidationStatus(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
   const handleCaseChange = (v: string) => { setSelectedCaseId(v); setCurrentPage(1); };
+  const handleTagIdsChange = (ids: string[]) => { setSelectedTagIds(ids); setCurrentPage(1); };
 
   const filters = useMemo(
     () => ({
@@ -57,10 +70,11 @@ export function AdminWorkersPage(): JSX.Element {
       docs_complete: selectedDocsStatus || undefined,
       docs_validated: selectedValidationStatus as 'all_validated' | 'pending_validation' | undefined || undefined,
       case_id: selectedCaseId || undefined,
+      tag_ids: selectedTagIds.length > 0 ? selectedTagIds.join(',') : undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     }),
-    [debouncedSearch, selectedDocsStatus, selectedValidationStatus, selectedCaseId, itemsPerPage, currentPage],
+    [debouncedSearch, selectedDocsStatus, selectedValidationStatus, selectedCaseId, selectedTagIds, itemsPerPage, currentPage],
   );
 
   const { workers: rawWorkers, total, stats, isLoading, error, refetch } = useWorkersData(filters);
@@ -184,6 +198,10 @@ export function AdminWorkersPage(): JSX.Element {
           selectedCaseId={selectedCaseId}
           onCaseChange={handleCaseChange}
           isCaseOptionsLoading={isCaseOptionsLoading}
+          tagOptions={tagOptions}
+          selectedTagIds={selectedTagIds}
+          onTagIdsChange={handleTagIdsChange}
+          isTagsLoading={isTagsLoading}
         />
 
         {error ? (
