@@ -97,9 +97,9 @@ async function main(): Promise<void> {
     const { rows } = await pool.query<{ total: string }>(
       `SELECT COUNT(*) AS total
          FROM workers
-        WHERE (sex_bidx IS NULL OR languages_bidx IS NULL)
-          AND merged_into_id IS NULL
-          AND (sex_encrypted IS NOT NULL OR languages_encrypted IS NOT NULL)`,
+        WHERE ((sex_encrypted IS NOT NULL AND sex_bidx IS NULL)
+               OR (languages_encrypted IS NOT NULL AND languages_bidx IS NULL))
+          AND merged_into_id IS NULL`,
     );
     const total = parseInt(rows[0].total, 10);
     const batches = Math.ceil(total / BATCH_SIZE);
@@ -123,9 +123,9 @@ async function main(): Promise<void> {
     const { rows } = await pool.query<WorkerRow>(
       `SELECT id, sex_encrypted, languages_encrypted
          FROM workers
-        WHERE (sex_bidx IS NULL OR languages_bidx IS NULL)
+        WHERE ((sex_encrypted IS NOT NULL AND sex_bidx IS NULL)
+               OR (languages_encrypted IS NOT NULL AND languages_bidx IS NULL))
           AND merged_into_id IS NULL
-          AND (sex_encrypted IS NOT NULL OR languages_encrypted IS NOT NULL)
           AND ($2::uuid[] IS NULL OR id <> ALL($2::uuid[]))
         ORDER BY created_at ASC
         LIMIT $1`,
@@ -138,6 +138,10 @@ async function main(): Promise<void> {
 
     for (const row of rows) {
       summary.processed++;
+      // Mark EVERY visited row as tried so the next batch excludes it. Without this,
+      // single-field workers (e.g. sex set, no languages) keep matching the WHERE and
+      // get re-selected forever — the loop never advances. Termination guarantee.
+      triedIds.add(row.id);
 
       try {
         // Decrypt sex and languages in parallel

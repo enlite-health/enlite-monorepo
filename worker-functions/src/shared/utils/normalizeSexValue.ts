@@ -11,17 +11,30 @@
  *
  * Canonical output: 'male' | 'female' | null (lowercase English)
  *
- * Accepted input variants (production data):
- *   - 'male', 'MALE', 'masculino', 'M', 'm'  → 'male'
- *   - 'female', 'FEMALE', 'femenino', 'femenina', 'F', 'f'  → 'female'
- *   - null / undefined / '' / 'BOTH' / 'OTHER' / anything else  → null
+ * Accepted input variants (production data — inclui espanhol AR real):
+ *   - 'male', 'MALE', 'masculino', 'M', 'hombre', 'varón', 'varon'  → 'male'
+ *   - 'female', 'FEMALE', 'femenino', 'femenina', 'F', 'mujer'  → 'female'
+ *   - null / undefined / '' / 'Trans' / 'BOTH' / 'OTHER' / anything else  → null
+ *
+ * Acentos são removidos antes do match (VARÓN === VARON). O filtro de sexo é
+ * binário (male/female); valores não-binários (ex: 'Trans') retornam null e
+ * ficam fora do filtro por design.
  */
 export function normalizeSexValue(
   value: string | null | undefined,
 ): 'male' | 'female' | null {
   if (!value) return null;
-  const v = value.trim().toUpperCase();
-  if (v === 'M' || v === 'MALE' || v === 'MASCULINO') return 'male';
-  if (v === 'F' || v === 'FEMALE' || v === 'FEMENINO' || v === 'FEMENINA') return 'female';
+  // trim + uppercase + remove acentos (NFD) para casar VARÓN/varon, etc.
+  const v = value
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(new RegExp('[\u0300-\u036f]', 'g'), '');
+  if (v === 'M' || v === 'MALE' || v === 'MASCULINO' || v === 'HOMBRE' || v === 'VARON') {
+    return 'male';
+  }
+  if (v === 'F' || v === 'FEMALE' || v === 'FEMENINO' || v === 'FEMENINA' || v === 'MUJER') {
+    return 'female';
+  }
   return null;
 }
