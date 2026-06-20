@@ -13,6 +13,8 @@
     "test:e2e:coverage": "jest --config jest.config.e2e.js --coverage",
     "migrate": "bash run_migrations.sh",
     "migrate:docker": "node scripts/run-migrations-docker.js",
+    "dedup:dry-run": "ts-node -r dotenv/config -r tsconfig-paths/register src/infrastructure/services/WorkerPhoneMergeOrchestrator.ts --dry-run",
+    "dedup:execute": "ts-node -r dotenv/config -r tsconfig-paths/register src/infrastructure/services/WorkerPhoneMergeOrchestrator.ts --execute",
     "geocode:jobs": "ts-node -r dotenv/config scripts/backfill-patient-addresses-geocoding.ts",
     "geocode:jobs:dry": "ts-node -r dotenv/config scripts/backfill-patient-addresses-geocoding.ts --dry-run",
     "backfill:worker-names": "ts-node -r dotenv/config scripts/backfill-worker-names-from-encuadres.ts",

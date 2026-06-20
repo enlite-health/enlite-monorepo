@@ -5,6 +5,7 @@ import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -34,6 +35,10 @@ export class WorkerRepository implements IWorkerRepository {
     try {
       const consentAt = data.lgpdOptIn ? new Date() : null;
       const whatsappPhoneEnc = await this.encryptionService.encrypt(data.whatsappPhone || null);
+      // Normaliza o phone na borda do create para garantir unicidade semântica.
+      // normalizePhoneAR retorna '' para entrada vazia — converte para null.
+      const rawPhone = data.phone || null;
+      const normalizedPhone = rawPhone ? (normalizePhoneAR(rawPhone) || rawPhone) : null;
       const query = `
         INSERT INTO workers (auth_uid, email, phone, whatsapp_phone_encrypted, lgpd_consent_at, terms_accepted_at, privacy_accepted_at, country, timezone, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'INCOMPLETE_REGISTER')
@@ -49,7 +54,7 @@ export class WorkerRepository implements IWorkerRepository {
       const values = [
         data.authUid,
         data.email,
-        data.phone || null,
+        normalizedPhone,
         whatsappPhoneEnc,
         consentAt,
         consentAt,

@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import { Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 
 // ─── findByAuthUid ────────────────────────────────────────────────────────────
 
@@ -127,7 +128,9 @@ export async function updateAuthUid(
     const params: unknown[] = [authUid];
 
     if (phone) {
-      params.push(phone);
+      // Normaliza phone na borda do update para manter unicidade semântica.
+      const normalizedPhone = normalizePhoneAR(phone) || phone;
+      params.push(normalizedPhone);
       setClauses.push(`phone = $${params.length}`);
     }
 
