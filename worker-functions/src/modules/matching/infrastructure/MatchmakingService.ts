@@ -20,6 +20,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import {
   JobPosting,
   WorkerCandidate,
@@ -374,18 +375,16 @@ export class MatchmakingService {
 }
 
 /**
- * Normaliza um valor de sexo para o canônico interno 'M' | 'F' | null.
- * Aceita as várias formas que aparecem em produção:
- *   - vaga.required_sex: 'M', 'F', 'MALE', 'FEMALE' (UPPERCASE inglês curto/extenso)
- *   - sex_encrypted decifrado: 'male', 'female' (lowercase inglês)
- *   - eventual entrada manual: 'masculino', 'femenino', 'femenina'
- * Retorna null pra valores desconhecidos / vazios / 'BOTH' / 'OTHER'.
+ * Normaliza um valor de sexo para o canônico curto 'M' | 'F' | null usado no
+ * matching (required_sex da vaga é single-letter). NÃO duplica a lógica de
+ * reconhecimento: delega ao SSOT `normalizeSexValue` (shared/utils), que cobre
+ * todas as variantes reais de prod (EN/ES: male/female/Masculino/Hombre/Mujer/
+ * Varón…) e apenas mapeia a saída canônica para a forma curta.
  */
 function normalizeSexCode(value: string | null | undefined): 'M' | 'F' | null {
-  if (!value) return null;
-  const v = value.trim().toUpperCase();
-  if (v === 'M' || v === 'MALE' || v === 'MASCULINO') return 'M';
-  if (v === 'F' || v === 'FEMALE' || v === 'FEMENINO' || v === 'FEMENINA') return 'F';
+  const canonical = normalizeSexValue(value);
+  if (canonical === 'male') return 'M';
+  if (canonical === 'female') return 'F';
   return null;
 }
 
