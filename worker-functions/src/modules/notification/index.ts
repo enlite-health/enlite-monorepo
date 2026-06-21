@@ -34,6 +34,7 @@ export type { ChatwootClientConfig, MirrorOutgoingOptions } from './infrastructu
 export { OutboxProcessor } from './infrastructure/OutboxProcessor';
 export { BulkDispatchScheduler } from './infrastructure/BulkDispatchScheduler';
 export { ReminderScheduler } from './infrastructure/ReminderScheduler';
+export { LegacyEncuadreReminderService } from './infrastructure/LegacyEncuadreReminderService';
 export { TokenService } from './infrastructure/TokenService';
 export { InterviewSchedulingService } from './infrastructure/InterviewSchedulingService';
 
@@ -48,6 +49,8 @@ export type {
 } from './application/BulkDispatchIncompleteWorkersUseCase';
 export { BookSlotFromWhatsAppUseCase } from './application/BookSlotFromWhatsAppUseCase';
 export { HandleReminderResponseUseCase } from './application/HandleReminderResponseUseCase';
+export { MarkNoShowUseCase } from './application/MarkNoShowUseCase';
+export type { NoShowResult } from './application/MarkNoShowUseCase';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
 export { MessagingController } from './interfaces/controllers/MessagingController';

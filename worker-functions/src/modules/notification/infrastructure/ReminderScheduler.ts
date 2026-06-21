@@ -2,31 +2,40 @@ import { Pool } from 'pg';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { TokenService } from './TokenService';
+import { LegacyEncuadreReminderService } from './LegacyEncuadreReminderService';
+import { MarkNoShowUseCase } from '../application/MarkNoShowUseCase';
 import { formatDateUTC, formatTimeUTC } from '@shared/utils/dateFormatters';
+import { logger } from '@shared/logging';
 
 const REMINDER_QUEUE = 'interview-reminders';
 
 /**
  * ReminderScheduler — agenda e processa lembretes de entrevista.
  *
- * Dois fluxos:
- *   - Encuadre (antigo): opera sobre tabela encuadres, templates encuadre_reminder_*
- *   - Qualified Interview (Step 7-8): opera sobre worker_job_applications,
- *     template qualified_reminder_confirm (interativo Sí/No)
+ * Duas fontes de dados:
+ *   - WJA (worker_job_applications, interview_datetime): todos os métodos públicos novos.
+ *   - encuadres: delegado a LegacyEncuadreReminderService (somente fallback/legado).
  *
  * Métodos:
  *   - scheduleReminders(): agenda Cloud Tasks (24h + 5min antes)
- *   - processQualifiedReminder(): fluxo encuadre (Cloud Task 24h antes)
- *   - processQualifiedInterviewReminder(): fluxo QUALIFIED via WJA (Cloud Task 24h antes)
- *   - processBatch(): safety net (Cloud Scheduler)
+ *   - processQualifiedReminder(): despacha 24h reminder (WJA → encuadre fallback)
+ *   - processQualifiedInterviewReminder(): fluxo WJA 24h (Cloud Task)
+ *   - process5MinReminder(): fluxo WJA 5min (Cloud Task)
+ *   - processBatch(): safety net sweep (Cloud Scheduler)
  */
 export class ReminderScheduler {
+  private readonly legacy: LegacyEncuadreReminderService;
+  private readonly noShowUseCase: MarkNoShowUseCase;
+
   constructor(
     private readonly db: Pool,
     private readonly cloudTasks: CloudTasksClient,
     private readonly pubsub?: PubSubClient,
     private readonly tokenService?: TokenService,
-  ) {}
+  ) {
+    this.legacy = new LegacyEncuadreReminderService(db);
+    this.noShowUseCase = new MarkNoShowUseCase(db);
+  }
 
   /**
    * Agenda Cloud Tasks para 24h e 5min antes da entrevista.
@@ -77,20 +86,19 @@ export class ReminderScheduler {
    * Processa um lembrete de 24h antes para um worker específico.
    * Chamado via Cloud Task → POST /api/internal/reminders/qualified
    *
-   * Tenta primeiro o fluxo QUALIFIED (worker_job_applications).
-   * Se não encontrar, cai no fluxo legado (encuadres).
+   * Tenta primeiro o fluxo WJA (worker_job_applications).
+   * Se não encontrar, cai no fluxo legado (encuadres) via LegacyEncuadreReminderService.
    */
   async processQualifiedReminder(workerId: string, jobPostingId: string): Promise<void> {
-    // Fluxo QUALIFIED (Step 8): worker_job_applications
     const handled = await this.processQualifiedInterviewReminder(workerId, jobPostingId);
     if (handled) return;
 
     // Fallback: fluxo encuadres (legado)
-    await this.processEncuadreReminder(workerId);
+    await this.legacy.processEncuadreReminder(workerId);
   }
 
   /**
-   * Fluxo QUALIFIED (Step 8): envia reminder interativo (Sí/No) via worker_job_applications.
+   * Fluxo WJA (Step 8): envia reminder interativo (Sí/No) via worker_job_applications.
    *
    * Idempotência: pula se interview_reminder_sent_at já está preenchido
    *               ou se interview_response já não é 'pending'.
@@ -112,10 +120,14 @@ export class ReminderScheduler {
 
     if (appResult.rows.length === 0) return false;
 
-    const app = appResult.rows[0];
+    const app = appResult.rows[0] as {
+      interview_response: string;
+      interview_reminder_sent_at: string | null;
+      interview_datetime: string | null;
+      interview_meet_link: string | null;
+    };
 
-    // Idempotência: já enviou reminder ou worker já declinou/cancelou
-    // Estado esperado aqui é 'confirmed' (worker escolheu slot no Step 7)
+    // Idempotência: já enviou reminder ou worker já declinou/cancelou/não respondeu
     if (app.interview_reminder_sent_at || app.interview_response !== 'confirmed') {
       return true;
     }
@@ -159,177 +171,186 @@ export class ReminderScheduler {
   }
 
   /**
-   * Fluxo legado: reminder 24h para encuadres.
-   */
-  private async processEncuadreReminder(workerId: string): Promise<void> {
-    const result = await this.db.query(
-      `SELECT e.id as encuadre_id, e.worker_id,
-              is2.slot_date, is2.slot_time, is2.meet_link
-       FROM encuadres e
-       JOIN interview_slots is2 ON is2.id = e.interview_slot_id
-       WHERE e.worker_id = $1
-         AND e.interview_slot_id IS NOT NULL
-         AND e.reminder_day_sent_at IS NULL
-         AND is2.status != 'CANCELLED'
-       LIMIT 1`,
-      [workerId],
-    );
-
-    if (result.rows.length === 0) return;
-
-    const row = result.rows[0];
-    const dateFormatted = new Date(row.slot_date).toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-    });
-
-    await this.db.query(
-      `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-       VALUES ($1, 'encuadre_reminder_day_before', $2::jsonb, 'pending', 0)`,
-      [
-        row.worker_id,
-        JSON.stringify({
-          name: row.worker_id,
-          date: dateFormatted,
-          time: row.slot_time?.slice(0, 5) ?? '',
-          meet_link: row.meet_link ?? '',
-        }),
-      ],
-    );
-
-    await this.db.query(
-      `UPDATE encuadres SET reminder_day_sent_at = NOW() WHERE id = $1`,
-      [row.encuadre_id],
-    );
-  }
-
-  /**
-   * Processa um lembrete de 5min antes para um worker específico.
-   * Chamado via Cloud Task → POST /api/internal/reminders/5min
+   * Lembrete 5min via WJA (Cloud Task).
+   * Idempotente: pula se interview_reminder_5min_sent_at já preenchido.
+   * Fallback para encuadres se WJA não encontrada (compatibilidade legada).
    */
   async process5MinReminder(workerId: string, jobPostingId: string): Promise<void> {
-    const result = await this.db.query(
-      `SELECT e.id as encuadre_id, e.worker_id,
-              is2.slot_date, is2.slot_time, is2.meet_link
-       FROM encuadres e
-       JOIN interview_slots is2 ON is2.id = e.interview_slot_id
-       WHERE e.worker_id = $1
-         AND e.interview_slot_id IS NOT NULL
-         AND e.reminder_5min_sent_at IS NULL
-         AND is2.status != 'CANCELLED'
+    const appResult = await this.db.query(
+      `SELECT interview_response, interview_reminder_5min_sent_at,
+              interview_datetime, interview_meet_link
+       FROM worker_job_applications
+       WHERE worker_id = $1 AND job_posting_id = $2
        LIMIT 1`,
-      [workerId],
+      [workerId, jobPostingId],
     );
 
-    if (result.rows.length === 0) return;
+    if (appResult.rows.length === 0) {
+      // Fallback legado: tenta encuadres
+      await this.legacy.process5MinReminder(workerId, jobPostingId);
+      return;
+    }
 
-    const row = result.rows[0];
+    const app = appResult.rows[0] as {
+      interview_response: string;
+      interview_reminder_5min_sent_at: string | null;
+      interview_datetime: string | null;
+      interview_meet_link: string | null;
+    };
 
-    await this.db.query(
+    // Idempotência: já enviou ou entrevista não está ativa
+    if (app.interview_reminder_5min_sent_at || app.interview_response !== 'confirmed') {
+      return;
+    }
+
+    if (!app.interview_datetime) return;
+
+    let nameValue = workerId;
+    if (this.tokenService) {
+      nameValue = await this.tokenService.generate(workerId, 'worker_first_name');
+    }
+
+    const outboxResult = await this.db.query(
       `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-       VALUES ($1, 'encuadre_reminder_5min', $2::jsonb, 'pending', 0)`,
+       VALUES ($1, 'qualified_reminder_5min', $2::jsonb, 'pending', 0)
+       RETURNING id`,
       [
-        row.worker_id,
+        workerId,
         JSON.stringify({
-          name: row.worker_id,
-          meet_link: row.meet_link ?? '',
+          name: nameValue,
+          meet_link: app.interview_meet_link ?? '',
         }),
       ],
     );
 
+    if (this.pubsub) {
+      const outboxId = outboxResult.rows[0].id;
+      await this.pubsub.publish('outbox-enqueued', { outboxId });
+    }
+
     await this.db.query(
-      `UPDATE encuadres SET reminder_5min_sent_at = NOW() WHERE id = $1`,
-      [row.encuadre_id],
+      `UPDATE worker_job_applications
+       SET interview_reminder_5min_sent_at = NOW(), updated_at = NOW()
+       WHERE worker_id = $1 AND job_posting_id = $2`,
+      [workerId, jobPostingId],
     );
   }
 
   /**
-   * Safety net: processa todos os lembretes pendentes em batch.
-   * Chamado via Cloud Scheduler como fallback para Cloud Tasks que falharam.
+   * Safety net sweep: processa lembretes pendentes + marca no-shows.
+   * Chamado via Cloud Scheduler (a cada 5min) → POST /api/internal/reminders/sweep.
    */
-  async processBatch(): Promise<void> {
-    const dayCount = await this.sendDayBeforeReminders();
-    const minCount = await this.send5MinReminders();
-    if (dayCount + minCount > 0) {
-      console.log(
-        `[ReminderScheduler] 24h: ${dayCount} lembretes | 5min: ${minCount} lembretes`,
+  async processBatch(): Promise<{ dayCount: number; minCount: number; noShows: number }> {
+    const dayCount = await this.sendDayBeforeRemindersWJA();
+    const minCount = await this.send5MinRemindersWJA();
+    const noShowResult = await this.noShowUseCase.execute();
+
+    if (dayCount + minCount + noShowResult.marked > 0) {
+      logger.info(
+        { dayCount, minCount, noShows: noShowResult.marked, stageMovedToInDoubt: noShowResult.stageMovedToInDoubt },
+        'ReminderScheduler.processBatch concluído',
       );
     }
+
+    return { dayCount, minCount, noShows: noShowResult.marked };
   }
 
-  private async sendDayBeforeReminders(): Promise<number> {
-    const result = await this.db.query(`
-      SELECT e.id as encuadre_id, e.worker_id,
-             is2.slot_date, is2.slot_time, is2.meet_link
-      FROM encuadres e
-      JOIN interview_slots is2 ON is2.id = e.interview_slot_id
-      WHERE e.interview_slot_id IS NOT NULL
-        AND e.reminder_day_sent_at IS NULL
-        AND e.worker_id IS NOT NULL
-        AND is2.status != 'CANCELLED'
-        AND (is2.slot_date + is2.slot_time)::timestamptz - INTERVAL '24 hours' <= NOW()
-        AND (is2.slot_date + is2.slot_time)::timestamptz > NOW()
-    `);
+  private async sendDayBeforeRemindersWJA(): Promise<number> {
+    const result = await this.db.query(
+      `SELECT worker_id, job_posting_id, interview_datetime, interview_meet_link
+       FROM worker_job_applications
+       WHERE interview_response = 'confirmed'
+         AND interview_reminder_sent_at IS NULL
+         AND interview_datetime IS NOT NULL
+         AND interview_datetime - INTERVAL '24 hours' <= NOW()
+         AND interview_datetime > NOW()`,
+    );
 
-    for (const row of result.rows) {
-      const dateFormatted = new Date(row.slot_date).toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-      });
+    for (const row of result.rows as Array<{
+      worker_id: string;
+      job_posting_id: string;
+      interview_datetime: string;
+      interview_meet_link: string | null;
+    }>) {
+      let nameValue = row.worker_id;
+      if (this.tokenService) {
+        nameValue = await this.tokenService.generate(row.worker_id, 'worker_first_name');
+      }
 
-      await this.db.query(
+      const outboxResult = await this.db.query(
         `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-         VALUES ($1, 'encuadre_reminder_day_before', $2::jsonb, 'pending', 0)`,
+         VALUES ($1, 'qualified_reminder_confirm', $2::jsonb, 'pending', 0)
+         RETURNING id`,
         [
           row.worker_id,
           JSON.stringify({
-            name: row.worker_id,
-            date: dateFormatted,
-            time: row.slot_time?.slice(0, 5) ?? '',
-            meet_link: row.meet_link ?? '',
+            name: nameValue,
+            date: formatDateUTC(row.interview_datetime),
+            time: formatTimeUTC(row.interview_datetime),
+            job_posting_id: row.job_posting_id,
           }),
         ],
       );
 
+      if (this.pubsub) {
+        await this.pubsub.publish('outbox-enqueued', { outboxId: outboxResult.rows[0].id });
+      }
+
       await this.db.query(
-        `UPDATE encuadres SET reminder_day_sent_at = NOW() WHERE id = $1`,
-        [row.encuadre_id],
+        `UPDATE worker_job_applications
+         SET interview_reminder_sent_at = NOW(), updated_at = NOW()
+         WHERE worker_id = $1 AND job_posting_id = $2`,
+        [row.worker_id, row.job_posting_id],
       );
     }
 
     return result.rows.length;
   }
 
-  private async send5MinReminders(): Promise<number> {
-    const result = await this.db.query(`
-      SELECT e.id as encuadre_id, e.worker_id,
-             is2.slot_date, is2.slot_time, is2.meet_link
-      FROM encuadres e
-      JOIN interview_slots is2 ON is2.id = e.interview_slot_id
-      WHERE e.interview_slot_id IS NOT NULL
-        AND e.reminder_5min_sent_at IS NULL
-        AND e.worker_id IS NOT NULL
-        AND is2.status != 'CANCELLED'
-        AND (is2.slot_date + is2.slot_time)::timestamptz - INTERVAL '5 minutes' <= NOW()
-        AND (is2.slot_date + is2.slot_time)::timestamptz > NOW()
-    `);
+  private async send5MinRemindersWJA(): Promise<number> {
+    const result = await this.db.query(
+      `SELECT worker_id, job_posting_id, interview_datetime, interview_meet_link
+       FROM worker_job_applications
+       WHERE interview_response = 'confirmed'
+         AND interview_reminder_5min_sent_at IS NULL
+         AND interview_datetime IS NOT NULL
+         AND interview_datetime - INTERVAL '5 minutes' <= NOW()
+         AND interview_datetime > NOW()`,
+    );
 
-    for (const row of result.rows) {
-      await this.db.query(
+    for (const row of result.rows as Array<{
+      worker_id: string;
+      job_posting_id: string;
+      interview_datetime: string;
+      interview_meet_link: string | null;
+    }>) {
+      let nameValue = row.worker_id;
+      if (this.tokenService) {
+        nameValue = await this.tokenService.generate(row.worker_id, 'worker_first_name');
+      }
+
+      const outboxResult = await this.db.query(
         `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-         VALUES ($1, 'encuadre_reminder_5min', $2::jsonb, 'pending', 0)`,
+         VALUES ($1, 'qualified_reminder_5min', $2::jsonb, 'pending', 0)
+         RETURNING id`,
         [
           row.worker_id,
           JSON.stringify({
-            name: row.worker_id,
-            meet_link: row.meet_link ?? '',
+            name: nameValue,
+            meet_link: row.interview_meet_link ?? '',
           }),
         ],
       );
 
+      if (this.pubsub) {
+        await this.pubsub.publish('outbox-enqueued', { outboxId: outboxResult.rows[0].id });
+      }
+
       await this.db.query(
-        `UPDATE encuadres SET reminder_5min_sent_at = NOW() WHERE id = $1`,
-        [row.encuadre_id],
+        `UPDATE worker_job_applications
+         SET interview_reminder_5min_sent_at = NOW(), updated_at = NOW()
+         WHERE worker_id = $1 AND job_posting_id = $2`,
+        [row.worker_id, row.job_posting_id],
       );
     }
 

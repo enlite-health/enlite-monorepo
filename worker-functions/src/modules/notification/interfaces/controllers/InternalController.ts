@@ -88,6 +88,22 @@ export class InternalController {
   }
 
   /**
+   * POST /api/internal/reminders/sweep
+   * Trigger: Cloud Scheduler (every 5min) — safety net para lembretes pendentes + no-shows.
+   */
+  async sweepReminders(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.reminderScheduler.processBatch();
+      res.status(200).json({ status: 'ok', ...result });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ error: error.message }, 'sweepReminders error');
+      reportError(error, { source: 'InternalController:sweepReminders' });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
    * POST /api/internal/outbox/sweep
    * Trigger: Cloud Scheduler (every 5min) — safety net for orphaned outbox messages.
    */
