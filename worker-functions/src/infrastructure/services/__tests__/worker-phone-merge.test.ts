@@ -620,20 +620,35 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
     expect(calls.some(q => q.includes('UPDATE') && q.includes('worker_id'))).toBe(false);
   });
 
-  it('happy path: BEGIN → coalesce → reparent → soft-delete → audit → COMMIT', async () => {
+  it('happy path: BEGIN → audit_insert → snapshot → coalesce → reparent → soft-delete → COMMIT', async () => {
+    // Nova ordem após adição de snapshot:
+    //   0: BEGIN
+    //   1: SELECT merged_into_id (check idempotência)
+    //   2: INSERT worker_merge_audit RETURNING id
+    //   3: SELECT * FROM workers (captureSnapshot: worker_row)
+    //   4+: SELECT * FROM fk tables (captureSnapshot: fk_rows) — pode haver 0 a N
+    //   N: INSERT INTO worker_merge_snapshots RETURNING id
+    //   N+1: UPDATE workers (coalesce)
+    //   N+2: SELECT fields_filled
+    //   N+3: UPDATE worker_merge_audit SET fields_filled
+    //   N+4+: reparent queries
+    //   M: UPDATE workers SET merged_into_id
+    //   M+1: COMMIT
     mockClient.query
-      .mockResolvedValueOnce(undefined)                     // BEGIN
+      .mockResolvedValueOnce(undefined)                             // BEGIN
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] }) // check idempotência
-      .mockResolvedValue({ rows: [{ fields_filled: ['profession'] }] }); // resto
+      .mockResolvedValueOnce({ rows: [{ id: '42' }] })             // INSERT worker_merge_audit RETURNING id
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', email: 'x@x.com' }] }) // SELECT * FROM workers (snapshot)
+      .mockResolvedValue({ rows: [{ fields_filled: ['profession'], id: 'snap-1' }] }); // resto (fk tables + snapshot insert + coalesce + etc)
 
-    // Passa discoveredFks explicitamente para não depender de pool.query mock
+    // Passa discoveredFks com lista vazia para simplificar (sem fk_rows extras)
     await service.executeSingleMerge({
       survivorId:           's1',
       absorbedId:           'a1',
       phoneNormalized:      '5491111111111',
       category:             'firebase',
       legalFieldExceptions: [],
-      discoveredFks:        MOCK_DISCOVERED_FKS,
+      discoveredFks:        [], // sem FKs = sem reparent queries
     });
 
     const calls = mockClient.query.mock.calls.map((c: unknown[]) => String(c[0]));
@@ -655,12 +670,28 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
       { table: 'worker_availability', fk_column: 'worker_id', strategy: 'update', unique_cols: [] },
     ];
 
+    // Nova ordem de queries com snapshot:
+    //   0: BEGIN
+    //   1: check idempotência
+    //   2: INSERT worker_merge_audit RETURNING id
+    //   3: SELECT * FROM workers (snapshot worker_row)
+    //   4: SELECT * FROM worker_availability (snapshot fk_rows)
+    //   5: INSERT worker_merge_snapshots RETURNING id
+    //   6: UPDATE workers (coalesce)
+    //   7: SELECT fields_filled
+    //   8: UPDATE worker_merge_audit SET fields_filled
+    //   9: reparent query → FALHA aqui
     mockClient.query
-      .mockResolvedValueOnce(undefined)                        // BEGIN
-      .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] }) // check
-      .mockResolvedValueOnce({ rows: [] })                     // COALESCE UPDATE
-      .mockResolvedValueOnce({ rows: [{ fields_filled: [] }] }) // fields query
-      .mockRejectedValueOnce(new Error('FK constraint failed')); // reparent falha
+      .mockResolvedValueOnce(undefined)                                     // BEGIN
+      .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] })          // check
+      .mockResolvedValueOnce({ rows: [{ id: '99' }] })                      // INSERT audit RETURNING id
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', status: 'INCOMPLETE' }] }) // worker_row snapshot
+      .mockResolvedValueOnce({ rows: [] })                                   // fk_rows (worker_availability)
+      .mockResolvedValueOnce({ rows: [{ id: 'snap-99' }] })                 // INSERT snapshot RETURNING
+      .mockResolvedValueOnce({ rows: [] })                                   // COALESCE UPDATE
+      .mockResolvedValueOnce({ rows: [{ fields_filled: [] }] })             // fields query
+      .mockResolvedValueOnce({ rows: [] })                                   // UPDATE audit fields_filled
+      .mockRejectedValueOnce(new Error('FK constraint failed'));              // reparent falha
 
     await expect(
       service.executeSingleMerge({

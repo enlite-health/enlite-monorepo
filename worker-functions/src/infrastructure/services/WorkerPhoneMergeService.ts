@@ -56,6 +56,7 @@ import {
   discoverWorkerFkTables,
   type FkTableInfo,
 } from './WorkerPhoneMergeHelpers';
+import { captureSnapshot, restoreSnapshot } from './WorkerMergeSnapshotService';
 
 const log = logger.child({ source: 'WorkerPhoneMergeService' });
 
@@ -239,37 +240,53 @@ export class WorkerPhoneMergeService {
         return;
       }
 
-      // 2. COALESCE: preenche campos nulos do sobrevivente com valores do absorvido
-      const { fieldsFilled } = await coalesceWorkerFields(client, survivorId, absorbedId);
-
-      // 3. Reparent de todas as tabelas FK (usa lista descoberta ou descobre on-demand)
+      // 2. Descobre FKs (usa lista descoberta ou descobre on-demand)
       const fks = params.discoveredFks
         ?? await discoverWorkerFkTables(this.pool, { knownTables: FK_TABLES_TO_REPARENT.map(t => t.table) });
 
-      const reparentQueries = buildReparentQueries(survivorId, absorbedId, fks);
-      for (const q of reparentQueries) {
-        await client.query(q.sql, q.params);
-      }
-
-      // 4. Soft-delete do absorvido
-      await client.query(
-        `UPDATE workers SET merged_into_id = $1, updated_at = NOW() WHERE id = $2`,
-        [survivorId, absorbedId],
-      );
-
-      // 5. Registrar auditoria
-      await client.query(
+      // 3. SNAPSHOT: captura estado completo do absorvido ANTES de qualquer mutação
+      //    (registra primeiro na auditoria para ter o ID disponível)
+      const auditRes = await client.query<{ id: string }>(
         `INSERT INTO worker_merge_audit
            (survivor_id, absorbed_id, phone_normalized, category, fields_filled, exceptions)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)`,
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+         RETURNING id`,
         [
           survivorId,
           absorbedId,
           phoneNormalized,
           category,
-          JSON.stringify(fieldsFilled),
+          JSON.stringify([]),   // fields_filled preenchido após COALESCE
           JSON.stringify(legalFieldExceptions),
         ],
+      );
+      const auditId = BigInt(auditRes.rows[0].id);
+
+      await captureSnapshot(client, {
+        mergeAuditId: auditId,
+        absorbedId,
+        discoveredFks: fks,
+      });
+
+      // 4. COALESCE: preenche campos nulos do sobrevivente com valores do absorvido
+      const { fieldsFilled } = await coalesceWorkerFields(client, survivorId, absorbedId);
+
+      // Atualiza fields_filled no audit agora que temos o valor real
+      await client.query(
+        `UPDATE worker_merge_audit SET fields_filled = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(fieldsFilled), auditId],
+      );
+
+      // 5. Reparent de todas as tabelas FK
+      const reparentQueries = buildReparentQueries(survivorId, absorbedId, fks);
+      for (const q of reparentQueries) {
+        await client.query(q.sql, q.params);
+      }
+
+      // 6. Soft-delete do absorvido
+      await client.query(
+        `UPDATE workers SET merged_into_id = $1, updated_at = NOW() WHERE id = $2`,
+        [survivorId, absorbedId],
       );
 
       await client.query('COMMIT');
@@ -282,6 +299,62 @@ export class WorkerPhoneMergeService {
         fields_filled: fieldsFilled.length,
         fk_tables_reparented: fks.length,
       });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Desfaz um merge a partir do seu ID de auditoria.
+   * Restaura o absorvido ao estado exato pré-merge (snapshot).
+   * Idempotente: se já desfeito, retorna sem erros.
+   *
+   * @param mergeAuditId  ID da linha em worker_merge_audit
+   */
+  async undoMerge(mergeAuditId: number | bigint): Promise<{
+    survivorId: string;
+    absorbedId: string;
+    alreadyUndone: boolean;
+  }> {
+    // Busca o audit para obter survivor/absorbed
+    const auditRes = await this.pool.query<{
+      survivor_id: string;
+      absorbed_id: string;
+    }>(
+      `SELECT survivor_id, absorbed_id FROM worker_merge_audit WHERE id = $1`,
+      [mergeAuditId],
+    );
+
+    if (auditRes.rows.length === 0) {
+      throw new Error(`worker_merge_audit id=${mergeAuditId} não encontrado`);
+    }
+
+    const { survivor_id: survivorId, absorbed_id: absorbedId } = auditRes.rows[0];
+
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const result = await restoreSnapshot(client, {
+        mergeAuditId,
+        survivorId,
+        absorbedId,
+      });
+
+      await client.query('COMMIT');
+
+      log.info({
+        msg: 'merge_undone',
+        mergeAuditId,
+        survivorId,
+        absorbedId,
+        alreadyUndone: result.alreadyUndone,
+      });
+
+      return { survivorId, absorbedId, alreadyUndone: result.alreadyUndone };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
