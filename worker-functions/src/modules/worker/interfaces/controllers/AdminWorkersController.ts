@@ -20,7 +20,7 @@ import { logger, reportError } from '@shared/logging';
 
 // Campos selecionados para detalhe de worker — compartilhado por getWorkerById e getWorkerByPhone
 const WORKER_DETAIL_COLS = [
-  'w.id, w.email, w.phone, w.country, w.timezone, w.status',
+  'w.id, w.email, w.phone, w.country, w.timezone, w.status, w.is_test',
   'w.data_sources, w.created_at, w.updated_at, w.deleted_at',
   'w.document_type, w.profession, w.occupation, w.knowledge_level',
   'w.title_certificate, w.experience_types, w.years_experience',

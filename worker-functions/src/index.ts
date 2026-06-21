@@ -32,7 +32,7 @@ import {
   createMockAuthEndpoints,
 } from '@modules/identity';
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
-import { AdminWorkersController } from '@modules/worker';
+import { AdminWorkersController, AdminWorkerTestFlagController } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
@@ -125,6 +125,7 @@ const funnelTableController = new WJAFunnelTableController();
 const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();
+const adminWorkerTestFlagController = new AdminWorkerTestFlagController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
 const adminTagCatalogController = new AdminTagCatalogController();
 const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
@@ -306,6 +307,8 @@ app.get('/api/admin/workers/export', adminOnly, (req: Request, res: Response) =>
 // timeline MUST be registered before /:id to avoid param capture
 app.get('/api/admin/workers/:id/timeline', staffOnly, (req: Request, res: Response) => workerTimelineController.getTimeline(req, res));
 app.get('/api/admin/workers/:id', staffOnly, (req: Request, res: Response) => adminWorkersController.getWorkerById(req, res));
+// test-flag é admin-only (mais estrito que staff) — marca worker como conta de teste
+app.patch('/api/admin/workers/:id/test-flag', adminOnly, (req: Request, res: Response) => adminWorkerTestFlagController.updateTestFlag(req, res));
 app.get('/api/admin/workers', staffOnly, (req: Request, res: Response) => adminWorkersController.listWorkers(req, res));
 
 // ========== Worker Tags ==========

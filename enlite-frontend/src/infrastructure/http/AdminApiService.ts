@@ -243,6 +243,11 @@ class AdminApiServiceClass {
     return this.request<WorkerDateStats>('GET', '/api/admin/workers/stats');
   }
 
+  /** Marca/desmarca um worker como conta de teste (admin-only no backend). */
+  async updateWorkerTestFlag(id: string, isTest: boolean): Promise<{ isTest: boolean }> {
+    return this.request<{ isTest: boolean }>('PATCH', `/api/admin/workers/${id}/test-flag`, { isTest });
+  }
+
   // ========== Patients Methods — delegated to AdminPatientsApiService ==========
   listPatients(f?: Parameters<typeof AdminPatientsApiService.listPatients>[0]) { return AdminPatientsApiService.listPatients(f); }
   getPatientStats() { return AdminPatientsApiService.getPatientStats(); }
