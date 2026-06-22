@@ -1,0 +1,27 @@
+# Cloud Scheduler: safety net de lembretes de entrevista + transição no-show
+# Frequência: a cada 5 minutos
+# Timezone: America/Argentina/Buenos_Aires (UTC-3, sem horário de verão)
+# Requer: Cloud Run worker-functions expondo POST /api/internal/reminders/sweep
+#
+# O que faz:
+#   1. Envia lembretes 24h pendentes (WJA com interview_reminder_sent_at IS NULL)
+#   2. Envia lembretes 5min pendentes (WJA com interview_reminder_5min_sent_at IS NULL)
+#   3. Marca no-shows: interview_datetime < NOW()-30min + interview_response='pending'
+#      → interview_response='no_response'; CONFIRMED → IN_DOUBT
+#
+# Idempotente — múltiplas execuções no mesmo período são seguras.
+
+name: reminders-sweep
+description: Safety net sweep de lembretes de entrevista e transição de no-shows (a cada 5min)
+schedule: "*/5 * * * *"
+timeZone: America/Argentina/Buenos_Aires
+httpTarget:
+  uri: ${WORKER_FUNCTIONS_SERVICE_URL}/api/internal/reminders/sweep
+  httpMethod: POST
+  headers:
+    Content-Type: application/json
+    X-Internal-Secret: ${INTERNAL_TOKEN_SECRET}
+  body: e30=  # base64 of '{}'
+attemptDeadline: 120s
+retryConfig:
+  retryCount: 0

@@ -52,6 +52,11 @@ export function createInternalRoutes(controller: InternalController): Router {
     controller.sweepEvents(req, res);
   });
 
+  // Cloud Scheduler safety net: lembretes pendentes + no-shows (a cada 5min)
+  router.post('/reminders/sweep', (req: Request, res: Response) => {
+    controller.sweepReminders(req, res);
+  });
+
   // Cloud Tasks: 24h reminder
   router.post('/reminders/qualified', (req: Request, res: Response) => {
     controller.processQualifiedReminder(req, res);
