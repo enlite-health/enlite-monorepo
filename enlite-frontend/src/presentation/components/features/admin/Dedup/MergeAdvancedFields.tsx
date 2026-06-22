@@ -15,18 +15,43 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import { getSexLabel, getGenderLabel } from '../WorkerDetail/workerDetailLabels';
+import {
+  getSexLabel,
+  getGenderLabel,
+  getYearsExperienceLabel,
+  getKnowledgeLevelLabel,
+} from '../WorkerDetail/workerDetailLabels';
 import type { DedupFieldComparison, DedupAccount } from '@domain/entities/DedupGroup';
 
 /**
- * Renders a comparison value as a human label. Enum-like PII fields (sex/gender)
- * are translated via i18n (reusing the worker-detail label SSOT); everything
- * else is shown verbatim. Returns null for empty/absent values.
+ * Per-field enum resolver map. Maps a field name to the resolver function that
+ * converts the raw enum value to a human label via i18n.
+ *
+ * - sex_encrypted / gender_encrypted: uses SEX_GENDER_KEYS (covers EN+ES mixed-case prod values).
+ * - years_experience: "0_2"→"0-2 años", "3_5"→"3-5 años", etc.
+ * - knowledge_level: "SECONDARY"→"Secundario", "BACHELOR"→"Licenciatura", etc.
+ *
+ * Any field NOT listed here falls back to showing the raw value verbatim
+ * (name, document number, etc. — not an enum).
+ */
+type FieldResolver = (t: TFunction, v: string | null) => string | null;
+
+const FIELD_RESOLVERS: Record<string, FieldResolver> = {
+  sex_encrypted: (t, v) => getSexLabel(t, v?.toLowerCase() ?? null),
+  gender_encrypted: (t, v) => getGenderLabel(t, v?.toLowerCase() ?? null),
+  years_experience: (t, v) => getYearsExperienceLabel(t, v),
+  knowledge_level: (t, v) => getKnowledgeLevelLabel(t, v),
+};
+
+/**
+ * Renders a comparison value as a human label. Enum-like fields are translated
+ * via the FIELD_RESOLVERS map (reusing the worker-detail label SSOT);
+ * everything else is shown verbatim. Returns null for empty/absent values.
  */
 function renderFieldValue(t: TFunction, field: string, raw: string | null): string | null {
   if (raw == null || raw === '') return null;
-  if (field === 'sex_encrypted') return getSexLabel(t, raw.toLowerCase());
-  if (field === 'gender_encrypted') return getGenderLabel(t, raw.toLowerCase());
+  const resolver = FIELD_RESOLVERS[field];
+  if (resolver) return resolver(t, raw) ?? raw;
   return raw;
 }
 

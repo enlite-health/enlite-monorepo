@@ -5,7 +5,10 @@
  * - Renders LoadingSkeleton while loading
  * - Renders error state with retry button
  * - Renders account cards when detail loaded
- * - Renders reparent_preview badges
+ * - Renders reparent_preview badges with friendly labels (not raw table names)
+ * - Hides technical entities (messaging_*, worker_reminder_state, etc.)
+ *   and shows "y otros datos del sistema" footnote instead
+ * - Shows only known entities, hides all unknown/technical ones
  * - Renders MergeAdvancedFields when conflicts present
  * - Footer hidden during loading and shown when detail available
  * - Layout / scroll structure: root flex-1 min-h-0, scrollable area
@@ -148,10 +151,17 @@ describe('MergePhoneModeBody — loaded state', () => {
     expect(screen.getByTestId(`merge-account-card-${ACC_B.id}`)).toBeInTheDocument();
   });
 
-  it('renders reparent_preview badges', () => {
+  it('renders reparent_preview section header', () => {
     renderBody();
     expect(screen.getByText(/Se van a reasignar/i)).toBeInTheDocument();
-    expect(screen.getByText(/worker_job_applications/i)).toBeInTheDocument();
+  });
+
+  it('shows friendly label for worker_job_applications — NOT the raw table name', () => {
+    renderBody();
+    // i18n not loaded in unit tests → key falls through as the key string
+    // "admin.dedup.entity.worker_job_applications" is the rendered key.
+    // Critically, "worker_job_applications" raw table name must NOT appear.
+    expect(screen.queryByText('worker_job_applications')).not.toBeInTheDocument();
   });
 
   it('renders Avanzado toggle when field conflicts exist', () => {
@@ -174,6 +184,128 @@ describe('MergePhoneModeBody — loaded state', () => {
     expect(
       screen.queryByRole('button', { name: /Confirmar unificación/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// ── Entity filtering — PROBLEMA 1 fix ────────────────────────────────────────
+// Technical entities (messaging_*, worker_reminder_state, etc.) must NOT appear
+// in the reparent_preview badge list. Only MEANINGFUL_ENTITIES get badges.
+
+describe('MergePhoneModeBody — reparent_preview entity filtering', () => {
+  it('technical entities are hidden — "messaging_variable_tokens" never appears in DOM', () => {
+    mockUse.mockReturnValue({
+      ...LOADED_STATE,
+      detail: {
+        ...MOCK_DETAIL,
+        reparent_preview: [
+          { entity: 'worker_job_applications', count: 2 },
+          { entity: 'messaging_variable_tokens', count: 5 },
+          { entity: 'worker_reminder_state', count: 1 },
+          { entity: 'whatsapp_bulk_dispatch_logs', count: 3 },
+        ],
+      },
+    });
+    renderBody();
+    // Technical entities must NOT appear
+    expect(document.body.textContent).not.toContain('messaging_variable_tokens');
+    expect(document.body.textContent).not.toContain('worker_reminder_state');
+    expect(document.body.textContent).not.toContain('whatsapp_bulk_dispatch_logs');
+  });
+
+  it('shows "y otros datos del sistema" footnote when hidden technical entities exist', () => {
+    mockUse.mockReturnValue({
+      ...LOADED_STATE,
+      detail: {
+        ...MOCK_DETAIL,
+        reparent_preview: [
+          { entity: 'worker_job_applications', count: 2 },
+          { entity: 'messaging_variable_tokens', count: 5 },
+        ],
+      },
+    });
+    renderBody();
+    // The footnote key or default text must appear
+    // (i18n not loaded → key itself is rendered)
+    const bodyText = document.body.textContent ?? '';
+    expect(
+      bodyText.includes('admin.dedup.entitySystemFootnote') ||
+      bodyText.includes('y otros datos del sistema'),
+    ).toBe(true);
+  });
+
+  it('does NOT show footnote when ALL entities are meaningful', () => {
+    mockUse.mockReturnValue({
+      ...LOADED_STATE,
+      detail: {
+        ...MOCK_DETAIL,
+        reparent_preview: [
+          { entity: 'worker_job_applications', count: 2 },
+          { entity: 'worker_documents', count: 1 },
+        ],
+      },
+    });
+    renderBody();
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toContain('admin.dedup.entitySystemFootnote');
+    expect(bodyText).not.toContain('y otros datos del sistema');
+  });
+
+  it('shows NO badges but DOES show footnote when ALL entities are technical', () => {
+    mockUse.mockReturnValue({
+      ...LOADED_STATE,
+      detail: {
+        ...MOCK_DETAIL,
+        reparent_preview: [
+          { entity: 'messaging_outbox', count: 10 },
+          { entity: 'worker_merge_audit', count: 1 },
+        ],
+      },
+    });
+    renderBody();
+    // The reparent block should still render (reparent_preview.length > 0)
+    // but with no blue badges — only the footnote
+    const blueBadges = document.querySelectorAll('.bg-blue-100');
+    expect(blueBadges.length).toBe(0);
+    const bodyText = document.body.textContent ?? '';
+    expect(
+      bodyText.includes('admin.dedup.entitySystemFootnote') ||
+      bodyText.includes('y otros datos del sistema'),
+    ).toBe(true);
+  });
+
+  it('encuadres is in MEANINGFUL_ENTITIES — renders a blue badge, not hidden', () => {
+    mockUse.mockReturnValue({
+      ...LOADED_STATE,
+      detail: {
+        ...MOCK_DETAIL,
+        reparent_preview: [
+          { entity: 'encuadres', count: 3 },
+        ],
+      },
+    });
+    renderBody();
+    // The badge for encuadres should exist (blue badge with count)
+    const blueBadges = document.querySelectorAll('.bg-blue-100');
+    expect(blueBadges.length).toBeGreaterThan(0);
+    // A count of 3 must appear (the badge value)
+    expect(document.body.textContent).toContain('3');
+  });
+
+  it('talentum_prescreenings is in MEANINGFUL_ENTITIES — renders a blue badge, not hidden', () => {
+    mockUse.mockReturnValue({
+      ...LOADED_STATE,
+      detail: {
+        ...MOCK_DETAIL,
+        reparent_preview: [
+          { entity: 'talentum_prescreenings', count: 4 },
+        ],
+      },
+    });
+    renderBody();
+    const blueBadges = document.querySelectorAll('.bg-blue-100');
+    expect(blueBadges.length).toBeGreaterThan(0);
+    // Count must appear
+    expect(document.body.textContent).toContain('4');
   });
 });
 
