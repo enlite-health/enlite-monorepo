@@ -8,10 +8,10 @@
  *
  * isSurvivor highlight:
  *   - When isSurvivor=true → border-primary + CheckCircle2 icon + "Principal" text
- *   - When isSurvivor=false → border-slate-200 + "Elegir como principal" button
+ *   - When isSurvivor=false → border-slate-200 + "Hacer principal" button
  *
  * Additional:
- *   - onSelectSurvivor is called when the "Elegir como principal" button is clicked
+ *   - onSelectSurvivor is called when the "Hacer principal" button is clicked
  *   - login_real=true → "Login real" badge
  *   - login_real=false → "Sin login real" badge
  *   - email=null → "Sin email" rendered
@@ -113,10 +113,10 @@ describe('MergeAccountCard — isSurvivor = true', () => {
     expect(document.body.textContent).toContain('Principal');
   });
 
-  it('does NOT show "Elegir como principal" button when isSurvivor=true', () => {
+  it('does NOT show "Hacer principal" button when isSurvivor=true', () => {
     renderCard(BASE_ACCOUNT, true);
     expect(
-      screen.queryByRole('button', { name: /Elegir como principal/i }),
+      screen.queryByRole('button', { name: /Hacer principal/i }),
     ).not.toBeInTheDocument();
   });
 });
@@ -132,20 +132,29 @@ describe('MergeAccountCard — isSurvivor = false', () => {
     expect(card?.className).toContain('border-slate-200');
   });
 
-  it('shows "Elegir como principal" button when NOT survivor', () => {
+  it('shows "Hacer principal" button when NOT survivor', () => {
     renderCard(BASE_ACCOUNT, false);
     expect(
-      screen.getByRole('button', { name: /Elegir como principal/i }),
+      screen.getByRole('button', { name: /Hacer principal/i }),
     ).toBeInTheDocument();
   });
 
-  it('calls onSelectSurvivor when "Elegir como principal" is clicked', () => {
+  it('calls onSelectSurvivor when "Hacer principal" is clicked', () => {
     const onSelectSurvivor = vi.fn();
     renderCard(BASE_ACCOUNT, false, onSelectSurvivor);
     fireEvent.click(
-      screen.getByRole('button', { name: /Elegir como principal/i }),
+      screen.getByRole('button', { name: /Hacer principal/i }),
     );
     expect(onSelectSurvivor).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Hacer principal" is a full-width, non-shrinking button (UX fix)', () => {
+    renderCard(BASE_ACCOUNT, false);
+    const btn = screen.getByRole('button', { name: /Hacer principal/i });
+    // w-full guarantees it never gets squeezed by long imported emails;
+    // whitespace-nowrap keeps the label on one line.
+    expect(btn.className).toContain('w-full');
+    expect(btn.className).toContain('whitespace-nowrap');
   });
 });
 
@@ -169,6 +178,28 @@ describe('MergeAccountCard — email null fallback', () => {
   it('renders "Sin email" when account.email is null', () => {
     renderCard(ACCOUNT_NO_EMAIL);
     expect(document.body.textContent).toContain('Sin email');
+  });
+});
+
+// ── email truncation + tooltip (UX fix for long @enlite.import addresses) ──────
+
+describe('MergeAccountCard — long email does not blow up the layout', () => {
+  const LONG_IMPORTED = {
+    ...BASE_ACCOUNT,
+    id: 'acc-long',
+    email: 'maria.fernanda.gonzalez.de.la.cruz.1990@enlite.import',
+  };
+
+  it('email heading uses truncate', () => {
+    const { container } = renderCard(LONG_IMPORTED, false);
+    const heading = container.querySelector('h4');
+    expect(heading?.className).toContain('truncate');
+  });
+
+  it('full email is exposed via title tooltip on the header container', () => {
+    const { container } = renderCard(LONG_IMPORTED, false);
+    const titled = container.querySelector(`[title="${LONG_IMPORTED.email}"]`);
+    expect(titled).not.toBeNull();
   });
 });
 

@@ -196,14 +196,58 @@ describe('MergeCompareModal — handleMerge payload', () => {
   });
 });
 
+describe('MergeCompareModal — explanatory banner', () => {
+  it('renders the intro banner (title + desc) in phone mode', async () => {
+    renderModal();
+
+    expect(await screen.findByTestId('merge-intro-banner')).toBeInTheDocument();
+    expect(
+      screen.getByText(/parecen ser la misma persona/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Elegí cuál es la cuenta PRINCIPAL/i),
+    ).toBeInTheDocument();
+    // name-match reinforcement is only for direct (imported) mode
+    expect(screen.queryByText(/Coincidencia por NOMBRE/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('MergeCompareModal — defensive guard (no crash on bad payload)', () => {
+  it('does NOT crash when backend payload has field_comparisons undefined', async () => {
+    // Simulate an unexpected/legacy payload (root cause of the prod crash:
+    // backend sent the singular key → field_comparisons was undefined).
+    const malformedDetail = {
+      ...MOCK_DETAIL,
+      field_comparisons: undefined,
+      reparent_preview: undefined,
+    } as unknown as DedupGroupDetail;
+    mockUseDedupGroupDetail.mockReturnValue({
+      ...LOADED_STATE,
+      detail: malformedDetail,
+    });
+
+    renderModal();
+
+    // Modal renders, account cards present, no thrown error.
+    expect(await screen.findByTestId('dedup-merge-modal')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('merge-account-card-acc-001'),
+    ).toBeInTheDocument();
+    // Confirm button still operable (proves no render crash short-circuited the tree).
+    expect(
+      screen.getByRole('button', { name: /Confirmar unificación/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('MergeCompareModal — survivor change updates payload', () => {
   it('selecting a different survivor changes survivorId and absorbedIds in merge payload', async () => {
     mockMerge.mockResolvedValue({ survivorId: 'acc-002', absorbedIds: ['acc-001', 'acc-003'], mergedAt: '' } as MergeResult);
 
     renderModal();
 
-    // Find "Elegir como principal" button for acc-002 account card
-    const setSurvivorBtns = await screen.findAllByText(/Elegir como principal/i);
+    // Find "Hacer principal" button for acc-002 account card
+    const setSurvivorBtns = await screen.findAllByText(/Hacer principal/i);
     // Click the first one (acc-002 is first non-survivor)
     await act(async () => { fireEvent.click(setSurvivorBtns[0]); });
 

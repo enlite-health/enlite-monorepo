@@ -363,7 +363,7 @@ describe('MergeDirectModeBody — cancel', () => {
 // ── onSelectSurvivor: changing the survivor updates the merge payload ─────────
 
 describe('MergeDirectModeBody — onSelectSurvivor changes survivor', () => {
-  it('clicking "Elegir como principal" on a non-survivor card updates survivorId in payload', async () => {
+  it('clicking "Hacer principal" on a non-survivor card updates survivorId in payload', async () => {
     mockMerge.mockResolvedValue({
       survivorId: ACC_IMP.id,
       absorbedIds: [ACC_REAL.id],
@@ -372,8 +372,8 @@ describe('MergeDirectModeBody — onSelectSurvivor changes survivor', () => {
 
     renderBody();
 
-    // ACC_IMP is the non-survivor; its card shows the "Elegir como principal" button
-    const setSurvivorBtn = screen.getByRole('button', { name: /Elegir como principal/i });
+    // ACC_IMP is the non-survivor; its card shows the "Hacer principal" button
+    const setSurvivorBtn = screen.getByRole('button', { name: /Hacer principal/i });
     fireEvent.click(setSurvivorBtn);
 
     // Now click Confirm — payload should reflect new survivor (ACC_IMP)
@@ -397,7 +397,7 @@ describe('MergeDirectModeBody — onSelectSurvivor changes survivor', () => {
 
     renderBody();
 
-    fireEvent.click(screen.getByRole('button', { name: /Elegir como principal/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hacer principal/i }));
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('imported-merge-confirm-btn'));
@@ -421,7 +421,7 @@ describe('MergeDirectModeBody — onSelectSurvivor changes survivor', () => {
     });
 
     // ACC_REAL_2 card has the "Elegir" button
-    const setSurvivorBtn = screen.getByRole('button', { name: /Elegir como principal/i });
+    const setSurvivorBtn = screen.getByRole('button', { name: /Hacer principal/i });
     fireEvent.click(setSurvivorBtn);
 
     // Confirm button is disabled — merge will not fire; survivor state unchanged
