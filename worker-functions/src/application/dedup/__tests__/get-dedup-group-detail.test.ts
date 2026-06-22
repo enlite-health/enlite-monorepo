@@ -270,9 +270,11 @@ describe('GetDedupGroupDetailUseCase — field_comparisons', () => {
     expect(cmp?.values[ABSORBED_ID]).toBeNull();
   });
 
-  it('campo encriptado → is_encrypted=true e values null (PII nunca exposta), mesmo com ciphertext diferente', async () => {
-    const survivorRow = buildWorkerRow({ first_name_encrypted: 'cipher1' });
-    const absorbedRow = buildWorkerRow({ id: ABSORBED_ID, email: 'a@e.com', auth_uid: 'FirebaseAbs_enc', first_name_encrypted: 'cipher2' });
+  it('campo encriptado → is_encrypted=true MAS decriptado (endpoint admin-only); conflito sobre o plaintext', async () => {
+    // KMSEncryptionService roda em passthrough (NODE_ENV=test): "ciphertext" = base64.
+    const cipher = (s: string) => Buffer.from(s, 'utf8').toString('base64');
+    const survivorRow = buildWorkerRow({ first_name_encrypted: cipher('Ana') });
+    const absorbedRow = buildWorkerRow({ id: ABSORBED_ID, email: 'a@e.com', auth_uid: 'FirebaseAbs_enc', first_name_encrypted: cipher('Maria') });
 
     const pool = makePool([
       { rows: [{ worker_ids: [SURVIVOR_ID, ABSORBED_ID] }] },
@@ -286,11 +288,62 @@ describe('GetDedupGroupDetailUseCase — field_comparisons', () => {
     const result = await useCase.execute(PHONE_NORM);
 
     const enc = result!.field_comparisons.find(f => f.field === 'first_name_encrypted');
+    // Continua marcado como sensível, mas agora COM o valor real decriptado.
     expect(enc?.is_encrypted).toBe(true);
-    expect(enc?.values[SURVIVOR_ID]).toBeNull();
-    expect(enc?.values[ABSORBED_ID]).toBeNull();
-    // ciphertext diverge → conflito opaco detectado
+    expect(enc?.values[SURVIVOR_ID]).toBe('Ana');
+    expect(enc?.values[ABSORBED_ID]).toBe('Maria');
+    // plaintext diverge → conflito detectado sobre o valor decriptado
     expect(enc?.has_conflict).toBe(true);
+  });
+
+  it('campo encriptado com mesmo plaintext → sem conflito (compara plaintext, não ciphertext)', async () => {
+    const cipher = (s: string) => Buffer.from(s, 'utf8').toString('base64');
+    const survivorRow = buildWorkerRow({ first_name_encrypted: cipher('Ana') });
+    const absorbedRow = buildWorkerRow({ id: ABSORBED_ID, email: 'a@e.com', auth_uid: 'FirebaseAbs_enc2', first_name_encrypted: cipher('Ana') });
+
+    const pool = makePool([
+      { rows: [{ worker_ids: [SURVIVOR_ID, ABSORBED_ID] }] },
+      { rows: [survivorRow, absorbedRow] },
+      { rows: [{ cnt: '0' }] },
+      { rows: [{ cnt: '0' }] },
+      { rows: [{ cnt: '0' }] },
+    ]);
+
+    const useCase = new GetDedupGroupDetailUseCase(pool as unknown as Pool);
+    const result = await useCase.execute(PHONE_NORM);
+
+    const enc = result!.field_comparisons.find(f => f.field === 'first_name_encrypted');
+    expect(enc?.values[SURVIVOR_ID]).toBe('Ana');
+    expect(enc?.values[ABSORBED_ID]).toBe('Ana');
+    expect(enc?.has_conflict).toBe(false);
+  });
+
+  it('erro de decrypt de 1 campo é gracioso → value null, não derruba o endpoint', async () => {
+    const survivorRow = buildWorkerRow({ first_name_encrypted: 'cipher-ok' });
+    const absorbedRow = buildWorkerRow({ id: ABSORBED_ID, email: 'a@e.com', auth_uid: 'FirebaseAbs_err', first_name_encrypted: 'cipher-fail' });
+
+    const pool = makePool([
+      { rows: [{ worker_ids: [SURVIVOR_ID, ABSORBED_ID] }] },
+      { rows: [survivorRow, absorbedRow] },
+      { rows: [{ cnt: '0' }] },
+      { rows: [{ cnt: '0' }] },
+      { rows: [{ cnt: '0' }] },
+    ]);
+
+    // Serviço cujo decrypt lança pro ciphertext do absorbed.
+    const flakyEncryption = {
+      decrypt: jest.fn(async (ct: string | null | undefined) => {
+        if (ct === 'cipher-fail') throw new Error('KMS decrypt boom');
+        return ct ? Buffer.from(String(ct), 'utf8').toString('utf8') : '';
+      }),
+    } as unknown as import('@shared/security/KMSEncryptionService').KMSEncryptionService;
+
+    const useCase = new GetDedupGroupDetailUseCase(pool as unknown as Pool, flakyEncryption);
+    const result = await useCase.execute(PHONE_NORM);
+
+    const enc = result!.field_comparisons.find(f => f.field === 'first_name_encrypted');
+    expect(enc?.values[SURVIVOR_ID]).toBe('cipher-ok');
+    expect(enc?.values[ABSORBED_ID]).toBeNull(); // decrypt falhou → null gracioso
   });
 
   it('campo array (data_sources) é serializado como CSV em values', async () => {

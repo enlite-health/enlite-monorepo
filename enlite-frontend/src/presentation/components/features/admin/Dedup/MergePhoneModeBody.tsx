@@ -106,8 +106,11 @@ export function MergePhoneModeBody({
     detail?.field_comparisons?.filter((f) => f.has_conflict)?.length ?? 0;
 
   return (
-    <>
-      {/* Phone label */}
+    // Root: flex column that fills the remaining card space (flex-1) and allows
+    // shrink below its content size (min-h-0) — essential for overflow-y-auto
+    // on the scrollable child to actually kick in inside a flex container.
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Phone label — fixed, does not scroll */}
       <div className="px-6 pt-4 shrink-0">
         <Text size="sm" color="muted">
           {t('admin.dedup.merge.phone', 'Teléfono')}:{' '}
@@ -117,8 +120,9 @@ export function MergePhoneModeBody({
         </Text>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 mt-4 flex flex-col gap-4">
+      {/* Scrollable body — grows to fill available space and scrolls when content
+          overflows (e.g. 9 conflicting fields in the Advanced section). */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 mt-4 flex flex-col gap-4">
         {isLoading && <LoadingSkeleton />}
 
         {!isLoading && error && (
@@ -192,7 +196,7 @@ export function MergePhoneModeBody({
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — fixed below the scrollable area, always visible */}
       {!isLoading && !error && detail && !mergeSuccess && (
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 shrink-0">
           <Button variant="outline" size="sm" onClick={onClose} disabled={isMerging}>
@@ -216,6 +220,6 @@ export function MergePhoneModeBody({
           </Button>
         </div>
       )}
-    </>
+    </div>
   );
 }

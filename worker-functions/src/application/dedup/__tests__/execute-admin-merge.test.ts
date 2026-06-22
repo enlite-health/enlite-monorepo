@@ -290,6 +290,62 @@ describe('ExecuteAdminMergeUseCase — fieldChoices', () => {
 
     expect(result.audit_ids).toEqual([88]);
   });
+
+  it('campo ENCRIPTADO via account-id (contrato do frontend) copia o ciphertext do absorbed pro survivor', async () => {
+    const ABSORBED_CIPHER = 'BASE64_CIPHERTEXT_DO_ABSORBED';
+    const pool = makePool([
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      { rows: [{ merged_into_id: null }] },
+      // SELECT absorbed row para fieldChoices (first_name_encrypted)
+      { rows: [{ first_name_encrypted: ABSORBED_CIPHER }] },
+      // UPDATE workers SET first_name_encrypted
+      { rows: [] },
+      // auditId
+      { rows: [{ id: 99 }] },
+    ]);
+
+    const useCase = new ExecuteAdminMergeUseCase(pool as unknown as Pool);
+    const result = await useCase.execute({
+      survivorId: SURVIVOR_ID,
+      absorbedIds: [ABSORBED_ID],
+      // Frontend envia o account id cru como vencedor do campo.
+      fieldChoices: { first_name_encrypted: ABSORBED_ID },
+    });
+
+    expect(result.audit_ids).toEqual([99]);
+
+    const calls = (pool.query as jest.Mock).mock.calls;
+    const updateCall = calls.find(
+      (c: [string, unknown[]]) =>
+        c[0].includes('UPDATE workers SET') && c[0].includes('first_name_encrypted'),
+    );
+    expect(updateCall).toBeDefined();
+    // O valor copiado é o CIPHERTEXT cru do absorbed (sem re-encriptar).
+    expect(updateCall?.[1]).toContain(ABSORBED_CIPHER);
+    expect(updateCall?.[1]).toContain(SURVIVOR_ID);
+  });
+
+  it('campo encriptado com vencedor = survivor não dispara UPDATE (nada a copiar)', async () => {
+    const pool = makePool([
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      { rows: [{ merged_into_id: null }] },
+      { rows: [{ id: 100 }] },
+    ]);
+
+    const useCase = new ExecuteAdminMergeUseCase(pool as unknown as Pool);
+    await useCase.execute({
+      survivorId: SURVIVOR_ID,
+      absorbedIds: [ABSORBED_ID],
+      // vencedor é o próprio survivor → não copia nada
+      fieldChoices: { sex_encrypted: SURVIVOR_ID },
+    });
+
+    const calls = (pool.query as jest.Mock).mock.calls;
+    const updateCall = calls.find(
+      (c: [string, unknown[]]) => c[0].includes('UPDATE workers SET'),
+    );
+    expect(updateCall).toBeUndefined();
+  });
 });
 
 // ── Propagação de erro ────────────────────────────────────────────────────────

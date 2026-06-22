@@ -442,3 +442,47 @@ describe('AdminDedupApiService.getImportedGroups — method/path/query', () => {
     expect(result.survivorId).toBe('x');
   });
 });
+
+// ── Layout / scroll structure ─────────────────────────────────────────────────
+// Asserts that the scroll-fix layout is in place:
+// root has flex-1 + min-h-0, scrollable area has overflow-y-auto + min-h-0,
+// footer wrapper has shrink-0. This prevents the regression where content
+// overflowed max-h-[90vh] without a scrollbar, cutting off the footer.
+
+describe('MergeDirectModeBody — scroll layout structure', () => {
+  it('root element has flex-1 and min-h-0 classes (allows shrink in flex parent)', () => {
+    const { container } = renderBody();
+    // The root rendered element is a div (not a fragment anymore)
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.tagName).toBe('DIV');
+    expect(root.classList.contains('flex-1')).toBe(true);
+    expect(root.classList.contains('min-h-0')).toBe(true);
+  });
+
+  it('scrollable area has overflow-y-auto and min-h-0 classes', () => {
+    const { container } = renderBody();
+    const scrollArea = container.querySelector('.overflow-y-auto') as HTMLElement;
+    expect(scrollArea).not.toBeNull();
+    expect(scrollArea.classList.contains('min-h-0')).toBe(true);
+    expect(scrollArea.classList.contains('flex-1')).toBe(true);
+  });
+
+  it('footer wrapper has shrink-0 class (stays visible below scrollable area)', () => {
+    const { container } = renderBody();
+    // Footer is the div containing Cancelar + Confirmar buttons
+    const footer = container.querySelector('.shrink-0:last-child') as HTMLElement;
+    expect(footer).not.toBeNull();
+    expect(footer.classList.contains('shrink-0')).toBe(true);
+  });
+
+  it('conflict banner also has shrink-0 (does not contribute to scroll area)', () => {
+    const { container } = renderBody({
+      accounts: [ACC_REAL, { ...ACC_REAL, id: 'acc-real-002', email: 'c@example.com' }],
+      survivorSuggestedId: ACC_REAL.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+    });
+    const banner = container.querySelector('[data-testid="imported-conflict-banner"]') as HTMLElement;
+    expect(banner).not.toBeNull();
+    expect(banner.classList.contains('shrink-0')).toBe(true);
+  });
+});

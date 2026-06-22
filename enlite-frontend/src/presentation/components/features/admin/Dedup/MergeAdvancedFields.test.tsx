@@ -4,9 +4,10 @@
  * Covers:
  * (a) returns null / does NOT render "Avanzado" when no field has has_conflict
  * (b) lists ONLY conflicting fields (not non-conflicting ones)
- * (c) encrypted field → button disabled, shows 🔒, raw value NOT in DOM,
- *     aria-label = 'Campo cifrado' (defaultValue used by i18n key)
+ * (c) encrypted field → shows DECRYPTED value + discreet 🔒, selectable
+ *     (admin-only endpoint already decrypts; lock is only a "sensitive" marker)
  * (d) field-level choice change → onFieldChoiceChange called with correct args
+ * (f) sex/gender enum value rendered via i18n (sex_encrypted)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -60,10 +61,21 @@ const FIELD_CONFLICT_PLAIN: DedupFieldComparison = {
   has_conflict: true,
 };
 
-/** Field with conflict, encrypted */
+/**
+ * Field with conflict, encrypted. Backend now DECRYPTS the value (admin-only),
+ * so values are present plaintext — the lock is just a "sensitive" marker.
+ */
 const FIELD_CONFLICT_ENCRYPTED: DedupFieldComparison = {
-  field: 'documentNumber',
-  values: { 'acc-A': null, 'acc-B': null },
+  field: 'document_number_encrypted',
+  values: { 'acc-A': '20111222333', 'acc-B': '27444555666' },
+  is_encrypted: true,
+  has_conflict: true,
+};
+
+/** Encrypted enum field (sex) — value rendered via i18n */
+const FIELD_CONFLICT_SEX: DedupFieldComparison = {
+  field: 'sex_encrypted',
+  values: { 'acc-A': 'MALE', 'acc-B': 'FEMALE' },
   is_encrypted: true,
   has_conflict: true,
 };
@@ -148,33 +160,32 @@ describe('MergeAdvancedFields — (c) encrypted field behaviour', () => {
     await act(async () => { fireEvent.click(toggle); });
   });
 
-  it('encrypted field buttons are disabled', () => {
+  it('encrypted field buttons are ENABLED (selectable)', () => {
     const accountButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
     expect(accountButtons.length).toBeGreaterThan(0);
     accountButtons.forEach((btn) => {
-      expect((btn as HTMLButtonElement).disabled).toBe(true);
+      expect((btn as HTMLButtonElement).disabled).toBe(false);
     });
   });
 
-  it('encrypted field shows 🔒 icon (Lock from lucide + emoji fallback)', () => {
-    // The component renders the Lock lucide icon AND the 🔒 emoji text
-    expect(document.body.textContent).toContain('🔒');
+  it('shows the DECRYPTED value (not just a lock)', () => {
+    expect(document.body.textContent).toContain('20111222333');
+    expect(document.body.textContent).toContain('27444555666');
   });
 
-  it('raw value is NEVER in the DOM for encrypted field', () => {
-    // values are null for encrypted, but the raw null value should not render as meaningful text
-    // The component renders '🔒' instead of rawValue
-    // Ensure no "null" string leaks into DOM
-    expect(document.body.textContent).not.toContain('null');
-    // Ensure neither "María" nor "Maria" appear (from a hypothetical plaintext value)
-    expect(document.body.textContent).not.toContain('María');
-    expect(document.body.textContent).not.toContain('Maria');
+  it('renders a discreet Lock marker on encrypted buttons', () => {
+    // lucide Lock renders an <svg> inside each account button
+    const accountButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
+    accountButtons.forEach((btn) => {
+      expect(btn.querySelector('svg')).not.toBeNull();
+    });
   });
 
-  it('aria-label of encrypted button is "Campo cifrado" (defaultValue)', () => {
+  it('aria-label of encrypted button includes the decrypted value', () => {
     const accountButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
     const ariaLabels = Array.from(accountButtons).map((b) => b.getAttribute('aria-label'));
-    expect(ariaLabels.every((label) => label === 'Campo cifrado')).toBe(true);
+    expect(ariaLabels.some((label) => label?.includes('20111222333'))).toBe(true);
+    expect(ariaLabels.some((label) => label?.includes('27444555666'))).toBe(true);
   });
 });
 
@@ -197,7 +208,7 @@ describe('MergeAdvancedFields — (d) field-level choice change', () => {
     expect(onFieldChoiceChange).toHaveBeenCalledWith('firstName', 'acc-B');
   });
 
-  it('clicking an encrypted account button does NOT call onFieldChoiceChange', async () => {
+  it('clicking an ENCRYPTED account button DOES call onFieldChoiceChange', async () => {
     const onFieldChoiceChange = vi.fn();
     renderComponent({
       fieldComparisons: [FIELD_CONFLICT_ENCRYPTED],
@@ -208,9 +219,9 @@ describe('MergeAdvancedFields — (d) field-level choice change', () => {
     await act(async () => { fireEvent.click(toggle); });
 
     const accountButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
-    await act(async () => { fireEvent.click(accountButtons[0]); });
+    await act(async () => { fireEvent.click(accountButtons[1]); });
 
-    expect(onFieldChoiceChange).not.toHaveBeenCalled();
+    expect(onFieldChoiceChange).toHaveBeenCalledWith('document_number_encrypted', 'acc-B');
   });
 
   it('toggling open/close works (aria-expanded flips)', async () => {
@@ -242,5 +253,42 @@ describe('MergeAdvancedFields — (e) plural conflict label (line 52)', () => {
     // defaultValue with count=2: "conflictos" (plural with 's')
     expect(toggle.textContent).toContain('conflictos');
     expect(toggle.textContent).toContain('2');
+  });
+});
+
+// ── (f) sex/gender enum value rendered via i18n (not the raw enum) ───────────
+
+describe('MergeAdvancedFields — (f) enum field rendered via i18n', () => {
+  it('sex_encrypted MALE/FEMALE go through the i18n label resolver, not raw enum', async () => {
+    renderComponent({
+      fieldComparisons: [FIELD_CONFLICT_SEX],
+      accounts: ACCOUNTS,
+    });
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => { fireEvent.click(toggle); });
+
+    // The resolver maps MALE/FEMALE (lowercased) to the worker-detail i18n keys.
+    // No translations are loaded in tests, so the resolved i18n KEY is rendered
+    // — proving the raw enum is NOT shown verbatim.
+    expect(document.body.textContent).toContain('workerRegistration.generalInfo.male');
+    expect(document.body.textContent).toContain('workerRegistration.generalInfo.female');
+    expect(document.body.textContent).not.toContain('MALE');
+    expect(document.body.textContent).not.toContain('FEMALE');
+  });
+
+  it('encrypted enum field is selectable (calls onFieldChoiceChange)', async () => {
+    const onFieldChoiceChange = vi.fn();
+    renderComponent({
+      fieldComparisons: [FIELD_CONFLICT_SEX],
+      accounts: ACCOUNTS,
+      onFieldChoiceChange,
+    });
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => { fireEvent.click(toggle); });
+
+    const accountButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
+    await act(async () => { fireEvent.click(accountButtons[1]); });
+
+    expect(onFieldChoiceChange).toHaveBeenCalledWith('sex_encrypted', 'acc-B');
   });
 });

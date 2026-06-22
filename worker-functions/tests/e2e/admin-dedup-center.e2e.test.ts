@@ -100,6 +100,25 @@ const dismissGroup = {
   phoneAbsorbed:  `54200${STAMP.slice(-7)}`,
 };
 
+// Cenário de merge com choice de campo ENCRIPTADO (modo avançado).
+// Survivor e absorbed têm first_name_encrypted distintos; o admin escolhe o do
+// absorbed → o ciphertext do absorbed deve vencer no survivor após o merge.
+const encChoiceGroup = {
+  survivorId: `cccc0001-0001-0001-0001-${STAMP.slice(-12)}`,
+  absorbedId: `cccc0002-0002-0002-0002-${STAMP.slice(-12)}`,
+  phoneNorm: `549400${STAMP.slice(-7)}`,
+  phoneSurvivor: `400${STAMP.slice(-7)}`,
+  phoneAbsorbed:  `54400${STAMP.slice(-7)}`,
+  survivorFirstName: 'SurvivorName',
+  absorbedFirstName: 'AbsorbedName',
+};
+
+// Em modo passthrough (USE_KMS_ENCRYPTION=false no docker de e2e) o "ciphertext"
+// é só base64 do plaintext — espelha KMSEncryptionService.encrypt/decrypt.
+function fakeCiphertext(plaintext: string): string {
+  return Buffer.from(plaintext, 'utf8').toString('base64');
+}
+
 beforeAll(async () => {
   api = createApiClient();
   await waitForBackend(api);
@@ -163,6 +182,41 @@ beforeAll(async () => {
      VALUES ($1::uuid, 1, '08:00', '12:00', 'America/Buenos_Aires')`,
     [mergeGroup.absorbedId],
   );
+
+  // ── PII encriptada distinta nos 2 (p/ assert de decrypt no detalhe) ─────────
+  await pool.query(
+    `UPDATE workers SET first_name_encrypted = $1, sex_encrypted = $2 WHERE id = $3::uuid`,
+    [fakeCiphertext('SurvivorFirst'), fakeCiphertext('MALE'), mergeGroup.survivorId],
+  );
+  await pool.query(
+    `UPDATE workers SET first_name_encrypted = $1, sex_encrypted = $2 WHERE id = $3::uuid`,
+    [fakeCiphertext('AbsorbedFirst'), fakeCiphertext('FEMALE'), mergeGroup.absorbedId],
+  );
+
+  // ── Cenário 3: merge com choice de campo encriptado ─────────────────────────
+  await insertWorker(pool, {
+    id: encChoiceGroup.survivorId,
+    auth_uid: `EncSurvivor_${STAMP}`,
+    email: `enc_sv_${STAMP}@example.com`,
+    phone: encChoiceGroup.phoneSurvivor,
+  });
+  await insertWorker(pool, {
+    id: encChoiceGroup.absorbedId,
+    auth_uid: `EncAbsorbed_${STAMP}`,
+    email: `enc_abs_${STAMP}@example.com`,
+    phone: encChoiceGroup.phoneAbsorbed,
+  });
+  await pool.query(
+    `UPDATE workers SET first_name_encrypted = $1 WHERE id = $2::uuid`,
+    [fakeCiphertext(encChoiceGroup.survivorFirstName), encChoiceGroup.survivorId],
+  );
+  await pool.query(
+    `UPDATE workers SET first_name_encrypted = $1 WHERE id = $2::uuid`,
+    [fakeCiphertext(encChoiceGroup.absorbedFirstName), encChoiceGroup.absorbedId],
+  );
+  await seedCollision(pool, encChoiceGroup.phoneNorm, [encChoiceGroup.survivorId, encChoiceGroup.absorbedId]);
+  seededWorkerIds.push(encChoiceGroup.survivorId, encChoiceGroup.absorbedId);
+  seededPhones.push(encChoiceGroup.phoneNorm);
 
   // ── Cenário 2: grupo para dismiss ───────────────────────────────────────────
   await insertWorker(pool, {
@@ -342,6 +396,40 @@ describe('GET /api/admin/dedup/groups/:phoneNormalized', () => {
     expect(absorbed?.login_real).toBe(false);
   });
 
+  it('DECRIPTA campos encriptados no comparativo (admin-only) — valor real, is_encrypted=true', async () => {
+    const res = await api.get(`/api/admin/dedup/groups/${mergeGroup.phoneNorm}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    type FC = {
+      field: string;
+      values: Record<string, string | null>;
+      is_encrypted: boolean;
+      has_conflict: boolean;
+    };
+    const comparisons = res.data.data.field_comparisons as FC[];
+
+    const firstName = comparisons.find(c => c.field === 'first_name_encrypted');
+    expect(firstName).toBeDefined();
+    // Continua marcado como sensível, mas agora COM valor decriptado.
+    expect(firstName?.is_encrypted).toBe(true);
+    expect(firstName?.values[mergeGroup.survivorId]).toBe('SurvivorFirst');
+    expect(firstName?.values[mergeGroup.absorbedId]).toBe('AbsorbedFirst');
+    // Valores distintos → conflito detectado sobre o PLAINTEXT.
+    expect(firstName?.has_conflict).toBe(true);
+
+    // sex_encrypted retorna o valor canônico (a UI traduz via i18n).
+    const sex = comparisons.find(c => c.field === 'sex_encrypted');
+    expect(sex?.is_encrypted).toBe(true);
+    expect(sex?.values[mergeGroup.survivorId]).toBe('MALE');
+    expect(sex?.values[mergeGroup.absorbedId]).toBe('FEMALE');
+
+    // Garantia de que NÃO vaza o ciphertext base64 cru.
+    expect(firstName?.values[mergeGroup.survivorId]).not.toBe(
+      Buffer.from('SurvivorFirst', 'utf8').toString('base64'),
+    );
+  });
+
   it('retorna 404 para phone não existente', async () => {
     const res = await api.get('/api/admin/dedup/groups/999999999999999', {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -486,6 +574,39 @@ describe('POST /api/admin/dedup/merge', () => {
     );
 
     expect(res.status).toBe(400);
+  });
+});
+
+// ── 5b. POST /api/admin/dedup/merge com fieldChoices ENCRIPTADO ───────────────
+
+describe('POST /api/admin/dedup/merge — choice de campo encriptado', () => {
+  it('escolher first_name_encrypted da conta absorvida copia o ciphertext dela pro survivor', async () => {
+    // fieldChoices keyed por account id (contrato real do frontend):
+    // o admin escolhe o nome da conta ABSORVIDA.
+    const res = await api.post('/api/admin/dedup/merge',
+      {
+        survivorId: encChoiceGroup.survivorId,
+        absorbedIds: [encChoiceGroup.absorbedId],
+        fieldChoices: { first_name_encrypted: encChoiceGroup.absorbedId },
+      },
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.data.success).toBe(true);
+
+    // Survivor deve ter ficado com o CIPHERTEXT do absorbed (sem re-encriptar).
+    const { rows } = await pool.query<{ first_name_encrypted: string | null }>(
+      `SELECT first_name_encrypted FROM workers WHERE id = $1::uuid`,
+      [encChoiceGroup.survivorId],
+    );
+    expect(rows[0].first_name_encrypted).toBe(
+      fakeCiphertext(encChoiceGroup.absorbedFirstName),
+    );
+    // E NÃO o do próprio survivor.
+    expect(rows[0].first_name_encrypted).not.toBe(
+      fakeCiphertext(encChoiceGroup.survivorFirstName),
+    );
   });
 });
 
