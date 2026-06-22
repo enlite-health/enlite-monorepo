@@ -534,7 +534,8 @@
       "tabs": {
         "queue": "Fila",
         "imported": "Importados",
-        "comingSoon": "Em breve"
+        "comingSoon": "Em breve",
+        "history": "Histórico"
       },
       "table": {
         "selectAll": "Selecionar todos",
@@ -616,6 +617,37 @@
         "worker_job_applications": "candidaturas",
         "worker_documents": "documentos",
         "worker_encuadres": "encuadres"
+      },
+      "history": {
+        "loadError": "Erro ao carregar o histórico",
+        "empty": "Sem unificações registradas",
+        "emptyDesc": "Nenhuma unificação foi executada por este painel ainda.",
+        "col": {
+          "phone": "Telefone",
+          "survivor": "Conta principal",
+          "absorbed": "Conta absorvida",
+          "category": "Categoria",
+          "date": "Data",
+          "actions": "Ações"
+        },
+        "undoBtn": "Desfazer",
+        "undoAriaLabel": "Desfazer unificação do telefone {{phone}}",
+        "category": {
+          "phone_duplicate": "Telefone duplicado",
+          "manual": "Manual",
+          "auto": "Automático"
+        },
+        "undo": {
+          "dialogLabel": "Desfazer unificação",
+          "title": "Desfazer unificação",
+          "description": "Você vai reativar a conta absorvida e reverter todas as alterações da unificação. Os dados migrados serão devolvidos à conta original.",
+          "warning": "Esta ação não pode ser revertida novamente caso as contas sejam unificadas de novo.",
+          "close": "Fechar",
+          "cancel": "Cancelar",
+          "confirm": "Sim, desfazer",
+          "confirmAriaLabel": "Confirmar desfazer unificação",
+          "undoing": "Desfazendo..."
+        }
       }
     },
     "apiDocs": {

@@ -4,13 +4,12 @@
  * Admin-only page: Centro de Duplicados.
  * Route: /admin/dedup
  *
- * Onda 2 scope:
- *   - Tab "Fila" — list of duplicate phone groups with merge/dismiss actions
- *   - Tab "Importados" — declared but disabled (Onda 4)
- *   - Modal "Comparar & Unificar" — compare accounts, pick survivor, execute merge
+ * Ondas:
+ *   Onda 2 — Tab "Fila": list of duplicate phone groups with merge/dismiss actions
+ *   Onda 3 — Tab "Historial": executed merges with undo action
+ *   Onda 4 — Tab "Importados": declared but disabled
  *
  * Access guard: redirects to /admin if role !== ADMIN.
- *
  * Pattern mirrors BlockedAttemptsPage (orquestrador; lógica en hooks).
  */
 
@@ -25,11 +24,14 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useDedupQueue } from '@hooks/admin/useDedupQueue';
+import { useDedupHistory } from '@hooks/admin/useDedupHistory';
 import { AdminDedupApiService } from '@infrastructure/http/AdminDedupApiService';
 import { DedupTabs, type DedupTab } from './DedupTabs';
 import { DedupGroupList } from './DedupGroupList';
 import { DedupBulkActionBar } from './DedupBulkActionBar';
+import { DedupHistoryTab } from './DedupHistoryTab';
 import { MergeCompareModal } from '@presentation/components/features/admin/Dedup/MergeCompareModal';
+import { UndoConfirmModal } from '@presentation/components/features/admin/Dedup/UndoConfirmModal';
 
 function LoadingSkeleton() {
   return (
@@ -73,7 +75,34 @@ function DedupCenterPageInner() {
   const [mergePhone, setMergePhone] = useState<string | null>(null);
   const [isDismissingBulk, setIsDismissingBulk] = useState(false);
 
+  // ── Undo modal state ──────────────────────────────────────────────────────────
+  const [undoTarget, setUndoTarget] = useState<{
+    auditId: string;
+    phone: string;
+  } | null>(null);
+
+  // ── Hooks ─────────────────────────────────────────────────────────────────────
   const { groups, isLoading, error, refetch } = useDedupQueue();
+  const {
+    history,
+    isLoading: isHistoryLoading,
+    error: historyError,
+    refetch: refetchHistory,
+    isUndoing,
+    undo,
+  } = useDedupHistory();
+
+  // ── Refresh delegates to the active tab's data ────────────────────────────────
+  const handleRefresh = useCallback(() => {
+    if (activeTab === 'history') {
+      refetchHistory();
+    } else {
+      refetch();
+    }
+  }, [activeTab, refetch, refetchHistory]);
+
+  const isCurrentTabLoading =
+    activeTab === 'history' ? isHistoryLoading : isLoading;
 
   // ── Selection handlers ────────────────────────────────────────────────────────
 
@@ -124,6 +153,24 @@ function DedupCenterPageInner() {
     }
   }, [selectedPhones, refetch]);
 
+  // ── Undo handlers ─────────────────────────────────────────────────────────────
+
+  const handleUndoRequest = useCallback((auditId: string, phone: string) => {
+    setUndoTarget({ auditId, phone });
+  }, []);
+
+  const handleUndoConfirm = useCallback(
+    async (auditId: string) => {
+      try {
+        await undo(auditId);
+        setUndoTarget(null);
+      } catch {
+        // undoError is set by the hook; modal stays open to display it
+      }
+    },
+    [undo],
+  );
+
   return (
     <PageContainer>
       {/* ── Header ─────────────────────────────────────────────────────────────── */}
@@ -142,11 +189,13 @@ function DedupCenterPageInner() {
         <Button
           variant="outline"
           size="sm"
-          onClick={refetch}
-          disabled={isLoading}
+          onClick={handleRefresh}
+          disabled={isCurrentTabLoading}
           aria-label={d('refresh')}
         >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${isCurrentTabLoading ? 'animate-spin' : ''}`}
+          />
           {d('refresh')}
         </Button>
       </div>
@@ -156,50 +205,62 @@ function DedupCenterPageInner() {
         <DedupTabs activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
 
-      {/* ── Loading ────────────────────────────────────────────────────────────── */}
-      {isLoading && <LoadingSkeleton />}
+      {/* ── Queue tab ──────────────────────────────────────────────────────────── */}
+      {activeTab === 'queue' && (
+        <>
+          {isLoading && <LoadingSkeleton />}
 
-      {/* ── Error ──────────────────────────────────────────────────────────────── */}
-      {!isLoading && error && (
-        <div
-          className="flex flex-col items-center gap-4 py-16 text-center"
-          data-testid="dedup-error"
-        >
-          <AlertCircle className="w-12 h-12 text-red-400" />
-          <Heading level={3} color="tertiary">
-            {d('loadError')}
-          </Heading>
-          <Text size="sm" color="muted">{error}</Text>
-          <Button variant="outline" size="sm" onClick={refetch}>
-            {d('retry')}
-          </Button>
-        </div>
-      )}
-
-      {/* ── Content ────────────────────────────────────────────────────────────── */}
-      {!isLoading && !error && (
-        <div data-testid="dedup-content">
-          {activeTab === 'queue' && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-              {/* Bulk action bar */}
-              <DedupBulkActionBar
-                selectedCount={selectedPhones.size}
-                onDismissSelected={handleDismissSelected}
-                onClearSelection={() => setSelectedPhones(new Set())}
-                isLoading={isDismissingBulk}
-              />
-
-              {/* Group list (includes empty state internally) */}
-              <DedupGroupList
-                groups={groups}
-                selectedPhones={selectedPhones}
-                onToggleSelect={handleToggleSelect}
-                onToggleSelectAll={handleToggleSelectAll}
-                onOpenMerge={setMergePhone}
-                onDismiss={handleDismiss}
-              />
+          {!isLoading && error && (
+            <div
+              className="flex flex-col items-center gap-4 py-16 text-center"
+              data-testid="dedup-error"
+            >
+              <AlertCircle className="w-12 h-12 text-red-400" />
+              <Heading level={3} color="tertiary">
+                {d('loadError')}
+              </Heading>
+              <Text size="sm" color="muted">
+                {error}
+              </Text>
+              <Button variant="outline" size="sm" onClick={refetch}>
+                {d('retry')}
+              </Button>
             </div>
           )}
+
+          {!isLoading && !error && (
+            <div data-testid="dedup-content">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <DedupBulkActionBar
+                  selectedCount={selectedPhones.size}
+                  onDismissSelected={handleDismissSelected}
+                  onClearSelection={() => setSelectedPhones(new Set())}
+                  isLoading={isDismissingBulk}
+                />
+                <DedupGroupList
+                  groups={groups}
+                  selectedPhones={selectedPhones}
+                  onToggleSelect={handleToggleSelect}
+                  onToggleSelectAll={handleToggleSelectAll}
+                  onOpenMerge={setMergePhone}
+                  onDismiss={handleDismiss}
+                />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── History tab ────────────────────────────────────────────────────────── */}
+      {activeTab === 'history' && (
+        <div data-testid="dedup-history-content">
+          <DedupHistoryTab
+            history={history}
+            isLoading={isHistoryLoading}
+            error={historyError}
+            onRetry={refetchHistory}
+            onUndo={handleUndoRequest}
+          />
         </div>
       )}
 
@@ -212,6 +273,17 @@ function DedupCenterPageInner() {
             setMergePhone(null);
             refetch();
           }}
+        />
+      )}
+
+      {/* ── Undo confirm modal ──────────────────────────────────────────────────── */}
+      {undoTarget && (
+        <UndoConfirmModal
+          auditId={undoTarget.auditId}
+          phone={undoTarget.phone}
+          isUndoing={isUndoing}
+          onConfirm={handleUndoConfirm}
+          onClose={() => setUndoTarget(null)}
         />
       )}
     </PageContainer>

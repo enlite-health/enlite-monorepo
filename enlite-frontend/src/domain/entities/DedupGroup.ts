@@ -83,3 +83,20 @@ export interface DismissResult {
   phoneNormalized: string;
   dismissedAt: string;
 }
+
+// ── Merge history (Onda 3) ─────────────────────────────────────────────────────
+
+export interface MergeHistoryItem {
+  auditId: string;
+  survivorId: string;
+  absorbedId: string;
+  phone_normalized: string;
+  category: string;
+  created_at: string;
+  can_undo: boolean;
+}
+
+export interface UndoResult {
+  auditId: string;
+  restoredAt: string;
+}

@@ -3,22 +3,27 @@
  *
  * Rounded-pill tab bar for the Deduplication Center.
  * Pattern copied from VacancyDetailTabs.tsx:18-25 — no Tabs atom exists.
- * The "Importados" tab (Onda 4) is declared but rendered as disabled.
+ *
+ * Tabs:
+ *   - queue    → Fila (Onda 2)
+ *   - history  → Historial (Onda 3)
+ *   - imported → Importados (Onda 4, disabled)
  */
 
 import { useTranslation } from 'react-i18next';
 
-export type DedupTab = 'queue' | 'imported';
+export type DedupTab = 'queue' | 'history' | 'imported';
 
 interface DedupTabsProps {
   activeTab: DedupTab;
   onTabChange: (tab: DedupTab) => void;
 }
 
-const TABS: DedupTab[] = ['queue', 'imported'];
+const TABS: DedupTab[] = ['queue', 'history', 'imported'];
 
 const TAB_I18N_KEYS: Record<DedupTab, string> = {
   queue: 'admin.dedup.tabs.queue',
+  history: 'admin.dedup.tabs.history',
   imported: 'admin.dedup.tabs.imported',
 };
 

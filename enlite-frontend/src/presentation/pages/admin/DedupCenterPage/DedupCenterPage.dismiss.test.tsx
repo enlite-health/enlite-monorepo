@@ -49,6 +49,11 @@ vi.mock('@hooks/admin/useDedupQueue', () => ({
   useDedupQueue: () => mockUseDedupQueue(),
 }));
 
+const mockUseDedupHistory = vi.fn();
+vi.mock('@hooks/admin/useDedupHistory', () => ({
+  useDedupHistory: () => mockUseDedupHistory(),
+}));
+
 const mockDismiss = vi.fn();
 vi.mock('@infrastructure/http/AdminDedupApiService', () => ({
   AdminDedupApiService: {
@@ -57,6 +62,10 @@ vi.mock('@infrastructure/http/AdminDedupApiService', () => ({
     getGroupDetail: vi.fn(),
     merge: vi.fn(),
   },
+}));
+
+vi.mock('@presentation/components/features/admin/Dedup/UndoConfirmModal', () => ({
+  UndoConfirmModal: () => <div data-testid="undo-modal-mock" />,
 }));
 
 vi.mock(
@@ -145,6 +154,16 @@ function getRowButtons(groupIndex: number) {
   return { merge: rowBtns[0], dismiss: rowBtns[1] };
 }
 
+const HISTORY_LOADED = {
+  history: [],
+  isLoading: false,
+  error: null,
+  refetch: vi.fn(),
+  isUndoing: false,
+  undoError: null,
+  undo: vi.fn(),
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseAdminAuth.mockReturnValue({
@@ -153,6 +172,7 @@ beforeEach(() => {
     isLoading: false,
   });
   mockUseDedupQueue.mockReturnValue(QUEUE_WITH_GROUPS);
+  mockUseDedupHistory.mockReturnValue(HISTORY_LOADED);
   mockDismiss.mockResolvedValue({
     phoneNormalized: GROUP_1.phone_normalized,
     dismissedAt: '2026-06-22T00:00:00Z',

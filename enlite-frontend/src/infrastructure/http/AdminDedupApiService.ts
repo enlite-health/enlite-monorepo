@@ -14,6 +14,8 @@ import type {
   MergeResult,
   DismissRequest,
   DismissResult,
+  MergeHistoryItem,
+  UndoResult,
 } from '@domain/entities/DedupGroup';
 
 interface ApiSuccessResponse<T> {
@@ -98,6 +100,26 @@ class AdminDedupApiServiceClass {
    */
   async dismiss(payload: DismissRequest): Promise<DismissResult> {
     return this.request<DismissResult>('POST', '/api/admin/dedup/dismiss', payload);
+  }
+
+  /**
+   * GET /api/admin/dedup/history
+   * Returns the list of executed merges with undo eligibility.
+   */
+  async getHistory(): Promise<MergeHistoryItem[]> {
+    return this.request<MergeHistoryItem[]>('GET', '/api/admin/dedup/history');
+  }
+
+  /**
+   * POST /api/admin/dedup/merges/:auditId/undo
+   * Undoes a previously executed merge, restoring the absorbed account.
+   */
+  async undoMerge(auditId: string): Promise<UndoResult> {
+    const encoded = encodeURIComponent(auditId);
+    return this.request<UndoResult>(
+      'POST',
+      `/api/admin/dedup/merges/${encoded}/undo`,
+    );
   }
 }
 

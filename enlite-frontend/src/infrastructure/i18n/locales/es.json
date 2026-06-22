@@ -534,7 +534,8 @@
       "tabs": {
         "queue": "Fila",
         "imported": "Importados",
-        "comingSoon": "Próximamente"
+        "comingSoon": "Próximamente",
+        "history": "Historial"
       },
       "table": {
         "selectAll": "Seleccionar todos",
@@ -616,6 +617,37 @@
         "worker_job_applications": "postulaciones",
         "worker_documents": "documentos",
         "worker_encuadres": "encuadres"
+      },
+      "history": {
+        "loadError": "Error al cargar el historial",
+        "empty": "Sin unificaciones registradas",
+        "emptyDesc": "Todavía no se ejecutaron unificaciones desde este panel.",
+        "col": {
+          "phone": "Teléfono",
+          "survivor": "Cuenta principal",
+          "absorbed": "Cuenta absorbida",
+          "category": "Categoría",
+          "date": "Fecha",
+          "actions": "Acciones"
+        },
+        "undoBtn": "Deshacer",
+        "undoAriaLabel": "Deshacer unificación del teléfono {{phone}}",
+        "category": {
+          "phone_duplicate": "Teléfono duplicado",
+          "manual": "Manual",
+          "auto": "Automático"
+        },
+        "undo": {
+          "dialogLabel": "Deshacer unificación",
+          "title": "Deshacer unificación",
+          "description": "Vas a reactivar la cuenta absorbida y revertir todos los cambios de la unificación. Los datos migrados se devolverán a la cuenta original.",
+          "warning": "Esta acción no se puede revertir nuevamente si se vuelven a unificar.",
+          "close": "Cerrar",
+          "cancel": "Cancelar",
+          "confirm": "Sí, deshacer",
+          "confirmAriaLabel": "Confirmar deshacer unificación",
+          "undoing": "Deshaciendo..."
+        }
       }
     },
     "apiDocs": {

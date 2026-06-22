@@ -7,12 +7,17 @@
  * Auth: Firebase Identity Toolkit interceptado localmente (sem emulador, sem conta real).
  * Técnica idêntica à de blocked-attempts-visual.e2e.ts.
  *
- * Estados capturados:
+ * Estados capturados (Onda 2):
  *   1. FILA POPULADA — tabela com grupos, signal badges, botões de ação
  *   2. FILA VAZIA    — empty state com ícone e mensagem
  *   3. FILA ERRO     — alert com mensagem de erro e botão retry
  *   4. MODAL ABERTO  — modal de comparação com dois account cards
  *   5. MODAL MISMATCH — modal com aviso de conflito de campos
+ *
+ * Estados capturados (Onda 3):
+ *   6. HISTÓRICO COM ITENS — aba Historial com linhas, badges de categoria,
+ *      botão Deshacer apenas em itens can_undo=true
+ *   7. MODAL DESFAZER ABERTO — modal UndoConfirmModal com phone exibido
  *
  * Run: pnpm test:e2e:no-integration --update-snapshots (1ª vez)
  *      pnpm test:e2e:no-integration (runs subsequentes)
@@ -135,6 +140,32 @@ const MOCK_DETAIL_NO_CONFLICT = {
     { entity: 'worker_documents', count: 2 },
   ],
 };
+
+// ── Onda 3 fixtures ───────────────────────────────────────────────────────────
+
+const AUDIT_1 = 'audit-vis-001';
+const AUDIT_2 = 'audit-vis-002';
+
+const MOCK_HISTORY = [
+  {
+    auditId: AUDIT_1,
+    survivorId: ACC_1.id,
+    absorbedId: ACC_2.id,
+    phone_normalized: PHONE_1,
+    category: 'phone_duplicate',
+    created_at: '2026-06-20T10:00:00Z',
+    can_undo: true,
+  },
+  {
+    auditId: AUDIT_2,
+    survivorId: ACC_3.id,
+    absorbedId: ACC_4.id,
+    phone_normalized: PHONE_2,
+    category: 'manual',
+    created_at: '2026-06-19T08:00:00Z',
+    can_undo: false,
+  },
+];
 
 const MOCK_DETAIL_WITH_CONFLICT = {
   phone_normalized: PHONE_2,
@@ -294,6 +325,16 @@ function mockGroupDetail(
   );
 }
 
+function mockDedupHistory(page: Page): void {
+  page.route('**/api/admin/dedup/history', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: MOCK_HISTORY }),
+    }),
+  );
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 test.describe('DedupCenterPage — visual proof', () => {
@@ -414,6 +455,82 @@ test.describe('DedupCenterPage — visual proof', () => {
     });
 
     await expect(page).toHaveScreenshot('dedup-center-modal-mismatch.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  // ── Onda 3 visual tests ─────────────────────────────────────────────────────
+
+  test('HISTORIAL COM ITENS: aba com linhas, categoria badge, botão Deshacer condicional', async ({ page }) => {
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockDedupHistory(page);
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Navigate to History tab (button text comes from i18n — es locale key = "Historial")
+    const historyTabBtn = page.getByRole('button', { name: /Historial|Histórico/i });
+    await historyTabBtn.click();
+
+    await expect(page.locator('[data-testid="dedup-history-content"]')).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Verify the table is visible with correct content
+    await expect(
+      page.locator('[data-testid="history-table-container"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Only AUDIT_1 should have the undo button (can_undo=true)
+    await expect(
+      page.locator(`[data-testid="undo-btn-${AUDIT_1}"]`),
+    ).toBeVisible({ timeout: 5000 });
+    await expect(
+      page.locator(`[data-testid="undo-btn-${AUDIT_2}"]`),
+    ).not.toBeVisible();
+
+    await expect(page).toHaveScreenshot('dedup-center-history-populated.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('MODAL DESHACER ABERTO: confirmação com phone exibido', async ({ page }) => {
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockDedupHistory(page);
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Navigate to History tab
+    const historyTabBtn = page.getByRole('button', { name: /Historial|Histórico/i });
+    await historyTabBtn.click();
+
+    await expect(
+      page.locator('[data-testid="history-table-container"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Click the Deshacer button for AUDIT_1
+    await page.locator(`[data-testid="undo-btn-${AUDIT_1}"]`).click();
+
+    // Modal should appear
+    await expect(
+      page.locator('[data-testid="undo-confirm-modal"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Phone should be visible in the modal
+    await expect(page.locator(`text=${PHONE_1}`).nth(1)).toBeVisible({
+      timeout: 5000,
+    });
+
+    await expect(page).toHaveScreenshot('dedup-center-undo-modal-open.png', {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });

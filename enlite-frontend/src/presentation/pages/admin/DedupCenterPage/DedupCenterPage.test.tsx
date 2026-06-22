@@ -39,13 +39,22 @@ vi.mock('@presentation/hooks/useAdminAuth', () => ({
 }));
 
 const mockUseDedupQueue = vi.fn();
+const mockUseDedupHistory = vi.fn();
 
 vi.mock('@hooks/admin/useDedupQueue', () => ({
   useDedupQueue: () => mockUseDedupQueue(),
 }));
 
+vi.mock('@hooks/admin/useDedupHistory', () => ({
+  useDedupHistory: () => mockUseDedupHistory(),
+}));
+
 vi.mock('@presentation/components/features/admin/Dedup/MergeCompareModal', () => ({
   MergeCompareModal: () => <div data-testid="merge-modal-mock" />,
+}));
+
+vi.mock('@presentation/components/features/admin/Dedup/UndoConfirmModal', () => ({
+  UndoConfirmModal: () => <div data-testid="undo-modal-mock" />,
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -74,6 +83,16 @@ const QUEUE_LOADED = {
   refetch: vi.fn(),
 };
 
+const HISTORY_LOADED = {
+  history: [],
+  isLoading: false,
+  error: null,
+  refetch: vi.fn(),
+  isUndoing: false,
+  undoError: null,
+  undo: vi.fn(),
+};
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 function renderPage() {
@@ -87,6 +106,7 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseDedupQueue.mockReturnValue(QUEUE_LOADED);
+  mockUseDedupHistory.mockReturnValue(HISTORY_LOADED);
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

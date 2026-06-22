@@ -14,10 +14,19 @@
  *   (verifies encodeURIComponent is applied to the phone)
  * - merge → POST /api/admin/dedup/merge with JSON body
  * - dismiss → POST /api/admin/dedup/dismiss with JSON body
+ * - getHistory → GET /api/admin/dedup/history
+ * - undoMerge  → POST /api/admin/dedup/merges/:auditId/undo
+ *   (verifies encodeURIComponent is applied to the auditId)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { DedupGroupSummary, DedupGroupDetail, MergeRequest, DismissRequest } from '@domain/entities/DedupGroup';
+import type {
+  DedupGroupSummary,
+  DedupGroupDetail,
+  MergeRequest,
+  DismissRequest,
+  MergeHistoryItem,
+} from '@domain/entities/DedupGroup';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -79,6 +88,32 @@ const MOCK_MERGE_RESULT = {
 const MOCK_DISMISS_RESULT = {
   phoneNormalized: '+5491112345678',
   dismissedAt: '2026-06-22T00:00:00Z',
+};
+
+const MOCK_HISTORY: MergeHistoryItem[] = [
+  {
+    auditId: 'audit-001',
+    survivorId: 'acc-001',
+    absorbedId: 'acc-002',
+    phone_normalized: '+5491112345678',
+    category: 'phone_duplicate',
+    created_at: '2026-06-22T10:00:00Z',
+    can_undo: true,
+  },
+  {
+    auditId: 'audit-002',
+    survivorId: 'acc-003',
+    absorbedId: 'acc-004',
+    phone_normalized: '+5491187654321',
+    category: 'manual',
+    created_at: '2026-06-21T08:00:00Z',
+    can_undo: false,
+  },
+];
+
+const MOCK_UNDO_RESULT = {
+  auditId: 'audit-001',
+  restoredAt: '2026-06-22T11:00:00Z',
 };
 
 // ── Setup / Teardown ──────────────────────────────────────────────────────────
@@ -286,5 +321,83 @@ describe('AdminDedupApiService.dismiss', () => {
       phoneNormalized: '+5491112345678',
     });
     expect(result.phoneNormalized).toBe('+5491112345678');
+  });
+});
+
+// ── getHistory ────────────────────────────────────────────────────────────────
+
+describe('AdminDedupApiService.getHistory', () => {
+  it('makes GET request to /api/admin/dedup/history', async () => {
+    mockFetchSuccess(MOCK_HISTORY);
+    await AdminDedupApiService.getHistory();
+
+    const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+    const url = fetchCall[0] as string;
+    const options = fetchCall[1];
+    expect(url).toContain('/api/admin/dedup/history');
+    expect(options?.method).toBe('GET');
+  });
+
+  it('returns array of MergeHistoryItem', async () => {
+    mockFetchSuccess(MOCK_HISTORY);
+    const result = await AdminDedupApiService.getHistory();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+    expect(result[0].auditId).toBe('audit-001');
+    expect(result[0].can_undo).toBe(true);
+    expect(result[1].can_undo).toBe(false);
+  });
+
+  it('returns empty array when no history', async () => {
+    mockFetchSuccess([]);
+    const result = await AdminDedupApiService.getHistory();
+    expect(result).toEqual([]);
+  });
+
+  it('throws when success=false', async () => {
+    mockFetchError('History fetch failed');
+    await expect(AdminDedupApiService.getHistory()).rejects.toThrow(
+      'History fetch failed',
+    );
+  });
+});
+
+// ── undoMerge ─────────────────────────────────────────────────────────────────
+
+describe('AdminDedupApiService.undoMerge', () => {
+  it('makes POST request to /api/admin/dedup/merges/:auditId/undo', async () => {
+    mockFetchSuccess(MOCK_UNDO_RESULT);
+    await AdminDedupApiService.undoMerge('audit-001');
+
+    const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+    const url = fetchCall[0] as string;
+    const options = fetchCall[1];
+    expect(url).toContain('/api/admin/dedup/merges/');
+    expect(url).toContain('/undo');
+    expect(options?.method).toBe('POST');
+  });
+
+  it('applies encodeURIComponent to the auditId', async () => {
+    mockFetchSuccess(MOCK_UNDO_RESULT);
+    const auditId = 'audit/special+chars';
+    await AdminDedupApiService.undoMerge(auditId);
+
+    const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+    const url = fetchCall[0] as string;
+    expect(url).toContain(encodeURIComponent(auditId));
+  });
+
+  it('returns UndoResult', async () => {
+    mockFetchSuccess(MOCK_UNDO_RESULT);
+    const result = await AdminDedupApiService.undoMerge('audit-001');
+    expect(result.auditId).toBe('audit-001');
+    expect(result.restoredAt).toBe('2026-06-22T11:00:00Z');
+  });
+
+  it('throws when success=false', async () => {
+    mockFetchError('Cannot undo — window expired');
+    await expect(AdminDedupApiService.undoMerge('audit-001')).rejects.toThrow(
+      'Cannot undo — window expired',
+    );
   });
 });
