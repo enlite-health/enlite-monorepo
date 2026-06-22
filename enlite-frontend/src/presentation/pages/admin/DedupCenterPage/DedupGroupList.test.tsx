@@ -3,14 +3,14 @@
  *
  * Covers:
  * - Empty state renders correctly
- * - Rows render phone, account count, signal badge, tier via i18n
+ * - Rows render phone, account count, signal badge
  * - Checkbox row toggles onToggleSelect
  * - Select-all checkbox triggers onToggleSelectAll
  * - "Merge" button triggers onOpenMerge with the correct phone
  * - "Dismiss" button triggers onDismiss with the correct phone
  * - formatDate happy path renders 2026
- * - Survivor email rendered (including null email fallback '—')
  * - allSelected state when all rows are checked
+ * NOTE: survivor column was removed from DedupGroupList (queue has no suggestion)
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -59,23 +59,6 @@ const GROUP_B: DedupGroupSummary = {
     makeAccount('acc-B2', { tier: 'REGISTERED' }),
   ],
   survivor_suggested: 'acc-B1',
-};
-
-/** Group where survivor has null email — tests the '—' fallback */
-const GROUP_NULL_EMAIL: DedupGroupSummary = {
-  phone_normalized: '+5493333333333',
-  accounts: [
-    makeAccount('acc-C1', { email: null, tier: 'PRE_REGISTER' }),
-    makeAccount('acc-C2', { tier: 'REGISTERED' }),
-  ],
-  survivor_suggested: 'acc-C1',
-};
-
-/** Group with no survivor match — survivor_suggested id not in accounts */
-const GROUP_NO_SURVIVOR: DedupGroupSummary = {
-  phone_normalized: '+5494444444444',
-  accounts: [makeAccount('acc-D1'), makeAccount('acc-D2')],
-  survivor_suggested: 'acc-D-nonexistent',
 };
 
 // ── Default props factory ──────────────────────────────────────────────────────
@@ -134,24 +117,6 @@ describe('DedupGroupList — table rows rendering', () => {
     // Both groups have 2 accounts each
     const cells = screen.getAllByText('2');
     expect(cells.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('renders survivor email when present', () => {
-    render(<DedupGroupList {...defaultProps([GROUP_A])} />);
-    expect(screen.getByText('acc-A1@test.com')).toBeInTheDocument();
-  });
-
-  it('renders "—" when survivor email is null', () => {
-    render(<DedupGroupList {...defaultProps([GROUP_NULL_EMAIL])} />);
-    // survivor acc-C1 has null email → renders '—'
-    const dashes = screen.getAllByText('—');
-    expect(dashes.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('renders "—" fallback when no survivor match found', () => {
-    render(<DedupGroupList {...defaultProps([GROUP_NO_SURVIVOR])} />);
-    const dashes = screen.getAllByText('—');
-    expect(dashes.length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders a DedupSignalBadge for each row', () => {
@@ -366,20 +331,7 @@ describe('DedupGroupList — formatDate', () => {
   });
 });
 
-// ── Tier via i18n ─────────────────────────────────────────────────────────────
-
-describe('DedupGroupList — tier badge via i18n', () => {
-  it('renders content in the tier badge area for the survivor', () => {
-    render(<DedupGroupList {...defaultProps([GROUP_A])} />);
-    // Component uses t(`admin.dedup.tier.${tier}`, { defaultValue: tier })
-    // In tests with no translations, falls back to the tier key or defaultValue.
-    // The important thing is the badge renders something (not crash).
-    const body = document.body.textContent ?? '';
-    expect(body.length).toBeGreaterThan(0);
-  });
-});
-
-// ── reduce "keep earliest" false branch (L156) ────────────────────────────────
+// ── reduce "keep earliest" false branch ──────────────────────────────────────
 
 describe('DedupGroupList — oldest-account reduce false branch', () => {
   it('keeps the earliest account when ordered chronologically (false branch of ternary)', () => {
