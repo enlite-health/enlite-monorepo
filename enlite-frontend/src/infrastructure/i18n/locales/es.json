@@ -523,7 +523,8 @@
       "patients": "Pacientes",
       "apiDocs": "API Docs",
       "tags": "Etiquetas",
-      "dedup": "Duplicados"
+      "dedup": "Duplicados",
+      "adminSection": "Administración"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -542,7 +543,7 @@
         "selectRow": "Seleccionar {{phone}}",
         "phone": "Teléfono",
         "accountCount": "Cuentas",
-        "signal": "Señal",
+        "signal": "Cuentas reales",
         "survivor": "Principal sugerido",
         "createdAt": "Alta",
         "actions": "Acciones",

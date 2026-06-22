@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { NavItem } from '@presentation/components/shared/NavItem';
 import { NavSection, type NavSectionItem } from '@presentation/components/shared/NavSection';
 import { SidebarFooter } from '@presentation/components/shared/SidebarFooter';
+import { Text } from '@presentation/components/atoms/Text';
 
 export interface AppSidebarNavItem {
   icon: ReactNode;
@@ -10,6 +11,8 @@ export interface AppSidebarNavItem {
   href?: string;
   subItems?: NavSectionItem[];
   enabled?: boolean;
+  /** Quando presente, renderiza um separador visual + rótulo de seção ANTES deste item. */
+  sectionStart?: string;
 }
 
 export interface AppSidebarProps {
@@ -73,25 +76,46 @@ export const AppSidebar = ({
       <nav className="flex-1 overflow-y-auto py-2">
         {navItems
           .filter((item) => item.enabled !== false)
-          .map((item, index) =>
-            !isCollapsed && item.subItems && item.subItems.length > 0 ? (
-              <NavSection
-                key={index}
-                icon={item.icon}
-                label={item.label}
-                items={item.subItems}
-                defaultExpanded={false}
-              />
-            ) : (
-              <NavItem
-                key={index}
-                icon={item.icon}
-                label={item.label}
-                href={item.href}
-                isCollapsed={isCollapsed}
-              />
-            )
-          )}
+          .map((item, index) => (
+            <div key={index}>
+              {item.sectionStart && (
+                <div
+                  role="separator"
+                  aria-label={item.sectionStart}
+                  className={`mt-3 mb-1 mx-2 border-t border-gray-100 ${isCollapsed ? '' : 'pt-3 px-2'}`}
+                >
+                  {!isCollapsed && (
+                    <span aria-hidden="true">
+                      <Text
+                        as="span"
+                        size="xs"
+                        weight="medium"
+                        color="muted"
+                        className="uppercase tracking-widest select-none"
+                      >
+                        {item.sectionStart}
+                      </Text>
+                    </span>
+                  )}
+                </div>
+              )}
+              {!isCollapsed && item.subItems && item.subItems.length > 0 ? (
+                <NavSection
+                  icon={item.icon}
+                  label={item.label}
+                  items={item.subItems}
+                  defaultExpanded={false}
+                />
+              ) : (
+                <NavItem
+                  icon={item.icon}
+                  label={item.label}
+                  href={item.href}
+                  isCollapsed={isCollapsed}
+                />
+              )}
+            </div>
+          ))}
       </nav>
 
       {/* Footer */}

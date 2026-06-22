@@ -76,6 +76,7 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
           ),
           label: t('admin.nav.tags', 'Etiquetas'),
           href: '/admin/tags',
+          sectionStart: t('admin.nav.adminSection', 'Administración'),
         },
         {
           icon: (

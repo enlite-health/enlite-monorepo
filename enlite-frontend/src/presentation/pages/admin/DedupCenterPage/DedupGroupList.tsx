@@ -2,7 +2,7 @@
  * DedupGroupList
  *
  * Table of duplicate phone groups.
- * Columns: checkbox | phone | accounts | signal | survivor | actions
+ * Columns: checkbox | phone | accounts | signal | createdAt | actions
  *
  * Rules:
  * - uses Table atom (no raw <table>)
@@ -89,16 +89,12 @@ export function DedupGroupList({
         <TableHead>{d('table.phone')}</TableHead>
         <TableHead align="center">{d('table.accountCount')}</TableHead>
         <TableHead>{d('table.signal')}</TableHead>
-        <TableHead>{d('table.survivor')}</TableHead>
         <TableHead>{d('table.createdAt')}</TableHead>
         <TableHead align="center">{d('table.actions')}</TableHead>
       </TableHeader>
 
       <TableBody>
         {groups.map((group) => {
-          const survivor = group.accounts.find(
-            (a) => a.id === group.survivor_suggested,
-          );
           const totalActivity =
             group.accounts.reduce(
               (sum, a) => sum + a.wja_count + a.docs_count,
@@ -127,26 +123,6 @@ export function DedupGroupList({
               {/* Signal badge */}
               <TableCell unwrapped>
                 <DedupSignalBadge accounts={group.accounts} />
-              </TableCell>
-
-              {/* Survivor email + tier */}
-              <TableCell unwrapped>
-                {survivor ? (
-                  <div className="flex flex-col gap-0.5">
-                    <Text as="span" size="sm" weight="medium">
-                      {survivor.email ?? '—'}
-                    </Text>
-                    <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full inline-flex w-fit">
-                      <Text as="span" size="xs" weight="medium" color="inherit">
-                        {t(`admin.dedup.tier.${survivor.tier}`, {
-                          defaultValue: survivor.tier,
-                        })}
-                      </Text>
-                    </span>
-                  </div>
-                ) : (
-                  <Text as="span" size="sm" color="muted">—</Text>
-                )}
               </TableCell>
 
               {/* Created at (oldest account) */}
