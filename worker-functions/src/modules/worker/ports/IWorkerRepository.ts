@@ -19,4 +19,6 @@ export interface IWorkerRepository {
   recalculateStatus(workerId: string): Promise<WorkerStatus | null>;
   delete(workerId: string): Promise<Result<void>>;
   deleteByAuthUid(authUid: string): Promise<Result<void>>;
+  /** Marca/desmarca worker como conta de teste. Retorna o flag resultante, ou null se não existir. */
+  updateTestFlag(workerId: string, isTest: boolean): Promise<boolean | null>;
 }

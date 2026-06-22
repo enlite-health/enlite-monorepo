@@ -522,7 +522,161 @@
       "recruitment": "Reclutamiento",
       "patients": "Pacientes",
       "apiDocs": "API Docs",
-      "tags": "Etiquetas"
+      "tags": "Etiquetas",
+      "dedup": "Duplicados"
+    },
+    "dedup": {
+      "title": "Centro de Duplicados",
+      "subtitle": "Revisá y unificá cuentas de workers con el mismo teléfono.",
+      "refresh": "Actualizar",
+      "loadError": "Error al cargar los duplicados",
+      "retry": "Reintentar",
+      "tabs": {
+        "queue": "Fila",
+        "imported": "Importados",
+        "comingSoon": "Próximamente",
+        "history": "Historial"
+      },
+      "table": {
+        "selectAll": "Seleccionar todos",
+        "selectRow": "Seleccionar {{phone}}",
+        "phone": "Teléfono",
+        "accountCount": "Cuentas",
+        "signal": "Señal",
+        "survivor": "Principal sugerido",
+        "createdAt": "Alta",
+        "actions": "Acciones",
+        "merge": "Unificar",
+        "mergeAriaLabel": "Unificar grupo {{phone}}",
+        "dismissAriaLabel": "Descartar grupo {{phone}}"
+      },
+      "queue": {
+        "empty": "Sin duplicados en la fila",
+        "emptyDesc": "No se encontraron grupos con el mismo teléfono."
+      },
+      "signal": {
+        "allReal": "{{count}} real",
+        "allReal_plural": "{{count}} reales",
+        "allTest": "{{count}} prueba",
+        "mixed": "{{real}} real · {{test}} prueba"
+      },
+      "tier": {
+        "REGISTERED": "Registrado",
+        "INCOMPLETE_REGISTER": "Incompleto",
+        "PRE_REGISTER": "Pre-registro"
+      },
+      "bulkBar": {
+        "selected": "{{count}} seleccionado",
+        "selected_plural": "{{count}} seleccionados",
+        "dismiss": "Descartar",
+        "dismissAriaLabel": "Descartar seleccionados",
+        "clearAriaLabel": "Limpiar selección"
+      },
+      "merge": {
+        "title": "Comparar y unificar",
+        "dialogLabel": "Comparar y unificar cuentas",
+        "phone": "Teléfono",
+        "close": "Cerrar",
+        "retry": "Reintentar",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar unificación",
+        "confirmAriaLabel": "Confirmar unificación",
+        "merging": "Unificando...",
+        "success": "Unificación realizada con éxito",
+        "survivor": "Principal",
+        "setSurvivor": "Elegir como principal",
+        "noEmail": "Sin email",
+        "createdAt": "Alta",
+        "realLogin": "Login real",
+        "testLogin": "Sin login real",
+        "wjaCount": "Postulaciones",
+        "docsCount": "Documentos",
+        "encuadresCount": "Encuadres",
+        "reparentTitle": "Se van a reasignar al principal:",
+        "advanced": "Avanzado",
+        "conflicts": "conflicto",
+        "conflicts_plural": "conflictos",
+        "mismatchTitle": "{{count}} campo con conflicto",
+        "mismatchTitle_plural": "{{count}} campos con conflicto",
+        "mismatchDesc": "Expandí «Avanzado» para revisar y elegir qué valor conservar campo por campo.",
+        "encryptedField": "Campo cifrado",
+        "emptyValue": "vacío"
+      },
+      "field": {
+        "email": "Email",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "documentNumber": "Número de documento",
+        "documentType": "Tipo de documento",
+        "phone": "Teléfono",
+        "birthDate": "Fecha de nacimiento",
+        "sex": "Sexo",
+        "profession": "Profesión"
+      },
+      "entity": {
+        "worker_job_applications": "postulaciones",
+        "worker_documents": "documentos",
+        "worker_encuadres": "encuadres"
+      },
+      "history": {
+        "loadError": "Error al cargar el historial",
+        "empty": "Sin unificaciones registradas",
+        "emptyDesc": "Todavía no se ejecutaron unificaciones desde este panel.",
+        "col": {
+          "phone": "Teléfono",
+          "survivor": "Cuenta principal",
+          "absorbed": "Cuenta absorbida",
+          "category": "Categoría",
+          "date": "Fecha",
+          "actions": "Acciones"
+        },
+        "undoBtn": "Deshacer",
+        "undoAriaLabel": "Deshacer unificación del teléfono {{phone}}",
+        "category": {
+          "phone_duplicate": "Teléfono duplicado",
+          "manual": "Manual",
+          "auto": "Automático"
+        },
+        "undo": {
+          "dialogLabel": "Deshacer unificación",
+          "title": "Deshacer unificación",
+          "description": "Vas a reactivar la cuenta absorbida y revertir todos los cambios de la unificación. Los datos migrados se devolverán a la cuenta original.",
+          "warning": "Esta acción no se puede revertir nuevamente si se vuelven a unificar.",
+          "close": "Cerrar",
+          "cancel": "Cancelar",
+          "confirm": "Sí, deshacer",
+          "confirmAriaLabel": "Confirmar deshacer unificación",
+          "undoing": "Deshaciendo..."
+        }
+      },
+      "imported": {
+        "loadError": "Error al cargar los grupos importados",
+        "empty": "Sin grupos por nombre",
+        "emptyDesc": "No se encontraron cuentas importadas con nombre coincidente.",
+        "namematchWarningTitle": "Coincidencia por NOMBRE (no por teléfono) — revisá bien antes de unir",
+        "namematchWarningDesc": "Estos grupos se detectaron por similitud de nombre. Verificá que sean la misma persona antes de unificar.",
+        "onlyWithRealLabel": "Solo con cuenta real",
+        "onlyWithRealHint": "Mostrando grupos con al menos 1 cuenta real (142 prioritarios)",
+        "allGroupsHint": "Mostrando todos los grupos (incluye importado↔importado)",
+        "reasonConflict": "requiere revisión",
+        "reviewBtn": "Revisar",
+        "conflictTitle": "Revisión manual requerida",
+        "conflictDesc": "Este grupo tiene más de una cuenta real. Unificá manualmente en la pestaña Fila.",
+        "reason": {
+          "real_account_absorbs_imported": "Real absorbe importado",
+          "conflict_multiple_real_accounts": "Conflicto: múltiples reales",
+          "most_complete": "Más completo"
+        },
+        "table": {
+          "accountCount": "Cuentas",
+          "signal": "Señal",
+          "survivor": "Principal sugerido",
+          "oldestAccount": "Alta",
+          "reason": "Razón",
+          "actions": "Acciones",
+          "mergeAriaLabel": "Unificar grupo con {{count}} cuentas"
+        }
+      }
     },
     "apiDocs": {
       "title": "Documentación de la API",
@@ -897,6 +1051,15 @@
         "removeTag": "Quitar etiqueta",
         "assignError": "Error al asignar etiqueta",
         "removeError": "Error al quitar etiqueta"
+      },
+      "testAccount": {
+        "label": "Cuenta de prueba",
+        "hint": "Marca este prestador como cuenta de prueba (QA, demos).",
+        "error": "Error al actualizar la cuenta de prueba"
+      },
+      "modal": {
+        "close": "Cerrar",
+        "title": "Perfil del prestador"
       }
     },
     "tags": {
@@ -2165,6 +2328,7 @@
       "alreadyApplied": "Ya postuló",
       "notified": "Notificado {{date}}",
       "sendWhatsappTooltip": "Enviar WhatsApp",
+      "viewProfileTooltip": "Ver perfil",
       "caseLabel": "Caso",
       "backToVacancy": "Vacante",
       "scheduleInterview": "Agendar entrevista",

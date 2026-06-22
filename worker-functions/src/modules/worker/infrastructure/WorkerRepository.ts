@@ -5,6 +5,7 @@ import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -34,6 +35,10 @@ export class WorkerRepository implements IWorkerRepository {
     try {
       const consentAt = data.lgpdOptIn ? new Date() : null;
       const whatsappPhoneEnc = await this.encryptionService.encrypt(data.whatsappPhone || null);
+      // Normaliza o phone na borda do create para garantir unicidade semântica.
+      // normalizePhoneAR retorna '' para entrada vazia — converte para null.
+      const rawPhone = data.phone || null;
+      const normalizedPhone = rawPhone ? (normalizePhoneAR(rawPhone) || rawPhone) : null;
       const query = `
         INSERT INTO workers (auth_uid, email, phone, whatsapp_phone_encrypted, lgpd_consent_at, terms_accepted_at, privacy_accepted_at, country, timezone, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'INCOMPLETE_REGISTER')
@@ -49,7 +54,7 @@ export class WorkerRepository implements IWorkerRepository {
       const values = [
         data.authUid,
         data.email,
-        data.phone || null,
+        normalizedPhone,
         whatsappPhoneEnc,
         consentAt,
         consentAt,
@@ -238,5 +243,18 @@ export class WorkerRepository implements IWorkerRepository {
     data: { authUid: string; email: string; consentAt?: Date },
   ): Promise<Result<Worker>> {
     return _updateImportedWorkerData(this.pool, this.encryptionService, workerId, data);
+  }
+
+  /**
+   * Marks/unmarks a worker as a test account. Returns the resulting flag,
+   * or null if no worker with that id exists (excluding merged-away rows).
+   */
+  async updateTestFlag(workerId: string, isTest: boolean): Promise<boolean | null> {
+    const result = await this.pool.query<{ is_test: boolean }>(
+      'UPDATE workers SET is_test = $2, updated_at = NOW() WHERE id = $1 AND merged_into_id IS NULL RETURNING is_test',
+      [workerId, isTest],
+    );
+    if (result.rows.length === 0) return null;
+    return result.rows[0].is_test;
   }
 }

@@ -109,6 +109,7 @@ export interface WorkerDetail {
 
   isMatchable: boolean;
   isActive: boolean;
+  isTest: boolean;
 
   documents: WorkerDocument | null;
   serviceAreas: WorkerServiceArea[];

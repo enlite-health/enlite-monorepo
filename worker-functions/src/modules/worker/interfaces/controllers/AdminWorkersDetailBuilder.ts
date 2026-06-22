@@ -174,6 +174,7 @@ export async function buildWorkerDetailResponse(
     weightKg: weightKg ?? null, heightCm: heightCm ?? null,
     hobbies: w.hobbies ?? [], diagnosticPreferences: w.diagnostic_preferences ?? [],
     linkedinUrl: linkedinUrl ?? null, isMatchable, isActive,
+    isTest: w.is_test ?? false,
     documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
     serviceAreas: serviceAreasResult.rows.map((sa: any) => ({
       id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,

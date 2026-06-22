@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageCircle, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { MatchScoreBar } from './MatchScoreBar';
 import { Text } from '@presentation/components/atoms/Text';
 import { TableRow, TableCell } from '@presentation/components/atoms/Table';
 import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge';
+import { WorkerProfileModal } from '@presentation/components/features/admin/WorkerDetail/WorkerProfileModal';
 import type { SavedCandidate } from '../../../../../types/match';
 
 interface MatchCandidateRowProps {
@@ -40,6 +41,7 @@ export function MatchCandidateRow({
   const navigate = useNavigate();
   const location = useLocation();
   const [expanded, setExpanded] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   const handleWorkerClick = (): void => {
     if (!candidate.workerId) return;
@@ -134,8 +136,19 @@ export function MatchCandidateRow({
           <MatchScoreBar score={score} />
         </TableCell>
 
-        <TableCell unwrapped className="w-16">
+        <TableCell unwrapped className="w-20">
           <div className="flex items-center gap-1">
+            {candidate.workerId && (
+              <button
+                onClick={() => setShowProfile(true)}
+                title={t('admin.match.viewProfileTooltip')}
+                aria-label={t('admin.match.viewProfileTooltip')}
+                data-testid="match-view-profile"
+                className="p-1.5 rounded-lg text-gray-800 hover:text-primary hover:bg-primary/10 transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => onSendMessage(candidate)}
               title={t('admin.match.sendWhatsappTooltip')}
@@ -168,6 +181,10 @@ export function MatchCandidateRow({
             </Text>
           </TableCell>
         </TableRow>
+      )}
+
+      {showProfile && candidate.workerId && (
+        <WorkerProfileModal workerId={candidate.workerId} onClose={() => setShowProfile(false)} />
       )}
     </>
   );

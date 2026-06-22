@@ -51,6 +51,7 @@ const MOCK_WORKER: WorkerDetail = {
 
   isMatchable: true,
   isActive: true,
+  isTest: false,
 
   documents: null,
   serviceAreas: [],

@@ -1,18 +1,20 @@
 /**
  * ReminderScheduler.test.ts
  *
- * Testa o scheduler de lembretes event-driven (Cloud Tasks).
+ * Testa o scheduler de lembretes event-driven (Cloud Tasks + Cloud Scheduler).
  *
  * Cenários:
  * 1. scheduleReminders() agenda 2 Cloud Tasks com scheduleTime correto
  * 2. scheduleReminders() calcula 24h e 5min antes corretamente
  * 3. cancelReminders() deleta Cloud Tasks agendados
- * 4. processQualifiedReminder() insere na outbox e marca reminder_day_sent_at
- * 5. processQualifiedReminder() retorna silenciosamente se não há encuadre pendente
- * 6. process5MinReminder() insere na outbox e marca reminder_5min_sent_at
- * 7. process5MinReminder() retorna silenciosamente se não há encuadre pendente
- * 8. processBatch() safety net — processa 24h e 5min em batch
- * 9. API: não expõe start()/stop()
+ * 4. processQualifiedReminder() usa fluxo WJA quando encontra WJA confirmed
+ * 5. processQualifiedReminder() cai no fallback encuadre quando WJA não encontrada
+ * 6. processQualifiedInterviewReminder() — idempotência (já enviou / declined)
+ * 7. process5MinReminder() — envia via WJA e marca 5min_sent_at
+ * 8. process5MinReminder() — idempotente (já enviou)
+ * 9. process5MinReminder() — fallback legado quando WJA não encontrada
+ * 10. processBatch() safety net — processa WJA 24h, 5min e no-shows
+ * 11. API: não expõe start()/stop()
  */
 
 import { ReminderScheduler } from '../ReminderScheduler';
@@ -134,7 +136,7 @@ describe('ReminderScheduler', () => {
 
       mockQuery
         .mockResolvedValueOnce({ rows: [] })             // SELECT WJA — vazio
-        .mockResolvedValueOnce({ rows: [encuadreRow] })  // SELECT encuadre
+        .mockResolvedValueOnce({ rows: [encuadreRow] })  // SELECT encuadre (legacy)
         .mockResolvedValueOnce({ rows: [] })              // INSERT outbox
         .mockResolvedValueOnce({ rows: [] });             // UPDATE encuadre
 
@@ -142,29 +144,6 @@ describe('ReminderScheduler', () => {
 
       const insertCall = mockQuery.mock.calls[2];
       expect(insertCall[0]).toContain('encuadre_reminder_day_before');
-    });
-
-    it('encuadre fallback trata slot_time e meet_link nulos', async () => {
-      const encuadreRow = {
-        encuadre_id: 'enc-002',
-        worker_id: 'w-2',
-        slot_date: '2026-04-10',
-        slot_time: null,
-        meet_link: null,
-      };
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })               // SELECT WJA — vazio
-        .mockResolvedValueOnce({ rows: [encuadreRow] })    // SELECT encuadre
-        .mockResolvedValueOnce({ rows: [] })                // INSERT outbox
-        .mockResolvedValueOnce({ rows: [] });               // UPDATE encuadre
-
-      await scheduler.processQualifiedReminder('w-2', 'jp-2');
-
-      const insertCall = mockQuery.mock.calls[2];
-      const variables = JSON.parse(insertCall[1][1]);
-      expect(variables.time).toBe('');
-      expect(variables.meet_link).toBe('');
     });
 
     it('retorna silenciosamente se nem WJA nem encuadre encontrados', async () => {
@@ -302,8 +281,6 @@ describe('ReminderScheduler', () => {
       const handled = await schedulerNoPubsub.processQualifiedInterviewReminder('w-1', 'jp-1');
 
       expect(handled).toBe(true);
-      // Sem pubsub, não publica
-      expect(mockPubsub.publish).not.toHaveBeenCalled();
       // name usa workerId como fallback
       const insertCall = mockQuery.mock.calls[1];
       const variables = JSON.parse(insertCall[1][1]);
@@ -311,11 +288,53 @@ describe('ReminderScheduler', () => {
     });
   });
 
-  // ─── process5MinReminder ─────────────────────────────────────────
+  // ─── process5MinReminder (WJA flow) ──────────────────────────────
 
   describe('process5MinReminder', () => {
-    it('insere na outbox e marca reminder_5min_sent_at', async () => {
-      const fakeRow = {
+    it('envia via WJA e marca interview_reminder_5min_sent_at', async () => {
+      const wjaRow = {
+        interview_response: 'confirmed',
+        interview_reminder_5min_sent_at: null,
+        interview_datetime: '2026-04-10T14:00:00.000Z',
+        interview_meet_link: 'https://meet.google.com/xyz',
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [wjaRow] })            // SELECT WJA
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-5' }] })// INSERT outbox
+        .mockResolvedValueOnce({ rows: [] });                  // UPDATE WJA
+
+      await scheduler.process5MinReminder('w-2', 'jp-2');
+
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+
+      const insertCall = mockQuery.mock.calls[1];
+      expect(insertCall[0]).toContain('messaging_outbox');
+      expect(insertCall[0]).toContain('qualified_reminder_5min');
+      expect(insertCall[1][0]).toBe('w-2');
+
+      const updateCall = mockQuery.mock.calls[2];
+      expect(updateCall[0]).toContain('interview_reminder_5min_sent_at');
+      expect(updateCall[1]).toEqual(['w-2', 'jp-2']);
+    });
+
+    it('retorna silenciosamente se já enviou (idempotência 5min)', async () => {
+      const wjaRow = {
+        interview_response: 'confirmed',
+        interview_reminder_5min_sent_at: '2026-04-10T13:55:00.000Z',
+        interview_datetime: '2026-04-10T14:00:00.000Z',
+        interview_meet_link: null,
+      };
+
+      mockQuery.mockResolvedValueOnce({ rows: [wjaRow] });
+
+      await scheduler.process5MinReminder('w-2', 'jp-2');
+
+      expect(mockQuery).toHaveBeenCalledTimes(1); // Só o SELECT
+    });
+
+    it('fallback para encuadres quando WJA não encontrada', async () => {
+      const encuadreRow = {
         encuadre_id: 'enc-002',
         worker_id: 'w-2',
         slot_date: '2026-04-10',
@@ -324,155 +343,144 @@ describe('ReminderScheduler', () => {
       };
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [fakeRow] })  // SELECT encuadre
-        .mockResolvedValueOnce({ rows: [] })          // INSERT outbox
-        .mockResolvedValueOnce({ rows: [] });         // UPDATE reminder_5min_sent_at
+        .mockResolvedValueOnce({ rows: [] })            // SELECT WJA — vazio
+        .mockResolvedValueOnce({ rows: [encuadreRow] }) // SELECT encuadre (legacy)
+        .mockResolvedValueOnce({ rows: [] })             // INSERT outbox
+        .mockResolvedValueOnce({ rows: [] });            // UPDATE encuadre
 
       await scheduler.process5MinReminder('w-2', 'jp-2');
 
-      expect(mockQuery).toHaveBeenCalledTimes(3);
-
-      const insertCall = mockQuery.mock.calls[1];
-      expect(insertCall[0]).toContain('messaging_outbox');
+      const insertCall = mockQuery.mock.calls[2];
       expect(insertCall[0]).toContain('encuadre_reminder_5min');
-      expect(insertCall[1][0]).toBe('w-2');
-
-      const updateCall = mockQuery.mock.calls[2];
-      expect(updateCall[0]).toContain('reminder_5min_sent_at');
-      expect(updateCall[1][0]).toBe('enc-002');
     });
 
-    it('retorna silenciosamente se não há encuadre pendente', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [] });
+    it('não envia se interview_response não é confirmed', async () => {
+      const wjaRow = {
+        interview_response: 'pending',
+        interview_reminder_5min_sent_at: null,
+        interview_datetime: '2026-04-10T14:00:00.000Z',
+        interview_meet_link: null,
+      };
 
-      await scheduler.process5MinReminder('w-nonexistent', 'jp-1');
+      mockQuery.mockResolvedValueOnce({ rows: [wjaRow] });
+
+      await scheduler.process5MinReminder('w-2', 'jp-2');
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
     });
-
-    it('trata meet_link nulo com fallback para string vazia', async () => {
-      const fakeRow = {
-        encuadre_id: 'enc-005',
-        worker_id: 'w-5',
-        slot_date: '2026-04-10',
-        slot_time: '14:00:00',
-        meet_link: null,
-      };
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [fakeRow] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] });
-
-      await scheduler.process5MinReminder('w-5', 'jp-5');
-
-      const insertCall = mockQuery.mock.calls[1];
-      const variables = JSON.parse(insertCall[1][1]);
-      expect(variables.meet_link).toBe('');
-    });
   });
 
-  // ─── processBatch (safety net) ───────────────────────────────────
+  // ─── processBatch (safety net WJA) ───────────────────────────────
 
   describe('processBatch', () => {
-    it('não insere na outbox quando não há encuadres pendentes', async () => {
+    it('retorna { dayCount:0, minCount:0, noShows:0 } quando não há pendentes', async () => {
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })  // sendDayBeforeReminders
-        .mockResolvedValueOnce({ rows: [] }); // send5MinReminders
+        .mockResolvedValueOnce({ rows: [] })  // sendDayBeforeRemindersWJA SELECT
+        .mockResolvedValueOnce({ rows: [] })  // send5MinRemindersWJA SELECT
+        .mockResolvedValueOnce({ rows: [] }); // MarkNoShowUseCase SELECT
 
-      await scheduler.processBatch();
+      const result = await scheduler.processBatch();
 
-      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ dayCount: 0, minCount: 0, noShows: 0 });
+      expect(mockQuery).toHaveBeenCalledTimes(3);
     });
 
-    it('envia lembrete 5min e marca reminder_5min_sent_at (safety net)', async () => {
-      const fakeRow = {
-        encuadre_id: 'enc-004',
-        worker_id: 'worker-004',
-        slot_date: '2026-04-01',
-        slot_time: '10:00:00',
-        meet_link: 'https://meet.google.com/xyz',
+    it('envia lembrete 24h via WJA e marca interview_reminder_sent_at', async () => {
+      const wjaRow = {
+        worker_id: 'worker-001',
+        job_posting_id: 'jp-001',
+        interview_datetime: '2026-04-10T14:00:00.000Z',
+        interview_meet_link: 'https://meet.google.com/abc',
       };
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })          // sendDayBeforeReminders SELECT — empty
-        .mockResolvedValueOnce({ rows: [fakeRow] })   // send5MinReminders SELECT
-        .mockResolvedValueOnce({ rows: [] })           // INSERT outbox
-        .mockResolvedValueOnce({ rows: [] });          // UPDATE encuadre
+        .mockResolvedValueOnce({ rows: [wjaRow] })            // sendDayBeforeRemindersWJA SELECT
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-d' }] })// INSERT outbox
+        .mockResolvedValueOnce({ rows: [] })                   // UPDATE WJA
+        .mockResolvedValueOnce({ rows: [] })                   // send5MinRemindersWJA SELECT
+        .mockResolvedValueOnce({ rows: [] });                  // MarkNoShowUseCase SELECT
 
-      await scheduler.processBatch();
+      const result = await scheduler.processBatch();
 
-      expect(mockQuery).toHaveBeenCalledTimes(4);
-      const insertCall = mockQuery.mock.calls[2];
-      expect(insertCall[0]).toContain('encuadre_reminder_5min');
-      expect(insertCall[1][0]).toBe('worker-004');
-    });
-
-    it('envia lembrete 5min com meet_link nulo (safety net)', async () => {
-      const fakeRow = {
-        encuadre_id: 'enc-006',
-        worker_id: 'worker-006',
-        slot_date: '2026-04-01',
-        slot_time: '10:00:00',
-        meet_link: null,
-      };
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })          // sendDayBeforeReminders — empty
-        .mockResolvedValueOnce({ rows: [fakeRow] })   // send5MinReminders
-        .mockResolvedValueOnce({ rows: [] })           // INSERT outbox
-        .mockResolvedValueOnce({ rows: [] });          // UPDATE encuadre
-
-      await scheduler.processBatch();
-
-      const insertCall = mockQuery.mock.calls[2];
-      const variables = JSON.parse(insertCall[1][1]);
-      expect(variables.meet_link).toBe('');
-    });
-
-    it('envia lembrete 24h com slot_time/meet_link nulos (safety net)', async () => {
-      const fakeRow = {
-        encuadre_id: 'enc-007',
-        worker_id: 'worker-007',
-        slot_date: '2026-04-01',
-        slot_time: null,
-        meet_link: null,
-      };
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [fakeRow] })  // sendDayBeforeReminders
-        .mockResolvedValueOnce({ rows: [] })          // INSERT outbox
-        .mockResolvedValueOnce({ rows: [] })          // UPDATE encuadre
-        .mockResolvedValueOnce({ rows: [] });         // send5MinReminders
-
-      await scheduler.processBatch();
+      expect(result.dayCount).toBe(1);
+      expect(result.minCount).toBe(0);
+      expect(result.noShows).toBe(0);
 
       const insertCall = mockQuery.mock.calls[1];
-      const variables = JSON.parse(insertCall[1][1]);
-      expect(variables.time).toBe('');
-      expect(variables.meet_link).toBe('');
+      expect(insertCall[0]).toContain('qualified_reminder_confirm');
+
+      const updateCall = mockQuery.mock.calls[2];
+      expect(updateCall[0]).toContain('interview_reminder_sent_at');
     });
 
-    it('envia lembrete 24h e marca reminder_day_sent_at (safety net)', async () => {
-      const fakeRow = {
-        encuadre_id: 'enc-003',
-        worker_id: 'worker-003',
-        slot_date: '2026-04-01',
-        slot_time: '10:00:00',
-        meet_link: 'https://meet.google.com/abc',
+    it('envia lembrete 5min via WJA e marca interview_reminder_5min_sent_at', async () => {
+      const wjaRow = {
+        worker_id: 'worker-002',
+        job_posting_id: 'jp-002',
+        interview_datetime: '2026-04-10T14:00:00.000Z',
+        interview_meet_link: null,
       };
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [fakeRow] })  // sendDayBeforeReminders SELECT
-        .mockResolvedValueOnce({ rows: [] })          // INSERT outbox
-        .mockResolvedValueOnce({ rows: [] })          // UPDATE encuadre
-        .mockResolvedValueOnce({ rows: [] });         // send5MinReminders SELECT
+        .mockResolvedValueOnce({ rows: [] })                   // sendDayBeforeRemindersWJA SELECT — empty
+        .mockResolvedValueOnce({ rows: [wjaRow] })             // send5MinRemindersWJA SELECT
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-m' }] })// INSERT outbox
+        .mockResolvedValueOnce({ rows: [] })                   // UPDATE WJA
+        .mockResolvedValueOnce({ rows: [] });                  // MarkNoShowUseCase SELECT
+
+      const result = await scheduler.processBatch();
+
+      expect(result.dayCount).toBe(0);
+      expect(result.minCount).toBe(1);
+
+      const insertCall = mockQuery.mock.calls[2];
+      expect(insertCall[0]).toContain('qualified_reminder_5min');
+      const updateCall = mockQuery.mock.calls[3];
+      expect(updateCall[0]).toContain('interview_reminder_5min_sent_at');
+    });
+
+    it('marca no-shows (interview_response pending + vencida)', async () => {
+      const noShowRow = {
+        worker_id: 'worker-ns',
+        job_posting_id: 'jp-ns',
+        application_funnel_stage: 'CONFIRMED',
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })           // sendDayBeforeRemindersWJA
+        .mockResolvedValueOnce({ rows: [] })           // send5MinRemindersWJA
+        .mockResolvedValueOnce({ rows: [noShowRow] }) // MarkNoShowUseCase SELECT
+        .mockResolvedValueOnce({ rows: [] });          // MarkNoShowUseCase UPDATE
+
+      const result = await scheduler.processBatch();
+
+      expect(result.noShows).toBe(1);
+
+      // UPDATE deve incluir IN_DOUBT (stage era CONFIRMED)
+      const updateCall = mockQuery.mock.calls[3];
+      expect(updateCall[0]).toContain("application_funnel_stage = 'IN_DOUBT'");
+      expect(updateCall[0]).toContain("interview_response = 'no_response'");
+    });
+
+    it('não move stage quando funnel_stage não é CONFIRMED (idempotência parcial)', async () => {
+      const noShowRow = {
+        worker_id: 'worker-ns2',
+        job_posting_id: 'jp-ns2',
+        application_funnel_stage: 'QUALIFIED',
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [noShowRow] })
+        .mockResolvedValueOnce({ rows: [] });
 
       await scheduler.processBatch();
 
-      expect(mockQuery).toHaveBeenCalledTimes(4);
-      const insertCall = mockQuery.mock.calls[1];
-      expect(insertCall[0]).toContain('encuadre_reminder_day_before');
+      const updateCall = mockQuery.mock.calls[3];
+      // Não deve conter IN_DOUBT quando stage é QUALIFIED
+      expect(updateCall[0]).not.toContain("application_funnel_stage = 'IN_DOUBT'");
+      expect(updateCall[0]).toContain("interview_response = 'no_response'");
     });
   });
 

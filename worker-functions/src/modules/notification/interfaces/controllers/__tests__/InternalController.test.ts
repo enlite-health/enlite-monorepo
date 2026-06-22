@@ -63,7 +63,7 @@ describe('InternalController', () => {
       process5MinReminder: jest.fn().mockResolvedValue(undefined),
       scheduleReminders: jest.fn().mockResolvedValue({ taskNames: [] }),
       cancelReminders: jest.fn().mockResolvedValue(undefined),
-      processBatch: jest.fn().mockResolvedValue(undefined),
+      processBatch: jest.fn().mockResolvedValue({ dayCount: 0, minCount: 0, noShows: 0 }),
     } as unknown as jest.Mocked<ReminderScheduler>;
 
     bulkDispatchScheduler = {
@@ -154,6 +154,28 @@ describe('InternalController', () => {
       const res = mockRes();
 
       await controller.processOutbox(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── sweepReminders ───────────────────────────────────────────────
+
+  describe('sweepReminders', () => {
+    it('chama processBatch e retorna 200 com counts', async () => {
+      reminderScheduler.processBatch.mockResolvedValueOnce({ dayCount: 2, minCount: 1, noShows: 3 });
+      const res = mockRes();
+      await controller.sweepReminders(mockReq(), res);
+
+      expect(reminderScheduler.processBatch).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ status: 'ok', dayCount: 2, minCount: 1, noShows: 3 });
+    });
+
+    it('returns 500 on error', async () => {
+      reminderScheduler.processBatch.mockRejectedValue(new Error('sweep failed'));
+      const res = mockRes();
+      await controller.sweepReminders(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });

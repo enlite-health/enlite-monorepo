@@ -90,6 +90,11 @@ vi.mock('@presentation/components/organisms/AdditionalDocumentsSection', () => (
   AdditionalDocumentsSection: () => <div data-testid="additional-documents-section" />,
 }));
 
+// Admin-only toggle calls useAdminAuth (Firebase) — out of scope here, tested separately.
+vi.mock('@presentation/components/features/admin/WorkerDetail/WorkerTestAccountToggle', () => ({
+  WorkerTestAccountToggle: () => <div data-testid="worker-test-account-toggle" />,
+}));
+
 // ── DetailSkeleton mock ───────────────────────────────────────────────────────
 vi.mock('@presentation/components/ui/skeletons', () => ({
   DetailSkeleton: () => <div data-testid="detail-skeleton" />,
@@ -141,6 +146,7 @@ const MOCK_WORKER: WorkerDetail = {
 
   isMatchable: true,
   isActive: true,
+  isTest: false,
 
   documents: null,
   serviceAreas: [],

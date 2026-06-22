@@ -32,7 +32,7 @@ import {
   createMockAuthEndpoints,
 } from '@modules/identity';
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
-import { AdminWorkersController } from '@modules/worker';
+import { AdminWorkersController, AdminWorkerTestFlagController } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
@@ -63,6 +63,8 @@ import { RecruitmentHealthController } from '@modules/notification/interfaces/co
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
 import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
+import { AdminDedupController } from './interfaces/controllers/dedup/AdminDedupController';
+import { createDedupRoutes } from './interfaces/routes/dedupRoutes';
 
 const app = express();
 
@@ -125,6 +127,7 @@ const funnelTableController = new WJAFunnelTableController();
 const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();
+const adminWorkerTestFlagController = new AdminWorkerTestFlagController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
 const adminTagCatalogController = new AdminTagCatalogController();
 const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
@@ -138,6 +141,7 @@ const publicJobsController = new PublicJobsController();
 const workerContextController = new WorkerContextController();
 
 const claimController = createClaimController();
+const adminDedupController = new AdminDedupController();
 
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
@@ -306,6 +310,8 @@ app.get('/api/admin/workers/export', adminOnly, (req: Request, res: Response) =>
 // timeline MUST be registered before /:id to avoid param capture
 app.get('/api/admin/workers/:id/timeline', staffOnly, (req: Request, res: Response) => workerTimelineController.getTimeline(req, res));
 app.get('/api/admin/workers/:id', staffOnly, (req: Request, res: Response) => adminWorkersController.getWorkerById(req, res));
+// test-flag é admin-only (mais estrito que staff) — marca worker como conta de teste
+app.patch('/api/admin/workers/:id/test-flag', adminOnly, (req: Request, res: Response) => adminWorkerTestFlagController.updateTestFlag(req, res));
 app.get('/api/admin/workers', staffOnly, (req: Request, res: Response) => adminWorkersController.listWorkers(req, res));
 
 // ========== Worker Tags ==========
@@ -320,6 +326,9 @@ app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsContr
 
 // ========== Admin Patients ==========
 app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
+
+// ========== Admin Dedup (Centro de Duplicados) ==========
+app.use('/api/admin/dedup', createDedupRoutes(adminDedupController, authMiddleware));
 
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware));

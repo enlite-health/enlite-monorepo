@@ -1635,3 +1635,22 @@ O workflow `backend-mcp-stg.yml` nunca deployou com sucesso. Diagnóstico em cam
 **Critério para fechar:** mcp-stg deploya `worker-functions-mcp` em enlite-stg via `gh workflow run backend-mcp-stg.yml --ref stage` (após backend-stg buildar a imagem do mesmo SHA). Investigar por que `worker-functions:<sha>` não aparece no GAR apesar do backend-stg success.
 
 **Gatilho:** quando o triage-service precisar do MCP em staging. **Ver:** `docs/HANDOFF_2026-06-16.md §6`.
+
+---
+
+### TD-054 — Não existe atom `Modal` compartilhado no design system (frontend)
+
+- **Status:** aberto — **não-bloqueante**.
+- **Descoberto em:** 2026-06-20, ao implementar o `WorkerProfileModal` (task 02 — modal de perfil do prestador no match).
+- **Dono provável:** frontend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+O frontend não tem um componente `Modal`/`Dialog` em `@/presentation/components/atoms`. Cada overlay é hand-rolled: `CreateAdminUserModal`, `DeleteAdminUserModal`, `InvitationFallbackModal` e agora `WorkerProfileModal` repetem a estrutura de backdrop (`fixed inset-0 bg-black/40 ... z-50`), e cada um decide se fecha por ESC/backdrop/X de forma inconsistente (ex.: `CreateAdminUserModal` não fecha por ESC nem backdrop; `WorkerProfileModal` fecha pelos três).
+
+**Risco:** divergência de comportamento (a11y: `role="dialog"`, `aria-modal`, focus trap, scroll lock), duplicação de markup e regressões visuais não centralizadas.
+
+**Critério para fechar:** extrair um atom `Modal` (backdrop + close por X/backdrop/ESC + focus trap + scroll lock + `role="dialog"`/`aria-modal`) e migrar os modais existentes (`WorkerProfileModal`, `CreateAdminUserModal`, `DeleteAdminUserModal`, `InvitationFallbackModal`) para consumi-lo.
+
+**Gatilho:** próximo modal novo ou quando houver bug de a11y/foco em algum overlay existente.
