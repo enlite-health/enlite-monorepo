@@ -32,6 +32,7 @@ jest.mock('../../../../application/dedup/ExecuteAdminMergeUseCase');
 jest.mock('../../../../application/dedup/DismissGroupUseCase');
 jest.mock('../../../../application/dedup/UndoMergeUseCase');
 jest.mock('../../../../application/dedup/ListMergeHistoryUseCase');
+jest.mock('../../../../application/dedup/ListImportedDedupGroupsUseCase');
 
 import type { Request, Response } from 'express';
 import { AdminDedupController } from '../AdminDedupController';
@@ -41,6 +42,7 @@ import { ExecuteAdminMergeUseCase }   from '../../../../application/dedup/Execut
 import { DismissGroupUseCase }        from '../../../../application/dedup/DismissGroupUseCase';
 import { UndoMergeUseCase }           from '../../../../application/dedup/UndoMergeUseCase';
 import { ListMergeHistoryUseCase }    from '../../../../application/dedup/ListMergeHistoryUseCase';
+import { ListImportedDedupGroupsUseCase } from '../../../../application/dedup/ListImportedDedupGroupsUseCase';
 
 // ── Helpers de mock ───────────────────────────────────────────────────────────
 
@@ -431,6 +433,89 @@ describe('AdminDedupController.listHistory', () => {
     await controller.listHistory(req as Request, res as unknown as Response);
 
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+});
+
+// ── listImportedGroups ────────────────────────────────────────────────────────
+
+describe('AdminDedupController.listImportedGroups', () => {
+  const importedGroup = {
+    name_trgm_bidx_key: 'hex_key_abc',
+    accounts: [],
+    match_type: 'name' as const,
+    confidence: 'name_fuzzy' as const,
+    survivor_suggested_id: 'eeeeeeee-0000-0000-0000-000000000001',
+    survivor_reason: 'real_account_absorbs_imported',
+    has_real: true,
+  };
+
+  it('200 com lista de grupos importados (sem query)', async () => {
+    (ListImportedDedupGroupsUseCase as jest.MockedClass<typeof ListImportedDedupGroupsUseCase>)
+      .prototype.execute.mockResolvedValueOnce([importedGroup]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+
+    await controller.listImportedGroups(req as Request, res as unknown as Response);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [importedGroup], total: 1 });
+  });
+
+  it('200 com ?onlyWithReal=true passado ao use case', async () => {
+    (ListImportedDedupGroupsUseCase as jest.MockedClass<typeof ListImportedDedupGroupsUseCase>)
+      .prototype.execute.mockResolvedValueOnce([importedGroup]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: { onlyWithReal: 'true' } });
+    const res = makeRes();
+
+    await controller.listImportedGroups(req as Request, res as unknown as Response);
+
+    const callArgs = (ListImportedDedupGroupsUseCase.prototype.execute as jest.Mock).mock.calls[0][0];
+    expect(callArgs.onlyWithReal).toBe(true);
+  });
+
+  it('200 com ?onlyWithReal=false passado ao use case', async () => {
+    (ListImportedDedupGroupsUseCase as jest.MockedClass<typeof ListImportedDedupGroupsUseCase>)
+      .prototype.execute.mockResolvedValueOnce([]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: { onlyWithReal: 'false' } });
+    const res = makeRes();
+
+    await controller.listImportedGroups(req as Request, res as unknown as Response);
+
+    const callArgs = (ListImportedDedupGroupsUseCase.prototype.execute as jest.Mock).mock.calls[0][0];
+    expect(callArgs.onlyWithReal).toBe(false);
+  });
+
+  it('200 com query ausente → onlyWithReal=false por default', async () => {
+    (ListImportedDedupGroupsUseCase as jest.MockedClass<typeof ListImportedDedupGroupsUseCase>)
+      .prototype.execute.mockResolvedValueOnce([]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+
+    await controller.listImportedGroups(req as Request, res as unknown as Response);
+
+    const callArgs = (ListImportedDedupGroupsUseCase.prototype.execute as jest.Mock).mock.calls[0][0];
+    expect(callArgs.onlyWithReal).toBe(false);
+  });
+
+  it('500 quando use case lança erro', async () => {
+    (ListImportedDedupGroupsUseCase as jest.MockedClass<typeof ListImportedDedupGroupsUseCase>)
+      .prototype.execute.mockRejectedValueOnce(new Error('db failure'));
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+
+    await controller.listImportedGroups(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Erro interno' });
   });
 });
 

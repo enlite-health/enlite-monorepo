@@ -11,6 +11,7 @@
  *   POST /api/admin/dedup/dismiss
  *   POST /api/admin/dedup/merges/:auditId/undo
  *   GET  /api/admin/dedup/history
+ *   GET  /api/admin/dedup/imported-groups
  */
 
 import type { Request, Response } from 'express';
@@ -24,6 +25,7 @@ import { ExecuteAdminMergeUseCase } from '../../../application/dedup/ExecuteAdmi
 import { DismissGroupUseCase } from '../../../application/dedup/DismissGroupUseCase';
 import { UndoMergeUseCase } from '../../../application/dedup/UndoMergeUseCase';
 import { ListMergeHistoryUseCase } from '../../../application/dedup/ListMergeHistoryUseCase';
+import { ListImportedDedupGroupsUseCase } from '../../../application/dedup/ListImportedDedupGroupsUseCase';
 
 const log = logger.child({ source: 'AdminDedupController' });
 
@@ -43,6 +45,14 @@ const DismissBodySchema = z.object({
 const HistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
   offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
+const ImportedGroupsQuerySchema = z.object({
+  onlyWithReal: z
+    .string()
+    .optional()
+    .transform(v => v === 'true')
+    .pipe(z.boolean()),
 });
 
 // ── Controller ─────────────────────────────────────────────────────────────
@@ -171,6 +181,23 @@ export class AdminDedupController {
       res.json({ success: true, data: entries, total: entries.length });
     } catch (err) {
       this.handleError(err, res, 'listHistory');
+    }
+  }
+
+  // GET /api/admin/dedup/imported-groups
+  async listImportedGroups(req: Request, res: Response): Promise<void> {
+    const parsed = ImportedGroupsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.flatten() });
+      return;
+    }
+
+    try {
+      const useCase = new ListImportedDedupGroupsUseCase(this.pool);
+      const groups = await useCase.execute({ onlyWithReal: parsed.data.onlyWithReal });
+      res.json({ success: true, data: groups, total: groups.length });
+    } catch (err) {
+      this.handleError(err, res, 'listImportedGroups');
     }
   }
 

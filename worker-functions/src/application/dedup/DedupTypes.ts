@@ -23,6 +23,8 @@ export interface DedupWorkerAccount {
   login_real: boolean;
   /** auth_uid — nunca exibe valor; usado para tier classification */
   auth_uid_prefix: string;
+  /** true = email termina em @enlite.import (worker importado, sem conta real) */
+  is_imported: boolean;
 }
 
 // ── Grupo de duplicados ────────────────────────────────────────────────────
@@ -89,6 +91,35 @@ export interface AdminMergeResult {
   audit_ids: number[];
   survivor_id: string;
   absorbed_ids: string[];
+}
+
+// ── Grupo de importados duplicados por nome ────────────────────────────────
+
+/**
+ * Conta dentro de um grupo de dedup por nome (importados).
+ * Extende DedupWorkerAccount com is_imported já presente.
+ */
+export type ImportedDedupWorkerAccount = DedupWorkerAccount;
+
+/**
+ * Grupo de workers com mesmo name_trgm_bidx (nome fuzzy idêntico),
+ * onde ao menos 1 membro é @enlite.import e merged_into_id IS NULL.
+ */
+export interface ImportedDedupGroup {
+  /** BYTEA[] serializado como hex string — chave opaca de agrupamento */
+  name_trgm_bidx_key: string;
+  accounts: ImportedDedupWorkerAccount[];
+  match_type: 'name';
+  confidence: 'name_fuzzy';
+  survivor_suggested_id: string | null;
+  survivor_reason: string;
+  /** true = há ao menos 1 conta real (não-import) no grupo */
+  has_real: boolean;
+}
+
+export interface ListImportedDedupGroupsParams {
+  /** Se true, retorna só grupos com ao menos 1 conta real (não-import) */
+  onlyWithReal?: boolean;
 }
 
 // ── Histórico de merges ────────────────────────────────────────────────────

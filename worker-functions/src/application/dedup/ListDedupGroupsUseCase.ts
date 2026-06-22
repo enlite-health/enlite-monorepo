@@ -116,6 +116,7 @@ export class ListDedupGroupsUseCase {
       encuadres_count: w.encuadres_count,
       login_real: !isSyntheticUid(w.auth_uid) && !w.email.toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
       auth_uid_prefix: extractPrefix(w.auth_uid),
+      is_imported: w.email.toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
     }));
 
     // Determina survivor sugerido

@@ -99,6 +99,7 @@ export class GetDedupGroupDetailUseCase {
       login_real: !isSyntheticUid(String(w.auth_uid ?? '')) &&
         !String(w.email).toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
       auth_uid_prefix: extractPrefix(String(w.auth_uid ?? '')),
+      is_imported: String(w.email).toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
       profession: w.profession != null ? String(w.profession) : null,
       country: w.country != null ? String(w.country) : null,
       has_encrypted_pii: ENCRYPTED_FIELDS_PRESENT(w),

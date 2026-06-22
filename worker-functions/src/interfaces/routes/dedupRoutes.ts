@@ -50,5 +50,10 @@ export function createDedupRoutes(
     controller.listHistory(req, res),
   );
 
+  // GET /api/admin/dedup/imported-groups
+  router.get('/imported-groups', adminOnly, (req: Request, res: Response) =>
+    controller.listImportedGroups(req, res),
+  );
+
   return router;
 }
