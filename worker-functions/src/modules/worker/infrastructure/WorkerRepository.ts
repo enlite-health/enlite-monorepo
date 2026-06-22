@@ -244,4 +244,17 @@ export class WorkerRepository implements IWorkerRepository {
   ): Promise<Result<Worker>> {
     return _updateImportedWorkerData(this.pool, this.encryptionService, workerId, data);
   }
+
+  /**
+   * Marks/unmarks a worker as a test account. Returns the resulting flag,
+   * or null if no worker with that id exists (excluding merged-away rows).
+   */
+  async updateTestFlag(workerId: string, isTest: boolean): Promise<boolean | null> {
+    const result = await this.pool.query<{ is_test: boolean }>(
+      'UPDATE workers SET is_test = $2, updated_at = NOW() WHERE id = $1 AND merged_into_id IS NULL RETURNING is_test',
+      [workerId, isTest],
+    );
+    if (result.rows.length === 0) return null;
+    return result.rows[0].is_test;
+  }
 }

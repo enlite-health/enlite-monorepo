@@ -1051,6 +1051,15 @@
         "removeTag": "Quitar etiqueta",
         "assignError": "Error al asignar etiqueta",
         "removeError": "Error al quitar etiqueta"
+      },
+      "testAccount": {
+        "label": "Cuenta de prueba",
+        "hint": "Marca este prestador como cuenta de prueba (QA, demos).",
+        "error": "Error al actualizar la cuenta de prueba"
+      },
+      "modal": {
+        "close": "Cerrar",
+        "title": "Perfil del prestador"
       }
     },
     "tags": {
@@ -2319,6 +2328,7 @@
       "alreadyApplied": "Ya postuló",
       "notified": "Notificado {{date}}",
       "sendWhatsappTooltip": "Enviar WhatsApp",
+      "viewProfileTooltip": "Ver perfil",
       "caseLabel": "Caso",
       "backToVacancy": "Vacante",
       "scheduleInterview": "Agendar entrevista",

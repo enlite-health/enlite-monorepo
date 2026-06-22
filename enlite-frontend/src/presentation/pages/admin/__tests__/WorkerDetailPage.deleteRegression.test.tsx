@@ -29,6 +29,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
 }));
 
+// Admin-only toggle calls useAdminAuth (Firebase) — out of scope for the
+// document-delete regression; tested separately in WorkerTestAccountToggle.test.tsx.
+vi.mock('@presentation/components/features/admin/WorkerDetail/WorkerTestAccountToggle', () => ({
+  WorkerTestAccountToggle: () => null,
+}));
+
 const WORKER_ID = 'worker-regression-delete';
 
 const DOCS_ALL_UPLOADED: WorkerDocument = {
@@ -77,7 +83,7 @@ const MOCK_WORKER: WorkerDetail = {
   sexualOrientation: null, race: null, religion: null,
   weightKg: null, heightCm: null, hobbies: [],
   diagnosticPreferences: [], linkedinUrl: null,
-  isMatchable: true, isActive: true,
+  isMatchable: true, isActive: true, isTest: false,
   documents: DOCS_ALL_UPLOADED,
   serviceAreas: [], location: null, encuadres: [], availability: [],
 };
