@@ -26,8 +26,9 @@
 
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, GitMerge } from 'lucide-react';
+import { X, GitMerge, Info } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { MergePhoneModeBody } from './MergePhoneModeBody';
 import { MergeDirectModeBody } from './MergeDirectModeBody';
 import type { ImportedDedupAccount, SurvivorReason } from '@domain/entities/DedupGroup';
@@ -100,6 +101,37 @@ export function MergeCompareModal(props: MergeCompareModalProps) {
           >
             <X size={24} />
           </button>
+        </div>
+
+        {/* Explanatory banner — tells the operator what this screen does and
+            what "Principal" means. Simple es-AR copy; shown in both modes. */}
+        <div
+          className="mx-6 mt-4 flex items-start gap-3 rounded-xl bg-blue-50 border border-blue-100 p-3 shrink-0"
+          data-testid="merge-intro-banner"
+        >
+          <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-0.5">
+            <Text size="sm" weight="semibold" color="inherit" as="p">
+              {t(
+                'admin.dedup.merge.introTitle',
+                'Estas cuentas parecen ser la misma persona.',
+              )}
+            </Text>
+            <Text size="xs" color="muted" as="p">
+              {t(
+                'admin.dedup.merge.introDesc',
+                'Elegí cuál es la cuenta PRINCIPAL (la que se queda). Las demás se unen a ella — no se pierde nada.',
+              )}
+            </Text>
+            {isDirectMode && (
+              <Text size="xs" color="inherit" as="p" className="text-amber-700 mt-0.5">
+                {t(
+                  'admin.dedup.merge.introNameMatch',
+                  'Coincidencia por NOMBRE: revisá que sean realmente la misma persona antes de unificar.',
+                )}
+              </Text>
+            )}
+          </div>
         </div>
 
         {/* Mode-specific body */}

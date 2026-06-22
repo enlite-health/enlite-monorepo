@@ -317,6 +317,14 @@ describe('GET /api/admin/dedup/groups/:phoneNormalized', () => {
     expect(res.data.data.phone_normalized).toBe(mergeGroup.phoneNorm);
     expect(Array.isArray(res.data.data.accounts)).toBe(true);
     expect(res.data.data.accounts.length).toBeGreaterThanOrEqual(2);
+
+    // Contrato consumido pelo frontend (PLURAL) — guarda contra a regressão do crash.
+    expect(Array.isArray(res.data.data.field_comparisons)).toBe(true);
+    expect(Array.isArray(res.data.data.reparent_preview)).toBe(true);
+    expect(typeof res.data.data.survivor_suggested).toBe('string');
+    expect(res.data.data.survivor_suggested.length).toBeGreaterThan(0);
+    // chave singular antiga não deve existir
+    expect(res.data.data.field_comparison).toBeUndefined();
   });
 
   it('contas têm tier classificado corretamente', async () => {

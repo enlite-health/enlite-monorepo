@@ -15,6 +15,7 @@ import type {
   FieldComparison,
   ReparentPreview,
 } from './DedupTypes';
+import { suggestSurvivorId } from './suggestSurvivorId';
 import { IMPORT_EMAIL_SUFFIX, SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
 import { discoverWorkerFkTables } from '../../infrastructure/services/WorkerPhoneMergeFkDiscovery';
 
@@ -111,22 +112,24 @@ export class GetDedupGroupDetailUseCase {
     const discoveredFks = await discoverWorkerFkTables(this.pool);
     const reparentPreview = await this.buildReparentPreview(workerIds, discoveredFks.map(f => f.table));
 
+    // Sobrevivente sugerido: tier logic. Fallback p/ 1ª conta (nunca undefined — evita
+    // crash silencioso no frontend que setava survivorId=undefined).
+    const survivorSuggested = suggestSurvivorId(accounts);
+
     return {
       phone_normalized: phoneNormalized,
       accounts,
+      survivor_suggested: survivorSuggested,
       reparent_preview: reparentPreview,
-      field_comparison: fieldComparisons,
+      field_comparisons: fieldComparisons,
     };
   }
 
   private async buildReparentPreview(
     workerIds: string[],
     fkTables: string[],
-  ): Promise<ReparentPreview> {
-    let wjaTotal = 0;
-    let docsTotal = 0;
-    let encuadresTotal = 0;
-    const otherTables: string[] = [];
+  ): Promise<ReparentPreview[]> {
+    const preview: ReparentPreview[] = [];
 
     for (const table of fkTables) {
       try {
@@ -136,17 +139,13 @@ export class GetDedupGroupDetailUseCase {
         );
         const cnt = Number(res.rows[0]?.cnt ?? 0);
         if (cnt === 0) continue;
-
-        if (table === 'worker_job_applications') wjaTotal += cnt;
-        else if (table === 'worker_documents') docsTotal += cnt;
-        else if (table === 'encuadres') encuadresTotal += cnt;
-        else otherTables.push(`${table}:${cnt}`);
+        preview.push({ entity: table, count: cnt });
       } catch {
         // Tabela pode não ter coluna worker_id — ignora
       }
     }
 
-    return { wja_total: wjaTotal, docs_total: docsTotal, encuadres_total: encuadresTotal, other_fk_tables: otherTables };
+    return preview;
   }
 }
 
@@ -156,28 +155,39 @@ function buildFieldComparisons(
 ): FieldComparison[] {
   if (rows.length < 2) return [];
 
-  const [first, ...rest] = rows;
   return fields.map(field => {
-    const firstVal = first[field];
-    const otherVals = rest.map(r => r[field]);
-    const allVals = [firstVal, ...otherVals];
+    const isEncrypted = ENCRYPTED_FIELDS.has(field);
 
-    const hasAny = allVals.some(v => v != null && v !== '');
-    const survivorHas = firstVal != null && firstVal !== '';
-    const absorbedHas = otherVals.some(v => v != null && v !== '');
+    // values: por account id. Encriptado → null (PII nunca exposta).
+    const values: Record<string, string | null> = {};
+    for (const row of rows) {
+      const id = String(row.id);
+      const raw = row[field];
+      values[id] = isEncrypted || raw == null || raw === ''
+        ? null
+        : stringifyValue(raw);
+    }
 
-    // Conflito: todos têm valor mas diferem (para encriptado: compara opacamente)
-    const nonNull = allVals.filter(v => v != null && v !== '');
-    const hasConflict = nonNull.length > 1 && !allVals.every(v => String(v ?? '') === String(firstVal ?? ''));
+    // Conflito: ao menos 2 valores não-null distintos.
+    // Para encriptado: compara opacamente o ciphertext original das rows.
+    const cmpVals = rows
+      .map(r => r[field])
+      .filter(v => v != null && v !== '')
+      .map(v => String(v));
+    const hasConflict = cmpVals.length > 1 && new Set(cmpVals).size > 1;
 
     return {
       field,
-      survivor_has_value: survivorHas,
-      absorbed_has_value: absorbedHas,
-      is_encrypted: ENCRYPTED_FIELDS.has(field),
-      conflict: hasConflict && hasAny,
+      values,
+      is_encrypted: isEncrypted,
+      has_conflict: hasConflict,
     };
   });
+}
+
+function stringifyValue(raw: unknown): string {
+  if (Array.isArray(raw)) return raw.map(v => String(v)).join(', ');
+  return String(raw);
 }
 
 function ENCRYPTED_FIELDS_PRESENT(row: Record<string, unknown>): boolean {

@@ -30,7 +30,9 @@ export function MergeAdvancedFields({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
-  const conflictingFields = fieldComparisons.filter((f) => f.has_conflict);
+  // Defensive default: never assume the array is present (belt-and-suspenders
+  // against an unexpected backend payload — see MergePhoneModeBody guard).
+  const conflictingFields = (fieldComparisons ?? []).filter((f) => f.has_conflict);
 
   if (conflictingFields.length === 0) return null;
 
