@@ -523,7 +523,8 @@
       "patients": "Pacientes",
       "apiDocs": "API Docs",
       "tags": "Etiquetas",
-      "dedup": "Duplicatas"
+      "dedup": "Duplicatas",
+      "adminSection": "Administração"
     },
     "dedup": {
       "title": "Central de Duplicatas",
