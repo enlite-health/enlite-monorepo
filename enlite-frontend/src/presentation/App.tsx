@@ -28,6 +28,7 @@ import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
@@ -140,6 +141,7 @@ export function App() {
           <Route path="patients" element={<AdminPatientsPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="dedup" element={<DedupCenterPage />} />
           <Route
             path="api-docs"
             element={

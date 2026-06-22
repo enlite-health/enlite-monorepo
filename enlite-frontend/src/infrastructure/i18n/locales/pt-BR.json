@@ -522,7 +522,101 @@
       "recruitment": "Recrutamento",
       "patients": "Pacientes",
       "apiDocs": "API Docs",
-      "tags": "Etiquetas"
+      "tags": "Etiquetas",
+      "dedup": "Duplicatas"
+    },
+    "dedup": {
+      "title": "Central de Duplicatas",
+      "subtitle": "Revise e unifique contas de workers com o mesmo telefone.",
+      "refresh": "Atualizar",
+      "loadError": "Erro ao carregar as duplicatas",
+      "retry": "Tentar novamente",
+      "tabs": {
+        "queue": "Fila",
+        "imported": "Importados",
+        "comingSoon": "Em breve"
+      },
+      "table": {
+        "selectAll": "Selecionar todos",
+        "selectRow": "Selecionar {{phone}}",
+        "phone": "Telefone",
+        "accountCount": "Contas",
+        "signal": "Sinal",
+        "survivor": "Principal sugerido",
+        "createdAt": "Criação",
+        "actions": "Ações",
+        "merge": "Unificar",
+        "mergeAriaLabel": "Unificar grupo {{phone}}",
+        "dismissAriaLabel": "Descartar grupo {{phone}}"
+      },
+      "queue": {
+        "empty": "Sem duplicatas na fila",
+        "emptyDesc": "Não foram encontrados grupos com o mesmo telefone."
+      },
+      "signal": {
+        "allReal": "{{count}} real",
+        "allReal_plural": "{{count}} reais",
+        "allTest": "{{count}} teste",
+        "mixed": "{{real}} real · {{test}} teste"
+      },
+      "tier": {
+        "REGISTERED": "Registrado",
+        "INCOMPLETE_REGISTER": "Incompleto",
+        "PRE_REGISTER": "Pré-cadastro"
+      },
+      "bulkBar": {
+        "selected": "{{count}} selecionado",
+        "selected_plural": "{{count}} selecionados",
+        "dismiss": "Descartar",
+        "dismissAriaLabel": "Descartar selecionados",
+        "clearAriaLabel": "Limpar seleção"
+      },
+      "merge": {
+        "title": "Comparar e unificar",
+        "dialogLabel": "Comparar e unificar contas",
+        "phone": "Telefone",
+        "close": "Fechar",
+        "retry": "Tentar novamente",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar unificação",
+        "confirmAriaLabel": "Confirmar unificação",
+        "merging": "Unificando...",
+        "success": "Unificação realizada com sucesso",
+        "survivor": "Principal",
+        "setSurvivor": "Escolher como principal",
+        "noEmail": "Sem email",
+        "createdAt": "Criação",
+        "realLogin": "Login real",
+        "testLogin": "Sem login real",
+        "wjaCount": "Candidaturas",
+        "docsCount": "Documentos",
+        "encuadresCount": "Encuadres",
+        "reparentTitle": "Serão reatribuídos ao principal:",
+        "advanced": "Avançado",
+        "conflicts": "conflito",
+        "conflicts_plural": "conflitos",
+        "mismatchTitle": "{{count}} campo com conflito",
+        "mismatchTitle_plural": "{{count}} campos com conflito",
+        "mismatchDesc": "Expanda «Avançado» para revisar e escolher qual valor manter campo a campo.",
+        "encryptedField": "Campo criptografado",
+        "emptyValue": "vazio"
+      },
+      "field": {
+        "email": "Email",
+        "firstName": "Nome",
+        "lastName": "Sobrenome",
+        "documentNumber": "Número do documento",
+        "documentType": "Tipo de documento",
+        "phone": "Telefone",
+        "birthDate": "Data de nascimento",
+        "sex": "Sexo",
+        "profession": "Profissão"
+      },
+      "entity": {
+        "worker_job_applications": "candidaturas",
+        "worker_documents": "documentos",
+        "worker_encuadres": "encuadres"
+      }
     },
     "apiDocs": {
       "title": "Documentação da API",
