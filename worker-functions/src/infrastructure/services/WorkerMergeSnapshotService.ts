@@ -272,13 +272,26 @@ async function restoreFkRows(
   }
 
   for (const row of rows) {
-    // Para cada linha original, tenta remover do survivor (se foi reparentada)
-    // identificando por todas as colunas exceto fkColumn
-    const otherCols = Object.keys(row).filter(c => c !== fkColumn && availableCols.includes(c));
+    // Para cada linha original, tenta remover do survivor (se foi reparentada).
+    // Prefere usar o PK (coluna "id") quando disponível — evita falhas de comparação
+    // de timestamps (precisão microsegundo vs. milissegundo na serialização JSON).
+    // Fallback: usa todas as colunas exceto fkColumn quando não há "id".
+    const hasId = availableCols.includes('id') && row['id'] != null;
+    const matchClauses: string[] = [];
+    const matchVals: unknown[] = [survivorId];
 
-    if (otherCols.length > 0) {
-      const matchClauses = otherCols.map((c, i) => `${c} = $${i + 2}`);
-      const matchVals = [survivorId, ...otherCols.map(c => row[c])];
+    if (hasId) {
+      matchClauses.push(`id = $2`);
+      matchVals.push(row['id']);
+    } else {
+      const otherCols = Object.keys(row).filter(c => c !== fkColumn && availableCols.includes(c));
+      otherCols.forEach((c, i) => {
+        matchClauses.push(`${c} = $${i + 2}`);
+        matchVals.push(row[c]);
+      });
+    }
+
+    if (matchClauses.length > 0) {
       try {
         await client.query(
           `DELETE FROM ${tableName}

@@ -98,6 +98,58 @@ describe('captureSnapshot', () => {
     expect(snapshotId).toBe('snap-uuid-2');
   });
 
+  it('usa {} quando workers query retorna 0 linhas (branch ?? {} linha 59)', async () => {
+    // workers retorna 0 linhas → workerRow = rows[0] ?? {} = {}
+    const client = makeClient([
+      { rows: [] },              // SELECT * FROM workers → 0 rows
+      { rows: [] },              // worker_job_applications: 0 linhas
+      { rows: [] },              // worker_documents: 0 linhas
+      { rows: [{ id: 'snap-0-rows' }] },
+    ]);
+
+    const snapshotId = await captureSnapshot(client, {
+      mergeAuditId: 20,
+      absorbedId: 'abs-not-found',
+      discoveredFks: SAMPLE_FK_INFO,
+    });
+
+    expect(snapshotId).toBe('snap-0-rows');
+
+    // Payload deve ter worker_row vazio
+    const calls = (client.query as jest.Mock).mock.calls;
+    const insertCall = calls.find((c: [string, unknown[]]) => c[0].includes('INSERT INTO worker_merge_snapshots'));
+    const payload = JSON.parse(insertCall[1][2] as string);
+    expect(payload.worker_row).toEqual({});
+  });
+
+  it('wraps non-Error em Error no catch de FK (branch ?? new Error, linha 75)', async () => {
+    const workerRow = { id: 'abs-wrap', email: 'x@y.com' };
+
+    // Simula FK query lançando string (não Error)
+    let callIdx = 0;
+    const clientNonError = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        callIdx++;
+        if (callIdx === 1) return Promise.resolve({ rows: [workerRow] });   // SELECT workers
+        if (sql.includes('worker_job_applications')) {
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          return Promise.reject('string error not Error instance');
+        }
+        if (sql.includes('worker_documents')) return Promise.resolve({ rows: [] });
+        return Promise.resolve({ rows: [{ id: 'snap-non-err' }] });         // INSERT snapshot
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    const snapshotId = await captureSnapshot(clientNonError, {
+      mergeAuditId: 21,
+      absorbedId: 'abs-wrap',
+      discoveredFks: SAMPLE_FK_INFO,
+    });
+
+    // Deve ter concluído sem lançar, retornando o snapshotId
+    expect(snapshotId).toBe('snap-non-err');
+  });
+
   it('não inclui tabelas FK com 0 linhas no payload', async () => {
     const workerRow = { id: 'abs-2', status: 'COMPLETE_REGISTER' };
 
@@ -140,17 +192,32 @@ describe('restoreSnapshot', () => {
     },
   };
 
-  it('restaura worker_row, fk_rows e marca undone_at', async () => {
+  it('restaura worker_row, fk_rows e marca undone_at (com id na row → usa id no DELETE)', async () => {
+    // Snapshot com row que tem 'id' → DELETE usa apenas id (evita comparação de timestamps)
+    const snapshotWithId = {
+      worker_row: {
+        id: 'absorbed-uuid',
+        email: 'old@example.com',
+        status: 'INCOMPLETE_REGISTER',
+        merged_into_id: null,
+      },
+      fk_rows: {
+        'worker_job_applications:worker_id': [
+          { id: 'wja-uuid-1', worker_id: 'absorbed-uuid', job_posting_id: 'jp-deleted', created_at: '2026-01-01T00:00:00Z' },
+        ],
+      },
+    };
+
     const client = makeClient([
       // SELECT snapshot
-      { rows: [{ id: 'snap-1', payload: snapshotPayload, undone_at: null }] },
+      { rows: [{ id: 'snap-1', payload: snapshotWithId, undone_at: null }] },
       // UPDATE workers (reativa merged_into_id = NULL)
       { rows: [] },
       // UPDATE workers (restoreWorkerRow)
       { rows: [] },
-      // SELECT information_schema.columns (worker_job_applications)
-      { rows: [{ column_name: 'worker_id' }, { column_name: 'job_posting_id' }, { column_name: 'created_at' }] },
-      // DELETE conflitos no survivor
+      // SELECT information_schema.columns (worker_job_applications) — inclui 'id'
+      { rows: [{ column_name: 'id' }, { column_name: 'worker_id' }, { column_name: 'job_posting_id' }, { column_name: 'created_at' }] },
+      // DELETE por id (não por todos os campos)
       { rows: [] },
       // INSERT linha original do absorvido
       { rows: [] },
@@ -189,6 +256,258 @@ describe('restoreSnapshot', () => {
     // Não deve ter chamado nenhuma operação de escrita
     const calls = (client.query as jest.Mock).mock.calls;
     expect(calls).toHaveLength(1); // apenas o SELECT do snapshot
+  });
+
+  it('skip quando tableKey não tem ":" separador (branch linha 173)', async () => {
+    // fk_rows com chave sem ":" → tableName ou fkColumn serão undefined → continue
+    const snapshotBadKey = {
+      worker_row: { id: 'abs-bad', email: 'b@b.com', merged_into_id: null },
+      fk_rows: {
+        'no_separator_key': [{ worker_id: 'abs-bad' }],  // sem ":"
+        'valid_table:worker_id': [],                       // sem rows → não processado
+      },
+    };
+
+    let callIdx = 0;
+    const clientBadKey = {
+      query: jest.fn().mockImplementation((_sql: string) => {
+        callIdx++;
+        if (callIdx === 1) return Promise.resolve({ rows: [{ id: 'snap-bk', payload: snapshotBadKey, undone_at: null }] });
+        if (callIdx === 2) return Promise.resolve({ rows: [] }); // merged_into_id = NULL
+        if (callIdx === 3) return Promise.resolve({ rows: [] }); // restoreWorkerRow: todas SKIP ou vazio
+        // undone_at update
+        return Promise.resolve({ rows: [] });
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    const result = await restoreSnapshot(clientBadKey, {
+      mergeAuditId: 15,
+      survivorId: 'sv',
+      absorbedId: 'abs-bad',
+    });
+
+    expect(result.alreadyUndone).toBe(false);
+  });
+
+  it('restoreWorkerRow com workerRow contendo APENAS colunas SKIP_COLS (branch setClauses.length === 0, linha 226)', async () => {
+    // worker_row tem apenas id, phone_normalized, created_at → setClauses = [] → early return sem UPDATE
+    const snapshotSkipOnly = {
+      worker_row: { id: 'abs-skip', phone_normalized: '549100', created_at: new Date() },
+      fk_rows: {},
+    };
+
+    let callIdx = 0;
+    const clientSkipCols = {
+      query: jest.fn().mockImplementation((_sql: string) => {
+        callIdx++;
+        if (callIdx === 1) return Promise.resolve({ rows: [{ id: 'snap-sc', payload: snapshotSkipOnly, undone_at: null }] });
+        if (callIdx === 2) return Promise.resolve({ rows: [] }); // merged_into_id = NULL
+        // callIdx 3 seria restoreWorkerRow mas como setClauses.length===0, não há chamada de UPDATE
+        // undone_at update
+        return Promise.resolve({ rows: [] });
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    const result = await restoreSnapshot(clientSkipCols, {
+      mergeAuditId: 16,
+      survivorId: 'sv',
+      absorbedId: 'abs-skip',
+    });
+
+    expect(result.alreadyUndone).toBe(false);
+
+    // Apenas 3 chamadas: SELECT snapshot, UPDATE merged_into_id=NULL, UPDATE undone_at
+    expect((clientSkipCols.query as jest.Mock)).toHaveBeenCalledTimes(3);
+  });
+
+  it('skip quando information_schema falha ao buscar colunas da tabela FK (branch 270-271)', async () => {
+    // Testa o branch: query de information_schema lança → warn + return
+    const snapshotWithFkRows = {
+      worker_row: { id: 'absorbed-uuid', email: 'old@example.com', status: 'INCOMPLETE_REGISTER', merged_into_id: null },
+      fk_rows: {
+        'worker_job_applications:worker_id': [
+          { worker_id: 'absorbed-uuid', job_posting_id: 'jp-1' },
+        ],
+      },
+    };
+
+    let callIdx = 0;
+    const clientWithSchemaError = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        callIdx++;
+        if (callIdx === 1) {
+          return Promise.resolve({ rows: [{ id: 'snap-x', payload: snapshotWithFkRows, undone_at: null }] });
+        }
+        if (callIdx === 2) {
+          // UPDATE workers SET merged_into_id = NULL
+          return Promise.resolve({ rows: [] });
+        }
+        if (callIdx === 3) {
+          // UPDATE workers (restoreWorkerRow)
+          return Promise.resolve({ rows: [] });
+        }
+        if (sql.includes('information_schema.columns')) {
+          // Simula erro ao buscar colunas → branch catch (linhas 270-271)
+          return Promise.reject(new Error('relation does not exist'));
+        }
+        // UPDATE worker_merge_snapshots SET undone_at
+        return Promise.resolve({ rows: [] });
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    const result = await restoreSnapshot(clientWithSchemaError, {
+      mergeAuditId: 11,
+      survivorId: 'survivor-uuid',
+      absorbedId: 'absorbed-uuid',
+    });
+
+    // Não deve lançar; undo concluído (alreadyUndone=false)
+    expect(result.alreadyUndone).toBe(false);
+  });
+
+  it('continua (sem lançar) quando INSERT de linha FK falha com Error (branch 307 true)', async () => {
+    // Testa o branch: INSERT lança Error → reportError + continua
+    const snapshotWithFkRows = {
+      worker_row: { id: 'absorbed-uuid', email: 'old@example.com', status: 'INCOMPLETE_REGISTER', merged_into_id: null },
+      fk_rows: {
+        'worker_job_applications:worker_id': [
+          { worker_id: 'absorbed-uuid', job_posting_id: 'jp-fail' },
+        ],
+      },
+    };
+
+    let callIdx = 0;
+    const clientWithInsertError = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        callIdx++;
+        if (callIdx === 1) {
+          return Promise.resolve({ rows: [{ id: 'snap-y', payload: snapshotWithFkRows, undone_at: null }] });
+        }
+        if (callIdx === 2) {
+          return Promise.resolve({ rows: [] }); // merged_into_id = NULL
+        }
+        if (callIdx === 3) {
+          return Promise.resolve({ rows: [] }); // restoreWorkerRow UPDATE
+        }
+        if (sql.includes('information_schema.columns')) {
+          return Promise.resolve({ rows: [{ column_name: 'worker_id' }, { column_name: 'job_posting_id' }] });
+        }
+        if (sql.includes('DELETE FROM')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (sql.includes('INSERT INTO worker_job_applications')) {
+          // Simula falha no INSERT com Error (branch true de instanceof Error)
+          return Promise.reject(new Error('unique constraint violated'));
+        }
+        // UPDATE worker_merge_snapshots SET undone_at
+        return Promise.resolve({ rows: [] });
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    // Não deve lançar — reportError é chamado internamente e continua
+    const result = await restoreSnapshot(clientWithInsertError, {
+      mergeAuditId: 12,
+      survivorId: 'survivor-uuid',
+      absorbedId: 'absorbed-uuid',
+    });
+
+    expect(result.alreadyUndone).toBe(false);
+  });
+
+  it('continua quando INSERT lança não-Error (branch 307 false: new Error(String(err)))', async () => {
+    // Testa o branch false: err não é instância de Error → new Error(String(err))
+    const snapshotWithFkRows = {
+      worker_row: { id: 'absorbed-uuid', email: 'old@example.com', merged_into_id: null },
+      fk_rows: {
+        'worker_job_applications:worker_id': [
+          { worker_id: 'absorbed-uuid', job_posting_id: 'jp-non-err' },
+        ],
+      },
+    };
+
+    let callIdx = 0;
+    const clientWithNonError = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        callIdx++;
+        if (callIdx === 1) {
+          return Promise.resolve({ rows: [{ id: 'snap-ne', payload: snapshotWithFkRows, undone_at: null }] });
+        }
+        if (callIdx === 2) {
+          return Promise.resolve({ rows: [] }); // merged_into_id = NULL
+        }
+        if (callIdx === 3) {
+          return Promise.resolve({ rows: [] }); // restoreWorkerRow UPDATE
+        }
+        if (sql.includes('information_schema.columns')) {
+          return Promise.resolve({ rows: [{ column_name: 'worker_id' }, { column_name: 'job_posting_id' }] });
+        }
+        if (sql.includes('DELETE FROM')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (sql.includes('INSERT INTO worker_job_applications')) {
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          return Promise.reject('non-error string thrown');
+        }
+        return Promise.resolve({ rows: [] });
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    const result = await restoreSnapshot(clientWithNonError, {
+      mergeAuditId: 17,
+      survivorId: 'survivor-uuid',
+      absorbedId: 'absorbed-uuid',
+    });
+
+    expect(result.alreadyUndone).toBe(false);
+  });
+
+  it('restoreFkRows com otherCols vazio (fkColumn único campo) — skip do DELETE', async () => {
+    // Snapshot onde a única coluna da linha FK é o próprio fkColumn
+    // → otherCols.length === 0 → skip do DELETE
+    const snapshotMinimalFk = {
+      worker_row: { id: 'absorbed-uuid', email: 'x@e.com', merged_into_id: null },
+      fk_rows: {
+        'some_table:worker_id': [
+          // row com SOMENTE o worker_id → otherCols = [] → sem DELETE
+          { worker_id: 'absorbed-uuid' },
+        ],
+      },
+    };
+
+    let callIdx = 0;
+    const clientMinimal = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        callIdx++;
+        if (callIdx === 1) {
+          return Promise.resolve({ rows: [{ id: 'snap-z', payload: snapshotMinimalFk, undone_at: null }] });
+        }
+        if (callIdx === 2) {
+          return Promise.resolve({ rows: [] }); // merged_into_id = NULL
+        }
+        if (callIdx === 3) {
+          return Promise.resolve({ rows: [] }); // restoreWorkerRow UPDATE
+        }
+        if (sql.includes('information_schema.columns')) {
+          // apenas worker_id disponível
+          return Promise.resolve({ rows: [{ column_name: 'worker_id' }] });
+        }
+        // INSERT (sem DELETE pois otherCols vazio)
+        return Promise.resolve({ rows: [] });
+      }),
+    } as unknown as import('pg').PoolClient;
+
+    const result = await restoreSnapshot(clientMinimal, {
+      mergeAuditId: 13,
+      survivorId: 'survivor-uuid',
+      absorbedId: 'absorbed-uuid',
+    });
+
+    expect(result.alreadyUndone).toBe(false);
+
+    // Não deve ter chamado DELETE
+    const calls = (clientMinimal.query as jest.Mock).mock.calls;
+    const deleteCall = calls.find((c: [string, unknown[]]) => c[0].includes('DELETE FROM some_table'));
+    expect(deleteCall).toBeUndefined();
   });
 
   it('lança erro quando snapshot não encontrado', async () => {

@@ -170,6 +170,31 @@ describe('ListMergeHistoryUseCase', () => {
     const call = (pool.query as jest.Mock).mock.calls[0];
     expect(call[1]).toEqual([10, 20]);
   });
+
+  it('normaliza fields_filled=null e exceptions=null para [] (branch ?? [])', async () => {
+    const pool = makePool([
+      {
+        rows: [{
+          id: 45,
+          survivor_id: 's-uuid',
+          absorbed_id: 'a-uuid',
+          phone_normalized: '5491112345681',
+          category: 'firebase',
+          fields_filled: null,  // força o branch ?? []
+          exceptions: null,     // força o branch ?? []
+          created_at: new Date('2026-01-15T10:00:00Z'),
+          has_snapshot: true,
+          undone_at: null,
+        }],
+      },
+    ]);
+
+    const useCase = new ListMergeHistoryUseCase(pool as unknown as Pool);
+    const entries = await useCase.execute();
+
+    expect(entries[0].fields_filled).toEqual([]);
+    expect(entries[0].exceptions).toEqual([]);
+  });
 });
 
 // ── UndoMergeUseCase ──────────────────────────────────────────────────────
