@@ -81,7 +81,7 @@ export function MergeCompareModal(props: MergeCompareModalProps) {
       data-testid="dedup-merge-modal"
     >
       <div
-        className="bg-white rounded-card shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+        className="bg-white rounded-card shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-label={t('admin.dedup.merge.dialogLabel', 'Comparar y unificar cuentas')}
