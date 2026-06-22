@@ -631,10 +631,21 @@
         "data_sources": "Origem dos dados"
       },
       "entity": {
-        "worker_job_applications": "candidaturas",
-        "worker_documents": "documentos",
-        "worker_encuadres": "encuadres"
+        "worker_job_applications": "Candidaturas",
+        "encuadres": "Entrevistas",
+        "worker_documents": "Documentos",
+        "worker_additional_documents": "Documentos adicionais",
+        "worker_availability": "Disponibilidade de horário",
+        "worker_service_areas": "Zonas de trabalho",
+        "worker_locations": "Localizações",
+        "worker_employment_history": "Histórico de trabalho",
+        "worker_payment_info": "Dados de pagamento",
+        "worker_quiz_responses": "Respostas de formulários",
+        "worker_tags": "Etiquetas",
+        "talentum_prescreenings": "Pré-avaliações",
+        "blacklist": "Lista negra"
       },
+      "entitySystemFootnote": "e outros dados do sistema",
       "history": {
         "loadError": "Erro ao carregar o histórico",
         "empty": "Sem unificações registradas",

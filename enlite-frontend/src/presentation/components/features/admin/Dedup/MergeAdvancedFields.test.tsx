@@ -362,3 +362,120 @@ describe('MergeAdvancedFields — (g) prod mixed-case ES/EN enum values', () => 
     expect(document.body.textContent).not.toContain('Femenino');
   });
 });
+
+// ── (h) years_experience enum — PROBLEMA 2 fix ───────────────────────────────
+//
+// "0_2", "3_5", "6_10", "10_plus" must NEVER appear verbatim.
+// They map via getYearsExperienceLabel → i18n key workerRegistration.generalInfo.years0to2 etc.
+// In test context (no translations loaded) the i18n KEY is what's rendered,
+// proving the raw enum slug is not shown.
+
+describe('MergeAdvancedFields — (h) years_experience rendered via i18n', () => {
+  async function renderAndExpandWithYears(
+    accAValue: string,
+    accBValue: string,
+  ): Promise<string> {
+    const field: DedupFieldComparison = {
+      field: 'years_experience',
+      values: { 'acc-A': accAValue, 'acc-B': accBValue },
+      is_encrypted: false,
+      has_conflict: true,
+    };
+    const { unmount } = renderComponent({ fieldComparisons: [field], accounts: ACCOUNTS });
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => { fireEvent.click(toggle); });
+    const text = document.body.textContent ?? '';
+    unmount();
+    return text;
+  }
+
+  it('"0_2" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithYears('0_2', '3_5');
+    expect(text).toContain('workerRegistration.generalInfo.years0to2');
+    expect(text).not.toContain('0_2');
+  });
+
+  it('"3_5" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithYears('0_2', '3_5');
+    expect(text).toContain('workerRegistration.generalInfo.years3to5');
+    expect(text).not.toContain('3_5');
+  });
+
+  it('"6_10" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithYears('6_10', '10_plus');
+    expect(text).toContain('workerRegistration.generalInfo.years6to10');
+    expect(text).not.toContain('6_10');
+  });
+
+  it('"10_plus" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithYears('6_10', '10_plus');
+    expect(text).toContain('workerRegistration.generalInfo.years10plus');
+    expect(text).not.toContain('10_plus');
+  });
+});
+
+// ── (i) knowledge_level enum — PROBLEMA 2 fix ────────────────────────────────
+//
+// "SECONDARY", "BACHELOR" etc. go through the i18n resolver — they are NOT
+// shown verbatim as-is from the raw field value.
+//
+// Note: unlike sex_encrypted where the raw value "MALE" is uppercased and the
+// i18n key suffix is lowercased ("male"), the knowledge_level keys keep their
+// case (SECONDARY → key "…generalInfo.SECONDARY"). The raw value still appears
+// as part of the i18n KEY string in test context (no translations loaded), but
+// what matters is that the resolver was invoked — evidenced by the full i18n
+// key path being present in the output (not just the bare uppercase value).
+//
+// The aria-label of the account button contains the RESOLVED value (not just
+// the key path), so we verify the full key is present and the aria-label is
+// set correctly via the resolver chain.
+
+describe('MergeAdvancedFields — (i) knowledge_level rendered via i18n', () => {
+  async function renderAndExpandWithKnowledge(
+    accAValue: string,
+    accBValue: string,
+  ): Promise<{ text: string; ariaLabels: (string | null)[] }> {
+    const field: DedupFieldComparison = {
+      field: 'knowledge_level',
+      values: { 'acc-A': accAValue, 'acc-B': accBValue },
+      is_encrypted: false,
+      has_conflict: true,
+    };
+    const { unmount } = renderComponent({ fieldComparisons: [field], accounts: ACCOUNTS });
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => { fireEvent.click(toggle); });
+    const text = document.body.textContent ?? '';
+    const accountButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
+    const ariaLabels = Array.from(accountButtons).map((b) => b.getAttribute('aria-label'));
+    unmount();
+    return { text, ariaLabels };
+  }
+
+  it('"SECONDARY" goes through resolver — full i18n key path present in DOM', async () => {
+    const { text } = await renderAndExpandWithKnowledge('SECONDARY', 'BACHELOR');
+    // Resolver invoked → full key path appears, not just the bare value
+    expect(text).toContain('workerRegistration.generalInfo.SECONDARY');
+  });
+
+  it('"BACHELOR" goes through resolver — full i18n key path present in DOM', async () => {
+    const { text } = await renderAndExpandWithKnowledge('SECONDARY', 'BACHELOR');
+    expect(text).toContain('workerRegistration.generalInfo.BACHELOR');
+  });
+
+  it('"MASTERS" goes through resolver — full i18n key path present in DOM', async () => {
+    const { text } = await renderAndExpandWithKnowledge('MASTERS', 'DOCTORATE');
+    expect(text).toContain('workerRegistration.generalInfo.MASTERS');
+  });
+
+  it('"DOCTORATE" goes through resolver — full i18n key path present in DOM', async () => {
+    const { text } = await renderAndExpandWithKnowledge('MASTERS', 'DOCTORATE');
+    expect(text).toContain('workerRegistration.generalInfo.DOCTORATE');
+  });
+
+  it('aria-label includes the resolved i18n key (not just the raw value)', async () => {
+    const { ariaLabels } = await renderAndExpandWithKnowledge('SECONDARY', 'BACHELOR');
+    // aria-label format: "<email>: <resolvedValue>" — resolver must have been called
+    expect(ariaLabels.some((l) => l?.includes('workerRegistration.generalInfo.SECONDARY'))).toBe(true);
+    expect(ariaLabels.some((l) => l?.includes('workerRegistration.generalInfo.BACHELOR'))).toBe(true);
+  });
+});

@@ -19,6 +19,43 @@ import { MergeAdvancedFields } from './MergeAdvancedFields';
 import { MergeMismatchAlert } from './MergeMismatchAlert';
 import type { MergeRequest } from '@domain/entities/DedupGroup';
 
+/**
+ * Entities that have a meaningful operator-facing label in i18n
+ * (admin.dedup.entity.<key>). Any entity NOT in this set is hidden from the
+ * reparent_preview badge list — technical plumbing the operator doesn't care about.
+ *
+ * Hidden examples: messaging_variable_tokens, messaging_outbox,
+ * messaging_opt_out, whatsapp_bulk_dispatch_logs, worker_reminder_state,
+ * worker_status_history, worker_placement_audits, worker_pending_profile_changes,
+ * worker_profile_changes_audit, worker_merge_audit, worker_phone_collisions.
+ */
+const MEANINGFUL_ENTITIES = new Set([
+  'worker_job_applications',
+  'encuadres',
+  'worker_documents',
+  'worker_additional_documents',
+  'worker_availability',
+  'worker_service_areas',
+  'worker_locations',
+  'worker_employment_history',
+  'worker_payment_info',
+  'worker_quiz_responses',
+  'worker_tags',
+  'talentum_prescreenings',
+  'blacklist',
+]);
+
+interface ReparentItem {
+  entity: string;
+  count: number;
+}
+
+function buildReparentRows(items: ReparentItem[]): { visible: ReparentItem[]; hasHidden: boolean } {
+  const visible = items.filter((rp) => MEANINGFUL_ENTITIES.has(rp.entity));
+  const hasHidden = items.some((rp) => !MEANINGFUL_ENTITIES.has(rp.entity));
+  return { visible, hasHidden };
+}
+
 interface MergePhoneModeBodyProps {
   phoneNormalized: string;
   onClose: () => void;
@@ -149,28 +186,36 @@ export function MergePhoneModeBody({
                 />
               ))}
             </div>
-            {(detail.reparent_preview?.length ?? 0) > 0 && (
-              <div className="bg-slate-50 rounded-xl p-4">
-                <Text size="xs" weight="semibold" color="muted" as="p">
-                  {t('admin.dedup.merge.reparentTitle', 'Se van a reasignar al principal:')}
-                </Text>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {(detail.reparent_preview ?? []).map((rp) => (
-                    <span
-                      key={rp.entity}
-                      className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"
-                    >
-                      <Text as="span" size="xs" weight="medium" color="inherit">
-                        {rp.count}{' '}
-                        {t(`admin.dedup.entity.${rp.entity}`, {
-                          defaultValue: rp.entity,
-                        })}
-                      </Text>
-                    </span>
-                  ))}
+            {(detail.reparent_preview?.length ?? 0) > 0 && (() => {
+              const { visible, hasHidden } = buildReparentRows(detail.reparent_preview ?? []);
+              return (
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <Text size="xs" weight="semibold" color="muted" as="p">
+                    {t('admin.dedup.merge.reparentTitle', 'Se van a reasignar al principal:')}
+                  </Text>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {visible.map((rp) => (
+                      <span
+                        key={rp.entity}
+                        className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"
+                      >
+                        <Text as="span" size="xs" weight="medium" color="inherit">
+                          {rp.count}{' '}
+                          {t(`admin.dedup.entity.${rp.entity}`)}
+                        </Text>
+                      </span>
+                    ))}
+                    {hasHidden && (
+                      <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                        <Text as="span" size="xs" weight="medium" color="inherit">
+                          {t('admin.dedup.entitySystemFootnote', 'y otros datos del sistema')}
+                        </Text>
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             <MergeAdvancedFields
               fieldComparisons={detail.field_comparisons ?? []}
               accounts={detail.accounts}
