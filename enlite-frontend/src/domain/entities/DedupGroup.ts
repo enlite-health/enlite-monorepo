@@ -84,6 +84,37 @@ export interface DismissResult {
   dismissedAt: string;
 }
 
+// ── Imported group types (Onda 4b) ────────────────────────────────────────────
+
+/**
+ * Account within an imported-group (same shape as DedupAccount but with the
+ * extra is_imported flag returned by the name-dedup endpoint).
+ */
+export interface ImportedDedupAccount extends DedupAccount {
+  is_imported: boolean;
+}
+
+/**
+ * Reason returned by GET /api/admin/dedup/imported-groups for the suggested
+ * survivor selection.
+ */
+export type SurvivorReason =
+  | 'real_account_absorbs_imported'
+  | 'conflict_multiple_real_accounts'
+  | 'most_complete';
+
+/**
+ * One group of accounts detected as duplicates by NAME (not phone).
+ * Returned by GET /api/admin/dedup/imported-groups.
+ */
+export interface ImportedDedupGroup {
+  accounts: ImportedDedupAccount[];
+  survivor_suggested_id: string;
+  survivor_reason: SurvivorReason;
+  /** True when at least one account in the group is NOT imported (real account). */
+  has_real: boolean;
+}
+
 // ── Merge history (Onda 3) ─────────────────────────────────────────────────────
 
 export interface MergeHistoryItem {

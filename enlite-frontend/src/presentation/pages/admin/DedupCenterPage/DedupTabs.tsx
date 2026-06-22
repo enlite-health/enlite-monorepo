@@ -7,7 +7,10 @@
  * Tabs:
  *   - queue    → Fila (Onda 2)
  *   - history  → Historial (Onda 3)
- *   - imported → Importados (Onda 4, disabled)
+ *   - imported → Importados (Onda 4b, active)
+ *
+ * All three tabs are now active (Onda 4b). The disabled-span branch was
+ * removed — no tabs are disabled, keeping the render path simple.
  */
 
 import { useTranslation } from 'react-i18next';
@@ -37,45 +40,20 @@ const tabInactive =
   'font-poppins font-semibold text-base whitespace-nowrap ' +
   'transition-colors flex items-center';
 
-const tabDisabled =
-  'text-gray-400 cursor-not-allowed px-5 h-10 rounded-pill ' +
-  'font-poppins font-semibold text-base whitespace-nowrap ' +
-  'flex items-center';
-
-/** Onda 4 tabs that are declared but not yet available. */
-const DISABLED_TABS: DedupTab[] = ['imported'];
-
 export function DedupTabs({ activeTab, onTabChange }: DedupTabsProps) {
   const { t } = useTranslation();
 
   return (
     <div className="flex items-center gap-8 flex-wrap">
-      {TABS.map((tab) => {
-        const isDisabled = DISABLED_TABS.includes(tab);
-
-        if (isDisabled) {
-          return (
-            <span
-              key={tab}
-              className={tabDisabled}
-              title={t('admin.dedup.tabs.comingSoon', 'Próximamente')}
-              aria-disabled="true"
-            >
-              {t(TAB_I18N_KEYS[tab])}
-            </span>
-          );
-        }
-
-        return (
-          <button
-            key={tab}
-            onClick={() => onTabChange(tab)}
-            className={activeTab === tab ? tabActive : tabInactive}
-          >
-            {t(TAB_I18N_KEYS[tab])}
-          </button>
-        );
-      })}
+      {TABS.map((tab) => (
+        <button
+          key={tab}
+          onClick={() => onTabChange(tab)}
+          className={activeTab === tab ? tabActive : tabInactive}
+        >
+          {t(TAB_I18N_KEYS[tab])}
+        </button>
+      ))}
     </div>
   );
 }

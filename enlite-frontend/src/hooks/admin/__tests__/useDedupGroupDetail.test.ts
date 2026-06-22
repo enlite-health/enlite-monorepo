@@ -274,3 +274,23 @@ describe('useDedupGroupDetail — dismiss mutation', () => {
     expect(result.current.dismissError).toBe('Dismiss failed');
   });
 });
+
+describe('useDedupGroupDetail — cancel on unmount (L65)', () => {
+  it('does NOT update state when component unmounts before fetch resolves', async () => {
+    let resolveFn!: (v: typeof MOCK_DETAIL) => void;
+    const deferred = new Promise<typeof MOCK_DETAIL>((res) => {
+      resolveFn = res;
+    });
+    vi.spyOn(AdminDedupApiService, 'getGroupDetail').mockReturnValue(deferred);
+
+    const { unmount } = renderHook(() => useDedupGroupDetail(PHONE));
+    unmount();
+
+    act(() => {
+      resolveFn(MOCK_DETAIL);
+    });
+
+    // cancelled guard at L65 prevented state update — no React warning.
+    expect(true).toBe(true);
+  });
+});

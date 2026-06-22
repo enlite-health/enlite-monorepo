@@ -26,6 +26,7 @@ import type {
   MergeRequest,
   DismissRequest,
   MergeHistoryItem,
+  ImportedDedupGroup,
 } from '@domain/entities/DedupGroup';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -398,6 +399,94 @@ describe('AdminDedupApiService.undoMerge', () => {
     mockFetchError('Cannot undo — window expired');
     await expect(AdminDedupApiService.undoMerge('audit-001')).rejects.toThrow(
       'Cannot undo — window expired',
+    );
+  });
+});
+
+// ── getImportedGroups ─────────────────────────────────────────────────────────
+
+const MOCK_IMPORTED_ACCOUNT = {
+  id: 'acc-imp-001',
+  email: null,
+  tier: 'PRE_REGISTER',
+  status: 'INCOMPLETE',
+  created_at: '2026-02-20T10:00:00Z',
+  updated_at: '2026-02-20T10:00:00Z',
+  wja_count: 0,
+  docs_count: 0,
+  encuadres_count: 0,
+  login_real: false,
+  is_imported: true,
+};
+
+const MOCK_IMPORTED_GROUPS: ImportedDedupGroup[] = [
+  {
+    accounts: [
+      {
+        ...MOCK_IMPORTED_ACCOUNT,
+        id: 'acc-real-001',
+        email: 'maria@example.com',
+        tier: 'REGISTERED',
+        login_real: true,
+        is_imported: false,
+        wja_count: 3,
+        docs_count: 2,
+        encuadres_count: 1,
+      },
+      MOCK_IMPORTED_ACCOUNT,
+    ],
+    survivor_suggested_id: 'acc-real-001',
+    survivor_reason: 'real_account_absorbs_imported',
+    has_real: true,
+  },
+];
+
+describe('AdminDedupApiService.getImportedGroups', () => {
+  it('makes GET request to /api/admin/dedup/imported-groups', async () => {
+    mockFetchSuccess(MOCK_IMPORTED_GROUPS);
+    await AdminDedupApiService.getImportedGroups();
+
+    const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0];
+    const url = fetchCall[0] as string;
+    const options = fetchCall[1];
+    expect(url).toContain('/api/admin/dedup/imported-groups');
+    expect(options?.method).toBe('GET');
+  });
+
+  it('appends onlyWithReal=true by default', async () => {
+    mockFetchSuccess(MOCK_IMPORTED_GROUPS);
+    await AdminDedupApiService.getImportedGroups();
+
+    const url = vi.mocked(globalThis.fetch).mock.calls[0][0] as string;
+    expect(url).toContain('onlyWithReal=true');
+  });
+
+  it('appends onlyWithReal=false when passed false', async () => {
+    mockFetchSuccess(MOCK_IMPORTED_GROUPS);
+    await AdminDedupApiService.getImportedGroups(false);
+
+    const url = vi.mocked(globalThis.fetch).mock.calls[0][0] as string;
+    expect(url).toContain('onlyWithReal=false');
+  });
+
+  it('returns array of ImportedDedupGroup', async () => {
+    mockFetchSuccess(MOCK_IMPORTED_GROUPS);
+    const result = await AdminDedupApiService.getImportedGroups();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result[0].survivor_reason).toBe('real_account_absorbs_imported');
+    expect(result[0].has_real).toBe(true);
+  });
+
+  it('returns empty array when no imported groups', async () => {
+    mockFetchSuccess([]);
+    const result = await AdminDedupApiService.getImportedGroups();
+    expect(result).toEqual([]);
+  });
+
+  it('throws when success=false', async () => {
+    mockFetchError('Imported groups fetch failed');
+    await expect(AdminDedupApiService.getImportedGroups()).rejects.toThrow(
+      'Imported groups fetch failed',
     );
   });
 });

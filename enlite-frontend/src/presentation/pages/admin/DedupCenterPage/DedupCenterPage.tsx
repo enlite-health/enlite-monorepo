@@ -7,7 +7,7 @@
  * Ondas:
  *   Onda 2 — Tab "Fila": list of duplicate phone groups with merge/dismiss actions
  *   Onda 3 — Tab "Historial": executed merges with undo action
- *   Onda 4 — Tab "Importados": declared but disabled
+ *   Onda 4b — Tab "Importados": name-based groups (real↔imported + imported↔imported)
  *
  * Access guard: redirects to /admin if role !== ADMIN.
  * Pattern mirrors BlockedAttemptsPage (orquestrador; lógica en hooks).
@@ -25,13 +25,16 @@ import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useDedupQueue } from '@hooks/admin/useDedupQueue';
 import { useDedupHistory } from '@hooks/admin/useDedupHistory';
+import { useImportedGroups } from '@hooks/admin/useImportedGroups';
 import { AdminDedupApiService } from '@infrastructure/http/AdminDedupApiService';
 import { DedupTabs, type DedupTab } from './DedupTabs';
 import { DedupGroupList } from './DedupGroupList';
 import { DedupBulkActionBar } from './DedupBulkActionBar';
 import { DedupHistoryTab } from './DedupHistoryTab';
+import { ImportedGroupsTab } from './ImportedGroupsTab';
 import { MergeCompareModal } from '@presentation/components/features/admin/Dedup/MergeCompareModal';
 import { UndoConfirmModal } from '@presentation/components/features/admin/Dedup/UndoConfirmModal';
+import type { ImportedDedupGroup } from '@domain/entities/DedupGroup';
 
 function LoadingSkeleton() {
   return (
@@ -73,6 +76,8 @@ function DedupCenterPageInner() {
   const [activeTab, setActiveTab] = useState<DedupTab>('queue');
   const [selectedPhones, setSelectedPhones] = useState<Set<string>>(new Set());
   const [mergePhone, setMergePhone] = useState<string | null>(null);
+  const [mergeImportedGroup, setMergeImportedGroup] =
+    useState<ImportedDedupGroup | null>(null);
   const [isDismissingBulk, setIsDismissingBulk] = useState(false);
 
   // ── Undo modal state ──────────────────────────────────────────────────────────
@@ -91,18 +96,32 @@ function DedupCenterPageInner() {
     isUndoing,
     undo,
   } = useDedupHistory();
+  const {
+    groups: importedGroups,
+    isLoading: isImportedLoading,
+    error: importedError,
+    refetch: refetchImported,
+    onlyWithReal,
+    setOnlyWithReal,
+  } = useImportedGroups();
 
   // ── Refresh delegates to the active tab's data ────────────────────────────────
   const handleRefresh = useCallback(() => {
     if (activeTab === 'history') {
       refetchHistory();
+    } else if (activeTab === 'imported') {
+      refetchImported();
     } else {
       refetch();
     }
-  }, [activeTab, refetch, refetchHistory]);
+  }, [activeTab, refetch, refetchHistory, refetchImported]);
 
   const isCurrentTabLoading =
-    activeTab === 'history' ? isHistoryLoading : isLoading;
+    activeTab === 'history'
+      ? isHistoryLoading
+      : activeTab === 'imported'
+        ? isImportedLoading
+        : isLoading;
 
   // ── Selection handlers ────────────────────────────────────────────────────────
 
@@ -264,7 +283,22 @@ function DedupCenterPageInner() {
         </div>
       )}
 
-      {/* ── Merge modal ────────────────────────────────────────────────────────── */}
+      {/* ── Imported tab ───────────────────────────────────────────────────────── */}
+      {activeTab === 'imported' && (
+        <div data-testid="dedup-imported-content">
+          <ImportedGroupsTab
+            groups={importedGroups}
+            isLoading={isImportedLoading}
+            error={importedError}
+            onlyWithReal={onlyWithReal}
+            onToggleOnlyWithReal={setOnlyWithReal}
+            onOpenMerge={setMergeImportedGroup}
+            onRetry={refetchImported}
+          />
+        </div>
+      )}
+
+      {/* ── Merge modal (phone mode — Onda 2/3) ───────────────────────────────── */}
       {mergePhone && (
         <MergeCompareModal
           phoneNormalized={mergePhone}
@@ -272,6 +306,20 @@ function DedupCenterPageInner() {
           onMergeSuccess={() => {
             setMergePhone(null);
             refetch();
+          }}
+        />
+      )}
+
+      {/* ── Merge modal (direct-accounts mode — Onda 4b) ──────────────────────── */}
+      {mergeImportedGroup && (
+        <MergeCompareModal
+          directAccounts={mergeImportedGroup.accounts}
+          survivorSuggestedId={mergeImportedGroup.survivor_suggested_id}
+          survivorReason={mergeImportedGroup.survivor_reason}
+          onClose={() => setMergeImportedGroup(null)}
+          onMergeSuccess={() => {
+            setMergeImportedGroup(null);
+            refetchImported();
           }}
         />
       )}

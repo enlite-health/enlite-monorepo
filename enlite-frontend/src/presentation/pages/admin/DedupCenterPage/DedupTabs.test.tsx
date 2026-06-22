@@ -2,12 +2,11 @@
  * DedupTabs.test.tsx
  *
  * Covers:
- * - queue, history (active), imported (disabled) tabs render correctly
- * - Clicking queue/history buttons calls onTabChange
- * - Clicking the disabled imported tab does NOT call onTabChange
+ * - queue, history, imported (all now active) tabs render correctly (Onda 4b)
+ * - Clicking any of the three buttons calls onTabChange with correct tab id
  * - Active tab has bg-primary styling
- * - Inactive tab has tabInactive styling (no bg-primary)
- * - Disabled tab has cursor-not-allowed and aria-disabled="true"
+ * - Inactive tabs do NOT have bg-primary
+ * - No disabled spans exist (DISABLED_TABS is empty for Onda 4b)
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -26,32 +25,28 @@ function renderTabs(
 // ── Renders ───────────────────────────────────────────────────────────────────
 
 describe('DedupTabs — render', () => {
-  it('renders queue and history as clickable buttons', () => {
+  it('renders all three tabs as clickable buttons (Onda 4b: imported is active)', () => {
     renderTabs();
     const buttons = screen.getAllByRole('button');
-    // queue and history are non-disabled; imported is disabled (<span>)
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(3);
   });
 
-  it('renders the imported tab as a span with aria-disabled="true"', () => {
+  it('does NOT render any aria-disabled span (no disabled tabs in Onda 4b)', () => {
     renderTabs();
     const span = document.querySelector('[aria-disabled="true"]');
-    expect(span).not.toBeNull();
-    expect(span?.getAttribute('aria-disabled')).toBe('true');
+    expect(span).toBeNull();
   });
 });
 
-// ── onClick fires for non-disabled tabs ──────────────────────────────────────
+// ── onClick fires for all tabs ────────────────────────────────────────────────
 
-describe('DedupTabs — onClick fires for non-disabled tabs', () => {
+describe('DedupTabs — onClick fires for all tabs', () => {
   it('clicking the queue button calls onTabChange with "queue"', () => {
     const onTabChange = vi.fn();
     renderTabs('history', onTabChange);
 
-    // queue is inactive (not active=history), find by text key
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[0]); // first button = queue
-
     expect(onTabChange).toHaveBeenCalledWith('queue');
     expect(onTabChange).toHaveBeenCalledTimes(1);
   });
@@ -62,8 +57,16 @@ describe('DedupTabs — onClick fires for non-disabled tabs', () => {
 
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[1]); // second button = history
-
     expect(onTabChange).toHaveBeenCalledWith('history');
+  });
+
+  it('clicking the imported button calls onTabChange with "imported"', () => {
+    const onTabChange = vi.fn();
+    renderTabs('queue', onTabChange);
+
+    const buttons = screen.getAllByRole('button');
+    fireEvent.click(buttons[2]); // third button = imported
+    expect(onTabChange).toHaveBeenCalledWith('imported');
   });
 
   it('onTabChange is called even when active tab is clicked again', () => {
@@ -76,23 +79,6 @@ describe('DedupTabs — onClick fires for non-disabled tabs', () => {
   });
 });
 
-// ── Disabled tab does NOT fire ────────────────────────────────────────────────
-
-describe('DedupTabs — disabled tab does NOT call onTabChange', () => {
-  it('clicking the imported span does NOT call onTabChange', () => {
-    const onTabChange = vi.fn();
-    renderTabs('queue', onTabChange);
-
-    const disabledSpan = document.querySelector(
-      '[aria-disabled="true"]',
-    ) as HTMLElement;
-    expect(disabledSpan).not.toBeNull();
-
-    fireEvent.click(disabledSpan);
-    expect(onTabChange).not.toHaveBeenCalled();
-  });
-});
-
 // ── Styling ───────────────────────────────────────────────────────────────────
 
 describe('DedupTabs — styling', () => {
@@ -102,10 +88,11 @@ describe('DedupTabs — styling', () => {
     expect(buttons[0].className).toContain('bg-primary'); // queue active
   });
 
-  it('inactive tab does not have bg-primary class', () => {
+  it('inactive tabs do not have bg-primary class', () => {
     renderTabs('queue');
     const buttons = screen.getAllByRole('button');
     expect(buttons[1].className).not.toContain('bg-primary'); // history inactive
+    expect(buttons[2].className).not.toContain('bg-primary'); // imported inactive
   });
 
   it('active history tab has bg-primary class', () => {
@@ -114,15 +101,9 @@ describe('DedupTabs — styling', () => {
     expect(buttons[1].className).toContain('bg-primary'); // history active
   });
 
-  it('disabled tab has cursor-not-allowed class', () => {
-    renderTabs('queue');
-    const span = document.querySelector('[aria-disabled="true"]');
-    expect(span?.className).toContain('cursor-not-allowed');
-  });
-
-  it('disabled tab has text-gray-400 class', () => {
-    renderTabs('queue');
-    const span = document.querySelector('[aria-disabled="true"]');
-    expect(span?.className).toContain('text-gray-400');
+  it('active imported tab has bg-primary class', () => {
+    renderTabs('imported');
+    const buttons = screen.getAllByRole('button');
+    expect(buttons[2].className).toContain('bg-primary'); // imported active
   });
 });

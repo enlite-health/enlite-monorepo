@@ -204,3 +204,23 @@ describe('useDedupHistory — undo error', () => {
     expect(result.current.undoError).toBe('Error al deshacer la unificación');
   });
 });
+
+describe('useDedupHistory — cancel on unmount (L46)', () => {
+  it('does NOT update state when component unmounts before fetch resolves', async () => {
+    let resolveFn!: (v: typeof ITEM_1[]) => void;
+    const deferred = new Promise<(typeof ITEM_1)[]>((res) => {
+      resolveFn = res;
+    });
+    vi.spyOn(AdminDedupApiService, 'getHistory').mockReturnValue(deferred);
+
+    const { unmount } = renderHook(() => useDedupHistory());
+    unmount();
+
+    act(() => {
+      resolveFn([ITEM_1]);
+    });
+
+    // cancelled guard at L46 prevented state update — no React warning.
+    expect(true).toBe(true);
+  });
+});

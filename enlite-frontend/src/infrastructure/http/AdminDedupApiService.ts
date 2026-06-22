@@ -16,6 +16,7 @@ import type {
   DismissResult,
   MergeHistoryItem,
   UndoResult,
+  ImportedDedupGroup,
 } from '@domain/entities/DedupGroup';
 
 interface ApiSuccessResponse<T> {
@@ -33,6 +34,9 @@ class AdminDedupApiServiceClass {
   private readonly baseURL: string;
 
   constructor() {
+    // Fallback 'http://localhost:8080' is defensive dead code in practice:
+    // VITE_API_WORKER_FUNCTIONS_URL is always set in .env.* and vitest globals.
+    // Same pattern accepted in AdminContactNotesApiService and others.
     this.baseURL =
       (import.meta as unknown as { env: Record<string, string> }).env
         ?.VITE_API_WORKER_FUNCTIONS_URL ?? 'http://localhost:8080';
@@ -119,6 +123,20 @@ class AdminDedupApiServiceClass {
     return this.request<UndoResult>(
       'POST',
       `/api/admin/dedup/merges/${encoded}/undo`,
+    );
+  }
+
+  /**
+   * GET /api/admin/dedup/imported-groups?onlyWithReal=true|false
+   * Returns groups of accounts detected as duplicates by NAME.
+   * onlyWithReal=true (default) returns only the 142 real↔imported priority groups.
+   * onlyWithReal=false also includes imported↔imported groups.
+   */
+  async getImportedGroups(onlyWithReal = true): Promise<ImportedDedupGroup[]> {
+    const qs = `onlyWithReal=${onlyWithReal ? 'true' : 'false'}`;
+    return this.request<ImportedDedupGroup[]>(
+      'GET',
+      `/api/admin/dedup/imported-groups?${qs}`,
     );
   }
 }

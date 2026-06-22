@@ -10,12 +10,16 @@
  * Lines 110-111: the catch block in handleMerge — when merge() throws, the
  *   catch swallows it (mergeError is set by the hook, shown separately).
  *   This branch is reachable: merge() rejects and the component catches without crashing.
+ *
+ * Lines 107-113: the isDirectMode=true branch — MergeDirectModeBody rendered inside
+ *   the shell. Tests: ESC closes in direct mode; X button and backdrop also close;
+ *   the shell renders correctly with directAccounts props.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MergeCompareModal } from './MergeCompareModal';
-import type { DedupGroupDetail, MergeResult } from '@domain/entities/DedupGroup';
+import type { DedupGroupDetail, ImportedDedupAccount, MergeResult } from '@domain/entities/DedupGroup';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -267,5 +271,113 @@ describe('MergeCompareModal — catch in handleMerge (lines 110-111)', () => {
 
     // Component still alive
     expect(screen.getByTestId('dedup-merge-modal')).toBeInTheDocument();
+  });
+});
+
+// ── Lines 107-113: isDirectMode=true branch (MergeDirectModeBody inside shell) ─
+
+const ACC_REAL: ImportedDedupAccount = {
+  id: 'acc-real-001',
+  email: 'maria@example.com',
+  tier: 'REGISTERED',
+  status: 'ACTIVE',
+  created_at: '2026-01-15T10:00:00Z',
+  updated_at: '2026-03-01T10:00:00Z',
+  wja_count: 3,
+  docs_count: 2,
+  encuadres_count: 1,
+  login_real: true,
+  is_imported: false,
+};
+
+const ACC_IMP: ImportedDedupAccount = {
+  id: 'acc-imp-001',
+  email: null,
+  tier: 'PRE_REGISTER',
+  status: 'INCOMPLETE',
+  created_at: '2026-02-20T10:00:00Z',
+  updated_at: '2026-02-20T10:00:00Z',
+  wja_count: 0,
+  docs_count: 0,
+  encuadres_count: 0,
+  login_real: false,
+  is_imported: true,
+};
+
+const DIRECT_ACCOUNTS = [ACC_REAL, ACC_IMP];
+
+function renderDirectModal(overrides: {
+  onClose?: () => void;
+  onMergeSuccess?: () => void;
+} = {}) {
+  const defaults = {
+    onClose: vi.fn(),
+    onMergeSuccess: vi.fn(),
+  };
+  return render(
+    <MergeCompareModal
+      directAccounts={DIRECT_ACCOUNTS}
+      survivorSuggestedId={ACC_REAL.id}
+      survivorReason="real_account_absorbs_imported"
+      {...defaults}
+      {...overrides}
+    />,
+  );
+}
+
+describe('MergeCompareModal — direct mode shell (lines 107-113)', () => {
+  it('renders the modal with direct accounts (isDirectMode=true branch)', () => {
+    renderDirectModal();
+    expect(screen.getByTestId('dedup-merge-modal')).toBeInTheDocument();
+  });
+
+  it('shows MergeDirectModeBody — account cards for each direct account', () => {
+    renderDirectModal();
+    expect(
+      screen.getByTestId(`merge-account-card-${ACC_REAL.id}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`merge-account-card-${ACC_IMP.id}`),
+    ).toBeInTheDocument();
+  });
+
+  it('ESC key closes the modal in direct mode', async () => {
+    const onClose = vi.fn();
+    renderDirectModal({ onClose });
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('X button closes the modal in direct mode', async () => {
+    const onClose = vi.fn();
+    renderDirectModal({ onClose });
+
+    const closeBtn = screen.getByRole('button', { name: /Cerrar/i });
+    await act(async () => {
+      fireEvent.click(closeBtn);
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('backdrop click closes the modal in direct mode', async () => {
+    const onClose = vi.fn();
+    renderDirectModal({ onClose });
+
+    const backdrop = screen.getByTestId('dedup-merge-modal');
+    await act(async () => {
+      fireEvent.click(backdrop);
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT render conflict banner for real_account_absorbs_imported', () => {
+    renderDirectModal();
+    expect(screen.queryByTestId('imported-conflict-banner')).not.toBeInTheDocument();
   });
 });

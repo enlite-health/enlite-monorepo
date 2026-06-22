@@ -18,16 +18,13 @@ interface MergeAccountCardProps {
   onSelectSurvivor: () => void;
 }
 
+// new Date() + toLocaleString never throw in V8 (invalid input → 'Invalid Date' string).
 function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  } catch {
-    return iso;
-  }
+  return new Date(iso).toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
 }
 
 export function MergeAccountCard({

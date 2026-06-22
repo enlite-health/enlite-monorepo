@@ -648,6 +648,34 @@
           "confirmAriaLabel": "Confirmar deshacer unificación",
           "undoing": "Deshaciendo..."
         }
+      },
+      "imported": {
+        "loadError": "Error al cargar los grupos importados",
+        "empty": "Sin grupos por nombre",
+        "emptyDesc": "No se encontraron cuentas importadas con nombre coincidente.",
+        "namematchWarningTitle": "Coincidencia por NOMBRE (no por teléfono) — revisá bien antes de unir",
+        "namematchWarningDesc": "Estos grupos se detectaron por similitud de nombre. Verificá que sean la misma persona antes de unificar.",
+        "onlyWithRealLabel": "Solo con cuenta real",
+        "onlyWithRealHint": "Mostrando grupos con al menos 1 cuenta real (142 prioritarios)",
+        "allGroupsHint": "Mostrando todos los grupos (incluye importado↔importado)",
+        "reasonConflict": "requiere revisión",
+        "reviewBtn": "Revisar",
+        "conflictTitle": "Revisión manual requerida",
+        "conflictDesc": "Este grupo tiene más de una cuenta real. Unificá manualmente en la pestaña Fila.",
+        "reason": {
+          "real_account_absorbs_imported": "Real absorbe importado",
+          "conflict_multiple_real_accounts": "Conflicto: múltiples reales",
+          "most_complete": "Más completo"
+        },
+        "table": {
+          "accountCount": "Cuentas",
+          "signal": "Señal",
+          "survivor": "Principal sugerido",
+          "oldestAccount": "Alta",
+          "reason": "Razón",
+          "actions": "Acciones",
+          "mergeAriaLabel": "Unificar grupo con {{count}} cuentas"
+        }
       }
     },
     "apiDocs": {

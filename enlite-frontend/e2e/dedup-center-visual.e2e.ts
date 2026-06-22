@@ -499,6 +499,175 @@ test.describe('DedupCenterPage — visual proof', () => {
     });
   });
 
+  // ── Onda 4b visual tests ────────────────────────────────────────────────────
+
+  test('IMPORTADOS POPULADOS: aba com aviso de name-match, toggle e grupos', async ({ page }) => {
+    const ACC_IMP_REAL = {
+      id: 'acc-real-vis-001',
+      email: 'maria.gonzalez@example.com',
+      tier: 'REGISTERED',
+      status: 'ACTIVE',
+      created_at: '2026-01-10T10:00:00Z',
+      updated_at: '2026-03-01T10:00:00Z',
+      wja_count: 2,
+      docs_count: 1,
+      encuadres_count: 0,
+      login_real: true,
+      is_imported: false,
+    };
+    const ACC_IMP_IMPORTED = {
+      id: 'acc-imp-vis-001',
+      email: null,
+      tier: 'PRE_REGISTER',
+      status: 'INCOMPLETE',
+      created_at: '2026-02-15T10:00:00Z',
+      updated_at: '2026-02-15T10:00:00Z',
+      wja_count: 0,
+      docs_count: 0,
+      encuadres_count: 0,
+      login_real: false,
+      is_imported: true,
+    };
+    const MOCK_IMPORTED_GROUPS = [
+      {
+        accounts: [ACC_IMP_REAL, ACC_IMP_IMPORTED],
+        survivor_suggested_id: ACC_IMP_REAL.id,
+        survivor_reason: 'real_account_absorbs_imported',
+        has_real: true,
+      },
+    ];
+
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockDedupHistory(page);
+
+    page.route('**/api/admin/dedup/imported-groups**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_IMPORTED_GROUPS }),
+      }),
+    );
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Navigate to Importados tab
+    const importedTabBtn = page.getByRole('button', { name: /Importados/i });
+    await importedTabBtn.click();
+
+    await expect(
+      page.locator('[data-testid="dedup-imported-content"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Warning banner must be visible
+    await expect(
+      page.locator('[data-testid="imported-name-match-warning"]'),
+    ).toBeVisible({ timeout: 5000 });
+
+    // Toggle must be present
+    await expect(
+      page.locator('[data-testid="only-with-real-toggle"]'),
+    ).toBeVisible({ timeout: 5000 });
+
+    // Merge button for the group
+    await expect(
+      page.locator('[data-testid="imported-merge-btn-0"]'),
+    ).toBeVisible({ timeout: 5000 });
+
+    await expect(page).toHaveScreenshot('dedup-center-imported-populated.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('IMPORTADOS MODAL ABERTO: modal em modo direct-accounts com survivor real', async ({ page }) => {
+    const ACC_IMP_REAL = {
+      id: 'acc-real-vis-002',
+      email: 'juan.perez@example.com',
+      tier: 'REGISTERED',
+      status: 'ACTIVE',
+      created_at: '2026-01-10T10:00:00Z',
+      updated_at: '2026-03-01T10:00:00Z',
+      wja_count: 5,
+      docs_count: 3,
+      encuadres_count: 1,
+      login_real: true,
+      is_imported: false,
+    };
+    const ACC_IMP_IMPORTED = {
+      id: 'acc-imp-vis-002',
+      email: null,
+      tier: 'PRE_REGISTER',
+      status: 'INCOMPLETE',
+      created_at: '2026-03-01T10:00:00Z',
+      updated_at: '2026-03-01T10:00:00Z',
+      wja_count: 0,
+      docs_count: 0,
+      encuadres_count: 0,
+      login_real: false,
+      is_imported: true,
+    };
+    const MOCK_IMPORTED_GROUPS = [
+      {
+        accounts: [ACC_IMP_REAL, ACC_IMP_IMPORTED],
+        survivor_suggested_id: ACC_IMP_REAL.id,
+        survivor_reason: 'real_account_absorbs_imported',
+        has_real: true,
+      },
+    ];
+
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockDedupHistory(page);
+
+    page.route('**/api/admin/dedup/imported-groups**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_IMPORTED_GROUPS }),
+      }),
+    );
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Navigate to Importados tab
+    const importedTabBtn = page.getByRole('button', { name: /Importados/i });
+    await importedTabBtn.click();
+
+    await expect(
+      page.locator('[data-testid="dedup-imported-content"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Click the merge button to open modal
+    await page.locator('[data-testid="imported-merge-btn-0"]').click();
+
+    // Modal should appear
+    await expect(
+      page.locator('[data-testid="dedup-merge-modal"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Survivor card should be visible (no phone label in direct mode)
+    await expect(
+      page.locator(`[data-testid="merge-account-card-${ACC_IMP_REAL.id}"]`),
+    ).toBeVisible({ timeout: 10000 });
+
+    // No conflict banner for real_account_absorbs_imported
+    await expect(
+      page.locator('[data-testid="imported-conflict-banner"]'),
+    ).not.toBeVisible();
+
+    await expect(page).toHaveScreenshot('dedup-center-imported-modal-open.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
   test('MODAL DESHACER ABERTO: confirmação com phone exibido', async ({ page }) => {
     await loginAsAdmin(page);
     mockDedupPopulated(page);

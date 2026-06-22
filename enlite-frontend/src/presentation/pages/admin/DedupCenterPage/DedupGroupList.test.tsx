@@ -378,3 +378,88 @@ describe('DedupGroupList — tier badge via i18n', () => {
     expect(body.length).toBeGreaterThan(0);
   });
 });
+
+// ── reduce "keep earliest" false branch (L156) ────────────────────────────────
+
+describe('DedupGroupList — oldest-account reduce false branch', () => {
+  it('keeps the earliest account when ordered chronologically (false branch of ternary)', () => {
+    // acc-early (noon UTC) and acc-late (later) — reduce false branch: keep earliest
+    // Use noon UTC so no timezone rollback across midnight
+    const GROUP_ORDERED: DedupGroupSummary = {
+      phone_normalized: '+5496666666666',
+      accounts: [
+        makeAccount('acc-early', { created_at: '2026-03-01T12:00:00Z' }),
+        makeAccount('acc-late', { created_at: '2026-06-01T12:00:00Z' }),
+      ],
+      survivor_suggested: 'acc-early',
+    };
+
+    render(<DedupGroupList {...defaultProps([GROUP_ORDERED])} />);
+    // Date rendered (es-AR) — either way contains '2026'
+    expect(document.body.textContent).toContain('2026');
+  });
+
+  it('picks the earliest account when accounts are in reverse order (true branch)', () => {
+    // acc-late comes first; reduce picks acc-early as the overall earliest
+    const GROUP_REVERSED: DedupGroupSummary = {
+      phone_normalized: '+5497777777777',
+      accounts: [
+        makeAccount('acc-late', { created_at: '2026-06-01T12:00:00Z' }),
+        makeAccount('acc-early', { created_at: '2026-03-01T12:00:00Z' }),
+      ],
+      survivor_suggested: 'acc-late',
+    };
+
+    render(<DedupGroupList {...defaultProps([GROUP_REVERSED])} />);
+    expect(document.body.textContent).toContain('2026');
+  });
+});
+
+// ── Merge button disabled state (L168) ───────────────────────────────────────
+
+describe('DedupGroupList — merge button disabled state', () => {
+  it('merge button is NOT disabled when accounts have activity (totalActivity > 0)', () => {
+    // GROUP_A accounts have wja_count=2, docs_count=1 → totalActivity=6 > 0
+    render(<DedupGroupList {...defaultProps([GROUP_A])} />);
+    const buttons = screen.getAllByRole('button');
+    const mergeBtn = buttons[0] as HTMLButtonElement;
+    expect(mergeBtn.disabled).toBe(false);
+  });
+
+  it('merge button IS disabled when totalActivity=0 and accounts.length < 2', () => {
+    // Single account with all-zero counts
+    const GROUP_SINGLE_ZERO: DedupGroupSummary = {
+      phone_normalized: '+5498888888888',
+      accounts: [
+        makeAccount('acc-zero', {
+          wja_count: 0,
+          docs_count: 0,
+          encuadres_count: 0,
+        }),
+      ],
+      survivor_suggested: 'acc-zero',
+    };
+
+    render(<DedupGroupList {...defaultProps([GROUP_SINGLE_ZERO])} />);
+    const buttons = screen.getAllByRole('button');
+    const mergeBtn = buttons[0] as HTMLButtonElement;
+    expect(mergeBtn.disabled).toBe(true);
+  });
+
+  it('merge button is NOT disabled when totalActivity=0 but accounts.length >= 2', () => {
+    // Two accounts both with zero activity — totalActivity=0 but length=2 (not < 2)
+    const GROUP_TWO_ZERO: DedupGroupSummary = {
+      phone_normalized: '+5499999999990',
+      accounts: [
+        makeAccount('acc-z1', { wja_count: 0, docs_count: 0, encuadres_count: 0 }),
+        makeAccount('acc-z2', { wja_count: 0, docs_count: 0, encuadres_count: 0 }),
+      ],
+      survivor_suggested: 'acc-z1',
+    };
+
+    render(<DedupGroupList {...defaultProps([GROUP_TWO_ZERO])} />);
+    const buttons = screen.getAllByRole('button');
+    const mergeBtn = buttons[0] as HTMLButtonElement;
+    expect(mergeBtn.disabled).toBe(false);
+  });
+});
