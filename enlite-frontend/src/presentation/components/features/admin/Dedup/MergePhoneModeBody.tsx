@@ -99,8 +99,11 @@ export function MergePhoneModeBody({
     }
   }
 
+  // Defensive: backend contract is field_comparisons (plural). Optional-chaining
+  // + default so an unexpected/legacy payload never crashes the modal
+  // (prod incident: undefined.filter when backend sent the singular key).
   const conflictCount =
-    detail?.field_comparisons.filter((f) => f.has_conflict).length ?? 0;
+    detail?.field_comparisons?.filter((f) => f.has_conflict)?.length ?? 0;
 
   return (
     <>
@@ -142,13 +145,13 @@ export function MergePhoneModeBody({
                 />
               ))}
             </div>
-            {detail.reparent_preview.length > 0 && (
+            {(detail.reparent_preview?.length ?? 0) > 0 && (
               <div className="bg-slate-50 rounded-xl p-4">
                 <Text size="xs" weight="semibold" color="muted" as="p">
                   {t('admin.dedup.merge.reparentTitle', 'Se van a reasignar al principal:')}
                 </Text>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {detail.reparent_preview.map((rp) => (
+                  {(detail.reparent_preview ?? []).map((rp) => (
                     <span
                       key={rp.entity}
                       className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"
@@ -165,7 +168,7 @@ export function MergePhoneModeBody({
               </div>
             )}
             <MergeAdvancedFields
-              fieldComparisons={detail.field_comparisons}
+              fieldComparisons={detail.field_comparisons ?? []}
               accounts={detail.accounts}
               survivorId={survivorId}
               fieldChoices={fieldChoices}

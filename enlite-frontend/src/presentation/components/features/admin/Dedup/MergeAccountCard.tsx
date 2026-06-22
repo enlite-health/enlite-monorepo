@@ -43,10 +43,19 @@ export function MergeAccountCard({
       }`}
       data-testid={`merge-account-card-${account.id}`}
     >
-      {/* Header */}
+      {/* Header — email truncates so the long @enlite.import addresses of
+          imported accounts never squeeze the layout (full address in tooltip). */}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <Heading level={4} weight="semibold" color={isSurvivor ? 'primary' : undefined}>
+        <div
+          className="flex flex-col gap-0.5 min-w-0"
+          title={account.email ?? undefined}
+        >
+          <Heading
+            level={4}
+            weight="semibold"
+            color={isSurvivor ? 'primary' : undefined}
+            className="truncate"
+          >
             {account.email ?? t('admin.dedup.merge.noEmail', 'Sin email')}
           </Heading>
           <span
@@ -62,21 +71,14 @@ export function MergeAccountCard({
           </span>
         </div>
 
-        {isSurvivor ? (
-          <div className="flex items-center gap-1 text-primary shrink-0">
+        {/* Survivor selo stays in the header; the action button moved below. */}
+        {isSurvivor && (
+          <div className="flex items-center gap-1 text-primary shrink-0 whitespace-nowrap">
             <CheckCircle2 className="w-5 h-5" />
             <Text as="span" size="xs" weight="semibold" color="primary">
               {t('admin.dedup.merge.survivor', 'Principal')}
             </Text>
           </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onSelectSurvivor}
-          >
-            {t('admin.dedup.merge.setSurvivor', 'Elegir como principal')}
-          </Button>
         )}
       </div>
 
@@ -113,6 +115,19 @@ export function MergeAccountCard({
           </span>
         )}
       </div>
+
+      {/* Full-width action — only on non-survivor cards. Short label so it
+          never gets squeezed/clipped regardless of email length. */}
+      {!isSurvivor && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onSelectSurvivor}
+          className="w-full justify-center whitespace-nowrap"
+        >
+          {t('admin.dedup.merge.makePrimary', 'Hacer principal')}
+        </Button>
+      )}
     </div>
   );
 }

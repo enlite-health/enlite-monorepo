@@ -41,8 +41,12 @@ export interface DedupGroup {
 export interface DedupMergePreview {
   phone_normalized: string;
   accounts: DedupWorkerAccountDetail[];
-  reparent_preview: ReparentPreview;
-  field_comparison: FieldComparison[];
+  /** Conta sugerida como sobrevivente (tier logic). Sempre presente — fallback p/ 1ª conta. */
+  survivor_suggested: string;
+  /** Lista entidade→count do que será reparentado ao sobrevivente. */
+  reparent_preview: ReparentPreview[];
+  /** Comparação campo-a-campo. Chave PLURAL — contrato consumido pelo frontend. */
+  field_comparisons: FieldComparison[];
 }
 
 export interface DedupWorkerAccountDetail extends DedupWorkerAccount {
@@ -52,20 +56,21 @@ export interface DedupWorkerAccountDetail extends DedupWorkerAccount {
   has_encrypted_pii: boolean;
 }
 
+/** Uma linha de reparent_preview: quantos registros da entidade migram ao sobrevivente. */
 export interface ReparentPreview {
-  wja_total: number;
-  docs_total: number;
-  encuadres_total: number;
-  other_fk_tables: string[];
+  /** Nome lógico da entidade (ex: 'worker_job_applications', 'worker_documents'). */
+  entity: string;
+  count: number;
 }
 
 export interface FieldComparison {
   field: string;
-  survivor_has_value: boolean;
-  absorbed_has_value: boolean;
-  /** true = campo encriptado (PII) — valor não exibido */
+  /** Valor por account id. null = encriptado (PII, não exposto) ou ausente. */
+  values: Record<string, string | null>;
+  /** true = campo encriptado (PII) — valor não exibido (values fica null). */
   is_encrypted: boolean;
-  conflict: boolean;
+  /** true = ao menos 2 contas têm valores não-null diferentes. */
+  has_conflict: boolean;
 }
 
 // ── Parâmetros de entrada dos use cases ────────────────────────────────────

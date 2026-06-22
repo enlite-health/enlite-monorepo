@@ -110,7 +110,7 @@ describe('AdminDedupController.listGroups', () => {
 
 describe('AdminDedupController.getGroupDetail', () => {
   it('200 com detalhe do grupo', async () => {
-    const detail = { phone_normalized: PHONE_NORM, accounts: [], reparent_preview: { wja_total: 0, docs_total: 0, encuadres_total: 0, other_fk_tables: [] }, field_comparison: [] };
+    const detail = { phone_normalized: PHONE_NORM, accounts: [], survivor_suggested: '', reparent_preview: [], field_comparisons: [] };
     (GetDedupGroupDetailUseCase as jest.MockedClass<typeof GetDedupGroupDetailUseCase>)
       .prototype.execute.mockResolvedValueOnce(detail);
 
