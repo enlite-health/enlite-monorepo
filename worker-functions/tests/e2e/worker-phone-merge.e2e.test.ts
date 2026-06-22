@@ -96,10 +96,10 @@ beforeAll(async () => {
 
   const client = await pool.connect();
   try {
-    // Migration 222 criou idx_workers_phone_normalized_unique APÓS os dados duplicados
-    // já existirem em prod. O teste simula esse estado pré-migration-222, onde múltiplos
-    // workers ativos tinham o mesmo phone_normalized. Para reproduzir, removemos
-    // temporariamente o índice único (ele é idempotente, recriado no afterAll).
+    // O índice único idx_workers_phone_normalized_unique NÃO existe por migration no
+    // conjunto atual (migration 222 está deferida em prod). Este teste é self-contained:
+    // garante que o índice não existe antes do seed (para permitir duplicatas intencionais)
+    // e faz DROP no afterAll para não vazar para outras suítes.
     await client.query(`DROP INDEX IF EXISTS idx_workers_phone_normalized_unique`);
     await client.query('BEGIN');
 
@@ -188,18 +188,16 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!pool) return;
 
-  // Remove dados semeados (auditoria, colisões, workers) e recria o índice único
+  // Remove dados semeados na ordem correta (FK constraints: snapshots antes de audit)
   const client = await pool.connect();
   try {
+    // worker_merge_snapshots tem FK → worker_merge_audit: deletar primeiro
+    await client.query(`DELETE FROM worker_merge_snapshots WHERE absorbed_worker_id = ANY($1::uuid[])`, [seededWorkerIds]);
     await client.query(`DELETE FROM worker_merge_audit WHERE survivor_id = ANY($1::uuid[]) OR absorbed_id = ANY($1::uuid[])`, [seededWorkerIds]);
     await client.query(`DELETE FROM worker_phone_collisions WHERE phone_normalized = ANY($1)`, [seededPhones]);
     await client.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [seededWorkerIds]);
-    // Recria o índice único removido no beforeAll para permitir o seed
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_phone_normalized_unique
-        ON workers (phone_normalized)
-        WHERE phone_normalized IS NOT NULL AND merged_into_id IS NULL
-    `);
+    // Garante que o índice único não vaza para outras suítes (self-contained)
+    await client.query(`DROP INDEX IF EXISTS idx_workers_phone_normalized_unique`);
   } finally {
     client.release();
   }

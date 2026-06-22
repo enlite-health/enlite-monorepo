@@ -225,12 +225,9 @@ afterAll(async () => {
     [seededWorkerIds],
   ).catch(() => {});
 
-  // Recria índice único
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_workers_phone_normalized_unique
-      ON workers (phone_normalized)
-      WHERE phone_normalized IS NOT NULL AND merged_into_id IS NULL
-  `).catch(() => {});
+  // Garante que o índice único não vaza para outras suítes (self-contained)
+  // A migration 222 está deferida em prod — o índice não existe por migration no conjunto atual.
+  await pool.query(`DROP INDEX IF EXISTS idx_workers_phone_normalized_unique`).catch(() => {});
 
   await pool.end();
 });
