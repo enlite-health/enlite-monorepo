@@ -292,3 +292,73 @@ describe('MergeAdvancedFields — (f) enum field rendered via i18n', () => {
     expect(onFieldChoiceChange).toHaveBeenCalledWith('sex_encrypted', 'acc-B');
   });
 });
+
+// ── (g) enum mistos reais de prod — valores ES/EN em caixa mista ──────────────
+//
+// Prod tem valores como "mujer", "Hombre", "Varón", "Femenino", "Masculino"
+// (importados em ES) misturados com "male"/"female" (EN canônico).
+// O resolve() faz .toLowerCase() antes do lookup, portanto o mapa precisa cobrir
+// todas as variantes minúsculas.
+
+describe('MergeAdvancedFields — (g) prod mixed-case ES/EN enum values', () => {
+  /** Helper: renderiza, expande Avanzado e retorna o texto do body. */
+  async function renderAndExpandWithSex(accAValue: string, accBValue: string): Promise<string> {
+    const field: DedupFieldComparison = {
+      field: 'sex_encrypted',
+      values: { 'acc-A': accAValue, 'acc-B': accBValue },
+      is_encrypted: true,
+      has_conflict: true,
+    };
+    const { unmount } = renderComponent({ fieldComparisons: [field], accounts: ACCOUNTS });
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => { fireEvent.click(toggle); });
+    const text = document.body.textContent ?? '';
+    unmount();
+    return text;
+  }
+
+  it('sex_encrypted "mujer" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithSex('mujer', 'MALE');
+    // i18n key is rendered (no translations loaded in tests)
+    expect(text).toContain('workerRegistration.generalInfo.female');
+    expect(text).not.toContain('mujer');
+  });
+
+  it('sex_encrypted "Hombre" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithSex('FEMALE', 'Hombre');
+    expect(text).toContain('workerRegistration.generalInfo.male');
+    expect(text).not.toContain('Hombre');
+  });
+
+  it('sex_encrypted "Femenino" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithSex('Femenino', 'male');
+    expect(text).toContain('workerRegistration.generalInfo.female');
+    expect(text).not.toContain('Femenino');
+  });
+
+  it('sex_encrypted "Masculino" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithSex('female', 'Masculino');
+    expect(text).toContain('workerRegistration.generalInfo.male');
+    expect(text).not.toContain('Masculino');
+  });
+
+  it('sex_encrypted "Varón" resolves via i18n key (not shown verbatim)', async () => {
+    const text = await renderAndExpandWithSex('female', 'Varón');
+    expect(text).toContain('workerRegistration.generalInfo.male');
+    expect(text).not.toContain('Varón');
+  });
+
+  it('gender_encrypted "Femenino" also resolves via i18n (same SSOT)', async () => {
+    const field: DedupFieldComparison = {
+      field: 'gender_encrypted',
+      values: { 'acc-A': 'Femenino', 'acc-B': 'male' },
+      is_encrypted: true,
+      has_conflict: true,
+    };
+    renderComponent({ fieldComparisons: [field], accounts: ACCOUNTS });
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => { fireEvent.click(toggle); });
+    expect(document.body.textContent).toContain('workerRegistration.generalInfo.female');
+    expect(document.body.textContent).not.toContain('Femenino');
+  });
+});

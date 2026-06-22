@@ -55,11 +55,14 @@ export function MergeAdvancedFields({
   if (conflictingFields.length === 0) return null;
 
   return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
+    // overflow-hidden foi removido: cortava as rows quando expandido dentro de
+    // um flex container com min-h-0 (MergePhoneModeBody scrollable).
+    // O rounded-xl funciona sem overflow-hidden para border+background normais.
+    <div className="border border-slate-200 rounded-xl">
       {/* Toggle header */}
       <button
         type="button"
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors"
+        className={`w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors rounded-t-xl${!open ? ' rounded-b-xl' : ''}`}
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >

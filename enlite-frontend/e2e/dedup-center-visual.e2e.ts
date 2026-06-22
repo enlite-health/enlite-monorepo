@@ -826,12 +826,16 @@ test.describe('DedupCenterPage — visual proof', () => {
     });
   });
 
-  // ── Bug-fix scroll test ─────────────────────────────────────────────────────
+  // ── Bug-fix scroll test (atualizado: prova scroll REAL via scrollHeight/clientHeight) ──
 
   test('MODAL SCROLL: com 9 conflitos o miolo rola e o footer fica visível', async ({ page }) => {
     // Regression test for the layout bug where many Advanced-section fields
     // pushed the content beyond max-h-[90vh] with no scrollbar, cutting off
     // the footer and making it unreachable.
+    //
+    // Prova REAL de scroll: mede scrollHeight > clientHeight no container rolável
+    // (não apenas presença no DOM), rola até o fundo e confirma que o último
+    // campo e o footer ficam dentro do viewport do modal.
     await loginAsAdmin(page);
     mockDedupManyConflicts(page);
 
@@ -853,45 +857,189 @@ test.describe('DedupCenterPage — visual proof', () => {
       page.locator(`[data-testid="merge-account-card-${ACC_MANY_A.id}"]`),
     ).toBeVisible({ timeout: 15000 });
 
-    // Expand the Advanced section (9 conflicts): scroll the overflow container
-    // to the bottom so the toggle button is in the viewport, then click.
-    // We use page.evaluate to scroll the specific overflow container inside
-    // the modal (not the page itself) and dispatch the click via JS to avoid
-    // Playwright's "intercepted by parent" false positive on overflow containers.
+    // Scroll the overflow container to the bottom so the toggle is in view,
+    // then dispatch click via JS to avoid Playwright pointer interception.
     await page.evaluate(() => {
       const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
       const scrollable = modal?.querySelector('.overflow-y-auto');
       if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
     });
-    // Wait a tick for scroll to settle
     await page.waitForTimeout(200);
 
-    // Click via JS dispatch to avoid Playwright pointer interception in overflow containers
     await page.evaluate(() => {
       const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
       const toggle = modal?.querySelector('button[aria-expanded]');
       if (toggle) (toggle as HTMLElement).click();
     });
+    await page.waitForTimeout(400);
 
-    // All 9 conflict field rows should be in the DOM after expanding
-    await expect(page.getByText('valor-a-0').first()).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('valor-a-8').first()).toBeVisible({ timeout: 5000 });
+    // All 9 conflict field rows must be in the DOM after expanding
+    await expect(page.getByText('valor-a-0').first()).toBeAttached({ timeout: 8000 });
+    await expect(page.getByText('valor-a-8').first()).toBeAttached({ timeout: 5000 });
 
-    // Scroll back to top so screenshot shows cards + beginning of Advanced section
+    // ── PROVA REAL DE SCROLL (antes só checava presença no DOM) ───────────────
+    // 1. scrollHeight > clientHeight prova que o container TEM conteúdo rolável.
+    const scrollMetrics = await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const scrollable = modal?.querySelector('.overflow-y-auto') as HTMLElement | null;
+      return {
+        scrollHeight: scrollable?.scrollHeight ?? -1,
+        clientHeight: scrollable?.clientHeight ?? -1,
+        overflowY: scrollable ? window.getComputedStyle(scrollable).overflowY : 'none',
+      };
+    });
+
+    // O container deve ter conteúdo excedente (overflow real, não apenas DOM)
+    expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+    expect(scrollMetrics.overflowY).toBe('auto');
+
+    // 2. Rola até o fundo e verifica que o último campo fica dentro da área
+    //    visível do container scrollável (não cortado pelo overflow).
     await page.evaluate(() => {
       const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
       const scrollable = modal?.querySelector('.overflow-y-auto');
-      if (scrollable) scrollable.scrollTop = 0;
+      if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
     });
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
 
-    // The footer (Confirmar unificación) must still be visible even with 9
-    // advanced rows expanded — proves footer is outside the scroll area.
+    // O último campo de conflito (último row do Avanzado) deve estar dentro
+    // da área visível do scrollable após rolar até o fundo.
+    // "Dentro da área visível" significa que a row do campo está com seu
+    // bottom dentro do scrollRect do container (não cortado pelo overflow).
+    const lastFieldVisible = await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]') as HTMLElement | null;
+      const scrollable = modal?.querySelector('.overflow-y-auto') as HTMLElement | null;
+      if (!scrollable) return false;
+      const scrollRect = scrollable.getBoundingClientRect();
+
+      // O Avanzado expandido renderiza rows com class "px-4 py-3 flex flex-col gap-2"
+      // dentro do container ".divide-y.divide-slate-100" que fica DENTRO do scrollable.
+      const advancedRows = scrollable.querySelectorAll('.divide-y.divide-slate-100 > .px-4.py-3');
+      if (!advancedRows.length) return false;
+      const lastRow = advancedRows[advancedRows.length - 1] as HTMLElement;
+      const rowRect = lastRow.getBoundingClientRect();
+
+      // A row do último campo está dentro dos limites verticais do container scrollável
+      return (
+        rowRect.top >= scrollRect.top - 16 && // tolerância de 16px
+        rowRect.bottom <= scrollRect.bottom + 16
+      );
+    });
+    expect(lastFieldVisible).toBe(true);
+
+    // 3. O footer (Confirmar unificación) deve estar visível com Advanced expandido.
     const confirmBtn = page.getByRole('button', { name: /Confirmar unificación/i });
     await expect(confirmBtn).toBeVisible({ timeout: 5000 });
 
-    // Screenshot: shows modal with fixed footer visible and scrollable body
+    // Screenshot final: modal com Advanced expandido, rolado ao fundo — mostra
+    // o último campo E o footer visíveis simultaneamente.
     await expect(page).toHaveScreenshot('dedup-center-modal-scroll-9-conflicts.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  // ── Bug-fix enum misto de prod (valores ES/EN em caixa mista) ────────────────
+
+  test('MODAL ENUM MISTO: "mujer"/"Hombre"/"Femenino"/"male" mostram label amigável', async ({ page }) => {
+    // Regression test para o bug onde valores reais de prod em espanhol/inglês
+    // em caixa mista (mujer, Hombre, Varón, Femenino, Masculino, male, female)
+    // apareciam crus em vez de labels amigáveis via i18n.
+    //
+    // A tentativa anterior de fix só checava MALE/FEMALE (sintético). Esta
+    // suite usa valores REAIS e MISTOS de prod.
+    await loginAsAdmin(page);
+    // Reutiliza mockDedupManyConflicts mas sobrescreve o detail com valores mistos
+    mockDedupManyConflicts(page);
+
+    // Adicionar grupo extra com valores mistos reais de enum
+    const PHONE_MISTO = '+5491166660000';
+    const ACC_MISTO_A = { ...ACC_MANY_A, id: 'acc-misto-a', email: 'misto.a@example.com' };
+    const ACC_MISTO_B = { ...ACC_MANY_B, id: 'acc-misto-b', email: 'misto.b@example.com' };
+    const encodedMisto = encodeURIComponent(PHONE_MISTO);
+    page.route(`**/api/admin/dedup/groups/${encodedMisto}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            phone_normalized: PHONE_MISTO,
+            accounts: [ACC_MISTO_A, ACC_MISTO_B],
+            survivor_suggested: ACC_MISTO_A.id,
+            field_comparisons: [
+              // Valores mistos reais de prod (ES e EN, caixa mista)
+              {
+                field: 'sex_encrypted',
+                values: { [ACC_MISTO_A.id]: 'mujer', [ACC_MISTO_B.id]: 'Hombre' },
+                is_encrypted: true,
+                has_conflict: true,
+              },
+              {
+                field: 'gender_encrypted',
+                values: { [ACC_MISTO_A.id]: 'Femenino', [ACC_MISTO_B.id]: 'male' },
+                is_encrypted: true,
+                has_conflict: true,
+              },
+            ],
+            reparent_preview: [],
+          },
+        }),
+      }),
+    );
+    // Sobrescreve a lista para incluir PHONE_MISTO como 4o grupo
+    page.route('**/api/admin/dedup/groups', (route) => {
+      if (route.request().url().includes('/groups/')) return route.continue();
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [
+            ...MOCK_GROUPS,
+            { phone_normalized: PHONE_MANY, accounts: [ACC_MANY_A, ACC_MANY_B], survivor_suggested: ACC_MANY_A.id },
+            { phone_normalized: PHONE_MISTO, accounts: [ACC_MISTO_A, ACC_MISTO_B], survivor_suggested: ACC_MISTO_A.id },
+          ],
+        }),
+      });
+    });
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({ timeout: 20000 });
+
+    // Abrir modal para o grupo com enum misto (4o botão Unificar)
+    const mergeButtons = page.getByRole('button', { name: /Unificar/i });
+    await mergeButtons.nth(3).click();
+
+    await expect(page.locator('[data-testid="dedup-merge-modal"]')).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.locator(`[data-testid="merge-account-card-${ACC_MISTO_A.id}"]`),
+    ).toBeVisible({ timeout: 15000 });
+
+    // Expandir Avanzado
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const toggle = modal?.querySelector('button[aria-expanded]');
+      if (toggle) (toggle as HTMLElement).click();
+    });
+    await page.waitForTimeout(400);
+
+    // "mujer" não deve aparecer cru — deve ser substituído pelo label i18n
+    await expect(page.getByText('mujer', { exact: true })).toHaveCount(0);
+    // "Hombre" não deve aparecer cru
+    await expect(page.getByText('Hombre', { exact: true })).toHaveCount(0);
+    // Labels amigáveis devem aparecer (via i18n: Masculino/Femenino no es locale)
+    // Em testes reais com locale carregado, a i18n traduz a key para "Femenino"/"Masculino".
+    // Como o dev server carrega as traduções reais, podemos checar o texto visible.
+    const sexRow = page.locator('.px-4.py-3.flex.flex-col.gap-2').filter({
+      has: page.locator('span', { hasText: /Sexo/i }),
+    });
+    // O campo sex_encrypted deve conter "Femenino" (mujer→Femenino) e "Masculino" (Hombre→Masculino)
+    await expect(sexRow.getByText('Femenino', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(sexRow.getByText('Masculino', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+
+    // Screenshot mostrando "Femenino"/"Masculino" em vez de "mujer"/"Hombre"
+    await expect(page).toHaveScreenshot('dedup-center-modal-enum-misto.png', {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });
