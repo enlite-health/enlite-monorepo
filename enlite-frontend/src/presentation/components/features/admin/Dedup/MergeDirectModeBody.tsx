@@ -85,11 +85,14 @@ export function MergeDirectModeBody({
   const baseAccounts: DedupAccount[] = accounts;
 
   return (
-    <>
-      {/* Conflict banner — shown when multiple real accounts exist */}
+    // Root: flex column that fills the remaining card space (flex-1) and allows
+    // shrink below its content size (min-h-0) — essential for overflow-y-auto
+    // on the scrollable child to actually kick in inside a flex container.
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Conflict banner — fixed above scrollable area, does not scroll */}
       {isConflict && (
         <div
-          className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3 items-start"
+          className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3 items-start shrink-0"
           data-testid="imported-conflict-banner"
         >
           <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
@@ -107,8 +110,9 @@ export function MergeDirectModeBody({
         </div>
       )}
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 mt-4 flex flex-col gap-4">
+      {/* Scrollable body — grows to fill available space and scrolls when content
+          overflows (e.g. many account cards). Advanced section hidden in v1. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 mt-4 flex flex-col gap-4">
         {/* Advanced section intentionally hidden in direct-accounts mode v1:
             name-based groups don't provide field_comparisons from backend. */}
 
@@ -139,7 +143,7 @@ export function MergeDirectModeBody({
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — fixed below the scrollable area, always visible */}
       {!mergeSuccess && (
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 shrink-0">
           <Button variant="outline" size="sm" onClick={onClose} disabled={isMerging}>
@@ -164,6 +168,6 @@ export function MergeDirectModeBody({
           </Button>
         </div>
       )}
-    </>
+    </div>
   );
 }

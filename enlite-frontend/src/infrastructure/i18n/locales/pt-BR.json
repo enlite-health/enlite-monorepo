@@ -616,7 +616,19 @@
         "phone": "Telefone",
         "birthDate": "Data de nascimento",
         "sex": "Sexo",
-        "profession": "Profissão"
+        "profession": "Profissão",
+        "first_name_encrypted": "Nome",
+        "last_name_encrypted": "Sobrenome",
+        "sex_encrypted": "Sexo",
+        "gender_encrypted": "Gênero",
+        "birth_date_encrypted": "Data de nascimento",
+        "document_number_encrypted": "Número do documento",
+        "languages_encrypted": "Idiomas",
+        "knowledge_level": "Nível de formação",
+        "years_experience": "Anos de experiência",
+        "status": "Status",
+        "country": "País",
+        "data_sources": "Origem dos dados"
       },
       "entity": {
         "worker_job_applications": "candidaturas",

@@ -184,8 +184,71 @@ const MOCK_DETAIL_WITH_CONFLICT = {
       is_encrypted: false,
       has_conflict: true,
     },
+    // PII encriptada agora DECRIPTADA pelo backend (endpoint admin-only).
+    // A UI mostra o valor real + um 🔒 discreto, e o campo é selecionável.
+    // Valores distintos dos campos públicos pra ancorar o scroll/screenshot.
+    {
+      field: 'first_name_encrypted',
+      values: { [ACC_3.id]: 'NombreCifradoUno', [ACC_4.id]: 'NombreCifradoDos' },
+      is_encrypted: true,
+      has_conflict: true,
+    },
+    {
+      // enum sex → renderizado via i18n (MALE/FEMALE → label traduzido)
+      field: 'sex_encrypted',
+      values: { [ACC_3.id]: 'MALE', [ACC_4.id]: 'FEMALE' },
+      is_encrypted: true,
+      has_conflict: true,
+    },
   ],
   reparent_preview: [{ entity: 'worker_job_applications', count: 1 }],
+};
+
+// 9-conflict fixture — triggers the scroll bug: Advanced section expands with
+// many rows and pushes the footer out of the visible card area.
+const PHONE_MANY = '+5491155550000';
+const ACC_MANY_A = {
+  id: 'acc-many-a',
+  email: 'a.scroll@example.com',
+  tier: 'REGISTERED',
+  status: 'ACTIVE',
+  created_at: '2026-01-01T10:00:00Z',
+  updated_at: '2026-04-01T10:00:00Z',
+  wja_count: 5,
+  docs_count: 3,
+  encuadres_count: 1,
+  login_real: true,
+};
+const ACC_MANY_B = {
+  id: 'acc-many-b',
+  email: 'b.scroll@example.com',
+  tier: 'INCOMPLETE_REGISTER',
+  status: 'INCOMPLETE',
+  created_at: '2026-02-15T10:00:00Z',
+  updated_at: '2026-02-15T10:00:00Z',
+  wja_count: 0,
+  docs_count: 0,
+  encuadres_count: 0,
+  login_real: false,
+};
+
+const MOCK_DETAIL_MANY_CONFLICTS = {
+  phone_normalized: PHONE_MANY,
+  accounts: [ACC_MANY_A, ACC_MANY_B],
+  survivor_suggested: ACC_MANY_A.id,
+  field_comparisons: [
+    'firstName', 'lastName', 'email', 'documentNumber',
+    'birthDate', 'nationality', 'address', 'profession', 'specialty',
+  ].map((field, i) => ({
+    field,
+    values: { [ACC_MANY_A.id]: `valor-a-${i}`, [ACC_MANY_B.id]: `valor-b-${i}` },
+    is_encrypted: false,
+    has_conflict: true,
+  })),
+  reparent_preview: [
+    { entity: 'worker_job_applications', count: 5 },
+    { entity: 'worker_documents', count: 3 },
+  ],
 };
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -335,6 +398,37 @@ function mockDedupHistory(page: Page): void {
   );
 }
 
+function mockDedupManyConflicts(page: Page): void {
+  // Adds PHONE_MANY group to the queue list
+  page.route('**/api/admin/dedup/groups', (route) => {
+    if (route.request().url().includes('/groups/')) return route.continue();
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: [
+          ...MOCK_GROUPS,
+          {
+            phone_normalized: PHONE_MANY,
+            accounts: [ACC_MANY_A, ACC_MANY_B],
+            survivor_suggested: ACC_MANY_A.id,
+          },
+        ],
+      }),
+    });
+  });
+  // Detail endpoint for the many-conflict group
+  const encoded = encodeURIComponent(PHONE_MANY);
+  page.route(`**/api/admin/dedup/groups/${encoded}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: MOCK_DETAIL_MANY_CONFLICTS }),
+    }),
+  );
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 test.describe('DedupCenterPage — visual proof', () => {
@@ -455,6 +549,70 @@ test.describe('DedupCenterPage — visual proof', () => {
     });
 
     await expect(page).toHaveScreenshot('dedup-center-modal-mismatch.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('AVANZADO ENCRIPTADO: campos PII decriptados, valor visível + 🔒, selecionáveis', async ({ page }) => {
+    // Tall viewport so the modal + expanded Advanced section fit without the
+    // internal scroll clipping the decrypted PII rows out of the captured frame.
+    await page.setViewportSize({ width: 1280, height: 1600 });
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockGroupDetail(page, PHONE_2, MOCK_DETAIL_WITH_CONFLICT);
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(page.locator(`text=${PHONE_2}`).first()).toBeVisible({
+      timeout: 10000,
+    });
+
+    const mergeButtons = page.getByRole('button', { name: /Unificar/i });
+    await mergeButtons.nth(1).click();
+
+    await expect(page.locator('[data-testid="dedup-merge-modal"]')).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Expand the "Avanzado" section. Scroll the modal's overflow container to
+    // the bottom so the toggle is in view, then dispatch the click via JS
+    // (avoids Playwright's "intercepted by overflow parent" false positive).
+    const advancedToggle = page
+      .locator('[data-testid="dedup-merge-modal"] button[aria-expanded]')
+      .filter({ hasText: /Avanzado/i });
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const scrollable = modal?.querySelector('.overflow-y-auto');
+      if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+    });
+    await page.waitForTimeout(200);
+    await advancedToggle.dispatchEvent('click');
+    await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true', {
+      timeout: 10000,
+    });
+
+    // The decrypted value for the encrypted field must be present (not just 🔒).
+    const encryptedValue = page.getByText('NombreCifradoUno', { exact: true }).first();
+    await expect(encryptedValue).toBeAttached({ timeout: 10000 });
+    // The raw enum MALE/FEMALE must NOT leak — sex_encrypted is rendered via i18n.
+    await expect(page.getByText('MALE', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('FEMALE', { exact: true })).toHaveCount(0);
+
+    // Scroll the modal's overflow container to the bottom so the decrypted PII
+    // rows (values + 🔒 markers) sit in the visible band, then snapshot the page.
+    await encryptedValue.scrollIntoViewIfNeeded();
+    await expect(encryptedValue).toBeVisible({ timeout: 10000 });
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const scrollable = modal?.querySelector('.overflow-y-auto');
+      if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+    });
+    await page.waitForTimeout(300);
+
+    await expect(page).toHaveScreenshot('dedup-center-modal-advanced-encrypted.png', {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });
@@ -663,6 +821,77 @@ test.describe('DedupCenterPage — visual proof', () => {
     ).not.toBeVisible();
 
     await expect(page).toHaveScreenshot('dedup-center-imported-modal-open.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  // ── Bug-fix scroll test ─────────────────────────────────────────────────────
+
+  test('MODAL SCROLL: com 9 conflitos o miolo rola e o footer fica visível', async ({ page }) => {
+    // Regression test for the layout bug where many Advanced-section fields
+    // pushed the content beyond max-h-[90vh] with no scrollbar, cutting off
+    // the footer and making it unreachable.
+    await loginAsAdmin(page);
+    mockDedupManyConflicts(page);
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Click Unificar for PHONE_MANY (the 3rd row)
+    const mergeButtons = page.getByRole('button', { name: /Unificar/i });
+    await mergeButtons.nth(2).click();
+
+    await expect(page.locator('[data-testid="dedup-merge-modal"]')).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Wait for account cards
+    await expect(
+      page.locator(`[data-testid="merge-account-card-${ACC_MANY_A.id}"]`),
+    ).toBeVisible({ timeout: 15000 });
+
+    // Expand the Advanced section (9 conflicts): scroll the overflow container
+    // to the bottom so the toggle button is in the viewport, then click.
+    // We use page.evaluate to scroll the specific overflow container inside
+    // the modal (not the page itself) and dispatch the click via JS to avoid
+    // Playwright's "intercepted by parent" false positive on overflow containers.
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const scrollable = modal?.querySelector('.overflow-y-auto');
+      if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+    });
+    // Wait a tick for scroll to settle
+    await page.waitForTimeout(200);
+
+    // Click via JS dispatch to avoid Playwright pointer interception in overflow containers
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const toggle = modal?.querySelector('button[aria-expanded]');
+      if (toggle) (toggle as HTMLElement).click();
+    });
+
+    // All 9 conflict field rows should be in the DOM after expanding
+    await expect(page.getByText('valor-a-0').first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('valor-a-8').first()).toBeVisible({ timeout: 5000 });
+
+    // Scroll back to top so screenshot shows cards + beginning of Advanced section
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="dedup-merge-modal"]');
+      const scrollable = modal?.querySelector('.overflow-y-auto');
+      if (scrollable) scrollable.scrollTop = 0;
+    });
+    await page.waitForTimeout(100);
+
+    // The footer (Confirmar unificación) must still be visible even with 9
+    // advanced rows expanded — proves footer is outside the scroll area.
+    const confirmBtn = page.getByRole('button', { name: /Confirmar unificación/i });
+    await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+
+    // Screenshot: shows modal with fixed footer visible and scrollable body
+    await expect(page).toHaveScreenshot('dedup-center-modal-scroll-9-conflicts.png', {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });

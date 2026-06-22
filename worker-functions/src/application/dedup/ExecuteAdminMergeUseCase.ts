@@ -117,35 +117,37 @@ export class ExecuteAdminMergeUseCase {
   }
 
   /**
-   * Aplica field choices do modo avançado: copia valor do absorvido para o survivor
-   * apenas para os campos onde fieldChoices[campo] === 'absorbed:<absorbedId>'.
+   * Aplica field choices do modo avançado: quando o admin escolhe o valor da
+   * conta ABSORVIDA pra um campo, copia esse valor pro survivor antes do merge.
    *
-   * NUNCA sobrescreve campos encriptados com valor cru — aceita apenas a chave do choice.
+   * Contrato do choice (`fieldChoices[campo]`), aceito em duas formas:
+   *   - account id cru (UUID)  → forma enviada pelo frontend (MergeAdvancedFields)
+   *   - 'absorbed:<id>' / 'survivor' → forma legada (API direta / testes)
+   * Só aplicamos quando o vencedor é a conta `absorbedId` corrente; se o
+   * vencedor é o survivor, não há nada a copiar.
+   *
+   * Campos ENCRIPTADOS (`*_encrypted`): copia o CIPHERTEXT da conta escolhida
+   * direto pro survivor — SEM decriptar/re-encriptar (a coluna já guarda o
+   * ciphertext base64 KMS; basta transferir os bytes).
    */
   private async applyFieldChoices(
     survivorId: string,
     absorbedId: string,
     fieldChoices: Record<string, string>,
   ): Promise<void> {
-    // Campos que podem ser sobrescritos via choice (não encriptados e não críticos)
-    const OVERRIDABLE_FIELDS = new Set([
-      'profession',
-      'knowledge_level',
-      'years_experience',
-      'status',
-    ]);
-
     const overrideFields: string[] = [];
     for (const [field, choice] of Object.entries(fieldChoices)) {
       if (!OVERRIDABLE_FIELDS.has(field)) continue;
-      if (choice === `absorbed:${absorbedId}`) {
+      if (choiceWinsForAbsorbed(choice, absorbedId)) {
         overrideFields.push(field);
       }
     }
 
     if (overrideFields.length === 0) return;
 
-    // Busca valores do absorvido para os campos escolhidos
+    // Busca valores do absorvido para os campos escolhidos. Para campos
+    // encriptados isto retorna o ciphertext cru — que é exatamente o que
+    // copiamos (sem expor plaintext neste use case).
     const absRes = await this.pool.query<Record<string, unknown>>(
       `SELECT ${overrideFields.join(', ')} FROM workers WHERE id = $1::uuid`,
       [absorbedId],
@@ -164,4 +166,42 @@ export class ExecuteAdminMergeUseCase {
 
     log.info({ msg: 'field_choices_applied', survivorId, fields: overrideFields });
   }
+}
+
+/**
+ * Colunas que o modo avançado pode sobrescrever via choice. Inclui campos
+ * públicos + as colunas `*_encrypted` que aparecem no comparativo do detalhe
+ * (GetDedupGroupDetailUseCase.ENCRYPTED_FIELDS). Para encriptados copiamos o
+ * ciphertext, nunca o plaintext.
+ */
+const OVERRIDABLE_FIELDS = new Set<string>([
+  // Públicos
+  'profession',
+  'knowledge_level',
+  'years_experience',
+  'status',
+  // Encriptados (ciphertext copiado direto)
+  'first_name_encrypted',
+  'last_name_encrypted',
+  'sex_encrypted',
+  'gender_encrypted',
+  'birth_date_encrypted',
+  'document_number_encrypted',
+  'languages_encrypted',
+  'profile_photo_url_encrypted',
+  'whatsapp_phone_encrypted',
+  'linkedin_url_encrypted',
+  'sexual_orientation_encrypted',
+  'race_encrypted',
+  'religion_encrypted',
+  'weight_kg_encrypted',
+  'height_cm_encrypted',
+]);
+
+/**
+ * True quando o choice indica que a conta ABSORVIDA corrente é a vencedora do
+ * campo. Tolera o id cru (frontend) e o prefixo 'absorbed:' (legado/testes).
+ */
+function choiceWinsForAbsorbed(choice: string, absorbedId: string): boolean {
+  return choice === absorbedId || choice === `absorbed:${absorbedId}`;
 }

@@ -7,15 +7,16 @@ import { execSync } from 'child_process';
 export default async function globalSetup() {
   console.log('[E2E Setup] Checking Docker containers...');
   
+  const baseUrl = process.env.PW_BASE_URL ?? 'http://localhost:5173';
   try {
     // Check if frontend is responding (use 127.0.0.1 to avoid IPv6 resolution issues)
-    execSync('curl -sf http://127.0.0.1:5173/health || curl -sf http://127.0.0.1:5173 || curl -sf http://localhost:5173', {
+    execSync(`curl -sf ${baseUrl}/health || curl -sf ${baseUrl}`, {
       timeout: 5000,
       stdio: 'pipe'
     });
-    console.log('[E2E Setup] Frontend is running on port 5173');
+    console.log(`[E2E Setup] Frontend is running on ${baseUrl}`);
   } catch {
-    console.error('[E2E Setup] ERROR: Frontend not found on port 5173');
+    console.error(`[E2E Setup] ERROR: Frontend not found on ${baseUrl}`);
     console.error('[E2E Setup] Run: docker-compose up -d');
     process.exit(1);
   }

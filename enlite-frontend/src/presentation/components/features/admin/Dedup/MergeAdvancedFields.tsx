@@ -3,14 +3,32 @@
  *
  * Collapsible "Avanzado" section that shows field-level comparison.
  * Only rendered when there are conflicts.
- * PII-encrypted fields show 🔒 — never the raw value.
+ *
+ * PII-encrypted fields: the backend decrypts the value (admin-only endpoint —
+ * same PII the admin already sees on the worker detail page), so here we show
+ * the REAL value with a discreet 🔒 marker and make the field selectable like
+ * any other. The admin picks which account wins per field.
  */
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { getSexLabel, getGenderLabel } from '../WorkerDetail/workerDetailLabels';
 import type { DedupFieldComparison, DedupAccount } from '@domain/entities/DedupGroup';
+
+/**
+ * Renders a comparison value as a human label. Enum-like PII fields (sex/gender)
+ * are translated via i18n (reusing the worker-detail label SSOT); everything
+ * else is shown verbatim. Returns null for empty/absent values.
+ */
+function renderFieldValue(t: TFunction, field: string, raw: string | null): string | null {
+  if (raw == null || raw === '') return null;
+  if (field === 'sex_encrypted') return getSexLabel(t, raw.toLowerCase());
+  if (field === 'gender_encrypted') return getGenderLabel(t, raw.toLowerCase());
+  return raw;
+}
 
 interface MergeAdvancedFieldsProps {
   fieldComparisons: DedupFieldComparison[];
@@ -78,41 +96,38 @@ export function MergeAdvancedFields({
 
                 <div className="flex flex-wrap gap-2">
                   {accounts.map((account) => {
-                    const rawValue = field.values[account.id];
+                    const displayValue = renderFieldValue(
+                      t,
+                      field.field,
+                      field.values[account.id],
+                    );
                     const isChosen = chosenId === account.id;
 
                     return (
                       <button
                         key={account.id}
                         type="button"
-                        onClick={() =>
-                          !field.is_encrypted &&
-                          onFieldChoiceChange(field.field, account.id)
-                        }
-                        disabled={field.is_encrypted}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-left transition-all ${
+                        onClick={() => onFieldChoiceChange(field.field, account.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-left transition-all cursor-pointer ${
                           isChosen
                             ? 'border-primary bg-primary/5'
                             : 'border-slate-200 bg-white hover:border-slate-300'
-                        } ${field.is_encrypted ? 'cursor-default' : 'cursor-pointer'}`}
+                        }`}
                         aria-pressed={isChosen}
-                        aria-label={
-                          field.is_encrypted
-                            ? t('admin.dedup.merge.encryptedField', 'Campo cifrado')
-                            : `${account.email ?? account.id}: ${rawValue ?? '—'}`
-                        }
+                        aria-label={`${account.email ?? account.id}: ${displayValue ?? '—'}`}
                       >
                         {field.is_encrypted ? (
-                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          <Lock
+                            className="w-3 h-3 text-slate-400 shrink-0"
+                            aria-label={t('admin.dedup.merge.encryptedField', 'Campo cifrado')}
+                          />
                         ) : null}
                         <Text as="span" size="xs" color={isChosen ? 'primary' : undefined}>
-                          {field.is_encrypted
-                            ? '🔒'
-                            : (rawValue ?? (
-                                <span className="text-slate-400 italic">
-                                  {t('admin.dedup.merge.emptyValue', 'vacío')}
-                                </span>
-                              ))}
+                          {displayValue ?? (
+                            <span className="text-slate-400 italic">
+                              {t('admin.dedup.merge.emptyValue', 'vacío')}
+                            </span>
+                          )}
                         </Text>
                         <Text as="span" size="xs" color="muted">
                           ({account.email ?? account.id.slice(0, 8)})
