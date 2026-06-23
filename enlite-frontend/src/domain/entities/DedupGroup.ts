@@ -172,9 +172,12 @@ export interface ManualGroupAccount extends ImportedDedupAccount {
 /**
  * Response of POST /api/admin/dedup/manual-group
  * Same shape as ImportedDedupGroup but accounts include name + phone_normalized.
+ * field_comparisons mirrors the phone-group detail shape — same type, same semantics.
  */
 export interface ManualGroupResult {
   accounts: ManualGroupAccount[];
   survivor_suggested_id: string | null;
   survivor_reason: SurvivorReason;
+  /** Field-level comparison for the advanced chooser section (same shape as DedupGroupDetail). */
+  field_comparisons: DedupFieldComparison[];
 }

@@ -112,10 +112,35 @@ const MANUAL_ACC_B = {
   is_imported: true,
 };
 
+// Field comparisons returned by POST /manual-group (new in this PR).
+// One conflicting field (firstName) with realistic values from each account.
+// Statuses use real backend values: 'REGISTERED' (tier 1) and 'INCOMPLETE_REGISTER' (tier 3).
+const MANUAL_GROUP_FIELD_COMPARISONS = [
+  {
+    field: 'first_name_encrypted',
+    values: {
+      [CAND_A_ID]: 'María',
+      [CAND_B_ID]: 'Maria',
+    },
+    is_encrypted: true,
+    has_conflict: true,
+  },
+  {
+    field: 'years_experience',
+    values: {
+      [CAND_A_ID]: '3_5',
+      [CAND_B_ID]: null,
+    },
+    is_encrypted: false,
+    has_conflict: false,
+  },
+];
+
 const MANUAL_GROUP_RESULT = {
   accounts: [MANUAL_ACC_A, MANUAL_ACC_B],
   survivor_suggested_id: CAND_A_ID,
   survivor_reason: 'real_account_absorbs_imported',
+  field_comparisons: MANUAL_GROUP_FIELD_COMPARISONS,
 };
 
 // ── Auth helper (same as dedup-center-visual.e2e.ts) ─────────────────────────
@@ -397,8 +422,30 @@ test.describe('DedupCenterPage — Manual Merge visual proof', () => {
         page.locator('[data-testid="imported-conflict-banner"]'),
       ).not.toBeVisible();
 
-      // Screenshot 3: comparison step (MergeDirectModeBody)
+      // ── Advanced section (field_comparisons) ─────────────────────────────────
+      // MergeAdvancedFields renders a collapsible toggle when conflicts exist.
+      // 'first_name_encrypted' has has_conflict=true → "Avanzado" toggle appears.
+      const advancedToggle = page.locator('button[aria-expanded]');
+      await expect(advancedToggle).toBeVisible({ timeout: 5000 });
+      await expect(advancedToggle).toContainText('Avanzado');
+      await expect(advancedToggle).toContainText('1'); // 1 conflicto
+
+      // Screenshot 3: comparison step with account cards AND "Avanzado" section collapsed
       await expect(page).toHaveScreenshot('manual-merge-compare-step.png', {
+        fullPage: false,
+        maxDiffPixelRatio: 0.03,
+      });
+
+      // ── Expand and inspect the field values ──────────────────────────────────
+      await advancedToggle.click();
+
+      // Both account values for 'first_name_encrypted' should be visible after expand
+      // Account A: 'María', Account B: 'Maria'
+      await expect(page.getByText('María', { exact: true }).first()).toBeVisible({ timeout: 3000 });
+      await expect(page.getByText('Maria', { exact: true }).first()).toBeVisible({ timeout: 3000 });
+
+      // Screenshot 4: advanced section EXPANDED — proves field chooser is visible
+      await expect(page).toHaveScreenshot('manual-merge-compare-advanced-expanded.png', {
         fullPage: false,
         maxDiffPixelRatio: 0.03,
       });

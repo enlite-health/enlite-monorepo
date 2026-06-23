@@ -10,53 +10,31 @@
  * pra escolher a sobrevivente. `is_encrypted` continua true (a UI usa só como
  * sinal "dado sensível", agora COM valor). Decriptação reusa o mesmo
  * KMSEncryptionService da ficha (AdminWorkersDetailBuilder.decrypt).
+ *
+ * Funções de comparação campo-a-campo extraídas para dedupFieldComparison.ts
+ * (compartilhado com BuildManualDedupGroupUseCase).
  */
 
 import type { Pool } from 'pg';
-import { logger, reportError } from '@shared/logging';
+import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { classifyWorkerTier } from '../../infrastructure/services/WorkerPhoneMergeHelpers';
 import type {
   DedupMergePreview,
   DedupWorkerAccountDetail,
-  FieldComparison,
   ReparentPreview,
 } from './DedupTypes';
 import { suggestSurvivorId } from './suggestSurvivorId';
 import { IMPORT_EMAIL_SUFFIX, SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
 import { discoverWorkerFkTables } from '../../infrastructure/services/WorkerPhoneMergeFkDiscovery';
+import {
+  COMPARE_FIELDS,
+  ENCRYPTED_FIELDS,
+  ENCRYPTED_FIELDS_PRESENT,
+  buildFieldComparisons,
+} from './dedupFieldComparison';
 
 const log = logger.child({ source: 'GetDedupGroupDetailUseCase' });
-
-// Campos encriptados — nunca exibir valor cru
-const ENCRYPTED_FIELDS = new Set([
-  'first_name_encrypted',
-  'last_name_encrypted',
-  'sex_encrypted',
-  'gender_encrypted',
-  'birth_date_encrypted',
-  'document_number_encrypted',
-  'languages_encrypted',
-  'profile_photo_url_encrypted',
-  'whatsapp_phone_encrypted',
-  'linkedin_url_encrypted',
-  'sexual_orientation_encrypted',
-  'race_encrypted',
-  'religion_encrypted',
-  'weight_kg_encrypted',
-  'height_cm_encrypted',
-]);
-
-// Campos públicos para comparação (não encriptados)
-const COMPARE_FIELDS = [
-  'profession',
-  'knowledge_level',
-  'years_experience',
-  'status',
-  'country',
-  'data_sources',
-  ...Array.from(ENCRYPTED_FIELDS),
-];
 
 export class GetDedupGroupDetailUseCase {
   private readonly encryptionService: KMSEncryptionService;
@@ -169,77 +147,7 @@ export class GetDedupGroupDetailUseCase {
   }
 }
 
-async function buildFieldComparisons(
-  fields: string[],
-  rows: Record<string, unknown>[],
-  encryptionService: KMSEncryptionService,
-): Promise<FieldComparison[]> {
-  if (rows.length < 2) return [];
-
-  return Promise.all(
-    fields.map(field => buildSingleFieldComparison(field, rows, encryptionService)),
-  );
-}
-
-async function buildSingleFieldComparison(
-  field: string,
-  rows: Record<string, unknown>[],
-  encryptionService: KMSEncryptionService,
-): Promise<FieldComparison> {
-  const isEncrypted = ENCRYPTED_FIELDS.has(field);
-
-  // values: por account id. Para encriptado, DECRIPTA o ciphertext (uso
-  // autorizado — endpoint admin-only; mesmo PII visível na ficha do prestador).
-  const values: Record<string, string | null> = {};
-  for (const row of rows) {
-    const id = String(row.id);
-    const raw = row[field];
-    values[id] = isEncrypted
-      ? await decryptFieldValue(encryptionService, raw, field, id)
-      : raw == null || raw === ''
-        ? null
-        : stringifyValue(raw);
-  }
-
-  // Conflito: ao menos 2 valores não-null distintos. Para encriptado, compara
-  // o PLAINTEXT decriptado (o ciphertext KMS é não-determinístico — mesmo valor
-  // gera bytes diferentes, então comparar ciphertext daria falso conflito).
-  const cmpVals = Object.values(values).filter((v): v is string => v != null && v !== '');
-  const hasConflict = cmpVals.length > 1 && new Set(cmpVals).size > 1;
-
-  return { field, values, is_encrypted: isEncrypted, has_conflict: hasConflict };
-}
-
-/**
- * Decripta 1 campo encriptado de 1 conta. Erro de decrypt é gracioso: loga e
- * retorna null pro campo, sem derrubar o endpoint (uma chave/registro corrompido
- * não pode quebrar a comparação inteira do grupo).
- */
-async function decryptFieldValue(
-  encryptionService: KMSEncryptionService,
-  raw: unknown,
-  field: string,
-  workerId: string,
-): Promise<string | null> {
-  if (raw == null || raw === '') return null;
-  try {
-    const plaintext = await encryptionService.decrypt(String(raw));
-    return plaintext === '' ? null : plaintext;
-  } catch (err) {
-    const e = err instanceof Error ? err : new Error(String(err));
-    reportError(e, { source: 'GetDedupGroupDetailUseCase:decryptFieldValue', field, workerId });
-    return null;
-  }
-}
-
-function stringifyValue(raw: unknown): string {
-  if (Array.isArray(raw)) return raw.map(v => String(v)).join(', ');
-  return String(raw);
-}
-
-function ENCRYPTED_FIELDS_PRESENT(row: Record<string, unknown>): boolean {
-  return Array.from(ENCRYPTED_FIELDS).some(f => row[f] != null);
-}
+// ── Helpers de tier/prefix (privados a este módulo) ─────────────────────────
 
 function isSyntheticUid(authUid: string): boolean {
   if (!authUid.trim()) return true;
@@ -251,3 +159,7 @@ function extractPrefix(authUid: string): string {
   const match = SYNTHETIC_AUTH_UID_PREFIXES.find(p => authUid.startsWith(p));
   return match ?? 'real';
 }
+
+// Re-exporta apenas o que os testes de GetDedupGroupDetail precisam internamente.
+// A lógica de comparação vive em dedupFieldComparison.ts (SSOT).
+export { ENCRYPTED_FIELDS, COMPARE_FIELDS };

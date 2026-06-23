@@ -115,6 +115,7 @@ export function ManualMergeModal({ onClose, onMergeSuccess }: ManualMergeModalPr
             accounts={manualGroup.accounts}
             survivorSuggestedId={manualGroup.survivor_suggested_id ?? manualGroup.accounts[0]?.id ?? ''}
             survivorReason={manualGroup.survivor_reason}
+            fieldComparisons={manualGroup.field_comparisons}
             onClose={onClose}
             onMergeSuccess={() => {
               onMergeSuccess();

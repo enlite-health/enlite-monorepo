@@ -346,6 +346,72 @@ describe('POST /api/admin/dedup/manual-group — 1 real + 1 importado', () => {
     expect(imp1Acc!.login_real).toBe(false);
     expect(imp1Acc!.tier).toBe(3);
   });
+
+  it('inclui field_comparisons — array não-vazio com shape correto', async () => {
+    const res = await api.post('/api/admin/dedup/manual-group',
+      { ids: [REAL1_ID, IMP1_ID] },
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.data.success).toBe(true);
+
+    const { field_comparisons } = res.data.data as {
+      field_comparisons: Array<{
+        field: string;
+        values: Record<string, string | null>;
+        is_encrypted: boolean;
+        has_conflict: boolean;
+      }>;
+    };
+
+    // Array não-vazio (COMPARE_FIELDS tem vários campos)
+    expect(Array.isArray(field_comparisons)).toBe(true);
+    expect(field_comparisons.length).toBeGreaterThan(0);
+
+    // Shape correto em cada entrada
+    for (const cmp of field_comparisons) {
+      expect(typeof cmp.field).toBe('string');
+      expect(typeof cmp.is_encrypted).toBe('boolean');
+      expect(typeof cmp.has_conflict).toBe('boolean');
+      expect(typeof cmp.values).toBe('object');
+      expect(cmp.values).not.toBeNull();
+      // Deve ter chave para cada account semeado
+      expect(Object.keys(cmp.values)).toContain(REAL1_ID);
+      expect(Object.keys(cmp.values)).toContain(IMP1_ID);
+    }
+  });
+
+  it('field_comparisons inclui campo encriptado com is_encrypted=true', async () => {
+    const res = await api.post('/api/admin/dedup/manual-group',
+      { ids: [REAL1_ID, IMP1_ID] },
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+
+    expect(res.status).toBe(200);
+
+    const { field_comparisons } = res.data.data as {
+      field_comparisons: Array<{
+        field: string;
+        is_encrypted: boolean;
+        has_conflict: boolean;
+        values: Record<string, string | null>;
+      }>;
+    };
+
+    // Deve existir ao menos 1 campo encriptado na lista
+    const encryptedFields = field_comparisons.filter(f => f.is_encrypted);
+    expect(encryptedFields.length).toBeGreaterThan(0);
+
+    // Ex: first_name_encrypted
+    const firstNameCmp = field_comparisons.find(f => f.field === 'first_name_encrypted');
+    expect(firstNameCmp).toBeDefined();
+    expect(firstNameCmp!.is_encrypted).toBe(true);
+    // Ambas contas semeadas não têm first_name_encrypted → values null, sem conflito
+    expect(firstNameCmp!.values[REAL1_ID]).toBeNull();
+    expect(firstNameCmp!.values[IMP1_ID]).toBeNull();
+    expect(firstNameCmp!.has_conflict).toBe(false);
+  });
 });
 
 // ── 6. POST /api/admin/dedup/manual-group — 2 reais → conflict ───────────────

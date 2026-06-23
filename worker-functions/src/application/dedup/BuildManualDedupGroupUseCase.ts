@@ -13,6 +13,9 @@
  * (ImportedDedupWorkerAccount + name decriptado + phone_normalized),
  * reutilizando electSurvivor e toImportedAccount de dedupGroupBuilder.
  *
+ * Inclui field_comparisons (comparação campo-a-campo via dedupFieldComparison)
+ * para exibição do chooser "Avanzado" na UI — mesmo padrão do GetDedupGroupDetail.
+ *
  * O merge em si é feito pelo endpoint existente POST /api/admin/dedup/merge.
  */
 
@@ -25,7 +28,11 @@ import {
   electSurvivor,
   toImportedAccount,
 } from './dedupGroupBuilder';
-import type { ImportedDedupWorkerAccount } from './DedupTypes';
+import type { FieldComparison, ImportedDedupWorkerAccount } from './DedupTypes';
+import {
+  COMPARE_FIELDS,
+  buildFieldComparisons,
+} from './dedupFieldComparison';
 
 const log = logger.child({ source: 'BuildManualDedupGroupUseCase' });
 
@@ -41,6 +48,8 @@ export interface ManualDedupGroupResult {
   accounts: ManualDedupAccount[];
   survivor_suggested_id: string | null;
   survivor_reason: string;
+  /** Comparação campo-a-campo das contas escolhidas (chooser "Avanzado"). */
+  field_comparisons: FieldComparison[];
 }
 
 // ── Erros de domínio ──────────────────────────────────────────────────────
@@ -54,8 +63,32 @@ export class ManualDedupValidationError extends Error {
 
 // ── Raw DB row ─────────────────────────────────────────────────────────────
 
+/**
+ * Estende BuilderWorkerRow com merged_into_id (validação) e todos os campos
+ * de COMPARE_FIELDS necessários para buildFieldComparisons.
+ */
 interface WorkerRow extends BuilderWorkerRow {
   merged_into_id: string | null;
+  // Campos de COMPARE_FIELDS não cobertos por BuilderWorkerRow
+  profession: string | null;
+  knowledge_level: string | null;
+  years_experience: number | null;
+  status: string;
+  country: string | null;
+  first_name_encrypted: string | null;
+  last_name_encrypted: string | null;
+  sex_encrypted: string | null;
+  gender_encrypted: string | null;
+  birth_date_encrypted: string | null;
+  languages_encrypted: string | null;
+  profile_photo_url_encrypted: string | null;
+  whatsapp_phone_encrypted: string | null;
+  linkedin_url_encrypted: string | null;
+  sexual_orientation_encrypted: string | null;
+  race_encrypted: string | null;
+  religion_encrypted: string | null;
+  weight_kg_encrypted: string | null;
+  height_cm_encrypted: string | null;
 }
 
 // ── Use case ───────────────────────────────────────────────────────────────
@@ -86,16 +119,26 @@ export class BuildManualDedupGroupUseCase {
 
     const { survivorId, survivorReason } = electSurvivor(rows);
 
+    // Comparação campo-a-campo — mesmo padrão do GetDedupGroupDetail.
+    // rows já contém todas as colunas de COMPARE_FIELDS (inclusive *_encrypted).
+    const fieldComparisons = await buildFieldComparisons(
+      COMPARE_FIELDS,
+      rows as unknown as Record<string, unknown>[],
+      this.encryptionService,
+    );
+
     log.info({
       msg: 'build_manual_dedup_group_done',
       survivorId,
       survivorReason,
+      field_comparisons_count: fieldComparisons.length,
     });
 
     return {
       accounts,
       survivor_suggested_id: survivorId,
       survivor_reason: survivorReason,
+      field_comparisons: fieldComparisons,
     };
   }
 
@@ -110,10 +153,31 @@ export class BuildManualDedupGroupUseCase {
          w.status,
          w.created_at,
          w.updated_at,
-         w.document_number_encrypted,
-         w.data_sources,
          w.phone_normalized,
          w.merged_into_id,
+         -- Campos de COMPARE_FIELDS (não encriptados)
+         w.profession,
+         w.knowledge_level,
+         w.years_experience,
+         w.country,
+         w.data_sources,
+         -- Campos de COMPARE_FIELDS (encriptados KMS)
+         w.document_number_encrypted,
+         w.first_name_encrypted,
+         w.last_name_encrypted,
+         w.sex_encrypted,
+         w.gender_encrypted,
+         w.birth_date_encrypted,
+         w.languages_encrypted,
+         w.profile_photo_url_encrypted,
+         w.whatsapp_phone_encrypted,
+         w.linkedin_url_encrypted,
+         w.sexual_orientation_encrypted,
+         w.race_encrypted,
+         w.religion_encrypted,
+         w.weight_kg_encrypted,
+         w.height_cm_encrypted,
+         -- Campos para electSurvivor / completeness
          (
            (CASE WHEN w.first_name_encrypted      IS NOT NULL THEN 1 ELSE 0 END) +
            (CASE WHEN w.last_name_encrypted        IS NOT NULL THEN 1 ELSE 0 END) +

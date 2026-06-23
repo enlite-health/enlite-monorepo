@@ -1,27 +1,31 @@
 /**
  * MergeDirectModeBody
  *
- * Direct-accounts flow body for MergeCompareModal (Onda 4b imported groups).
+ * Direct-accounts flow body for MergeCompareModal (Onda 4b imported groups)
+ * AND the manual-merge flow (ManualMergeModal).
  * Accounts are supplied directly — no HTTP fetch needed.
  *
  * Notes:
- * - Advanced (field-level) section is intentionally hidden: name-based groups
- *   don't return field_comparisons from the backend in v1.
+ * - Advanced (field-level) section is shown ONLY when fieldComparisons is
+ *   provided and non-empty (manual-merge flow). Importados tab does not supply
+ *   field_comparisons — the section stays hidden, preserving existing behaviour.
  * - survivor_reason='conflict_multiple_real_accounts' disables the merge button
  *   and shows a blocking banner directing the operator to the Fila tab.
  *
  * Extracted from MergeCompareModal to keep each file ≤400 lines.
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GitMerge, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminDedupApiService } from '@infrastructure/http/AdminDedupApiService';
 import { MergeAccountCard } from './MergeAccountCard';
+import { MergeAdvancedFields } from './MergeAdvancedFields';
 import type {
   DedupAccount,
+  DedupFieldComparison,
   ImportedDedupAccount,
   MergeRequest,
   SurvivorReason,
@@ -33,6 +37,13 @@ export interface MergeDirectModeBodyProps {
   survivorReason: SurvivorReason;
   onClose: () => void;
   onMergeSuccess: () => void;
+  /**
+   * Field-level comparisons for the advanced chooser.
+   * Provided only by the manual-merge flow (POST /manual-group now returns
+   * field_comparisons). When undefined or empty the section stays hidden,
+   * keeping the Importados tab behaviour unchanged.
+   */
+  fieldComparisons?: DedupFieldComparison[];
 }
 
 export function MergeDirectModeBody({
@@ -41,15 +52,24 @@ export function MergeDirectModeBody({
   survivorReason,
   onClose,
   onMergeSuccess,
+  fieldComparisons,
 }: MergeDirectModeBodyProps) {
   const { t } = useTranslation();
   const [survivorId, setSurvivorId] = useState<string>(survivorSuggestedId);
   const [isMerging, setIsMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [mergeSuccess, setMergeSuccess] = useState(false);
+  const [fieldChoices, setFieldChoices] = useState<Record<string, string>>({});
 
   // survivor_reason='conflict_multiple_real_accounts' → block merge
   const isConflict = survivorReason === 'conflict_multiple_real_accounts';
+
+  const handleFieldChoiceChange = useCallback(
+    (field: string, accountId: string) => {
+      setFieldChoices((prev) => ({ ...prev, [field]: accountId }));
+    },
+    [],
+  );
 
   async function handleMerge() {
     // Defense-in-depth: button is disabled when isConflict=true so this
@@ -60,7 +80,13 @@ export function MergeDirectModeBody({
       .map((a) => a.id)
       .filter((id) => id !== survivorId);
 
-    const payload: MergeRequest = { survivorId, absorbedIds };
+    const payload: MergeRequest = {
+      survivorId,
+      absorbedIds,
+      // Include field choices only when the advanced section was shown and used.
+      // Mirrors MergePhoneModeBody pattern: spread only when non-empty.
+      ...(Object.keys(fieldChoices).length > 0 ? { fieldChoices } : {}),
+    };
 
     setIsMerging(true);
     setMergeError(null);
@@ -111,11 +137,8 @@ export function MergeDirectModeBody({
       )}
 
       {/* Scrollable body — grows to fill available space and scrolls when content
-          overflows (e.g. many account cards). Advanced section hidden in v1. */}
+          overflows (e.g. many account cards or the Advanced field-chooser section). */}
       <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 mt-4 flex flex-col gap-4">
-        {/* Advanced section intentionally hidden in direct-accounts mode v1:
-            name-based groups don't provide field_comparisons from backend. */}
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {baseAccounts.map((account) => (
             <MergeAccountCard
@@ -126,6 +149,19 @@ export function MergeDirectModeBody({
             />
           ))}
         </div>
+
+        {/* Advanced field-chooser: rendered only for the manual-merge flow when
+            the backend supplies field_comparisons. Importados groups do not
+            provide this prop → section stays hidden (no regression). */}
+        {(fieldComparisons?.length ?? 0) > 0 && (
+          <MergeAdvancedFields
+            fieldComparisons={fieldComparisons ?? []}
+            accounts={baseAccounts}
+            survivorId={survivorId}
+            fieldChoices={fieldChoices}
+            onFieldChoiceChange={handleFieldChoiceChange}
+          />
+        )}
 
         {mergeError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-3">
