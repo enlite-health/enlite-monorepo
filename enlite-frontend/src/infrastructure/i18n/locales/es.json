@@ -1078,6 +1078,28 @@
       "weight": "Peso",
       "height": "Altura",
       "edit": "Editar",
+      "professionValue": {
+        "AT": "Acompañante Terapéutico",
+        "CAREGIVER": "Cuidador/a",
+        "NURSE": "Enfermero/a",
+        "KINESIOLOGIST": "Kinesiólogo/a",
+        "PSYCHOLOGIST": "Psicólogo/a"
+      },
+      "editModal": {
+        "title": "Editar prestador",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "email": "E-mail",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "addressSection": "Dirección",
+        "unset": "—",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "invalidEmail": "E-mail inválido",
+        "selectAddress": "Seleccioná una dirección de la lista de sugerencias",
+        "saveError": "Error al guardar los cambios"
+      },
       "serviceRadius": "Radio de atención",
       "termsOfUse": "Términos de uso",
       "privacyPolicy": "Políticas de privacidad",
