@@ -25,6 +25,11 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { WorkerDetail, WorkerDocument } from '@domain/entities/Worker';
 
 vi.mock('@infrastructure/http/AdminApiService');
+// WorkerDetailContent calls useAdminAuth (Firebase). Non-admin profile → no edit
+// affordance, isolating this document-regression test from auth state.
+vi.mock('@presentation/hooks/useAdminAuth', () => ({
+  useAdminAuth: () => ({ adminProfile: null }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
 }));

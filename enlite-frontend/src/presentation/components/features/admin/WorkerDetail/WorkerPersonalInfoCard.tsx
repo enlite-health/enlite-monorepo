@@ -18,6 +18,8 @@ interface WorkerPersonalInfoCardProps {
   weightKg: string | null;
   heightCm: string | null;
   tags?: WorkerTagSummary[];
+  /** When provided, renders the admin-only Edit button wired to this handler. */
+  onEdit?: () => void;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -41,6 +43,7 @@ export function WorkerPersonalInfoCard({
   weightKg,
   heightCm,
   tags = [],
+  onEdit,
 }: WorkerPersonalInfoCardProps) {
   const { t } = useTranslation();
 
@@ -54,9 +57,11 @@ export function WorkerPersonalInfoCard({
         <Heading level={1} as="h3">
           {t('admin.workerDetail.personalInfo')}
         </Heading>
-        <Button variant="primary" size="sm" className="w-40 shrink-0">
-          {t('admin.workerDetail.edit')}
-        </Button>
+        {onEdit && (
+          <Button variant="primary" size="sm" className="w-40 shrink-0" onClick={onEdit} data-testid="worker-edit-button">
+            {t('admin.workerDetail.edit')}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col gap-2.5">

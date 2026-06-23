@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useWorkerDetail } from '@hooks/admin/useWorkerDetail';
 import { useAdminWorkerDocuments } from '@hooks/admin/useAdminWorkerDocuments';
 import { useAdminAdditionalDocuments } from '@hooks/admin/useAdminAdditionalDocuments';
@@ -16,6 +18,7 @@ import { WorkerEncuadresCard } from './WorkerEncuadresCard';
 import { WorkerProfessionalCard } from './WorkerProfessionalCard';
 import { WorkerAvailabilityCard } from './WorkerAvailabilityCard';
 import { WorkerTestAccountToggle } from './WorkerTestAccountToggle';
+import { WorkerEditModal } from './WorkerEditModal';
 
 interface WorkerDetailContentProps {
   workerId: string | undefined;
@@ -23,6 +26,11 @@ interface WorkerDetailContentProps {
   header?: React.ReactNode;
   /** Rendered when the worker fails to load (page renders a full-screen fallback). */
   renderError?: (message: string) => React.ReactNode;
+  /**
+   * Enables the admin-only edit affordances (page only — the read-only profile
+   * modal omits this). Still double-gated by EnliteRole.ADMIN at runtime.
+   */
+  allowEdit?: boolean;
 }
 
 /**
@@ -31,10 +39,13 @@ interface WorkerDetailContentProps {
  * fetching, tab state and card layout — read-only except for document review
  * (page) and the admin-only test-account toggle.
  */
-export function WorkerDetailContent({ workerId, header, renderError }: WorkerDetailContentProps): JSX.Element {
+export function WorkerDetailContent({ workerId, header, renderError, allowEdit = false }: WorkerDetailContentProps): JSX.Element {
   const { t } = useTranslation();
-  const { worker, isLoading, error, patchDocuments, patchDocumentValidations } = useWorkerDetail(workerId);
+  const { adminProfile } = useAdminAuth();
+  const canEdit = allowEdit && adminProfile?.role === EnliteRole.ADMIN;
+  const { worker, isLoading, error, refetch, patchDocuments, patchDocumentValidations } = useWorkerDetail(workerId);
   const [activeTab, setActiveTab] = useState<WorkerTab>('documents');
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   const docsOptions = useMemo(
     () => ({ onDocumentsChange: patchDocuments, onValidationChange: patchDocumentValidations }),
@@ -91,8 +102,17 @@ export function WorkerDetailContent({ workerId, header, renderError }: WorkerDet
           weightKg={worker.weightKg}
           heightCm={worker.heightCm}
           tags={worker.tags ?? []}
+          onEdit={canEdit ? () => setIsEditOpen(true) : undefined}
         />
       </div>
+
+      {canEdit && isEditOpen && (
+        <WorkerEditModal
+          worker={worker}
+          onClose={() => setIsEditOpen(false)}
+          onSaved={refetch}
+        />
+      )}
 
       {/* Admin-only: test-account toggle */}
       <WorkerTestAccountToggle workerId={worker.id} initialIsTest={worker.isTest} />

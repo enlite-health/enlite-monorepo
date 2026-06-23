@@ -64,6 +64,48 @@ export interface WorkerEncuadre {
   createdAt: string;
 }
 
+/** Canonical profession enum (workers.profession). Mirror of backend mig 064. */
+export const WORKER_PROFESSIONS = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
+export type WorkerProfession = (typeof WORKER_PROFESSIONS)[number];
+
+/** Canonical document types accepted by the admin profile edit endpoint. */
+export const WORKER_DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
+export type WorkerDocumentType = (typeof WORKER_DOCUMENT_TYPES)[number];
+
+/**
+ * Partial payload for PATCH /api/admin/workers/:id/profile (admin-only).
+ * Every field is optional; at least one must be sent. Address is NOT here —
+ * it is edited via PUT /api/admin/workers/:id/service-area (Google Places).
+ */
+export interface WorkerProfileUpdatePayload {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  documentType?: WorkerDocumentType;
+  documentNumber?: string;
+  profession?: WorkerProfession;
+}
+
+export interface WorkerProfileUpdateResult {
+  workerId: string;
+  fieldsUpdated: string[];
+}
+
+/**
+ * Payload for PUT /api/admin/workers/:id/service-area (admin-only).
+ * Mirrors the worker self-service service-area save (Google Places + lat/lng).
+ */
+export interface WorkerServiceAreaUpdatePayload {
+  address: string;
+  addressComplement?: string;
+  serviceRadiusKm: number;
+  lat: number;
+  lng: number;
+  city?: string;
+  postalCode?: string;
+  neighborhood?: string;
+}
+
 export interface WorkerDetail {
   id: string;
   email: string;

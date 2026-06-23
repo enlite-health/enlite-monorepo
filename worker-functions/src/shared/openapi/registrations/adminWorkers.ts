@@ -121,6 +121,81 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'patch',
+  path: '/api/admin/workers/{id}/profile',
+  tags: ['Admin · Workers'],
+  summary: 'Edita campos do perfil de um worker (apenas ADMIN)',
+  description:
+    'Atualização parcial do perfil de um worker. Restrito à role ADMIN. ' +
+    'Campos PII são encriptados via KMS antes da gravação. ' +
+    'Atualizar `profession` pode reativar o gate REGISTERED (trigger fn_guard_registered_status).',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({ id: UuidParam }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            firstName: z.string().optional(),
+            lastName: z.string().optional(),
+            email: z.string().email().optional(),
+            documentType: z.enum(['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF']).optional(),
+            documentNumber: z.string().optional(),
+            profession: z.enum(['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST']).optional(),
+          }).openapi({ description: 'Subconjunto de campos a atualizar (ao menos um). Endereço é editado via PUT /service-area.' }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Perfil atualizado. Retorna fieldsUpdated.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Body inválido ou nenhum campo informado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Sem permissão de admin.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/admin/workers/{id}/service-area',
+  tags: ['Admin · Workers'],
+  summary: 'Edita endereço/área de serviço de um worker (apenas ADMIN)',
+  description:
+    'Substitui a área de serviço primária do worker (Google Places + lat/lng). ' +
+    'Reusa o mesmo use case do self-service e recalcula o status do worker.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({ id: UuidParam }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            address: z.string().openapi({ example: 'Av. Corrientes 1234, CABA' }),
+            addressComplement: z.string().optional(),
+            serviceRadiusKm: z.number().openapi({ example: 10 }),
+            lat: z.number().openapi({ example: -34.6037 }),
+            lng: z.number().openapi({ example: -58.3816 }),
+            city: z.string().optional(),
+            postalCode: z.string().optional(),
+            neighborhood: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Área de serviço salva.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Body inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Sem permissão de admin.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/api/admin/workers',
   tags: ['Admin · Workers'],
