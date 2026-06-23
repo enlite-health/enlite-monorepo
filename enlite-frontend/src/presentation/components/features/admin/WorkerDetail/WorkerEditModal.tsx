@@ -17,6 +17,7 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { GooglePlacesAutocomplete } from '@presentation/components/molecules/GooglePlacesAutocomplete';
 import { extractAddressComponents } from '@application/use-cases/extractAddressComponents';
+import { WorkerEditProfessionalFields } from './WorkerEditProfessionalFields';
 
 interface WorkerEditModalProps {
   worker: WorkerDetail;
@@ -25,13 +26,24 @@ interface WorkerEditModalProps {
   onSaved: () => void;
 }
 
-interface EditForm {
+export interface WorkerEditFormValues {
   firstName: string;
   lastName: string;
   email: string;
   documentType: string;
   documentNumber: string;
   profession: string;
+  // professional data
+  occupation: string;
+  knowledgeLevel: string;
+  titleCertificate: string;
+  yearsExperience: string;
+  experienceTypes: string[];
+  preferredTypes: string[];
+  preferredAgeRange: string[];
+  languages: string[];
+  linkedinUrl: string;
+  // address
   address: string;
   addressComplement: string;
   serviceRadiusKm: number;
@@ -73,7 +85,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     control,
     setError,
     formState: { errors },
-  } = useForm<EditForm>({
+  } = useForm<WorkerEditFormValues>({
     defaultValues: {
       firstName: worker.firstName ?? '',
       lastName: worker.lastName ?? '',
@@ -81,6 +93,15 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
       documentType: worker.documentType ?? '',
       documentNumber: worker.documentNumber ?? '',
       profession: worker.profession ?? '',
+      occupation: worker.occupation ?? '',
+      knowledgeLevel: worker.knowledgeLevel ?? '',
+      titleCertificate: worker.titleCertificate ?? '',
+      yearsExperience: worker.yearsExperience ?? '',
+      experienceTypes: worker.experienceTypes ?? [],
+      preferredTypes: worker.preferredTypes ?? [],
+      preferredAgeRange: worker.preferredAgeRange ?? [],
+      languages: worker.languages ?? [],
+      linkedinUrl: worker.linkedinUrl ?? '',
       address: initialAddress,
       addressComplement: '',
       serviceRadiusKm: initialRadius,
@@ -124,7 +145,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     }
   };
 
-  const buildProfilePatch = (values: EditForm): WorkerProfileUpdatePayload => {
+  const buildProfilePatch = (values: WorkerEditFormValues): WorkerProfileUpdatePayload => {
     const patch: WorkerProfileUpdatePayload = {};
     if (values.firstName.trim() && values.firstName.trim() !== (worker.firstName ?? '')) patch.firstName = values.firstName.trim();
     if (values.lastName.trim() && values.lastName.trim() !== (worker.lastName ?? '')) patch.lastName = values.lastName.trim();
@@ -136,10 +157,22 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     if (values.profession && values.profession !== (worker.profession ?? '') && (WORKER_PROFESSIONS as readonly string[]).includes(values.profession)) {
       patch.profession = values.profession as WorkerProfileUpdatePayload['profession'];
     }
+    // professional scalars — send only when non-empty and changed
+    if (values.occupation && values.occupation !== (worker.occupation ?? '')) patch.occupation = values.occupation;
+    if (values.knowledgeLevel && values.knowledgeLevel !== (worker.knowledgeLevel ?? '')) patch.knowledgeLevel = values.knowledgeLevel;
+    if (values.yearsExperience && values.yearsExperience !== (worker.yearsExperience ?? '')) patch.yearsExperience = values.yearsExperience;
+    if (values.titleCertificate.trim() && values.titleCertificate.trim() !== (worker.titleCertificate ?? '')) patch.titleCertificate = values.titleCertificate.trim();
+    if (values.linkedinUrl.trim() && values.linkedinUrl.trim() !== (worker.linkedinUrl ?? '')) patch.linkedinUrl = values.linkedinUrl.trim();
+    // professional arrays — send (incl. empty to clear) when changed
+    const arrChanged = (a: string[], b: string[]) => JSON.stringify(a) !== JSON.stringify(b);
+    if (arrChanged(values.experienceTypes, worker.experienceTypes ?? [])) patch.experienceTypes = values.experienceTypes;
+    if (arrChanged(values.preferredTypes, worker.preferredTypes ?? [])) patch.preferredTypes = values.preferredTypes;
+    if (arrChanged(values.preferredAgeRange, worker.preferredAgeRange ?? [])) patch.preferredAgeRange = values.preferredAgeRange;
+    if (arrChanged(values.languages, worker.languages ?? [])) patch.languages = values.languages;
     return patch;
   };
 
-  const onSubmit = async (values: EditForm): Promise<void> => {
+  const onSubmit = async (values: WorkerEditFormValues): Promise<void> => {
     setSubmitError(null);
 
     if (values.email.trim() && !EMAIL_RE.test(values.email.trim())) {
@@ -284,6 +317,9 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
               <InputWithIcon id="we-documentNumber" inputSize="compact" data-testid="we-documentNumber" {...register('documentNumber')} />
             </FormField>
           </div>
+
+          {/* Dados profissionais */}
+          <WorkerEditProfessionalFields control={control} register={register} />
 
           {/* Endereço (Google Places) */}
           <div className="flex flex-col gap-4 pt-2 border-t border-slate-100">

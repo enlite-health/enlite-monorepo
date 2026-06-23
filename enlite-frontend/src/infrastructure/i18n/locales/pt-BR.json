@@ -1056,6 +1056,12 @@
         "KINESIOLOGIST": "Fisioterapeuta",
         "PSYCHOLOGIST": "Psicólogo(a)"
       },
+      "occupationValue": {
+        "AT": "Acompanhante Terapêutico",
+        "CUIDADOR": "Cuidador(a)",
+        "AMBOS": "Ambos"
+      },
+      "linkedin": "LinkedIn",
       "editModal": {
         "title": "Editar prestador",
         "firstName": "Nome",
@@ -1063,6 +1069,7 @@
         "email": "E-mail",
         "documentType": "Tipo de documento",
         "documentNumber": "Número do documento",
+        "professionalSection": "Dados profissionais",
         "addressSection": "Endereço",
         "unset": "—",
         "save": "Salvar",

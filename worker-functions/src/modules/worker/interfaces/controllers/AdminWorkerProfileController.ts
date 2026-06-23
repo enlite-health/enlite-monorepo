@@ -34,6 +34,16 @@ const UpdateProfileBodySchema = z
     documentType: z.enum(CANONICAL_DOCUMENT_TYPES).optional(),
     documentNumber: z.string().trim().min(1).max(64).optional(),
     profession: z.enum(CANONICAL_PROFESSIONS).optional(),
+    // ── Professional data ──
+    occupation: z.enum(['AT', 'CUIDADOR', 'AMBOS']).optional(), // workers.occupation has a CHECK
+    knowledgeLevel: z.string().trim().max(40).optional(),
+    titleCertificate: z.string().trim().max(80).optional(),
+    yearsExperience: z.string().trim().max(20).optional(),
+    experienceTypes: z.array(z.string().trim().max(60)).max(20).optional(),
+    preferredTypes: z.array(z.string().trim().max(60)).max(20).optional(),
+    preferredAgeRange: z.array(z.string().trim().max(40)).max(10).optional(),
+    languages: z.array(z.string().trim().max(10)).max(10).optional(),
+    linkedinUrl: z.string().trim().max(255).optional(),
   })
   .strict()
   .refine(

@@ -145,7 +145,7 @@ export function WorkerTagsArea({ workerId, initialTags }: WorkerTagsAreaProps): 
           <button
             type="button"
             onClick={handleOpenDropdown}
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-dashed border-gray-400 text-xs text-gray-500 hover:border-primary hover:text-primary transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 h-6 px-2.5 rounded-full border border-primary text-xs font-medium text-primary hover:bg-primary hover:text-white transition-colors cursor-pointer"
           >
             {t('admin.workerDetail.tags.addTag')}
             <ChevronDown className={`w-3 h-3 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
