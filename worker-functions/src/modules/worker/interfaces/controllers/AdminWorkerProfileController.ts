@@ -6,6 +6,7 @@ import {
   type WorkerProfilePatch,
 } from '../../application/UpdateWorkerProfileFieldsUseCase';
 import { logger, reportError } from '@shared/logging';
+import { WorkerAuditRepository, extractWorkerAuditActor } from '../../infrastructure/WorkerAuditRepository';
 
 /**
  * AdminWorkerProfileController
@@ -34,6 +35,16 @@ const UpdateProfileBodySchema = z
     documentType: z.enum(CANONICAL_DOCUMENT_TYPES).optional(),
     documentNumber: z.string().trim().min(1).max(64).optional(),
     profession: z.enum(CANONICAL_PROFESSIONS).optional(),
+    // ── Professional data ──
+    occupation: z.enum(CANONICAL_PROFESSIONS).optional(), // workers.occupation: enum alinhado a profession (mig 076)
+    knowledgeLevel: z.string().trim().max(40).optional(),
+    titleCertificate: z.string().trim().max(80).optional(),
+    yearsExperience: z.string().trim().max(20).optional(),
+    experienceTypes: z.array(z.string().trim().max(60)).max(20).optional(),
+    preferredTypes: z.array(z.string().trim().max(60)).max(20).optional(),
+    preferredAgeRange: z.array(z.string().trim().max(40)).max(10).optional(),
+    languages: z.array(z.string().trim().max(10)).max(10).optional(),
+    linkedinUrl: z.string().trim().max(255).optional(),
   })
   .strict()
   .refine(
@@ -47,9 +58,11 @@ function getUid(req: Request): string | null {
 
 export class AdminWorkerProfileController {
   private readonly useCase: UpdateWorkerProfileFieldsUseCase;
+  private readonly auditRepo: WorkerAuditRepository;
 
   constructor() {
     this.useCase = new UpdateWorkerProfileFieldsUseCase();
+    this.auditRepo = new WorkerAuditRepository();
   }
 
   /** PATCH /api/admin/workers/:id/profile */
@@ -69,7 +82,13 @@ export class AdminWorkerProfileController {
     try {
       const result = await this.useCase.execute(patch);
       logger.info({ msg: 'worker profile updated by admin', workerId: id, uid, fieldsUpdated: result.fieldsUpdated });
-      res.status(200).json({ success: true, data: result });
+      // Trilho de auditoria detalhado (quem/o-quê/quando/de-onde) — best-effort.
+      await this.auditRepo.recordFieldChanges({
+        workerId: id,
+        fields: result.changes,
+        actor: extractWorkerAuditActor(req),
+      });
+      res.status(200).json({ success: true, data: { workerId: result.workerId, fieldsUpdated: result.fieldsUpdated } });
     } catch (err) {
       if (err instanceof WorkerNotFoundError) {
         res.status(404).json({ success: false, error: 'Worker not found' });

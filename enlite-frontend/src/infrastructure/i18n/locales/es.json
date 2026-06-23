@@ -1105,6 +1105,7 @@
         "KINESIOLOGIST": "Kinesiólogo/a",
         "PSYCHOLOGIST": "Psicólogo/a"
       },
+      "linkedin": "LinkedIn",
       "editModal": {
         "title": "Editar prestador",
         "firstName": "Nombre",
@@ -1112,6 +1113,7 @@
         "email": "E-mail",
         "documentType": "Tipo de documento",
         "documentNumber": "Número de documento",
+        "professionalSection": "Datos profesionales",
         "addressSection": "Dirección",
         "unset": "—",
         "save": "Guardar",

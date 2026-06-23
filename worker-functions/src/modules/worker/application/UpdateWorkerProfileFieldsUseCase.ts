@@ -17,6 +17,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { logger, reportError } from '@shared/logging';
+import type { EntityFieldDiff } from '@shared/audit/types';
+import { captureWorkerBefore } from './workerAuditDiff';
 
 export interface WorkerProfilePatch {
   workerId: string;
@@ -37,6 +39,25 @@ export interface WorkerProfilePatch {
   profession?: string;
   meiNumber?: string;
   meiCnpj?: string;
+  // ── Professional data ──
+  /** Plaintext `occupation` column (AT/CUIDADOR/AMBOS). */
+  occupation?: string;
+  /** Plaintext `knowledge_level` column. */
+  knowledgeLevel?: string;
+  /** Plaintext `title_certificate` column (free text). */
+  titleCertificate?: string;
+  /** Plaintext `years_experience` column. */
+  yearsExperience?: string;
+  /** Plaintext TEXT[] `experience_types` column. */
+  experienceTypes?: string[];
+  /** Plaintext TEXT[] `preferred_types` column. */
+  preferredTypes?: string[];
+  /** Plaintext TEXT[] `preferred_age_range` column. */
+  preferredAgeRange?: string[];
+  /** Encrypted `languages_encrypted` (JSON) + `languages_bidx` blind index. */
+  languages?: string[];
+  /** Encrypted `linkedin_url_encrypted` column. */
+  linkedinUrl?: string;
   address?: {
     street?: string;
     number?: string;
@@ -51,6 +72,8 @@ export interface WorkerProfilePatch {
 export interface UpdateWorkerProfileFieldsResult {
   workerId: string;
   fieldsUpdated: string[];
+  /** Diff antes→depois por campo, para auditoria. */
+  changes: EntityFieldDiff[];
 }
 
 export class WorkerNotFoundError extends Error {
@@ -85,6 +108,9 @@ export class UpdateWorkerProfileFieldsUseCase {
       throw new WorkerNotFoundError(workerId);
     }
 
+    // Snapshot "before" (decriptado) para o diff de auditoria.
+    const before = await captureWorkerBefore(this.pool, this.encryptionService, workerId);
+
     const fieldsUpdated: string[] = [];
 
     // 2. Update scalar fields on workers table
@@ -96,8 +122,15 @@ export class UpdateWorkerProfileFieldsUseCase {
       fieldsUpdated.push('address');
     }
 
+    const afterMap = scalarFields as Record<string, unknown>;
+    const changes: EntityFieldDiff[] = fieldsUpdated.map((field) => ({
+      field,
+      before: before[field] ?? null,
+      after: field === 'address' ? address ?? null : afterMap[field] ?? null,
+    }));
+
     log.info({ msg: 'profile fields updated', fieldsUpdated });
-    return { workerId, fieldsUpdated };
+    return { workerId, fieldsUpdated, changes };
   }
 
   private async updateScalarFields(
@@ -143,6 +176,51 @@ export class UpdateWorkerProfileFieldsUseCase {
       fieldsUpdated.push('meiCnpj');
     }
 
+    // Professional data — plaintext scalar columns
+    const plainScalars: Array<['occupation' | 'knowledgeLevel' | 'titleCertificate' | 'yearsExperience', string]> = [
+      ['occupation', 'occupation'],
+      ['knowledgeLevel', 'knowledge_level'],
+      ['titleCertificate', 'title_certificate'],
+      ['yearsExperience', 'years_experience'],
+    ];
+    for (const [key, column] of plainScalars) {
+      const v = fields[key];
+      if (v !== undefined) {
+        sets.push(`${column} = $${idx++}`);
+        values.push(v);
+        fieldsUpdated.push(key);
+      }
+    }
+
+    // Professional data — plaintext TEXT[] array columns
+    const plainArrays: Array<['experienceTypes' | 'preferredTypes' | 'preferredAgeRange', string]> = [
+      ['experienceTypes', 'experience_types'],
+      ['preferredTypes', 'preferred_types'],
+      ['preferredAgeRange', 'preferred_age_range'],
+    ];
+    for (const [key, column] of plainArrays) {
+      const v = fields[key];
+      if (v !== undefined) {
+        sets.push(`${column} = $${idx++}`);
+        values.push(v);
+        fieldsUpdated.push(key);
+      }
+    }
+
+    // languages — encrypted JSON + blind index (mirror WorkerPersonalInfoRepository)
+    if (fields.languages !== undefined) {
+      const langs = fields.languages;
+      const encryptedLangs = langs.length > 0
+        ? (await this.encryptionService.encryptBatch({ languages: JSON.stringify(langs) })).languages
+        : null;
+      sets.push(`languages_encrypted = $${idx++}`);
+      values.push(encryptedLangs);
+      const langBidx = await this.blindIndexService.generateValuesBidx(langs);
+      sets.push(`languages_bidx = $${idx++}::bytea[]`);
+      values.push(this.blindIndexService.serializeForPg(langBidx));
+      fieldsUpdated.push('languages');
+    }
+
     // Encrypted PII fields — encrypt in batch
     const toEncrypt: Record<string, string> = {};
     if (fields.firstName !== undefined) toEncrypt.firstName = fields.firstName;
@@ -153,6 +231,7 @@ export class UpdateWorkerProfileFieldsUseCase {
     if (fields.documentNumber !== undefined) toEncrypt.documentNumber = fields.documentNumber;
     else if (fields.cpf !== undefined) toEncrypt.documentNumber = fields.cpf;
     else if (fields.rg !== undefined) toEncrypt.documentNumber = fields.rg;
+    if (fields.linkedinUrl !== undefined) toEncrypt.linkedinUrl = fields.linkedinUrl;
 
     if (Object.keys(toEncrypt).length > 0) {
       let encrypted: Record<string, string | null>;
@@ -185,6 +264,11 @@ export class UpdateWorkerProfileFieldsUseCase {
         if (fields.documentNumber !== undefined) fieldsUpdated.push('documentNumber');
         else if (fields.cpf !== undefined) fieldsUpdated.push('cpf');
         else if (fields.rg !== undefined) fieldsUpdated.push('rg');
+      }
+      if (encrypted.linkedinUrl != null) {
+        sets.push(`linkedin_url_encrypted = $${idx++}`);
+        values.push(encrypted.linkedinUrl);
+        fieldsUpdated.push('linkedinUrl');
       }
     }
 

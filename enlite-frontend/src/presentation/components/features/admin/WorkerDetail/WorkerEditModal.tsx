@@ -9,14 +9,15 @@ import {
   WORKER_PROFESSIONS,
   WORKER_DOCUMENT_TYPES,
 } from '@domain/entities/Worker';
+import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Label } from '@presentation/components/atoms/Label';
-import { Input } from '@presentation/components/atoms/Input';
-import { Select, type SelectOption } from '@presentation/components/atoms/Select';
-import { Button } from '@presentation/components/atoms/Button';
-import { GooglePlacesAutocomplete } from '@presentation/components/molecules';
+import { FormField } from '@presentation/components/molecules/FormField';
+import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
+import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { GooglePlacesAutocomplete } from '@presentation/components/molecules/GooglePlacesAutocomplete';
 import { extractAddressComponents } from '@application/use-cases/extractAddressComponents';
+import { WorkerEditProfessionalFields } from './WorkerEditProfessionalFields';
 
 interface WorkerEditModalProps {
   worker: WorkerDetail;
@@ -25,13 +26,24 @@ interface WorkerEditModalProps {
   onSaved: () => void;
 }
 
-interface EditForm {
+export interface WorkerEditFormValues {
   firstName: string;
   lastName: string;
   email: string;
   documentType: string;
   documentNumber: string;
   profession: string;
+  // professional data
+  occupation: string;
+  knowledgeLevel: string;
+  titleCertificate: string;
+  yearsExperience: string;
+  experienceTypes: string[];
+  preferredTypes: string[];
+  preferredAgeRange: string[];
+  languages: string[];
+  linkedinUrl: string;
+  // address
   address: string;
   addressComplement: string;
   serviceRadiusKm: number;
@@ -39,15 +51,17 @@ interface EditForm {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RADIUS_OPTIONS = [5, 10, 20, 50];
+const CLOSE_MS = 300;
 
 /**
- * Admin-only worker edit modal. Mounted only when the viewer is ADMIN (the
- * trigger in WorkerDetailContent is gated). Saves identity/profession via
- * PATCH /profile and the address via PUT /service-area (Google Places + lat/lng),
- * mirroring the worker self-service address flow.
+ * Admin-only worker edit — side drawer (slides in from the right, mirroring the
+ * VacancyModal design-system pattern). Mounted only when the viewer is ADMIN.
+ * Saves identity/profession via PATCH /profile and the address via
+ * PUT /service-area (Google Places + lat/lng), like the worker self-service flow.
  */
 export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalProps): JSX.Element {
   const { t } = useTranslation();
+  const tm = (k: string, def: string) => t(`admin.workerDetail.editModal.${k}`, { defaultValue: def });
 
   const primaryArea = worker.serviceAreas[0];
   const initialAddress = primaryArea?.address ?? '';
@@ -59,10 +73,11 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
   });
   const autoFilledRef = useRef<{ city?: string; postalCode?: string; neighborhood?: string }>({});
   const [addressDirty, setAddressDirty] = useState(false);
-  // Prefilled address with existing coords counts as a valid selection.
   const [placeSelected, setPlaceSelected] = useState<boolean>(!!primaryArea?.lat && !!primaryArea?.lng);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // slide-in animation: mount off-screen, then transition in on next tick
+  const [show, setShow] = useState(false);
 
   const {
     register,
@@ -70,7 +85,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     control,
     setError,
     formState: { errors },
-  } = useForm<EditForm>({
+  } = useForm<WorkerEditFormValues>({
     defaultValues: {
       firstName: worker.firstName ?? '',
       lastName: worker.lastName ?? '',
@@ -78,6 +93,15 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
       documentType: worker.documentType ?? '',
       documentNumber: worker.documentNumber ?? '',
       profession: worker.profession ?? '',
+      occupation: worker.occupation ?? '',
+      knowledgeLevel: worker.knowledgeLevel ?? '',
+      titleCertificate: worker.titleCertificate ?? '',
+      yearsExperience: worker.yearsExperience ?? '',
+      experienceTypes: worker.experienceTypes ?? [],
+      preferredTypes: worker.preferredTypes ?? [],
+      preferredAgeRange: worker.preferredAgeRange ?? [],
+      languages: worker.languages ?? [],
+      linkedinUrl: worker.linkedinUrl ?? '',
       address: initialAddress,
       addressComplement: '',
       serviceRadiusKm: initialRadius,
@@ -85,22 +109,27 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
   });
 
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const id = requestAnimationFrame(() => setShow(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const handleClose = (): void => {
+    setShow(false);
+    setTimeout(onClose, CLOSE_MS);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const professionOptions: SelectOption[] = [
-    { value: '', label: t('admin.workerDetail.editModal.unset', { defaultValue: '—' }) },
-    ...WORKER_PROFESSIONS.map((p) => ({
-      value: p,
-      label: t(`admin.workerDetail.professionValue.${p}`, { defaultValue: p }),
-    })),
-  ];
-  const documentTypeOptions: SelectOption[] = [
-    { value: '', label: t('admin.workerDetail.editModal.unset', { defaultValue: '—' }) },
-    ...WORKER_DOCUMENT_TYPES.map((d) => ({ value: d, label: d })),
-  ];
+  const professionOptions: SelectOption[] = WORKER_PROFESSIONS.map((p) => ({
+    value: p,
+    label: t(`admin.workerDetail.professionValue.${p}`, { defaultValue: p }),
+  }));
+  const documentTypeOptions: SelectOption[] = WORKER_DOCUMENT_TYPES.map((d) => ({ value: d, label: d }));
 
   const handlePlaceSelected = (place: google.maps.places.PlaceResult): void => {
     if (place.geometry?.location) {
@@ -116,7 +145,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     }
   };
 
-  const buildProfilePatch = (values: EditForm): WorkerProfileUpdatePayload => {
+  const buildProfilePatch = (values: WorkerEditFormValues): WorkerProfileUpdatePayload => {
     const patch: WorkerProfileUpdatePayload = {};
     if (values.firstName.trim() && values.firstName.trim() !== (worker.firstName ?? '')) patch.firstName = values.firstName.trim();
     if (values.lastName.trim() && values.lastName.trim() !== (worker.lastName ?? '')) patch.lastName = values.lastName.trim();
@@ -128,14 +157,26 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     if (values.profession && values.profession !== (worker.profession ?? '') && (WORKER_PROFESSIONS as readonly string[]).includes(values.profession)) {
       patch.profession = values.profession as WorkerProfileUpdatePayload['profession'];
     }
+    // professional scalars — send only when non-empty and changed
+    if (values.occupation && values.occupation !== (worker.occupation ?? '')) patch.occupation = values.occupation;
+    if (values.knowledgeLevel && values.knowledgeLevel !== (worker.knowledgeLevel ?? '')) patch.knowledgeLevel = values.knowledgeLevel;
+    if (values.yearsExperience && values.yearsExperience !== (worker.yearsExperience ?? '')) patch.yearsExperience = values.yearsExperience;
+    if (values.titleCertificate.trim() && values.titleCertificate.trim() !== (worker.titleCertificate ?? '')) patch.titleCertificate = values.titleCertificate.trim();
+    if (values.linkedinUrl.trim() && values.linkedinUrl.trim() !== (worker.linkedinUrl ?? '')) patch.linkedinUrl = values.linkedinUrl.trim();
+    // professional arrays — send (incl. empty to clear) when changed
+    const arrChanged = (a: string[], b: string[]) => JSON.stringify(a) !== JSON.stringify(b);
+    if (arrChanged(values.experienceTypes, worker.experienceTypes ?? [])) patch.experienceTypes = values.experienceTypes;
+    if (arrChanged(values.preferredTypes, worker.preferredTypes ?? [])) patch.preferredTypes = values.preferredTypes;
+    if (arrChanged(values.preferredAgeRange, worker.preferredAgeRange ?? [])) patch.preferredAgeRange = values.preferredAgeRange;
+    if (arrChanged(values.languages, worker.languages ?? [])) patch.languages = values.languages;
     return patch;
   };
 
-  const onSubmit = async (values: EditForm): Promise<void> => {
+  const onSubmit = async (values: WorkerEditFormValues): Promise<void> => {
     setSubmitError(null);
 
     if (values.email.trim() && !EMAIL_RE.test(values.email.trim())) {
-      setError('email', { message: t('admin.workerDetail.editModal.invalidEmail', { defaultValue: 'E-mail inválido' }) });
+      setError('email', { message: tm('invalidEmail', 'E-mail inválido') });
       return;
     }
 
@@ -144,7 +185,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     const mustSaveAddress = addressDirty || radiusChanged || addressLineChanged || !!values.addressComplement.trim();
 
     if (mustSaveAddress && values.address.trim() && !placeSelected) {
-      setError('address', { message: t('admin.workerDetail.editModal.selectAddress', { defaultValue: 'Seleccioná una dirección de la lista' }) });
+      setError('address', { message: tm('selectAddress', 'Seleccioná una dirección de la lista') });
       return;
     }
 
@@ -152,7 +193,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     const hasProfileChange = Object.keys(profilePatch).length > 0;
 
     if (!hasProfileChange && !(mustSaveAddress && values.address.trim())) {
-      onClose();
+      handleClose();
       return;
     }
 
@@ -174,75 +215,116 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
         });
       }
       onSaved();
-      onClose();
+      handleClose();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : t('admin.workerDetail.editModal.saveError', { defaultValue: 'Error al guardar' }));
+      setSubmitError(err instanceof Error ? err.message : tm('saveError', 'Error al guardar'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 overflow-y-auto"
-      onClick={onClose}
-      data-testid="worker-edit-modal-backdrop"
-    >
+    <>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={handleClose}
+        data-testid="worker-edit-modal-backdrop"
+      />
+
+      {/* Side drawer — slides from the right */}
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('admin.workerDetail.editModal.title', { defaultValue: 'Editar prestador' })}
-        className="bg-white rounded-card w-full max-w-2xl my-8 shadow-lg relative"
-        onClick={(e) => e.stopPropagation()}
+        aria-label={tm('title', 'Editar prestador')}
+        className={`fixed top-0 right-0 h-screen z-50 w-full max-w-xl bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col transition-transform duration-300 ease-in-out ${show ? 'translate-x-0' : 'translate-x-full'}`}
         data-testid="worker-edit-modal"
       >
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-200">
-          <Heading level={2} weight="semibold" color="primary">
-            {t('admin.workerDetail.editModal.title', { defaultValue: 'Editar prestador' })}
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 shrink-0">
+          <Heading level={3} weight="semibold" color="primary">
+            {tm('title', 'Editar prestador')}
           </Heading>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t('admin.workerDetail.modal.close', { defaultValue: 'Cerrar' })}
-            className="p-1.5 rounded-lg text-gray-800 hover:text-primary hover:bg-primary/10 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-4">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleSubmit(onSubmit)}
+              isLoading={busy}
+              className="w-32"
+              data-testid="we-save"
+            >
+              {tm('save', 'Guardar')}
+            </Button>
+            <button
+              type="button"
+              onClick={handleClose}
+              aria-label={t('admin.workerDetail.modal.close', { defaultValue: 'Cerrar' })}
+              className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="px-6 py-5 flex flex-col gap-5">
+        {/* Scrollable body */}
+        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
           {/* Identidade */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="we-firstName">{t('admin.workerDetail.editModal.firstName', { defaultValue: 'Nombre' })}</Label>
-              <Input id="we-firstName" data-testid="we-firstName" {...register('firstName')} />
-            </div>
-            <div>
-              <Label htmlFor="we-lastName">{t('admin.workerDetail.editModal.lastName', { defaultValue: 'Apellido' })}</Label>
-              <Input id="we-lastName" data-testid="we-lastName" {...register('lastName')} />
-            </div>
-            <div>
-              <Label htmlFor="we-email">{t('admin.workerDetail.editModal.email', { defaultValue: 'E-mail' })}</Label>
-              <Input id="we-email" type="email" data-testid="we-email" error={errors.email?.message} {...register('email')} />
-            </div>
-            <div>
-              <Label htmlFor="we-profession">{t('admin.workerDetail.profession')}</Label>
-              <Select id="we-profession" data-testid="we-profession" options={professionOptions} {...register('profession')} />
-            </div>
-            <div>
-              <Label htmlFor="we-documentType">{t('admin.workerDetail.editModal.documentType', { defaultValue: 'Tipo de documento' })}</Label>
-              <Select id="we-documentType" data-testid="we-documentType" options={documentTypeOptions} {...register('documentType')} />
-            </div>
-            <div>
-              <Label htmlFor="we-documentNumber">{t('admin.workerDetail.editModal.documentNumber', { defaultValue: 'Número de documento' })}</Label>
-              <Input id="we-documentNumber" data-testid="we-documentNumber" {...register('documentNumber')} />
-            </div>
+            <FormField label={tm('firstName', 'Nombre')} htmlFor="we-firstName">
+              <InputWithIcon id="we-firstName" inputSize="compact" data-testid="we-firstName" {...register('firstName')} />
+            </FormField>
+            <FormField label={tm('lastName', 'Apellido')} htmlFor="we-lastName">
+              <InputWithIcon id="we-lastName" inputSize="compact" data-testid="we-lastName" {...register('lastName')} />
+            </FormField>
+            <FormField label={tm('email', 'E-mail')} htmlFor="we-email">
+              <InputWithIcon id="we-email" type="email" inputSize="compact" error={errors.email?.message} data-testid="we-email" {...register('email')} />
+            </FormField>
+            <FormField label={t('admin.workerDetail.profession')} htmlFor="we-profession">
+              <Controller
+                control={control}
+                name="profession"
+                render={({ field }) => (
+                  <SelectField
+                    inputSize="compact"
+                    options={professionOptions}
+                    placeholder={tm('unset', '—')}
+                    value={field.value}
+                    onChange={field.onChange}
+                    data-testid="we-profession"
+                  />
+                )}
+              />
+            </FormField>
+            <FormField label={tm('documentType', 'Tipo de documento')} htmlFor="we-documentType">
+              <Controller
+                control={control}
+                name="documentType"
+                render={({ field }) => (
+                  <SelectField
+                    inputSize="compact"
+                    options={documentTypeOptions}
+                    placeholder={tm('unset', '—')}
+                    value={field.value}
+                    onChange={field.onChange}
+                    data-testid="we-documentType"
+                  />
+                )}
+              />
+            </FormField>
+            <FormField label={tm('documentNumber', 'Número de documento')} htmlFor="we-documentNumber">
+              <InputWithIcon id="we-documentNumber" inputSize="compact" data-testid="we-documentNumber" {...register('documentNumber')} />
+            </FormField>
           </div>
 
+          {/* Dados profissionais */}
+          <WorkerEditProfessionalFields control={control} register={register} />
+
           {/* Endereço (Google Places) */}
-          <div className="flex flex-col gap-4 pt-2 border-t border-gray-200">
+          <div className="flex flex-col gap-4 pt-2 border-t border-slate-100">
             <Text size="sm" weight="semibold" color="secondary">
-              {t('admin.workerDetail.editModal.addressSection', { defaultValue: 'Dirección' })}
+              {tm('addressSection', 'Dirección')}
             </Text>
             <Controller
               control={control}
@@ -260,36 +342,31 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
               )}
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="we-complement">{t('admin.workerDetail.addressComplement')}</Label>
-                <Input id="we-complement" data-testid="we-complement" {...register('addressComplement', { onChange: () => setAddressDirty(true) })} />
-              </div>
-              <div>
-                <Label htmlFor="we-radius">{t('admin.workerDetail.radius')} (km)</Label>
-                <Select
-                  id="we-radius"
-                  data-testid="we-radius"
-                  options={RADIUS_OPTIONS.map((r) => ({ value: String(r), label: `${r} km` }))}
-                  {...register('serviceRadiusKm', { onChange: () => setAddressDirty(true) })}
+              <FormField label={t('admin.workerDetail.addressComplement')} htmlFor="we-complement">
+                <InputWithIcon id="we-complement" inputSize="compact" data-testid="we-complement" {...register('addressComplement', { onChange: () => setAddressDirty(true) })} />
+              </FormField>
+              <FormField label={`${t('admin.workerDetail.radius')} (km)`} htmlFor="we-radius">
+                <Controller
+                  control={control}
+                  name="serviceRadiusKm"
+                  render={({ field }) => (
+                    <SelectField
+                      inputSize="compact"
+                      options={RADIUS_OPTIONS.map((r) => ({ value: String(r), label: `${r} km` }))}
+                      placeholder={tm('unset', '—')}
+                      value={String(field.value)}
+                      onChange={(v) => { field.onChange(Number(v)); setAddressDirty(true); }}
+                      data-testid="we-radius"
+                    />
+                  )}
                 />
-              </div>
+              </FormField>
             </div>
           </div>
 
-          {submitError && (
-            <Text size="sm" className="text-red-600">{submitError}</Text>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('admin.workerDetail.editModal.cancel', { defaultValue: 'Cancelar' })}
-            </Button>
-            <Button type="submit" variant="primary" isLoading={busy} data-testid="we-save">
-              {t('admin.workerDetail.editModal.save', { defaultValue: 'Guardar' })}
-            </Button>
-          </div>
+          {submitError && <Text size="sm" className="text-red-600">{submitError}</Text>}
         </form>
       </div>
-    </div>
+    </>
   );
 }
