@@ -1,7 +1,7 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { AdminUser } from '@domain/entities/AdminUser';
 import { EnliteRole } from '@domain/entities/EnliteRole';
-import { WorkerDateStats, WorkerDetail, WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
+import { WorkerDateStats, WorkerDetail, WorkerDocument, DocumentValidations, WorkerProfileUpdatePayload, WorkerProfileUpdateResult, WorkerServiceAreaUpdatePayload } from '@domain/entities/Worker';
 import type { MatchResultsResponse } from '../../types/match';
 import type { InterviewSlot, CreateSlotsInput, BookSlotResult, InterviewSlotsSummary } from '@domain/entities/InterviewSlot';
 import {
@@ -246,6 +246,16 @@ class AdminApiServiceClass {
   /** Marca/desmarca um worker como conta de teste (admin-only no backend). */
   async updateWorkerTestFlag(id: string, isTest: boolean): Promise<{ isTest: boolean }> {
     return this.request<{ isTest: boolean }>('PATCH', `/api/admin/workers/${id}/test-flag`, { isTest });
+  }
+
+  /** Edita campos do perfil de um worker (admin-only no backend). */
+  async updateWorkerProfile(id: string, payload: WorkerProfileUpdatePayload): Promise<WorkerProfileUpdateResult> {
+    return this.request<WorkerProfileUpdateResult>('PATCH', `/api/admin/workers/${id}/profile`, payload);
+  }
+
+  /** Edita o endereço/área de serviço de um worker (admin-only no backend). */
+  async updateWorkerServiceArea(id: string, payload: WorkerServiceAreaUpdatePayload): Promise<void> {
+    await this.request<unknown>('PUT', `/api/admin/workers/${id}/service-area`, payload);
   }
 
   // ========== Patients Methods — delegated to AdminPatientsApiService ==========

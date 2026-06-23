@@ -60,6 +60,10 @@ export { RemoveTagFromWorkerUseCase } from './application/RemoveTagFromWorkerUse
 export { WorkerControllerV2 } from './interfaces/controllers/WorkerControllerV2';
 export { AdminWorkersController } from './interfaces/controllers/AdminWorkersController';
 export { AdminWorkerTestFlagController } from './interfaces/controllers/AdminWorkerTestFlagController';
+export { AdminWorkerProfileController } from './interfaces/controllers/AdminWorkerProfileController';
+export { AdminWorkerServiceAreaController } from './interfaces/controllers/AdminWorkerServiceAreaController';
+export { createAdminWorkerRoutes } from './interfaces/routes/adminWorkerRoutes';
+export type { AdminWorkerRouteControllers } from './interfaces/routes/adminWorkerRoutes';
 export { JobsController } from './interfaces/controllers/JobsController';
 export { WorkerDocumentsMeController } from './interfaces/controllers/WorkerDocumentsMeController';
 export { AdminWorkerDocumentsController } from './interfaces/controllers/AdminWorkerDocumentsController';

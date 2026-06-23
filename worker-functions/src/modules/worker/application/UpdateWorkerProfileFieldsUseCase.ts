@@ -33,6 +33,8 @@ export interface WorkerProfilePatch {
   documentType?: string;
   /** ISO date YYYY-MM-DD */
   birthDate?: string;
+  /** Canonical profession enum (AT, CUIDADOR, …) — plaintext `profession` column. */
+  profession?: string;
   meiNumber?: string;
   meiCnpj?: string;
   address?: {
@@ -119,6 +121,14 @@ export class UpdateWorkerProfileFieldsUseCase {
       sets.push(`document_type = $${idx++}`);
       values.push(fields.documentType);
       fieldsUpdated.push('documentType');
+    }
+
+    // profession — plaintext enum column (AT/CUIDADOR/…). Note: writing this can
+    // flip the worker to REGISTERED via the fn_guard_registered_status trigger (mig 208).
+    if (fields.profession !== undefined) {
+      sets.push(`profession = $${idx++}`);
+      values.push(fields.profession);
+      fieldsUpdated.push('profession');
     }
 
     // meiNumber, meiCnpj — plaintext columns (operational, not PII-encrypted)
