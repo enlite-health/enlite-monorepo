@@ -15,7 +15,7 @@ O Centro de Duplicados resolve isso com uma ação central: **unificar** (merge)
 - **Absorvida** — a conta que é **mesclada** na principal e sai de cena.
 - **O que acontece com os campos** — por padrão a principal mantém os dados dela e os campos **vazios** são preenchidos pela absorvida (não sobrescreve, não perde nada). Na unificação você pode abrir **"Avanzado"** e escolher, **campo a campo**, qual valor fica.
 
-A tela tem **3 abas** (Fila, Historial, Importados) e o botão **"Unificar manualmente"** no topo.
+A tela tem **3 abas** (Fila, Historial, Importados) e o botão **"Unificar manualmente"** no topo. **Cada aba mostra uma breve descrição do seu propósito** logo abaixo dos tabs, pra o operador não ficar perdido ao abri-la pela primeira vez (chaves i18n `admin.dedup.tabDesc.*`).
 
 ---
 
@@ -30,7 +30,7 @@ A tela tem **3 abas** (Fila, Historial, Importados) e o botão **"Unificar manua
 | Coluna (es‑AR) | O que mostra | Por que existe |
 |---|---|---|
 | ☑ (checkbox) | Seleção da linha | Permite **ação em lote** (unificar/descartar vários grupos de uma vez) sem abrir um por um. |
-| **Teléfono** | O telefone normalizado do grupo (`phone_normalized`, ex. `5491134567890`) | É a **chave** que agrupou as contas — o motivo de elas estarem juntas. Identifica o grupo de forma humana (telefone, não ID interno). |
+| **Prestador** | **Nome(s)** das contas do grupo (decriptado, admin-only) **em destaque** + o telefone normalizado (`phone_normalized`) logo abaixo | O operador precisa ver **QUEM** é a conta, não só um número. O telefone continua visível (é a chave que agrupou), mas o nome vem primeiro. Mostra **nomes distintos** quando o mesmo telefone tem nomes diferentes (sinal útil). Fallback "Sin nombre" quando não há nome. |
 | **Cuentas** | Quantas contas há no grupo (2, 3, …) | Mostra o **tamanho** da duplicata — quantos registros vão virar um só. |
 | **Cuentas reales** | Badge: quantas das contas têm login real (ex. *"2 reales"*, *"1 real · 1 prueba"*) | É o **sinal de risco/decisão**: se há **1 real** o merge é tranquilo (a real absorve a fantasma); se há **2+ reais** é preciso cuidado (pode ser gente diferente). |
 | **Alta** | Data de criação da conta **mais antiga** do grupo | Ajuda a julgar qual é a conta "original" e dá contexto temporal (duplicata nova vs. antiga). |
@@ -84,7 +84,10 @@ A tela tem **3 abas** (Fila, Historial, Importados) e o botão **"Unificar manua
 
 **Proposta:** dar autonomia ao operador pra resolver casos que a detecção automática não pegou. Ele busca a **primeira conta** e depois a **segunda** num campo com **autocomplete** (por **nome ou telefone**, mostrando *nome · telefone · "Con acceso"/"Importado"*), e cai na **mesma** tela de comparar e mesclar — com **seleção campo a campo** (seção "Avanzado") igual à Fila.
 
-**Regra de segurança:** se as duas contas escolhidas forem **ambas reais**, a unificação é **bloqueada** ("Revisión manual requerida") — pra não fundir, por engano, duas pessoas diferentes.
+**Regra de segurança — e por que a manual NÃO bloqueia:** quando há **2+ contas reais** (conta real = e‑mail **não** importado, mesma regra do backend que dispara `conflict_multiple_real_accounts`), o sistema trata os dois fluxos de forma diferente:
+
+- **Unificação manual:** o operador **escolheu as contas de propósito** — pode ser a mesma pessoa com **telefone, sobrenome ou e‑mail diferentes** (justamente o caso que a detecção automática não pega). Por isso a manual **não bloqueia**. Em vez disso mostra um **aviso âmbar** dizendo que são contas distintas, **qual fica** (principal) e **qual é eliminada** (absorvida — os dados dela passam pra principal), e exige uma **confirmação explícita** ("Confirmo que son la misma persona") pra liberar o botão. É reversível pelo **Historial**. O operador troca quem fica via "Hacer principal" em cada card.
+- **Aba Importados (detecção automática por nome):** continua **bloqueando** ("Revisión manual requerida"). O banner **nomeia as contas reais** (pra saber **QUEM** está em conflito) e cada nome é **clicável** → leva pra aba **Fila** e abre o popup do grupo daquele telefone (quando a conta tem `phone_normalized`). *Obs.: se as contas reais não compartilham telefone, o popup da Fila não terá o grupo — nesse caso o caminho é a **unificação manual**, que permite confirmar e unificar.*
 
 ---
 
@@ -97,6 +100,15 @@ Aberta por qualquer "Unificar" (Fila, Importados ou manual). Mostra um **card po
 3. Confirma em **"Confirmar unificación"**. Tudo é re‑vinculado à principal, a absorvida sai, e a ação fica no **Historial** com **Deshacer**.
 
 ---
+
+## Auditoria e rastreabilidade (quem / de onde / como)
+
+Cada unificação é registrada com rastro **detalhado e minucioso** — não confiamos cegamente no admin que executa. O rastro fica em **dois lugares**:
+
+1. **Banco** (`worker_merge_audit`, colunas da mig **227**): `executed_by` (uid) + `executed_by_email`, `source` (`fila`/`imported`/`manual`/`auto_batch`), `confirmed_same_person` (merge manual de 2+ reais confirmado), `ip_address`, `user_agent`, `request_id`, `field_choices` (o que o admin mandou) + `applied_overrides` (campos que ele **de fato sobrescreveu** e de qual conta veio cada um), `survivor_email`/`absorbed_email`. O **desfazer** também carimba `undone_by`/`undone_by_email`/`undone_at` + ip/ua/request_id.
+2. **Cloud Logging** (logs estruturados `merge_executed` / `merge_undone` / `admin_merge_*` / `admin_undo_via_endpoint`): mesmos dados. É a cópia **à prova de adulteração** — quem tem acesso ao banco poderia mexer na tabela, mas não no Cloud Logging.
+
+Na aba **Historial** a coluna **"Hecho por"** mostra o email do admin que executou; merges manuais confirmados ganham o selo **"Confirmado manualmente"** (ação de maior risco). O `request_id` correlaciona a linha do banco com o log.
 
 ## Onde está no código (referência rápida pra devs)
 

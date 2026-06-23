@@ -225,6 +225,57 @@ describe('ListDedupGroupsUseCase — auth_uid null (branches 175-180)', () => {
   });
 });
 
+// ── Anexa nome decriptado (Fila mostra QUEM) ──────────────────────────────────
+
+describe('ListDedupGroupsUseCase — anexa nome decriptado às contas', () => {
+  it('anexa o nome humano (decriptado) a cada conta; fallback "(importado)" sem nome', async () => {
+    const pool = makePool([
+      { rows: [{ phone_normalized: PHONE_A, worker_ids: [ID1, ID2] }] },
+      { rows: [
+        rawWorkerRow({ id: ID1, auth_uid: 'FirebaseReal_x', email: 'real@example.com' }),
+        rawWorkerRow({ id: ID2, auth_uid: 'base1import_y', email: 'g@enlite.import' }),
+      ]},
+      // 4ª query = loadWorkerDisplayNames
+      { rows: [
+        { id: ID1, first_name_encrypted: 'Gabriela', last_name_encrypted: 'Varela', email: 'real@example.com' },
+        { id: ID2, first_name_encrypted: null, last_name_encrypted: null, email: 'g@enlite.import' },
+      ]},
+    ]);
+
+    // decrypt passthrough (sem KMS real): devolve o valor como está.
+    const fakeEnc = {
+      decrypt: jest.fn(async (ct: string | null | undefined) => String(ct ?? '')),
+    } as unknown as import('@shared/security/KMSEncryptionService').KMSEncryptionService;
+
+    const useCase = new ListDedupGroupsUseCase(pool as unknown as Pool, fakeEnc);
+    const result = await useCase.execute();
+
+    const a1 = result[0].accounts.find(a => a.id === ID1);
+    const a2 = result[0].accounts.find(a => a.id === ID2);
+    expect(a1?.name).toBe('Gabriela Varela');
+    expect(a2?.name).toBe('(importado)');
+  });
+
+  it('name=null quando loadWorkerDisplayNames não retorna a conta', async () => {
+    const pool = makePool([
+      { rows: [{ phone_normalized: PHONE_A, worker_ids: [ID1, ID2] }] },
+      { rows: [
+        rawWorkerRow({ id: ID1, auth_uid: 'FirebaseReal_x', email: 'real@example.com' }),
+        rawWorkerRow({ id: ID2, auth_uid: 'base1import_y', email: 'g@enlite.import' }),
+      ]},
+      { rows: [] }, // nenhum nome retornado
+    ]);
+    const fakeEnc = {
+      decrypt: jest.fn(async (ct: string | null | undefined) => String(ct ?? '')),
+    } as unknown as import('@shared/security/KMSEncryptionService').KMSEncryptionService;
+
+    const useCase = new ListDedupGroupsUseCase(pool as unknown as Pool, fakeEnc);
+    const result = await useCase.execute();
+
+    expect(result[0].accounts.every(a => a.name === null)).toBe(true);
+  });
+});
+
 // ── Múltiplos grupos ──────────────────────────────────────────────────────────
 
 describe('ListDedupGroupsUseCase — múltiplos grupos', () => {

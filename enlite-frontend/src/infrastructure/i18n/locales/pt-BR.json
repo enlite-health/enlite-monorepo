@@ -538,10 +538,17 @@
         "comingSoon": "Em breve",
         "history": "Histórico"
       },
+      "tabDesc": {
+        "queue": "Contas que provavelmente são a mesma pessoa porque compartilham o mesmo telefone. Revise cada grupo e unifique as contas duplicadas (ou descarte se não forem).",
+        "history": "Todas as unificações já feitas. Você vê quem ficou, quem foi absorvido e pode desfazer uma unificação se algo deu errado.",
+        "imported": "Contas que coincidem por NOME (não por telefone) — em geral fantasmas importados. Confiança menor: revise bem se são a mesma pessoa antes de unificar."
+      },
       "table": {
         "selectAll": "Selecionar todos",
         "selectRow": "Selecionar {{phone}}",
         "phone": "Telefone",
+        "account": "Prestador",
+        "noName": "Sem nome",
         "accountCount": "Contas",
         "signal": "Contas reais",
         "survivor": "Principal sugerido",
@@ -611,7 +618,15 @@
         "mismatchTitle_plural": "{{count}} campos com conflito",
         "mismatchDesc": "Expanda «Avançado» para revisar e escolher qual valor manter campo a campo.",
         "encryptedField": "Campo criptografado",
-        "emptyValue": "vazio"
+        "emptyValue": "vazio",
+        "conflictManualTitle": "Atenção: são duas contas distintas com acesso real",
+        "conflictManualDesc": "Ao unificar, uma conta absorve a outra: uma fica e a outra é eliminada. Confirme só se tiver certeza de que é a mesma pessoa.",
+        "conflictKeeps": "Fica",
+        "conflictPrincipalLabel": "(principal)",
+        "conflictDeletes": "É eliminada",
+        "conflictDeletesHint": "Os dados dela (candidaturas, documentos, entrevistas) passam para a conta principal. É reversível pelo Histórico.",
+        "conflictChangePrincipalHint": "Use «Tornar principal» em cada cartão para escolher qual fica.",
+        "conflictConfirmCheckbox": "Confirmo que é a mesma pessoa"
       },
       "field": {
         "email": "Email",
@@ -661,9 +676,12 @@
           "survivor": "Conta principal",
           "absorbed": "Conta absorvida",
           "category": "Categoria",
+          "executedBy": "Feito por",
           "date": "Data",
           "actions": "Ações"
         },
+        "systemActor": "Sistema (automático)",
+        "confirmedSamePersonBadge": "Confirmado manualmente",
         "undoBtn": "Desfazer",
         "undoAriaLabel": "Desfazer unificação do telefone {{phone}}",
         "category": {
@@ -698,7 +716,9 @@
         "reasonConflict": "requer revisão",
         "reviewBtn": "Revisar",
         "conflictTitle": "Revisão manual necessária",
-        "conflictDesc": "Este grupo tem mais de uma conta real. Unifique manualmente na aba Fila.",
+        "conflictDesc": "Há {{count}} conta real neste grupo. Revise na aba Fila antes de unificar:",
+        "conflictDesc_plural": "Há {{count}} contas reais neste grupo — podem ser pessoas diferentes. Revise cada uma na aba Fila antes de unificar:",
+        "conflictAccountAriaLabel": "Ver {{name}} na Fila",
         "reason": {
           "real_account_absorbs_imported": "Real absorve importado",
           "conflict_multiple_real_accounts": "Conflito: múltiplos reais",

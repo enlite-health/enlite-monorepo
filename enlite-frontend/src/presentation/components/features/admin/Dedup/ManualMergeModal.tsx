@@ -17,8 +17,10 @@
  *   - Duplicate id guard (disabledIds prop on each autocomplete).
  *   - ESC key closes modal.
  *
- * Does NOT block on conflict_multiple_real_accounts — that is handled inside
- * MergeDirectModeBody (shows banner + disables merge button, same as Importados tab).
+ * Conflict (2+ real accounts) is NOT blocked here: this is a deliberate manual
+ * action, so MergeDirectModeBody receives allowConflictOverride and shows a
+ * warning naming which account is kept vs deleted, gated by an explicit
+ * "es la misma persona" confirmation (unlike the Importados tab, which blocks).
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -37,7 +39,10 @@ interface ManualMergeModalProps {
   onMergeSuccess: () => void;
 }
 
-export function ManualMergeModal({ onClose, onMergeSuccess }: ManualMergeModalProps) {
+export function ManualMergeModal({
+  onClose,
+  onMergeSuccess,
+}: ManualMergeModalProps) {
   const { t } = useTranslation();
   const [accountA, setAccountA] = useState<CandidateItem | null>(null);
   const [accountB, setAccountB] = useState<CandidateItem | null>(null);
@@ -121,6 +126,7 @@ export function ManualMergeModal({ onClose, onMergeSuccess }: ManualMergeModalPr
               onMergeSuccess();
               onClose();
             }}
+            allowConflictOverride
           />
         </div>
       </div>
