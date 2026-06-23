@@ -104,6 +104,7 @@ export function DedupHistoryTab({
           <TableHead>{h('col.survivor')}</TableHead>
           <TableHead>{h('col.absorbed')}</TableHead>
           <TableHead>{h('col.category')}</TableHead>
+          <TableHead>{h('col.executedBy')}</TableHead>
           <TableHead>{h('col.date')}</TableHead>
           <TableHead>{h('col.actions')}</TableHead>
         </TableHeader>
@@ -125,6 +126,25 @@ export function DedupHistoryTab({
                     })}
                   </Text>
                 </span>
+              </TableCell>
+              {/* Hecho por: QUEM executou (auditoria). Email quando há; senão uid/sistema.
+                  Badge âmbar quando foi merge manual de 2 contas reais confirmado. */}
+              <TableCell unwrapped>
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <Text as="span" size="sm" className="truncate">
+                    {item.executed_by_email ??
+                      (item.executed_by && item.executed_by !== 'system'
+                        ? item.executed_by
+                        : h('systemActor'))}
+                  </Text>
+                  {item.confirmed_same_person ? (
+                    <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full inline-flex w-fit">
+                      <Text as="span" size="xs" weight="medium" color="inherit">
+                        {h('confirmedSamePersonBadge')}
+                      </Text>
+                    </span>
+                  ) : null}
+                </div>
               </TableCell>
               <TableCell>
                 {new Date(item.created_at).toLocaleString('es-AR', {

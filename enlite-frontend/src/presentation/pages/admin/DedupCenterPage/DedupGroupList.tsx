@@ -2,7 +2,7 @@
  * DedupGroupList
  *
  * Table of duplicate phone groups.
- * Columns: checkbox | phone | accounts | signal | createdAt | actions
+ * Columns: checkbox | prestador (name + phone) | accounts | signal | createdAt | actions
  *
  * Rules:
  * - uses Table atom (no raw <table>)
@@ -86,7 +86,7 @@ export function DedupGroupList({
             aria-label={d('table.selectAll')}
           />
         </TableHead>
-        <TableHead>{d('table.phone')}</TableHead>
+        <TableHead>{d('table.account')}</TableHead>
         <TableHead align="center">{d('table.accountCount')}</TableHead>
         <TableHead>{d('table.signal')}</TableHead>
         <TableHead>{d('table.createdAt')}</TableHead>
@@ -101,6 +101,18 @@ export function DedupGroupList({
               0,
             );
 
+          // Nome(s) do grupo: distinct dos nomes decriptados das contas. Quase
+          // sempre 1 (mesma pessoa); >1 nomes diferentes no mesmo telefone é um
+          // sinal útil — mostramos todos pro operador ver.
+          const names = Array.from(
+            new Set(
+              group.accounts
+                .map((a) => a.name?.trim())
+                .filter((n): n is string => !!n),
+            ),
+          );
+          const displayName = names.length > 0 ? names.join(' · ') : null;
+
           return (
             <TableRow key={group.phone_normalized}>
               {/* Checkbox */}
@@ -114,8 +126,28 @@ export function DedupGroupList({
                 />
               </TableCell>
 
-              {/* Phone */}
-              <TableCell weight="medium">{group.phone_normalized}</TableCell>
+              {/* Prestador: NOME em destaque + telefone abaixo (o telefone é a
+                  chave que agrupou, mas o operador precisa ver QUEM é). */}
+              <TableCell unwrapped>
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  {displayName ? (
+                    <Text
+                      size="sm"
+                      weight="medium"
+                      className="truncate"
+                    >
+                      {displayName}
+                    </Text>
+                  ) : (
+                    <Text size="sm" color="muted" className="italic">
+                      {d('table.noName')}
+                    </Text>
+                  )}
+                  <Text as="span" size="xs" color="muted" className="truncate">
+                    {group.phone_normalized}
+                  </Text>
+                </div>
+              </TableCell>
 
               {/* Account count */}
               <TableCell align="center">{group.accounts.length}</TableCell>

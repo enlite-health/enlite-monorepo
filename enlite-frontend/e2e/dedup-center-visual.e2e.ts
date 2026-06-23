@@ -52,6 +52,7 @@ const FAKE_ID_TOKEN =
 const ACC_1 = {
   id: 'acc-dedup-001',
   email: 'maria.real@example.com',
+  name: 'María González',
   tier: 'REGISTERED',
   status: 'ACTIVE',
   created_at: '2026-01-15T10:00:00Z',
@@ -65,6 +66,7 @@ const ACC_1 = {
 const ACC_2 = {
   id: 'acc-dedup-002',
   email: null,
+  name: 'María González',
   tier: 'INCOMPLETE_REGISTER',
   status: 'INCOMPLETE',
   created_at: '2026-02-20T10:00:00Z',
@@ -78,6 +80,7 @@ const ACC_2 = {
 const ACC_3 = {
   id: 'acc-dedup-003',
   email: 'carlos.otro@example.com',
+  name: 'Carlos López',
   tier: 'REGISTERED',
   status: 'ACTIVE',
   created_at: '2026-03-10T10:00:00Z',
@@ -91,6 +94,7 @@ const ACC_3 = {
 const ACC_4 = {
   id: 'acc-dedup-004',
   email: 'carlos.alt@example.com',
+  name: 'Carlos López',
   tier: 'INCOMPLETE_REGISTER',
   status: 'INCOMPLETE',
   created_at: '2026-04-01T10:00:00Z',
@@ -157,6 +161,11 @@ const MOCK_HISTORY = [
     category: 'firebase',
     created_at: '2026-06-20T10:00:00Z',
     can_undo: true,
+    executed_by: 'admin-uid-1',
+    executed_by_email: 'e2e.admin@enlite.health',
+    source: 'fila',
+    confirmed_same_person: false,
+    undone_by_email: null,
   },
   {
     audit_id: AUDIT_2,
@@ -168,6 +177,11 @@ const MOCK_HISTORY = [
     category: 'most_complete',
     created_at: '2026-06-19T08:00:00Z',
     can_undo: false,
+    executed_by: 'admin-uid-2',
+    executed_by_email: 'e2e.recruiter@enlite.health',
+    source: 'manual',
+    confirmed_same_person: true,
+    undone_by_email: null,
   },
 ];
 
@@ -455,6 +469,19 @@ test.describe('DedupCenterPage — visual proof', () => {
       timeout: 5000,
     });
 
+    // Prestador column: the account NAME shows above the phone
+    await expect(page.getByText('María González').first()).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(page.getByText('Carlos López').first()).toBeVisible({
+      timeout: 5000,
+    });
+
+    // Per-tab description is shown under the tabs
+    await expect(
+      page.locator('[data-testid="dedup-tab-description"]'),
+    ).toBeVisible({ timeout: 5000 });
+
     await expect(page).toHaveScreenshot('dedup-center-populated.png', {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
@@ -666,6 +693,15 @@ test.describe('DedupCenterPage — visual proof', () => {
       page.locator('.bg-blue-100').filter({ hasText: /Cuenta con acceso/i }).first(),
     ).toBeVisible({ timeout: 5000 });
 
+    // (c) QUEM executou aparece na coluna "Hecho por"
+    await expect(
+      page.getByText('e2e.admin@enlite.health', { exact: true }).first(),
+    ).toBeVisible({ timeout: 5000 });
+    // O merge manual confirmado mostra o selo de confirmação
+    await expect(
+      page.getByText('Confirmado manualmente', { exact: true }).first(),
+    ).toBeVisible({ timeout: 5000 });
+
     // Only AUDIT_1 should have the undo button (can_undo=true)
     await expect(
       page.locator(`[data-testid="undo-btn-${AUDIT_1}"]`),
@@ -847,6 +883,218 @@ test.describe('DedupCenterPage — visual proof', () => {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });
+  });
+
+  test('IMPORTADOS CONFLITO: banner nomeia as contas reais e cada nome leva à Fila', async ({ page }) => {
+    // 2+ contas reais → conflito. O banner deve NOMEAR cada conta real e cada
+    // nome é clicável: leva pra aba Fila e abre o popup do telefone daquela conta.
+    const ACC_CONF_A = {
+      id: 'acc-conf-a',
+      email: 'gabriela@example.com',
+      name: 'Gabriela Varela',
+      tier: 'INCOMPLETE_REGISTER',
+      status: 'INCOMPLETE',
+      created_at: '2026-01-10T10:00:00Z',
+      updated_at: '2026-03-01T10:00:00Z',
+      wja_count: 1,
+      docs_count: 0,
+      encuadres_count: 1,
+      login_real: false,
+      is_imported: false,
+      phone_normalized: PHONE_1,
+    };
+    const ACC_CONF_B = {
+      id: 'acc-conf-b',
+      email: 'javier@example.com',
+      name: 'Javier Bernal',
+      tier: 'REGISTERED',
+      status: 'ACTIVE',
+      created_at: '2026-02-01T10:00:00Z',
+      updated_at: '2026-04-01T10:00:00Z',
+      wja_count: 2,
+      docs_count: 1,
+      encuadres_count: 2,
+      login_real: true,
+      is_imported: false,
+      phone_normalized: PHONE_2,
+    };
+    const MOCK_CONFLICT_GROUPS = [
+      {
+        accounts: [ACC_CONF_A, ACC_CONF_B],
+        survivor_suggested_id: ACC_CONF_A.id,
+        survivor_reason: 'conflict_multiple_real_accounts',
+        has_real: true,
+      },
+    ];
+
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockDedupHistory(page);
+    // Detail for PHONE_1 so clicking the name opens the Fila popup
+    mockGroupDetail(page, PHONE_1, MOCK_DETAIL_NO_CONFLICT);
+
+    page.route('**/api/admin/dedup/imported-groups**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_CONFLICT_GROUPS }),
+      }),
+    );
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    await page.getByRole('button', { name: /Importados/i }).click();
+    await expect(
+      page.locator('[data-testid="dedup-imported-content"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Open the conflict group (review button)
+    await page.locator('[data-testid="imported-merge-btn-0"]').click();
+    await expect(
+      page.locator('[data-testid="dedup-merge-modal"]'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Conflict banner NAMES both real accounts
+    const banner = page.locator('[data-testid="imported-conflict-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10000 });
+    await expect(banner).toContainText('Gabriela Varela');
+    await expect(banner).toContainText('Javier Bernal');
+
+    await expect(page).toHaveScreenshot('dedup-center-conflict-named.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+
+    // Clicking a name jumps to the Fila and opens that phone's popup
+    await page
+      .locator(`[data-testid="conflict-account-link-${ACC_CONF_A.id}"]`)
+      .click();
+
+    // The imported conflict modal is gone; the phone-mode Fila popup opens for PHONE_1
+    await expect(
+      page.locator('[data-testid="imported-conflict-banner"]'),
+    ).not.toBeVisible();
+    await expect(
+      page.locator('[data-testid="dedup-merge-modal"]'),
+    ).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.locator(`[data-testid="merge-account-card-${ACC_1.id}"]`),
+    ).toBeVisible({ timeout: 10000 });
+  });
+
+  test('UNIFICAR MANUAL CONFLITO: 2 contas reais não bloqueia — avisa e exige confirmação', async ({ page }) => {
+    // A fusão manual existe justamente pro caso "mesma pessoa, telefone/sobrenome
+    // diferentes". Por isso, com 2 contas reais NÃO bloqueia: avisa quem fica e
+    // quem é eliminada, e exige o operador confirmar que é a mesma pessoa.
+    const CAND_A = {
+      id: 'acc-mc-a',
+      name: 'Gabriela Varela',
+      phone: '+5491124566820',
+      email: 'gabriela@example.com',
+      login_real: false,
+      is_imported: false,
+    };
+    const CAND_B = {
+      id: 'acc-mc-b',
+      name: 'Javier Bernal',
+      phone: '+5495411275878',
+      email: 'javier@example.com',
+      login_real: true,
+      is_imported: false,
+    };
+    const MANUAL_GROUP = {
+      accounts: [
+        {
+          ...CAND_A,
+          phone_normalized: CAND_A.phone,
+          tier: 'INCOMPLETE_REGISTER',
+          status: 'INCOMPLETE',
+          created_at: '2026-04-27T10:00:00Z',
+          updated_at: '2026-04-27T10:00:00Z',
+          wja_count: 1,
+          docs_count: 0,
+          encuadres_count: 1,
+        },
+        {
+          ...CAND_B,
+          phone_normalized: CAND_B.phone,
+          tier: 'REGISTERED',
+          status: 'ACTIVE',
+          created_at: '2026-04-02T10:00:00Z',
+          updated_at: '2026-04-02T10:00:00Z',
+          wja_count: 2,
+          docs_count: 1,
+          encuadres_count: 2,
+        },
+      ],
+      survivor_suggested_id: CAND_B.id,
+      survivor_reason: 'conflict_multiple_real_accounts',
+      field_comparisons: [],
+    };
+
+    await loginAsAdmin(page);
+    mockDedupPopulated(page);
+    mockDedupHistory(page);
+
+    page.route('**/api/admin/dedup/candidates**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [CAND_A, CAND_B] }),
+      }),
+    );
+    page.route('**/api/admin/dedup/manual-group', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MANUAL_GROUP }),
+      }),
+    );
+
+    await page.goto('/admin/dedup');
+    await expect(page.locator('[data-testid="dedup-content"]')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Open the manual-merge modal and pick both accounts via autocomplete
+    await page.locator('[data-testid="manual-merge-open-btn"]').click();
+    await expect(page.locator('[data-testid="manual-merge-modal"]')).toBeVisible({
+      timeout: 10000,
+    });
+
+    await page.locator('[data-testid="manual-account-a-input"]').fill('Gabriela');
+    await page.locator('[data-testid="manual-account-a-option-0"]').click();
+
+    await page.locator('[data-testid="manual-account-b-input"]').fill('Javier');
+    await page.locator('[data-testid="manual-account-b-option-0"]').click();
+
+    await page.locator('[data-testid="manual-compare-btn"]').click();
+
+    // Override warning (amber), NOT the red block — names who stays vs who is deleted
+    await expect(
+      page.locator('[data-testid="manual-conflict-confirm"]'),
+    ).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.locator('[data-testid="imported-conflict-banner"]'),
+    ).not.toBeVisible();
+    const outcome = page.locator('[data-testid="manual-conflict-outcome"]');
+    await expect(outcome).toContainText('Gabriela Varela');
+    await expect(outcome).toContainText('Javier Bernal');
+
+    // Merge is disabled until the operator confirms it's the same person
+    const confirmBtn = page.locator('[data-testid="imported-merge-confirm-btn"]');
+    await expect(confirmBtn).toBeDisabled();
+
+    await expect(page).toHaveScreenshot('dedup-center-manual-conflict-confirm.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
+
+    await page.locator('[data-testid="manual-conflict-confirm-checkbox"]').check();
+    await expect(confirmBtn).toBeEnabled();
   });
 
   // ── Bug-fix scroll test (atualizado: prova scroll REAL via scrollHeight/clientHeight) ──

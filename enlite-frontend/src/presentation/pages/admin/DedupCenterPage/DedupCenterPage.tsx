@@ -192,6 +192,17 @@ function DedupCenterPageInner() {
     [undo],
   );
 
+  // ── Conflict → Fila navigation ─────────────────────────────────────────────────
+  // From the conflict banner (Importados/manual merge): jump to the Fila tab and
+  // open the phone-group popup for the clicked real account. Closes whatever modal
+  // is currently open first.
+  const handleNavigateToPhoneGroup = useCallback((phone: string) => {
+    setMergeImportedGroup(null);
+    setIsManualMergeOpen(false);
+    setActiveTab('queue');
+    setMergePhone(phone);
+  }, []);
+
   return (
     <PageContainer>
       {/* ── Header ─────────────────────────────────────────────────────────────── */}
@@ -234,8 +245,16 @@ function DedupCenterPageInner() {
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div className="mb-2">
         <DedupTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
+
+      {/* Per-tab description — explica pra que serve a aba ativa, pro operador não
+          ficar perdido ao abri-la pela primeira vez. */}
+      <div className="mb-6 max-w-3xl" data-testid="dedup-tab-description">
+        <Text size="sm" color="muted" as="p">
+          {d(`tabDesc.${activeTab}`)}
+        </Text>
       </div>
 
       {/* ── Queue tab ──────────────────────────────────────────────────────────── */}
@@ -335,6 +354,7 @@ function DedupCenterPageInner() {
             setMergeImportedGroup(null);
             refetchImported();
           }}
+          onNavigateToPhoneGroup={handleNavigateToPhoneGroup}
         />
       )}
 

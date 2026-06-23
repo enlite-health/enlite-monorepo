@@ -76,6 +76,10 @@ export interface MergeRequest {
   survivorId: string;
   absorbedIds: string[];
   fieldChoices?: Record<string, string>;
+  /** Fluxo de origem (auditoria): fila | imported | manual. */
+  source?: 'fila' | 'imported' | 'manual';
+  /** Merge manual de 2+ contas reais com confirmação explícita do admin. */
+  confirmedSamePerson?: boolean;
 }
 
 export interface MergeResult {
@@ -139,6 +143,15 @@ export interface MergeHistoryItem {
   category: string;
   created_at: string;
   can_undo: boolean;
+  /** QUEM executou (auditoria): email do admin quando resolvível; senão uid/"system". */
+  executed_by_email?: string | null;
+  executed_by?: string | null;
+  /** Fluxo de origem: fila | imported | manual | auto_batch. */
+  source?: string | null;
+  /** Merge manual de 2+ contas reais com confirmação explícita. */
+  confirmed_same_person?: boolean | null;
+  /** QUEM desfez (quando desfeito). */
+  undone_by_email?: string | null;
 }
 
 export interface UndoResult {
