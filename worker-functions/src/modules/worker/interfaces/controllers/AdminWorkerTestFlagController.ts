@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { UpdateWorkerTestFlagUseCase } from '../../application/UpdateWorkerTestFlagUseCase';
+import { WorkerAuditRepository, extractWorkerAuditActor } from '../../infrastructure/WorkerAuditRepository';
 import { logger, reportError } from '@shared/logging';
 
 /**
@@ -23,9 +24,11 @@ function getUid(req: Request): string | null {
 
 export class AdminWorkerTestFlagController {
   private readonly useCase: UpdateWorkerTestFlagUseCase;
+  private readonly auditRepo: WorkerAuditRepository;
 
   constructor() {
     this.useCase = new UpdateWorkerTestFlagUseCase(new WorkerRepository());
+    this.auditRepo = new WorkerAuditRepository();
   }
 
   /** PATCH /api/admin/workers/:id/test-flag */
@@ -47,6 +50,11 @@ export class AdminWorkerTestFlagController {
         return;
       }
       logger.info({ msg: 'worker test-flag updated', workerId: id, isTest, uid });
+      await this.auditRepo.recordFieldChanges({
+        workerId: id,
+        fields: [{ field: 'isTest', before: null, after: isTest }],
+        actor: extractWorkerAuditActor(req),
+      });
       res.status(200).json({ success: true, data: { isTest } });
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
