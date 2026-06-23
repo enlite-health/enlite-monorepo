@@ -86,7 +86,7 @@ export function MergeAccountCard({
             }`}
           >
             <Text as="span" size="xs" weight="medium" color="inherit">
-              {t(`admin.dedup.tier.${account.tier}`, { defaultValue: account.tier })}
+              {t(`admin.dedup.tier.${account.status}`, { defaultValue: account.status })}
             </Text>
           </span>
         </div>
