@@ -17,6 +17,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { logger, reportError } from '@shared/logging';
+import type { EntityFieldDiff } from '@shared/audit/types';
+import { captureWorkerBefore } from './workerAuditDiff';
 
 export interface WorkerProfilePatch {
   workerId: string;
@@ -70,6 +72,8 @@ export interface WorkerProfilePatch {
 export interface UpdateWorkerProfileFieldsResult {
   workerId: string;
   fieldsUpdated: string[];
+  /** Diff antes→depois por campo, para auditoria. */
+  changes: EntityFieldDiff[];
 }
 
 export class WorkerNotFoundError extends Error {
@@ -104,6 +108,9 @@ export class UpdateWorkerProfileFieldsUseCase {
       throw new WorkerNotFoundError(workerId);
     }
 
+    // Snapshot "before" (decriptado) para o diff de auditoria.
+    const before = await captureWorkerBefore(this.pool, this.encryptionService, workerId);
+
     const fieldsUpdated: string[] = [];
 
     // 2. Update scalar fields on workers table
@@ -115,8 +122,15 @@ export class UpdateWorkerProfileFieldsUseCase {
       fieldsUpdated.push('address');
     }
 
+    const afterMap = scalarFields as Record<string, unknown>;
+    const changes: EntityFieldDiff[] = fieldsUpdated.map((field) => ({
+      field,
+      before: before[field] ?? null,
+      after: field === 'address' ? address ?? null : afterMap[field] ?? null,
+    }));
+
     log.info({ msg: 'profile fields updated', fieldsUpdated });
-    return { workerId, fieldsUpdated };
+    return { workerId, fieldsUpdated, changes };
   }
 
   private async updateScalarFields(

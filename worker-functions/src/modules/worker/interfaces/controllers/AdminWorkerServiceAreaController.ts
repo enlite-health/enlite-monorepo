@@ -1,8 +1,11 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import { Pool } from 'pg';
 import { SaveServiceAreaUseCase } from '../../application/SaveServiceAreaUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
+import { WorkerAuditRepository, extractWorkerAuditActor } from '../../infrastructure/WorkerAuditRepository';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { logger, reportError } from '@shared/logging';
 
 /**
@@ -36,9 +39,29 @@ function getUid(req: Request): string | null {
 
 export class AdminWorkerServiceAreaController {
   private readonly useCase: SaveServiceAreaUseCase;
+  private readonly auditRepo: WorkerAuditRepository;
+  private readonly pool: Pool;
 
   constructor() {
     this.useCase = new SaveServiceAreaUseCase(new WorkerRepository(), new ServiceAreaRepository());
+    this.auditRepo = new WorkerAuditRepository();
+    this.pool = DatabaseConnection.getInstance().getPool();
+  }
+
+  /** Snapshot da área de serviço primária atual (para o "antes" da auditoria). */
+  private async currentArea(workerId: string): Promise<Record<string, unknown> | null> {
+    try {
+      const r = await this.pool.query(
+        `SELECT address_line AS address, address_complement AS "addressComplement",
+                neighborhood, city, postal_code AS "postalCode", state,
+                latitude AS lat, longitude AS lng, radius_km AS "serviceRadiusKm"
+         FROM worker_service_areas WHERE worker_id = $1 ORDER BY created_at ASC LIMIT 1`,
+        [workerId],
+      );
+      return r.rows[0] ?? null;
+    } catch {
+      return null; // best-effort: "antes" da auditoria não bloqueia a edição
+    }
   }
 
   /** PUT /api/admin/workers/:id/service-area */
@@ -54,6 +77,7 @@ export class AdminWorkerServiceAreaController {
     }
 
     try {
+      const before = await this.currentArea(id);
       const result = await this.useCase.execute({ workerId: id, ...parsed.data });
       if (result.isFailure) {
         const notFound = result.error === 'Worker not found';
@@ -61,6 +85,11 @@ export class AdminWorkerServiceAreaController {
         return;
       }
       logger.info({ msg: 'worker service area updated by admin', workerId: id, uid });
+      await this.auditRepo.recordFieldChanges({
+        workerId: id,
+        fields: [{ field: 'serviceArea', before, after: parsed.data }],
+        actor: extractWorkerAuditActor(req),
+      });
       res.status(200).json({ success: true, data: { message: 'Service area saved' } });
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));

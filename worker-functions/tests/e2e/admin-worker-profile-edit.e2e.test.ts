@@ -158,6 +158,39 @@ describe('PATCH /api/admin/workers/:id/profile', () => {
     });
   });
 
+  // ── Auditoria detalhada (quem/o-quê/quando) ──
+  describe('trilho de auditoria', () => {
+    it('grava worker_admin_audit_log com ator + antes→depois por campo', async () => {
+      // edição nova pra garantir linha fresca
+      await api.patch(
+        `/api/admin/workers/${seededWorkerId}/profile`,
+        { firstName: 'Auditado', occupation: 'CAREGIVER' },
+        authHeaders(adminToken),
+      );
+
+      const rows = await pool.query(
+        `SELECT field_name, changes, actor_user_id, actor_email, actor_type, actor_label, event_type
+         FROM worker_admin_audit_log WHERE worker_id = $1 ORDER BY created_at DESC`,
+        [seededWorkerId],
+      );
+      expect(rows.rows.length).toBeGreaterThan(0);
+
+      const byField = (f: string) => rows.rows.find((r) => r.field_name === f);
+      const firstNameRow = byField('firstName');
+      expect(firstNameRow).toBeDefined();
+      expect(firstNameRow.actor_user_id).toBe('worker-profile-edit-admin-e2e');
+      expect(firstNameRow.actor_type).toBe('HUMAN');
+      expect(firstNameRow.actor_label).toBe('admin_panel');
+      expect(firstNameRow.changes).toHaveProperty('after', 'Auditado');
+      expect(firstNameRow.changes).toHaveProperty('before');
+
+      // campo escalar não-PII também registra antes→depois
+      const occ = byField('occupation');
+      expect(occ).toBeDefined();
+      expect(occ.changes.after).toBe('CAREGIVER');
+    });
+  });
+
   // ── 400 — body inválido ──
   describe('body inválido', () => {
     it('retorna 400 quando nenhum campo é informado', async () => {
