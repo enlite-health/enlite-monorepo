@@ -8,9 +8,11 @@
 
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { classifyWorkerTier } from '../../infrastructure/services/WorkerPhoneMergeHelpers';
 import { selectMostComplete } from '../../infrastructure/services/WorkerPhoneMergeHelpers';
 import type { DedupGroup, DedupWorkerAccount, WorkerTier } from './DedupTypes';
+import { loadWorkerDisplayNames } from './loadWorkerDisplayNames';
 import { SYNTHETIC_AUTH_UID_PREFIXES, IMPORT_EMAIL_SUFFIX } from '../../infrastructure/services/WorkerPhoneMergeTypes';
 
 const log = logger.child({ source: 'ListDedupGroupsUseCase' });
@@ -31,7 +33,16 @@ interface RawWorkerRow {
 }
 
 export class ListDedupGroupsUseCase {
-  constructor(private readonly pool: Pool) {}
+  private readonly encryptionService: KMSEncryptionService;
+
+  constructor(
+    private readonly pool: Pool,
+    encryptionService?: KMSEncryptionService,
+  ) {
+    // Reusa o mesmo serviço da ficha do prestador (KMS / test-passthrough),
+    // igual a GetDedupGroupDetailUseCase — decripta nome admin-only.
+    this.encryptionService = encryptionService ?? new KMSEncryptionService();
+  }
 
   async execute(): Promise<DedupGroup[]> {
     log.info({ msg: 'list_dedup_groups_start' });
@@ -62,6 +73,17 @@ export class ListDedupGroupsUseCase {
 
       const group = this.buildGroup(row.phone_normalized, active);
       groups.push(group);
+    }
+
+    // Anexa o NOME humano (decriptado, admin-only) a cada conta, num único
+    // batch de decrypt — a Fila precisa mostrar QUEM é a conta, não só o
+    // telefone. Falha de decrypt vira fallback (não derruba a lista).
+    const allIds = groups.flatMap(g => g.accounts.map(a => a.id));
+    const names = await loadWorkerDisplayNames(this.pool, allIds, this.encryptionService);
+    for (const g of groups) {
+      for (const a of g.accounts) {
+        a.name = names.get(a.id) ?? null;
+      }
     }
 
     log.info({ msg: 'list_dedup_groups_done', total: groups.length });

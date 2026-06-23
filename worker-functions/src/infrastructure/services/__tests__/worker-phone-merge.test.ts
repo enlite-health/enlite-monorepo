@@ -637,6 +637,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
     mockClient.query
       .mockResolvedValueOnce(undefined)                             // BEGIN
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] }) // check idempotência
+      .mockResolvedValueOnce({ rows: [{ id: 's1', email: 's@x.com' }, { id: 'a1', email: 'a@x.com' }] }) // emails (audit writer)
       .mockResolvedValueOnce({ rows: [{ id: '42' }] })             // INSERT worker_merge_audit RETURNING id
       .mockResolvedValueOnce({ rows: [{ id: 'a1', email: 'x@x.com' }] }) // SELECT * FROM workers (snapshot)
       .mockResolvedValue({ rows: [{ fields_filled: ['profession'], id: 'snap-1' }] }); // resto (fk tables + snapshot insert + coalesce + etc)
@@ -684,6 +685,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
     mockClient.query
       .mockResolvedValueOnce(undefined)                                     // BEGIN
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] })          // check
+      .mockResolvedValueOnce({ rows: [{ id: 's1', email: null }, { id: 'a1', email: null }] }) // emails (audit writer)
       .mockResolvedValueOnce({ rows: [{ id: '99' }] })                      // INSERT audit RETURNING id
       .mockResolvedValueOnce({ rows: [{ id: 'a1', status: 'INCOMPLETE' }] }) // worker_row snapshot
       .mockResolvedValueOnce({ rows: [] })                                   // fk_rows (worker_availability)

@@ -45,6 +45,70 @@ beforeEach(() => {
   MockMergeService.prototype.executeSingleMerge.mockResolvedValue(undefined);
 });
 
+// ── Auditoria: ator + contexto (QUEM/DE ONDE/COMO) ────────────────────────────
+
+describe('ExecuteAdminMergeUseCase — auditoria de ator/contexto', () => {
+  it('resolve o email do admin e passa ator+contexto+overrides ao executeSingleMerge', async () => {
+    const pool = makePool([
+      // resolveAdminEmail (executedBy presente → consulta users)
+      { rows: [{ email: 'admin@enlite.health' }] },
+      // survivor query
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      // absorbed query
+      { rows: [{ merged_into_id: null }] },
+      // applyFieldChoices: SELECT do absorvido
+      { rows: [{ first_name_encrypted: 'cipher-abs' }] },
+      // applyFieldChoices: UPDATE
+      { rows: [] },
+      // auditId após merge
+      { rows: [{ id: 71 }] },
+    ]);
+
+    const useCase = new ExecuteAdminMergeUseCase(pool as unknown as Pool);
+    await useCase.execute({
+      survivorId: SURVIVOR_ID,
+      absorbedIds: [ABSORBED_ID],
+      fieldChoices: { first_name_encrypted: ABSORBED_ID },
+      audit: {
+        executedBy: 'uid-admin-1',
+        source: 'manual',
+        confirmedSamePerson: true,
+        ipAddress: '203.0.113.7',
+        userAgent: 'jest',
+        requestId: 'req-123',
+      },
+    });
+
+    const call = MockMergeService.prototype.executeSingleMerge.mock.calls[0][0];
+    expect(call.audit?.executedBy).toBe('uid-admin-1');
+    expect(call.audit?.executedByEmail).toBe('admin@enlite.health');
+    expect(call.audit?.source).toBe('manual');
+    expect(call.audit?.confirmedSamePerson).toBe(true);
+    expect(call.audit?.ipAddress).toBe('203.0.113.7');
+    expect(call.audit?.requestId).toBe('req-123');
+    // O override aplicado é registrado: qual campo e de qual conta veio.
+    expect(call.audit?.appliedOverrides).toEqual([
+      { field: 'first_name_encrypted', from_account_id: ABSORBED_ID },
+    ]);
+  });
+
+  it('sem executedBy não consulta users (email null) e source default permanece', async () => {
+    const pool = makePool([
+      // survivor query (NÃO há query de resolveAdminEmail pois executedBy ausente)
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      { rows: [{ merged_into_id: null }] },
+      { rows: [{ id: 9 }] },
+    ]);
+
+    const useCase = new ExecuteAdminMergeUseCase(pool as unknown as Pool);
+    await useCase.execute({ survivorId: SURVIVOR_ID, absorbedIds: [ABSORBED_ID] });
+
+    const call = MockMergeService.prototype.executeSingleMerge.mock.calls[0][0];
+    expect(call.audit?.executedBy).toBeUndefined();
+    expect(call.audit?.executedByEmail).toBeUndefined();
+  });
+});
+
 // ── Happy path ────────────────────────────────────────────────────────────────
 
 describe('ExecuteAdminMergeUseCase — happy path', () => {

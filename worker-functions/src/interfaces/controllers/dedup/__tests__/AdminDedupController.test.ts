@@ -391,6 +391,11 @@ describe('AdminDedupController.listHistory', () => {
         exceptions: [],
         created_at: '2026-01-01T00:00:00.000Z',
         can_undo: true,
+        executed_by: 'admin-uid',
+        executed_by_email: 'admin@enlite.health',
+        source: 'manual',
+        confirmed_same_person: null,
+        undone_by_email: null,
       },
     ];
     (ListMergeHistoryUseCase as jest.MockedClass<typeof ListMergeHistoryUseCase>)

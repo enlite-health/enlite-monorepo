@@ -220,7 +220,11 @@ describe('UndoMergeUseCase', () => {
     expect(result.survivorId).toBe('survivor-uuid');
     expect(result.absorbedId).toBe('absorbed-uuid');
     expect(result.alreadyUndone).toBe(false);
-    expect(WorkerPhoneMergeService.prototype.undoMerge).toHaveBeenCalledWith(42);
+    // Agora propaga o contexto de auditoria do undo (2º argumento).
+    expect(WorkerPhoneMergeService.prototype.undoMerge).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ undoneByEmail: undefined }),
+    );
   });
 
   it('retorna alreadyUndone=true quando merge já foi desfeito', async () => {

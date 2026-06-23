@@ -17,6 +17,7 @@
  */
 
 import type { Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -42,6 +43,10 @@ const MergeBodySchema = z.object({
   survivorId: z.string().uuid('survivorId deve ser UUID'),
   absorbedIds: z.array(z.string().uuid()).min(1, 'absorbedIds deve ter ao menos 1 item'),
   fieldChoices: z.record(z.string()).optional(),
+  /** Fluxo que originou o merge (auditoria). */
+  source: z.enum(['fila', 'imported', 'manual']).optional(),
+  /** Merge manual de 2+ contas reais com confirmação explícita do admin. */
+  confirmedSamePerson: z.boolean().optional(),
 });
 
 const DismissBodySchema = z.object({
@@ -126,7 +131,7 @@ export class AdminDedupController {
       return;
     }
 
-    const adminUid = (req as Request & { user?: { uid?: string } }).user?.uid;
+    const actor = this.requestActor(req);
 
     try {
       const useCase = new ExecuteAdminMergeUseCase(this.pool);
@@ -134,14 +139,60 @@ export class AdminDedupController {
         survivorId: parsed.data.survivorId,
         absorbedIds: parsed.data.absorbedIds,
         fieldChoices: parsed.data.fieldChoices,
-        executedBy: adminUid,
+        audit: {
+          executedBy: actor.uid,
+          executedByEmail: actor.email,
+          source: parsed.data.source ?? 'manual',
+          confirmedSamePerson: parsed.data.confirmedSamePerson,
+          ipAddress: actor.ip,
+          userAgent: actor.userAgent,
+          requestId: actor.requestId,
+        },
       });
 
-      log.info({ msg: 'admin_merge_via_endpoint', adminUid, result });
+      log.info({
+        msg: 'admin_merge_via_endpoint',
+        executed_by: actor.uid,
+        ip_address: actor.ip,
+        request_id: actor.requestId,
+        source: parsed.data.source ?? 'manual',
+        confirmed_same_person: parsed.data.confirmedSamePerson ?? false,
+        result,
+      });
       res.json({ success: true, data: result });
     } catch (err) {
       this.handleError(err, res, 'executeMerge');
     }
+  }
+
+  /**
+   * Extrai o ator + contexto da requisição para auditoria: uid/email do admin
+   * (do middleware), IP (respeita x-forwarded-for atrás de proxy), user-agent e
+   * um request_id para correlacionar com o Cloud Logging.
+   */
+  private requestActor(req: Request): {
+    uid?: string;
+    email?: string;
+    ip?: string;
+    userAgent?: string;
+    requestId: string;
+  } {
+    const user = (req as Request & { user?: { uid?: string; email?: string } }).user;
+    const headers = req.headers ?? {};
+    const fwd = headers['x-forwarded-for'];
+    const ip =
+      (Array.isArray(fwd) ? fwd[0] : fwd?.split(',')[0]?.trim()) || req.ip || undefined;
+    const requestId =
+      (headers['x-request-id'] as string) ||
+      (headers['x-cloud-trace-context'] as string) ||
+      randomUUID();
+    return {
+      uid: user?.uid,
+      email: user?.email,
+      ip,
+      userAgent: headers['user-agent'],
+      requestId,
+    };
   }
 
   // POST /api/admin/dedup/dismiss
@@ -177,9 +228,25 @@ export class AdminDedupController {
       return;
     }
 
+    const actor = this.requestActor(req);
+
     try {
       const useCase = new UndoMergeUseCase(this.pool);
-      const result = await useCase.execute(auditIdRaw);
+      const result = await useCase.execute(auditIdRaw, {
+        undoneBy: actor.uid,
+        undoneByEmail: actor.email,
+        ipAddress: actor.ip,
+        userAgent: actor.userAgent,
+        requestId: actor.requestId,
+      });
+
+      log.info({
+        msg: 'admin_undo_via_endpoint',
+        auditId: auditIdRaw,
+        undone_by: actor.uid,
+        ip_address: actor.ip,
+        request_id: actor.requestId,
+      });
       res.json({ success: true, data: result });
     } catch (err) {
       this.handleError(err, res, 'undoMerge');

@@ -9,6 +9,8 @@
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { WorkerPhoneMergeService } from '../../infrastructure/services/WorkerPhoneMergeService';
+import type { UndoAuditContext } from './DedupTypes';
+import { resolveAdminEmail } from './resolveAdminEmail';
 
 const log = logger.child({ source: 'UndoMergeUseCase' });
 
@@ -22,14 +24,26 @@ export interface UndoMergeResult {
 export class UndoMergeUseCase {
   private readonly mergeService: WorkerPhoneMergeService;
 
-  constructor(_pool: Pool) {
+  constructor(private readonly pool: Pool) {
     this.mergeService = new WorkerPhoneMergeService();
   }
 
-  async execute(auditId: number): Promise<UndoMergeResult> {
-    log.info({ msg: 'undo_merge_start', auditId });
+  async execute(auditId: number, undoAudit?: UndoAuditContext): Promise<UndoMergeResult> {
+    // Resolve o email do admin que está desfazendo, pra registro legível.
+    const undoneByEmail: string | undefined =
+      undoAudit?.undoneByEmail ?? (await resolveAdminEmail(this.pool, undoAudit?.undoneBy)) ?? undefined;
+    const ctx: UndoAuditContext = { ...undoAudit, undoneByEmail };
 
-    const result = await this.mergeService.undoMerge(auditId);
+    log.info({
+      msg: 'undo_merge_start',
+      auditId,
+      undone_by: ctx.undoneBy ?? 'system',
+      undone_by_email: undoneByEmail,
+      ip_address: ctx.ipAddress ?? null,
+      request_id: ctx.requestId ?? null,
+    });
+
+    const result = await this.mergeService.undoMerge(auditId, ctx);
 
     log.info({
       msg: 'undo_merge_done',
@@ -37,6 +51,8 @@ export class UndoMergeUseCase {
       survivorId: result.survivorId,
       absorbedId: result.absorbedId,
       alreadyUndone: result.alreadyUndone,
+      undone_by: ctx.undoneBy ?? 'system',
+      undone_by_email: undoneByEmail,
     });
 
     return {

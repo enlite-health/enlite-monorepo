@@ -18,17 +18,12 @@
  *   - NUNCA auto-sobrescritos quando divergentes → registrar em exceptions.
  *   - COALESCE seguro: só preenche se o sobrevivente estava NULL.
  *
- * FK reparent — DESCOBERTA DINÂMICA (resiliente a drift de schema):
- *   Em vez de lista hardcoded, o serviço consulta information_schema do banco conectado
- *   para descobrir todas as tabelas/colunas com FK → workers(id).
- *   Garante que tabelas inexistentes em prod (drift) não quebrem a transação.
- *   Ver WorkerPhoneMergeFkDiscovery.ts para a query e a lógica de estratégia.
+ * FK reparent — DESCOBERTA DINÂMICA (resiliente a drift de schema): consulta o
+ *   information_schema pra achar toda FK → workers(id) (inclusive múltiplas colunas
+ *   na mesma tabela) e reparenta. Ver WorkerPhoneMergeFkDiscovery.ts.
  *
- * Multi-FK por tabela:
- *   Se uma tabela tiver worker_id + reviewed_by_worker_id apontando para workers(id),
- *   ambas as colunas são reparentadas para evitar FK órfã.
- *
- * Auditoria: worker_merge_audit (migration 221).
+ * Auditoria: worker_merge_audit (mig 221 + 227 ator/contexto). Escrita em
+ *   WorkerMergeAuditWriter.ts.
  */
 
 import { Pool, PoolClient } from 'pg';
@@ -56,7 +51,10 @@ import {
   discoverWorkerFkTables,
   type FkTableInfo,
 } from './WorkerPhoneMergeHelpers';
-import { captureSnapshot, restoreSnapshot } from './WorkerMergeSnapshotService';
+import { captureSnapshot } from './WorkerMergeSnapshotService';
+import { insertMergeAuditRow, type MergeAuditInput } from './WorkerMergeAuditWriter';
+import { undoMergeTx } from './WorkerMergeUndoService';
+import type { UndoAuditContext } from '../../application/dedup/DedupTypes';
 
 const log = logger.child({ source: 'WorkerPhoneMergeService' });
 
@@ -222,8 +220,11 @@ export class WorkerPhoneMergeService {
      * Se não fornecida (chamada direta em testes), faz a descoberta on-demand.
      */
     discoveredFks?: FkTableInfo[];
+    /** Contexto de auditoria (QUEM/DE ONDE/COMO). Ausente = merge automático em lote. */
+    audit?: MergeAuditInput;
   }): Promise<void> {
     const { survivorId, absorbedId, phoneNormalized, category, legalFieldExceptions } = params;
+    const audit = params.audit ?? {};
 
     const client: PoolClient = await this.pool.connect();
     try {
@@ -245,22 +246,17 @@ export class WorkerPhoneMergeService {
         ?? await discoverWorkerFkTables(this.pool, { knownTables: FK_TABLES_TO_REPARENT.map(t => t.table) });
 
       // 3. SNAPSHOT: captura estado completo do absorvido ANTES de qualquer mutação
-      //    (registra primeiro na auditoria para ter o ID disponível)
-      const auditRes = await client.query<{ id: string }>(
-        `INSERT INTO worker_merge_audit
-           (survivor_id, absorbed_id, phone_normalized, category, fields_filled, exceptions)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
-         RETURNING id`,
-        [
-          survivorId,
-          absorbedId,
-          phoneNormalized,
-          category,
-          JSON.stringify([]),   // fields_filled preenchido após COALESCE
-          JSON.stringify(legalFieldExceptions),
-        ],
-      );
-      const auditId = BigInt(auditRes.rows[0].id);
+      //    (registra primeiro na auditoria para ter o ID disponível). Grava TODO o
+      //    rastro: quem, de onde, como (overrides) e os emails das duas contas
+      //    (o writer busca os emails das contas internamente).
+      const auditId = await insertMergeAuditRow(client, {
+        survivorId,
+        absorbedId,
+        phoneNormalized,
+        category,
+        legalFieldExceptions,
+        audit,
+      });
 
       await captureSnapshot(client, {
         mergeAuditId: auditId,
@@ -291,13 +287,22 @@ export class WorkerPhoneMergeService {
 
       await client.query('COMMIT');
 
+      // AUDIT: log completo (Cloud Logging — fora do alcance de quem mexe no DB).
       log.info({
         msg:          'merge_executed',
+        audit_id:     auditId.toString(),
         survivorId,
         absorbedId,
         category,
         fields_filled: fieldsFilled.length,
         fk_tables_reparented: fks.length,
+        executed_by:  audit.executedBy ?? 'system',
+        executed_by_email: audit.executedByEmail ?? null,
+        merge_source: audit.source ?? 'auto_batch',
+        confirmed_same_person: audit.confirmedSamePerson ?? false,
+        ip_address:   audit.ipAddress ?? null,
+        request_id:   audit.requestId ?? null,
+        applied_overrides: audit.appliedOverrides ?? [],
       });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -314,53 +319,12 @@ export class WorkerPhoneMergeService {
    *
    * @param mergeAuditId  ID da linha em worker_merge_audit
    */
-  async undoMerge(mergeAuditId: number | bigint): Promise<{
+  async undoMerge(mergeAuditId: number | bigint, undoAudit?: UndoAuditContext): Promise<{
     survivorId: string;
     absorbedId: string;
     alreadyUndone: boolean;
   }> {
-    // Busca o audit para obter survivor/absorbed
-    const auditRes = await this.pool.query<{
-      survivor_id: string;
-      absorbed_id: string;
-    }>(
-      `SELECT survivor_id, absorbed_id FROM worker_merge_audit WHERE id = $1`,
-      [mergeAuditId],
-    );
-
-    if (auditRes.rows.length === 0) {
-      throw new Error(`worker_merge_audit id=${mergeAuditId} não encontrado`);
-    }
-
-    const { survivor_id: survivorId, absorbed_id: absorbedId } = auditRes.rows[0];
-
-    const client: PoolClient = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const result = await restoreSnapshot(client, {
-        mergeAuditId,
-        survivorId,
-        absorbedId,
-      });
-
-      await client.query('COMMIT');
-
-      log.info({
-        msg: 'merge_undone',
-        mergeAuditId,
-        survivorId,
-        absorbedId,
-        alreadyUndone: result.alreadyUndone,
-      });
-
-      return { survivorId, absorbedId, alreadyUndone: result.alreadyUndone };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    return undoMergeTx(this.pool, mergeAuditId, undoAudit);
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

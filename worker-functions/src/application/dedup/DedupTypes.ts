@@ -25,6 +25,12 @@ export interface DedupWorkerAccount {
   auth_uid_prefix: string;
   /** true = email termina em @enlite.import (worker importado, sem conta real) */
   is_imported: boolean;
+  /**
+   * Nome humano EXIBÍVEL (decriptado via KMS, admin-only) para a Fila mostrar
+   * QUEM é a conta, não só o telefone. Fallback "(importado)"/"(sin nombre)"
+   * quando não há nome — nunca expõe UUID/ciphertext. Ver loadWorkerDisplayNames.
+   */
+  name?: string | null;
 }
 
 // ── Grupo de duplicados ────────────────────────────────────────────────────
@@ -82,6 +88,46 @@ export interface ExecuteMergeParams {
   fieldChoices?: Record<string, string>;
   /** auth_uid do admin que executou (para auditoria) */
   executedBy?: string;
+  /** Contexto de auditoria — QUEM/DE ONDE/COMO. Persistido + logado. */
+  audit?: MergeAuditContext;
+}
+
+/**
+ * Origem do merge (para a coluna source da auditoria).
+ *   fila       = colisão por telefone (aba Fila)
+ *   imported   = aba Importados (match por nome)
+ *   manual     = "Unificar manualmente"
+ *   auto_batch = limpeza automática em lote (sem admin)
+ */
+export type MergeSource = 'fila' | 'imported' | 'manual' | 'auto_batch';
+
+/** Contexto de auditoria capturado na borda (controller) e propagado até o INSERT. */
+export interface MergeAuditContext {
+  /** uid (Firebase) do admin. */
+  executedBy?: string;
+  /** Email do admin (resolvido por uid, denormalizado na auditoria). */
+  executedByEmail?: string;
+  source?: MergeSource;
+  /** true = merge manual de 2+ contas reais com confirmação explícita do admin. */
+  confirmedSamePerson?: boolean;
+  ipAddress?: string;
+  userAgent?: string;
+  requestId?: string;
+}
+
+/** Override aplicado: campo sobrescrito na principal copiando da conta absorvida. */
+export interface AppliedOverride {
+  field: string;
+  from_account_id: string;
+}
+
+/** Contexto de auditoria do DESFAZER (undo) — QUEM reverteu e de onde. */
+export interface UndoAuditContext {
+  undoneBy?: string;
+  undoneByEmail?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  requestId?: string;
 }
 
 export interface DismissGroupParams {
@@ -143,4 +189,13 @@ export interface MergeHistoryEntry {
   exceptions: unknown[];
   created_at: string;
   can_undo: boolean;
+  /** QUEM executou (auditoria mig 227). Email quando resolvível; senão uid/"system". */
+  executed_by: string | null;
+  executed_by_email: string | null;
+  /** Fluxo de origem: fila/imported/manual/auto_batch. */
+  source: string | null;
+  /** Merge manual de 2+ contas reais com confirmação explícita. */
+  confirmed_same_person: boolean | null;
+  /** QUEM desfez (quando desfeito). */
+  undone_by_email: string | null;
 }
