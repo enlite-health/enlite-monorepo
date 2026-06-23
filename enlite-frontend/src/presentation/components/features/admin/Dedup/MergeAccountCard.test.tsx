@@ -28,8 +28,9 @@ import type { DedupAccount } from '@domain/entities/DedupGroup';
 const BASE_ACCOUNT: DedupAccount = {
   id: 'acc-001',
   email: 'worker@test.com',
-  tier: 'REGISTERED',
-  status: 'ACTIVE',
+  // tier real do backend é numérico (1/2/3) e NÃO é exibido; o badge mostra o status.
+  tier: 1,
+  status: 'REGISTERED',
   created_at: '2026-03-15T08:30:00Z',
   updated_at: '2026-03-15T08:30:00Z',
   wja_count: 5,
@@ -269,5 +270,31 @@ describe('MergeAccountCard — nome + teléfono amigável', () => {
   it('mostra email real como secundário quando há nome', () => {
     renderCard(ACCOUNT_WITH_NAME);
     expect(screen.getByText('maria.real@gmail.com')).toBeInTheDocument();
+  });
+});
+
+// ── Badge de status humano (não o número do tier interno) ───────────────────
+
+// NOTA: o i18n do ambiente de teste não carrega es.json — t() devolve a chave
+// (defaultValue = status). Então o badge mostra 'REGISTERED' (o STATUS), e a
+// tradução humana ("Registrado") é validada pelo teste visual no app real.
+// O que importa aqui: o badge usa STATUS, nunca o número do tier (1/2/3).
+describe('MergeAccountCard — badge usa STATUS, não o tier numérico', () => {
+  function statusBadgeTexts(container: HTMLElement): (string | undefined)[] {
+    return Array.from(container.querySelectorAll('span.rounded-full')).map((b) =>
+      b.textContent?.trim(),
+    );
+  }
+
+  it('renderiza o valor do status (não o número do tier)', () => {
+    const { container } = renderCard({ ...BASE_ACCOUNT, tier: 3, status: 'REGISTERED' });
+    const badges = statusBadgeTexts(container);
+    expect(badges).toContain('REGISTERED'); // status (traduz no app real)
+    expect(badges).not.toContain('3'); // nunca o tier cru
+  });
+
+  it('reflete o status passado (QUALIFIED)', () => {
+    const { container } = renderCard({ ...BASE_ACCOUNT, tier: 1, status: 'QUALIFIED' });
+    expect(statusBadgeTexts(container)).toContain('QUALIFIED');
   });
 });

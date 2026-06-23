@@ -10,7 +10,13 @@
 
 // ── Account within a duplicate group ──────────────────────────────────────────
 
-export type WorkerTier = 'REGISTERED' | 'INCOMPLETE_REGISTER' | 'PRE_REGISTER' | string;
+/**
+ * Classificação NUMÉRICA do backend para eleger o sobrevivente:
+ * 1 = conta real, 2 = importada, 3 = fantasma/sintética.
+ * NÃO é exibida pro operador (o card mostra `status` humano).
+ * `string` mantido por compat com fixtures legados.
+ */
+export type WorkerTier = 1 | 2 | 3 | string;
 
 export interface DedupAccount {
   id: string;

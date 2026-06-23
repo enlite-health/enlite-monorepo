@@ -211,8 +211,8 @@ export function ImportedGroupsTab({
                           </Text>
                           <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full inline-flex w-fit">
                             <Text as="span" size="xs" weight="medium" color="inherit">
-                              {t(`admin.dedup.tier.${survivor.tier}`, {
-                                defaultValue: survivor.tier,
+                              {t(`admin.dedup.tier.${survivor.status}`, {
+                                defaultValue: survivor.status,
                               })}
                             </Text>
                           </span>

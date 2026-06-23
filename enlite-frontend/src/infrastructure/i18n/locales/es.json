@@ -564,7 +564,13 @@
       "tier": {
         "REGISTERED": "Registrado",
         "INCOMPLETE_REGISTER": "Incompleto",
-        "PRE_REGISTER": "Pre-registro"
+        "PRE_REGISTER": "Pre-registro",
+        "QUALIFIED": "Calificado",
+        "ACTIVE": "Activo",
+        "SELECTED": "Seleccionado",
+        "PENDING": "Pendiente",
+        "REJECTED": "Rechazado",
+        "DISABLED": "Deshabilitado"
       },
       "bulkBar": {
         "selected": "{{count}} seleccionado",
