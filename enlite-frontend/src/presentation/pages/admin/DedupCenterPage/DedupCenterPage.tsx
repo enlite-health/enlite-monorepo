@@ -16,7 +16,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { GitMerge, RefreshCw, AlertCircle } from 'lucide-react';
+import { GitMerge, RefreshCw, AlertCircle, Users } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -34,6 +34,7 @@ import { DedupHistoryTab } from './DedupHistoryTab';
 import { ImportedGroupsTab } from './ImportedGroupsTab';
 import { MergeCompareModal } from '@presentation/components/features/admin/Dedup/MergeCompareModal';
 import { UndoConfirmModal } from '@presentation/components/features/admin/Dedup/UndoConfirmModal';
+import { ManualMergeModal } from '@presentation/components/features/admin/Dedup/ManualMergeModal';
 import type { ImportedDedupGroup } from '@domain/entities/DedupGroup';
 
 function LoadingSkeleton() {
@@ -79,6 +80,7 @@ function DedupCenterPageInner() {
   const [mergeImportedGroup, setMergeImportedGroup] =
     useState<ImportedDedupGroup | null>(null);
   const [isDismissingBulk, setIsDismissingBulk] = useState(false);
+  const [isManualMergeOpen, setIsManualMergeOpen] = useState(false);
 
   // ── Undo modal state ──────────────────────────────────────────────────────────
   const [undoTarget, setUndoTarget] = useState<{
@@ -205,18 +207,30 @@ function DedupCenterPageInner() {
             </Text>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isCurrentTabLoading}
-          aria-label={d('refresh')}
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${isCurrentTabLoading ? 'animate-spin' : ''}`}
-          />
-          {d('refresh')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsManualMergeOpen(true)}
+            aria-label={d('manualMerge.buttonAriaLabel')}
+            data-testid="manual-merge-open-btn"
+          >
+            <Users className="w-4 h-4 mr-1" />
+            {d('manualMerge.button')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isCurrentTabLoading}
+            aria-label={d('refresh')}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${isCurrentTabLoading ? 'animate-spin' : ''}`}
+            />
+            {d('refresh')}
+          </Button>
+        </div>
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────────── */}
@@ -332,6 +346,18 @@ function DedupCenterPageInner() {
           isUndoing={isUndoing}
           onConfirm={handleUndoConfirm}
           onClose={() => setUndoTarget(null)}
+        />
+      )}
+
+      {/* ── Manual merge modal (Onda 5) ─────────────────────────────────────────── */}
+      {isManualMergeOpen && (
+        <ManualMergeModal
+          onClose={() => setIsManualMergeOpen(false)}
+          onMergeSuccess={() => {
+            setIsManualMergeOpen(false);
+            refetch();
+            refetchHistory();
+          }}
         />
       )}
     </PageContainer>

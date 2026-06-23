@@ -33,6 +33,17 @@ jest.mock('../../../../application/dedup/DismissGroupUseCase');
 jest.mock('../../../../application/dedup/UndoMergeUseCase');
 jest.mock('../../../../application/dedup/ListMergeHistoryUseCase');
 jest.mock('../../../../application/dedup/ListImportedDedupGroupsUseCase');
+jest.mock('../../../../application/dedup/SearchDedupCandidatesUseCase');
+jest.mock('../../../../application/dedup/BuildManualDedupGroupUseCase', () => {
+  // Keep real ManualDedupValidationError so instanceof works in controller
+  class ManualDedupValidationError extends Error {
+    constructor(msg: string) { super(msg); this.name = 'ManualDedupValidationError'; }
+  }
+  // BuildManualDedupGroupUseCase: prototype.execute is a jest.fn set before returning
+  function BuildManualDedupGroupUseCase() { /* noop */ }
+  BuildManualDedupGroupUseCase.prototype.execute = jest.fn();
+  return { BuildManualDedupGroupUseCase, ManualDedupValidationError };
+});
 
 import type { Request, Response } from 'express';
 import { AdminDedupController } from '../AdminDedupController';
@@ -43,6 +54,11 @@ import { DismissGroupUseCase }        from '../../../../application/dedup/Dismis
 import { UndoMergeUseCase }           from '../../../../application/dedup/UndoMergeUseCase';
 import { ListMergeHistoryUseCase }    from '../../../../application/dedup/ListMergeHistoryUseCase';
 import { ListImportedDedupGroupsUseCase } from '../../../../application/dedup/ListImportedDedupGroupsUseCase';
+import { SearchDedupCandidatesUseCase } from '../../../../application/dedup/SearchDedupCandidatesUseCase';
+import {
+  BuildManualDedupGroupUseCase,
+  ManualDedupValidationError,
+} from '../../../../application/dedup/BuildManualDedupGroupUseCase';
 
 // ── Helpers de mock ───────────────────────────────────────────────────────────
 
@@ -515,6 +531,181 @@ describe('AdminDedupController.listImportedGroups', () => {
     const res = makeRes();
 
     await controller.listImportedGroups(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Erro interno' });
+  });
+});
+
+// ── searchCandidates ──────────────────────────────────────────────────────────
+
+describe('AdminDedupController.searchCandidates', () => {
+  const candidateItem = {
+    id: SURVIVOR_ID,
+    name: 'Ana García',
+    phone: '54911111111',
+    email: 'ana@example.com',
+    login_real: true,
+    is_imported: false,
+  };
+
+  it('200 com lista de candidatos', async () => {
+    (SearchDedupCandidatesUseCase as jest.MockedClass<typeof SearchDedupCandidatesUseCase>)
+      .prototype.execute.mockResolvedValueOnce([candidateItem]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: { q: 'Ana', limit: '5' } });
+    const res = makeRes();
+
+    await controller.searchCandidates(req as Request, res as unknown as Response);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [candidateItem] });
+  });
+
+  it('200 com array vazio quando q curto (use case retorna [])', async () => {
+    (SearchDedupCandidatesUseCase as jest.MockedClass<typeof SearchDedupCandidatesUseCase>)
+      .prototype.execute.mockResolvedValueOnce([]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: { q: 'a' } });
+    const res = makeRes();
+
+    await controller.searchCandidates(req as Request, res as unknown as Response);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
+  });
+
+  it('400 quando limit > 20 (Zod)', async () => {
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: { q: 'Ana', limit: '99' } });
+    const res = makeRes();
+
+    await controller.searchCandidates(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('200 com q ausente (q default "")', async () => {
+    (SearchDedupCandidatesUseCase as jest.MockedClass<typeof SearchDedupCandidatesUseCase>)
+      .prototype.execute.mockResolvedValueOnce([]);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+
+    await controller.searchCandidates(req as Request, res as unknown as Response);
+
+    const callArgs = (SearchDedupCandidatesUseCase.prototype.execute as jest.Mock).mock.calls[0][0];
+    expect(callArgs.q).toBe('');
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
+  });
+
+  it('500 quando use case lança erro', async () => {
+    (SearchDedupCandidatesUseCase as jest.MockedClass<typeof SearchDedupCandidatesUseCase>)
+      .prototype.execute.mockRejectedValueOnce(new Error('db fail'));
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ query: { q: 'Ana' } });
+    const res = makeRes();
+
+    await controller.searchCandidates(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Erro interno' });
+  });
+});
+
+// ── buildManualGroup ──────────────────────────────────────────────────────────
+
+describe('AdminDedupController.buildManualGroup', () => {
+  const manualGroupResult = {
+    accounts: [
+      { id: SURVIVOR_ID, name: 'Real Worker', phone_normalized: null, email: 'real@example.com',
+        tier: 1 as const, status: 'REGISTERED', created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z', wja_count: 0, docs_count: 0,
+        encuadres_count: 0, login_real: true, auth_uid_prefix: 'real', is_imported: false },
+      { id: ABSORBED_ID, name: '(importado)', phone_normalized: null, email: 'ghost@enlite.import',
+        tier: 3 as const, status: 'INCOMPLETE_REGISTER', created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z', wja_count: 0, docs_count: 0,
+        encuadres_count: 0, login_real: false, auth_uid_prefix: 'base1import_', is_imported: true },
+    ],
+    survivor_suggested_id: SURVIVOR_ID,
+    survivor_reason: 'real_account_absorbs_imported',
+  };
+
+  it('200 com grupo montado', async () => {
+    (BuildManualDedupGroupUseCase as jest.MockedClass<typeof BuildManualDedupGroupUseCase>)
+      .prototype.execute.mockResolvedValueOnce(manualGroupResult);
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ body: { ids: [SURVIVOR_ID, ABSORBED_ID] } });
+    const res = makeRes();
+
+    await controller.buildManualGroup(req as Request, res as unknown as Response);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: manualGroupResult });
+  });
+
+  it('400 com ids < 2 (Zod)', async () => {
+    const controller = new AdminDedupController();
+    const req = makeReq({ body: { ids: [SURVIVOR_ID] } });
+    const res = makeRes();
+
+    await controller.buildManualGroup(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('400 com ids > 5 (Zod)', async () => {
+    const controller = new AdminDedupController();
+    const ids = Array.from({ length: 6 }, (_, i) =>
+      `eeeeeeee-0000-0000-0000-00000000000${i + 1}`,
+    );
+    const req = makeReq({ body: { ids } });
+    const res = makeRes();
+
+    await controller.buildManualGroup(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('400 com id não-UUID (Zod)', async () => {
+    const controller = new AdminDedupController();
+    const req = makeReq({ body: { ids: ['not-a-uuid', ABSORBED_ID] } });
+    const res = makeRes();
+
+    await controller.buildManualGroup(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('400 quando use case lança ManualDedupValidationError (id inexistente)', async () => {
+    (BuildManualDedupGroupUseCase as jest.MockedClass<typeof BuildManualDedupGroupUseCase>)
+      .prototype.execute.mockRejectedValueOnce(
+        new ManualDedupValidationError('Workers não encontrados: ' + ABSORBED_ID),
+      );
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ body: { ids: [SURVIVOR_ID, ABSORBED_ID] } });
+    const res = makeRes();
+
+    await controller.buildManualGroup(req as Request, res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const call = (res.json as jest.Mock).mock.calls[0][0];
+    expect(call.success).toBe(false);
+    expect(call.error).toContain(ABSORBED_ID);
+  });
+
+  it('500 quando use case lança erro genérico', async () => {
+    (BuildManualDedupGroupUseCase as jest.MockedClass<typeof BuildManualDedupGroupUseCase>)
+      .prototype.execute.mockRejectedValueOnce(new Error('unexpected'));
+
+    const controller = new AdminDedupController();
+    const req = makeReq({ body: { ids: [SURVIVOR_ID, ABSORBED_ID] } });
+    const res = makeRes();
+
+    await controller.buildManualGroup(req as Request, res as unknown as Response);
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Erro interno' });
