@@ -230,3 +230,44 @@ describe('MergeAccountCard — valid date formatting', () => {
     expect(document.body.textContent).toContain('2026');
   });
 });
+
+// ── Amigável: NOME + TELEFONE em vez de email/jargão (operador não-técnico) ──
+
+describe('MergeAccountCard — nome + teléfono amigável', () => {
+  const ACCOUNT_WITH_NAME: DedupAccount = {
+    ...BASE_ACCOUNT,
+    name: 'María González',
+    phone_normalized: '5491134567890',
+    email: 'maria.real@gmail.com',
+  };
+
+  const ACCOUNT_IMPORTED: DedupAccount = {
+    ...BASE_ACCOUNT,
+    id: 'acc-import',
+    name: '(importado)',
+    phone_normalized: '5491199998888',
+    email: 'candidatoimport_abc@enlite.import',
+    login_real: false,
+  };
+
+  it('mostra o NOME como título quando disponível', () => {
+    renderCard(ACCOUNT_WITH_NAME);
+    expect(screen.getByText('María González')).toBeInTheDocument();
+  });
+
+  it('mostra o TELEFONE', () => {
+    renderCard(ACCOUNT_WITH_NAME);
+    expect(screen.getByText('5491134567890')).toBeInTheDocument();
+  });
+
+  it('ESCONDE o email sintético @enlite.import (jargão)', () => {
+    renderCard(ACCOUNT_IMPORTED);
+    expect(screen.queryByText(/@enlite\.import/)).not.toBeInTheDocument();
+    expect(screen.getByText('(importado)')).toBeInTheDocument();
+  });
+
+  it('mostra email real como secundário quando há nome', () => {
+    renderCard(ACCOUNT_WITH_NAME);
+    expect(screen.getByText('maria.real@gmail.com')).toBeInTheDocument();
+  });
+});

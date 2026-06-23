@@ -707,6 +707,29 @@
           "actions": "Acciones",
           "mergeAriaLabel": "Unificar grupo con {{count}} cuentas"
         }
+      },
+      "manualMerge": {
+        "button": "Unificar manualmente",
+        "buttonAriaLabel": "Unificar dos cuentas manualmente",
+        "title": "Unificar manualmente",
+        "dialogLabel": "Unificación manual de cuentas",
+        "compareDialogLabel": "Comparar y unificar cuentas",
+        "description": "Buscá dos cuentas por nombre o teléfono y compará para unificarlas, aunque no estén en la fila automática.",
+        "accountA": "Primera cuenta",
+        "accountB": "Segunda cuenta",
+        "searchPlaceholder": "Buscá por nombre o teléfono...",
+        "changeAccount": "Cambiar",
+        "changeHint": "Cambiá para elegir otra cuenta.",
+        "noResults": "Sin resultados para la búsqueda.",
+        "compare": "Comparar y unificar",
+        "compareAriaLabel": "Comparar y unificar las dos cuentas seleccionadas",
+        "comparing": "Cargando...",
+        "sameAccountError": "Las dos cuentas elegidas son la misma. Elegí cuentas distintas.",
+        "buildError": "Error al construir el grupo. Intentá de nuevo.",
+        "badge": {
+          "withAccess": "Con acceso",
+          "imported": "Importado"
+        }
       }
     },
     "apiDocs": {

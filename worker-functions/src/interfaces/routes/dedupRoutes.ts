@@ -55,5 +55,15 @@ export function createDedupRoutes(
     controller.listImportedGroups(req, res),
   );
 
+  // GET /api/admin/dedup/candidates?q=<text>&limit=<n>
+  router.get('/candidates', adminOnly, (req: Request, res: Response) =>
+    controller.searchCandidates(req, res),
+  );
+
+  // POST /api/admin/dedup/manual-group
+  router.post('/manual-group', adminOnly, (req: Request, res: Response) =>
+    controller.buildManualGroup(req, res),
+  );
+
   return router;
 }

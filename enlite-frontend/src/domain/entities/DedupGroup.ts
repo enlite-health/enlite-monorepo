@@ -24,6 +24,10 @@ export interface DedupAccount {
   encuadres_count: number;
   /** True when the worker has shown real login activity. */
   login_real: boolean;
+  /** Decrypted human name, when the endpoint provides it (admin-only). Card prefers it over email. */
+  name?: string | null;
+  /** Normalized phone, when available — shown to the operator instead of jargon emails. */
+  phone_normalized?: string | null;
 }
 
 // ── Group list item ────────────────────────────────────────────────────────────
@@ -134,4 +138,37 @@ export interface MergeHistoryItem {
 export interface UndoResult {
   auditId: string;
   restoredAt: string;
+}
+
+// ── Manual merge types (Onda 5 — merge manual) ────────────────────────────────
+
+/**
+ * One candidate returned by GET /api/admin/dedup/candidates?q=<texto>
+ */
+export interface CandidateItem {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  login_real: boolean;
+  is_imported: boolean;
+}
+
+/**
+ * Account within a manual-group result. Extends ImportedDedupAccount with
+ * the name and phone_normalized fields decrypted by the admin endpoint.
+ */
+export interface ManualGroupAccount extends ImportedDedupAccount {
+  name: string;
+  phone_normalized: string | null;
+}
+
+/**
+ * Response of POST /api/admin/dedup/manual-group
+ * Same shape as ImportedDedupGroup but accounts include name + phone_normalized.
+ */
+export interface ManualGroupResult {
+  accounts: ManualGroupAccount[];
+  survivor_suggested_id: string | null;
+  survivor_reason: SurvivorReason;
 }

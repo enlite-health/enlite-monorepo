@@ -12,6 +12,8 @@
  *   POST /api/admin/dedup/merges/:auditId/undo
  *   GET  /api/admin/dedup/history
  *   GET  /api/admin/dedup/imported-groups
+ *   GET  /api/admin/dedup/candidates
+ *   POST /api/admin/dedup/manual-group
  */
 
 import type { Request, Response } from 'express';
@@ -26,6 +28,11 @@ import { DismissGroupUseCase } from '../../../application/dedup/DismissGroupUseC
 import { UndoMergeUseCase } from '../../../application/dedup/UndoMergeUseCase';
 import { ListMergeHistoryUseCase } from '../../../application/dedup/ListMergeHistoryUseCase';
 import { ListImportedDedupGroupsUseCase } from '../../../application/dedup/ListImportedDedupGroupsUseCase';
+import { SearchDedupCandidatesUseCase } from '../../../application/dedup/SearchDedupCandidatesUseCase';
+import {
+  BuildManualDedupGroupUseCase,
+  ManualDedupValidationError,
+} from '../../../application/dedup/BuildManualDedupGroupUseCase';
 
 const log = logger.child({ source: 'AdminDedupController' });
 
@@ -53,6 +60,18 @@ const ImportedGroupsQuerySchema = z.object({
     .optional()
     .transform(v => v === 'true')
     .pipe(z.boolean()),
+});
+
+const CandidatesQuerySchema = z.object({
+  q: z.string().default(''),
+  limit: z.coerce.number().int().min(1).max(20).optional().default(8),
+});
+
+const ManualGroupBodySchema = z.object({
+  ids: z
+    .array(z.string().uuid('cada id deve ser UUID'))
+    .min(2, 'ids deve ter ao menos 2 elementos')
+    .max(5, 'ids deve ter no máximo 5 elementos'),
 });
 
 // ── Controller ─────────────────────────────────────────────────────────────
@@ -198,6 +217,44 @@ export class AdminDedupController {
       res.json({ success: true, data: groups, total: groups.length });
     } catch (err) {
       this.handleError(err, res, 'listImportedGroups');
+    }
+  }
+
+  // GET /api/admin/dedup/candidates?q=<text>&limit=<n>
+  async searchCandidates(req: Request, res: Response): Promise<void> {
+    const parsed = CandidatesQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.flatten() });
+      return;
+    }
+
+    try {
+      const useCase = new SearchDedupCandidatesUseCase(this.pool);
+      const data = await useCase.execute({ q: parsed.data.q, limit: parsed.data.limit });
+      res.json({ success: true, data });
+    } catch (err) {
+      this.handleError(err, res, 'searchCandidates');
+    }
+  }
+
+  // POST /api/admin/dedup/manual-group
+  async buildManualGroup(req: Request, res: Response): Promise<void> {
+    const parsed = ManualGroupBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: parsed.error.flatten() });
+      return;
+    }
+
+    try {
+      const useCase = new BuildManualDedupGroupUseCase(this.pool);
+      const result = await useCase.execute(parsed.data.ids);
+      res.json({ success: true, data: result });
+    } catch (err) {
+      if (err instanceof ManualDedupValidationError) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
+      this.handleError(err, res, 'buildManualGroup');
     }
   }
 
