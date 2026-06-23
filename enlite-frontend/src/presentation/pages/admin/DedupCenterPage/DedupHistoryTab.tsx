@@ -109,16 +109,12 @@ export function DedupHistoryTab({
         </TableHeader>
         <TableBody>
           {history.map((item) => (
-            <TableRow key={item.auditId} clickable={false}>
+            <TableRow key={item.audit_id} clickable={false}>
               <TableCell weight="medium">{item.phone_normalized}</TableCell>
+              <TableCell weight="medium">{item.survivor_name ?? '—'}</TableCell>
               <TableCell>
-                <Text as="span" size="xs" color="muted">
-                  {item.survivorId}
-                </Text>
-              </TableCell>
-              <TableCell>
-                <Text as="span" size="xs" color="muted">
-                  {item.absorbedId}
+                <Text as="span" size="sm" color="muted">
+                  {item.absorbed_name ?? '—'}
                 </Text>
               </TableCell>
               <TableCell unwrapped>
@@ -141,11 +137,11 @@ export function DedupHistoryTab({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onUndo(item.auditId, item.phone_normalized)}
+                    onClick={() => onUndo(String(item.audit_id), item.phone_normalized)}
                     aria-label={h('undoAriaLabel', {
                       phone: item.phone_normalized,
                     })}
-                    data-testid={`undo-btn-${item.auditId}`}
+                    data-testid={`undo-btn-${item.audit_id}`}
                   >
                     <RotateCcw className="w-4 h-4 mr-1" />
                     {h('undoBtn')}

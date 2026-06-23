@@ -93,20 +93,24 @@ const MOCK_DISMISS_RESULT = {
 
 const MOCK_HISTORY: MergeHistoryItem[] = [
   {
-    auditId: 'audit-001',
-    survivorId: 'acc-001',
-    absorbedId: 'acc-002',
+    audit_id: 1,
+    survivor_id: 'acc-001',
+    absorbed_id: 'acc-002',
+    survivor_name: 'María González',
+    absorbed_name: '(importado)',
     phone_normalized: '+5491112345678',
-    category: 'phone_duplicate',
+    category: 'firebase',
     created_at: '2026-06-22T10:00:00Z',
     can_undo: true,
   },
   {
-    auditId: 'audit-002',
-    survivorId: 'acc-003',
-    absorbedId: 'acc-004',
+    audit_id: 2,
+    survivor_id: 'acc-003',
+    absorbed_id: 'acc-004',
+    survivor_name: 'Carlos López',
+    absorbed_name: null,
     phone_normalized: '+5491187654321',
-    category: 'manual',
+    category: 'most_complete',
     created_at: '2026-06-21T08:00:00Z',
     can_undo: false,
   },
@@ -344,7 +348,7 @@ describe('AdminDedupApiService.getHistory', () => {
     const result = await AdminDedupApiService.getHistory();
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(2);
-    expect(result[0].auditId).toBe('audit-001');
+    expect(result[0].audit_id).toBe(1);
     expect(result[0].can_undo).toBe(true);
     expect(result[1].can_undo).toBe(false);
   });

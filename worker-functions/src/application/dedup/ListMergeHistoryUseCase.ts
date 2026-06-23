@@ -8,6 +8,7 @@
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import type { MergeHistoryEntry } from './DedupTypes';
+import { loadWorkerDisplayNames } from './loadWorkerDisplayNames';
 
 const log = logger.child({ source: 'ListMergeHistoryUseCase' });
 
@@ -52,10 +53,17 @@ export class ListMergeHistoryUseCase {
       [limit, offset],
     );
 
+    // Nomes humanos decriptados (admin-only) pras duas contas de cada merge —
+    // o operador precisa VER quem ficou e quem foi absorvido, nunca o UUID.
+    const allIds = res.rows.flatMap(r => [r.survivor_id, r.absorbed_id]);
+    const names = await loadWorkerDisplayNames(this.pool, allIds);
+
     const entries: MergeHistoryEntry[] = res.rows.map(r => ({
       audit_id: Number(r.id),
       survivor_id: r.survivor_id,
       absorbed_id: r.absorbed_id,
+      survivor_name: names.get(r.survivor_id) ?? null,
+      absorbed_name: names.get(r.absorbed_id) ?? null,
       phone_normalized: r.phone_normalized,
       category: r.category,
       fields_filled: r.fields_filled ?? [],

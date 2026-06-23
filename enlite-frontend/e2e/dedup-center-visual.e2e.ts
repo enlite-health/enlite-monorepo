@@ -143,25 +143,29 @@ const MOCK_DETAIL_NO_CONFLICT = {
 
 // ── Onda 3 fixtures ───────────────────────────────────────────────────────────
 
-const AUDIT_1 = 'audit-vis-001';
-const AUDIT_2 = 'audit-vis-002';
+const AUDIT_1 = 101;
+const AUDIT_2 = 102;
 
 const MOCK_HISTORY = [
   {
-    auditId: AUDIT_1,
-    survivorId: ACC_1.id,
-    absorbedId: ACC_2.id,
+    audit_id: AUDIT_1,
+    survivor_id: ACC_1.id,
+    absorbed_id: ACC_2.id,
+    survivor_name: 'María González',
+    absorbed_name: '(importado)',
     phone_normalized: PHONE_1,
-    category: 'phone_duplicate',
+    category: 'firebase',
     created_at: '2026-06-20T10:00:00Z',
     can_undo: true,
   },
   {
-    auditId: AUDIT_2,
-    survivorId: ACC_3.id,
-    absorbedId: ACC_4.id,
+    audit_id: AUDIT_2,
+    survivor_id: ACC_3.id,
+    absorbed_id: ACC_4.id,
+    survivor_name: 'Carlos López',
+    absorbed_name: null,
     phone_normalized: PHONE_2,
-    category: 'manual',
+    category: 'most_complete',
     created_at: '2026-06-19T08:00:00Z',
     can_undo: false,
   },
@@ -642,6 +646,25 @@ test.describe('DedupCenterPage — visual proof', () => {
     await expect(
       page.locator('[data-testid="history-table-container"]'),
     ).toBeVisible({ timeout: 10000 });
+
+    // (a) Human names must appear in the table
+    await expect(page.getByText('María González', { exact: true }).first()).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(page.getByText('(importado)', { exact: true }).first()).toBeVisible({
+      timeout: 5000,
+    });
+
+    // (b) Raw UUIDs must NOT appear in the document
+    await expect(page.getByText(ACC_1.id, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(ACC_2.id, { exact: true })).toHaveCount(0);
+
+    // (b) Raw category string 'firebase' must NOT appear — should be "Cuenta con acceso"
+    //     (the i18n key admin.dedup.history.category.firebase resolves to the label)
+    await expect(page.getByText('firebase', { exact: true })).toHaveCount(0);
+    await expect(
+      page.locator('.bg-blue-100').filter({ hasText: /Cuenta con acceso/i }).first(),
+    ).toBeVisible({ timeout: 5000 });
 
     // Only AUDIT_1 should have the undo button (can_undo=true)
     await expect(
