@@ -36,8 +36,9 @@ export function WorkerEditProfessionalFields({ control, register }: Props): JSX.
   const { t } = useTranslation();
   const tm = (k: string, def: string) => t(`admin.workerDetail.editModal.${k}`, { defaultValue: def });
 
+  // occupation == enum de profession (mig 076) → reusa os labels de profissão
   const occupationOpts: SelectOption[] = WORKER_OCCUPATIONS.map((v) => ({
-    value: v, label: t(`admin.workerDetail.occupationValue.${v}`, { defaultValue: v }),
+    value: v, label: t(`admin.workerDetail.professionValue.${v}`, { defaultValue: v }),
   }));
   const knowledgeOpts: SelectOption[] = WORKER_KNOWLEDGE_LEVELS.map((v) => ({ value: v, label: getKnowledgeLevelLabel(t, v) ?? v }));
   const yearsOpts: SelectOption[] = WORKER_YEARS_EXPERIENCE.map((v) => ({ value: v, label: getYearsExperienceLabel(t, v) ?? v }));

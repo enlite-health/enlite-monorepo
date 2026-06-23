@@ -142,7 +142,7 @@ registry.registerPath({
             documentType: z.enum(['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF']).optional(),
             documentNumber: z.string().optional(),
             profession: z.enum(['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST']).optional(),
-            occupation: z.enum(['AT', 'CUIDADOR', 'AMBOS']).optional(),
+            occupation: z.enum(['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST']).optional(),
             knowledgeLevel: z.string().optional(),
             titleCertificate: z.string().optional(),
             yearsExperience: z.string().optional(),

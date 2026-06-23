@@ -1105,11 +1105,6 @@
         "KINESIOLOGIST": "Kinesiólogo/a",
         "PSYCHOLOGIST": "Psicólogo/a"
       },
-      "occupationValue": {
-        "AT": "Acompañante Terapéutico",
-        "CUIDADOR": "Cuidador/a",
-        "AMBOS": "Ambos"
-      },
       "linkedin": "LinkedIn",
       "editModal": {
         "title": "Editar prestador",

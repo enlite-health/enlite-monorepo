@@ -97,7 +97,8 @@ export interface WorkerProfileUpdatePayload {
 }
 
 /** Canonical option value lists for worker professional fields (mirror of registration). */
-export const WORKER_OCCUPATIONS = ['AT', 'CUIDADOR', 'AMBOS'] as const;
+// occupation foi realinhado ao enum de profession na migração 076 (CHECK idêntico).
+export const WORKER_OCCUPATIONS = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 export const WORKER_KNOWLEDGE_LEVELS = ['SECONDARY', 'TERTIARY', 'TECNICATURA', 'BACHELOR', 'POSTGRADUATE', 'MASTERS', 'DOCTORATE'] as const;
 export const WORKER_YEARS_EXPERIENCE = ['0_2', '3_5', '6_10', '10_plus'] as const;
 export const WORKER_AGE_RANGES = ['children', 'adolescents', 'adults', 'elderly'] as const;
