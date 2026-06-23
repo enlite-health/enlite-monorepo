@@ -12,7 +12,7 @@ export async function captureWorkerBefore(
   workerId: string,
 ): Promise<Record<string, unknown>> {
   const res = await pool.query(
-    `SELECT email, document_type, profession, mei_number, mei_cnpj,
+    `SELECT email, document_type, profession,
             occupation, knowledge_level, title_certificate, years_experience,
             experience_types, preferred_types, preferred_age_range,
             first_name_encrypted, last_name_encrypted, birth_date_encrypted,
@@ -41,8 +41,6 @@ export async function captureWorkerBefore(
     email: r.email ?? null,
     documentType: r.document_type ?? null,
     profession: r.profession ?? null,
-    meiNumber: r.mei_number ?? null,
-    meiCnpj: r.mei_cnpj ?? null,
     occupation: r.occupation ?? null,
     knowledgeLevel: r.knowledge_level ?? null,
     titleCertificate: r.title_certificate ?? null,
