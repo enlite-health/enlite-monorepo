@@ -35,7 +35,7 @@ const UpdateProfileBodySchema = z
     documentNumber: z.string().trim().min(1).max(64).optional(),
     profession: z.enum(CANONICAL_PROFESSIONS).optional(),
     // ── Professional data ──
-    occupation: z.enum(['AT', 'CUIDADOR', 'AMBOS']).optional(), // workers.occupation has a CHECK
+    occupation: z.enum(CANONICAL_PROFESSIONS).optional(), // workers.occupation: enum alinhado a profession (mig 076)
     knowledgeLevel: z.string().trim().max(40).optional(),
     titleCertificate: z.string().trim().max(80).optional(),
     yearsExperience: z.string().trim().max(20).optional(),
