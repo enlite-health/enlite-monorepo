@@ -20,21 +20,25 @@ import type { MergeHistoryItem } from '@domain/entities/DedupGroup';
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const ITEM_UNDOABLE: MergeHistoryItem = {
-  auditId: 'audit-001',
-  survivorId: 'acc-survivor-001',
-  absorbedId: 'acc-absorbed-002',
+  audit_id: 1,
+  survivor_id: 'acc-survivor-001',
+  absorbed_id: 'acc-absorbed-002',
+  survivor_name: 'María González',
+  absorbed_name: '(importado)',
   phone_normalized: '+5491112345678',
-  category: 'phone_duplicate',
+  category: 'firebase',
   created_at: '2026-06-22T10:00:00Z',
   can_undo: true,
 };
 
 const ITEM_NOT_UNDOABLE: MergeHistoryItem = {
-  auditId: 'audit-002',
-  survivorId: 'acc-survivor-003',
-  absorbedId: 'acc-absorbed-004',
+  audit_id: 2,
+  survivor_id: 'acc-survivor-003',
+  absorbed_id: 'acc-absorbed-004',
+  survivor_name: 'Carlos López',
+  absorbed_name: null,
   phone_normalized: '+5491187654321',
-  category: 'manual',
+  category: 'most_complete',
   created_at: '2026-06-21T08:00:00Z',
   can_undo: false,
 };
@@ -132,10 +136,14 @@ describe('DedupHistoryTab — table rows', () => {
     expect(screen.getByText(ITEM_NOT_UNDOABLE.phone_normalized)).toBeInTheDocument();
   });
 
-  it('renders survivorId and absorbedId for each row', () => {
+  it('renders survivor_name and absorbed_name for each row (not raw UUIDs)', () => {
     renderTab();
-    expect(screen.getByText(ITEM_UNDOABLE.survivorId)).toBeInTheDocument();
-    expect(screen.getByText(ITEM_UNDOABLE.absorbedId)).toBeInTheDocument();
+    // Human names must appear
+    expect(screen.getByText('María González')).toBeInTheDocument();
+    expect(screen.getByText('(importado)')).toBeInTheDocument();
+    // Raw survivor_id UUID must NOT appear in the document
+    expect(screen.queryByText('acc-survivor-001')).not.toBeInTheDocument();
+    expect(screen.queryByText('acc-absorbed-002')).not.toBeInTheDocument();
   });
 });
 
@@ -148,26 +156,26 @@ describe('DedupHistoryTab — Deshacer button', () => {
     const undoBtns = screen.getAllByTestId(/^undo-btn-/);
     expect(undoBtns).toHaveLength(1);
     expect(undoBtns[0].getAttribute('data-testid')).toBe(
-      `undo-btn-${ITEM_UNDOABLE.auditId}`,
+      `undo-btn-${ITEM_UNDOABLE.audit_id}`,
     );
   });
 
   it('does NOT render Deshacer button for can_undo=false item', () => {
     renderTab();
     expect(
-      screen.queryByTestId(`undo-btn-${ITEM_NOT_UNDOABLE.auditId}`),
+      screen.queryByTestId(`undo-btn-${ITEM_NOT_UNDOABLE.audit_id}`),
     ).not.toBeInTheDocument();
   });
 
-  it('clicking Deshacer calls onUndo with correct auditId and phone', () => {
+  it('clicking Deshacer calls onUndo with correct auditId (as string) and phone', () => {
     const onUndo = vi.fn();
     renderTab({ onUndo });
 
-    const undoBtn = screen.getByTestId(`undo-btn-${ITEM_UNDOABLE.auditId}`);
+    const undoBtn = screen.getByTestId(`undo-btn-${ITEM_UNDOABLE.audit_id}`);
     fireEvent.click(undoBtn);
 
     expect(onUndo).toHaveBeenCalledWith(
-      ITEM_UNDOABLE.auditId,
+      String(ITEM_UNDOABLE.audit_id),
       ITEM_UNDOABLE.phone_normalized,
     );
     expect(onUndo).toHaveBeenCalledTimes(1);
@@ -177,17 +185,17 @@ describe('DedupHistoryTab — Deshacer button', () => {
 // ── Category via i18n ─────────────────────────────────────────────────────────
 
 describe('DedupHistoryTab — category i18n', () => {
-  it('renders category value for phone_duplicate (via defaultValue fallback)', () => {
+  it('renders category value for firebase (via defaultValue fallback)', () => {
     renderTab({ history: [ITEM_UNDOABLE] });
     // Test env has no translations; t(key, { defaultValue: item.category })
-    // returns item.category = 'phone_duplicate'
-    expect(screen.getByText('phone_duplicate')).toBeInTheDocument();
+    // returns item.category = 'firebase'
+    expect(screen.getByText('firebase')).toBeInTheDocument();
   });
 
-  it('renders category value for manual (via defaultValue fallback)', () => {
+  it('renders category value for most_complete (via defaultValue fallback)', () => {
     renderTab({ history: [ITEM_NOT_UNDOABLE] });
-    // defaultValue = 'manual'
-    expect(screen.getByText('manual')).toBeInTheDocument();
+    // defaultValue = 'most_complete'
+    expect(screen.getByText('most_complete')).toBeInTheDocument();
   });
 });
 

@@ -367,6 +367,8 @@ describe('AdminDedupController.listHistory', () => {
         audit_id: 1,
         survivor_id: SURVIVOR_ID,
         absorbed_id: ABSORBED_ID,
+        survivor_name: 'María González',
+        absorbed_name: '(importado)',
         phone_normalized: PHONE_NORM,
         category: 'firebase',
         fields_filled: [],

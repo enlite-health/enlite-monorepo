@@ -133,6 +133,10 @@ export interface MergeHistoryEntry {
   audit_id: number;
   survivor_id: string;
   absorbed_id: string;
+  /** Nome humano decriptado da conta que ficou (admin-only); fallback "(importado)"/"(sin nombre)". */
+  survivor_name: string | null;
+  /** Nome humano decriptado da conta absorvida (admin-only); fallback "(importado)"/"(sin nombre)". */
+  absorbed_name: string | null;
   phone_normalized: string;
   category: string;
   fields_filled: string[];

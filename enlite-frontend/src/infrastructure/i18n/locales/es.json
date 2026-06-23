@@ -663,7 +663,10 @@
         "category": {
           "phone_duplicate": "Teléfono duplicado",
           "manual": "Manual",
-          "auto": "Automático"
+          "auto": "Automático",
+          "firebase": "Cuenta con acceso",
+          "most_complete": "Datos más completos",
+          "ghost": "Sin actividad"
         },
         "undo": {
           "dialogLabel": "Deshacer unificación",

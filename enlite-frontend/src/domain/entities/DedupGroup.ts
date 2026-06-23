@@ -118,9 +118,13 @@ export interface ImportedDedupGroup {
 // ── Merge history (Onda 3) ─────────────────────────────────────────────────────
 
 export interface MergeHistoryItem {
-  auditId: string;
-  survivorId: string;
-  absorbedId: string;
+  audit_id: number;
+  survivor_id: string;
+  absorbed_id: string;
+  /** Nome humano da conta que ficou (decriptado no backend, admin-only). */
+  survivor_name: string | null;
+  /** Nome humano da conta absorvida (decriptado no backend, admin-only). */
+  absorbed_name: string | null;
   phone_normalized: string;
   category: string;
   created_at: string;
