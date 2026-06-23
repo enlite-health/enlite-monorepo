@@ -9,6 +9,8 @@
  * - On buildManualGroup error: error message shown, step stays on selection
  * - onClose called when X button clicked
  * - Backdrop click calls onClose
+ * - [NEW] field_comparisons in result → MergeAdvancedFields toggle rendered
+ * - [NEW] result without field_comparisons → MergeAdvancedFields NOT rendered
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -130,6 +132,19 @@ const MANUAL_GROUP_RESULT: ManualGroupResult = {
   accounts: [ACC_A, ACC_B],
   survivor_suggested_id: ACC_A.id,
   survivor_reason: 'real_account_absorbs_imported',
+  field_comparisons: [],
+};
+
+const MANUAL_GROUP_RESULT_WITH_CONFLICTS: ManualGroupResult = {
+  ...MANUAL_GROUP_RESULT,
+  field_comparisons: [
+    {
+      field: 'firstName',
+      values: { [ACC_A.id]: 'María', [ACC_B.id]: 'Maria' },
+      is_encrypted: false,
+      has_conflict: true,
+    },
+  ],
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -238,5 +253,42 @@ describe('ManualMergeModal', () => {
 
     expect(screen.queryByText('stub-id-a')).not.toBeInTheDocument();
     expect(screen.queryByText('stub-id-b')).not.toBeInTheDocument();
+  });
+});
+
+// ── Advanced field chooser in ManualMergeModal (field_comparisons) ────────────
+
+describe('ManualMergeModal — field_comparisons forwarded to MergeDirectModeBody', () => {
+  const onClose = vi.fn();
+  const onMergeSuccess = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMerge.mockResolvedValue({ survivorId: ACC_A.id, absorbedIds: [ACC_B.id], mergedAt: '2026-06-22T00:00:00Z' });
+  });
+
+  async function openCompareStep(result: ManualGroupResult) {
+    mockBuildManualGroup.mockResolvedValue(result);
+    render(<ManualMergeModal onClose={onClose} onMergeSuccess={onMergeSuccess} />);
+
+    fireEvent.click(screen.getByTestId('manual-account-a-stub-select'));
+    fireEvent.click(screen.getByTestId('manual-account-b-stub-select'));
+    fireEvent.click(screen.getByTestId('manual-compare-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`merge-account-card-${ACC_A.id}`)).toBeInTheDocument();
+    });
+  }
+
+  it('with field_comparisons having conflicts → MergeAdvancedFields toggle rendered', async () => {
+    await openCompareStep(MANUAL_GROUP_RESULT_WITH_CONFLICTS);
+    // MergeAdvancedFields renders button[aria-expanded] as the toggle
+    expect(document.querySelector('button[aria-expanded]')).not.toBeNull();
+  });
+
+  it('with empty field_comparisons → MergeAdvancedFields NOT rendered (Importados parity)', async () => {
+    await openCompareStep(MANUAL_GROUP_RESULT); // field_comparisons: []
+    expect(document.querySelector('button[aria-expanded]')).toBeNull();
+    expect(screen.queryByText(/Avanzado/i)).not.toBeInTheDocument();
   });
 });

@@ -13,13 +13,16 @@
  * - success message shown after merge succeeds
  * - cancel button calls onClose
  * - footer hidden after mergeSuccess
+ * - [NEW] fieldComparisons provided → MergeAdvancedFields renders (manual-merge flow)
+ * - [NEW] choosing a field value includes fieldChoices in merge payload
+ * - [NEW] fieldComparisons absent → MergeAdvancedFields NOT rendered (Importados flow)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MergeDirectModeBody } from './MergeDirectModeBody';
 import type { MergeDirectModeBodyProps } from './MergeDirectModeBody';
-import type { ImportedDedupAccount } from '@domain/entities/DedupGroup';
+import type { DedupFieldComparison, ImportedDedupAccount } from '@domain/entities/DedupGroup';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -440,6 +443,101 @@ describe('AdminDedupApiService.getImportedGroups — method/path/query', () => {
     mockMerge.mockResolvedValue({ survivorId: 'x', absorbedIds: ['y'], mergedAt: '' });
     const result = await mockMerge({ survivorId: 'x', absorbedIds: ['y'] });
     expect(result.survivorId).toBe('x');
+  });
+});
+
+// ── Advanced field chooser (manual-merge flow) ────────────────────────────────
+//
+// When fieldComparisons is provided (manual-merge flow), MergeAdvancedFields
+// must be rendered. When absent (Importados tab), it must NOT appear.
+
+const FIELD_CONFLICT: DedupFieldComparison = {
+  field: 'firstName',
+  values: {
+    [ACC_REAL.id]: 'María',
+    [ACC_IMP.id]: 'Maria',
+  },
+  is_encrypted: false,
+  has_conflict: true,
+};
+
+describe('MergeDirectModeBody — advanced field chooser (manual-merge flow)', () => {
+  it('with fieldComparisons → MergeAdvancedFields toggle ("Avanzado") is rendered', () => {
+    renderBody({
+      fieldComparisons: [FIELD_CONFLICT],
+    });
+    // MergeAdvancedFields renders a button[aria-expanded] as the toggle when conflicts exist
+    expect(document.querySelector('button[aria-expanded]')).not.toBeNull();
+  });
+
+  it('with fieldComparisons and no conflicts → MergeAdvancedFields is NOT rendered', () => {
+    const noConflict: DedupFieldComparison = {
+      ...FIELD_CONFLICT,
+      has_conflict: false,
+    };
+    renderBody({ fieldComparisons: [noConflict] });
+    expect(document.querySelector('button[aria-expanded]')).toBeNull();
+  });
+
+  it('without fieldComparisons → MergeAdvancedFields is NOT rendered (Importados regression)', () => {
+    renderBody(); // DEFAULT_PROPS has no fieldComparisons
+    expect(document.querySelector('button[aria-expanded]')).toBeNull();
+    expect(screen.queryByText(/Avanzado/i)).not.toBeInTheDocument();
+  });
+
+  it('choosing a field value adds fieldChoices to the merge payload', async () => {
+    mockMerge.mockResolvedValue({
+      survivorId: ACC_REAL.id,
+      absorbedIds: [ACC_IMP.id],
+      mergedAt: '',
+    });
+
+    renderBody({ fieldComparisons: [FIELD_CONFLICT] });
+
+    // Expand the "Avanzado" section
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Pick the second account button (ACC_IMP) for the 'firstName' field
+    const fieldButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
+    await act(async () => {
+      fireEvent.click(fieldButtons[1]); // ACC_IMP button
+    });
+
+    // Confirm merge
+    const confirmBtn = screen.getByTestId('imported-merge-confirm-btn');
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(mockMerge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        survivorId: ACC_REAL.id,
+        absorbedIds: [ACC_IMP.id],
+        fieldChoices: { firstName: ACC_IMP.id },
+      }),
+    );
+  });
+
+  it('without choosing any field value → fieldChoices NOT in payload', async () => {
+    mockMerge.mockResolvedValue({
+      survivorId: ACC_REAL.id,
+      absorbedIds: [ACC_IMP.id],
+      mergedAt: '',
+    });
+
+    // fieldComparisons provided but operator does not interact with the chooser
+    renderBody({ fieldComparisons: [FIELD_CONFLICT] });
+
+    const confirmBtn = screen.getByTestId('imported-merge-confirm-btn');
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    const payload = mockMerge.mock.calls[0][0];
+    expect('fieldChoices' in payload).toBe(false);
   });
 });
 

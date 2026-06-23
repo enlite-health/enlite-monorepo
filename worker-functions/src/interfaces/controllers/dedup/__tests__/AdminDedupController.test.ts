@@ -631,6 +631,9 @@ describe('AdminDedupController.buildManualGroup', () => {
     ],
     survivor_suggested_id: SURVIVOR_ID,
     survivor_reason: 'real_account_absorbs_imported',
+    field_comparisons: [
+      { field: 'profession', values: { [SURVIVOR_ID]: 'AT', [ABSORBED_ID]: null }, is_encrypted: false, has_conflict: false },
+    ],
   };
 
   it('200 com grupo montado', async () => {
