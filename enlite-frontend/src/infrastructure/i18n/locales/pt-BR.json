@@ -520,6 +520,7 @@
       "vacancies": "Vagas",
       "workers": "Prestadores",
       "recruitment": "Recrutamento",
+      "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
       "apiDocs": "API Docs",
       "tags": "Etiquetas",
