@@ -331,6 +331,10 @@ export async function coalesceWorkerFields(
        gender_encrypted          = COALESCE(survivor.gender_encrypted,      absorbed.gender_encrypted),
        birth_date_encrypted      = COALESCE(survivor.birth_date_encrypted,  absorbed.birth_date_encrypted),
        document_number_encrypted = COALESCE(survivor.document_number_encrypted, absorbed.document_number_encrypted),
+       -- document_type DEVE acompanhar document_number_encrypted: a constraint
+       -- check_document_type_required (mig 026) exige type quando há número. Sem
+       -- esta linha, herdar o número do absorvido sem o type viola a constraint (23514).
+       document_type             = COALESCE(survivor.document_type,         absorbed.document_type),
        languages_encrypted       = COALESCE(survivor.languages_encrypted,   absorbed.languages_encrypted),
        profession                = COALESCE(survivor.profession,            absorbed.profession),
        knowledge_level           = COALESCE(survivor.knowledge_level,       absorbed.knowledge_level),

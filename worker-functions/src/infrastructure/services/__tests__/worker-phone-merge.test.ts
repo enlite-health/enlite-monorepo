@@ -601,6 +601,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
     // Primeira query (check merged_into_id) retorna id preenchido
     mockClient.query
       .mockResolvedValueOnce(undefined)                                   // BEGIN
+      .mockResolvedValueOnce(undefined)                                   // SET LOCAL bypass_registered_guard
       .mockResolvedValueOnce({ rows: [{ merged_into_id: 'some-other' }] }); // check
 
     // Passa discoveredFks explicitamente para não depender de pool.query mock
@@ -623,10 +624,11 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
   it('happy path: BEGIN → audit_insert → snapshot → coalesce → reparent → soft-delete → COMMIT', async () => {
     // Nova ordem após adição de snapshot:
     //   0: BEGIN
-    //   1: SELECT merged_into_id (check idempotência)
-    //   2: INSERT worker_merge_audit RETURNING id
-    //   3: SELECT * FROM workers (captureSnapshot: worker_row)
-    //   4+: SELECT * FROM fk tables (captureSnapshot: fk_rows) — pode haver 0 a N
+    //   1: SET LOCAL app.bypass_registered_guard
+    //   2: SELECT merged_into_id (check idempotência)
+    //   3: INSERT worker_merge_audit RETURNING id
+    //   4: SELECT * FROM workers (captureSnapshot: worker_row)
+    //   5+: SELECT * FROM fk tables (captureSnapshot: fk_rows) — pode haver 0 a N
     //   N: INSERT INTO worker_merge_snapshots RETURNING id
     //   N+1: UPDATE workers (coalesce)
     //   N+2: SELECT fields_filled
@@ -636,6 +638,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
     //   M+1: COMMIT
     mockClient.query
       .mockResolvedValueOnce(undefined)                             // BEGIN
+      .mockResolvedValueOnce(undefined)                             // SET LOCAL bypass_registered_guard
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] }) // check idempotência
       .mockResolvedValueOnce({ rows: [{ id: 's1', email: 's@x.com' }, { id: 'a1', email: 'a@x.com' }] }) // emails (audit writer)
       .mockResolvedValueOnce({ rows: [{ id: '42' }] })             // INSERT worker_merge_audit RETURNING id
@@ -673,17 +676,19 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
 
     // Nova ordem de queries com snapshot:
     //   0: BEGIN
-    //   1: check idempotência
-    //   2: INSERT worker_merge_audit RETURNING id
-    //   3: SELECT * FROM workers (snapshot worker_row)
-    //   4: SELECT * FROM worker_availability (snapshot fk_rows)
-    //   5: INSERT worker_merge_snapshots RETURNING id
-    //   6: UPDATE workers (coalesce)
-    //   7: SELECT fields_filled
-    //   8: UPDATE worker_merge_audit SET fields_filled
-    //   9: reparent query → FALHA aqui
+    //   1: SET LOCAL app.bypass_registered_guard
+    //   2: check idempotência
+    //   3: INSERT worker_merge_audit RETURNING id
+    //   4: SELECT * FROM workers (snapshot worker_row)
+    //   5: SELECT * FROM worker_availability (snapshot fk_rows)
+    //   6: INSERT worker_merge_snapshots RETURNING id
+    //   7: UPDATE workers (coalesce)
+    //   8: SELECT fields_filled
+    //   9: UPDATE worker_merge_audit SET fields_filled
+    //   10: reparent query → FALHA aqui
     mockClient.query
       .mockResolvedValueOnce(undefined)                                     // BEGIN
+      .mockResolvedValueOnce(undefined)                                     // SET LOCAL bypass_registered_guard
       .mockResolvedValueOnce({ rows: [{ merged_into_id: null }] })          // check
       .mockResolvedValueOnce({ rows: [{ id: 's1', email: null }, { id: 'a1', email: null }] }) // emails (audit writer)
       .mockResolvedValueOnce({ rows: [{ id: '99' }] })                      // INSERT audit RETURNING id

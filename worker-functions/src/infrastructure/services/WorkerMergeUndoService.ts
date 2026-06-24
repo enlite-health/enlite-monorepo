@@ -34,6 +34,11 @@ export async function undoMergeTx(
   try {
     await client.query('BEGIN');
 
+    // Undo reinsere WJAs no absorvido (BEFORE INSERT em trg_enforce_worker_registered).
+    // O absorvido costuma estar INCOMPLETE_REGISTER → guard abortaria a transação de undo.
+    // Restaurar dado pré-merge não é postulação nova → bypassa o guard só nesta tx (mig 229).
+    await client.query(`SET LOCAL app.bypass_registered_guard = 'on'`);
+
     const result = await restoreSnapshot(client, { mergeAuditId, survivorId, absorbedId });
 
     // Carimba QUEM desfez — só quando houve reversão real (não em no-op idempotente).
