@@ -230,6 +230,11 @@ export class WorkerPhoneMergeService {
     try {
       await client.query('BEGIN');
 
+      // Reparent de WJA dispara trg_enforce_worker_registered (mig 183/205). Como o
+      // principal pode estar INCOMPLETE_REGISTER, o guard abortaria o merge (erro 23514).
+      // Merge não é postulação nova → bypassa o guard só nesta transação (mig 229).
+      await client.query(`SET LOCAL app.bypass_registered_guard = 'on'`);
+
       // 1. Verifica idempotência: absorvido já mergeado?
       const checkRow = await client.query(
         'SELECT merged_into_id FROM workers WHERE id = $1',
