@@ -20,6 +20,25 @@ import {
   updateImportedWorkerData as _updateImportedWorkerData,
 } from './WorkerAuthRepository';
 
+// ── WorkerWithPii — dados decriptados retornados por findByIdWithPii ──────────
+export interface WorkerWithPii {
+  id: string;
+  email: string;
+  phone: string | null;
+  status: string;
+  profession: string | null;
+  occupation: string | null;
+  employment_type: string | null;
+  /** Decriptados via KMS */
+  firstName: string | null;
+  lastName: string | null;
+  sex: string | null;
+  birthDate: string | null;
+  documentNumber: string | null;
+  anaCareSyncedAt: Date | null;
+  anaCareId: string | null;
+}
+
 export class WorkerRepository implements IWorkerRepository {
   private pool: Pool;
   private encryptionService: KMSEncryptionService;
@@ -158,6 +177,76 @@ export class WorkerRepository implements IWorkerRepository {
     } catch (error: any) {
       return Result.fail<void>(`Failed to delete worker: ${error.message}`);
     }
+  }
+
+  /**
+   * Busca worker por ID com campos PII DECRIPTADOS via KMS.
+   *
+   * Intencionado para sincronização externa (BackfillWorkerMirrorUseCase) que precisa
+   * de nome/sexo/birthDate/documentNumber em plaintext para envio à plataforma AnaCare.
+   *
+   * VETO C2 do Architect: não adicionar flag ao findById existente — método separado.
+   * NÃO usar em request handlers síncronos sem guardar contexto de auditoria.
+   * PII-SAFETY: os valores decriptados NUNCA podem ir para logs.
+   */
+  async findByIdWithPii(id: string): Promise<WorkerWithPii | null> {
+    const result = await this.pool.query(
+      `SELECT
+         id, email, phone, status, profession, occupation, employment_type,
+         first_name_encrypted  AS "firstNameEnc",
+         last_name_encrypted   AS "lastNameEnc",
+         sex_encrypted         AS "sexEnc",
+         birth_date_encrypted  AS "birthDateEnc",
+         document_number_encrypted AS "documentNumberEnc",
+         ana_care_synced_at    AS "anaCareSyncedAt",
+         ana_care_id           AS "anaCareId"
+       FROM workers
+       WHERE id = $1 AND merged_into_id IS NULL`,
+      [id],
+    );
+    if (result.rows.length === 0) return null;
+
+    const row = result.rows[0] as {
+      id: string;
+      email: string;
+      phone: string | null;
+      status: string;
+      profession: string | null;
+      occupation: string | null;
+      employment_type: string | null;
+      firstNameEnc: string | null;
+      lastNameEnc: string | null;
+      sexEnc: string | null;
+      birthDateEnc: string | null;
+      documentNumberEnc: string | null;
+      anaCareSyncedAt: Date | null;
+      anaCareId: string | null;
+    };
+
+    const [firstName, lastName, sex, birthDate, documentNumber] = await Promise.all([
+      row.firstNameEnc ? this.encryptionService.decrypt(row.firstNameEnc) : Promise.resolve(null),
+      row.lastNameEnc ? this.encryptionService.decrypt(row.lastNameEnc) : Promise.resolve(null),
+      row.sexEnc ? this.encryptionService.decrypt(row.sexEnc) : Promise.resolve(null),
+      row.birthDateEnc ? this.encryptionService.decrypt(row.birthDateEnc) : Promise.resolve(null),
+      row.documentNumberEnc ? this.encryptionService.decrypt(row.documentNumberEnc) : Promise.resolve(null),
+    ]);
+
+    return {
+      id: row.id,
+      email: row.email,
+      phone: row.phone,
+      status: row.status,
+      profession: row.profession,
+      occupation: row.occupation,
+      employment_type: row.employment_type,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      sex: sex || null,
+      birthDate: birthDate || null,
+      documentNumber: documentNumber || null,
+      anaCareSyncedAt: row.anaCareSyncedAt,
+      anaCareId: row.anaCareId,
+    };
   }
 
   async updateAuthUid(workerId: string, authUid: string, phone?: string, consentAt?: Date): Promise<Result<Worker>> {
