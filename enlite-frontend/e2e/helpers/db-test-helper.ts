@@ -6,6 +6,9 @@
  * as a frontend dependency (the same approach as admin-patient-detail-integration.e2e.ts).
  *
  * Connection target: enlite_e2e database on the Docker enlite-postgres container.
+ *
+ * Extended helpers for eligibility / postularse-modal tests live in:
+ *   e2e/helpers/eligibility-worker-helper.ts  (400-line budget kept separately)
  */
 
 import { execSync } from 'child_process';

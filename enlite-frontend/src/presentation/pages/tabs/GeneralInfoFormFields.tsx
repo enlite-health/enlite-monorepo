@@ -77,17 +77,19 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         </FormField>
 
         {/* Languages */}
-        <Controller name="languages" control={control} render={({ field }) => (
-          <MultiSelect testId="languages" label={t('workerRegistration.generalInfo.languages')}
-            options={[
-              { value: 'pt', label: t('workerRegistration.generalInfo.portuguese') },
-              { value: 'es', label: t('workerRegistration.generalInfo.spanish') },
-              { value: 'en', label: t('workerRegistration.generalInfo.english') },
-            ]}
-            value={field.value} onChange={(val) => { field.onChange(val); triggerSave(); }}
-            placeholder={t('workerRegistration.generalInfo.select')} error={errors.languages?.message}
-          />
-        )} />
+        <div id="languages">
+          <Controller name="languages" control={control} render={({ field }) => (
+            <MultiSelect testId="languages" label={t('workerRegistration.generalInfo.languages')}
+              options={[
+                { value: 'pt', label: t('workerRegistration.generalInfo.portuguese') },
+                { value: 'es', label: t('workerRegistration.generalInfo.spanish') },
+                { value: 'en', label: t('workerRegistration.generalInfo.english') },
+              ]}
+              value={field.value} onChange={(val) => { field.onChange(val); triggerSave(); }}
+              placeholder={t('workerRegistration.generalInfo.select')} error={errors.languages?.message}
+            />
+          )} />
+        </div>
 
         {/* First Name */}
         <FormField label={t('workerRegistration.generalInfo.firstName')} htmlFor="fullName" error={errors.fullName?.message}>
@@ -144,14 +146,16 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         </FormField>
 
         {/* Phone */}
-        <FormField label={t('workerRegistration.generalInfo.phone')} htmlFor="phone" error={errors.phone?.message}>
-          <Controller name="phone" control={control} render={({ field }) => (
-            <PhoneInputIntl inputSize="compact" value={field.value} onChange={field.onChange}
-              placeholder={t('workerRegistration.generalInfo.phonePlaceholder')}
-              readOnly={isFieldReadonly('phone')} className="border-gray-600 focus-within:border-primary"
-            />
-          )} />
-        </FormField>
+        <div id="phone">
+          <FormField label={t('workerRegistration.generalInfo.phone')} htmlFor="phone-input" error={errors.phone?.message}>
+            <Controller name="phone" control={control} render={({ field }) => (
+              <PhoneInputIntl inputSize="compact" value={field.value} onChange={field.onChange}
+                placeholder={t('workerRegistration.generalInfo.phonePlaceholder')}
+                readOnly={isFieldReadonly('phone')} className="border-gray-600 focus-within:border-primary"
+              />
+            )} />
+          </FormField>
+        </div>
 
         {/* Profession */}
         <Controller name="profession" control={control} render={({ field }) => (
@@ -181,13 +185,15 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         </FormField>
 
         {/* Experience Types */}
-        <Controller name="experienceTypes" control={control} render={({ field }) => (
-          <MultiSelect testId="experience-types" label={t('workerRegistration.generalInfo.experienceTypes')}
-            options={TRASTORNO_OPTIONS} value={field.value}
-            onChange={(val) => { field.onChange(val); triggerSave(); }}
-            placeholder={t('workerRegistration.generalInfo.select')} error={errors.experienceTypes?.message}
-          />
-        )} />
+        <div id="experienceTypes">
+          <Controller name="experienceTypes" control={control} render={({ field }) => (
+            <MultiSelect testId="experience-types" label={t('workerRegistration.generalInfo.experienceTypes')}
+              options={TRASTORNO_OPTIONS} value={field.value}
+              onChange={(val) => { field.onChange(val); triggerSave(); }}
+              placeholder={t('workerRegistration.generalInfo.select')} error={errors.experienceTypes?.message}
+            />
+          )} />
+        </div>
 
         {/* Years Experience */}
         <Controller name="yearsExperience" control={control} render={({ field }) => (
@@ -205,28 +211,32 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         )} />
 
         {/* Preferred Types */}
-        <Controller name="preferredTypes" control={control} render={({ field }) => (
-          <MultiSelect testId="preferred-types" label="¿Con que tipos de pacientes te gustaria acompañar?"
-            options={TRASTORNO_OPTIONS} value={field.value}
-            onChange={(val) => { field.onChange(val); triggerSave(); }}
-            placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredTypes?.message}
-          />
-        )} />
+        <div id="preferredTypes">
+          <Controller name="preferredTypes" control={control} render={({ field }) => (
+            <MultiSelect testId="preferred-types" label="¿Con que tipos de pacientes te gustaria acompañar?"
+              options={TRASTORNO_OPTIONS} value={field.value}
+              onChange={(val) => { field.onChange(val); triggerSave(); }}
+              placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredTypes?.message}
+            />
+          )} />
+        </div>
 
         {/* Preferred Age Range */}
-        <Controller name="preferredAgeRange" control={control} render={({ field }) => (
-          <MultiSelect testId="preferred-age-range" label={t('workerRegistration.generalInfo.preferredAgeRange')}
-            options={[
-              { value: 'children', label: t('workerRegistration.generalInfo.ageRangeChildren') },
-              { value: 'adolescents', label: t('workerRegistration.generalInfo.ageRangeAdolescents') },
-              { value: 'adults', label: t('workerRegistration.generalInfo.ageRangeAdults') },
-              { value: 'elderly', label: t('workerRegistration.generalInfo.ageRangeElderly') },
-            ]}
-            value={field.value}
-            onChange={(val) => { field.onChange(val); triggerSave(); }}
-            placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredAgeRange?.message}
-          />
-        )} />
+        <div id="preferredAgeRange">
+          <Controller name="preferredAgeRange" control={control} render={({ field }) => (
+            <MultiSelect testId="preferred-age-range" label={t('workerRegistration.generalInfo.preferredAgeRange')}
+              options={[
+                { value: 'children', label: t('workerRegistration.generalInfo.ageRangeChildren') },
+                { value: 'adolescents', label: t('workerRegistration.generalInfo.ageRangeAdolescents') },
+                { value: 'adults', label: t('workerRegistration.generalInfo.ageRangeAdults') },
+                { value: 'elderly', label: t('workerRegistration.generalInfo.ageRangeElderly') },
+              ]}
+              value={field.value}
+              onChange={(val) => { field.onChange(val); triggerSave(); }}
+              placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredAgeRange?.message}
+            />
+          )} />
+        </div>
       </div>
     </>
   );

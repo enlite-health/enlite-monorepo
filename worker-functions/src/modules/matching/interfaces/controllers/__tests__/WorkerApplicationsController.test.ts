@@ -326,10 +326,11 @@ describe('WorkerApplicationsController — trackChannel', () => {
 
   // ── Eligibility gating (cadastro + documentos completos) ──────────────
 
-  it('returns 403 when worker.status = INCOMPLETE_REGISTER', async () => {
+  it('returns 403 when worker.status = INCOMPLETE_REGISTER — inclui missingFields no body', async () => {
     mockWorkerFound('w-1');
     mockWorkerEligible('INCOMPLETE_REGISTER');
-    // RecordBlockedAttemptUseCase chama fn_worker_missing_fields (query extra, fire-and-forget)
+    // RecordBlockedAttemptUseCase chama fn_worker_missing_fields (query extra)
+    // missingFields sem worker_documents → sem expand query (2 queries para o use case)
     mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["phone"]' }] }); // fn_worker_missing_fields
     mockQuery.mockResolvedValueOnce({ rowCount: 1 });                      // INSERT worker_blocked_applications
 
@@ -341,19 +342,20 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(body.code).toBe('WORKER_NOT_ELIGIBLE');
     expect(body.reason).toBe('registration_incomplete');
     expect(body.workerStatus).toBe('INCOMPLETE_REGISTER');
+    expect(body.missingFields).toEqual(['phone']);
     // NÃO deve ter chamado WJA upsert nem encuadre insert — só worker lookup + eligibility +
-    // fn_worker_missing_fields + INSERT worker_blocked_applications (fire-and-forget)
+    // fn_worker_missing_fields + INSERT worker_blocked_applications
     expect(mockQuery).toHaveBeenCalledTimes(4);
     // Confirma que WJA upsert nunca foi chamado
     const queryCalls = mockQuery.mock.calls.map((c: unknown[]) => c[0] as string);
     expect(queryCalls.some(q => q.includes('worker_job_applications'))).toBe(false);
   });
 
-  it('returns 403 when worker.status = DISABLED', async () => {
+  it('returns 403 when worker.status = DISABLED — missingFields vazio', async () => {
     mockWorkerFound('w-1');
     mockWorkerEligible('DISABLED');
     // RecordBlockedAttemptUseCase para worker_disabled NÃO chama fn_worker_missing_fields
-    // mas chama o INSERT (query extra, fire-and-forget)
+    // mas chama o INSERT (query extra)
     mockQuery.mockResolvedValueOnce({ rowCount: 1 }); // INSERT worker_blocked_applications
 
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'instagram' }, 'uid-1');
@@ -362,6 +364,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     const body = (res.json as jest.Mock).mock.calls[0][0];
     expect(body.reason).toBe('worker_disabled');
+    expect(body.missingFields).toEqual([]);
     // 2 (lookup + eligibility) + 1 (INSERT blocked — sem fn_worker_missing_fields para DISABLED)
     expect(mockQuery).toHaveBeenCalledTimes(3);
     // Confirma que WJA upsert nunca foi chamado
@@ -372,6 +375,9 @@ describe('WorkerApplicationsController — trackChannel', () => {
   it('returns 403 when worker row disappears between progress and eligibility (race)', async () => {
     mockWorkerFound('w-1');
     mockQuery.mockResolvedValueOnce({ rows: [] }); // SELECT status returns nothing
+    // worker_not_found: fn_worker_missing_fields retorna ["worker_not_found"] → sem expand query
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["worker_not_found"]' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 }); // INSERT
 
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'whatsapp' }, 'uid-1');
     await controller.trackChannel(req, res);
@@ -379,6 +385,97 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     const body = (res.json as jest.Mock).mock.calls[0][0];
     expect(body.reason).toBe('worker_not_found');
+    expect(body.missingFields).toEqual(['worker_not_found']);
+  });
+
+  it('403 com worker_documents expandido: AT faltando at_certificate → doc_at_certificate no body', async () => {
+    mockWorkerFound('w-1');
+    mockWorkerEligible('INCOMPLETE_REGISTER');
+    // fn_worker_missing_fields retorna worker_documents → expand query será feita
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["worker_documents"]' }] }); // fn
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });                                  // INSERT
+    // expand query: AT com at_certificate faltando
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      profession: 'AT',
+      resume_cv_url: 'url',
+      identity_document_url: 'url',
+      criminal_record_url: 'url',
+      at_certificate_url: null,
+    }] });
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.missingFields).toEqual(['doc_at_certificate']);
+    expect(body.missingFields).not.toContain('worker_documents');
+  });
+
+  it('403 com CUIDADOR sem DNI → doc_identity_document e sem doc_at_certificate', async () => {
+    mockWorkerFound('w-1');
+    mockWorkerEligible('INCOMPLETE_REGISTER');
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["worker_documents"]' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      profession: 'CAREGIVER',
+      resume_cv_url: null,
+      identity_document_url: null,
+      criminal_record_url: 'url',
+      at_certificate_url: null,
+    }] });
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.missingFields).toEqual(['doc_identity_document']);
+    expect(body.missingFields).not.toContain('doc_at_certificate');
+    expect(body.missingFields).not.toContain('doc_resume_cv');
+  });
+
+  it('403 com profession NULL → trata como AT (resume_cv + at_certificate obrigatórios)', async () => {
+    mockWorkerFound('w-1');
+    mockWorkerEligible('INCOMPLETE_REGISTER');
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["worker_documents"]' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      profession: null,
+      resume_cv_url: null,
+      identity_document_url: 'url',
+      criminal_record_url: 'url',
+      at_certificate_url: null,
+    }] });
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.missingFields).toContain('doc_resume_cv');
+    expect(body.missingFields).toContain('doc_at_certificate');
+    expect(body.missingFields).not.toContain('doc_identity_document');
+  });
+
+  it('403 com title_certificate + worker_documents: ambos aparecem corretamente expandidos', async () => {
+    mockWorkerFound('w-1');
+    mockWorkerEligible('INCOMPLETE_REGISTER');
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["title_certificate","worker_documents"]' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      profession: 'AT',
+      resume_cv_url: null,
+      identity_document_url: 'url',
+      criminal_record_url: 'url',
+      at_certificate_url: 'url',
+    }] });
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.missingFields).toContain('title_certificate');
+    expect(body.missingFields).toContain('doc_resume_cv');
+    expect(body.missingFields).not.toContain('worker_documents');
   });
 
   // ── Error handling ─────────────────────────────────────────────────────

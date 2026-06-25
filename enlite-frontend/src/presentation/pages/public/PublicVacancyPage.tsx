@@ -323,7 +323,7 @@ export default function PublicVacancyPage() {
         <UnauthenticatedModal onClose={dismissModal} onConfirm={confirmRegister} />
       )}
 
-      {state === 'incomplete' && missingFields && (
+      {state === 'incomplete' && (
         <IncompleteRegistrationModal missingFields={missingFields} onClose={dismissModal} />
       )}
     </div>

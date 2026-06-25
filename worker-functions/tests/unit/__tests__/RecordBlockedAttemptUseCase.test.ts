@@ -2,8 +2,8 @@
  * RecordBlockedAttemptUseCase — Unit Tests
  *
  * Cobre 100% de linhas/branches/funcs/stmts:
- *   - Caminho feliz: delega ao repo sem lançar
- *   - Falha no repo: captura, loga warn, NÃO propaga (fire-and-forget)
+ *   - Caminho feliz: delega ao repo sem lançar, retorna missingFields do repo
+ *   - Falha no repo: captura, loga warn, NÃO propaga (fire-and-forget), retorna []
  *   - Todos os reason values do union type
  *   - acquisitionChannel null e string
  */
@@ -57,14 +57,14 @@ describe('RecordBlockedAttemptUseCase', () => {
   // ── Caminho feliz ─────────────────────────────────────────────────
 
   describe('caminho feliz — repo bem-sucedido', () => {
-    it('resolve sem lançar quando upsert tem sucesso', async () => {
-      mockUpsert.mockResolvedValueOnce(undefined);
+    it('resolve sem lançar quando upsert tem sucesso, retorna array de missingFields', async () => {
+      mockUpsert.mockResolvedValueOnce(['first_name', 'phone']);
 
-      await expect(useCase.execute(BASE_PARAMS)).resolves.toBeUndefined();
+      await expect(useCase.execute(BASE_PARAMS)).resolves.toEqual(['first_name', 'phone']);
     });
 
     it('chama repo.upsert com os params corretos', async () => {
-      mockUpsert.mockResolvedValueOnce(undefined);
+      mockUpsert.mockResolvedValueOnce([]);
 
       await useCase.execute(BASE_PARAMS);
 
@@ -78,10 +78,10 @@ describe('RecordBlockedAttemptUseCase', () => {
     });
 
     it('aceita acquisitionChannel null', async () => {
-      mockUpsert.mockResolvedValueOnce(undefined);
+      mockUpsert.mockResolvedValueOnce([]);
       const params = { ...BASE_PARAMS, acquisitionChannel: null };
 
-      await expect(useCase.execute(params)).resolves.toBeUndefined();
+      await expect(useCase.execute(params)).resolves.toEqual([]);
 
       expect(mockUpsert).toHaveBeenCalledWith(
         expect.objectContaining({ acquisitionChannel: null }),
@@ -89,10 +89,10 @@ describe('RecordBlockedAttemptUseCase', () => {
     });
 
     it('aceita reason=worker_not_found', async () => {
-      mockUpsert.mockResolvedValueOnce(undefined);
+      mockUpsert.mockResolvedValueOnce(['worker_not_found']);
       const params = { ...BASE_PARAMS, reason: 'worker_not_found' as const };
 
-      await expect(useCase.execute(params)).resolves.toBeUndefined();
+      await expect(useCase.execute(params)).resolves.toEqual(['worker_not_found']);
 
       expect(mockUpsert).toHaveBeenCalledWith(
         expect.objectContaining({ reason: 'worker_not_found' }),
@@ -100,10 +100,10 @@ describe('RecordBlockedAttemptUseCase', () => {
     });
 
     it('aceita reason=worker_disabled', async () => {
-      mockUpsert.mockResolvedValueOnce(undefined);
+      mockUpsert.mockResolvedValueOnce([]);
       const params = { ...BASE_PARAMS, reason: 'worker_disabled' as const };
 
-      await expect(useCase.execute(params)).resolves.toBeUndefined();
+      await expect(useCase.execute(params)).resolves.toEqual([]);
 
       expect(mockUpsert).toHaveBeenCalledWith(
         expect.objectContaining({ reason: 'worker_disabled' }),
@@ -111,7 +111,7 @@ describe('RecordBlockedAttemptUseCase', () => {
     });
 
     it('não chama logger.warn quando sucesso', async () => {
-      mockUpsert.mockResolvedValueOnce(undefined);
+      mockUpsert.mockResolvedValueOnce([]);
 
       await useCase.execute(BASE_PARAMS);
 
@@ -122,10 +122,10 @@ describe('RecordBlockedAttemptUseCase', () => {
   // ── Caminho de falha (fire-and-forget) ───────────────────────────
 
   describe('caminho de falha — repo lança (fire-and-forget)', () => {
-    it('NÃO propaga erro quando repo lança — resolve normalmente', async () => {
+    it('NÃO propaga erro quando repo lança — retorna [] sem lançar', async () => {
       mockUpsert.mockRejectedValueOnce(new Error('DB connection lost'));
 
-      await expect(useCase.execute(BASE_PARAMS)).resolves.toBeUndefined();
+      await expect(useCase.execute(BASE_PARAMS)).resolves.toEqual([]);
     });
 
     it('loga warn quando repo lança (com Error)', async () => {
@@ -162,12 +162,15 @@ describe('RecordBlockedAttemptUseCase', () => {
       mockUpsert.mockRejectedValueOnce(new Error('timeout'));
 
       const start = Date.now();
-      await useCase.execute(BASE_PARAMS);
+      const result = await useCase.execute(BASE_PARAMS);
       const elapsed = Date.now() - start;
 
       // Prova que não ficou travado — deve completar muito rápido
       expect(elapsed).toBeLessThan(500);
-      await expect(useCase.execute(BASE_PARAMS)).resolves.toBeUndefined();
+      expect(result).toEqual([]);
+
+      mockUpsert.mockResolvedValueOnce([]);
+      await expect(useCase.execute(BASE_PARAMS)).resolves.toEqual([]);
     });
 
     it('falha com reason=worker_not_found: loga reason correto', async () => {
