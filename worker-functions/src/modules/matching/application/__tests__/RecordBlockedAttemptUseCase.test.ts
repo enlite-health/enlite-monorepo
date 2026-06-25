@@ -2,9 +2,10 @@
  * RecordBlockedAttemptUseCase.test.ts
  *
  * Cenários:
- * 1. Sucesso — delega para repo.upsert com os params corretos
- * 2. Falha no repo — loga warn e NÃO propaga exceção (fire-and-forget)
- * 3. Falha com objeto não-Error — também não propaga
+ * 1. Sucesso — delega para repo.upsert com os params corretos e retorna missingFields
+ * 2. Falha no repo — loga warn, NÃO propaga, retorna []
+ * 3. Falha com objeto não-Error — também não propaga, retorna []
+ * 4. Retorna missingFields expandidos do repo
  */
 
 const mockUpsert = jest.fn();
@@ -39,10 +40,10 @@ describe('RecordBlockedAttemptUseCase', () => {
     useCase = new RecordBlockedAttemptUseCase();
   });
 
-  it('delega para repo.upsert com todos os params', async () => {
-    mockUpsert.mockResolvedValueOnce(undefined);
+  it('delega para repo.upsert com todos os params e retorna missingFields', async () => {
+    mockUpsert.mockResolvedValueOnce(['first_name', 'phone']);
 
-    await useCase.execute({
+    const result = await useCase.execute({
       workerId: WORKER_ID,
       jobPostingId: JOB_ID,
       reason: 'registration_incomplete',
@@ -56,19 +57,33 @@ describe('RecordBlockedAttemptUseCase', () => {
       reason: 'registration_incomplete',
       acquisitionChannel: 'facebook',
     });
+    expect(result).toEqual(['first_name', 'phone']);
   });
 
-  it('não propaga erro quando repo.upsert falha — loga warn', async () => {
+  it('retorna missingFields expandidos (doc_* tokens) do repo', async () => {
+    mockUpsert.mockResolvedValueOnce(['doc_identity_document', 'doc_at_certificate']);
+
+    const result = await useCase.execute({
+      workerId: WORKER_ID,
+      jobPostingId: JOB_ID,
+      reason: 'registration_incomplete',
+      acquisitionChannel: null,
+    });
+
+    expect(result).toEqual(['doc_identity_document', 'doc_at_certificate']);
+  });
+
+  it('não propaga erro quando repo.upsert falha — loga warn, retorna []', async () => {
     mockUpsert.mockRejectedValueOnce(new Error('DB explodiu'));
 
-    await expect(
-      useCase.execute({
-        workerId: WORKER_ID,
-        jobPostingId: JOB_ID,
-        reason: 'worker_disabled',
-        acquisitionChannel: null,
-      }),
-    ).resolves.toBeUndefined();
+    const result = await useCase.execute({
+      workerId: WORKER_ID,
+      jobPostingId: JOB_ID,
+      reason: 'worker_disabled',
+      acquisitionChannel: null,
+    });
+
+    expect(result).toEqual([]);
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -81,17 +96,17 @@ describe('RecordBlockedAttemptUseCase', () => {
     );
   });
 
-  it('não propaga erro quando repo.upsert lança objeto não-Error', async () => {
+  it('não propaga erro quando repo.upsert lança objeto não-Error — retorna []', async () => {
     mockUpsert.mockRejectedValueOnce('string error');
 
-    await expect(
-      useCase.execute({
-        workerId: WORKER_ID,
-        jobPostingId: JOB_ID,
-        reason: 'worker_not_found',
-        acquisitionChannel: null,
-      }),
-    ).resolves.toBeUndefined();
+    const result = await useCase.execute({
+      workerId: WORKER_ID,
+      jobPostingId: JOB_ID,
+      reason: 'worker_not_found',
+      acquisitionChannel: null,
+    });
+
+    expect(result).toEqual([]);
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.objectContaining({ error: 'string error' }),
@@ -99,9 +114,9 @@ describe('RecordBlockedAttemptUseCase', () => {
   });
 
   it('passa acquisitionChannel=null corretamente', async () => {
-    mockUpsert.mockResolvedValueOnce(undefined);
+    mockUpsert.mockResolvedValueOnce([]);
 
-    await useCase.execute({
+    const result = await useCase.execute({
       workerId: WORKER_ID,
       jobPostingId: JOB_ID,
       reason: 'worker_not_found',
@@ -111,5 +126,6 @@ describe('RecordBlockedAttemptUseCase', () => {
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ acquisitionChannel: null }),
     );
+    expect(result).toEqual([]);
   });
 });

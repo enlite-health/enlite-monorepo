@@ -92,6 +92,7 @@ interface ApiErrorResponse {
   code?: string;
   reason?: string;
   workerStatus?: string | null;
+  missingFields?: string[];
 }
 
 type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;

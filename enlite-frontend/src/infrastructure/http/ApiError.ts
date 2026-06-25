@@ -9,6 +9,7 @@ export interface ApiErrorResponse {
   code?: string;
   reason?: string;
   workerStatus?: string | null;
+  missingFields?: string[];
 }
 
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
@@ -17,6 +18,7 @@ export class ApiError extends Error {
   readonly code?: string;
   readonly reason?: string;
   readonly workerStatus?: string | null;
+  readonly missingFields?: string[];
   readonly status: number;
 
   constructor(payload: ApiErrorResponse, status: number) {
@@ -25,6 +27,7 @@ export class ApiError extends Error {
     this.code = payload.code;
     this.reason = payload.reason;
     this.workerStatus = payload.workerStatus;
+    this.missingFields = payload.missingFields;
     this.status = status;
   }
 }

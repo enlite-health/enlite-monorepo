@@ -1,11 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ChevronRight } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
-import type { MissingFields } from '@presentation/hooks/usePostularseAction';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
+import {
+  destinationFor,
+  firstPendingTab,
+  buildProfileUrl,
+} from '@presentation/utils/incompleteFieldDestinations';
 
 interface IncompleteRegistrationModalProps {
-  missingFields: MissingFields | null;
+  missingFields: string[] | null;
   onClose: () => void;
 }
 
@@ -16,17 +22,23 @@ export function IncompleteRegistrationModal({
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const missingRegistration = missingFields
-    ? Object.entries(missingFields.registration)
-        .filter(([, done]) => !done)
-        .map(([key]) => t(`publicVacancy.incompleteModal.fields.${key}`))
-    : [];
+  const allTokens = missingFields ?? [];
+  const docTokens = allTokens.filter((f) => f.startsWith('doc_'));
+  const registrationTokens = allTokens.filter((f) => !f.startsWith('doc_'));
 
-  const missingDocs = missingFields
-    ? Object.entries(missingFields.documents)
-        .filter(([, done]) => !done)
-        .map(([key]) => t(`publicVacancy.incompleteModal.fields.${key}`))
-    : [];
+  const isEmpty = !missingFields || missingFields.length === 0;
+
+  const handleFieldClick = (token: string): void => {
+    const dest = destinationFor(token);
+    navigate(buildProfileUrl(dest));
+    onClose();
+  };
+
+  const handleCompleteRegistration = (): void => {
+    const tab = firstPendingTab(allTokens);
+    navigate(buildProfileUrl({ tab }));
+    onClose();
+  };
 
   return (
     <div
@@ -37,48 +49,79 @@ export function IncompleteRegistrationModal({
         className="bg-white rounded-lg shadow-xl max-w-md w-full m-4 p-6 max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="font-poppins font-semibold text-xl leading-tight text-primary mb-2">
+        <Heading level={3} weight="semibold" color="primary" className="mb-2">
           {t('publicVacancy.incompleteModal.title')}
-        </p>
-        <p className="font-lexend font-medium text-sm leading-[1.4] text-[#737373] mb-4">
-          {t('publicVacancy.incompleteModal.body')}
-        </p>
+        </Heading>
 
-        {missingRegistration.length > 0 && (
+        {isEmpty ? (
+          <Text size="sm" weight="medium" color="muted" className="mb-4">
+            {t('publicVacancy.incompleteModal.bodyGeneric')}
+          </Text>
+        ) : (
+          <Text size="sm" weight="medium" color="muted" className="mb-4">
+            {t('publicVacancy.incompleteModal.body')}
+          </Text>
+        )}
+
+        {registrationTokens.length > 0 && (
           <div className="mb-3">
-            <p className="font-lexend font-semibold text-sm text-primary mb-1.5">
+            <Text size="sm" weight="semibold" color="primary" className="mb-1.5">
               {t('publicVacancy.incompleteModal.registrationTitle')}
-            </p>
+            </Text>
             <div className="flex flex-col gap-1">
-              {missingRegistration.map((label) => (
-                <div key={label} className="flex items-center gap-2">
+              {registrationTokens.map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  role="button"
+                  onClick={() => handleFieldClick(token)}
+                  aria-label={t('publicVacancy.incompleteModal.goToField', {
+                    field: t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }),
+                  })}
+                  className="flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-300 group"
+                >
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                  <span className="font-lexend text-sm text-red-600 font-medium">{label}</span>
-                </div>
+                  <Text as="span" size="sm" weight="medium" color="inherit" className="text-red-600 group-hover:underline flex-1">
+                    {t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token })}
+                  </Text>
+                  <ChevronRight className="w-3.5 h-3.5 text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {missingDocs.length > 0 && (
+        {docTokens.length > 0 && (
           <div className="mb-3">
-            <p className="font-lexend font-semibold text-sm text-primary mb-1.5">
+            <Text size="sm" weight="semibold" color="primary" className="mb-1.5">
               {t('publicVacancy.incompleteModal.documentsTitle')}
-            </p>
+            </Text>
             <div className="flex flex-col gap-1">
-              {missingDocs.map((label) => (
-                <div key={label} className="flex items-center gap-2">
+              {docTokens.map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  role="button"
+                  onClick={() => handleFieldClick(token)}
+                  aria-label={t('publicVacancy.incompleteModal.goToField', {
+                    field: t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }),
+                  })}
+                  className="flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-300 group"
+                >
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                  <span className="font-lexend text-sm text-red-600 font-medium">{label}</span>
-                </div>
+                  <Text as="span" size="sm" weight="medium" color="inherit" className="text-red-600 group-hover:underline flex-1">
+                    {t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token })}
+                  </Text>
+                  <ChevronRight className="w-3.5 h-3.5 text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        <p className="font-lexend font-medium text-sm leading-[1.4] text-[#737373] mb-4 mt-4">
+        <Text size="sm" weight="medium" color="muted" className="mb-4 mt-4">
           {t('publicVacancy.incompleteModal.redirectNotice')}
-        </p>
+        </Text>
 
         <div className="flex justify-end gap-3">
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -87,7 +130,7 @@ export function IncompleteRegistrationModal({
           <Button
             variant="primary"
             size="sm"
-            onClick={() => navigate('/worker/profile')}
+            onClick={handleCompleteRegistration}
           >
             {t('publicVacancy.incompleteModal.confirm')}
           </Button>
