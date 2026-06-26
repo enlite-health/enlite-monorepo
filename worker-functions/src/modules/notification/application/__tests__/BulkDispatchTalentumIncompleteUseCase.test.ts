@@ -2,7 +2,8 @@
  * BulkDispatchTalentumIncompleteUseCase.test.ts
  *
  * Testa o use case de lembrete para workers com prescreening Talentum
- * em INITIATED/IN_PROGRESS há >5 dias.
+ * em PRE_SCREENING/IN_PROGRESS há >5 dias.
+ * (Migration 230: INITIATED renomeado para PRE_SCREENING)
  *
  * Cenários:
  * 1. 0 workers retornados → resultado com total=0, sent=0, errors=0
@@ -258,6 +259,23 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       const r2 = await useCase2.execute('scheduler');
 
       expect(r1.batchId).not.toBe(r2.batchId);
+    });
+  });
+
+  describe('execute — query usa PRE_SCREENING (migration 230)', () => {
+    it('SQL inclui PRE_SCREENING e NÃO inclui INITIATED como filtro de stage', async () => {
+      // migration 230: INITIATED renomeado para PRE_SCREENING no critério de elegibilidade
+      const db = makeDbSequence([{ rows: [] }]);
+      const messaging = makeMessaging();
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await useCase.execute('scheduler');
+
+      const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
+      const mainQuery = calls[0][0] as string;
+
+      expect(mainQuery).toContain('PRE_SCREENING');
+      expect(mainQuery).not.toContain("'INITIATED'");
     });
   });
 });

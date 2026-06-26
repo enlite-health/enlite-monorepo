@@ -8,7 +8,7 @@
  * 2. Invalid channel → 400 with whitelist error
  * 3. Missing jobPostingId → 400
  * 4. Worker not found (getProgress fails) → 404
- * 5. Happy path: upserts WJA with channel + funnel_stage='INITIATED'
+ * 5. Happy path: upserts WJA with channel + funnel_stage='INVITED' (pré-Talentum — migration 230)
  * 6. Happy path: creates encuadre with decrypted name and channel as import_source_audit
  * 7. Encuadre dedup_hash is deterministic md5
  * 8. Accepts all valid channels (WJA + encuadre per channel)
@@ -160,7 +160,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
 
   // ── WJA upsert ─────────────────────────────────────────────────────────
 
-  it('upserts WJA with funnel_stage=INITIATED and first-touch channel', async () => {
+  it('upserts WJA with funnel_stage=INVITED and first-touch channel (migration 230: pré-Talentum = INVITED)', async () => {
     mockWorkerFound('w-1');
     mockDbSuccess();
 

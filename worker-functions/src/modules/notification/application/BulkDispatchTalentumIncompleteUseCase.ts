@@ -15,7 +15,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Workers com application_funnel_stage INITIATED ou IN_PROGRESS — cadência:
+ * Workers com application_funnel_stage PRE_SCREENING ou IN_PROGRESS — cadência:
+ * (Migration 230: INITIATED renomeado para PRE_SCREENING)
  *
  *   1º envio: app parada há >=1 dia + nunca recebeu o reminder antes
  *   2º envio: app continua parada + último envio foi há >=3 dias + total enviados < 2
@@ -51,7 +52,7 @@ const TALENTUM_INCOMPLETE_QUERY = `
   FROM workers w
   INNER JOIN worker_job_applications wja
     ON wja.worker_id = w.id
-    AND wja.application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')
+    AND wja.application_funnel_stage IN ('PRE_SCREENING', 'IN_PROGRESS')
   LEFT JOIN talentum_send_stats tss ON tss.worker_id = w.id
   LEFT JOIN undelivered_stats us ON us.worker_id = w.id
   WHERE

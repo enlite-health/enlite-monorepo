@@ -7,6 +7,7 @@ import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
+import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
 
 
 /**
@@ -21,12 +22,20 @@ import {
  *
  * Renamed from EncuadreFunnelController in F7.a (migration 194).
  * WJA is the canonical entity; encuadre is enrichment data only.
+ *
+ * Migration 230 (2026-06-26): Kanban redesign
+ *   - INITIATED column removed (stage renamed to PRE_SCREENING in DB)
+ *   - PRE_SCREENING column added (Talentum entry point)
+ *   - INICIADO column added: INVITED+source='manual' WJAs + worker_blocked_applications
+ *     (badge-like cards for workers who clicked postularse but were blocked)
  */
 export class WJAFunnelController {
   private db: Pool;
+  private blockedRepo: BlockedApplicationQueryRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.blockedRepo = new BlockedApplicationQueryRepository();
   }
 
   /**
@@ -37,89 +46,119 @@ export class WJAFunnelController {
    * cards that already have one. Orphan WJAs (no encuadre) are now visible.
    *
    * Card identifier: wja.id (always present). encuadreId: e.id (null for orphans).
+   *
+   * Columns (Migration 230):
+   *   INVITED    — WJA stage=INVITED, source != 'manual' (auto-invite system)
+   *   INICIADO   — WJA stage=INVITED + source='manual' + blocked attempt cards
+   *   PRE_SCREENING — WJA stage=PRE_SCREENING (antigo INITIATED)
+   *   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED — inalterados
    */
   async getEncuadreFunnel(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
 
-      const result = await this.db.query(
-        `SELECT
-           wja.id,
-           wja.worker_id,
-           w.first_name_encrypted,
-           w.last_name_encrypted,
-           COALESCE(w.phone, e.worker_raw_phone) AS worker_phone,
-           e.occupation_raw,
-           COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::date, e.interview_date) AS interview_date,
-           COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::time, e.interview_time) AS interview_time,
-           COALESCE(wja.interview_meet_link, e.meet_link) AS meet_link,
-           e.resultado,
-           e.attended,
-           e.rejection_reason_category,
-           e.rejection_reason,
-           e.redireccionamiento,
-           e.id AS encuadre_id,
-           wja.match_score,
-           wja.interview_response,
-           wja.acquisition_channel,
-           wja.application_funnel_stage AS funnel_stage,
-           CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
-             WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
-             ELSE wja.application_funnel_stage END AS talentum_status,
-           wsa.work_zone
-         FROM worker_job_applications wja
-         LEFT JOIN workers w ON w.id = wja.worker_id
-         LEFT JOIN LATERAL (
-           SELECT id, worker_raw_name, worker_raw_phone, occupation_raw,
-                  interview_date, interview_time, meet_link, resultado, attended,
-                  rejection_reason_category, rejection_reason, redireccionamiento
-           FROM encuadres
-           WHERE worker_id = wja.worker_id AND job_posting_id = wja.job_posting_id
-           ORDER BY created_at DESC
-           LIMIT 1
-         ) e ON true
-         LEFT JOIN worker_service_areas wsa ON wsa.worker_id = wja.worker_id AND wsa.deleted_at IS NULL
-         WHERE wja.job_posting_id = $1
-         ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
-        [id]
-      );
+      const [result, blockedAttempts] = await Promise.all([
+        this.db.query(
+          `SELECT
+             wja.id,
+             wja.worker_id,
+             w.first_name_encrypted,
+             w.last_name_encrypted,
+             COALESCE(w.phone, e.worker_raw_phone) AS worker_phone,
+             e.occupation_raw,
+             COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::date, e.interview_date) AS interview_date,
+             COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::time, e.interview_time) AS interview_time,
+             COALESCE(wja.interview_meet_link, e.meet_link) AS meet_link,
+             e.resultado,
+             e.attended,
+             e.rejection_reason_category,
+             e.rejection_reason,
+             e.redireccionamiento,
+             e.id AS encuadre_id,
+             wja.match_score,
+             wja.interview_response,
+             wja.acquisition_channel,
+             wja.application_funnel_stage AS funnel_stage,
+             wja.source,
+             CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
+               WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
+               ELSE wja.application_funnel_stage END AS talentum_status,
+             wsa.work_zone
+           FROM worker_job_applications wja
+           LEFT JOIN workers w ON w.id = wja.worker_id
+           LEFT JOIN LATERAL (
+             SELECT id, worker_raw_name, worker_raw_phone, occupation_raw,
+                    interview_date, interview_time, meet_link, resultado, attended,
+                    rejection_reason_category, rejection_reason, redireccionamiento
+             FROM encuadres
+             WHERE worker_id = wja.worker_id AND job_posting_id = wja.job_posting_id
+             ORDER BY created_at DESC
+             LIMIT 1
+           ) e ON true
+           LEFT JOIN worker_service_areas wsa ON wsa.worker_id = wja.worker_id AND wsa.deleted_at IS NULL
+           WHERE wja.job_posting_id = $1
+           ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
+          [id],
+        ),
+        this.blockedRepo.listByVacancy(id),
+      ]);
 
       // Colunas do Kanban — classificação 100% baseada em application_funnel_stage
+      // Migration 230: INITIATED removido → PRE_SCREENING + INICIADO adicionados
       const stages: Record<string, unknown[]> = {
         INVITED: [],
-        INITIATED: [],
+        INICIADO: [],       // INVITED+source='manual' + blocked attempts (badge)
+        PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
         IN_PROGRESS: [],
-        COMPLETED: [],     // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia). NOT_QUALIFIED foi auto-rejeitado em F3 (migration 191)
+        COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
         CONFIRMED: [],
-        SELECTED: [],      // PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
+        SELECTED: [],
         REJECTED: [],
       };
 
-      // Decriptografa nomes via KMS em paralelo (uso operacional autorizado pra admin
-      // identificar workers no Kanban; LGPD: minimização aplicada — sem fallback de email).
-      // Workers sem first_name_encrypted (~44 em prod, 0.36%) caem pro identificador parcial UUID.
       const kms = new KMSEncryptionService();
-      const decryptedNames = await Promise.all(result.rows.map(async (row) => {
-        const [firstName, lastName] = await Promise.all([
-          row.first_name_encrypted ? kms.decrypt(row.first_name_encrypted).catch(() => null) : null,
-          row.last_name_encrypted ? kms.decrypt(row.last_name_encrypted).catch(() => null) : null,
-        ]);
-        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
-        if (fullName) return fullName;
-        // Fallback LGPD-compliant: identificador parcial UUID (não-PII)
-        const wid = row.worker_id as string | null;
-        return wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação';
-      }));
 
+      // Decrypt WJA names + blocked worker names em paralelo no controller (não no repo)
+      const [decryptedWjaNames, decryptedBlockedNames] = await Promise.all([
+        Promise.all(result.rows.map(async (row) => {
+          const [firstName, lastName] = await Promise.all([
+            row.first_name_encrypted ? kms.decrypt(row.first_name_encrypted).catch(() => null) : null,
+            row.last_name_encrypted ? kms.decrypt(row.last_name_encrypted).catch(() => null) : null,
+          ]);
+          const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+          if (fullName) return fullName;
+          const wid = row.worker_id as string | null;
+          return wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação';
+        })),
+        Promise.all(blockedAttempts.map(async (ba) => {
+          if (!ba.workerId) return null;
+          // Fetch worker name encrypted for blocked cards
+          const workerRow = await this.db.query(
+            `SELECT first_name_encrypted, last_name_encrypted FROM workers WHERE id = $1`,
+            [ba.workerId],
+          );
+          if (workerRow.rows.length === 0) return null;
+          const wr = workerRow.rows[0];
+          const [fn, ln] = await Promise.all([
+            wr.first_name_encrypted ? kms.decrypt(wr.first_name_encrypted).catch(() => null) : null,
+            wr.last_name_encrypted ? kms.decrypt(wr.last_name_encrypted).catch(() => null) : null,
+          ]);
+          const name = [fn, ln].filter(Boolean).join(' ').trim();
+          return name || null;
+        })),
+      ]);
+
+      // Classify WJA rows into kanban columns
       for (let i = 0; i < result.rows.length; i++) {
         const row = result.rows[i];
         const stage = row.funnel_stage as string | null;
+        const source = row.source as string | null;
 
         const item = {
           id: row.id,
           encuadreId: row.encuadre_id ?? null,
           workerId: row.worker_id ?? null,
-          workerName: decryptedNames[i],
+          workerName: decryptedWjaNames[i],
           workerPhone: row.worker_phone,
           occupation: row.occupation_raw,
           interviewDate: row.interview_date,
@@ -135,12 +174,9 @@ export class WJAFunnelController {
           talentumStatus: row.talentum_status ?? null,
           workZone: row.work_zone,
           redireccionamiento: row.redireccionamiento,
-          // F7.c (ADR-004): funnelStage removido — era alias 100% redundante de internalStage.
-          // Frontend deve usar apenas internalStage.
           internalStage: stage ?? null,
         };
 
-        // Classificação direta por application_funnel_stage
         if (stage === 'SELECTED') {
           stages.SELECTED.push(item);
         } else if (stage === 'REJECTED') {
@@ -148,17 +184,54 @@ export class WJAFunnelController {
         } else if (stage === 'CONFIRMED') {
           stages.CONFIRMED.push(item);
         } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) {
-          // REPROGRAM removido em F7.b — workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED
           stages.COMPLETED.push(item);
         } else if (stage === 'IN_PROGRESS') {
           stages.IN_PROGRESS.push(item);
-        } else if (stage === 'INITIATED') {
-          stages.INITIATED.push(item);
+        } else if (stage === 'PRE_SCREENING' || stage === 'INITIATED') {
+          // INITIATED só ocorre transitoriamente em rolling deploy (pod antigo grava
+          // o literal enquanto o CHECK fase-1 ainda o aceita) — mapeia p/ PRE_SCREENING
+          // para o card não cair em Invitados nem sumir. Removível junto da Fase-2.
+          stages.PRE_SCREENING.push(item);
+        } else if (stage === 'INVITED' && source === 'manual') {
+          // INVITED+manual = clicou em postularse manualmente → coluna INICIADO
+          stages.INICIADO.push(item);
         } else if (stage === 'INVITED' || !stage) {
           stages.INVITED.push(item);
         } else {
           stages.INVITED.push(item); // fallback for unknown stages
         }
+      }
+
+      // Merge blocked attempt cards into INICIADO column
+      for (let i = 0; i < blockedAttempts.length; i++) {
+        const ba = blockedAttempts[i];
+        stages.INICIADO.push({
+          id: ba.id,
+          encuadreId: null,
+          workerId: ba.workerId ?? null,
+          workerName: decryptedBlockedNames[i] ?? null,
+          workerPhone: null,
+          occupation: null,
+          interviewDate: null,
+          interviewTime: null,
+          meetLink: null,
+          resultado: null,
+          attended: null,
+          rejectionReasonCategory: null,
+          rejectionReason: null,
+          matchScore: null,
+          interviewResponse: null,
+          acquisitionChannel: ba.acquisitionChannel,
+          talentumStatus: null,
+          workZone: null,
+          redireccionamiento: null,
+          internalStage: null,
+          // Blocked-specific fields
+          isBlocked: true,
+          blockedReason: ba.blockedReason,
+          missingFields: ba.missingFields,
+          attemptCount: ba.attemptCount,
+        });
       }
 
       res.json({
@@ -182,6 +255,8 @@ export class WJAFunnelController {
    * Also syncs encuadre.resultado for terminal states (SELECTED/REJECTED).
    *
    * Body: { targetStage, rejectionReasonCategory?, rejectionReason? }
+   *
+   * Migration 230: INITIATED replaced by PRE_SCREENING in validStages.
    */
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
@@ -189,7 +264,7 @@ export class WJAFunnelController {
       const { targetStage, rejectionReasonCategory, rejectionReason } = req.body;
 
       const validStages = [
-        'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
+        'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
         'CONFIRMED', 'SELECTED', 'REJECTED',
       ];
 
@@ -231,7 +306,6 @@ export class WJAFunnelController {
       }
 
       // 2. Atualizar application_funnel_stage (fonte de verdade)
-      // F7.c (ADR-004): application_status removido do INSERT.
       await this.db.query(
         `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
          VALUES ($1, $2, $3, 'manual')

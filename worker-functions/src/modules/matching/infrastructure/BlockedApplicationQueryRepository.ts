@@ -15,6 +15,20 @@ export interface BlockedAttemptDto {
   updatedAt: string;
 }
 
+/**
+ * Shape retornado por listByVacancy — campos necessários para os cards do kanban INICIADO.
+ * workerId retornado em plaintext (sem decrypt — o controller cuida do KMS).
+ */
+export interface BlockedAttemptForFunnelDto {
+  id: string;
+  workerId: string | null;
+  blockedReason: string;
+  missingFields: string[];
+  attemptCount: number;
+  acquisitionChannel: string | null;
+  lastAttemptedAt: string;
+}
+
 export interface BlockedAggregates {
   totalBlocked: number;
   byReason: Record<string, number>;
@@ -118,6 +132,46 @@ export class BlockedApplicationQueryRepository {
       data,
       total: (countResult.rows[0]?.total as number) ?? 0,
     };
+  }
+
+  /**
+   * Lista tentativas bloqueadas para uma vaga específica, excluindo workers que já têm WJA
+   * para o mesmo par (worker_id, job_posting_id) — dedup via NOT EXISTS.
+   *
+   * Usado pelo WJAFunnelController para montar a coluna "INICIADO" do kanban.
+   * Não faz decrypt de PII — o controller realiza o KMS decrypt em Promise.all junto
+   * com os cards WJA normais.
+   */
+  async listByVacancy(jobPostingId: string): Promise<BlockedAttemptForFunnelDto[]> {
+    const result = await this.pool.query(
+      `SELECT
+         wba.id,
+         wba.worker_id,
+         wba.blocked_reason,
+         wba.missing_fields,
+         wba.attempt_count,
+         wba.acquisition_channel,
+         wba.last_attempted_at
+       FROM worker_blocked_applications wba
+       WHERE wba.job_posting_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM worker_job_applications wja
+           WHERE wja.worker_id  = wba.worker_id
+             AND wja.job_posting_id = wba.job_posting_id
+         )
+       ORDER BY wba.last_attempted_at DESC`,
+      [jobPostingId],
+    );
+
+    return result.rows.map(r => ({
+      id:                r.id as string,
+      workerId:          (r.worker_id as string | null) ?? null,
+      blockedReason:     r.blocked_reason as string,
+      missingFields:     Array.isArray(r.missing_fields) ? r.missing_fields as string[] : [],
+      attemptCount:      r.attempt_count as number,
+      acquisitionChannel: (r.acquisition_channel as string | null) ?? null,
+      lastAttemptedAt:   (r.last_attempted_at as Date).toISOString(),
+    }));
   }
 
   async aggregates(): Promise<BlockedAggregates> {
