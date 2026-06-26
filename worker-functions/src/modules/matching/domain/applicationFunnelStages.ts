@@ -9,7 +9,9 @@
  * counts shown when opening the vacancy detail.
  */
 
-export const POSTULATED_STAGES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED'] as const;
+// Migration 230 (2026-06-26): INITIATED → PRE_SCREENING
+// PRE_SCREENING = quem entrou no formulário Talentum (antigo INITIATED)
+export const POSTULATED_STAGES = ['PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED'] as const;
 export const PRE_SELECTED_STAGES = ['QUALIFIED', 'CONFIRMED', 'SELECTED'] as const;
 export const REJECTION_STAGES = ['REJECTED'] as const;
 
