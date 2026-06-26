@@ -86,7 +86,8 @@ function makeEncuadre(overrides: Partial<FunnelStages['INVITED'][0]> = {}) {
 function emptyStages(): FunnelStages {
   return {
     INVITED: [],
-    INITIATED: [],
+    INICIADO: [],
+    PRE_SCREENING: [],
     IN_PROGRESS: [],
     COMPLETED: [],
     CONFIRMED: [],
@@ -108,11 +109,11 @@ beforeEach(() => {
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 7 columns', () => {
+  it('renders all 8 columns', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const expectedColumns = [
-      'INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
@@ -121,14 +122,14 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (INVITED → INITIATED → IN_PROGRESS → COMPLETED → CONFIRMED → ...)', () => {
+  it('renders columns in correct order (INVITED → INICIADO → PRE_SCREENING → IN_PROGRESS → ...)', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
 
     expect(ids).toEqual([
-      'INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ]);
   });
@@ -137,7 +138,8 @@ describe('KanbanBoard — column rendering', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
-    expect(screen.getByText('admin.kanban.columns.INITIATED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.IN_PROGRESS')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.COMPLETED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.CONFIRMED')).toBeInTheDocument();
@@ -147,13 +149,13 @@ describe('KanbanBoard — column rendering', () => {
 
   it('shows correct card count per column', () => {
     const stages = emptyStages();
-    stages.INITIATED = [makeEncuadre(), makeEncuadre()];
+    stages.INICIADO = [makeEncuadre(), makeEncuadre()];
     stages.COMPLETED = [makeEncuadre()];
 
     render(<KanbanBoard stages={stages} onMove={noop} />);
 
-    const initiatedCol = screen.getByTestId('kanban-column-INITIATED');
-    expect(within(initiatedCol).getByText('2')).toBeInTheDocument();
+    const iniciadoCol = screen.getByTestId('kanban-column-INICIADO');
+    expect(within(iniciadoCol).getByText('2')).toBeInTheDocument();
 
     const completedCol = screen.getByTestId('kanban-column-COMPLETED');
     expect(within(completedCol).getByText('1')).toBeInTheDocument();
@@ -177,14 +179,14 @@ describe('KanbanBoard — column rendering', () => {
 // ── Drag & Drop Behavior ─────────────────────────────────────────────────────
 
 describe('KanbanBoard — drag & drop rules', () => {
-  it('disables droppable on Talentum-driven columns (INITIATED, IN_PROGRESS, COMPLETED)', () => {
+  it('disables droppable on Talentum-driven columns (INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED)', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const nonDroppable = droppableIds.filter((d) =>
-      ['INITIATED', 'IN_PROGRESS', 'COMPLETED'].includes(d.id),
+      ['INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED'].includes(d.id),
     );
 
-    expect(nonDroppable).toHaveLength(3);
+    expect(nonDroppable).toHaveLength(4);
     for (const col of nonDroppable) {
       expect(col.disabled).toBe(true);
     }
@@ -211,13 +213,24 @@ describe('KanbanBoard — drag & drop rules', () => {
     expect(invitedDroppable?.disabled).toBe(false);
   });
 
-  it('renders draggable cards inside Talentum columns (drag FROM is allowed)', () => {
+  it('renders draggable cards inside INICIADO column (drag FROM is allowed)', () => {
     const stages = emptyStages();
-    stages.INITIATED = [makeEncuadre({ id: 'enc-drag' })];
+    stages.INICIADO = [makeEncuadre({ id: 'enc-drag' })];
 
     render(<KanbanBoard stages={stages} onMove={noop} />);
 
     const card = screen.getByTestId('kanban-card-enc-drag');
+    expect(card).toBeInTheDocument();
+    expect(card.closest('[data-draggable-id]')).toBeTruthy();
+  });
+
+  it('renders draggable cards inside PRE_SCREENING column (drag FROM is allowed)', () => {
+    const stages = emptyStages();
+    stages.PRE_SCREENING = [makeEncuadre({ id: 'enc-pre-drag' })];
+
+    render(<KanbanBoard stages={stages} onMove={noop} />);
+
+    const card = screen.getByTestId('kanban-card-enc-pre-drag');
     expect(card).toBeInTheDocument();
     expect(card.closest('[data-draggable-id]')).toBeTruthy();
   });
@@ -230,12 +243,13 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(7);
+    expect(columns).toHaveLength(8);
   });
 
   it('renders multiple cards across different Talentum columns', () => {
     const stages = emptyStages();
-    stages.INITIATED = [makeEncuadre({ id: 'a' })];
+    stages.INICIADO = [makeEncuadre({ id: 'a' })];
+    stages.PRE_SCREENING = [makeEncuadre({ id: 'e' })];
     stages.IN_PROGRESS = [makeEncuadre({ id: 'b' }), makeEncuadre({ id: 'c' })];
     stages.COMPLETED = [makeEncuadre({ id: 'd' })];
 
@@ -245,6 +259,7 @@ describe('KanbanBoard — edge cases', () => {
     expect(screen.getByTestId('kanban-card-b')).toBeInTheDocument();
     expect(screen.getByTestId('kanban-card-c')).toBeInTheDocument();
     expect(screen.getByTestId('kanban-card-d')).toBeInTheDocument();
+    expect(screen.getByTestId('kanban-card-e')).toBeInTheDocument();
   });
 });
 
@@ -310,7 +325,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
 
   it('keeps drag enabled on card with valid encuadreId', () => {
     const stages = emptyStages();
-    stages.INITIATED = [makeEncuadre({ id: 'enc-with-id', encuadreId: 'real-enc-uuid' })];
+    stages.INICIADO = [makeEncuadre({ id: 'enc-with-id', encuadreId: 'real-enc-uuid' })];
 
     render(<KanbanBoard stages={stages} onMove={noop} />);
 

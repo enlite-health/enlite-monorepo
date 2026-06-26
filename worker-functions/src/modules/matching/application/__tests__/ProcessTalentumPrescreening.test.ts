@@ -797,14 +797,16 @@ describe('ProcessTalentumPrescreening', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('progressão de application_funnel_stage', () => {
-    it('INITIATED → application_funnel_stage = INITIATED', async () => {
+    it('INITIATED (Talentum subtype) → application_funnel_stage = PRE_SCREENING (migration 230: conversão interna)', async () => {
+      // O Zod do webhook aceita 'INITIATED' como subtype — NÃO foi alterado.
+      // deriveFunnelStage() converte internamente para PRE_SCREENING antes de gravar na WJA.
       const payload = buildPayload({ status: 'INITIATED' });
       (payload.data.response as any).statusLabel = undefined;
 
       await useCase.execute(payload);
 
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalledWith(
-        expect.objectContaining({ applicationFunnelStage: 'INITIATED' }),
+        expect.objectContaining({ applicationFunnelStage: 'PRE_SCREENING' }),
         mockPoolClient,
       );
     });
@@ -907,13 +909,13 @@ describe('ProcessTalentumPrescreening', () => {
     });
 
     it('cada webhook atualiza o stage — simula fluxo completo INITIATED → QUALIFIED', async () => {
-      // Webhook 1: INITIATED
+      // Webhook 1: INITIATED (Talentum subtype) → PRE_SCREENING (canônico interno, migration 230)
       const p1 = buildPayload({ status: 'INITIATED' });
       (p1.data.response as any).statusLabel = undefined;
       await useCase.execute(p1);
 
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenLastCalledWith(
-        expect.objectContaining({ applicationFunnelStage: 'INITIATED' }),
+        expect.objectContaining({ applicationFunnelStage: 'PRE_SCREENING' }),
         mockPoolClient,
       );
 

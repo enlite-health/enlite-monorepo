@@ -5,11 +5,18 @@
  * Split from WJAFunnelController.test.ts to keep both files ≤400 lines.
  *
  * Renamed from EncuadreFunnelController.moveEncuadre.test.ts in F7.a (migration 194).
+ * Migration 230 (2026-06-26): INITIATED → PRE_SCREENING in validStages.
  *
  * - PUT /api/admin/encuadres/:id/move
  */
 
 const mockQuery = jest.fn();
+
+jest.mock('@modules/matching/infrastructure/BlockedApplicationQueryRepository', () => ({
+  BlockedApplicationQueryRepository: jest.fn().mockImplementation(() => ({
+    listByVacancy: jest.fn().mockResolvedValue([]),
+  })),
+}));
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -53,6 +60,30 @@ describe('WJAFunnelController — moveEncuadre', () => {
     await controller.moveEncuadre(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('retorna 400 para INITIATED (migration 230: aposentado, use PRE_SCREENING)', async () => {
+    // INITIATED foi renomeado para PRE_SCREENING — não é mais aceito pelo moveEncuadre
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INITIATED' });
+    await controller.moveEncuadre(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('aceita PRE_SCREENING como targetStage (migration 230: substitui INITIATED)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
+    });
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
+
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'PRE_SCREENING' });
+    await controller.moveEncuadre(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, data: expect.objectContaining({ targetStage: 'PRE_SCREENING' }) }),
+    );
   });
 
   it('retorna 404 quando encuadre não existe', async () => {
@@ -198,11 +229,12 @@ describe('WJAFunnelController — moveEncuadre', () => {
     expect(updateCall[1]).toContain('DISTANCE');
   });
 
-  it('aceita todos os targetStage válidos (F3: NOT_QUALIFIED removido; F7.a: PLACED removido)', async () => {
+  it('aceita todos os targetStage válidos (migration 230: INITIATED→PRE_SCREENING; F3: NOT_QUALIFIED removido; F7.a: PLACED removido)', async () => {
+    // INITIATED removido em migration 230 — renomeado para PRE_SCREENING
     // NOT_QUALIFIED removido em F3 — operador admin não pode mover manualmente para esse stage
     // PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
     const validStages = [
-      'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
+      'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 

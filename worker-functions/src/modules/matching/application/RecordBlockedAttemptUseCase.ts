@@ -17,6 +17,9 @@ export interface RecordBlockedAttemptParams {
  * FIRE-AND-FORGET: nunca propaga exceção. Falhas são logadas como warn.
  * O 403 já foi emitido pelo controller antes de chamar este use case.
  *
+ * Retorna os missingFields EXPANDIDOS (doc_* tokens) para inclusão no 403.
+ * Em caso de falha, retorna [] em vez de propagar.
+ *
  * Migration 209.
  */
 export class RecordBlockedAttemptUseCase {
@@ -26,9 +29,9 @@ export class RecordBlockedAttemptUseCase {
     this.repo = new BlockedApplicationRepository();
   }
 
-  async execute(params: RecordBlockedAttemptParams): Promise<void> {
+  async execute(params: RecordBlockedAttemptParams): Promise<string[]> {
     try {
-      await this.repo.upsert({
+      return await this.repo.upsert({
         workerId: params.workerId,
         jobPostingId: params.jobPostingId,
         reason: params.reason,
@@ -42,6 +45,7 @@ export class RecordBlockedAttemptUseCase {
         reason: params.reason,
         error: err instanceof Error ? err.message : String(err),
       });
+      return [];
     }
   }
 }

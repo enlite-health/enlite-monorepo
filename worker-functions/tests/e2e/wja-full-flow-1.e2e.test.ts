@@ -222,7 +222,7 @@ describe('WJA Full Flow Part 1 — T1→T7 @integration', () => {
   describe('Step 3 — T3-T5: Progressão via webhooks Talentum (Worker A)', () => {
     const ENDPOINT = '/api/webhooks/talentum/prescreening';
 
-    it('T3: webhook INITIATED → WJA stage=INITIATED', async () => {
+    it('T3: webhook INITIATED → WJA stage=PRE_SCREENING (migration 230: INITIATED→PRE_SCREENING)', async () => {
       const res = await api.post(ENDPOINT, envelope({
         subtype: 'INITIATED',
         prescreening: { id: PSC_T3, name: `CASO ${CASE_NUMBER} WFF E2E` },
@@ -235,7 +235,8 @@ describe('WJA Full Flow Part 1 — T1→T7 @integration', () => {
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [workerAId, jobPostingId],
       );
-      expect(rows[0].application_funnel_stage).toBe('INITIATED');
+      // migration 230: deriveFunnelStage converte subtype='INITIATED' → 'PRE_SCREENING' internamente
+      expect(rows[0].application_funnel_stage).toBe('PRE_SCREENING');
     });
 
     it('T4: webhook IN_PROGRESS → WJA stage=IN_PROGRESS', async () => {
@@ -315,7 +316,7 @@ describe('WJA Full Flow Part 1 — T1→T7 @integration', () => {
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [workerAId, jobPostingId],
       );
-      // Precedência canônica: QUALIFIED(5) > INITIATED(1)
+      // Precedência canônica: QUALIFIED(5) > PRE_SCREENING(1) — subtype='INITIATED' → PRE_SCREENING (migration 230)
       expect(rows[0].application_funnel_stage).toBe('QUALIFIED');
     });
   });

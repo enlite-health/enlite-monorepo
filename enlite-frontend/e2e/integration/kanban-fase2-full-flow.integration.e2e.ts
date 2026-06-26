@@ -241,7 +241,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     await openKanban(page, vacancyId);
 
     const colIds = [
-      'INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
@@ -316,8 +316,8 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).not.toBe('true');
 
     // ── 5. Drag: INVITED → CONFIRMED ─────────────────────────────────────────
-    // NOTA: INVITED, INITIATED, IN_PROGRESS, COMPLETED são colunas NÃO-droppable
-    // (driven by Talentum webhook). Admin só pode arrastar manualmente para
+    // NOTA: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED são colunas NÃO-droppable
+    // (driven by Talentum webhook ou gate de postulação). Admin só pode arrastar manualmente para
     // CONFIRMED, SELECTED ou REJECTED. Portanto arrastamos para CONFIRMED.
     //
     // IMPORTANTE: usar page.on('response', ...) em vez de page.route() porque
@@ -407,7 +407,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
   // ── F3 — Path B: Talentum webhook ciclo completo ──────────────────────────────
 
-  test('F3 — Path B: webhook INITIATED — card em INITIATED com encuadreId != null', async ({ page, request }) => {
+  test('F3 — Path B: webhook INITIATED — card em PRE_SCREENING com encuadreId != null', async ({ page, request }) => {
     await loginAsKanbanAdmin(page);
 
     expect(
@@ -431,13 +431,14 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
     // kanban-card-<wja.id> tem data-stage (KanbanCard usa enc.id = wja.id)
-    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaB_Id}`, 'INITIATED');
+    // Talentum INITIATED webhook → coluna PRE_SCREENING (renomeada de INITIATED)
+    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaB_Id}`, 'PRE_SCREENING');
 
     // card sem data-drag-disabled
     await openKanban(page, vacancyId);
     // data-testid = kanban-draggable-<wja.id> (DraggableCard usa enc.id = wja.id)
     const cardWrapper = page.locator(`[data-testid="kanban-draggable-${wjaB_Id}"]`);
-    await expect(cardWrapper, 'Card Path B deve estar visível em INITIATED').toBeVisible();
+    await expect(cardWrapper, 'Card Path B deve estar visível em PRE_SCREENING').toBeVisible();
     const dragDisabled = await cardWrapper.getAttribute('data-drag-disabled');
     expect(dragDisabled, 'Card Path B NÃO deve ter data-drag-disabled=true').not.toBe('true');
 
@@ -687,7 +688,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).not.toBe('true');
 
     // ── 4. Drag: INVITED → SELECTED ──────────────────────────────────────────
-    // NOTA: INVITED, INITIATED, IN_PROGRESS, COMPLETED não são drop targets.
+    // NOTA: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED não são drop targets.
     // Admin só pode mover manualmente para CONFIRMED, SELECTED ou REJECTED.
     // page.on('response') evita conflito com **/api/** catch-all do installKanbanInterceptors.
     const capturedMovesC: { url: string; status: number }[] = [];
@@ -1016,7 +1017,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     };
     page.on('response', onRespF7);
 
-    // NOTA: arrastar para SELECTED (droppable). INITIATED não é drop target.
+    // NOTA: arrastar para SELECTED (droppable). INICIADO/PRE_SCREENING não são drop targets.
     // Scroll APENAS vertical para expor o board
     await page.evaluate(() => {
       const board = document.querySelector('[data-testid="kanban-board"]');

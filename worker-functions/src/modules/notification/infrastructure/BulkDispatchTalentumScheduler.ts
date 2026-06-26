@@ -8,7 +8,8 @@ import { BulkDispatchTalentumIncompleteUseCase, BulkDispatchTalentumResult } fro
  * Método stateless `run()` chamado via Cloud Scheduler (diário)
  * através do endpoint POST /api/internal/bulk-dispatch/talentum-incomplete.
  *
- * Critério: application_funnel_stage IN ('INITIATED', 'IN_PROGRESS') há >5 dias,
+ * Critério: application_funnel_stage IN ('PRE_SCREENING', 'IN_PROGRESS') há >5 dias,
+ * (Migration 230: INITIATED renomeado para PRE_SCREENING)
  * sem reminder enviado nos últimos 7 dias.
  */
 export class BulkDispatchTalentumScheduler {

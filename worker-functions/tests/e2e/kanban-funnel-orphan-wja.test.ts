@@ -12,7 +12,7 @@
  *
  * Cenários:
  *   O1 — WJA órfã em INVITED    → aparece no Kanban, coluna INVITED, encuadreId=null
- *   O2 — WJA órfã em INITIATED  → aparece no Kanban, coluna INITIATED, encuadreId=null
+ *   O2 — WJA órfã em PRE_SCREENING → aparece no Kanban, coluna PRE_SCREENING, encuadreId=null (migration 230)
  *   O3 — WJA órfã em IN_PROGRESS → aparece no Kanban, coluna IN_PROGRESS, encuadreId=null
  *   O4 — WJA órfã em COMPLETED  → aparece no Kanban, coluna COMPLETED, encuadreId=null
  *   O5 — WJA órfã em CONFIRMED  → aparece no Kanban, coluna CONFIRMED, encuadreId=null
@@ -93,12 +93,12 @@ describe('GET /api/admin/vacancies/:id/funnel — WJA órfã aparece no Kanban (
     expect(card!.internalStage).toBe('INVITED');
   });
 
-  it('[O2] WJA órfã em INITIATED aparece na coluna INITIATED com encuadreId=null', async () => {
+  it('[O2] WJA órfã em PRE_SCREENING aparece na coluna PRE_SCREENING com encuadreId=null (migration 230: INITIATED→PRE_SCREENING)', async () => {
     const stages = await getFunnelStages();
-    const card = stages.INITIATED.find((c) => c.workerId === IDS.wOrphan2);
+    const card = stages.PRE_SCREENING.find((c) => c.workerId === IDS.wOrphan2);
     expect(card).toBeDefined();
     expect(card!.encuadreId).toBeNull();
-    expect(card!.internalStage).toBe('INITIATED');
+    expect(card!.internalStage).toBe('PRE_SCREENING');
   });
 
   it('[O3] WJA órfã em IN_PROGRESS aparece na coluna IN_PROGRESS com encuadreId=null', async () => {
@@ -205,7 +205,7 @@ async function seedFixtures(pool: Pool): Promise<string> {
 
   const orphanRows: Array<{ id: string; stage: string }> = [
     { id: IDS.wOrphan1, stage: 'INVITED' },
-    { id: IDS.wOrphan2, stage: 'INITIATED' },
+    { id: IDS.wOrphan2, stage: 'PRE_SCREENING' }, // migration 230: INITIATED → PRE_SCREENING
     { id: IDS.wOrphan3, stage: 'IN_PROGRESS' },
     { id: IDS.wOrphan4, stage: 'COMPLETED' },
     { id: IDS.wOrphan5, stage: 'CONFIRMED' },

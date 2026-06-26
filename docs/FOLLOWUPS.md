@@ -1654,3 +1654,57 @@ O frontend não tem um componente `Modal`/`Dialog` em `@/presentation/components
 **Critério para fechar:** extrair um atom `Modal` (backdrop + close por X/backdrop/ESC + focus trap + scroll lock + `role="dialog"`/`aria-modal`) e migrar os modais existentes (`WorkerProfileModal`, `CreateAdminUserModal`, `DeleteAdminUserModal`, `InvitationFallbackModal`) para consumi-lo.
 
 **Gatilho:** próximo modal novo ou quando houver bug de a11y/foco em algum overlay existente.
+
+### TD-055 — Suíte Playwright `@integration` (frontend) rotada: 22 testes quebrados em banco limpo
+
+- **Status:** aberto — **não-bloqueante** (NÃO está no gate de CI).
+- **Descoberto em:** 2026-06-25/26, ao validar a feature de docs-AT (rodar a suíte `@integration` completa).
+- **Dono provável:** frontend (+ decisão de produto pontual no match).
+- **Bloqueador?** Não. O gate de merge é `pnpm test:run` (frontend unit — 3682 verdes) + `backend-e2e.yml`. Os Playwright `@integration` **não rodam no CI** (precisam de docker stack + `pnpm dev`). Distinto do TD-051 (que era backend/jest).
+
+**O que é:** `pnpm test:e2e:integration` → **22 falhas / 6 features**, reproduzíveis em banco **limpo** (`reset-test-db.sh`) e **serial** (`--workers=1`) — ou seja, não é poluição nem paralelismo, é rot por evolução de produto/schema não propagada aos testes.
+
+**Causas-raiz por cluster (mapa):**
+- **kanban-drag-fase1 (4) + kanban-orphan (4):** dependem de **fixtures com UUIDs fixos** (`POSITIVE_WJA_ID=bbbbbbbb-0001…`, `ORPHAN_WJA_ID`, vaga `8e7e8447…`, worker `aaaaaaaa-0001…`) que **NÃO existem em VCS** (nenhum seed) — eram dados injetados manualmente no banco de longa duração; o reset os removeu. Os testes **nunca foram self-contained**. Modelo do funil está correto (WJA-canônico: `application_funnel_stage` dirige; `card.id=wja.id`, `encuadreId=e.id` nullable — `WJAFunnelController.ts:41-176`). **Conserto:** autorar seed/`beforeAll` que insere as WJAs/encuadres (preferir self-provision a UUID fixo pré-semeado).
+- **kanban-fase2 (1):** usa coluna `encuadres.origen`, **renomeada p/ `import_source_audit`** na migration 197 (valor `'auto-trigger'` mantido). **Conserto:** trocar `origen`→`import_source_audit` no helper `queryEncuadreOrigen`/`countEncuadresByOrigen` (linhas ~73-97). Também já corrigido neste working tree: coluna `application_status` (removida na mig 196) em 5 INSERTs inline de fase2/orphan.
+- **resume-draft-vacancy (7):** (a) `case-select` virou `SearchableSelect` custom (`<div>`, não `<select>`) → trocar `selectOption` por: clicar `button[aria-haspopup="listbox"]` → buscar → clicar `role="option"` (`VacancyFormLeftColumn.tsx:123`, `SearchableSelect.tsx`); (b) novo `address-has-vacancy-dialog` (`AddressHasVacancyDialog.tsx`) intercepta o click — tratar/fechar antes (`address-has-vacancy-continue`/`-cancel`); (c) 4 screenshots desatualizados → re-baseline após corrigir o fluxo (validar visual correto).
+- **full-create-vacancy (1):** mesmo `case-select` custom.
+- **funnel-worker-detail-nav (1):** botão "Volver" (`WorkerDetailPage.tsx:27`, i18n `admin.workerDetail.back`) — timeout no click; revisar timing/seletor (sugestão: adicionar `data-testid="worker-detail-back-btn"`).
+- **match (3):** `MatchmakingService` (SQL ~264-265) **exclui workers sem coordenadas** (`location IS NOT NULL`). **DECISÃO DE PRODUTO (2026-06-26): o backend está CERTO — não há match com prestador sem coordenada.** Logo a expectativa dos testes está errada. **Conserto (test-only, NÃO mexer no backend):** atualizar `match-hard-filter` (esperar `maleNoCoords` **excluído**, não incluído), `match-vacancy-modal` (sem bucket "sin ubicación" p/ sem-coords) e `match-worker-profile-link` (cascata — deve voltar com os candidatos válidos).
+- **vacancy-kanban-talentum-webhook (1 + cascata serial):** screenshot `vacancy-kanban-initiated.png` + os C3-C7 são `serial` e ficam "did not run" quando C2 falha.
+
+**Pré-condição esquecida:** os seeds de dev (`001_dev_workers`, `002_wave1_diagnostic_data`) estão sendo **pulados** por drift (`column "overall_status" does not exist`) — corrigir se algum teste depender deles.
+
+**Critério para fechar:** os 22 verdes em `pnpm test:e2e:integration` num banco resetado; idealmente os kanban passam a se auto-prover (robustos a reset).
+
+### TD-056 — Migration 230 Fase-2: remover `INITIATED` do CHECK de `application_funnel_stage`
+
+- **Status:** aberto — **não-bloqueante**, com **gatilho temporal**.
+- **Descoberto em:** 2026-06-26, ao implementar o redesenho do Kanban (colunas Iniciados/Pre Screening).
+- **Dono provável:** backend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+A migration 230 renomeou o conceito `INITIATED → PRE_SCREENING` (backfill + novo valor no CHECK), mas **manteve `INITIATED` no CHECK de propósito** (Fase-1, aditiva). Motivo: durante o rolling deploy, pods com código antigo podem gravar o literal `'INITIATED'` por alguns segundos; se o CHECK já o tivesse removido, esses writes quebrariam com `check constraint violation`. O `funnel_stage_precedence()` também mantém `INITIATED=1` em paralelo a `PRE_SCREENING=1`, e o `WJAFunnelController` roteia `stage='INITIATED'` transitório para a coluna Pre Screening defensivamente.
+
+**Risco:** valor morto no CHECK + ramo defensivo no controller que confundem leitura futura. Nenhum risco operacional.
+
+**Critério para fechar:** após `PRE_SCREENING` estável em prod por **≥7 dias** e confirmar `SELECT COUNT(*) FROM worker_job_applications WHERE application_funnel_stage='INITIATED'` = 0, criar migration Fase-2 que: (a) remove `'INITIATED'` do CHECK; (b) remove a linha `WHEN 'INITIATED' THEN 1` de `funnel_stage_precedence()`; (c) remove o ramo `|| stage === 'INITIATED'` em `WJAFunnelController` (~linha 190) e o tipo/comentários residuais.
+
+**Gatilho:** 7 dias após o merge desta feature ir pra produção (não há data fixa ainda — depende do deploy).
+
+### TD-057 — `worker_job_applications.source` sem CHECK constraint (split do Kanban depende dele)
+
+- **Status:** aberto — **não-bloqueante**.
+- **Descoberto em:** 2026-06-26, no parecer do Architect sobre o redesenho do Kanban.
+- **Dono provável:** backend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+A coluna `source` (mig 019, `TEXT DEFAULT 'manual'`) **não tem CHECK constraint**. Os valores válidos (`manual`, `system`, `talentum`, `import`, `planilla_operativa`) existem só como contrato implícito de código. O agrupamento novo do Kanban depende de `source='manual'` distinguir confiavelmente "clique do worker" de "convite do match" (`source='system'`) — um valor espúrio gravado direto em SQL classificaria o card na coluna errada (Iniciados vs Invitados).
+
+**Critério para fechar:** auditar `SELECT DISTINCT source FROM worker_job_applications` em prod; se limpo, adicionar `CHECK (source IN ('manual','system','talentum','import','planilla_operativa'))` em migration aditiva.
+
+**Gatilho:** próxima vez que tocar o write-path de `worker_job_applications` ou ao endurecer o schema.

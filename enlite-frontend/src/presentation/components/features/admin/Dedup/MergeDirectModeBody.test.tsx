@@ -13,13 +13,16 @@
  * - success message shown after merge succeeds
  * - cancel button calls onClose
  * - footer hidden after mergeSuccess
+ * - [NEW] fieldComparisons provided → MergeAdvancedFields renders (manual-merge flow)
+ * - [NEW] choosing a field value includes fieldChoices in merge payload
+ * - [NEW] fieldComparisons absent → MergeAdvancedFields NOT rendered (Importados flow)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MergeDirectModeBody } from './MergeDirectModeBody';
 import type { MergeDirectModeBodyProps } from './MergeDirectModeBody';
-import type { ImportedDedupAccount } from '@domain/entities/DedupGroup';
+import type { DedupFieldComparison, ImportedDedupAccount } from '@domain/entities/DedupGroup';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -130,6 +133,221 @@ describe('MergeDirectModeBody — conflict banner', () => {
   });
 });
 
+// ── Conflict banner: WHO (names the real accounts) + navigation ────────────────
+
+const ACC_REAL_NAMED: ImportedDedupAccount = {
+  ...ACC_REAL,
+  name: 'Gabriela Varela',
+  phone_normalized: '+5491111111111',
+};
+const ACC_REAL_2_NAMED: ImportedDedupAccount = {
+  ...ACC_REAL_2,
+  name: 'Javier Bernal',
+  phone_normalized: '+5492222222222',
+};
+
+describe('MergeDirectModeBody — conflict banner names the real accounts', () => {
+  it('lists each real account by name', () => {
+    renderBody({
+      accounts: [ACC_REAL_NAMED, ACC_REAL_2_NAMED],
+      survivorSuggestedId: ACC_REAL_NAMED.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+    });
+    const list = screen.getByTestId('conflict-real-accounts');
+    expect(list).toHaveTextContent('Gabriela Varela');
+    expect(list).toHaveTextContent('Javier Bernal');
+  });
+
+  it('falls back to email when an account has no name', () => {
+    renderBody({
+      accounts: [ACC_REAL, ACC_REAL_2], // no names
+      survivorSuggestedId: ACC_REAL.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+    });
+    const list = screen.getByTestId('conflict-real-accounts');
+    expect(list).toHaveTextContent('maria@example.com');
+    expect(list).toHaveTextContent('carlos@example.com');
+  });
+
+  it('does NOT list imported accounts among the real ones', () => {
+    renderBody({
+      accounts: [ACC_REAL_NAMED, ACC_REAL_2_NAMED, ACC_IMP],
+      survivorSuggestedId: ACC_REAL_NAMED.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+      onNavigateToPhoneGroup: vi.fn(),
+    });
+    // Only the two real accounts are linkable
+    expect(
+      screen.getByTestId(`conflict-account-link-${ACC_REAL_NAMED.id}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`conflict-account-link-${ACC_REAL_2_NAMED.id}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`conflict-account-link-${ACC_IMP.id}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it('clicking a name calls onNavigateToPhoneGroup with that account phone', () => {
+    const onNavigateToPhoneGroup = vi.fn();
+    renderBody({
+      accounts: [ACC_REAL_NAMED, ACC_REAL_2_NAMED],
+      survivorSuggestedId: ACC_REAL_NAMED.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+      onNavigateToPhoneGroup,
+    });
+    fireEvent.click(
+      screen.getByTestId(`conflict-account-link-${ACC_REAL_2_NAMED.id}`),
+    );
+    expect(onNavigateToPhoneGroup).toHaveBeenCalledWith(
+      ACC_REAL_2_NAMED.phone_normalized,
+    );
+  });
+
+  it('renders names as plain text (no link) when no navigation handler is provided', () => {
+    renderBody({
+      accounts: [ACC_REAL_NAMED, ACC_REAL_2_NAMED],
+      survivorSuggestedId: ACC_REAL_NAMED.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+      // onNavigateToPhoneGroup omitted
+    });
+    expect(
+      screen.queryByTestId(`conflict-account-link-${ACC_REAL_NAMED.id}`),
+    ).not.toBeInTheDocument();
+    // The name is still shown
+    expect(screen.getByTestId('conflict-real-accounts')).toHaveTextContent(
+      'Gabriela Varela',
+    );
+  });
+
+  it('renders the name as plain text when the account has no phone (cannot navigate)', () => {
+    const noPhone: ImportedDedupAccount = {
+      ...ACC_REAL_NAMED,
+      phone_normalized: null,
+    };
+    renderBody({
+      accounts: [noPhone, ACC_REAL_2_NAMED],
+      survivorSuggestedId: noPhone.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+      onNavigateToPhoneGroup: vi.fn(),
+    });
+    // No-phone account is not a link; the other (with phone) is
+    expect(
+      screen.queryByTestId(`conflict-account-link-${noPhone.id}`),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId(`conflict-account-link-${ACC_REAL_2_NAMED.id}`),
+    ).toBeInTheDocument();
+  });
+});
+
+// ── Manual conflict override (allowConflictOverride) ───────────────────────────
+// In the manual-merge flow the operator deliberately picked the accounts, so a
+// 2+ real conflict is NOT blocked: an amber confirm banner replaces the red
+// block, names who is kept vs deleted, and gates the merge on a checkbox.
+
+describe('MergeDirectModeBody — manual conflict override', () => {
+  function renderOverride(overrides: Partial<MergeDirectModeBodyProps> = {}) {
+    return renderBody({
+      accounts: [ACC_REAL_NAMED, ACC_REAL_2_NAMED],
+      survivorSuggestedId: ACC_REAL_NAMED.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+      allowConflictOverride: true,
+      ...overrides,
+    });
+  }
+
+  it('shows the amber confirm banner, NOT the red block banner', () => {
+    renderOverride();
+    expect(screen.getByTestId('manual-conflict-confirm')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('imported-conflict-banner'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('names which account is KEPT (principal) and which is DELETED (absorbed)', () => {
+    renderOverride();
+    const outcome = screen.getByTestId('manual-conflict-outcome');
+    // survivorSuggestedId = ACC_REAL_NAMED → kept; the other → deleted
+    expect(outcome).toHaveTextContent('Gabriela Varela');
+    expect(outcome).toHaveTextContent('Javier Bernal');
+  });
+
+  it('merge button is DISABLED until the operator confirms same person', () => {
+    renderOverride();
+    const btn = screen.getByTestId(
+      'imported-merge-confirm-btn',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('manual-conflict-confirm-checkbox'));
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('after confirming, merge fires with the suggested survivor + absorbed id', async () => {
+    mockMerge.mockResolvedValue({
+      survivorId: ACC_REAL_NAMED.id,
+      absorbedIds: [ACC_REAL_2_NAMED.id],
+      mergedAt: '',
+    });
+    renderOverride();
+
+    fireEvent.click(screen.getByTestId('manual-conflict-confirm-checkbox'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('imported-merge-confirm-btn'));
+    });
+
+    // Audit: manual flow tags source='manual' + the explicit confirmation.
+    expect(mockMerge).toHaveBeenCalledWith({
+      survivorId: ACC_REAL_NAMED.id,
+      absorbedIds: [ACC_REAL_2_NAMED.id],
+      source: 'manual',
+      confirmedSamePerson: true,
+    });
+  });
+
+  it('operator can switch which account is kept before confirming (changes absorbed)', async () => {
+    mockMerge.mockResolvedValue({
+      survivorId: ACC_REAL_2_NAMED.id,
+      absorbedIds: [ACC_REAL_NAMED.id],
+      mergedAt: '',
+    });
+    renderOverride();
+
+    // Switch principal to the other account (Javier)
+    fireEvent.click(screen.getByRole('button', { name: /Hacer principal/i }));
+
+    fireEvent.click(screen.getByTestId('manual-conflict-confirm-checkbox'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('imported-merge-confirm-btn'));
+    });
+
+    expect(mockMerge).toHaveBeenCalledWith({
+      survivorId: ACC_REAL_2_NAMED.id,
+      absorbedIds: [ACC_REAL_NAMED.id],
+      source: 'manual',
+      confirmedSamePerson: true,
+    });
+  });
+
+  it('does NOT override for the Importados flow (allowConflictOverride falsy → still blocks)', () => {
+    renderBody({
+      accounts: [ACC_REAL_NAMED, ACC_REAL_2_NAMED],
+      survivorSuggestedId: ACC_REAL_NAMED.id,
+      survivorReason: 'conflict_multiple_real_accounts',
+      // allowConflictOverride omitted
+    });
+    expect(screen.getByTestId('imported-conflict-banner')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('manual-conflict-confirm'),
+    ).not.toBeInTheDocument();
+    const btn = screen.getByTestId(
+      'imported-merge-confirm-btn',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+});
+
 // ── Merge button disabled state ───────────────────────────────────────────────
 
 describe('MergeDirectModeBody — merge button disabled for conflict', () => {
@@ -190,9 +408,11 @@ describe('MergeDirectModeBody — handleMerge payload', () => {
       fireEvent.click(btn);
     });
 
+    // Audit: Importados flow tags source='imported' (no confirmation needed).
     expect(mockMerge).toHaveBeenCalledWith({
       survivorId: ACC_REAL.id,
       absorbedIds: [ACC_IMP.id],
+      source: 'imported',
     });
   });
 
@@ -385,6 +605,7 @@ describe('MergeDirectModeBody — onSelectSurvivor changes survivor', () => {
     expect(mockMerge).toHaveBeenCalledWith({
       survivorId: ACC_IMP.id,
       absorbedIds: [ACC_REAL.id],
+      source: 'imported',
     });
   });
 
@@ -440,6 +661,101 @@ describe('AdminDedupApiService.getImportedGroups — method/path/query', () => {
     mockMerge.mockResolvedValue({ survivorId: 'x', absorbedIds: ['y'], mergedAt: '' });
     const result = await mockMerge({ survivorId: 'x', absorbedIds: ['y'] });
     expect(result.survivorId).toBe('x');
+  });
+});
+
+// ── Advanced field chooser (manual-merge flow) ────────────────────────────────
+//
+// When fieldComparisons is provided (manual-merge flow), MergeAdvancedFields
+// must be rendered. When absent (Importados tab), it must NOT appear.
+
+const FIELD_CONFLICT: DedupFieldComparison = {
+  field: 'firstName',
+  values: {
+    [ACC_REAL.id]: 'María',
+    [ACC_IMP.id]: 'Maria',
+  },
+  is_encrypted: false,
+  has_conflict: true,
+};
+
+describe('MergeDirectModeBody — advanced field chooser (manual-merge flow)', () => {
+  it('with fieldComparisons → MergeAdvancedFields toggle ("Avanzado") is rendered', () => {
+    renderBody({
+      fieldComparisons: [FIELD_CONFLICT],
+    });
+    // MergeAdvancedFields renders a button[aria-expanded] as the toggle when conflicts exist
+    expect(document.querySelector('button[aria-expanded]')).not.toBeNull();
+  });
+
+  it('with fieldComparisons and no conflicts → MergeAdvancedFields is NOT rendered', () => {
+    const noConflict: DedupFieldComparison = {
+      ...FIELD_CONFLICT,
+      has_conflict: false,
+    };
+    renderBody({ fieldComparisons: [noConflict] });
+    expect(document.querySelector('button[aria-expanded]')).toBeNull();
+  });
+
+  it('without fieldComparisons → MergeAdvancedFields is NOT rendered (Importados regression)', () => {
+    renderBody(); // DEFAULT_PROPS has no fieldComparisons
+    expect(document.querySelector('button[aria-expanded]')).toBeNull();
+    expect(screen.queryByText(/Avanzado/i)).not.toBeInTheDocument();
+  });
+
+  it('choosing a field value adds fieldChoices to the merge payload', async () => {
+    mockMerge.mockResolvedValue({
+      survivorId: ACC_REAL.id,
+      absorbedIds: [ACC_IMP.id],
+      mergedAt: '',
+    });
+
+    renderBody({ fieldComparisons: [FIELD_CONFLICT] });
+
+    // Expand the "Avanzado" section
+    const toggle = document.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Pick the second account button (ACC_IMP) for the 'firstName' field
+    const fieldButtons = document.querySelectorAll('.flex.flex-wrap.gap-2 button');
+    await act(async () => {
+      fireEvent.click(fieldButtons[1]); // ACC_IMP button
+    });
+
+    // Confirm merge
+    const confirmBtn = screen.getByTestId('imported-merge-confirm-btn');
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(mockMerge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        survivorId: ACC_REAL.id,
+        absorbedIds: [ACC_IMP.id],
+        fieldChoices: { firstName: ACC_IMP.id },
+      }),
+    );
+  });
+
+  it('without choosing any field value → fieldChoices NOT in payload', async () => {
+    mockMerge.mockResolvedValue({
+      survivorId: ACC_REAL.id,
+      absorbedIds: [ACC_IMP.id],
+      mergedAt: '',
+    });
+
+    // fieldComparisons provided but operator does not interact with the chooser
+    renderBody({ fieldComparisons: [FIELD_CONFLICT] });
+
+    const confirmBtn = screen.getByTestId('imported-merge-confirm-btn');
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    const payload = mockMerge.mock.calls[0][0];
+    expect('fieldChoices' in payload).toBe(false);
   });
 });
 

@@ -104,11 +104,11 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
 
   // ── C1 — Estado vazio ─────────────────────────────────────────────────────
 
-  test('C1 — kanban vazio: 7 colunas com 0 cards', async ({ page }) => {
+  test('C1 — kanban vazio: 8 colunas com 0 cards', async ({ page }) => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    const colIds = ['INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+    const colIds = ['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
     for (const id of colIds) {
       await expect(page.locator(`[data-testid="kanban-column-${id}-count"]`)).toHaveText('0');
     }
@@ -119,9 +119,9 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     );
   });
 
-  // ── C2 — INITIATED ────────────────────────────────────────────────────────
+  // ── C2 — PRE_SCREENING (webhook Talentum INITIATED) ──────────────────────
 
-  test('C2 — webhook INITIATED: card aparece na coluna INITIATED', async ({ page, request }) => {
+  test('C2 — webhook INITIATED: card aparece na coluna PRE_SCREENING (renomeada de INITIATED)', async ({ page, request }) => {
     await loginAsKanbanAdmin(page);
 
     const opts: TalentumWebhookOpts = {
@@ -137,9 +137,9 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     expect(await sendTalentumWebhook(request, opts)).toBe(200);
 
     const encId = await getEncuadreId(request, worker1Id, vacancyId);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'INITIATED');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'PRE_SCREENING');
 
-    await expect(page.locator('[data-testid="kanban-column-INITIATED-count"]')).toHaveText('1');
+    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('1');
     await expect(page.locator('[data-testid="kanban-column-INVITED-count"]')).toHaveText('0');
 
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
@@ -170,7 +170,7 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'IN_PROGRESS');
 
     await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]')).toHaveText('1');
-    await expect(page.locator('[data-testid="kanban-column-INITIATED-count"]')).toHaveText('0');
+    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('0');
 
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
       'vacancy-kanban-in-progress.png',
@@ -330,11 +330,11 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     ).toBe(200);
 
     const enc3Id = await getEncuadreId(request, worker3Id, vacancyId);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${enc3Id}`, 'INITIATED');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${enc3Id}`, 'PRE_SCREENING');
 
     // Contadores esperados:
-    // INITIATED=1 (worker3), IN_PROGRESS=1 (worker4), COMPLETED=2 (worker1 QUALIFIED + worker2 NOT_QUALIFIED)
-    await expect(page.locator('[data-testid="kanban-column-INITIATED-count"]')).toHaveText('1');
+    // PRE_SCREENING=1 (worker3), IN_PROGRESS=1 (worker4), COMPLETED=2 (worker1 QUALIFIED + worker2 NOT_QUALIFIED)
+    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('1');
     await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]')).toHaveText('1');
     await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('2');
 

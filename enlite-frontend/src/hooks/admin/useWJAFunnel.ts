@@ -13,7 +13,7 @@ const POLL_INTERVAL_MS = 5_000;
 
 interface FunnelEncuadre {
   id: string;
-  /** encuadreId is null for WJAs that have no encuadre yet (orphans). Drag is blocked in that case. */
+  /** encuadreId is null for WJAs that have no encuadre yet (orphans or blocked attempts). Drag is blocked in that case. */
   encuadreId: string | null;
   workerId: string | null;
   workerName: string | null;
@@ -34,11 +34,20 @@ interface FunnelEncuadre {
   redireccionamiento: string | null;
   acquisitionChannel?: string | null;
   internalStage?: string | null;
+  /** INICIADO column: true when the worker was blocked by the gate (worker_blocked_applications) */
+  isBlocked?: boolean;
+  /** Reason the gate blocked the attempt: worker_not_found | registration_incomplete | worker_disabled */
+  blockedReason?: string;
+  /** List of field keys that need to be completed for registration_incomplete */
+  missingFields?: string[];
+  /** How many times this worker attempted to apply to this vacancy */
+  attemptCount?: number;
 }
 
 export interface FunnelStages {
   INVITED: FunnelEncuadre[];
-  INITIATED: FunnelEncuadre[];
+  INICIADO: FunnelEncuadre[];
+  PRE_SCREENING: FunnelEncuadre[];
   IN_PROGRESS: FunnelEncuadre[];
   COMPLETED: FunnelEncuadre[];
   CONFIRMED: FunnelEncuadre[];

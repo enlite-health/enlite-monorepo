@@ -8,6 +8,9 @@
  *   2. list() — total = 0 quando countResult.rows[0] é undefined (branch ?? 0)
  *   3. aggregates() — byReason e totalBlocked corretos para múltiplas linhas
  *   4. list() — acquisitionChannel null (branch ?? null)
+ *   5. listByVacancy() — retorna BlockedAttemptForFunnelDto corretamente (migration 230)
+ *   6. listByVacancy() — missingFields=[] branch defensivo
+ *   7. listByVacancy() — workerId null (worker_not_found)
  *
  * Nota: testes com banco real ficam em
  *   tests/e2e/blocked-application-repositories.integration.test.ts
@@ -164,5 +167,87 @@ describe('BlockedApplicationQueryRepository', () => {
 
     expect(agg.totalBlocked).toBe(0);
     expect(agg.byReason).toEqual({});
+  });
+
+  // ── listByVacancy() — migration 230 ──────────────────────────────
+  // Usado pelo WJAFunnelController para montar a coluna INICIADO do kanban.
+
+  it('listByVacancy() retorna BlockedAttemptForFunnelDto mapeado corretamente', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: 'ba-1',
+        worker_id: WORKER_ID,
+        blocked_reason: 'registration_incomplete',
+        missing_fields: ['profession', 'phone'],
+        attempt_count: 3,
+        acquisition_channel: 'facebook',
+        last_attempted_at: NOW_DATE,
+      }],
+    });
+
+    const result = await repo.listByVacancy(JOB_ID);
+
+    expect(result).toHaveLength(1);
+    const item = result[0];
+    expect(item.id).toBe('ba-1');
+    expect(item.workerId).toBe(WORKER_ID);
+    expect(item.blockedReason).toBe('registration_incomplete');
+    expect(item.missingFields).toEqual(['profession', 'phone']);
+    expect(item.attemptCount).toBe(3);
+    expect(item.acquisitionChannel).toBe('facebook');
+    expect(item.lastAttemptedAt).toBe(NOW_DATE.toISOString());
+  });
+
+  it('listByVacancy() inclui NOT EXISTS para dedup (query SQL deve ter NOT EXISTS)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await repo.listByVacancy(JOB_ID);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('NOT EXISTS');
+    expect(sql).toContain('worker_job_applications');
+    expect(sql).toContain('wja.worker_id  = wba.worker_id');
+    expect(sql).toContain('wja.job_posting_id = wba.job_posting_id');
+  });
+
+  it('listByVacancy() — missingFields = [] quando missing_fields não é array (branch defensivo)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: 'ba-2',
+        worker_id: WORKER_ID,
+        blocked_reason: 'registration_incomplete',
+        missing_fields: null, // não é array
+        attempt_count: 1,
+        acquisition_channel: null,
+        last_attempted_at: NOW_DATE,
+      }],
+    });
+
+    const result = await repo.listByVacancy(JOB_ID);
+    expect(result[0].missingFields).toEqual([]);
+  });
+
+  it('listByVacancy() — workerId = null quando worker_not_found', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: 'ba-3',
+        worker_id: null, // worker_not_found
+        blocked_reason: 'worker_not_found',
+        missing_fields: [],
+        attempt_count: 1,
+        acquisition_channel: null,
+        last_attempted_at: NOW_DATE,
+      }],
+    });
+
+    const result = await repo.listByVacancy(JOB_ID);
+    expect(result[0].workerId).toBeNull();
+  });
+
+  it('listByVacancy() — retorna lista vazia quando não há bloqueados', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const result = await repo.listByVacancy(JOB_ID);
+    expect(result).toHaveLength(0);
   });
 });

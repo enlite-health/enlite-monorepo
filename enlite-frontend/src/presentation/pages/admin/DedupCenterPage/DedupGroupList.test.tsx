@@ -129,6 +129,71 @@ describe('DedupGroupList — table rows rendering', () => {
   });
 });
 
+// ── Prestador column: name above phone ─────────────────────────────────────────
+
+describe('DedupGroupList — prestador (name + phone) column', () => {
+  it('renders the account name above the phone when accounts have a name', () => {
+    const group: DedupGroupSummary = {
+      phone_normalized: '+5491234567890',
+      accounts: [
+        makeAccount('acc-1', { name: 'Gabriela Varela' }),
+        makeAccount('acc-2', { name: 'Gabriela Varela', login_real: false }),
+      ],
+      survivor_suggested: 'acc-1',
+    };
+    render(<DedupGroupList {...defaultProps([group])} />);
+    expect(screen.getByText('Gabriela Varela')).toBeInTheDocument();
+    expect(screen.getByText('+5491234567890')).toBeInTheDocument();
+  });
+
+  it('joins DISTINCT names when the same phone has different names', () => {
+    const group: DedupGroupSummary = {
+      phone_normalized: '+5491234567891',
+      accounts: [
+        makeAccount('acc-1', { name: 'Gabriela Varela' }),
+        makeAccount('acc-2', { name: 'Javier Bernal' }),
+      ],
+      survivor_suggested: 'acc-1',
+    };
+    render(<DedupGroupList {...defaultProps([group])} />);
+    expect(
+      screen.getByText('Gabriela Varela · Javier Bernal'),
+    ).toBeInTheDocument();
+  });
+
+  it('deduplicates identical names into a single label', () => {
+    const group: DedupGroupSummary = {
+      phone_normalized: '+5491234567892',
+      accounts: [
+        makeAccount('acc-1', { name: 'Ana Pérez' }),
+        makeAccount('acc-2', { name: 'Ana Pérez' }),
+      ],
+      survivor_suggested: 'acc-1',
+    };
+    render(<DedupGroupList {...defaultProps([group])} />);
+    // Single combined label, not "Ana Pérez · Ana Pérez"
+    expect(screen.getByText('Ana Pérez')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Ana Pérez · Ana Pérez'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('falls back to the noName key when no account has a name', () => {
+    // GROUP_A fixtures have no name → fallback label renders, phone still shows
+    render(<DedupGroupList {...defaultProps([GROUP_A])} />);
+    expect(screen.getByText('admin.dedup.table.noName')).toBeInTheDocument();
+    expect(screen.getByText(GROUP_A.phone_normalized)).toBeInTheDocument();
+  });
+
+  it('uses the renamed column header key (table.account, not table.phone)', () => {
+    render(<DedupGroupList {...defaultProps([GROUP_A])} />);
+    expect(screen.getByText('admin.dedup.table.account')).toBeInTheDocument();
+    expect(
+      screen.queryByText('admin.dedup.table.phone'),
+    ).not.toBeInTheDocument();
+  });
+});
+
 // ── Checkbox — row selection ───────────────────────────────────────────────────
 // Note: i18n returns the key in tests (no translations loaded), so we cannot
 // look up checkboxes by interpolated phone. We use index-based queries instead.

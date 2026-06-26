@@ -7,7 +7,7 @@
  *   1. Vacancy with no candidates → rows=[], all counts zero
  *   2. Vacancy with 5 workers in distinct stages:
  *        W1: INVITED stage, no WhatsApp dispatch      → INVITED bucket, NOT_SENT
- *        W2: INITIATED stage, WhatsApp DELIVERED       → POSTULATED bucket, DELIVERED
+ *        W2: PRE_SCREENING stage, WhatsApp DELIVERED    → POSTULATED bucket, DELIVERED (migration 230)
  *        W3: COMPLETED stage, WhatsApp READ            → POSTULATED bucket, READ
  *        W4: SELECTED stage, interview confirmed       → PRE_SELECTED bucket, REPLIED
  *        W5: REJECTED stage, interview declined        → WITHDREW bucket  (declined overrides bucket)
@@ -104,12 +104,12 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
       expect(row.accepted).toBeNull();
     });
 
-    it('W2 (INITIATED, WhatsApp DELIVERED) → bucket POSTULATED, whatsappStatus DELIVERED', async () => {
+    it('W2 (PRE_SCREENING, WhatsApp DELIVERED) → bucket POSTULATED, whatsappStatus DELIVERED (migration 230)', async () => {
       const res = await api.get(`/api/admin/vacancies/${IDS.jobFull}/funnel-table`, auth());
       const row = (res.data.data.rows as any[]).find((r: any) => r.workerId === IDS.w2);
 
       expect(row).toBeDefined();
-      expect(row.funnelStage).toBe('INITIATED');
+      expect(row.funnelStage).toBe('PRE_SCREENING'); // migration 230: INITIATED → PRE_SCREENING
       expect(row.whatsappStatus).toBe('DELIVERED');
     });
 
@@ -150,7 +150,7 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
 
       // W1 → INVITED
       expect(counts.INVITED).toBe(1);
-      // W2 (INITIATED) + W3 (COMPLETED) → POSTULATED
+      // W2 (PRE_SCREENING, migration 230) + W3 (COMPLETED) → POSTULATED
       expect(counts.POSTULATED).toBe(2);
       // W4 (SELECTED) → PRE_SELECTED
       expect(counts.PRE_SELECTED).toBe(1);
@@ -299,8 +299,8 @@ async function seedFixtures(pool: Pool): Promise<void> {
     stage: string;
     ir: string | null;
   }> = [
-    { wid: IDS.w1, stage: 'INVITED',   ir: null },
-    { wid: IDS.w2, stage: 'INITIATED', ir: null },
+    { wid: IDS.w1, stage: 'INVITED',        ir: null },
+    { wid: IDS.w2, stage: 'PRE_SCREENING', ir: null }, // migration 230: INITIATED → PRE_SCREENING
     { wid: IDS.w3, stage: 'COMPLETED', ir: null },
     { wid: IDS.w4, stage: 'SELECTED',  ir: 'confirmed' },
     { wid: IDS.w5, stage: 'REJECTED',  ir: 'declined' },

@@ -17,6 +17,8 @@ import type {
   MergeHistoryItem,
   UndoResult,
   ImportedDedupGroup,
+  CandidateItem,
+  ManualGroupResult,
 } from '@domain/entities/DedupGroup';
 
 interface ApiSuccessResponse<T> {
@@ -137,6 +139,34 @@ class AdminDedupApiServiceClass {
     return this.request<ImportedDedupGroup[]>(
       'GET',
       `/api/admin/dedup/imported-groups?${qs}`,
+    );
+  }
+
+  /**
+   * GET /api/admin/dedup/candidates?q=<texto>&limit=<n>
+   * Searches workers by name or phone for the manual-merge flow.
+   * Returns [] when q has fewer than 2 chars (enforced by backend).
+   */
+  async searchCandidates(q: string, limit = 8): Promise<CandidateItem[]> {
+    const qs = `q=${encodeURIComponent(q)}&limit=${limit}`;
+    return this.request<CandidateItem[]>(
+      'GET',
+      `/api/admin/dedup/candidates?${qs}`,
+    );
+  }
+
+  /**
+   * POST /api/admin/dedup/manual-group  body { ids: string[] }
+   * Builds a comparison group from two explicit account ids.
+   * Returns the same shape as an ImportedDedupGroup (direct-mode ready).
+   * survivor_reason='conflict_multiple_real_accounts' → MergeDirectModeBody
+   * blocks the merge button and redirects to the Fila tab (desired behaviour).
+   */
+  async buildManualGroup(ids: [string, string]): Promise<ManualGroupResult> {
+    return this.request<ManualGroupResult>(
+      'POST',
+      '/api/admin/dedup/manual-group',
+      { ids },
     );
   }
 }

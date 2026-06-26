@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@presentation/hooks/useAuth';
 import {
   useWorkerRegistrationStore,
@@ -15,14 +16,25 @@ import { AvailabilityTab } from './tabs/AvailabilityTab';
 import { DocumentsTab } from './tabs/DocumentsTab';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import type { TabId } from '@presentation/utils/incompleteFieldDestinations';
 
-type TabId = 'general' | 'address' | 'availability' | 'documents';
+const VALID_TABS: TabId[] = ['general', 'address', 'availability', 'documents'];
+
+/** Classe de highlight transitório aplicado ao alvo do focus */
+const HIGHLIGHT_CLASS = 'ring-2 ring-primary ring-offset-2 rounded';
+/** Duração do highlight em ms */
+const HIGHLIGHT_DURATION_MS = 2000;
+
+function isValidTab(value: string | null): value is TabId {
+  return VALID_TABS.includes(value as TabId);
+}
 
 export function WorkerProfilePage(): JSX.Element {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navItems = useWorkerNavItems();
   const { getProgress, initWorker } = useWorkerApi();
+  const [searchParams] = useSearchParams();
 
   // Use individual selectors to prevent re-renders
   const setMode = useWorkerRegistrationStore((state) => state.setMode);
@@ -31,7 +43,12 @@ export function WorkerProfilePage(): JSX.Element {
   const hydrateFromServer = useWorkerRegistrationStore((state) => state.hydrateFromServer);
   const profilePhoto = useWorkerRegistrationStore((state) => state.data.generalInfo.profilePhoto);
 
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+  const tabParam = searchParams.get('tab');
+  const focusParam = searchParams.get('focus');
+
+  const [activeTab, setActiveTab] = useState<TabId>(
+    isValidTab(tabParam) ? tabParam : 'general',
+  );
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -93,6 +110,43 @@ export function WorkerProfilePage(): JSX.Element {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  // Sync tab from searchParams when they change (e.g., deep link from modal)
+  useEffect(() => {
+    if (isValidTab(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  // Scroll and highlight the focus target after tab renders
+  useEffect(() => {
+    if (isInitializing || !focusParam) return;
+
+    // Small delay to let the tab content render
+    const timer = setTimeout(() => {
+      let target: Element | null = null;
+
+      if (activeTab === 'documents') {
+        target = document.querySelector(`[data-testid="doc-slot-${focusParam}"]`);
+      } else {
+        target = document.getElementById(focusParam);
+      }
+
+      if (!target) return;
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Apply transitional highlight
+      target.classList.add(...HIGHLIGHT_CLASS.split(' '));
+      const removeHighlight = setTimeout(() => {
+        target?.classList.remove(...HIGHLIGHT_CLASS.split(' '));
+      }, HIGHLIGHT_DURATION_MS);
+
+      return () => clearTimeout(removeHighlight);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [activeTab, focusParam, isInitializing]);
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'general', label: t('profile.tabs.general', 'Informações Gerais') },

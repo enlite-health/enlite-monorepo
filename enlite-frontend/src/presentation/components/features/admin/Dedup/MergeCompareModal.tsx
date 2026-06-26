@@ -54,6 +54,11 @@ interface DirectAccountsModeProps {
 type MergeCompareModalProps = (PhoneModeProps | DirectAccountsModeProps) & {
   onClose: () => void;
   onMergeSuccess: () => void;
+  /**
+   * Direct mode only: clicking a real account's name in the conflict banner
+   * jumps to that account's group in the Fila tab. Ignored in phone mode.
+   */
+  onNavigateToPhoneGroup?: (phoneNormalized: string) => void;
 };
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
@@ -142,6 +147,7 @@ export function MergeCompareModal(props: MergeCompareModalProps) {
             survivorReason={props.survivorReason}
             onClose={onClose}
             onMergeSuccess={onMergeSuccess}
+            onNavigateToPhoneGroup={props.onNavigateToPhoneGroup}
           />
         ) : (
           <MergePhoneModeBody

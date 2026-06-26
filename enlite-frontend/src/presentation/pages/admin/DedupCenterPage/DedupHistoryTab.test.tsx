@@ -29,6 +29,11 @@ const ITEM_UNDOABLE: MergeHistoryItem = {
   category: 'firebase',
   created_at: '2026-06-22T10:00:00Z',
   can_undo: true,
+  executed_by: 'admin-uid-1',
+  executed_by_email: 'e2e.admin@enlite.health',
+  source: 'fila',
+  confirmed_same_person: false,
+  undone_by_email: null,
 };
 
 const ITEM_NOT_UNDOABLE: MergeHistoryItem = {
@@ -41,6 +46,11 @@ const ITEM_NOT_UNDOABLE: MergeHistoryItem = {
   category: 'most_complete',
   created_at: '2026-06-21T08:00:00Z',
   can_undo: false,
+  executed_by: 'admin-uid-2',
+  executed_by_email: 'e2e.recruiter@enlite.health',
+  source: 'manual',
+  confirmed_same_person: true,
+  undone_by_email: null,
 };
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -144,6 +154,31 @@ describe('DedupHistoryTab — table rows', () => {
     // Raw survivor_id UUID must NOT appear in the document
     expect(screen.queryByText('acc-survivor-001')).not.toBeInTheDocument();
     expect(screen.queryByText('acc-absorbed-002')).not.toBeInTheDocument();
+  });
+
+  it('renders "Hecho por" with the executing admin email for each row', () => {
+    renderTab();
+    expect(screen.getByText('e2e.admin@enlite.health')).toBeInTheDocument();
+    expect(screen.getByText('e2e.recruiter@enlite.health')).toBeInTheDocument();
+  });
+
+  it('flags a manual same-person-confirmed merge with a badge', () => {
+    renderTab();
+    // ITEM_NOT_UNDOABLE has confirmed_same_person=true → badge (i18n key in tests)
+    expect(
+      screen.getByText('admin.dedup.history.confirmedSamePersonBadge'),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to "system" actor label when there is no executor email/uid', () => {
+    renderTab({
+      history: [
+        { ...ITEM_UNDOABLE, executed_by: 'system', executed_by_email: null },
+      ],
+    });
+    expect(
+      screen.getByText('admin.dedup.history.systemActor'),
+    ).toBeInTheDocument();
   });
 });
 

@@ -32,6 +32,11 @@ export class ListMergeHistoryUseCase {
       created_at: Date;
       has_snapshot: boolean;
       undone_at: Date | null;
+      executed_by: string | null;
+      executed_by_email: string | null;
+      source: string | null;
+      confirmed_same_person: boolean | null;
+      undone_by_email: string | null;
     }>(
       `SELECT
          a.id,
@@ -42,6 +47,11 @@ export class ListMergeHistoryUseCase {
          a.fields_filled,
          a.exceptions,
          a.created_at,
+         a.executed_by,
+         a.executed_by_email,
+         a.source,
+         a.confirmed_same_person,
+         a.undone_by_email,
          s.id IS NOT NULL                    AS has_snapshot,
          s.undone_at
        FROM worker_merge_audit a
@@ -70,6 +80,11 @@ export class ListMergeHistoryUseCase {
       exceptions: r.exceptions ?? [],
       created_at: r.created_at.toISOString(),
       can_undo: r.has_snapshot && r.undone_at == null,
+      executed_by: r.executed_by ?? null,
+      executed_by_email: r.executed_by_email ?? null,
+      source: r.source ?? null,
+      confirmed_same_person: r.confirmed_same_person ?? null,
+      undone_by_email: r.undone_by_email ?? null,
     }));
 
     log.info({ msg: 'list_merge_history_done', total: entries.length });

@@ -55,6 +55,18 @@ function renderFieldValue(t: TFunction, field: string, raw: string | null): stri
   return raw;
 }
 
+/**
+ * Rótulo humano da conta pro operador não-técnico: prioriza NOME; nunca mostra
+ * o email sintético "@enlite.import" nem o UUID se houver algo melhor.
+ */
+function accountLabel(account: DedupAccount): string {
+  const name = account.name?.trim();
+  if (name) return name;
+  const email = account.email;
+  if (email && !email.toLowerCase().includes('@enlite.import')) return email;
+  return account.id.slice(0, 8);
+}
+
 interface MergeAdvancedFieldsProps {
   fieldComparisons: DedupFieldComparison[];
   accounts: DedupAccount[];
@@ -142,7 +154,7 @@ export function MergeAdvancedFields({
                             : 'border-slate-200 bg-white hover:border-slate-300'
                         }`}
                         aria-pressed={isChosen}
-                        aria-label={`${account.email ?? account.id}: ${displayValue ?? '—'}`}
+                        aria-label={`${accountLabel(account)}: ${displayValue ?? '—'}`}
                       >
                         {field.is_encrypted ? (
                           <Lock
@@ -158,7 +170,7 @@ export function MergeAdvancedFields({
                           )}
                         </Text>
                         <Text as="span" size="xs" color="muted">
-                          ({account.email ?? account.id.slice(0, 8)})
+                          ({accountLabel(account)})
                         </Text>
                       </button>
                     );

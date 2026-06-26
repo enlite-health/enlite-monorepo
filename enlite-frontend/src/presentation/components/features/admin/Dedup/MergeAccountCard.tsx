@@ -6,7 +6,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Phone } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -34,6 +34,13 @@ export function MergeAccountCard({
 }: MergeAccountCardProps) {
   const { t } = useTranslation();
 
+  // Operador não-técnico: priorizar NOME + TELEFONE. Email só aparece quando é
+  // real e útil; o sintético "@enlite.import" é ruído e fica escondido.
+  const displayName = account.name?.trim() || null;
+  const isSyntheticEmail = !!account.email && account.email.toLowerCase().includes('@enlite.import');
+  const titleText = displayName ?? account.email ?? t('admin.dedup.merge.noEmail', 'Sin email');
+  const secondaryEmail = displayName && account.email && !isSyntheticEmail ? account.email : null;
+
   return (
     <div
       className={`rounded-xl border p-4 flex flex-col gap-3 transition-all ${
@@ -43,12 +50,12 @@ export function MergeAccountCard({
       }`}
       data-testid={`merge-account-card-${account.id}`}
     >
-      {/* Header — email truncates so the long @enlite.import addresses of
-          imported accounts never squeeze the layout (full address in tooltip). */}
+      {/* Header — NOME em destaque (não o email). Telefone logo abaixo; o
+          email sintético @enlite.import nunca aparece pro operador. */}
       <div className="flex items-start justify-between gap-2">
         <div
           className="flex flex-col gap-0.5 min-w-0"
-          title={account.email ?? undefined}
+          title={displayName ?? account.email ?? undefined}
         >
           <Heading
             level={4}
@@ -56,8 +63,21 @@ export function MergeAccountCard({
             color={isSurvivor ? 'primary' : undefined}
             className="truncate"
           >
-            {account.email ?? t('admin.dedup.merge.noEmail', 'Sin email')}
+            {titleText}
           </Heading>
+          {account.phone_normalized && (
+            <span className="flex items-center gap-1 text-slate-500 min-w-0">
+              <Phone className="w-3 h-3 shrink-0" />
+              <Text as="span" size="xs" color="muted" className="truncate">
+                {account.phone_normalized}
+              </Text>
+            </span>
+          )}
+          {secondaryEmail && (
+            <Text as="span" size="xs" color="muted" className="truncate">
+              {secondaryEmail}
+            </Text>
+          )}
           <span
             className={`inline-flex w-fit px-2 py-0.5 rounded-full ${
               isSurvivor
@@ -66,7 +86,7 @@ export function MergeAccountCard({
             }`}
           >
             <Text as="span" size="xs" weight="medium" color="inherit">
-              {t(`admin.dedup.tier.${account.tier}`, { defaultValue: account.tier })}
+              {t(`admin.dedup.tier.${account.status}`, { defaultValue: account.status })}
             </Text>
           </span>
         </div>
