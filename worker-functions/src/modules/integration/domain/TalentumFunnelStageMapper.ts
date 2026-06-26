@@ -25,7 +25,9 @@ export type TalentumProviderStatus = string;
 export class TalentumFunnelStageMapper implements FunnelStageMapper<TalentumProviderStatus> {
   private static readonly KNOWN_STAGES = new Map<string, FunnelStage>([
     ['INVITED',       'INVITED'],
-    ['INITIATED',     'INITIATED'],
+    // Migration 230 (2026-06-26): INITIATED (Talentum webhook subtype) → PRE_SCREENING (canônico interno)
+    // O Zod do webhook continua aceitando 'INITIATED' como subtype — apenas a conversão interna muda.
+    ['INITIATED',     'PRE_SCREENING'],
     ['IN_PROGRESS',   'IN_PROGRESS'],
     ['COMPLETED',     'COMPLETED'],
     ['ANALYZED',      'ANALYZED'],

@@ -499,6 +499,9 @@
     "monotributo": "Certificado de Monotributo",
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",
+    "atRequiredPending": "Para postularte como Acompañante Terapéutico necesitás subir:",
+    "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
+    "requiredBadge": "Obligatorio",
     "additionalTitle": "Otros Documentos",
     "addDocument": "Agregar",
     "labelPlaceholder": "Nombre del documento (ej: Certificado Primeros Auxilios)",
@@ -963,12 +966,13 @@
     "kanban": {
       "columns": {
         "INVITED": "Invitados",
-        "INITIATED": "Iniciado",
         "IN_PROGRESS": "En Progreso",
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",
         "SELECTED": "Seleccionados",
-        "REJECTED": "Rechazados"
+        "REJECTED": "Rechazados",
+        "INICIADO": "Iniciados",
+        "PRE_SCREENING": "Pre Screening"
       },
       "talentumStatus": {
         "INITIATED": "Talentum: Iniciado",
@@ -977,7 +981,8 @@
         "PENDING": "Talentum: Analizando...",
         "QUALIFIED": "Talentum: Calificado",
         "IN_DOUBT": "Talentum: En duda",
-        "NOT_QUALIFIED": "Talentum: No calificado"
+        "NOT_QUALIFIED": "Talentum: No calificado",
+        "PRE_SCREENING": "Talentum: Pre Screening"
       },
       "rejectionLabels": {
         "DISTANCE": "Distancia",
@@ -1021,7 +1026,10 @@
         "DEPENDENCY_MISMATCH": "Nivel de dependencia",
         "TALENTUM_NOT_QUALIFIED": "Talentum: No calificado",
         "OTHER": "Otro motivo"
-      }
+      },
+      "blockedBadge": "BLOQUEADO",
+      "blockedAttemptCount_one": "Intentó {{count}} vez",
+      "blockedAttemptCount_other": "Intentó {{count}} veces"
     },
     "workerDetail": {
       "status": "Estado del Prestador",

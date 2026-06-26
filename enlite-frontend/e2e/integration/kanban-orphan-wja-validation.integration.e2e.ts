@@ -161,14 +161,14 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     await loginAndOpenKanban(page);
 
     const invited = await page.locator('[data-testid="kanban-column-INVITED-count"]').textContent();
-    const initiated = await page.locator('[data-testid="kanban-column-INITIATED-count"]').textContent();
+    const preScrCount = await page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]').textContent();
     const inProgress = await page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]').textContent();
 
-    console.log(`[Gate 2] Kanban: INVITED=${invited}, INITIATED=${initiated}, IN_PROGRESS=${inProgress}`);
+    console.log(`[Gate 2] Kanban: INVITED=${invited}, PRE_SCREENING=${preScrCount}, IN_PROGRESS=${inProgress}`);
 
     // Seeds garantem pelo menos 1 em cada coluna — outros testes paralelos podem adicionar mais
     expect(Number(invited), 'INVITED deve ter >= 1 card').toBeGreaterThanOrEqual(1);
-    expect(Number(initiated), 'INITIATED deve ter >= 1 card').toBeGreaterThanOrEqual(1);
+    expect(Number(preScrCount), 'PRE_SCREENING deve ter >= 1 card').toBeGreaterThanOrEqual(1);
     expect(Number(inProgress), 'IN_PROGRESS deve ter >= 1 card').toBeGreaterThanOrEqual(1);
 
     // DraggableCard deve existir pelo WJA ID
@@ -249,8 +249,8 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     });
     console.log(`[Gate 3] Screenshot: ${OUTPUT_DIR}/path2-com-fix.png`);
 
-    const initiatedCount = await page.locator('[data-testid="kanban-column-INITIATED-count"]').textContent();
-    console.log(`[Gate 3] INITIATED após webhook: ${initiatedCount}`);
+    const preScreeningCount = await page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]').textContent();
+    console.log(`[Gate 3] PRE_SCREENING após webhook: ${preScreeningCount}`);
 
     // Cleanup do worker gate3
     execSync(
@@ -404,11 +404,11 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     expect(body.success).toBe(true);
 
     const stages = body.data.stages;
-    for (const stage of ['INVITED', 'INITIATED', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED']) {
+    for (const stage of ['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED']) {
       expect(stages, `Stage ${stage} deve estar presente`).toHaveProperty(stage);
     }
 
-    console.log('[Gate 5] Contrato da API OK — todos os 7 stages presentes, fix não quebrou estrutura');
+    console.log('[Gate 5] Contrato da API OK — todos os 8 stages presentes, fix não quebrou estrutura');
     console.log(`[Gate 5] Total cards: ${body.data.totalEncuadres}`);
   });
 });

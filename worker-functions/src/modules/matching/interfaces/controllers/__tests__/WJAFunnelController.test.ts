@@ -9,10 +9,12 @@
  * Dashboard tests (getCoordinatorCapacity, getAlerts) live here too as they are small.
  *
  * Renamed from EncuadreFunnelController.test.ts in F7.a (migration 194).
+ * Migration 230 (2026-06-26): INITIATED → PRE_SCREENING + INICIADO column added.
  */
 
 const mockQuery = jest.fn();
 const mockKmsDecrypt = jest.fn();
+const mockListByVacancy = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -27,6 +29,12 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 jest.mock('@shared/security/KMSEncryptionService', () => ({
   KMSEncryptionService: jest.fn().mockImplementation(() => ({
     decrypt: mockKmsDecrypt,
+  })),
+}));
+
+jest.mock('../../../infrastructure/BlockedApplicationQueryRepository', () => ({
+  BlockedApplicationQueryRepository: jest.fn().mockImplementation(() => ({
+    listByVacancy: mockListByVacancy,
   })),
 }));
 
@@ -62,6 +70,7 @@ function makeRow(overrides: Record<string, unknown> = {}) {
     match_score: null,
     acquisition_channel: null,
     funnel_stage: null,
+    source: null,
     talentum_status: null,
     work_zone: null,
     ...overrides,
@@ -74,6 +83,8 @@ describe('WJAFunnelController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: no blocked attempts (most tests don't test that path)
+    mockListByVacancy.mockResolvedValue([]);
     // Default KMS mock: decrypta prefixo 'encrypted:' → resto. Permite asserts diretos.
     mockKmsDecrypt.mockImplementation((value: string) => {
       if (typeof value === 'string' && value.startsWith('encrypted:')) {
@@ -87,24 +98,28 @@ describe('WJAFunnelController', () => {
 
   // ═══════════════════════════════════════════════════════════════════
   // getEncuadreFunnel — classificação por application_funnel_stage
+  // Migration 230: 8 colunas (INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS,
+  //                           COMPLETED, CONFIRMED, SELECTED, REJECTED)
   // ═══════════════════════════════════════════════════════════════════
 
   describe('getEncuadreFunnel', () => {
-    it('classifica encuadres nas 7 colunas por funnel_stage', async () => {
+    it('classifica encuadres nas 8 colunas por funnel_stage (migration 230)', async () => {
+      // Migration 230: INITIATED renomeado para PRE_SCREENING; INICIADO adicionado.
       // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
       // F7.a: PLACED removido (migration 194 — 0 linhas em prod, sync F6 morta)
-      // Teste usa apenas stages canônicos pós-migration 194
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: null }),
-          makeRow({ id: 'e2', funnel_stage: 'INITIATED', talentum_status: 'INITIATED' }),
-          makeRow({ id: 'e3', funnel_stage: 'IN_PROGRESS', talentum_status: 'IN_PROGRESS' }),
-          makeRow({ id: 'e4', funnel_stage: 'COMPLETED', talentum_status: 'COMPLETED' }),
-          makeRow({ id: 'e5', funnel_stage: 'QUALIFIED', talentum_status: 'QUALIFIED' }),
-          makeRow({ id: 'e6', funnel_stage: 'IN_DOUBT', talentum_status: 'IN_DOUBT' }),
-          makeRow({ id: 'e7', funnel_stage: 'CONFIRMED' }),
-          makeRow({ id: 'e8', funnel_stage: 'SELECTED' }),
-          makeRow({ id: 'e9', funnel_stage: 'REJECTED' }),
+          makeRow({ id: 'e2', funnel_stage: 'INVITED', source: 'system' }),
+          makeRow({ id: 'e-manual', funnel_stage: 'INVITED', source: 'manual' }),
+          makeRow({ id: 'e3', funnel_stage: 'PRE_SCREENING', talentum_status: 'PRE_SCREENING' }),
+          makeRow({ id: 'e4', funnel_stage: 'IN_PROGRESS', talentum_status: 'IN_PROGRESS' }),
+          makeRow({ id: 'e5', funnel_stage: 'COMPLETED', talentum_status: 'COMPLETED' }),
+          makeRow({ id: 'e6', funnel_stage: 'QUALIFIED', talentum_status: 'QUALIFIED' }),
+          makeRow({ id: 'e7', funnel_stage: 'IN_DOUBT', talentum_status: 'IN_DOUBT' }),
+          makeRow({ id: 'e8', funnel_stage: 'CONFIRMED' }),
+          makeRow({ id: 'e9', funnel_stage: 'SELECTED' }),
+          makeRow({ id: 'e10', funnel_stage: 'REJECTED' }),
         ],
       });
 
@@ -113,41 +128,125 @@ describe('WJAFunnelController', () => {
 
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
-      expect(response.data.totalEncuadres).toBe(9);
+      expect(response.data.totalEncuadres).toBe(11);
 
       const { stages } = response.data;
 
-      // NULL → INVITED
-      expect(stages.INVITED).toHaveLength(1);
-      expect(stages.INVITED[0].id).toBe('e1');
+      // 8 colunas no kanban (migration 230)
+      expect(Object.keys(stages)).toHaveLength(8);
 
-      // INITIATED
-      expect(stages.INITIATED).toHaveLength(1);
-      expect(stages.INITIATED[0].id).toBe('e2');
+      // NULL → INVITED (coluna de auto-invite / sem source)
+      expect(stages.INVITED).toHaveLength(2); // e1 (null stage) + e2 (INVITED+system)
+      const invitedIds = (stages.INVITED as Array<{ id: string }>).map(e => e.id);
+      expect(invitedIds).toContain('e1');
+      expect(invitedIds).toContain('e2');
+
+      // INVITED+source='manual' → INICIADO
+      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.INICIADO[0].id).toBe('e-manual');
+
+      // PRE_SCREENING (antigo INITIATED — migration 230)
+      expect(stages.PRE_SCREENING).toHaveLength(1);
+      expect(stages.PRE_SCREENING[0].id).toBe('e3');
 
       // IN_PROGRESS
       expect(stages.IN_PROGRESS).toHaveLength(1);
-      expect(stages.IN_PROGRESS[0].id).toBe('e3');
+      expect(stages.IN_PROGRESS[0].id).toBe('e4');
 
-      // COMPLETED agrupa COMPLETED + QUALIFIED + IN_DOUBT (F3: NOT_QUALIFIED removido; F7.b: REPROGRAM removido)
+      // COMPLETED agrupa COMPLETED + QUALIFIED + IN_DOUBT
       expect(stages.COMPLETED).toHaveLength(3);
-      const completedIds = stages.COMPLETED.map((e: any) => e.id);
-      expect(completedIds).toContain('e4');
+      const completedIds = (stages.COMPLETED as Array<{ id: string }>).map(e => e.id);
       expect(completedIds).toContain('e5');
       expect(completedIds).toContain('e6');
+      expect(completedIds).toContain('e7');
 
       // CONFIRMED
       expect(stages.CONFIRMED).toHaveLength(1);
-      expect(stages.CONFIRMED[0].id).toBe('e7');
+      expect(stages.CONFIRMED[0].id).toBe('e8');
 
-      // SELECTED: apenas SELECTED (PLACED removido em F7.a, migration 194)
+      // SELECTED
       expect(stages.SELECTED).toHaveLength(1);
-      const selectedIds = stages.SELECTED.map((e: any) => e.id);
-      expect(selectedIds).toContain('e8');
+      expect(stages.SELECTED[0].id).toBe('e9');
 
       // REJECTED
       expect(stages.REJECTED).toHaveLength(1);
-      expect(stages.REJECTED[0].id).toBe('e9');
+      expect(stages.REJECTED[0].id).toBe('e10');
+    });
+
+    it('cards bloqueados aparecem em INICIADO com isBlocked=true', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockListByVacancy.mockResolvedValue([
+        {
+          id: 'ba-1',
+          workerId: 'w-blocked-001',
+          blockedReason: 'registration_incomplete',
+          missingFields: ['profession', 'phone'],
+          attemptCount: 3,
+          acquisitionChannel: 'facebook',
+          lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+        },
+      ]);
+      // blocked repo busca nome do worker
+      mockQuery.mockResolvedValue({
+        rows: [{ first_name_encrypted: 'encrypted:Ana', last_name_encrypted: 'encrypted:Blocked' }],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(stages.INICIADO).toHaveLength(1);
+
+      const card = stages.INICIADO[0] as Record<string, unknown>;
+      expect(card.id).toBe('ba-1');
+      expect(card.isBlocked).toBe(true);
+      expect(card.blockedReason).toBe('registration_incomplete');
+      expect(card.missingFields).toEqual(['profession', 'phone']);
+      expect(card.attemptCount).toBe(3);
+      expect(card.acquisitionChannel).toBe('facebook');
+      expect(card.encuadreId).toBeNull();
+      expect(card.workerName).toBe('Ana Blocked');
+    });
+
+    it('card bloqueado com worker_not_found → workerName null, sem crash', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockListByVacancy.mockResolvedValue([
+        {
+          id: 'ba-2',
+          workerId: null,
+          blockedReason: 'registration_incomplete',
+          missingFields: ['profession'],
+          attemptCount: 1,
+          acquisitionChannel: null,
+          lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+        },
+      ]);
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.INICIADO[0].workerName).toBeNull();
+      expect(stages.INICIADO[0].isBlocked).toBe(true);
+    });
+
+    it('dedup: bloqueado NÃO aparece em INICIADO quando há WJA pra aquele par (NOT EXISTS no SQL)', async () => {
+      // O dedup é implementado no SQL de listByVacancy via NOT EXISTS.
+      // Simulamos o repository retornando [] (dedup funcionou no banco).
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeRow({ id: 'e-wja', funnel_stage: 'INVITED', source: 'manual' })],
+      });
+      mockListByVacancy.mockResolvedValue([]); // dedup: bloqueado não retorna pois WJA existe
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      // Só o WJA manual aparece em INICIADO
+      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.INICIADO[0].id).toBe('e-wja');
+      expect(stages.INICIADO[0].isBlocked).toBeUndefined();
     });
 
     it('preserva talentumStatus como tag para diferenciar dentro de COMPLETED', async () => {
@@ -252,7 +351,7 @@ describe('WJAFunnelController', () => {
       expect(items.find(c => c.id === 'wja-4')!.workerName).toBe('Worker sem identificação');
     });
 
-    it('retorna 7 stages vazios quando não há encuadres', async () => {
+    it('retorna 8 stages vazios quando não há encuadres nem bloqueados (migration 230)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-empty' });
@@ -261,10 +360,23 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      expect(Object.keys(response.data.stages)).toHaveLength(7);
+      // 8 colunas: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(8);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });
+    });
+
+    it('INICIADO não tem a chave INITIATED (migration 230 — INITIATED aposentado)', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect('INITIATED' in stages).toBe(false);
+      expect('INICIADO' in stages).toBe(true);
+      expect('PRE_SCREENING' in stages).toBe(true);
     });
 
     it('ordena por wja.updated_at DESC — mais recentes primeiro', async () => {
@@ -293,8 +405,8 @@ describe('WJAFunnelController', () => {
     it('retorna acquisitionChannel no item quando preenchido, null quando ausente', async () => {
       mockQuery.mockResolvedValueOnce({
         rows: [
-          makeRow({ id: 'e1', funnel_stage: 'INITIATED', acquisition_channel: 'facebook' }),
-          makeRow({ id: 'e2', funnel_stage: 'INITIATED', acquisition_channel: null }),
+          makeRow({ id: 'e1', funnel_stage: 'PRE_SCREENING', acquisition_channel: 'facebook' }),
+          makeRow({ id: 'e2', funnel_stage: 'PRE_SCREENING', acquisition_channel: null }),
         ],
       });
 
@@ -302,9 +414,9 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.INITIATED).toHaveLength(2);
-      expect(stages.INITIATED.find((e: any) => e.id === 'e1').acquisitionChannel).toBe('facebook');
-      expect(stages.INITIATED.find((e: any) => e.id === 'e2').acquisitionChannel).toBeNull();
+      expect(stages.PRE_SCREENING).toHaveLength(2);
+      expect(stages.PRE_SCREENING.find((e: any) => e.id === 'e1').acquisitionChannel).toBe('facebook');
+      expect(stages.PRE_SCREENING.find((e: any) => e.id === 'e2').acquisitionChannel).toBeNull();
     });
 
     it('retorna 500 em caso de erro no banco', async () => {

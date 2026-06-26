@@ -130,7 +130,8 @@ const MOCK_FUNNEL = {
           acquisitionChannel: 'site',
         },
       ],
-      INITIATED: [],
+      INICIADO: [],
+      PRE_SCREENING: [],
       IN_PROGRESS: [],
       COMPLETED: [
         {

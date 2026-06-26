@@ -11,7 +11,8 @@
 
 export type FunnelStage =
   | 'INVITED'
-  | 'INITIATED'
+  | 'INITIATED'       // Talentum webhook subtype — mapeado para PRE_SCREENING internamente (migration 230)
+  | 'PRE_SCREENING'   // Canônico interno (antigo INITIATED — migration 230)
   | 'IN_PROGRESS'
   | 'COMPLETED'
   // 'ANALYZED' permanece em FunnelStage como vocabulário de protocolo Talentum,

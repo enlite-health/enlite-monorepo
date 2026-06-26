@@ -214,9 +214,9 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
 
   // ── Happy paths ──────────────────────────────────────────────────
 
-  it('[#1 happy] INITIATED → WJA criada com stage=INITIATED', async () => {
+  it('[#1 happy] INITIATED (Talentum subtype) → WJA criada com stage=PRE_SCREENING (migration 230)', async () => {
     const res = await api.post(ENDPOINT, envelope({
-      subtype: 'INITIATED',
+      subtype: 'INITIATED',  // Talentum ainda envia este subtype — Zod NÃO alterado
       prescreening: { id: PSC.HP1, name: JOB.HP1 },
       profile: { id: PROF.HP1, email: EMAIL.HP1, phoneNumber: '+5491140000001', cuil: '20-40000001-1' },
     }));
@@ -229,7 +229,8 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
       [wid.HP1, jid.HP1],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].application_funnel_stage).toBe('INITIATED');
+    // migration 230: deriveFunnelStage converte subtype='INITIATED' → 'PRE_SCREENING' internamente
+    expect(rows[0].application_funnel_stage).toBe('PRE_SCREENING');
   });
 
   it('[#2 happy] INITIATED → IN_PROGRESS: WJA avança para IN_PROGRESS', async () => {

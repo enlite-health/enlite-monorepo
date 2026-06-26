@@ -205,7 +205,7 @@ export class EncuadreRepository {
           WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'REJECTED'
           WHEN e.attended = true THEN 'IN_PROGRESS'
           WHEN e.interview_date IS NOT NULL OR e.resultado = 'REPROGRAMAR' THEN 'IN_PROGRESS'
-          ELSE 'INITIATED'
+          ELSE 'PRE_SCREENING' -- migration 230: INITIATED→PRE_SCREENING (função @deprecated)
         END,
         COALESCE(e.recruitment_date::timestamptz, e.created_at),
         e.rejection_reason,

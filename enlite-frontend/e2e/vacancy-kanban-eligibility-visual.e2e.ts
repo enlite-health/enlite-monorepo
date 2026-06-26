@@ -33,7 +33,8 @@ const MOCK_FUNNEL = {
   data: {
     stages: {
       INVITED: [],
-      INITIATED: [],
+      INICIADO: [],
+      PRE_SCREENING: [],
       IN_PROGRESS: [
         {
           id: 'enc-incomplete',
