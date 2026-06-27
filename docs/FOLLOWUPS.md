@@ -1617,7 +1617,8 @@ Risco principal: use case novo escrito sem o filtro passa em testes single-tenan
 
 ### TD-053 — Deploy do `worker-functions-mcp` em staging nunca funcionou (pipeline)
 
-- **Status:** aberto — **não-bloqueante** (só o triage-service usa o MCP; fora do escopo do ABAC e do app admin).
+- **Status:** RESOLVIDO POR DECISÃO (2026-06-27) — não haverá MCP de staging. O auto-trigger (`workflow_run`) do `backend-mcp-stg.yml` foi **desligado** (sobra só `workflow_dispatch` manual): rodava em contexto `main`, era rejeitado pelo WIF e falhava em ~4s em todo push no stage (ruído). O triage-service consome o MCP de **produção**; não há consumidor do MCP em staging. Para reabrir: resolver a camada 3 (imagem `worker-functions:<sha>` não aparece no GAR) com acesso ao GCP enlite-stg e religar o auto-trigger.
+- **Status histórico:** aberto — **não-bloqueante** (só o triage-service usa o MCP; fora do escopo do ABAC e do app admin).
 - **Descoberto em:** 2026-06-16, ao tentar deixar staging 100% atual.
 - **Dono provável:** infra / backend (precisa de acesso ao GCP enlite-stg).
 - **Bloqueador?** Não.
