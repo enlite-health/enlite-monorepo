@@ -30,6 +30,15 @@
 
 BEGIN;
 
+-- ── Bypass do guard enforce_worker_registered_for_application (mig 183/196/229) ──
+-- O backfill abaixo dá UPDATE em application_funnel_stage, evento monitorado pelo
+-- trigger trg_enforce_worker_registered. Esse guard bloqueia WJA de worker não
+-- REGISTERED quando source NÃO é talentum/system/import/planilla (ex.: source='manual'
+-- self-apply que entrou na Talentum). Como isto é consolidação de dado existente
+-- (rename de stage), não postulação nova, setamos o GUC de bypass (escopo da transação,
+-- auto-reset no COMMIT) — exatamente o mecanismo documentado na mig 229.
+SET LOCAL app.bypass_registered_guard = 'on';
+
 -- ── STEP 1: Atualizar o CHECK PRIMEIRO (add PRE_SCREENING, mantém INITIATED) ───
 -- Precede o backfill para que o UPDATE para PRE_SCREENING seja válido.
 
@@ -43,7 +52,7 @@ BEGIN
   ) THEN
     ALTER TABLE worker_job_applications
       RENAME CONSTRAINT worker_job_applications_application_funnel_stage_check
-      TO worker_job_applications_application_funnel_stage_check_deprecated_20260626;
+      TO wja_funnel_stage_check_deprecated_20260626;
   END IF;
 END $$;
 
@@ -82,11 +91,11 @@ DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'worker_job_applications_application_funnel_stage_check_deprecated_20260626'
+    WHERE constraint_name = 'wja_funnel_stage_check_deprecated_20260626'
       AND table_name = 'worker_job_applications'
   ) THEN
     ALTER TABLE worker_job_applications
-      DROP CONSTRAINT worker_job_applications_application_funnel_stage_check_deprecated_20260626;
+      DROP CONSTRAINT wja_funnel_stage_check_deprecated_20260626;
   END IF;
 END $$;
 
