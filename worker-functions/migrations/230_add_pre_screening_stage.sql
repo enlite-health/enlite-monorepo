@@ -16,6 +16,12 @@
 -- FASE 2 (futura migration):
 --   - Remove INITIATED do CHECK constraint após confirmar 0 escritas em prod
 --
+-- ORDEM CRÍTICA (corrigida): o CHECK é ATUALIZADO ANTES do backfill.
+--   Se o UPDATE para 'PRE_SCREENING' rodar antes de o valor existir no CHECK,
+--   o write viola o constraint antigo ("new row violates check constraint").
+--   Isso não aparece em ambientes sem linhas INITIATED (UPDATE afeta 0 linhas),
+--   mas estoura em prod, que tem linhas reais. Por isso: constraint → backfill.
+--
 -- Motivo de manter INITIATED no CHECK agora:
 --   Rolling deploy — pods com código antigo podem gravar 'INITIATED' por alguns
 --   segundos durante a transição. Se removermos agora, esses writes causam CHECK
@@ -24,28 +30,10 @@
 
 BEGIN;
 
--- ── STEP 1: UPDATE defensivo — backfill INITIATED → PRE_SCREENING ────────────
--- Target: todos os WJAs com stage INITIATED que ainda não foram migrados.
--- Idempotente: segunda execução é no-op (nenhum INITIATED restante).
-UPDATE worker_job_applications
-SET application_funnel_stage = 'PRE_SCREENING',
-    updated_at               = NOW()
-WHERE application_funnel_stage = 'INITIATED';
+-- ── STEP 1: Atualizar o CHECK PRIMEIRO (add PRE_SCREENING, mantém INITIATED) ───
+-- Precede o backfill para que o UPDATE para PRE_SCREENING seja válido.
 
--- ── STEP 2: Pré-check — confirmar backfill completo ───────────────────────────
-DO $$
-DECLARE bad_count INTEGER;
-BEGIN
-  SELECT COUNT(*) INTO bad_count
-  FROM worker_job_applications
-  WHERE application_funnel_stage = 'INITIATED';
-  IF bad_count > 0 THEN
-    RAISE EXCEPTION 'Migration 230 falhou: % WJAs ainda em INITIATED após backfill', bad_count;
-  END IF;
-END $$;
-
--- ── STEP 3a: Renomear constraint atual para _deprecated_ ──────────────────────
--- Idempotente: falha silenciosa se já foi substituído
+-- STEP 1a: Renomear constraint atual para _deprecated_ (idempotente)
 DO $$
 BEGIN
   IF EXISTS (
@@ -59,9 +47,8 @@ BEGIN
   END IF;
 END $$;
 
--- ── STEP 3b: Adicionar novo CHECK com PRE_SCREENING + INITIATED (fase-1) ──────
+-- STEP 1b: Adicionar novo CHECK com PRE_SCREENING + INITIATED (fase-1)
 -- INITIATED mantido intencionalmente — remoção na Fase 2 após rolling deploy.
--- PRE_SCREENING é o valor canônico novo; INITIATED aceito transitoriamente.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -90,7 +77,7 @@ BEGIN
   END IF;
 END $$;
 
--- ── STEP 3c: Remover constraint _deprecated_ ──────────────────────────────────
+-- STEP 1c: Remover constraint _deprecated_
 DO $$
 BEGIN
   IF EXISTS (
@@ -103,10 +90,28 @@ BEGIN
   END IF;
 END $$;
 
+-- ── STEP 2: Backfill INITIATED → PRE_SCREENING (agora o valor é permitido) ─────
+-- Idempotente: segunda execução é no-op (nenhum INITIATED restante).
+UPDATE worker_job_applications
+SET application_funnel_stage = 'PRE_SCREENING',
+    updated_at               = NOW()
+WHERE application_funnel_stage = 'INITIATED';
+
+-- ── STEP 3: Pós-check — confirmar backfill completo ───────────────────────────
+DO $$
+DECLARE bad_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO bad_count
+  FROM worker_job_applications
+  WHERE application_funnel_stage = 'INITIATED';
+  IF bad_count > 0 THEN
+    RAISE EXCEPTION 'Migration 230 falhou: % WJAs ainda em INITIATED após backfill', bad_count;
+  END IF;
+END $$;
+
 -- ── STEP 4: Atualizar funnel_stage_precedence() ───────────────────────────────
--- PRE_SCREENING no slot 1 (onde INITIATED estava).
--- INITIATED mantido no mapeamento (retorna -1 ou 1?) — conservador: manter precedência 1
--- para não quebrar lógica in-flight se algum pod antigo ainda tentar ler/comparar.
+-- PRE_SCREENING no slot 1 (onde INITIATED estava). INITIATED mantido no slot 1
+-- para não quebrar lógica in-flight se algum pod antigo ainda comparar.
 CREATE OR REPLACE FUNCTION funnel_stage_precedence(stage text)
 RETURNS integer
 LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -137,7 +142,7 @@ COMMENT ON FUNCTION funnel_stage_precedence(text) IS
   'ANALYZED nunca esteve no CHECK de WJA — transporte interno do mapper Talentum.';
 
 DO $$ BEGIN
-  RAISE NOTICE 'Migration 230 done: PRE_SCREENING adicionado ao CHECK + backfill INITIATED→PRE_SCREENING + funnel_stage_precedence atualizada.';
+  RAISE NOTICE 'Migration 230 done: CHECK com PRE_SCREENING (antes do backfill) + backfill INITIATED→PRE_SCREENING + funnel_stage_precedence atualizada.';
 END $$;
 
 COMMIT;
