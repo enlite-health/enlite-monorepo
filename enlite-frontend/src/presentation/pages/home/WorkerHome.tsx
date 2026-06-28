@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@presentation/hooks/useAuth';
 import { useState, useEffect } from 'react';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
@@ -16,6 +17,7 @@ import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiServi
 import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
 
 export const WorkerHome = (): JSX.Element => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { getProgress, getAvailability } = useWorkerApi();
@@ -61,8 +63,8 @@ export const WorkerHome = (): JSX.Element => {
   };
 
   return (
-    <AppLayout navItems={navItems} userName={user?.name || 'Usuário'} userAvatar={profilePhoto || undefined}>
-      <TopNavbar userName={user?.name || 'Usuário'} className="w-full mb-6" />
+    <AppLayout navItems={navItems} userName={user?.name || t('common.userFallback')} userAvatar={profilePhoto || undefined}>
+      <TopNavbar userName={user?.name || t('common.userFallback')} className="w-full mb-6" />
       
       {!isLoading && !isComplete && (
         <ProfileCompletionCard

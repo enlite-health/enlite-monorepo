@@ -46,7 +46,10 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       preferredAgeRange: data.generalInfo.preferredAgeRange?.length ? (data.generalInfo.preferredAgeRange as Array<'children' | 'adolescents' | 'adults' | 'elderly'>) : [],
       profilePhoto: data.generalInfo.profilePhoto || null,
     },
-    mode: 'onChange',
+    // on-blur: valida quando o campo perde o foco (e re-valida ao digitar
+    // depois disso). Evita "erro no 1º caractere" de Nombre/CUIL durante a
+    // digitação — ver docs/features/worker-registration-ux/ux-review-2026-06-28.md.
+    mode: 'onTouched',
   });
 
   const { handleSubmit, reset, getValues } = form;

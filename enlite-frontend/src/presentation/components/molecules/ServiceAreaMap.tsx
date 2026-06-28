@@ -103,6 +103,15 @@ export function ServiceAreaMap({
             mapTypeControl: false,
             streetViewControl: false,
             fullscreenControl: false,
+            // Foca o mapa no endereço do prestador: sem POIs comerciais
+            // clicáveis nem labels de pontos de interesse, que confundiam
+            // (apareciam negócios de outra região com o endereço correto).
+            // Ver docs/features/worker-registration-ux/ux-review-2026-06-28.md.
+            clickableIcons: false,
+            styles: [
+              { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+              { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+            ],
           });
           markerRef.current = new google.maps.Marker({
             position,

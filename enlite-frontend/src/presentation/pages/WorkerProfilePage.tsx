@@ -16,6 +16,8 @@ import { AvailabilityTab } from './tabs/AvailabilityTab';
 import { DocumentsTab } from './tabs/DocumentsTab';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { ProfileWizardFooter } from '@presentation/components/molecules/ProfileWizardFooter';
+import { ProfileCompletionSummary } from '@presentation/components/organisms/ProfileCompletionSummary';
 import type { TabId } from '@presentation/utils/incompleteFieldDestinations';
 
 const VALID_TABS: TabId[] = ['general', 'address', 'availability', 'documents'];
@@ -51,6 +53,7 @@ export function WorkerProfilePage(): JSX.Element {
   );
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
 
   const didRekey = useRef(false);
   useEffect(() => {
@@ -158,11 +161,27 @@ export function WorkerProfilePage(): JSX.Element {
   const currentTabIndex = tabs.findIndex((tab) => tab.id === activeTab);
 
   const goToPrevTab = (): void => {
-    if (currentTabIndex > 0) setActiveTab(tabs[currentTabIndex - 1].id);
+    if (currentTabIndex > 0) {
+      setActiveTab(tabs[currentTabIndex - 1].id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const goToNextTab = (): void => {
-    if (currentTabIndex < tabs.length - 1) setActiveTab(tabs[currentTabIndex + 1].id);
+    if (currentTabIndex < tabs.length - 1) {
+      setActiveTab(tabs[currentTabIndex + 1].id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleFinish = (): void => {
+    setShowSummary(true);
+  };
+
+  const handleGoToTab = (tab: TabId): void => {
+    setShowSummary(false);
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const renderTabContent = () => {
@@ -278,9 +297,26 @@ export function WorkerProfilePage(): JSX.Element {
             <div className="bg-white rounded-lg shadow-sm p-6">
               {renderTabContent()}
             </div>
+
+            {/* Rodapé de navegação (P0): conduz o fluxo entre etapas. O autosave
+                de cada aba persiste; aqui só navegamos. Última aba → Finalizar. */}
+            <ProfileWizardFooter
+              isFirst={currentTabIndex === 0}
+              isLast={currentTabIndex === tabs.length - 1}
+              onPrev={goToPrevTab}
+              onNext={goToNextTab}
+              onFinish={handleFinish}
+            />
           </>
         )}
       </div>
+
+      {showSummary && (
+        <ProfileCompletionSummary
+          onClose={() => setShowSummary(false)}
+          onGoToTab={handleGoToTab}
+        />
+      )}
     </AppLayout>
   );
 }

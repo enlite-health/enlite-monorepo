@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentUploadCard } from '@presentation/components/molecules/DocumentUploadCard';
 import { Heading, Text } from '@presentation/components/atoms';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { DocumentType, WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
+import { isATProfession, requiredDocTypesFor } from '@presentation/utils/workerDocumentPolicy';
 
 interface DocumentSlot {
   docType: DocumentType;
@@ -61,7 +62,10 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
   const { t } = useTranslation();
   const [loadingTypes, setLoadingTypes] = useState<Set<DocumentType>>(new Set());
   const [cardErrors, setCardErrors] = useState<Partial<Record<DocumentType, string>>>({});
-  const isAT = profession === 'AT';
+  // NULL/'' profession is treated as AT — mirrors the SQL gate that blocks
+  // postulación (see workerDocumentPolicy.ts). Fixes the ~68% of ATs with
+  // profession=NULL who otherwise never saw the AT slots/warning.
+  const isAT = isATProfession(profession);
 
   // Mostrar slot se:
   //   - não tem flag exclusiva (universal), OU
@@ -88,6 +92,11 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
     return (documents[DOC_URL_MAP[docType]] as string | null) ?? null;
   };
 
+  // Gate-required docs for this profession + the ones still missing.
+  const requiredDocs = requiredDocTypesFor(profession);
+  const isRequiredDoc = (docType: DocumentType): boolean => requiredDocs.includes(docType);
+  const pendingRequiredDocs = requiredDocs.filter((docType) => !getFilePath(docType));
+
   // Row 1: first 3 slots, Row 2: next 3, Row 3: AT-only (if applicable)
   const row1 = visibleSlots.slice(0, 3);
   const row2 = visibleSlots.slice(3, 6);
@@ -101,6 +110,7 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
           label={t(`documentTypes.${slot.docType}`)}
           isUploaded={!!filePath}
           isLoading={loadingTypes.has(slot.docType)}
+          isRequired={isRequiredDoc(slot.docType)}
           onFileSelect={(file) => withLoading(slot.docType, () => onUpload(slot.docType, file))}
           onDelete={() => withLoading(slot.docType, () => onDelete(slot.docType))}
           onView={() => filePath ? onView(filePath) : Promise.resolve()}
@@ -121,6 +131,34 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
         {t('documents.title', 'Documentos')}
       </Heading>
 
+      {/* AT requirement notice — prominent and specific (lists the docs still
+          pending). Shown for AT and for profession=NULL (gate treats NULL as AT). */}
+      {isAT && pendingRequiredDocs.length > 0 && (
+        <div
+          data-testid="at-required-notice"
+          className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-300"
+        >
+          <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <Text as="p" size="sm" color="secondary" className="text-amber-900">
+            {t('documents.atRequiredPending', 'Para postularte como Acompañante Terapéutico necesitás subir:')}{' '}
+            <Text as="span" size="sm" weight="semibold" color="inherit">
+              {pendingRequiredDocs.map((dt) => t(`documentTypes.${dt}`)).join(', ')}
+            </Text>
+          </Text>
+        </div>
+      )}
+      {isAT && pendingRequiredDocs.length === 0 && (
+        <div
+          data-testid="at-required-done"
+          className="flex items-start gap-2 px-4 py-3 rounded-lg bg-green-50 border border-green-200"
+        >
+          <CheckCircle2 size={18} className="text-green-600 shrink-0 mt-0.5" />
+          <Text as="p" size="sm" color="secondary" className="text-green-800">
+            {t('documents.allRequiredDone', 'Ya subiste todos los documentos obligatorios para postularte.')}
+          </Text>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-4">
         {row1.map((slot) => renderCard(slot, 'flex-1 min-w-[200px]'))}
       </div>
@@ -130,19 +168,9 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
       </div>
 
       {row3.length > 0 && (
-        <>
-          {isAT && (
-            <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200">
-              <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-              <Text as="p" size="sm" color="secondary" className="text-amber-800">
-                {t('documents.atRequiredWarning', 'Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.')}
-              </Text>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-4">
-            {row3.map((slot) => renderCard(slot, 'flex-1 min-w-[260px]'))}
-          </div>
-        </>
+        <div className="flex flex-wrap gap-4">
+          {row3.map((slot) => renderCard(slot, 'flex-1 min-w-[260px]'))}
+        </div>
       )}
     </div>
   );
