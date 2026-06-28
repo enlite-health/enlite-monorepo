@@ -40,6 +40,7 @@ export function ServiceAddressTab(): JSX.Element {
     handleSubmit,
     control,
     reset,
+    watch,
     formState: { errors },
     getValues,
   } = useForm<ServiceAddressFormData>({
@@ -50,7 +51,7 @@ export function ServiceAddressTab(): JSX.Element {
       complement: data.serviceAddress.complement || '',
       acceptsRemoteService: data.serviceAddress.acceptsRemoteService || false,
     },
-    mode: 'onChange',
+    mode: 'onTouched',
   });
 
   useEffect(() => {
@@ -247,7 +248,7 @@ export function ServiceAddressTab(): JSX.Element {
       </div>
 
       {/* Map */}
-      <ServiceAreaMap lat={coordinates.lat} lng={coordinates.lng} />
+      <ServiceAreaMap lat={coordinates.lat} lng={coordinates.lng} address={watch('address')} />
 
       {/* Service Radius with Slider */}
       <div className="flex flex-col gap-3">

@@ -320,6 +320,26 @@ export function cleanupMinimalVacancy(vacancyId: string): void {
   }
 }
 
+/** Resolves a worker's DB id from its auth_uid (workers provisioned via the real UI). */
+export function resolveWorkerIdByAuthUid(authUid: string): string | null {
+  if (!authUid) return null;
+  return extractUUID(runSQL(`SELECT id FROM workers WHERE auth_uid = '${authUid}'`));
+}
+
+/** Reads a worker's status by auth_uid (e.g. to assert REGISTERED after a real journey). */
+export function getWorkerStatusByAuthUid(authUid: string): string | null {
+  if (!authUid) return null;
+  const out = runSQL(`SELECT status FROM workers WHERE auth_uid = '${authUid}'`);
+  const m = out.match(/\b(REGISTERED|INCOMPLETE_REGISTER|DISABLED)\b/);
+  return m ? m[1] : null;
+}
+
+/** Full cleanup for a worker provisioned via the real UI (resolved by auth_uid). */
+export function cleanupWorkerByAuthUid(authUid: string): void {
+  const workerId = resolveWorkerIdByAuthUid(authUid);
+  if (workerId) cleanupEligibilityWorker(workerId);
+}
+
 /** Full cleanup for a worker created by insertEligibilityWorker. */
 export function cleanupEligibilityWorker(workerId: string): void {
   if (!workerId) return;

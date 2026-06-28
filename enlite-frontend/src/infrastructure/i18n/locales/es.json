@@ -181,7 +181,7 @@
     "licenseRequired": "El registro profesional es obligatorio",
     "selectLanguage": "Seleccione al menos un idioma",
     "selectProfession": "Por favor, seleccione la profesión",
-    "selectKnowledgeLevel": "Por favor, seleccione el nivel de conocimiento",
+    "selectKnowledgeLevel": "Por favor, seleccione el nivel de estudios",
     "selectExperienceType": "Seleccione al menos un tipo de experiencia",
     "selectYearsExperience": "Por favor, seleccione los años de experiencia",
     "selectPreferredType": "Seleccione al menos un tipo preferido",
@@ -218,9 +218,11 @@
       "lastName": "Apellido",
       "lastNamePlaceholder": "Marquez",
       "sex": "Sexo",
+      "sexHint": "El sexo que figura en tu documento.",
       "male": "Masculino",
       "female": "Femenino",
       "gender": "Género",
+      "genderHint": "El género con el que te identificás.",
       "other": "Otro",
       "birthDate": "Fecha de nacimiento",
       "birthDatePlaceholder": "18/03/1960",
@@ -265,7 +267,7 @@
       "years3to5": "3-5 años",
       "years6to10": "6-10 años",
       "years10plus": "10 o más",
-      "preferredTypes": "¿Con que tipos de pacientes te gustaria acompañar?",
+      "preferredTypes": "¿Con qué tipos de pacientes te gustaría acompañar?",
       "preferredAgeRange": "Preferencia de rango etario de los pacientes",
       "ageRangeChildren": "Niños (0-12 años)",
       "ageRangeAdolescents": "Adolescentes (13-17 años)",
@@ -342,6 +344,8 @@
   },
   "jobs": {
     "title": "Consultar Vacantes",
+    "completeToApplyBanner": "Completá tu registro para poder postularte a las vacantes.",
+    "completeNow": "Completar",
     "searchPlaceholder": "Buscar por nombre de vacante",
     "status": "Estado",
     "noResults": "No se encontraron vacantes con los filtros seleccionados",
@@ -459,6 +463,19 @@
     "completionCard": {
       "title": "Complete su Perfil Profesional"
     },
+    "wizard": {
+      "back": "Atrás",
+      "next": "Siguiente",
+      "finish": "Finalizar"
+    },
+    "summary": {
+      "title": "Resumen de tu registro",
+      "pendingIntro": "Te falta completar:",
+      "keepEditing": "Seguir editando",
+      "allDone": "¡Tu registro está completo!",
+      "allDoneBody": "Ya podés postularte a las vacantes disponibles.",
+      "viewVacancies": "Ver vacantes"
+    },
     "tabs": {
       "general": "Información General",
       "address": "Dirección de Atención",
@@ -467,7 +484,7 @@
     },
     "progress": {
       "registration": "Registro Básico",
-      "documents": "Documentos Profesionales",
+      "documents": "Documentos obligatorios",
       "step1": "Información General",
       "step2": "Dirección de Atención",
       "step3": "Disponibilidad",
