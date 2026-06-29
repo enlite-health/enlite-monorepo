@@ -293,20 +293,21 @@ export function WorkerProfilePage(): JSX.Element {
               </nav>
             </div>
 
-            {/* Tab Content */}
+            {/* Tab Content + rodapé de navegação no mesmo container.
+                O autosave de cada aba persiste em cada blur (toast confirma);
+                não há mais botão "Guardar" — o rodapé conduz o fluxo entre
+                etapas (Atrás/Siguiente) e Finalizar na última aba. */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               {renderTabContent()}
-            </div>
 
-            {/* Rodapé de navegação (P0): conduz o fluxo entre etapas. O autosave
-                de cada aba persiste; aqui só navegamos. Última aba → Finalizar. */}
-            <ProfileWizardFooter
-              isFirst={currentTabIndex === 0}
-              isLast={currentTabIndex === tabs.length - 1}
-              onPrev={goToPrevTab}
-              onNext={goToNextTab}
-              onFinish={handleFinish}
-            />
+              <ProfileWizardFooter
+                isFirst={currentTabIndex === 0}
+                isLast={currentTabIndex === tabs.length - 1}
+                onPrev={goToPrevTab}
+                onNext={goToNextTab}
+                onFinish={handleFinish}
+              />
+            </div>
           </>
         )}
       </div>

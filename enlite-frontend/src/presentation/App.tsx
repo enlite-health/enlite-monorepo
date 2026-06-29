@@ -30,6 +30,7 @@ import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
+import { Toaster } from './components/molecules/Toaster';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
@@ -66,6 +67,7 @@ export function App() {
   return (
     <BrowserRouter>
       <NewVersionBanner />
+      <Toaster />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
