@@ -6,6 +6,9 @@
 // Domain
 export type { WebhookPartner, PartnerContext } from './domain/WebhookPartner';
 export type { ITalentumApiClient, TalentumQuestion, TalentumFaq, TalentumProject, TalentumQuestionWithId, TalentumDashboardProfile, TalentumDashboardResponse, CreatePrescreeningInput, CreatePrescreeningResult, ListPrescreeningsOpts } from './domain/ITalentumApiClient';
+export type { WorkerMirrorRecord, WorkerMirrorAddress } from './domain/WorkerMirrorRecord';
+export type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from './domain/WorkerMirrorProvider';
+export type { IAnaCareApiClient, AnaCareNursePayload, AnaCareNurse, AnaCareNurseType, AnaCareHiringType, AnaCarePagedResponse, AnaCareNurseBulkItem, AnaCareNurseBulkPayload } from './domain/IAnaCareApiClient';
 
 // Ports
 export type { IWebhookPartnerRepository } from './ports/IWebhookPartnerRepository';
@@ -32,6 +35,13 @@ export { ClickUpPatientMapper } from './infrastructure/clickup/ClickUpPatientMap
 export { ClickUpEncuadreMapper, parseCaseNumbersFromName } from './infrastructure/clickup/ClickUpEncuadreMapper';
 export type { EncuadreMapperEntry, EncuadreWorkerData, EncuadreData } from './infrastructure/clickup/ClickUpEncuadreMapper';
 
+// Infrastructure — AnaCare
+export { AnaCareClient } from './infrastructure/anacare/AnaCareClient';
+export { AnaCareMirrorProvider } from './infrastructure/anacare/AnaCareMirrorProvider';
+export { AnaCareTypeResolver } from './infrastructure/anacare/anaCareTypeResolver';
+export type { ResolvedTypes } from './infrastructure/anacare/anaCareTypeResolver';
+export { mapWorkerToAnaCarePayload, mapSexToAnaCareGenero, formatDateYMD } from './infrastructure/anacare/anaCareMapper';
+
 // Application — use cases
 export { PublishVacancyToTalentumUseCase, PublishError } from './application/PublishVacancyToTalentumUseCase';
 export type { AuditActor } from './application/PublishVacancyToTalentumUseCase';
@@ -41,6 +51,12 @@ export { SyncTalentumWorkersUseCase } from './application/SyncTalentumWorkersUse
 export type { WorkerSyncReport } from './application/SyncTalentumWorkersUseCase';
 export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPostingFromTalentumUseCase';
 export type { CreateJobPostingFromTalentumInput, CreateJobPostingFromTalentumResult } from './application/CreateJobPostingFromTalentumUseCase';
+export { BackfillWorkerMirrorUseCase } from './application/BackfillWorkerMirrorUseCase';
+export type { BackfillOptions, BackfillSummary } from './application/BackfillWorkerMirrorUseCase';
+export { MirrorWorkerService } from './application/MirrorWorkerService';
+export type { MirrorResult } from './application/MirrorWorkerService';
+export { createAnaCareMirrorHandler } from './application/AnaCareMirrorEventHandler';
+export type { AnaCareMirrorHandlerDeps } from './application/AnaCareMirrorEventHandler';
 
 // Interfaces / Webhooks
 export { TalentumWebhookController } from './interfaces/webhooks/controllers/TalentumWebhookController';
@@ -48,6 +64,8 @@ export { ClickUpPatientWebhookController } from './interfaces/webhooks/controlle
 export { PartnerAuthMiddleware } from './interfaces/webhooks/middleware/PartnerAuthMiddleware';
 export { ClickUpHmacMiddleware } from './interfaces/webhooks/middleware/ClickUpHmacMiddleware';
 export { createWebhookRoutes } from './interfaces/webhooks/routes/webhookRoutes';
+export { createAdminIntegrationsRoutes } from './interfaces/routes/adminIntegrationsRoutes';
+export { AnaCareBackfillController } from './interfaces/controllers/AnaCareBackfillController';
 export { TalentumPrescreeningPayloadSchema } from './interfaces/webhooks/validators/talentumPrescreeningSchema';
 export type { TalentumPrescreeningPayloadInput, TalentumPrescreeningPayloadParsed, TalentumPrescreeningCreatedParsed, TalentumPrescreeningResponseParsed } from './interfaces/webhooks/validators/talentumPrescreeningSchema';
 export { ClickUpWebhookBodySchema, ClickUpEventSchema } from './interfaces/webhooks/validators/clickupWebhookSchema';

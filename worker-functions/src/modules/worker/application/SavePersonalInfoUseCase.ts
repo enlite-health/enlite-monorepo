@@ -3,10 +3,36 @@ import { SavePersonalInfoDTO, Worker } from '../domain/Worker';
 import { WORKER_ERROR_CODES } from '../domain/workerErrors';
 import { Result } from '@shared/utils/Result';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
+import type { Pool } from 'pg';
+import { logger, loggingAls } from '@shared/logging';
+
+const TAG = '[SavePersonalInfoUseCase]';
+
 export class SavePersonalInfoUseCase {
+  private readonly workerRepository: IWorkerRepository;
+  /**
+   * Pool injetado para enqueue de domain_events.
+   * Quando null (default em unit tests), resolvido lazy via DatabaseConnection
+   * na primeira chamada a enqueueMirrorEvent — evita chamar getInstance() no
+   * construtor, que requer DATABASE_URL nos testes unitários.
+   */
+  private readonly injectedPool: Pool | null;
+
   constructor(
-    private workerRepository: IWorkerRepository,
-  ) {}
+    workerRepository: IWorkerRepository,
+    /** Pool injetado. Omitir em produção → usa DatabaseConnection singleton. */
+    pool?: Pool,
+  ) {
+    this.workerRepository = workerRepository;
+    this.injectedPool = pool ?? null;
+  }
+
+  private getPool(): Pool {
+    if (this.injectedPool) return this.injectedPool;
+    // Lazy import para não exigir DATABASE_URL no construtor
+    const { DatabaseConnection } = require('@shared/database/DatabaseConnection') as typeof import('@shared/database/DatabaseConnection');
+    return DatabaseConnection.getInstance().getPool();
+  }
 
   async execute(data: SavePersonalInfoDTO): Promise<Result<Worker>> {
     const workerResult = await this.workerRepository.findById(data.workerId);
@@ -70,7 +96,33 @@ export class SavePersonalInfoUseCase {
 
     await this.workerRepository.recalculateStatus(data.workerId);
 
+    // Enqueue worker.mirror_requested (outbox assíncrono, best-effort).
+    // updatePersonalInfo não usa uma transação explícita (pool.query direto),
+    // então fazemos o INSERT logo após o update — não é transacional mas é
+    // suficiente: o sweep do DomainEventProcessor reprocessa pendentes.
+    await this.enqueueMirrorEvent(data.workerId);
+
     return Result.ok<Worker>(updateResult.getValue());
+  }
+
+  // ── Enqueue outbox ──────────────────────────────────────────────
+
+  private async enqueueMirrorEvent(workerId: string): Promise<void> {
+    try {
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+      await this.getPool().query(
+        `INSERT INTO domain_events (event, payload, trace_id)
+         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
+        [JSON.stringify({ workerId }), traceId],
+      );
+    } catch (err: unknown) {
+      // best-effort: não bloqueia o fluxo principal
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId }).warn({
+        msg: `${TAG} failed to enqueue mirror event (best-effort, ignoring)`,
+        error: e.message,
+      });
+    }
   }
 
   /**
