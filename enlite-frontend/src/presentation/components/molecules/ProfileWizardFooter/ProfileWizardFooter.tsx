@@ -33,7 +33,7 @@ export function ProfileWizardFooter({
   return (
     <div
       data-testid="profile-wizard-footer"
-      className="mt-6 flex items-center justify-between gap-3"
+      className="mt-6 pt-6 border-t border-gray-100 flex items-center justify-between gap-3"
     >
       <Button
         type="button"

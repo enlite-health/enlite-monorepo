@@ -30,11 +30,20 @@ setup('signin Firebase real e salva storageState', async ({ page }) => {
   // Firebase real costuma demorar ~3-5s; damos 30s pra cobrir cold start.
   await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 });
 
+  // Em produção o Firebase usa IndexedDB (não localStorage). A escrita da sessão
+  // é assíncrona após o redirect — esperamos a home renderizar e damos uma folga
+  // pro Firebase persistir antes de capturar o estado.
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(2_000);
+
   // Garante diretório .auth
   const authDir = path.dirname(WORKER_AUTH_FILE);
   if (!fs.existsSync(authDir)) {
     fs.mkdirSync(authDir, { recursive: true });
   }
 
-  await page.context().storageState({ path: WORKER_AUTH_FILE });
+  // indexedDB: true é essencial — sem isso o storageState sai vazio (a sessão do
+  // Firebase vive no IndexedDB em prod) e os testes caem no /login. Requer
+  // Playwright >= 1.51.
+  await page.context().storageState({ path: WORKER_AUTH_FILE, indexedDB: true });
 });

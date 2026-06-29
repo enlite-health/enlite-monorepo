@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, screen, act } from '@testing-library/react';
 import { AvailabilityTab } from '../AvailabilityTab';
+import { Toaster } from '@presentation/components/molecules/Toaster';
+import { useToastStore } from '@presentation/stores/toastStore';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 
@@ -52,9 +54,10 @@ vi.mock('@presentation/stores/workerRegistrationStore', () => ({
   }),
 }));
 
-describe('AvailabilityTab - Auto Save & Scroll', () => {
+describe('AvailabilityTab - Auto Save & Toast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useToastStore.setState({ toasts: [] });
     vi.mocked(useAutoSave).mockReturnValue(mockTriggerSave);
     vi.mocked(useWorkerApi).mockReturnValue({
       saveAvailability: mockSaveAvailability,
@@ -120,40 +123,26 @@ describe('AvailabilityTab - Auto Save & Scroll', () => {
     }
   });
 
-  it('should scroll to top on successful manual save', async () => {
+  it('shows a success toast when auto-save succeeds', async () => {
     mockSaveAvailability.mockResolvedValueOnce(undefined);
-    const { container } = render(<AvailabilityTab />);
+    render(<><AvailabilityTab /><Toaster /></>);
 
     await waitFor(() => expect(mockGetAvailability).toHaveBeenCalled());
 
-    // Save button is inside the "flex justify-end pt-4" container
-    const saveButton = container.querySelector('.justify-end.pt-4 button') as HTMLElement;
-    expect(saveButton).toBeTruthy();
-    fireEvent.click(saveButton);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+    expect(await screen.findByTestId('toast-success')).toBeTruthy();
   });
 
-  it('should scroll to top on save error', async () => {
-    mockSaveAvailability.mockRejectedValueOnce(new Error('Save failed'));
-    const { container } = render(<AvailabilityTab />);
+  it('shows an error toast when auto-save fails', async () => {
+    render(<><AvailabilityTab /><Toaster /></>);
 
     await waitFor(() => expect(mockGetAvailability).toHaveBeenCalled());
 
-    const saveButton = container.querySelector('.justify-end.pt-4 button') as HTMLElement;
-    expect(saveButton).toBeTruthy();
-    fireEvent.click(saveButton);
+    const onError = vi.mocked(useAutoSave).mock.calls[0][2]!;
+    act(() => onError(new Error('Save failed')));
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+    expect(await screen.findByTestId('toast-error')).toBeTruthy();
   });
 });

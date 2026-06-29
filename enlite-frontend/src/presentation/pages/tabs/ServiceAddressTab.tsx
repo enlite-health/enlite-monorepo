@@ -8,8 +8,8 @@ import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { GooglePlacesAutocomplete, AddressField, ServiceAreaMap } from '@presentation/components/molecules';
 import { DistanceSlider } from '@presentation/components/shared/DistanceSlider';
 import { InputWithIcon } from '@presentation/components/molecules';
-import { Button } from '@presentation/components/atoms/Button';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
+import { useToast } from '@presentation/hooks/useToast';
 import { Checkbox, Typography } from '@presentation/components/atoms';
 import { extractAddressComponents } from '@application/use-cases/extractAddressComponents';
 
@@ -24,20 +24,15 @@ export function ServiceAddressTab(): JSX.Element {
   const { saveServiceArea, getProgress } = useWorkerApi();
 
   const data = useWorkerRegistrationStore((state) => state.data);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const showToast = useToast();
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number }>({ lat: 0, lng: 0 });
   const coordinatesRef = useRef({ lat: 0, lng: 0 });
-  const [isAddressValid, setIsAddressValid] = useState(!!data.serviceAddress.address);
   const [autoFilled, setAutoFilled] = useState<AutoFilledFields>({ city: '', postalCode: '', neighborhood: '' });
   const autoFilledRef = useRef<AutoFilledFields>({ city: '', postalCode: '', neighborhood: '' });
-  const formRef = useRef<HTMLFormElement>(null);
   const [, setIsLoading] = useState(true);
 
   const {
     register,
-    handleSubmit,
     control,
     reset,
     watch,
@@ -67,7 +62,6 @@ export function ServiceAddressTab(): JSX.Element {
             serviceRadius: workerData.serviceRadiusKm || 10,
             acceptsRemoteService: false,
           });
-          setIsAddressValid(true);
 
           // Restore auto-filled fields from backend
           const restored: AutoFilledFields = {
@@ -108,10 +102,15 @@ export function ServiceAddressTab(): JSX.Element {
         postalCode: autoFilledRef.current.postalCode || undefined,
         neighborhood: autoFilledRef.current.neighborhood || undefined,
       });
+      showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
     },
     500,
     (error) => {
-      setSaveError(error instanceof Error ? error.message : t('workerRegistration.serviceAddress.saveError'));
+      showToast(
+        error instanceof Error ? error.message : t('workerRegistration.serviceAddress.saveError'),
+        'error',
+        'profile-save',
+      );
     },
   );
 
@@ -135,52 +134,8 @@ export function ServiceAddressTab(): JSX.Element {
     }
   };
 
-  const onSubmit = async (formData: ServiceAddressFormData): Promise<void> => {
-    if (!isAddressValid) {
-      setSaveError(t('validation.selectAddressFromSuggestions'));
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-
-    setSaveError(null);
-    setSaveSuccess(false);
-    setIsSaving(true);
-    try {
-      await saveServiceArea({
-        address: formData.address,
-        addressComplement: formData.complement || undefined,
-        serviceRadiusKm: formData.serviceRadius,
-        lat: coordinates.lat,
-        lng: coordinates.lng,
-        city: autoFilled.city || undefined,
-        postalCode: autoFilled.postalCode || undefined,
-        neighborhood: autoFilled.neighborhood || undefined,
-      });
-      setSaveSuccess(true);
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : t('workerRegistration.serviceAddress.saveError'));
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   return (
-    <form ref={formRef} onSubmit={handleSubmit(onSubmit)} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
-      {/* Success/Error Messages */}
-      {saveSuccess && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-input font-lexend text-sm text-green-700">
-          {t('profile.saveSuccess', 'Informações salvas com sucesso!')}
-        </div>
-      )}
-      {saveError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-input font-lexend text-sm text-red-700">
-          {saveError}
-        </div>
-      )}
-
+    <form onSubmit={(e) => e.preventDefault()} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
       {/* Address Fields */}
       <div className="flex flex-col md:flex-row gap-4">
         <Controller
@@ -194,7 +149,6 @@ export function ServiceAddressTab(): JSX.Element {
               value={field.value}
               onChange={field.onChange}
               onPlaceSelected={handlePlaceSelected}
-              onValidationChange={setIsAddressValid}
               error={errors.address?.message}
               requireSelection={true}
             />
@@ -321,18 +275,6 @@ export function ServiceAddressTab(): JSX.Element {
             />
           )}
         />
-      </div>
-
-      {/* Submit Button */}
-      <div className="flex justify-end pt-4">
-        <Button
-          type="submit"
-          variant="primary"
-          size="md"
-          isLoading={isSaving}
-        >
-          {t('profile.save', 'Salvar')}
-        </Button>
       </div>
     </form>
   );

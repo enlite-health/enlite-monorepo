@@ -9,7 +9,8 @@
  *   - transcript:13-16 "profesión / nivel de estudios seleccionado por defecto
  *     → mejor sin selección"  → selects começam vazios (placeholder).
  *   - transcript:30-33 "horarios cada 5 min es muy largo → cada 30 minutos"
- *     → o seletor de horário oferece só :00 e :30.
+ *     REVERTIDO em 2026-06-29: o seletor voltou a 5 min (recrutamento usa essa
+ *     granularidade). O teste abaixo prova o passo de 5 min.
  *
  * Frontend real + backend real + Postgres real. Run: pnpm test:e2e:integration
  */
@@ -35,7 +36,11 @@ test.describe('@integration Worker profile — correções faladas no UX review'
     await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
   }
 
-  test('transcript:30-33 — seletor de horário em incrementos de 30 min (não 5)', async ({ page }) => {
+  // DECISÃO REVERTIDA (2026-06-29): o passo de 30 min foi desfeito a pedido do
+  // negócio — prestadores podem não usar tanta granularidade, mas o pessoal de
+  // recrutamento usa, então o seletor voltou a 5 min. Ver
+  // src/.../DayScheduleEditor.tsx (step={5}).
+  test('granularidade do seletor de horário é de 5 min', async ({ page }) => {
     const w = insertEligibilityWorker({ occupation: 'AT' });
     await login(page, w);
     await page.goto('/worker/profile?tab=availability', { waitUntil: 'networkidle', timeout: 30_000 });
@@ -46,15 +51,15 @@ test.describe('@integration Worker profile — correções faladas no UX review'
     const startBtn = page.locator('[data-testid="day-schedule-row-monday"] button:has-text(":")').first();
     await startBtn.click();
 
-    // O dropdown deve conter 09:30 (passo 30) e NÃO 09:05 (passo 5 antigo).
+    // Passo de 5 min: o dropdown deve conter 09:05 e 09:30.
     const list = page.locator('ul li button');
-    await expect(page.locator('ul:has(li button:has-text("09:30"))')).toBeVisible({ timeout: 10_000 });
-    await expect(list.filter({ hasText: /^09:05$/ })).toHaveCount(0);
+    await expect(page.locator('ul:has(li button:has-text("09:05"))')).toBeVisible({ timeout: 10_000 });
+    await expect(list.filter({ hasText: /^09:05$/ })).toHaveCount(1);
     await expect(list.filter({ hasText: /^09:30$/ })).toHaveCount(1);
 
-    // Prova visual: as opções saltam de 30 em 30.
-    await expect(page.locator('ul:has(li button:has-text("09:30"))')).toHaveScreenshot(
-      'time-picker-30min.png',
+    // Prova visual: as opções saltam de 5 em 5.
+    await expect(page.locator('ul:has(li button:has-text("09:05"))')).toHaveScreenshot(
+      'time-picker-5min.png',
       { maxDiffPixels: 200 },
     );
   });

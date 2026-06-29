@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrationStore';
 import { availabilitySchema, AvailabilityFormData } from '@presentation/validation/workerRegistrationSchemas';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
-import { Button } from '@presentation/components/atoms/Button';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
+import { useToast } from '@presentation/hooks/useToast';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -31,10 +31,7 @@ export function AvailabilityTab(): JSX.Element {
 
   // Use individual selectors to prevent re-renders
   const data = useWorkerRegistrationStore((state) => state.data);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const showToast = useToast();
 
   const {
     watch,
@@ -96,10 +93,15 @@ export function AvailabilityTab(): JSX.Element {
         }));
       });
       await saveAvailability({ availability });
+      showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
     },
     500,
     (error) => {
-      setSaveError(error instanceof Error ? error.message : t('workerRegistration.availability.saveError'));
+      showToast(
+        error instanceof Error ? error.message : t('workerRegistration.availability.saveError'),
+        'error',
+        'profile-save',
+      );
     },
   );
 
@@ -129,49 +131,8 @@ export function AvailabilityTab(): JSX.Element {
     triggerSave();
   };
 
-  const onSubmit = async (): Promise<void> => {
-    setSaveError(null);
-    setSaveSuccess(false);
-    setIsSaving(true);
-    try {
-      const availability = schedule.flatMap((daySchedule, dayIndex) => {
-        if (!daySchedule.enabled) return [];
-        return (daySchedule.timeSlots || []).map((slot) => ({
-          dayOfWeek: dayIndex,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        }));
-      });
-      await saveAvailability({ availability });
-      setSaveSuccess(true);
-      containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : t('workerRegistration.availability.saveError'));
-      containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   return (
-    <div ref={containerRef} className="flex flex-col gap-6 w-full" onBlur={triggerSave}>
-      {/* Success/Error Messages */}
-      {saveSuccess && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-input">
-          <Text as="span" size="sm" color="inherit" className="text-green-700">
-            {t('profile.saveSuccess', 'Informações salvas com sucesso!')}
-          </Text>
-        </div>
-      )}
-      {saveError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-input">
-          <Text as="span" size="sm" color="inherit" className="text-red-700">
-            {saveError}
-          </Text>
-        </div>
-      )}
-
+    <div className="flex flex-col gap-6 w-full" onBlur={triggerSave}>
       <Heading level={3} weight="medium" color="secondary">
         {t('workerRegistration.availability.title')}
       </Heading>
@@ -183,19 +144,6 @@ export function AvailabilityTab(): JSX.Element {
           {errors.schedule.message}
         </Text>
       )}
-
-      {/* Submit Button */}
-      <div className="flex justify-end pt-4">
-        <Button
-          type="button"
-          onClick={onSubmit}
-          variant="primary"
-          size="md"
-          isLoading={isSaving}
-        >
-          {t('profile.save', 'Salvar')}
-        </Button>
-      </div>
     </div>
   );
 }

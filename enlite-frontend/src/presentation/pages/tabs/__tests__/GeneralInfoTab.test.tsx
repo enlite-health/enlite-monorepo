@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, screen, act } from '@testing-library/react';
 import { GeneralInfoTab } from '../GeneralInfoTab';
+import { Toaster } from '@presentation/components/molecules/Toaster';
+import { useToastStore } from '@presentation/stores/toastStore';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { ApiError } from '@infrastructure/http/ApiError';
@@ -80,9 +82,10 @@ vi.mock('@presentation/utils/imageCompression', () => ({
   compressImage: vi.fn((data: string) => Promise.resolve(data)),
 }));
 
-describe('GeneralInfoTab - Auto Save & Scroll', () => {
+describe('GeneralInfoTab - Auto Save & Toast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useToastStore.setState({ toasts: [] });
     vi.mocked(useAutoSave).mockReturnValue(mockTriggerSave);
     vi.mocked(useWorkerApi).mockReturnValue({
       saveGeneralInfo: mockSaveGeneralInfo,
@@ -126,38 +129,27 @@ describe('GeneralInfoTab - Auto Save & Scroll', () => {
     );
   });
 
-  it('should scroll to top on successful manual save', async () => {
+  it('shows a success toast when auto-save succeeds', async () => {
     mockSaveGeneralInfo.mockResolvedValueOnce(undefined);
-    const { container } = render(<GeneralInfoTab />);
+    render(<><GeneralInfoTab /><Toaster /></>);
 
     await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
 
-    const form = container.querySelector('form')!;
-    fireEvent.submit(form);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+    expect(await screen.findByTestId('toast-success')).toBeTruthy();
   });
 
-  it('should scroll to top on save error', async () => {
-    mockSaveGeneralInfo.mockRejectedValueOnce(new Error('Save failed'));
-    const { container } = render(<GeneralInfoTab />);
+  it('shows an error toast when auto-save fails', async () => {
+    render(<><GeneralInfoTab /><Toaster /></>);
 
     await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
 
-    const form = container.querySelector('form')!;
-    fireEvent.submit(form);
+    const onError = vi.mocked(useAutoSave).mock.calls[0][2]!;
+    act(() => onError(new Error('Save failed')));
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+    expect(await screen.findByTestId('toast-error')).toBeTruthy();
   });
 
   // Regressão: o erro de telefone duplicado NUNCA pode mostrar SQL cru ao worker.
@@ -172,24 +164,21 @@ describe('GeneralInfoTab - Auto Save & Scroll', () => {
         },
         409,
       );
-      mockSaveGeneralInfo.mockRejectedValueOnce(apiError);
 
-      const { container } = render(<GeneralInfoTab />);
+      render(<><GeneralInfoTab /><Toaster /></>);
       await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
 
-      fireEvent.submit(container.querySelector('form')!);
+      // O autosave traduz o erro via onError → toast amigável (nunca SQL cru).
+      const onError = vi.mocked(useAutoSave).mock.calls[0][2]!;
+      act(() => onError(apiError));
 
-      const errorBox = await waitFor(() => {
-        const el = container.querySelector('.bg-red-50');
-        expect(el).not.toBeNull();
-        return el!;
-      });
+      const toast = await screen.findByTestId('toast-error');
 
-      expect(errorBox.textContent).toContain('no puede ser utilizado');
+      expect(toast.textContent).toContain('no puede ser utilizado');
       // Garantia central: jamais expor detalhes de SQL/constraint.
-      expect(errorBox.textContent?.toLowerCase()).not.toContain('duplicate key');
-      expect(errorBox.textContent?.toLowerCase()).not.toContain('constraint');
-      expect(errorBox.textContent?.toLowerCase()).not.toContain('idx_workers_phone_unique');
+      expect(toast.textContent?.toLowerCase()).not.toContain('duplicate key');
+      expect(toast.textContent?.toLowerCase()).not.toContain('constraint');
+      expect(toast.textContent?.toLowerCase()).not.toContain('idx_workers_phone_unique');
     });
   });
 });

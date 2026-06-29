@@ -1,4 +1,4 @@
-import { useState, memo, useEffect, useRef } from 'react';
+import { useState, memo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -8,8 +8,8 @@ import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { compressImage } from '@presentation/utils/imageCompression';
 import { formatDateFromISO, parseDateToISO } from '@presentation/hooks/useMask';
-import { Button } from '@presentation/components/atoms/Button';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
+import { useToast } from '@presentation/hooks/useToast';
 import { GeneralInfoFormFields } from './GeneralInfoFormFields';
 
 export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
@@ -19,10 +19,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
+  const showToast = useToast();
 
   const form = useForm<GeneralInfoFormData>({
     resolver: zodResolver(generalInfoSchema) as import('react-hook-form').Resolver<GeneralInfoFormData>,
@@ -52,7 +49,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     mode: 'onTouched',
   });
 
-  const { handleSubmit, reset, getValues } = form;
+  const { reset, getValues } = form;
 
   // Fetch real worker data from backend and populate form
   useEffect(() => {
@@ -133,29 +130,13 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const triggerSave = useAutoSave(
     async () => {
       await saveGeneralInfo(buildSavePayload(getValues()));
+      showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
     },
     500,
     (error) => {
-      setSaveError(resolveSaveErrorMessage(error));
+      showToast(resolveSaveErrorMessage(error), 'error', 'profile-save');
     },
   );
-
-  const onSubmit = async (formData: GeneralInfoFormData): Promise<void> => {
-    setSaveError(null);
-    setSaveSuccess(false);
-    setIsSaving(true);
-    try {
-      await saveGeneralInfo(buildSavePayload(formData));
-      setSaveSuccess(true);
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      setSaveError(resolveSaveErrorMessage(err));
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const handleProfilePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0];
@@ -199,30 +180,13 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   );
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit(onSubmit)} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
-      {saveSuccess && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-input font-lexend text-sm text-green-700">
-          {t('profile.saveSuccess', 'Informações salvas com sucesso!')}
-        </div>
-      )}
-      {saveError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-input font-lexend text-sm text-red-700">
-          {saveError}
-        </div>
-      )}
-
+    <form onSubmit={(e) => e.preventDefault()} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
       <GeneralInfoFormFields
         form={form}
         isFieldReadonly={isFieldReadonly}
         triggerSave={triggerSave}
         profilePhotoElement={profilePhotoElement}
       />
-
-      <div className="flex justify-end pt-4">
-        <Button type="submit" variant="primary" size="md" isLoading={isSaving}>
-          {t('profile.save', 'Salvar')}
-        </Button>
-      </div>
     </form>
   );
 });
