@@ -1,4 +1,4 @@
--- Migration 219: colunas de estado de espelhamento no AnaCare
+-- Migration 231: colunas de estado de espelhamento no AnaCare
 --
 -- CONTEXTO:
 --   ana_care_id já existe (migration 014) — armazena o ID externo da enfermera.
