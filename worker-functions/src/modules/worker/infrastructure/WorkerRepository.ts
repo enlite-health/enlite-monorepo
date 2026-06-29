@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { logger, loggingAls } from '@shared/logging';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -324,7 +325,41 @@ export class WorkerRepository implements IWorkerRepository {
 
   /** Delega para WorkerImportRepository para manter o arquivo sob 400 linhas. */
   async recalculateStatus(workerId: string): Promise<WorkerStatus | null> {
-    return _recalculateStatus(this.pool, workerId, (id, s) => this.updateStatus(id, s));
+    const newStatus = await _recalculateStatus(this.pool, workerId, (id, s) => this.updateStatus(id, s));
+
+    // Quando o status transitou para REGISTERED: enfileira mirror event (outbox best-effort).
+    // Esta é a forma canônica de disparar o sync para AnaCare — todos os caminhos que
+    // promovem um worker a REGISTERED passam por recalculateStatus.
+    if (newStatus === 'REGISTERED') {
+      await this.enqueueMirrorEvent(workerId);
+    }
+
+    return newStatus;
+  }
+
+  /**
+   * Enfileira worker.mirror_requested no outbox (domain_events).
+   * Best-effort: falha silenciosa — não bloqueia o fluxo principal.
+   * Não é transacional com o UPDATE de status (pool.query direto, sem client).
+   * Se o INSERT falhar não há linha pra reprocessar (o sweep do
+   * DomainEventProcessor só reenfileira eventos JÁ gravados) — a rede de
+   * segurança real é o BackfillWorkerMirrorUseCase, re-rodável a qualquer momento.
+   */
+  private async enqueueMirrorEvent(workerId: string): Promise<void> {
+    try {
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+      await this.pool.query(
+        `INSERT INTO domain_events (event, payload, trace_id)
+         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
+        [JSON.stringify({ workerId }), traceId],
+      );
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId }).warn({
+        msg: '[WorkerRepository] failed to enqueue mirror event (best-effort, ignoring)',
+        error: e.message,
+      });
+    }
   }
 
   async updateImportedWorkerData(

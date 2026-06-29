@@ -53,6 +53,10 @@ export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPost
 export type { CreateJobPostingFromTalentumInput, CreateJobPostingFromTalentumResult } from './application/CreateJobPostingFromTalentumUseCase';
 export { BackfillWorkerMirrorUseCase } from './application/BackfillWorkerMirrorUseCase';
 export type { BackfillOptions, BackfillSummary } from './application/BackfillWorkerMirrorUseCase';
+export { MirrorWorkerService } from './application/MirrorWorkerService';
+export type { MirrorResult } from './application/MirrorWorkerService';
+export { createAnaCareMirrorHandler } from './application/AnaCareMirrorEventHandler';
+export type { AnaCareMirrorHandlerDeps } from './application/AnaCareMirrorEventHandler';
 
 // Interfaces / Webhooks
 export { TalentumWebhookController } from './interfaces/webhooks/controllers/TalentumWebhookController';

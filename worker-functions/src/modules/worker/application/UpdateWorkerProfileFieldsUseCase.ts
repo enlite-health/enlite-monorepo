@@ -16,9 +16,11 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, loggingAls } from '@shared/logging';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { captureWorkerBefore } from './workerAuditDiff';
+
+const TAG = '[UpdateWorkerProfileFieldsUseCase]';
 
 export interface WorkerProfilePatch {
   workerId: string;
@@ -130,7 +132,36 @@ export class UpdateWorkerProfileFieldsUseCase {
     }));
 
     log.info({ msg: 'profile fields updated', fieldsUpdated });
+
+    // Enqueue worker.mirror_requested (outbox assíncrono, best-effort).
+    // updateScalarFields usa pool.query direto (sem transação explícita),
+    // então fazemos o INSERT logo após — não é transacional mas é suficiente:
+    // o sweep do DomainEventProcessor reprocessa pendentes.
+    if (fieldsUpdated.length > 0) {
+      await this.enqueueMirrorEvent(workerId);
+    }
+
     return { workerId, fieldsUpdated, changes };
+  }
+
+  // ── Enqueue outbox ──────────────────────────────────────────────
+
+  private async enqueueMirrorEvent(workerId: string): Promise<void> {
+    try {
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+      await this.pool.query(
+        `INSERT INTO domain_events (event, payload, trace_id)
+         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
+        [JSON.stringify({ workerId }), traceId],
+      );
+    } catch (err: unknown) {
+      // best-effort: não bloqueia o fluxo principal
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId }).warn({
+        msg: `${TAG} failed to enqueue mirror event (best-effort, ignoring)`,
+        error: e.message,
+      });
+    }
   }
 
   private async updateScalarFields(

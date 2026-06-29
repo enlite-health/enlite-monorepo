@@ -56,6 +56,7 @@ import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
+import { createAnaCareMirrorHandler } from '@modules/integration/application/AnaCareMirrorEventHandler';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
@@ -349,6 +350,11 @@ domainEventProcessor.registerHandler(
 domainEventProcessor.registerHandler(
   'vacancy.created',
   createVacancyAutoInviteHandler(dbPool, cloudTasksClient),
+);
+
+domainEventProcessor.registerHandler(
+  'worker.mirror_requested',
+  createAnaCareMirrorHandler(),
 );
 
 const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
