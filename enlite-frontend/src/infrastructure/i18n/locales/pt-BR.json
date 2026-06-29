@@ -181,7 +181,7 @@
     "licenseRequired": "Registro profissional é obrigatório",
     "selectLanguage": "Selecione pelo menos um idioma",
     "selectProfession": "Por favor, selecione a profissão",
-    "selectKnowledgeLevel": "Por favor, selecione o nível de conhecimento",
+    "selectKnowledgeLevel": "Por favor, selecione o nível de estudos",
     "selectExperienceType": "Selecione pelo menos um tipo de experiência",
     "selectYearsExperience": "Por favor, selecione os anos de experiência",
     "selectPreferredType": "Selecione pelo menos um tipo preferido",
@@ -218,9 +218,11 @@
       "lastName": "Sobrenome",
       "lastNamePlaceholder": "Marquez",
       "sex": "Sexo",
+      "sexHint": "O sexo que consta no seu documento.",
       "male": "Masculino",
       "female": "Feminino",
       "gender": "Gênero",
+      "genderHint": "O gênero com o qual você se identifica.",
       "other": "Outro",
       "birthDate": "Data de nascimento",
       "birthDatePlaceholder": "18/03/1960",
@@ -342,6 +344,8 @@
   },
   "jobs": {
     "title": "Consultar Vagas",
+    "completeToApplyBanner": "Complete seu cadastro para poder se candidatar às vagas.",
+    "completeNow": "Completar",
     "searchPlaceholder": "Pesquisar pelo nome da vaga",
     "status": "Status",
     "noResults": "Nenhuma vaga encontrada com os filtros selecionados",
@@ -459,6 +463,19 @@
     "completionCard": {
       "title": "Complete seu Perfil Profissional"
     },
+    "wizard": {
+      "back": "Voltar",
+      "next": "Próximo",
+      "finish": "Finalizar"
+    },
+    "summary": {
+      "title": "Resumo do seu cadastro",
+      "pendingIntro": "Falta completar:",
+      "keepEditing": "Continuar editando",
+      "allDone": "Seu cadastro está completo!",
+      "allDoneBody": "Você já pode se candidatar às vagas disponíveis.",
+      "viewVacancies": "Ver vagas"
+    },
     "tabs": {
       "general": "Informações Gerais",
       "address": "Endereço de Atendimento",
@@ -467,7 +484,7 @@
     },
     "progress": {
       "registration": "Cadastro Básico",
-      "documents": "Documentos Profissionais",
+      "documents": "Documentos obrigatórios",
       "step1": "Informações Gerais",
       "step2": "Endereço de Atendimento",
       "step3": "Disponibilidade",
@@ -499,6 +516,9 @@
     "monotributo": "Certificado MEI/Monotributo",
     "atCertificate": "Certificado de Acompanhante Terapêutico",
     "atRequiredWarning": "Como Acompanhante Terapêutico, estes documentos são obrigatórios para completar seu cadastro.",
+    "atRequiredPending": "Para se postular como Acompanhante Terapêutico você precisa enviar:",
+    "allRequiredDone": "Você já enviou todos os documentos obrigatórios para se postular.",
+    "requiredBadge": "Obrigatório",
     "additionalTitle": "Outros Documentos",
     "addDocument": "Adicionar",
     "labelPlaceholder": "Nome do documento (ex: Certificado Primeiros Socorros)",
@@ -520,6 +540,7 @@
       "vacancies": "Vagas",
       "workers": "Prestadores",
       "recruitment": "Recrutamento",
+      "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
       "apiDocs": "API Docs",
       "tags": "Etiquetas",
@@ -538,10 +559,17 @@
         "comingSoon": "Em breve",
         "history": "Histórico"
       },
+      "tabDesc": {
+        "queue": "Contas que provavelmente são a mesma pessoa porque compartilham o mesmo telefone. Revise cada grupo e unifique as contas duplicadas (ou descarte se não forem).",
+        "history": "Todas as unificações já feitas. Você vê quem ficou, quem foi absorvido e pode desfazer uma unificação se algo deu errado.",
+        "imported": "Contas que coincidem por NOME (não por telefone) — em geral fantasmas importados. Confiança menor: revise bem se são a mesma pessoa antes de unificar."
+      },
       "table": {
         "selectAll": "Selecionar todos",
         "selectRow": "Selecionar {{phone}}",
         "phone": "Telefone",
+        "account": "Prestador",
+        "noName": "Sem nome",
         "accountCount": "Contas",
         "signal": "Contas reais",
         "survivor": "Principal sugerido",
@@ -564,7 +592,13 @@
       "tier": {
         "REGISTERED": "Registrado",
         "INCOMPLETE_REGISTER": "Incompleto",
-        "PRE_REGISTER": "Pré-cadastro"
+        "PRE_REGISTER": "Pré-cadastro",
+        "QUALIFIED": "Qualificado",
+        "ACTIVE": "Ativo",
+        "SELECTED": "Selecionado",
+        "PENDING": "Pendente",
+        "REJECTED": "Rejeitado",
+        "DISABLED": "Desabilitado"
       },
       "bulkBar": {
         "selected": "{{count}} selecionado",
@@ -605,7 +639,15 @@
         "mismatchTitle_plural": "{{count}} campos com conflito",
         "mismatchDesc": "Expanda «Avançado» para revisar e escolher qual valor manter campo a campo.",
         "encryptedField": "Campo criptografado",
-        "emptyValue": "vazio"
+        "emptyValue": "vazio",
+        "conflictManualTitle": "Atenção: são duas contas distintas com acesso real",
+        "conflictManualDesc": "Ao unificar, uma conta absorve a outra: uma fica e a outra é eliminada. Confirme só se tiver certeza de que é a mesma pessoa.",
+        "conflictKeeps": "Fica",
+        "conflictPrincipalLabel": "(principal)",
+        "conflictDeletes": "É eliminada",
+        "conflictDeletesHint": "Os dados dela (candidaturas, documentos, entrevistas) passam para a conta principal. É reversível pelo Histórico.",
+        "conflictChangePrincipalHint": "Use «Tornar principal» em cada cartão para escolher qual fica.",
+        "conflictConfirmCheckbox": "Confirmo que é a mesma pessoa"
       },
       "field": {
         "email": "Email",
@@ -655,9 +697,12 @@
           "survivor": "Conta principal",
           "absorbed": "Conta absorvida",
           "category": "Categoria",
+          "executedBy": "Feito por",
           "date": "Data",
           "actions": "Ações"
         },
+        "systemActor": "Sistema (automático)",
+        "confirmedSamePersonBadge": "Confirmado manualmente",
         "undoBtn": "Desfazer",
         "undoAriaLabel": "Desfazer unificação do telefone {{phone}}",
         "category": {
@@ -692,7 +737,9 @@
         "reasonConflict": "requer revisão",
         "reviewBtn": "Revisar",
         "conflictTitle": "Revisão manual necessária",
-        "conflictDesc": "Este grupo tem mais de uma conta real. Unifique manualmente na aba Fila.",
+        "conflictDesc": "Há {{count}} conta real neste grupo. Revise na aba Fila antes de unificar:",
+        "conflictDesc_plural": "Há {{count}} contas reais neste grupo — podem ser pessoas diferentes. Revise cada uma na aba Fila antes de unificar:",
+        "conflictAccountAriaLabel": "Ver {{name}} na Fila",
         "reason": {
           "real_account_absorbs_imported": "Real absorve importado",
           "conflict_multiple_real_accounts": "Conflito: múltiplos reais",
@@ -706,6 +753,29 @@
           "reason": "Razão",
           "actions": "Ações",
           "mergeAriaLabel": "Unificar grupo com {{count}} contas"
+        }
+      },
+      "manualMerge": {
+        "button": "Unificar manualmente",
+        "buttonAriaLabel": "Unificar duas contas manualmente",
+        "title": "Unificar manualmente",
+        "dialogLabel": "Unificação manual de contas",
+        "compareDialogLabel": "Comparar e unificar contas",
+        "description": "Busque duas contas por nome ou telefone e compare para unificá-las, mesmo que não estejam na fila automática.",
+        "accountA": "Primeira conta",
+        "accountB": "Segunda conta",
+        "searchPlaceholder": "Busque por nome ou telefone...",
+        "changeAccount": "Alterar",
+        "changeHint": "Altere para escolher outra conta.",
+        "noResults": "Sem resultados para a busca.",
+        "compare": "Comparar e unificar",
+        "compareAriaLabel": "Comparar e unificar as duas contas selecionadas",
+        "comparing": "Carregando...",
+        "sameAccountError": "As duas contas escolhidas são a mesma. Escolha contas diferentes.",
+        "buildError": "Erro ao construir o grupo. Tente novamente.",
+        "badge": {
+          "withAccess": "Com acesso",
+          "imported": "Importado"
         }
       }
     },
@@ -913,12 +983,13 @@
     "kanban": {
       "columns": {
         "INVITED": "Convidados",
-        "INITIATED": "Iniciado",
         "IN_PROGRESS": "Em Progresso",
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",
         "SELECTED": "Selecionados",
-        "REJECTED": "Rejeitados"
+        "REJECTED": "Rejeitados",
+        "INICIADO": "Iniciados",
+        "PRE_SCREENING": "Pré-triagem"
       },
       "talentumStatus": {
         "INITIATED": "Talentum: Iniciado",
@@ -927,7 +998,8 @@
         "PENDING": "Talentum: Analisando...",
         "QUALIFIED": "Talentum: Qualificado",
         "IN_DOUBT": "Talentum: Em dúvida",
-        "NOT_QUALIFIED": "Talentum: Não qualificado"
+        "NOT_QUALIFIED": "Talentum: Não qualificado",
+        "PRE_SCREENING": "Talentum: Pré-triagem"
       },
       "rejectionLabels": {
         "DISTANCE": "Distância",
@@ -971,7 +1043,10 @@
         "DEPENDENCY_MISMATCH": "Nível de dependência",
         "TALENTUM_NOT_QUALIFIED": "Talentum: Não qualificado",
         "OTHER": "Outro motivo"
-      }
+      },
+      "blockedBadge": "BLOQUEADO",
+      "blockedAttemptCount_one": "Tentou {{count}} vez",
+      "blockedAttemptCount_other": "Tentou {{count}} vezes"
     },
     "workerDetail": {
       "status": "Status do Prestador",
@@ -1049,6 +1124,30 @@
       "weight": "Peso",
       "height": "Altura",
       "edit": "Editar",
+      "professionValue": {
+        "AT": "Acompanhante Terapêutico",
+        "CAREGIVER": "Cuidador(a)",
+        "NURSE": "Enfermeiro(a)",
+        "KINESIOLOGIST": "Fisioterapeuta",
+        "PSYCHOLOGIST": "Psicólogo(a)"
+      },
+      "linkedin": "LinkedIn",
+      "editModal": {
+        "title": "Editar prestador",
+        "firstName": "Nome",
+        "lastName": "Sobrenome",
+        "email": "E-mail",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número do documento",
+        "professionalSection": "Dados profissionais",
+        "addressSection": "Endereço",
+        "unset": "—",
+        "save": "Salvar",
+        "cancel": "Cancelar",
+        "invalidEmail": "E-mail inválido",
+        "selectAddress": "Selecione um endereço da lista de sugestões",
+        "saveError": "Erro ao salvar as alterações"
+      },
       "serviceRadius": "Raio de atendimento",
       "termsOfUse": "Termos de uso",
       "privacyPolicy": "Políticas de privacidade",
@@ -1057,7 +1156,6 @@
       "statusIncomplete": "Registro incompleto",
       "statusDisabled": "Desativado",
       "viewDocument": "Ver documento",
-      "linkedin": "LinkedIn",
       "noAvailability": "Sem disponibilidade registrada",
       "validateDoc": "Validar",
       "validatedBy": "Validado por",
@@ -2409,11 +2507,30 @@
         "analiticoUniversitario": "Histórico universitário",
         "cartaRecomendacion": "Carta de recomendação",
         "professionalRegistration": "Registro profissional",
-        "liabilityInsurance": "Seguro de responsabilidade civil"
+        "liabilityInsurance": "Seguro de responsabilidade civil",
+        "first_name": "Nome",
+        "last_name": "Sobrenome",
+        "birth_date": "Data de nascimento",
+        "document_number": "Número do documento",
+        "knowledge_level": "Nível de conhecimento",
+        "title_certificate": "Título / Certificado",
+        "years_experience": "Anos de experiência",
+        "experience_types": "Tipos de experiência",
+        "preferred_types": "Tipos de serviço preferidos",
+        "preferred_age_range": "Faixa etária preferida",
+        "worker_service_areas": "Área de atendimento",
+        "worker_availability": "Disponibilidade",
+        "phone": "Telefone",
+        "doc_resume_cv": "Currículo",
+        "doc_identity_document": "Documento de identidade",
+        "doc_criminal_record": "Antecedentes penais",
+        "doc_at_certificate": "Certificado de Acompanhante Terapêutico"
       },
+      "bodyGeneric": "Seu cadastro está incompleto. Vamos redirecioná-lo ao seu perfil para completá-lo.",
       "redirectNotice": "Você será redirecionado ao seu perfil para completar os dados faltantes.",
       "confirm": "Completar cadastro",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "goToField": "Ir para {{field}}"
     },
     "notFound": {
       "title": "Vaga não encontrada",

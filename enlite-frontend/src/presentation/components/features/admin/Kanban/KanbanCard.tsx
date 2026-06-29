@@ -22,6 +22,14 @@ interface KanbanCardProps {
   meetLink?: string | null;
   acquisitionChannel?: string | null;
   internalStage?: string | null;
+  /** INICIADO column: true when worker was blocked by the postulation gate */
+  isBlocked?: boolean;
+  /** Reason the gate blocked the attempt: worker_not_found | registration_incomplete | worker_disabled */
+  blockedReason?: string;
+  /** Fields that need to be completed (only relevant when blockedReason='registration_incomplete') */
+  missingFields?: string[];
+  /** How many times this worker attempted to apply */
+  attemptCount?: number;
   onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
 }
@@ -36,6 +44,7 @@ const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = 
 
 const TALENTUM_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   INITIATED: { bg: 'bg-slate-100', text: 'text-slate-600' },
+  PRE_SCREENING: { bg: 'bg-indigo-50', text: 'text-indigo-700' },
   IN_PROGRESS: { bg: 'bg-amber-50', text: 'text-amber-700' },
   COMPLETED: { bg: 'bg-blue-50', text: 'text-blue-700' },
   PENDING: { bg: 'bg-violet-50', text: 'text-violet-700' },
@@ -71,6 +80,10 @@ export function KanbanCard({
   meetLink,
   acquisitionChannel,
   internalStage,
+  isBlocked,
+  blockedReason,
+  missingFields,
+  attemptCount,
   onWorkerClick,
   onReject,
 }: KanbanCardProps) {
@@ -193,6 +206,36 @@ export function KanbanCard({
           <span data-testid="rejection-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600">
             {t(`admin.kanban.rejectionLabels.${rejectionReasonCategory}`, rejectionReasonCategory)}
           </span>
+        </div>
+      )}
+
+      {isBlocked && (
+        <div className="mt-2 flex flex-col gap-1" data-testid="blocked-section">
+          <span data-testid="blocked-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+            {t('admin.kanban.blockedBadge')}
+          </span>
+          {blockedReason && (
+            <span data-testid="blocked-reason" className="text-[10px] text-slate-500">
+              {t(`admin.blockedAttempts.reason.${blockedReason}`, { defaultValue: blockedReason })}
+            </span>
+          )}
+          {missingFields && missingFields.length > 0 && (
+            <div data-testid="blocked-missing-fields" className="flex flex-wrap gap-1 mt-0.5">
+              {missingFields.map((field) => (
+                <span
+                  key={field}
+                  className="inline-block px-1 py-0.5 rounded text-[9px] font-medium bg-amber-50 text-amber-700"
+                >
+                  {t(`admin.blockedAttempts.missingField.${field}`, { defaultValue: field })}
+                </span>
+              ))}
+            </div>
+          )}
+          {attemptCount !== undefined && attemptCount > 0 && (
+            <span data-testid="blocked-attempt-count" className="text-[10px] text-slate-400">
+              {t('admin.kanban.blockedAttemptCount', { count: attemptCount })}
+            </span>
+          )}
         </div>
       )}
 

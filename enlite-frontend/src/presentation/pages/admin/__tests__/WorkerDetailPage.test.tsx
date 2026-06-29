@@ -4,6 +4,12 @@ import userEvent from '@testing-library/user-event';
 import WorkerDetailPage from '../WorkerDetailPage';
 import type { WorkerDetail } from '@domain/entities/Worker';
 
+// WorkerDetailContent calls useAdminAuth (Firebase). Non-admin profile → no edit
+// affordance, preserving the read-only behavior these tests assert.
+vi.mock('@presentation/hooks/useAdminAuth', () => ({
+  useAdminAuth: () => ({ adminProfile: null }),
+}));
+
 // ── react-i18next mock ────────────────────────────────────────────────────────
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

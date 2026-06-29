@@ -15,7 +15,8 @@ interface KanbanBoardProps {
 
 const COLUMN_CONFIG = [
   { id: 'INVITED', color: 'bg-blue-400', droppable: true },
-  { id: 'INITIATED', color: 'bg-violet-400', droppable: false },
+  { id: 'INICIADO', color: 'bg-indigo-400', droppable: false },
+  { id: 'PRE_SCREENING', color: 'bg-violet-400', droppable: false },
   { id: 'IN_PROGRESS', color: 'bg-violet-500', droppable: false },
   { id: 'COMPLETED', color: 'bg-violet-600', droppable: false },
   { id: 'CONFIRMED', color: 'bg-cyan-400', droppable: true },
@@ -123,6 +124,10 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                       meetLink={enc.meetLink}
                       acquisitionChannel={enc.acquisitionChannel}
                       internalStage={enc.internalStage ?? null}
+                      isBlocked={enc.isBlocked}
+                      blockedReason={enc.blockedReason}
+                      missingFields={enc.missingFields}
+                      attemptCount={enc.attemptCount}
                       onWorkerClick={handleWorkerClick}
                       onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
                     />
@@ -153,6 +158,10 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                 meetLink={activeCardInfo.card.meetLink}
                 internalStage={activeCardInfo.card.internalStage ?? null}
                 acquisitionChannel={activeCardInfo.card.acquisitionChannel}
+                isBlocked={activeCardInfo.card.isBlocked}
+                blockedReason={activeCardInfo.card.blockedReason}
+                missingFields={activeCardInfo.card.missingFields}
+                attemptCount={activeCardInfo.card.attemptCount}
               />
             </div>
           ) : null}

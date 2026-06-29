@@ -51,7 +51,7 @@ export function AvailabilityTab(): JSX.Element {
         timeSlots: [],
       })),
     },
-    mode: 'onChange',
+    mode: 'onTouched',
   });
 
   // Buscar dados reais do backend e preencher formulário

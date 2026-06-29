@@ -2,10 +2,10 @@ import * as crypto from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescreeningRepository';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
-import { TalentumResponseSource } from '../domain/TalentumPrescreening';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { reportError } from '@shared/logging';
+import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 
 const TAG = '[ProcessTalentumPrescreening]';
 
@@ -35,13 +35,17 @@ export interface IJobPostingLookup {
 }
 
 export class ProcessTalentumPrescreening {
+  private readonly questionsWriter: PrescreeningQuestionsWriter;
+
   constructor(
     private readonly prescreeningRepo: TalentumPrescreeningRepository,
     private readonly workerLookup: IWorkerLookup,
     private readonly jobPostingLookup: IJobPostingLookup,
     private readonly pool: Pool,
     private readonly pubsub: PubSubClient,
-  ) {}
+  ) {
+    this.questionsWriter = new PrescreeningQuestionsWriter(prescreeningRepo);
+  }
 
   async execute(
     payload: TalentumPrescreeningResponseParsed,
@@ -60,7 +64,7 @@ export class ProcessTalentumPrescreening {
     const prescreening = await this.persistPrescreening(payload, workerId, jobPostingId, environment);
 
     await this.syncFunnelAndEncuadre(prescreening, payload);
-    await this.persistQuestions(prescreening.id, payload);
+    await this.questionsWriter.persist(prescreening.id, payload);
 
     return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
   }
@@ -120,15 +124,16 @@ export class ProcessTalentumPrescreening {
         [authUid, payload.data.profile.email, phone],
       );
       return result.rows[0].id;
-    } catch (err: any) {
-      if (err.code === '23505') {
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string; message?: string };
+      if (pgErr.code === '23505') {
         const existing = await this.pool.query(
           `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
           [authUid, payload.data.profile.email],
         );
         return existing.rows[0]?.id ?? null;
       }
-      console.error(`${TAG} autoCreateWorker failed:`, err.message);
+      console.error(`${TAG} autoCreateWorker failed:`, pgErr.message);
       return null;
     }
   }
@@ -185,7 +190,11 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
   ): Promise<void> {
     if (!prescreening.workerId || !prescreening.jobPostingId) {
-      console.error(`${TAG} ALERT: syncFunnel SKIPPED — missing mandatory field! workerId=${prescreening.workerId}, jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}, talentumId=${prescreening.talentumPrescreeningId}. This should NEVER happen: worker must exist (registered in platform) and jobPosting must exist (created with vacancy).`);
+      console.error(
+        `${TAG} ALERT: syncFunnel SKIPPED — missing mandatory field! workerId=${prescreening.workerId}, ` +
+        `jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}, ` +
+        `talentumId=${prescreening.talentumPrescreeningId}. This should NEVER happen.`,
+      );
       return;
     }
 
@@ -207,13 +216,21 @@ export class ProcessTalentumPrescreening {
     }
   }
 
-  private deriveFunnelStage(payload: TalentumPrescreeningResponseParsed): string {
+  /**
+   * Derives the internal funnel stage from a Talentum webhook payload.
+   *
+   * Migration 230 (2026-06-26): subtype='INITIATED' (Talentum) → 'PRE_SCREENING' (canônico interno).
+   * O Zod do webhook NÃO foi alterado — Talentum continua enviando subtype='INITIATED'.
+   * A conversão é INTERNA aqui, antes de qualquer persistência em worker_job_applications.
+   */
+  deriveFunnelStage(payload: TalentumPrescreeningResponseParsed): string {
     if (payload.subtype === 'ANALYZED' && payload.data.response.statusLabel) {
       // 'ANALYZED' é sentinel local — usa-se pra pular upsert em WJA quando statusLabel === 'PENDING';
       // nunca persiste em application_funnel_stage (não consta em ApplicationFunnelStage)
       if (payload.data.response.statusLabel === 'PENDING') return 'ANALYZED';
       return payload.data.response.statusLabel;
     }
+    if (payload.subtype === 'INITIATED') return 'PRE_SCREENING';
     return payload.subtype;
   }
 
@@ -273,7 +290,7 @@ export class ProcessTalentumPrescreening {
     client: PoolClient, workerId: string, jobPostingId: string, funnelStage: string, previousStage: string | null,
     prescreeningId?: string,
   ): Promise<void> {
-    // Guard: skip if not NOT_QUALIFIED transition, or already auto-rejected (prevents re-execution on duplicate webhook)
+    // Guard: skip if not NOT_QUALIFIED transition, or already auto-rejected
     if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'REJECTED') return;
 
     console.log(`${TAG} NOT_QUALIFIED transition → marking encuadre RECHAZADO + auto-rejecting WJA`);
@@ -338,41 +355,6 @@ export class ProcessTalentumPrescreening {
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'ProcessTalentumPrescreening:ensureEncuadre', workerId, jobPostingId });
-    }
-  }
-
-  // ── Questions persistence ────────────────────────────────────────
-
-  private async persistQuestions(
-    prescreeningId: string,
-    payload: TalentumPrescreeningResponseParsed,
-  ): Promise<void> {
-    const regCount = payload.data.profile.registerQuestions.length;
-    const stateCount = payload.data.response.state.length;
-    console.log(`${TAG} persistQuestions | register=${regCount} | prescreening=${stateCount}`);
-
-    await this.upsertQuestions(prescreeningId, payload.data.profile.registerQuestions, 'register');
-    await this.upsertQuestions(prescreeningId, payload.data.response.state, 'prescreening');
-  }
-
-  private async upsertQuestions(
-    prescreeningId: string,
-    items: { questionId: string; question: string; answer: string; responseType?: string }[],
-    source: TalentumResponseSource,
-  ): Promise<void> {
-    for (const item of items) {
-      const { question } = await this.prescreeningRepo.upsertQuestion({
-        questionId:   item.questionId,
-        question:     item.question,
-        responseType: item.responseType ?? '',
-      });
-
-      await this.prescreeningRepo.upsertResponse({
-        prescreeningId,
-        questionId:     question.id,
-        answer:         item.answer || null,
-        responseSource: source,
-      });
     }
   }
 

@@ -138,6 +138,7 @@ export function DayScheduleEditor({
                         value={slot.startTime}
                         onChange={(e) => updateSlot(dayIndex, slotIndex, 'startTime', e.target.value)}
                         disabled={disabled}
+                        step={30}
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
                       <Text as="span" size="sm" color="white">-</Text>
@@ -145,6 +146,7 @@ export function DayScheduleEditor({
                         value={slot.endTime}
                         onChange={(e) => updateSlot(dayIndex, slotIndex, 'endTime', e.target.value)}
                         disabled={disabled}
+                        step={30}
                         includeEndOfDay
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />

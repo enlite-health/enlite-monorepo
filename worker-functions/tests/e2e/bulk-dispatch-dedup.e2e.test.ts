@@ -72,11 +72,11 @@ describe('Fase 5 — Dedup e idempotência do bulk dispatch', () => {
     );
     eligibleWorkerId = wRes.rows[0].id;
 
-    // Application em INITIATED há >5 dias
+    // Application em PRE_SCREENING há >5 dias (migration 230: INITIATED→PRE_SCREENING)
     await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage, updated_at)
-       VALUES ($1, $2, 'INITIATED', NOW() - INTERVAL '10 days')
+       VALUES ($1, $2, 'PRE_SCREENING', NOW() - INTERVAL '10 days')
        ON CONFLICT DO NOTHING`,
       [eligibleWorkerId, jobPostingId],
     );
@@ -187,7 +187,7 @@ describe('Fase 5 — Dedup e idempotência do bulk dispatch', () => {
        FROM workers w
        INNER JOIN worker_job_applications wja
          ON wja.worker_id = w.id
-         AND wja.application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')
+         AND wja.application_funnel_stage IN ('PRE_SCREENING', 'IN_PROGRESS') -- migration 230
          AND wja.updated_at < NOW() - INTERVAL '5 days'
        WHERE w.id = $1
          AND w.status != 'DISABLED'

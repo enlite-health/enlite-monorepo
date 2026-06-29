@@ -54,7 +54,7 @@ export default function WorkerDetailPage() {
 
   return (
     <div className="w-full min-h-screen bg-background px-4 sm:px-8 lg:px-12 xl:px-[120px] py-8">
-      <WorkerDetailContent workerId={id} header={header} renderError={renderError} />
+      <WorkerDetailContent workerId={id} header={header} renderError={renderError} allowEdit />
     </div>
   );
 }

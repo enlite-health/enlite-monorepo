@@ -16,7 +16,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { GitMerge, RefreshCw, AlertCircle } from 'lucide-react';
+import { GitMerge, RefreshCw, AlertCircle, Users } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -34,6 +34,7 @@ import { DedupHistoryTab } from './DedupHistoryTab';
 import { ImportedGroupsTab } from './ImportedGroupsTab';
 import { MergeCompareModal } from '@presentation/components/features/admin/Dedup/MergeCompareModal';
 import { UndoConfirmModal } from '@presentation/components/features/admin/Dedup/UndoConfirmModal';
+import { ManualMergeModal } from '@presentation/components/features/admin/Dedup/ManualMergeModal';
 import type { ImportedDedupGroup } from '@domain/entities/DedupGroup';
 
 function LoadingSkeleton() {
@@ -79,6 +80,7 @@ function DedupCenterPageInner() {
   const [mergeImportedGroup, setMergeImportedGroup] =
     useState<ImportedDedupGroup | null>(null);
   const [isDismissingBulk, setIsDismissingBulk] = useState(false);
+  const [isManualMergeOpen, setIsManualMergeOpen] = useState(false);
 
   // ── Undo modal state ──────────────────────────────────────────────────────────
   const [undoTarget, setUndoTarget] = useState<{
@@ -190,6 +192,17 @@ function DedupCenterPageInner() {
     [undo],
   );
 
+  // ── Conflict → Fila navigation ─────────────────────────────────────────────────
+  // From the conflict banner (Importados/manual merge): jump to the Fila tab and
+  // open the phone-group popup for the clicked real account. Closes whatever modal
+  // is currently open first.
+  const handleNavigateToPhoneGroup = useCallback((phone: string) => {
+    setMergeImportedGroup(null);
+    setIsManualMergeOpen(false);
+    setActiveTab('queue');
+    setMergePhone(phone);
+  }, []);
+
   return (
     <PageContainer>
       {/* ── Header ─────────────────────────────────────────────────────────────── */}
@@ -205,23 +218,43 @@ function DedupCenterPageInner() {
             </Text>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isCurrentTabLoading}
-          aria-label={d('refresh')}
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${isCurrentTabLoading ? 'animate-spin' : ''}`}
-          />
-          {d('refresh')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsManualMergeOpen(true)}
+            aria-label={d('manualMerge.buttonAriaLabel')}
+            data-testid="manual-merge-open-btn"
+          >
+            <Users className="w-4 h-4 mr-1" />
+            {d('manualMerge.button')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isCurrentTabLoading}
+            aria-label={d('refresh')}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${isCurrentTabLoading ? 'animate-spin' : ''}`}
+            />
+            {d('refresh')}
+          </Button>
+        </div>
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
+      <div className="mb-2">
         <DedupTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
+
+      {/* Per-tab description — explica pra que serve a aba ativa, pro operador não
+          ficar perdido ao abri-la pela primeira vez. */}
+      <div className="mb-6 max-w-3xl" data-testid="dedup-tab-description">
+        <Text size="sm" color="muted" as="p">
+          {d(`tabDesc.${activeTab}`)}
+        </Text>
       </div>
 
       {/* ── Queue tab ──────────────────────────────────────────────────────────── */}
@@ -321,6 +354,7 @@ function DedupCenterPageInner() {
             setMergeImportedGroup(null);
             refetchImported();
           }}
+          onNavigateToPhoneGroup={handleNavigateToPhoneGroup}
         />
       )}
 
@@ -332,6 +366,18 @@ function DedupCenterPageInner() {
           isUndoing={isUndoing}
           onConfirm={handleUndoConfirm}
           onClose={() => setUndoTarget(null)}
+        />
+      )}
+
+      {/* ── Manual merge modal (Onda 5) ─────────────────────────────────────────── */}
+      {isManualMergeOpen && (
+        <ManualMergeModal
+          onClose={() => setIsManualMergeOpen(false)}
+          onMergeSuccess={() => {
+            setIsManualMergeOpen(false);
+            refetch();
+            refetchHistory();
+          }}
         />
       )}
     </PageContainer>

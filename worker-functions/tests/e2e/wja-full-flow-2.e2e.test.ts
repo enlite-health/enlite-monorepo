@@ -337,7 +337,8 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
     });
 
     it('Stage history: transições de Worker A foram registradas em stage_history', async () => {
-      // Worker A passou por: INVITED → INITIATED → IN_PROGRESS → COMPLETED → QUALIFIED → CONFIRMED
+      // Worker A passou por: INVITED → PRE_SCREENING → IN_PROGRESS → COMPLETED → QUALIFIED → CONFIRMED
+      // (migration 230: subtype INITIATED do Talentum → PRE_SCREENING no banco)
       const { rows } = await pool.query(
         `SELECT sh.old_value, sh.new_value
          FROM worker_job_application_stage_history sh
@@ -349,7 +350,7 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
       expect(rows.length).toBeGreaterThanOrEqual(5);
 
       const stages = rows.map(r => r.new_value as string);
-      expect(stages).toContain('INITIATED');
+      expect(stages).toContain('PRE_SCREENING'); // migration 230: INITIATED → PRE_SCREENING
       expect(stages).toContain('IN_PROGRESS');
       expect(stages).toContain('COMPLETED');
       expect(stages).toContain('QUALIFIED');

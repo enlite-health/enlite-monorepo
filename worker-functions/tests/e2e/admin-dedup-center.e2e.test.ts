@@ -113,6 +113,31 @@ const encChoiceGroup = {
   absorbedFirstName: 'AbsorbedName',
 };
 
+// Cenário de regressão (bug de prod 23514): merge cujo PRINCIPAL está
+// INCOMPLETE_REGISTER e o absorvido tem worker_job_applications com source='manual'.
+// O reparent da WJA dispara trg_enforce_worker_registered; sem o bypass (mig 229) o
+// merge inteiro faz ROLLBACK e o operador vê "Erro interno".
+const guardGroup = {
+  survivorId: `dddd0001-0001-0001-0001-${STAMP.slice(-12)}`,
+  absorbedId: `dddd0002-0002-0002-0002-${STAMP.slice(-12)}`,
+  phoneNorm: `549500${STAMP.slice(-7)}`,
+  phoneSurvivor: `500${STAMP.slice(-7)}`,
+  phoneAbsorbed: `54500${STAMP.slice(-7)}`,
+  jobPostingId: '',
+};
+
+// Cenário de regressão (bug de prod 23514 / check_document_type_required): principal
+// SEM documento; absorvido COM document_number + document_type. O COALESCE precisa herdar
+// document_type junto com o número, senão o principal fica com número sem tipo → viola a
+// constraint check_document_type_required (mig 026) e o merge faz ROLLBACK ("Erro interno").
+const docTypeGroup = {
+  survivorId: `eeee0001-0001-0001-0001-${STAMP.slice(-12)}`,
+  absorbedId: `eeee0002-0002-0002-0002-${STAMP.slice(-12)}`,
+  phoneNorm: `549600${STAMP.slice(-7)}`,
+  phoneSurvivor: `600${STAMP.slice(-7)}`,
+  phoneAbsorbed: `54600${STAMP.slice(-7)}`,
+};
+
 // Em modo passthrough (USE_KMS_ENCRYPTION=false no docker de e2e) o "ciphertext"
 // é só base64 do plaintext — espelha KMSEncryptionService.encrypt/decrypt.
 function fakeCiphertext(plaintext: string): string {
@@ -236,6 +261,70 @@ beforeAll(async () => {
   await seedCollision(pool, dismissGroup.phoneNorm, [dismissGroup.survivorId, dismissGroup.absorbedId]);
   seededWorkerIds.push(dismissGroup.survivorId, dismissGroup.absorbedId);
   seededPhones.push(dismissGroup.phoneNorm);
+
+  // ── Cenário 4: regressão do guard (mig 229) ─────────────────────────────────
+  // Principal Firebase real porém INCOMPLETE_REGISTER; absorvido com WJA source='manual'.
+  await insertWorker(pool, {
+    id: guardGroup.survivorId,
+    auth_uid: `FirebaseGuardSurvivor_${STAMP}`,
+    email: `guard_sv_${STAMP}@example.com`,
+    phone: guardGroup.phoneSurvivor,
+  });
+  await insertWorker(pool, {
+    id: guardGroup.absorbedId,
+    auth_uid: `guard_absorbed_${STAMP}`,
+    email: `guard_abs_${STAMP}@enlite.import`,
+    phone: guardGroup.phoneAbsorbed,
+  });
+
+  // job_posting mínimo (patient_id nullable — vaga órfã)
+  const jp = await pool.query<{ id: string }>(
+    `INSERT INTO job_postings (title, description, country, status)
+     VALUES ('Vaga E2E dedup guard', 'desc', 'AR', 'SEARCHING')
+     RETURNING id`,
+  );
+  guardGroup.jobPostingId = jp.rows[0].id;
+
+  // Semeia a WJA manual no absorvido INCOMPLETE sem acionar o guard no seed:
+  // INSERT com source bypass ('talentum'), depois UPDATE só de `source` — coluna
+  // FORA da lista do trigger (worker_id, job_posting_id, application_funnel_stage).
+  await pool.query(
+    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+     VALUES ($1::uuid, $2::uuid, 'INITIATED', 'talentum')`,
+    [guardGroup.absorbedId, guardGroup.jobPostingId],
+  );
+  await pool.query(
+    `UPDATE worker_job_applications SET source = 'manual'
+     WHERE worker_id = $1::uuid AND job_posting_id = $2::uuid`,
+    [guardGroup.absorbedId, guardGroup.jobPostingId],
+  );
+
+  await seedCollision(pool, guardGroup.phoneNorm, [guardGroup.survivorId, guardGroup.absorbedId]);
+  seededWorkerIds.push(guardGroup.survivorId, guardGroup.absorbedId);
+  seededPhones.push(guardGroup.phoneNorm);
+
+  // ── Cenário 5: regressão check_document_type_required ───────────────────────
+  // Principal sem documento; absorvido com número + tipo (linha self-consistente).
+  await insertWorker(pool, {
+    id: docTypeGroup.survivorId,
+    auth_uid: `FirebaseDocSurvivor_${STAMP}`,
+    email: `doc_sv_${STAMP}@example.com`,
+    phone: docTypeGroup.phoneSurvivor,
+  });
+  await insertWorker(pool, {
+    id: docTypeGroup.absorbedId,
+    auth_uid: `doc_absorbed_${STAMP}`,
+    email: `doc_abs_${STAMP}@enlite.import`,
+    phone: docTypeGroup.phoneAbsorbed,
+  });
+  // Absorvido: número + tipo juntos (satisfaz a constraint na própria linha).
+  await pool.query(
+    `UPDATE workers SET document_number_encrypted = $1, document_type = 'DNI' WHERE id = $2::uuid`,
+    [fakeCiphertext('20304050'), docTypeGroup.absorbedId],
+  );
+  await seedCollision(pool, docTypeGroup.phoneNorm, [docTypeGroup.survivorId, docTypeGroup.absorbedId]);
+  seededWorkerIds.push(docTypeGroup.survivorId, docTypeGroup.absorbedId);
+  seededPhones.push(docTypeGroup.phoneNorm);
 });
 
 afterAll(async () => {
@@ -275,9 +364,21 @@ afterAll(async () => {
   ).catch(() => {});
 
   await pool.query(
+    `DELETE FROM worker_job_applications WHERE worker_id = ANY($1::uuid[])`,
+    [seededWorkerIds],
+  ).catch(() => {});
+
+  await pool.query(
     `DELETE FROM workers WHERE id = ANY($1::uuid[])`,
     [seededWorkerIds],
   ).catch(() => {});
+
+  if (guardGroup.jobPostingId) {
+    await pool.query(
+      `DELETE FROM job_postings WHERE id = $1::uuid`,
+      [guardGroup.jobPostingId],
+    ).catch(() => {});
+  }
 
   // Garante que o índice único não vaza para outras suítes (self-contained)
   // A migration 222 está deferida em prod — o índice não existe por migration no conjunto atual.
@@ -607,6 +708,93 @@ describe('POST /api/admin/dedup/merge — choice de campo encriptado', () => {
     expect(rows[0].first_name_encrypted).not.toBe(
       fakeCiphertext(encChoiceGroup.survivorFirstName),
     );
+  });
+});
+
+// ── 5c. Regressão guard: principal INCOMPLETE_REGISTER + WJA manual ───────────
+// Sem a mig 229 (bypass do trg_enforce_worker_registered na transação de merge/undo),
+// o reparent da WJA manual pro principal incompleto levantava 23514 → 500 "Erro interno".
+
+describe('POST /api/admin/dedup/merge — guard não bloqueia merge com WJA manual', () => {
+  let auditId: number;
+
+  it('sanidade: o trigger AINDA bloqueia postulação manual direta de worker incompleto', async () => {
+    // Prova que o guard segue ativo pro caminho real (não foi simplesmente desligado).
+    await expect(
+      pool.query(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1::uuid, $2::uuid, 'INITIATED', 'manual')`,
+        [guardGroup.survivorId, guardGroup.jobPostingId],
+      ),
+    ).rejects.toThrow(/must be REGISTERED/);
+  });
+
+  it('merge retorna 200 mesmo com principal incompleto (antes: 500)', async () => {
+    const res = await api.post('/api/admin/dedup/merge',
+      { survivorId: guardGroup.survivorId, absorbedIds: [guardGroup.absorbedId] },
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.data.success).toBe(true);
+    expect(res.data.data.audit_ids).toHaveLength(1);
+    auditId = Number(res.data.data.audit_ids[0]);
+    expect(auditId).toBeGreaterThan(0);
+  });
+
+  it('a WJA manual foi reparentada pro principal', async () => {
+    const { rows } = await pool.query<{ worker_id: string; source: string }>(
+      `SELECT worker_id, source FROM worker_job_applications
+       WHERE job_posting_id = $1::uuid`,
+      [guardGroup.jobPostingId],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].worker_id).toBe(guardGroup.survivorId);
+    expect(rows[0].source).toBe('manual');
+  });
+
+  it('undo retorna 200 e re-insere a WJA manual no absorvido (antes: tx abortada)', async () => {
+    const res = await api.post(`/api/admin/dedup/merges/${auditId}/undo`,
+      {},
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.data.success).toBe(true);
+    expect(res.data.data.alreadyUndone).toBe(false);
+
+    const { rows } = await pool.query<{ worker_id: string }>(
+      `SELECT worker_id FROM worker_job_applications
+       WHERE job_posting_id = $1::uuid`,
+      [guardGroup.jobPostingId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].worker_id).toBe(guardGroup.absorbedId);
+  });
+});
+
+// ── 5d. Regressão check_document_type_required ────────────────────────────────
+// Sem o COALESCE de document_type (par com document_number_encrypted), herdar o
+// número do absorvido sem o tipo violava check_document_type_required → 500.
+
+describe('POST /api/admin/dedup/merge — herda document_type junto com o número', () => {
+  it('merge retorna 200 e o principal fica com número E tipo (constraint satisfeita)', async () => {
+    const res = await api.post('/api/admin/dedup/merge',
+      { survivorId: docTypeGroup.survivorId, absorbedIds: [docTypeGroup.absorbedId] },
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.data.success).toBe(true);
+
+    const { rows } = await pool.query<{ document_number_encrypted: string | null; document_type: string | null }>(
+      `SELECT document_number_encrypted, document_type FROM workers WHERE id = $1::uuid`,
+      [docTypeGroup.survivorId],
+    );
+    // Número herdado do absorvido — e o tipo veio JUNTO (senão a constraint barraria).
+    expect(rows[0].document_number_encrypted).toBe(fakeCiphertext('20304050'));
+    expect(rows[0].document_type).toBe('DNI');
   });
 });
 

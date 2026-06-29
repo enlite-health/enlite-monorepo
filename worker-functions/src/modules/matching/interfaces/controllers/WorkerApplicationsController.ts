@@ -108,7 +108,7 @@ export class WorkerApplicationsController {
           // perderia a gravação. A conexão já está quente (assertWorkerCanApply acima)
           // e o upsert é single-row indexado (latência sub-ms). O use case é à prova de
           // falha (try/catch interno, nunca lança), então o 403 nunca é bloqueado por erro.
-          await this.recordBlockedAttemptUseCase.execute({
+          const missingFields = await this.recordBlockedAttemptUseCase.execute({
             workerId: worker.id,
             jobPostingId,
             reason: err.reason,
@@ -120,6 +120,7 @@ export class WorkerApplicationsController {
             code: err.code,
             reason: err.reason,
             workerStatus: err.workerStatus,
+            missingFields,
           });
           return;
         }

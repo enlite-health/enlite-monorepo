@@ -156,6 +156,15 @@ describe('DedupCenterPage — role guard: admin', () => {
       expect(screen.getByTestId('dedup-content')).toBeInTheDocument();
     });
   });
+
+  it('renders a per-tab description for the active tab (queue by default)', async () => {
+    renderPage();
+    await waitFor(() => {
+      const desc = screen.getByTestId('dedup-tab-description');
+      // i18n returns the key in tests — the active tab is 'queue'
+      expect(desc).toHaveTextContent('admin.dedup.tabDesc.queue');
+    });
+  });
 });
 
 describe('DedupCenterPage — role guard: loading (adminProfile=null)', () => {

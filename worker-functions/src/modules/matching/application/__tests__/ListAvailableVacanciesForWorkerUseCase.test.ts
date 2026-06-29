@@ -37,7 +37,7 @@ describe('ListAvailableVacanciesForWorkerUseCase', () => {
       status: 'OPEN',
       city: 'Buenos Aires',
       startDate: '2026-05-01',
-      funnelStage: 'INITIATED',
+      funnelStage: 'PRE_SCREENING', // migration 230: INITIATED → PRE_SCREENING
     };
     mockFindActiveByWorkerId.mockResolvedValue([vacancy]);
 

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modal "Registro incompleto" — todos os casos (E2E visual)</title>
+<style>
+  :root { --reg:#1e1b4b; --bug:#dc2626; --ok:#16a34a; --nav:#2563eb; --muted:#6b7280; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background:#f5f5f7; color:#1e1b4b; }
+  header { padding: 28px 32px; background:#fff; border-bottom:1px solid #e5e7eb; }
+  header h1 { margin:0 0 6px; font-size:22px; }
+  header p { margin:2px 0; color:var(--muted); font-size:14px; }
+  header code { background:#f0f0f3; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  .legend { margin-top:10px; font-size:13px; }
+  .legend b { color:var(--bug); } .legend i { color:var(--nav); font-style:normal; font-weight:700; }
+  h2.section { padding: 6px 32px 0; margin:24px 0 0; font-size:16px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap:20px; padding:16px 32px 8px; }
+  .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .card.bug { border-color:#fca5a5; } .card.nav { border-color:#bfdbfe; }
+  .card .cap { padding:12px 14px; border-bottom:1px solid #f0f0f3; }
+  .card .cap .tag { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--ok); }
+  .card.bug .cap .tag { color:var(--bug); } .card.nav .cap .tag { color:var(--nav); }
+  .card .cap .ttl { font-size:14px; font-weight:600; margin-top:3px; }
+  .card .cap .sub { font-size:12.5px; color:var(--muted); margin-top:3px; }
+  .card img { display:block; width:100%; background:#fafafa; }
+  .pair { display:grid; grid-template-columns:1fr; gap:0; }
+  .pair .step { padding:7px 14px; font-size:12px; font-weight:600; color:var(--nav); background:#eff6ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Modal "Registro incompleto" — garantia visual (E2E de integração real)</h1>
+  <p>12 casos, cada um de um worker real no banco → login → "Postularse" → 403 do backend → modal. 12/12 passando em 3 runs.</p>
+  <p>Arquivo: <code>enlite-frontend/e2e/integration/postularse-incomplete-modal.integration.e2e.ts</code></p>
+  <p class="legend">
+    <b>Vermelho</b> = modos de falha que causavam as 11 tentativas (worker não via o motivo) — agora corrigidos.<br>
+    <i>Azul</i> = navegação nova: cada item é clicável e leva ao local exato onde aquele registro se preenche.
+  </p>
+</header>
+
+<h2 class="section">Os 10 casos do modal — o motivo agora aparece sempre</h2>
+<div class="grid">
+  <div class="card"><div class="cap"><div class="tag">caso 1 · OK</div><div class="ttl">Só falta o nome</div><div class="sub">"Nombre" em Datos personales</div></div><img src="screenshots/caso1-nome.png" alt="caso 1"></div>
+  <div class="card"><div class="cap"><div class="tag">caso 2 · OK</div><div class="ttl">AT sem certificado</div><div class="sub">"Certificado de Acompañante Terapéutico"</div></div><img src="screenshots/caso2-at-certificado.png" alt="caso 2"></div>
+  <div class="card"><div class="cap"><div class="tag">caso 3 · OK</div><div class="ttl">AT sem currículo</div><div class="sub">"Currículum vitae"</div></div><img src="screenshots/caso3-at-curriculum.png" alt="caso 3"></div>
+  <div class="card"><div class="cap"><div class="tag">caso 4 · OK</div><div class="ttl">Cuidador sem DNI</div><div class="sub">"Documento de identidad" — sem exigir cert AT</div></div><img src="screenshots/caso4-cuidador-dni.png" alt="caso 4"></div>
+  <div class="card"><div class="cap"><div class="tag">caso 5 · OK</div><div class="ttl">Cuidador sem antecedentes</div><div class="sub">"Antecedentes penales"</div></div><img src="screenshots/caso5-cuidador-antecedentes.png" alt="caso 5"></div>
+  <div class="card"><div class="cap"><div class="tag">caso 6 · OK</div><div class="ttl">Composto (3 dados + 2 docs)</div><div class="sub">Duas seções; cada item com chevron clicável</div></div><img src="screenshots/caso6-composto-duas-secoes.png" alt="caso 6"></div>
+  <div class="card bug"><div class="cap"><div class="tag">caso 7 · BUG CORRIGIDO</div><div class="ttl">Falta título / certificado</div><div class="sub">"Título / Certificado" — antes NUNCA aparecia</div></div><img src="screenshots/caso7-titulo-certificado.png" alt="caso 7"></div>
+  <div class="card bug"><div class="cap"><div class="tag">caso 8 · BUG CORRIGIDO</div><div class="ttl">Falta telefone</div><div class="sub">"Teléfono" — antes era token cru / sumia</div></div><img src="screenshots/caso8-telefone.png" alt="caso 8"></div>
+  <div class="card"><div class="cap"><div class="tag">caso 9 · OK</div><div class="ttl">profession = NULL</div><div class="sub">Trata como AT: "Profesión" + cert AT</div></div><img src="screenshots/caso9-profissao-null.png" alt="caso 9"></div>
+  <div class="card bug"><div class="cap"><div class="tag">caso 10 · BUG CORRIGIDO</div><div class="ttl">Lista vazia</div><div class="sub">Mensagem genérica — nunca modal em branco</div></div><img src="screenshots/caso10-sem-campos.png" alt="caso 10"></div>
+</div>
+
+<h2 class="section">Navegação — clicar no item leva ao local exato</h2>
+<div class="grid">
+  <div class="card nav"><div class="cap"><div class="tag">caso 11 · NAVEGAÇÃO</div><div class="ttl">Clicar "Currículum vitae"</div><div class="sub">→ aba Documentos, rola e destaca o slot do CV</div></div>
+    <div class="pair">
+      <div class="step">1 · modal (item clicável)</div><img src="screenshots/caso11-nav-curriculum-modal.png" alt="caso 11 modal">
+      <div class="step">2 · destino: slot Currículum</div><img src="screenshots/caso11-nav-curriculum-slot.png" alt="caso 11 slot">
+    </div>
+  </div>
+  <div class="card nav"><div class="cap"><div class="tag">caso 12 · NAVEGAÇÃO</div><div class="ttl">Clicar "Teléfono"</div><div class="sub">→ aba General, foca o campo de telefone</div></div>
+    <div class="pair">
+      <div class="step">1 · modal (item clicável)</div><img src="screenshots/caso12-nav-telefone-modal.png" alt="caso 12 modal">
+      <div class="step">2 · destino: campo Número de teléfono</div><img src="screenshots/caso12-nav-telefone-campo.png" alt="caso 12 campo">
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -117,12 +117,14 @@ describe('AF1 — INSERT com application_funnel_stage = INITIATED', () => {
 
 // ── AF2: UPDATE para cada um dos 7 stages válidos ─────────────────────────────
 
-describe('AF2 — UPDATE para cada um dos 7 stages válidos', () => {
-  // Stages válidos pós-migration 191/194: NOT_QUALIFIED e PLACED foram removidos do CHECK.
-  // Stages atuais: INVITED, INITIATED, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT,
-  //                CONFIRMED, SELECTED, REJECTED
+describe('AF2 — UPDATE para cada um dos stages válidos', () => {
+  // Stages válidos pós-migration 230: PRE_SCREENING adicionado (renomeação canônica de INITIATED).
+  // INITIATED permanece no CHECK (fase-1 rolling deploy) mas deriveFunnelStage nunca o grava.
+  // Stages atuais: INVITED, INITIATED, PRE_SCREENING, IN_PROGRESS, COMPLETED, QUALIFIED,
+  //                IN_DOUBT, CONFIRMED, SELECTED, REJECTED
   const VALID_STAGES = [
     'INITIATED',
+    'PRE_SCREENING',
     'IN_PROGRESS',
     'COMPLETED',
     'QUALIFIED',
@@ -168,15 +170,25 @@ describe('AF3 — Constraint violation: stage antigo APPLIED', () => {
   });
 });
 
-describe('AF4 — Constraint violation: stage antigo PRE_SCREENING', () => {
-  it('deve rejeitar INSERT com stage = "PRE_SCREENING"', async () => {
-    // Arrange
+describe('AF4 — PRE_SCREENING é stage válido (migration 230 adicionou ao CHECK)', () => {
+  it('deve aceitar INSERT com stage = "PRE_SCREENING" (canônico interno de INITIATED, adicionado em migration 230)', async () => {
+    // PRE_SCREENING era inválido antes da migration 230. Após a migration, é o stage canônico
+    // que substituiu INITIATED internamente (deriveFunnelStage converte subtype='INITIATED' → 'PRE_SCREENING').
     const s = makeSuffix();
     const workerId = await insertTestWorker(s);
     const jobId = await insertTestJobPosting(s);
 
-    // Act / Assert
-    await expect(insertApplication(workerId, jobId, 'PRE_SCREENING')).rejects.toThrow();
+    // Act / Assert — deve inserir sem erros
+    await expect(insertApplication(workerId, jobId, 'PRE_SCREENING')).resolves.toBeTruthy();
+  });
+
+  it('deve rejeitar INSERT com stage inválido PLACED (removido em migration 191)', async () => {
+    // PLACED foi removido do CHECK constraint em migration 191. Continua inválido.
+    const s = makeSuffix();
+    const workerId = await insertTestWorker(s);
+    const jobId = await insertTestJobPosting(s);
+
+    await expect(insertApplication(workerId, jobId, 'PLACED')).rejects.toThrow();
   });
 });
 

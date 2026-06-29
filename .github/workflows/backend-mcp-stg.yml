@@ -1,11 +1,13 @@
 name: Backend MCP — Staging
 
+# Auto-trigger (workflow_run após "Backend — Staging") DESLIGADO em 2026-06-27.
+# Decisão: não há ambiente MCP de staging em uso (só o triage-service consome o MCP,
+# e usa o de produção). O auto-trigger rodava em contexto `main`, era rejeitado pelo
+# WIF, e falhava em ~4s em TODO push no stage — ruído puro. Ver TD-053. O deploy manual
+# via `gh workflow run backend-mcp-stg.yml --ref stage` continua disponível se um dia
+# precisarmos de MCP staging.
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Backend — Staging"]
-    types: [completed]
-    branches: [stage]
 
 concurrency:
   group: backend-mcp-stg

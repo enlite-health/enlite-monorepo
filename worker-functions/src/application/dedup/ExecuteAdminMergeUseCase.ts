@@ -11,7 +11,13 @@ import { logger, reportError } from '@shared/logging';
 import { WorkerPhoneMergeService } from '../../infrastructure/services/WorkerPhoneMergeService';
 import { discoverWorkerFkTables } from '../../infrastructure/services/WorkerPhoneMergeFkDiscovery';
 import { FK_TABLES_TO_REPARENT } from '../../infrastructure/services/WorkerPhoneMergeTypes';
-import type { AdminMergeResult, ExecuteMergeParams } from './DedupTypes';
+import type {
+  AdminMergeResult,
+  AppliedOverride,
+  ExecuteMergeParams,
+  MergeAuditContext,
+} from './DedupTypes';
+import { resolveAdminEmail } from './resolveAdminEmail';
 
 const log = logger.child({ source: 'ExecuteAdminMergeUseCase' });
 
@@ -25,10 +31,27 @@ export class ExecuteAdminMergeUseCase {
   async execute(params: ExecuteMergeParams): Promise<AdminMergeResult> {
     const { survivorId, absorbedIds, fieldChoices } = params;
 
+    // Monta o contexto de auditoria (QUEM/DE ONDE/COMO). executedBy pode vir no
+    // topo (legado) ou dentro de audit; resolvemos o email pra registro legível.
+    const executedBy = params.audit?.executedBy ?? params.executedBy;
+    const executedByEmail: string | undefined =
+      params.audit?.executedByEmail ?? (await resolveAdminEmail(this.pool, executedBy)) ?? undefined;
+    const baseAudit: MergeAuditContext = {
+      ...params.audit,
+      executedBy,
+      executedByEmail,
+    };
+
     log.info({
       msg: 'admin_merge_start',
       survivorId,
       absorbedIds,
+      executed_by: executedBy ?? 'system',
+      executed_by_email: executedByEmail,
+      merge_source: baseAudit.source ?? 'manual',
+      confirmed_same_person: baseAudit.confirmedSamePerson ?? false,
+      ip_address: baseAudit.ipAddress ?? null,
+      request_id: baseAudit.requestId ?? null,
       has_field_choices: Boolean(fieldChoices && Object.keys(fieldChoices).length > 0),
     });
 
@@ -74,18 +97,22 @@ export class ExecuteAdminMergeUseCase {
       }
 
       try {
-        // Se fieldChoices fornecido, aplica overrides antes do merge
+        // Se fieldChoices fornecido, aplica overrides antes do merge.
+        // appliedOverrides registra EXATAMENTE o que o admin sobrescreveu (de qual
+        // conta veio cada campo) — peça-chave da auditoria "como".
+        let appliedOverrides: AppliedOverride[] = [];
         if (fieldChoices && Object.keys(fieldChoices).length > 0) {
-          await this.applyFieldChoices(survivorId, absorbedId, fieldChoices);
+          appliedOverrides = await this.applyFieldChoices(survivorId, absorbedId, fieldChoices);
         }
 
         await this.mergeService.executeSingleMerge({
           survivorId,
           absorbedId,
           phoneNormalized,
-          category: 'firebase', // Admin merge assume categoria mais permissiva
+          category: 'firebase', // categoria = regra de sobrevivente; o fluxo real vai em audit.source
           legalFieldExceptions: [],
           discoveredFks,
+          audit: { ...baseAudit, fieldChoices, appliedOverrides },
         });
 
         // Recupera o auditId do último merge inserido
@@ -111,6 +138,8 @@ export class ExecuteAdminMergeUseCase {
       survivorId,
       absorbed_count: absorbedIds.length,
       audit_ids: auditIds,
+      executed_by: executedBy ?? 'system',
+      executed_by_email: executedByEmail,
     });
 
     return { audit_ids: auditIds, survivor_id: survivorId, absorbed_ids: absorbedIds };
@@ -134,7 +163,7 @@ export class ExecuteAdminMergeUseCase {
     survivorId: string,
     absorbedId: string,
     fieldChoices: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<AppliedOverride[]> {
     const overrideFields: string[] = [];
     for (const [field, choice] of Object.entries(fieldChoices)) {
       if (!OVERRIDABLE_FIELDS.has(field)) continue;
@@ -143,7 +172,7 @@ export class ExecuteAdminMergeUseCase {
       }
     }
 
-    if (overrideFields.length === 0) return;
+    if (overrideFields.length === 0) return [];
 
     // Busca valores do absorvido para os campos escolhidos. Para campos
     // encriptados isto retorna o ciphertext cru — que é exatamente o que
@@ -153,7 +182,7 @@ export class ExecuteAdminMergeUseCase {
       [absorbedId],
     );
 
-    if (absRes.rows.length === 0) return;
+    if (absRes.rows.length === 0) return [];
 
     const absorbedRow = absRes.rows[0];
     const setClauses = overrideFields.map((f, i) => `${f} = $${i + 1}`);
@@ -164,7 +193,10 @@ export class ExecuteAdminMergeUseCase {
       values,
     );
 
-    log.info({ msg: 'field_choices_applied', survivorId, fields: overrideFields });
+    log.info({ msg: 'field_choices_applied', survivorId, absorbedId, fields: overrideFields });
+
+    // Rastro "como": cada campo sobrescrito + de qual conta veio o valor.
+    return overrideFields.map(field => ({ field, from_account_id: absorbedId }));
   }
 }
 

@@ -121,6 +121,7 @@ export function MergePhoneModeBody({
     const payload: MergeRequest = {
       survivorId,
       absorbedIds,
+      source: 'fila', // auditoria: merge originado na aba Fila (colisão por telefone)
       ...(Object.keys(fieldChoices).length > 0 ? { fieldChoices } : {}),
     };
 

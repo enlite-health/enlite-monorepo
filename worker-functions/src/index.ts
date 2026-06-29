@@ -32,7 +32,7 @@ import {
   createMockAuthEndpoints,
 } from '@modules/identity';
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
-import { AdminWorkersController, AdminWorkerTestFlagController } from '@modules/worker';
+import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
@@ -129,6 +129,8 @@ const dashboardController = new EncuadreDashboardController();
 const workerApplicationsController = new WorkerApplicationsController();
 const adminWorkersController = new AdminWorkersController();
 const adminWorkerTestFlagController = new AdminWorkerTestFlagController();
+const adminWorkerProfileController = new AdminWorkerProfileController();
+const adminWorkerServiceAreaController = new AdminWorkerServiceAreaController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
 const adminTagCatalogController = new AdminTagCatalogController();
 const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
@@ -281,33 +283,17 @@ app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, 
 // ========== Worker Status & Encuadres ==========
 app.use('/api', createWorkerEncuadreRoutes(encuadreController, authMiddleware));
 
-// ========== Admin Workers ==========
+// ========== Admin Workers & Worker Tags ==========
 const staffOnly = authMiddleware.requireStaff();
-const staffOrApiKey = authMiddleware.requireStaffOrApiKey();
-const adminOnly = authMiddleware.requireAdmin();
-app.get('/api/admin/workers/stats', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.getWorkerDateStats(req, res));
-// by-phone aceita API key (consumido pelo triage-service pra resolver worker do contato)
-app.get('/api/admin/workers/by-phone', staffOrApiKey, (req: Request, res: Response) => adminWorkersController.getWorkerByPhone(req, res));
-app.get('/api/admin/workers/case-options', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.listCaseOptions(req, res));
-// filter-options MUST be before /:id to avoid param capture
-app.get('/api/admin/workers/filter-options', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.getFilterOptions(req, res));
-app.post('/api/admin/workers/sync-talentum', staffOnly, (req: Request, res: Response) => adminWorkersAuxController.syncTalentumWorkers(req, res));
-// export MUST be registered before /:id to avoid param capture
-app.get('/api/admin/workers/export', adminOnly, (req: Request, res: Response) => adminWorkersController.exportWorkers(req, res));
-// timeline MUST be registered before /:id to avoid param capture
-app.get('/api/admin/workers/:id/timeline', staffOnly, (req: Request, res: Response) => workerTimelineController.getTimeline(req, res));
-app.get('/api/admin/workers/:id', staffOnly, (req: Request, res: Response) => adminWorkersController.getWorkerById(req, res));
-// test-flag é admin-only (mais estrito que staff) — marca worker como conta de teste
-app.patch('/api/admin/workers/:id/test-flag', adminOnly, (req: Request, res: Response) => adminWorkerTestFlagController.updateTestFlag(req, res));
-app.get('/api/admin/workers', staffOnly, (req: Request, res: Response) => adminWorkersController.listWorkers(req, res));
-
-// ========== Worker Tags ==========
-app.get('/api/admin/worker-tags', staffOnly, (req: Request, res: Response) => adminTagCatalogController.list(req, res));
-app.post('/api/admin/worker-tags', adminOnly, (req: Request, res: Response) => adminTagCatalogController.create(req, res));
-app.patch('/api/admin/worker-tags/:id', adminOnly, (req: Request, res: Response) => adminTagCatalogController.update(req, res));
-app.delete('/api/admin/worker-tags/:id', adminOnly, (req: Request, res: Response) => adminTagCatalogController.delete(req, res));
-app.post('/api/admin/workers/:id/tags/:tagId', staffOnly, (req: Request, res: Response) => adminTagCatalogController.assign(req, res));
-app.delete('/api/admin/workers/:id/tags/:tagId', staffOnly, (req: Request, res: Response) => adminTagCatalogController.remove(req, res));
+app.use('/api/admin', createAdminWorkerRoutes({
+  workers: adminWorkersController,
+  aux: adminWorkersAuxController,
+  testFlag: adminWorkerTestFlagController,
+  profile: adminWorkerProfileController,
+  serviceArea: adminWorkerServiceAreaController,
+  tags: adminTagCatalogController,
+  timeline: workerTimelineController,
+}, authMiddleware));
 
 app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware));
 
