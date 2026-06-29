@@ -1,4 +1,4 @@
-import { useState, memo, useEffect } from 'react';
+import { useState, memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -14,10 +14,11 @@ import { GeneralInfoFormFields } from './GeneralInfoFormFields';
 
 export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const { t } = useTranslation();
-  const { saveGeneralInfo, getProgress } = useWorkerApi();
+  const { saveGeneralInfo } = useWorkerApi();
 
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
+  const updateGeneralInfo = useWorkerRegistrationStore((state) => state.updateGeneralInfo);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
   const showToast = useToast();
 
@@ -29,9 +30,9 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       cpf: data.generalInfo.cpf || '',
       phone: data.generalInfo.phone || '',
       email: data.generalInfo.email || '',
-      birthDate: data.generalInfo.birthDate || '',
-      sex: (data.generalInfo.sex as 'male' | 'female' | undefined) || undefined,
-      gender: (data.generalInfo.gender as 'male' | 'female' | 'other' | undefined) || undefined,
+      birthDate: formatDateFromISO(data.generalInfo.birthDate || '') || '',
+      sex: (data.generalInfo.sex?.toLowerCase() as 'male' | 'female' | undefined) || undefined,
+      gender: (data.generalInfo.gender?.toLowerCase() as 'male' | 'female' | 'other' | undefined) || undefined,
       documentType: (data.generalInfo.documentType as 'CUIL_CUIT' | 'CPF' | 'RG' | 'CNH') || 'CUIL_CUIT',
       professionalLicense: data.generalInfo.professionalLicense || '',
       languages: data.generalInfo.languages?.length ? (data.generalInfo.languages as Array<'pt' | 'es' | 'en'>) : [],
@@ -49,47 +50,18 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     mode: 'onTouched',
   });
 
-  const { reset, getValues } = form;
+  const { getValues } = form;
 
-  // Fetch real worker data from backend and populate form
-  useEffect(() => {
-    const fetchWorkerData = async () => {
-      try {
-        const workerData = await getProgress();
-
-        reset({
-          fullName: workerData.firstName || '',
-          lastName: workerData.lastName || '',
-          cpf: workerData.documentNumber || '',
-          phone: workerData.phone || '',
-          email: workerData.email || '',
-          birthDate: formatDateFromISO(workerData.birthDate || '') || '',
-          sex: (workerData.sex?.toLowerCase() as 'male' | 'female') || undefined,
-          gender: (workerData.gender?.toLowerCase() as 'male' | 'female' | 'other') || undefined,
-          documentType: (workerData.documentType as 'CUIL_CUIT' | 'CPF' | 'RG' | 'CNH') || 'CUIL_CUIT',
-          professionalLicense: workerData.titleCertificate || '',
-          languages: (workerData.languages as Array<'pt' | 'es' | 'en'>) || [],
-          profession: (workerData.profession as 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST') || undefined,
-          knowledgeLevel: (workerData.knowledgeLevel as 'SECONDARY' | 'TERTIARY' | 'TECNICATURA' | 'BACHELOR' | 'POSTGRADUATE' | 'MASTERS' | 'DOCTORATE') || undefined,
-          experienceTypes: (workerData.experienceTypes as Array<'adicciones' | 'psicosis' | 'trastorno_alimentar' | 'trastorno_bipolaridad' | 'trastorno_ansiedad' | 'trastorno_discapacidad_intelectual' | 'trastorno_depresivo' | 'trastorno_neurologico' | 'trastorno_opositor_desafiante' | 'trastorno_psicologico' | 'trastorno_psiquiatrico'>) || [],
-          yearsExperience: (workerData.yearsExperience as '0_2' | '3_5' | '6_10' | '10_plus') || undefined,
-          preferredTypes: (workerData.preferredTypes as Array<'adicciones' | 'psicosis' | 'trastorno_alimentar' | 'trastorno_bipolaridad' | 'trastorno_ansiedad' | 'trastorno_discapacidad_intelectual' | 'trastorno_depresivo' | 'trastorno_neurologico' | 'trastorno_opositor_desafiante' | 'trastorno_psicologico' | 'trastorno_psiquiatrico'>) || [],
-          preferredAgeRange: Array.isArray(workerData.preferredAgeRange)
-            ? (workerData.preferredAgeRange as Array<'children' | 'adolescents' | 'adults' | 'elderly'>)
-            : workerData.preferredAgeRange ? [workerData.preferredAgeRange as 'children' | 'adolescents' | 'adults' | 'elderly'] : [],
-          profilePhoto: workerData.profilePhotoUrl || null,
-        });
-
-        if (workerData.profilePhotoUrl) {
-          setProfilePhotoPreview(workerData.profilePhotoUrl);
-        }
-      } catch (error) {
-        console.error('Failed to fetch worker data:', error);
-      }
-    };
-
-    fetchWorkerData();
-  }, [getProgress, reset]);
+  // O formulário é populado pelos `defaultValues` acima, que leem do store
+  // (Zustand). A WorkerProfilePage já fez `getProgress()` + `hydrateFromServer()`
+  // ANTES de renderizar esta aba, e o hydrate PRESERVA o valor local quando o
+  // backend devolve null (`serverData.firstName || store.fullName`).
+  //
+  // IMPORTANTE: NÃO refazer aqui um `getProgress()` + `reset()`. A versão
+  // anterior fazia `reset({ fullName: workerData.firstName || '' })`, o que
+  // SOBRESCREVIA com '' o nome que o hydrate tinha preservado — era exatamente
+  // o "campo aparece e some" (reproduzido em prod, 2026-06-29). O store é a
+  // fonte única; o reset duplicado só reintroduzia a corrida e o data-loss.
 
   const buildSavePayload = (formData: GeneralInfoFormData) => ({
     firstName: formData.fullName?.split(' ')[0] || formData.fullName || '',
@@ -129,7 +101,15 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
 
   const triggerSave = useAutoSave(
     async () => {
-      await saveGeneralInfo(buildSavePayload(getValues()));
+      const values = getValues();
+      await saveGeneralInfo(buildSavePayload(values));
+      // Mantém o store (fonte única) em sincronia com o que foi salvo, para que
+      // trocar de aba e voltar mostre o valor atual — sem re-fetch e sem o
+      // reset que zerava os campos.
+      updateGeneralInfo({
+        ...values,
+        birthDate: values.birthDate ? parseDateToISO(values.birthDate) : '',
+      });
       showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
     },
     500,
