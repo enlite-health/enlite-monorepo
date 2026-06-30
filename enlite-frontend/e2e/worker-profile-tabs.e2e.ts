@@ -879,3 +879,123 @@ test.describe('Worker Profile — Abas de Edição', () => {
     });
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+// REGRESSÃO — Autosave NÃO deve reenviar `phone` se não foi editado
+//
+// Bug de prod (2026-06-29): o autosave enviava o registro INTEIRO, incluindo
+// `phone`, a CADA blur. No backend o phone passa por verificação de unicidade
+// quando "muda"; com duplicatas reais de telefone em prod + round-trip do
+// próprio número em formato diferente do gravado, o backend achava que o
+// telefone mudou e batia `409 PHONE_NOT_AVAILABLE` — mesmo para quem nunca
+// tocou no campo. Fix: só enviar `phone` quando `dirtyFields.phone` é true.
+//
+// Os testes de autosave existentes não pegavam isso porque (a) o GET sempre
+// devolvia phone:'' e (b) fillGeneralInfoForm sempre preenchia um telefone
+// novo — o cenário "telefone pré-carregado + não editado" nunca era exercido.
+// ══════════════════════════════════════════════════════════════
+
+test.describe('Worker Profile — Autosave: phone só quando editado', () => {
+  test.describe.configure({ mode: 'default' });
+
+  // GET com um worker JÁ preenchido, incluindo telefone — replica produção.
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/workers/me', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              email: 'worker@test.com',
+              firstName: 'Carla', lastName: 'Gomez', phone: '+5491133334444',
+              documentNumber: '20123456780', birthDate: '1990-03-18',
+              sex: 'male', gender: 'male', documentType: 'CUIL_CUIT',
+              titleCertificate: 'Técnica en cuidados', languages: ['es'],
+              profession: 'CAREGIVER', knowledgeLevel: 'TECNICATURA',
+              experienceTypes: ['adicciones'], yearsExperience: '0_2',
+              preferredTypes: ['adicciones'], preferredAgeRange: ['elderly'],
+              profilePhotoUrl: null, serviceAddress: null, serviceRadiusKm: 10,
+              availability: [],
+            },
+          }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto('/worker/profile');
+    await page.waitForSelector('nav[aria-label="Tabs"]', { timeout: 10_000 });
+    // Garante que o telefone pré-carregado já hidratou o form.
+    await expect(page.locator('input[type="tel"]').first()).not.toHaveValue('', { timeout: 5_000 });
+  });
+
+  test('editar OUTRO campo sem tocar no telefone → payload OMITE phone', async ({ page }) => {
+    await capturePut(page, '/api/workers/me/general-info');
+
+    await page.locator('#fullName').fill('Carla Editada');
+    const body = await triggerGeneralInfoSave(page);
+
+    // O telefone não foi editado → não deve viajar no payload (backend mantém
+    // o atual via COALESCE e PULA a verificação de unicidade).
+    expect(body?.phone).toBeUndefined();
+    // Os demais campos continuam presentes (backend faz overwrite, não COALESCE).
+    expect(body?.firstName).toBe('Carla');
+    expect(body?.lastName).toBe('Gomez');
+  });
+
+  test('editar o telefone → payload INCLUI phone', async ({ page }) => {
+    await capturePut(page, '/api/workers/me/general-info');
+
+    // O input do react-phone-number-input só dirtytifica via eventos de teclado
+    // reais (fill() não dispara o onChange interno). Limpa e digita um número
+    // novo válido — apenas APPEND seria rejeitado por exceder o tamanho do
+    // celular AR e não dispararia onChange.
+    const phoneInput = page.locator('input[type="tel"]').first();
+    await phoneInput.click();
+    await phoneInput.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
+    await phoneInput.press('Backspace');
+    await phoneInput.pressSequentially('1144445555', { delay: 40 });
+
+    // Captura o save disparado pelo blur do PRÓPRIO telefone (antes de o
+    // dirty-tracking ser rebaselinado pós-sucesso).
+    const respPromise = page.waitForResponse(
+      (r) => r.url().includes('/api/workers/me/general-info') && r.request().method() === 'PUT',
+    );
+    await phoneInput.blur();
+    const body = (await respPromise).request().postDataJSON();
+
+    expect(typeof body?.phone).toBe('string');
+    expect((body?.phone as string).length).toBeGreaterThan(0);
+  });
+
+  test('VISUAL — 409 PHONE_NOT_AVAILABLE ao editar telefone → toast amigável', async ({ page }) => {
+    await page.route('**/api/workers/me/general-info', async (route) => {
+      if (route.request().method() === 'PUT') {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            code: 'PHONE_NOT_AVAILABLE',
+            error: 'El teléfono ingresado no puede ser utilizado.',
+          }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    const phoneInput = page.locator('input[type="tel"]').first();
+    await phoneInput.fill('1145556666');
+    await phoneInput.blur();
+
+    const errorToast = page.getByTestId('toast-error');
+    await expect(errorToast).toBeVisible({ timeout: 6_000 });
+    // Mensagem amigável traduzida — nunca a mensagem crua do backend/SQL.
+    await expect(errorToast).toContainText('El teléfono ingresado no puede ser utilizado');
+    await expect(errorToast).toHaveScreenshot('autosave-phone-not-available-toast.png');
+  });
+});
