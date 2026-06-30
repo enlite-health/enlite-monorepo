@@ -272,10 +272,18 @@ export class WorkerRepository implements IWorkerRepository {
   async findByPhoneCandidates(candidates: string[]): Promise<Result<Worker | null>> {
     try {
       if (candidates.length === 0) return Result.ok<Worker | null>(null);
+      // Só considera workers ATIVOS (não-merged) como "donos" de um telefone.
+      // Sem o `merged_into_id IS NULL`, um número que ainda mora num registro
+      // duplicado/merged era devolvido como dono e bloqueava o worker legítimo
+      // com PHONE_NOT_AVAILABLE — falso positivo causado pelas duplicatas
+      // históricas de prod (mesmo número em formatos diferentes). Espelha o
+      // predicado do idx_workers_phone_normalized (mig 219).
       const query = `
         SELECT id, auth_uid as "authUid", email, phone, country,
                created_at as "createdAt", updated_at as "updatedAt"
-        FROM workers WHERE phone = ANY($1::text[])
+        FROM workers
+        WHERE phone = ANY($1::text[])
+          AND merged_into_id IS NULL
         LIMIT 1
       `;
       const result = await this.pool.query(query, [candidates]);

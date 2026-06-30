@@ -51,6 +51,12 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   });
 
   const { getValues } = form;
+  // Assina o dirty-tracking do react-hook-form LENDO `dirtyFields` no render.
+  // `formState` é um Proxy que só computa `dirtyFields` quando a propriedade é
+  // acessada durante o render — sem esta leitura, `dirtyFields` fica sempre
+  // vazio e o gate de `phone` no autosave nunca dispararia. Como o useAutoSave
+  // invoca sempre o closure mais recente, este snapshot está sempre atualizado.
+  const { dirtyFields } = form.formState;
 
   // O formulário é populado pelos `defaultValues` acima, que leem do store
   // (Zustand). A WorkerProfilePage já fez `getProgress()` + `hydrateFromServer()`
@@ -63,7 +69,22 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   // o "campo aparece e some" (reproduzido em prod, 2026-06-29). O store é a
   // fonte única; o reset duplicado só reintroduzia a corrida e o data-loss.
 
-  const buildSavePayload = (formData: GeneralInfoFormData) => ({
+  // Monta o payload do autosave.
+  //
+  // `phone` é CONDICIONAL e só entra quando o campo foi realmente editado
+  // (`dirty`). Motivo: no backend, o `phone` é o ÚNICO campo gravado com
+  // `COALESCE($n, phone)` — omiti-lo significa "mantém o número atual" e PULA a
+  // verificação de unicidade (`resolvePhoneToPersist`). Enviar o telefone a cada
+  // autosave de quem nem tocou no campo disparava `409 PHONE_NOT_AVAILABLE`
+  // (round-trip do próprio número em formato diferente do gravado + duplicatas
+  // reais de telefone em prod faziam a unicidade bater contra outro registro).
+  //
+  // Todos os OUTROS campos continuam sempre presentes de propósito: no backend
+  // eles são overwrite direto (não COALESCE), então omitir qualquer um gravaria
+  // NULL por cima — o data-loss de "campo some" que essa tela já sofreu. O store
+  // é a fonte única e já está hidratado, então reenviar os valores atuais é
+  // idempotente e seguro.
+  const buildSavePayload = (formData: GeneralInfoFormData, includePhone: boolean) => ({
     firstName: formData.fullName?.split(' ')[0] || formData.fullName || '',
     lastName: formData.lastName || '',
     sex: formData.sex as 'male' | 'female',
@@ -71,7 +92,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     birthDate: formData.birthDate ? parseDateToISO(formData.birthDate) : undefined,
     documentType: 'CUIL_CUIT',
     documentNumber: formData.cpf || '',
-    phone: formData.phone || '',
+    ...(includePhone ? { phone: formData.phone || '' } : {}),
     profilePhotoUrl: formData.profilePhoto || undefined,
     languages: formData.languages || [],
     profession: formData.profession as 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST',
@@ -102,7 +123,9 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const triggerSave = useAutoSave(
     async () => {
       const values = getValues();
-      await saveGeneralInfo(buildSavePayload(values));
+      // Só envia `phone` quando o campo foi editado de fato. Ver buildSavePayload.
+      const phoneDirty = Boolean(dirtyFields.phone);
+      await saveGeneralInfo(buildSavePayload(values, phoneDirty));
       // Mantém o store (fonte única) em sincronia com o que foi salvo, para que
       // trocar de aba e voltar mostre o valor atual — sem re-fetch e sem o
       // reset que zerava os campos.
@@ -110,6 +133,13 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
         ...values,
         birthDate: values.birthDate ? parseDateToISO(values.birthDate) : '',
       });
+      // Rebaselina o dirty-tracking: o que acabou de ser salvo deixa de estar
+      // "sujo", então o próximo autosave só reenvia `phone` se ele mudar OUTRA
+      // vez. `keepValues: true` NÃO altera nenhum valor do form — só atualiza o
+      // baseline interno de dirty (diferente do antigo `reset({...''})` que
+      // zerava os campos). Sem isso, um telefone editado uma vez seguiria
+      // "dirty" e seria reenviado a cada blur subsequente.
+      form.reset(values, { keepValues: true });
       showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
     },
     500,

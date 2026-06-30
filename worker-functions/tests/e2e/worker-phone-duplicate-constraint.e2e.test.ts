@@ -35,6 +35,8 @@ const CANON_A = '549' + LOCAL_A; // mesmo número humano de A, canônico 13 díg
 const CANON_C = '549' + '200' + SUFFIX; // número DIFERENTE, dono = worker C
 const LOCAL_FREE = '300' + SUFFIX; // número livre (ninguém possui)
 const CANON_FREE = '549' + LOCAL_FREE;
+const LOCAL_M = '400' + SUFFIX; // número cujo único "dono" é um registro MERGED
+const CANON_M = '549' + LOCAL_M;
 
 const basePayload = {
   firstName: 'Eliana',
@@ -62,12 +64,14 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
   let workerAId: string;
   let workerDId: string;
   let workerCId: string;
+  let workerMId: string;
   let tokenA: string;
 
   const stamp = Date.now();
   const uidA = `phone-dup-A-${stamp}`;
   const uidD = `phone-dup-D-${stamp}`;
   const uidC = `phone-dup-C-${stamp}`;
+  const uidM = `phone-dup-M-${stamp}`;
 
   beforeAll(async () => {
     api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } });
@@ -80,17 +84,27 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     workerDId = await initWorker(uidD, `phone-dup-d-${stamp}@example.com`);
     // Worker C: número DIFERENTE, dono legítimo.
     workerCId = await initWorker(uidC, `phone-dup-c-${stamp}@example.com`);
+    // Worker M: DUPLICATA MERGED — segura um número mas está marcada como merged,
+    // logo NÃO pode ser tratada como "dona" do número (mig 219/dedup).
+    workerMId = await initWorker(uidM, `phone-dup-m-${stamp}@example.com`);
 
     // Simula os formatos históricos diretamente no banco (a API normalizaria).
     await db.query('UPDATE workers SET phone = $1 WHERE id = $2', [LOCAL_A, workerAId]); // A: 10 díg
     await db.query('UPDATE workers SET phone = $1 WHERE id = $2', [CANON_A, workerDId]); // D: 13 díg (mesmo nº de A)
     await db.query('UPDATE workers SET phone = $1 WHERE id = $2', [CANON_C, workerCId]); // C: outro nº
+    // M segura LOCAL_M e é merged para dentro de C.
+    await db.query('UPDATE workers SET phone = $1, merged_into_id = $2 WHERE id = $3', [
+      LOCAL_M,
+      workerCId,
+      workerMId,
+    ]);
 
     tokenA = await mockToken(uidA, `phone-dup-a-${stamp}@example.com`);
   });
 
   afterAll(async () => {
-    for (const id of [workerAId, workerDId, workerCId]) {
+    // M aponta para C via merged_into_id (FK) — limpa M antes de C.
+    for (const id of [workerAId, workerDId, workerMId, workerCId]) {
       if (id) await db.query('DELETE FROM workers WHERE id = $1', [id]);
     }
     await db.end();
@@ -199,5 +213,66 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     expect(caught).toBeDefined();
     expect(caught.response.status).toBe(409);
     expect(JSON.stringify(caught.response.data).toLowerCase()).not.toContain('duplicate key');
+  });
+
+  it('FOLLOW-UP 2: número cujo único dono é um registro MERGED → 200 (não bloqueia)', async () => {
+    // A muda para o número humano de M (informa o local; normaliza p/ CANON_M).
+    // M segura esse número mas está MERGED → não conta como dona. Antes do fix,
+    // findByPhoneCandidates ignorava merged_into_id, retornava M e bloqueava com
+    // um 409 PHONE_NOT_AVAILABLE falso. Agora o lookup exclui merged → libera.
+    const res = await api.put(
+      '/api/workers/me/general-info',
+      { ...basePayload, phone: LOCAL_M },
+      authA(),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.data.success).toBe(true);
+
+    // A passou a ter o número canônico; M (merged) permanece com o formato local.
+    const a = await db.query('SELECT phone FROM workers WHERE id = $1', [workerAId]);
+    expect(a.rows[0].phone).toBe(CANON_M);
+    const m = await db.query('SELECT phone, merged_into_id FROM workers WHERE id = $1', [workerMId]);
+    expect(m.rows[0].phone).toBe(LOCAL_M);
+    expect(m.rows[0].merged_into_id).toBe(workerCId);
+  });
+
+  it('FOLLOW-UP 1: UPDATE PARCIAL — payload sem firstName/profession PRESERVA os campos atuais', async () => {
+    // 1. Grava um perfil completo (firstName + profession etc.).
+    const full = await api.put(
+      '/api/workers/me/general-info',
+      { ...basePayload, firstName: 'Eliana', lastName: 'Juarez', profession: 'CAREGIVER', phone: LOCAL_M },
+      authA(),
+    );
+    expect(full.status).toBe(200);
+
+    const before = await db.query(
+      'SELECT first_name_encrypted, last_name_encrypted, profession, name_trgm_bidx FROM workers WHERE id = $1',
+      [workerAId],
+    );
+    expect(before.rows[0].first_name_encrypted).not.toBeNull();
+    expect(before.rows[0].profession).toBe('CAREGIVER');
+
+    // 2. Envia um payload PARCIAL — só muda yearsExperience, OMITE o resto
+    //    (firstName, lastName, profession, phone, sex, languages...).
+    const partial = await api.put(
+      '/api/workers/me/general-info',
+      { yearsExperience: '6_10', termsAccepted: true, privacyAccepted: true },
+      authA(),
+    );
+    expect(partial.status).toBe(200);
+
+    const after = await db.query(
+      'SELECT first_name_encrypted, last_name_encrypted, profession, years_experience, name_trgm_bidx FROM workers WHERE id = $1',
+      [workerAId],
+    );
+    // Campos OMITIDOS preservados (antes do fix viravam NULL = "campo some").
+    expect(after.rows[0].first_name_encrypted).toBe(before.rows[0].first_name_encrypted);
+    expect(after.rows[0].last_name_encrypted).toBe(before.rows[0].last_name_encrypted);
+    expect(after.rows[0].profession).toBe('CAREGIVER');
+    // Blind index do nome também preservado (não recomputado sem o par de nomes).
+    expect(after.rows[0].name_trgm_bidx).toEqual(before.rows[0].name_trgm_bidx);
+    // Campo realmente enviado foi atualizado.
+    expect(after.rows[0].years_experience).toBe('6_10');
   });
 });
