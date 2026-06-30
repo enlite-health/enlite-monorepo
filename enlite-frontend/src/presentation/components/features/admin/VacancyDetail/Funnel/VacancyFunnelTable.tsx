@@ -74,8 +74,11 @@ export function VacancyFunnelTable({
         className="border-collapse"
       >
         <TableHeader>
-          {headers.map((header) => (
-            <TableHead key={header} className="px-6 whitespace-nowrap">
+          {headers.map((header, i) => (
+            <TableHead
+              key={header}
+              className={`${i === 0 ? 'pl-6 pr-2' : i === 1 ? 'pl-2 pr-6' : 'px-6'} whitespace-nowrap`}
+            >
               {header}
             </TableHead>
           ))}
