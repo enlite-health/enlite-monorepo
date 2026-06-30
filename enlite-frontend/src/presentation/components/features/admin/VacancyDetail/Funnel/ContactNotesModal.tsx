@@ -6,6 +6,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { useContactNotes } from '@hooks/admin/useContactNotes';
+import { ContactNoteItem } from './ContactNoteItem';
 
 const MAX_NOTE_LENGTH = 240;
 
@@ -16,16 +17,6 @@ interface ContactNotesModalProps {
   onClose: () => void;
 }
 
-function formatNoteDate(iso: string): string {
-  return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(iso));
-}
-
 export function ContactNotesModal({
   vacancyId,
   wjaId,
@@ -33,8 +24,16 @@ export function ContactNotesModal({
   onClose,
 }: ContactNotesModalProps): JSX.Element {
   const { t } = useTranslation();
-  const { notes, isLoading, isCreating, error, fetchNotes, createNote } =
-    useContactNotes(vacancyId, wjaId);
+  const {
+    notes,
+    isLoading,
+    isCreating,
+    deletingId,
+    error,
+    fetchNotes,
+    createNote,
+    deleteNote,
+  } = useContactNotes(vacancyId, wjaId);
 
   const [noteText, setNoteText] = useState('');
 
@@ -106,24 +105,13 @@ export function ContactNotesModal({
           )}
 
           {notes.map((note) => (
-            <div
+            <ContactNoteItem
               key={note.id}
-              className="flex flex-col gap-1 bg-slate-50 rounded-xl px-4 py-3"
-            >
-              <Text as="p" size="sm" color="secondary">
-                {note.noteText}
-              </Text>
-              <div className="flex items-center gap-2 flex-wrap">
-                {note.createdByAdminEmail && (
-                  <Text as="span" size="xs" color="muted">
-                    {note.createdByAdminEmail}
-                  </Text>
-                )}
-                <Text as="span" size="xs" color="muted">
-                  {formatNoteDate(note.createdAt)}
-                </Text>
-              </div>
-            </div>
+              note={note}
+              canDelete={note.canDelete}
+              isDeleting={deletingId === note.id}
+              onDelete={deleteNote}
+            />
           ))}
         </div>
 

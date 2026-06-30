@@ -34,13 +34,13 @@ export function VacancyFunnelTable({
   const [activeNotes, setActiveNotes] = useState<ActiveNotesModal | null>(null);
 
   const headers = [
+    t('admin.vacancyDetail.funnelTable.headers.notes'),
     t('admin.vacancyDetail.funnelTable.headers.name'),
     t('admin.vacancyDetail.funnelTable.headers.phone'),
     t('admin.vacancyDetail.funnelTable.headers.inviteDate'),
     t('admin.vacancyDetail.funnelTable.headers.whatsapp'),
     t('admin.vacancyDetail.funnelTable.headers.accepted'),
     t('admin.vacancyDetail.funnelTable.headers.registration'),
-    t('admin.vacancyDetail.funnelTable.headers.notes'),
   ];
 
   function handleOpenNotes(wjaId: string) {

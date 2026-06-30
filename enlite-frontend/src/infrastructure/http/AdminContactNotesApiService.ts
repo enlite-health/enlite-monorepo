@@ -77,6 +77,17 @@ class AdminContactNotesApiServiceClass {
       payload,
     );
   }
+
+  async deleteContactNote(
+    vacancyId: string,
+    wjaId: string,
+    noteId: string,
+  ): Promise<void> {
+    await this.request<{ id: string }>(
+      'DELETE',
+      `/api/admin/vacancies/${vacancyId}/applications/${wjaId}/contact-notes/${noteId}`,
+    );
+  }
 }
 
 export const AdminContactNotesApiService =

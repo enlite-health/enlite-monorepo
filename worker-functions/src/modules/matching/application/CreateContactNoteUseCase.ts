@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ContactNoteRepository } from '../infrastructure/ContactNoteRepository';
 import { ContactNote } from '../domain/ContactNote';
+import { AdminRepository } from '@modules/identity';
 
 const createContactNoteSchema = z.object({
   noteText: z
@@ -35,9 +36,11 @@ export type CreateContactNoteResult =
  */
 export class CreateContactNoteUseCase {
   private repo: ContactNoteRepository;
+  private adminRepo: AdminRepository;
 
   constructor() {
     this.repo = new ContactNoteRepository();
+    this.adminRepo = new AdminRepository();
   }
 
   async execute(params: CreateContactNoteParams): Promise<CreateContactNoteResult> {
@@ -60,11 +63,19 @@ export class CreateContactNoteUseCase {
       };
     }
 
+    // Snapshot do autor a partir do cadastro de staff (users.display_name vem do
+    // displayName do Firebase). O nome/email do token nem sempre chega no req.user,
+    // então a fonte canônica aqui é a tabela users. Fallback pro email do token.
+    const admin = await this.adminRepo.findByFirebaseUid(params.adminId);
+    const createdByAdminName = admin?.displayName ?? null;
+    const createdByAdminEmail = admin?.email ?? params.adminEmail ?? null;
+
     const note = await this.repo.insert({
       workerJobApplicationId: params.wjaId,
       noteText: parsed.data.noteText,
       createdByAdminId: params.adminId,
-      createdByAdminEmail: params.adminEmail,
+      createdByAdminName,
+      createdByAdminEmail,
     });
 
     return { ok: true, note };

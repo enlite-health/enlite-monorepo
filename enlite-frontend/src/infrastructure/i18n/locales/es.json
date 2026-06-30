@@ -1464,7 +1464,13 @@
           "registerButton": "Registrar",
           "registering": "Registrando…",
           "loadError": "Error al cargar las notas.",
-          "createError": "Error al registrar la nota."
+          "createError": "Error al registrar la nota.",
+          "deleteAria": "Eliminar nota",
+          "deleteConfirm": "¿Eliminar esta nota?",
+          "deleteYes": "Eliminar",
+          "deleteCancel": "Cancelar",
+          "deleting": "Eliminando…",
+          "deleteError": "Error al eliminar la nota."
         }
       },
       "whatsappStatus": {
