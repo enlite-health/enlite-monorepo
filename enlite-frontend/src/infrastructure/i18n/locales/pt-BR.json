@@ -181,7 +181,7 @@
     "licenseRequired": "Registro profissional é obrigatório",
     "selectLanguage": "Selecione pelo menos um idioma",
     "selectProfession": "Por favor, selecione a profissão",
-    "selectKnowledgeLevel": "Por favor, selecione o nível de conhecimento",
+    "selectKnowledgeLevel": "Por favor, selecione o nível de estudos",
     "selectExperienceType": "Selecione pelo menos um tipo de experiência",
     "selectYearsExperience": "Por favor, selecione os anos de experiência",
     "selectPreferredType": "Selecione pelo menos um tipo preferido",
@@ -218,9 +218,11 @@
       "lastName": "Sobrenome",
       "lastNamePlaceholder": "Marquez",
       "sex": "Sexo",
+      "sexHint": "O sexo que consta no seu documento.",
       "male": "Masculino",
       "female": "Feminino",
       "gender": "Gênero",
+      "genderHint": "O gênero com o qual você se identifica.",
       "other": "Outro",
       "birthDate": "Data de nascimento",
       "birthDatePlaceholder": "18/03/1960",
@@ -342,6 +344,8 @@
   },
   "jobs": {
     "title": "Consultar Vagas",
+    "completeToApplyBanner": "Complete seu cadastro para poder se candidatar às vagas.",
+    "completeNow": "Completar",
     "searchPlaceholder": "Pesquisar pelo nome da vaga",
     "status": "Status",
     "noResults": "Nenhuma vaga encontrada com os filtros selecionados",
@@ -459,6 +463,19 @@
     "completionCard": {
       "title": "Complete seu Perfil Profissional"
     },
+    "wizard": {
+      "back": "Voltar",
+      "next": "Próximo",
+      "finish": "Finalizar"
+    },
+    "summary": {
+      "title": "Resumo do seu cadastro",
+      "pendingIntro": "Falta completar:",
+      "keepEditing": "Continuar editando",
+      "allDone": "Seu cadastro está completo!",
+      "allDoneBody": "Você já pode se candidatar às vagas disponíveis.",
+      "viewVacancies": "Ver vagas"
+    },
     "tabs": {
       "general": "Informações Gerais",
       "address": "Endereço de Atendimento",
@@ -467,7 +484,7 @@
     },
     "progress": {
       "registration": "Cadastro Básico",
-      "documents": "Documentos Profissionais",
+      "documents": "Documentos obrigatórios",
       "step1": "Informações Gerais",
       "step2": "Endereço de Atendimento",
       "step3": "Disponibilidade",
@@ -1431,7 +1448,13 @@
           "registerButton": "Registrar",
           "registering": "Registrando…",
           "loadError": "Erro ao carregar as notas.",
-          "createError": "Erro ao registrar a nota."
+          "createError": "Erro ao registrar a nota.",
+          "deleteAria": "Excluir nota",
+          "deleteConfirm": "Excluir esta nota?",
+          "deleteYes": "Excluir",
+          "deleteCancel": "Cancelar",
+          "deleting": "Excluindo…",
+          "deleteError": "Erro ao excluir a nota."
         }
       },
       "whatsappStatus": {

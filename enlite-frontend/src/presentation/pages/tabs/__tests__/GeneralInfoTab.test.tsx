@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, screen, act } from '@testing-library/react';
 import { GeneralInfoTab } from '../GeneralInfoTab';
+import { Toaster } from '@presentation/components/molecules/Toaster';
+import { useToastStore } from '@presentation/stores/toastStore';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
+import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrationStore';
 import { ApiError } from '@infrastructure/http/ApiError';
 
 // i18n determinístico: t(key, defaultValue) → defaultValue (texto amigável).
@@ -53,23 +56,31 @@ vi.mock('@hookform/resolvers/zod', () => ({
   zodResolver: () => async (values: any) => ({ values, errors: {} }),
 }));
 
-vi.mock('@presentation/stores/workerRegistrationStore', () => ({
-  useWorkerRegistrationStore: vi.fn((selector: (state: any) => any) => {
-    const state = {
-      data: {
-        generalInfo: {
-          profilePhoto: null, fullName: '', lastName: '', cpf: '', phone: '',
-          email: '', birthDate: '', sex: '', gender: '', documentType: 'DNI',
-          professionalLicense: '', languages: [], profession: '', knowledgeLevel: '',
-          experienceTypes: [], yearsExperience: '', preferredTypes: [], preferredAgeRange: '',
-        },
-        serviceAddress: { serviceRadius: 10, address: '', complement: '', acceptsRemoteService: false },
-        availability: { schedule: [] },
+// Estado do store configurável por teste (simula o que o hydrateFromServer já
+// deixou no store antes da aba montar — inclusive valores preservados quando o
+// backend devolve null).
+const mockUpdateGeneralInfo = vi.fn();
+function setStoreGeneralInfo(overrides: Record<string, unknown> = {}): void {
+  const state = {
+    data: {
+      generalInfo: {
+        profilePhoto: null, fullName: '', lastName: '', cpf: '', phone: '',
+        email: '', birthDate: '', sex: '', gender: '', documentType: 'DNI',
+        professionalLicense: '', languages: [], profession: '', knowledgeLevel: '',
+        experienceTypes: [], yearsExperience: '', preferredTypes: [], preferredAgeRange: '',
+        ...overrides,
       },
-      isFieldReadonly: () => false,
-    };
-    return selector(state);
-  }),
+      serviceAddress: { serviceRadius: 10, address: '', complement: '', acceptsRemoteService: false },
+      availability: { schedule: [] },
+    },
+    isFieldReadonly: () => false,
+    updateGeneralInfo: mockUpdateGeneralInfo,
+  };
+  vi.mocked(useWorkerRegistrationStore).mockImplementation((selector: (s: any) => any) => selector(state));
+}
+
+vi.mock('@presentation/stores/workerRegistrationStore', () => ({
+  useWorkerRegistrationStore: vi.fn(),
 }));
 
 vi.mock('@presentation/components/shared/PhoneInputIntl', () => ({
@@ -80,9 +91,11 @@ vi.mock('@presentation/utils/imageCompression', () => ({
   compressImage: vi.fn((data: string) => Promise.resolve(data)),
 }));
 
-describe('GeneralInfoTab - Auto Save & Scroll', () => {
+describe('GeneralInfoTab - Auto Save & Toast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useToastStore.setState({ toasts: [] });
+    setStoreGeneralInfo();
     vi.mocked(useAutoSave).mockReturnValue(mockTriggerSave);
     vi.mocked(useWorkerApi).mockReturnValue({
       saveGeneralInfo: mockSaveGeneralInfo,
@@ -114,10 +127,39 @@ describe('GeneralInfoTab - Auto Save & Scroll', () => {
     expect(mockTriggerSave).toHaveBeenCalled();
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // REGRESSÃO do bug "os campos aparecem e somem" (reproduzido em prod
+  // 2026-06-29 na conta do próprio dono): o worker tinha o nome preservado no
+  // store (hydrateFromServer mantém o valor local quando o backend devolve
+  // null), mas a aba fazia `getProgress()` + `reset({ fullName: x || '' })` e
+  // ZERAVA o campo. O fix removeu esse reset — o form é populado SÓ pelos
+  // defaultValues (store). Este teste prova que o campo carrega e NÃO some.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('mantém os campos preenchidos quando vêm do store (não some)', async () => {
+    setStoreGeneralInfo({ fullName: 'Gabriel', lastName: 'Stein', cpf: '20-12345678-9' });
+    // Mesmo que o backend devolvesse null, não pode haver wipe.
+    mockGetProgress.mockResolvedValue({ firstName: null, lastName: null, documentNumber: null });
+
+    const { container } = render(<GeneralInfoTab />);
+    const fullName = container.querySelector('input#fullName') as HTMLInputElement;
+    const lastName = container.querySelector('input#lastName') as HTMLInputElement;
+
+    expect(fullName.value).toBe('Gabriel');
+    expect(lastName.value).toBe('Stein');
+
+    // Espera além de qualquer microtask/effect — se houvesse reset, zeraria aqui.
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+
+    expect((container.querySelector('input#fullName') as HTMLInputElement).value).toBe('Gabriel');
+    expect((container.querySelector('input#lastName') as HTMLInputElement).value).toBe('Stein');
+    // A aba não deve buscar do backend nem dar reset.
+    expect(mockGetProgress).not.toHaveBeenCalled();
+  });
+
   it('should call saveGeneralInfo when auto-save function executes', async () => {
     render(<GeneralInfoTab />);
     const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
-    await saveFn();
+    await act(async () => { await saveFn(); });
     expect(mockSaveGeneralInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         termsAccepted: true,
@@ -126,38 +168,33 @@ describe('GeneralInfoTab - Auto Save & Scroll', () => {
     );
   });
 
-  it('should scroll to top on successful manual save', async () => {
-    mockSaveGeneralInfo.mockResolvedValueOnce(undefined);
-    const { container } = render(<GeneralInfoTab />);
-
-    await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
-
-    const form = container.querySelector('form')!;
-    fireEvent.submit(form);
-
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+  it('sincroniza o store no save (evita staleness ao trocar de aba)', async () => {
+    setStoreGeneralInfo({ fullName: 'Gabriel', lastName: 'Stein' });
+    render(<GeneralInfoTab />);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
+    expect(mockUpdateGeneralInfo).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'Gabriel', lastName: 'Stein' }),
+    );
   });
 
-  it('should scroll to top on save error', async () => {
-    mockSaveGeneralInfo.mockRejectedValueOnce(new Error('Save failed'));
-    const { container } = render(<GeneralInfoTab />);
+  it('shows a success toast when auto-save succeeds', async () => {
+    mockSaveGeneralInfo.mockResolvedValueOnce(undefined);
+    render(<><GeneralInfoTab /><Toaster /></>);
 
-    await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
 
-    const form = container.querySelector('form')!;
-    fireEvent.submit(form);
+    expect(await screen.findByTestId('toast-success')).toBeTruthy();
+  });
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+  it('shows an error toast when auto-save fails', async () => {
+    render(<><GeneralInfoTab /><Toaster /></>);
+
+    const onError = vi.mocked(useAutoSave).mock.calls[0][2]!;
+    act(() => onError(new Error('Save failed')));
+
+    expect(await screen.findByTestId('toast-error')).toBeTruthy();
   });
 
   // Regressão: o erro de telefone duplicado NUNCA pode mostrar SQL cru ao worker.
@@ -172,24 +209,20 @@ describe('GeneralInfoTab - Auto Save & Scroll', () => {
         },
         409,
       );
-      mockSaveGeneralInfo.mockRejectedValueOnce(apiError);
 
-      const { container } = render(<GeneralInfoTab />);
-      await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
+      render(<><GeneralInfoTab /><Toaster /></>);
 
-      fireEvent.submit(container.querySelector('form')!);
+      // O autosave traduz o erro via onError → toast amigável (nunca SQL cru).
+      const onError = vi.mocked(useAutoSave).mock.calls[0][2]!;
+      act(() => onError(apiError));
 
-      const errorBox = await waitFor(() => {
-        const el = container.querySelector('.bg-red-50');
-        expect(el).not.toBeNull();
-        return el!;
-      });
+      const toast = await screen.findByTestId('toast-error');
 
-      expect(errorBox.textContent).toContain('no puede ser utilizado');
+      expect(toast.textContent).toContain('no puede ser utilizado');
       // Garantia central: jamais expor detalhes de SQL/constraint.
-      expect(errorBox.textContent?.toLowerCase()).not.toContain('duplicate key');
-      expect(errorBox.textContent?.toLowerCase()).not.toContain('constraint');
-      expect(errorBox.textContent?.toLowerCase()).not.toContain('idx_workers_phone_unique');
+      expect(toast.textContent?.toLowerCase()).not.toContain('duplicate key');
+      expect(toast.textContent?.toLowerCase()).not.toContain('constraint');
+      expect(toast.textContent?.toLowerCase()).not.toContain('idx_workers_phone_unique');
     });
   });
 });

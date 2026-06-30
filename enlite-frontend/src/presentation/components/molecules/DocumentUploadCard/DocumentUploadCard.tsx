@@ -1,10 +1,13 @@
 import { useRef, ChangeEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms';
 
 interface DocumentUploadCardProps {
   label: string;
   isUploaded: boolean;
   isLoading?: boolean;
+  /** When true and not yet uploaded, the slot is marked as mandatory (red accent + badge). */
+  isRequired?: boolean;
   onFileSelect: (file: File) => void;
   onDelete: () => void;
   onView: () => void;
@@ -24,8 +27,10 @@ function FileIcon({ uploaded }: { uploaded: boolean }): JSX.Element {
 }
 
 export function DocumentUploadCard({
-  label, isUploaded, isLoading = false, onFileSelect, onDelete, onView, className = '',
+  label, isUploaded, isLoading = false, isRequired = false,
+  onFileSelect, onDelete, onView, className = '',
 }: DocumentUploadCardProps): JSX.Element {
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = (): void => {
@@ -40,9 +45,13 @@ export function DocumentUploadCard({
     }
   };
 
+  // Required-but-empty slots get a red accent so the worker can't miss them.
+  const showRequired = isRequired && !isUploaded;
   const borderClass = isUploaded
     ? 'border-primary border-[2.5px]'
-    : 'border-gray-700 border-[2.5px]';
+    : showRequired
+      ? 'border-red-400 border-[2.5px]'
+      : 'border-gray-700 border-[2.5px]';
 
   const cursorClass = isUploaded || isLoading ? 'cursor-default' : 'cursor-pointer hover:border-gray-800 transition-colors';
 
@@ -60,6 +69,17 @@ export function DocumentUploadCard({
         <div data-testid="upload-spinner" className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-card">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
+      )}
+
+      {showRequired && (
+        <span
+          data-testid="doc-required-badge"
+          className="absolute top-2 left-2 rounded-full bg-red-100 px-2 py-0.5"
+        >
+          <Text as="span" size="xs" weight="medium" color="inherit" className="text-red-600">
+            {t('documents.requiredBadge', 'Obligatorio')}
+          </Text>
+        </span>
       )}
 
       {isUploaded && (

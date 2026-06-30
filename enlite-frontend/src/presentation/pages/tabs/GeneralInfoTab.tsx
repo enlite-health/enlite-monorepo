@@ -1,4 +1,4 @@
-import { useState, memo, useEffect, useRef } from 'react';
+import { useState, memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -8,21 +8,19 @@ import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { compressImage } from '@presentation/utils/imageCompression';
 import { formatDateFromISO, parseDateToISO } from '@presentation/hooks/useMask';
-import { Button } from '@presentation/components/atoms/Button';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
+import { useToast } from '@presentation/hooks/useToast';
 import { GeneralInfoFormFields } from './GeneralInfoFormFields';
 
 export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const { t } = useTranslation();
-  const { saveGeneralInfo, getProgress } = useWorkerApi();
+  const { saveGeneralInfo } = useWorkerApi();
 
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
+  const updateGeneralInfo = useWorkerRegistrationStore((state) => state.updateGeneralInfo);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
+  const showToast = useToast();
 
   const form = useForm<GeneralInfoFormData>({
     resolver: zodResolver(generalInfoSchema) as import('react-hook-form').Resolver<GeneralInfoFormData>,
@@ -32,9 +30,9 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       cpf: data.generalInfo.cpf || '',
       phone: data.generalInfo.phone || '',
       email: data.generalInfo.email || '',
-      birthDate: data.generalInfo.birthDate || '',
-      sex: (data.generalInfo.sex as 'male' | 'female' | undefined) || undefined,
-      gender: (data.generalInfo.gender as 'male' | 'female' | 'other' | undefined) || undefined,
+      birthDate: formatDateFromISO(data.generalInfo.birthDate || '') || '',
+      sex: (data.generalInfo.sex?.toLowerCase() as 'male' | 'female' | undefined) || undefined,
+      gender: (data.generalInfo.gender?.toLowerCase() as 'male' | 'female' | 'other' | undefined) || undefined,
       documentType: (data.generalInfo.documentType as 'CUIL_CUIT' | 'CPF' | 'RG' | 'CNH') || 'CUIL_CUIT',
       professionalLicense: data.generalInfo.professionalLicense || '',
       languages: data.generalInfo.languages?.length ? (data.generalInfo.languages as Array<'pt' | 'es' | 'en'>) : [],
@@ -46,52 +44,47 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       preferredAgeRange: data.generalInfo.preferredAgeRange?.length ? (data.generalInfo.preferredAgeRange as Array<'children' | 'adolescents' | 'adults' | 'elderly'>) : [],
       profilePhoto: data.generalInfo.profilePhoto || null,
     },
-    mode: 'onChange',
+    // on-blur: valida quando o campo perde o foco (e re-valida ao digitar
+    // depois disso). Evita "erro no 1º caractere" de Nombre/CUIL durante a
+    // digitação — ver docs/features/worker-registration-ux/ux-review-2026-06-28.md.
+    mode: 'onTouched',
   });
 
-  const { handleSubmit, reset, getValues } = form;
+  const { getValues } = form;
+  // Assina o dirty-tracking do react-hook-form LENDO `dirtyFields` no render.
+  // `formState` é um Proxy que só computa `dirtyFields` quando a propriedade é
+  // acessada durante o render — sem esta leitura, `dirtyFields` fica sempre
+  // vazio e o gate de `phone` no autosave nunca dispararia. Como o useAutoSave
+  // invoca sempre o closure mais recente, este snapshot está sempre atualizado.
+  const { dirtyFields } = form.formState;
 
-  // Fetch real worker data from backend and populate form
-  useEffect(() => {
-    const fetchWorkerData = async () => {
-      try {
-        const workerData = await getProgress();
+  // O formulário é populado pelos `defaultValues` acima, que leem do store
+  // (Zustand). A WorkerProfilePage já fez `getProgress()` + `hydrateFromServer()`
+  // ANTES de renderizar esta aba, e o hydrate PRESERVA o valor local quando o
+  // backend devolve null (`serverData.firstName || store.fullName`).
+  //
+  // IMPORTANTE: NÃO refazer aqui um `getProgress()` + `reset()`. A versão
+  // anterior fazia `reset({ fullName: workerData.firstName || '' })`, o que
+  // SOBRESCREVIA com '' o nome que o hydrate tinha preservado — era exatamente
+  // o "campo aparece e some" (reproduzido em prod, 2026-06-29). O store é a
+  // fonte única; o reset duplicado só reintroduzia a corrida e o data-loss.
 
-        reset({
-          fullName: workerData.firstName || '',
-          lastName: workerData.lastName || '',
-          cpf: workerData.documentNumber || '',
-          phone: workerData.phone || '',
-          email: workerData.email || '',
-          birthDate: formatDateFromISO(workerData.birthDate || '') || '',
-          sex: (workerData.sex?.toLowerCase() as 'male' | 'female') || undefined,
-          gender: (workerData.gender?.toLowerCase() as 'male' | 'female' | 'other') || undefined,
-          documentType: (workerData.documentType as 'CUIL_CUIT' | 'CPF' | 'RG' | 'CNH') || 'CUIL_CUIT',
-          professionalLicense: workerData.titleCertificate || '',
-          languages: (workerData.languages as Array<'pt' | 'es' | 'en'>) || [],
-          profession: (workerData.profession as 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST') || undefined,
-          knowledgeLevel: (workerData.knowledgeLevel as 'SECONDARY' | 'TERTIARY' | 'TECNICATURA' | 'BACHELOR' | 'POSTGRADUATE' | 'MASTERS' | 'DOCTORATE') || undefined,
-          experienceTypes: (workerData.experienceTypes as Array<'adicciones' | 'psicosis' | 'trastorno_alimentar' | 'trastorno_bipolaridad' | 'trastorno_ansiedad' | 'trastorno_discapacidad_intelectual' | 'trastorno_depresivo' | 'trastorno_neurologico' | 'trastorno_opositor_desafiante' | 'trastorno_psicologico' | 'trastorno_psiquiatrico'>) || [],
-          yearsExperience: (workerData.yearsExperience as '0_2' | '3_5' | '6_10' | '10_plus') || undefined,
-          preferredTypes: (workerData.preferredTypes as Array<'adicciones' | 'psicosis' | 'trastorno_alimentar' | 'trastorno_bipolaridad' | 'trastorno_ansiedad' | 'trastorno_discapacidad_intelectual' | 'trastorno_depresivo' | 'trastorno_neurologico' | 'trastorno_opositor_desafiante' | 'trastorno_psicologico' | 'trastorno_psiquiatrico'>) || [],
-          preferredAgeRange: Array.isArray(workerData.preferredAgeRange)
-            ? (workerData.preferredAgeRange as Array<'children' | 'adolescents' | 'adults' | 'elderly'>)
-            : workerData.preferredAgeRange ? [workerData.preferredAgeRange as 'children' | 'adolescents' | 'adults' | 'elderly'] : [],
-          profilePhoto: workerData.profilePhotoUrl || null,
-        });
-
-        if (workerData.profilePhotoUrl) {
-          setProfilePhotoPreview(workerData.profilePhotoUrl);
-        }
-      } catch (error) {
-        console.error('Failed to fetch worker data:', error);
-      }
-    };
-
-    fetchWorkerData();
-  }, [getProgress, reset]);
-
-  const buildSavePayload = (formData: GeneralInfoFormData) => ({
+  // Monta o payload do autosave.
+  //
+  // `phone` é CONDICIONAL e só entra quando o campo foi realmente editado
+  // (`dirty`). Motivo: no backend, o `phone` é o ÚNICO campo gravado com
+  // `COALESCE($n, phone)` — omiti-lo significa "mantém o número atual" e PULA a
+  // verificação de unicidade (`resolvePhoneToPersist`). Enviar o telefone a cada
+  // autosave de quem nem tocou no campo disparava `409 PHONE_NOT_AVAILABLE`
+  // (round-trip do próprio número em formato diferente do gravado + duplicatas
+  // reais de telefone em prod faziam a unicidade bater contra outro registro).
+  //
+  // Todos os OUTROS campos continuam sempre presentes de propósito: no backend
+  // eles são overwrite direto (não COALESCE), então omitir qualquer um gravaria
+  // NULL por cima — o data-loss de "campo some" que essa tela já sofreu. O store
+  // é a fonte única e já está hidratado, então reenviar os valores atuais é
+  // idempotente e seguro.
+  const buildSavePayload = (formData: GeneralInfoFormData, includePhone: boolean) => ({
     firstName: formData.fullName?.split(' ')[0] || formData.fullName || '',
     lastName: formData.lastName || '',
     sex: formData.sex as 'male' | 'female',
@@ -99,7 +92,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     birthDate: formData.birthDate ? parseDateToISO(formData.birthDate) : undefined,
     documentType: 'CUIL_CUIT',
     documentNumber: formData.cpf || '',
-    phone: formData.phone || '',
+    ...(includePhone ? { phone: formData.phone || '' } : {}),
     profilePhotoUrl: formData.profilePhoto || undefined,
     languages: formData.languages || [],
     profession: formData.profession as 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST',
@@ -129,30 +122,31 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
 
   const triggerSave = useAutoSave(
     async () => {
-      await saveGeneralInfo(buildSavePayload(getValues()));
+      const values = getValues();
+      // Só envia `phone` quando o campo foi editado de fato. Ver buildSavePayload.
+      const phoneDirty = Boolean(dirtyFields.phone);
+      await saveGeneralInfo(buildSavePayload(values, phoneDirty));
+      // Mantém o store (fonte única) em sincronia com o que foi salvo, para que
+      // trocar de aba e voltar mostre o valor atual — sem re-fetch e sem o
+      // reset que zerava os campos.
+      updateGeneralInfo({
+        ...values,
+        birthDate: values.birthDate ? parseDateToISO(values.birthDate) : '',
+      });
+      // Rebaselina o dirty-tracking: o que acabou de ser salvo deixa de estar
+      // "sujo", então o próximo autosave só reenvia `phone` se ele mudar OUTRA
+      // vez. `keepValues: true` NÃO altera nenhum valor do form — só atualiza o
+      // baseline interno de dirty (diferente do antigo `reset({...''})` que
+      // zerava os campos). Sem isso, um telefone editado uma vez seguiria
+      // "dirty" e seria reenviado a cada blur subsequente.
+      form.reset(values, { keepValues: true });
+      showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
     },
     500,
     (error) => {
-      setSaveError(resolveSaveErrorMessage(error));
+      showToast(resolveSaveErrorMessage(error), 'error', 'profile-save');
     },
   );
-
-  const onSubmit = async (formData: GeneralInfoFormData): Promise<void> => {
-    setSaveError(null);
-    setSaveSuccess(false);
-    setIsSaving(true);
-    try {
-      await saveGeneralInfo(buildSavePayload(formData));
-      setSaveSuccess(true);
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      setSaveError(resolveSaveErrorMessage(err));
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const handleProfilePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0];
@@ -196,30 +190,13 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   );
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit(onSubmit)} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
-      {saveSuccess && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-input font-lexend text-sm text-green-700">
-          {t('profile.saveSuccess', 'Informações salvas com sucesso!')}
-        </div>
-      )}
-      {saveError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-input font-lexend text-sm text-red-700">
-          {saveError}
-        </div>
-      )}
-
+    <form onSubmit={(e) => e.preventDefault()} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
       <GeneralInfoFormFields
         form={form}
         isFieldReadonly={isFieldReadonly}
         triggerSave={triggerSave}
         profilePhotoElement={profilePhotoElement}
       />
-
-      <div className="flex justify-end pt-4">
-        <Button type="submit" variant="primary" size="md" isLoading={isSaving}>
-          {t('profile.save', 'Salvar')}
-        </Button>
-      </div>
     </form>
   );
 });

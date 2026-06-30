@@ -1,0 +1,1 @@
+export { ProfileWizardFooter } from './ProfileWizardFooter';

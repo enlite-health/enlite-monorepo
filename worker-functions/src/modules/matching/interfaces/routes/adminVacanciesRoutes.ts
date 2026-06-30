@@ -191,6 +191,11 @@ export function createAdminVacanciesRoutes(
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.create(req, res),
   );
+  router.delete(
+    '/vacancies/:vacancyId/applications/:wjaId/contact-notes/:noteId',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => contactNotesController.delete(req, res),
+  );
 
   return router;
 }

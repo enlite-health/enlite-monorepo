@@ -303,6 +303,9 @@ class AdminApiServiceClass {
   createContactNote(...args: Parameters<typeof AdminContactNotesApiService.createContactNote>) {
     return AdminContactNotesApiService.createContactNote(...args);
   }
+  deleteContactNote(...args: Parameters<typeof AdminContactNotesApiService.deleteContactNote>) {
+    return AdminContactNotesApiService.deleteContactNote(...args);
+  }
 
   // ========== Interview Slots Methods ==========
 

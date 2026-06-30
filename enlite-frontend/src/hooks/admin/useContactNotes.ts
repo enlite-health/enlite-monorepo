@@ -6,12 +6,14 @@ interface UseContactNotesState {
   notes: ContactNote[];
   isLoading: boolean;
   isCreating: boolean;
+  deletingId: string | null;
   error: string | null;
 }
 
 interface UseContactNotesReturn extends UseContactNotesState {
   fetchNotes: () => Promise<void>;
   createNote: (payload: CreateContactNotePayload) => Promise<void>;
+  deleteNote: (noteId: string) => Promise<void>;
 }
 
 export function useContactNotes(
@@ -21,6 +23,7 @@ export function useContactNotes(
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchNotes = useCallback(async () => {
@@ -52,5 +55,30 @@ export function useContactNotes(
     [vacancyId, wjaId, fetchNotes],
   );
 
-  return { notes, isLoading, isCreating, error, fetchNotes, createNote };
+  const deleteNote = useCallback(
+    async (noteId: string) => {
+      setDeletingId(noteId);
+      setError(null);
+      try {
+        await AdminApiService.deleteContactNote(vacancyId, wjaId, noteId);
+        await fetchNotes();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete note');
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [vacancyId, wjaId, fetchNotes],
+  );
+
+  return {
+    notes,
+    isLoading,
+    isCreating,
+    deletingId,
+    error,
+    fetchNotes,
+    createNote,
+    deleteNote,
+  };
 }

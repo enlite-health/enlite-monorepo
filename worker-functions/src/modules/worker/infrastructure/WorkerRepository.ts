@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { logger, loggingAls } from '@shared/logging';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -19,6 +20,25 @@ import {
   updateAuthUid as _updateAuthUid,
   updateImportedWorkerData as _updateImportedWorkerData,
 } from './WorkerAuthRepository';
+
+// ── WorkerWithPii — dados decriptados retornados por findByIdWithPii ──────────
+export interface WorkerWithPii {
+  id: string;
+  email: string;
+  phone: string | null;
+  status: string;
+  profession: string | null;
+  occupation: string | null;
+  employment_type: string | null;
+  /** Decriptados via KMS */
+  firstName: string | null;
+  lastName: string | null;
+  sex: string | null;
+  birthDate: string | null;
+  documentNumber: string | null;
+  anaCareSyncedAt: Date | null;
+  anaCareId: string | null;
+}
 
 export class WorkerRepository implements IWorkerRepository {
   private pool: Pool;
@@ -160,6 +180,76 @@ export class WorkerRepository implements IWorkerRepository {
     }
   }
 
+  /**
+   * Busca worker por ID com campos PII DECRIPTADOS via KMS.
+   *
+   * Intencionado para sincronização externa (BackfillWorkerMirrorUseCase) que precisa
+   * de nome/sexo/birthDate/documentNumber em plaintext para envio à plataforma AnaCare.
+   *
+   * VETO C2 do Architect: não adicionar flag ao findById existente — método separado.
+   * NÃO usar em request handlers síncronos sem guardar contexto de auditoria.
+   * PII-SAFETY: os valores decriptados NUNCA podem ir para logs.
+   */
+  async findByIdWithPii(id: string): Promise<WorkerWithPii | null> {
+    const result = await this.pool.query(
+      `SELECT
+         id, email, phone, status, profession, occupation, employment_type,
+         first_name_encrypted  AS "firstNameEnc",
+         last_name_encrypted   AS "lastNameEnc",
+         sex_encrypted         AS "sexEnc",
+         birth_date_encrypted  AS "birthDateEnc",
+         document_number_encrypted AS "documentNumberEnc",
+         ana_care_synced_at    AS "anaCareSyncedAt",
+         ana_care_id           AS "anaCareId"
+       FROM workers
+       WHERE id = $1 AND merged_into_id IS NULL`,
+      [id],
+    );
+    if (result.rows.length === 0) return null;
+
+    const row = result.rows[0] as {
+      id: string;
+      email: string;
+      phone: string | null;
+      status: string;
+      profession: string | null;
+      occupation: string | null;
+      employment_type: string | null;
+      firstNameEnc: string | null;
+      lastNameEnc: string | null;
+      sexEnc: string | null;
+      birthDateEnc: string | null;
+      documentNumberEnc: string | null;
+      anaCareSyncedAt: Date | null;
+      anaCareId: string | null;
+    };
+
+    const [firstName, lastName, sex, birthDate, documentNumber] = await Promise.all([
+      row.firstNameEnc ? this.encryptionService.decrypt(row.firstNameEnc) : Promise.resolve(null),
+      row.lastNameEnc ? this.encryptionService.decrypt(row.lastNameEnc) : Promise.resolve(null),
+      row.sexEnc ? this.encryptionService.decrypt(row.sexEnc) : Promise.resolve(null),
+      row.birthDateEnc ? this.encryptionService.decrypt(row.birthDateEnc) : Promise.resolve(null),
+      row.documentNumberEnc ? this.encryptionService.decrypt(row.documentNumberEnc) : Promise.resolve(null),
+    ]);
+
+    return {
+      id: row.id,
+      email: row.email,
+      phone: row.phone,
+      status: row.status,
+      profession: row.profession,
+      occupation: row.occupation,
+      employment_type: row.employment_type,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      sex: sex || null,
+      birthDate: birthDate || null,
+      documentNumber: documentNumber || null,
+      anaCareSyncedAt: row.anaCareSyncedAt,
+      anaCareId: row.anaCareId,
+    };
+  }
+
   async updateAuthUid(workerId: string, authUid: string, phone?: string, consentAt?: Date): Promise<Result<Worker>> {
     return _updateAuthUid(this.pool, this.encryptionService, workerId, authUid, phone, consentAt);
   }
@@ -182,10 +272,18 @@ export class WorkerRepository implements IWorkerRepository {
   async findByPhoneCandidates(candidates: string[]): Promise<Result<Worker | null>> {
     try {
       if (candidates.length === 0) return Result.ok<Worker | null>(null);
+      // Só considera workers ATIVOS (não-merged) como "donos" de um telefone.
+      // Sem o `merged_into_id IS NULL`, um número que ainda mora num registro
+      // duplicado/merged era devolvido como dono e bloqueava o worker legítimo
+      // com PHONE_NOT_AVAILABLE — falso positivo causado pelas duplicatas
+      // históricas de prod (mesmo número em formatos diferentes). Espelha o
+      // predicado do idx_workers_phone_normalized (mig 219).
       const query = `
         SELECT id, auth_uid as "authUid", email, phone, country,
                created_at as "createdAt", updated_at as "updatedAt"
-        FROM workers WHERE phone = ANY($1::text[])
+        FROM workers
+        WHERE phone = ANY($1::text[])
+          AND merged_into_id IS NULL
         LIMIT 1
       `;
       const result = await this.pool.query(query, [candidates]);
@@ -235,7 +333,41 @@ export class WorkerRepository implements IWorkerRepository {
 
   /** Delega para WorkerImportRepository para manter o arquivo sob 400 linhas. */
   async recalculateStatus(workerId: string): Promise<WorkerStatus | null> {
-    return _recalculateStatus(this.pool, workerId, (id, s) => this.updateStatus(id, s));
+    const newStatus = await _recalculateStatus(this.pool, workerId, (id, s) => this.updateStatus(id, s));
+
+    // Quando o status transitou para REGISTERED: enfileira mirror event (outbox best-effort).
+    // Esta é a forma canônica de disparar o sync para AnaCare — todos os caminhos que
+    // promovem um worker a REGISTERED passam por recalculateStatus.
+    if (newStatus === 'REGISTERED') {
+      await this.enqueueMirrorEvent(workerId);
+    }
+
+    return newStatus;
+  }
+
+  /**
+   * Enfileira worker.mirror_requested no outbox (domain_events).
+   * Best-effort: falha silenciosa — não bloqueia o fluxo principal.
+   * Não é transacional com o UPDATE de status (pool.query direto, sem client).
+   * Se o INSERT falhar não há linha pra reprocessar (o sweep do
+   * DomainEventProcessor só reenfileira eventos JÁ gravados) — a rede de
+   * segurança real é o BackfillWorkerMirrorUseCase, re-rodável a qualquer momento.
+   */
+  private async enqueueMirrorEvent(workerId: string): Promise<void> {
+    try {
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+      await this.pool.query(
+        `INSERT INTO domain_events (event, payload, trace_id)
+         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
+        [JSON.stringify({ workerId }), traceId],
+      );
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId }).warn({
+        msg: '[WorkerRepository] failed to enqueue mirror event (best-effort, ignoring)',
+        error: e.message,
+      });
+    }
   }
 
   async updateImportedWorkerData(

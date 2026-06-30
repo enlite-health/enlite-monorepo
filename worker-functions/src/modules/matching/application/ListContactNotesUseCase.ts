@@ -1,16 +1,21 @@
 import { ContactNoteRepository } from '../infrastructure/ContactNoteRepository';
-import { ContactNote } from '../domain/ContactNote';
+import {
+  canDeleteContactNote,
+  ContactNoteView,
+} from '../domain/contactNoteDeletion';
 
 export interface ListContactNotesParams {
   vacancyId: string;
   wjaId: string;
+  /** Operador que está pedindo a lista — define `canDelete` por nota. */
+  requesterAdminId: string;
 }
 
 export type ListContactNotesError =
   | { kind: 'not_found'; message: string };
 
 export type ListContactNotesResult =
-  | { ok: true; notes: ContactNote[] }
+  | { ok: true; notes: ContactNoteView[] }
   | { ok: false; error: ListContactNotesError };
 
 /**
@@ -40,6 +45,11 @@ export class ListContactNotesUseCase {
     }
 
     const notes = await this.repo.findByWJA(params.wjaId);
-    return { ok: true, notes };
+    const now = Date.now();
+    const view: ContactNoteView[] = notes.map((note) => ({
+      ...note,
+      canDelete: canDeleteContactNote(note, params.requesterAdminId, now),
+    }));
+    return { ok: true, notes: view };
   }
 }

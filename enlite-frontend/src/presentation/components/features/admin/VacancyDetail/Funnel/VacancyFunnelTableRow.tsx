@@ -54,8 +54,26 @@ export function VacancyFunnelTableRow({
 
   return (
     <TableRow className={`bg-white${isLast ? ' rounded-bl-[12px] rounded-br-[12px]' : ''}`}>
+      {/* Contact notes */}
+      <TableCell unwrapped className="pl-6 pr-2">
+        <button
+          type="button"
+          onClick={handleNotesClick}
+          aria-label={t('admin.vacancyDetail.funnelTable.headers.notes')}
+          data-testid="funnel-notes-button"
+          className="inline-flex items-center gap-1.5 text-gray-800 hover:text-primary transition-colors"
+        >
+          <MessageSquare size={16} aria-hidden="true" />
+          {row.contactNotesCount > 0 && (
+            <Text as="span" size="xs" weight="medium" color="inherit">
+              {row.contactNotesCount}
+            </Text>
+          )}
+        </button>
+      </TableCell>
+
       {/* Name + email */}
-      <TableCell unwrapped className="px-6">
+      <TableCell unwrapped className="pl-2 pr-6">
         <div className="flex items-center gap-2 max-w-[280px]">
           <WorkerAvatar name={row.workerName} avatarUrl={row.workerAvatarUrl} size={32} />
           <div className="flex flex-col min-w-0 flex-1">
@@ -125,23 +143,6 @@ export function VacancyFunnelTableRow({
             </Text>
           </span>
         )}
-      </TableCell>
-
-      {/* Contact notes */}
-      <TableCell unwrapped className="px-6">
-        <button
-          type="button"
-          onClick={handleNotesClick}
-          aria-label={t('admin.vacancyDetail.funnelTable.headers.notes')}
-          className="inline-flex items-center gap-1.5 text-gray-500 hover:text-primary transition-colors"
-        >
-          <MessageSquare size={16} aria-hidden="true" />
-          {row.contactNotesCount > 0 && (
-            <Text as="span" size="xs" weight="medium" color="inherit">
-              {row.contactNotesCount}
-            </Text>
-          )}
-        </button>
       </TableCell>
     </TableRow>
   );

@@ -34,13 +34,13 @@ export function VacancyFunnelTable({
   const [activeNotes, setActiveNotes] = useState<ActiveNotesModal | null>(null);
 
   const headers = [
+    t('admin.vacancyDetail.funnelTable.headers.notes'),
     t('admin.vacancyDetail.funnelTable.headers.name'),
     t('admin.vacancyDetail.funnelTable.headers.phone'),
     t('admin.vacancyDetail.funnelTable.headers.inviteDate'),
     t('admin.vacancyDetail.funnelTable.headers.whatsapp'),
     t('admin.vacancyDetail.funnelTable.headers.accepted'),
     t('admin.vacancyDetail.funnelTable.headers.registration'),
-    t('admin.vacancyDetail.funnelTable.headers.notes'),
   ];
 
   function handleOpenNotes(wjaId: string) {
@@ -74,8 +74,11 @@ export function VacancyFunnelTable({
         className="border-collapse"
       >
         <TableHeader>
-          {headers.map((header) => (
-            <TableHead key={header} className="px-6 whitespace-nowrap">
+          {headers.map((header, i) => (
+            <TableHead
+              key={header}
+              className={`${i === 0 ? 'pl-6 pr-2' : i === 1 ? 'pl-2 pr-6' : 'px-6'} whitespace-nowrap`}
+            >
               {header}
             </TableHead>
           ))}

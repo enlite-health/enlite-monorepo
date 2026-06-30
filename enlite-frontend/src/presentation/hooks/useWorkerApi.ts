@@ -15,62 +15,69 @@ import {
  */
 export function useWorkerApi() {
   const { user } = useAuth();
+  // Depend on primitives (id/email), NOT the `user` object. Firebase's
+  // onAuthStateChanged emits a brand-new user object on every token
+  // restore/refresh; depending on `user` would recreate these callbacks each
+  // time, re-triggering effects that consume them (e.g. the profile form's
+  // fetch+reset, which was wiping already-loaded fields). See useAuth/Firebase.
+  const userId = user?.id;
+  const userEmail = user?.email;
 
   const initWorker = useCallback(
     async (extras: Omit<InitWorkerPayload, 'authUid' | 'email'>): Promise<InitWorkerResponse> => {
-      if (!user) throw new Error('User must be authenticated to init worker');
+      if (!userId || !userEmail) throw new Error('User must be authenticated to init worker');
       return WorkerApiService.initWorker({
-        authUid: user.id,
-        email: user.email,
+        authUid: userId,
+        email: userEmail,
         ...extras,
       });
     },
-    [user],
+    [userId, userEmail],
   );
 
   const getProgress = useCallback(async (): Promise<WorkerProgressResponse> => {
-    if (!user) throw new Error('User must be authenticated to get progress');
+    if (!userId) throw new Error('User must be authenticated to get progress');
     return WorkerApiService.getProgress();
-  }, [user]);
+  }, [userId]);
 
   const saveStep = useCallback(
     async (workerId: string, step: number, data: SaveStepPayload['data']): Promise<void> => {
-      if (!user) throw new Error('User must be authenticated to save step');
+      if (!userId) throw new Error('User must be authenticated to save step');
       return WorkerApiService.saveStep({ workerId, step, data });
     },
-    [user],
+    [userId],
   );
 
   const saveGeneralInfo = useCallback(
     async (data: Record<string, any>): Promise<void> => {
-      if (!user) throw new Error('User must be authenticated');
+      if (!userId) throw new Error('User must be authenticated');
       return WorkerApiService.saveGeneralInfo(data);
     },
-    [user],
+    [userId],
   );
 
   const saveServiceArea = useCallback(
     async (data: Record<string, any>): Promise<void> => {
-      if (!user) throw new Error('User must be authenticated');
+      if (!userId) throw new Error('User must be authenticated');
       return WorkerApiService.saveServiceArea(data);
     },
-    [user],
+    [userId],
   );
 
   const getAvailability = useCallback(
     async (): Promise<AvailabilitySlotResponse[]> => {
-      if (!user) throw new Error('User must be authenticated');
+      if (!userId) throw new Error('User must be authenticated');
       return WorkerApiService.getAvailability();
     },
-    [user],
+    [userId],
   );
 
   const saveAvailability = useCallback(
     async (data: { availability: Record<string, any>[] }): Promise<void> => {
-      if (!user) throw new Error('User must be authenticated');
+      if (!userId) throw new Error('User must be authenticated');
       return WorkerApiService.saveAvailability(data);
     },
-    [user],
+    [userId],
   );
 
   return { initWorker, getProgress, saveStep, saveGeneralInfo, saveServiceArea, getAvailability, saveAvailability };

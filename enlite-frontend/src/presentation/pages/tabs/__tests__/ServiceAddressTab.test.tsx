@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, screen, act } from '@testing-library/react';
 import { ServiceAddressTab } from '../ServiceAddressTab';
+import { Toaster } from '@presentation/components/molecules/Toaster';
+import { useToastStore } from '@presentation/stores/toastStore';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 
@@ -71,9 +73,10 @@ vi.mock('@application/use-cases/extractAddressComponents', () => ({
   }),
 }));
 
-describe('ServiceAddressTab - Auto Save & Scroll', () => {
+describe('ServiceAddressTab - Auto Save & Toast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useToastStore.setState({ toasts: [] });
     vi.mocked(useAutoSave).mockReturnValue(mockTriggerSave);
     vi.mocked(useWorkerApi).mockReturnValue({
       saveServiceArea: mockSaveServiceArea,
@@ -109,38 +112,27 @@ describe('ServiceAddressTab - Auto Save & Scroll', () => {
     );
   });
 
-  it('should scroll to top on successful manual save', async () => {
+  it('shows a success toast when auto-save succeeds', async () => {
     mockSaveServiceArea.mockResolvedValueOnce(undefined);
-    const { container } = render(<ServiceAddressTab />);
+    render(<><ServiceAddressTab /><Toaster /></>);
 
     await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
 
-    const form = container.querySelector('form')!;
-    fireEvent.submit(form);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+    expect(await screen.findByTestId('toast-success')).toBeTruthy();
   });
 
-  it('should scroll to top on save error', async () => {
-    mockSaveServiceArea.mockRejectedValueOnce(new Error('Network error'));
-    const { container } = render(<ServiceAddressTab />);
+  it('shows an error toast when auto-save fails', async () => {
+    render(<><ServiceAddressTab /><Toaster /></>);
 
     await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
 
-    const form = container.querySelector('form')!;
-    fireEvent.submit(form);
+    const onError = vi.mocked(useAutoSave).mock.calls[0][2]!;
+    act(() => onError(new Error('Network error')));
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    });
+    expect(await screen.findByTestId('toast-error')).toBeTruthy();
   });
 
   it('should render read-only city and postal code fields', async () => {

@@ -30,6 +30,7 @@ const IDS = {
 describe('WJA Contact Notes', () => {
   const api = createApiClient();
   let adminToken: string;
+  let otherAdminToken: string;
   let pool: Pool;
 
   beforeAll(async () => {
@@ -38,6 +39,13 @@ describe('WJA Contact Notes', () => {
     adminToken = await getMockToken(api, {
       uid: 'cn-admin-e2e',
       email: 'cn-admin@e2e.local',
+      role: 'admin',
+    });
+
+    // Segundo operador — usado pra provar que só o autor pode excluir.
+    otherAdminToken = await getMockToken(api, {
+      uid: 'cn-admin-other',
+      email: 'cn-admin-other@e2e.local',
       role: 'admin',
     });
 
@@ -52,6 +60,10 @@ describe('WJA Contact Notes', () => {
 
   function auth() {
     return { headers: { Authorization: `Bearer ${adminToken}` } };
+  }
+
+  function authOther() {
+    return { headers: { Authorization: `Bearer ${otherAdminToken}` } };
   }
 
   // ── POST creates note ─────────────────────────────────────────────────────
@@ -117,6 +129,103 @@ describe('WJA Contact Notes', () => {
       expect(res.status).toBe(404);
       expect(res.data.success).toBe(false);
     });
+
+    it('snapshots the author display name from the users table', async () => {
+      // seedFixtures inseriu users(cn-admin-e2e).display_name = 'Operadora E2E'
+      const res = await api.post(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        { noteText: 'Nota com nome do autor' },
+        auth(),
+      );
+
+      expect(res.status).toBe(201);
+      expect(res.data.data.createdByAdminName).toBe('Operadora E2E');
+      expect(res.data.data.createdByAdminEmail).toBe('cn-admin-users@e2e.local');
+    });
+  });
+
+  // ── DELETE: author-only + 2h window ──────────────────────────────────────
+
+  describe('DELETE /:vacancyId/applications/:wjaId/contact-notes/:noteId', () => {
+    async function createNoteViaApi(noteText: string): Promise<string> {
+      const res = await api.post(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        { noteText },
+        auth(),
+      );
+      expect(res.status).toBe(201);
+      return res.data.data.id as string;
+    }
+
+    it('lets the AUTHOR delete their own note within 2h (200) and removes it', async () => {
+      const noteId = await createNoteViaApi('Nota a ser excluída pelo autor');
+
+      const del = await api.delete(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/${noteId}`,
+        auth(),
+      );
+      expect(del.status).toBe(200);
+      expect(del.data.success).toBe(true);
+
+      const check = await pool.query(
+        `SELECT 1 FROM wja_contact_notes WHERE id = $1`,
+        [noteId],
+      );
+      expect(check.rowCount).toBe(0);
+    });
+
+    it('forbids a NON-author from deleting the note (403 not_owner) and keeps it', async () => {
+      const noteId = await createNoteViaApi('Nota do autor, outro tenta excluir');
+
+      const del = await api.delete(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/${noteId}`,
+        authOther(),
+      );
+      expect(del.status).toBe(403);
+      expect(del.data.success).toBe(false);
+      expect(del.data.reason).toBe('not_owner');
+
+      const check = await pool.query(
+        `SELECT 1 FROM wja_contact_notes WHERE id = $1`,
+        [noteId],
+      );
+      expect(check.rowCount).toBe(1);
+    });
+
+    it('forbids the author from deleting after 2h (403 window_expired) and keeps it', async () => {
+      // Insere nota retroagida 3h, do mesmo autor (cn-admin-e2e)
+      const inserted = await pool.query<{ id: string }>(
+        `INSERT INTO wja_contact_notes
+           (worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, 'Nota antiga (3h)', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '3 hours')
+         RETURNING id`,
+        [IDS.wja],
+      );
+      const noteId = inserted.rows[0].id;
+
+      const del = await api.delete(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/${noteId}`,
+        auth(),
+      );
+      expect(del.status).toBe(403);
+      expect(del.data.success).toBe(false);
+      expect(del.data.reason).toBe('window_expired');
+
+      const check = await pool.query(
+        `SELECT 1 FROM wja_contact_notes WHERE id = $1`,
+        [noteId],
+      );
+      expect(check.rowCount).toBe(1);
+    });
+
+    it('returns 404 for an unknown noteId', async () => {
+      const del = await api.delete(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/c0000001-0000-4000-a009-000000000099`,
+        auth(),
+      );
+      expect(del.status).toBe(404);
+      expect(del.data.success).toBe(false);
+    });
   });
 
   // ── GET lists notes in DESC order ────────────────────────────────────────
@@ -168,6 +277,28 @@ describe('WJA Contact Notes', () => {
 
       expect(res.status).toBe(404);
       expect(res.data.success).toBe(false);
+    });
+
+    it('computes canDelete per note (own+recent=true, foreign=false, own+old=false)', async () => {
+      await pool.query(
+        `INSERT INTO wja_contact_notes
+           (worker_job_application_id, note_text, created_by_admin_id, created_at)
+         VALUES
+           ($1, 'cd-own-recent', 'cn-admin-e2e', NOW()),
+           ($1, 'cd-foreign',    'cn-admin-other', NOW()),
+           ($1, 'cd-own-old',    'cn-admin-e2e', NOW() - INTERVAL '3 hours')`,
+        [IDS.wja],
+      );
+
+      const res = await api.get(
+        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        auth(),
+      );
+      expect(res.status).toBe(200);
+      const notes = res.data.data as Array<{ noteText: string; canDelete: boolean }>;
+      expect(notes.find(n => n.noteText === 'cd-own-recent')?.canDelete).toBe(true);
+      expect(notes.find(n => n.noteText === 'cd-foreign')?.canDelete).toBe(false);
+      expect(notes.find(n => n.noteText === 'cd-own-old')?.canDelete).toBe(false);
     });
   });
 
@@ -222,6 +353,17 @@ describe('WJA Contact Notes', () => {
 
 async function seedFixtures(pool: Pool): Promise<void> {
   await cleanFixtures(pool);
+
+  // Staff user (autor das notas) — fonte do display_name p/ o snapshot do nome.
+  await pool.query(
+    `INSERT INTO users (firebase_uid, email, display_name, role, is_active)
+     VALUES ('cn-admin-e2e', 'cn-admin-users@e2e.local', 'Operadora E2E', 'admin', true)
+     ON CONFLICT (firebase_uid) DO UPDATE
+       SET display_name = EXCLUDED.display_name,
+           email = EXCLUDED.email,
+           role = EXCLUDED.role,
+           is_active = true`,
+  );
 
   // Patient
   await pool.query(
@@ -311,5 +453,9 @@ async function cleanFixtures(pool: Pool): Promise<void> {
   await pool.query(
     `DELETE FROM patients WHERE id = $1`,
     [IDS.patient],
+  ).catch(() => {});
+
+  await pool.query(
+    `DELETE FROM users WHERE firebase_uid = 'cn-admin-e2e'`,
   ).catch(() => {});
 }
