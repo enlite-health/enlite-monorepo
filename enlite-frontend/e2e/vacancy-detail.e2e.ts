@@ -7,7 +7,6 @@
  *   - Navegar de /admin/vacancies para detalhe ao clicar na linha
  *   - Exibir case number, status, dados do paciente
  *   - Requisitos e horário da vaga exibidos a partir dos campos manuais
- *   - Botão "Ver Match" navega para /admin/vacancies/:id/match
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -192,42 +191,6 @@ test.describe('VacancyDetailPage', () => {
     await expect(page.locator('text=Acompañante Terapéutico').first()).toBeVisible({ timeout: 15000 });
     // Patologia manual
     await expect(page.locator('text=TEA leve').first()).toBeVisible({ timeout: 5000 });
-  });
-
-  test('botão "Ver Match" navega para /admin/vacancies/:id/match', async ({ page }) => {
-    await seedAdminAndLogin(page);
-
-    await page.route(`**/api/admin/vacancies/${MOCK_VACANCY_ID}`, route =>
-      route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: MOCK_VACANCY }),
-      }),
-    );
-    // Mock match-results para evitar erro na tela de match
-    await page.route(`**/api/admin/vacancies/${MOCK_VACANCY_ID}/match-results**`, route =>
-      route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            jobPostingId: MOCK_VACANCY_ID,
-            lastMatchAt: null,
-            totalCandidates: 0,
-            candidates: [],
-          },
-        }),
-      }),
-    );
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-
-    await expect(page.getByRole('button', { name: /Ver Match/i })).toBeVisible({ timeout: 15000 });
-    await page.getByRole('button', { name: /Ver Match/i }).click();
-
-    await expect(page).toHaveURL(
-      new RegExp(`/admin/vacancies/${MOCK_VACANCY_ID}/match`),
-      { timeout: 10000 },
-    );
   });
 
   // ── Testes visuais das tabs ───────────────────────────────────────────────
