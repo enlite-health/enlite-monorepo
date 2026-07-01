@@ -7,6 +7,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { usePatientDetail } from '@hooks/admin/usePatientDetail';
+import { usePatientVacancies } from '@hooks/admin/usePatientVacancies';
 import { PatientIdentityCard } from '@presentation/components/features/admin/PatientDetail/PatientIdentityCard';
 import { PatientGeneralInfoCard } from '@presentation/components/features/admin/PatientDetail/PatientGeneralInfoCard';
 import { PatientProfileTabs, PatientTab } from '@presentation/components/features/admin/PatientDetail/PatientProfileTabs';
@@ -20,6 +21,7 @@ import { CoberturaMedicaCard } from '@presentation/components/features/admin/Pat
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { EnquadreTerapeuticoCard } from '@presentation/components/features/admin/PatientDetail/EnquadreTerapeuticoCard';
+import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 
 const COUNTRY_FLAG: Record<string, string> = {
   AR: '🇦🇷',
@@ -32,6 +34,7 @@ export default function PatientDetailPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { patient, isLoading, error } = usePatientDetail(id);
+  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError } = usePatientVacancies(id);
   const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
 
   if (isLoading) return <DetailSkeleton />;
@@ -112,6 +115,14 @@ export default function PatientDetailPage() {
             <ServicosContratadosCard patient={patient} />
           </>
         )}
+        {activeTab === 'vacancies' && (
+          <PatientVacanciesCard
+            patientId={id ?? ''}
+            vacancies={vacancies}
+            isLoading={vacanciesLoading}
+            error={vacanciesError}
+          />
+        )}
         {activeTab === 'matching' && (
           <>
             <ServicosContratadosCard patient={patient} />
@@ -121,6 +132,7 @@ export default function PatientDetailPage() {
         {activeTab !== 'clinicalData'
           && activeTab !== 'supportNetwork'
           && activeTab !== 'contractedService'
+          && activeTab !== 'vacancies'
           && activeTab !== 'matching' && (
           <PlaceholderTab label={t(`admin.patients.detail.tabs.${activeTab}`)} />
         )}

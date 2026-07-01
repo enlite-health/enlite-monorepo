@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
+import { reportError } from '@shared/logging';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
+import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
 
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
@@ -73,17 +75,19 @@ export class AdminPatientsController {
         needsAttention: row.needsAttention,
         attentionReasons: row.attentionReasons,
         addressesCount: row.addressesCount,
+        caseNumber: row.caseNumber,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       }));
 
       res.status(200).json({ success: true, data, total });
-    } catch (error: any) {
-      console.error('[AdminPatientsController] listPatients error:', error);
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:listPatients' });
       res.status(500).json({
         success: false,
         error: 'Failed to list patients',
-        details: error.message,
+        details: e.message,
       });
     }
   }
@@ -109,12 +113,13 @@ export class AdminPatientsController {
       }
 
       res.status(200).json({ success: true, data: result.patient });
-    } catch (error: any) {
-      console.error('[AdminPatientsController] getPatientById error:', error);
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientById' });
       res.status(500).json({
         success: false,
         error: 'Failed to get patient details',
-        details: error.message,
+        details: e.message,
       });
     }
   }
@@ -175,12 +180,13 @@ export class AdminPatientsController {
       );
 
       res.status(201).json({ success: true, data: result.rows[0] });
-    } catch (error: any) {
-      console.error('[AdminPatientsController] createPatientAddress error:', error);
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:createPatientAddress' });
       res.status(500).json({
         success: false,
         error: 'Failed to create patient address',
-        details: error.message,
+        details: e.message,
       });
     }
   }
@@ -225,12 +231,13 @@ export class AdminPatientsController {
       );
 
       res.status(200).json({ success: true, data: result.rows });
-    } catch (error: any) {
-      console.error('[AdminPatientsController] listPatientAddresses error:', error);
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:listPatientAddresses' });
       res.status(500).json({
         success: false,
         error: 'Failed to list patient addresses',
-        details: error.message,
+        details: e.message,
       });
     }
   }
@@ -240,12 +247,45 @@ export class AdminPatientsController {
     try {
       const stats = await this.repo.stats();
       res.status(200).json({ success: true, data: stats });
-    } catch (error: any) {
-      console.error('[AdminPatientsController] getPatientStats error:', error);
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientStats' });
       res.status(500).json({
         success: false,
         error: 'Failed to get patient stats',
-        details: error.message,
+        details: e.message,
+      });
+    }
+  }
+
+  /**
+   * GET /api/admin/patients/:id/vacancies
+   *
+   * Lists all non-deleted job_postings for a patient, ordered newest first.
+   * Returns all vagas regardless of is_draft or status so the operator has
+   * the complete history in one call.
+   */
+  async listPatientVacancies(req: Request, res: Response): Promise<void> {
+    const parsed = adminPatientParamsSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid params',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    try {
+      const vacancies = await fetchPatientVacancies(this.db, parsed.data.id);
+      res.status(200).json({ success: true, data: vacancies });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:listPatientVacancies' });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to list patient vacancies',
+        details: e.message,
       });
     }
   }

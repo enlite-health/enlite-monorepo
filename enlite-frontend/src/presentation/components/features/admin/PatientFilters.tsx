@@ -5,6 +5,8 @@ import { Select, SelectOption } from '@presentation/components/atoms/Select';
 interface PatientFiltersProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
+  codeValue: string;
+  onCodeChange: (value: string) => void;
   selectedAttention: string;
   onAttentionChange: (value: string) => void;
   selectedReason: string;
@@ -22,6 +24,8 @@ interface PatientFiltersProps {
 export function PatientFilters({
   searchValue,
   onSearchChange,
+  codeValue,
+  onCodeChange,
   selectedAttention,
   onAttentionChange,
   selectedReason,
@@ -39,10 +43,11 @@ export function PatientFilters({
 
   const showReasonFilter = selectedAttention === 'needs_attention';
   const hasActiveFilters =
-    searchValue || selectedAttention || selectedSpecialty || selectedDependency;
+    searchValue || codeValue || selectedAttention || selectedSpecialty || selectedDependency;
 
   const handleClearAll = () => {
     onSearchChange('');
+    onCodeChange('');
     onAttentionChange('');
     onReasonChange('');
     onSpecialtyChange('');
@@ -67,6 +72,20 @@ export function PatientFilters({
               className="w-full h-[42px] pl-10 pr-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] text-sm font-lexend text-[#374151] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#6B21A8]/20 focus:border-[#6B21A8] focus:bg-white transition-all"
             />
           </div>
+        </div>
+
+        {/* Code / case number filter */}
+        <div className="w-[160px]" data-testid="filter-code">
+          <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
+            {t('admin.patients.codeLabel')}
+          </label>
+          <input
+            type="text"
+            value={codeValue}
+            onChange={(e) => onCodeChange(e.target.value)}
+            placeholder={t('admin.patients.codePlaceholder')}
+            className="w-full h-[42px] px-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] text-sm font-lexend text-[#374151] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#6B21A8]/20 focus:border-[#6B21A8] focus:bg-white transition-all"
+          />
         </div>
 
         {/* Attention status filter */}

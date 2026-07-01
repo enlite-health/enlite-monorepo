@@ -38,5 +38,10 @@ export function createAdminPatientsRoutes(
     controller.createPatientAddress(req, res),
   );
 
+  // Patient vacancies — all job_postings for a patient, newest first
+  router.get('/patients/:id/vacancies', staffOnly, (req: Request, res: Response) =>
+    controller.listPatientVacancies(req, res),
+  );
+
   return router;
 }

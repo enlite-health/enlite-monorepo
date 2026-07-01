@@ -6,7 +6,7 @@
  * Callers use `AdminApiService` — it delegates here transparently.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { PatientDetail } from '@domain/entities/PatientDetail';
+import type { PatientDetail, PatientVacancySummary } from '@domain/entities/PatientDetail';
 
 export interface PatientListFilters {
   search?: string;
@@ -14,6 +14,7 @@ export interface PatientListFilters {
   attention_reason?: string;
   clinical_specialty?: string;
   dependency_level?: string;
+  case_number?: string;
   limit?: string;
   offset?: string;
 }
@@ -88,6 +89,10 @@ export class AdminPatientsApiServiceClass {
 
   async getPatientById(id: string): Promise<PatientDetail> {
     return this.request<PatientDetail>('GET', `/api/admin/patients/${id}`);
+  }
+
+  async getPatientVacancies(patientId: string): Promise<PatientVacancySummary[]> {
+    return this.request<PatientVacancySummary[]>('GET', `/api/admin/patients/${patientId}/vacancies`);
   }
 }
 

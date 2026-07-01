@@ -29,6 +29,8 @@ export function AdminPatientsPage(): JSX.Element {
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [codeInput, setCodeInput] = useState('');
+  const [debouncedCode, setDebouncedCode] = useState('');
   const [selectedAttention, setSelectedAttention] = useState('');
   const [selectedReason, setSelectedReason] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
@@ -36,13 +38,22 @@ export function AdminPatientsPage(): JSX.Element {
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const codeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleSearchChange = (v: string) => {
     setSearchInput(v);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => { setDebouncedSearch(v); setCurrentPage(1); }, 400);
   };
-  useEffect(() => () => clearTimeout(debounceRef.current), []);
+  const handleCodeChange = (v: string) => {
+    setCodeInput(v);
+    clearTimeout(codeDebounceRef.current);
+    codeDebounceRef.current = setTimeout(() => { setDebouncedCode(v); setCurrentPage(1); }, 400);
+  };
+  useEffect(() => () => {
+    clearTimeout(debounceRef.current);
+    clearTimeout(codeDebounceRef.current);
+  }, []);
 
   const handleAttentionChange = (v: string) => {
     setSelectedAttention(v);
@@ -63,11 +74,13 @@ export function AdminPatientsPage(): JSX.Element {
         selectedAttention === 'needs_attention' && selectedReason ? selectedReason : undefined,
       clinical_specialty: selectedSpecialty || undefined,
       dependency_level: selectedDependency || undefined,
+      case_number: debouncedCode || undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
   }, [
     debouncedSearch,
+    debouncedCode,
     selectedAttention,
     selectedReason,
     selectedSpecialty,
@@ -86,6 +99,7 @@ export function AdminPatientsPage(): JSX.Element {
         lastName: p.lastName ?? '',
         documentType: p.documentType ?? null,
         documentNumber: p.documentNumber ?? null,
+        caseNumber: p.caseNumber ?? null,
         dependencyLevel: p.dependencyLevel ?? null,
         clinicalSpecialty: p.clinicalSpecialty ?? null,
         serviceType: p.serviceType ?? [],
@@ -128,6 +142,8 @@ export function AdminPatientsPage(): JSX.Element {
         <PatientFilters
           searchValue={searchInput}
           onSearchChange={handleSearchChange}
+          codeValue={codeInput}
+          onCodeChange={handleCodeChange}
           selectedAttention={selectedAttention}
           onAttentionChange={handleAttentionChange}
           selectedReason={selectedReason}

@@ -2128,9 +2128,13 @@
       "pagination": "{{start}}–{{end}} de {{total}}",
       "previousPage": "Página anterior",
       "nextPage": "Próxima página",
+      "codeLabel": "Código",
+      "codePlaceholder": "Nº do caso",
+      "codeColumn": "Caso",
       "table": {
         "name": "Nome",
         "document": "Documento",
+        "code": "Código",
         "dependency": "Dependência",
         "specialty": "Especialidade",
         "service": "Serviço",
@@ -2157,6 +2161,7 @@
           "clinicalData": "Dados Clínicos",
           "supportNetwork": "Rede de Apoio",
           "contractedService": "Serviço Contratado",
+          "vacancies": "Vagas",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
@@ -2177,6 +2182,12 @@
           "EM_ATENDIMENTO": "Em Atendimento",
           "PACIENTE_COM_ALTA": "Paciente com alta",
           "CANCELADO": "Cancelado"
+        },
+        "caseNumber": "Caso",
+        "vacanciesCard": {
+          "title": "Vagas Geradas",
+          "empty": "Sem vagas geradas",
+          "error": "Erro ao carregar vagas"
         },
         "identityCard": {
           "admission": "Admissão",
