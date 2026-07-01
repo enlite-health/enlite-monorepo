@@ -7,6 +7,7 @@ export interface UsePatientsDataFilters {
   attention_reason?: string;
   clinical_specialty?: string;
   dependency_level?: string;
+  case_number?: string;
   limit?: string;
   offset?: string;
 }
@@ -59,6 +60,7 @@ export function usePatientsData(filters?: UsePatientsDataFilters) {
     filters?.attention_reason,
     filters?.clinical_specialty,
     filters?.dependency_level,
+    filters?.case_number,
     filters?.limit,
     filters?.offset,
     refreshKey,

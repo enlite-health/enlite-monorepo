@@ -5,6 +5,9 @@ import { CLINICAL_SPECIALTIES } from '../../domain/enums/ClinicalSpecialty';
 /**
  * adminPatientsListSchema — validates query params for GET /api/admin/patients.
  * All params are optional. Invalid enum values produce a 400 response.
+ *
+ * case_number: partial numeric match (digits only). Filters against the
+ * effective case_number: COALESCE(patients.case_number, MAX(job_postings.case_number)).
  */
 export const adminPatientsListSchema = z.object({
   search: z.string().optional(),
@@ -12,6 +15,11 @@ export const adminPatientsListSchema = z.object({
   attention_reason: z.string().optional(),
   clinical_specialty: z.enum(CLINICAL_SPECIALTIES as [string, ...string[]]).optional(),
   dependency_level: z.enum(DEPENDENCY_LEVELS as [string, ...string[]]).optional(),
+  case_number: z
+    .string()
+    .trim()
+    .regex(/^\d+$/, { message: 'case_number must contain digits only' })
+    .optional(),
   limit: z.coerce
     .number()
     .int()

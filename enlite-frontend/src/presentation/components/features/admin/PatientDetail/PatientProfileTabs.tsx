@@ -4,6 +4,7 @@ export type PatientTab =
   | 'clinicalData'
   | 'supportNetwork'
   | 'contractedService'
+  | 'vacancies'
   | 'financialData'
   | 'matching'
   | 'appointments'
@@ -18,6 +19,7 @@ const TABS: PatientTab[] = [
   'clinicalData',
   'supportNetwork',
   'contractedService',
+  'vacancies',
   'financialData',
   'matching',
   'appointments',
@@ -28,6 +30,7 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   clinicalData: 'admin.patients.detail.tabs.clinicalData',
   supportNetwork: 'admin.patients.detail.tabs.supportNetwork',
   contractedService: 'admin.patients.detail.tabs.contractedService',
+  vacancies: 'admin.patients.detail.tabs.vacancies',
   financialData: 'admin.patients.detail.tabs.financialData',
   matching: 'admin.patients.detail.tabs.matching',
   appointments: 'admin.patients.detail.tabs.appointments',

@@ -96,3 +96,14 @@ export interface PatientDetail {
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
 }
+
+/** Vacancy summary returned by GET /api/admin/patients/:id/vacancies */
+export interface PatientVacancySummary {
+  id: string;
+  caseNumber: number | null;
+  vacancyNumber: number | null;
+  title: string | null;
+  status: string | null;
+  isDraft: boolean;
+  createdAt: string;
+}

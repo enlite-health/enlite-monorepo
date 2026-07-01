@@ -114,6 +114,12 @@ export interface PatientListRow {
   attentionReasons: string[];
   /** Number of addresses linked to this patient. */
   addressesCount: number;
+  /**
+   * Effective case number: patients.case_number when set (newer records), or
+   * MAX(job_postings.case_number) for legacy patients that only have vagas.
+   * Null when neither is present.
+   */
+  caseNumber: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -178,11 +184,27 @@ export class PatientQueryRepository {
     params.push(filters.dependency_level ?? null);
     const dependencyLevelIdx = i++;
 
-    // $6 limit, $7 offset
+    // $6 case_number partial filter (null = no filter)
+    params.push(filters.case_number ?? null);
+    const caseNumberIdx = i++;
+
+    // $7 limit, $8 offset
     params.push(filters.limit);
     const limitIdx = i++;
     params.push(filters.offset);
     const offsetIdx = i++;
+
+    // Effective case_number: patients.case_number when populated, otherwise
+    // fall back to the MAX case_number across this patient's active vagas.
+    const effectiveCaseNumber = `
+      COALESCE(
+        p.case_number,
+        (SELECT MAX(jp.case_number)
+           FROM job_postings jp
+          WHERE jp.patient_id = p.id
+            AND jp.deleted_at IS NULL)
+      )
+    `;
 
     const sql = `
       SELECT
@@ -202,6 +224,8 @@ export class PatientQueryRepository {
         (SELECT COUNT(*) FROM patient_addresses pa
           WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)::int
                                AS "addressesCount",
+        (${effectiveCaseNumber})::int
+                               AS "caseNumber",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
         COUNT(*) OVER()        AS total_count
@@ -215,6 +239,8 @@ export class PatientQueryRepository {
         AND ($${attentionReasonIdx}::text IS NULL OR $${attentionReasonIdx} = ANY(p.attention_reasons))
         AND ($${clinicalSpecialtyIdx}::text IS NULL OR p.clinical_specialty = $${clinicalSpecialtyIdx})
         AND ($${dependencyLevelIdx}::text IS NULL OR p.dependency_level = $${dependencyLevelIdx})
+        AND ($${caseNumberIdx}::text IS NULL
+          OR CAST((${effectiveCaseNumber}) AS TEXT) ILIKE '%' || $${caseNumberIdx} || '%')
         AND p.deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -242,6 +268,7 @@ export class PatientQueryRepository {
       needsAttention: row.needsAttention,
       attentionReasons: row.attentionReasons ?? [],
       addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,
+      caseNumber: row.caseNumber != null ? parseInt(row.caseNumber as unknown as string, 10) : null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
