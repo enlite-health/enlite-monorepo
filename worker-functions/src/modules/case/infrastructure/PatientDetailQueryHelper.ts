@@ -43,8 +43,14 @@ const PATIENT_DETAIL_SQL = `
     status,
     needs_attention          AS "needsAttention",
     attention_reasons        AS "attentionReasons",
-    (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
-                             AS "lastCaseNumber",
+    -- Mesma fonte da lista (PatientQueryRepository): usa patients.case_number
+    -- e cai no MAX das vagas quando o paciente foi importado sem esse campo.
+    -- Sem o COALESCE, um paciente com case_number mas sem vagas não mostrava
+    -- o "Caso #N" na ficha (inconsistente com a lista).
+    COALESCE(
+      p.case_number,
+      (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
+    )                        AS "lastCaseNumber",
     p.created_at               AS "createdAt",
     p.updated_at               AS "updatedAt"
   FROM patients p
