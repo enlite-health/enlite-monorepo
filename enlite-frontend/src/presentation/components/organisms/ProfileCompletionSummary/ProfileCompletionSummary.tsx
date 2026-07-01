@@ -134,7 +134,7 @@ export function ProfileCompletionSummary({
               size="md"
               className="mt-2"
               data-testid="summary-view-vacancies"
-              onClick={() => navigate('/worker')}
+              onClick={() => navigate('/')}
             >
               {t('profile.summary.viewVacancies', 'Ver vacantes')}
             </Button>
