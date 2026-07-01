@@ -141,16 +141,6 @@ export default function VacancyDetailPage() {
             {pageTitle}
           </Heading>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => navigate(`/admin/vacancies/${id}/match`)}
-            className="flex items-center gap-2 px-5"
-          >
-            {t('admin.vacancyDetail.viewMatch')}
-          </Button>
-        </div>
       </div>
 
       {/* Linha 1: assimétrica — coluna esquerda fixa 404px, direita flex-1 */}

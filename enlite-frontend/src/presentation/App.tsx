@@ -23,7 +23,6 @@ import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
 import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
-import VacancyMatchPage from './pages/admin/VacancyMatchPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
@@ -151,7 +150,6 @@ export function App() {
           <Route path="vacancies/:id/edit" element={<CreateVacancyPage />} />
           <Route path="vacancies/:id/talentum" element={<TalentumConfigPage />} />
           <Route path="vacancies/:id" element={<VacancyDetailPage />} />
-          <Route path="vacancies/:id/match" element={<VacancyMatchPage />} />
           <Route path="recruitment" element={<AdminRecruitmentPage />} />
           <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
           <Route path="recruitment/blocked-attempts" element={<BlockedAttemptsPage />} />
