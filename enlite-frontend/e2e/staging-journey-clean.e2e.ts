@@ -162,6 +162,35 @@ test('jornada worker completa via UI real → REGISTERED → wa.me', async ({ pa
   const status = (meData.match(/"status"\s*:\s*"([A-Z_]+)"/) ?? [])[1] ?? '?';
   console.log(`[EV] status=${status} | saves=[${saves.join(', ')}]`);
 
+  // ── GUARD DO FIX: CTA "Ver vacantes" do resumo deve navegar para a home "/" ──
+  // (e NÃO para "/worker", rota inexistente que renderizava tela branca). Só é
+  // exercível quando o cadastro está completo (REGISTERED), por isso vive aqui.
+  if (status === 'REGISTERED') {
+    await page.goto(`${BASE}/worker/profile`);
+    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+    await page.waitForTimeout(2000);
+    await goTab(/documento/i);
+    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: /finalizar/i }).first().click().catch(() => undefined);
+    const verVacantes = page.locator('[data-testid="summary-view-vacancies"]');
+    await verVacantes.waitFor({ state: 'visible', timeout: 15_000 });
+    await verVacantes.click();
+    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+    await page.waitForTimeout(1500);
+    const pathname = new URL(page.url()).pathname;
+    const rootChildren = await page.evaluate(
+      () => document.getElementById('root')?.childElementCount ?? -1,
+    );
+    const vacantesVisiveis = await page
+      .getByText(/consultar vacantes|vacantes encontradas/i)
+      .count();
+    console.log(`[VERVACANTES] pathname=${pathname} rootChildren=${rootChildren} vacantes=${vacantesVisiveis}`);
+    await page.screenshot({ path: 'e2e/screenshots/staging/ver-vacantes-home.png' });
+    expect(pathname, 'CTA "Ver vacantes" navega para "/" (não /worker)').toBe('/');
+    expect(rootChildren, 'home renderiza conteúdo real (não tela branca)').toBeGreaterThan(0);
+    expect(vacantesVisiveis, 'home mostra as vacantes reais').toBeGreaterThan(0);
+  }
+
   // Postularse
   await page.evaluate(() => { (window as unknown as { open: unknown }).open = ((u?: string) => { (window as unknown as { __wa?: string }).__wa = u; return null; }); });
   await page.goto(`${BASE}/vacantes/${VACANCY_ID}`);
