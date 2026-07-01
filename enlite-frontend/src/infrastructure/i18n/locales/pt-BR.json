@@ -2558,5 +2558,13 @@
     "MX": "México",
     "PE": "Peru",
     "UY": "Uruguai"
+  },
+  "worker": {
+    "errorBoundary": {
+      "title": "Algo deu errado",
+      "description": "Ocorreu um erro inesperado. Você pode recarregar a página ou voltar ao início.",
+      "reload": "Recarregar",
+      "home": "Ir para o início"
+    }
   }
 }

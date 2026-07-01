@@ -2637,5 +2637,13 @@
     "MX": "México",
     "PE": "Perú",
     "UY": "Uruguay"
+  },
+  "worker": {
+    "errorBoundary": {
+      "title": "Algo salió mal",
+      "description": "Ocurrió un error inesperado. Podés recargar la página o volver al inicio.",
+      "reload": "Recargar",
+      "home": "Ir al inicio"
+    }
   }
 }
