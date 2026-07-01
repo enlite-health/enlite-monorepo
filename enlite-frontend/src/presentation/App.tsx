@@ -7,6 +7,8 @@ import { RegisterPage } from './pages/RegisterPage';
 import { CompleteWhatsappPage } from './pages/CompleteWhatsappPage';
 import { WorkerProfilePage } from './pages/WorkerProfilePage';
 import { AdminErrorBoundary } from './components/features/admin/AdminErrorBoundary';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
+import { CrashNow } from './components/RouteErrorBoundary/__CrashNow';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Import direto — páginas e layout carregam junto com o bundle admin
@@ -91,7 +93,9 @@ export function App() {
           path="/worker/profile"
           element={
             <ProtectedRoute redirectTo="/login?next=/worker/profile">
-              <WorkerProfilePage />
+              <RouteErrorBoundary>
+                <WorkerProfilePage />
+              </RouteErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -99,10 +103,23 @@ export function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <RoleBasedHome />
+              <RouteErrorBoundary>
+                <RoleBasedHome />
+              </RouteErrorBoundary>
             </ProtectedRoute>
           }
         />
+        {/* Rota de crash — só disponível em DEV para validação visual do ErrorBoundary */}
+        {import.meta.env.DEV && (
+          <Route
+            path="/__error-test"
+            element={
+              <RouteErrorBoundary>
+                <CrashNow />
+              </RouteErrorBoundary>
+            }
+          />
+        )}
 
         {/* Admin module — lazy-loaded, isolated from worker module */}
         <Route path="/admin/login" element={
@@ -153,6 +170,8 @@ export function App() {
             }
           />
         </Route>
+        {/* Catch-all: rota desconhecida redireciona para home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
