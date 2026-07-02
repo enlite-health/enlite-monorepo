@@ -52,12 +52,18 @@ export class CapabilityRegistry {
   }
 
   /**
-   * Registers all capabilities as tools on the MCP server.
-   * Each tool wrapper validates principal.isCapabilityAllowed before delegating.
+   * Registers as tools on the MCP server only the capabilities allowed for o
+   * principal da request (o server é criado por request, então tools/list fica
+   * escopado pelo allowlist — um principal read-only nem vê as tools de escrita).
+   * Fail-closed: sem principal resolvido, nenhuma tool é registrada.
+   * Each tool wrapper re-validates principal.isCapabilityAllowed before delegating.
    * Write capabilities are additionally guarded by the WriteRateLimiter.
    */
   registerAll(server: McpServer, getPrincipal: () => ServicePrincipal | undefined): void {
-    const entries = this.buildEntries();
+    const principal = getPrincipal();
+    const entries = this.buildEntries().filter(
+      (entry) => principal?.isCapabilityAllowed(entry.name) === true,
+    );
     for (const entry of entries) {
       this.registerOne(server, entry, getPrincipal);
     }

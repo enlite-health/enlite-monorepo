@@ -17,11 +17,15 @@ import { createHash } from 'node:crypto';
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const WORKER_ID = '123e4567-e89b-12d3-a456-426614174000';
 
-const ALL_CAPS = [
+const READ_CAPS = [
   'worker.profile.get',
   'worker.documents.list',
   'worker.vacancies.list',
   'worker.interview.get',
+];
+
+const ALL_CAPS = [
+  ...READ_CAPS,
   'worker.profile.update',
   'worker.profile.proposeUpdate',
   'worker.profile.confirmUpdate',
@@ -154,7 +158,7 @@ describe('CapabilityRegistry', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
-    registry.registerAll(server as never, () => undefined);
+    registry.registerAll(server as never, () => makePrincipal());
 
     const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
       ([name]) => name,
@@ -164,12 +168,40 @@ describe('CapabilityRegistry', () => {
     }
   });
 
-  // 3. Wrapper: principal not set → throws
-  it('wrapper throws when principal is not resolved', async () => {
+  // 2b. Registro escopado: principal read-only só vê tools de leitura
+  it('registers only allowed capabilities for a read-only principal', () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    const readOnly = READ_CAPS;
+    registry.registerAll(server as never, () => makePrincipal(readOnly));
+
+    const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
+      ([name]) => name,
+    );
+    expect(registeredNames.sort()).toEqual([...readOnly].sort());
+    expect(registeredNames).not.toContain('worker.profile.update');
+    expect(registeredNames).not.toContain('worker.documents.upload');
+  });
+
+  // 2c. Fail-closed: sem principal resolvido, nada é registrado
+  it('registers no tools when principal is not resolved (fail-closed)', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => undefined);
+
+    expect(server.registerTool).not.toHaveBeenCalled();
+  });
+
+  // 3. Wrapper: principal not set at execution time → throws
+  it('wrapper throws when principal is not resolved at execution time', async () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    let principal: ServicePrincipal | undefined = makePrincipal();
+    registry.registerAll(server as never, () => principal);
+    principal = undefined;
 
     const handler = getHandler(server, 'worker.profile.get');
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(
@@ -177,13 +209,14 @@ describe('CapabilityRegistry', () => {
     );
   });
 
-  // 4. Wrapper: principal without permission → throws
-  it('wrapper throws when capability is not allowed for principal', async () => {
+  // 4. Wrapper: principal without permission at execution time → throws
+  it('wrapper throws when capability is not allowed for principal at execution time', async () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
-    const restrictedPrincipal = makePrincipal([]);
-    registry.registerAll(server as never, () => restrictedPrincipal);
+    let principal = makePrincipal();
+    registry.registerAll(server as never, () => principal);
+    principal = makePrincipal([]);
 
     const handler = getHandler(server, 'worker.profile.get');
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(/not allowed for/);
