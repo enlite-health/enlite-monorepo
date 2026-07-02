@@ -67,6 +67,49 @@ test.describe('@integration Worker profile wizard — navegação Atrás/Siguien
     await expect(page.locator('[data-testid="wizard-next"]')).toHaveCount(0);
   });
 
+  test('Siguiente NÃO avança da aba de endereço com a dirección vazia (erro inline + prova visual)', async ({ page }) => {
+    // Worker sem address_line → o form de endereço hidrata vazio.
+    const w = insertEligibilityWorker({ occupation: 'AT', serviceArea: false });
+    await openProfile(page, w);
+
+    // Avança da 1ª aba pra "Dirección de Atención" (o gate só existe nela).
+    await page.locator('[data-testid="wizard-next"]').click();
+    await expect(page.locator('[data-testid="tab-btn-address"]')).toHaveAttribute('aria-current', 'page');
+
+    // Pré-condição real: o campo de dirección está vazio.
+    const addressInput = page.locator('[data-testid="address-autocomplete-input"]');
+    await expect(addressInput).toBeVisible({ timeout: 15_000 });
+    await expect(addressInput).toHaveValue('');
+
+    // Siguiente bloqueado: continua na aba de endereço com erro inline.
+    await page.locator('[data-testid="wizard-next"]').click();
+    await expect(page.locator('[data-testid="tab-btn-address"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('[data-testid="tab-btn-availability"]')).not.toHaveAttribute('aria-current', 'page');
+    await expect(page.getByText('La dirección es obligatoria')).toBeVisible();
+
+    // O guard rola (smooth) até o campo — espera o scroll assentar antes de
+    // medir a região, senão o clip captura a área errada.
+    await page.waitForFunction(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const y0 = window.scrollY;
+          setTimeout(() => resolve(window.scrollY === y0), 250);
+        }),
+    );
+
+    // Prova visual: campo de dirección com borda vermelha + mensagem de erro.
+    const box = await addressInput.boundingBox();
+    if (!box) throw new Error('address input has no bounding box');
+    await expect(page).toHaveScreenshot('wizard-address-blocked-empty.png', {
+      clip: { x: box.x - 8, y: box.y - 48, width: box.width + 16, height: box.height + 96 },
+      maxDiffPixels: 200,
+    });
+
+    // Segundo clique continua bloqueado (não é debounce/acaso).
+    await page.locator('[data-testid="wizard-next"]').click();
+    await expect(page.locator('[data-testid="tab-btn-address"]')).toHaveAttribute('aria-current', 'page');
+  });
+
   test('Finalizar abre o resumo do que falta (worker incompleto) com link à aba pendente', async ({ page }) => {
     // Worker sem documentos obrigatórios → a seção de documentos fica pendente.
     const w = insertEligibilityWorker({
