@@ -184,6 +184,41 @@ describe('CapabilityRegistry', () => {
     expect(registeredNames).not.toContain('worker.documents.upload');
   });
 
+  // 2b-bis. Principal OAuth (sanitizedToolNames) vê nomes claude-safe, mas
+  // allowlist e audit continuam no nome canônico com pontos
+  it('sanitizedToolNames: registra worker_profile_get mas audita worker.profile.get', async () => {
+    const { registry, auditor } = makeRegistry();
+    const server = makeMcpServer();
+    const oauthPrincipal = new ServicePrincipal({
+      name: 'claude-ai:ana@enlite.health',
+      allowedCapabilities: READ_CAPS,
+      tokenHashes: ['oauth'],
+      sanitizedToolNames: true,
+    });
+
+    registry.registerAll(server as never, () => oauthPrincipal);
+
+    const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
+      ([name]) => name,
+    );
+    expect(registeredNames.sort()).toEqual([
+      'worker_documents_list',
+      'worker_interview_get',
+      'worker_profile_get',
+      'worker_vacancies_list',
+    ]);
+    // pattern do claude.ai
+    for (const name of registeredNames) {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    }
+
+    const handler = getHandler(server, 'worker_profile_get');
+    await handler({ workerId: WORKER_ID });
+    expect(auditor.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'success', capability: 'worker.profile.get' }),
+    );
+  });
+
   // 2c. Fail-closed: sem principal resolvido, nada é registrado
   it('registers no tools when principal is not resolved (fail-closed)', () => {
     const { registry } = makeRegistry();

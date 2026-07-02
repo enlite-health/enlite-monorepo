@@ -131,5 +131,6 @@ async function resolveOAuthPrincipal(
     name: `claude-ai:${email}`,
     allowedCapabilities: capabilities,
     tokenHashes: ['oauth-access-token'], // não usado nesse caminho; exigido pelo domínio
+    sanitizedToolNames: true, // claude.ai rejeita "." em nomes de tool
   });
 }
