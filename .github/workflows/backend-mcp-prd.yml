@@ -61,6 +61,7 @@ jobs:
             MCP_PRINCIPAL_NAMES=triage-service,claude-code
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
+            CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             FIREBASE_WEB_API_KEY=AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI
             FIREBASE_WEB_AUTH_DOMAIN=enlite-prd.firebaseapp.com
             ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
