@@ -19,7 +19,15 @@ interface AutoFilledFields {
   neighborhood: string;
 }
 
-export function ServiceAddressTab(): JSX.Element {
+/** Gate consultado pelo rodapé do wizard antes de avançar de aba. */
+export type BeforeNextGuard = () => boolean | Promise<boolean>;
+
+interface ServiceAddressTabProps {
+  /** Registra (ou desregistra, com null) o gate do Siguiente no wizard pai. */
+  registerBeforeNextGuard?: (guard: BeforeNextGuard | null) => void;
+}
+
+export function ServiceAddressTab({ registerBeforeNextGuard }: ServiceAddressTabProps): JSX.Element {
   const { t } = useTranslation();
   const { saveServiceArea, getProgress } = useWorkerApi();
 
@@ -36,6 +44,7 @@ export function ServiceAddressTab(): JSX.Element {
     control,
     reset,
     watch,
+    trigger,
     formState: { errors },
     getValues,
   } = useForm<ServiceAddressFormData>({
@@ -88,6 +97,26 @@ export function ServiceAddressTab(): JSX.Element {
 
     fetchWorkerData();
   }, [getProgress, reset]);
+
+  // Sem dirección o Siguiente não avança: valida o campo, mostra o erro inline
+  // e traz o campo de volta à vista (o footer fica abaixo do mapa/slider).
+  useEffect(() => {
+    if (!registerBeforeNextGuard) return;
+
+    registerBeforeNextGuard(async () => {
+      const isAddressValid = await trigger('address');
+      if (!isAddressValid) {
+        const input = document.querySelector<HTMLInputElement>(
+          '[data-testid="address-autocomplete-input"]',
+        );
+        input?.focus({ preventScroll: true });
+        input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return isAddressValid;
+    });
+
+    return () => registerBeforeNextGuard(null);
+  }, [registerBeforeNextGuard, trigger]);
 
   const triggerSave = useAutoSave(
     async () => {
