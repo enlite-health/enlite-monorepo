@@ -5,6 +5,7 @@ import { ClickUpPatientWebhookController } from '../controllers/ClickUpPatientWe
 import { ClickUpHmacMiddleware } from '../middleware/ClickUpHmacMiddleware';
 import { TwilioWebhookController } from '@modules/notification/interfaces/controllers/TwilioWebhookController';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
+import { PeriskopeWebhookController } from '@modules/notification/interfaces/controllers/PeriskopeWebhookController';
 
 /**
  * Cria o router unificado de webhooks.
@@ -16,6 +17,7 @@ export function createWebhookRoutes(
   inboundWhatsAppController?: InboundWhatsAppController,
   clickupPatientController?: ClickUpPatientWebhookController,
   clickupHmac?: ClickUpHmacMiddleware,
+  periskopeWebhookController?: PeriskopeWebhookController,
 ): Router {
   const router = Router();
   const talentumController = new TalentumWebhookController();
@@ -39,6 +41,14 @@ export function createWebhookRoutes(
     router.post(
       '/twilio/inbound',
       (req: Request, res: Response) => inboundWhatsAppController.handleInbound(req, res),
+    );
+  }
+
+  // ── Periskope Inbound — webhook message.created, auth via x-periskope-signature ──
+  if (periskopeWebhookController) {
+    router.post(
+      '/periskope/inbound',
+      (req: Request, res: Response) => periskopeWebhookController.handleWebhook(req, res),
     );
   }
 

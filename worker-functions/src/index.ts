@@ -37,8 +37,8 @@ import { AdminWorkersAuxController } from './modules/worker/interfaces/controlle
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
-import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
 import { buildChatwootClient } from './bootstrap/buildChatwootClient';
+import { buildMessagingService } from './bootstrap/buildMessagingService';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
@@ -76,7 +76,12 @@ app.use(corsMiddleware());
 app.use(express.json({
   limit: '60mb',
   verify: (req, _res, buf) => {
-    if (req.url?.startsWith('/api/webhooks/clickup')) {
+    // Rotas com validação HMAC do raw body (re-serializar o JSON não é confiável)
+    if (
+      req.url?.startsWith('/api/webhooks/clickup') ||
+      req.url?.startsWith('/api/webhooks/periskope') ||
+      req.url?.startsWith('/api/webhooks-test/periskope')
+    ) {
       (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
     }
   },
@@ -150,7 +155,7 @@ const adminDedupController = new AdminDedupController();
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
 const chatwootClient = buildChatwootClient();
-const messagingService = new TwilioMessagingService(templateRepo, chatwootClient);
+const messagingService = buildMessagingService(templateRepo, chatwootClient);
 const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection.getInstance().getPool());
 
 // ========== Public Routes ==========

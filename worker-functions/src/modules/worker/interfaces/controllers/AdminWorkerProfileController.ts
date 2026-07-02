@@ -7,6 +7,7 @@ import {
 } from '../../application/UpdateWorkerProfileFieldsUseCase';
 import { logger, reportError } from '@shared/logging';
 import { WorkerAuditRepository, extractWorkerAuditActor } from '../../infrastructure/WorkerAuditRepository';
+import { PubSubClient } from '@shared/events/PubSubClient';
 
 /**
  * AdminWorkerProfileController
@@ -61,7 +62,7 @@ export class AdminWorkerProfileController {
   private readonly auditRepo: WorkerAuditRepository;
 
   constructor() {
-    this.useCase = new UpdateWorkerProfileFieldsUseCase();
+    this.useCase = new UpdateWorkerProfileFieldsUseCase(new PubSubClient());
     this.auditRepo = new WorkerAuditRepository();
   }
 

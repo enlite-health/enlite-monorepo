@@ -29,6 +29,7 @@ export type {
 export { MessageTemplateRepository } from './infrastructure/MessageTemplateRepository';
 export { InterviewSlotRepository } from './infrastructure/InterviewSlotRepository';
 export { TwilioMessagingService } from './infrastructure/TwilioMessagingService';
+export { PeriskopeMessagingService } from './infrastructure/PeriskopeMessagingService';
 export { ChatwootClient } from './infrastructure/ChatwootClient';
 export type { ChatwootClientConfig, MirrorOutgoingOptions } from './infrastructure/ChatwootClient';
 export { OutboxProcessor } from './infrastructure/OutboxProcessor';
@@ -57,6 +58,7 @@ export { MessagingController } from './interfaces/controllers/MessagingControlle
 export { InternalController } from './interfaces/controllers/InternalController';
 export { TwilioWebhookController } from './interfaces/controllers/TwilioWebhookController';
 export { InboundWhatsAppController } from './interfaces/controllers/InboundWhatsAppController';
+export { PeriskopeWebhookController } from './interfaces/controllers/PeriskopeWebhookController';
 export {
   createMessagingRoutes,
   createPublicBulkDispatchRoute,

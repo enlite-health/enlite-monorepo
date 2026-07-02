@@ -19,8 +19,12 @@ import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { logger, reportError, loggingAls } from '@shared/logging';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { captureWorkerBefore } from './workerAuditDiff';
+import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
+import type { PubSubClient } from '@shared/events/PubSubClient';
 
 const TAG = '[UpdateWorkerProfileFieldsUseCase]';
+const MIRROR_EVENT = 'worker.mirror_requested';
+const MIRROR_TOPIC = 'worker-mirror-requested';
 
 export interface WorkerProfilePatch {
   workerId: string;
@@ -90,11 +94,13 @@ export class UpdateWorkerProfileFieldsUseCase {
   private readonly pool: Pool;
   private readonly encryptionService: KMSEncryptionService;
   private readonly blindIndexService: BlindIndexService;
+  private readonly pubsub: PubSubClient | null;
 
-  constructor() {
+  constructor(pubsub?: PubSubClient) {
     this.pool = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
     this.blindIndexService = new BlindIndexService();
+    this.pubsub = pubsub ?? null;
   }
 
   async execute(patch: WorkerProfilePatch): Promise<UpdateWorkerProfileFieldsResult> {
@@ -149,13 +155,14 @@ export class UpdateWorkerProfileFieldsUseCase {
   private async enqueueMirrorEvent(workerId: string): Promise<void> {
     try {
       const traceId = loggingAls.getStore()?.traceId ?? null;
-      await this.pool.query(
-        `INSERT INTO domain_events (event, payload, trace_id)
-         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
-        [JSON.stringify({ workerId }), traceId],
-      );
+      await enqueueDomainEvent(this.pool, {
+        event: MIRROR_EVENT,
+        payload: { workerId },
+        traceId,
+        pubsub: this.pubsub ?? undefined,
+        topic: MIRROR_TOPIC,
+      });
     } catch (err: unknown) {
-      // best-effort: não bloqueia o fluxo principal
       const e = err instanceof Error ? err : new Error(String(err));
       logger.child({ workerId }).warn({
         msg: `${TAG} failed to enqueue mirror event (best-effort, ignoring)`,
