@@ -47,6 +47,10 @@ export function mountOAuthRoutes(
   const issuerUrl = new URL(config.issuerUrl);
   const resourceServerUrl = new URL('/mcp/v1', issuerUrl);
 
+  // Cloud Run fica atrás do Google Frontend: sem trust proxy, o express-rate-limit
+  // do mcpAuthRouter agruparia todos os users no IP do LB (429 compartilhado).
+  app.set('trust proxy', 1);
+
   const tokens = new OAuthTokenService(config.signingKey, issuerUrl.origin);
   const clientsStore = new StatelessClientsStore(tokens);
   const provider = new EnliteOAuthProvider({
