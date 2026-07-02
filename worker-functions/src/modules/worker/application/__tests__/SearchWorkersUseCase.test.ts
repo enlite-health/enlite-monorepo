@@ -95,6 +95,19 @@ describe('SearchWorkersUseCase', () => {
     expect(params).toContain('%ana@test.com%');
   });
 
+  it('ciphertext inválido numa linha não derruba a busca (fallback pro email)', async () => {
+    const { useCase, query, encryption } = makeDeps();
+    (encryption.decrypt as jest.Mock).mockRejectedValue(new Error('Failed to decrypt data'));
+    query
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [ROW] });
+
+    const result = await useCase.execute({ limit: 20, offset: 0 });
+
+    expect(result.workers).toHaveLength(1);
+    expect(result.workers[0].name).toBe('ana@test.com');
+  });
+
   it('nunca expõe phone/dados encriptados no item retornado', async () => {
     const { useCase, query } = makeDeps();
     query

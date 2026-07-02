@@ -13,6 +13,7 @@ export const OAUTH_SCOPE_CAPABILITIES: Readonly<Record<string, readonly string[]
     'worker.interview.get',
     'worker.stats.get',
     'worker.search',
+    'db.query.readonly',
   ],
 };
 

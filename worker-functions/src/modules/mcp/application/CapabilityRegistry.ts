@@ -9,6 +9,7 @@ import type { WorkerProfileConfirmUpdateCapability } from './capabilities/Worker
 import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocumentsUploadCapability';
 import type { WorkerStatsGetCapability } from './capabilities/WorkerStatsGetCapability';
 import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapability';
+import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -36,6 +37,8 @@ interface RegistryDeps {
   documentsUpload: WorkerDocumentsUploadCapability;
   statsGet: WorkerStatsGetCapability;
   workerSearch: WorkerSearchCapability;
+  /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
+  dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
   writeRateLimiter?: WriteRateLimiter;
 }
@@ -90,6 +93,7 @@ export class CapabilityRegistry {
       documentsUpload,
       statsGet,
       workerSearch,
+      dbQuery,
     } = this.deps;
 
     return [
@@ -198,6 +202,20 @@ export class CapabilityRegistry {
           {},
         execute: (args) => workerSearch.execute(args),
       },
+      ...(dbQuery !== undefined
+        ? [
+            {
+              name: (dbQuery.constructor as { NAME?: string }).NAME ?? 'db.query.readonly',
+              description:
+                (dbQuery.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+                'Run a read-only SQL query.',
+              inputShape:
+                (dbQuery.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ??
+                {},
+              execute: (args: unknown) => dbQuery.execute(args),
+            },
+          ]
+        : []),
     ];
   }
 

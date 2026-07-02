@@ -28,6 +28,9 @@ import { GetWorkerStatsUseCase } from '../../worker/application/GetWorkerStatsUs
 import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseCase';
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
+import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryReadonlyCapability';
+import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
+import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
 import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
@@ -62,6 +65,22 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
         { staffLookup: new AdminRepository(), auditor },
       );
     }
+  }
+
+  // Query SQL read-only ad-hoc (conector Claude): só quando a role dedicada
+  // está configurada. Defesa em profundidade: role sem escrita + tx READ ONLY.
+  let readonlyDbCapability: DbQueryReadonlyCapability | undefined;
+  const roUser = process.env.MCP_DB_RO_USER;
+  const roPassword = process.env.MCP_DB_RO_PASSWORD;
+  if (roUser && roPassword) {
+    const roPool = new Pool({
+      host: process.env.DB_HOST,
+      database: process.env.DB_NAME,
+      user: roUser,
+      password: roPassword,
+      max: 3,
+    });
+    readonlyDbCapability = new DbQueryReadonlyCapability(new ReadonlyDbQueryService(roPool));
   }
 
   // Shared deps for the propose/confirm profile-update flow (Luz).
@@ -101,6 +120,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     statsGet: new WorkerStatsGetCapability(new GetWorkerStatsUseCase(dbPool)),
     workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
+    ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });
 

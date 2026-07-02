@@ -283,6 +283,7 @@ Adicionado em 2026-07-02. Permite usar o MCP como conector do Claude Code/API, a
 
 - **Secret:** `mcp-principal-claude-code` (stg e prd, tokens distintos por ambiente), mesmo formato do triage. IAM: `enlite-functions-sa` com `secretAccessor`.
 - **Capabilities (só leitura):** `worker.profile.get`, `worker.documents.list`, `worker.vacancies.list`, `worker.interview.get`, `worker.stats.get` (agregados: total/status/funil, zero PII) e `worker.search` (busca paginada, máx 50, mesma mecânica do painel admin incl. trigram blind index). As duas últimas adicionadas em 2026-07-02 após a primeira pergunta real do time ("quantos prestadores temos?").
+- **`db.query.readonly`** (2026-07-02): SQL ad-hoc de leitura pro Claude — single statement SELECT/WITH, máx 200 linhas, timeout 10s, transação READ ONLY, executado pela role `enlite_mcp_ro` (`pg_read_all_data` + `default_transaction_read_only=on`, senha em `enlite-mcp-ro-db-password`). PII encriptada sai como ciphertext opaco (decrypt KMS só nas capabilities worker.*). Registrada só quando `MCP_DB_RO_USER/MCP_DB_RO_PASSWORD` estão setados (services MCP).
 - **Registry escopado por principal:** `CapabilityRegistry.registerAll` só registra as tools do allowlist do principal da request (o `McpServer` é stateless, criado por request). Um principal read-only nem vê as tools de escrita no `tools/list`. Fail-closed: sem principal, nenhuma tool registrada. A validação em tempo de execução (`isCapabilityAllowed`) permanece como segunda camada.
 - **Conexão (Claude Code):**
 
