@@ -144,9 +144,11 @@ export class SearchWorkersUseCase {
   private async decryptRow(
     row: Record<string, unknown>,
   ): Promise<{ item: SearchWorkersItem; names: string[]; phone: string }> {
+    // Ciphertext inválido numa linha (ex: dado sintético/legado) não pode
+    // derrubar a busca inteira — degrada pro fallback de email no nome.
     const [firstName, lastName] = await Promise.all([
-      this.encryption.decrypt(row.first_name_encrypted as string | null),
-      this.encryption.decrypt(row.last_name_encrypted as string | null),
+      this.safeDecrypt(row.first_name_encrypted as string | null),
+      this.safeDecrypt(row.last_name_encrypted as string | null),
     ]);
     return {
       names: [firstName ?? '', lastName ?? ''],
@@ -160,5 +162,13 @@ export class SearchWorkersUseCase {
         createdAt: row.created_at as string,
       },
     };
+  }
+
+  private async safeDecrypt(value: string | null): Promise<string | null> {
+    try {
+      return await this.encryption.decrypt(value);
+    } catch {
+      return null;
+    }
   }
 }
