@@ -5,16 +5,21 @@ import { Result } from '@shared/utils/Result';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import type { Pool } from 'pg';
 import { logger, loggingAls } from '@shared/logging';
+import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
+import type { PubSubClient } from '@shared/events/PubSubClient';
 
 const TAG = '[SavePersonalInfoUseCase]';
+const MIRROR_EVENT = 'worker.mirror_requested';
+const MIRROR_TOPIC = 'worker-mirror-requested';
 
 export class SavePersonalInfoUseCase {
   private readonly workerRepository: IWorkerRepository;
+  private readonly pubsub: PubSubClient | null;
   /**
    * Pool injetado para enqueue de domain_events.
    * Quando null (default em unit tests), resolvido lazy via DatabaseConnection
-   * na primeira chamada a enqueueMirrorEvent — evita chamar getInstance() no
-   * construtor, que requer DATABASE_URL nos testes unitários.
+   * na primeira chamada — evita chamar getInstance() no construtor, que requer
+   * DATABASE_URL nos testes unitários.
    */
   private readonly injectedPool: Pool | null;
 
@@ -22,9 +27,12 @@ export class SavePersonalInfoUseCase {
     workerRepository: IWorkerRepository,
     /** Pool injetado. Omitir em produção → usa DatabaseConnection singleton. */
     pool?: Pool,
+    /** PubSubClient injetado. Omitir em produção → sem publish imediato. */
+    pubsub?: PubSubClient,
   ) {
     this.workerRepository = workerRepository;
     this.injectedPool = pool ?? null;
+    this.pubsub = pubsub ?? null;
   }
 
   private getPool(): Pool {
@@ -96,10 +104,11 @@ export class SavePersonalInfoUseCase {
 
     await this.workerRepository.recalculateStatus(data.workerId);
 
-    // Enqueue worker.mirror_requested (outbox assíncrono, best-effort).
-    // updatePersonalInfo não usa uma transação explícita (pool.query direto),
-    // então fazemos o INSERT logo após o update — não é transacional mas é
-    // suficiente: o sweep do DomainEventProcessor reprocessa pendentes.
+    // Enqueue worker.mirror_requested (outbox best-effort).
+    // updatePersonalInfo does not use an explicit transaction, so the INSERT
+    // runs after — not atomic, but the DomainEventProcessor sweep is the
+    // durability net. recalculateStatus already enqueues when reaching
+    // REGISTERED atomically; this covers profile edits that don't change status.
     await this.enqueueMirrorEvent(data.workerId);
 
     return Result.ok<Worker>(updateResult.getValue());
@@ -110,13 +119,15 @@ export class SavePersonalInfoUseCase {
   private async enqueueMirrorEvent(workerId: string): Promise<void> {
     try {
       const traceId = loggingAls.getStore()?.traceId ?? null;
-      await this.getPool().query(
-        `INSERT INTO domain_events (event, payload, trace_id)
-         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
-        [JSON.stringify({ workerId }), traceId],
-      );
+      const eventId = await enqueueDomainEvent(this.getPool(), {
+        event: MIRROR_EVENT,
+        payload: { workerId },
+        traceId,
+        pubsub: this.pubsub ?? undefined,
+        topic: MIRROR_TOPIC,
+      });
+      logger.child({ workerId, eventId }).debug({ msg: `${TAG} mirror event enqueued` });
     } catch (err: unknown) {
-      // best-effort: não bloqueia o fluxo principal
       const e = err instanceof Error ? err : new Error(String(err));
       logger.child({ workerId }).warn({
         msg: `${TAG} failed to enqueue mirror event (best-effort, ignoring)`,

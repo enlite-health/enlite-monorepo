@@ -12,6 +12,7 @@ import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { BookSlotFromWhatsAppUseCase } from '@modules/notification/application/BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from '@modules/notification/application/HandleReminderResponseUseCase';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
+import { PeriskopeWebhookController } from '@modules/notification/interfaces/controllers/PeriskopeWebhookController';
 import { GoogleCalendarService } from '@modules/matching';
 
 export async function startServer(app: Express, useCerbos: boolean): Promise<void> {
@@ -38,6 +39,18 @@ export async function startServer(app: Express, useCerbos: boolean): Promise<voi
     handleReminderResponseUseCase,
   );
 
+  // ── Periskope inbound webhook (migração Chatwoot → Periskope) ──
+  // Habilitado por PERISKOPE_WEBHOOK_ENABLED=true; a validação de assinatura
+  // usa PERISKOPE_WEBHOOK_SECRET (sem secret, valida nada — só dev/test).
+  let periskopeWebhookController: PeriskopeWebhookController | undefined;
+  if (process.env.PERISKOPE_WEBHOOK_ENABLED === 'true') {
+    periskopeWebhookController = new PeriskopeWebhookController(
+      DatabaseConnection.getInstance().getPool(),
+      handleReminderResponseUseCase,
+    );
+    console.log('[startup] Periskope inbound webhook route enabled');
+  }
+
   // ── ClickUp Patient webhook (async: fetches field definitions from ClickUp API) ──
   const clickupSecret = process.env.CLICKUP_WEBHOOK_SECRET;
   let clickupPatientController: ClickUpPatientWebhookController | undefined;
@@ -53,8 +66,8 @@ export async function startServer(app: Express, useCerbos: boolean): Promise<voi
     console.warn('[startup] CLICKUP_WEBHOOK_SECRET not set — ClickUp webhook route will be unavailable');
   }
 
-  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac));
-  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac));
+  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
+  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
 
   // ── Start Server ──────────────────────────────────────────────────────────
   const PORT = process.env.PORT || 8080;

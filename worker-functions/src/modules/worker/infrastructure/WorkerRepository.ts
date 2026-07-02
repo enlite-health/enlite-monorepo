@@ -6,13 +6,12 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
-import { logger, loggingAls } from '@shared/logging';
+import type { PubSubClient } from '@shared/events/PubSubClient';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
   updateFromImport as _updateFromImport,
   addDataSource as _addDataSource,
-  recalculateStatus as _recalculateStatus,
   WorkerImportData,
 } from './WorkerImportRepository';
 import {
@@ -20,6 +19,10 @@ import {
   updateAuthUid as _updateAuthUid,
   updateImportedWorkerData as _updateImportedWorkerData,
 } from './WorkerAuthRepository';
+import {
+  updateWorkerStatus as _updateWorkerStatus,
+  recalculateWorkerStatus as _recalculateWorkerStatus,
+} from './WorkerStatusRepository';
 
 // ── WorkerWithPii — dados decriptados retornados por findByIdWithPii ──────────
 export interface WorkerWithPii {
@@ -44,11 +47,13 @@ export class WorkerRepository implements IWorkerRepository {
   private pool: Pool;
   private encryptionService: KMSEncryptionService;
   private blindIndexService: BlindIndexService;
+  private readonly pubsub: PubSubClient | null;
 
-  constructor() {
+  constructor(pubsub?: PubSubClient) {
     this.pool = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
     this.blindIndexService = new BlindIndexService();
+    this.pubsub = pubsub ?? null;
   }
 
   async create(data: CreateWorkerDTO): Promise<Result<Worker>> {
@@ -87,8 +92,9 @@ export class WorkerRepository implements IWorkerRepository {
       row.whatsappPhone = data.whatsappPhone || undefined;
 
       return Result.ok<Worker>(row);
-    } catch (error: any) {
-      return Result.fail<Worker>(`Failed to create worker: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<Worker>(`Failed to create worker: ${msg}`);
     }
   }
 
@@ -115,8 +121,9 @@ export class WorkerRepository implements IWorkerRepository {
       delete row.whatsappPhoneEnc;
 
       return Result.ok<Worker>(row);
-    } catch (error: any) {
-      return Result.fail<Worker | null>(`Failed to find worker: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<Worker | null>(`Failed to find worker: ${msg}`);
     }
   }
 
@@ -146,8 +153,9 @@ export class WorkerRepository implements IWorkerRepository {
       delete row.whatsappPhoneEnc;
 
       return Result.ok<Worker>(row);
-    } catch (error: any) {
-      return Result.fail<Worker | null>(`Failed to find worker: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<Worker | null>(`Failed to find worker: ${msg}`);
     }
   }
 
@@ -162,32 +170,27 @@ export class WorkerRepository implements IWorkerRepository {
 
   async delete(workerId: string): Promise<Result<void>> {
     try {
-      const query = 'DELETE FROM workers WHERE id = $1';
-      await this.pool.query(query, [workerId]);
+      await this.pool.query('DELETE FROM workers WHERE id = $1', [workerId]);
       return Result.ok<void>();
-    } catch (error: any) {
-      return Result.fail<void>(`Failed to delete worker: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<void>(`Failed to delete worker: ${msg}`);
     }
   }
 
   async deleteByAuthUid(authUid: string): Promise<Result<void>> {
     try {
-      const query = 'DELETE FROM workers WHERE auth_uid = $1';
-      await this.pool.query(query, [authUid]);
+      await this.pool.query('DELETE FROM workers WHERE auth_uid = $1', [authUid]);
       return Result.ok<void>();
-    } catch (error: any) {
-      return Result.fail<void>(`Failed to delete worker: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<void>(`Failed to delete worker: ${msg}`);
     }
   }
 
   /**
    * Busca worker por ID com campos PII DECRIPTADOS via KMS.
-   *
-   * Intencionado para sincronização externa (BackfillWorkerMirrorUseCase) que precisa
-   * de nome/sexo/birthDate/documentNumber em plaintext para envio à plataforma AnaCare.
-   *
-   * VETO C2 do Architect: não adicionar flag ao findById existente — método separado.
-   * NÃO usar em request handlers síncronos sem guardar contexto de auditoria.
+   * NÃO usar em request handlers síncronos sem contexto de auditoria.
    * PII-SAFETY: os valores decriptados NUNCA podem ir para logs.
    */
   async findByIdWithPii(id: string): Promise<WorkerWithPii | null> {
@@ -208,20 +211,11 @@ export class WorkerRepository implements IWorkerRepository {
     if (result.rows.length === 0) return null;
 
     const row = result.rows[0] as {
-      id: string;
-      email: string;
-      phone: string | null;
-      status: string;
-      profession: string | null;
-      occupation: string | null;
-      employment_type: string | null;
-      firstNameEnc: string | null;
-      lastNameEnc: string | null;
-      sexEnc: string | null;
-      birthDateEnc: string | null;
-      documentNumberEnc: string | null;
-      anaCareSyncedAt: Date | null;
-      anaCareId: string | null;
+      id: string; email: string; phone: string | null; status: string;
+      profession: string | null; occupation: string | null; employment_type: string | null;
+      firstNameEnc: string | null; lastNameEnc: string | null; sexEnc: string | null;
+      birthDateEnc: string | null; documentNumberEnc: string | null;
+      anaCareSyncedAt: Date | null; anaCareId: string | null;
     };
 
     const [firstName, lastName, sex, birthDate, documentNumber] = await Promise.all([
@@ -233,20 +227,13 @@ export class WorkerRepository implements IWorkerRepository {
     ]);
 
     return {
-      id: row.id,
-      email: row.email,
-      phone: row.phone,
-      status: row.status,
-      profession: row.profession,
-      occupation: row.occupation,
+      id: row.id, email: row.email, phone: row.phone, status: row.status,
+      profession: row.profession, occupation: row.occupation,
       employment_type: row.employment_type,
-      firstName: firstName || null,
-      lastName: lastName || null,
-      sex: sex || null,
-      birthDate: birthDate || null,
+      firstName: firstName || null, lastName: lastName || null,
+      sex: sex || null, birthDate: birthDate || null,
       documentNumber: documentNumber || null,
-      anaCareSyncedAt: row.anaCareSyncedAt,
-      anaCareId: row.anaCareId,
+      anaCareSyncedAt: row.anaCareSyncedAt, anaCareId: row.anaCareId,
     };
   }
 
@@ -256,41 +243,37 @@ export class WorkerRepository implements IWorkerRepository {
 
   async findByPhone(phone: string): Promise<Result<Worker | null>> {
     try {
-      const query = `
-        SELECT id, auth_uid as "authUid", email, phone, country,
-               created_at as "createdAt", updated_at as "updatedAt"
-        FROM workers WHERE phone = $1
-      `;
-      const result = await this.pool.query(query, [phone]);
+      const result = await this.pool.query(
+        `SELECT id, auth_uid as "authUid", email, phone, country,
+                created_at as "createdAt", updated_at as "updatedAt"
+         FROM workers WHERE phone = $1`,
+        [phone],
+      );
       if (result.rows.length === 0) return Result.ok<Worker | null>(null);
       return Result.ok<Worker>(result.rows[0]);
-    } catch (error: any) {
-      return Result.fail<Worker | null>(`Failed to find worker by phone: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<Worker | null>(`Failed to find worker by phone: ${msg}`);
     }
   }
 
   async findByPhoneCandidates(candidates: string[]): Promise<Result<Worker | null>> {
     try {
       if (candidates.length === 0) return Result.ok<Worker | null>(null);
-      // Só considera workers ATIVOS (não-merged) como "donos" de um telefone.
-      // Sem o `merged_into_id IS NULL`, um número que ainda mora num registro
-      // duplicado/merged era devolvido como dono e bloqueava o worker legítimo
-      // com PHONE_NOT_AVAILABLE — falso positivo causado pelas duplicatas
-      // históricas de prod (mesmo número em formatos diferentes). Espelha o
-      // predicado do idx_workers_phone_normalized (mig 219).
-      const query = `
-        SELECT id, auth_uid as "authUid", email, phone, country,
-               created_at as "createdAt", updated_at as "updatedAt"
-        FROM workers
-        WHERE phone = ANY($1::text[])
-          AND merged_into_id IS NULL
-        LIMIT 1
-      `;
-      const result = await this.pool.query(query, [candidates]);
+      // Só considera workers ATIVOS (não-merged) — espelha idx_workers_phone_normalized (mig 219).
+      const result = await this.pool.query(
+        `SELECT id, auth_uid as "authUid", email, phone, country,
+                created_at as "createdAt", updated_at as "updatedAt"
+         FROM workers
+         WHERE phone = ANY($1::text[]) AND merged_into_id IS NULL
+         LIMIT 1`,
+        [candidates],
+      );
       if (result.rows.length === 0) return Result.ok<Worker | null>(null);
       return Result.ok<Worker>(result.rows[0]);
-    } catch (error: any) {
-      return Result.fail<Worker | null>(`Failed to find worker by phone: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<Worker | null>(`Failed to find worker by phone: ${msg}`);
     }
   }
 
@@ -300,8 +283,9 @@ export class WorkerRepository implements IWorkerRepository {
   }
 
   async updateFromImport(workerId: string, data: WorkerImportData): Promise<void> {
-    return _updateFromImport(this.pool, this.encryptionService, this.blindIndexService, workerId, data, (id) =>
-      this.recalculateStatus(id),
+    return _updateFromImport(
+      this.pool, this.encryptionService, this.blindIndexService, workerId, data,
+      (id) => this.recalculateStatus(id),
     );
   }
 
@@ -313,61 +297,19 @@ export class WorkerRepository implements IWorkerRepository {
   /**
    * Updates worker status inside a transaction so the trigger
    * trg_worker_status_history fires and records the transition.
+   * Delegates to WorkerStatusRepository.
    */
   async updateStatus(workerId: string, status: WorkerStatus): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        'UPDATE workers SET status = $2, updated_at = NOW() WHERE id = $1',
-        [workerId, status],
-      );
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  /** Delega para WorkerImportRepository para manter o arquivo sob 400 linhas. */
-  async recalculateStatus(workerId: string): Promise<WorkerStatus | null> {
-    const newStatus = await _recalculateStatus(this.pool, workerId, (id, s) => this.updateStatus(id, s));
-
-    // Quando o status transitou para REGISTERED: enfileira mirror event (outbox best-effort).
-    // Esta é a forma canônica de disparar o sync para AnaCare — todos os caminhos que
-    // promovem um worker a REGISTERED passam por recalculateStatus.
-    if (newStatus === 'REGISTERED') {
-      await this.enqueueMirrorEvent(workerId);
-    }
-
-    return newStatus;
+    return _updateWorkerStatus(this.pool, workerId, status);
   }
 
   /**
-   * Enfileira worker.mirror_requested no outbox (domain_events).
-   * Best-effort: falha silenciosa — não bloqueia o fluxo principal.
-   * Não é transacional com o UPDATE de status (pool.query direto, sem client).
-   * Se o INSERT falhar não há linha pra reprocessar (o sweep do
-   * DomainEventProcessor só reenfileira eventos JÁ gravados) — a rede de
-   * segurança real é o BackfillWorkerMirrorUseCase, re-rodável a qualquer momento.
+   * Recalculates worker status. When the new status is REGISTERED the status
+   * UPDATE and domain_events INSERT are atomic (same transaction). After
+   * commit, publishes to Pub/Sub best-effort. Delegates to WorkerStatusRepository.
    */
-  private async enqueueMirrorEvent(workerId: string): Promise<void> {
-    try {
-      const traceId = loggingAls.getStore()?.traceId ?? null;
-      await this.pool.query(
-        `INSERT INTO domain_events (event, payload, trace_id)
-         VALUES ('worker.mirror_requested', $1::jsonb, $2)`,
-        [JSON.stringify({ workerId }), traceId],
-      );
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      logger.child({ workerId }).warn({
-        msg: '[WorkerRepository] failed to enqueue mirror event (best-effort, ignoring)',
-        error: e.message,
-      });
-    }
+  async recalculateStatus(workerId: string): Promise<WorkerStatus | null> {
+    return _recalculateWorkerStatus(this.pool, workerId, this.pubsub);
   }
 
   async updateImportedWorkerData(

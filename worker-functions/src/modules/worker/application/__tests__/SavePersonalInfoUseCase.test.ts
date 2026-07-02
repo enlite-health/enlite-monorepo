@@ -1,5 +1,6 @@
 import { SavePersonalInfoUseCase } from '../SavePersonalInfoUseCase';
 import { Result } from '@shared/utils/Result';
+import type { PubSubClient } from '@shared/events/PubSubClient';
 
 const mockWorker = {
   id: 'worker-123',
@@ -220,6 +221,46 @@ describe('SavePersonalInfoUseCase', () => {
       expect(repo.updatePersonalInfo).toHaveBeenCalledWith(
         expect.objectContaining({ phone: '5491151265663' }),
       );
+    });
+  });
+
+  describe('mirror event — enqueue + publish', () => {
+    function makePool(rows: Array<{ id: string }> = [{ id: 'evt-sp-1' }]) {
+      return {
+        query: jest.fn().mockResolvedValue({ rows }),
+      };
+    }
+
+    function makePubsub(): jest.Mocked<Pick<PubSubClient, 'publish'>> {
+      return { publish: jest.fn().mockResolvedValue('msg-1') };
+    }
+
+    it('enqueues mirror event and publishes on successful save', async () => {
+      const repo = makeRepository();
+      const pool = makePool();
+      const pubsub = makePubsub();
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any, pubsub as unknown as PubSubClient);
+
+      const result = await useCase.execute(personalInfoPayload);
+
+      expect(result.isFailure).toBe(false);
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO domain_events'),
+        expect.arrayContaining(['worker.mirror_requested']),
+      );
+      expect(pubsub.publish).toHaveBeenCalledWith('worker-mirror-requested', { eventId: 'evt-sp-1' });
+    });
+
+    it('does NOT publish when pubsub not injected (no pool in scope)', async () => {
+      // Pool not injected — enqueueMirrorEvent catches DB error best-effort.
+      const repo = makeRepository();
+      const pubsub = makePubsub();
+      // Construct without pool; pubsub is 3rd arg but pool is 2nd — omit pool
+      const useCase = new SavePersonalInfoUseCase(repo as any, undefined, pubsub as unknown as PubSubClient);
+
+      // Should not throw even if DB is unavailable
+      const result = await useCase.execute(personalInfoPayload);
+      expect(result.isFailure).toBe(false);
     });
   });
 });

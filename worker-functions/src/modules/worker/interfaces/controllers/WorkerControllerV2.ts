@@ -14,6 +14,7 @@ import { AvailabilityRepository } from '../../infrastructure/AvailabilityReposit
 import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 import { WORKER_ERROR_CODES } from '../../domain/workerErrors';
+import { PubSubClient } from '@shared/events/PubSubClient';
 
 /**
  * Mensagem amigável (pt-BR fallback do backend) para PHONE_NOT_AVAILABLE.
@@ -33,7 +34,8 @@ export class WorkerControllerV2 {
   private lookupWorkerByEmailUseCase: LookupWorkerByEmailUseCase;
 
   constructor() {
-    const workerRepository = new WorkerRepository();
+    const pubsub = new PubSubClient();
+    const workerRepository = new WorkerRepository(pubsub);
     const quizRepository = new QuizResponseRepository();
     const serviceAreaRepository = new ServiceAreaRepository();
     const availabilityRepository = new AvailabilityRepository();
@@ -42,7 +44,7 @@ export class WorkerControllerV2 {
     const twilioVerifyService = new TwilioVerifyService();
     this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, eventDispatcher, twilioVerifyService);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository, eventDispatcher);
-    this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository);
+    this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository, undefined, pubsub);
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
     this.saveAvailabilityUseCase = new SaveAvailabilityUseCase(workerRepository, availabilityRepository);
     this.getAvailabilityUseCase = new GetWorkerAvailabilityUseCase(workerRepository, availabilityRepository);
