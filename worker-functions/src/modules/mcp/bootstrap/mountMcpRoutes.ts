@@ -1,5 +1,6 @@
 import type { Application } from 'express';
 import type { Pool as PgPool } from 'pg';
+import { PubSubClient } from '@shared/events/PubSubClient';
 import { ServicePrincipalSecretManagerRepo } from '../infrastructure/ServicePrincipalSecretManagerRepo';
 import { McpAuditLogger } from '../infrastructure/McpAuditLogger';
 import { CapabilityRegistry } from '../application/CapabilityRegistry';
@@ -24,14 +25,40 @@ import { ProfileChangeAuditRepository } from '../../worker/infrastructure/Profil
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDocumentFromUrlUseCase';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
+import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
+import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
+import { logger } from '@shared/logging/Logger';
 
 /**
  * Mounts the MCP server at /mcp on the Express app.
  * Only called when MCP_ENABLED=true (feature flag).
+ * Com MCP_OAUTH_ENABLED=true, monta também o authorization server OAuth 2.1
+ * (conector claude.ai) e o /mcp/v1 passa a aceitar access tokens OAuth.
  */
 export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   const principalRepo = new ServicePrincipalSecretManagerRepo();
   const auditor = new McpAuditLogger();
+  const pubsub = new PubSubClient();
+
+  let oauth: OAuthMountResult | undefined;
+  if (process.env.MCP_OAUTH_ENABLED === 'true') {
+    const issuerUrl = process.env.MCP_OAUTH_ISSUER_URL;
+    const signingKey = process.env.MCP_OAUTH_SIGNING_KEY;
+    const firebaseApiKey = process.env.FIREBASE_WEB_API_KEY;
+    const firebaseAuthDomain = process.env.FIREBASE_WEB_AUTH_DOMAIN;
+    if (!issuerUrl || !signingKey || !firebaseApiKey || !firebaseAuthDomain) {
+      logger.error(
+        {},
+        'mcp-oauth: MCP_OAUTH_ENABLED=true mas faltam MCP_OAUTH_ISSUER_URL/MCP_OAUTH_SIGNING_KEY/FIREBASE_WEB_API_KEY/FIREBASE_WEB_AUTH_DOMAIN — OAuth NÃO montado',
+      );
+    } else {
+      oauth = mountOAuthRoutes(
+        app,
+        { issuerUrl, signingKey, firebaseApiKey, firebaseAuthDomain },
+        { staffLookup: new AdminRepository(), auditor },
+      );
+    }
+  }
 
   // Shared deps for the propose/confirm profile-update flow (Luz).
   const kms = new KMSEncryptionService();
@@ -40,7 +67,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
 
   const registry = new CapabilityRegistry({
     profileGet: new WorkerProfileGetCapability(
-      new GetWorkerByIdUseCase(new WorkerRepository()),
+      new GetWorkerByIdUseCase(new WorkerRepository(pubsub)),
     ),
     documentsList: new WorkerDocumentsListCapability(
       new WorkerDocumentsRepository(dbPool),
@@ -52,7 +79,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       new GetCurrentInterviewUseCase(),
     ),
     profileUpdate: new WorkerProfileUpdateCapability(
-      new UpdateWorkerProfileFieldsUseCase(),
+      new UpdateWorkerProfileFieldsUseCase(pubsub),
     ),
     profilePropose: new WorkerProfileProposeUpdateCapability(
       new ProposeWorkerProfileUpdateUseCase(pendingProfileRepo, kms),
@@ -62,7 +89,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
         pendingProfileRepo,
         profileAuditRepo,
         kms,
-        new UpdateWorkerProfileFieldsUseCase(),
+        new UpdateWorkerProfileFieldsUseCase(pubsub),
       ),
     ),
     documentsUpload: new WorkerDocumentsUploadCapability(
@@ -79,6 +106,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       registry,
       serverName: 'enlite-worker-mcp',
       serverVersion: '1.0.0',
+      ...(oauth !== undefined
+        ? { oauthVerifier: oauth.verifier, resourceMetadataUrl: oauth.resourceMetadataUrl }
+        : {}),
     }),
   );
 }

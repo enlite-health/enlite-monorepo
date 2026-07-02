@@ -1709,3 +1709,33 @@ A coluna `source` (mig 019, `TEXT DEFAULT 'manual'`) **não tem CHECK constraint
 **Critério para fechar:** auditar `SELECT DISTINCT source FROM worker_job_applications` em prod; se limpo, adicionar `CHECK (source IN ('manual','system','talentum','import','planilla_operativa'))` em migration aditiva.
 
 **Gatilho:** próxima vez que tocar o write-path de `worker_job_applications` ou ao endurecer o schema.
+
+### TD-058 — OAuth do MCP sem revogação individual de token (v1 stateless)
+
+- **Status:** aberto — **não-bloqueante**.
+- **Descoberto em:** 2026-07-02, no design da Fase 2 do conector claude.ai (SPRINT_MCP_INTERNAL_SERVER §3.6).
+- **Dono provável:** backend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+Os tokens OAuth do conector claude.ai são JWTs stateless (access 1h, refresh 30d). Não há como revogar um token individual (ex: staff desligado) sem rotacionar a `mcp-oauth-signing-key` inteira — o que derruba todos os conectores de uma vez. Mitigações atuais: TTL curto do access token e o consent revalidar staff ativo a cada novo authorization code. Mas um refresh token vivo de um ex-staff continua válido por até 30 dias.
+
+**Critério para fechar:** (a) denylist de `jti` persistida (tabela ou Redis) consultada no `verifyAccessToken`/`exchangeRefreshToken`, OU (b) revalidar `users.is_active` no exchange de refresh token (barato: 1 SELECT por hora por conector).
+
+**Gatilho:** primeiro offboarding de staff com conector ativo, ou ao tocar o módulo mcp/oauth.
+
+### TD-059 — MCP de stg quebrado: sem principal do triage + revision com imagem inexistente
+
+- **Status:** parcialmente resolvido em 2026-07-02.
+- **Descoberto em:** 2026-07-02, no provisionamento da Fase 1/2 do conector Claude.
+- **Dono provável:** backend/infra.
+- **Bloqueador?** Não (triage só roda em prod).
+
+**O que é:**
+
+O service `worker-functions-mcp` de stg estava com a revision apontando pra uma imagem já expurgada do Artifact Registry (RevisionFailed desde 2026-06-16) — ou seja, o MCP de stg nunca serviu tráfego. Além disso, o secret `mcp-principal-triage-service` só existe em prd; em stg só há o legado `mcp-token-triage`. O deploy seguinte da branch `stage` recria a revision com imagem válida (auto-cura), mas o principal do triage em stg segue faltando.
+
+**Critério para fechar:** criar `mcp-principal-triage-service` em enlite-stg (mesmo formato do prd) e rodar o smoke test `scripts/mcp-smoke-test.sh` contra stg.
+
+**Gatilho:** quando o triage-service ganhar ambiente de staging ou ao testar o canal MCP interno fora de prod.

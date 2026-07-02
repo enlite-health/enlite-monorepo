@@ -288,6 +288,145 @@ describe('requireServicePrincipal', () => {
     expect(mockLoggerError).not.toHaveBeenCalled();
   });
 
+  // ── OAuth (conector claude.ai) ─────────────────────────────────────────────
+
+  const FAKE_JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJmb28iOiJiYXIifQ.c2ln';
+  const RESOURCE_METADATA_URL =
+    'https://mcp.example.com/.well-known/oauth-protected-resource/mcp/v1';
+
+  function makeOAuthVerifier(result?: { scopes: string[]; extra?: Record<string, unknown> }) {
+    return {
+      verifyAccessToken: result
+        ? jest.fn().mockResolvedValue(result)
+        : jest.fn().mockRejectedValue(new Error('invalid token')),
+    };
+  }
+
+  // 13 — access token OAuth válido → principal sintético read-only + next()
+  it('OAuth: JWT válido vira principal sintético claude-ai:<email> com caps read-only', async () => {
+    const repo = makeRepo(null);
+    const auditor = makeAuditor();
+    const oauthVerifier = makeOAuthVerifier({
+      scopes: ['worker:read'],
+      extra: { email: 'ana@enlite.health', role: 'recruiter' },
+    });
+    const middleware = requireServicePrincipal({
+      repo,
+      auditor,
+      oauthVerifier,
+      resourceMetadataUrl: RESOURCE_METADATA_URL,
+    });
+
+    const req = httpMocks.createRequest({
+      headers: { authorization: `Bearer ${FAKE_JWT}` },
+    });
+    const res = httpMocks.createResponse();
+    const next = jest.fn();
+
+    await middleware(req as unknown as Request, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const principal = (req as unknown as Record<string, unknown>)
+      .servicePrincipal as ServicePrincipal;
+    expect(principal.name).toBe('claude-ai:ana@enlite.health');
+    expect(principal.isCapabilityAllowed('worker.profile.get')).toBe(true);
+    expect(principal.isCapabilityAllowed('worker.profile.update')).toBe(false);
+    expect(principal.isCapabilityAllowed('worker.documents.upload')).toBe(false);
+    expect(repo.findByToken).not.toHaveBeenCalled();
+    expect(auditor.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'success', capability: 'auth.oauth' }),
+    );
+  });
+
+  // 14 — JWT inválido → 401 com WWW-Authenticate (descoberta RFC 9728)
+  it('OAuth: JWT inválido → 401 com header WWW-Authenticate', async () => {
+    const repo = makeRepo(null);
+    const auditor = makeAuditor();
+    const middleware = requireServicePrincipal({
+      repo,
+      auditor,
+      oauthVerifier: makeOAuthVerifier(),
+      resourceMetadataUrl: RESOURCE_METADATA_URL,
+    });
+
+    const req = httpMocks.createRequest({
+      headers: { authorization: `Bearer ${FAKE_JWT}` },
+    });
+    const res = httpMocks.createResponse();
+    const next = jest.fn();
+
+    await middleware(req as unknown as Request, res, next);
+
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.getHeader('WWW-Authenticate')).toBe(
+      `Bearer resource_metadata="${RESOURCE_METADATA_URL}"`,
+    );
+  });
+
+  // 15 — Sem header + resourceMetadataUrl → 401 já anuncia o WWW-Authenticate
+  it('OAuth: request sem Authorization ganha WWW-Authenticate no 401', async () => {
+    const repo = makeRepo(null);
+    const auditor = makeAuditor();
+    const middleware = requireServicePrincipal({
+      repo,
+      auditor,
+      oauthVerifier: makeOAuthVerifier(),
+      resourceMetadataUrl: RESOURCE_METADATA_URL,
+    });
+
+    const req = httpMocks.createRequest({});
+    const res = httpMocks.createResponse();
+    const next = jest.fn();
+
+    await middleware(req as unknown as Request, res, next);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.getHeader('WWW-Authenticate')).toContain('resource_metadata=');
+  });
+
+  // 16 — Sem oauthVerifier, token JWT-shaped cai no fluxo de service principal
+  it('OAuth desabilitado: JWT-shaped token vai pro lookup de service principal', async () => {
+    const repo = makeRepo(null);
+    const auditor = makeAuditor();
+    const middleware = requireServicePrincipal({ repo, auditor });
+
+    const req = httpMocks.createRequest({
+      headers: { authorization: `Bearer ${FAKE_JWT}` },
+    });
+    const res = httpMocks.createResponse();
+    const next = jest.fn();
+
+    await middleware(req as unknown as Request, res, next);
+
+    expect(repo.findByToken).toHaveBeenCalledWith(FAKE_JWT);
+    expect(res.statusCode).toBe(401);
+    expect(res.getHeader('WWW-Authenticate')).toBeUndefined();
+  });
+
+  // 17 — Escopo desconhecido (sem capabilities) → 401
+  it('OAuth: token com escopo sem capabilities mapeadas → 401', async () => {
+    const repo = makeRepo(null);
+    const auditor = makeAuditor();
+    const middleware = requireServicePrincipal({
+      repo,
+      auditor,
+      oauthVerifier: makeOAuthVerifier({ scopes: ['unknown:scope'], extra: {} }),
+      resourceMetadataUrl: RESOURCE_METADATA_URL,
+    });
+
+    const req = httpMocks.createRequest({
+      headers: { authorization: `Bearer ${FAKE_JWT}` },
+    });
+    const res = httpMocks.createResponse();
+    const next = jest.fn();
+
+    await middleware(req as unknown as Request, res, next);
+
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   // Extra — McpAuthError é throw corretamente sem a instância principal
   it('auditor.emit recebe principal="unknown" em falha de auth', async () => {
     const repo = makeRepo(null);
