@@ -38,7 +38,7 @@ export function renderConsentPage(config: ConsentPageConfig, params: ConsentPage
 <div class="card">
   <h1>Conectar ${clientName} a Enlite</h1>
   <p>Iniciá sesión con tu cuenta de staff de Enlite para autorizar el acceso.</p>
-  <div class="scope">Acceso de <strong>solo lectura</strong>: perfil, documentos, vacantes y entrevista de prestadores.</div>
+  <div class="scope">Acceso de <strong>solo lectura</strong>: perfil, documentos, vacantes, entrevista, búsqueda y estadísticas de prestadores.</div>
   <button id="signin">Continuar con Google</button>
   <div id="error"></div>
 </div>

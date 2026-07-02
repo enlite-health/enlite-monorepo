@@ -7,6 +7,8 @@ import type { WorkerProfileUpdateCapability } from './capabilities/WorkerProfile
 import type { WorkerProfileProposeUpdateCapability } from './capabilities/WorkerProfileProposeUpdateCapability';
 import type { WorkerProfileConfirmUpdateCapability } from './capabilities/WorkerProfileConfirmUpdateCapability';
 import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocumentsUploadCapability';
+import type { WorkerStatsGetCapability } from './capabilities/WorkerStatsGetCapability';
+import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -32,6 +34,8 @@ interface RegistryDeps {
   profilePropose: WorkerProfileProposeUpdateCapability;
   profileConfirm: WorkerProfileConfirmUpdateCapability;
   documentsUpload: WorkerDocumentsUploadCapability;
+  statsGet: WorkerStatsGetCapability;
+  workerSearch: WorkerSearchCapability;
   auditor: IAuditEmitter;
   writeRateLimiter?: WriteRateLimiter;
 }
@@ -84,6 +88,8 @@ export class CapabilityRegistry {
       profilePropose,
       profileConfirm,
       documentsUpload,
+      statsGet,
+      workerSearch,
     } = this.deps;
 
     return [
@@ -172,6 +178,25 @@ export class CapabilityRegistry {
           (documentsUpload.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ??
           {},
         execute: (args) => documentsUpload.execute(args),
+      },
+      {
+        name: (statsGet.constructor as { NAME?: string }).NAME ?? 'worker.stats.get',
+        description:
+          (statsGet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Aggregate worker statistics.',
+        inputShape:
+          (statsGet.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ?? {},
+        execute: (args) => statsGet.execute(args),
+      },
+      {
+        name: (workerSearch.constructor as { NAME?: string }).NAME ?? 'worker.search',
+        description:
+          (workerSearch.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Search workers with filters and pagination.',
+        inputShape:
+          (workerSearch.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ??
+          {},
+        execute: (args) => workerSearch.execute(args),
       },
     ];
   }
