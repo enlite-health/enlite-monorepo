@@ -166,12 +166,16 @@ describe('OAuth 2.1 + MCP — fluxo conector claude.ai (e2e in-process)', () => 
     await client.close();
 
     const names = tools.tools.map((t) => t.name).sort();
+    // Principal OAuth vê nomes claude-safe (claude.ai rejeita "." em tool name)
     expect(names).toEqual([
-      'worker.documents.list',
-      'worker.interview.get',
-      'worker.profile.get',
-      'worker.vacancies.list',
+      'worker_documents_list',
+      'worker_interview_get',
+      'worker_profile_get',
+      'worker_vacancies_list',
     ]);
+    for (const name of names) {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    }
   }, 20_000);
 
   it('code_verifier errado → /token recusa (PKCE do SDK)', async () => {

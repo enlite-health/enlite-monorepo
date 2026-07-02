@@ -65,7 +65,12 @@ export class CapabilityRegistry {
       (entry) => principal?.isCapabilityAllowed(entry.name) === true,
     );
     for (const entry of entries) {
-      this.registerOne(server, entry, getPrincipal);
+      // claude.ai rejeita "." em nome de tool (^[a-zA-Z0-9_-]{1,64}$);
+      // principals OAuth veem worker_profile_get, internos veem worker.profile.get.
+      const exposedName = principal?.sanitizedToolNames
+        ? entry.name.replace(/\./g, '_')
+        : entry.name;
+      this.registerOne(server, entry, exposedName, getPrincipal);
     }
   }
 
@@ -174,6 +179,7 @@ export class CapabilityRegistry {
   private registerOne(
     server: McpServer,
     entry: CapabilityEntry,
+    exposedName: string,
     getPrincipal: () => ServicePrincipal | undefined,
   ): void {
     const { auditor } = this.deps;
@@ -186,7 +192,7 @@ export class CapabilityRegistry {
     ) => void;
 
     registerTool(
-      entry.name,
+      exposedName,
       { description: entry.description, inputSchema: entry.inputShape },
       async (args: unknown) => {
         const start = Date.now();
