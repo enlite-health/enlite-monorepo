@@ -24,6 +24,10 @@ import { PendingProfileChangeRepository } from '../../worker/infrastructure/Pend
 import { ProfileChangeAuditRepository } from '../../worker/infrastructure/ProfileChangeAuditRepository';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDocumentFromUrlUseCase';
+import { GetWorkerStatsUseCase } from '../../worker/application/GetWorkerStatsUseCase';
+import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseCase';
+import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
+import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
 import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
@@ -95,6 +99,8 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     documentsUpload: new WorkerDocumentsUploadCapability(
       new IngestDocumentFromUrlUseCase(),
     ),
+    statsGet: new WorkerStatsGetCapability(new GetWorkerStatsUseCase(dbPool)),
+    workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
     auditor,
   });
 

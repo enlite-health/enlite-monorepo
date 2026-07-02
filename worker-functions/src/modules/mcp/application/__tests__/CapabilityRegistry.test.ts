@@ -7,6 +7,8 @@ import { WorkerProfileUpdateCapability } from '../capabilities/WorkerProfileUpda
 import { WorkerProfileProposeUpdateCapability } from '../capabilities/WorkerProfileProposeUpdateCapability';
 import { WorkerProfileConfirmUpdateCapability } from '../capabilities/WorkerProfileConfirmUpdateCapability';
 import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
+import { WorkerStatsGetCapability } from '../capabilities/WorkerStatsGetCapability';
+import { WorkerSearchCapability } from '../capabilities/WorkerSearchCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -22,6 +24,8 @@ const READ_CAPS = [
   'worker.documents.list',
   'worker.vacancies.list',
   'worker.interview.get',
+  'worker.stats.get',
+  'worker.search',
 ];
 
 const ALL_CAPS = [
@@ -85,6 +89,12 @@ function makeCapabilities() {
       workerId: WORKER_ID,
     }),
   } as never);
+  const statsGet = new WorkerStatsGetCapability({
+    execute: jest.fn().mockResolvedValue({ totalWorkers: 0, byStatus: {} }),
+  } as never);
+  const workerSearch = new WorkerSearchCapability({
+    execute: jest.fn().mockResolvedValue({ workers: [], total: 0, limit: 20, offset: 0 }),
+  } as never);
   return {
     profileGet,
     documentsList,
@@ -94,6 +104,8 @@ function makeCapabilities() {
     profilePropose,
     profileConfirm,
     documentsUpload,
+    statsGet,
+    workerSearch,
   };
 }
 
@@ -143,14 +155,14 @@ function getHandler(
 describe('CapabilityRegistry', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  // 1. registerAll registers exactly 8 tools
-  it('registerAll registers exactly 8 tools on the server', () => {
+  // 1. registerAll registers exactly 10 tools
+  it('registerAll registers exactly 10 tools on the server', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => makePrincipal());
 
-    expect(server.registerTool).toHaveBeenCalledTimes(8);
+    expect(server.registerTool).toHaveBeenCalledTimes(10);
   });
 
   // 2. registerAll uses correct NAMEs
@@ -205,6 +217,8 @@ describe('CapabilityRegistry', () => {
       'worker_documents_list',
       'worker_interview_get',
       'worker_profile_get',
+      'worker_search',
+      'worker_stats_get',
       'worker_vacancies_list',
     ]);
     // pattern do claude.ai

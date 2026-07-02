@@ -22,6 +22,8 @@ import { WorkerProfileUpdateCapability } from '../application/capabilities/Worke
 import { WorkerProfileProposeUpdateCapability } from '../application/capabilities/WorkerProfileProposeUpdateCapability';
 import { WorkerProfileConfirmUpdateCapability } from '../application/capabilities/WorkerProfileConfirmUpdateCapability';
 import { WorkerDocumentsUploadCapability } from '../application/capabilities/WorkerDocumentsUploadCapability';
+import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
+import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -39,6 +41,8 @@ function makeRegistry(): CapabilityRegistry {
     profilePropose: new WorkerProfileProposeUpdateCapability(stub),
     profileConfirm: new WorkerProfileConfirmUpdateCapability(stub),
     documentsUpload: new WorkerDocumentsUploadCapability(stub),
+    statsGet: new WorkerStatsGetCapability(stub),
+    workerSearch: new WorkerSearchCapability(stub),
     auditor: { emit: jest.fn() },
   });
 }
@@ -171,6 +175,8 @@ describe('OAuth 2.1 + MCP — fluxo conector claude.ai (e2e in-process)', () => 
       'worker_documents_list',
       'worker_interview_get',
       'worker_profile_get',
+      'worker_search',
+      'worker_stats_get',
       'worker_vacancies_list',
     ]);
     for (const name of names) {
