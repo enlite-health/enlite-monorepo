@@ -88,6 +88,8 @@ export class WJAFunnelController {
              CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
                WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
                ELSE wja.application_funnel_stage END AS talentum_status,
+             (SELECT COUNT(*)::int FROM wja_contact_notes cn
+              WHERE cn.worker_job_application_id = wja.id) AS contact_notes_count,
              wsa.work_zone
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
@@ -182,6 +184,7 @@ export class WJAFunnelController {
           workZone: row.work_zone,
           redireccionamiento: row.redireccionamiento,
           internalStage: stage ?? null,
+          contactNotesCount: Number(row.contact_notes_count ?? 0),
         };
 
         if (stage === 'SELECTED') {
@@ -235,6 +238,7 @@ export class WJAFunnelController {
           workZone: null,
           redireccionamiento: null,
           internalStage: null,
+          contactNotesCount: 0, // blocked attempts não são WJA real → sem notas
           // Blocked-specific fields
           isBlocked: true,
           blockedReason: ba.blockedReason,

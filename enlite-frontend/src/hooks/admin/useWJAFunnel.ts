@@ -42,6 +42,8 @@ interface FunnelEncuadre {
   missingFields?: string[];
   /** How many times this worker attempted to apply to this vacancy */
   attemptCount?: number;
+  /** Number of contact notes (comentários) registered for this WJA. 0 for blocked cards. */
+  contactNotesCount?: number;
 }
 
 export interface FunnelStages {

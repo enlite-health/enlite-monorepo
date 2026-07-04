@@ -20,6 +20,7 @@ vi.mock('@presentation/components/atoms/Text', () => ({
 vi.mock('lucide-react', () => ({
   CalendarClock: (props: Record<string, unknown>) => <svg data-testid="icon-calendar-clock" {...props} />,
   MapPin: (props: Record<string, unknown>) => <svg data-testid="icon-map-pin" {...props} />,
+  MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
 }));
@@ -548,6 +549,46 @@ describe('KanbanCard — reject button', () => {
       expect(screen.getByTestId('reject-button')).toBeInTheDocument();
     },
   );
+});
+
+// ── Notes Button (contact notes / comentários) ──────────────────────────────
+
+describe('KanbanCard — notes button', () => {
+  it('renders notes button when onOpenNotes is provided', () => {
+    const onOpenNotes = vi.fn();
+    render(<KanbanCard {...defaultProps} onOpenNotes={onOpenNotes} />);
+    expect(screen.getByTestId('notes-button')).toBeInTheDocument();
+    expect(screen.getByTestId('notes-button')).toHaveTextContent('admin.kanban.notesButton');
+  });
+
+  it('does NOT render notes button when onOpenNotes is undefined', () => {
+    render(<KanbanCard {...defaultProps} />);
+    expect(screen.queryByTestId('notes-button')).not.toBeInTheDocument();
+  });
+
+  it('calls onOpenNotes when notes button is clicked', () => {
+    const onOpenNotes = vi.fn();
+    render(<KanbanCard {...defaultProps} onOpenNotes={onOpenNotes} />);
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(onOpenNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the count badge with contactNotesCount when > 0', () => {
+    render(<KanbanCard {...defaultProps} onOpenNotes={vi.fn()} contactNotesCount={3} />);
+    const badge = screen.getByTestId('notes-count-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('3');
+  });
+
+  it('does NOT show the count badge when contactNotesCount is 0', () => {
+    render(<KanbanCard {...defaultProps} onOpenNotes={vi.fn()} contactNotesCount={0} />);
+    expect(screen.queryByTestId('notes-count-badge')).not.toBeInTheDocument();
+  });
+
+  it('does NOT show the count badge when contactNotesCount is undefined', () => {
+    render(<KanbanCard {...defaultProps} onOpenNotes={vi.fn()} />);
+    expect(screen.queryByTestId('notes-count-badge')).not.toBeInTheDocument();
+  });
 });
 
 // ── Interview Schedule Tag (CONFIRMED stage) ────────────────────────────────
