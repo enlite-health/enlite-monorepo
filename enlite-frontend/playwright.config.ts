@@ -17,7 +17,7 @@ export default defineConfig({
   },
 
   projects: [
-    // Auth setup — cria worker via REST no Firebase Emulator e salva storageState
+    // Auth setup — signIn REAL no Firebase (enlite-prd) via UI e salva storageState (emulator é proibido no projeto)
     {
       name: 'setup',
       testMatch: '**/auth.setup.ts',
