@@ -112,8 +112,7 @@ export function deriveKanbanColumn(stage: string | null, source: string | null):
   if (stage === 'CONFIRMED') return 'CONFIRMED';
   if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
-  // INITIATED só ocorre transitoriamente em rolling deploy — mapeia p/ PRE_SCREENING.
-  if (stage === 'PRE_SCREENING' || stage === 'INITIATED') return 'PRE_SCREENING';
+  if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
   // INVITED+manual = clicou em postularse manualmente → coluna INICIADO.
   if (stage === 'INVITED' && source === 'manual') return 'INICIADO';
   // INVITED (auto-invite), null, ou stage desconhecido → INVITED (fallback).

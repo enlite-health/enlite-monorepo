@@ -1694,20 +1694,23 @@ O frontend não tem um componente `Modal`/`Dialog` em `@/presentation/components
 
 ### TD-056 — Migration 230 Fase-2: remover `INITIATED` do CHECK de `application_funnel_stage`
 
-- **Status:** aberto — **não-bloqueante**, com **gatilho temporal**.
+- **Status:** ✅ resolvido em 2026-07-04 (PR #95 — migration 264 + limpeza de código).
 - **Descoberto em:** 2026-06-26, ao implementar o redesenho do Kanban (colunas Iniciados/Pre Screening).
 - **Dono provável:** backend.
 - **Bloqueador?** Não.
 
-**O que é:**
+**O que foi feito (migration 264, 2026-07-04):**
 
-A migration 230 renomeou o conceito `INITIATED → PRE_SCREENING` (backfill + novo valor no CHECK), mas **manteve `INITIATED` no CHECK de propósito** (Fase-1, aditiva). Motivo: durante o rolling deploy, pods com código antigo podem gravar o literal `'INITIATED'` por alguns segundos; se o CHECK já o tivesse removido, esses writes quebrariam com `check constraint violation`. O `funnel_stage_precedence()` também mantém `INITIATED=1` em paralelo a `PRE_SCREENING=1`, e o `WJAFunnelController` roteia `stage='INITIATED'` transitório para a coluna Pre Screening defensivamente.
+- `INITIATED` removido do CHECK constraint de `application_funnel_stage` (rename → add sem INITIATED → drop deprecated `wja_funnel_stage_chk_deprecated_20260704`).
+- `funnel_stage_precedence()`: linha `WHEN 'INITIATED' THEN 1` removida.
+- `deriveKanbanColumn` (`domain/kanbanColumn.ts`, SSOT pós-refactor de main): ramo defensivo `stage === 'INITIATED'` removido.
+- `WorkerJobApplication.ts`: comentários de "banco fase-1 ainda aceita transitoriamente" atualizados.
 
-**Risco:** valor morto no CHECK + ramo defensivo no controller que confundem leitura futura. Nenhum risco operacional.
-
-**Critério para fechar:** após `PRE_SCREENING` estável em prod por **≥7 dias** e confirmar `SELECT COUNT(*) FROM worker_job_applications WHERE application_funnel_stage='INITIATED'` = 0, criar migration Fase-2 que: (a) remove `'INITIATED'` do CHECK; (b) remove a linha `WHEN 'INITIATED' THEN 1` de `funnel_stage_precedence()`; (c) remove o ramo `|| stage === 'INITIATED'` em `WJAFunnelController` (~linha 190) e o tipo/comentários residuais.
-
-**Gatilho:** 7 dias após o merge desta feature ir pra produção (não há data fixa ainda — depende do deploy).
+**Gate de merge (PRÉ-CONDIÇÃO):** confirmar em prod antes de mergear:
+```sql
+SELECT COUNT(*) FROM worker_job_applications WHERE application_funnel_stage='INITIATED';
+-- deve retornar 0
+```
 
 ### TD-057 — `worker_job_applications.source` sem CHECK constraint (split do Kanban depende dele)
 

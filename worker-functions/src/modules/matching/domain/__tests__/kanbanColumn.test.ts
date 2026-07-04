@@ -30,9 +30,18 @@ describe('deriveKanbanColumn', () => {
     expect(deriveKanbanColumn('IN_PROGRESS', 'talentum')).toBe('IN_PROGRESS');
   });
 
-  it('maps PRE_SCREENING and transitional INITIATED to PRE_SCREENING', () => {
+  it('maps PRE_SCREENING', () => {
     expect(deriveKanbanColumn('PRE_SCREENING', 'talentum')).toBe('PRE_SCREENING');
-    expect(deriveKanbanColumn('INITIATED', 'talentum')).toBe('PRE_SCREENING');
+  });
+
+  /**
+   * Migration 264 (Fase-2 do redesenho, PR #95): INITIATED removido do CHECK
+   * de application_funnel_stage — não é mais um valor gravável. O fallback
+   * para 'unknown stage' (INVITED) é o comportamento correto agora, não uma
+   * regressão do transitório da Fase-1 (migration 230).
+   */
+  it('no longer special-cases INITIATED (removed from the DB CHECK in migration 264) — falls back to INVITED', () => {
+    expect(deriveKanbanColumn('INITIATED', 'talentum')).toBe('INVITED');
   });
 
   it('INVITED + source=manual is a real manual postulation → INICIADO', () => {
