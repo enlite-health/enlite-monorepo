@@ -233,11 +233,14 @@ test.describe('WJA Flow Visuals @integration', () => {
     await expect(card).toHaveScreenshot('wja-v1-invited-system-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── V2 — Card INVITED com badge acquisition_channel=instagram ─────────────
+  // ── V2 — Card INICIADO (source='manual') com badge acquisition_channel=instagram ──
+  //
+  // Migration 230 (feature BLOQUEADO): stage=INVITED + source='manual' mapeia
+  // para a coluna INICIADO (postulação real, não-bloqueada) — não mais INVITED.
 
-  test('V2 — card INVITED manual com badge instagram (bg-pink-100 text-pink-700)', async ({ page }) => {
+  test('V2 — card INICIADO manual com badge instagram (bg-pink-100 text-pink-700)', async ({ page }) => {
     await loginAsKanbanAdmin(page);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV2Id}`, 'INVITED');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV2Id}`, 'INICIADO');
 
     const card = page.locator(`[data-testid="kanban-card-${wjaV2Id}"]`);
     const badge = card.locator('[data-testid="acquisition-channel-badge"]');
@@ -249,13 +252,13 @@ test.describe('WJA Flow Visuals @integration', () => {
     await expect(badge).toHaveClass(/bg-pink-100/);
     await expect(badge).toHaveClass(/text-pink-700/);
 
-    // Card na coluna INVITED
+    // Card na coluna INICIADO
     await expect(
-      page.locator('[data-testid="kanban-column-INVITED"]').locator(`[data-testid="kanban-card-${wjaV2Id}"]`),
+      page.locator('[data-testid="kanban-column-INICIADO"]').locator(`[data-testid="kanban-card-${wjaV2Id}"]`),
     ).toBeVisible();
 
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'visible' });
-    await expect(card).toHaveScreenshot('wja-v2-invited-instagram-card.png', { maxDiffPixelRatio: 0.05 });
+    await expect(card).toHaveScreenshot('wja-v2-iniciado-instagram-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
   // ── V3 — Coluna COMPLETED com 3 badges (QUALIFIED / IN_DOUBT / COMPLETED) ─

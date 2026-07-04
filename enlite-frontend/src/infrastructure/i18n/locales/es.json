@@ -983,6 +983,7 @@
     "kanban": {
       "columns": {
         "INVITED": "Invitados",
+        "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "En Progreso",
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",

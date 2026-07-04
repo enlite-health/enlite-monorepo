@@ -13,8 +13,17 @@ interface KanbanBoardProps {
   onMove: (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => Promise<MoveEncuadreError | null>;
 }
 
-const COLUMN_CONFIG = [
+interface ColumnConfig {
+  id: string;
+  color: string;
+  droppable: boolean;
+  /** Alert-styled header (red/amber tone) for columns that need operator attention, e.g. BLOQUEADO */
+  alert?: boolean;
+}
+
+const COLUMN_CONFIG: ColumnConfig[] = [
   { id: 'INVITED', color: 'bg-blue-400', droppable: true },
+  { id: 'BLOQUEADO', color: 'bg-red-500', droppable: false, alert: true },
   { id: 'INICIADO', color: 'bg-indigo-400', droppable: false },
   { id: 'PRE_SCREENING', color: 'bg-violet-400', droppable: false },
   { id: 'IN_PROGRESS', color: 'bg-violet-500', droppable: false },
@@ -22,7 +31,7 @@ const COLUMN_CONFIG = [
   { id: 'CONFIRMED', color: 'bg-cyan-400', droppable: true },
   { id: 'SELECTED', color: 'bg-green-500', droppable: true },
   { id: 'REJECTED', color: 'bg-red-400', droppable: true },
-] as const;
+];
 
 // Droppable columns map directly to application_funnel_stage values
 const DROPPABLE_STAGES = new Set(['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED']);
@@ -104,7 +113,7 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
           {COLUMN_CONFIG.map((col) => {
             const items = stages[col.id as keyof FunnelStages] ?? [];
             return (
-              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable}>
+              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable} alert={col.alert}>
                 {items.map((enc) => (
                   <DraggableCard key={enc.id} id={enc.id} disabled={!enc.encuadreId}>
                     <KanbanCard

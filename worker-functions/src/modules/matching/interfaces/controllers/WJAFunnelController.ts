@@ -26,8 +26,12 @@ import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedA
  * Migration 230 (2026-06-26): Kanban redesign
  *   - INITIATED column removed (stage renamed to PRE_SCREENING in DB)
  *   - PRE_SCREENING column added (Talentum entry point)
- *   - INICIADO column added: INVITED+source='manual' WJAs + worker_blocked_applications
- *     (badge-like cards for workers who clicked postularse but were blocked)
+ *   - INICIADO column added: INVITED+source='manual' WJAs
+ *
+ * Feature BLOQUEADO (2026-07-03): worker_blocked_applications cards moved out of
+ * INICIADO into their own BLOQUEADO column — INICIADO is now real WJAs only.
+ * Promoted (worker completed registration) blocked attempts stop appearing here
+ * and become real WJA cards in INICIADO (see PromoteBlockedApplicationsUseCase).
  */
 export class WJAFunnelController {
   private db: Pool;
@@ -47,9 +51,10 @@ export class WJAFunnelController {
    *
    * Card identifier: wja.id (always present). encuadreId: e.id (null for orphans).
    *
-   * Columns (Migration 230):
+   * Columns (Migration 230 + feature BLOQUEADO):
    *   INVITED    — WJA stage=INVITED, source != 'manual' (auto-invite system)
-   *   INICIADO   — WJA stage=INVITED + source='manual' + blocked attempt cards
+   *   BLOQUEADO  — worker_blocked_applications não promovidas (tentativa bloqueada)
+   *   INICIADO   — WJA stage=INVITED + source='manual' (postulação real, não-bloqueada)
    *   PRE_SCREENING — WJA stage=PRE_SCREENING (antigo INITIATED)
    *   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED — inalterados
    */
@@ -105,9 +110,11 @@ export class WJAFunnelController {
 
       // Colunas do Kanban — classificação 100% baseada em application_funnel_stage
       // Migration 230: INITIATED removido → PRE_SCREENING + INICIADO adicionados
+      // Feature BLOQUEADO: worker_blocked_applications não promovidas ganham coluna própria
       const stages: Record<string, unknown[]> = {
         INVITED: [],
-        INICIADO: [],       // INVITED+source='manual' + blocked attempts (badge)
+        BLOQUEADO: [],      // worker_blocked_applications não promovidas (badge)
+        INICIADO: [],       // INVITED+source='manual' — postulação real, não-bloqueada
         PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
         IN_PROGRESS: [],
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
@@ -202,10 +209,12 @@ export class WJAFunnelController {
         }
       }
 
-      // Merge blocked attempt cards into INICIADO column
+      // Merge blocked attempt cards into their own BLOQUEADO column (not promoted yet —
+      // listByVacancy já faz NOT EXISTS contra worker_job_applications, então uma linha
+      // promovida vira WJA real e some daqui automaticamente).
       for (let i = 0; i < blockedAttempts.length; i++) {
         const ba = blockedAttempts[i];
-        stages.INICIADO.push({
+        stages.BLOQUEADO.push({
           id: ba.id,
           encuadreId: null,
           workerId: ba.workerId ?? null,

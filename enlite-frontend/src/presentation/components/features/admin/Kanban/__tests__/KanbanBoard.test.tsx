@@ -10,9 +10,16 @@ vi.mock('react-router-dom', () => ({
 }));
 
 // ── i18n mock — returns the key so we can assert exact i18n paths ────────────
+// Supports both call shapes used across the Kanban components:
+//   t(key, 'stringFallback')            — e.g. rejection labels
+//   t(key, { defaultValue, count, ... }) — e.g. blocked reason / attempt count
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, options?: string | { defaultValue?: string; count?: number }) => {
+      if (typeof options === 'string') return options;
+      if (options && typeof options === 'object') return options.defaultValue ?? key;
+      return key;
+    },
   }),
 }));
 
@@ -86,6 +93,7 @@ function makeEncuadre(overrides: Partial<FunnelStages['INVITED'][0]> = {}) {
 function emptyStages(): FunnelStages {
   return {
     INVITED: [],
+    BLOQUEADO: [],
     INICIADO: [],
     PRE_SCREENING: [],
     IN_PROGRESS: [],
@@ -109,11 +117,11 @@ beforeEach(() => {
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 8 columns', () => {
+  it('renders all 9 columns', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const expectedColumns = [
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
@@ -122,14 +130,14 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (INVITED → INICIADO → PRE_SCREENING → IN_PROGRESS → ...)', () => {
+  it('renders columns in correct order (INVITED → BLOQUEADO → INICIADO → PRE_SCREENING → IN_PROGRESS → ...)', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
 
     expect(ids).toEqual([
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ]);
   });
@@ -138,6 +146,7 @@ describe('KanbanBoard — column rendering', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.BLOQUEADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.IN_PROGRESS')).toBeInTheDocument();
@@ -192,6 +201,14 @@ describe('KanbanBoard — drag & drop rules', () => {
     }
   });
 
+  it('disables droppable on BLOQUEADO column (cards have no encuadreId, never a drop target)', () => {
+    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+
+    const bloqueado = droppableIds.find((d) => d.id === 'BLOQUEADO');
+    expect(bloqueado, 'BLOQUEADO column must be registered in useDroppable').toBeTruthy();
+    expect(bloqueado?.disabled, 'BLOQUEADO must have droppable disabled').toBe(true);
+  });
+
   it('keeps droppable enabled on INVITED, CONFIRMED, SELECTED, and REJECTED columns', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
@@ -243,7 +260,7 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(8);
+    expect(columns).toHaveLength(9);
   });
 
   it('renders multiple cards across different Talentum columns', () => {
@@ -401,5 +418,54 @@ describe('KanbanBoard — interview tag in CONFIRMED column', () => {
 
     const completedCol = screen.getByTestId('kanban-column-COMPLETED');
     expect(within(completedCol).queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
+  });
+});
+
+// ── BLOQUEADO column ─────────────────────────────────────────────────────────
+
+describe('KanbanBoard — BLOQUEADO column', () => {
+  it('renders blocked cards in the BLOQUEADO column with badge, reason and missing fields', () => {
+    const stages = emptyStages();
+    stages.BLOQUEADO = [makeEncuadre({
+      id: 'enc-blocked',
+      encuadreId: null,
+      isBlocked: true,
+      blockedReason: 'registration_incomplete',
+      missingFields: ['profession', 'phone'],
+      attemptCount: 2,
+    })];
+
+    render(<KanbanBoard stages={stages} onMove={noop} />);
+
+    const bloqueadoCol = screen.getByTestId('kanban-column-BLOQUEADO');
+    const card = within(bloqueadoCol).getByTestId('kanban-card-enc-blocked');
+
+    expect(within(card).getByTestId('blocked-badge')).toBeInTheDocument();
+    expect(within(card).getByTestId('blocked-reason')).toBeInTheDocument();
+    expect(within(card).getByTestId('blocked-missing-fields')).toBeInTheDocument();
+    expect(within(card).getByTestId('blocked-attempt-count')).toBeInTheDocument();
+  });
+
+  it('renders BLOQUEADO card as drag-disabled (encuadreId=null)', () => {
+    const stages = emptyStages();
+    stages.BLOQUEADO = [makeEncuadre({ id: 'enc-blocked-drag', encuadreId: null, isBlocked: true })];
+
+    render(<KanbanBoard stages={stages} onMove={noop} />);
+
+    const wrapper = screen.getByTestId('kanban-draggable-enc-blocked-drag');
+    expect(wrapper.getAttribute('data-drag-disabled')).toBe('true');
+  });
+
+  it('shows correct card count in the BLOQUEADO column', () => {
+    const stages = emptyStages();
+    stages.BLOQUEADO = [
+      makeEncuadre({ id: 'b1', encuadreId: null, isBlocked: true }),
+      makeEncuadre({ id: 'b2', encuadreId: null, isBlocked: true }),
+    ];
+
+    render(<KanbanBoard stages={stages} onMove={noop} />);
+
+    const bloqueadoCol = screen.getByTestId('kanban-column-BLOQUEADO');
+    expect(within(bloqueadoCol).getByText('2')).toBeInTheDocument();
   });
 });

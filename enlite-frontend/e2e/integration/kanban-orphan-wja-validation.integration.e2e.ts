@@ -1,138 +1,156 @@
 /**
  * kanban-orphan-wja-validation.integration.e2e.ts @integration
  *
- * Validação visual do fix do JOIN invertido no EncuadreFunnelController:
- * WJA LEFT JOIN LATERAL encuadres (antes: encuadre LEFT JOIN wja).
+ * Validação do fix do JOIN invertido no WJAFunnelController (WJA LEFT JOIN
+ * LATERAL encuadres, ao invés de encuadre LEFT JOIN wja) para WJAs órfãs
+ * (sem encuadre vinculado) — cenário histórico anterior à migration 189
+ * (trigger anti-órfã trg_ensure_encuadre_on_wja_insert), reproduzido aqui via
+ * seed com o trigger temporariamente desabilitado (mesma técnica usada em
+ * F7 de kanban-fase2-full-flow.integration.e2e.ts).
  *
- * Reproduz os casos 774-784 (12 invitados, 3 no kanban) e valida:
- * - Gate 1: backend retorna WJAs órfãs com encuadreId=null e card.id=wja.id
- * - Gate 2: WJAs órfãs aparecem no Kanban visual
- * - Gate 3: WJA via webhook Talentum aparece no Kanban
- * - Gate 4: drag de card órfão — identifica qual endpoint é chamado (Cenário A/B/C)
- * - Gate 5: contrato da API ainda está íntegro
+ * Cenários:
+ *   Gate 1 — backend retorna as 3 WJAs órfãs com encuadreId=null e card.id=wja.id
+ *   Gate 2 — WJAs órfãs aparecem no Kanban visual (INVITED/PRE_SCREENING/IN_PROGRESS)
+ *            com data-drag-disabled=true
+ *   Gate 3 — WJA via webhook Talentum aparece no Kanban ao lado das órfãs
+ *   Gate 4 — drag de card órfão (sem encuadreId) — diagnóstico do endpoint chamado
+ *   Gate 5 — contrato da API íntegro: todos os stages presentes
  *
- * Pré-condições: banco local com seeds inseridos via SQL direto.
- * Vacancy ID fixo: 8e7e8447-8619-45d6-a60b-a507ec0fc1ab
- * WJA IDs (orphans, encuadreId=null):
- *   INVITED:     fcf6aeb8-1394-4ef7-8647-8d030f53ddcb
- *   INITIATED:   fb449e04-9487-410f-8321-6876466cc0b4
- *   IN_PROGRESS: 28028211-d520-4b76-b2c8-d93facfc19c7
- *
- * Nota sobre vacancy detail mock: o endpoint GET /api/admin/vacancies/:id usa
- * a coluna patients.zone_neighborhood que foi renomeada na migration 186 mas o
- * container Docker usa código compilado antes disso. O teste mocka esse endpoint
- * inline para contornar este problema independente do fix em validação.
- * Todos os outros endpoints (especialmente /funnel) passam pro backend real.
+ * Nota histórica: a versão anterior deste arquivo usava um vacancyId e WJA ids
+ * hardcoded (snapshot de dados de produção) que não existem no banco e2e limpo
+ * — refatorado para semear vaga/workers/WJAs via helpers reais em beforeAll.
  */
 
-import { test, expect, Page, Route } from '@playwright/test';
+import { execSync } from 'child_process';
+import { test, expect, type Route } from '@playwright/test';
+import {
+  insertTestPatient,
+  insertBaseVacancy,
+  insertTestWorker,
+  cleanupTestPatient,
+  cleanupTestWorker,
+} from '../helpers/db-test-helper';
 import {
   loginAsKanbanAdmin,
-  installKanbanInterceptors,
+  openKanban,
   MOCK_TOKEN,
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
-import { execSync } from 'child_process';
 
-const VACANCY_ID = '8e7e8447-8619-45d6-a60b-a507ec0fc1ab';
-// WJA ID (= card.id) do worker órfão na coluna INVITED
-const ORPHAN_WJA_ID_INVITED = 'fcf6aeb8-1394-4ef7-8647-8d030f53ddcb';
-const OUTPUT_DIR = '/tmp/kanban-validation';
+// ── DB helpers ─────────────────────────────────────────────────────────────────
 
-// Resposta mock mínima para vacancy detail
-// Necessária porque o endpoint GET /api/admin/vacancies/:id falha no container
-// local por divergência de schema (migration 186 renomeou zone_neighborhood mas
-// o código compilado no container ainda referencia o nome antigo).
-const VACANCY_DETAIL_MOCK = {
-  success: true,
-  data: {
-    id: VACANCY_ID,
-    title: 'CASO 98001-orphan-test',
-    status: 'SEARCHING',
-    is_draft: false,
-    case_number: 98001,
-    vacancy_number: 9001,
-    patient_first_name: 'Paciente',
-    patient_last_name: 'KanbanTest',
-    patient_diagnosis: 'TEA',
-    patient_zone: null,
-    patient_city: null,
-    patient_neighborhood: null,
-    patient_address_formatted: 'Av. Corrientes 1234, CABA, AR',
-    patient_address_raw: 'Av. Corrientes 1234, CABA',
-    dependency_level: 'SEVERE',
-    required_professions: ['AT'],
-    providers_needed: 1,
-    encuadres: [],
-    publications: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    closes_at: null,
-    published_at: null,
-  },
-};
+const CONTAINER = 'enlite-postgres';
+const DB_USER = 'enlite_admin';
+const DB_NAME = 'enlite_e2e';
 
-// ── Helpers locais ────────────────────────────────────────────────────────────
+function runSQL(sql: string): string {
+  const escaped = sql.replace(/'/g, "'\\''");
+  return execSync(
+    `docker exec ${CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} -c '${escaped}'`,
+    { stdio: 'pipe' },
+  ).toString();
+}
 
-async function forceKanbanView(page: Page): Promise<void> {
-  await page.addInitScript(
-    ([key]: [string]) => { window.localStorage.setItem(key, 'kanban'); },
-    [`vacancy-funnel-view-${VACANCY_ID}`],
+function extractUUID(psqlOutput: string): string | null {
+  const match = psqlOutput.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
   );
+  return match ? match[0] : null;
 }
 
-/**
- * Instala o mock do vacancy detail COM PRIORIDADE sobre os interceptores do
- * helper. Em Playwright, page.route é LIFO — o último handler registrado tem
- * prioridade. Por isso: 1) instalamos o catch-all do helper, 2) instalamos o
- * mock específico do vacancy detail (mais recente = maior prioridade).
- */
-async function installVacancyDetailMockWithPriority(page: Page): Promise<void> {
-  const vacancyDetailPattern = new RegExp(`/api/admin/vacancies/${VACANCY_ID}$`);
-  await page.route('**/api/admin/vacancies/**', async (route: Route) => {
-    if (route.request().method() === 'GET' && vacancyDetailPattern.test(route.request().url())) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(VACANCY_DETAIL_MOCK),
-      });
-      return;
-    }
-    // Não é o vacancy detail específico — deixar o handler do helper processar
-    await route.fallback();
-  });
+function getWjaIdByWorkerAndJob(workerId: string, jobPostingId: string): string | null {
+  const out = runSQL(
+    `SELECT id FROM worker_job_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' ORDER BY created_at DESC LIMIT 1`,
+  );
+  return extractUUID(out);
 }
 
-async function loginAndOpenKanban(page: Page): Promise<void> {
-  // 1. Instalar interceptores de auth + API (catch-all)
-  await loginAsKanbanAdmin(page);
-  // 2. Instalar mock específico do vacancy detail COM PRIORIDADE (LIFO)
-  await installVacancyDetailMockWithPriority(page);
-  await forceKanbanView(page);
-  await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-  await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 25_000 });
-  await page.waitForTimeout(1_500);
-}
+// ── State compartilhado pela suite ────────────────────────────────────────────
+
+let patientId = '';
+let vacancyId = '';
+let vacancyTitle = '';
+
+let workerInvitedId = '';
+let workerPreScrId = '';
+let workerInProgressId = '';
+
+let orphanWjaIdInvited = '';
+let orphanWjaIdPreScr = '';
+let orphanWjaIdInProgress = '';
+
+const cleanupWorkerIds: string[] = [];
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 test.describe('Kanban Orphan WJA Validation @integration', () => {
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);
   test.use({ viewport: { width: 1920, height: 1080 } });
 
-  // ── Gate 1 — Backend health (API pura, sem browser) ────────────────────────
+  test.beforeAll(() => {
+    const caseNumber = 985_000 + Math.floor(Math.random() * 9_999);
+    const { patientId: pid, addressId } = insertTestPatient({ withAddress: true });
+    patientId = pid;
+    vacancyTitle = `CASO ${caseNumber}-orphan-test`;
+    vacancyId = insertBaseVacancy({
+      patientId,
+      patientAddressId: addressId!,
+      caseNumber,
+      status: 'SEARCHING',
+      isDraft: false,
+    });
+
+    const rand = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
+    workerInvitedId = insertTestWorker({ firstName: 'Orphan', lastName: 'Invited', phone: `+549140${rand()}` });
+    cleanupWorkerIds.push(workerInvitedId);
+    workerPreScrId = insertTestWorker({ firstName: 'Orphan', lastName: 'PreScreening', phone: `+549141${rand()}` });
+    cleanupWorkerIds.push(workerPreScrId);
+    workerInProgressId = insertTestWorker({ firstName: 'Orphan', lastName: 'InProgress', phone: `+549142${rand()}` });
+    cleanupWorkerIds.push(workerInProgressId);
+
+    // Seed de 3 WJAs órfãs (sem encuadre vinculado) — trigger anti-órfã
+    // (migration 189) desabilitado temporariamente para reproduzir dados
+    // legados pré-migration, exatamente como em F7 de kanban-fase2-full-flow.
+    runSQL(
+      `ALTER TABLE worker_job_applications DISABLE TRIGGER trg_ensure_encuadre_on_wja_insert;
+       INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at) VALUES
+         ('${workerInvitedId}', '${vacancyId}', 'INVITED', 'pre-migration-orphan', NOW(), NOW()),
+         ('${workerPreScrId}', '${vacancyId}', 'PRE_SCREENING', 'pre-migration-orphan', NOW(), NOW()),
+         ('${workerInProgressId}', '${vacancyId}', 'IN_PROGRESS', 'pre-migration-orphan', NOW(), NOW())
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING;
+       ALTER TABLE worker_job_applications ENABLE TRIGGER trg_ensure_encuadre_on_wja_insert;`,
+    );
+
+    orphanWjaIdInvited = getWjaIdByWorkerAndJob(workerInvitedId, vacancyId) ?? '';
+    orphanWjaIdPreScr = getWjaIdByWorkerAndJob(workerPreScrId, vacancyId) ?? '';
+    orphanWjaIdInProgress = getWjaIdByWorkerAndJob(workerInProgressId, vacancyId) ?? '';
+
+    if (!orphanWjaIdInvited || !orphanWjaIdPreScr || !orphanWjaIdInProgress) {
+      throw new Error('[beforeAll] Falha ao semear as 3 WJAs órfãs (INVITED/PRE_SCREENING/IN_PROGRESS)');
+    }
+  });
+
+  test.afterAll(() => {
+    runSQL(`DELETE FROM encuadres WHERE job_posting_id = '${vacancyId}'`);
+    runSQL(`DELETE FROM worker_job_applications WHERE job_posting_id = '${vacancyId}'`);
+    for (const wid of cleanupWorkerIds) cleanupTestWorker(wid);
+    cleanupTestPatient(patientId);
+  });
+
+  // ── Gate 1 — Backend health + contrato (API pura, sem browser) ────────────
 
   test('Gate1 — backend retorna 3 WJAs órfãs com encuadreId=null e card.id=wja.id', async ({ request }) => {
     const healthRes = await request.get(`${BACKEND_URL}/health`);
     expect(healthRes.status(), 'Backend /health deve retornar 200').toBe(200);
 
     const funnelRes = await request.get(
-      `${BACKEND_URL}/api/admin/vacancies/${VACANCY_ID}/funnel`,
+      `${BACKEND_URL}/api/admin/vacancies/${vacancyId}/funnel`,
       { headers: { Authorization: `Bearer ${MOCK_TOKEN}` } },
     );
     expect(funnelRes.status(), 'Funnel API deve retornar 200').toBe(200);
 
-    const body = await funnelRes.json() as {
+    const body = (await funnelRes.json()) as {
       success: boolean;
       data: {
         totalEncuadres: number;
@@ -141,65 +159,66 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     };
 
     expect(body.success).toBe(true);
-    expect(body.data.totalEncuadres, 'Devem existir >= 3 WJAs no funil').toBeGreaterThanOrEqual(3);
+    expect(body.data.totalEncuadres, 'Devem existir exatamente as 3 WJAs de seed no funil').toBe(3);
 
     const allCards = Object.values(body.data.stages).flat();
-    const orphans = allCards.filter(c => c.encuadreId === null);
-    expect(orphans.length, 'Cards de seed devem ter encuadreId=null').toBeGreaterThanOrEqual(3);
+    const orphans = allCards.filter((c) => c.encuadreId === null);
+    expect(orphans.length, 'As 3 WJAs de seed devem ter encuadreId=null').toBe(3);
 
     // Confirmar que card.id = wja.id (não encuadre.id)
     const invitedCards = body.data.stages['INVITED'] ?? [];
-    expect(invitedCards.length, 'INVITED deve ter >= 1 card de seed').toBeGreaterThanOrEqual(1);
-    const foundOrphan = invitedCards.find(c => c.id === ORPHAN_WJA_ID_INVITED);
-    expect(foundOrphan, `card.id=${ORPHAN_WJA_ID_INVITED} deve estar em INVITED`).toBeTruthy();
+    const foundOrphan = invitedCards.find((c) => c.id === orphanWjaIdInvited);
+    expect(foundOrphan, `card.id=${orphanWjaIdInvited} deve estar em INVITED`).toBeTruthy();
     expect(foundOrphan?.encuadreId).toBeNull();
   });
 
-  // ── Gate 2 — Kanban visual COM FIX ───────────────────────────────────────
+  // ── Gate 2 — Kanban visual com as órfãs ────────────────────────────────────
 
   test('Gate2 — WJAs órfãs aparecem no Kanban com fix aplicado (visual)', async ({ page }) => {
-    await loginAndOpenKanban(page);
+    await loginAsKanbanAdmin(page);
+    await openKanban(page, vacancyId);
 
     const invited = await page.locator('[data-testid="kanban-column-INVITED-count"]').textContent();
     const preScrCount = await page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]').textContent();
     const inProgress = await page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]').textContent();
 
-    console.log(`[Gate 2] Kanban: INVITED=${invited}, PRE_SCREENING=${preScrCount}, IN_PROGRESS=${inProgress}`);
+    expect(Number(invited), 'INVITED deve ter >= 1 card (órfã)').toBeGreaterThanOrEqual(1);
+    expect(Number(preScrCount), 'PRE_SCREENING deve ter >= 1 card (órfã)').toBeGreaterThanOrEqual(1);
+    expect(Number(inProgress), 'IN_PROGRESS deve ter >= 1 card (órfã)').toBeGreaterThanOrEqual(1);
 
-    // Seeds garantem pelo menos 1 em cada coluna — outros testes paralelos podem adicionar mais
-    expect(Number(invited), 'INVITED deve ter >= 1 card').toBeGreaterThanOrEqual(1);
-    expect(Number(preScrCount), 'PRE_SCREENING deve ter >= 1 card').toBeGreaterThanOrEqual(1);
-    expect(Number(inProgress), 'IN_PROGRESS deve ter >= 1 card').toBeGreaterThanOrEqual(1);
-
-    // DraggableCard deve existir pelo WJA ID
-    const orphanDraggable = page.locator(`[data-testid="kanban-draggable-${ORPHAN_WJA_ID_INVITED}"]`);
+    // DraggableCard deve existir pelo WJA id (card.id = wja.id)
+    const orphanDraggable = page.locator(`[data-testid="kanban-draggable-${orphanWjaIdInvited}"]`);
     await expect(orphanDraggable, 'Card órfão deve estar visível no Kanban').toBeVisible();
 
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/path1-com-fix.png`,
-    });
-    console.log(`[Gate 2] Screenshot COM FIX: ${OUTPUT_DIR}/path1-com-fix.png`);
+    // Sem encuadre vinculado → contrato de drag-disabled (mesma invariante de F7)
+    await expect(
+      orphanDraggable,
+      'Card órfão sem encuadreId deve ter data-drag-disabled=true',
+    ).toHaveAttribute('data-drag-disabled', 'true');
+
+    await expect(
+      page.locator('[data-testid="kanban-board"]'),
+    ).toHaveScreenshot('kanban-orphan-gate2-board.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── Gate 3 — Path 2: Talentum sync (webhook + fallback SQL) ──────────────
+  // ── Gate 3 — Path Talentum: webhook aparece ao lado das órfãs ─────────────
 
-  test('Gate3 — WJA via webhook Talentum aparece no Kanban', async ({ page, request }) => {
+  test('Gate3 — WJA via webhook Talentum aparece no Kanban ao lado das órfãs', async ({ page, request }) => {
     const ts = Date.now();
-    const phone = `+549118${String(Math.floor(Math.random() * 9000000) + 1000000)}`;
-    const email = `e2e-g3-${ts}@test.com`;
+    const phone = `+549143${String(Math.floor(Math.random() * 9_000_000) + 1_000_000)}`;
+    const email = `e2e-orphan-g3-${ts}@test.com`;
 
-    // Inserir worker no banco via SQL
-    execSync(
-      `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c "INSERT INTO workers (auth_uid, email, phone, status, country, first_name_encrypted, last_name_encrypted, sex_encrypted, created_at, updated_at) VALUES ('e2e-g3-${ts}', '${email}', '${phone}', 'REGISTERED', 'AR', encode('Gate3','base64'), encode('Worker','base64'), NULL, NOW(), NOW()) ON CONFLICT (auth_uid) DO NOTHING; INSERT INTO worker_service_areas (worker_id, country, latitude, longitude, radius_km, created_at, updated_at) SELECT id, 'AR', -34.6037, -58.3816, 20, NOW(), NOW() FROM workers WHERE email='${email}' ON CONFLICT DO NOTHING;"`,
-      { stdio: 'pipe' },
-    );
+    const workerGate3Id = insertTestWorker({ firstName: 'Gate3', lastName: 'Worker', phone });
+    cleanupWorkerIds.push(workerGate3Id);
+    // insertTestWorker gera um email interno próprio — sobrescrevemos para casar
+    // com o profile.email do payload do webhook (usado para reconciliar o worker).
+    runSQL(`UPDATE workers SET email = '${email}' WHERE id = '${workerGate3Id}'`);
 
-    // Webhook Talentum INITIATED
     const payload = {
       action: 'PRESCREENING_RESPONSE',
       subtype: 'INITIATED',
       data: {
-        prescreening: { id: `psc-g3-${ts}`, name: 'CASO 98001-orphan-test' },
+        prescreening: { id: `psc-g3-${ts}`, name: vacancyTitle },
         profile: {
           id: `prof-g3-${ts}`,
           firstName: 'Gate3',
@@ -216,59 +235,38 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
       data: payload,
       headers: { 'Content-Type': 'application/json' },
     });
-    const webhookStatus = webhookRes.status();
-    console.log(`[Gate 3] Webhook status: ${webhookStatus}`);
+    expect(webhookRes.status(), 'Webhook Talentum deve retornar 200').toBe(200);
 
-    let syncMethod = 'webhook Talentum';
-    if (webhookStatus !== 200) {
-      syncMethod = 'fallback SQL (webhook falhou)';
-      console.log(`[Gate 3] Webhook falhou (${webhookStatus}) — fallback SQL`);
-      execSync(
-        `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c "INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, application_status, source, created_at, updated_at) SELECT id, '${VACANCY_ID}', 'INITIATED', 'applied', 'talentum', NOW(), NOW() FROM workers WHERE email='${email}' ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET application_funnel_stage='INITIATED', updated_at=NOW();"`,
-        { stdio: 'pipe' },
-      );
-    }
-
-    await page.waitForTimeout(1_000);
-
-    // Verificar via API
     const funnelRes = await request.get(
-      `${BACKEND_URL}/api/admin/vacancies/${VACANCY_ID}/funnel`,
+      `${BACKEND_URL}/api/admin/vacancies/${vacancyId}/funnel`,
       { headers: { Authorization: `Bearer ${MOCK_TOKEN}` } },
     );
-    const body = await funnelRes.json() as {
+    const body = (await funnelRes.json()) as {
       data: { totalEncuadres: number; stages: Record<string, Array<{ id: string }>> };
     };
-    console.log(`[Gate 3] Total cards no Kanban: ${body.data.totalEncuadres} (sync via ${syncMethod})`);
-    expect(body.data.totalEncuadres, 'Deve ter >= 4 cards (3 seeds + 1 gate3)').toBeGreaterThanOrEqual(4);
+    expect(body.data.totalEncuadres, 'Deve ter 4 cards (3 seeds órfãs + 1 gate3)').toBe(4);
 
-    // Screenshot visual
-    await loginAndOpenKanban(page);
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/path2-com-fix.png`,
-    });
-    console.log(`[Gate 3] Screenshot: ${OUTPUT_DIR}/path2-com-fix.png`);
+    await loginAsKanbanAdmin(page);
+    await openKanban(page, vacancyId);
 
     const preScreeningCount = await page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]').textContent();
-    console.log(`[Gate 3] PRE_SCREENING após webhook: ${preScreeningCount}`);
+    expect(Number(preScreeningCount), 'PRE_SCREENING deve ter >= 2 cards (órfã + gate3)').toBeGreaterThanOrEqual(2);
 
-    // Cleanup do worker gate3
-    execSync(
-      `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c "DELETE FROM worker_job_applications WHERE worker_id IN (SELECT id FROM workers WHERE email='${email}'); DELETE FROM encuadres WHERE worker_id IN (SELECT id FROM workers WHERE email='${email}'); DELETE FROM worker_service_areas WHERE worker_id IN (SELECT id FROM workers WHERE email='${email}'); DELETE FROM workers WHERE email='${email}';"`,
-      { stdio: 'pipe' },
-    );
+    await expect(
+      page.locator('[data-testid="kanban-board"]'),
+    ).toHaveScreenshot('kanban-orphan-gate3-webhook.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── Gate 4 — Drag test (card órfão sem encuadreId) ────────────────────────
+  // ── Gate 4 — Drag de card órfão (sem encuadreId) ──────────────────────────
+  //
+  // Diagnóstico: identifica se o drag chega a disparar PUT /move e, se sim,
+  // qual id é usado na URL e o status retornado. Não assume um cenário fixo —
+  // preserva a natureza exploratória original do gate.
 
   test('Gate4 — drag de card órfão: identifica endpoint e Cenário A/B/C', async ({ page }) => {
     const capturedRequests: { method: string; url: string; body: string; status: number }[] = [];
 
-    // 1. Login (instala interceptores do helper internamente)
     await loginAsKanbanAdmin(page);
-    // 2. Mock do vacancy detail com prioridade (LIFO — depois do catch-all do helper)
-    await installVacancyDetailMockWithPriority(page);
-    // 3. Interceptor de move com prioridade máxima (LIFO — último registrado)
     await page.route('**/api/admin/encuadres/**', async (route: Route) => {
       const req = route.request();
       if (req.method() === 'PUT' && req.url().includes('/move')) {
@@ -285,42 +283,53 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
       await route.continue();
     });
 
-    await forceKanbanView(page);
-    await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-    await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 25_000 });
-    await page.waitForTimeout(1_500);
+    await openKanban(page, vacancyId);
 
-    const draggableCard = page.locator(`[data-testid="kanban-draggable-${ORPHAN_WJA_ID_INVITED}"]`);
+    const draggableCard = page.locator(`[data-testid="kanban-draggable-${orphanWjaIdInvited}"]`);
     await expect(draggableCard, 'Card órfão deve estar visível antes do drag').toBeVisible();
 
-    const confirmedColumn = page.locator('[data-testid="kanban-column-CONFIRMED"]');
+    // Scroll vertical para expor o board no viewport
+    await page.evaluate(() => {
+      const board = document.querySelector('[data-testid="kanban-board"]');
+      if (board) board.scrollIntoView({ block: 'start' });
+    });
+    await page.waitForTimeout(200);
+
+    // Card órfão está em INVITED (1ª coluna) — bounding box capturada ANTES de
+    // rolar o board horizontalmente até CONFIRMED, senão o card sai do viewport
+    // (9 colunas, feature BLOQUEADO, não cabem em 1920px de uma vez).
     const cardBox = await draggableCard.boundingBox();
-    const colBox = await confirmedColumn.boundingBox();
+    if (!cardBox) throw new Error('Não foi possível obter bounding box do card órfão');
 
-    if (!cardBox || !colBox) {
-      throw new Error('Não foi possível obter bounding box do card ou coluna CONFIRMED');
-    }
-
-    console.log(`[Gate 4] Card bbox: x=${Math.round(cardBox.x)}, y=${Math.round(cardBox.y)}, w=${Math.round(cardBox.width)}, h=${Math.round(cardBox.height)}`);
-    console.log(`[Gate 4] CONFIRMED col bbox: x=${Math.round(colBox.x)}, y=${Math.round(colBox.y)}`);
-
-    // Drag simulado: PointerSensor tem activationConstraint distance=8
     const startX = cardBox.x + cardBox.width / 2;
     const startY = cardBox.y + cardBox.height / 2;
-    const endX = colBox.x + colBox.width / 2;
-    const endY = colBox.y + 100; // Dentro da coluna mas não no header
 
+    console.log(`[Gate 4] Card bbox: x=${Math.round(cardBox.x)}, y=${Math.round(cardBox.y)}, w=${Math.round(cardBox.width)}, h=${Math.round(cardBox.height)}`);
+
+    // Drag simulado: PointerSensor tem activationConstraint distance=8
     await page.mouse.move(startX, startY);
     await page.mouse.down();
     await page.waitForTimeout(100);
     // Mover 12px primeiro para ativar o PointerSensor (distance=8)
     await page.mouse.move(startX + 12, startY, { steps: 3 });
+
+    // Rolar o board até CONFIRMED ficar visível (mouse já pressionado no card
+    // órfão) — mesma técnica de dndKitDrag.ts (scrollIntoViewIfNeeded mid-drag).
+    const confirmedColumn = page.locator('[data-testid="kanban-column-CONFIRMED"]');
+    await confirmedColumn.scrollIntoViewIfNeeded();
+    const colBox = await confirmedColumn.boundingBox();
+    if (!colBox) throw new Error('Não foi possível obter bounding box da coluna CONFIRMED');
+    console.log(`[Gate 4] CONFIRMED col bbox: x=${Math.round(colBox.x)}, y=${Math.round(colBox.y)}`);
+
+    const endX = colBox.x + colBox.width / 2;
+    const endY = colBox.y + 100; // Dentro da coluna mas não no header
+
     // Mover para a coluna CONFIRMED
     await page.mouse.move(endX, endY, { steps: 20 });
     await page.waitForTimeout(500);
     await page.mouse.up();
     // Aguardar API call + re-render
-    await page.waitForTimeout(4_000);
+    await page.waitForTimeout(3_000);
 
     console.log(`\n[Gate 4] Requests de move capturadas: ${capturedRequests.length}`);
     for (const r of capturedRequests) {
@@ -328,87 +337,61 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     }
 
     let scenario: 'A' | 'B' | 'C' = 'C';
-    let persistedAfterDrag = false;
 
     if (capturedRequests.length === 0) {
       scenario = 'C';
-      console.log('[Gate 4] Cenário C: drag não disparou request de move');
-      console.log('  Possíveis causas: dnd-kit não ativou (distance constraint), ou frontend bloqueia card sem encuadreId');
+      console.log('[Gate 4] Cenário C: drag não disparou request de move (esperado — card sem encuadreId)');
     } else {
       for (const r of capturedRequests) {
         if (r.url.includes('/encuadres/') && r.url.includes('/move')) {
           const encIdInUrl = r.url.split('/encuadres/')[1]?.split('/')[0] ?? '';
           console.log(`[Gate 4] ID na URL de move: ${encIdInUrl}`);
-          console.log(`[Gate 4] WJA ID esperado:   ${ORPHAN_WJA_ID_INVITED}`);
+          console.log(`[Gate 4] WJA ID esperado:   ${orphanWjaIdInvited}`);
 
-          if (encIdInUrl === ORPHAN_WJA_ID_INVITED) {
-            // Frontend usou wja.id como encuadreId
+          if (encIdInUrl === orphanWjaIdInvited) {
             scenario = r.status === 404 ? 'B' : 'A';
             console.log(`[Gate 4] Frontend enviou card.id (wja.id) como encuadreId → status=${r.status}`);
           } else {
             scenario = r.status < 400 ? 'A' : 'B';
             console.log(`[Gate 4] Frontend enviou id diferente: ${encIdInUrl}`);
           }
-          persistedAfterDrag = r.status < 300;
         }
       }
     }
 
-    // Screenshot pós-drag (antes do refresh)
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/drag-result.png`,
-    });
-
     const confirmedAfterDrag = await page.locator('[data-testid="kanban-column-CONFIRMED-count"]').textContent();
     console.log(`[Gate 4] CONFIRMED count após drag: ${confirmedAfterDrag}`);
-
-    // Refresh para verificar persistência
-    await page.reload();
-    await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 20_000 });
-    await page.waitForTimeout(1_500);
-
-    const confirmedAfterRefresh = await page.locator('[data-testid="kanban-column-CONFIRMED-count"]').textContent();
-    console.log(`[Gate 4] CONFIRMED count após refresh: ${confirmedAfterRefresh}`);
-
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/drag-after-refresh.png`,
-    });
-
     console.log(`\n[Gate 4] CENÁRIO: ${scenario}`);
-    console.log(`[Gate 4] Stage persistiu (CONFIRMED>0 após refresh): ${confirmedAfterRefresh !== '0'}`);
 
-    if (scenario === 'B') {
-      console.log('[Gate 4] REGRESSAO DETECTADA: frontend usa card.id (wja.id) como encuadreId → 404');
-      console.log('  Arquivo a adaptar: enlite-frontend/src/presentation/components/features/admin/Kanban/KanbanBoard.tsx:61');
-      console.log('  Fix: usar card.encuadreId ao invés de card.id no handleDragEnd');
-    } else if (scenario === 'A') {
-      console.log('[Gate 4] OK: drag funcionou, stage persistido');
-    } else {
-      console.log('[Gate 4] Cenário C: drag não disparou API — investigar se dnd-kit ativou');
-    }
+    await expect(
+      page.locator('[data-testid="kanban-board"]'),
+    ).toHaveScreenshot('kanban-orphan-gate4-drag-result.png', { maxDiffPixelRatio: 0.05 });
   });
 
   // ── Gate 5 — Contrato da API ──────────────────────────────────────────────
 
   test('Gate5 — contrato da API íntegro: todos os stages presentes', async ({ request }) => {
     const funnelRes = await request.get(
-      `${BACKEND_URL}/api/admin/vacancies/${VACANCY_ID}/funnel`,
+      `${BACKEND_URL}/api/admin/vacancies/${vacancyId}/funnel`,
       { headers: { Authorization: `Bearer ${MOCK_TOKEN}` } },
     );
     expect(funnelRes.status()).toBe(200);
 
-    const body = await funnelRes.json() as {
+    const body = (await funnelRes.json()) as {
       success: boolean;
       data: { stages: Record<string, unknown[]>; totalEncuadres: number };
     };
     expect(body.success).toBe(true);
 
     const stages = body.data.stages;
-    for (const stage of ['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED']) {
+    for (const stage of [
+      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
+      'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
+    ]) {
       expect(stages, `Stage ${stage} deve estar presente`).toHaveProperty(stage);
     }
 
-    console.log('[Gate 5] Contrato da API OK — todos os 8 stages presentes, fix não quebrou estrutura');
+    console.log('[Gate 5] Contrato da API OK — todos os 9 stages presentes, fix não quebrou estrutura');
     console.log(`[Gate 5] Total cards: ${body.data.totalEncuadres}`);
   });
 });

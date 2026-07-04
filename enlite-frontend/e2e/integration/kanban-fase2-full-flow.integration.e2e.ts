@@ -70,9 +70,12 @@ function extractUUID(psqlOutput: string): string | null {
   return match ? match[0] : null;
 }
 
+// Nota: coluna `origen` foi renomeada para `import_source_audit` na migration 197
+// (F8 / ADR-002) — os nomes de variável locais (origen/origenC/origenD) foram
+// mantidos por não impactarem o schema, só o SQL abaixo foi corrigido.
 function queryEncuadreOrigen(workerId: string, jobPostingId: string): string | null {
   const out = runSQL(
-    `SELECT origen FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' ORDER BY created_at DESC LIMIT 1`,
+    `SELECT import_source_audit FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' ORDER BY created_at DESC LIMIT 1`,
   );
   const lines = out.split('\n').filter(l => l.trim());
   const sepIdx = lines.findIndex(l => l.startsWith('-'));
@@ -88,7 +91,7 @@ function countEncuadresByOrigen(
   origen: string,
 ): number {
   const out = runSQL(
-    `SELECT COUNT(*) FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' AND origen = '${origen}'`,
+    `SELECT COUNT(*) FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' AND import_source_audit = '${origen}'`,
   );
   const lines = out.split('\n').filter(l => l.trim());
   const sepIdx = lines.findIndex(l => l.startsWith('-'));
@@ -236,12 +239,12 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
   // ── F1 — Estado inicial: vaga vazia ──────────────────────────────────────────
 
-  test('F1 — Estado inicial: vaga vazia, 7 colunas com 0 cards', async ({ page }) => {
+  test('F1 — Estado inicial: vaga vazia, 9 colunas com 0 cards', async ({ page }) => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
     const colIds = [
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
@@ -270,9 +273,9 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     // Nota: o endpoint track-channel é worker-facing; admin usa SQL equivalente.
     runSQL(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_status, source, application_funnel_stage, created_at, updated_at)
+         (worker_id, job_posting_id, source, application_funnel_stage, created_at, updated_at)
        VALUES
-         ('${workerA_Id}', '${vacancyId}', 'applied', 'manual', 'INVITED', NOW(), NOW())
+         ('${workerA_Id}', '${vacancyId}', 'manual', 'INVITED', NOW(), NOW())
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     );
 
@@ -290,11 +293,13 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       `Trigger deve criar encuadre com origen='auto-trigger' para Path A. Obtido: ${origen}`,
     ).toBe('auto-trigger');
 
-    // ── 3. Refresh Kanban + aguardar card em INVITED ─────────────────────────
+    // ── 3. Refresh Kanban + aguardar card em INICIADO ────────────────────────
     // kanban-card-<wja.id> tem data-stage (KanbanCard usa enc.id = wja.id)
     // kanban-draggable-<wja.id> NÃO tem data-stage, portanto não pode ser usado em waitForCardInStage
+    // Migration 230 (feature BLOQUEADO): stage=INVITED + source='manual' mapeia
+    // para a coluna INICIADO (postulação real, não-bloqueada) — não mais INVITED.
     await loginAsKanbanAdmin(page);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaA_Id}`, 'INVITED');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaA_Id}`, 'INICIADO');
 
     // Aguardar encuadreId (real) ficar disponível via API
     // getRealEncuadreId retorna item.encuadreId — o UUID real do encuadre para PUT /move
@@ -376,11 +381,11 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       `PUT /move deve retornar 2xx. Status: ${capturedMoves[0].status}`,
     ).toBeLessThan(300);
 
-    // ── 7. DOM: card moveu de INVITED para CONFIRMED ──────────────────────────
-    const invitedCol = page.locator('[data-testid="kanban-column-INVITED"]');
+    // ── 7. DOM: card moveu de INICIADO para CONFIRMED ─────────────────────────
+    const iniciadoCol = page.locator('[data-testid="kanban-column-INICIADO"]');
     await expect(
-      invitedCol.locator(`[data-testid="kanban-draggable-${wjaA_Id}"]`),
-      'Card Path A deve ter saído de INVITED',
+      iniciadoCol.locator(`[data-testid="kanban-draggable-${wjaA_Id}"]`),
+      'Card Path A deve ter saído de INICIADO',
     ).not.toBeVisible();
 
     await expect(
@@ -543,6 +548,16 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     });
     await page.waitForTimeout(300);
 
+    // Com 9 colunas (feature BLOQUEADO), COMPLETED e SELECTED ficam fora do
+    // viewport 1920px em scrollLeft=0. Scroll horizontal do board até o fim
+    // (mesma técnica de kanban-iniciado-blocked-columns K7) para que ambas as
+    // bounding boxes fiquem dentro da área visível para o drag.
+    await page.evaluate(() => {
+      const board = document.querySelector('[data-testid="kanban-board"]');
+      if (board) board.scrollLeft = board.scrollWidth;
+    });
+    await page.waitForTimeout(400);
+
     await expect(draggable, 'Draggable de Path B deve estar visível').toBeVisible();
 
     const selectedCol = page.locator('[data-testid="kanban-column-SELECTED"]');
@@ -645,9 +660,9 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       // comportamento do encuadre é idêntico — testamos o mesmo path de código.
       runSQL(
         `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, application_funnel_stage, source, application_status, created_at, updated_at)
+           (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
          VALUES
-           ('${workerC_Id}', '${vacancyId}', 'INVITED', 'talent_search', 'applied', NOW(), NOW())
+           ('${workerC_Id}', '${vacancyId}', 'INVITED', 'talent_search', NOW(), NOW())
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       );
       // Trigger 189 cria encuadre com origen='auto-trigger'
@@ -740,9 +755,9 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     // Este é exatamente o cenário que a migration 189 (trigger) protege.
     runSQL(
       `INSERT INTO worker_job_applications
-         (worker_id, job_posting_id, application_funnel_stage, source, application_status, created_at, updated_at)
+         (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
        VALUES
-         ('${workerD_Id}', '${vacancyId}', 'INVITED', 'direct-insert-test', 'applied', NOW(), NOW())
+         ('${workerD_Id}', '${vacancyId}', 'INVITED', 'direct-insert-test', NOW(), NOW())
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     );
 
@@ -905,9 +920,9 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     // Isso simula WJAs órfãs pré-existentes que existiam antes da migration 189.
     runSQL(
       `ALTER TABLE worker_job_applications DISABLE TRIGGER trg_ensure_encuadre_on_wja_insert;
-       INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, application_status, created_at, updated_at)
-       VALUES ('${orphanWorker1Id}', '${vacancyId}', 'INVITED', 'pre-migration-orphan', 'applied', NOW(), NOW()),
-              ('${orphanWorker2Id}', '${vacancyId}', 'INVITED', 'pre-migration-orphan', 'applied', NOW(), NOW())
+       INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
+       VALUES ('${orphanWorker1Id}', '${vacancyId}', 'INVITED', 'pre-migration-orphan', NOW(), NOW()),
+              ('${orphanWorker2Id}', '${vacancyId}', 'INVITED', 'pre-migration-orphan', NOW(), NOW())
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING;
        ALTER TABLE worker_job_applications ENABLE TRIGGER trg_ensure_encuadre_on_wja_insert;`,
     );
@@ -958,7 +973,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
     // ── 4. Executar SQL do backfill (SQL da migration 188) ─────────────────────
     runSQL(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
        SELECT wja.worker_id, wja.job_posting_id, 'backfill-td036',
               md5('backfill-td036|' || wja.worker_id::text || '|' || wja.job_posting_id::text)
        FROM worker_job_applications wja
@@ -1055,7 +1070,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
     // ── 8. Idempotência: rodar backfill de novo → 0 inserts ──────────────────
     const idempotentCheck = runSQL(
-      `INSERT INTO encuadres (worker_id, job_posting_id, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, import_source_audit, dedup_hash)
        SELECT wja.worker_id, wja.job_posting_id, 'backfill-td036',
               md5('backfill-td036|' || wja.worker_id::text || '|' || wja.job_posting_id::text)
        FROM worker_job_applications wja

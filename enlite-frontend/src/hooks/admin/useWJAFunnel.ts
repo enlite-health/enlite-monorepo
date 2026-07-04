@@ -46,6 +46,8 @@ interface FunnelEncuadre {
 
 export interface FunnelStages {
   INVITED: FunnelEncuadre[];
+  /** Blocked postulation attempts (worker_blocked_applications) — no encuadreId, cards are drag-disabled */
+  BLOQUEADO: FunnelEncuadre[];
   INICIADO: FunnelEncuadre[];
   PRE_SCREENING: FunnelEncuadre[];
   IN_PROGRESS: FunnelEncuadre[];

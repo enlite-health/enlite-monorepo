@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import crypto from 'crypto';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -10,6 +9,7 @@ import {
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
 import { RecordBlockedAttemptUseCase } from '../../application/RecordBlockedAttemptUseCase';
+import { CreateManualWjaWithEncuadreUseCase } from '../../application/CreateManualWjaWithEncuadreUseCase';
 
 const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
 
@@ -41,11 +41,13 @@ export class WorkerApplicationsController {
   private readonly db: Pool;
   private readonly getProgressUseCase: GetWorkerProgressUseCase;
   private readonly recordBlockedAttemptUseCase: RecordBlockedAttemptUseCase;
+  private readonly createManualWjaWithEncuadreUseCase: CreateManualWjaWithEncuadreUseCase;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.getProgressUseCase = new GetWorkerProgressUseCase(new WorkerRepository());
     this.recordBlockedAttemptUseCase = new RecordBlockedAttemptUseCase();
+    this.createManualWjaWithEncuadreUseCase = new CreateManualWjaWithEncuadreUseCase();
   }
 
   private getAuthUid(req: Request): string | null {
@@ -127,38 +129,16 @@ export class WorkerApplicationsController {
         throw err;
       }
 
-      // Upsert WJA: worker self-applied via public link, lands in INVITED column.
+      // Worker self-applied via public link, lands in INVITED column.
       // (Clicou no link, ainda não entrou no WhatsApp Talentum — INITIATED só via webhook.)
-      // ON CONFLICT: only sets acquisition_channel if currently NULL (first-touch wins).
-      // F7.c (ADR-004): application_status removido.
-      await this.db.query(
-        `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, source, acquisition_channel, application_funnel_stage)
-         VALUES ($1, $2, 'manual', $3, 'INVITED')
-         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-           acquisition_channel = CASE
-             WHEN worker_job_applications.acquisition_channel IS NULL THEN EXCLUDED.acquisition_channel
-             ELSE worker_job_applications.acquisition_channel
-           END,
-           updated_at = NOW()`,
-        [worker.id, jobPostingId, channel],
-      );
-
-      // Ensure encuadre exists so the worker appears in the Kanban INITIATED column.
-      // Uses decrypted worker name. Only creates if no encuadre exists (preserves Talentum encuadres).
-      const dedupHash = crypto.createHash('md5')
-        .update(`social-link|${worker.id}|${jobPostingId}`)
-        .digest('hex');
-
-      await this.db.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
-         SELECT $1, $2, $4, $5, $6, $3
-         WHERE NOT EXISTS (
-           SELECT 1 FROM encuadres e WHERE e.worker_id = $1 AND e.job_posting_id = $2
-         )
-         ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
-        [worker.id, jobPostingId, dedupHash, worker.name, worker.phone, channel],
-      );
+      // Extraído para CreateManualWjaWithEncuadreUseCase (reusado por PromoteBlockedApplicationsUseCase).
+      await this.createManualWjaWithEncuadreUseCase.execute(this.db, {
+        workerId: worker.id,
+        jobPostingId,
+        acquisitionChannel: channel,
+        workerName: worker.name,
+        workerPhone: worker.phone,
+      });
 
       res.status(200).json({ success: true });
     } catch (error) {

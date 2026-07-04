@@ -12,9 +12,15 @@
  *   1. Move to source center
  *   2. pointerdown
  *   3. Small move (15 px) in multiple steps to exceed the 8 px constraint
- *   4. Main move to target center in many steps so dnd-kit's collision
- *      detection registers the correct drop target
- *   5. pointerup
+ *   4. Scroll target into view (mid-drag) — the board has more droppable
+ *      columns than fit in one 1920px viewport (feature BLOQUEADO, 2026-07-03,
+ *      added a 9th column), so source and target frequently can't be visible
+ *      simultaneously. Source position is captured BEFORE this scroll (mouse
+ *      is already down by then), and only the target needs to be visible for
+ *      the final move — mirrors a real user scrolling the board mid-drag.
+ *   5. Main move to target center (re-measured post-scroll) in many steps so
+ *      dnd-kit's collision detection registers the correct drop target
+ *   6. pointerup
  *
  * Tested against dnd-kit v6 in Playwright Chromium (headless + headed).
  */
@@ -67,15 +73,11 @@ export async function dndKitDrag(
   } = opts;
 
   const sb = await source.boundingBox();
-  const tb = await target.boundingBox();
 
   if (!sb) throw new Error('dndKitDrag: source element has no bounding box (not visible?)');
-  if (!tb) throw new Error('dndKitDrag: target element has no bounding box (not visible?)');
 
   const startX = sb.x + sb.width / 2;
   const startY = sb.y + sb.height / 2;
-  const endX = tb.x + tb.width / 2;
-  const endY = tb.y + tb.height / 2;
 
   // 1. Position cursor on source
   await page.mouse.move(startX, startY);
@@ -95,6 +97,15 @@ export async function dndKitDrag(
     startY + 5,
     { steps: activationSteps },
   );
+
+  // 4b. Scroll the (horizontally overflowing) board so the target column is
+  //     visible, then re-measure — source may now be off-screen, which is
+  //     fine: the pointer is already "down" at its captured start position.
+  await target.scrollIntoViewIfNeeded();
+  const tb = await target.boundingBox();
+  if (!tb) throw new Error('dndKitDrag: target element has no bounding box after scrollIntoViewIfNeeded (not visible?)');
+  const endX = tb.x + tb.width / 2;
+  const endY = tb.y + tb.height / 2;
 
   // 5. Main move towards drop target in many steps so dnd-kit's collision
   //    detection can compute the correct `over` container at each frame.

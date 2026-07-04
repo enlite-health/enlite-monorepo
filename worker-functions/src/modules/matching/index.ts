@@ -29,6 +29,14 @@ export { ProcessTalentumPrescreening } from './application/ProcessTalentumPrescr
 export type { IJobPostingLookup } from './application/ProcessTalentumPrescreening';
 export { RecordBlockedAttemptUseCase } from './application/RecordBlockedAttemptUseCase';
 export type { RecordBlockedAttemptParams } from './application/RecordBlockedAttemptUseCase';
+export { CreateManualWjaWithEncuadreUseCase } from './application/CreateManualWjaWithEncuadreUseCase';
+export type {
+  CreateManualWjaWithEncuadreParams,
+  CreateManualWjaWithEncuadreResult,
+} from './application/CreateManualWjaWithEncuadreUseCase';
+export { PromoteBlockedApplicationsUseCase } from './application/PromoteBlockedApplicationsUseCase';
+export type { PromoteBlockedApplicationsResult } from './application/PromoteBlockedApplicationsUseCase';
+export { createPromoteBlockedApplicationsHandler } from './application/PromoteBlockedApplicationsEventHandler';
 
 // ── Interface — Controllers ──────────────────────────────────────
 export { EncuadreController } from './interfaces/controllers/EncuadreController';

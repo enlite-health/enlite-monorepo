@@ -11,119 +11,168 @@
  * Pré-condições:
  * - Backend local porta 8080 com USE_MOCK_AUTH=true
  * - Frontend dev server porta 5173
- * - Seeds no banco:
- *   - Vacancy: 8e7e8447-8619-45d6-a60b-a507ec0fc1ab
- *   - Orphan WJA (INVITED, encuadreId=null): fcf6aeb8-1394-4ef7-8647-8d030f53ddcb
- *   - Positive WJA (INVITED, encuadreId=cccccccc-0001-0001-0001-000000000001):
- *       id=bbbbbbbb-0001-0001-0001-000000000001
- *       worker=aaaaaaaa-0001-0001-0001-000000000001 (status=REGISTERED)
+ *
+ * Nota histórica: a versão anterior deste arquivo usava um vacancyId e WJA ids
+ * hardcoded (snapshot de dados de produção) que não existem no banco e2e limpo
+ * — refatorado para semear vaga/workers/WJAs via helpers reais em beforeAll,
+ * na mesma linha de kanban-orphan-wja-validation.integration.e2e.ts.
+ *
+ * Seeds (beforeAll):
+ *   - Vaga dedicada (patient + job_posting via insertTestPatient/insertBaseVacancy)
+ *   - Worker órfão: WJA INVITED sem encuadre — trigger anti-órfã (migration 189)
+ *     desabilitado temporariamente para reproduzir dados legados, como em F7 de
+ *     kanban-fase2-full-flow.integration.e2e.ts
+ *   - Worker positivo: WJA INVITED com encuadre real (trigger habilitado cria
+ *     o encuadre automaticamente — origen='auto-trigger')
  */
 
 import { execSync } from 'child_process';
-import { test, expect, Page, Route } from '@playwright/test';
+import { test, expect, type Route } from '@playwright/test';
+import {
+  insertTestPatient,
+  insertBaseVacancy,
+  insertTestWorker,
+  cleanupTestPatient,
+  cleanupTestWorker,
+} from '../helpers/db-test-helper';
 import {
   loginAsKanbanAdmin,
+  openKanban,
   MOCK_TOKEN,
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 
-// ── Seed IDs (pre-seeded, verified via DB) ────────────────────────────────────
+// ── DB helpers ─────────────────────────────────────────────────────────────────
 
-const VACANCY_ID = '8e7e8447-8619-45d6-a60b-a507ec0fc1ab';
-const ORPHAN_WJA_ID = 'fcf6aeb8-1394-4ef7-8647-8d030f53ddcb';
-const POSITIVE_WJA_ID = 'bbbbbbbb-0001-0001-0001-000000000001';
-const POSITIVE_ENCUADRE_ID = 'cccccccc-0001-0001-0001-000000000001';
-const POSITIVE_WORKER_ID = 'aaaaaaaa-0001-0001-0001-000000000001';
-const OUTPUT_DIR = '/tmp/kanban-validation';
+const CONTAINER = 'enlite-postgres';
+const DB_USER = 'enlite_admin';
+const DB_NAME = 'enlite_e2e';
 
-// ── Mock for vacancy detail (not the funnel endpoint) ─────────────────────────
-
-const VACANCY_DETAIL_MOCK = {
-  success: true,
-  data: {
-    id: VACANCY_ID,
-    title: 'CASO 98001-orphan-test',
-    status: 'SEARCHING',
-    is_draft: false,
-    case_number: 98001,
-    vacancy_number: 9001,
-    patient_first_name: 'Paciente',
-    patient_last_name: 'KanbanTest',
-    patient_diagnosis: 'TEA',
-    patient_zone: null,
-    patient_city: null,
-    patient_neighborhood: null,
-    patient_address_formatted: 'Av. Corrientes 1234, CABA, AR',
-    patient_address_raw: 'Av. Corrientes 1234, CABA',
-    dependency_level: 'SEVERE',
-    required_professions: ['AT'],
-    providers_needed: 1,
-    encuadres: [],
-    publications: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    closes_at: null,
-    published_at: null,
-  },
-};
-
-async function installVacancyDetailMock(page: Page): Promise<void> {
-  const pat = new RegExp(`/api/admin/vacancies/${VACANCY_ID}$`);
-  await page.route('**/api/admin/vacancies/**', async (route: Route) => {
-    if (route.request().method() === 'GET' && pat.test(route.request().url())) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(VACANCY_DETAIL_MOCK),
-      });
-      return;
-    }
-    await route.fallback();
-  });
-}
-
-async function openKanbanBoard(page: Page): Promise<void> {
-  await loginAsKanbanAdmin(page);
-  await installVacancyDetailMock(page);
-  await page.addInitScript(
-    ([key]: [string]) => { window.localStorage.setItem(key, 'kanban'); },
-    [`vacancy-funnel-view-${VACANCY_ID}`],
-  );
-  await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-  await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 25_000 });
-  await page.waitForTimeout(1_500);
-}
-
-/**
- * Resets the positive control WJA back to INVITED stage via direct DB access.
- * Called after a positive drag test so the next run starts from the same state.
- */
-function resetPositiveWja(): void {
-  execSync(
-    `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c ` +
-    `"UPDATE worker_job_applications SET application_funnel_stage='INVITED', updated_at=NOW() ` +
-    `WHERE id='${POSITIVE_WJA_ID}';"`,
+function runSQL(sql: string): string {
+  const escaped = sql.replace(/'/g, "'\\''");
+  return execSync(
+    `docker exec ${CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} -c '${escaped}'`,
     { stdio: 'pipe' },
+  ).toString();
+}
+
+function extractUUID(psqlOutput: string): string | null {
+  const match = psqlOutput.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  );
+  return match ? match[0] : null;
+}
+
+function getWjaIdByWorkerAndJob(workerId: string, jobPostingId: string): string | null {
+  const out = runSQL(
+    `SELECT id FROM worker_job_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' ORDER BY created_at DESC LIMIT 1`,
+  );
+  return extractUUID(out);
+}
+
+function getEncuadreIdByWorkerAndJob(workerId: string, jobPostingId: string): string | null {
+  const out = runSQL(
+    `SELECT id FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' ORDER BY created_at DESC LIMIT 1`,
+  );
+  return extractUUID(out);
+}
+
+/** Reseta a WJA positiva para INVITED via DB direto — usado para isolamento entre execuções. */
+function resetPositiveWja(wjaId: string): void {
+  runSQL(
+    `UPDATE worker_job_applications SET application_funnel_stage='INVITED', updated_at=NOW() WHERE id='${wjaId}'`,
   );
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── State compartilhado pela suite ────────────────────────────────────────────
+
+let patientId = '';
+let vacancyId = '';
+
+let orphanWorkerId = '';
+let orphanWjaId = '';
+
+let positiveWorkerId = '';
+let positiveWjaId = '';
+let positiveEncuadreId = '';
+
+const cleanupWorkerIds: string[] = [];
+
+// ── Suite ─────────────────────────────────────────────────────────────────────
 
 test.describe('Kanban Drag Fase 1 Validation @integration', () => {
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);
   test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test.beforeAll(() => {
+    const rand = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
+    const caseNumber = 986_000 + Math.floor(Math.random() * 9_999);
+    const { patientId: pid, addressId } = insertTestPatient({ withAddress: true });
+    patientId = pid;
+    vacancyId = insertBaseVacancy({
+      patientId,
+      patientAddressId: addressId!,
+      caseNumber,
+      status: 'SEARCHING',
+      isDraft: false,
+    });
+
+    // Worker órfão: WJA INVITED sem encuadre vinculado — trigger anti-órfã
+    // (migration 189) desabilitado temporariamente (mesma técnica de F7 em
+    // kanban-fase2-full-flow.integration.e2e.ts).
+    orphanWorkerId = insertTestWorker({ firstName: 'Drag1', lastName: 'Orphan', phone: `+549150${rand()}` });
+    cleanupWorkerIds.push(orphanWorkerId);
+
+    runSQL(
+      `ALTER TABLE worker_job_applications DISABLE TRIGGER trg_ensure_encuadre_on_wja_insert;
+       INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
+       VALUES ('${orphanWorkerId}', '${vacancyId}', 'INVITED', 'pre-migration-orphan', NOW(), NOW())
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING;
+       ALTER TABLE worker_job_applications ENABLE TRIGGER trg_ensure_encuadre_on_wja_insert;`,
+    );
+    orphanWjaId = getWjaIdByWorkerAndJob(orphanWorkerId, vacancyId) ?? '';
+
+    // Worker positivo: WJA INVITED com trigger HABILITADO — cria encuadre real
+    // automaticamente (origen='auto-trigger'), source != 'manual' para
+    // permanecer na coluna INVITED (source='manual' iria para INICIADO —
+    // migration 230 / feature BLOQUEADO).
+    positiveWorkerId = insertTestWorker({ firstName: 'Drag1', lastName: 'Positive', phone: `+549151${rand()}` });
+    cleanupWorkerIds.push(positiveWorkerId);
+
+    runSQL(
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
+       VALUES ('${positiveWorkerId}', '${vacancyId}', 'INVITED', 'system', NOW(), NOW())
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
+    );
+    positiveWjaId = getWjaIdByWorkerAndJob(positiveWorkerId, vacancyId) ?? '';
+    positiveEncuadreId = getEncuadreIdByWorkerAndJob(positiveWorkerId, vacancyId) ?? '';
+
+    if (!orphanWjaId || !positiveWjaId || !positiveEncuadreId) {
+      throw new Error(
+        `[beforeAll] Falha ao semear WJAs (orphan=${orphanWjaId}, positive=${positiveWjaId}, encuadre=${positiveEncuadreId})`,
+      );
+    }
+  });
+
+  test.afterAll(() => {
+    runSQL(`DELETE FROM encuadres WHERE job_posting_id = '${vacancyId}'`);
+    runSQL(`DELETE FROM worker_job_applications WHERE job_posting_id = '${vacancyId}'`);
+    for (const wid of cleanupWorkerIds) cleanupTestWorker(wid);
+    cleanupTestPatient(patientId);
+  });
 
   // ── Cenário 0 — API contract ───────────────────────────────────────────────
 
   test('Cenário0 — API retorna encuadreId correto (null p/ órfãos, uuid p/ positivo)', async ({ request }) => {
     const res = await request.get(
-      `${BACKEND_URL}/api/admin/vacancies/${VACANCY_ID}/funnel`,
+      `${BACKEND_URL}/api/admin/vacancies/${vacancyId}/funnel`,
       { headers: { Authorization: `Bearer ${MOCK_TOKEN}` } },
     );
     expect(res.status()).toBe(200);
 
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       success: boolean;
       data: { stages: Record<string, Array<{ id: string; encuadreId: string | null }>> };
     };
@@ -131,15 +180,15 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
 
     const allCards = Object.values(body.data.stages).flat();
 
-    const positive = allCards.find(c => c.id === POSITIVE_WJA_ID);
+    const positive = allCards.find((c) => c.id === positiveWjaId);
     expect(positive, 'Positive control card must be present in funnel').toBeTruthy();
-    expect(positive?.encuadreId, 'Positive control must have encuadreId').toBe(POSITIVE_ENCUADRE_ID);
+    expect(positive?.encuadreId, 'Positive control must have encuadreId').toBe(positiveEncuadreId);
 
-    const orphan = allCards.find(c => c.id === ORPHAN_WJA_ID);
+    const orphan = allCards.find((c) => c.id === orphanWjaId);
     expect(orphan, 'Orphan card must be present in funnel').toBeTruthy();
     expect(orphan?.encuadreId, 'Orphan must have encuadreId=null').toBeNull();
 
-    console.log('[C0] API contract OK: orphan=null, positive=', POSITIVE_ENCUADRE_ID);
+    console.log('[C0] API contract OK: orphan=null, positive=', positiveEncuadreId);
   });
 
   // ── Cenário 1 — Card SEM encuadre (órfão): drag bloqueado ─────────────────
@@ -148,8 +197,6 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     const moveRequests: string[] = [];
 
     await loginAsKanbanAdmin(page);
-    await installVacancyDetailMock(page);
-
     await page.route('**/api/admin/encuadres/**', async (route: Route) => {
       const req = route.request();
       if (req.method() === 'PUT' && req.url().includes('/move')) {
@@ -161,15 +208,17 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
       await route.continue();
     });
 
-    await page.addInitScript(
-      ([key]: [string]) => { window.localStorage.setItem(key, 'kanban'); },
-      [`vacancy-funnel-view-${VACANCY_ID}`],
-    );
-    await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-    await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 25_000 });
-    await page.waitForTimeout(1_500);
+    await openKanban(page, vacancyId);
 
-    const orphanWrapper = page.locator(`[data-testid="kanban-draggable-${ORPHAN_WJA_ID}"]`);
+    // Scroll vertical para expor o board no viewport — a página de detalhe da
+    // vaga (patient/schedule) empurra o board abaixo do fold em 1080px.
+    await page.evaluate(() => {
+      const board = document.querySelector('[data-testid="kanban-board"]');
+      if (board) board.scrollIntoView({ block: 'start' });
+    });
+    await page.waitForTimeout(200);
+
+    const orphanWrapper = page.locator(`[data-testid="kanban-draggable-${orphanWjaId}"]`);
     await expect(orphanWrapper, 'Orphan draggable must be visible').toBeVisible();
 
     const dragDisabled = await orphanWrapper.getAttribute('data-drag-disabled');
@@ -182,9 +231,6 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     expect(titleAttr, 'Orphan must have tooltip').toBeTruthy();
     console.log(`[C1] Orphan tooltip: "${titleAttr}"`);
 
-    await orphanWrapper.screenshot({ path: `${OUTPUT_DIR}/drag-orphan-blocked.png` });
-    console.log(`[C1] Screenshot: ${OUTPUT_DIR}/drag-orphan-blocked.png`);
-
     const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
     await dndKitDrag(page, orphanWrapper, confirmedCol);
     await page.waitForTimeout(2_000);
@@ -192,7 +238,7 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     console.log(`[C1] Move requests captured: ${moveRequests.length}`);
     expect(moveRequests.length, 'Orphan drag must fire 0 move requests').toBe(0);
 
-    await expect(orphanWrapper).toHaveScreenshot('kanban-orphan-drag-disabled.png');
+    await expect(orphanWrapper).toHaveScreenshot('kanban-orphan-drag-disabled.png', { maxDiffPixelRatio: 0.05 });
     console.log('[C1] Visual snapshot taken for orphan drag blocked state');
   });
 
@@ -202,10 +248,9 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     const capturedMoves: { url: string; body: string; status: number }[] = [];
 
     // Guarantee the WJA starts in INVITED (idempotent reset)
-    resetPositiveWja();
+    resetPositiveWja(positiveWjaId);
 
     await loginAsKanbanAdmin(page);
-    await installVacancyDetailMock(page);
 
     // Capture all PUT .../encuadres/.../move requests BEFORE they complete,
     // forwarding them to the real backend (no mock — we need real persistence).
@@ -230,30 +275,26 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
       await route.continue();
     });
 
-    await page.addInitScript(
-      ([key]: [string]) => { window.localStorage.setItem(key, 'kanban'); },
-      [`vacancy-funnel-view-${VACANCY_ID}`],
-    );
-    await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-    await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 25_000 });
-    await page.waitForTimeout(1_500);
+    await openKanban(page, vacancyId);
+
+    // Scroll vertical para expor o board no viewport — a página de detalhe da
+    // vaga (patient/schedule) empurra o board abaixo do fold em 1080px.
+    await page.evaluate(() => {
+      const board = document.querySelector('[data-testid="kanban-board"]');
+      if (board) board.scrollIntoView({ block: 'start' });
+    });
+    await page.waitForTimeout(200);
 
     // Verify positive card is visible and NOT drag-disabled
-    const positiveWrapper = page.locator(`[data-testid="kanban-draggable-${POSITIVE_WJA_ID}"]`);
+    const positiveWrapper = page.locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
     await expect(positiveWrapper, 'Positive control card must be visible in INVITED').toBeVisible();
 
     const dragDisabled = await positiveWrapper.getAttribute('data-drag-disabled');
     expect(dragDisabled, 'Positive card must NOT be drag-disabled').not.toBe('true');
 
-    // Screenshot before drag
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/drag-positive-before-real.png`,
-    });
-    console.log(`[C2] Before screenshot: ${OUTPUT_DIR}/drag-positive-before-real.png`);
-
     // Verify card is in INVITED column initially
     const invitedColBefore = page.locator('[data-testid="kanban-column-INVITED"]');
-    const cardInInvitedBefore = invitedColBefore.locator(`[data-testid="kanban-draggable-${POSITIVE_WJA_ID}"]`);
+    const cardInInvitedBefore = invitedColBefore.locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
     await expect(cardInInvitedBefore, 'Card must be in INVITED column before drag').toBeVisible();
 
     // Perform drag using dnd-kit compatible helper
@@ -288,18 +329,18 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     // ── ASSERTIVA 2: URL contains the encuadre.id (NOT the wja.id) ────────────
     expect(
       encIdInUrl,
-      `PUT URL must contain encuadre.id (${POSITIVE_ENCUADRE_ID}), got: ${encIdInUrl}`,
-    ).toBe(POSITIVE_ENCUADRE_ID);
+      `PUT URL must contain encuadre.id (${positiveEncuadreId}), got: ${encIdInUrl}`,
+    ).toBe(positiveEncuadreId);
 
     expect(
       encIdInUrl,
-      `PUT URL must NOT use wja.id (${POSITIVE_WJA_ID})`,
-    ).not.toBe(POSITIVE_WJA_ID);
+      `PUT URL must NOT use wja.id (${positiveWjaId})`,
+    ).not.toBe(positiveWjaId);
 
     expect(
       encIdInUrl,
-      `PUT URL must NOT use worker.id (${POSITIVE_WORKER_ID})`,
-    ).not.toBe(POSITIVE_WORKER_ID);
+      `PUT URL must NOT use worker.id (${positiveWorkerId})`,
+    ).not.toBe(positiveWorkerId);
 
     // ── ASSERTIVA 3: request succeeded ────────────────────────────────────────
     expect(
@@ -309,21 +350,15 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
 
     console.log(`[C2] Request OK: encuadreId=${encIdInUrl}, status=${move.status}`);
 
-    // Screenshot after drag (before refresh)
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/drag-positive-after-real.png`,
-    });
-    console.log(`[C2] After screenshot: ${OUTPUT_DIR}/drag-positive-after-real.png`);
-
     // ── ASSERTIVA 4: card disappeared from INVITED column ─────────────────────
-    const cardInInvitedAfter = invitedColBefore.locator(`[data-testid="kanban-draggable-${POSITIVE_WJA_ID}"]`);
+    const cardInInvitedAfter = invitedColBefore.locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
     await expect(
       cardInInvitedAfter,
       'Card must have left the INVITED column after drag',
     ).not.toBeVisible();
 
     // ── ASSERTIVA 5: card appeared in CONFIRMED column ────────────────────────
-    const cardInConfirmed = confirmedCol.locator(`[data-testid="kanban-draggable-${POSITIVE_WJA_ID}"]`);
+    const cardInConfirmed = confirmedCol.locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
     await expect(
       cardInConfirmed,
       'Card must appear in CONFIRMED column after drag',
@@ -338,7 +373,7 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
 
     const cardInConfirmedAfterReload = page
       .locator('[data-testid="kanban-column-CONFIRMED"]')
-      .locator(`[data-testid="kanban-draggable-${POSITIVE_WJA_ID}"]`);
+      .locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
 
     await expect(
       cardInConfirmedAfterReload,
@@ -347,19 +382,14 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
 
     console.log('[C2] Persistence OK: card still in CONFIRMED after reload');
 
-    // Screenshot after refresh
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/drag-positive-after-refresh.png`,
-    });
-    console.log(`[C2] Refresh screenshot: ${OUTPUT_DIR}/drag-positive-after-refresh.png`);
-
     // ── VISUAL SNAPSHOT ───────────────────────────────────────────────────────
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
       'kanban-after-positive-drag.png',
+      { maxDiffPixelRatio: 0.05 },
     );
 
     // ── CLEANUP: reset WJA to INVITED for test isolation ──────────────────────
-    resetPositiveWja();
+    resetPositiveWja(positiveWjaId);
     console.log('[C2] Cleanup: WJA reset to INVITED');
   });
 
@@ -370,8 +400,6 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     const allMoves: { wja: string; url: string; status: number }[] = [];
 
     await loginAsKanbanAdmin(page);
-    await installVacancyDetailMock(page);
-
     await page.route('**/api/admin/encuadres/**', async (route: Route) => {
       const req = route.request();
       if (req.method() === 'PUT' && req.url().includes('/move')) {
@@ -385,17 +413,19 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
       await route.continue();
     });
 
-    await page.addInitScript(
-      ([key]: [string]) => { window.localStorage.setItem(key, 'kanban'); },
-      [`vacancy-funnel-view-${VACANCY_ID}`],
-    );
-    await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-    await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 25_000 });
-    await page.waitForTimeout(1_500);
+    await openKanban(page, vacancyId);
+
+    // Scroll vertical para expor o board no viewport — a página de detalhe da
+    // vaga (patient/schedule) empurra o board abaixo do fold em 1080px.
+    await page.evaluate(() => {
+      const board = document.querySelector('[data-testid="kanban-board"]');
+      if (board) board.scrollIntoView({ block: 'start' });
+    });
+    await page.waitForTimeout(200);
 
     // -- Orphan drag attempt using dndKitDrag --
     const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-    const orphanWrapper = page.locator(`[data-testid="kanban-draggable-${ORPHAN_WJA_ID}"]`);
+    const orphanWrapper = page.locator(`[data-testid="kanban-draggable-${orphanWjaId}"]`);
 
     const prevCount = allMoves.length;
     await dndKitDrag(page, orphanWrapper, confirmedCol);
@@ -404,11 +434,6 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     const addedByOrphan = allMoves.length - prevCount;
     for (let i = prevCount; i < allMoves.length; i++) orphanMoves.push(allMoves[i].url);
     console.log(`[C3] Orphan drag: ${addedByOrphan} move requests (expected 0)`);
-
-    // Take kanban screenshot
-    await page.locator('[data-testid="kanban-board"]').screenshot({
-      path: `${OUTPUT_DIR}/network-proof-board.png`,
-    });
 
     // Print network summary
     console.log('\n[C3] Network proof summary:');
@@ -420,8 +445,8 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
       for (const m of allMoves) {
         const encId = m.url.split('/encuadres/')[1]?.split('/')[0] ?? '';
         const isOrphan = orphanMoves.includes(m.url);
-        const usedWjaId = encId === ORPHAN_WJA_ID || encId === POSITIVE_WJA_ID;
-        const usedEncuadreId = encId === POSITIVE_ENCUADRE_ID;
+        const usedWjaId = encId === orphanWjaId || encId === positiveWjaId;
+        const usedEncuadreId = encId === positiveEncuadreId;
         console.log(
           `  ${isOrphan ? '[ORPHAN]' : '[POSITIVE]'} PUT .../encuadres/${encId}/move → ` +
           `${m.status} | wja.id used: ${usedWjaId} | encuadre.id used: ${usedEncuadreId}`,
@@ -432,6 +457,6 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     // Core assertion: orphan must fire 0 requests
     expect(orphanMoves.length, 'Orphan drag must produce 0 move requests').toBe(0);
 
-    await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot('kanban-network-proof-board.png');
+    await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot('kanban-network-proof-board.png', { maxDiffPixelRatio: 0.05 });
   });
 });

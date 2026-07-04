@@ -10,6 +10,8 @@
  *
  * Renamed from EncuadreFunnelController.test.ts in F7.a (migration 194).
  * Migration 230 (2026-06-26): INITIATED → PRE_SCREENING + INICIADO column added.
+ * Feature BLOQUEADO (2026-07-03): worker_blocked_applications cards moved out of
+ * INICIADO into their own BLOQUEADO column — INICIADO is now real WJAs only.
  */
 
 const mockQuery = jest.fn();
@@ -98,12 +100,13 @@ describe('WJAFunnelController', () => {
 
   // ═══════════════════════════════════════════════════════════════════
   // getEncuadreFunnel — classificação por application_funnel_stage
-  // Migration 230: 8 colunas (INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS,
-  //                           COMPLETED, CONFIRMED, SELECTED, REJECTED)
+  // Migration 230 + feature BLOQUEADO: 9 colunas (INVITED, BLOQUEADO, INICIADO,
+  //                           PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED,
+  //                           SELECTED, REJECTED)
   // ═══════════════════════════════════════════════════════════════════
 
   describe('getEncuadreFunnel', () => {
-    it('classifica encuadres nas 8 colunas por funnel_stage (migration 230)', async () => {
+    it('classifica encuadres nas 9 colunas por funnel_stage (migration 230 + BLOQUEADO)', async () => {
       // Migration 230: INITIATED renomeado para PRE_SCREENING; INICIADO adicionado.
       // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
       // F7.a: PLACED removido (migration 194 — 0 linhas em prod, sync F6 morta)
@@ -132,8 +135,9 @@ describe('WJAFunnelController', () => {
 
       const { stages } = response.data;
 
-      // 8 colunas no kanban (migration 230)
-      expect(Object.keys(stages)).toHaveLength(8);
+      // 9 colunas no kanban (migration 230 + BLOQUEADO)
+      expect(Object.keys(stages)).toHaveLength(9);
+      expect(stages.BLOQUEADO).toHaveLength(0); // sem blocked attempts neste cenário
 
       // NULL → INVITED (coluna de auto-invite / sem source)
       expect(stages.INVITED).toHaveLength(2); // e1 (null stage) + e2 (INVITED+system)
@@ -173,7 +177,7 @@ describe('WJAFunnelController', () => {
       expect(stages.REJECTED[0].id).toBe('e10');
     });
 
-    it('cards bloqueados aparecem em INICIADO com isBlocked=true', async () => {
+    it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -195,9 +199,10 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.BLOQUEADO).toHaveLength(1);
+      expect(stages.INICIADO).toHaveLength(0);
 
-      const card = stages.INICIADO[0] as Record<string, unknown>;
+      const card = stages.BLOQUEADO[0] as Record<string, unknown>;
       expect(card.id).toBe('ba-1');
       expect(card.isBlocked).toBe(true);
       expect(card.blockedReason).toBe('registration_incomplete');
@@ -208,7 +213,7 @@ describe('WJAFunnelController', () => {
       expect(card.workerName).toBe('Ana Blocked');
     });
 
-    it('card bloqueado com worker_not_found → workerName null, sem crash', async () => {
+    it('card bloqueado com worker_not_found → workerName null, sem crash (coluna BLOQUEADO)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -226,23 +231,25 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.INICIADO).toHaveLength(1);
-      expect(stages.INICIADO[0].workerName).toBeNull();
-      expect(stages.INICIADO[0].isBlocked).toBe(true);
+      expect(stages.BLOQUEADO).toHaveLength(1);
+      expect(stages.BLOQUEADO[0].workerName).toBeNull();
+      expect(stages.BLOQUEADO[0].isBlocked).toBe(true);
     });
 
-    it('dedup: bloqueado NÃO aparece em INICIADO quando há WJA pra aquele par (NOT EXISTS no SQL)', async () => {
-      // O dedup é implementado no SQL de listByVacancy via NOT EXISTS.
-      // Simulamos o repository retornando [] (dedup funcionou no banco).
+    it('dedup: bloqueado promovido some de BLOQUEADO e aparece como WJA real em INICIADO (NOT EXISTS no SQL)', async () => {
+      // O dedup é implementado no SQL de listByVacancy via NOT EXISTS: uma linha
+      // promovida (worker completou cadastro) já tem WJA real, então listByVacancy
+      // não a retorna mais — sai de BLOQUEADO e o card real aparece em INICIADO.
       mockQuery.mockResolvedValueOnce({
         rows: [makeRow({ id: 'e-wja', funnel_stage: 'INVITED', source: 'manual' })],
       });
-      mockListByVacancy.mockResolvedValue([]); // dedup: bloqueado não retorna pois WJA existe
+      mockListByVacancy.mockResolvedValue([]); // dedup: bloqueado não retorna pois WJA existe (promovida)
 
       const [req, res] = mockReqRes({ id: 'jp-001' });
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(stages.BLOQUEADO).toHaveLength(0);
       // Só o WJA manual aparece em INICIADO
       expect(stages.INICIADO).toHaveLength(1);
       expect(stages.INICIADO[0].id).toBe('e-wja');
@@ -351,7 +358,7 @@ describe('WJAFunnelController', () => {
       expect(items.find(c => c.id === 'wja-4')!.workerName).toBe('Worker sem identificação');
     });
 
-    it('retorna 8 stages vazios quando não há encuadres nem bloqueados (migration 230)', async () => {
+    it('retorna 9 stages vazios quando não há encuadres nem bloqueados (migration 230 + BLOQUEADO)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-empty' });
@@ -360,14 +367,14 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      // 8 colunas: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED
-      expect(Object.keys(response.data.stages)).toHaveLength(8);
+      // 9 colunas: INVITED, BLOQUEADO, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(9);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });
     });
 
-    it('INICIADO não tem a chave INITIATED (migration 230 — INITIATED aposentado)', async () => {
+    it('stages contém BLOQUEADO e INICIADO, sem a chave INITIATED (migration 230 — INITIATED aposentado)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-001' });
@@ -375,6 +382,7 @@ describe('WJAFunnelController', () => {
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect('INITIATED' in stages).toBe(false);
+      expect('BLOQUEADO' in stages).toBe(true);
       expect('INICIADO' in stages).toBe(true);
       expect('PRE_SCREENING' in stages).toBe(true);
     });

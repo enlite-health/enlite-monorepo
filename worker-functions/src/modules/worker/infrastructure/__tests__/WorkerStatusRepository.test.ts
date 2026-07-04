@@ -3,9 +3,11 @@
  *
  * Covers:
  *  - recalculateWorkerStatus: when status becomes REGISTERED, the status UPDATE
- *    and domain_events INSERT are in the same transaction (BEGIN/COMMIT).
- *  - recalculateWorkerStatus: after commit, publishes to Pub/Sub best-effort.
- *  - recalculateWorkerStatus: publish failure does NOT propagate.
+ *    and BOTH domain_events INSERTs (worker.mirror_requested +
+ *    worker.registration_completed) are in the same transaction (BEGIN/COMMIT).
+ *  - recalculateWorkerStatus: after commit, publishes BOTH events to Pub/Sub
+ *    best-effort (worker-mirror-requested + worker-registration-completed).
+ *  - recalculateWorkerStatus: publish failure does NOT propagate (either topic).
  *  - recalculateWorkerStatus: non-REGISTERED transitions use plain updateWorkerStatus
  *    (no domain_events INSERT, no Pub/Sub call).
  *  - updateWorkerStatus: wraps UPDATE in BEGIN/COMMIT.
@@ -93,14 +95,15 @@ describe('updateWorkerStatus', () => {
 // ── recalculateWorkerStatus ────────────────────────────────────────────────────
 
 describe('recalculateWorkerStatus', () => {
-  it('runs status UPDATE + domain_events INSERT atomically when REGISTERED', async () => {
+  it('runs status UPDATE + BOTH domain_events INSERTs atomically when REGISTERED', async () => {
     setupRecalculate('REGISTERED');
     const client = makeClient();
-    // Simulate INSERT RETURNING id for the domain_events row
+    // Simulate INSERT RETURNING id for each domain_events row
     client.query
       .mockResolvedValueOnce({ rows: [] })                        // BEGIN
       .mockResolvedValueOnce({ rows: [] })                        // UPDATE workers
-      .mockResolvedValueOnce({ rows: [{ id: 'evt-reg-1' }] })    // INSERT domain_events
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-mirror-1' }] })  // INSERT domain_events (mirror)
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-reg-1' }] })     // INSERT domain_events (registration_completed)
       .mockResolvedValueOnce({ rows: [] });                       // COMMIT
     const pool = makePool(client);
 
@@ -111,23 +114,27 @@ describe('recalculateWorkerStatus', () => {
     expect(calls[0]).toBe('BEGIN');
     expect(calls[1]).toMatch(/UPDATE workers SET status/);
     expect(calls[2]).toMatch(/INSERT INTO domain_events/);
-    expect(calls[3]).toBe('COMMIT');
+    expect(calls[3]).toMatch(/INSERT INTO domain_events/);
+    expect(calls[4]).toBe('COMMIT');
   });
 
-  it('publishes to worker-mirror-requested after REGISTERED transition', async () => {
+  it('publishes to worker-mirror-requested AND worker-registration-completed after REGISTERED transition', async () => {
     setupRecalculate('REGISTERED');
     const client = makeClient();
     client.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: 'evt-pub-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-mirror-pub' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-reg-pub' }] })
       .mockResolvedValueOnce({ rows: [] });
     const pool = makePool(client);
     const pubsub = makePubsub();
 
     await recalculateWorkerStatus(pool as never, 'w-pub', pubsub as unknown as PubSubClient);
 
-    expect(pubsub.publish).toHaveBeenCalledWith('worker-mirror-requested', { eventId: 'evt-pub-1' });
+    expect(pubsub.publish).toHaveBeenCalledWith('worker-mirror-requested', { eventId: 'evt-mirror-pub' });
+    expect(pubsub.publish).toHaveBeenCalledWith('worker-registration-completed', { eventId: 'evt-reg-pub' });
+    expect(pubsub.publish).toHaveBeenCalledTimes(2);
   });
 
   it('does NOT publish when pubsub is null', async () => {
@@ -136,7 +143,8 @@ describe('recalculateWorkerStatus', () => {
     client.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: 'evt-nopub' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-nopub-mirror' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-nopub-reg' }] })
       .mockResolvedValueOnce({ rows: [] });
     const pool = makePool(client);
 
@@ -145,13 +153,14 @@ describe('recalculateWorkerStatus', () => {
     expect(result).toBe('REGISTERED');
   });
 
-  it('swallows publish error (best-effort) after REGISTERED', async () => {
+  it('swallows publish error (best-effort) independently for each topic after REGISTERED', async () => {
     setupRecalculate('REGISTERED');
     const client = makeClient();
     client.query
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: 'evt-swallow' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-swallow-mirror' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'evt-swallow-reg' }] })
       .mockResolvedValueOnce({ rows: [] });
     const pool = makePool(client);
     const pubsub = makePubsub();
@@ -160,6 +169,8 @@ describe('recalculateWorkerStatus', () => {
     await expect(
       recalculateWorkerStatus(pool as never, 'w-swallow', pubsub as unknown as PubSubClient),
     ).resolves.toBe('REGISTERED');
+    // Both publishes were attempted despite both rejecting
+    expect(pubsub.publish).toHaveBeenCalledTimes(2);
   });
 
   it('does NOT insert domain_events or publish for non-REGISTERED transitions', async () => {

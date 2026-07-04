@@ -4,7 +4,7 @@
  * Extracted from WorkerRepository to stay within the 400-line limit.
  * Contains status-transition logic including the transactional
  * recalculateStatus implementation that atomically updates the worker
- * status and enqueues the domain event when the worker reaches REGISTERED.
+ * status and enqueues the domain events when the worker reaches REGISTERED.
  */
 
 import { Pool } from 'pg';
@@ -16,6 +16,12 @@ import type { PubSubClient } from '@shared/events/PubSubClient';
 
 const MIRROR_TOPIC = 'worker-mirror-requested';
 const MIRROR_EVENT = 'worker.mirror_requested';
+
+// worker.registration_completed: dispara PromoteBlockedApplicationsUseCase —
+// promove tentativas de postulação bloqueadas (worker_blocked_applications) do
+// worker que acabou de completar o cadastro. Ver docs/features/blocked-attempts-modal.
+const REGISTRATION_COMPLETED_TOPIC = 'worker-registration-completed';
+const REGISTRATION_COMPLETED_EVENT = 'worker.registration_completed';
 
 /**
  * Updates a single worker's status inside its own transaction.
@@ -64,13 +70,14 @@ export async function recalculateWorkerStatus(
 ): Promise<WorkerStatus | null> {
   const traceId = loggingAls.getStore()?.traceId ?? null;
   let mirrorEventId: string | null = null;
+  let registrationCompletedEventId: string | null = null;
 
   const newStatus = await _recalculateStatus(
     pool,
     workerId,
     async (id, status) => {
       if (status === 'REGISTERED') {
-        // Atomic: status UPDATE + domain_events INSERT in one transaction.
+        // Atomic: status UPDATE + both domain_events INSERTs in one transaction.
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
@@ -80,6 +87,11 @@ export async function recalculateWorkerStatus(
           );
           mirrorEventId = await enqueueDomainEvent(client, {
             event: MIRROR_EVENT,
+            payload: { workerId: id },
+            traceId,
+          });
+          registrationCompletedEventId = await enqueueDomainEvent(client, {
+            event: REGISTRATION_COMPLETED_EVENT,
             payload: { workerId: id },
             traceId,
           });
@@ -104,6 +116,18 @@ export async function recalculateWorkerStatus(
       const e = err instanceof Error ? err : new Error(String(err));
       logger.child({ workerId, eventId: mirrorEventId }).warn({
         msg: '[WorkerStatusRepository] Pub/Sub publish failed — sweep will retry',
+        error: e.message,
+      });
+    }
+  }
+
+  if (registrationCompletedEventId && pubsub) {
+    try {
+      await pubsub.publish(REGISTRATION_COMPLETED_TOPIC, { eventId: registrationCompletedEventId });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId, eventId: registrationCompletedEventId }).warn({
+        msg: '[WorkerStatusRepository] Pub/Sub publish failed (registration_completed) — sweep will retry',
         error: e.message,
       });
     }

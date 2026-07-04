@@ -104,11 +104,11 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
 
   // ── C1 — Estado vazio ─────────────────────────────────────────────────────
 
-  test('C1 — kanban vazio: 8 colunas com 0 cards', async ({ page }) => {
+  test('C1 — kanban vazio: 9 colunas com 0 cards', async ({ page }) => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    const colIds = ['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+    const colIds = ['INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
     for (const id of colIds) {
       await expect(page.locator(`[data-testid="kanban-column-${id}-count"]`)).toHaveText('0');
     }
@@ -244,8 +244,12 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
   });
 
   // ── C6 — NOT_QUALIFIED ───────────────────────────────────────────────────
+  //
+  // ProcessTalentumPrescreening.ts (F3, migration 191): NOT_QUALIFIED não
+  // existe mais como funnel_stage — é convertido para REJECTED antes do
+  // upsert e o WJA é auto-rejeitado (não permanece em COMPLETED).
 
-  test('C6 — segundo worker NOT_QUALIFIED: 2 cards em COMPLETED', async ({ page, request }) => {
+  test('C6 — segundo worker NOT_QUALIFIED: auto-rejeitado para a coluna REJECTED', async ({ page, request }) => {
     await loginAsKanbanAdmin(page);
 
     const psc2 = `${prescreeningId}-w2`;
@@ -275,11 +279,12 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     ).toBe(200);
 
     const enc2Id = await getEncuadreId(request, worker2Id, vacancyId);
-    // NOT_QUALIFIED também agrupa em COMPLETED no EncuadreFunnelController
-    await waitForCardInStage(page, vacancyId, `kanban-card-${enc2Id}`, 'COMPLETED');
+    // NOT_QUALIFIED é auto-rejeitado (ProcessTalentumPrescreening.ts) → coluna REJECTED
+    await waitForCardInStage(page, vacancyId, `kanban-card-${enc2Id}`, 'REJECTED');
 
-    // worker1 (QUALIFIED) + worker2 (NOT_QUALIFIED) = 2 cards em COMPLETED
-    await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('2');
+    // worker1 (QUALIFIED) permanece em COMPLETED; worker2 (NOT_QUALIFIED) vai para REJECTED
+    await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('1');
+    await expect(page.locator('[data-testid="kanban-column-REJECTED-count"]')).toHaveText('1');
 
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
       'vacancy-kanban-not-qualified.png',
@@ -333,10 +338,12 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     await waitForCardInStage(page, vacancyId, `kanban-card-${enc3Id}`, 'PRE_SCREENING');
 
     // Contadores esperados:
-    // PRE_SCREENING=1 (worker3), IN_PROGRESS=1 (worker4), COMPLETED=2 (worker1 QUALIFIED + worker2 NOT_QUALIFIED)
+    // PRE_SCREENING=1 (worker3), IN_PROGRESS=1 (worker4),
+    // COMPLETED=1 (worker1 QUALIFIED), REJECTED=1 (worker2 NOT_QUALIFIED, auto-rejeitado)
     await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('1');
     await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]')).toHaveText('1');
-    await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('2');
+    await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('1');
+    await expect(page.locator('[data-testid="kanban-column-REJECTED-count"]')).toHaveText('1');
 
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
       'vacancy-kanban-counters.png',
