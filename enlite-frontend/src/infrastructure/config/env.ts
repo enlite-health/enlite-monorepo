@@ -9,6 +9,7 @@ export const ENV = {
   FIREBASE_MESSAGING_SENDER_ID: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
   FIREBASE_APP_ID: import.meta.env.VITE_FIREBASE_APP_ID || '',
   FIREBASE_AUTH_EMULATOR: import.meta.env.VITE_FIREBASE_AUTH_EMULATOR || '',
+  CLARITY_PROJECT_ID: import.meta.env.VITE_CLARITY_PROJECT_ID || '',
   IS_PRODUCTION: import.meta.env.PROD,
   IS_DEVELOPMENT: import.meta.env.DEV,
 } as const;
