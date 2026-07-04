@@ -291,3 +291,119 @@ test.describe('Match modal — buckets de distância @integration', () => {
     await page.screenshot({ path: `${SNAP}/04-modal-fullpage.png`, fullPage: true });
   });
 });
+
+/**
+ * Painel de progresso de convite (estilo upload do Drive, não-bloqueante).
+ * Setup próprio e isolado (paciente + vaga + 1 worker) pra não colidir com a
+ * suíte de buckets acima (vaga distinta ⇒ sem match concorrente/WJA duplicado)
+ * e pra não depender das asserts de distribuição por bucket.
+ */
+test.describe('Match modal — painel de convite flutuante @integration', () => {
+  test.setTimeout(120_000);
+
+  let patientId: string;
+  let addressId: string | null;
+  let vacancyId: string;
+  let workerIds: string[] = [];
+
+  test.beforeAll(async () => {
+    const result = insertTestPatient({
+      status: 'ACTIVE',
+      firstName: 'PanelTest',
+      lastName: `Patient${Date.now()}`,
+      withAddress: true,
+      addressLat: PATIENT_LAT,
+      addressLng: PATIENT_LNG,
+    });
+    patientId = result.patientId;
+    addressId = result.addressId;
+    if (!addressId) throw new Error('Setup: addressId is required');
+
+    const caseNumber = 980_000 + Math.floor(Math.random() * 9999);
+    vacancyId = insertBaseVacancy({
+      patientId,
+      patientAddressId: addressId,
+      caseNumber,
+      requiredSex: 'F',
+      requiredProfessions: ['AT'],
+      // Meet link libera o envio de convites (gate hasAnyMeetLink) no modal.
+      meetLink1: 'https://meet.google.com/e2e-panel-test',
+    });
+
+    // 3 workers perto garantem múltiplos candidatos — permite ver o estado
+    // "enviando" (barra parcial + spinner) além do "concluído".
+    workerIds = [
+      insertTestWorker({ sex: 'F', occupation: 'AT', firstName: 'PanelA', lat: -34.6450, lng: -58.7780 }),
+      insertTestWorker({ sex: 'F', occupation: 'AT', firstName: 'PanelB', lat: -34.6460, lng: -58.7790 }),
+      insertTestWorker({ sex: 'F', occupation: 'AT', firstName: 'PanelC', lat: -34.6470, lng: -58.7800 }),
+    ];
+  });
+
+  test.afterAll(() => {
+    workerIds.forEach(cleanupTestWorker);
+    if (vacancyId) cleanupVacancies([vacancyId]);
+    if (patientId) cleanupTestPatient(patientId);
+  });
+
+  test('invita candidato → painel flutuante aparece e não bloqueia o fluxo', async ({
+    page,
+  }) => {
+    const SNAP = 'e2e/integration/match-vacancy-modal.integration.e2e.ts-snapshots';
+
+    await loginAsAdmin(page);
+
+    // Mock do envio WhatsApp — jamais dispara Twilio real. Delay de 700ms deixa
+    // o estado "enviando" visível pro screenshot. Rota mais específica que a
+    // genérica `**/api/**` (registrada depois → tem precedência).
+    await page.route(
+      '**/api/admin/messaging/whatsapp/vacancy-match',
+      async (route: Route) => {
+        await new Promise((r) => setTimeout(r, 700));
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: { sid: 'SM_e2e_mock', status: 'queued' },
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/admin/vacancies/${vacancyId}`);
+    await expect(page.getByRole('button', { name: /Hacer match/i })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    const matchPromise = page.waitForResponse(
+      (resp) =>
+        resp.url().includes(`/api/admin/vacancies/${vacancyId}/match?`) &&
+        resp.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
+    await page.getByRole('button', { name: /Hacer match/i }).click();
+    await matchPromise;
+
+    // Seleciona os 3 candidatos e dispara o envio em lote.
+    await page.getByRole('checkbox', { name: /Seleccionar PanelA/i }).first().check();
+    await page.getByRole('checkbox', { name: /Seleccionar PanelB/i }).first().check();
+    await page.getByRole('checkbox', { name: /Seleccionar PanelC/i }).first().check();
+    await page.getByRole('button', { name: /Invitar seleccionados/i }).click();
+
+    // O painel flutuante aparece (canto inferior-direito) e NÃO é um modal
+    // bloqueante — o modal de match segue aberto/acessível por trás.
+    const panel = page.getByTestId('invite-progress-panel');
+    await expect(panel).toBeVisible({ timeout: 10_000 });
+
+    // ── Estado "enviando" — barra de progresso parcial + spinner ──────────────
+    await expect(panel.getByText(/enviando/i).first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: `${SNAP}/05-panel-sending.png`, fullPage: false });
+
+    // ── Estado "concluído" — todos enviados ───────────────────────────────────
+    await expect(panel.getByText(/3 invitaciones enviadas/i)).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.screenshot({ path: `${SNAP}/06-panel-done.png`, fullPage: false });
+  });
+});

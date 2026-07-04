@@ -283,6 +283,9 @@ export interface InsertBaseVacancyOpts {
    *  Talentum publish flips it). Pass `false` to simulate an already-published
    *  vacancy (post-publish-flow). */
   isDraft?: boolean;
+  /** Default null. Set a Google Meet link so the match modal libera o envio de
+   *  convites (o gate `hasAnyMeetLink`). */
+  meetLink1?: string | null;
 }
 
 /**
@@ -300,6 +303,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
     requiredSex = null,
     status = 'PENDING_ACTIVATION',
     isDraft = true,
+    meetLink1 = null,
   } = opts;
 
   const professionsSql =
@@ -307,13 +311,14 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
       ? 'NULL'
       : `ARRAY[${requiredProfessions.map((p) => `'${p}'`).join(',')}]::varchar[]`;
   const sexSql = requiredSex === null ? 'NULL' : `'${requiredSex}'`;
+  const meetLinkSql = meetLink1 === null ? 'NULL' : `'${meetLink1}'`;
 
   runSQL(`
     INSERT INTO job_postings (
       vacancy_number, case_number, title, description,
       patient_id, patient_address_id,
       required_professions, required_sex, providers_needed,
-      status, is_draft, country, created_at, updated_at
+      status, is_draft, country, meet_link_1, created_at, updated_at
     ) VALUES (
       nextval('job_postings_vacancy_number_seq'),
       ${caseNumber},
@@ -327,6 +332,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
       '${status}',
       ${isDraft},
       'AR',
+      ${meetLinkSql},
       NOW(), NOW()
     )
   `);

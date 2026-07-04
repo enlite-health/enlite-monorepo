@@ -2440,7 +2440,16 @@
       "doneSent_one": "{{count}} enviado",
       "doneSent_other": "{{count}} enviados",
       "doneErrors_one": "{{count}} falha",
-      "doneErrors_other": "{{count}} falhas"
+      "doneErrors_other": "{{count}} falhas",
+      "panel": {
+        "sending": "Enviando convites… ({{done}}/{{total}})",
+        "done_one": "{{count}} convite enviado",
+        "done_other": "{{count}} convites enviados",
+        "doneWithErrors": "{{sent}} enviados, {{errors}} com erro",
+        "doneCancelled": "{{sent}} enviados, {{cancelled}} cancelados",
+        "expand": "Expandir",
+        "collapse": "Recolher"
+      }
     },
     "interviews": {
       "phaseTitle1": "Configurar slots de entrevista",

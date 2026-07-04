@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
@@ -13,7 +13,7 @@ import { VacancyFunnelTable } from './VacancyFunnelTable';
 import { VacancyFunnelKanban } from './VacancyFunnelKanban';
 import { DispatchConfirmModal } from './DispatchConfirmModal';
 import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
-import { InviteProgressModal } from '../../VacancyMatch/InviteProgressModal';
+import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
 
 const DEFAULT_BUCKET: FunnelBucket = 'INVITED';
@@ -55,8 +55,10 @@ export function VacancyFunnelView({
     useState<FunnelBucket>(DEFAULT_BUCKET);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
-  const [showInviteProgress, setShowInviteProgress] = useState(false);
   const [dispatchSnapshot, setDispatchSnapshot] = useState<InviteTarget[]>([]);
+
+  const enqueueInvites = useInviteProgressStore((s) => s.enqueue);
+  const isSendingInvites = useInviteProgressStore((s) => s.isSending);
 
   const isListView = view === 'list';
 
@@ -89,13 +91,20 @@ export function VacancyFunnelView({
 
   function handleConfirmDispatch() {
     setShowDispatchConfirm(false);
-    setShowInviteProgress(true);
+    // Envio em background — o painel flutuante mostra o progresso e o operador
+    // segue trabalhando (não trava mais a tela).
+    enqueueInvites(vacancyId, dispatchSnapshot);
   }
 
-  function handleCloseProgress() {
-    setShowInviteProgress(false);
-    refetchPending();
-  }
+  // Ao concluir um lote de envio (isSending true → false), recarrega a lista de
+  // pendentes pra refletir os que saíram (equivale ao antigo refetch-on-close).
+  const wasSending = useRef(false);
+  useEffect(() => {
+    if (wasSending.current && !isSendingInvites) {
+      refetchPending();
+    }
+    wasSending.current = isSendingInvites;
+  }, [isSendingInvites, refetchPending]);
 
   // Reset bucket when switching back to list view
   useEffect(() => {
@@ -180,17 +189,6 @@ export function VacancyFunnelView({
           pendingCount={dispatchSnapshot.length}
           onConfirm={handleConfirmDispatch}
           onCancel={() => setShowDispatchConfirm(false)}
-        />
-      )}
-
-      {showInviteProgress && (
-        <InviteProgressModal
-          candidates={dispatchSnapshot}
-          vacancyId={vacancyId}
-          onClose={handleCloseProgress}
-          onMessaged={(_workerId: string, _messagedAt: string) => {
-            // no-op: VacancyFunnelView refetches on modal close
-          }}
         />
       )}
     </div>
