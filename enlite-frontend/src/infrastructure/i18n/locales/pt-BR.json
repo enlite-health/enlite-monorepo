@@ -1028,6 +1028,7 @@
         "COMPLETED": "Aguardando análise"
       },
       "reprogramBadge": "🔄 Remarcado",
+      "notesButton": "Comentários",
       "rejectButton": "Rejeitar",
       "rejectionModal": {
         "title": "Motivo de rejeição",

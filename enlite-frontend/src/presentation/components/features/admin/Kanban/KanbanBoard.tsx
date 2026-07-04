@@ -7,9 +7,11 @@ import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { DraggableCard } from './DraggableCard';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
+import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
+  vacancyId: string;
   onMove: (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => Promise<MoveEncuadreError | null>;
 }
 
@@ -36,13 +38,15 @@ const COLUMN_CONFIG: ColumnConfig[] = [
 // Droppable columns map directly to application_funnel_stage values
 const DROPPABLE_STAGES = new Set(['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED']);
 
-export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeId, setActiveId] = useState<string | null>(null);
   /** Stores the encuadreId (not wja.id) of the card being dragged */
   const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
+  /** WJA cujo modal de comentários (contact notes) está aberto. */
+  const [activeNotes, setActiveNotes] = useState<{ wjaId: string; workerName: string | null } | null>(null);
 
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
@@ -139,6 +143,12 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
                       attemptCount={enc.attemptCount}
                       onWorkerClick={handleWorkerClick}
                       onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
+                      onOpenNotes={
+                        enc.isBlocked
+                          ? undefined
+                          : () => setActiveNotes({ wjaId: enc.id, workerName: enc.workerName })
+                      }
+                      contactNotesCount={enc.contactNotesCount}
                     />
                   </DraggableCard>
                 ))}
@@ -181,6 +191,15 @@ export function KanbanBoard({ stages, onMove }: KanbanBoardProps) {
         <RejectionReasonSelect
           onSubmit={(category) => handleRejectionSubmit(showRejectionSelect.encuadreId, category)}
           onCancel={() => setShowRejectionSelect(null)}
+        />
+      )}
+
+      {activeNotes && (
+        <ContactNotesModal
+          vacancyId={vacancyId}
+          wjaId={activeNotes.wjaId}
+          workerName={activeNotes.workerName}
+          onClose={() => setActiveNotes(null)}
         />
       )}
     </>

@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { WorkerAvatar } from '@presentation/components/atoms/WorkerAvatar';
 import { WhatsappStatusBadge } from '@presentation/components/atoms/WhatsappStatusBadge';
 import { Text } from '@presentation/components/atoms/Text';
+import { NotesCountBadge } from './NotesCountBadge';
 import {
   TableRow,
   TableCell,
@@ -64,11 +65,7 @@ export function VacancyFunnelTableRow({
           className="inline-flex items-center gap-1.5 text-gray-800 hover:text-primary transition-colors"
         >
           <MessageSquare size={16} aria-hidden="true" />
-          {row.contactNotesCount > 0 && (
-            <Text as="span" size="xs" weight="medium" color="inherit">
-              {row.contactNotesCount}
-            </Text>
-          )}
+          <NotesCountBadge count={row.contactNotesCount} />
         </button>
       </TableCell>
 
