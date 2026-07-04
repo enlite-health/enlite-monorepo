@@ -145,11 +145,13 @@ Este monorepo usa subagentes especializados em `.claude/agents/`. O fluxo padrã
 ```
 1. PO analisa requisito + regras de negócio → refina e decompõe
 2. Architect valida viabilidade arquitetural → parecer de schema e código (reuso vs criação)
-3. Backend Dev implementa (respeitando worker-functions/CLAUDE.md + parecer do Architect)
-4. Frontend Dev implementa (respeitando enlite-frontend/CLAUDE.md + parecer do Architect)
-5. QA valida (testes E2E + unitários + lint + type-check + critérios de aceite)
+3. Backend Dev implementa (respeitando worker-functions/CLAUDE.md + parecer do Architect)  → skill: bug-shield
+4. Frontend Dev implementa (respeitando enlite-frontend/CLAUDE.md + parecer do Architect) → skills: bug-shield (+ pixel-loop se houver Figma)
+5. QA valida (testes E2E + unitários + lint + type-check + critérios de aceite)            → skill: flow-guard
 6. PO revisa o diff final contra as regras de negócio e critérios de aceite
 ```
+
+As skills abaixo NÃO são opcionais nem "chamadas se der" — cada etapa TEM uma skill associada. Ver "Skills obrigatórias por etapa".
 
 ### Etapa 2 — Parecer do Architect (obrigatória para mudanças de schema ou novos domínios)
 
@@ -181,3 +183,25 @@ Após o QA aprovar, o PO **sempre** faz uma revisão final antes de considerar a
 | Bug isolado no frontend | Frontend Dev direto |
 | Validação de qualidade pós-implementação | QA |
 | Feature cross-project (API + tela) | PO → **Architect** → Backend Dev → Frontend Dev → QA → PO (revisão final) |
+
+### Skills obrigatórias por etapa (chamar SEM ambiguidade)
+
+Regra dura: **skill se invoca pela ferramenta Skill, pelo NOME EXATO abaixo.** Nunca "achar" qual serve pela vibe, nunca inventar nome. Se o gatilho da linha bateu, a skill é obrigatória — não é sugestão. Se nenhuma linha bate, não force skill nenhuma.
+
+| Gatilho objetivo (quando é verdade) | Skill EXATA | Momento |
+|---|---|---|
+| Vou escrever/alterar lógica de implementação (feature ou bugfix, back ou front) | `bug-shield` | ANTES de escrever o código |
+| Bugfix a partir de um report/sintoma | `bug-shield` | ANTES do fix (força grep de callers = causa-raiz) |
+| Componente/tela nova ou alterada QUE TEM design no Figma | `pixel-loop` | DEPOIS de implementar o visual, antes do QA |
+| Vou dar uma feature/PR como pronta, ou o user pediu "garantir que funciona"/"sem bugs"/"testar o fluxo" | `flow-guard` | ANTES de declarar DONE / abrir PR |
+| Sessão longa (~70% de contexto), antes de /clear ou /compact, ou "salva o contexto"/"handoff" | `context-keeper` | ANTES de compactar/limpar |
+
+Precedência quando mais de um gatilho bate numa feature completa: `bug-shield` (durante) → `pixel-loop` (se Figma) → `flow-guard` (gate final). `context-keeper` é ortogonal, dispara por tamanho de sessão.
+
+**Quem invoca:** o **Claude orquestrador (principal)**, sempre. Os subagentes (`frontend-dev`, `backend-dev`, `qa` etc.) NÃO têm a ferramenta Skill — não conseguem chamar skill. Logo o padrão é:
+
+1. Orquestrador invoca a skill da etapa (ex: `bug-shield`) → a skill injeta o protocolo no contexto.
+2. Orquestrador dispatcha o subagente **carregando esse protocolo no prompt do dispatch** (ex: "siga o red-first e o grep de callers do bug-shield: …").
+3. O subagente devolve a evidência estruturada que a skill exige; o orquestrador confere.
+
+**Certeiro = determinístico:** a linha da tabela decide, não o julgamento do modelo. Se o gatilho bateu e a skill não rodou (orquestrador esqueceu de invocar, ou dispatchou o dev sem o protocolo), a etapa está em violação — reabrir e rodar. Skills não substituem os agentes (PO/Architect/QA continuam); elas padronizam O QUE cada etapa executa e QUAL evidência volta.
