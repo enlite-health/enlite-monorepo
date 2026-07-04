@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, MapPin, Phone, Star } from 'lucide-react';
+import { CalendarClock, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
+import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 
 interface KanbanCardProps {
   id: string;
@@ -32,6 +33,10 @@ interface KanbanCardProps {
   attemptCount?: number;
   onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
+  /** Opens the contact-notes modal for this WJA. Only wired for real applications (not blocked attempts). */
+  onOpenNotes?: () => void;
+  /** Number of contact notes registered for this WJA — shown as a count badge on the notes button. */
+  contactNotesCount?: number;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -86,6 +91,8 @@ export function KanbanCard({
   attemptCount,
   onWorkerClick,
   onReject,
+  onOpenNotes,
+  contactNotesCount = 0,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -237,6 +244,22 @@ export function KanbanCard({
             </span>
           )}
         </div>
+      )}
+
+      {onOpenNotes && (
+        <button
+          data-testid="notes-button"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenNotes();
+          }}
+          className="mt-2 w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-slate-600 hover:bg-slate-100 hover:text-primary transition-colors border border-transparent hover:border-slate-200"
+        >
+          <MessageSquare className="w-3 h-3" />
+          {t('admin.kanban.notesButton')}
+          <NotesCountBadge count={contactNotesCount} />
+        </button>
       )}
 
       {onReject && stage !== 'REJECTED' && (

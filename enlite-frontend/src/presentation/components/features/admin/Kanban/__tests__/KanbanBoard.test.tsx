@@ -61,8 +61,16 @@ vi.mock('@presentation/components/atoms/Typography', () => ({
 vi.mock('lucide-react', () => ({
   CalendarClock: (props: Record<string, unknown>) => <svg data-testid="icon-calendar-clock" {...props} />,
   MapPin: (props: Record<string, unknown>) => <svg data-testid="icon-map-pin" {...props} />,
+  MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
+}));
+
+// ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────
+vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({
+  ContactNotesModal: ({ vacancyId, wjaId, workerName }: { vacancyId: string; wjaId: string; workerName: string | null }) => (
+    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-wja-id={wjaId} data-worker-name={workerName ?? ''} />
+  ),
 }));
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -118,7 +126,7 @@ beforeEach(() => {
 
 describe('KanbanBoard — column rendering', () => {
   it('renders all 9 columns', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const expectedColumns = [
       'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
@@ -131,7 +139,7 @@ describe('KanbanBoard — column rendering', () => {
   });
 
   it('renders columns in correct order (INVITED → BLOQUEADO → INICIADO → PRE_SCREENING → IN_PROGRESS → ...)', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
@@ -143,7 +151,7 @@ describe('KanbanBoard — column rendering', () => {
   });
 
   it('displays internationalized column titles via i18n keys', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.BLOQUEADO')).toBeInTheDocument();
@@ -161,7 +169,7 @@ describe('KanbanBoard — column rendering', () => {
     stages.INICIADO = [makeEncuadre(), makeEncuadre()];
     stages.COMPLETED = [makeEncuadre()];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const iniciadoCol = screen.getByTestId('kanban-column-INICIADO');
     expect(within(iniciadoCol).getByText('2')).toBeInTheDocument();
@@ -177,7 +185,7 @@ describe('KanbanBoard — column rendering', () => {
     const stages = emptyStages();
     stages.IN_PROGRESS = [makeEncuadre({ id: 'enc-1', workerName: 'Carlos López' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const inProgressCol = screen.getByTestId('kanban-column-IN_PROGRESS');
     expect(within(inProgressCol).getByTestId('kanban-card-enc-1')).toBeInTheDocument();
@@ -189,7 +197,7 @@ describe('KanbanBoard — column rendering', () => {
 
 describe('KanbanBoard — drag & drop rules', () => {
   it('disables droppable on Talentum-driven columns (INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED)', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const nonDroppable = droppableIds.filter((d) =>
       ['INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED'].includes(d.id),
@@ -202,7 +210,7 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 
   it('disables droppable on BLOQUEADO column (cards have no encuadreId, never a drop target)', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const bloqueado = droppableIds.find((d) => d.id === 'BLOQUEADO');
     expect(bloqueado, 'BLOQUEADO column must be registered in useDroppable').toBeTruthy();
@@ -210,7 +218,7 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 
   it('keeps droppable enabled on INVITED, CONFIRMED, SELECTED, and REJECTED columns', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const droppableColumns = droppableIds.filter((d) =>
       ['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED'].includes(d.id),
@@ -223,7 +231,7 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 
   it('INVITED column is droppable (F4 change)', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const invitedDroppable = droppableIds.find((d) => d.id === 'INVITED');
     expect(invitedDroppable).toBeTruthy();
@@ -234,7 +242,7 @@ describe('KanbanBoard — drag & drop rules', () => {
     const stages = emptyStages();
     stages.INICIADO = [makeEncuadre({ id: 'enc-drag' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const card = screen.getByTestId('kanban-card-enc-drag');
     expect(card).toBeInTheDocument();
@@ -245,7 +253,7 @@ describe('KanbanBoard — drag & drop rules', () => {
     const stages = emptyStages();
     stages.PRE_SCREENING = [makeEncuadre({ id: 'enc-pre-drag' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const card = screen.getByTestId('kanban-card-enc-pre-drag');
     expect(card).toBeInTheDocument();
@@ -257,7 +265,7 @@ describe('KanbanBoard — drag & drop rules', () => {
 
 describe('KanbanBoard — edge cases', () => {
   it('renders gracefully with all stages empty', () => {
-    render(<KanbanBoard stages={emptyStages()} onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     expect(columns).toHaveLength(9);
@@ -270,7 +278,7 @@ describe('KanbanBoard — edge cases', () => {
     stages.IN_PROGRESS = [makeEncuadre({ id: 'b' }), makeEncuadre({ id: 'c' })];
     stages.COMPLETED = [makeEncuadre({ id: 'd' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     expect(screen.getByTestId('kanban-card-a')).toBeInTheDocument();
     expect(screen.getByTestId('kanban-card-b')).toBeInTheDocument();
@@ -287,7 +295,7 @@ describe('KanbanBoard — worker name navigation', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nav', workerId: 'worker-99', workerName: 'Carlos Test' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const button = screen.getByRole('button', { name: 'Carlos Test' });
     fireEvent.click(button);
@@ -300,7 +308,7 @@ describe('KanbanBoard — worker name navigation', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nolink', workerId: null, workerName: 'No Link' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     expect(screen.queryByRole('button', { name: 'No Link' })).not.toBeInTheDocument();
     // Name should still render as plain text
@@ -313,7 +321,7 @@ describe('KanbanBoard — worker name navigation', () => {
     stages.CONFIRMED = [makeEncuadre({ id: 'w2', workerId: 'wk-2', workerName: 'Worker B' })];
     stages.SELECTED = [makeEncuadre({ id: 'w3', workerId: 'wk-3', workerName: 'Worker C' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     // All should have clickable names
     expect(screen.getByRole('button', { name: 'Worker A' })).toBeInTheDocument();
@@ -333,7 +341,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'orphan-wja', encuadreId: null })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const orphanDraggable = draggableIds.find((d) => d.id === 'orphan-wja');
     expect(orphanDraggable, 'Orphan card must be registered in useDraggable').toBeTruthy();
@@ -344,7 +352,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.INICIADO = [makeEncuadre({ id: 'enc-with-id', encuadreId: 'real-enc-uuid' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const cardDraggable = draggableIds.find((d) => d.id === 'enc-with-id');
     expect(cardDraggable, 'Card with encuadreId must be registered in useDraggable').toBeTruthy();
@@ -355,7 +363,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'orphan-vis', encuadreId: null })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const wrapper = screen.getByTestId('kanban-draggable-orphan-vis');
     expect(wrapper.getAttribute('data-drag-disabled')).toBe('true');
@@ -365,7 +373,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.CONFIRMED = [makeEncuadre({ id: 'active-enc', encuadreId: 'uuid-abc' })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const wrapper = screen.getByTestId('kanban-draggable-active-enc');
     expect(wrapper.getAttribute('data-drag-disabled')).not.toBe('true');
@@ -378,7 +386,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
       makeEncuadre({ id: 'non-orphan-1', encuadreId: 'enc-uuid-1' }),
     ];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const orphan = draggableIds.find((d) => d.id === 'orphan-1');
     const nonOrphan = draggableIds.find((d) => d.id === 'non-orphan-1');
@@ -399,7 +407,7 @@ describe('KanbanBoard — interview tag in CONFIRMED column', () => {
       interviewTime: '10:30',
     })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const confirmedCol = screen.getByTestId('kanban-column-CONFIRMED');
     // CalendarClock icon should be inside the CONFIRMED column
@@ -414,7 +422,7 @@ describe('KanbanBoard — interview tag in CONFIRMED column', () => {
       interviewTime: '10:30',
     })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const completedCol = screen.getByTestId('kanban-column-COMPLETED');
     expect(within(completedCol).queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
@@ -435,7 +443,7 @@ describe('KanbanBoard — BLOQUEADO column', () => {
       attemptCount: 2,
     })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const bloqueadoCol = screen.getByTestId('kanban-column-BLOQUEADO');
     const card = within(bloqueadoCol).getByTestId('kanban-card-enc-blocked');
@@ -450,7 +458,7 @@ describe('KanbanBoard — BLOQUEADO column', () => {
     const stages = emptyStages();
     stages.BLOQUEADO = [makeEncuadre({ id: 'enc-blocked-drag', encuadreId: null, isBlocked: true })];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const wrapper = screen.getByTestId('kanban-draggable-enc-blocked-drag');
     expect(wrapper.getAttribute('data-drag-disabled')).toBe('true');
@@ -463,9 +471,54 @@ describe('KanbanBoard — BLOQUEADO column', () => {
       makeEncuadre({ id: 'b2', encuadreId: null, isBlocked: true }),
     ];
 
-    render(<KanbanBoard stages={stages} onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     const bloqueadoCol = screen.getByTestId('kanban-column-BLOQUEADO');
     expect(within(bloqueadoCol).getByText('2')).toBeInTheDocument();
+  });
+});
+
+// ── Notes Button Wiring (contact notes / comentários) ────────────────────────
+
+describe('KanbanBoard — botão de comentários abre o ContactNotesModal', () => {
+  it('não renderiza o modal de comentários até o botão do card ser clicado', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', workerName: 'Marcia Costa' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+
+    expect(screen.queryByTestId('contact-notes-modal')).not.toBeInTheDocument();
+  });
+
+  it('abre o modal com o wjaId (card.id) e o vacancyId do board ao clicar', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', workerName: 'Marcia Costa' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+
+    fireEvent.click(screen.getByTestId('notes-button'));
+
+    const modal = screen.getByTestId('contact-notes-modal');
+    expect(modal).toHaveAttribute('data-vacancy-id', 'vac-77');
+    expect(modal).toHaveAttribute('data-wja-id', 'wja-1');
+    expect(modal).toHaveAttribute('data-worker-name', 'Marcia Costa');
+  });
+
+  it('não renderiza botão de comentários em cards bloqueados (não são WJA)', () => {
+    const stages = emptyStages();
+    stages.BLOQUEADO = [makeEncuadre({ id: 'b1', encuadreId: null, workerId: null, isBlocked: true })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+
+    expect(screen.queryByTestId('notes-button')).not.toBeInTheDocument();
+  });
+
+  it('repassa contactNotesCount do encuadre para o badge do card', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', contactNotesCount: 4 })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+
+    expect(screen.getByTestId('notes-count-badge')).toHaveTextContent('4');
   });
 });

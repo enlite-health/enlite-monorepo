@@ -5,7 +5,8 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useVacancyMatch } from '@hooks/admin/useVacancyMatch';
-import { InviteProgressModal } from './InviteProgressModal';
+import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
+import { ResendConfirmDialog } from './ResendConfirmDialog';
 import { MatchCriteriaChips } from './MatchCriteriaChips';
 import { MatchBucketSection } from './MatchBucketSection';
 import { MatchMissingMeetLinksAlert } from './MatchMissingMeetLinksAlert';
@@ -38,8 +39,11 @@ export function MatchVacancyModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const enqueueInvites = useInviteProgressStore((s) => s.enqueue);
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [pendingInvites, setPendingInvites] = useState<SavedCandidate[] | null>(
+  // Candidatos aguardando decisão de re-envio (alguns já foram notificados).
+  const [confirmTarget, setConfirmTarget] = useState<SavedCandidate[] | null>(
     null,
   );
 
@@ -69,15 +73,24 @@ export function MatchVacancyModal({
     });
   }
 
+  // Dispara o envio em background. Se algum candidato já foi notificado, abre a
+  // confirmação de re-envio antes; senão, enfileira direto no painel flutuante.
+  function startInvite(candidates: SavedCandidate[]) {
+    if (!meetLinksOk || candidates.length === 0) return;
+    const anyAlreadyNotified = candidates.some((c) => c.messagedAt != null);
+    if (anyAlreadyNotified) {
+      setConfirmTarget(candidates);
+      return;
+    }
+    enqueueInvites(vacancyId, candidates, markMessaged);
+  }
+
   function handleInviteOne(candidate: SavedCandidate) {
-    if (!meetLinksOk) return;
-    setPendingInvites([candidate]);
+    startInvite([candidate]);
   }
 
   function handleInviteSelected() {
-    if (!meetLinksOk) return;
-    if (selectedCandidates.length === 0) return;
-    setPendingInvites(selectedCandidates);
+    startInvite(selectedCandidates);
   }
 
   return (
@@ -167,14 +180,23 @@ export function MatchVacancyModal({
         </div>
       </div>
 
-      {pendingInvites && (
-        <InviteProgressModal
-          candidates={pendingInvites}
-          vacancyId={vacancyId}
-          onClose={() => setPendingInvites(null)}
-          onMessaged={(workerId, messagedAt) => {
-            markMessaged(workerId, messagedAt);
+      {confirmTarget && (
+        <ResendConfirmDialog
+          alreadyCount={confirmTarget.filter((c) => c.messagedAt != null).length}
+          newCount={confirmTarget.filter((c) => c.messagedAt == null).length}
+          onResendAll={() => {
+            enqueueInvites(vacancyId, confirmTarget, markMessaged);
+            setConfirmTarget(null);
           }}
+          onNewOnly={() => {
+            enqueueInvites(
+              vacancyId,
+              confirmTarget.filter((c) => c.messagedAt == null),
+              markMessaged,
+            );
+            setConfirmTarget(null);
+          }}
+          onCancel={() => setConfirmTarget(null)}
         />
       )}
     </div>

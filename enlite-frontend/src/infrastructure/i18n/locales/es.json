@@ -1028,6 +1028,7 @@
         "COMPLETED": "En análisis"
       },
       "reprogramBadge": "🔄 Reprogramado",
+      "notesButton": "Comentarios",
       "rejectButton": "Rechazar",
       "rejectionModal": {
         "title": "Motivo de rechazo",
@@ -2518,7 +2519,16 @@
       "doneSent_one": "{{count}} enviado",
       "doneSent_other": "{{count}} enviados",
       "doneErrors_one": "{{count}} fallido",
-      "doneErrors_other": "{{count}} fallidos"
+      "doneErrors_other": "{{count}} fallidos",
+      "panel": {
+        "sending": "Enviando invitaciones… ({{done}}/{{total}})",
+        "done_one": "{{count}} invitación enviada",
+        "done_other": "{{count}} invitaciones enviadas",
+        "doneWithErrors": "{{sent}} enviadas, {{errors}} con error",
+        "doneCancelled": "{{sent}} enviadas, {{cancelled}} canceladas",
+        "expand": "Expandir",
+        "collapse": "Contraer"
+      }
     },
     "interviews": {
       "phaseTitle1": "Configurar slots de entrevista",

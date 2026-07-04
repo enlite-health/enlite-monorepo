@@ -107,7 +107,7 @@ export function VacancyFunnelKanban({
 
       {/* Board */}
       {data?.stages && (
-        <KanbanBoard stages={data.stages} onMove={handleMove} />
+        <KanbanBoard stages={data.stages} vacancyId={vacancyId} onMove={handleMove} />
       )}
     </div>
   );
