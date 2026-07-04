@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -11,7 +11,7 @@ import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { AppLayout } from '@presentation/components/templates/DashboardLayout';
 import { useWorkerNavItems } from '@presentation/config/workerNavigation';
 import { GeneralInfoTab } from './tabs/GeneralInfoTab';
-import { ServiceAddressTab } from './tabs/ServiceAddressTab';
+import { ServiceAddressTab, type BeforeNextGuard } from './tabs/ServiceAddressTab';
 import { AvailabilityTab } from './tabs/AvailabilityTab';
 import { DocumentsTab } from './tabs/DocumentsTab';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -160,6 +160,15 @@ export function WorkerProfilePage(): JSX.Element {
 
   const currentTabIndex = tabs.findIndex((tab) => tab.id === activeTab);
 
+  // Gate opcional registrado pela aba ativa: se devolver false, o Siguiente
+  // (footer e carousel mobile) não avança. Hoje só a aba de endereço registra
+  // — sem dirección o prestador pulava a etapa e nunca voltava a preenchê-la.
+  const beforeNextGuardRef = useRef<BeforeNextGuard | null>(null);
+
+  const registerBeforeNextGuard = useCallback((guard: BeforeNextGuard | null): void => {
+    beforeNextGuardRef.current = guard;
+  }, []);
+
   const goToPrevTab = (): void => {
     if (currentTabIndex > 0) {
       setActiveTab(tabs[currentTabIndex - 1].id);
@@ -168,10 +177,13 @@ export function WorkerProfilePage(): JSX.Element {
   };
 
   const goToNextTab = (): void => {
-    if (currentTabIndex < tabs.length - 1) {
-      setActiveTab(tabs[currentTabIndex + 1].id);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    void (async () => {
+      if (beforeNextGuardRef.current && !(await beforeNextGuardRef.current())) return;
+      if (currentTabIndex < tabs.length - 1) {
+        setActiveTab(tabs[currentTabIndex + 1].id);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    })();
   };
 
   const handleFinish = (): void => {
@@ -189,7 +201,7 @@ export function WorkerProfilePage(): JSX.Element {
       case 'general':
         return <GeneralInfoTab />;
       case 'address':
-        return <ServiceAddressTab />;
+        return <ServiceAddressTab registerBeforeNextGuard={registerBeforeNextGuard} />;
       case 'availability':
         return <AvailabilityTab />;
       case 'documents':
