@@ -74,6 +74,12 @@ src/
 - Ao criar novas telas ou componentes, **sempre** usar chaves i18n desde o início.
 - Estrutura de chaves: agrupar por feature/página (ex: `admin.vacancyDetail.statusCard.title`).
 
+#### Enums vindos do backend (OBRIGATÓRIO)
+- **JSX nunca renderiza enum cru** (`CAREGIVER`, `BOTH`, `SEARCHING`, …). Todo valor de enum passa por i18n na renderização: `t('admin....Options.${value}', value)` — o segundo argumento é o fallback pro valor cru (não quebra se surgir valor novo, mas o teste de cobertura pega).
+- **Guard automático**: `src/test/rawEnumLeakGuard.ts` exporta `expectNoRawEnumLeaks(container)` — deriva o vocabulário de enums do próprio `es.json` (toda chave ALL_CAPS) e falha o teste se qualquer enum aparecer cru no DOM. Todo teste que renderiza tela/componente admin **com i18n real** deve chamar o guard após o render (setup de i18n real: ver `sex-both-i18n.test.tsx`).
+- **Cobertura de tradução**: `src/infrastructure/i18n/__tests__/enumTranslationCoverage.test.ts` garante que os valores de enum do domínio têm tradução em es/pt-BR. Ao adicionar valor novo a um enum (ex: nova profissão), adicionar a chave nos grupos `*Options` correspondentes — o teste falha se esquecer.
+- Regressões conhecidas dessa classe: `required_sex='BOTH'` cru (fix: `sex-both-i18n.test.tsx`) e `profession='CAREGIVER'` cru no card do caso (fix: `profession-enum-i18n.test.tsx`).
+
 ### Estilo
 - Usar classes Tailwind. Evitar CSS custom exceto em `styles/`.
 - Ícones via `lucide-react`.
