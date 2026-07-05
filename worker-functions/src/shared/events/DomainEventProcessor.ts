@@ -110,4 +110,89 @@ export class DomainEventProcessor {
     }
     return processed;
   }
+
+  /**
+   * Safety net scoped to a single event name — same as `sweepPendingEvents` but
+   * filtered by `event`, so it can never touch other event types (e.g.
+   * `vacancy.created`, which fires WhatsApp invites as a side effect).
+   *
+   * Used by the allowlist-scoped backlog sweep, one call per allowed event
+   * (POST /api/internal/events/sweep-safe → SWEEP_SAFE_EVENTS).
+   */
+  async sweepPendingByEvent(
+    eventName: string,
+    olderThanMinutes = 5,
+    limit = 100,
+  ): Promise<{ processed: number; total: number }> {
+    const { rows } = await this.pool.query(
+      `SELECT id FROM domain_events
+       WHERE status = 'pending'
+         AND event = $1
+         AND created_at < NOW() - INTERVAL '1 minute' * $2
+       ORDER BY created_at ASC
+       LIMIT $3`,
+      [eventName, olderThanMinutes, limit],
+    );
+
+    let processed = 0;
+    for (const row of rows) {
+      const result = await this.processEvent(row.id);
+      if (result.status === 'processed') processed++;
+    }
+
+    if (rows.length > 0) {
+      console.log(
+        `[DomainEventProcessor] Sweep(${eventName}): ${processed}/${rows.length} events processed`,
+      );
+    }
+    return { processed, total: rows.length };
+  }
+
+  /**
+   * Deletes redundant PENDING `worker.mirror_requested` events without ever
+   * calling AnaCare. Scoped exclusively to this event name.
+   *
+   * A pending mirror event is provably redundant when, after a 30-minute
+   * anti in-flight guard:
+   *   (a) the worker it targets is already mirrored
+   *       (`workers.ana_care_synced_at IS NOT NULL`) — reprocessing would just
+   *       re-send a PATCH that changes nothing, or
+   *   (b) a newer PENDING mirror event exists for the same worker — this one
+   *       was superseded and dedup keeps only the most recent.
+   *
+   * Never deletes the only/most-recent pending event of a worker that hasn't
+   * been synced yet.
+   */
+  async deleteRedundantMirrorEvents(): Promise<number> {
+    const result = await this.pool.query(
+      `DELETE FROM domain_events
+       WHERE id IN (
+         SELECT de.id
+         FROM domain_events de
+         WHERE de.event = 'worker.mirror_requested'
+           AND de.status = 'pending'
+           AND de.created_at < NOW() - INTERVAL '30 minutes'
+           AND (
+             EXISTS (
+               SELECT 1 FROM workers w
+               WHERE w.id = (de.payload->>'workerId')::uuid
+                 AND w.ana_care_synced_at IS NOT NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM domain_events de2
+               WHERE de2.event = 'worker.mirror_requested'
+                 AND de2.status = 'pending'
+                 AND (de2.payload->>'workerId')::uuid = (de.payload->>'workerId')::uuid
+                 AND de2.created_at > de.created_at
+             )
+           )
+       )`,
+    );
+
+    const deleted = result.rowCount ?? 0;
+    if (deleted > 0) {
+      console.log(`[DomainEventProcessor] deleteRedundantMirrorEvents: deleted ${deleted} events`);
+    }
+    return deleted;
+  }
 }

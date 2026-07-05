@@ -14,6 +14,19 @@ const EventsHealthQuerySchema = z.object({
   stuckThresholdMinutes: z.coerce.number().int().positive().max(1440).optional().default(15),
 });
 
+const SweepSafeQuerySchema = z.object({
+  olderThanMinutes: z.coerce.number().int().positive().max(1440).optional().default(5),
+  limit: z.coerce.number().int().positive().max(1000).optional().default(100),
+});
+
+/**
+ * Allowlist explícito de eventos elegíveis para o sweep de durabilidade
+ * (POST /api/internal/events/sweep-safe). Cada entrada precisa ter handler
+ * idempotente confirmado — NUNCA incluir `vacancy.created` (dispara convites
+ * WhatsApp; reprocessar um evento já entregue re-envia mensagem ao worker).
+ */
+export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registration_completed'] as const;
+
 /**
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
  * All endpoints are protected by InternalAuthMiddleware.
@@ -135,6 +148,52 @@ export class InternalController {
       res.status(200).json({ status: 'ok', processed });
     } catch (err) {
       console.error('[InternalController] sweepEvents error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * POST /api/internal/events/sweep-safe
+   * Trigger: Cloud Scheduler / manual incident response — safety net escopado
+   * a um ALLOWLIST explícito de eventos (`SWEEP_SAFE_EVENTS`), nunca "todos os
+   * pendentes" (evita reprocessar `vacancy.created` e reenviar convites).
+   *
+   * Flow: (1) apaga eventos `worker.mirror_requested` provadamente redundantes
+   * (mirror-only — usa `ana_care_synced_at`, que só existe para esse evento),
+   * (2) itera SWEEP_SAFE_EVENTS chamando `sweepPendingByEvent` UMA VEZ por
+   * evento (nunca um sweep genérico) e soma os resultados.
+   */
+  async sweepSafeEvents(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = SweepSafeQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.errors.map(e => e.message).join('; '),
+        });
+        return;
+      }
+
+      const { olderThanMinutes, limit } = parsed.data;
+
+      const deleted = await this.eventProcessor.deleteRedundantMirrorEvents();
+
+      let processed = 0;
+      let total = 0;
+      const byEvent: Record<string, { processed: number; total: number }> = {};
+
+      for (const eventName of SWEEP_SAFE_EVENTS) {
+        const result = await this.eventProcessor.sweepPendingByEvent(eventName, olderThanMinutes, limit);
+        byEvent[eventName] = result;
+        processed += result.processed;
+        total += result.total;
+      }
+
+      logger.info({ msg: '[sweep-safe] done', deleted, processed, total, byEvent });
+      res.status(200).json({ deleted, processed, total, byEvent });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ msg: '[sweep-safe] error', error: error.message });
+      reportError(error, { source: 'InternalController:sweepSafeEvents' });
       res.status(500).json({ error: 'Internal server error' });
     }
   }

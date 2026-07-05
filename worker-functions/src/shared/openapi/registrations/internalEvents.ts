@@ -34,6 +34,27 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post',
+  path: '/api/internal/events/sweep-safe',
+  tags: ['Internal · Events'],
+  summary: 'Sweep escopado a um allowlist explícito de eventos (SWEEP_SAFE_EVENTS)',
+  description:
+    'Safety net escopado ao allowlist `worker.mirror_requested` + `worker.registration_completed` ' +
+    '— NUNCA um sweep genérico de "todos os pendentes" (evitaria reprocessar `vacancy.created`, ' +
+    'que reenviaria convites WhatsApp). Fluxo: (1) apaga eventos `worker.mirror_requested` pending ' +
+    'provadamente redundantes (worker já sincronizado via ana_care_synced_at, ou superado por um ' +
+    'evento mais novo do mesmo worker) sem chamar o AnaCare; (2) reprocessa o backlog pendente de ' +
+    'cada evento do allowlist, um de cada vez. Retorna also `byEvent` com processed/total por tipo. ' +
+    'Autenticado via X-API-Key interna.',
+  security: [{ internalApiKey: [] }],
+  responses: {
+    200: { description: 'Sweep concluído.', content: { 'application/json': { schema: OkMessage } } },
+    401: { description: 'X-API-Key ausente ou inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/api/internal/events/health',
   tags: ['Internal · Events'],
