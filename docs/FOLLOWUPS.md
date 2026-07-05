@@ -1739,3 +1739,20 @@ O service `worker-functions-mcp` de stg estava com a revision apontando pra uma 
 **Critério para fechar:** criar `mcp-principal-triage-service` em enlite-stg (mesmo formato do prd) e rodar o smoke test `scripts/mcp-smoke-test.sh` contra stg.
 
 **Gatilho:** quando o triage-service ganhar ambiente de staging ou ao testar o canal MCP interno fora de prod.
+
+### TD-060 — Eventos `funnel_stage.rejected` / `not_qualified` são órfãos (sem consumidor) + Kanban tempo-real adiado
+
+- **Status:** aberto (decisão de produto: adiar tempo-real).
+- **Descoberto em:** 2026-07-05, pelo alerta de backlog de domain_events (que corretamente flagrou eventos recentes parados).
+- **Dono provável:** backend + frontend (feature cross-project).
+- **Bloqueador?** Não. A rejeição do Talentum funciona (encuadre→RECHAZADO + WJA→REJECTED síncrono, migration 191) e o Kanban já reflete no refresh.
+
+**O que é:**
+
+`ProcessTalentumPrescreening` emite `funnel_stage.rejected` e `funnel_stage.not_qualified` no outbox, mas **nenhum handler os consome** (diferente de `funnel_stage.qualified`, que tem handler + Pub/Sub → agenda entrevista). O efeito de negócio da rejeição já acontece síncrono na transação; os eventos são redundantes pro Kanban atual (que lê `worker_job_applications.application_funnel_stage` no load). Verificado em prod: 40/40 workers com evento `rejected` pendente já estão `WJA=REJECTED`. Logo os eventos acumulam `pending` (~40 dias) e tripavam o alerta.
+
+**Decisão (2026-07-05):** NÃO fazer Kanban tempo-real — refresh é aceitável. NOT_QUALIFIED colapsado em REJECTED está correto (mesmo balde). Os 2 eventos foram **excluídos da métrica de alerta** `domain_event_backlog_stuck` (filtro `NOT event IN (rejected, not_qualified)`) pra não paginar; seguem visíveis no `/api/internal/events/health`.
+
+**Critério para fechar:** OU (a) construir o Kanban tempo-real de verdade (emitir evento em TODA transição de `application_funnel_stage` + consumidor SSE/short-poll + frontend aplicando ao vivo — aí esses eventos ganham consumidor e drenam), OU (b) parar de emitir `rejected`/`not_qualified` se confirmado que são código morto. Enquanto nenhum dos dois, os eventos ficam pending (inertes) e o alerta os ignora.
+
+**Gatilho:** quando priorizarem Kanban tempo-real, ou numa limpeza do outbox.
