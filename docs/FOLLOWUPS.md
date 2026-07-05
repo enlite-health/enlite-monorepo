@@ -1792,3 +1792,18 @@ Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos co
 4. Se o emissor identificado for uma key solta da era n8n, rotacionar para SA dedicada `talentum-webhook-identity`.
 
 **Gatilho:** logs do item 1 coletados (≥1 semana de tráfego) ou qualquer mudança na integração Talentum.
+
+### TD-063 — Suíte `e2e/integration` do frontend vermelha em main (modal de dedup de domicílio)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-05, ao rodar o gate `make test-integration` pro PR #103 (normalização de endereços).
+- **Dono provável:** frontend (testes da feature de dedup, release 2026-06-22 — ver `docs/HANDOFF_2026-06-22_dedup_release.md`).
+- **Bloqueador?** Para PRs que dependem do gate de integração, sim — a suíte não fica verde em main.
+
+**O que é:**
+
+22 testes de `enlite-frontend/e2e/integration/` falham em `main` sem diff nenhum (provado por experimento de controle no PR #103: falha idêntica com o diff stashado). Causa: o modal novo **"Este domicilio ya tiene una vacante"** (dedup de domicílio) intercepta fluxos que os testes esperam chegar em outros modais/telas — ex.: `resume-draft-vacancy` espera "Vacante en curso encontrada" e recebe o modal de dedup (screenshot diff de 67%). Suítes afetadas: resume-draft-vacancy (7), kanban-* (vários), match-* (3), worker-profile-* (2), wja-flow-visuals, postularse-incomplete-modal.
+
+**Fix esperado:** atualizar os testes pra lidar com o modal de dedup (fechar/desviar quando aparecer, ou dados de teste com domicílios únicos) + re-gravar as baselines visuais afetadas. Enquanto aberto, PRs backend-only devem registrar a vermelhidão pré-existente com prova de controle (stash) em vez de "esperar verde".
+
+**Nota adicional (infra local):** `make test-integration` recria o container `enlite-api` a partir de imagem stale (node_modules sem `tsconfig-paths`) e trava no health-check — workaround documentado: `docker exec enlite-api npm install && docker restart enlite-api`. Consertar a imagem (rebuild) evita o remendo a cada swap de auth.
