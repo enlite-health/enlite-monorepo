@@ -52,6 +52,11 @@ export function createInternalRoutes(controller: InternalController): Router {
     controller.sweepEvents(req, res);
   });
 
+  // Read-only diagnostic: backlog + idade do outbox domain_events por tipo de evento
+  router.get('/events/health', (req: Request, res: Response) => {
+    controller.getEventsHealth(req, res);
+  });
+
   // Cloud Scheduler safety net: lembretes pendentes + no-shows (a cada 5min)
   router.post('/reminders/sweep', (req: Request, res: Response) => {
     controller.sweepReminders(req, res);

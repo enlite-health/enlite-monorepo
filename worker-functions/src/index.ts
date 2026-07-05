@@ -52,6 +52,7 @@ import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/w
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
+import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
@@ -372,7 +373,8 @@ const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsub
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
 const recruitmentHealthController = new RecruitmentHealthController(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler);
+const domainEventBacklogService = new DomainEventBacklogService(dbPool);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService);
 app.use('/api/internal', createInternalRoutes(internalController));
 
 // ========== Recruitment Health Dashboard ==========
