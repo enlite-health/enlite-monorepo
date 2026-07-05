@@ -20,6 +20,7 @@ import {
   extractNeighborhood,
   extractNeighborhoodFromLocation,
 } from './helpers/locationHelpers';
+import { normalizeProvince, stripPostalCodePrefix } from '@shared/utils/argentinaLocationNormalizer';
 
 type CustomFieldMap = Record<string, unknown>;
 
@@ -201,10 +202,14 @@ export class ClickUpPatientMapper {
     // Slots 2 and 3 (secondary) do NOT use the legacy fallback because those
     // patient-level fields refer to the patient's habitual zone, not a
     // secondary address.
+    // Raw formatted-address fallback (used only when the location field lacks
+    // address_components entirely, e.g. plain-string legacy values) is dirty
+    // by construction — route it through the same normalizer so legacy
+    // patient-level fields never bypass the border-of-import cleanup.
     const legacyPatientState        = extractStateFromLocation(cf['Provincia del Paciente'])
-                                   ?? this.extractFormattedAddress(cf['Provincia del Paciente']);
+                                   ?? normalizeProvince(this.extractFormattedAddress(cf['Provincia del Paciente']));
     const legacyPatientCity         = extractCityFromLocation(cf['Ciudad / Localidad del Paciente'])
-                                   ?? this.extractFormattedAddress(cf['Ciudad / Localidad del Paciente']);
+                                   ?? stripPostalCodePrefix(this.extractFormattedAddress(cf['Ciudad / Localidad del Paciente']));
     const legacyPatientNeighborhood = extractNeighborhood(cf['Zona o Barrio Paciente']);
 
     const slots = [
