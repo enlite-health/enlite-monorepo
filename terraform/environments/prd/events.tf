@@ -189,7 +189,10 @@ resource "google_logging_metric" "domain_event_delivery_failure" {
 resource "google_logging_metric" "domain_event_backlog_stuck" {
   project = var.project_id
   name    = "domain_event_backlog_stuck"
-  filter  = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"[events/health] backlog stuck\""
+  # Exclui funnel_stage.rejected / not_qualified: eventos do Talentum sem consumidor
+  # (Kanban já reflete a rejeição via UPDATE síncrono em worker_job_applications,
+  # migration 191) — são órfãos por design, não devem paginar. Ver docs/FOLLOWUPS.md.
+  filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"[events/health] backlog stuck\" AND NOT (jsonPayload.event=\"funnel_stage.rejected\" OR jsonPayload.event=\"funnel_stage.not_qualified\")"
 
   metric_descriptor {
     metric_kind = "DELTA"
