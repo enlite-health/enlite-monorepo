@@ -235,6 +235,57 @@ describe('mapWorkerToAnaCarePayload', () => {
     });
   });
 
+  describe('truncamento de campos de texto livre (AnaCare v2: max 100 chars)', () => {
+    it('trunca calle (address.line) com 150 chars para 100', () => {
+      const longLine = 'A'.repeat(150);
+      const p = mapWorkerToAnaCarePayload(makeRecord({
+        address: { line: longLine, city: 'CDMX', state: 'CDMX', neighborhood: 'Roma', postalCode: '06700' },
+      }));
+      expect(p.calle).toHaveLength(100);
+      expect(p.calle).toBe('A'.repeat(100));
+    });
+
+    it('não trunca calle com exatamente 100 chars', () => {
+      const exact100 = 'B'.repeat(100);
+      const p = mapWorkerToAnaCarePayload(makeRecord({
+        address: { line: exact100, city: 'CDMX', state: 'CDMX', neighborhood: 'Roma', postalCode: '06700' },
+      }));
+      expect(p.calle).toHaveLength(100);
+      expect(p.calle).toBe(exact100);
+    });
+
+    it('mantém calle curta intacta', () => {
+      const p = mapWorkerToAnaCarePayload(makeRecord({
+        address: { line: 'Av. Insurgentes 100', city: 'CDMX', state: 'CDMX', neighborhood: 'Roma', postalCode: '06700' },
+      }));
+      expect(p.calle).toBe('Av. Insurgentes 100');
+    });
+
+    it('trunca colonia, ciudad e estado quando > 100 chars', () => {
+      const p = mapWorkerToAnaCarePayload(makeRecord({
+        address: {
+          line: 'Rua Curta 1',
+          city: 'C'.repeat(120),
+          state: 'E'.repeat(110),
+          neighborhood: 'N'.repeat(130),
+          postalCode: '06700',
+        },
+      }));
+      expect(p.ciudad).toHaveLength(100);
+      expect(p.estado).toHaveLength(100);
+      expect(p.colonia).toHaveLength(100);
+    });
+
+    it('trunca nombre e apellidos longos', () => {
+      const p = mapWorkerToAnaCarePayload(makeRecord({
+        firstName: 'F'.repeat(150),
+        lastName: 'L'.repeat(150),
+      }));
+      expect(p.nombre).toHaveLength(100);
+      expect(p.apellidos).toHaveLength(100);
+    });
+  });
+
   describe('overrides de tipo', () => {
     it('inclui tipo_enfermera quando fornecido', () => {
       const p = mapWorkerToAnaCarePayload(makeRecord(), { tipo_enfermera: 42 });

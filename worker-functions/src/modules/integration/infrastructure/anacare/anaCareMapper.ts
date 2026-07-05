@@ -47,6 +47,16 @@ function nonEmpty(val: string | null | undefined): string | undefined {
 }
 
 /**
+ * nonEmpty + trunca ao limite `max` da API AnaCare.
+ * AnaCare v2: max 100 chars (confirmado em calle via 400 — ver docs/features/anacare/agencies-integration-api-v2.md).
+ * Evita rejeição 400 da API em campos de texto livre (endereço/nome) que excedam o limite.
+ */
+function capped(val: string | null | undefined, max: number): string | undefined {
+  const s = nonEmpty(val);
+  return s ? s.slice(0, max) : undefined;
+}
+
+/**
  * Mapeia WorkerMirrorRecord → AnaCareNursePayload (somente criação/alta completa).
  *
  * Campos obrigatórios: nombre, apellidos, genero, email.
@@ -61,8 +71,8 @@ export function mapWorkerToAnaCarePayload(
     tipo_contratacion?: number | string;
   },
 ): AnaCareNursePayload {
-  const nombre = nonEmpty(record.firstName);
-  const apellidos = nonEmpty(record.lastName);
+  const nombre = capped(record.firstName, 100);
+  const apellidos = capped(record.lastName, 100);
   const genero = mapSexToAnaCareGenero(record.sex);
 
   if (!nombre) throw new Error('mapWorkerToAnaCarePayload: firstName is required');
@@ -82,13 +92,14 @@ export function mapWorkerToAnaCarePayload(
   if (telefono) payload.telefono = telefono;
 
   // Endereço da área de atuação (worker_service_areas)
-  const calle = nonEmpty(record.address.line);
+  // Campos de texto livre truncados a 100 chars — AnaCare v2 rejeita com 400 acima disso (ex: calle).
+  const calle = capped(record.address.line, 100);
   if (calle) payload.calle = calle;
-  const estado = nonEmpty(record.address.state);
+  const estado = capped(record.address.state, 100);
   if (estado) payload.estado = estado;
-  const ciudad = nonEmpty(record.address.city);
+  const ciudad = capped(record.address.city, 100);
   if (ciudad) payload.ciudad = ciudad;
-  const colonia = nonEmpty(record.address.neighborhood);
+  const colonia = capped(record.address.neighborhood, 100);
   if (colonia) payload.colonia = colonia;
   const codigoPostal = nonEmpty(record.address.postalCode);
   if (codigoPostal) payload.codigo_postal = codigoPostal;
