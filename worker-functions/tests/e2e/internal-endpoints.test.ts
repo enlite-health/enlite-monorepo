@@ -115,4 +115,53 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
   // trigger automático (Cloud Scheduler foi eliminado).
   //
   // Futuramente bulk-dispatch será reativado com Cloud Tasks (~1x/semana).
+
+  // ─── Events Health (backlog diagnostic) ─────────────────────────────
+
+  describe('GET /events/health', () => {
+    it('returns 403 without auth', async () => {
+      try {
+        await axios.get(`${API_URL}/api/internal/events/health`);
+        fail('Expected 403');
+      } catch (err) {
+        const e = err as AxiosError;
+        expect(e.response?.status).toBe(403);
+      }
+    });
+
+    it('reports a stuck event group and returns 200 with summary/stuckCount', async () => {
+      const eventName = `test.events-health.stuck.${Date.now()}`;
+      const { rows } = await pool.query(
+        `INSERT INTO domain_events (event, payload, status, created_at)
+         VALUES ($1, '{}'::jsonb, 'pending', NOW() - INTERVAL '30 minutes')
+         RETURNING id`,
+        [eventName],
+      );
+      const eventId = rows[0].id;
+
+      try {
+        const res = await internalApi.get('/events/health', {
+          params: { recentWindowHours: 6, stuckThresholdMinutes: 15 },
+        });
+
+        expect(res.status).toBe(200);
+        expect(res.data.stuckCount).toBeGreaterThanOrEqual(1);
+
+        const row = res.data.summary.find((r: { event: string }) => r.event === eventName);
+        expect(row).toBeDefined();
+        expect(row.stuck).toBe(true);
+        expect(row.pendingRecent).toBe(1);
+        expect(row.oldestRecentAgeMinutes).toBeGreaterThanOrEqual(29);
+      } finally {
+        await pool.query('DELETE FROM domain_events WHERE id = $1', [eventId]);
+      }
+    });
+
+    it('returns 400 for an invalid query param', async () => {
+      const res = await internalApi
+        .get('/events/health', { params: { recentWindowHours: 'not-a-number' } })
+        .catch(e => e.response);
+      expect(res.status).toBe(400);
+    });
+  });
 });

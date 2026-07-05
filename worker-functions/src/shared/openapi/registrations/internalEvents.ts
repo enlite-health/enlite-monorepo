@@ -32,3 +32,21 @@ registry.registerPath({
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/internal/events/health',
+  tags: ['Internal · Events'],
+  summary: 'Backlog/idade do outbox domain_events por tipo de evento',
+  description:
+    'Diagnóstico read-only: agrega domain_events por tipo de evento e reporta backlog pendente, ' +
+    'backlog "recente" (dentro de recentWindowHours) e a idade do pending recente mais antigo. ' +
+    'Loga WARN estruturado para cada grupo stuck (idade > stuckThresholdMinutes). ' +
+    'Autenticado via X-API-Key interna.',
+  security: [{ internalApiKey: [] }],
+  responses: {
+    200: { description: 'Summary calculado com sucesso.', content: { 'application/json': { schema: OkMessage } } },
+    401: { description: 'X-API-Key ausente ou inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});

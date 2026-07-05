@@ -1,11 +1,18 @@
 import { Request, Response } from 'express';
+import { z } from 'zod';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { PubSubClient } from '@shared/events/PubSubClient';
+import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
 import { logger, reportError } from '@shared/logging';
+
+const EventsHealthQuerySchema = z.object({
+  recentWindowHours: z.coerce.number().int().positive().max(168).optional().default(6),
+  stuckThresholdMinutes: z.coerce.number().int().positive().max(1440).optional().default(15),
+});
 
 /**
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
@@ -18,6 +25,7 @@ export class InternalController {
     private readonly reminderScheduler: ReminderScheduler,
     private readonly bulkDispatchScheduler: BulkDispatchScheduler,
     private readonly bulkDispatchTalentumScheduler: BulkDispatchTalentumScheduler,
+    private readonly domainEventBacklogService: DomainEventBacklogService,
   ) {}
 
   /**
@@ -127,6 +135,67 @@ export class InternalController {
       res.status(200).json({ status: 'ok', processed });
     } catch (err) {
       console.error('[InternalController] sweepEvents error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * GET /api/internal/events/health
+   *
+   * Read-only diagnostic: reporta backlog + idade do outbox `domain_events`
+   * POR TIPO DE EVENTO, pra identificar rápido qual pipeline parou de consumir.
+   * Loga um WARN estruturado por grupo stuck (o alerta depende dos campos exatos).
+   *
+   * Query params:
+   *   recentWindowHours?     default 6  — janela que define pending "recente"
+   *   stuckThresholdMinutes? default 15 — idade acima da qual um grupo é stuck
+   */
+  async getEventsHealth(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = EventsHealthQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.errors.map(e => e.message).join('; '),
+        });
+        return;
+      }
+
+      const { recentWindowHours, stuckThresholdMinutes } = parsed.data;
+      const summary = await this.domainEventBacklogService.getBacklogSummary(
+        recentWindowHours,
+        stuckThresholdMinutes,
+      );
+
+      const stuckRows = summary.filter(row => row.stuck);
+
+      for (const row of stuckRows) {
+        logger.warn({
+          msg: '[events/health] backlog stuck',
+          event: row.event,
+          pendingRecent: row.pendingRecent,
+          pendingTotal: row.pendingTotal,
+          oldestRecentAgeMinutes: row.oldestRecentAgeMinutes,
+        });
+      }
+
+      if (stuckRows.length === 0) {
+        logger.info({ msg: '[events/health] ok', stuckCount: 0 });
+      }
+
+      const worstOldestRecentAgeMinutes = summary.reduce(
+        (max, row) => Math.max(max, row.oldestRecentAgeMinutes),
+        0,
+      );
+
+      res.status(200).json({
+        summary,
+        stuckCount: stuckRows.length,
+        worstOldestRecentAgeMinutes,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ msg: '[events/health] error', error: error.message });
+      reportError(error, { source: 'InternalController:getEventsHealth' });
       res.status(500).json({ error: 'Internal server error' });
     }
   }

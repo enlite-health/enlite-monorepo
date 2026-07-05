@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { InternalController } from '../InternalController';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
+import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { OutboxProcessor } from '../../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../../infrastructure/BulkDispatchScheduler';
@@ -23,8 +24,8 @@ function mockRes() {
   } as unknown as Response;
 }
 
-function mockReq(body: Record<string, unknown> = {}): Request {
-  return { body } as unknown as Request;
+function mockReq(body: Record<string, unknown> = {}, query: Record<string, unknown> = {}): Request {
+  return { body, query } as unknown as Request;
 }
 
 /** Helper: build a Pub/Sub push body with base64-encoded data */
@@ -44,6 +45,7 @@ describe('InternalController', () => {
   let reminderScheduler: jest.Mocked<ReminderScheduler>;
   let bulkDispatchScheduler: jest.Mocked<BulkDispatchScheduler>;
   let bulkDispatchTalentumScheduler: jest.Mocked<BulkDispatchTalentumScheduler>;
+  let domainEventBacklogService: jest.Mocked<DomainEventBacklogService>;
   let controller: InternalController;
 
   beforeEach(() => {
@@ -74,12 +76,17 @@ describe('InternalController', () => {
       run: jest.fn().mockResolvedValue({ batchId: 'batch-t-1', total: 5, sent: 4, errors: 1 }),
     } as unknown as jest.Mocked<BulkDispatchTalentumScheduler>;
 
+    domainEventBacklogService = {
+      getBacklogSummary: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<DomainEventBacklogService>;
+
     controller = new InternalController(
       eventProcessor,
       outboxProcessor,
       reminderScheduler,
       bulkDispatchScheduler,
       bulkDispatchTalentumScheduler,
+      domainEventBacklogService,
     );
   });
 
@@ -216,6 +223,86 @@ describe('InternalController', () => {
       eventProcessor.sweepPendingEvents.mockRejectedValue(new Error('fail'));
       const res = mockRes();
       await controller.sweepEvents(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── getEventsHealth ───────────────────────────────────────────────
+
+  describe('getEventsHealth', () => {
+    it('returns summary + stuckCount + worstOldestRecentAgeMinutes with default params', async () => {
+      domainEventBacklogService.getBacklogSummary.mockResolvedValue([
+        {
+          event: 'worker.qualified',
+          pendingTotal: 2,
+          pendingRecent: 2,
+          oldestRecentAgeMinutes: 5,
+          failedTotal: 0,
+          stuck: false,
+        },
+      ]);
+      const req = mockReq({}, {});
+      const res = mockRes();
+
+      await controller.getEventsHealth(req, res);
+
+      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(6, 15);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        summary: [
+          {
+            event: 'worker.qualified',
+            pendingTotal: 2,
+            pendingRecent: 2,
+            oldestRecentAgeMinutes: 5,
+            failedTotal: 0,
+            stuck: false,
+          },
+        ],
+        stuckCount: 0,
+        worstOldestRecentAgeMinutes: 5,
+      });
+    });
+
+    it('parses recentWindowHours/stuckThresholdMinutes from query', async () => {
+      const req = mockReq({}, { recentWindowHours: '12', stuckThresholdMinutes: '30' });
+      const res = mockRes();
+
+      await controller.getEventsHealth(req, res);
+
+      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(12, 30);
+    });
+
+    it('returns 400 for invalid query params', async () => {
+      const req = mockReq({}, { recentWindowHours: 'not-a-number' });
+      const res = mockRes();
+
+      await controller.getEventsHealth(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(domainEventBacklogService.getBacklogSummary).not.toHaveBeenCalled();
+    });
+
+    it('computes stuckCount from rows with stuck=true', async () => {
+      domainEventBacklogService.getBacklogSummary.mockResolvedValue([
+        { event: 'a', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 20, failedTotal: 0, stuck: true },
+        { event: 'b', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 2, failedTotal: 0, stuck: false },
+      ]);
+      const res = mockRes();
+
+      await controller.getEventsHealth(mockReq(), res);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ stuckCount: 1, worstOldestRecentAgeMinutes: 20 }),
+      );
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      domainEventBacklogService.getBacklogSummary.mockRejectedValue(new Error('db down'));
+      const res = mockRes();
+
+      await controller.getEventsHealth(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });
