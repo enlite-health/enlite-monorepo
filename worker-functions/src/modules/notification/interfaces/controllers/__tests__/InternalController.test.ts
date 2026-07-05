@@ -52,6 +52,8 @@ describe('InternalController', () => {
     eventProcessor = {
       processEvent: jest.fn().mockResolvedValue({ status: 'processed', event: 'test' }),
       sweepPendingEvents: jest.fn().mockResolvedValue(3),
+      sweepPendingByEvent: jest.fn().mockResolvedValue({ processed: 2, total: 3 }),
+      deleteRedundantMirrorEvents: jest.fn().mockResolvedValue(1),
       registerHandler: jest.fn(),
     } as unknown as jest.Mocked<DomainEventProcessor>;
 
@@ -223,6 +225,85 @@ describe('InternalController', () => {
       eventProcessor.sweepPendingEvents.mockRejectedValue(new Error('fail'));
       const res = mockRes();
       await controller.sweepEvents(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── sweepSafeEvents ───────────────────────────────────────────────
+
+  describe('sweepSafeEvents', () => {
+    beforeEach(() => {
+      // Event-aware mock: returns a distinct {processed,total} per event name,
+      // so the test can prove BOTH allowlist entries were swept (not just one).
+      eventProcessor.sweepPendingByEvent.mockImplementation(async (eventName: string) => {
+        if (eventName === 'worker.mirror_requested') return { processed: 2, total: 3 };
+        if (eventName === 'worker.registration_completed') return { processed: 1, total: 1 };
+        throw new Error(`unexpected event in sweep-safe: ${eventName}`);
+      });
+    });
+
+    it('deletes redundant mirror events, then sweeps EACH allowlist event and sums the totals', async () => {
+      const req = mockReq({}, {});
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(req, res);
+
+      expect(eventProcessor.deleteRedundantMirrorEvents).toHaveBeenCalled();
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('worker.mirror_requested', 5, 100);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith(
+        'worker.registration_completed',
+        5,
+        100,
+      );
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(2);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        deleted: 1,
+        processed: 3, // 2 + 1
+        total: 4, // 3 + 1
+        byEvent: {
+          'worker.mirror_requested': { processed: 2, total: 3 },
+          'worker.registration_completed': { processed: 1, total: 1 },
+        },
+      });
+    });
+
+    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. vacancy.created)', async () => {
+      const res = mockRes();
+      await controller.sweepSafeEvents(mockReq(), res);
+
+      const calledEvents = eventProcessor.sweepPendingByEvent.mock.calls.map(c => c[0]);
+      expect(calledEvents).not.toContain('vacancy.created');
+      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed'].sort());
+    });
+
+    it('parses olderThanMinutes/limit from query and forwards to every allowlist event', async () => {
+      const req = mockReq({}, { olderThanMinutes: '10', limit: '25' });
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(req, res);
+
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('worker.mirror_requested', 10, 25);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('worker.registration_completed', 10, 25);
+    });
+
+    it('returns 400 for invalid query params', async () => {
+      const req = mockReq({}, { olderThanMinutes: 'not-a-number' });
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(eventProcessor.deleteRedundantMirrorEvents).not.toHaveBeenCalled();
+      expect(eventProcessor.sweepPendingByEvent).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      eventProcessor.deleteRedundantMirrorEvents.mockRejectedValue(new Error('db down'));
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });

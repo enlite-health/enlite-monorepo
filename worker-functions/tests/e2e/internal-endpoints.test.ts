@@ -116,6 +116,117 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
   //
   // Futuramente bulk-dispatch será reativado com Cloud Tasks (~1x/semana).
 
+  // ─── Sweep Safe (allowlist safety net: mirror + registration_completed) ──
+
+  describe('POST /events/sweep-safe', () => {
+    it('returns 403 without auth', async () => {
+      try {
+        await axios.post(`${API_URL}/api/internal/events/sweep-safe`, {});
+        fail('Expected 403');
+      } catch (err) {
+        const e = err as AxiosError;
+        expect(e.response?.status).toBe(403);
+      }
+    });
+
+    it('returns 200 with {deleted, processed, total} scoped to worker.mirror_requested only (legacy shape check)', async () => {
+      const otherEventName = `test.sweep-safe.other.${Date.now()}`;
+      const { rows } = await pool.query(
+        `INSERT INTO domain_events (event, payload, status, created_at)
+         VALUES ($1, '{}'::jsonb, 'pending', NOW() - INTERVAL '10 minutes')
+         RETURNING id`,
+        [otherEventName],
+      );
+      const otherEventId = rows[0].id;
+
+      try {
+        const res = await internalApi.post('/events/sweep-safe', {});
+
+        expect(res.status).toBe(200);
+        expect(typeof res.data.deleted).toBe('number');
+        expect(typeof res.data.processed).toBe('number');
+        expect(typeof res.data.total).toBe('number');
+
+        // A pending event of a type OUTSIDE the allowlist must stay untouched.
+        const { rows: untouched } = await pool.query(
+          `SELECT status FROM domain_events WHERE id = $1`,
+          [otherEventId],
+        );
+        expect(untouched[0].status).toBe('pending');
+      } finally {
+        await pool.query('DELETE FROM domain_events WHERE id = $1', [otherEventId]);
+      }
+    });
+
+    it('processes BOTH allowlist events (mirror + registration_completed) and leaves vacancy.created untouched', async () => {
+      const suffix = Date.now();
+      const workerId = '00000000-0000-0000-0000-000000000099';
+
+      const insertPending = async (event: string) => {
+        const { rows } = await pool.query(
+          `INSERT INTO domain_events (event, payload, status, created_at)
+           VALUES ($1, $2, 'pending', NOW() - INTERVAL '10 minutes')
+           RETURNING id`,
+          [event, JSON.stringify({ workerId })],
+        );
+        return rows[0].id as string;
+      };
+
+      const mirrorEventId = await insertPending('worker.mirror_requested');
+      const registrationEventId = await insertPending('worker.registration_completed');
+      const vacancyEventId = await insertPending(`vacancy.created.e2e-guard.${suffix}`); // never real vacancy.created in this test to avoid side effects
+
+      // Also cover the REAL vacancy.created name explicitly, to prove the allowlist
+      // (not just event-name-prefix luck) is what protects it.
+      const { rows: realVacancyRows } = await pool.query(
+        `INSERT INTO domain_events (event, payload, status, created_at)
+         VALUES ('vacancy.created', '{}'::jsonb, 'pending', NOW() - INTERVAL '10 minutes')
+         RETURNING id`,
+      );
+      const realVacancyEventId = realVacancyRows[0].id as string;
+
+      try {
+        const res = await internalApi.post('/events/sweep-safe', {});
+
+        expect(res.status).toBe(200);
+        expect(res.data.byEvent['worker.mirror_requested']).toBeDefined();
+        expect(res.data.byEvent['worker.registration_completed']).toBeDefined();
+        // Both allowlist entries must have been SELECTED for sweeping (in-scope).
+        expect(res.data.byEvent['worker.mirror_requested'].total).toBeGreaterThanOrEqual(1);
+        expect(res.data.byEvent['worker.registration_completed'].total).toBeGreaterThanOrEqual(1);
+        // registration_completed has no external dependency — proves real success.
+        expect(res.data.byEvent['worker.registration_completed'].processed).toBeGreaterThanOrEqual(1);
+
+        const { rows: statuses } = await pool.query(
+          `SELECT id, status FROM domain_events WHERE id = ANY($1::uuid[])`,
+          [[mirrorEventId, registrationEventId, vacancyEventId, realVacancyEventId]],
+        );
+        const byId = new Map(statuses.map((r: { id: string; status: string }) => [r.id, r.status]));
+
+        // Mirror event was ATTEMPTED (no longer pending) — outcome (processed/failed)
+        // depends on AnaCare/ADC reachability in this sandbox, which is out of scope
+        // for the sweep-safe logic itself (already proven in isolation with a real
+        // DB + fake handler in domain-event-mirror-sweep.integration.test.ts).
+        expect(byId.get(mirrorEventId)).not.toBe('pending');
+        expect(byId.get(registrationEventId)).toBe('processed');
+        // Outside the allowlist — untouched regardless of naming resemblance.
+        expect(byId.get(vacancyEventId)).toBe('pending');
+        expect(byId.get(realVacancyEventId)).toBe('pending');
+      } finally {
+        await pool.query('DELETE FROM domain_events WHERE id = ANY($1::uuid[])', [
+          [mirrorEventId, registrationEventId, vacancyEventId, realVacancyEventId],
+        ]);
+      }
+    });
+
+    it('returns 400 for an invalid query param', async () => {
+      const res = await internalApi
+        .post('/events/sweep-safe', {}, { params: { olderThanMinutes: 'not-a-number' } })
+        .catch(e => e.response);
+      expect(res.status).toBe(400);
+    });
+  });
+
   // ─── Events Health (backlog diagnostic) ─────────────────────────────
 
   describe('GET /events/health', () => {
