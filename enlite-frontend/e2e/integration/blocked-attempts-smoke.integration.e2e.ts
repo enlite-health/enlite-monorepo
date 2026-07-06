@@ -128,7 +128,7 @@ async function installInterceptors(page: Page): Promise<void> {
           data: {
             id: MOCK_ADMIN.uid,
             email: MOCK_ADMIN.email,
-            role: 'superadmin',
+            role: 'admin',
             firstName: 'Smoke',
             lastName: 'Admin',
             isActive: true,

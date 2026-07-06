@@ -10,9 +10,11 @@
  *   3. Paginated table with resolved worker name + vacancy title
  */
 
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
+import { EnliteRole } from '@domain/entities/EnliteRole';
 import { RefreshCw, AlertCircle, ShieldX } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -215,7 +217,28 @@ function PaginationBar({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export function BlockedAttemptsPage(): JSX.Element {
+export function BlockedAttemptsPage(): JSX.Element | null {
+  const navigate = useNavigate();
+  const { adminProfile } = useAdminAuth();
+
+  // ── Role guard (mesmo padrão do DedupCenterPage) ────────────────────────────
+  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+
+  useEffect(() => {
+    if (adminProfile && !isAdmin) {
+      navigate('/admin', { replace: true });
+    }
+  }, [adminProfile, isAdmin, navigate]);
+
+  if (adminProfile && !isAdmin) return null;
+
+  return <BlockedAttemptsPageInner />;
+}
+
+/**
+ * Inner component extracted to keep the role guard clean.
+ */
+function BlockedAttemptsPageInner(): JSX.Element {
   const { t } = useTranslation();
   const ba = (key: string) => t(`admin.blockedAttempts.${key}`);
 

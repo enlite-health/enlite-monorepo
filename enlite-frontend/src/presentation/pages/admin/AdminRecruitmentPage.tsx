@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 import { MetricCard } from '@presentation/components/atoms/MetricCard';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { DateRangeFilter } from '@presentation/components/molecules/DateRangeFilter';
@@ -16,6 +17,8 @@ import { CaseSearchBar } from '@presentation/components/molecules/CaseSearchBar'
 import { ActiveCasesTable } from '@presentation/components/organisms/ActiveCasesTable';
 import { PublicationsBarChart } from '@presentation/components/organisms/PublicationsBarChart';
 import { useDashboardData } from '@hooks/recruitment/useDashboardData';
+import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
+import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useGlobalMetrics } from '@hooks/recruitment/useGlobalMetrics';
 import { useActiveCases } from '@hooks/recruitment/useActiveCases';
 import type { DateFilterType } from '@domain/entities/RecruitmentData';
@@ -27,6 +30,8 @@ type TabType = 'global' | 'caso' | 'zona';
 
 export function AdminRecruitmentPage(): JSX.Element {
   const { t } = useTranslation();
+  const { adminProfile } = useAdminAuth();
+  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
   const [activeTab, setActiveTab] = useState<TabType>('global');
   const [dateFilter, setDateFilter] = useState<DateFilterType>('1m');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -68,13 +73,18 @@ export function AdminRecruitmentPage(): JSX.Element {
           </Typography>
         </div>
         <div className="flex items-center gap-3">
-          <Link
-            to="/admin/recruitment/blocked-attempts"
-            className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-primary transition-colors"
-          >
-            <ShieldX className="w-4 h-4" />
-            {t('admin.blockedAttempts.linkFromRecruitment')}
-          </Link>
+          {isAdmin && (
+            <Link
+              to="/admin/recruitment/blocked-attempts"
+              data-testid="blocked-attempts-link"
+              className="flex items-center gap-1.5 text-slate-600 hover:text-primary transition-colors"
+            >
+              <ShieldX className="w-4 h-4" />
+              <Text as="span" size="sm" weight="medium" color="inherit">
+                {t('admin.blockedAttempts.linkFromRecruitment')}
+              </Text>
+            </Link>
+          )}
           <div className="flex items-center gap-2">
             <img
               className="w-7 h-5"
