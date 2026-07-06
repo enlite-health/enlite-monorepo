@@ -1756,3 +1756,18 @@ O service `worker-functions-mcp` de stg estava com a revision apontando pra uma 
 **Critério para fechar:** OU (a) construir o Kanban tempo-real de verdade (emitir evento em TODA transição de `application_funnel_stage` + consumidor SSE/short-poll + frontend aplicando ao vivo — aí esses eventos ganham consumidor e drenam), OU (b) parar de emitir `rejected`/`not_qualified` se confirmado que são código morto. Enquanto nenhum dos dois, os eventos ficam pending (inertes) e o alerta os ignora.
 
 **Gatilho:** quando priorizarem Kanban tempo-real, ou numa limpeza do outbox.
+
+### TD-061 — Role-guard admin-only espalhado em cópias por página (sem SSOT)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-06, na review da feature "Postulaciones bloqueadas admin-only".
+- **Dono provável:** frontend.
+- **Bloqueador?** Não. As 3 páginas admin-only funcionam; o problema é manutenção/drift.
+
+**O que é:**
+
+A regra "tela X é admin-only" vive hoje em cópias não coordenadas: guard in-page repetido em `DedupCenterPage`, `TagCatalogPage` e `BlockedAttemptsPage` (3ª cópia adicionada nesta feature), gate no item de nav (`adminNavigation.tsx`), gate no link do dashboard (`AdminRecruitmentPage`) e `requireAdmin()` no backend. As cópias **já divergiram**: `TagCatalogPage` redireciona no `useEffect` mas NÃO tem `return null` — não-admin renderiza o conteúdo e dispara `listWorkerTags` no frame antes do redirect; `DedupCenterPage`/`BlockedAttemptsPage` retornam `null`. Além disso `adminProfile?.role === EnliteRole.ADMIN` aparece hardcoded em ~9 sites de `src/`.
+
+**Como fechar:** guard no nível de ROTA — prop `requiredRole` no `AdminProtectedRoute` (App.tsx já envolve as 3 rotas; é o choke point natural) OU um `useIsAdmin()`/`RequireAdmin` compartilhado; remover as cópias in-page no mesmo PR. Considerar junto com a feature de permissões ABAC (em discovery) — se ABAC chegar antes, resolver lá.
+
+**Gatilho:** próxima página admin-only nova, ou início da implementação ABAC.

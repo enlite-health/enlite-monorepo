@@ -47,7 +47,7 @@ const FAKE_ID_TOKEN =
 
 // ── Auth helper (sem emulador) ────────────────────────────────────────────────
 
-async function installFakeFirebaseAuth(page: Page): Promise<void> {
+async function installFakeFirebaseAuth(page: Page, role: string = MOCK_ADMIN.role): Promise<void> {
   await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
     const url = route.request().url();
     if (url.includes('signInWithPassword') || url.includes('signUp')) {
@@ -101,7 +101,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
     });
   });
 
-  // Profile retorna role=admin → adminItems aparecem no sidebar
+  // Profile retorna o role pedido → controla se adminItems aparecem no sidebar
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
       status: 200,
@@ -111,7 +111,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
         data: {
           id: MOCK_ADMIN.uid,
           email: MOCK_ADMIN.email,
-          role: MOCK_ADMIN.role,
+          role,
           firstName: 'Visual',
           lastName: 'Admin',
           isActive: true,
@@ -122,8 +122,8 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
   );
 }
 
-async function loginAsAdmin(page: Page): Promise<void> {
-  await installFakeFirebaseAuth(page);
+async function loginAsAdmin(page: Page, role: string = MOCK_ADMIN.role): Promise<void> {
+  await installFakeFirebaseAuth(page, role);
   await page.goto(`${BASE}/admin/login`);
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
@@ -158,6 +158,7 @@ test.describe('AppSidebar — separação visual admin', () => {
     // Aguarda o sidebar renderizar com os itens admin
     await expect(page.getByText('Etiquetas')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Duplicados')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Postulaciones bloqueadas')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Administración')).toBeVisible({ timeout: 10000 });
 
     // Captura apenas o sidebar lateral para evitar variação de conteúdo de página
@@ -182,5 +183,72 @@ test.describe('AppSidebar — separação visual admin', () => {
 
     // O separador deve ter role="separator"
     await expect(page.getByRole('separator').first()).toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe('AppSidebar — visão não-admin (recruiter)', () => {
+  test.setTimeout(90000);
+
+  test('RECRUITER: sidebar NÃO mostra Postulaciones bloqueadas nem seção Administración', async ({ page }) => {
+    await loginAsAdmin(page, 'recruiter');
+    mockAdminListEndpoints(page);
+
+    await page.goto(`${BASE}/admin`);
+
+    const sidebar = page.locator('aside').first();
+
+    // Itens base seguem visíveis
+    await expect(sidebar.getByText('Usuarios')).toBeVisible({ timeout: 15000 });
+    await expect(sidebar.getByText('API Docs')).toBeVisible({ timeout: 10000 });
+
+    // Itens admin-only ausentes
+    await expect(sidebar.getByText('Postulaciones bloqueadas')).toHaveCount(0);
+    await expect(sidebar.getByText('Administración')).toHaveCount(0);
+    await expect(sidebar.getByText('Etiquetas')).toHaveCount(0);
+
+    await expect(sidebar).toHaveScreenshot('admin-sidebar-recruiter-no-section.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('RECRUITER: URL direta de blocked-attempts redireciona pra /admin', async ({ page }) => {
+    await loginAsAdmin(page, 'recruiter');
+    mockAdminListEndpoints(page);
+
+    await page.goto(`${BASE}/admin/recruitment/blocked-attempts`);
+
+    // Guard da page redireciona sem renderizar conteúdo da tela bloqueada
+    await expect(page).toHaveURL(`${BASE}/admin`, { timeout: 15000 });
+    await expect(page.locator('[data-testid="blocked-content"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="blocked-skeleton"]')).toHaveCount(0);
+
+    const sidebar = page.locator('aside').first();
+    await expect(sidebar).toHaveScreenshot('admin-sidebar-recruiter-after-redirect.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('RECRUITER: header do Reclutamiento NÃO mostra o link de postulaciones bloqueadas', async ({ page }) => {
+    await loginAsAdmin(page, 'recruiter');
+    mockAdminListEndpoints(page);
+    // Dados do dashboard vazios → página renderiza estável
+    await page.route('**/api/admin/recruitment/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [] }),
+      }),
+    );
+
+    await page.goto(`${BASE}/admin/recruitment`);
+
+    // Página renderizada, mas sem o link admin-only no header
+    await expect(page.locator('aside').first().getByText('Reclutamiento')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="blocked-attempts-link"]')).toHaveCount(0);
+
+    await expect(page).toHaveScreenshot('recruitment-header-recruiter-no-link.png', {
+      fullPage: false,
+      maxDiffPixelRatio: 0.03,
+    });
   });
 });
