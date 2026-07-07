@@ -70,8 +70,8 @@ vi.mock('lucide-react', () => ({
 
 // ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({
-  ContactNotesModal: ({ vacancyId }: { vacancyId: string }) => (
-    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} />
+  ContactNotesModal: ({ vacancyId, workerId, workerName }: { vacancyId: string; workerId: string; workerName: string | null }) => (
+    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-worker-id={workerId} data-worker-name={workerName ?? ''} />
   ),
 }));
 
@@ -482,7 +482,7 @@ describe('KanbanBoard — BLOQUEADO column', () => {
 
 // ── Notes Button Wiring (contact notes / comentários) ────────────────────────
 
-describe('KanbanBoard — botão de comentários abre o ContactNotesModal (escopado à vaga)', () => {
+describe('KanbanBoard — botão de comentários abre o ContactNotesModal', () => {
   it('não renderiza o modal de comentários até o botão do card ser clicado', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', workerName: 'Marcia Costa' })];
@@ -492,7 +492,7 @@ describe('KanbanBoard — botão de comentários abre o ContactNotesModal (escop
     expect(screen.queryByTestId('contact-notes-modal')).not.toBeInTheDocument();
   });
 
-  it('abre o modal keyado pelo vacancyId do board (não por workerId/wjaId) ao clicar', () => {
+  it('abre o modal com o workerId (par worker×vaga, não o wjaId) e o vacancyId do board ao clicar', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', workerName: 'Marcia Costa' })];
 
@@ -502,12 +502,14 @@ describe('KanbanBoard — botão de comentários abre o ContactNotesModal (escop
 
     const modal = screen.getByTestId('contact-notes-modal');
     expect(modal).toHaveAttribute('data-vacancy-id', 'vac-77');
+    expect(modal).toHaveAttribute('data-worker-id', 'wk-1');
+    expect(modal).toHaveAttribute('data-worker-name', 'Marcia Costa');
   });
 
-  it('renderiza o botão de comentários em cards BLOQUEADO mesmo sem workerId — thread é da vaga, igual em qualquer coluna', () => {
+  it('renderiza o botão de comentários em cards BLOQUEADO quando workerId está presente — histórico é o mesmo do worker×vaga em qualquer coluna', () => {
     const stages = emptyStages();
     stages.BLOQUEADO = [
-      makeEncuadre({ id: 'b1', encuadreId: null, workerId: null, isBlocked: true, contactNotesCount: 3 }),
+      makeEncuadre({ id: 'b1', encuadreId: null, workerId: 'wk-blocked', isBlocked: true, contactNotesCount: 3 }),
     ];
 
     render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
@@ -516,21 +518,16 @@ describe('KanbanBoard — botão de comentários abre o ContactNotesModal (escop
 
     fireEvent.click(screen.getByTestId('notes-button'));
     const modal = screen.getByTestId('contact-notes-modal');
-    expect(modal).toHaveAttribute('data-vacancy-id', 'vac-77');
+    expect(modal).toHaveAttribute('data-worker-id', 'wk-blocked');
   });
 
-  it('mesmo modal (mesma instância) é reaberto ao clicar em qualquer card diferente — thread única por vaga', () => {
+  it('não renderiza botão de comentários quando workerId é null (defensivo — não deve ocorrer em bloqueado real)', () => {
     const stages = emptyStages();
     stages.BLOQUEADO = [makeEncuadre({ id: 'b1', encuadreId: null, workerId: null, isBlocked: true })];
-    stages.COMPLETED = [makeEncuadre({ id: 'c1', workerId: 'wk-2', workerName: 'Otro Candidato' })];
 
     render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
 
-    const notesButtons = screen.getAllByTestId('notes-button');
-    expect(notesButtons).toHaveLength(2);
-
-    fireEvent.click(notesButtons[0]);
-    expect(screen.getByTestId('contact-notes-modal')).toHaveAttribute('data-vacancy-id', 'vac-77');
+    expect(screen.queryByTestId('notes-button')).not.toBeInTheDocument();
   });
 
   it('repassa contactNotesCount do encuadre para o badge do card', () => {

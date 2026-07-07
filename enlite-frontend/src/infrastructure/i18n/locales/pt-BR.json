@@ -1445,7 +1445,6 @@
         },
         "contactNotes": {
           "modalTitle": "Notas de contato",
-          "modalTitleVacancy": "Comentários da vaga",
           "emptyState": "Sem notas registradas.",
           "textareaPlaceholder": "Escreva uma nota sobre este candidato…",
           "charCounter": "{{count}}/240",
