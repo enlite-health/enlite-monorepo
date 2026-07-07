@@ -54,7 +54,7 @@ describe('KanbanColumn — colapsar/expandir (trilho estilo ClickUp)', () => {
     renderColumn({ onToggleCollapse });
     const col = screen.getByTestId('kanban-column-CONFIRMED');
     expect(col).not.toHaveAttribute('data-collapsed');
-    expect(col.className).toContain('min-w-[260px]');
+    expect(col.className).toContain('w-[280px]');
 
     const btn = screen.getByTestId('kanban-column-CONFIRMED-collapse');
     fireEvent.click(btn);
@@ -70,8 +70,8 @@ describe('KanbanColumn — colapsar/expandir (trilho estilo ClickUp)', () => {
     renderColumn({ collapsed: true, count: 7, onToggleCollapse: vi.fn() });
     const col = screen.getByTestId('kanban-column-CONFIRMED');
     expect(col).toHaveAttribute('data-collapsed', 'true');
-    expect(col.className).toContain('max-w-[52px]');
-    expect(col.className).not.toContain('min-w-[260px]');
+    expect(col.className).toContain('w-[52px]');
+    expect(col.className).not.toContain('w-[280px]');
     // título preservado (só rotacionado) + contagem visível no trilho
     expect(screen.getByText('Confirmados')).toBeInTheDocument();
     expect(screen.getByTestId('kanban-column-CONFIRMED-count')).toHaveTextContent('7');

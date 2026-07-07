@@ -50,12 +50,13 @@ export function KanbanColumn({
           ? 'border-red-200 bg-red-50/40'
           : 'border-slate-200 bg-slate-50/50';
 
-  // A largura entre expandida e o trilho fino (52px) é o que anima — transition-all
-  // + duration-300 dá o efeito fluido de colapsar/expandir (estilo ClickUp). Como a
-  // coluna que colapsa tem a largura interpolada, as vizinhas (flex-1) dão reflow suave.
+  // Largura FIXA (estilo ClickUp): expandida 280px, colapsada 52px. Fixa (flex-none,
+  // sem flex-1) de propósito — assim colapsar uma coluna NÃO redimensiona as outras
+  // (só encolhe a própria e desloca as à direita), evitando o board inteiro se mexer
+  // e o mouse cair num lugar não-intuitivo. A transição de width dá o efeito fluido.
   const widthClass = collapsed
-    ? 'min-w-[52px] max-w-[52px] flex-none'
-    : 'min-w-[260px] max-w-[300px] flex-1';
+    ? 'w-[52px] flex-none'
+    : 'w-[280px] flex-none';
 
   const countBadge = (
     <span
@@ -83,7 +84,7 @@ export function KanbanColumn({
       >
         <ChevronsRight className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" aria-hidden="true" />
         {countBadge}
-        <div className="flex items-center gap-1.5 mt-1 [writing-mode:vertical-rl] rotate-180">
+        <div className="flex items-center gap-1.5 mt-1 [writing-mode:vertical-rl]">
           <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
           <Typography variant="body" weight="semibold" className={alert ? 'text-red-700 text-sm' : 'text-[#180149] text-sm'}>
             {title}
