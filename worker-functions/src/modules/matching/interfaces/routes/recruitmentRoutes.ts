@@ -67,7 +67,8 @@ export function createRecruitmentRoutes(
   router.post('/admin/recruitment/calculate-reemplazos', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     analyticsController.calculateReemplazos(req, res),
   );
-  router.get('/admin/recruitment/blocked-attempts', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+  // Admin-only: a tela de postulaciones bloqueadas é restrita a administradores
+  router.get('/admin/recruitment/blocked-attempts', authMiddleware.requireAdmin(), (req: Request, res: Response) =>
     blockedController.listBlockedAttempts(req, res),
   );
 

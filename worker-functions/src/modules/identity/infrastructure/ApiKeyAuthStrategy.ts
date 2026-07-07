@@ -114,7 +114,6 @@ function randomString(length: number): string {
 
 function scopesForService(name: string): string[] {
   switch (name) {
-    case 'n8n':        return ['workers:read', 'workers:write', 'webhooks:execute'];
     case 'react_frontend': return ['workers:read', 'workers:write', 'users:manage'];
     case 'admin':      return ['*'];
     default:           return ['workers:read'];

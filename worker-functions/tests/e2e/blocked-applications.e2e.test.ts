@@ -313,6 +313,20 @@ describe('Worker blocked applications — instrumentação de postulação bloqu
       expect([401, 403]).toContain(res.status);
     });
 
+    it('retorna 403 para staff não-admin (recruiter) — endpoint é admin-only', async () => {
+      const recruiterToken = await getMockToken(api, {
+        uid: 'blk-recruiter',
+        email: 'blk-recruiter@e2e.local',
+        role: 'recruiter',
+      });
+
+      const res = await api.get('/api/admin/recruitment/blocked-attempts', {
+        headers: { Authorization: `Bearer ${recruiterToken}` },
+      });
+
+      expect(res.status).toBe(403);
+    });
+
     it('aggregates contém totalBlocked e byReason com pelo menos os reasons inseridos', async () => {
       const res = await api.get(
         `/api/admin/recruitment/blocked-attempts?jobPostingId=${vacancyId}`,

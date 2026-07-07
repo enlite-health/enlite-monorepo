@@ -1,7 +1,6 @@
 import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 
 export interface SaveStepInput {
   workerId: string;
@@ -11,8 +10,7 @@ export interface SaveStepInput {
 
 export class SaveStepUseCase {
   constructor(
-    private workerRepository: IWorkerRepository,
-    private eventDispatcher: EventDispatcher
+    private workerRepository: IWorkerRepository
   ) {}
 
   async execute(input: SaveStepInput): Promise<Result<Worker>> {
@@ -37,12 +35,7 @@ export class SaveStepUseCase {
     }
 
     // Recalcula status com base nos campos obrigatórios preenchidos
-    const newStatus = await this.workerRepository.recalculateStatus(input.workerId);
-    if (newStatus) {
-      await this.eventDispatcher.notifyStatusChanged(worker.id, newStatus);
-    }
-
-    await this.eventDispatcher.notifyStepCompleted(worker.id, input.step, input.data);
+    await this.workerRepository.recalculateStatus(input.workerId);
 
     return Result.ok<Worker>(worker);
   }

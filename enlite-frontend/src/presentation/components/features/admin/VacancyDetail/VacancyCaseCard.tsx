@@ -102,8 +102,12 @@ export function VacancyCaseCard({
     ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${sex}`, sex)
     : null;
 
+  const professionLabel = profession
+    ? t(`admin.vacancyDetail.vacancyForm.professionOptions.${profession}`, profession)
+    : null;
+
   const caseParts = [
-    profession,
+    professionLabel,
     sexLabel,
     zone,
   ].filter(Boolean).join(' - ');

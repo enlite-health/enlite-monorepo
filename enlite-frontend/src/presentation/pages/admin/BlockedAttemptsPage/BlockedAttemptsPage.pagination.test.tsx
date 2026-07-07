@@ -39,6 +39,15 @@ vi.mock('@hooks/admin/useBlockedAttempts', () => ({
   useBlockedAttempts: (...args: unknown[]) => mockUseBlockedAttempts(...args),
 }));
 
+// Role guard: estes testes cobrem o conteúdo da página, então o perfil é admin
+vi.mock('@presentation/hooks/useAdminAuth', () => ({
+  useAdminAuth: () => ({
+    adminProfile: { role: 'admin' },
+    isAuthenticated: true,
+    isLoading: false,
+  }),
+}));
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const ATTEMPT = {

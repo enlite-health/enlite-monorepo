@@ -47,14 +47,6 @@ const makeRepository = (overrides = {}) => ({
   ...overrides,
 });
 
-const makeEventDispatcher = () => ({
-  notifyWorkerCreated: jest.fn().mockResolvedValue(undefined),
-  notifyStepCompleted: jest.fn(),
-  notifyStatusChanged: jest.fn(),
-  notifyWorkerUpdated: jest.fn(),
-  notifyWorkerDeleted: jest.fn(),
-});
-
 const makeTwilioVerify = (overrides = {}) => ({
   startVerification: jest.fn().mockResolvedValue({ verificationSid: 'VE_TEST_SID' }),
   checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved' }),
@@ -76,8 +68,7 @@ describe('InitWorkerUseCase', () => {
   describe('Cenário 1 — Worker novo (nenhum registro existe)', () => {
     it('deve criar worker e retornar status ok com o worker criado', async () => {
       const repo = makeRepository();
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -91,8 +82,7 @@ describe('InitWorkerUseCase', () => {
 
     it('deve chamar create com os dados corretos incluindo lgpdOptIn e whatsappPhone', async () => {
       const repo = makeRepository();
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
       const dto = makeCreateDTO({ lgpdOptIn: true, whatsappPhone: '+5411234567890' });
 
       await useCase.execute(dto);
@@ -109,8 +99,7 @@ describe('InitWorkerUseCase', () => {
 
     it('deve chamar create com lgpdOptIn e whatsappPhone undefined quando não fornecidos', async () => {
       const repo = makeRepository();
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
       const dto = makeCreateDTO();
 
       await useCase.execute(dto);
@@ -129,8 +118,7 @@ describe('InitWorkerUseCase', () => {
 
     it('deve persistir lgpdOptIn=false quando enviado explicitamente como false', async () => {
       const repo = makeRepository();
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO({ lgpdOptIn: false }));
 
@@ -146,8 +134,7 @@ describe('InitWorkerUseCase', () => {
       const repo = makeRepository({
         findByAuthUid: jest.fn().mockResolvedValue(Result.ok(existingWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -159,18 +146,6 @@ describe('InitWorkerUseCase', () => {
       }
       expect(repo.create).not.toHaveBeenCalled();
       expect(repo.findByEmail).not.toHaveBeenCalled();
-    });
-
-    it('não deve chamar notifyWorkerCreated quando authUid já existe', async () => {
-      const repo = makeRepository({
-        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(mockWorker)),
-      });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
     });
   });
 
@@ -189,8 +164,7 @@ describe('InitWorkerUseCase', () => {
           Result.ok({ ...workerWithOldAuthUid, authUid: REAL_AUTH_UID })
         ),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -211,8 +185,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithOldAuthUid)),
         updateAuthUid: jest.fn().mockResolvedValue(Result.ok(updatedWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -223,28 +196,13 @@ describe('InitWorkerUseCase', () => {
       }
     });
 
-    it('não deve chamar notifyWorkerCreated na reconexão por email', async () => {
-      const repo = makeRepository({
-        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
-        findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithOldAuthUid)),
-        updateAuthUid: jest.fn().mockResolvedValue(Result.ok(workerWithOldAuthUid)),
-      });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
-    });
-
     it('deve passar consentAt quando lgpdOptIn=true na reconexão por email', async () => {
       const repo = makeRepository({
         findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
         findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithOldAuthUid)),
         updateAuthUid: jest.fn().mockResolvedValue(Result.ok(mockWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO({ lgpdOptIn: true }));
 
@@ -258,8 +216,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithOldAuthUid)),
         updateAuthUid: jest.fn().mockResolvedValue(Result.ok(mockWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO({ lgpdOptIn: false }));
 
@@ -275,8 +232,7 @@ describe('InitWorkerUseCase', () => {
         findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
         findByEmail: jest.fn().mockResolvedValue(Result.ok(existingWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -288,7 +244,6 @@ describe('InitWorkerUseCase', () => {
       }
       expect(repo.updateAuthUid).not.toHaveBeenCalled();
       expect(repo.create).not.toHaveBeenCalled();
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
     });
   });
 
@@ -343,8 +298,7 @@ describe('InitWorkerUseCase', () => {
           findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
           findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
         });
-        const dispatcher = makeEventDispatcher();
-        const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
+        const useCase = new InitWorkerUseCase(repo as any, twilio as any);
 
         const result = await useCase.execute(makeCreateDTO());
 
@@ -374,28 +328,12 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
 
       // Payload envia phone DIFERENTE da ficha
       await useCase.execute(makeCreateDTO({ phone: '+5411999887766' }));
 
       expect(twilio.startVerification).toHaveBeenCalledWith(FICHA_PHONE);
-    });
-
-    it('não deve chamar notifyWorkerCreated ao detectar candidato', async () => {
-      const twilio = makeTwilioVerify();
-      const repo = makeRepository({
-        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
-        findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
-        findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerAnacare)),
-      });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
     });
 
     it('deve retornar fail quando Twilio Verify lança erro', async () => {
@@ -407,8 +345,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerAnacare)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -422,9 +359,8 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerAnacare)),
       });
-      const dispatcher = makeEventDispatcher();
       // Sem twilioVerify (undefined) — fallback para TWILIO_NOT_CONFIGURED
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -450,8 +386,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(realWorkerByPhone)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO());
 
@@ -473,8 +408,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(workerWithTalentumUid)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO());
 
@@ -490,8 +424,7 @@ describe('InitWorkerUseCase', () => {
           Result.fail('Erro de conexão com o banco: timeout')
         ),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -510,8 +443,7 @@ describe('InitWorkerUseCase', () => {
           Result.fail('Query inválida: coluna email não existe')
         ),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -534,14 +466,12 @@ describe('InitWorkerUseCase', () => {
           Result.fail('Falha ao atualizar authUid: constraint violation')
         ),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Falha ao atualizar authUid: constraint violation');
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
     });
   });
 
@@ -566,8 +496,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithPhone)),
         updateAuthUid: jest.fn().mockResolvedValue(Result.ok(updatedWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO({ phone: PAYLOAD_PHONE }));
 
@@ -598,8 +527,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithoutPhone)),
         updateAuthUid: jest.fn().mockResolvedValue(Result.ok(updatedWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO({ phone: PAYLOAD_PHONE }));
 
@@ -623,8 +551,7 @@ describe('InitWorkerUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(null)),
         create: jest.fn().mockResolvedValue(Result.ok(createdWorker)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO({ phone: NEW_PHONE }));
 
@@ -636,84 +563,18 @@ describe('InitWorkerUseCase', () => {
   });
 
   describe('Cenário 11 — Erro no create', () => {
-    it('deve propagar o erro sem chamar notifyWorkerCreated', async () => {
+    it('deve propagar o erro', async () => {
       const repo = makeRepository({
         create: jest.fn().mockResolvedValue(
           Result.fail('INSERT falhou: duplicate key value violates unique constraint')
         ),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       const result = await useCase.execute(makeCreateDTO());
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toContain('duplicate key');
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Cenário 12 — notifyWorkerCreated apenas na criação de worker novo', () => {
-    it('deve chamar notifyWorkerCreated com o id e email do worker criado', async () => {
-      const repo = makeRepository();
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).toHaveBeenCalledTimes(1);
-      expect(dispatcher.notifyWorkerCreated).toHaveBeenCalledWith(
-        mockWorker.id,
-        { email: mockWorker.email }
-      );
-    });
-
-    it('NÃO deve chamar notifyWorkerCreated quando authUid já existe', async () => {
-      const repo = makeRepository({
-        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(mockWorker)),
-      });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
-    });
-
-    it('NÃO deve chamar notifyWorkerCreated quando reconecta por email (updateAuthUid)', async () => {
-      const workerWithOldUid = { ...mockWorker, authUid: 'uidAntigo456' };
-      const repo = makeRepository({
-        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
-        findByEmail: jest.fn().mockResolvedValue(Result.ok(workerWithOldUid)),
-        updateAuthUid: jest.fn().mockResolvedValue(Result.ok(mockWorker)),
-      });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
-    });
-
-    it('NÃO deve chamar notifyWorkerCreated quando detecta candidato importado (claim_pending)', async () => {
-      const importedWorker: Worker = {
-        ...mockWorker,
-        authUid: IMPORTED_AUTH_UID_ANACARE,
-        email: 'joana@anacareimport.invalid',
-        id: 'e5f6a7b8-5678-4efg-c234-3210987654ef',
-      };
-      const twilio = makeTwilioVerify();
-      const repo = makeRepository({
-        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
-        findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
-        findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
-      });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
-
-      await useCase.execute(makeCreateDTO());
-
-      expect(dispatcher.notifyWorkerCreated).not.toHaveBeenCalled();
     });
   });
 
@@ -733,8 +594,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerWithCanonical)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
 
       const result = await useCase.execute(makeCreateDTO({ phone: '+5491155555555' }));
 
@@ -751,8 +611,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerWithCanonical)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
 
       const result = await useCase.execute(makeCreateDTO({ phone: '1155555555' }));
 
@@ -765,8 +624,7 @@ describe('InitWorkerUseCase', () => {
         findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO({ phone: '12345678' }));
 
@@ -779,8 +637,7 @@ describe('InitWorkerUseCase', () => {
         findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(makeCreateDTO({ phone: undefined }));
 
@@ -795,8 +652,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerWithCanonical)),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
 
       const result = await useCase.execute(
         makeCreateDTO({ phone: undefined, whatsappPhone: '+5491155555555' })
@@ -818,8 +674,7 @@ describe('InitWorkerUseCase', () => {
           return Promise.resolve(Result.ok(null));
         }),
       });
-      const dispatcher = makeEventDispatcher();
-      const useCase = new InitWorkerUseCase(repo as any, dispatcher as any);
+      const useCase = new InitWorkerUseCase(repo as any);
 
       await useCase.execute(
         makeCreateDTO({ phone: '1155555555', whatsappPhone: '1166666666' })

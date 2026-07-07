@@ -1739,3 +1739,56 @@ O service `worker-functions-mcp` de stg estava com a revision apontando pra uma 
 **Critério para fechar:** criar `mcp-principal-triage-service` em enlite-stg (mesmo formato do prd) e rodar o smoke test `scripts/mcp-smoke-test.sh` contra stg.
 
 **Gatilho:** quando o triage-service ganhar ambiente de staging ou ao testar o canal MCP interno fora de prod.
+
+### TD-060 — Eventos `funnel_stage.rejected` / `not_qualified` são órfãos (sem consumidor) + Kanban tempo-real adiado
+
+- **Status:** aberto (decisão de produto: adiar tempo-real).
+- **Descoberto em:** 2026-07-05, pelo alerta de backlog de domain_events (que corretamente flagrou eventos recentes parados).
+- **Dono provável:** backend + frontend (feature cross-project).
+- **Bloqueador?** Não. A rejeição do Talentum funciona (encuadre→RECHAZADO + WJA→REJECTED síncrono, migration 191) e o Kanban já reflete no refresh.
+
+**O que é:**
+
+`ProcessTalentumPrescreening` emite `funnel_stage.rejected` e `funnel_stage.not_qualified` no outbox, mas **nenhum handler os consome** (diferente de `funnel_stage.qualified`, que tem handler + Pub/Sub → agenda entrevista). O efeito de negócio da rejeição já acontece síncrono na transação; os eventos são redundantes pro Kanban atual (que lê `worker_job_applications.application_funnel_stage` no load). Verificado em prod: 40/40 workers com evento `rejected` pendente já estão `WJA=REJECTED`. Logo os eventos acumulam `pending` (~40 dias) e tripavam o alerta.
+
+**Decisão (2026-07-05):** NÃO fazer Kanban tempo-real — refresh é aceitável. NOT_QUALIFIED colapsado em REJECTED está correto (mesmo balde). Os 2 eventos foram **excluídos da métrica de alerta** `domain_event_backlog_stuck` (filtro `NOT event IN (rejected, not_qualified)`) pra não paginar; seguem visíveis no `/api/internal/events/health`.
+
+**Critério para fechar:** OU (a) construir o Kanban tempo-real de verdade (emitir evento em TODA transição de `application_funnel_stage` + consumidor SSE/short-poll + frontend aplicando ao vivo — aí esses eventos ganham consumidor e drenam), OU (b) parar de emitir `rejected`/`not_qualified` se confirmado que são código morto. Enquanto nenhum dos dois, os eventos ficam pending (inertes) e o alerta os ignora.
+
+**Gatilho:** quando priorizarem Kanban tempo-real, ou numa limpeza do outbox.
+
+### TD-061 — Role-guard admin-only espalhado em cópias por página (sem SSOT)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-06, na review da feature "Postulaciones bloqueadas admin-only".
+- **Dono provável:** frontend.
+- **Bloqueador?** Não. As 3 páginas admin-only funcionam; o problema é manutenção/drift.
+
+**O que é:**
+
+A regra "tela X é admin-only" vive hoje em cópias não coordenadas: guard in-page repetido em `DedupCenterPage`, `TagCatalogPage` e `BlockedAttemptsPage` (3ª cópia adicionada nesta feature), gate no item de nav (`adminNavigation.tsx`), gate no link do dashboard (`AdminRecruitmentPage`) e `requireAdmin()` no backend. As cópias **já divergiram**: `TagCatalogPage` redireciona no `useEffect` mas NÃO tem `return null` — não-admin renderiza o conteúdo e dispara `listWorkerTags` no frame antes do redirect; `DedupCenterPage`/`BlockedAttemptsPage` retornam `null`. Além disso `adminProfile?.role === EnliteRole.ADMIN` aparece hardcoded em ~9 sites de `src/`.
+
+**Como fechar:** guard no nível de ROTA — prop `requiredRole` no `AdminProtectedRoute` (App.tsx já envolve as 3 rotas; é o choke point natural) OU um `useIsAdmin()`/`RequireAdmin` compartilhado; remover as cópias in-page no mesmo PR. Considerar junto com a feature de permissões ABAC (em discovery) — se ABAC chegar antes, resolver lá.
+
+**Gatilho:** próxima página admin-only nova, ou início da implementação ABAC.
+
+### TD-062 — Webhook Talentum aceita QUALQUER Google ID Token (sem audience, sem allowlist)
+
+- **Status:** aberto, **segurança**.
+- **Descoberto em:** 2026-07-07, durante a remoção do n8n.
+- **Dono provável:** backend.
+- **Bloqueador?** Não bloqueia feature, mas é exposição real: qualquer pessoa com conta GCP consegue emitir um ID token válido do Google e postar prescreenings falsos (transições QUALIFIED forjadas).
+
+**O que é:**
+
+`TalentumWebhookController.verifyGoogleToken` valida o token só contra as chaves públicas do Google: `TALENTUM_WEBHOOK_AUDIENCE` **não está configurado em prod** (o check de audience é pulado com warning) e **não há allowlist de email** do emissor. Na prática o endpoint é público para qualquer identidade Google válida.
+
+Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos comentários como emissora) teve **0 eventos de autenticação em 7 dias** (métrica `iam.googleapis.com/service_account/authn_events_count`) enquanto o webhook recebia chamadas diárias com 200 — o emissor real é outro e é desconhecido. A SA n8n foi deletada nos dois projetos.
+
+**Como fechar:**
+1. Já plantado: `verifyGoogleToken` loga `payload.email` a cada chamada válida (este PR). Observar os logs por alguns dias para identificar o emissor real.
+2. Configurar `TALENTUM_WEBHOOK_AUDIENCE` em prod/stg com a URL do serviço.
+3. Adicionar allowlist de emails de emissor (env `TALENTUM_ALLOWED_ISSUERS`) e rejeitar o resto.
+4. Se o emissor identificado for uma key solta da era n8n, rotacionar para SA dedicada `talentum-webhook-identity`.
+
+**Gatilho:** logs do item 1 coletados (≥1 semana de tráfego) ou qualquer mudança na integração Talentum.

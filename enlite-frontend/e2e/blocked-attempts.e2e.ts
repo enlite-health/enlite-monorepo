@@ -219,7 +219,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
         data: {
           id: uid,
           email,
-          role: 'superadmin',
+          role: 'admin',
           firstName: 'Blocked',
           lastName: 'E2E',
           isActive: true,

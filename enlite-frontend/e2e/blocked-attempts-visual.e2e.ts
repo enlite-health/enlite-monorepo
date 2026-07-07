@@ -27,7 +27,7 @@ import { test, expect, Page, Route } from '@playwright/test';
 const MOCK_ADMIN = {
   uid: 'blocked-vis-admin-uid',
   email: 'blocked.visual@e2e.test',
-  role: 'superadmin',
+  role: 'admin',
 };
 
 const FAKE_ID_TOKEN =

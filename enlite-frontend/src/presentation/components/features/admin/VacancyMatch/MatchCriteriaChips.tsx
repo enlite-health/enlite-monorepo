@@ -32,8 +32,14 @@ export function MatchCriteriaChips({ vacancy }: MatchCriteriaChipsProps) {
         vacancy.required_sex,
       )
     : '—';
-  const profession =
-    (vacancy?.required_professions as string[] | null)?.[0] ?? '—';
+  const professionValue =
+    (vacancy?.required_professions as string[] | null)?.[0] ?? null;
+  const profession = professionValue
+    ? t(
+        `admin.vacancyDetail.vacancyForm.professionOptions.${professionValue}`,
+        professionValue,
+      )
+    : '—';
   const address = buildAddressLabel(vacancy);
 
   return (
