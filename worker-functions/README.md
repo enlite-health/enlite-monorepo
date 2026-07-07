@@ -40,3 +40,5 @@ npm run dev
 - **HIPAA**: Sem logs de PII
 - **Auditoria**: Todos os updates registram `updated_at`
 - **UUID v4**: IDs primários para anonimização
+
+<!-- repo transferido pra enlite-health em 2026-07-07; commit valida deploy via WIF -->
