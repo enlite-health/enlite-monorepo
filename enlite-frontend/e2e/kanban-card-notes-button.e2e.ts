@@ -6,14 +6,13 @@
  * VALIDAÇÃO VISUAL com AUTH FIREBASE REAL: o card do Kanban ganhou um botão
  * "Comentarios" que reaproveita 100% a feature de Contact Notes já existente na
  * listagem/funil (ContactNotesModal + useContactNotes) — comentário/nota do
- * operador sobre o candidato, escopado ao par worker×vaga. NÃO é envio de
- * WhatsApp.
+ * operador sobre a vaga. NÃO é envio de WhatsApp.
  *
- * O histórico de comentários é chaveado por workerId (não por wja.id) para
- * ser o MESMO em qualquer coluna do Kanban — inclusive BLOQUEADO, ver
- * `kanban-card-blocked-notes-button.e2e.ts` — e não zerar quando o card é
- * promovido (ex.: BLOQUEADO → INICIADO):
- *   GET/POST /api/admin/vacancies/:id/workers/:workerId/contact-notes
+ * O histórico de comentários é ESCOPADO À VAGA (vacancyId, não workerId nem
+ * wja.id) para ser o MESMO em qualquer card/coluna do Kanban — inclusive
+ * BLOQUEADO, ver `kanban-card-blocked-notes-button.e2e.ts` — e não zerar
+ * quando o card é promovido (ex.: BLOQUEADO → INICIADO):
+ *   GET/POST /api/admin/vacancies/:vacancyId/contact-notes
  *
  * Login: Firebase Auth REAL (enlite-prd) via UI — mesma conta do auth.setup.
  * Backend mockado via page.route (padrão do projeto chromium-admin): nenhuma
@@ -105,9 +104,9 @@ async function loginAndMockBackend(page: Page): Promise<{ notes: ContactNote[] }
     return route.fulfill(ok({ stages, totalEncuadres: 1 }));
   });
 
-  // Contact notes — stateful, chaveado por workerId. GET devolve a lista; POST anexa uma nota e devolve.
+  // Contact notes — stateful, escopado à VAGA. GET devolve a lista; POST anexa uma nota e devolve.
   await page.route(
-    `**/api/admin/vacancies/${VACANCY_ID}/workers/${WORKER_ID}/contact-notes`,
+    `**/api/admin/vacancies/${VACANCY_ID}/contact-notes`,
     (route: Route) => {
       const method = route.request().method();
       if (method === 'POST') {

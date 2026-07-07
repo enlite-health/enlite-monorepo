@@ -1,25 +1,26 @@
 /**
  * CreateContactNoteUseCase.test.ts
  *
- * Migration 235: params passam a ser { vacancyId, workerId, ... } (antes: wjaId).
- * Guard de pertencimento passa a ser validateCandidateVacancyPair (WJA real OU
- * tentativa bloqueada) em vez de wjaBelongsToVacancy.
+ * Migration 236: params passam a ser { vacancyId, noteText, adminId, adminEmail }
+ * (antes: também workerId). Guard de existência passa a ser validateVacancyExists
+ * (a vaga precisa existir; não há mais noção de par candidato×vaga — a nota é
+ * escopada SÓ à vaga).
  *
  * Cenários:
  * 1. validação — noteText vazio → kind='validation'
  * 2. validação — noteText > 240 chars → kind='validation'
- * 3. guard — par (workerId, vacancyId) não existe (nem WJA nem blocked) → not_found
- * 4. sucesso — insere delegando pro repo com workerId/jobPostingId corretos
+ * 3. guard — vaga não existe → not_found
+ * 4. sucesso — insere delegando pro repo com jobPostingId=vacancyId
  * 5. snapshot do autor — usa displayName/email do AdminRepository quando disponível
  * 6. snapshot do autor — fallback pro email do token quando admin não encontrado
  */
 
-const mockValidateCandidateVacancyPair = jest.fn();
+const mockValidateVacancyExists = jest.fn();
 const mockInsert = jest.fn();
 
 jest.mock('../../infrastructure/ContactNoteRepository', () => ({
   ContactNoteRepository: jest.fn().mockImplementation(() => ({
-    validateCandidateVacancyPair: mockValidateCandidateVacancyPair,
+    validateVacancyExists: mockValidateVacancyExists,
     insert: mockInsert,
   })),
 }));
@@ -34,7 +35,6 @@ jest.mock('@modules/identity', () => ({
 
 import { CreateContactNoteUseCase } from '../CreateContactNoteUseCase';
 
-const WORKER_ID = 'aaaa0000-0000-0000-0000-111111111111';
 const VACANCY_ID = 'bbbb0000-0000-0000-0000-222222222222';
 
 describe('CreateContactNoteUseCase', () => {
@@ -48,7 +48,6 @@ describe('CreateContactNoteUseCase', () => {
   it('noteText vazio → validation error, sem tocar o repo', async () => {
     const result = await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       noteText: '   ',
       adminId: 'admin-1',
       adminEmail: null,
@@ -56,13 +55,12 @@ describe('CreateContactNoteUseCase', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('validation');
-    expect(mockValidateCandidateVacancyPair).not.toHaveBeenCalled();
+    expect(mockValidateVacancyExists).not.toHaveBeenCalled();
   });
 
   it('noteText > 240 chars → validation error', async () => {
     const result = await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       noteText: 'a'.repeat(241),
       adminId: 'admin-1',
       adminEmail: null,
@@ -72,31 +70,28 @@ describe('CreateContactNoteUseCase', () => {
     if (!result.ok) expect(result.error.kind).toBe('validation');
   });
 
-  it('par (workerId, vacancyId) sem WJA nem tentativa bloqueada → not_found', async () => {
-    mockValidateCandidateVacancyPair.mockResolvedValueOnce(false);
+  it('vaga inexistente → not_found', async () => {
+    mockValidateVacancyExists.mockResolvedValueOnce(false);
 
     const result = await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       noteText: 'Nota válida',
       adminId: 'admin-1',
       adminEmail: null,
     });
 
-    expect(mockValidateCandidateVacancyPair).toHaveBeenCalledWith(WORKER_ID, VACANCY_ID);
+    expect(mockValidateVacancyExists).toHaveBeenCalledWith(VACANCY_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('not_found');
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it('sucesso: insere delegando workerId/jobPostingId (não workerJobApplicationId) pro repo', async () => {
-    mockValidateCandidateVacancyPair.mockResolvedValueOnce(true);
+  it('sucesso: insere delegando jobPostingId=vacancyId pro repo (sem workerId)', async () => {
+    mockValidateVacancyExists.mockResolvedValueOnce(true);
     mockFindByFirebaseUid.mockResolvedValueOnce({ displayName: 'Operadora', email: 'op@e2e.local' });
     mockInsert.mockResolvedValueOnce({
       id: 'note-1',
-      workerId: WORKER_ID,
       jobPostingId: VACANCY_ID,
-      workerJobApplicationId: null,
       noteText: 'Nota válida',
       createdByAdminId: 'admin-1',
       createdByAdminName: 'Operadora',
@@ -106,14 +101,12 @@ describe('CreateContactNoteUseCase', () => {
 
     const result = await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       noteText: 'Nota válida',
       adminId: 'admin-1',
       adminEmail: 'token@e2e.local',
     });
 
     expect(mockInsert).toHaveBeenCalledWith({
-      workerId: WORKER_ID,
       jobPostingId: VACANCY_ID,
       noteText: 'Nota válida',
       createdByAdminId: 'admin-1',
@@ -125,13 +118,11 @@ describe('CreateContactNoteUseCase', () => {
   });
 
   it('fallback: sem admin no cadastro → usa email do token e nome null', async () => {
-    mockValidateCandidateVacancyPair.mockResolvedValueOnce(true);
+    mockValidateVacancyExists.mockResolvedValueOnce(true);
     mockFindByFirebaseUid.mockResolvedValueOnce(null);
     mockInsert.mockResolvedValueOnce({
       id: 'note-2',
-      workerId: WORKER_ID,
       jobPostingId: VACANCY_ID,
-      workerJobApplicationId: null,
       noteText: 'Nota sem admin cadastrado',
       createdByAdminId: 'admin-1',
       createdByAdminName: null,
@@ -141,7 +132,6 @@ describe('CreateContactNoteUseCase', () => {
 
     await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       noteText: 'Nota sem admin cadastrado',
       adminId: 'admin-1',
       adminEmail: 'token@e2e.local',

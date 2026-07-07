@@ -8,14 +8,14 @@ import { canDeleteContactNote } from '../../domain/contactNoteDeletion';
 /**
  * WJAContactNotesController
  *
- * Gerencia notas de contato escopadas ao par estável candidato×vaga
- * (worker_id, job_posting_id) — migration 235. O par sobrevive à promoção
- * BLOQUEADO→INICIADO, então cards ainda bloqueados (sem WJA) também podem
- * ter notas.
+ * Gerencia notas de contato escopadas SOMENTE À VAGA (job_posting_id) —
+ * migration 236. A thread é única por vaga: a mesma conversa aparece
+ * idêntica em todos os cards/candidatos daquela vaga (bloqueado ou não,
+ * qualquer coluna).
  *
- * POST   /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → 201
- * GET    /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → 200
- * DELETE /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId → 200
+ * POST   /api/admin/vacancies/:vacancyId/contact-notes → 201
+ * GET    /api/admin/vacancies/:vacancyId/contact-notes → 200
+ * DELETE /api/admin/vacancies/:vacancyId/contact-notes/:noteId → 200
  *
  * Requer: req.user populado pelo middleware de auth admin (requireStaff).
  */
@@ -38,7 +38,7 @@ export class WJAContactNotesController {
         return;
       }
 
-      const { vacancyId, workerId } = req.params;
+      const { vacancyId } = req.params;
       const { noteText } = req.body as { noteText?: unknown };
 
       if (typeof noteText !== 'string') {
@@ -48,7 +48,6 @@ export class WJAContactNotesController {
 
       const result = await this.createUseCase.execute({
         vacancyId,
-        workerId,
         noteText,
         adminId: user.uid,
         adminEmail: user.email ?? null,
@@ -81,11 +80,10 @@ export class WJAContactNotesController {
         return;
       }
 
-      const { vacancyId, workerId } = req.params;
+      const { vacancyId } = req.params;
 
       const result = await this.listUseCase.execute({
         vacancyId,
-        workerId,
         requesterAdminId: user.uid,
       });
 
@@ -110,11 +108,10 @@ export class WJAContactNotesController {
         return;
       }
 
-      const { vacancyId, workerId, noteId } = req.params;
+      const { vacancyId, noteId } = req.params;
 
       const result = await this.deleteUseCase.execute({
         vacancyId,
-        workerId,
         noteId,
         requesterAdminId: user.uid,
       });

@@ -60,8 +60,6 @@ const sampleNotes: ContactNote[] = [
 
 const defaultProps = {
   vacancyId: 'vac-1',
-  workerId: 'worker-1',
-  workerName: 'Juan Pérez',
   onClose: vi.fn(),
 };
 
@@ -75,14 +73,13 @@ beforeEach(() => {
 });
 
 describe('ContactNotesModal', () => {
-  it('renders title and worker name', () => {
+  it('renders the vacancy-scoped title (not a worker name)', () => {
     render(<ContactNotesModal {...defaultProps} />);
     expect(
       screen.getByText(
-        'admin.vacancyDetail.funnelTable.contactNotes.modalTitle',
+        'admin.vacancyDetail.funnelTable.contactNotes.modalTitleVacancy',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
   });
 
   it('shows empty state when no notes', () => {

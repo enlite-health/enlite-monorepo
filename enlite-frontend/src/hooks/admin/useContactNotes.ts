@@ -16,10 +16,11 @@ interface UseContactNotesReturn extends UseContactNotesState {
   deleteNote: (noteId: string) => Promise<void>;
 }
 
-export function useContactNotes(
-  vacancyId: string,
-  workerId: string,
-): UseContactNotesReturn {
+/**
+ * Notas de contato ESCOPADAS À VAGA (vacancyId) — uma única thread por vaga,
+ * a mesma em todos os cards/linhas independentemente do candidato.
+ */
+export function useContactNotes(vacancyId: string): UseContactNotesReturn {
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -30,21 +31,21 @@ export function useContactNotes(
     setIsLoading(true);
     setError(null);
     try {
-      const data = await AdminApiService.getContactNotes(vacancyId, workerId);
+      const data = await AdminApiService.getContactNotes(vacancyId);
       setNotes(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notes');
     } finally {
       setIsLoading(false);
     }
-  }, [vacancyId, workerId]);
+  }, [vacancyId]);
 
   const createNote = useCallback(
     async (payload: CreateContactNotePayload) => {
       setIsCreating(true);
       setError(null);
       try {
-        await AdminApiService.createContactNote(vacancyId, workerId, payload);
+        await AdminApiService.createContactNote(vacancyId, payload);
         await fetchNotes();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to create note');
@@ -52,7 +53,7 @@ export function useContactNotes(
         setIsCreating(false);
       }
     },
-    [vacancyId, workerId, fetchNotes],
+    [vacancyId, fetchNotes],
   );
 
   const deleteNote = useCallback(
@@ -60,7 +61,7 @@ export function useContactNotes(
       setDeletingId(noteId);
       setError(null);
       try {
-        await AdminApiService.deleteContactNote(vacancyId, workerId, noteId);
+        await AdminApiService.deleteContactNote(vacancyId, noteId);
         await fetchNotes();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete note');
@@ -68,7 +69,7 @@ export function useContactNotes(
         setDeletingId(null);
       }
     },
-    [vacancyId, workerId, fetchNotes],
+    [vacancyId, fetchNotes],
   );
 
   return {

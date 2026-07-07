@@ -53,6 +53,16 @@ vi.mock('@hooks/admin/useContactNotes', () => ({
   }),
 }));
 
+// ContactNotesModal como leaf — prova que a tabela abre o modal escopado à
+// VAGA (vacancyId), não por row/workerId.
+vi.mock('./ContactNotesModal', () => ({
+  ContactNotesModal: ({ vacancyId, onClose }: { vacancyId: string; onClose: () => void }) => (
+    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId}>
+      <button type="button" onClick={onClose}>close</button>
+    </div>
+  ),
+}));
+
 const mockRows: FunnelTableRow[] = [
   {
     id: 'row-1',
@@ -181,5 +191,29 @@ describe('VacancyFunnelTable', () => {
     expect(link).toBeDisabled();
     fireEvent.click(link);
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('VacancyFunnelTable — comentários escopados à vaga (thread única)', () => {
+  it('não renderiza o modal até um botão de comentários ser clicado', () => {
+    renderTable(defaultProps);
+    expect(screen.queryByTestId('contact-notes-modal')).not.toBeInTheDocument();
+  });
+
+  it('abre o mesmo modal (keyado por vacancyId, não por workerId) ao clicar em qualquer linha', () => {
+    renderTable(defaultProps);
+    const notesButtons = screen.getAllByTestId('funnel-notes-button');
+    expect(notesButtons.length).toBe(mockRows.length);
+
+    fireEvent.click(notesButtons[1]);
+    const modal = screen.getByTestId('contact-notes-modal');
+    expect(modal).toHaveAttribute('data-vacancy-id', defaultProps.vacancyId);
+  });
+
+  it('mantém o modal keyado pelo vacancyId mesmo clicando na primeira linha', () => {
+    renderTable(defaultProps);
+    fireEvent.click(screen.getAllByTestId('funnel-notes-button')[0]);
+    const modal = screen.getByTestId('contact-notes-modal');
+    expect(modal).toHaveAttribute('data-vacancy-id', defaultProps.vacancyId);
   });
 });

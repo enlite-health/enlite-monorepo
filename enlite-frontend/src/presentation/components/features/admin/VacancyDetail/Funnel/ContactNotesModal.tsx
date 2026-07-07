@@ -11,16 +11,13 @@ import { ContactNoteItem } from './ContactNoteItem';
 const MAX_NOTE_LENGTH = 240;
 
 interface ContactNotesModalProps {
+  /** Notas escopadas à VAGA — uma única thread, idêntica em todos os cards. */
   vacancyId: string;
-  workerId: string;
-  workerName: string | null;
   onClose: () => void;
 }
 
 export function ContactNotesModal({
   vacancyId,
-  workerId,
-  workerName,
   onClose,
 }: ContactNotesModalProps): JSX.Element {
   const { t } = useTranslation();
@@ -33,7 +30,7 @@ export function ContactNotesModal({
     fetchNotes,
     createNote,
     deleteNote,
-  } = useContactNotes(vacancyId, workerId);
+  } = useContactNotes(vacancyId);
 
   const [noteText, setNoteText] = useState('');
 
@@ -65,13 +62,10 @@ export function ContactNotesModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div className="flex flex-col gap-0.5">
             <Heading level={3} weight="semibold" color="secondary">
-              {t('admin.vacancyDetail.funnelTable.contactNotes.modalTitle')}
+              {t(
+                'admin.vacancyDetail.funnelTable.contactNotes.modalTitleVacancy',
+              )}
             </Heading>
-            {workerName && (
-              <Text as="span" size="xs" color="muted">
-                {workerName}
-              </Text>
-            )}
           </div>
           <button
             onClick={onClose}

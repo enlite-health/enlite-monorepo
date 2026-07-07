@@ -89,7 +89,7 @@ export class WJAFunnelController {
                WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
                ELSE wja.application_funnel_stage END AS talentum_status,
              (SELECT COUNT(*)::int FROM wja_contact_notes cn
-              WHERE cn.worker_id = wja.worker_id AND cn.job_posting_id = wja.job_posting_id) AS contact_notes_count,
+              WHERE cn.job_posting_id = wja.job_posting_id) AS contact_notes_count,
              wsa.work_zone
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
@@ -240,8 +240,8 @@ export class WJAFunnelController {
           workZone: null,
           redireccionamiento: null,
           internalStage: null,
-          // Notas de contato escritas enquanto o card estava bloqueado
-          // (migration 235 — chave estável worker_id+job_posting_id).
+          // Notas de contato da vaga — mesma thread de qualquer card, inclusive
+          // BLOQUEADO (migration 236 — escopo só-vaga, job_posting_id).
           contactNotesCount: ba.contactNotesCount,
           // Blocked-specific fields
           isBlocked: true,

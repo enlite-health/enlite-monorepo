@@ -1,28 +1,27 @@
 /**
  * ListContactNotesUseCase.test.ts
  *
- * Migration 235: params passam a ser { vacancyId, workerId, requesterAdminId }
- * (antes: wjaId). Guard via validateCandidateVacancyPair; leitura via
- * findByWorkerAndVacancy (par worker_id+job_posting_id).
+ * Migration 236: params passam a ser { vacancyId, requesterAdminId } (sem
+ * workerId — a nota é escopada só à vaga, não ao par candidato×vaga). Guard
+ * via validateVacancyExists; leitura via findByVacancy(vacancyId).
  *
  * Cenários:
- * 1. guard — par não pertence à vacante → not_found
- * 2. sucesso — lista notas do par e computa canDelete por nota
+ * 1. guard — vaga não existe → not_found
+ * 2. sucesso — lista notas da vaga e computa canDelete por nota
  */
 
-const mockValidateCandidateVacancyPair = jest.fn();
-const mockFindByWorkerAndVacancy = jest.fn();
+const mockValidateVacancyExists = jest.fn();
+const mockFindByVacancy = jest.fn();
 
 jest.mock('../../infrastructure/ContactNoteRepository', () => ({
   ContactNoteRepository: jest.fn().mockImplementation(() => ({
-    validateCandidateVacancyPair: mockValidateCandidateVacancyPair,
-    findByWorkerAndVacancy: mockFindByWorkerAndVacancy,
+    validateVacancyExists: mockValidateVacancyExists,
+    findByVacancy: mockFindByVacancy,
   })),
 }));
 
 import { ListContactNotesUseCase } from '../ListContactNotesUseCase';
 
-const WORKER_ID = 'aaaa0000-0000-0000-0000-111111111111';
 const VACANCY_ID = 'bbbb0000-0000-0000-0000-222222222222';
 
 describe('ListContactNotesUseCase', () => {
@@ -33,29 +32,26 @@ describe('ListContactNotesUseCase', () => {
     useCase = new ListContactNotesUseCase();
   });
 
-  it('par não pertence à vacante → not_found, sem consultar notas', async () => {
-    mockValidateCandidateVacancyPair.mockResolvedValueOnce(false);
+  it('vaga não existe → not_found, sem consultar notas', async () => {
+    mockValidateVacancyExists.mockResolvedValueOnce(false);
 
     const result = await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       requesterAdminId: 'admin-1',
     });
 
-    expect(mockValidateCandidateVacancyPair).toHaveBeenCalledWith(WORKER_ID, VACANCY_ID);
+    expect(mockValidateVacancyExists).toHaveBeenCalledWith(VACANCY_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('not_found');
-    expect(mockFindByWorkerAndVacancy).not.toHaveBeenCalled();
+    expect(mockFindByVacancy).not.toHaveBeenCalled();
   });
 
-  it('sucesso: lista via findByWorkerAndVacancy e computa canDelete (autor+recente=true)', async () => {
-    mockValidateCandidateVacancyPair.mockResolvedValueOnce(true);
-    mockFindByWorkerAndVacancy.mockResolvedValueOnce([
+  it('sucesso: lista via findByVacancy e computa canDelete (autor+recente=true)', async () => {
+    mockValidateVacancyExists.mockResolvedValueOnce(true);
+    mockFindByVacancy.mockResolvedValueOnce([
       {
         id: 'note-own-recent',
-        workerId: WORKER_ID,
         jobPostingId: VACANCY_ID,
-        workerJobApplicationId: null,
         noteText: 'nota do autor, recente',
         createdByAdminId: 'admin-1',
         createdByAdminName: null,
@@ -64,9 +60,7 @@ describe('ListContactNotesUseCase', () => {
       },
       {
         id: 'note-foreign',
-        workerId: WORKER_ID,
         jobPostingId: VACANCY_ID,
-        workerJobApplicationId: 'wja-1',
         noteText: 'nota de outro operador',
         createdByAdminId: 'admin-2',
         createdByAdminName: null,
@@ -77,11 +71,10 @@ describe('ListContactNotesUseCase', () => {
 
     const result = await useCase.execute({
       vacancyId: VACANCY_ID,
-      workerId: WORKER_ID,
       requesterAdminId: 'admin-1',
     });
 
-    expect(mockFindByWorkerAndVacancy).toHaveBeenCalledWith(WORKER_ID, VACANCY_ID);
+    expect(mockFindByVacancy).toHaveBeenCalledWith(VACANCY_ID);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.notes.find(n => n.id === 'note-own-recent')?.canDelete).toBe(true);
