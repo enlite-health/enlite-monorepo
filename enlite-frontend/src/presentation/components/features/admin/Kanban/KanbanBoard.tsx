@@ -46,11 +46,12 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
   const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
   /**
-   * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
-   * por workerId (não wjaId): o histórico é o MESMO em todas as colunas —
-   * inclusive BLOQUEADO — e não zera quando o card é promovido.
+   * Modal de comentários (contact notes) está aberto. Escopado à VAGA
+   * (vacancyId, fixo no board) — uma única thread, idêntica em qualquer
+   * card/coluna, inclusive BLOQUEADO, e que não zera quando o card é
+   * promovido.
    */
-  const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
@@ -116,12 +117,18 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
 
   return (
     <>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        autoScroll={{ threshold: { x: 0.2, y: 0 }, acceleration: 18 }}
+      >
         <div data-testid="kanban-board" className="flex gap-3 overflow-x-auto pb-4">
           {COLUMN_CONFIG.map((col) => {
             const items = stages[col.id as keyof FunnelStages] ?? [];
             return (
-              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable} alert={col.alert}>
+              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable} alert={col.alert} dragActive={activeId !== null}>
                 {items.map((enc) => (
                   <DraggableCard key={enc.id} id={enc.id} disabled={!enc.encuadreId}>
                     <KanbanCard
@@ -147,11 +154,8 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
                       attemptCount={enc.attemptCount}
                       onWorkerClick={handleWorkerClick}
                       onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
-                      onOpenNotes={
-                        enc.workerId
-                          ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })
-                          : undefined
-                      }
+                      onMoveTo={enc.encuadreId ? (target) => { void onMove(enc.encuadreId!, target); } : undefined}
+                      onOpenNotes={() => setNotesOpen(true)}
                       contactNotesCount={enc.contactNotesCount}
                     />
                   </DraggableCard>
@@ -198,12 +202,10 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
         />
       )}
 
-      {activeNotes && (
+      {notesOpen && (
         <ContactNotesModal
           vacancyId={vacancyId}
-          workerId={activeNotes.workerId}
-          workerName={activeNotes.workerName}
-          onClose={() => setActiveNotes(null)}
+          onClose={() => setNotesOpen(false)}
         />
       )}
     </>
