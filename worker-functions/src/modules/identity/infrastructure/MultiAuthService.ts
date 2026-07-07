@@ -40,7 +40,7 @@ export interface MultiAuthConfig {
  * Multi-Strategy Authentication Service
  *
  * Strategies (delegated to sub-classes):
- *   - ApiKeyAuthStrategy  — API keys (n8n, triage-service, external SaaS)
+ *   - ApiKeyAuthStrategy  — API keys (triage-service, external SaaS)
  *   - FirebaseAuthStrategy — Google/Firebase ID tokens (React frontend)
  *
  * HIPAA: No PII in tokens. Audit log for all auth attempts.

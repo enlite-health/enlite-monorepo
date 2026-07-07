@@ -5,7 +5,7 @@ const router = Router();
 const controller = new TalentumWebhookController();
 
 // POST /api/webhooks/talentum/prescreening
-// Chamado pelo n8n via Service Account. Sem Firebase auth.
+// Chamado com Google ID Token de Service Account (emissor em identificação — TD-062). Sem Firebase auth.
 // Autenticação: Google ID Token (Authorization: Bearer <id_token>).
 router.post(
   '/prescreening',

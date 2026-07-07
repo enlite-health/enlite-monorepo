@@ -26,7 +26,6 @@ export enum PrincipalType {
   WORKER = 'worker',
   ADMIN = 'admin',
   SYSTEM = 'system',
-  N8N = 'n8n',
   EXTERNAL_SAAS = 'external_saas'
 }
 
@@ -69,8 +68,7 @@ export enum ResourceType {
   AVAILABILITY = 'availability',
   QUIZ_RESPONSE = 'quiz_response',
   SYSTEM_CONFIG = 'system_config',
-  AUDIT_LOG = 'audit_log',
-  N8N_WEBHOOK = 'n8n_webhook'
+  AUDIT_LOG = 'audit_log'
 }
 
 export enum Action {

@@ -51,16 +51,6 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
   })),
 }));
 
-// EventDispatcher faz chamadas HTTP externas — mockamos para isolar o controller
-jest.mock('@shared/services/EventDispatcher', () => ({
-  EventDispatcher: jest.fn().mockImplementation(() => ({
-    notifyWorkerCreated: jest.fn().mockResolvedValue(undefined),
-    notifyStepCompleted: jest.fn().mockResolvedValue(undefined),
-    notifyStatusChanged: jest.fn().mockResolvedValue(undefined),
-    notifyWorkerUpdated: jest.fn().mockResolvedValue(undefined),
-  })),
-}));
-
 import { WorkerControllerV2 } from '../WorkerControllerV2';
 import { Request, Response } from 'express';
 import { Result } from '@shared/utils/Result';
