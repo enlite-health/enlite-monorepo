@@ -270,6 +270,8 @@ export class WJAFunnelController {
    * Body: { targetStage, rejectionReasonCategory?, rejectionReason? }
    *
    * Migration 230: INITIATED replaced by PRE_SCREENING in validStages.
+   * INVITED added to validStages — "Invitados" is a droppable column in the kanban
+   * (KanbanBoard DROPPABLE_STAGES); its omission here 400'd every drop into it.
    */
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
@@ -277,7 +279,7 @@ export class WJAFunnelController {
       const { targetStage, rejectionReasonCategory, rejectionReason } = req.body;
 
       const validStages = [
-        'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
+        'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
         'CONFIRMED', 'SELECTED', 'REJECTED',
       ];
 
