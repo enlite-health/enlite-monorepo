@@ -20,7 +20,7 @@ interface VacancyFunnelTableProps {
 }
 
 interface ActiveNotesModal {
-  wjaId: string;
+  workerId: string;
   workerName: string | null;
 }
 
@@ -43,9 +43,9 @@ export function VacancyFunnelTable({
     t('admin.vacancyDetail.funnelTable.headers.registration'),
   ];
 
-  function handleOpenNotes(wjaId: string) {
-    const row = rows.find((r) => r.id === wjaId);
-    setActiveNotes({ wjaId, workerName: row?.workerName ?? null });
+  function handleOpenNotes(workerId: string) {
+    const row = rows.find((r) => r.workerId === workerId);
+    setActiveNotes({ workerId, workerName: row?.workerName ?? null });
   }
 
   if (isLoading && rows.length === 0) {
@@ -98,7 +98,7 @@ export function VacancyFunnelTable({
       {activeNotes && (
         <ContactNotesModal
           vacancyId={vacancyId}
-          wjaId={activeNotes.wjaId}
+          workerId={activeNotes.workerId}
           workerName={activeNotes.workerName}
           onClose={() => setActiveNotes(null)}
         />

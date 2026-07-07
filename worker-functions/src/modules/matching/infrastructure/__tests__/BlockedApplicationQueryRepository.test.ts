@@ -182,6 +182,7 @@ describe('BlockedApplicationQueryRepository', () => {
         attempt_count: 3,
         acquisition_channel: 'facebook',
         last_attempted_at: NOW_DATE,
+        contact_notes_count: 2,
       }],
     });
 
@@ -196,6 +197,37 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(item.attemptCount).toBe(3);
     expect(item.acquisitionChannel).toBe('facebook');
     expect(item.lastAttemptedAt).toBe(NOW_DATE.toISOString());
+    expect(item.contactNotesCount).toBe(2);
+  });
+
+  it('listByVacancy() — contactNotesCount default 0 quando ausente/undefined (branch defensivo)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: 'ba-1b',
+        worker_id: WORKER_ID,
+        blocked_reason: 'registration_incomplete',
+        missing_fields: [],
+        attempt_count: 1,
+        acquisition_channel: null,
+        last_attempted_at: NOW_DATE,
+        // contact_notes_count ausente
+      }],
+    });
+
+    const result = await repo.listByVacancy(JOB_ID);
+    expect(result[0].contactNotesCount).toBe(0);
+  });
+
+  it('listByVacancy() — SQL soma contact_notes_count filtrando pelo par (worker_id, job_posting_id)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await repo.listByVacancy(JOB_ID);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('wja_contact_notes cn');
+    expect(sql).toContain('cn.worker_id = wba.worker_id');
+    expect(sql).toContain('cn.job_posting_id = wba.job_posting_id');
+    expect(sql).toContain('contact_notes_count');
   });
 
   it('listByVacancy() inclui NOT EXISTS para dedup (query SQL deve ter NOT EXISTS)', async () => {

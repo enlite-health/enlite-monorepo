@@ -177,7 +177,7 @@ describe('WJAFunnelController', () => {
       expect(stages.REJECTED[0].id).toBe('e10');
     });
 
-    it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true', async () => {
+    it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true, workerPhone e contactNotesCount (migration 235)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -188,11 +188,12 @@ describe('WJAFunnelController', () => {
           attemptCount: 3,
           acquisitionChannel: 'facebook',
           lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+          contactNotesCount: 2,
         },
       ]);
-      // blocked repo busca nome do worker
+      // blocked repo busca nome + phone (plaintext) do worker
       mockQuery.mockResolvedValue({
-        rows: [{ first_name_encrypted: 'encrypted:Ana', last_name_encrypted: 'encrypted:Blocked' }],
+        rows: [{ first_name_encrypted: 'encrypted:Ana', last_name_encrypted: 'encrypted:Blocked', phone: '+5491100000' }],
       });
 
       const [req, res] = mockReqRes({ id: 'jp-001' });
@@ -211,6 +212,10 @@ describe('WJAFunnelController', () => {
       expect(card.acquisitionChannel).toBe('facebook');
       expect(card.encuadreId).toBeNull();
       expect(card.workerName).toBe('Ana Blocked');
+      // migration 235: contactNotesCount vem do blockedRepo (não mais hardcoded 0)
+      expect(card.contactNotesCount).toBe(2);
+      // workerPhone passa a ser preenchido (plaintext — workers.phone, sem KMS)
+      expect(card.workerPhone).toBe('+5491100000');
     });
 
     it('card bloqueado com worker_not_found → workerName null, sem crash (coluna BLOQUEADO)', async () => {
@@ -224,6 +229,7 @@ describe('WJAFunnelController', () => {
           attemptCount: 1,
           acquisitionChannel: null,
           lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+          contactNotesCount: 0,
         },
       ]);
 
@@ -233,6 +239,7 @@ describe('WJAFunnelController', () => {
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect(stages.BLOQUEADO).toHaveLength(1);
       expect(stages.BLOQUEADO[0].workerName).toBeNull();
+      expect(stages.BLOQUEADO[0].workerPhone).toBeNull();
       expect(stages.BLOQUEADO[0].isBlocked).toBe(true);
     });
 

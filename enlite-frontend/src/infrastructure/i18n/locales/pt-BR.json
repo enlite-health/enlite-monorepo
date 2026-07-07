@@ -1014,6 +1014,7 @@
         "OTHER": "Outro"
       },
       "noName": "Sem nome",
+      "blockedNoName": "Nome não registrado",
       "orphanDragTooltip": "Aguardando criação do encuadre — arrasto disponível em breve",
       "acquisitionChannel": {
         "facebook": "Facebook",

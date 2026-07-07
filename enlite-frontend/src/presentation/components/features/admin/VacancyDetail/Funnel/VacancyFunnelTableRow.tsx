@@ -14,7 +14,8 @@ import type { FunnelTableRow } from '@domain/entities/Funnel';
 interface VacancyFunnelTableRowProps {
   row: FunnelTableRow;
   isLast: boolean;
-  onOpenNotes: (wjaId: string) => void;
+  /** Abre o modal de comentários pelo par worker×vaga (não pelo wjaId). */
+  onOpenNotes: (workerId: string) => void;
 }
 
 export function VacancyFunnelTableRow({
@@ -50,7 +51,7 @@ export function VacancyFunnelTableRow({
 
   function handleNotesClick(e: React.MouseEvent) {
     e.stopPropagation();
-    onOpenNotes(row.id);
+    onOpenNotes(row.workerId);
   }
 
   return (

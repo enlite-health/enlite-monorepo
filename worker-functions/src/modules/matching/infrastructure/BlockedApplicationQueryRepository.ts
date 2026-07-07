@@ -27,6 +27,8 @@ export interface BlockedAttemptForFunnelDto {
   attemptCount: number;
   acquisitionChannel: string | null;
   lastAttemptedAt: string;
+  /** Notas escritas enquanto o card estava bloqueado (migration 235 — chave estável worker_id+job_posting_id). */
+  contactNotesCount: number;
 }
 
 export interface BlockedAggregates {
@@ -151,7 +153,9 @@ export class BlockedApplicationQueryRepository {
          wba.missing_fields,
          wba.attempt_count,
          wba.acquisition_channel,
-         wba.last_attempted_at
+         wba.last_attempted_at,
+         (SELECT COUNT(*)::int FROM wja_contact_notes cn
+          WHERE cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count
        FROM worker_blocked_applications wba
        WHERE wba.job_posting_id = $1
          AND NOT EXISTS (
@@ -171,6 +175,7 @@ export class BlockedApplicationQueryRepository {
       attemptCount:      r.attempt_count as number,
       acquisitionChannel: (r.acquisition_channel as string | null) ?? null,
       lastAttemptedAt:   (r.last_attempted_at as Date).toISOString(),
+      contactNotesCount: Number(r.contact_notes_count ?? 0),
     }));
   }
 

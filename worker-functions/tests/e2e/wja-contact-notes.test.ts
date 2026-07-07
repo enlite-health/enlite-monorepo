@@ -1,9 +1,14 @@
 /**
  * wja-contact-notes.test.ts
  *
- * E2E tests for WJA Contact Notes feature:
- *   POST /api/admin/vacancies/:vacancyId/applications/:wjaId/contact-notes
- *   GET  /api/admin/vacancies/:vacancyId/applications/:wjaId/contact-notes
+ * E2E tests for Worker Contact Notes feature:
+ *   POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes
+ *   GET  /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes
+ *
+ * Migration 235: chave re-chaveada de worker_job_application_id (WJA) para o
+ * par estável (worker_id, job_posting_id) — sobrevive à promoção
+ * BLOQUEADO→INICIADO. Cobre também o cenário de card BLOQUEADO (sem WJA
+ * ainda) e a sobrevivência da nota após a promoção.
  *
  * Also validates Feature A (registrationComplete + contactNotesCount) via:
  *   GET /api/admin/vacancies/:id/funnel-table
@@ -25,9 +30,10 @@ const IDS = {
   worker: 'c0000001-0000-4000-a003-000000000001',
   wja: 'c0000001-0000-4000-a004-000000000001',
   otherWja: 'c0000001-0000-4000-a004-000000000002',
+  blockedWorker: 'c0000001-0000-4000-a003-000000000002',
 };
 
-describe('WJA Contact Notes', () => {
+describe('Worker Contact Notes', () => {
   const api = createApiClient();
   let adminToken: string;
   let otherAdminToken: string;
@@ -68,10 +74,10 @@ describe('WJA Contact Notes', () => {
 
   // ── POST creates note ─────────────────────────────────────────────────────
 
-  describe('POST /:vacancyId/applications/:wjaId/contact-notes', () => {
+  describe('POST /:vacancyId/workers/:workerId/contact-notes', () => {
     it('creates a note and returns 201 with noteText, createdByAdminId, createdAt', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: 'Primeiro contato realizado via WhatsApp' },
         auth(),
       );
@@ -87,7 +93,7 @@ describe('WJA Contact Notes', () => {
     it('returns 400 when noteText exceeds 240 characters', async () => {
       const longText = 'a'.repeat(241);
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: longText },
         auth(),
       );
@@ -98,7 +104,7 @@ describe('WJA Contact Notes', () => {
 
     it('returns 400 when noteText is empty string', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: '' },
         auth(),
       );
@@ -109,7 +115,7 @@ describe('WJA Contact Notes', () => {
 
     it('returns 400 when noteText is only whitespace', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: '   ' },
         auth(),
       );
@@ -118,11 +124,25 @@ describe('WJA Contact Notes', () => {
       expect(res.data.success).toBe(false);
     });
 
-    it('returns 404 when wjaId belongs to a different vacancy', async () => {
-      // IDS.otherWja belongs to IDS.otherVacancy, not IDS.vacancy
+    it('returns 404 when workerId has no WJA nor blocked attempt for this vacancy', async () => {
+      // otherWja pertence à IDS.otherVacancy — o par (worker, IDS.vacancy) via
+      // um worker sem nenhuma postulação/tentativa não existe.
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.otherWja}/contact-notes`,
-        { noteText: 'Nota válida mas WJA errada' },
+        `/api/admin/vacancies/${IDS.vacancy}/workers/00000000-0000-4000-a000-000000000099/contact-notes`,
+        { noteText: 'Worker sem postulação nesta vaga' },
+        auth(),
+      );
+
+      expect(res.status).toBe(404);
+      expect(res.data.success).toBe(false);
+    });
+
+    it('returns 404 when worker belongs to a different vacancy (cross-vacancy isolation)', async () => {
+      // IDS.worker tem WJA na IDS.otherVacancy também, mas o par (worker, IDS.vacancy)
+      // deve ser validado — aqui testamos vacancyId errado com worker de outro par.
+      const res = await api.post(
+        `/api/admin/vacancies/${IDS.otherVacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        { noteText: 'Blocked worker não pertence a otherVacancy' },
         auth(),
       );
 
@@ -133,7 +153,7 @@ describe('WJA Contact Notes', () => {
     it('snapshots the author display name from the users table', async () => {
       // seedFixtures inseriu users(cn-admin-e2e).display_name = 'Operadora E2E'
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: 'Nota com nome do autor' },
         auth(),
       );
@@ -144,12 +164,91 @@ describe('WJA Contact Notes', () => {
     });
   });
 
+  // ── BLOQUEADO: notes on a candidate with no WJA yet ──────────────────────
+
+  describe('Notas em card BLOQUEADO (sem WJA) — migration 235', () => {
+    it('creates a note for a blocked candidate (worker_blocked_applications, no WJA yet)', async () => {
+      const res = await api.post(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        { noteText: 'Contato enquanto o card ainda está bloqueado' },
+        auth(),
+      );
+
+      expect(res.status).toBe(201);
+      expect(res.data.success).toBe(true);
+
+      // A nota persiste com worker_id/job_posting_id preenchidos e
+      // worker_job_application_id NULL (não existe WJA para este par ainda).
+      const row = await pool.query(
+        `SELECT worker_id, job_posting_id, worker_job_application_id
+         FROM wja_contact_notes WHERE id = $1`,
+        [res.data.data.id],
+      );
+      expect(row.rows[0].worker_id).toBe(IDS.blockedWorker);
+      expect(row.rows[0].job_posting_id).toBe(IDS.vacancy);
+      expect(row.rows[0].worker_job_application_id).toBeNull();
+    });
+
+    it('lists the note for the blocked candidate via GET', async () => {
+      const res = await api.get(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        auth(),
+      );
+
+      expect(res.status).toBe(200);
+      const notes = res.data.data as Array<{ noteText: string }>;
+      expect(notes.some(n => n.noteText === 'Contato enquanto o card ainda está bloqueado')).toBe(true);
+    });
+
+    it('a nota sobrevive à promoção: worker_job_application_id passa a ser resolvido, mas worker_id/job_posting_id continuam os mesmos', async () => {
+      // Simula a promoção: nasce a WJA pro mesmo par (worker_id, job_posting_id) —
+      // o que PromoteBlockedApplicationsUseCase faria no fluxo real (só pra workers
+      // REGISTERED, já coberto por PromoteBlockedApplicationsUseCase.test.ts).
+      // Usa source='system' aqui só pra bypassar o guard de registro completo
+      // (migration 205) — irrelevante pro que este teste prova: que a nota
+      // sobrevive e passa a resolver worker_job_application_id via subquery.
+      const promotedWjaId = 'c0000001-0000-4000-a004-000000000099';
+      await pool.query(
+        `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, $3, 'INVITED', 'system')
+         ON CONFLICT (id) DO NOTHING`,
+        [promotedWjaId, IDS.blockedWorker, IDS.vacancy],
+      );
+
+      // A nota antiga (criada quando o card ainda estava bloqueado) segue
+      // aparecendo pelo mesmo par worker×vaga, mesmo sem ter sido copiada.
+      const res = await api.get(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        auth(),
+      );
+      expect(res.status).toBe(200);
+      const notes = res.data.data as Array<{ noteText: string }>;
+      expect(notes.some(n => n.noteText === 'Contato enquanto o card ainda está bloqueado')).toBe(true);
+
+      // Uma NOVA nota após a promoção resolve worker_job_application_id via subquery.
+      const postPromotion = await api.post(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        { noteText: 'Nota após promoção' },
+        auth(),
+      );
+      expect(postPromotion.status).toBe(201);
+
+      const row = await pool.query(
+        `SELECT worker_job_application_id FROM wja_contact_notes WHERE id = $1`,
+        [postPromotion.data.data.id],
+      );
+      expect(row.rows[0].worker_job_application_id).toBe(promotedWjaId);
+
+      await pool.query(`DELETE FROM worker_job_applications WHERE id = $1`, [promotedWjaId]);
+    });
+  });
+
   // ── DELETE: author-only + 2h window ──────────────────────────────────────
 
-  describe('DELETE /:vacancyId/applications/:wjaId/contact-notes/:noteId', () => {
+  describe('DELETE /:vacancyId/workers/:workerId/contact-notes/:noteId', () => {
     async function createNoteViaApi(noteText: string): Promise<string> {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText },
         auth(),
       );
@@ -161,7 +260,7 @@ describe('WJA Contact Notes', () => {
       const noteId = await createNoteViaApi('Nota a ser excluída pelo autor');
 
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/${noteId}`,
         auth(),
       );
       expect(del.status).toBe(200);
@@ -178,7 +277,7 @@ describe('WJA Contact Notes', () => {
       const noteId = await createNoteViaApi('Nota do autor, outro tenta excluir');
 
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/${noteId}`,
         authOther(),
       );
       expect(del.status).toBe(403);
@@ -193,18 +292,18 @@ describe('WJA Contact Notes', () => {
     });
 
     it('forbids the author from deleting after 2h (403 window_expired) and keeps it', async () => {
-      // Insere nota retroagida 3h, do mesmo autor (cn-admin-e2e)
+      // Insere nota retroagida 3h, do mesmo autor (cn-admin-e2e), já no par novo.
       const inserted = await pool.query<{ id: string }>(
         `INSERT INTO wja_contact_notes
-           (worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
-         VALUES ($1, 'Nota antiga (3h)', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '3 hours')
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, $2, $3, 'Nota antiga (3h)', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '3 hours')
          RETURNING id`,
-        [IDS.wja],
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
       const noteId = inserted.rows[0].id;
 
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/${noteId}`,
         auth(),
       );
       expect(del.status).toBe(403);
@@ -220,7 +319,7 @@ describe('WJA Contact Notes', () => {
 
     it('returns 404 for an unknown noteId', async () => {
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes/c0000001-0000-4000-a009-000000000099`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/c0000001-0000-4000-a009-000000000099`,
         auth(),
       );
       expect(del.status).toBe(404);
@@ -230,26 +329,26 @@ describe('WJA Contact Notes', () => {
 
   // ── GET lists notes in DESC order ────────────────────────────────────────
 
-  describe('GET /:vacancyId/applications/:wjaId/contact-notes', () => {
+  describe('GET /:vacancyId/workers/:workerId/contact-notes', () => {
     beforeAll(async () => {
       // Insert two notes with known timestamps (older first, then newer)
       await pool.query(
         `INSERT INTO wja_contact_notes
-           (worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
-         VALUES ($1, 'Nota mais antiga', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '10 minutes')`,
-        [IDS.wja],
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, $2, $3, 'Nota mais antiga', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '10 minutes')`,
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
       await pool.query(
         `INSERT INTO wja_contact_notes
-           (worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
-         VALUES ($1, 'Nota mais recente', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW())`,
-        [IDS.wja],
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, $2, $3, 'Nota mais recente', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW())`,
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
     });
 
     it('returns notes in DESC order (most recent first)', async () => {
       const res = await api.get(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         auth(),
       );
 
@@ -269,9 +368,9 @@ describe('WJA Contact Notes', () => {
       expect(idxRecente).toBeLessThan(idxAntiga);
     });
 
-    it('returns 404 when wjaId belongs to a different vacancy', async () => {
+    it('returns 404 when worker has no application/attempt for this vacancy', async () => {
       const res = await api.get(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.otherWja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/00000000-0000-4000-a000-000000000098/contact-notes`,
         auth(),
       );
 
@@ -282,16 +381,16 @@ describe('WJA Contact Notes', () => {
     it('computes canDelete per note (own+recent=true, foreign=false, own+old=false)', async () => {
       await pool.query(
         `INSERT INTO wja_contact_notes
-           (worker_job_application_id, note_text, created_by_admin_id, created_at)
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_at)
          VALUES
-           ($1, 'cd-own-recent', 'cn-admin-e2e', NOW()),
-           ($1, 'cd-foreign',    'cn-admin-other', NOW()),
-           ($1, 'cd-own-old',    'cn-admin-e2e', NOW() - INTERVAL '3 hours')`,
-        [IDS.wja],
+           ($1, $2, $3, 'cd-own-recent', 'cn-admin-e2e', NOW()),
+           ($1, $2, $3, 'cd-foreign',    'cn-admin-other', NOW()),
+           ($1, $2, $3, 'cd-own-old',    'cn-admin-e2e', NOW() - INTERVAL '3 hours')`,
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
 
       const res = await api.get(
-        `/api/admin/vacancies/${IDS.vacancy}/applications/${IDS.wja}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         auth(),
       );
       expect(res.status).toBe(200);
@@ -323,11 +422,13 @@ describe('WJA Contact Notes', () => {
       expect(row!.registrationComplete).toBe(true);
     });
 
-    it('returns contactNotesCount matching actual notes for the WJA', async () => {
-      // Count notes in DB directly for comparison
+    it('returns contactNotesCount matching actual notes for the pair (worker_id, job_posting_id)', async () => {
+      // Count notes in DB directly for comparison — filtrado pelo par estável
+      // (migration 235), não mais por worker_job_application_id.
       const dbResult = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM wja_contact_notes WHERE worker_job_application_id = $1`,
-        [IDS.wja],
+        `SELECT COUNT(*)::text AS count FROM wja_contact_notes
+         WHERE worker_id = $1 AND job_posting_id = $2`,
+        [IDS.worker, IDS.vacancy],
       );
       const expectedCount = parseInt(dbResult.rows[0].count, 10);
 
@@ -422,17 +523,41 @@ async function seedFixtures(pool: Pool): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [IDS.otherWja, IDS.worker, IDS.otherVacancy],
   );
+
+  // Blocked worker: só tem worker_blocked_applications para IDS.vacancy — sem WJA
+  // (simula um card BLOQUEADO real, que só existirá se worker.status != REGISTERED
+  // ou similar; aqui o status não importa pro teste, só a existência da linha).
+  await pool.query(
+    `INSERT INTO workers (id, auth_uid, email, phone, status, country)
+     VALUES ($1, 'cn-blocked-worker-uid', 'cn-blocked-worker@e2e.local', '+54911000098', 'INCOMPLETE_REGISTER', 'AR')
+     ON CONFLICT (id) DO NOTHING`,
+    [IDS.blockedWorker],
+  );
+  await pool.query(
+    `INSERT INTO worker_blocked_applications
+       (worker_id, job_posting_id, blocked_reason, missing_fields, attempt_count, acquisition_channel)
+     VALUES ($1, $2, 'registration_incomplete', '["phone"]', 1, 'facebook')
+     ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
+    [IDS.blockedWorker, IDS.vacancy],
+  );
 }
 
 async function cleanFixtures(pool: Pool): Promise<void> {
   await pool.query(
-    `DELETE FROM wja_contact_notes WHERE worker_job_application_id IN ($1, $2)`,
-    [IDS.wja, IDS.otherWja],
+    `DELETE FROM wja_contact_notes
+     WHERE worker_job_application_id IN ($1, $2)
+        OR worker_id IN ($3, $4)`,
+    [IDS.wja, IDS.otherWja, IDS.worker, IDS.blockedWorker],
   ).catch(() => {});
 
   await pool.query(
     `DELETE FROM worker_job_applications WHERE id IN ($1, $2)`,
     [IDS.wja, IDS.otherWja],
+  ).catch(() => {});
+
+  await pool.query(
+    `DELETE FROM worker_blocked_applications WHERE worker_id = $1`,
+    [IDS.blockedWorker],
   ).catch(() => {});
 
   await pool.query(
@@ -446,8 +571,8 @@ async function cleanFixtures(pool: Pool): Promise<void> {
   ).catch(() => {});
 
   await pool.query(
-    `DELETE FROM workers WHERE id = $1`,
-    [IDS.worker],
+    `DELETE FROM workers WHERE id IN ($1, $2)`,
+    [IDS.worker, IDS.blockedWorker],
   ).catch(() => {});
 
   await pool.query(

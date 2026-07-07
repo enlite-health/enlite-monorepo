@@ -1014,6 +1014,7 @@
         "OTHER": "Otro"
       },
       "noName": "Sin nombre",
+      "blockedNoName": "Sin nombre registrado",
       "orphanDragTooltip": "Pendiente de registro de encuadre — el arrastre estará disponible en breve",
       "acquisitionChannel": {
         "facebook": "Facebook",

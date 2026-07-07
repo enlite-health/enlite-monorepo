@@ -97,6 +97,11 @@ export function KanbanCard({
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
   const formattedPhone = formatPhoneDisplay(workerPhone);
+  // BLOQUEADO (worker_not_found): o nome não pôde ser decriptado — usar um
+  // label curto e específico em vez do fallback genérico "Sin nombre".
+  const nameLabel =
+    workerName ??
+    (isBlocked ? t('admin.kanban.blockedNoName') : t('admin.kanban.noName'));
 
   const handleNameClick = (e: React.MouseEvent) => {
     if (workerId && onWorkerClick) {
@@ -123,12 +128,12 @@ export function KanbanCard({
             onClick={handleNameClick}
           >
             <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
-              {workerName ?? t('admin.kanban.noName')}
+              {nameLabel}
             </Text>
           </button>
         ) : (
           <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate">
-            {workerName ?? t('admin.kanban.noName')}
+            {nameLabel}
           </Text>
         )}
         {matchScore !== null && (

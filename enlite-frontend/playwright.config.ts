@@ -28,14 +28,14 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['setup'],
-      testIgnore: ['**/integration/**', '**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testIgnore: ['**/integration/**', '**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
     },
 
     // Chromium-admin — testes admin que fazem login manual (não usam o storageState do worker)
     {
       name: 'chromium-admin',
       use: { ...devices['Desktop Chrome'] },
-      testMatch: ['**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testMatch: ['**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
     },
     {
       name: 'firefox',

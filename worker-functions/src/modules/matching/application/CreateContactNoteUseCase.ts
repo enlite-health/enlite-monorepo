@@ -13,7 +13,7 @@ const createContactNoteSchema = z.object({
 
 export interface CreateContactNoteParams {
   vacancyId: string;
-  wjaId: string;
+  workerId: string;
   noteText: string;
   adminId: string;
   adminEmail: string | null;
@@ -30,9 +30,11 @@ export type CreateContactNoteResult =
 /**
  * CreateContactNoteUseCase
  *
- * Valida e persiste uma nota de contato escopada ao par WJA×vacante.
- * Verifica pertencimento antes de inserir — retorna not_found se o wjaId
- * não pertencer à vacante informada.
+ * Valida e persiste uma nota de contato escopada ao par estável
+ * (worker_id, job_posting_id) — migration 235. Verifica pertencimento antes
+ * de inserir: o par precisa ser uma postulação real (WJA) OU uma tentativa
+ * bloqueada (worker_blocked_applications) da vacante informada; retorna
+ * not_found caso contrário.
  */
 export class CreateContactNoteUseCase {
   private repo: ContactNoteRepository;
@@ -52,13 +54,13 @@ export class CreateContactNoteUseCase {
       };
     }
 
-    const belongs = await this.repo.wjaBelongsToVacancy(params.wjaId, params.vacancyId);
+    const belongs = await this.repo.validateCandidateVacancyPair(params.workerId, params.vacancyId);
     if (!belongs) {
       return {
         ok: false,
         error: {
           kind: 'not_found',
-          message: `WJA ${params.wjaId} não pertence à vacante ${params.vacancyId}`,
+          message: `Worker ${params.workerId} não pertence à vacante ${params.vacancyId}`,
         },
       };
     }
@@ -71,7 +73,8 @@ export class CreateContactNoteUseCase {
     const createdByAdminEmail = admin?.email ?? params.adminEmail ?? null;
 
     const note = await this.repo.insert({
-      workerJobApplicationId: params.wjaId,
+      workerId: params.workerId,
+      jobPostingId: params.vacancyId,
       noteText: parsed.data.noteText,
       createdByAdminId: params.adminId,
       createdByAdminName,

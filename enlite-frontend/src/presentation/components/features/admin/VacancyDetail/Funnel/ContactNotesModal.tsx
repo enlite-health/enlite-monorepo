@@ -12,14 +12,14 @@ const MAX_NOTE_LENGTH = 240;
 
 interface ContactNotesModalProps {
   vacancyId: string;
-  wjaId: string;
+  workerId: string;
   workerName: string | null;
   onClose: () => void;
 }
 
 export function ContactNotesModal({
   vacancyId,
-  wjaId,
+  workerId,
   workerName,
   onClose,
 }: ContactNotesModalProps): JSX.Element {
@@ -33,7 +33,7 @@ export function ContactNotesModal({
     fetchNotes,
     createNote,
     deleteNote,
-  } = useContactNotes(vacancyId, wjaId);
+  } = useContactNotes(vacancyId, workerId);
 
   const [noteText, setNoteText] = useState('');
 

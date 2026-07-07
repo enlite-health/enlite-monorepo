@@ -115,15 +115,22 @@ describe('DraggableCard — disabled (orphan card)', () => {
     expect(wrapper.getAttribute('title')).toBe('admin.kanban.orphanDragTooltip');
   });
 
-  it('renders children inside pointer-events-none opacity wrapper when disabled', () => {
+  it('renders children inside a dimmed (opacity-70) wrapper when disabled', () => {
     setupDraggable();
 
     render(<DraggableCard id="orphan-1" disabled><span>Orphan Content</span></DraggableCard>);
 
     expect(screen.getByText('Orphan Content')).toBeInTheDocument();
-    // Inner wrapper that blocks pointer events
     const inner = screen.getByText('Orphan Content').parentElement;
-    expect(inner?.className).toContain('pointer-events-none');
     expect(inner?.className).toContain('opacity-70');
+  });
+
+  it('does NOT block pointer events on children when disabled — only DRAG is blocked, not clicks (e.g. profile link, notes button on BLOQUEADO cards)', () => {
+    setupDraggable();
+
+    render(<DraggableCard id="orphan-1" disabled><span>Orphan Content</span></DraggableCard>);
+
+    const inner = screen.getByText('Orphan Content').parentElement;
+    expect(inner?.className).not.toContain('pointer-events-none');
   });
 });

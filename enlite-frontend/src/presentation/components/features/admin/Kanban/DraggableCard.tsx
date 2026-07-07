@@ -13,6 +13,10 @@ export function DraggableCard({ id, disabled = false, children }: DraggableCardP
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
 
   if (disabled) {
+    // Só o ARRASTO é bloqueado (nenhum listener/attribute do dnd-kit é
+    // repassado abaixo). O conteúdo do card continua clicável — o link de
+    // perfil e o botão de comentários precisam funcionar mesmo em cards sem
+    // encuadre (ex.: BLOQUEADO), então NÃO usamos pointer-events-none aqui.
     return (
       <div
         ref={setNodeRef}
@@ -22,7 +26,7 @@ export function DraggableCard({ id, disabled = false, children }: DraggableCardP
         title={t('admin.kanban.orphanDragTooltip')}
         aria-label={t('admin.kanban.orphanDragTooltip')}
       >
-        <div className="pointer-events-none opacity-70">
+        <div className="opacity-70">
           {children}
         </div>
       </div>

@@ -1,7 +1,10 @@
 /**
  * AdminContactNotesApiService
  *
- * CRUD de notas de contato por candidato (WJA) dentro de uma vacante.
+ * CRUD de notas de contato do par worker×vaga dentro de uma vacante.
+ * Chaveado por workerId (não por WJA) para que o histórico de comentários
+ * seja o MESMO em todas as colunas do Kanban — inclusive BLOQUEADO — e não
+ * zere quando o card é promovido (ex.: BLOQUEADO → INICIADO).
  * Extraído do AdminApiService para respeitar o limite de 400 linhas —
  * callers continuam usando `AdminApiService` (delega transparentemente).
  */
@@ -58,34 +61,34 @@ class AdminContactNotesApiServiceClass {
 
   async getContactNotes(
     vacancyId: string,
-    wjaId: string,
+    workerId: string,
   ): Promise<ContactNote[]> {
     return this.request<ContactNote[]>(
       'GET',
-      `/api/admin/vacancies/${vacancyId}/applications/${wjaId}/contact-notes`,
+      `/api/admin/vacancies/${vacancyId}/workers/${workerId}/contact-notes`,
     );
   }
 
   async createContactNote(
     vacancyId: string,
-    wjaId: string,
+    workerId: string,
     payload: CreateContactNotePayload,
   ): Promise<ContactNote> {
     return this.request<ContactNote>(
       'POST',
-      `/api/admin/vacancies/${vacancyId}/applications/${wjaId}/contact-notes`,
+      `/api/admin/vacancies/${vacancyId}/workers/${workerId}/contact-notes`,
       payload,
     );
   }
 
   async deleteContactNote(
     vacancyId: string,
-    wjaId: string,
+    workerId: string,
     noteId: string,
   ): Promise<void> {
     await this.request<{ id: string }>(
       'DELETE',
-      `/api/admin/vacancies/${vacancyId}/applications/${wjaId}/contact-notes/${noteId}`,
+      `/api/admin/vacancies/${vacancyId}/workers/${workerId}/contact-notes/${noteId}`,
     );
   }
 }

@@ -45,8 +45,12 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
   /** Stores the encuadreId (not wja.id) of the card being dragged */
   const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
-  /** WJA cujo modal de comentários (contact notes) está aberto. */
-  const [activeNotes, setActiveNotes] = useState<{ wjaId: string; workerName: string | null } | null>(null);
+  /**
+   * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
+   * por workerId (não wjaId): o histórico é o MESMO em todas as colunas —
+   * inclusive BLOQUEADO — e não zera quando o card é promovido.
+   */
+  const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
 
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
@@ -144,9 +148,9 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
                       onWorkerClick={handleWorkerClick}
                       onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
                       onOpenNotes={
-                        enc.isBlocked
-                          ? undefined
-                          : () => setActiveNotes({ wjaId: enc.id, workerName: enc.workerName })
+                        enc.workerId
+                          ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })
+                          : undefined
                       }
                       contactNotesCount={enc.contactNotesCount}
                     />
@@ -197,7 +201,7 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
       {activeNotes && (
         <ContactNotesModal
           vacancyId={vacancyId}
-          wjaId={activeNotes.wjaId}
+          workerId={activeNotes.workerId}
           workerName={activeNotes.workerName}
           onClose={() => setActiveNotes(null)}
         />

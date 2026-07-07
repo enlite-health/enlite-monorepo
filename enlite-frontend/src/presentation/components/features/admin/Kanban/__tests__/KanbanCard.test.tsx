@@ -338,6 +338,59 @@ describe('KanbanCard — blocked badge', () => {
     expect(badge.className).toContain('bg-red-100');
     expect(badge.className).toContain('text-red-700');
   });
+
+  it('renders the blocked-specific "no name" i18n key when isBlocked and workerName is null (worker_not_found)', () => {
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        workerName={null}
+        isBlocked={true}
+        blockedReason="worker_not_found"
+      />,
+    );
+    expect(screen.getByText('admin.kanban.blockedNoName')).toBeInTheDocument();
+    expect(screen.queryByText('admin.kanban.noName')).not.toBeInTheDocument();
+  });
+
+  it('still renders the generic "no name" i18n key when NOT blocked and workerName is null', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" workerName={null} isBlocked={false} />);
+    expect(screen.getByText('admin.kanban.noName')).toBeInTheDocument();
+  });
+
+  it('renders the worker name as a clickable link even when isBlocked, when workerId + onWorkerClick are present', () => {
+    const onClick = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        isBlocked={true}
+        workerId="worker-blocked-1"
+        workerName="Lucía Fernández"
+        onWorkerClick={onClick}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Lucía Fernández' });
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledWith('worker-blocked-1');
+  });
+
+  it('renders the notes button in a blocked card when onOpenNotes is provided (contact notes are keyed by worker, not WJA)', () => {
+    const onOpenNotes = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        isBlocked={true}
+        workerId="worker-blocked-1"
+        onOpenNotes={onOpenNotes}
+        contactNotesCount={2}
+      />,
+    );
+    expect(screen.getByTestId('notes-button')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(onOpenNotes).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ── Clickable Worker Name ───────────────────────────────────────────────────

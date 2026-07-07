@@ -89,7 +89,7 @@ export class WJAFunnelController {
                WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
                ELSE wja.application_funnel_stage END AS talentum_status,
              (SELECT COUNT(*)::int FROM wja_contact_notes cn
-              WHERE cn.worker_job_application_id = wja.id) AS contact_notes_count,
+              WHERE cn.worker_id = wja.worker_id AND cn.job_posting_id = wja.job_posting_id) AS contact_notes_count,
              wsa.work_zone
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
@@ -139,21 +139,22 @@ export class WJAFunnelController {
           const wid = row.worker_id as string | null;
           return wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação';
         })),
-        Promise.all(blockedAttempts.map(async (ba) => {
-          if (!ba.workerId) return null;
-          // Fetch worker name encrypted for blocked cards
+        Promise.all(blockedAttempts.map(async (ba): Promise<{ name: string | null; phone: string | null }> => {
+          if (!ba.workerId) return { name: null, phone: null };
+          // Fetch worker name (encrypted) + phone (plaintext — usado para dedup,
+          // ver migrations/023_encrypt_all_pii.sql) para os cards bloqueados
           const workerRow = await this.db.query(
-            `SELECT first_name_encrypted, last_name_encrypted FROM workers WHERE id = $1`,
+            `SELECT first_name_encrypted, last_name_encrypted, phone FROM workers WHERE id = $1`,
             [ba.workerId],
           );
-          if (workerRow.rows.length === 0) return null;
+          if (workerRow.rows.length === 0) return { name: null, phone: null };
           const wr = workerRow.rows[0];
           const [fn, ln] = await Promise.all([
             wr.first_name_encrypted ? kms.decrypt(wr.first_name_encrypted).catch(() => null) : null,
             wr.last_name_encrypted ? kms.decrypt(wr.last_name_encrypted).catch(() => null) : null,
           ]);
           const name = [fn, ln].filter(Boolean).join(' ').trim();
-          return name || null;
+          return { name: name || null, phone: (wr.phone as string | null) ?? null };
         })),
       ]);
 
@@ -217,12 +218,13 @@ export class WJAFunnelController {
       // promovida vira WJA real e some daqui automaticamente).
       for (let i = 0; i < blockedAttempts.length; i++) {
         const ba = blockedAttempts[i];
+        const blockedWorker = decryptedBlockedNames[i];
         stages.BLOQUEADO.push({
           id: ba.id,
           encuadreId: null,
           workerId: ba.workerId ?? null,
-          workerName: decryptedBlockedNames[i] ?? null,
-          workerPhone: null,
+          workerName: blockedWorker?.name ?? null,
+          workerPhone: blockedWorker?.phone ?? null,
           occupation: null,
           interviewDate: null,
           interviewTime: null,
@@ -238,7 +240,9 @@ export class WJAFunnelController {
           workZone: null,
           redireccionamiento: null,
           internalStage: null,
-          contactNotesCount: 0, // blocked attempts não são WJA real → sem notas
+          // Notas de contato escritas enquanto o card estava bloqueado
+          // (migration 235 — chave estável worker_id+job_posting_id).
+          contactNotesCount: ba.contactNotesCount,
           // Blocked-specific fields
           isBlocked: true,
           blockedReason: ba.blockedReason,

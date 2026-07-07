@@ -931,7 +931,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ];
     let postedBody: { noteText?: string } | null = null;
     await page.route(
-      `**/api/admin/vacancies/${MOCK_VACANCY_ID}/applications/*/contact-notes`,
+      `**/api/admin/vacancies/${MOCK_VACANCY_ID}/workers/*/contact-notes`,
       async (route) => {
         if (route.request().method() === 'POST') {
           postedBody = route.request().postDataJSON() as { noteText?: string };
@@ -991,7 +991,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await mockVacancyApis(page);
 
     await page.route(
-      `**/api/admin/vacancies/${MOCK_VACANCY_ID}/applications/*/contact-notes`,
+      `**/api/admin/vacancies/${MOCK_VACANCY_ID}/workers/*/contact-notes`,
       (route) =>
         route.fulfill({
           status: 200,
