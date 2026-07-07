@@ -9,19 +9,35 @@ interface KanbanColumnProps {
   droppable?: boolean;
   /** Alert-styled header (red tone) for columns that need operator attention, e.g. BLOQUEADO */
   alert?: boolean;
+  /** True enquanto um card está sendo arrastado — realça as colunas que aceitam drop
+   *  (verde) e esmaece as que não aceitam, pra guiar o operador até o alvo certo. */
+  dragActive?: boolean;
   children: React.ReactNode;
 }
 
-export function KanbanColumn({ id, title, count, color, droppable = true, alert = false, children }: KanbanColumnProps) {
+export function KanbanColumn({ id, title, count, color, droppable = true, alert = false, dragActive = false, children }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable });
+
+  const validDropTarget = dragActive && droppable;
+
+  // Prioridade: hover ativo (roxo forte) > destino válido durante drag (verde) >
+  // destino inválido durante drag (esmaecido) > alert > default.
+  const stateClass = isOver
+    ? 'border-purple-400 bg-purple-50/50 ring-2 ring-purple-300'
+    : validDropTarget
+      ? 'border-green-400 bg-green-50/50 ring-2 ring-green-200'
+      : dragActive && !droppable
+        ? 'border-slate-200 bg-slate-50/50 opacity-50'
+        : alert
+          ? 'border-red-200 bg-red-50/40'
+          : 'border-slate-200 bg-slate-50/50';
 
   return (
     <div
       ref={setNodeRef}
       data-testid={`kanban-column-${id}`}
-      className={`flex flex-col min-w-[260px] max-w-[300px] flex-1 rounded-xl border ${
-        isOver ? 'border-purple-400 bg-purple-50/50' : alert ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-slate-50/50'
-      } transition-colors`}
+      data-valid-drop-target={validDropTarget ? 'true' : undefined}
+      className={`flex flex-col min-w-[260px] max-w-[300px] flex-1 rounded-xl border ${stateClass} transition-colors`}
     >
       <div
         className={`flex items-center justify-between px-3 py-2.5 border-b ${

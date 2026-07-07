@@ -3,6 +3,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { CalendarClock, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
+import { MoveToMenu } from './MoveToMenu';
 
 interface KanbanCardProps {
   id: string;
@@ -33,9 +34,12 @@ interface KanbanCardProps {
   attemptCount?: number;
   onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
-  /** Opens the contact-notes modal for this WJA. Only wired for real applications (not blocked attempts). */
+  /** Move o card para outro stage via menu de clique (alternativa ao arrasto).
+   *  Só é passado para cards movíveis (com encuadre) — orphans/BLOQUEADO ficam sem. */
+  onMoveTo?: (targetStage: string) => void;
+  /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
-  /** Number of contact notes registered for this WJA — shown as a count badge on the notes button. */
+  /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
 }
 
@@ -91,6 +95,7 @@ export function KanbanCard({
   attemptCount,
   onWorkerClick,
   onReject,
+  onMoveTo,
   onOpenNotes,
   contactNotesCount = 0,
 }: KanbanCardProps) {
@@ -266,6 +271,8 @@ export function KanbanCard({
           <NotesCountBadge count={contactNotesCount} />
         </button>
       )}
+
+      {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}
 
       {onReject && stage !== 'REJECTED' && (
         <button

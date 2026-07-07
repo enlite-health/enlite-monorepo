@@ -1030,6 +1030,7 @@
       },
       "reprogramBadge": "🔄 Reprogramado",
       "notesButton": "Comentarios",
+      "moveToButton": "Mover a…",
       "rejectButton": "Rechazar",
       "rejectionModal": {
         "title": "Motivo de rechazo",
@@ -1460,6 +1461,7 @@
         },
         "contactNotes": {
           "modalTitle": "Notas de contacto",
+          "modalTitleVacancy": "Comentarios de la vacante",
           "emptyState": "Sin notas registradas.",
           "textareaPlaceholder": "Escribí una nota sobre este candidato…",
           "charCounter": "{{count}}/240",
