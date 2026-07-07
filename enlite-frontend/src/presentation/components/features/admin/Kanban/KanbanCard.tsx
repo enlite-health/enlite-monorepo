@@ -37,9 +37,9 @@ interface KanbanCardProps {
   /** Move o card para outro stage via menu de clique (alternativa ao arrasto).
    *  Só é passado para cards movíveis (com encuadre) — orphans/BLOQUEADO ficam sem. */
   onMoveTo?: (targetStage: string) => void;
-  /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
+  /** Opens the contact-notes modal for this WJA. Only wired for real applications (not blocked attempts). */
   onOpenNotes?: () => void;
-  /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
+  /** Number of contact notes registered for this WJA — shown as a count badge on the notes button. */
   contactNotesCount?: number;
 }
 
