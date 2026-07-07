@@ -218,15 +218,15 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(result[0].contactNotesCount).toBe(0);
   });
 
-  it('listByVacancy() — SQL soma contact_notes_count filtrando só pela VAGA (job_posting_id) — migration 236', async () => {
+  it('listByVacancy() — SQL soma contact_notes_count filtrando pelo par (worker_id, job_posting_id)', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     await repo.listByVacancy(JOB_ID);
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('wja_contact_notes cn');
-    expect(sql).toContain('cn.job_posting_id = $1');
-    expect(sql).not.toContain('cn.worker_id');
+    expect(sql).toContain('cn.worker_id = wba.worker_id');
+    expect(sql).toContain('cn.job_posting_id = wba.job_posting_id');
     expect(sql).toContain('contact_notes_count');
   });
 

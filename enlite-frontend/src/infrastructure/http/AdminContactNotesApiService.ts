@@ -1,9 +1,10 @@
 /**
  * AdminContactNotesApiService
  *
- * CRUD de notas de contato ESCOPADAS À VAGA (vacancyId) — uma única thread
- * por vaga, mostrada IDÊNTICA em todos os cards do Kanban (bloqueado ou não,
- * qualquer coluna, qualquer candidato). Não é mais chaveado por worker.
+ * CRUD de notas de contato do par worker×vaga dentro de uma vacante.
+ * Chaveado por workerId (não por WJA) para que o histórico de comentários
+ * seja o MESMO em todas as colunas do Kanban — inclusive BLOQUEADO — e não
+ * zere quando o card é promovido (ex.: BLOQUEADO → INICIADO).
  * Extraído do AdminApiService para respeitar o limite de 400 linhas —
  * callers continuam usando `AdminApiService` (delega transparentemente).
  */
@@ -58,28 +59,36 @@ class AdminContactNotesApiServiceClass {
     return (json as ApiSuccessResponse<T>).data;
   }
 
-  async getContactNotes(vacancyId: string): Promise<ContactNote[]> {
+  async getContactNotes(
+    vacancyId: string,
+    workerId: string,
+  ): Promise<ContactNote[]> {
     return this.request<ContactNote[]>(
       'GET',
-      `/api/admin/vacancies/${vacancyId}/contact-notes`,
+      `/api/admin/vacancies/${vacancyId}/workers/${workerId}/contact-notes`,
     );
   }
 
   async createContactNote(
     vacancyId: string,
+    workerId: string,
     payload: CreateContactNotePayload,
   ): Promise<ContactNote> {
     return this.request<ContactNote>(
       'POST',
-      `/api/admin/vacancies/${vacancyId}/contact-notes`,
+      `/api/admin/vacancies/${vacancyId}/workers/${workerId}/contact-notes`,
       payload,
     );
   }
 
-  async deleteContactNote(vacancyId: string, noteId: string): Promise<void> {
+  async deleteContactNote(
+    vacancyId: string,
+    workerId: string,
+    noteId: string,
+  ): Promise<void> {
     await this.request<{ id: string }>(
       'DELETE',
-      `/api/admin/vacancies/${vacancyId}/contact-notes/${noteId}`,
+      `/api/admin/vacancies/${vacancyId}/workers/${workerId}/contact-notes/${noteId}`,
     );
   }
 }

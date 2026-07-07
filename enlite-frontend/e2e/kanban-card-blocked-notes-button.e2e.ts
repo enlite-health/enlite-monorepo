@@ -7,10 +7,10 @@
  * mostrava os motivos de bloqueio. Passa a ganhar, MANTENDO os motivos:
  *   1. Link pro perfil do worker (quando workerId presente).
  *   2. Telefone (workerPhone).
- *   3. Botão de Comentarios — MESMA thread ESCOPADA À VAGA em TODAS as
- *      colunas (chaveado por vacancyId, não por worker/wja.id) — não zera
- *      na promoção BLOQUEADO → INICIADO, e é idêntica em qualquer card:
- *        GET/POST /api/admin/vacancies/:vacancyId/contact-notes
+ *   3. Botão de Comentarios — MESMO histórico do candidato naquela vaga em
+ *      TODAS as colunas (chaveado por workerId, não por wja.id) — não zera
+ *      na promoção BLOQUEADO → INICIADO:
+ *        GET/POST /api/admin/vacancies/:id/workers/:workerId/contact-notes
  *
  * Login: Firebase Auth REAL (enlite-prd) via UI — mesma conta do auth.setup.
  * Backend mockado via page.route (padrão do projeto chromium-admin): nenhuma
@@ -91,10 +91,10 @@ test.describe('Kanban card BLOQUEADO — mesma UX dos demais cards (auth real)',
       return route.fulfill(ok({ stages, totalEncuadres: 1 }));
     });
 
-    // Contact notes escopadas à VAGA — mesmo endpoint pra qualquer card/candidato.
+    // Contact notes do worker bloqueado — MESMO endpoint chaveado por workerId.
     const notesStore = { notes: [seedNote] as ContactNote[] };
     await page.route(
-      `**/api/admin/vacancies/${VACANCY_ID}/contact-notes`,
+      `**/api/admin/vacancies/${VACANCY_ID}/workers/${BLOCKED_WORKER_ID}/contact-notes`,
       (route: Route) => {
         if (route.request().method() === 'POST') {
           const body = route.request().postDataJSON() as { noteText: string };
@@ -152,7 +152,7 @@ test.describe('Kanban card BLOQUEADO — mesma UX dos demais cards (auth real)',
       maxDiffPixelRatio: 0.05,
     });
 
-    // Clicar em Comentarios abre a thread da VAGA (mesmo modal em qualquer card)
+    // Clicar em Comentarios abre o MESMO modal, chaveado por workerId (não wjaId)
     await notesButton.click();
     await expect(page.getByRole('textbox')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Sofía Ramírez')).toBeVisible();

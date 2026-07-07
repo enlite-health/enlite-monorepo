@@ -179,22 +179,23 @@ export function createAdminVacanciesRoutes(
     interviewSlotsController.cancelSlot(req, res),
   );
 
-  // ── Vacancy Contact Notes (WJAContactNotesController) ────────────────────────
-  // Chave: SOMENTE job_posting_id — migration 236. Thread única por vaga:
-  // a mesma conversa aparece idêntica em todos os cards/candidatos.
+  // ── Worker Contact Notes (WJAContactNotesController) ─────────────────────────
+  // Chave: par estável (worker_id, job_posting_id) — migration 235. Sobrevive
+  // à promoção BLOQUEADO→INICIADO, então cards ainda bloqueados (sem WJA)
+  // também podem ter notas.
   const contactNotesController = new WJAContactNotesController();
   router.get(
-    '/vacancies/:vacancyId/contact-notes',
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.list(req, res),
   );
   router.post(
-    '/vacancies/:vacancyId/contact-notes',
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.create(req, res),
   );
   router.delete(
-    '/vacancies/:vacancyId/contact-notes/:noteId',
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.delete(req, res),
   );

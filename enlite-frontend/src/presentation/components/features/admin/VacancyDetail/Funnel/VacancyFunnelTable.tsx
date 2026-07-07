@@ -19,6 +19,11 @@ interface VacancyFunnelTableProps {
   activeBucket: FunnelBucket;
 }
 
+interface ActiveNotesModal {
+  workerId: string;
+  workerName: string | null;
+}
+
 export function VacancyFunnelTable({
   vacancyId,
   rows,
@@ -26,8 +31,7 @@ export function VacancyFunnelTable({
   activeBucket,
 }: VacancyFunnelTableProps): JSX.Element {
   const { t } = useTranslation();
-  /** Modal de comentários escopado à VAGA — uma única thread por vaga. */
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [activeNotes, setActiveNotes] = useState<ActiveNotesModal | null>(null);
 
   const headers = [
     t('admin.vacancyDetail.funnelTable.headers.notes'),
@@ -39,8 +43,9 @@ export function VacancyFunnelTable({
     t('admin.vacancyDetail.funnelTable.headers.registration'),
   ];
 
-  function handleOpenNotes() {
-    setNotesOpen(true);
+  function handleOpenNotes(workerId: string) {
+    const row = rows.find((r) => r.workerId === workerId);
+    setActiveNotes({ workerId, workerName: row?.workerName ?? null });
   }
 
   if (isLoading && rows.length === 0) {
@@ -90,10 +95,12 @@ export function VacancyFunnelTable({
         </TableBody>
       </Table>
 
-      {notesOpen && (
+      {activeNotes && (
         <ContactNotesModal
           vacancyId={vacancyId}
-          onClose={() => setNotesOpen(false)}
+          workerId={activeNotes.workerId}
+          workerName={activeNotes.workerName}
+          onClose={() => setActiveNotes(null)}
         />
       )}
     </>

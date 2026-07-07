@@ -27,7 +27,7 @@ export interface BlockedAttemptForFunnelDto {
   attemptCount: number;
   acquisitionChannel: string | null;
   lastAttemptedAt: string;
-  /** Notas de contato da vaga — mesma thread de qualquer card (migration 236 — escopo só-vaga, job_posting_id). */
+  /** Notas escritas enquanto o card estava bloqueado (migration 235 — chave estável worker_id+job_posting_id). */
   contactNotesCount: number;
 }
 
@@ -155,7 +155,7 @@ export class BlockedApplicationQueryRepository {
          wba.acquisition_channel,
          wba.last_attempted_at,
          (SELECT COUNT(*)::int FROM wja_contact_notes cn
-          WHERE cn.job_posting_id = $1) AS contact_notes_count
+          WHERE cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count
        FROM worker_blocked_applications wba
        WHERE wba.job_posting_id = $1
          AND NOT EXISTS (

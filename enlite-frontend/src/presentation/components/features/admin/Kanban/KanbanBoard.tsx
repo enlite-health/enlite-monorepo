@@ -46,12 +46,11 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
   const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
   /**
-   * Modal de comentários (contact notes) está aberto. Escopado à VAGA
-   * (vacancyId, fixo no board) — uma única thread, idêntica em qualquer
-   * card/coluna, inclusive BLOQUEADO, e que não zera quando o card é
-   * promovido.
+   * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
+   * por workerId (não wjaId): o histórico é o MESMO em todas as colunas —
+   * inclusive BLOQUEADO — e não zera quando o card é promovido.
    */
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
 
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
@@ -155,7 +154,11 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
                       onWorkerClick={handleWorkerClick}
                       onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
                       onMoveTo={enc.encuadreId ? (target) => { void onMove(enc.encuadreId!, target); } : undefined}
-                      onOpenNotes={() => setNotesOpen(true)}
+                      onOpenNotes={
+                        enc.workerId
+                          ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })
+                          : undefined
+                      }
                       contactNotesCount={enc.contactNotesCount}
                     />
                   </DraggableCard>
@@ -202,10 +205,12 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
         />
       )}
 
-      {notesOpen && (
+      {activeNotes && (
         <ContactNotesModal
           vacancyId={vacancyId}
-          onClose={() => setNotesOpen(false)}
+          workerId={activeNotes.workerId}
+          workerName={activeNotes.workerName}
+          onClose={() => setActiveNotes(null)}
         />
       )}
     </>

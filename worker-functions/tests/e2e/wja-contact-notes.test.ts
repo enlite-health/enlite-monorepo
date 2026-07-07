@@ -1,22 +1,21 @@
 /**
  * wja-contact-notes.test.ts
  *
- * E2E tests for Vacancy Contact Notes feature (migration 236):
- *   POST   /api/admin/vacancies/:vacancyId/contact-notes
- *   GET    /api/admin/vacancies/:vacancyId/contact-notes
- *   DELETE /api/admin/vacancies/:vacancyId/contact-notes/:noteId
+ * E2E tests for Worker Contact Notes feature:
+ *   POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes
+ *   GET  /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes
  *
- * Migration 236: a thread de comentários é escopada SOMENTE À VAGA
- * (job_posting_id) — a mesma conversa aparece idêntica em TODOS os cards da
- * vaga, qualquer candidato, qualquer coluna (inclusive BLOQUEADO). Não há
- * mais segmento /workers/:workerId na rota nem noção de par candidato×vaga.
+ * Migration 235: chave re-chaveada de worker_job_application_id (WJA) para o
+ * par estável (worker_id, job_posting_id) — sobrevive à promoção
+ * BLOQUEADO→INICIADO. Cobre também o cenário de card BLOQUEADO (sem WJA
+ * ainda) e a sobrevivência da nota após a promoção.
  *
  * Also validates Feature A (registrationComplete + contactNotesCount) via:
  *   GET /api/admin/vacancies/:id/funnel-table
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -25,14 +24,16 @@ const DATABASE_URL =
 // ── Deterministic IDs ─────────────────────────────────────────────────────────
 
 const IDS = {
-  patient: 'c0000002-0000-4000-a001-000000000001',
-  vacancy: 'c0000002-0000-4000-a002-000000000001',
-  otherVacancy: 'c0000002-0000-4000-a002-000000000002',
-  worker: 'c0000002-0000-4000-a003-000000000001',
-  wja: 'c0000002-0000-4000-a004-000000000001',
+  patient: 'c0000001-0000-4000-a001-000000000001',
+  vacancy: 'c0000001-0000-4000-a002-000000000001',
+  otherVacancy: 'c0000001-0000-4000-a002-000000000002',
+  worker: 'c0000001-0000-4000-a003-000000000001',
+  wja: 'c0000001-0000-4000-a004-000000000001',
+  otherWja: 'c0000001-0000-4000-a004-000000000002',
+  blockedWorker: 'c0000001-0000-4000-a003-000000000002',
 };
 
-describe('Vacancy Contact Notes (migration 236)', () => {
+describe('Worker Contact Notes', () => {
   const api = createApiClient();
   let adminToken: string;
   let otherAdminToken: string;
@@ -42,15 +43,15 @@ describe('Vacancy Contact Notes (migration 236)', () => {
     await waitForBackend(api);
 
     adminToken = await getMockToken(api, {
-      uid: 'cn2-admin-e2e',
-      email: 'cn2-admin@e2e.local',
+      uid: 'cn-admin-e2e',
+      email: 'cn-admin@e2e.local',
       role: 'admin',
     });
 
     // Segundo operador — usado pra provar que só o autor pode excluir.
     otherAdminToken = await getMockToken(api, {
-      uid: 'cn2-admin-other',
-      email: 'cn2-admin-other@e2e.local',
+      uid: 'cn-admin-other',
+      email: 'cn-admin-other@e2e.local',
       role: 'admin',
     });
 
@@ -73,10 +74,10 @@ describe('Vacancy Contact Notes (migration 236)', () => {
 
   // ── POST creates note ─────────────────────────────────────────────────────
 
-  describe('POST /:vacancyId/contact-notes', () => {
+  describe('POST /:vacancyId/workers/:workerId/contact-notes', () => {
     it('creates a note and returns 201 with noteText, createdByAdminId, createdAt', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: 'Primeiro contato realizado via WhatsApp' },
         auth(),
       );
@@ -84,18 +85,15 @@ describe('Vacancy Contact Notes (migration 236)', () => {
       expect(res.status).toBe(201);
       expect(res.data.success).toBe(true);
       expect(res.data.data.noteText).toBe('Primeiro contato realizado via WhatsApp');
-      expect(res.data.data.createdByAdminId).toBe('cn2-admin-e2e');
+      expect(res.data.data.createdByAdminId).toBe('cn-admin-e2e');
       expect(typeof res.data.data.createdAt).toBe('string');
       expect(res.data.data.id).toBeTruthy();
-      // Nota escopada só à vaga — sem workerId nem workerJobApplicationId no payload.
-      expect(res.data.data.workerId).toBeUndefined();
-      expect(res.data.data.workerJobApplicationId).toBeUndefined();
     });
 
     it('returns 400 when noteText exceeds 240 characters', async () => {
       const longText = 'a'.repeat(241);
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: longText },
         auth(),
       );
@@ -106,7 +104,7 @@ describe('Vacancy Contact Notes (migration 236)', () => {
 
     it('returns 400 when noteText is empty string', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: '' },
         auth(),
       );
@@ -117,7 +115,7 @@ describe('Vacancy Contact Notes (migration 236)', () => {
 
     it('returns 400 when noteText is only whitespace', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: '   ' },
         auth(),
       );
@@ -126,10 +124,25 @@ describe('Vacancy Contact Notes (migration 236)', () => {
       expect(res.data.success).toBe(false);
     });
 
-    it('returns 404 when vacancyId does not exist', async () => {
+    it('returns 404 when workerId has no WJA nor blocked attempt for this vacancy', async () => {
+      // otherWja pertence à IDS.otherVacancy — o par (worker, IDS.vacancy) via
+      // um worker sem nenhuma postulação/tentativa não existe.
       const res = await api.post(
-        `/api/admin/vacancies/00000000-0000-4000-a000-000000000099/contact-notes`,
-        { noteText: 'Vaga inexistente' },
+        `/api/admin/vacancies/${IDS.vacancy}/workers/00000000-0000-4000-a000-000000000099/contact-notes`,
+        { noteText: 'Worker sem postulação nesta vaga' },
+        auth(),
+      );
+
+      expect(res.status).toBe(404);
+      expect(res.data.success).toBe(false);
+    });
+
+    it('returns 404 when worker belongs to a different vacancy (cross-vacancy isolation)', async () => {
+      // IDS.worker tem WJA na IDS.otherVacancy também, mas o par (worker, IDS.vacancy)
+      // deve ser validado — aqui testamos vacancyId errado com worker de outro par.
+      const res = await api.post(
+        `/api/admin/vacancies/${IDS.otherVacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        { noteText: 'Blocked worker não pertence a otherVacancy' },
         auth(),
       );
 
@@ -138,60 +151,104 @@ describe('Vacancy Contact Notes (migration 236)', () => {
     });
 
     it('snapshots the author display name from the users table', async () => {
-      // seedFixtures inseriu users(cn2-admin-e2e).display_name = 'Operadora E2E'
+      // seedFixtures inseriu users(cn-admin-e2e).display_name = 'Operadora E2E'
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText: 'Nota com nome do autor' },
         auth(),
       );
 
       expect(res.status).toBe(201);
       expect(res.data.data.createdByAdminName).toBe('Operadora E2E');
-      expect(res.data.data.createdByAdminEmail).toBe('cn2-admin-users@e2e.local');
+      expect(res.data.data.createdByAdminEmail).toBe('cn-admin-users@e2e.local');
     });
   });
 
-  // ── Thread única por vaga ─────────────────────────────────────────────────
+  // ── BLOQUEADO: notes on a candidate with no WJA yet ──────────────────────
 
-  describe('Thread única por vaga — migration 236', () => {
-    it('a nota criada sem nenhum candidato/WJA associado é visível (escopo é só a vaga)', async () => {
-      // otherVacancy não tem NENHUM worker/WJA/blocked attempt — prova que a
-      // nota depende só da vaga existir, não de haver candidato algum.
+  describe('Notas em card BLOQUEADO (sem WJA) — migration 235', () => {
+    it('creates a note for a blocked candidate (worker_blocked_applications, no WJA yet)', async () => {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.otherVacancy}/contact-notes`,
-        { noteText: 'Nota em vaga sem nenhum candidato ainda' },
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        { noteText: 'Contato enquanto o card ainda está bloqueado' },
         auth(),
       );
 
       expect(res.status).toBe(201);
       expect(res.data.success).toBe(true);
 
-      const list = await api.get(
-        `/api/admin/vacancies/${IDS.otherVacancy}/contact-notes`,
-        auth(),
+      // A nota persiste com worker_id/job_posting_id preenchidos e
+      // worker_job_application_id NULL (não existe WJA para este par ainda).
+      const row = await pool.query(
+        `SELECT worker_id, job_posting_id, worker_job_application_id
+         FROM wja_contact_notes WHERE id = $1`,
+        [res.data.data.id],
       );
-      expect(list.status).toBe(200);
-      const notes = list.data.data as Array<{ noteText: string }>;
-      expect(notes.some(n => n.noteText === 'Nota em vaga sem nenhum candidato ainda')).toBe(true);
+      expect(row.rows[0].worker_id).toBe(IDS.blockedWorker);
+      expect(row.rows[0].job_posting_id).toBe(IDS.vacancy);
+      expect(row.rows[0].worker_job_application_id).toBeNull();
     });
 
-    it('a lista de notas da vaga é isolada de outra vaga (cross-vacancy)', async () => {
-      const list = await api.get(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+    it('lists the note for the blocked candidate via GET', async () => {
+      const res = await api.get(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
         auth(),
       );
-      expect(list.status).toBe(200);
-      const notes = list.data.data as Array<{ noteText: string }>;
-      expect(notes.some(n => n.noteText === 'Nota em vaga sem nenhum candidato ainda')).toBe(false);
+
+      expect(res.status).toBe(200);
+      const notes = res.data.data as Array<{ noteText: string }>;
+      expect(notes.some(n => n.noteText === 'Contato enquanto o card ainda está bloqueado')).toBe(true);
+    });
+
+    it('a nota sobrevive à promoção: worker_job_application_id passa a ser resolvido, mas worker_id/job_posting_id continuam os mesmos', async () => {
+      // Simula a promoção: nasce a WJA pro mesmo par (worker_id, job_posting_id) —
+      // o que PromoteBlockedApplicationsUseCase faria no fluxo real (só pra workers
+      // REGISTERED, já coberto por PromoteBlockedApplicationsUseCase.test.ts).
+      // Usa source='system' aqui só pra bypassar o guard de registro completo
+      // (migration 205) — irrelevante pro que este teste prova: que a nota
+      // sobrevive e passa a resolver worker_job_application_id via subquery.
+      const promotedWjaId = 'c0000001-0000-4000-a004-000000000099';
+      await pool.query(
+        `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, $3, 'INVITED', 'system')
+         ON CONFLICT (id) DO NOTHING`,
+        [promotedWjaId, IDS.blockedWorker, IDS.vacancy],
+      );
+
+      // A nota antiga (criada quando o card ainda estava bloqueado) segue
+      // aparecendo pelo mesmo par worker×vaga, mesmo sem ter sido copiada.
+      const res = await api.get(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        auth(),
+      );
+      expect(res.status).toBe(200);
+      const notes = res.data.data as Array<{ noteText: string }>;
+      expect(notes.some(n => n.noteText === 'Contato enquanto o card ainda está bloqueado')).toBe(true);
+
+      // Uma NOVA nota após a promoção resolve worker_job_application_id via subquery.
+      const postPromotion = await api.post(
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.blockedWorker}/contact-notes`,
+        { noteText: 'Nota após promoção' },
+        auth(),
+      );
+      expect(postPromotion.status).toBe(201);
+
+      const row = await pool.query(
+        `SELECT worker_job_application_id FROM wja_contact_notes WHERE id = $1`,
+        [postPromotion.data.data.id],
+      );
+      expect(row.rows[0].worker_job_application_id).toBe(promotedWjaId);
+
+      await pool.query(`DELETE FROM worker_job_applications WHERE id = $1`, [promotedWjaId]);
     });
   });
 
   // ── DELETE: author-only + 2h window ──────────────────────────────────────
 
-  describe('DELETE /:vacancyId/contact-notes/:noteId', () => {
+  describe('DELETE /:vacancyId/workers/:workerId/contact-notes/:noteId', () => {
     async function createNoteViaApi(noteText: string): Promise<string> {
       const res = await api.post(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         { noteText },
         auth(),
       );
@@ -203,7 +260,7 @@ describe('Vacancy Contact Notes (migration 236)', () => {
       const noteId = await createNoteViaApi('Nota a ser excluída pelo autor');
 
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/${noteId}`,
         auth(),
       );
       expect(del.status).toBe(200);
@@ -220,7 +277,7 @@ describe('Vacancy Contact Notes (migration 236)', () => {
       const noteId = await createNoteViaApi('Nota do autor, outro tenta excluir');
 
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/${noteId}`,
         authOther(),
       );
       expect(del.status).toBe(403);
@@ -235,18 +292,18 @@ describe('Vacancy Contact Notes (migration 236)', () => {
     });
 
     it('forbids the author from deleting after 2h (403 window_expired) and keeps it', async () => {
-      // Insere nota retroagida 3h, do mesmo autor (cn2-admin-e2e).
+      // Insere nota retroagida 3h, do mesmo autor (cn-admin-e2e), já no par novo.
       const inserted = await pool.query<{ id: string }>(
         `INSERT INTO wja_contact_notes
-           (job_posting_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
-         VALUES ($1, 'Nota antiga (3h)', 'cn2-admin-e2e', 'cn2-admin@e2e.local', NOW() - INTERVAL '3 hours')
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, $2, $3, 'Nota antiga (3h)', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '3 hours')
          RETURNING id`,
-        [IDS.vacancy],
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
       const noteId = inserted.rows[0].id;
 
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/${noteId}`,
         auth(),
       );
       expect(del.status).toBe(403);
@@ -262,18 +319,7 @@ describe('Vacancy Contact Notes (migration 236)', () => {
 
     it('returns 404 for an unknown noteId', async () => {
       const del = await api.delete(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes/c0000002-0000-4000-a009-000000000099`,
-        auth(),
-      );
-      expect(del.status).toBe(404);
-      expect(del.data.success).toBe(false);
-    });
-
-    it('returns 404 when the note belongs to a DIFFERENT vacancy', async () => {
-      const noteId = await createNoteViaApi('Nota da vaga principal');
-
-      const del = await api.delete(
-        `/api/admin/vacancies/${IDS.otherVacancy}/contact-notes/${noteId}`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes/c0000001-0000-4000-a009-000000000099`,
         auth(),
       );
       expect(del.status).toBe(404);
@@ -283,26 +329,26 @@ describe('Vacancy Contact Notes (migration 236)', () => {
 
   // ── GET lists notes in DESC order ────────────────────────────────────────
 
-  describe('GET /:vacancyId/contact-notes', () => {
+  describe('GET /:vacancyId/workers/:workerId/contact-notes', () => {
     beforeAll(async () => {
       // Insert two notes with known timestamps (older first, then newer)
       await pool.query(
         `INSERT INTO wja_contact_notes
-           (job_posting_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
-         VALUES ($1, 'Nota mais antiga', 'cn2-admin-e2e', 'cn2-admin@e2e.local', NOW() - INTERVAL '10 minutes')`,
-        [IDS.vacancy],
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, $2, $3, 'Nota mais antiga', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW() - INTERVAL '10 minutes')`,
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
       await pool.query(
         `INSERT INTO wja_contact_notes
-           (job_posting_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
-         VALUES ($1, 'Nota mais recente', 'cn2-admin-e2e', 'cn2-admin@e2e.local', NOW())`,
-        [IDS.vacancy],
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_by_admin_email, created_at)
+         VALUES ($1, $2, $3, 'Nota mais recente', 'cn-admin-e2e', 'cn-admin@e2e.local', NOW())`,
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
     });
 
     it('returns notes in DESC order (most recent first)', async () => {
       const res = await api.get(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         auth(),
       );
 
@@ -322,9 +368,9 @@ describe('Vacancy Contact Notes (migration 236)', () => {
       expect(idxRecente).toBeLessThan(idxAntiga);
     });
 
-    it('returns 404 when vacancy does not exist', async () => {
+    it('returns 404 when worker has no application/attempt for this vacancy', async () => {
       const res = await api.get(
-        `/api/admin/vacancies/00000000-0000-4000-a000-000000000098/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/00000000-0000-4000-a000-000000000098/contact-notes`,
         auth(),
       );
 
@@ -335,16 +381,16 @@ describe('Vacancy Contact Notes (migration 236)', () => {
     it('computes canDelete per note (own+recent=true, foreign=false, own+old=false)', async () => {
       await pool.query(
         `INSERT INTO wja_contact_notes
-           (job_posting_id, note_text, created_by_admin_id, created_at)
+           (worker_id, job_posting_id, worker_job_application_id, note_text, created_by_admin_id, created_at)
          VALUES
-           ($1, 'cd-own-recent', 'cn2-admin-e2e', NOW()),
-           ($1, 'cd-foreign',    'cn2-admin-other', NOW()),
-           ($1, 'cd-own-old',    'cn2-admin-e2e', NOW() - INTERVAL '3 hours')`,
-        [IDS.vacancy],
+           ($1, $2, $3, 'cd-own-recent', 'cn-admin-e2e', NOW()),
+           ($1, $2, $3, 'cd-foreign',    'cn-admin-other', NOW()),
+           ($1, $2, $3, 'cd-own-old',    'cn-admin-e2e', NOW() - INTERVAL '3 hours')`,
+        [IDS.worker, IDS.vacancy, IDS.wja],
       );
 
       const res = await api.get(
-        `/api/admin/vacancies/${IDS.vacancy}/contact-notes`,
+        `/api/admin/vacancies/${IDS.vacancy}/workers/${IDS.worker}/contact-notes`,
         auth(),
       );
       expect(res.status).toBe(200);
@@ -376,13 +422,13 @@ describe('Vacancy Contact Notes (migration 236)', () => {
       expect(row!.registrationComplete).toBe(true);
     });
 
-    it('returns contactNotesCount matching the VAGA total (migration 236 — escopo só-vaga)', async () => {
-      // Count notes in DB directly for comparison — filtrado só pela vaga
-      // (migration 236), não mais por worker.
+    it('returns contactNotesCount matching actual notes for the pair (worker_id, job_posting_id)', async () => {
+      // Count notes in DB directly for comparison — filtrado pelo par estável
+      // (migration 235), não mais por worker_job_application_id.
       const dbResult = await pool.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM wja_contact_notes
-         WHERE job_posting_id = $1`,
-        [IDS.vacancy],
+         WHERE worker_id = $1 AND job_posting_id = $2`,
+        [IDS.worker, IDS.vacancy],
       );
       const expectedCount = parseInt(dbResult.rows[0].count, 10);
 
@@ -412,7 +458,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // Staff user (autor das notas) — fonte do display_name p/ o snapshot do nome.
   await pool.query(
     `INSERT INTO users (firebase_uid, email, display_name, role, is_active)
-     VALUES ('cn2-admin-e2e', 'cn2-admin-users@e2e.local', 'Operadora E2E', 'admin', true)
+     VALUES ('cn-admin-e2e', 'cn-admin-users@e2e.local', 'Operadora E2E', 'admin', true)
      ON CONFLICT (firebase_uid) DO UPDATE
        SET display_name = EXCLUDED.display_name,
            email = EXCLUDED.email,
@@ -423,7 +469,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // Patient
   await pool.query(
     `INSERT INTO patients (id, clickup_task_id, country, first_name, last_name)
-     VALUES ($1, 'cn2-e2e-task-001', 'AR', 'CnTest', 'Patient')
+     VALUES ($1, 'cn-e2e-task-001', 'AR', 'CnTest', 'Patient')
      ON CONFLICT (id) DO NOTHING`,
     [IDS.patient],
   );
@@ -441,7 +487,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // Main vacancy
   await pool.query(
     `INSERT INTO job_postings (id, vacancy_number, case_number, patient_id, title, description, country, status)
-     VALUES ($1, $2, 99201, $3, 'cn2-e2e-vacancy', '', 'AR', 'SEARCHING')
+     VALUES ($1, $2, 99101, $3, 'cn-e2e-vacancy', '', 'AR', 'SEARCHING')
      ON CONFLICT (id) DO NOTHING`,
     [IDS.vacancy, vn1, IDS.patient],
   );
@@ -449,7 +495,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // Other vacancy (used for cross-vacancy isolation test)
   await pool.query(
     `INSERT INTO job_postings (id, vacancy_number, case_number, patient_id, title, description, country, status)
-     VALUES ($1, $2, 99202, $3, 'cn2-e2e-other-vacancy', '', 'AR', 'SEARCHING')
+     VALUES ($1, $2, 99102, $3, 'cn-e2e-other-vacancy', '', 'AR', 'SEARCHING')
      ON CONFLICT (id) DO NOTHING`,
     [IDS.otherVacancy, vn2, IDS.patient],
   );
@@ -457,29 +503,61 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // Worker with status=REGISTERED (required: migration 183 blocks WJA for non-REGISTERED workers)
   await pool.query(
     `INSERT INTO workers (id, auth_uid, email, phone, status, country)
-     VALUES ($1, 'cn2-worker-uid', 'cn2-worker@e2e.local', '+54911000199', 'REGISTERED', 'AR')
+     VALUES ($1, 'cn-worker-uid', 'cn-worker@e2e.local', '+54911000099', 'REGISTERED', 'AR')
      ON CONFLICT (id) DO NOTHING`,
     [IDS.worker],
   );
 
-  // WJA for main vacancy — usado só pelo teste de funnel-table (Feature A).
+  // WJA for main vacancy
   await pool.query(
     `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
      VALUES ($1, $2, $3, 'INVITED', 'manual')
      ON CONFLICT (id) DO NOTHING`,
     [IDS.wja, IDS.worker, IDS.vacancy],
   );
+
+  // WJA for other vacancy (used to test cross-vacancy 404)
+  await pool.query(
+    `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
+     VALUES ($1, $2, $3, 'INVITED', 'manual')
+     ON CONFLICT (id) DO NOTHING`,
+    [IDS.otherWja, IDS.worker, IDS.otherVacancy],
+  );
+
+  // Blocked worker: só tem worker_blocked_applications para IDS.vacancy — sem WJA
+  // (simula um card BLOQUEADO real, que só existirá se worker.status != REGISTERED
+  // ou similar; aqui o status não importa pro teste, só a existência da linha).
+  await pool.query(
+    `INSERT INTO workers (id, auth_uid, email, phone, status, country)
+     VALUES ($1, 'cn-blocked-worker-uid', 'cn-blocked-worker@e2e.local', '+54911000098', 'INCOMPLETE_REGISTER', 'AR')
+     ON CONFLICT (id) DO NOTHING`,
+    [IDS.blockedWorker],
+  );
+  await pool.query(
+    `INSERT INTO worker_blocked_applications
+       (worker_id, job_posting_id, blocked_reason, missing_fields, attempt_count, acquisition_channel)
+     VALUES ($1, $2, 'registration_incomplete', '["phone"]', 1, 'facebook')
+     ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
+    [IDS.blockedWorker, IDS.vacancy],
+  );
 }
 
 async function cleanFixtures(pool: Pool): Promise<void> {
   await pool.query(
-    `DELETE FROM wja_contact_notes WHERE job_posting_id IN ($1, $2)`,
-    [IDS.vacancy, IDS.otherVacancy],
+    `DELETE FROM wja_contact_notes
+     WHERE worker_job_application_id IN ($1, $2)
+        OR worker_id IN ($3, $4)`,
+    [IDS.wja, IDS.otherWja, IDS.worker, IDS.blockedWorker],
   ).catch(() => {});
 
   await pool.query(
-    `DELETE FROM worker_job_applications WHERE id = $1`,
-    [IDS.wja],
+    `DELETE FROM worker_job_applications WHERE id IN ($1, $2)`,
+    [IDS.wja, IDS.otherWja],
+  ).catch(() => {});
+
+  await pool.query(
+    `DELETE FROM worker_blocked_applications WHERE worker_id = $1`,
+    [IDS.blockedWorker],
   ).catch(() => {});
 
   await pool.query(
@@ -493,8 +571,8 @@ async function cleanFixtures(pool: Pool): Promise<void> {
   ).catch(() => {});
 
   await pool.query(
-    `DELETE FROM workers WHERE id = $1`,
-    [IDS.worker],
+    `DELETE FROM workers WHERE id IN ($1, $2)`,
+    [IDS.worker, IDS.blockedWorker],
   ).catch(() => {});
 
   await pool.query(
@@ -503,6 +581,6 @@ async function cleanFixtures(pool: Pool): Promise<void> {
   ).catch(() => {});
 
   await pool.query(
-    `DELETE FROM users WHERE firebase_uid = 'cn2-admin-e2e'`,
+    `DELETE FROM users WHERE firebase_uid = 'cn-admin-e2e'`,
   ).catch(() => {});
 }
