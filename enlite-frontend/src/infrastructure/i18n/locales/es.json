@@ -1031,6 +1031,8 @@
       "reprogramBadge": "🔄 Reprogramado",
       "notesButton": "Comentarios",
       "moveToButton": "Mover a…",
+      "collapseColumn": "Colapsar columna",
+      "expandColumn": "Expandir columna",
       "rejectButton": "Rechazar",
       "rejectionModal": {
         "title": "Motivo de rechazo",

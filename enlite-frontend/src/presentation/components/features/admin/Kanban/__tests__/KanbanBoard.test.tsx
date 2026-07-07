@@ -66,6 +66,8 @@ vi.mock('lucide-react', () => ({
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
   ArrowRightLeft: (props: Record<string, unknown>) => <svg data-testid="icon-move" {...props} />,
   ChevronDown: (props: Record<string, unknown>) => <svg data-testid="icon-chevron" {...props} />,
+  ChevronsLeft: (props: Record<string, unknown>) => <svg data-testid="icon-collapse" {...props} />,
+  ChevronsRight: (props: Record<string, unknown>) => <svg data-testid="icon-expand" {...props} />,
 }));
 
 // ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────

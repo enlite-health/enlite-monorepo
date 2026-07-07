@@ -52,6 +52,31 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
    */
   const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
 
+  /** Colunas colapsadas num trilho fino (estilo ClickUp), persistidas por vaga. */
+  const collapsedStorageKey = `kanban-collapsed-${vacancyId}`;
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(collapsedStorageKey);
+      return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
+
+  function toggleColumnCollapse(columnId: string) {
+    setCollapsedColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(columnId)) next.delete(columnId);
+      else next.add(columnId);
+      try {
+        localStorage.setItem(collapsedStorageKey, JSON.stringify([...next]));
+      } catch {
+        // localStorage indisponível (modo privado etc.) — o colapso fica só em memória.
+      }
+      return next;
+    });
+  }
+
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
   }
@@ -127,7 +152,7 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
           {COLUMN_CONFIG.map((col) => {
             const items = stages[col.id as keyof FunnelStages] ?? [];
             return (
-              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable} alert={col.alert} dragActive={activeId !== null}>
+              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable} alert={col.alert} dragActive={activeId !== null} collapsed={collapsedColumns.has(col.id)} onToggleCollapse={() => toggleColumnCollapse(col.id)}>
                 {items.map((enc) => (
                   <DraggableCard key={enc.id} id={enc.id} disabled={!enc.encuadreId}>
                     <KanbanCard
