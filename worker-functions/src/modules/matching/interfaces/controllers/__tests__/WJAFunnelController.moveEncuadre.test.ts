@@ -86,6 +86,32 @@ describe('WJAFunnelController — moveEncuadre', () => {
     );
   });
 
+  it('aceita INVITED como targetStage (coluna Invitados é droppable no kanban — F4)', async () => {
+    // Regressão: coluna "Invitados" (stage=INVITED) é destino droppable no front
+    // (KanbanBoard DROPPABLE_STAGES), mas INVITED faltava no validStages do backend
+    // → todo drop pra Invitados retornava "targetStage must be one of: ...".
+    mockQuery.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
+    });
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVITED' });
+    await controller.moveEncuadre(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { encuadreId: 'e1', targetStage: 'INVITED' },
+    });
+
+    // INVITED não é terminal → não toca resultado do encuadre (só 3 queries)
+    expect(mockQuery).toHaveBeenCalledTimes(3);
+    const upsertCall = mockQuery.mock.calls[2];
+    expect(upsertCall[0]).toContain('worker_job_applications');
+    expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'INVITED']);
+  });
+
   it('retorna 404 quando encuadre não existe', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 0, rows: [] });
 
@@ -234,7 +260,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     // NOT_QUALIFIED removido em F3 — operador admin não pode mover manualmente para esse stage
     // PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
     const validStages = [
-      'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
+      'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
