@@ -10,6 +10,8 @@ import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocum
 import type { WorkerStatsGetCapability } from './capabilities/WorkerStatsGetCapability';
 import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapability';
 import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCapability';
+import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMemoryGetCapability';
+import type { WorkerCaseMemoryPutCapability } from './capabilities/WorkerCaseMemoryPutCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -37,6 +39,8 @@ interface RegistryDeps {
   documentsUpload: WorkerDocumentsUploadCapability;
   statsGet: WorkerStatsGetCapability;
   workerSearch: WorkerSearchCapability;
+  caseMemoryGet: WorkerCaseMemoryGetCapability;
+  caseMemoryPut: WorkerCaseMemoryPutCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -49,6 +53,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.profile.proposeUpdate',
   'worker.profile.confirmUpdate',
   'worker.documents.upload',
+  'worker.caseMemory.put',
 ]);
 
 export class CapabilityRegistry {
@@ -93,6 +98,8 @@ export class CapabilityRegistry {
       documentsUpload,
       statsGet,
       workerSearch,
+      caseMemoryGet,
+      caseMemoryPut,
       dbQuery,
     } = this.deps;
 
@@ -201,6 +208,30 @@ export class CapabilityRegistry {
           (workerSearch.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ??
           {},
         execute: (args) => workerSearch.execute(args),
+      },
+      {
+        name:
+          (caseMemoryGet.constructor as { NAME?: string }).NAME ??
+          'worker.caseMemory.get',
+        description:
+          (caseMemoryGet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Get worker case memory.',
+        inputShape:
+          (caseMemoryGet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => caseMemoryGet.execute(args),
+      },
+      {
+        name:
+          (caseMemoryPut.constructor as { NAME?: string }).NAME ??
+          'worker.caseMemory.put',
+        description:
+          (caseMemoryPut.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Merge-update worker case memory.',
+        inputShape:
+          (caseMemoryPut.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => caseMemoryPut.execute(args),
       },
       ...(dbQuery !== undefined
         ? [

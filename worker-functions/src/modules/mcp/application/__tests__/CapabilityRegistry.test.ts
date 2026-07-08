@@ -9,6 +9,8 @@ import { WorkerProfileConfirmUpdateCapability } from '../capabilities/WorkerProf
 import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
 import { WorkerStatsGetCapability } from '../capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../capabilities/WorkerSearchCapability';
+import { WorkerCaseMemoryGetCapability } from '../capabilities/WorkerCaseMemoryGetCapability';
+import { WorkerCaseMemoryPutCapability } from '../capabilities/WorkerCaseMemoryPutCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -95,6 +97,12 @@ function makeCapabilities() {
   const workerSearch = new WorkerSearchCapability({
     execute: jest.fn().mockResolvedValue({ workers: [], total: 0, limit: 20, offset: 0 }),
   } as never);
+  const caseMemoryGet = new WorkerCaseMemoryGetCapability({
+    get: jest.fn().mockResolvedValue(null),
+  } as never);
+  const caseMemoryPut = new WorkerCaseMemoryPutCapability({
+    put: jest.fn().mockResolvedValue({ caseMemory: {}, updatedAt: '2026-07-08T00:00:00.000Z' }),
+  } as never);
   return {
     profileGet,
     documentsList,
@@ -106,6 +114,8 @@ function makeCapabilities() {
     documentsUpload,
     statsGet,
     workerSearch,
+    caseMemoryGet,
+    caseMemoryPut,
   };
 }
 
