@@ -29,6 +29,9 @@ import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseC
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
 import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryReadonlyCapability';
+import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
+import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
+import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -88,6 +91,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   const pendingProfileRepo = new PendingProfileChangeRepository(dbPool);
   const profileAuditRepo = new ProfileChangeAuditRepository(dbPool);
 
+  // Camada A: dossiê da Luz (worker_case_memory).
+  const caseMemoryRepo = new CaseMemoryRepository(dbPool);
+
   const registry = new CapabilityRegistry({
     profileGet: new WorkerProfileGetCapability(
       new GetWorkerByIdUseCase(new WorkerRepository(pubsub)),
@@ -120,6 +126,8 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     statsGet: new WorkerStatsGetCapability(new GetWorkerStatsUseCase(dbPool)),
     workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
+    caseMemoryGet: new WorkerCaseMemoryGetCapability(caseMemoryRepo),
+    caseMemoryPut: new WorkerCaseMemoryPutCapability(caseMemoryRepo),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });
