@@ -26,6 +26,27 @@ export type KanbanColumn =
 export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'BLOQUEADO';
 
 /**
+ * A WJA row persisted by the matchmaking algorithm (MatchmakingService.saveMatchResults:
+ * source='system', stage='INVITED') that was never actually messaged
+ * (messaged_at IS NULL) is a *match candidate*, not an invitation. Running a
+ * match writes ALL top-N candidates as INVITED/system, so counting them in the
+ * "Invitados" column inflates the metric (ClickUp 86ajb48v1 AC2:
+ * "colocar todos está gerando uma métrica falsa"). Only a real send
+ * (MessagingController sets messaged_at) turns a match candidate into an invite.
+ *
+ * @param stage      worker_job_applications.application_funnel_stage
+ * @param source     worker_job_applications.source
+ * @param messagedAt worker_job_applications.messaged_at (ISO string / Date / null)
+ */
+export function isMatchedNotInvited(
+  stage: string | null,
+  source: string | null,
+  messagedAt: string | Date | null,
+): boolean {
+  return source === 'system' && stage === 'INVITED' && messagedAt == null;
+}
+
+/**
  * Derives the Kanban column for a WJA row from its funnel stage + source.
  * Mirrors the classification chain in WJAFunnelController.getEncuadreFunnel.
  *

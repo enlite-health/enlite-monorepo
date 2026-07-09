@@ -8,7 +8,7 @@ import {
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
-import { deriveKanbanColumn } from '../../domain/kanbanColumn';
+import { deriveKanbanColumn, isMatchedNotInvited } from '../../domain/kanbanColumn';
 
 
 /**
@@ -86,6 +86,7 @@ export class WJAFunnelController {
              wja.acquisition_channel,
              wja.application_funnel_stage AS funnel_stage,
              wja.source,
+             wja.messaged_at,
              CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
                WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
                ELSE wja.application_funnel_stage END AS talentum_status,
@@ -160,10 +161,20 @@ export class WJAFunnelController {
       ]);
 
       // Classify WJA rows into kanban columns
+      let classifiedCount = 0;
       for (let i = 0; i < result.rows.length; i++) {
         const row = result.rows[i];
         const stage = row.funnel_stage as string | null;
         const source = row.source as string | null;
+
+        // AC2 (86ajb48v1): a system match that was never messaged is a match
+        // candidate, not an invitation — running a match writes ALL top-N as
+        // INVITED/system, so keeping them here inflates "Invitados". They live
+        // only in the match modal until a real send sets messaged_at.
+        if (isMatchedNotInvited(stage, source, row.messaged_at as string | Date | null)) {
+          continue;
+        }
+        classifiedCount++;
 
         const item = {
           id: row.id,
@@ -236,7 +247,7 @@ export class WJAFunnelController {
         success: true,
         data: {
           stages,
-          totalEncuadres: result.rows.length, // kept for backward-compat; equals total WJAs now
+          totalEncuadres: classifiedCount, // WJAs shown on the board (excludes matched-not-invited system rows)
         },
       });
     } catch (error) {

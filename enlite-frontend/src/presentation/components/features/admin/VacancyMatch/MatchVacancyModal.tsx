@@ -9,6 +9,7 @@ import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore
 import { ResendConfirmDialog } from './ResendConfirmDialog';
 import { MatchCriteriaChips } from './MatchCriteriaChips';
 import { MatchBucketSection } from './MatchBucketSection';
+import { MatchTotalsMarker } from './MatchTotalsMarker';
 import { MatchMissingMeetLinksAlert } from './MatchMissingMeetLinksAlert';
 import {
   bucketize,
@@ -59,6 +60,12 @@ export function MatchVacancyModal({
     [buckets],
   );
 
+  // AC3 (86ajb48v1): recrutados = candidatos com convite já enviado (messagedAt).
+  const recruitedCount = useMemo(
+    () => (results?.candidates ?? []).filter((c) => c.messagedAt != null).length,
+    [results],
+  );
+
   const selectedCandidates = useMemo(() => {
     if (!results) return [];
     return results.candidates.filter((c) => selectedIds.has(c.workerId));
@@ -69,6 +76,19 @@ export function MatchVacancyModal({
       const next = new Set(prev);
       if (next.has(workerId)) next.delete(workerId);
       else next.add(workerId);
+      return next;
+    });
+  }
+
+  // AC1 (86ajb48v1): "Seleccionar todos" por agrupamento de Km — marca/desmarca
+  // todos os candidatos de um bucket de uma vez.
+  function toggleSelectBucket(candidates: SavedCandidate[], select: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const c of candidates) {
+        if (select) next.add(c.workerId);
+        else next.delete(c.workerId);
+      }
       return next;
     });
   }
@@ -95,7 +115,10 @@ export function MatchVacancyModal({
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-card shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div
+        data-testid="match-modal"
+        className="bg-white rounded-card shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-400">
           <Heading level={2} weight="semibold" color="primary">
@@ -146,12 +169,17 @@ export function MatchVacancyModal({
 
           {results && totalCandidates > 0 && (
             <div className="flex flex-col gap-4">
+              <MatchTotalsMarker
+                availableCount={totalCandidates}
+                recruitedCount={recruitedCount}
+              />
               {buckets.map((bucket) => (
                 <MatchBucketSection
                   key={bucket.label}
                   bucket={bucket}
                   selectedIds={selectedIds}
                   onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectBucket}
                   onInviteOne={handleInviteOne}
                 />
               ))}
