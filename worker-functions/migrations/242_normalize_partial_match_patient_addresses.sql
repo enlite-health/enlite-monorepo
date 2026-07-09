@@ -1,4 +1,4 @@
--- 235: Normaliza state/city de 12 patient_addresses retidos por partial_match no backfill
+-- 242: Normaliza state/city de 12 patient_addresses retidos por partial_match no backfill
 -- de geocoding (scripts/backfill-patient-addresses-location.ts). O geocoder do Google não
 -- retornou match exato pra esses raws (tokens extras: "Clinica San Gabriel", "PISO 10 DEPTO E",
 -- "(Escuela)" etc.), mas o próprio address_raw nomeia a localidade explicitamente — cada UPDATE
