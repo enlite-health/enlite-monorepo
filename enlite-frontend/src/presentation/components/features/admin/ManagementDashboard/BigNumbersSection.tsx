@@ -23,7 +23,6 @@ export function BigNumbersSection({
         <MetricCard title={t(`${p}vacantesAbiertas`)} value={data.vacantesAbiertas} />
         <MetricCard title={t(`${p}vacantesPausadas`)} value={data.vacantesPausadas} />
         <GapNotice labelKey={`${p}ubicaciones`} />
-        <GapNotice labelKey={`${p}horas`} />
       </div>
     </section>
   );

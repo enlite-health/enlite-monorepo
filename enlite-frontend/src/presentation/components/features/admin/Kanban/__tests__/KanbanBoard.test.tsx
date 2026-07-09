@@ -575,4 +575,24 @@ describe('KanbanBoard — menu "Mover a…"', () => {
 
     expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED');
   });
+
+  it('mover para SELECTED abre o modal de papel antes de chamar onMove', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-sel', encuadreId: 'enc-99', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-SELECTED'));
+
+    // Ainda não moveu — pede o papel primeiro.
+    expect(onMove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('role-modal')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByTestId('role-option-rapid-response')).getByRole('radio'));
+    fireEvent.click(screen.getByTestId('role-confirm'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-99', 'SELECTED', undefined, 'RAPID_RESPONSE');
+  });
 });

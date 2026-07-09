@@ -10,13 +10,14 @@ import { z } from 'zod';
  */
 
 const nonNegInt = z.number().int().nonnegative();
+const nonNegNumber = z.number().nonnegative();
 
 export const managementDashboardSchema = z.object({
   /** Big numbers operacionais. */
   bigNumbers: z.object({
-    /** job_postings.status = 'ACTIVE' — caso com equipe montada e operando. */
+    /** Casos ARMADOS (titulares + substitutos suficientes) — GetArmedCasesUseCase. */
     equiposArmados: nonNegInt,
-    /** status IN (SEARCHING, SEARCHING_REPLACEMENT, RAPID_RESPONSE) — vaga aberta sem equipe. */
+    /** Casos POR_ARMAR (classificáveis e ainda sem equipe completa). */
     equiposPorArmar: nonNegInt,
     /** patients.status = 'ACTIVE'. */
     pacientesActivos: nonNegInt,
@@ -24,6 +25,33 @@ export const managementDashboardSchema = z.object({
     vacantesAbiertas: nonNegInt,
     /** job_postings.status = 'SUSPENDED'. */
     vacantesPausadas: nonNegInt,
+  }),
+  /**
+   * Classificação honesta da "Equipe Armada" (nunca um 0 falso). armados/porArmar
+   * espelham os big numbers; semConfig/pendenteClasificacao explicam os casos que
+   * NÃO dá pra julgar (sem providers_needed numérico / selecionados sem papel).
+   */
+  equipoArmada: z.object({
+    armados: nonNegInt,
+    porArmar: nonNegInt,
+    /** providers_needed não-numérico/NULL. */
+    semConfig: nonNegInt,
+    /** ≥1 SELECCIONADO mas nenhum com papel setado (rollout do papel). */
+    pendenteClasificacao: nonNegInt,
+  }),
+  /**
+   * Horas semanais calculadas do JSONB job_postings.schedule (soma por dia-turno,
+   * trata virada de meia-noite). Cobertura = quantos casos ativos têm schedule.
+   */
+  horas: z.object({
+    /** Soma das horas/semana dos casos ativos com schedule. */
+    totais: nonNegNumber,
+    /** Horas/semana ainda descobertas (soma dos casos POR_ARMAR). */
+    aPreencher: nonNegNumber,
+    /** Casos ativos COM schedule estruturado. */
+    coberturaConSchedule: nonNegInt,
+    /** Casos ativos SEM schedule estruturado. */
+    coberturaSinSchedule: nonNegInt,
   }),
   /** Prioridades de contato para a recrutadora agir rápido. */
   prioridades: z.object({

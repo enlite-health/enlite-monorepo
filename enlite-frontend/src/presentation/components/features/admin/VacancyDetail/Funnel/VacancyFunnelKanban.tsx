@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
+import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
 interface VacancyFunnelKanbanProps {
   vacancyId: string;
@@ -19,8 +20,8 @@ export function VacancyFunnelKanban({
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
   const handleMove = useCallback(
-    async (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => {
-      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory);
+    async (encuadreId: string, targetStage: string, rejectionReasonCategory?: string, role?: EncuadreRole) => {
+      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory, role);
       setMoveError(err);
       return err;
     },

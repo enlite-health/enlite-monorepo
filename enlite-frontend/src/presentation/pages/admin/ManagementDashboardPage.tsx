@@ -13,6 +13,7 @@ import { DashboardSkeleton } from '@presentation/components/ui/skeletons';
 import { useManagementDashboard } from '@hooks/admin/useManagementDashboard';
 import {
   BigNumbersSection,
+  EquipoArmadaSection,
   PrioridadesSection,
   FunnelTotalsSection,
   CadastrosSection,
@@ -62,6 +63,7 @@ export function ManagementDashboardPage(): JSX.Element {
       {!isLoading && !error && data && (
         <div data-testid="mgmt-content" className="space-y-10">
           <BigNumbersSection data={data.bigNumbers} />
+          <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />
           <PrioridadesSection data={data.prioridades} />
           <FunnelTotalsSection funnel={data.funnel} encuadres={data.encuadres} />
           <CadastrosSection data={data.cadastros} />

@@ -18,6 +18,13 @@ export type EncuadreResultado =
   | 'BLACKLIST'
   | 'PENDIENTE';
 
+/**
+ * Papel do encuadre selecionado (migration 142, CHECK 'TITULAR'|'RAPID_RESPONSE').
+ * TITULAR = titular do caso; RAPID_RESPONSE = substituto/backup. Base da métrica
+ * "Equipe Armada" — ver domain/armedCases.ts.
+ */
+export type EncuadreRole = 'TITULAR' | 'RAPID_RESPONSE';
+
 export interface Encuadre {
   id: string;
   workerId: string | null;
@@ -37,6 +44,7 @@ export interface Encuadre {
   rejectionReason: string | null;
   rejectionReasonCategory: RejectionReasonCategory | null;
   resultado: EncuadreResultado | null;
+  role: EncuadreRole | null;
   redireccionamiento: string | null;
   hasCv: boolean | null;
   hasDni: boolean | null;
@@ -76,6 +84,7 @@ export interface CreateEncuadreDTO {
   rejectionReason?: string | null;
   rejectionReasonCategory?: RejectionReasonCategory | null;
   resultado?: EncuadreResultado | null;
+  role?: EncuadreRole | null;
   redireccionamiento?: string | null;
   hasCv?: boolean | null;
   hasDni?: boolean | null;
@@ -100,6 +109,7 @@ export interface SupplementEncuadreDTO {
   importSourceAudit?: string | null;
   idOnboarding?: string | null;
   resultado?: EncuadreResultado | null;
+  role?: EncuadreRole | null;
   hasCv?: boolean | null;
   hasDni?: boolean | null;
   hasCertAt?: boolean | null;

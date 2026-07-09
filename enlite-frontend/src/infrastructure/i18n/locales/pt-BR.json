@@ -536,20 +536,29 @@
       "retry": "Tentar novamente",
       "sections": {
         "bigNumbers": "Números-chave",
+        "equipoArmada": "Equipe armada e horas",
         "prioridades": "Prioridades de contato",
         "funnel": "Totalização do funil",
         "cadastros": "Cadastros de prestadores"
       },
       "bigNumbers": {
         "equiposArmados": "Equipes armadas",
-        "equiposArmadosSub": "Casos com equipe operando (ativos)",
+        "equiposArmadosSub": "Casos com quadro completo (titulares + substitutos)",
         "equiposPorArmar": "Equipes para armar",
-        "equiposPorArmarSub": "Vagas abertas sem equipe",
+        "equiposPorArmarSub": "Casos classificáveis ainda sem quadro completo",
         "pacientesActivos": "Pacientes ativos",
         "vacantesAbiertas": "Vagas abertas",
         "vacantesPausadas": "Vagas pausadas",
         "ubicaciones": "Localidades",
         "horas": "Horas totais / a preencher"
+      },
+      "equipoArmada": {
+        "horasTotais": "Horas semanais totais",
+        "cobertura": "{{con}} casos com horário · {{sin}} sem horário",
+        "horasAPreencher": "Horas a preencher",
+        "horasAPreencherSub": "Demanda dos casos por armar",
+        "pendenteClasificacao": "{{count}} casos sem classificação de papel",
+        "semConfig": "{{count}} casos sem configuração de quadro"
       },
       "prioridades": {
         "esperandoAgendamiento": "Cadastros completos aguardando agenda",
@@ -1091,6 +1100,20 @@
         "title": "Motivo de rejeição",
         "cancel": "Cancelar",
         "confirm": "Confirmar"
+      },
+      "roleModal": {
+        "title": "Titular ou substituto?",
+        "subtitle": "Classifique o selecionado para o painel de equipe armada.",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar",
+        "options": {
+          "TITULAR": "Titular",
+          "RAPID_RESPONSE": "Substituto"
+        },
+        "hints": {
+          "TITULAR": "Ocupa uma posição do quadro do caso",
+          "RAPID_RESPONSE": "Backup / resposta rápida"
+        }
       },
       "rejectionOptions": {
         "DISTANCE": "Distância do local",

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { managementDashboardSchema, type ManagementDashboardData } from './managementDashboardSchema';
+import { GetArmedCasesUseCase } from './GetArmedCasesUseCase';
 
 /** Linha de contagem simples chave→valor. */
 interface CountRow {
@@ -18,8 +19,11 @@ export class GetManagementDashboardUseCase {
   constructor(private readonly db: Pool) {}
 
   async execute(): Promise<ManagementDashboardData> {
-    const [jobRows, patientRows, workerRow, funnelRows, allocatedRow, blockedRow, encuadreRow] =
+    const [armed, jobRows, patientRows, workerRow, funnelRows, allocatedRow, blockedRow, encuadreRow] =
       await Promise.all([
+        // Equipe Armada + horas: agregação por caso (buckets honestos, ver
+        // GetArmedCasesUseCase). É a 1ª promise → 1ª chamada a this.db.query.
+        new GetArmedCasesUseCase(this.db).execute(),
         this.db.query<CountRow>(
           `SELECT status AS k, COUNT(*)::int AS count
              FROM job_postings
@@ -77,15 +81,31 @@ export class GetManagementDashboardUseCase {
     const blocked = blockedRow.rows[0]?.bloqueados ?? 0;
     const encuadre = encuadreRow.rows[0]?.agendados ?? 0;
 
-    const porArmar = pick(jobs, 'SEARCHING') + pick(jobs, 'SEARCHING_REPLACEMENT') + pick(jobs, 'RAPID_RESPONSE');
+    // Vagas abertas POR STATUS — conceito distinto de "equipe por armar" (bucket).
+    // Mantido como estava para não quebrar vacantesAbiertas (teste de regressão).
+    const openByStatus =
+      pick(jobs, 'SEARCHING') + pick(jobs, 'SEARCHING_REPLACEMENT') + pick(jobs, 'RAPID_RESPONSE');
 
     const data: ManagementDashboardData = {
       bigNumbers: {
-        equiposArmados: pick(jobs, 'ACTIVE'),
-        equiposPorArmar: porArmar,
+        // Agora baseado na regra "Equipe Armada" (não mais job_postings.status).
+        equiposArmados: armed.armados,
+        equiposPorArmar: armed.porArmar,
         pacientesActivos: patient.activos,
-        vacantesAbiertas: porArmar + pick(jobs, 'PENDING_ACTIVATION'),
+        vacantesAbiertas: openByStatus + pick(jobs, 'PENDING_ACTIVATION'),
         vacantesPausadas: pick(jobs, 'SUSPENDED'),
+      },
+      equipoArmada: {
+        armados: armed.armados,
+        porArmar: armed.porArmar,
+        semConfig: armed.semConfig,
+        pendenteClasificacao: armed.pendenteClasificacao,
+      },
+      horas: {
+        totais: armed.horasTotais,
+        aPreencher: armed.horasAPreencher,
+        coberturaConSchedule: armed.coberturaConSchedule,
+        coberturaSinSchedule: armed.coberturaSinSchedule,
       },
       prioridades: {
         completosEsperandoAgendamiento: pick(funnel, 'QUALIFIED'),

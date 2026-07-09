@@ -40,11 +40,23 @@ const FAKE_ID_TOKEN =
 
 const MOCK_DASHBOARD = {
   bigNumbers: {
-    equiposArmados: 82,
+    equiposArmados: 12,
     equiposPorArmar: 148,
     pacientesActivos: 193,
     vacantesAbiertas: 152,
     vacantesPausadas: 15,
+  },
+  equipoArmada: {
+    armados: 12,
+    porArmar: 148,
+    semConfig: 61,
+    pendenteClasificacao: 24,
+  },
+  horas: {
+    totais: 1240.5,
+    aPreencher: 612,
+    coberturaConSchedule: 160,
+    coberturaSinSchedule: 105,
   },
   prioridades: {
     completosEsperandoAgendamiento: 2387,
@@ -152,33 +164,53 @@ async function loginAsAdmin(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
 }
 
-function mockDashboard(page: Page, ok = true): void {
-  page.route('**/analytics/dashboard/management', (route) =>
+// Estado "config pendente": rollout do papel — sem armados reais, mas com
+// N sem classificação / N sem configuração honestos (nunca um 0 falso).
+const MOCK_DASHBOARD_PENDENTE = {
+  ...MOCK_DASHBOARD,
+  bigNumbers: { ...MOCK_DASHBOARD.bigNumbers, equiposArmados: 0, equiposPorArmar: 0 },
+  equipoArmada: { armados: 0, porArmar: 0, semConfig: 61, pendenteClasificacao: 204 },
+  horas: { totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 265 },
+};
+
+function mockDashboard(page: Page, mode: 'ok' | 'error' | 'pendente' = 'ok'): void {
+  page.route('**/analytics/dashboard/management', (route) => {
+    if (mode === 'error') {
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: 'Internal server error' }),
+      });
+      return;
+    }
     route.fulfill({
-      status: ok ? 200 : 500,
+      status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(
-        ok
-          ? { success: true, data: MOCK_DASHBOARD }
-          : { success: false, error: 'Internal server error' },
-      ),
-    }),
-  );
+      body: JSON.stringify({
+        success: true,
+        data: mode === 'pendente' ? MOCK_DASHBOARD_PENDENTE : MOCK_DASHBOARD,
+      }),
+    });
+  });
 }
 
 test.describe('ManagementDashboardPage — visual proof', () => {
   test.setTimeout(90000);
 
-  test('POPULADO: big numbers + prioridades + funil + cadastros + GAP notices', async ({ page }) => {
+  test('POPULADO: big numbers + equipe armada + horas + funil + cadastros', async ({ page }) => {
     await loginAsAdmin(page);
-    mockDashboard(page, true);
+    mockDashboard(page, 'ok');
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20000 });
     await expect(page.getByTestId('mgmt-big-numbers')).toBeVisible();
     await expect(page.getByTestId('mgmt-funnel-invitados')).toContainText('3435');
     await expect(page.getByTestId('mgmt-prioridades')).toContainText('6632');
-    // GAP notices renderizados (horas + ubicaciones), sem número fabricado.
+    // Seção Equipe Armada com números reais + classificação honesta.
+    await expect(page.getByTestId('mgmt-equipo-armada')).toBeVisible();
+    await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('61'); // sem config
+    await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('24'); // sem classificação
+    // GAP notice de ubicaciones ainda existe (horas deixou de ser GAP).
     await expect(page.getByTestId('mgmt-gap-notice').first()).toBeVisible();
 
     await expect(page).toHaveScreenshot('management-dashboard-populated.png', {
@@ -187,9 +219,24 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     });
   });
 
+  test('CONFIG PENDENTE: sem armados, mas expõe N sem classificação / N sem config', async ({ page }) => {
+    await loginAsAdmin(page);
+    mockDashboard(page, 'pendente');
+
+    await page.goto('/admin/dashboard');
+    await expect(page.getByTestId('mgmt-equipo-armada')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('204'); // pendentes
+    await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('61');  // sem config
+
+    await expect(page.getByTestId('mgmt-equipo-armada')).toHaveScreenshot(
+      'management-dashboard-equipo-armada-pendente.png',
+      { maxDiffPixelRatio: 0.03 },
+    );
+  });
+
   test('ERRO: alerta com mensagem e botão de reintentar', async ({ page }) => {
     await loginAsAdmin(page);
-    mockDashboard(page, false);
+    mockDashboard(page, 'error');
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-error')).toBeVisible({ timeout: 20000 });

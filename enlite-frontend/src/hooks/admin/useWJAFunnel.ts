@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
+import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
 export interface MoveEncuadreError {
   message: string;
@@ -100,11 +101,13 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     encuadreId: string,
     targetStage: string,
     rejectionReasonCategory?: string,
+    role?: EncuadreRole,
   ): Promise<MoveEncuadreError | null> => {
     try {
       await AdminApiService.moveEncuadre(encuadreId, {
         targetStage,
         rejectionReasonCategory,
+        role,
       });
       await fetchFunnel();
       return null;
