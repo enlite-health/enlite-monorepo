@@ -14,9 +14,11 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('lucide-react', () => ({
-  Info: (props: Record<string, unknown>) => <svg data-testid="icon-info" {...props} />,
-}));
+// Ícones lucide usados pela seção viram <svg> stub (vitest exige exports nomeados).
+vi.mock('lucide-react', () => {
+  const Stub = (props: Record<string, unknown>) => <svg {...props} />;
+  return { Info: Stub, Clock: Stub, AlarmClock: Stub, Users: Stub };
+});
 
 const horas = { totais: 12.5, aPreencher: 6, coberturaConSchedule: 3, coberturaSinSchedule: 2 };
 

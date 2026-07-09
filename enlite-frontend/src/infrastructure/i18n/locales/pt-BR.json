@@ -536,10 +536,15 @@
       "retry": "Tentar novamente",
       "sections": {
         "bigNumbers": "Números-chave",
+        "bigNumbersHint": "O estado geral da operação num relance",
         "equipoArmada": "Equipe armada e horas",
+        "equipoArmadaHint": "Quantas horas de cuidado existem e quantas faltam cobrir",
         "prioridades": "Prioridades de contato",
+        "prioridadesHint": "Quem precisa ser contatado primeiro",
         "funnel": "Totalização do funil",
-        "cadastros": "Cadastros de prestadores"
+        "funnelHint": "Onde cada prestador está no processo de seleção",
+        "cadastros": "Cadastros de prestadores",
+        "cadastrosHint": "Quantas pessoas se cadastraram e em que estado estão"
       },
       "bigNumbers": {
         "equiposArmados": "Equipes armadas",
@@ -547,8 +552,11 @@
         "equiposPorArmar": "Equipes para armar",
         "equiposPorArmarSub": "Casos classificáveis ainda sem quadro completo",
         "pacientesActivos": "Pacientes ativos",
+        "pacientesActivosSub": "Pacientes em atendimento hoje",
         "vacantesAbiertas": "Vagas abertas",
+        "vacantesAbiertasSub": "Postos buscando prestador",
         "vacantesPausadas": "Vagas pausadas",
+        "vacantesPausadasSub": "Postos em pausa temporária",
         "ubicaciones": "Localidades",
         "horas": "Horas totais / a preencher"
       },
@@ -557,6 +565,7 @@
         "cobertura": "{{con}} casos com horário · {{sin}} sem horário",
         "horasAPreencher": "Horas a preencher",
         "horasAPreencherSub": "Demanda dos casos por armar",
+        "clasificacionTitulo": "Casos que ainda não dá pra medir",
         "pendenteClasificacao": "{{count}} casos sem classificação de papel",
         "semConfig": "{{count}} casos sem configuração de quadro"
       },
@@ -581,10 +590,14 @@
       },
       "cadastros": {
         "leads": "Leads",
+        "leadsSub": "Cadastros iniciados",
         "completos": "Completos",
+        "completosSub": "Cadastros prontos para uso",
         "alocados": "Alocados",
+        "alocadosSub": "Prestadores já em um caso",
         "incompletos": "Incompletos",
-        "nuevosMes": "Novos completos (mês)",
+        "incompletosSub": "Faltam dados ou documentos",
+        "nuevosMes": "Novos do mês",
         "nuevosMesSub": "Cadastros concluídos neste mês"
       },
       "gap": {
