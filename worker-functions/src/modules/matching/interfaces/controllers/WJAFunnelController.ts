@@ -8,6 +8,7 @@ import {
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { deriveKanbanColumn } from '../../domain/kanbanColumn';
 
 
 /**
@@ -188,29 +189,9 @@ export class WJAFunnelController {
           contactNotesCount: Number(row.contact_notes_count ?? 0),
         };
 
-        if (stage === 'SELECTED') {
-          stages.SELECTED.push(item);
-        } else if (stage === 'REJECTED') {
-          stages.REJECTED.push(item);
-        } else if (stage === 'CONFIRMED') {
-          stages.CONFIRMED.push(item);
-        } else if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) {
-          stages.COMPLETED.push(item);
-        } else if (stage === 'IN_PROGRESS') {
-          stages.IN_PROGRESS.push(item);
-        } else if (stage === 'PRE_SCREENING' || stage === 'INITIATED') {
-          // INITIATED só ocorre transitoriamente em rolling deploy (pod antigo grava
-          // o literal enquanto o CHECK fase-1 ainda o aceita) — mapeia p/ PRE_SCREENING
-          // para o card não cair em Invitados nem sumir. Removível junto da Fase-2.
-          stages.PRE_SCREENING.push(item);
-        } else if (stage === 'INVITED' && source === 'manual') {
-          // INVITED+manual = clicou em postularse manualmente → coluna INICIADO
-          stages.INICIADO.push(item);
-        } else if (stage === 'INVITED' || !stage) {
-          stages.INVITED.push(item);
-        } else {
-          stages.INVITED.push(item); // fallback for unknown stages
-        }
+        // Classificação 100% baseada em (stage, source) — SSOT em deriveKanbanColumn
+        // (domain/kanbanColumn.ts), compartilhado com a aba de encuadre do worker-detail.
+        stages[deriveKanbanColumn(stage, source)].push(item);
       }
 
       // Merge blocked attempt cards into their own BLOQUEADO column (not promoted yet —

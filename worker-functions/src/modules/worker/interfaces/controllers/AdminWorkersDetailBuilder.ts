@@ -2,6 +2,9 @@ import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { mapPlatformLabel } from './AdminWorkersControllerHelpers';
+import { WorkerApplicationRepository } from '../../../matching/infrastructure/WorkerApplicationRepository';
+import { BlockedApplicationQueryRepository } from '../../../matching/infrastructure/BlockedApplicationQueryRepository';
+import { WorkerEngagement } from '../../../matching/domain/WorkerEngagement';
 
 /**
  * Funções auxiliares para montar a resposta completa de detalhe de um worker.
@@ -72,11 +75,14 @@ export async function buildWorkerDetailResponse(
   gcs: GCSStorageService,
   w: Record<string, any>,
 ): Promise<Record<string, any>> {
+  const appRepo = new WorkerApplicationRepository();
+  const blockedRepo = new BlockedApplicationQueryRepository();
+
   const [
     firstName, lastName, birthDate, sex, gender, documentNumber,
     profilePhotoUrl, languages, whatsappPhone, linkedinUrl,
     sexualOrientation, race, religion, weightKg, heightCm,
-    docsResult, serviceAreasResult, locationResult, encuadresResult, availabilityResult, tagsResult,
+    docsResult, serviceAreasResult, locationResult, engagements, availabilityResult, tagsResult,
   ] = await Promise.all([
     encryptionService.decrypt(w.first_name_encrypted),
     encryptionService.decrypt(w.last_name_encrypted),
@@ -117,18 +123,19 @@ export async function buildWorkerDetailResponse(
         ORDER BY created_at DESC LIMIT 1`,
       [w.id],
     ),
-    db.query(
-      `SELECT e.id, e.job_posting_id, jp.case_number, jp.vacancy_number,
-        p.first_name AS patient_first_name, p.last_name AS patient_last_name,
-        e.resultado, e.interview_date, e.interview_time,
-        e.recruiter_name, e.coordinator_name,
-        e.rejection_reason, e.rejection_reason_category, e.attended, e.created_at
-      FROM encuadres e
-      LEFT JOIN job_postings jp ON e.job_posting_id = jp.id
-      LEFT JOIN patients p ON jp.patient_id = p.id
-      WHERE e.worker_id = $1 ORDER BY e.created_at DESC`,
-      [w.id],
-    ),
+    // Engajamentos do worker = WJA (com stage → coluna do Kanban) ∪ tentativas
+    // bloqueadas não-promovidas. Espelha o Kanban da vaga: a aba de encuadre passa a
+    // mostrar TODAS as vagas (bloqueado/iniciado/rejeitado inclusive), com o status =
+    // coluna do board. SSOT do mapa (stage,source)→coluna: domain/kanbanColumn.ts.
+    (async (): Promise<WorkerEngagement[]> => {
+      const [wjaEngagements, blockedEngagements] = await Promise.all([
+        appRepo.listEngagementsByWorker(w.id),
+        blockedRepo.listByWorker(w.id),
+      ]);
+      return [...wjaEngagements, ...blockedEngagements].sort(
+        (a, b) => b.createdAt.localeCompare(a.createdAt),
+      );
+    })(),
     db.query(
       `SELECT id, day_of_week, start_time, end_time, timezone, crosses_midnight
       FROM worker_availability WHERE worker_id = $1
@@ -185,14 +192,18 @@ export async function buildWorkerDetailResponse(
       address: loc.address ?? null, city: loc.city ?? null,
       workZone: loc.work_zone ?? null, interestZone: loc.interest_zone ?? null,
     } : null,
-    encuadres: encuadresResult.rows.map((e: any) => ({
-      id: e.id, jobPostingId: e.job_posting_id ?? null, caseNumber: e.case_number ?? null, vacancyNumber: e.vacancy_number ?? null,
-      patientName: [e.patient_first_name, e.patient_last_name].filter(Boolean).join(' ') || null,
-      resultado: e.resultado ?? null, interviewDate: e.interview_date ?? null,
-      interviewTime: e.interview_time ?? null, recruiterName: e.recruiter_name ?? null,
-      coordinatorName: e.coordinator_name ?? null, rejectionReason: e.rejection_reason ?? null,
-      rejectionReasonCategory: e.rejection_reason_category ?? null,
-      attended: e.attended ?? null, createdAt: e.created_at,
+    // Uma linha por vaga em que o worker está engajado. `kanbanStage` é a coluna do
+    // Kanban (SSOT deriveKanbanColumn) — o frontend renderiza o label de
+    // admin.kanban.columns.<kanbanStage>. Mantém o nome `encuadres` no payload por
+    // retrocompat do WorkerDetail (frontend WorkerEncuadresCard).
+    encuadres: engagements.map((e: WorkerEngagement) => ({
+      id: e.id, jobPostingId: e.jobPostingId, caseNumber: e.caseNumber, vacancyNumber: e.vacancyNumber,
+      patientName: e.patientName, kanbanStage: e.kanbanStage, vacancyStatus: e.vacancyStatus,
+      resultado: e.resultado, interviewDate: e.interviewDate, interviewTime: e.interviewTime,
+      recruiterName: e.recruiterName, coordinatorName: e.coordinatorName,
+      rejectionReason: e.rejectionReason, rejectionReasonCategory: e.rejectionReasonCategory,
+      attended: e.attended, isBlocked: e.isBlocked, blockedReason: e.blockedReason,
+      missingFields: e.missingFields, attemptCount: e.attemptCount, createdAt: e.createdAt,
     })),
     availability: availabilityResult.rows.map((a: any) => ({
       id: a.id,
