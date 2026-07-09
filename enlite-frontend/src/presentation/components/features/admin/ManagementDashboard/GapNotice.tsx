@@ -11,14 +11,14 @@ export function GapNotice({ labelKey }: { labelKey: string }): JSX.Element {
   return (
     <div
       data-testid="mgmt-gap-notice"
-      className="flex items-start gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 dark:border-slate-600 dark:bg-slate-800/40"
+      className="flex items-start gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6"
     >
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
       <div>
-        <Text as="p" size="sm" weight="medium" className="text-slate-500">
+        <Text as="p" size="sm" weight="medium" className="text-slate-700">
           {t(labelKey)}
         </Text>
-        <Text as="p" size="xs" className="text-slate-400">
+        <Text as="p" size="xs" className="text-slate-500">
           {t('admin.managementDashboard.gap.pending')}
         </Text>
       </div>
