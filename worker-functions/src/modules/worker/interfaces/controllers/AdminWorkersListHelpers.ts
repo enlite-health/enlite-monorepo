@@ -17,6 +17,10 @@
 
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
+import {
+  resolveLocationFilter,
+  type LocationFilterMatch,
+} from '@shared/utils/normalizeLocationValue';
 
 // ── Enum allowlists ────────────────────────────────────────────────────────────
 
@@ -49,9 +53,9 @@ export interface WorkerListFilters {
   language?: string;
   /** 'male' | 'female' — blind-index search via sex_bidx */
   sex?: string;
-  /** Province/state — EXISTS on worker_service_areas.state ILIKE */
+  /** Province/state — normalized EXISTS on worker_service_areas (see normalizeLocationValue) */
   state?: string;
-  /** City — EXISTS on worker_service_areas.city ILIKE */
+  /** City/locality — normalized EXISTS on worker_service_areas (see normalizeLocationValue) */
   city?: string;
   /** CSV of day-of-week ints (0-6) — EXISTS on worker_availability.day_of_week */
   days?: string;
@@ -63,6 +67,50 @@ export interface WorkerListQuery {
   whereClause: string;
   params: unknown[];
   paramIndex: number;
+}
+
+// ── Location EXISTS builder (provincia / localidad) ─────────────────────────────
+
+/**
+ * Appends a normalized location EXISTS sub-query for the provincia (`state`) or
+ * localidad (`city`) filter. Matches, case-insensitively, on the primary column
+ * AND `work_zone` for the equality keys, plus `work_zone`/`interest_zone` via
+ * ILIKE for the free-text `containsPatterns` (CABA lives only in those zone
+ * columns). `primaryColumn` is a fixed union literal — never user input — so the
+ * interpolation is injection-safe; all values go through parameterized `$n`.
+ * Returns unchanged when the match has neither keys nor patterns.
+ */
+function appendLocationExists(
+  whereClause: string,
+  params: unknown[],
+  paramIndex: number,
+  primaryColumn: 'city' | 'state',
+  match: LocationFilterMatch,
+): { whereClause: string; paramIndex: number } {
+  const conds: string[] = [];
+
+  if (match.exactKeys.length > 0) {
+    const p = paramIndex++;
+    params.push(match.exactKeys);
+    conds.push(`lower(btrim(wsa.${primaryColumn})) = ANY($${p}::text[])`);
+    conds.push(`lower(btrim(wsa.work_zone)) = ANY($${p}::text[])`);
+  }
+
+  if (match.containsPatterns.length > 0) {
+    const p = paramIndex++;
+    params.push(match.containsPatterns.map((pat) => `%${pat}%`));
+    conds.push(`wsa.work_zone ILIKE ANY($${p}::text[])`);
+    conds.push(`wsa.interest_zone ILIKE ANY($${p}::text[])`);
+  }
+
+  if (conds.length === 0) return { whereClause, paramIndex };
+
+  return {
+    whereClause:
+      whereClause +
+      ` AND EXISTS (SELECT 1 FROM worker_service_areas wsa WHERE wsa.worker_id = w.id AND (${conds.join(' OR ')}))`,
+    paramIndex,
+  };
 }
 
 // ── Builder ────────────────────────────────────────────────────────────────────
@@ -155,19 +203,23 @@ export function buildWorkerListWhereClause(filters: WorkerListFilters): WorkerLi
     paramIndex++;
   }
 
-  // ── State / province (EXISTS on worker_service_areas) ──────────────────────
+  // ── State / province (normalized EXISTS on worker_service_areas) ───────────
   // Uses worker_service_areas (not worker_locations which was deprecated via mig 160).
   if (typeof filters.state === 'string' && filters.state.trim() !== '') {
-    whereClause += ` AND EXISTS (SELECT 1 FROM worker_service_areas wsa WHERE wsa.worker_id = w.id AND wsa.state ILIKE $${paramIndex})`;
-    params.push(filters.state.trim());
-    paramIndex++;
+    const built = appendLocationExists(
+      whereClause, params, paramIndex, 'state', resolveLocationFilter(filters.state),
+    );
+    whereClause = built.whereClause;
+    paramIndex = built.paramIndex;
   }
 
-  // ── City (EXISTS on worker_service_areas) ───────────────────────────────────
+  // ── City / locality (normalized EXISTS on worker_service_areas) ─────────────
   if (typeof filters.city === 'string' && filters.city.trim() !== '') {
-    whereClause += ` AND EXISTS (SELECT 1 FROM worker_service_areas wsa WHERE wsa.worker_id = w.id AND wsa.city ILIKE $${paramIndex})`;
-    params.push(filters.city.trim());
-    paramIndex++;
+    const built = appendLocationExists(
+      whereClause, params, paramIndex, 'city', resolveLocationFilter(filters.city),
+    );
+    whereClause = built.whereClause;
+    paramIndex = built.paramIndex;
   }
 
   // ── Days (EXISTS on worker_availability) ────────────────────────────────────

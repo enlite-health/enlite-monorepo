@@ -2023,30 +2023,49 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
 
   // ── state (province) ───────────────────────────────────────────────────────
 
-  it('state=Buenos Aires adiciona EXISTS em worker_service_areas.state', async () => {
+  it('state=Buenos Aires adiciona EXISTS normalizado em worker_service_areas.state', async () => {
     setupCount();
     const [req, res] = mockReqRes({}, { state: 'Buenos Aires' } as any);
     await controller.listWorkers(req, res);
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('worker_service_areas');
-    expect(sql).toContain('wsa.state ILIKE');
+    expect(sql).toContain('lower(btrim(wsa.state)) = ANY(');
     const params = mockQuery.mock.calls[0][1] as unknown[];
-    expect(params).toContain('Buenos Aires');
+    // normalized to lowercased equality key(s)
+    expect(params).toContainEqual(['buenos aires']);
   });
 
   // ── city ────────────────────────────────────────────────────────────────────
 
-  it('city=Palermo adiciona EXISTS em worker_service_areas.city', async () => {
+  it('city=Palermo adiciona EXISTS normalizado em worker_service_areas.city', async () => {
     setupCount();
     const [req, res] = mockReqRes({}, { city: 'Palermo' } as any);
     await controller.listWorkers(req, res);
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('worker_service_areas');
-    expect(sql).toContain('wsa.city ILIKE');
+    expect(sql).toContain('lower(btrim(wsa.city)) = ANY(');
     const params = mockQuery.mock.calls[0][1] as unknown[];
-    expect(params).toContain('Palermo');
+    expect(params).toContainEqual(['palermo']);
+  });
+
+  // ── city=CABA (AC): matches the free-text work_zone/interest_zone signal ─────
+
+  it('city=CABA matcheia work_zone/interest_zone via ILIKE além de city (alias)', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { city: 'Ciudad Autónoma de Buenos Aires' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('lower(btrim(wsa.city)) = ANY(');
+    expect(sql).toContain('lower(btrim(wsa.work_zone)) = ANY(');
+    expect(sql).toContain('wsa.work_zone ILIKE ANY(');
+    expect(sql).toContain('wsa.interest_zone ILIKE ANY(');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    // alias key set includes 'caba'; contains patterns wrapped in %...%
+    expect(params.some((p) => Array.isArray(p) && (p as string[]).includes('caba'))).toBe(true);
+    expect(params.some((p) => Array.isArray(p) && (p as string[]).includes('%caba%'))).toBe(true);
   });
 
   // ── days ────────────────────────────────────────────────────────────────────
@@ -2129,7 +2148,7 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('w.profession = ANY(');
-    expect(sql).toContain('wsa.state ILIKE');
+    expect(sql).toContain('lower(btrim(wsa.state)) = ANY(');
     expect(sql).toContain('worker_availability');
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -2149,6 +2168,7 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
       mockQuery
         .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }, { state: 'Córdoba' }] })
         .mockResolvedValueOnce({ rows: [{ city: 'Palermo' }, { city: 'Recoleta' }] })
+        .mockResolvedValueOnce({ rows: [] }) // work_zone
         .mockResolvedValueOnce({ rows: [{ val: 'TEA' }, { val: 'DOWN' }] })
         .mockResolvedValueOnce({ rows: [{ val: 'home' }, { val: 'institutional' }] });
 
@@ -2164,8 +2184,46 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
       expect(body.data.preferredTypes).toEqual(['home', 'institutional']);
     });
 
+    it('remove códigos CPA lixo (AEJ/BSI) do dropdown de localidades', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }] })
+        .mockResolvedValueOnce({
+          rows: [{ city: 'Buenos Aires' }, { city: 'AEJ' }, { city: 'BSI' }, { city: 'Lanús' }],
+        })
+        .mockResolvedValueOnce({ rows: [] }) // work_zone
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.cities).toEqual(['Buenos Aires', 'Lanús']);
+      expect(body.data.cities).not.toContain('AEJ');
+      expect(body.data.cities).not.toContain('BSI');
+    });
+
+    it('faz surgir CABA no dropdown a partir de work_zone (não está em city/state)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }] })
+        .mockResolvedValueOnce({ rows: [{ city: 'Lanús' }] })
+        .mockResolvedValueOnce({ rows: [{ work_zone: 'CABA' }, { work_zone: 'Paternal, Villa Crespo' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.cities).toContain('Ciudad Autónoma de Buenos Aires');
+      expect(body.data.states).toContain('Ciudad Autónoma de Buenos Aires');
+      // free-text zone list is NOT surfaced as a locality
+      expect(body.data.cities).not.toContain('Paternal, Villa Crespo');
+    });
+
     it('retorna listas vazias quando não há dados', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })
