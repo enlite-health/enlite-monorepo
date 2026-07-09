@@ -18,6 +18,7 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
+import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
@@ -152,6 +153,7 @@ export function App() {
           <Route path="vacancies/:id/edit" element={<CreateVacancyPage />} />
           <Route path="vacancies/:id/talentum" element={<TalentumConfigPage />} />
           <Route path="vacancies/:id" element={<VacancyDetailPage />} />
+          <Route path="dashboard" element={<ManagementDashboardPage />} />
           <Route path="recruitment" element={<AdminRecruitmentPage />} />
           <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
           <Route path="recruitment/blocked-attempts" element={<BlockedAttemptsPage />} />

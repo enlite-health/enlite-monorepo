@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
+import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
@@ -9,6 +10,13 @@ import {
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { deriveKanbanColumn, isMatchedNotInvited } from '../../domain/kanbanColumn';
+
+/**
+ * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
+ * TITULAR=titular, RAPID_RESPONSE=substituto. Ausente = fica pendente de
+ * classificação (bucket PENDENTE_CLASSIFICACAO no dashboard de gestão).
+ */
+const encuadreRoleSchema = z.enum(['TITULAR', 'RAPID_RESPONSE']);
 
 
 /**
@@ -272,7 +280,7 @@ export class WJAFunnelController {
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { targetStage, rejectionReasonCategory, rejectionReason } = req.body;
+      const { targetStage, rejectionReasonCategory, rejectionReason, role } = req.body;
 
       const validStages = [
         'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
@@ -282,6 +290,17 @@ export class WJAFunnelController {
       if (!targetStage || !validStages.includes(targetStage)) {
         res.status(400).json({ success: false, error: `targetStage must be one of: ${validStages.join(', ')}` });
         return;
+      }
+
+      // Papel só é aceito ao selecionar; quando presente deve ser válido.
+      let selectedRole: 'TITULAR' | 'RAPID_RESPONSE' | null = null;
+      if (role !== undefined && role !== null) {
+        const parsed = encuadreRoleSchema.safeParse(role);
+        if (!parsed.success) {
+          res.status(400).json({ success: false, error: "role must be one of: TITULAR, RAPID_RESPONSE" });
+          return;
+        }
+        selectedRole = parsed.data;
       }
 
       // 1. Busca encuadre para obter worker_id + job_posting_id
@@ -328,9 +347,12 @@ export class WJAFunnelController {
 
       // 3. Sincronizar encuadre.resultado para estados terminais
       if (targetStage === 'SELECTED') {
+        // Grava o papel quando informado; sem papel o COALESCE preserva o
+        // existente (re-mover não apaga a classificação anterior). Encuadre
+        // selecionado sem papel = PENDENTE_CLASSIFICACAO no dashboard.
         await this.db.query(
-          `UPDATE encuadres SET resultado = 'SELECCIONADO', updated_at = NOW() WHERE id = $1`,
-          [id],
+          `UPDATE encuadres SET resultado = 'SELECCIONADO', role = COALESCE($2, role), updated_at = NOW() WHERE id = $1`,
+          [id, selectedRole],
         );
       } else if (targetStage === 'REJECTED') {
         await this.db.query(

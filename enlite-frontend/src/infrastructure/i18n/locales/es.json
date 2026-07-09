@@ -530,12 +530,74 @@
     "noAdditional": "No hay documentos adicionales"
   },
   "admin": {
+    "managementDashboard": {
+      "title": "Gestión a la Vista",
+      "errorLoading": "No se pudieron cargar las métricas",
+      "retry": "Reintentar",
+      "sections": {
+        "bigNumbers": "Números clave",
+        "equipoArmada": "Equipo armado y horas",
+        "prioridades": "Prioridades de contacto",
+        "funnel": "Totalización del embudo",
+        "cadastros": "Registros de prestadores"
+      },
+      "bigNumbers": {
+        "equiposArmados": "Equipos armados",
+        "equiposArmadosSub": "Casos con dotación completa (titulares + suplentes)",
+        "equiposPorArmar": "Equipos por armar",
+        "equiposPorArmarSub": "Casos clasificables aún sin dotación completa",
+        "pacientesActivos": "Pacientes activos",
+        "vacantesAbiertas": "Vacantes abiertas",
+        "vacantesPausadas": "Vacantes pausadas",
+        "ubicaciones": "Ubicaciones",
+        "horas": "Horas totales / a cubrir"
+      },
+      "equipoArmada": {
+        "horasTotais": "Horas semanales totales",
+        "cobertura": "{{con}} casos con horario · {{sin}} sin horario",
+        "horasAPreencher": "Horas por cubrir",
+        "horasAPreencherSub": "Demanda de casos por armar",
+        "pendenteClasificacao": "{{count}} casos sin clasificación de rol",
+        "semConfig": "{{count}} casos sin configuración de dotación"
+      },
+      "prioridades": {
+        "esperandoAgendamiento": "Registros completos esperando agenda",
+        "esperandoAgendamientoSub": "Calificados por Talentum, sin encuadre agendado",
+        "bloqueados": "Profesionales bloqueados",
+        "bloqueadosSub": "Registro incompleto"
+      },
+      "funnel": {
+        "agendadosSemana": "Encuadres agendados esta semana",
+        "agendadosSemanaSub": "Semana en curso",
+        "stage": {
+          "invitados": "Invitados",
+          "bloqueados": "Bloqueados",
+          "preScreening": "Pre Screening",
+          "completos": "Completos",
+          "agendados": "Agendados",
+          "seleccionados": "Seleccionados",
+          "rechazados": "Rechazados"
+        }
+      },
+      "cadastros": {
+        "leads": "Leads",
+        "completos": "Completos",
+        "alocados": "Asignados",
+        "incompletos": "Incompletos",
+        "nuevosMes": "Nuevos completos (mes)",
+        "nuevosMesSub": "Registros completados este mes"
+      },
+      "gap": {
+        "pending": "Sin fuente de datos disponible todavía"
+      }
+    },
     "errorBoundary": {
       "title": "Error al cargar la página de admin",
       "description": "Ocurrió un error inesperado. Detalles técnicos:",
       "reload": "Recargar página"
     },
     "nav": {
+      "dashboard": "Gestión a la Vista",
       "users": "Usuarios",
       "vacancies": "Vacantes",
       "workers": "Prestadores",
@@ -1038,6 +1100,20 @@
         "title": "Motivo de rechazo",
         "cancel": "Cancelar",
         "confirm": "Confirmar"
+      },
+      "roleModal": {
+        "title": "¿Titular o suplente?",
+        "subtitle": "Clasificá al seleccionado para el tablero de equipo armado.",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar",
+        "options": {
+          "TITULAR": "Titular",
+          "RAPID_RESPONSE": "Suplente"
+        },
+        "hints": {
+          "TITULAR": "Ocupa una posición de dotación del caso",
+          "RAPID_RESPONSE": "Backup / respuesta rápida"
+        }
       },
       "rejectionOptions": {
         "DISTANCE": "Distancia al lugar",

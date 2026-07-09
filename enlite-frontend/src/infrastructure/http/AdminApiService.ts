@@ -281,7 +281,7 @@ class AdminApiServiceClass {
 
   async moveEncuadre(
     encuadreId: string,
-    data: { targetStage: string; rejectionReasonCategory?: string; rejectionReason?: string }
+    data: { targetStage: string; rejectionReasonCategory?: string; rejectionReason?: string; role?: 'TITULAR' | 'RAPID_RESPONSE' }
   ): Promise<void> {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
   }

@@ -7,12 +7,19 @@ import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { DraggableCard } from './DraggableCard';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
+import { RoleSelect } from './RoleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
+import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
   vacancyId: string;
-  onMove: (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => Promise<MoveEncuadreError | null>;
+  onMove: (
+    encuadreId: string,
+    targetStage: string,
+    rejectionReasonCategory?: string,
+    role?: EncuadreRole,
+  ) => Promise<MoveEncuadreError | null>;
 }
 
 interface ColumnConfig {
@@ -45,6 +52,8 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
   /** Stores the encuadreId (not wja.id) of the card being dragged */
   const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
+  /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
+  const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
   /**
    * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
    * por workerId (não wjaId): o histórico é o MESMO em todas as colunas —
@@ -131,12 +140,32 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
       return;
     }
 
+    // If moving to SELECTED, ask whether the worker is Titular or Substituto.
+    if (targetStage === 'SELECTED') {
+      setShowRoleSelect({ encuadreId });
+      return;
+    }
+
     await onMove(encuadreId, targetStage);
   }
 
   async function handleRejectionSubmit(encuadreId: string, category: string) {
     setShowRejectionSelect(null);
     await onMove(encuadreId, 'REJECTED', category);
+  }
+
+  async function handleRoleSubmit(encuadreId: string, role: EncuadreRole) {
+    setShowRoleSelect(null);
+    await onMove(encuadreId, 'SELECTED', undefined, role);
+  }
+
+  /** Move click (MoveToMenu): intercept SELECTED to ask the role first. */
+  function handleCardMoveTo(encuadreId: string, target: string) {
+    if (target === 'SELECTED') {
+      setShowRoleSelect({ encuadreId });
+      return;
+    }
+    void onMove(encuadreId, target);
   }
 
   return (
@@ -178,7 +207,7 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
                       attemptCount={enc.attemptCount}
                       onWorkerClick={handleWorkerClick}
                       onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
-                      onMoveTo={enc.encuadreId ? (target) => { void onMove(enc.encuadreId!, target); } : undefined}
+                      onMoveTo={enc.encuadreId ? (target) => handleCardMoveTo(enc.encuadreId!, target) : undefined}
                       onOpenNotes={
                         enc.workerId
                           ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })
@@ -227,6 +256,13 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
         <RejectionReasonSelect
           onSubmit={(category) => handleRejectionSubmit(showRejectionSelect.encuadreId, category)}
           onCancel={() => setShowRejectionSelect(null)}
+        />
+      )}
+
+      {showRoleSelect && (
+        <RoleSelect
+          onSubmit={(role) => handleRoleSubmit(showRoleSelect.encuadreId, role)}
+          onCancel={() => setShowRoleSelect(null)}
         />
       )}
 

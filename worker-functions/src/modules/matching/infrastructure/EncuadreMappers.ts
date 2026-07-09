@@ -28,6 +28,7 @@ export async function mapEncuadreRow(
     rejectionReason: row.rejection_reason as string | null,
     rejectionReasonCategory: row.rejection_reason_category as Encuadre['rejectionReasonCategory'],
     resultado: row.resultado as Encuadre['resultado'],
+    role: (row.role as Encuadre['role']) ?? null,
     redireccionamiento: row.redireccionamiento as string | null,
     hasCv: row.has_cv as boolean | null,
     hasDni: row.has_dni as boolean | null,
