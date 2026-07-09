@@ -9,7 +9,6 @@ import { UpdateAdminRoleUseCase } from '../../application/UpdateAdminRoleUseCase
 import { AdminRepository } from '../../infrastructure/AdminRepository';
 import { UserRepository } from '../../infrastructure/UserRepository';
 import { GoogleIdentityService } from '../../infrastructure/GoogleIdentityService';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { isStaffRole } from '../../domain/EnliteRole';
 
 export class AdminController {
@@ -25,12 +24,10 @@ export class AdminController {
   constructor() {
     const userRepository = new UserRepository();
     const googleIdentityService = new GoogleIdentityService();
-    const eventDispatcher = new EventDispatcher();
 
     this.deleteUserByEmailUseCase = new DeleteUserByEmailUseCase(
       userRepository,
-      googleIdentityService,
-      eventDispatcher
+      googleIdentityService
     );
   }
 

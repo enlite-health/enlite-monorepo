@@ -46,19 +46,6 @@ module "sa_github_deploy" {
   ]
 }
 
-module "sa_n8n_integration" {
-  source       = "../../modules/service-account"
-  project_id   = var.project_id
-  account_id   = "n8n-integration-identity"
-  display_name = "N8N Integration"
-  description  = "This account service is to n8n and APIs comunicate each other"
-  project_roles = [
-    "roles/iap.httpsResourceAccessor",
-    "roles/run.servicesInvoker",
-    "roles/serviceusage.apiKeysViewer",
-  ]
-}
-
 module "sa_tf_admin" {
   source       = "../../modules/service-account"
   project_id   = var.project_id

@@ -1771,3 +1771,39 @@ A regra "tela X é admin-only" vive hoje em cópias não coordenadas: guard in-p
 **Como fechar:** guard no nível de ROTA — prop `requiredRole` no `AdminProtectedRoute` (App.tsx já envolve as 3 rotas; é o choke point natural) OU um `useIsAdmin()`/`RequireAdmin` compartilhado; remover as cópias in-page no mesmo PR. Considerar junto com a feature de permissões ABAC (em discovery) — se ABAC chegar antes, resolver lá.
 
 **Gatilho:** próxima página admin-only nova, ou início da implementação ABAC.
+
+### TD-062 — Webhook Talentum aceita QUALQUER Google ID Token (sem audience, sem allowlist)
+
+- **Status:** aberto, **segurança**.
+- **Descoberto em:** 2026-07-07, durante a remoção do n8n.
+- **Dono provável:** backend.
+- **Bloqueador?** Não bloqueia feature, mas é exposição real: qualquer pessoa com conta GCP consegue emitir um ID token válido do Google e postar prescreenings falsos (transições QUALIFIED forjadas).
+
+**O que é:**
+
+`TalentumWebhookController.verifyGoogleToken` valida o token só contra as chaves públicas do Google: `TALENTUM_WEBHOOK_AUDIENCE` **não está configurado em prod** (o check de audience é pulado com warning) e **não há allowlist de email** do emissor. Na prática o endpoint é público para qualquer identidade Google válida.
+
+Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos comentários como emissora) teve **0 eventos de autenticação em 7 dias** (métrica `iam.googleapis.com/service_account/authn_events_count`) enquanto o webhook recebia chamadas diárias com 200 — o emissor real é outro e é desconhecido. A SA n8n foi deletada nos dois projetos.
+
+**Como fechar:**
+1. Já plantado: `verifyGoogleToken` loga `payload.email` a cada chamada válida (este PR). Observar os logs por alguns dias para identificar o emissor real.
+2. Configurar `TALENTUM_WEBHOOK_AUDIENCE` em prod/stg com a URL do serviço.
+3. Adicionar allowlist de emails de emissor (env `TALENTUM_ALLOWED_ISSUERS`) e rejeitar o resto.
+4. Se o emissor identificado for uma key solta da era n8n, rotacionar para SA dedicada `talentum-webhook-identity`.
+
+**Gatilho:** logs do item 1 coletados (≥1 semana de tráfego) ou qualquer mudança na integração Talentum.
+
+### TD-063 — Suíte `e2e/integration` do frontend vermelha em main (modal de dedup de domicílio)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-05, ao rodar o gate `make test-integration` pro PR #103 (normalização de endereços).
+- **Dono provável:** frontend (testes da feature de dedup, release 2026-06-22 — ver `docs/HANDOFF_2026-06-22_dedup_release.md`).
+- **Bloqueador?** Para PRs que dependem do gate de integração, sim — a suíte não fica verde em main.
+
+**O que é:**
+
+22 testes de `enlite-frontend/e2e/integration/` falham em `main` sem diff nenhum (provado por experimento de controle no PR #103: falha idêntica com o diff stashado). Causa: o modal novo **"Este domicilio ya tiene una vacante"** (dedup de domicílio) intercepta fluxos que os testes esperam chegar em outros modais/telas — ex.: `resume-draft-vacancy` espera "Vacante en curso encontrada" e recebe o modal de dedup (screenshot diff de 67%). Suítes afetadas: resume-draft-vacancy (7), kanban-* (vários), match-* (3), worker-profile-* (2), wja-flow-visuals, postularse-incomplete-modal.
+
+**Fix esperado:** atualizar os testes pra lidar com o modal de dedup (fechar/desviar quando aparecer, ou dados de teste com domicílios únicos) + re-gravar as baselines visuais afetadas. Enquanto aberto, PRs backend-only devem registrar a vermelhidão pré-existente com prova de controle (stash) em vez de "esperar verde".
+
+**Nota adicional (infra local):** `make test-integration` recria o container `enlite-api` a partir de imagem stale (node_modules sem `tsconfig-paths`) e trava no health-check — workaround documentado: `docker exec enlite-api npm install && docker restart enlite-api`. Consertar a imagem (rebuild) evita o remendo a cada swap de auth.

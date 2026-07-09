@@ -218,6 +218,27 @@ function makeEncuadreRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Linha bruta como retornada por BlockedApplicationQueryRepository.listByWorker
+// (tentativa bloqueada não-promovida). created_at chega como Date do pg — o mapper
+// chama `.toISOString()`, então o mock DEVE passar um Date (não string).
+function makeBlockedRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'blk-1',
+    job_posting_id: 'jp-800',
+    case_number: 800,
+    vacancy_number: 2,
+    vacancy_status: 'BUSQUEDA',
+    patient_first_name: 'Julia',
+    patient_last_name: 'Blocked',
+    blocked_reason: 'registration_incomplete',
+    missing_fields: ['criminal_record', 'phone'],
+    attempt_count: 2,
+    // Mais recente que o WJA (2025-03-01) → deve vir PRIMEIRO na ordenação por createdAt desc.
+    created_at: new Date('2025-06-01T10:00:00Z'),
+    ...overrides,
+  };
+}
+
 /**
  * Configura mockQuery para retornar os dados de getWorkerById.
  * Chamada 1: worker query
@@ -889,6 +910,51 @@ describe('AdminWorkersController — getWorkerById', () => {
       expect(encuadres[0].caseNumber).toBe(42);
       expect(encuadres[0].resultado).toBe('SELECCIONADO');
       expect(encuadres[0].attended).toBe(true);
+    });
+
+    // ── AC 86ajeu7vw: a aba de encuadre inclui casos BLOQUEADOS (WJA ∪ blocked) ──
+    // O caso da "Júlia": clicou postular na vaga 800, foi BLOQUEADO (docs incompletos),
+    // e por isso NÃO aparecia na lista de encuadres. Agora aparece, com a coluna de
+    // estágio = coluna do Kanban (BLOQUEADO).
+    it('inclui tentativas bloqueadas na lista de encuadres com estágio BLOQUEADO', async () => {
+      setupFullMocks({
+        encuadreRows: [makeEncuadreRow()], // 1 WJA (SELECTED)
+        blockedRows: [makeBlockedRow()],   // 1 bloqueado (vaga 800 — caso Júlia)
+      });
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const { encuadres } = (res.json as jest.Mock).mock.calls[0][0].data;
+      // WJA ∪ blocked = 2 engajamentos (o bloqueado deixou de ser filtrado).
+      expect(encuadres).toHaveLength(2);
+
+      const blocked = encuadres.find((e: { id: string }) => e.id === 'blk-1');
+      expect(blocked).toBeDefined();
+      expect(blocked.isBlocked).toBe(true);
+      expect(blocked.kanbanStage).toBe('BLOQUEADO');
+      expect(blocked.caseNumber).toBe(800);
+      expect(blocked.patientName).toBe('Julia Blocked');
+      expect(blocked.blockedReason).toBe('registration_incomplete');
+      expect(blocked.missingFields).toEqual(['criminal_record', 'phone']);
+      expect(blocked.attemptCount).toBe(2);
+      // Sem dados de encuadre (nunca virou WJA): sem entrevista/recrutador.
+      expect(blocked.resultado).toBeNull();
+      expect(blocked.recruiterName).toBeNull();
+    });
+
+    it('ordena encuadres (WJA ∪ blocked) por data desc — bloqueado mais novo vem primeiro', async () => {
+      setupFullMocks({
+        encuadreRows: [makeEncuadreRow()],          // 2025-03-01
+        blockedRows: [makeBlockedRow()],            // 2025-06-01 (mais novo)
+      });
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const { encuadres } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(encuadres[0].id).toBe('blk-1'); // bloqueado (jun) antes do WJA (mar)
+      expect(encuadres[1].id).toBe('enc-1');
     });
   });
 

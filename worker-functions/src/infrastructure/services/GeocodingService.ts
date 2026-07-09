@@ -38,6 +38,13 @@ function isPreciseEnough(result: GeocodeResult, allowCoarse = false): boolean {
   return true;
 }
 
+/** Raw Google address_components entry — subset consumed by locationHelpers. */
+export interface GeocodedAddressComponent {
+  long_name: string;
+  short_name?: string;
+  types: string[];
+}
+
 export interface GeocodedAddress {
   formattedAddress: string;
   city: string | null;
@@ -46,6 +53,27 @@ export interface GeocodedAddress {
   latitude: number;
   longitude: number;
   placeId: string;
+  /**
+   * Raw address_components from the Google Geocoding response. Optional —
+   * populated by `geocode()`/`geocodeBatch()`. Kept alongside the already
+   * `city`/`state` heuristic parse (which uses coarse
+   * locality/administrative_area_level_2) so callers that need the finer
+   * Argentina-specific extraction (province canonicalization, postal-code
+   * stripping, neighborhood) can re-derive it via
+   * `locationHelpers.extractStateFromLocationStrict` and friends instead of
+   * duplicating Google address parsing. Used by the Fase 1 patient-address
+   * location backfill (`scripts/backfill-patient-addresses-location.ts`).
+   */
+  addressComponents?: GeocodedAddressComponent[];
+  /**
+   * Google's own "this wasn't quite the address you asked for" flag — true
+   * when the geocoder had to relax part of the query to find a match (e.g.
+   * dropped a street number, or matched a different street). Surfaced so the
+   * Fase 1 patient-address backfill can treat these as UNRESOLVED instead of
+   * silently writing a guessed location — see
+   * `backfillPatientAddressLocation.classifyBackfillUnresolved`.
+   */
+  partialMatch?: boolean;
 }
 
 export class GeocodingService {
@@ -163,6 +191,8 @@ export class GeocodingService {
       latitude:  result.geometry.location.lat,
       longitude: result.geometry.location.lng,
       placeId:   result.place_id,
+      addressComponents: components as unknown as GeocodedAddressComponent[],
+      partialMatch: result.partial_match === true,
     };
   }
 

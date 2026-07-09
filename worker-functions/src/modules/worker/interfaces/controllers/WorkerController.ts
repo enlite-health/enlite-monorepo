@@ -1,17 +1,14 @@
 import { Request, Response } from 'express';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
 import { SaveStepUseCase } from '../../application/SaveStepUseCase';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 
 export class WorkerController {
   private workerRepository: WorkerRepository;
-  private eventDispatcher: EventDispatcher;
 
   constructor() {
     this.workerRepository = new WorkerRepository();
-    this.eventDispatcher = new EventDispatcher();
   }
 
   async initWorker(req: Request, res: Response): Promise<void> {
@@ -26,7 +23,7 @@ export class WorkerController {
         return;
       }
 
-      const useCase = new InitWorkerUseCase(this.workerRepository, this.eventDispatcher);
+      const useCase = new InitWorkerUseCase(this.workerRepository);
       const result = await useCase.execute({
         authUid,
         email,
@@ -66,7 +63,7 @@ export class WorkerController {
         return;
       }
 
-      const useCase = new SaveStepUseCase(this.workerRepository, this.eventDispatcher);
+      const useCase = new SaveStepUseCase(this.workerRepository);
       const result = await useCase.execute({ workerId, step, data });
 
       if (result.isFailure) {

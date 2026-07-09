@@ -9,8 +9,6 @@ import cors, { CorsOptions } from 'cors';
  */
 const defaultAllowedOrigins = [
   'https://app.enlite.health',
-  'https://n8n.enlite.health',
-  'https://enlite-n8n-121472682203.southamerica-west1.run.app',
   'https://enlite-frontend-121472682203.southamerica-west1.run.app',
   'https://enlite-frontend-vtf37eainq-tl.a.run.app', // staging frontend (Cloud Run)
   'https://enlite-frontend-byh3gvl5yq-tl.a.run.app', // prod frontend (Cloud Run)

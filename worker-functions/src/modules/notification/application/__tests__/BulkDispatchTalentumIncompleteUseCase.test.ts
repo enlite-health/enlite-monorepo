@@ -134,6 +134,7 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
         to: worker.phone,
         templateSlug: 'talentum_incomplete_reminder',
         variables: { worker_name: 'João Silva' },
+        channel: 'twilio',
       });
 
       const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
@@ -243,6 +244,59 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       expect(result.total).toBe(1);
       expect(result.sent).toBe(1);
       expect(result.errors).toBe(0);
+    });
+  });
+
+  describe('execute — roteamento por canal (messaging_channel)', () => {
+    it('SELECT inclui w.messaging_channel', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, makeMessaging());
+      await useCase.execute('scheduler');
+
+      const mainQuery = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(mainQuery).toContain('w.messaging_channel');
+    });
+
+    it('worker com messaging_channel=periskope → sendWhatsApp recebe channel=periskope', async () => {
+      const worker = { worker_id: 'w-periskope-t1', phone: '+5511999990098', messaging_channel: 'periskope' };
+      const db = makeDbSequence([
+        { rows: [worker] },
+        { rows: [{ worker_id: worker.worker_id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true, 'SM_periskope_t');
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await useCase.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
+        to: worker.phone,
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'João Silva' },
+        channel: 'periskope',
+      });
+    });
+
+    it('worker sem messaging_channel na row (default) → sendWhatsApp recebe channel=twilio', async () => {
+      const worker = { worker_id: 'w-default-t1', phone: '+5511999990097' };
+      const db = makeDbSequence([
+        { rows: [worker] },
+        { rows: [{ worker_id: worker.worker_id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true, 'SM_default_t');
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await useCase.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
+        to: worker.phone,
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'João Silva' },
+        channel: 'twilio',
+      });
     });
   });
 

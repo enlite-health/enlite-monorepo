@@ -89,6 +89,7 @@ jobs:
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             GCS_BUCKET_NAME=enlite-worker-documents-stg
+            CORS_ALLOWED_ORIGINS=https://qas.enlite.health
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
@@ -101,7 +102,6 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
             EMAIL_FROM=enlite-stg@enlite.health
-            N8N_WEBHOOK_URL=https://enlite-n8n-vtf37eainq-tl.a.run.app/webhook/worker-events
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}

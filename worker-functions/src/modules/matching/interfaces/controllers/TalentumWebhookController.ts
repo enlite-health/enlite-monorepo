@@ -1,7 +1,7 @@
 // =====================
 // TalentumWebhookController — endpoint POST /api/webhooks/talentum/prescreening
 //
-// Autenticação: Google ID Token via Service Account (n8n → Cloud Function).
+// Autenticação: Google ID Token via Service Account (emissor em identificação — TD-062).
 // Sem Firebase. Token validado com OAuth2Client.verifyIdToken da google-auth-library.
 // Em ambiente de teste (USE_MOCK_AUTH=true) a validação do token é ignorada.
 // =====================
@@ -136,6 +136,9 @@ export class TalentumWebhookController {
 
       const payload = ticket.getPayload();
       if (!payload) return 'Invalid token payload';
+
+      // TD-062: identidade do emissor ainda desconhecida — logar até definir allowlist
+      console.info('[TalentumWebhook] token OK | issuer:', payload.email ?? payload.sub ?? 'unknown');
 
       return null; // token válido
     } catch (err) {

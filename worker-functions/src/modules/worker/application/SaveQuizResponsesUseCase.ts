@@ -2,13 +2,11 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { IQuizResponseRepository } from '../ports/IQuizResponseRepository';
 import { SaveQuizResponseDTO } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 
 export class SaveQuizResponsesUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
-    private quizResponseRepository: IQuizResponseRepository,
-    private eventDispatcher: EventDispatcher
+    private quizResponseRepository: IQuizResponseRepository
   ) {}
 
   async execute(data: SaveQuizResponseDTO): Promise<Result<void>> {
@@ -45,10 +43,6 @@ export class SaveQuizResponsesUseCase {
     // if (updateResult.isFailure) {
     //   return Result.fail<void>(updateResult.error!);
     // }
-
-    await this.eventDispatcher.notifyStepCompleted(data.workerId, 1, {
-      responsesCount: data.responses.length,
-    });
 
     return Result.ok<void>();
   }

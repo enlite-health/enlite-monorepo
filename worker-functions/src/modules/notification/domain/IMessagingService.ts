@@ -11,6 +11,13 @@ export interface SendWhatsAppOptions {
   contactName?: string;
   /** Email do contato — usado se o Chatwoot precisar criar o contato no espelho. */
   contactEmail?: string;
+  /**
+   * Canal de envio explícito. Ausente = default do RoutingMessagingService
+   * (MESSAGING_PROVIDER, hoje 'twilio') — preserva o comportamento atual para
+   * todo caller que ainda não resolve o canal do worker. VETADO usar boolean
+   * (ex: useTwilio) — canal é enum de 2+ valores por design (parecer Architect).
+   */
+  channel?: 'twilio' | 'periskope';
 }
 
 export interface MessageSentResult {
