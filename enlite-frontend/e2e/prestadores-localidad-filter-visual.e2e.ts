@@ -20,10 +20,18 @@ import { loginAsAdmin, mockAdminBaseRoutes, ok } from './helpers/kanban-notes-e2
 
 const CABA_LABEL = 'Ciudad Autónoma de Buenos Aires';
 
-// Dropdown JÁ normalizado pelo backend: sem "AEJ/AOO/BSI"; CABA presente.
+// Dropdown JÁ normalizado pelo backend (valores REAIS de prod pós-backfill+
+// canonicalização): provincia canônica em ES (sem "X Province" inglês), sem
+// códigos CPA lixo, e localidades recuperadas via geocoding (La Matanza, Bosques).
 const FILTER_OPTIONS = {
-  states: ['Buenos Aires', CABA_LABEL, 'Córdoba'],
-  cities: ['Buenos Aires', CABA_LABEL, 'Lanús', 'Mar del Plata'],
+  states: [
+    'Provincia de Buenos Aires', CABA_LABEL, 'Córdoba', 'Chaco', 'Tucumán',
+    'Entre Ríos', 'Santa Fe', 'Mendoza', 'Salta', 'Jujuy',
+  ],
+  cities: [
+    CABA_LABEL, 'Mar del Plata', 'Lanús', 'Moreno', 'Merlo', 'La Matanza',
+    'Bosques', 'Avellaneda', 'Quilmes', 'Lomas de Zamora',
+  ],
   experienceTypes: ['TEA', 'DOWN'],
   preferredTypes: ['home', 'institutional'],
 };
@@ -109,6 +117,20 @@ test.describe('Prestadores — filtro de Localidad (86ajeu9fw)', () => {
     const optionValues = await localidadSelect.locator('option').allInnerTexts();
     expect(optionValues).toContain(CABA_LABEL);
     expect(optionValues.join('|')).not.toMatch(/\b(AEJ|AOO|ARP|BSI|GTJ)\b/);
+    // Localidades recuperadas pelo geocoding aparecem limpas.
+    expect(optionValues).toContain('La Matanza');
+    expect(optionValues).toContain('Bosques');
+
+    // Provincia (7º select): canônica em ES — sem rótulo inglês "X Province".
+    const provinciaSelect = profileFilters.locator('select').nth(6);
+    const provinciaOpts = await provinciaSelect.locator('option').allInnerTexts();
+    expect(provinciaOpts).toContain('Provincia de Buenos Aires');
+    expect(provinciaOpts).toContain(CABA_LABEL);
+    expect(provinciaOpts.join('|')).not.toMatch(/Province\b/); // sem inglês
+    // Screenshot da linha de filtros com o dropdown limpo.
+    await expect(profileFilters).toHaveScreenshot('prestadores-filtros-dropdown-limpo.png', {
+      maxDiffPixelRatio: 0.02,
+    });
 
     // Seleciona CABA → dispara a listagem filtrada.
     await localidadSelect.selectOption({ label: CABA_LABEL });
