@@ -140,7 +140,9 @@ describe('ClickUpPatientMapper', () => {
     // Address populated on primary slot — from location's address_components,
     // NOT from the stale patient-level legacy fields.
     expect(result!.addresses).toHaveLength(1);
-    expect(result!.addresses![0].state).toBe('Buenos Aires');
+    // Fase 1: state runs through argentinaLocationNormalizer — canonical
+    // "Provincia de Buenos Aires" label, not the raw Google long_name.
+    expect(result!.addresses![0].state).toBe('Provincia de Buenos Aires');
     expect(result!.addresses![0].city).toBe('Palermo');
     expect(result!.addresses![0].neighborhood).toBe('Palermo Soho');
   });
@@ -234,7 +236,9 @@ describe('ClickUpPatientMapper', () => {
     ]);
 
     const result = mapper.map(task);
-    expect(result!.addresses![0].state).toBe('Buenos Aires');
+    // Fase 1: first-segment fallback value "Buenos Aires" is normalized to the
+    // canonical province label.
+    expect(result!.addresses![0].state).toBe('Provincia de Buenos Aires');
     expect(result!.addresses![0].city).toBe('Olivos');
   });
 
@@ -371,12 +375,14 @@ describe('ClickUpPatientMapper', () => {
     const result = mapper.map(task);
     expect(result!.addresses).toHaveLength(2);
 
-    // Slot 1: legacy fallback applied (no components in own location)
-    expect(result!.addresses![0].state).toBe('Buenos Aires');
+    // Slot 1: legacy fallback applied (no components in own location).
+    // Fase 1: normalized to the canonical province label.
+    expect(result!.addresses![0].state).toBe('Provincia de Buenos Aires');
     expect(result!.addresses![0].neighborhood).toBe('San Telmo Habitual');
 
-    // Slot 2: own location's address_components prevail (no legacy fallback)
-    expect(result!.addresses![1].state).toBe('Ciudad Autónoma de Buenos Aires');
+    // Slot 2: own location's address_components prevail (no legacy fallback).
+    // Fase 1: "Ciudad Autónoma de Buenos Aires" normalizes to "CABA".
+    expect(result!.addresses![1].state).toBe('CABA');
     expect(result!.addresses![1].city).toBe('Buenos Aires');
     expect(result!.addresses![1].neighborhood).toBe('Belgrano');
   });
@@ -413,8 +419,9 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result!.addresses).toHaveLength(1);
-    // Fresh values from the location's components, NOT the stale legacy fields
-    expect(result!.addresses![0].state).toBe('Ciudad Autónoma de Buenos Aires');
+    // Fresh values from the location's components, NOT the stale legacy fields.
+    // Fase 1: "Ciudad Autónoma de Buenos Aires" normalizes to "CABA".
+    expect(result!.addresses![0].state).toBe('CABA');
     expect(result!.addresses![0].city).toBe('Buenos Aires');
     expect(result!.addresses![0].neighborhood).toBe('Constitución');
     expect(result!.addresses![0].neighborhood).not.toBe('Villa Ballester');
@@ -885,7 +892,8 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       addressFormatted: 'Av. Hipólito Yrigoyen 123, Temperley, Buenos Aires',
       addressRaw:       'Hipólito Yrigoyen 123, Temperley',
       displayOrder:     1,
-      state:            'Buenos Aires',
+      // Fase 1: state normalized to the canonical province label.
+      state:            'Provincia de Buenos Aires',
       city:             'Temperley',
       neighborhood:     'Temperley',
     });
