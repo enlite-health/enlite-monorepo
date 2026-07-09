@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { WorkerEngagement } from '../domain/WorkerEngagement';
+import { KANBAN_COLUMN_BLOCKED } from '../domain/kanbanColumn';
 
 export interface BlockedAttemptDto {
   id: string;
@@ -176,6 +178,70 @@ export class BlockedApplicationQueryRepository {
       acquisitionChannel: (r.acquisition_channel as string | null) ?? null,
       lastAttemptedAt:   (r.last_attempted_at as Date).toISOString(),
       contactNotesCount: Number(r.contact_notes_count ?? 0),
+    }));
+  }
+
+  /**
+   * Lista tentativas bloqueadas de UM worker (todas as vagas), excluindo pares que já
+   * viraram WJA real (NOT EXISTS — mesma dedup do listByVacancy). Enriquece com dados
+   * da vaga/paciente para a aba de encuadre do worker-detail e mapeia para o shape
+   * unificado WorkerEngagement (kanbanStage = BLOQUEADO).
+   *
+   * missing_fields é recomputado ON-READ via fn_worker_missing_fields — editar o perfil
+   * do worker reflete aqui sem nova tentativa.
+   */
+  async listByWorker(workerId: string): Promise<WorkerEngagement[]> {
+    const result = await this.pool.query(
+      `SELECT
+         wba.id,
+         wba.job_posting_id,
+         jp.case_number,
+         jp.vacancy_number,
+         jp.status AS vacancy_status,
+         p.first_name AS patient_first_name,
+         p.last_name  AS patient_last_name,
+         wba.blocked_reason,
+         CASE
+           WHEN wba.blocked_reason = 'registration_incomplete' AND wba.worker_id IS NOT NULL
+           THEN fn_worker_missing_fields(wba.worker_id)
+           ELSE wba.missing_fields
+         END AS missing_fields,
+         wba.attempt_count,
+         wba.created_at
+       FROM worker_blocked_applications wba
+       LEFT JOIN job_postings jp ON jp.id = wba.job_posting_id
+       LEFT JOIN patients p ON jp.patient_id = p.id
+       WHERE wba.worker_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM worker_job_applications wja
+           WHERE wja.worker_id = wba.worker_id
+             AND wja.job_posting_id = wba.job_posting_id
+         )
+       ORDER BY wba.last_attempted_at DESC`,
+      [workerId],
+    );
+
+    return result.rows.map((r): WorkerEngagement => ({
+      id: r.id as string,
+      jobPostingId: (r.job_posting_id as string | null) ?? null,
+      caseNumber: (r.case_number as number | null) ?? null,
+      vacancyNumber: (r.vacancy_number as number | null) ?? null,
+      patientName: [r.patient_first_name, r.patient_last_name].filter(Boolean).join(' ') || null,
+      vacancyStatus: (r.vacancy_status as string | null) ?? null,
+      kanbanStage: KANBAN_COLUMN_BLOCKED,
+      resultado: null,
+      interviewDate: null,
+      interviewTime: null,
+      recruiterName: null,
+      coordinatorName: null,
+      rejectionReason: null,
+      rejectionReasonCategory: null,
+      attended: null,
+      isBlocked: true,
+      blockedReason: (r.blocked_reason as string | null) ?? null,
+      missingFields: Array.isArray(r.missing_fields) ? r.missing_fields as string[] : [],
+      attemptCount: (r.attempt_count as number | null) ?? null,
+      createdAt: (r.created_at as Date).toISOString(),
     }));
   }
 

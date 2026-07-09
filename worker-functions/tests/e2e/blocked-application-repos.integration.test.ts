@@ -308,3 +308,112 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
     expect(agg.byReason).toMatchObject({ registration_incomplete: expect.any(Number) });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Aba de encuadre do worker-detail: engajamentos por WORKER = WJA ∪ blocked.
+// Prova que a ficha do prestador mostra a REALIDADE (todas as vagas) com o status
+// = coluna do Kanban (deriveKanbanColumn), e que blocked promovido a WJA some daqui.
+// ─────────────────────────────────────────────────────────────────────────
+describe('Worker engagements por worker (banco real)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { WorkerApplicationRepository } = require('../../src/modules/matching/infrastructure/WorkerApplicationRepository') as typeof import('../../src/modules/matching/infrastructure/WorkerApplicationRepository');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { BlockedApplicationQueryRepository } = require('../../src/modules/matching/infrastructure/BlockedApplicationQueryRepository') as typeof import('../../src/modules/matching/infrastructure/BlockedApplicationQueryRepository');
+
+  let engWorker: string;
+  let engPatientId: string;
+  let vPre: string;   // vaga com WJA PRE_SCREENING
+  let vManual: string; // vaga com WJA INVITED+manual → INICIADO
+  let vBlocked: string; // vaga só bloqueada
+
+  beforeAll(async () => {
+    const { rows: pRows } = await pool.query<{ id: string }>(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ($1, 'E2E', 'EngWorker', 'AR', 'ACTIVE') RETURNING id`,
+      [`e2e-eng-${SUFFIX}`],
+    );
+    engPatientId = pRows[0].id;
+
+    const mkVacancy = async (caseNumber: number): Promise<string> => {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO job_postings (title, country, status, patient_id, case_number)
+         VALUES ('Vaga Eng', 'AR', 'SEARCHING', $1, $2) RETURNING id`,
+        [engPatientId, caseNumber],
+      );
+      return rows[0].id;
+    };
+    vPre = await mkVacancy(88881);
+    vManual = await mkVacancy(88882);
+    vBlocked = await mkVacancy(88883);
+
+    // REGISTERED para o guard (mig 183) aceitar as WJA — 'manual' não tem bypass de source.
+    engWorker = await makeWorker('REGISTERED', 'eng');
+
+    // WJA: PRE_SCREENING (talentum) e INVITED+manual (→ INICIADO)
+    await pool.query(
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+       VALUES ($1, $2, 'PRE_SCREENING', 'talentum'),
+              ($1, $3, 'INVITED', 'manual')`,
+      [engWorker, vPre, vManual],
+    );
+
+    // Blocked em vPre (JÁ tem WJA → deve ser EXCLUÍDO por NOT EXISTS) e em vBlocked (deve aparecer).
+    await pool.query(
+      `INSERT INTO worker_blocked_applications
+         (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+          attempt_count, first_attempted_at, last_attempted_at)
+       VALUES
+         ($1, $2, 'registration_incomplete', '["worker_documents"]', 'site', 1, NOW(), NOW()),
+         ($1, $3, 'registration_incomplete', '["worker_documents"]', 'site', 5, NOW(), NOW())`,
+      [engWorker, vPre, vBlocked],
+    );
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM worker_blocked_applications WHERE worker_id = $1`, [engWorker]);
+    await pool.query(`DELETE FROM worker_job_applications WHERE worker_id = $1`, [engWorker]);
+    await pool.query(`DELETE FROM job_postings WHERE id = ANY($1::uuid[])`, [[vPre, vManual, vBlocked]]);
+    await pool.query(`DELETE FROM patients WHERE id = $1`, [engPatientId]);
+  });
+
+  it('listEngagementsByWorker — WJA rows com kanbanStage derivado (PRE_SCREENING + INICIADO)', async () => {
+    const repo = new WorkerApplicationRepository();
+    const rows = await repo.listEngagementsByWorker(engWorker);
+    const byVacancy = new Map(rows.map(r => [r.jobPostingId, r]));
+
+    expect(rows).toHaveLength(2);
+    expect(byVacancy.get(vPre)!.kanbanStage).toBe('PRE_SCREENING');
+    expect(byVacancy.get(vPre)!.caseNumber).toBe(88881);
+    expect(byVacancy.get(vPre)!.isBlocked).toBe(false);
+    // INVITED + source=manual → coluna INICIADO (mesma regra do board)
+    expect(byVacancy.get(vManual)!.kanbanStage).toBe('INICIADO');
+  });
+
+  it('listByWorker — blocked não-promovido vira BLOQUEADO; par que já é WJA é excluído (NOT EXISTS)', async () => {
+    const repo = new BlockedApplicationQueryRepository();
+    const rows = await repo.listByWorker(engWorker);
+
+    // vPre tem WJA → excluído; só vBlocked aparece.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].jobPostingId).toBe(vBlocked);
+    expect(rows[0].kanbanStage).toBe('BLOQUEADO');
+    expect(rows[0].isBlocked).toBe(true);
+    expect(rows[0].caseNumber).toBe(88883);
+    expect(rows[0].attemptCount).toBe(5);
+    // missing_fields é recomputado ON-READ (fn_worker_missing_fields) — aqui basta o shape.
+    expect(Array.isArray(rows[0].missingFields)).toBe(true);
+  });
+
+  it('união WJA ∪ blocked = 3 engajamentos distintos (a realidade completa do worker)', async () => {
+    const appRepo = new WorkerApplicationRepository();
+    const blockedRepo = new BlockedApplicationQueryRepository();
+    const [wja, blocked] = await Promise.all([
+      appRepo.listEngagementsByWorker(engWorker),
+      blockedRepo.listByWorker(engWorker),
+    ]);
+    const all = [...wja, ...blocked];
+    expect(all).toHaveLength(3);
+    expect(new Set(all.map(e => e.jobPostingId))).toEqual(new Set([vPre, vManual, vBlocked]));
+    expect(all.filter(e => e.isBlocked)).toHaveLength(1);
+  });
+});

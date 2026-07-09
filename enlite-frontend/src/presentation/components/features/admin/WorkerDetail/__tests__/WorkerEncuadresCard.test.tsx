@@ -6,6 +6,7 @@ import type { WorkerEncuadre } from '@domain/entities/Worker';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    // Kanban column labels resolve via defaultValue = the raw stage; headers fall back to key.
     t: (key: string, opts?: any) => opts?.defaultValue ?? key,
   }),
 }));
@@ -15,12 +16,15 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-const encuadres: WorkerEncuadre[] = [
-  {
+function makeEncuadre(overrides: Partial<WorkerEncuadre> = {}): WorkerEncuadre {
+  return {
     id: 'enc-1',
     jobPostingId: 'jp-100',
     caseNumber: 442,
+    vacancyNumber: 1,
     patientName: 'Juan Pérez',
+    kanbanStage: 'SELECTED',
+    vacancyStatus: 'ACTIVE',
     resultado: 'SELECCIONADO',
     interviewDate: '2026-03-10',
     interviewTime: '10:00',
@@ -29,13 +33,24 @@ const encuadres: WorkerEncuadre[] = [
     rejectionReason: null,
     rejectionReasonCategory: null,
     attended: true,
+    isBlocked: false,
+    blockedReason: null,
+    missingFields: [],
+    attemptCount: null,
     createdAt: '2026-03-01T00:00:00Z',
-  },
-  {
+    ...overrides,
+  };
+}
+
+const encuadres: WorkerEncuadre[] = [
+  makeEncuadre(),
+  makeEncuadre({
     id: 'enc-2',
     jobPostingId: null,
     caseNumber: null,
+    vacancyNumber: null,
     patientName: null,
+    kanbanStage: 'REJECTED',
     resultado: 'RECHAZADO',
     interviewDate: null,
     interviewTime: null,
@@ -45,7 +60,7 @@ const encuadres: WorkerEncuadre[] = [
     rejectionReasonCategory: 'DISTANCE',
     attended: false,
     createdAt: '2026-02-15T00:00:00Z',
-  },
+  }),
 ];
 
 describe('WorkerEncuadresCard', () => {
@@ -70,9 +85,9 @@ describe('WorkerEncuadresCard', () => {
     expect(screen.getByText('admin.workerDetail.patient')).toBeInTheDocument();
   });
 
-  it('renders result column header using i18n key admin.workerDetail.result', () => {
+  it('renders status column header using i18n key admin.workerDetail.funnelStatus', () => {
     render(<WorkerEncuadresCard encuadres={encuadres} />);
-    expect(screen.getByText('admin.workerDetail.result')).toBeInTheDocument();
+    expect(screen.getByText('admin.workerDetail.funnelStatus')).toBeInTheDocument();
   });
 
   it('renders interview column header using i18n key admin.workerDetail.interview', () => {
@@ -114,15 +129,58 @@ describe('WorkerEncuadresCard', () => {
     render(<WorkerEncuadresCard encuadres={encuadres} />);
     expect(screen.getByText('442')).toBeInTheDocument();
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
-    expect(screen.getByText('SELECCIONADO')).toBeInTheDocument();
     expect(screen.getByText('Maria')).toBeInTheDocument();
   });
 
-  it('renders dash for null fields', () => {
+  // ── Status column = Kanban column (the core of this feature) ─────────────────
+
+  it('renders the Kanban stage as the status, not the encuadre resultado', () => {
     render(<WorkerEncuadresCard encuadres={encuadres} />);
-    const dashes = screen.getAllByText('—');
-    // enc-2: caseNumber, patientName, interview, recruiter = 4 dashes
-    expect(dashes.length).toBeGreaterThanOrEqual(4);
+    // status column shows the kanban column key (via defaultValue = raw stage)
+    expect(screen.getByText('SELECTED')).toBeInTheDocument();
+    expect(screen.getByText('REJECTED')).toBeInTheDocument();
+    // the old resultado value must NOT be what drives the badge anymore
+    expect(screen.queryByText('SELECCIONADO')).not.toBeInTheDocument();
+  });
+
+  it('applies green badge for the SELECTED stage', () => {
+    render(<WorkerEncuadresCard encuadres={[makeEncuadre({ kanbanStage: 'SELECTED' })]} />);
+    const badge = screen.getByText('SELECTED').parentElement!;
+    expect(badge.className).toContain('bg-green-100');
+    expect(badge.className).toContain('text-green-700');
+  });
+
+  it('applies red badge for the BLOQUEADO stage', () => {
+    render(<WorkerEncuadresCard encuadres={[makeEncuadre({ kanbanStage: 'BLOQUEADO' })]} />);
+    const badge = screen.getByText('BLOQUEADO').parentElement!;
+    expect(badge.className).toContain('bg-red-100');
+  });
+
+  it('applies indigo badge for the INICIADO stage', () => {
+    render(<WorkerEncuadresCard encuadres={[makeEncuadre({ kanbanStage: 'INICIADO' })]} />);
+    const badge = screen.getByText('INICIADO').parentElement!;
+    expect(badge.className).toContain('bg-indigo-100');
+  });
+
+  // ── Blocked attempts are surfaced (the reality gap this feature fixes) ───────
+
+  it('renders a blocked attempt row with its BLOQUEADO status and attempt count', () => {
+    const blocked = makeEncuadre({
+      id: 'blk-1',
+      jobPostingId: 'jp-777',
+      caseNumber: 501,
+      kanbanStage: 'BLOQUEADO',
+      resultado: null,
+      isBlocked: true,
+      blockedReason: 'registration_incomplete',
+      missingFields: ['worker_documents'],
+      attemptCount: 3,
+    });
+    render(<WorkerEncuadresCard encuadres={[blocked]} />);
+    expect(screen.getByText('BLOQUEADO')).toBeInTheDocument();
+    expect(screen.getByText('501')).toBeInTheDocument();
+    // attempt count is shown next to the badge (defaultValue fallback in the mock)
+    expect(screen.getByText('3 intento(s)')).toBeInTheDocument();
   });
 
   // ── Interview display ──────────────────────────────────────────────────────
@@ -133,86 +191,13 @@ describe('WorkerEncuadresCard', () => {
   });
 
   it('renders interview date without time when interviewTime is null', () => {
-    const withDateOnly: WorkerEncuadre[] = [{
-      ...encuadres[0],
-      interviewTime: null,
-    }];
-    render(<WorkerEncuadresCard encuadres={withDateOnly} />);
-    // When interviewTime is null, the time portion must not be rendered
+    render(<WorkerEncuadresCard encuadres={[makeEncuadre({ interviewTime: null })]} />);
     expect(screen.queryByText(/10:00/)).not.toBeInTheDocument();
-    // At least one formatted date cell is visible
     expect(screen.getAllByText(/3\/2026/).length).toBeGreaterThan(0);
   });
 
   it('renders dash when interviewDate is null', () => {
     render(<WorkerEncuadresCard encuadres={[encuadres[1]]} />);
-    const dashes = screen.getAllByText('—');
-    expect(dashes.length).toBeGreaterThanOrEqual(1);
-  });
-
-  // ── Resultado badges ───────────────────────────────────────────────────────
-
-  it('applies green badge for SELECCIONADO', () => {
-    render(<WorkerEncuadresCard encuadres={encuadres} />);
-    const badge = screen.getByText('SELECCIONADO').parentElement!;
-    expect(badge.className).toContain('bg-green-100');
-    expect(badge.className).toContain('text-green-700');
-  });
-
-  it('applies red badge for RECHAZADO', () => {
-    render(<WorkerEncuadresCard encuadres={encuadres} />);
-    const badge = screen.getByText('RECHAZADO').parentElement!;
-    expect(badge.className).toContain('bg-red-100');
-    expect(badge.className).toContain('text-red-700');
-  });
-
-  it('applies yellow badge for PENDIENTE', () => {
-    const pending: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'PENDIENTE' }];
-    render(<WorkerEncuadresCard encuadres={pending} />);
-    const badge = screen.getByText('PENDIENTE').parentElement!;
-    expect(badge.className).toContain('bg-yellow-100');
-  });
-
-  it('applies orange badge for AT_NO_ACEPTA', () => {
-    const noAcepta: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'AT_NO_ACEPTA' }];
-    render(<WorkerEncuadresCard encuadres={noAcepta} />);
-    const badge = screen.getByText('AT_NO_ACEPTA').parentElement!;
-    expect(badge.className).toContain('bg-orange-100');
-  });
-
-  it('applies blue badge for REPROGRAMAR', () => {
-    const reprog: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'REPROGRAMAR' }];
-    render(<WorkerEncuadresCard encuadres={reprog} />);
-    const badge = screen.getByText('REPROGRAMAR').parentElement!;
-    expect(badge.className).toContain('bg-blue-100');
-  });
-
-  it('applies purple badge for REEMPLAZO', () => {
-    const reem: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'REEMPLAZO' }];
-    render(<WorkerEncuadresCard encuadres={reem} />);
-    const badge = screen.getByText('REEMPLAZO').parentElement!;
-    expect(badge.className).toContain('bg-purple-100');
-  });
-
-  it('applies black badge for BLACKLIST', () => {
-    const bl: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'BLACKLIST' }];
-    render(<WorkerEncuadresCard encuadres={bl} />);
-    const badge = screen.getByText('BLACKLIST').parentElement!;
-    expect(badge.className).toContain('bg-gray-800');
-    expect(badge.className).toContain('text-white');
-  });
-
-  it('applies gray fallback badge for unknown resultado', () => {
-    const unknown: WorkerEncuadre[] = [{ ...encuadres[0], resultado: 'CUSTOM_STATUS' }];
-    render(<WorkerEncuadresCard encuadres={unknown} />);
-    const badge = screen.getByText('CUSTOM_STATUS').parentElement!;
-    expect(badge.className).toContain('bg-gray-100');
-  });
-
-  it('renders dash badge when resultado is null', () => {
-    const nullRes: WorkerEncuadre[] = [{ ...encuadres[0], resultado: null }];
-    render(<WorkerEncuadresCard encuadres={nullRes} />);
-    // The badge area should show '—'
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThanOrEqual(1);
   });
@@ -241,7 +226,6 @@ describe('WorkerEncuadresCard', () => {
   it('renders rows with cursor-pointer class', () => {
     render(<WorkerEncuadresCard encuadres={encuadres} />);
     const rows = screen.getAllByRole('row');
-    // Data rows (not header) should have cursor-pointer
     expect(rows[1].className).toContain('cursor-pointer');
   });
 

@@ -48,11 +48,31 @@ export interface WorkerLocation {
   interestZone: string | null;
 }
 
+/** Kanban column ids — mirror of backend domain/kanbanColumn.ts + KanbanBoard COLUMN_CONFIG. */
+export type WorkerEncuadreKanbanStage =
+  | 'INVITED'
+  | 'BLOQUEADO'
+  | 'INICIADO'
+  | 'PRE_SCREENING'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CONFIRMED'
+  | 'SELECTED'
+  | 'REJECTED';
+
 export interface WorkerEncuadre {
   id: string;
   jobPostingId: string | null;
   caseNumber: number | null;
+  vacancyNumber: number | null;
   patientName: string | null;
+  /**
+   * The Kanban column the worker occupies for this vacancy — the status shown in the
+   * worker-detail tab, identical to the vacancy board (backend deriveKanbanColumn).
+   */
+  kanbanStage: WorkerEncuadreKanbanStage;
+  /** job_postings.status (vacancy lifecycle) — not the funnel column. */
+  vacancyStatus: string | null;
   resultado: string | null;
   interviewDate: string | null;
   interviewTime: string | null;
@@ -61,6 +81,11 @@ export interface WorkerEncuadre {
   rejectionReason: string | null;
   rejectionReasonCategory: string | null;
   attended: boolean | null;
+  /** True when this row is a blocked postulation attempt (worker_blocked_applications). */
+  isBlocked: boolean;
+  blockedReason: string | null;
+  missingFields: string[];
+  attemptCount: number | null;
   createdAt: string;
 }
 

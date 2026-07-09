@@ -192,11 +192,17 @@ function makeLocationRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Linha WJA como retornada por WorkerApplicationRepository.listEngagementsByWorker
+// (aba de encuadre passou a ler WJA ∪ blocked, não mais a tabela encuadres direto).
 function makeEncuadreRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'enc-1',
     job_posting_id: 'jp-1',
+    funnel_stage: 'SELECTED',
+    source: 'talentum',
     case_number: 42,
+    vacancy_number: 1,
+    vacancy_status: 'ACTIVE',
     patient_first_name: 'Juan',
     patient_last_name: 'Perez',
     resultado: 'SELECCIONADO',
@@ -223,6 +229,7 @@ function setupFullMocks(opts: {
   serviceAreaRows?: Record<string, unknown>[];
   locationRows?: Record<string, unknown>[];
   encuadreRows?: Record<string, unknown>[];
+  blockedRows?: Record<string, unknown>[];
   availabilityRows?: Record<string, unknown>[];
   tagRows?: Record<string, unknown>[];
 } = {}) {
@@ -233,7 +240,8 @@ function setupFullMocks(opts: {
     .mockResolvedValueOnce({ rows: opts.docRows ?? [makeDocRow()] }) // docs
     .mockResolvedValueOnce({ rows: opts.serviceAreaRows ?? [makeServiceAreaRow()] }) // service areas
     .mockResolvedValueOnce({ rows: opts.locationRows ?? [makeLocationRow()] }) // locations
-    .mockResolvedValueOnce({ rows: opts.encuadreRows ?? [makeEncuadreRow()] }) // encuadres
+    .mockResolvedValueOnce({ rows: opts.encuadreRows ?? [makeEncuadreRow()] }) // WJA engagements
+    .mockResolvedValueOnce({ rows: opts.blockedRows ?? [] }) // blocked (listByWorker)
     .mockResolvedValueOnce({ rows: opts.availabilityRows ?? [] }) // availability
     .mockResolvedValueOnce({ rows: opts.tagRows ?? [] }); // tags
 
