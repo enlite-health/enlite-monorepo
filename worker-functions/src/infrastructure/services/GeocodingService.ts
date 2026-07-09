@@ -10,19 +10,28 @@ import { Client, GeocodeResult, Status } from '@googlemaps/google-maps-services-
  *   - ROOFTOP, RANGE_INTERPOLATED, GEOMETRIC_CENTER em qualquer types.
  *   - APPROXIMATE em locality/sublocality (centro do bairro é aceitável).
  */
-function isPreciseEnough(result: GeocodeResult): boolean {
+function isPreciseEnough(result: GeocodeResult, allowCoarse = false): boolean {
   const types = (result.types ?? []) as string[];
   const locType = (result.geometry?.location_type ?? '') as string;
 
+  // Centroide de país nunca serve (é o fallback do Google quando não achou nada).
+  if (types.length > 0 && types[0] === 'country') return false;
+
+  // Nível provincia/partido: rejeitado por padrão (endereço de paciente precisa
+  // de ponto preciso), mas ACEITO em allowCoarse — usado só pelo backfill de
+  // ZONA de worker, onde provincia/localidad já é o suficiente.
   const adminCoarseTypes = new Set([
-    'country',
     'administrative_area_level_1',
     'administrative_area_level_2',
   ]);
-  if (types.length > 0 && adminCoarseTypes.has(types[0])) return false;
+  if (!allowCoarse && types.length > 0 && adminCoarseTypes.has(types[0])) return false;
 
   if (locType === 'APPROXIMATE') {
     const allowedApprox = new Set(['locality', 'sublocality', 'sublocality_level_1', 'neighborhood']);
+    if (allowCoarse) {
+      allowedApprox.add('administrative_area_level_1');
+      allowedApprox.add('administrative_area_level_2');
+    }
     return types.some((t) => allowedApprox.has(t));
   }
 
@@ -59,7 +68,11 @@ export class GeocodingService {
    * fallback que distorce match por proximidade).
    * Lança erro para problemas de API (REQUEST_DENIED, OVER_QUERY_LIMIT).
    */
-  async geocode(address: string, country = 'AR'): Promise<GeocodedAddress | null> {
+  async geocode(
+    address: string,
+    country = 'AR',
+    opts: { allowCoarse?: boolean } = {},
+  ): Promise<GeocodedAddress | null> {
     if (!this.apiKey) return null;
     if (!address || address.trim().length < 3) return null;
 
@@ -91,7 +104,7 @@ export class GeocodingService {
     // não acha o endereço específico ele retorna o centroide do país/província
     // com types=['country',...] e location_type=APPROXIMATE. Isso quebra
     // qualquer match por proximidade no banco — preferimos NULL.
-    if (!isPreciseEnough(top)) return null;
+    if (!isPreciseEnough(top, opts.allowCoarse)) return null;
 
     return this.parseGeocodeResult(top, country);
   }
@@ -103,21 +116,22 @@ export class GeocodingService {
   async geocodeBatch(
     addresses: string[],
     country = 'AR',
-    delayMs = 200
+    delayMs = 200,
+    opts: { allowCoarse?: boolean } = {},
   ): Promise<(GeocodedAddress | null)[]> {
     const results: (GeocodedAddress | null)[] = [];
 
     for (let i = 0; i < addresses.length; i++) {
       let result: GeocodedAddress | null = null;
       try {
-        result = await this.geocode(addresses[i], country);
+        result = await this.geocode(addresses[i], country, opts);
       } catch (err) {
         const msg = (err as Error).message ?? '';
         if (msg.includes('OVER_QUERY_LIMIT') || msg.includes('REQUEST_DENIED')) {
           // Espera 1s e tenta uma vez mais antes de desistir
           await new Promise(r => setTimeout(r, 1000));
           try {
-            result = await this.geocode(addresses[i], country);
+            result = await this.geocode(addresses[i], country, opts);
           } catch {
             console.warn(`  ⚠ Geocoding falhou definitivamente: "${addresses[i].substring(0, 50)}" — ${msg}`);
           }

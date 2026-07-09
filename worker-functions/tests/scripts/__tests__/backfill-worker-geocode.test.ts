@@ -1,9 +1,9 @@
 /**
  * Unit da fonte de query do backfill de geocoding de worker_service_areas.
- * Garante que, sem address_line, a ZONA de texto livre (work_zone/interest_zone)
- * vira a query — o caso dos ~457 imports legados que o script antigo ignorava.
+ * Garante: (1) sem address_line, a ZONA vira query coarse (os ~457 legados);
+ * (2) address_line usa query precise com CPA-lixo removido.
  */
-import { buildQuery } from '../../../scripts/backfill-worker-service-areas-geocoding';
+import { buildQuery, stripCpa } from '../../../scripts/backfill-worker-service-areas-geocoding';
 
 type Row = Parameters<typeof buildQuery>[0];
 const base: Row = {
@@ -12,27 +12,34 @@ const base: Row = {
   latitude: null, longitude: null,
 };
 
+describe('stripCpa', () => {
+  it('remove CPA "B1832 AOO" e "C1426BSI"', () => {
+    expect(stripCpa('Gral. Arenales 739, B1832 AOO, Provincia de Buenos Aires'))
+      .toBe('Gral. Arenales 739, Provincia de Buenos Aires');
+    expect(stripCpa('Arce 691, C1426BSI, Cdad. Autónoma')).toBe('Arce 691, Cdad. Autónoma');
+  });
+  it('remove CPA antigo "B1748"', () => {
+    expect(stripCpa('Carlos Pellegrini 1676, B1748, Provincia')).toBe('Carlos Pellegrini 1676, Provincia');
+  });
+});
+
 describe('buildQuery', () => {
-  it('usa address_line já formatado (contém país) direto', () => {
-    expect(buildQuery({ ...base, address_line: 'Av. Santa Fe 3681, CABA, Argentina' }))
-      .toBe('Av. Santa Fe 3681, CABA, Argentina');
+  it('address_line já com país → precise, CPA removido', () => {
+    const q = buildQuery({ ...base, address_line: 'Arce 691, C1426BSI, Cdad. Autónoma de Buenos Aires, Argentina' });
+    expect(q).toEqual({ query: 'Arce 691, Cdad. Autónoma de Buenos Aires, Argentina', coarse: false });
   });
 
-  it('compõe address_line + componentes + país quando não tem país', () => {
-    expect(buildQuery({ ...base, address_line: 'Calle 1', neighborhood: 'Centro', city: 'Quilmes', state: 'Buenos Aires' }))
-      .toBe('Calle 1, Centro, Quilmes, Buenos Aires, Argentina');
+  it('address_line sem país compõe + Argentina, ignorando city-lixo', () => {
+    const q = buildQuery({ ...base, address_line: 'Gral. Arenales 739, B1832 AOO', city: 'AOO', state: 'Provincia de Buenos Aires' });
+    expect(q).toEqual({ query: 'Gral. Arenales 739, Provincia de Buenos Aires, Argentina', coarse: false });
   });
 
-  it('sem address_line, cai na work_zone', () => {
-    expect(buildQuery({ ...base, work_zone: 'Flores' })).toBe('Flores, Argentina');
+  it('sem address_line, work_zone vira query COARSE', () => {
+    expect(buildQuery({ ...base, work_zone: 'La Matanza' })).toEqual({ query: 'La Matanza, Argentina', coarse: true });
   });
 
-  it('sem address_line nem work_zone, usa interest_zone', () => {
-    expect(buildQuery({ ...base, interest_zone: 'En CABA, zona norte' })).toBe('En CABA, zona norte, Argentina');
-  });
-
-  it('work_zone tem prioridade sobre interest_zone', () => {
-    expect(buildQuery({ ...base, work_zone: 'Avellaneda', interest_zone: 'Lanús' })).toBe('Avellaneda, Argentina');
+  it('sem address_line nem work_zone, usa interest_zone (coarse)', () => {
+    expect(buildQuery({ ...base, interest_zone: 'Escobar' })).toEqual({ query: 'Escobar, Argentina', coarse: true });
   });
 
   it('sem nenhuma fonte → null', () => {

@@ -71,18 +71,40 @@ function coordsMissing(row: ServiceAreaRow): boolean {
   );
 }
 
-/** Constrói a string de geocoding: address_line quando houver; senão a zona livre. */
-export function buildQuery(row: ServiceAreaRow): string | null {
+/** Remove tokens de CPA argentino ("B1832 AOO", "C1426BSI", "B1748") que
+ * confundem o geocoder e vazam o sufixo-lixo pra city. */
+export function stripCpa(s: string): string {
+  return s
+    .replace(/\b[A-Z]\d{4}\s*[A-Z]{2,4}\b/g, '')
+    .replace(/\b[A-Z]\d{4}\b/g, '')
+    .replace(/\s*,\s*,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/[\s,]+$/, '')
+    .replace(/^[\s,]+/, '')
+    .trim();
+}
+
+export interface GeoQuery {
+  query: string;
+  /** true = query veio da ZONA livre → aceita resultado nível partido (allowCoarse). */
+  coarse: boolean;
+}
+
+/** Constrói a query de geocoding: address_line (CPA removido) quando houver;
+ * senão a zona livre (coarse). Exclui city-lixo da composição. */
+export function buildQuery(row: ServiceAreaRow): GeoQuery | null {
   const line = row.address_line?.trim();
   if (line) {
-    // Se já parece formatado pelo Google (contém país), usa direto.
-    if (/argentina|brasil|brazil/i.test(line)) return line;
-    return [line, row.neighborhood?.trim(), row.city?.trim(), row.state?.trim(), 'Argentina']
+    const cleaned = stripCpa(line);
+    if (/argentina|brasil|brazil/i.test(cleaned)) return { query: cleaned, coarse: false };
+    const cityPart = row.city?.trim() && !isJunkCity(row.city) ? row.city.trim() : null;
+    const query = [cleaned, row.neighborhood?.trim(), cityPart, row.state?.trim(), 'Argentina']
       .filter((p): p is string => !!p)
       .join(', ');
+    return { query, coarse: false };
   }
   const zone = row.work_zone?.trim() || row.interest_zone?.trim();
-  if (zone) return `${zone}, Argentina`;
+  if (zone) return { query: `${zone}, Argentina`, coarse: true };
   return null;
 }
 
@@ -120,27 +142,39 @@ async function main(): Promise<void> {
 
   console.log(`[backfill-worker-geo] candidates=${candidates.length}`);
 
-  // Dedup por query — geocoda cada string única uma vez.
+  // Dedup por query — geocoda cada string única uma vez. Separa precise
+  // (address) de coarse (zona → aceita nível partido).
   const queryByRow = new Map<string, string>(); // rowId → query
-  const distinct = new Set<string>();
+  const precise = new Set<string>();
+  const coarse = new Set<string>();
   for (const row of candidates) {
     const q = buildQuery(row);
     if (q) {
-      queryByRow.set(row.id, q);
-      distinct.add(q);
+      queryByRow.set(row.id, q.query);
+      (q.coarse ? coarse : precise).add(q.query);
     }
   }
-  const uniqueQueries = [...distinct];
-  console.log(`[backfill-worker-geo] unique queries to geocode=${uniqueQueries.length} (skipped ${candidates.length - queryByRow.size} sem fonte)`);
+  console.log(`[backfill-worker-geo] queries: precise=${precise.size} coarse=${coarse.size} (skipped ${candidates.length - queryByRow.size} sem fonte)`);
 
-  // Geocoda as strings únicas em lotes; monta mapa query → resultado.
+  // Geocoda em lotes; monta mapa query → resultado.
   const resultByQuery = new Map<string, { city: string | null; state: string | null; latitude: number; longitude: number } | null>();
-  for (let i = 0; i < uniqueQueries.length; i += BATCH_SIZE) {
-    const slice = uniqueQueries.slice(i, i + BATCH_SIZE);
-    const results = await geocoder.geocodeBatch(slice, DEFAULT_COUNTRY, RATE_LIMIT_MS);
-    slice.forEach((q, k) => resultByQuery.set(q, results[k] ?? null));
-    console.log(`[backfill-worker-geo] geocoded ${Math.min(i + BATCH_SIZE, uniqueQueries.length)}/${uniqueQueries.length}`);
-  }
+  const geocodeSet = async (queries: string[], allowCoarse: boolean): Promise<void> => {
+    for (let i = 0; i < queries.length; i += BATCH_SIZE) {
+      const slice = queries.slice(i, i + BATCH_SIZE);
+      const results = await geocoder.geocodeBatch(slice, DEFAULT_COUNTRY, RATE_LIMIT_MS, { allowCoarse });
+      slice.forEach((q, k) => resultByQuery.set(q, results[k] ?? null));
+    }
+  };
+  await geocodeSet([...precise], false);
+  await geocodeSet([...coarse], true);
+  console.log(`[backfill-worker-geo] geocoded ${resultByQuery.size} unique queries`);
+
+  // Região da operação — zona (coarse) sem contexto que resolve para província
+  // distante é quase sempre um match errado do Google ("Mitre"→Santiago del
+  // Estero); só confiamos em Buenos Aires / CABA e mandamos o resto pra ops.
+  const OPERATING = new Set(['Provincia de Buenos Aires', 'Ciudad Autónoma de Buenos Aires']);
+  const flagged = new Map<string, number>(); // zona → nº (pra revisão humana)
+  const flag = (z: string): void => { flagged.set(z, (flagged.get(z) ?? 0) + 1); };
 
   let updated = 0;
   let unresolved = 0;
@@ -153,9 +187,17 @@ async function main(): Promise<void> {
       const res = resultByQuery.get(q);
       if (!res) {
         unresolved++;
+        flag(q);
         continue;
       }
       const canonState = canonicalProvince(res.state, res.city);
+      // Guard: resultado coarse (de zona) fora de Buenos Aires/CABA = provável
+      // match errado de nome ambíguo — não escreve, vai pra ops.
+      if (coarse.has(q) && (!canonState || !OPERATING.has(canonState))) {
+        unresolved++;
+        flag(q);
+        continue;
+      }
       const willCoords = coordsMissing(row);
       const willState = isEmpty(row.state) && !!canonState;
       const willCity = (isEmpty(row.city) || isJunkCity(row.city)) && !!res.city;
@@ -184,6 +226,22 @@ async function main(): Promise<void> {
       );
       updated++;
     }
+
+    // Limpeza final: city que restou como lixo de CPA (geocoding não recuperou a
+    // localidad) vira NULL — melhor vazio que "AOO". state/coords ficam intactos.
+    const junkSql = `city ~ '^[A-Z]{2,4}$'`;
+    if (isDryRun) {
+      const { rows } = await client.query<{ n: string }>(
+        `SELECT COUNT(*) n FROM worker_service_areas WHERE deleted_at IS NULL AND ${junkSql}`,
+      );
+      console.log(`[backfill-worker-geo] junk cities a limpar (→NULL): ${rows[0].n}`);
+    } else {
+      const r = await client.query(
+        `UPDATE worker_service_areas SET city = NULL, updated_at = now() WHERE deleted_at IS NULL AND ${junkSql}`,
+      );
+      console.log(`[backfill-worker-geo] junk cities limpas (→NULL): ${r.rowCount}`);
+    }
+
     if (!isDryRun) await client.query('COMMIT');
   } catch (err) {
     if (!isDryRun) await client.query('ROLLBACK');
@@ -193,6 +251,12 @@ async function main(): Promise<void> {
     client.release();
   }
 
+  if (flagged.size > 0) {
+    console.log(`[backfill-worker-geo] PARA OPS — ${flagged.size} zonas não-resolvíveis (worker precisa esclarecer):`);
+    for (const [z, n] of [...flagged.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${n.toString().padStart(3)}  ${z.replace(/, Argentina$/, '')}`);
+    }
+  }
   console.log(`[backfill-worker-geo] DONE — ${isDryRun ? 'would update' : 'updated'}=${updated} unresolved=${unresolved}`);
   await pool.end();
 }
