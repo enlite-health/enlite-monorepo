@@ -16,11 +16,26 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { SyncTalentumWorkersUseCase } from '@modules/integration';
 import { reportError } from '@shared/logging';
+import { canonicalLocation, recognizedZoneLabel } from '@shared/utils/normalizeLocationValue';
 
 interface WorkerDateStats {
   today: number;
   yesterday: number;
   sevenDaysAgo: number;
+}
+
+/**
+ * Drops nulls, dedupes case-insensitively (keeping the first display casing) and
+ * sorts with the es-AR locale (accent-aware). Used to build clean dropdown lists.
+ */
+function dedupeSorted(values: (string | null)[]): string[] {
+  const seen = new Map<string, string>();
+  for (const v of values) {
+    if (v === null) continue;
+    const key = v.toLowerCase();
+    if (!seen.has(key)) seen.set(key, v);
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, 'es-AR'));
 }
 
 export class AdminWorkersAuxController {
@@ -89,57 +104,83 @@ export class AdminWorkersAuxController {
   /**
    * GET /api/admin/workers/filter-options
    *
-   * Returns distinct non-empty values for dynamic filter dropdowns:
-   *   - states: distinct worker_service_areas.state values (sorted)
-   *   - cities: distinct worker_service_areas.city values (sorted)
+   * Returns distinct NORMALIZED values for dynamic filter dropdowns:
+   *   - states: cleaned worker_service_areas.state values (junk removed, CABA folded)
+   *   - cities: cleaned worker_service_areas.city values + recognized zones (CABA)
+   *             surfaced from work_zone — so Localidad=CABA is selectable
    *   - experienceTypes: distinct unnested experience_types values (sorted)
    *   - preferredTypes: distinct unnested preferred_types values (sorted)
+   *
+   * Junk (Argentine CPA postal suffixes wrongly stored as city, e.g. "AEJ") is
+   * dropped via `canonicalLocation`. See normalizeLocationValue for the rules.
    *
    * NOT included (fixed enums the frontend already knows):
    *   profession, sex, languages, preferred_age_range, days
    */
   async getFilterOptions(_req: Request, res: Response): Promise<void> {
     try {
-      const [statesResult, citiesResult, expTypesResult, prefTypesResult] = await Promise.all([
-        this.db.query<{ state: string }>(`
-          SELECT DISTINCT wsa.state
-          FROM worker_service_areas wsa
-          JOIN workers w ON wsa.worker_id = w.id
-          WHERE w.merged_into_id IS NULL
-            AND wsa.state IS NOT NULL
-            AND btrim(wsa.state) <> ''
-          ORDER BY wsa.state
-        `),
-        this.db.query<{ city: string }>(`
-          SELECT DISTINCT wsa.city
-          FROM worker_service_areas wsa
-          JOIN workers w ON wsa.worker_id = w.id
-          WHERE w.merged_into_id IS NULL
-            AND wsa.city IS NOT NULL
-            AND btrim(wsa.city) <> ''
-          ORDER BY wsa.city
-        `),
-        this.db.query<{ val: string }>(`
-          SELECT DISTINCT unnest(experience_types) AS val
-          FROM workers
-          WHERE merged_into_id IS NULL
-            AND experience_types IS NOT NULL
-          ORDER BY val
-        `),
-        this.db.query<{ val: string }>(`
-          SELECT DISTINCT unnest(preferred_types) AS val
-          FROM workers
-          WHERE merged_into_id IS NULL
-            AND preferred_types IS NOT NULL
-          ORDER BY val
-        `),
+      const [statesResult, citiesResult, zonesResult, expTypesResult, prefTypesResult] =
+        await Promise.all([
+          this.db.query<{ state: string }>(`
+            SELECT DISTINCT wsa.state
+            FROM worker_service_areas wsa
+            JOIN workers w ON wsa.worker_id = w.id
+            WHERE w.merged_into_id IS NULL
+              AND wsa.state IS NOT NULL
+              AND btrim(wsa.state) <> ''
+          `),
+          this.db.query<{ city: string }>(`
+            SELECT DISTINCT wsa.city
+            FROM worker_service_areas wsa
+            JOIN workers w ON wsa.worker_id = w.id
+            WHERE w.merged_into_id IS NULL
+              AND wsa.city IS NOT NULL
+              AND btrim(wsa.city) <> ''
+          `),
+          this.db.query<{ work_zone: string }>(`
+            SELECT DISTINCT wsa.work_zone
+            FROM worker_service_areas wsa
+            JOIN workers w ON wsa.worker_id = w.id
+            WHERE w.merged_into_id IS NULL
+              AND wsa.work_zone IS NOT NULL
+              AND btrim(wsa.work_zone) <> ''
+          `),
+          this.db.query<{ val: string }>(`
+            SELECT DISTINCT unnest(experience_types) AS val
+            FROM workers
+            WHERE merged_into_id IS NULL
+              AND experience_types IS NOT NULL
+            ORDER BY val
+          `),
+          this.db.query<{ val: string }>(`
+            SELECT DISTINCT unnest(preferred_types) AS val
+            FROM workers
+            WHERE merged_into_id IS NULL
+              AND preferred_types IS NOT NULL
+            ORDER BY val
+          `),
+        ]);
+
+      // Recognized zones (e.g. "CABA") surfaced from work_zone → CABA becomes a
+      // selectable provincia AND localidad even though it's absent from city/state.
+      const zoneLabels = zonesResult.rows
+        .map((r) => recognizedZoneLabel(r.work_zone))
+        .filter((v): v is string => v !== null);
+
+      const cities = dedupeSorted([
+        ...citiesResult.rows.map((r) => canonicalLocation(r.city)),
+        ...zoneLabels,
+      ]);
+      const states = dedupeSorted([
+        ...statesResult.rows.map((r) => canonicalLocation(r.state)),
+        ...zoneLabels,
       ]);
 
       res.status(200).json({
         success: true,
         data: {
-          states: statesResult.rows.map((r) => r.state),
-          cities: citiesResult.rows.map((r) => r.city),
+          states,
+          cities,
           experienceTypes: expTypesResult.rows.map((r) => r.val),
           preferredTypes: prefTypesResult.rows.map((r) => r.val),
         },
