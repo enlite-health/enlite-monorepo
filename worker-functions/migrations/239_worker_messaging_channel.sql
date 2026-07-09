@@ -1,4 +1,4 @@
--- Migration 235: canal de mensageria por worker (fundação do roteamento Twilio → Periskope)
+-- Migration 239: canal de mensageria por worker (fundação do roteamento Twilio → Periskope)
 --
 -- CONTEXTO: worker frio recebe WhatsApp via Twilio (WABA oficial). Após handover
 -- (1º texto livre não-roteável), todo o tráfego daquele worker passa a ser

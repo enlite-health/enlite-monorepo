@@ -1,4 +1,4 @@
--- Migration 237: coluna channel em messaging_outbox (histórico + teto diário Periskope)
+-- Migration 241: coluna channel em messaging_outbox (histórico + teto diário Periskope)
 --
 -- CONTEXTO: workers.messaging_channel é mutável (worker pode flipar de twilio
 -- para periskope via handover a qualquer momento) — para o teto diário de

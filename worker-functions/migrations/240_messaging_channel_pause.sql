@@ -1,4 +1,4 @@
--- Migration 236: kill-switch de canal de mensageria (messaging_channel_pause)
+-- Migration 240: kill-switch de canal de mensageria (messaging_channel_pause)
 --
 -- CONTEXTO: fallback instantâneo do provider Periskope sem deploy. Se o
 -- Periskope apresentar instabilidade, um operador seta paused=true nesta
