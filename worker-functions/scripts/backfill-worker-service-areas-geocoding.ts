@@ -29,6 +29,7 @@
 
 import { Pool } from 'pg';
 import { GeocodingService } from '../src/infrastructure/services/GeocodingService';
+import { canonicalProvince } from '../src/shared/utils/normalizeLocationValue';
 
 interface ServiceAreaRow {
   id: string;
@@ -154,15 +155,16 @@ async function main(): Promise<void> {
         unresolved++;
         continue;
       }
+      const canonState = canonicalProvince(res.state, res.city);
       const willCoords = coordsMissing(row);
-      const willState = isEmpty(row.state) && !!res.state;
+      const willState = isEmpty(row.state) && !!canonState;
       const willCity = (isEmpty(row.city) || isJunkCity(row.city)) && !!res.city;
       if (!willCoords && !willState && !willCity) continue;
 
       if (isDryRun) {
         const parts: string[] = [];
         if (willCoords) parts.push(`coords→${res.latitude.toFixed(4)},${res.longitude.toFixed(4)}`);
-        if (willState) parts.push(`state→${res.state}`);
+        if (willState) parts.push(`state→${canonState}`);
         if (willCity) parts.push(`city→${res.city}`);
         console.log(`  ✓ wsa=${row.id} worker=${row.worker_id} "${q.slice(0, 50)}" ${parts.join(' ')}`);
         updated++;
@@ -178,7 +180,7 @@ async function main(): Promise<void> {
            city  = CASE WHEN (city IS NULL OR btrim(city)='' OR city ~ '^[A-Z]{2,4}$') AND $4::text IS NOT NULL THEN $4 ELSE city END,
            updated_at = now()
          WHERE id = $5`,
-        [res.latitude, res.longitude, res.state, res.city, row.id],
+        [res.latitude, res.longitude, canonState, res.city, row.id],
       );
       updated++;
     }

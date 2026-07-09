@@ -151,3 +151,40 @@ export function resolveLocationFilter(raw: string | null | undefined): LocationF
   }
   return { exactKeys: [toKey(t)], containsPatterns: [] };
 }
+
+const PBA_CANONICAL = 'Provincia de Buenos Aires';
+
+/**
+ * Canonicaliza o rótulo de provincia (`state`) para uma forma única em espanhol.
+ * O Google Maps devolve a mesma provincia com nomes inconsistentes ("Buenos
+ * Aires Province" em inglês, "Buenos Aires" cru, "Córdoba Province"), o que
+ * fragmenta o dropdown/analytics. Regras:
+ *   - CABA (várias grafias)                         → "Ciudad Autónoma de Buenos Aires"
+ *   - "Buenos Aires" cru: desambigua pela localidad → city="Buenos Aires" é a
+ *     CIDADE (CABA); qualquer outra localidad é a PROVINCIA (PBA)
+ *   - "Buenos Aires Province" / "Provincia de …"    → "Provincia de Buenos Aires"
+ *   - inglês "<X> Province"                          → "<X>" (Córdoba, Entre Ríos, …)
+ *   - resto                                          → inalterado
+ */
+export function canonicalProvince(
+  state: string | null | undefined,
+  city?: string | null,
+): string | null {
+  if (state === null || state === undefined) return state ?? null;
+  const s = state.trim();
+  if (s === '') return s;
+  const low = s.toLowerCase();
+
+  if (['ciudad autónoma de buenos aires', 'ciudad autonoma de buenos aires', 'caba', 'capital federal'].includes(low)) {
+    return CABA_CANONICAL;
+  }
+  if (low === 'buenos aires') {
+    return (city ?? '').trim().toLowerCase() === 'buenos aires' ? CABA_CANONICAL : PBA_CANONICAL;
+  }
+  if (low === 'buenos aires province' || low === 'provincia de buenos aires') {
+    return PBA_CANONICAL;
+  }
+  const m = s.match(/^(.*) Province$/i);
+  if (m) return m[1].trim();
+  return s;
+}

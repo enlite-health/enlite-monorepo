@@ -67,6 +67,9 @@ export class GeocodingService {
       params: {
         address: address.trim(),
         region: country.toLowerCase(),
+        // Rótulos em espanhol — evita "Buenos Aires Province"/"Córdoba Province"
+        // (inglês) que fragmentam provincia no dropdown/analytics.
+        language: 'es',
         key: this.apiKey,
       },
       timeout: 5000,
