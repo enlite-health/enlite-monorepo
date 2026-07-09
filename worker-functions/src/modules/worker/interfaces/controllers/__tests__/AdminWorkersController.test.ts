@@ -218,6 +218,27 @@ function makeEncuadreRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Linha bruta como retornada por BlockedApplicationQueryRepository.listByWorker
+// (tentativa bloqueada não-promovida). created_at chega como Date do pg — o mapper
+// chama `.toISOString()`, então o mock DEVE passar um Date (não string).
+function makeBlockedRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'blk-1',
+    job_posting_id: 'jp-800',
+    case_number: 800,
+    vacancy_number: 2,
+    vacancy_status: 'BUSQUEDA',
+    patient_first_name: 'Julia',
+    patient_last_name: 'Blocked',
+    blocked_reason: 'registration_incomplete',
+    missing_fields: ['criminal_record', 'phone'],
+    attempt_count: 2,
+    // Mais recente que o WJA (2025-03-01) → deve vir PRIMEIRO na ordenação por createdAt desc.
+    created_at: new Date('2025-06-01T10:00:00Z'),
+    ...overrides,
+  };
+}
+
 /**
  * Configura mockQuery para retornar os dados de getWorkerById.
  * Chamada 1: worker query
@@ -889,6 +910,51 @@ describe('AdminWorkersController — getWorkerById', () => {
       expect(encuadres[0].caseNumber).toBe(42);
       expect(encuadres[0].resultado).toBe('SELECCIONADO');
       expect(encuadres[0].attended).toBe(true);
+    });
+
+    // ── AC 86ajeu7vw: a aba de encuadre inclui casos BLOQUEADOS (WJA ∪ blocked) ──
+    // O caso da "Júlia": clicou postular na vaga 800, foi BLOQUEADO (docs incompletos),
+    // e por isso NÃO aparecia na lista de encuadres. Agora aparece, com a coluna de
+    // estágio = coluna do Kanban (BLOQUEADO).
+    it('inclui tentativas bloqueadas na lista de encuadres com estágio BLOQUEADO', async () => {
+      setupFullMocks({
+        encuadreRows: [makeEncuadreRow()], // 1 WJA (SELECTED)
+        blockedRows: [makeBlockedRow()],   // 1 bloqueado (vaga 800 — caso Júlia)
+      });
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const { encuadres } = (res.json as jest.Mock).mock.calls[0][0].data;
+      // WJA ∪ blocked = 2 engajamentos (o bloqueado deixou de ser filtrado).
+      expect(encuadres).toHaveLength(2);
+
+      const blocked = encuadres.find((e: { id: string }) => e.id === 'blk-1');
+      expect(blocked).toBeDefined();
+      expect(blocked.isBlocked).toBe(true);
+      expect(blocked.kanbanStage).toBe('BLOQUEADO');
+      expect(blocked.caseNumber).toBe(800);
+      expect(blocked.patientName).toBe('Julia Blocked');
+      expect(blocked.blockedReason).toBe('registration_incomplete');
+      expect(blocked.missingFields).toEqual(['criminal_record', 'phone']);
+      expect(blocked.attemptCount).toBe(2);
+      // Sem dados de encuadre (nunca virou WJA): sem entrevista/recrutador.
+      expect(blocked.resultado).toBeNull();
+      expect(blocked.recruiterName).toBeNull();
+    });
+
+    it('ordena encuadres (WJA ∪ blocked) por data desc — bloqueado mais novo vem primeiro', async () => {
+      setupFullMocks({
+        encuadreRows: [makeEncuadreRow()],          // 2025-03-01
+        blockedRows: [makeBlockedRow()],            // 2025-06-01 (mais novo)
+      });
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const { encuadres } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(encuadres[0].id).toBe('blk-1'); // bloqueado (jun) antes do WJA (mar)
+      expect(encuadres[1].id).toBe('enc-1');
     });
   });
 
@@ -2023,30 +2089,49 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
 
   // ── state (province) ───────────────────────────────────────────────────────
 
-  it('state=Buenos Aires adiciona EXISTS em worker_service_areas.state', async () => {
+  it('state=Buenos Aires adiciona EXISTS normalizado em worker_service_areas.state', async () => {
     setupCount();
     const [req, res] = mockReqRes({}, { state: 'Buenos Aires' } as any);
     await controller.listWorkers(req, res);
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('worker_service_areas');
-    expect(sql).toContain('wsa.state ILIKE');
+    expect(sql).toContain('lower(btrim(wsa.state)) = ANY(');
     const params = mockQuery.mock.calls[0][1] as unknown[];
-    expect(params).toContain('Buenos Aires');
+    // normalized to lowercased equality key(s)
+    expect(params).toContainEqual(['buenos aires']);
   });
 
   // ── city ────────────────────────────────────────────────────────────────────
 
-  it('city=Palermo adiciona EXISTS em worker_service_areas.city', async () => {
+  it('city=Palermo adiciona EXISTS normalizado em worker_service_areas.city', async () => {
     setupCount();
     const [req, res] = mockReqRes({}, { city: 'Palermo' } as any);
     await controller.listWorkers(req, res);
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('worker_service_areas');
-    expect(sql).toContain('wsa.city ILIKE');
+    expect(sql).toContain('lower(btrim(wsa.city)) = ANY(');
     const params = mockQuery.mock.calls[0][1] as unknown[];
-    expect(params).toContain('Palermo');
+    expect(params).toContainEqual(['palermo']);
+  });
+
+  // ── city=CABA (AC): matches the free-text work_zone/interest_zone signal ─────
+
+  it('city=CABA matcheia work_zone/interest_zone via ILIKE além de city (alias)', async () => {
+    setupCount();
+    const [req, res] = mockReqRes({}, { city: 'Ciudad Autónoma de Buenos Aires' } as any);
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('lower(btrim(wsa.city)) = ANY(');
+    expect(sql).toContain('lower(btrim(wsa.work_zone)) = ANY(');
+    expect(sql).toContain('wsa.work_zone ILIKE ANY(');
+    expect(sql).toContain('wsa.interest_zone ILIKE ANY(');
+    const params = mockQuery.mock.calls[0][1] as unknown[];
+    // alias key set includes 'caba'; contains patterns wrapped in %...%
+    expect(params.some((p) => Array.isArray(p) && (p as string[]).includes('caba'))).toBe(true);
+    expect(params.some((p) => Array.isArray(p) && (p as string[]).includes('%caba%'))).toBe(true);
   });
 
   // ── days ────────────────────────────────────────────────────────────────────
@@ -2129,7 +2214,7 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
 
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('w.profession = ANY(');
-    expect(sql).toContain('wsa.state ILIKE');
+    expect(sql).toContain('lower(btrim(wsa.state)) = ANY(');
     expect(sql).toContain('worker_availability');
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -2149,6 +2234,7 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
       mockQuery
         .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }, { state: 'Córdoba' }] })
         .mockResolvedValueOnce({ rows: [{ city: 'Palermo' }, { city: 'Recoleta' }] })
+        .mockResolvedValueOnce({ rows: [] }) // work_zone
         .mockResolvedValueOnce({ rows: [{ val: 'TEA' }, { val: 'DOWN' }] })
         .mockResolvedValueOnce({ rows: [{ val: 'home' }, { val: 'institutional' }] });
 
@@ -2164,8 +2250,46 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
       expect(body.data.preferredTypes).toEqual(['home', 'institutional']);
     });
 
+    it('remove códigos CPA lixo (AEJ/BSI) do dropdown de localidades', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }] })
+        .mockResolvedValueOnce({
+          rows: [{ city: 'Buenos Aires' }, { city: 'AEJ' }, { city: 'BSI' }, { city: 'Lanús' }],
+        })
+        .mockResolvedValueOnce({ rows: [] }) // work_zone
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.cities).toEqual(['Buenos Aires', 'Lanús']);
+      expect(body.data.cities).not.toContain('AEJ');
+      expect(body.data.cities).not.toContain('BSI');
+    });
+
+    it('faz surgir CABA no dropdown a partir de work_zone (não está em city/state)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ state: 'Buenos Aires' }] })
+        .mockResolvedValueOnce({ rows: [{ city: 'Lanús' }] })
+        .mockResolvedValueOnce({ rows: [{ work_zone: 'CABA' }, { work_zone: 'Paternal, Villa Crespo' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({});
+      await auxController.getFilterOptions(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.cities).toContain('Ciudad Autónoma de Buenos Aires');
+      expect(body.data.states).toContain('Ciudad Autónoma de Buenos Aires');
+      // free-text zone list is NOT surfaced as a locality
+      expect(body.data.cities).not.toContain('Paternal, Villa Crespo');
+    });
+
     it('retorna listas vazias quando não há dados', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })

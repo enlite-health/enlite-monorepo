@@ -3,28 +3,19 @@ import { Pool } from 'pg';
 import twilio from 'twilio';
 import { BookSlotFromWhatsAppUseCase } from '../../application/BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
+import { TriggerWorkerHandoverUseCase } from '../../application/TriggerWorkerHandoverUseCase';
 import { logger } from '@shared/logging';
+import {
+  INTERVIEW_INVITE_SLUG,
+  LEGACY_INVITE_SLUG,
+  REMINDER_CONFIRM_SLUG,
+  REMINDER_RESCHEDULE_SLUG,
+  INTERVIEW_SLUGS,
+} from '../../domain/interviewFlowTemplateSlugs';
 
 const OPT_OUT_KEYWORDS = new Set([
   'parar', 'stop', 'cancelar', 'desuscribir', 'desuscribirme',
   'no quiero', 'basta', 'unsubscribe', 'optout', 'opt-out',
-]);
-
-/** Templates do fluxo qualified interview que este controller sabe rotear */
-const INTERVIEW_INVITE_SLUG = 'qualified_worker_request';
-const LEGACY_INVITE_SLUG = 'qualified_worker';
-const SLOT_CONFIRMED_SLUG = 'qualified_worker_response';
-const REMINDER_CONFIRM_SLUG = 'qualified_reminder_confirm';
-const REMINDER_RESCHEDULE_SLUG = 'qualified_reminder_reschedule';
-const REMINDER_REASON_SLUG = 'qualified_reminder_reason';
-
-const INTERVIEW_SLUGS = new Set([
-  INTERVIEW_INVITE_SLUG,
-  LEGACY_INVITE_SLUG,
-  SLOT_CONFIRMED_SLUG,
-  REMINDER_CONFIRM_SLUG,
-  REMINDER_RESCHEDULE_SLUG,
-  REMINDER_REASON_SLUG,
 ]);
 
 /**
@@ -48,6 +39,12 @@ export class InboundWhatsAppController {
     private readonly db: Pool,
     private readonly bookSlotUseCase: BookSlotFromWhatsAppUseCase,
     private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
+    /**
+     * Opcional: quando ausente OU PERISKOPE_HANDOVER_ENABLED != 'true', o
+     * comportamento de texto-livre não-roteável fica idêntico ao atual
+     * (apenas log "Message ignored") — flag default OFF, sem impacto em prod.
+     */
+    private readonly triggerHandoverUseCase?: TriggerWorkerHandoverUseCase,
   ) {}
 
   async handleInbound(req: Request, res: Response): Promise<void> {
@@ -87,6 +84,9 @@ export class InboundWhatsAppController {
           res.status(200).send();
           return;
         }
+        // Texto livre não-roteável: gatilho de handover Twilio → Periskope
+        // (item de fundação do roteamento por worker). Flag default OFF.
+        await this.maybeTriggerHandover(from);
       }
       console.info('[InboundWhatsApp] Message ignored (no ButtonPayload)', { from });
       res.status(200).send();
@@ -215,6 +215,39 @@ export class InboundWhatsAppController {
     } catch (err) {
       console.warn('[InboundWhatsApp] tryHandleTextResponse error:', err);
       return false;
+    }
+  }
+
+  /**
+   * Gatilho de handover Twilio → Periskope: quando o texto livre não foi
+   * capturado por nenhum fluxo conhecido (tryHandleTextResponse retornou
+   * false), este é o 1º texto livre não-roteável do worker no canal Twilio.
+   *
+   * No-op (sem query, sem side-effect) quando PERISKOPE_HANDOVER_ENABLED !=
+   * 'true' ou quando triggerHandoverUseCase não foi injetado — flag default
+   * OFF preserva o comportamento atual de produção sem as envs novas.
+   */
+  private async maybeTriggerHandover(from: string): Promise<void> {
+    if (process.env.PERISKOPE_HANDOVER_ENABLED !== 'true' || !this.triggerHandoverUseCase) {
+      return;
+    }
+
+    const phone = from.replace('whatsapp:', '');
+
+    try {
+      const workerRes = await this.db.query<{ id: string; messaging_channel: string }>(
+        `SELECT id, messaging_channel FROM workers WHERE phone = $1 LIMIT 1`,
+        [phone],
+      );
+      const worker = workerRes.rows[0];
+      if (!worker || worker.messaging_channel !== 'twilio') return;
+
+      const result = await this.triggerHandoverUseCase.execute(worker.id, phone);
+      if (result.isFailure) {
+        console.warn('[InboundWhatsApp] Handover failed:', result.error);
+      }
+    } catch (err) {
+      console.warn('[InboundWhatsApp] maybeTriggerHandover error:', err);
     }
   }
 

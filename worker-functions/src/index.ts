@@ -157,7 +157,8 @@ const adminDedupController = new AdminDedupController();
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
 const chatwootClient = buildChatwootClient();
-const messagingService = buildMessagingService(templateRepo, chatwootClient);
+const { messagingService, twilioMessagingService, periskopeMessagingService } =
+  buildMessagingService(templateRepo, chatwootClient);
 const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection.getInstance().getPool());
 
 // ========== Public Routes ==========
@@ -390,6 +391,6 @@ if (process.env.MCP_ENABLED === 'true') {
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).
-startServer(app, useCerbos);
+startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService });
 
 export { app };

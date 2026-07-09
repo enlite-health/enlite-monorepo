@@ -5,7 +5,9 @@ import { test, expect, Page } from '@playwright/test';
  * backend+banco reais. Um único teste contínuo (página única → estrutura correta,
  * sem re-login frágil entre passos).
  */
-const BASE = 'https://enlite-frontend-vtf37eainq-tl.a.run.app';
+test.use({ actionTimeout: 15_000 });
+
+const BASE = process.env.STG_BASE_URL ?? 'https://enlite-frontend-vtf37eainq-tl.a.run.app';
 const API = 'https://worker-functions-vtf37eainq-tl.a.run.app';
 const KEY = process.env.STG_FB_KEY ?? '';
 const PASS = 'StageClean@123';
@@ -58,7 +60,7 @@ async function multi(page: Page, testId: string): Promise<void> {
 }
 
 test('jornada worker completa via UI real → REGISTERED → wa.me', async ({ page, context }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(Number(process.env.STG_TEST_TIMEOUT ?? 300_000));
   await context.addInitScript(GOOGLE_FAKE);
   const email = `e2e.clean.${Date.now()}@enlite.test`;
   const { idToken } = await signUp(email);

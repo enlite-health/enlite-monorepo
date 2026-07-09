@@ -1,4 +1,8 @@
-import { deriveKanbanColumn, KANBAN_COLUMN_BLOCKED } from '../kanbanColumn';
+import {
+  deriveKanbanColumn,
+  isMatchedNotInvited,
+  KANBAN_COLUMN_BLOCKED,
+} from '../kanbanColumn';
 
 /**
  * Single source of truth for the WJA stage → Kanban column mapping.
@@ -43,5 +47,36 @@ describe('deriveKanbanColumn', () => {
 
   it('exposes the BLOQUEADO constant for blocked-attempt rows (no WJA stage)', () => {
     expect(KANBAN_COLUMN_BLOCKED).toBe('BLOQUEADO');
+  });
+});
+
+/**
+ * isMatchedNotInvited — a WJA persisted by the matchmaking algorithm
+ * (source='system', stage='INVITED') that was never actually messaged
+ * (messaged_at IS NULL) is a *match candidate*, NOT an invitation. Including it
+ * in the "Invitados" column inflates the metric (ClickUp 86ajb48v1 AC2:
+ * "colocar todos está gerando uma métrica falsa"). This predicate flags those
+ * rows so the funnel can skip them.
+ */
+describe('isMatchedNotInvited', () => {
+  it('is true for a system match that was never messaged', () => {
+    expect(isMatchedNotInvited('INVITED', 'system', null)).toBe(true);
+  });
+
+  it('is false once the system candidate has been messaged (real invite)', () => {
+    expect(isMatchedNotInvited('INVITED', 'system', '2026-07-09T10:00:00Z')).toBe(false);
+  });
+
+  it('is false for manual postulations (source=manual) even without messaged_at', () => {
+    expect(isMatchedNotInvited('INVITED', 'manual', null)).toBe(false);
+  });
+
+  it('is false for talentum-sourced rows', () => {
+    expect(isMatchedNotInvited('INVITED', 'talentum', null)).toBe(false);
+  });
+
+  it('is false once the system candidate advanced past INVITED', () => {
+    expect(isMatchedNotInvited('PRE_SCREENING', 'system', null)).toBe(false);
+    expect(isMatchedNotInvited('SELECTED', 'system', null)).toBe(false);
   });
 });

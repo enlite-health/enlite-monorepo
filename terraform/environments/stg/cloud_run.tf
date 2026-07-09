@@ -11,8 +11,7 @@ data "google_project" "this" {
 }
 
 locals {
-  cloud_sql_ar  = "enlite-stg:southamerica-west1:enlite-ar-db"
-  cloud_sql_n8n = "enlite-stg:southamerica-west1:enlite-n8n-db-ar"
+  cloud_sql_ar = "enlite-stg:southamerica-west1:enlite-ar-db"
 
   # Placeholder Google "hello" image até o CI/CD fazer push da primeira imagem real
   placeholder_image = "us-docker.pkg.dev/cloudrun/container/hello"
@@ -68,22 +67,4 @@ module "cloud_run_worker_functions_mcp" {
   cloud_sql_instances = [local.cloud_sql_ar]
 
   depends_on = [module.sql_enlite_ar_db]
-}
-
-module "cloud_run_enlite_n8n" {
-  source                = "../../modules/cloud-run"
-  project_id            = var.project_id
-  name                  = "enlite-n8n"
-  location              = "southamerica-west1"
-  image                 = local.placeholder_image
-  service_account_email = local.default_compute_sa
-  cpu_limit             = "1"
-  memory_limit          = "4Gi"
-  max_scale             = 3
-  min_scale             = 1
-  cpu_throttling        = false
-
-  cloud_sql_instances = [local.cloud_sql_n8n]
-
-  depends_on = [module.sql_enlite_n8n_db_ar]
 }
