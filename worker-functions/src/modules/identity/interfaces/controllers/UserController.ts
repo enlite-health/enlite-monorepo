@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { DeleteUserUseCase } from '../../application/DeleteUserUseCase';
 import { UserRepository } from '../../infrastructure/UserRepository';
 import { GoogleIdentityService } from '../../infrastructure/GoogleIdentityService';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 
 /**
  * UserController - Handles user management operations
@@ -18,12 +17,10 @@ export class UserController {
   constructor() {
     const userRepository = new UserRepository();
     const googleIdentityService = new GoogleIdentityService();
-    const eventDispatcher = new EventDispatcher();
 
     this.deleteUserUseCase = new DeleteUserUseCase(
       userRepository,
-      googleIdentityService,
-      eventDispatcher
+      googleIdentityService
     );
   }
 

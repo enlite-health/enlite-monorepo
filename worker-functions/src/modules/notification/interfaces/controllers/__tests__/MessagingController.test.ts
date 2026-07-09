@@ -224,6 +224,54 @@ describe('MessagingController.sendVacancyMatch', () => {
     expect(updateCall[1]).toEqual(['w-1', 'job-1']);
   });
 
+  it('worker com messaging_channel=periskope → sendWhatsApp recebe channel=periskope', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321', messaging_channel: 'periskope' }],
+      })
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
+      .mockResolvedValueOnce({ rows: [] }); // INSERT log
+
+    const req = makeReq({ workerId: 'w-periskope', jobPostingId: 'job-1' });
+    const res = mockRes();
+
+    await controller.sendVacancyMatch(req, res);
+
+    expect(mockMessaging.sendWhatsApp).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'periskope' }),
+    );
+  });
+
+  it('worker sem messaging_channel na row (default) → sendWhatsApp recebe channel=twilio', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
+      .mockResolvedValueOnce({ rows: [] }); // INSERT log
+
+    const req = makeReq({ workerId: 'w-1', jobPostingId: 'job-1' });
+    const res = mockRes();
+
+    await controller.sendVacancyMatch(req, res);
+
+    expect(mockMessaging.sendWhatsApp).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'twilio' }),
+    );
+  });
+
+  it('SELECT de sendVacancyMatch inclui messaging_channel', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const req = makeReq({ workerId: 'w-1', jobPostingId: 'job-1' });
+    const res = mockRes();
+    await controller.sendVacancyMatch(req, res);
+
+    const selectSql = mockQuery.mock.calls[0][0] as string;
+    expect(selectSql).toContain('messaging_channel');
+  });
+
   it('log inserido em whatsapp_bulk_dispatch_logs com source=individual', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })

@@ -47,7 +47,8 @@ const INCOMPLETE_WORKERS_QUERY = `
   )
   SELECT DISTINCT
     w.id,
-    w.phone
+    w.phone,
+    w.messaging_channel
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
   LEFT JOIN worker_documents wd ON wd.worker_id = w.id
@@ -132,9 +133,9 @@ export class BulkDispatchIncompleteWorkersUseCase {
     batchLogger.info('BulkDispatch iniciado');
 
     // 1. Busca workers com cadastro incompleto (já exclui quem recebeu hoje via NOT EXISTS)
-    let rows: Array<{ id: string; phone: string }>;
+    let rows: Array<{ id: string; phone: string; messaging_channel: string | null }>;
     try {
-      const queryResult = await this.db.query<{ id: string; phone: string }>(
+      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null }>(
         INCOMPLETE_WORKERS_QUERY,
       );
       rows = queryResult.rows;
@@ -204,10 +205,12 @@ export class BulkDispatchIncompleteWorkersUseCase {
         continue;
       }
 
-      // 2b. Enviar WhatsApp
+      // 2b. Enviar WhatsApp — channel resolvido pelo messaging_channel do worker
+      // (zero query extra: já veio na eligibility query acima).
       const sendResult = await this.messaging.sendWhatsApp({
         to: row.phone,
         templateSlug: TEMPLATE_SLUG,
+        channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
       });
 
       const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';

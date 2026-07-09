@@ -48,7 +48,8 @@ const TALENTUM_INCOMPLETE_QUERY = `
   )
   SELECT DISTINCT
     w.id AS worker_id,
-    w.phone AS phone
+    w.phone AS phone,
+    w.messaging_channel AS messaging_channel
   FROM workers w
   INNER JOIN worker_job_applications wja
     ON wja.worker_id = w.id
@@ -100,7 +101,9 @@ export class BulkDispatchTalentumIncompleteUseCase {
 
     batchLogger.info({ msg: 'BulkDispatchTalentum iniciado' });
 
-    const rows = await this.db.query<{ worker_id: string; phone: string }>(TALENTUM_INCOMPLETE_QUERY);
+    const rows = await this.db.query<{ worker_id: string; phone: string; messaging_channel: string | null }>(
+      TALENTUM_INCOMPLETE_QUERY,
+    );
 
     batchLogger.info({ msg: 'Workers elegíveis para reminder Talentum', total: rows.rows.length });
 
@@ -142,10 +145,13 @@ export class BulkDispatchTalentumIncompleteUseCase {
           worker_name: workerNameToken,
         });
 
+        // channel resolvido pelo messaging_channel do worker — zero query extra
+        // (já veio na eligibility query TALENTUM_INCOMPLETE_QUERY acima).
         const sendResult = await this.messaging.sendWhatsApp({
           to: row.phone,
           templateSlug: TEMPLATE_SLUG,
           variables: resolvedVars,
+          channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
         });
 
         const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';

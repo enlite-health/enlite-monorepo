@@ -99,7 +99,6 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
             EMAIL_FROM=enlite@enlite.health
-            N8N_WEBHOOK_URL=https://n8n.enlite.health/webhook/worker-events
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}

@@ -11,7 +11,6 @@ import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 import { WORKER_ERROR_CODES } from '../../domain/workerErrors';
 import { PubSubClient } from '@shared/events/PubSubClient';
@@ -39,11 +38,10 @@ export class WorkerControllerV2 {
     const quizRepository = new QuizResponseRepository();
     const serviceAreaRepository = new ServiceAreaRepository();
     const availabilityRepository = new AvailabilityRepository();
-    const eventDispatcher = new EventDispatcher();
 
     const twilioVerifyService = new TwilioVerifyService();
-    this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, eventDispatcher, twilioVerifyService);
-    this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository, eventDispatcher);
+    this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, twilioVerifyService);
+    this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository);
     this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository, undefined, pubsub);
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
     this.saveAvailabilityUseCase = new SaveAvailabilityUseCase(workerRepository, availabilityRepository);

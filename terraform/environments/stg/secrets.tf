@@ -5,9 +5,6 @@ locals {
   automatic_secrets = [
     "groq-api-key",
     "internal-token-secret",
-    "n8n-basic-auth-password",
-    "n8n-db-password",
-    "n8n-encryption-key",
     "sendgrid-api-key",
     "short-io-api-key",
     "short-io-domain",

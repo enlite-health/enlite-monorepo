@@ -1,5 +1,4 @@
 import { Result } from '@shared/utils/Result';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { GoogleIdentityService } from '../infrastructure/GoogleIdentityService';
 import { UserRepository } from '../infrastructure/UserRepository';
 
@@ -20,8 +19,7 @@ export interface DeleteUserDTO {
 export class DeleteUserUseCase {
   constructor(
     private userRepository: UserRepository,
-    private googleIdentityService: GoogleIdentityService,
-    private eventDispatcher: EventDispatcher
+    private googleIdentityService: GoogleIdentityService
   ) {}
 
   async execute(data: DeleteUserDTO): Promise<Result<void>> {
@@ -52,11 +50,6 @@ export class DeleteUserUseCase {
           console.error('Failed to delete user record from database');
           return Result.fail<void>('Failed to delete user data');
         }
-
-        // Step 4: Notify about deletion
-        await this.eventDispatcher.notifyWorkerDeleted(data.authUid, {
-          deletedAt: new Date().toISOString(),
-        });
       }
 
       return Result.ok<void>();

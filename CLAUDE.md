@@ -11,7 +11,6 @@ enlite-monorepo/
   enlite-frontend/   → Painel administrativo da Enlite (React + Vite + TypeScript + Tailwind)
   worker-functions/  → Backend de recrutamento e operação (Node.js + Express + TypeScript + PostgreSQL + Firebase)
   terraform/         → IaC (apenas stg — prd ainda manual via gcloud)
-  n8n-workflows/     → Workflows do n8n (chatwoot triage etc.)
   docs/              → Sprints, roadmaps, runbooks, FOLLOWUPS (TDs)
 ```
 

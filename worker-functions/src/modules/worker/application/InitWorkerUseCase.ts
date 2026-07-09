@@ -2,7 +2,6 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { CreateWorkerDTO, Worker } from '../domain/Worker';
 import { InitWorkerOutput } from '../domain/InitWorkerOutput';
 import { Result } from '@shared/utils/Result';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { logger } from '@shared/logging';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone } from '@shared/utils/phoneMask';
@@ -32,7 +31,6 @@ function isImportedWorker(authUid: string | null | undefined): boolean {
 export class InitWorkerUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
-    private eventDispatcher: EventDispatcher,
     private twilioVerify?: ITwilioVerifyService,
   ) {}
 
@@ -155,10 +153,6 @@ export class InitWorkerUseCase {
     }
 
     const worker: Worker = createResult.getValue();
-
-    await this.eventDispatcher.notifyWorkerCreated(worker.id, {
-      email: worker.email,
-    });
 
     return Result.ok<InitWorkerOutput>({ status: 'ok', worker });
   }
