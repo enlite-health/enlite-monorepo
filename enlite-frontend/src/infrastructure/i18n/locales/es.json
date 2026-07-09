@@ -530,12 +530,65 @@
     "noAdditional": "No hay documentos adicionales"
   },
   "admin": {
+    "managementDashboard": {
+      "title": "Gestión a la Vista",
+      "errorLoading": "No se pudieron cargar las métricas",
+      "retry": "Reintentar",
+      "sections": {
+        "bigNumbers": "Números clave",
+        "prioridades": "Prioridades de contacto",
+        "funnel": "Totalización del embudo",
+        "cadastros": "Registros de prestadores"
+      },
+      "bigNumbers": {
+        "equiposArmados": "Equipos armados",
+        "equiposArmadosSub": "Casos con equipo operando (activos)",
+        "equiposPorArmar": "Equipos por armar",
+        "equiposPorArmarSub": "Vacantes abiertas sin equipo",
+        "pacientesActivos": "Pacientes activos",
+        "vacantesAbiertas": "Vacantes abiertas",
+        "vacantesPausadas": "Vacantes pausadas",
+        "ubicaciones": "Ubicaciones",
+        "horas": "Horas totales / a cubrir"
+      },
+      "prioridades": {
+        "esperandoAgendamiento": "Registros completos esperando agenda",
+        "esperandoAgendamientoSub": "Calificados por Talentum, sin encuadre agendado",
+        "bloqueados": "Profesionales bloqueados",
+        "bloqueadosSub": "Registro incompleto"
+      },
+      "funnel": {
+        "agendadosSemana": "Encuadres agendados esta semana",
+        "agendadosSemanaSub": "Semana en curso",
+        "stage": {
+          "invitados": "Invitados",
+          "bloqueados": "Bloqueados",
+          "preScreening": "Pre Screening",
+          "completos": "Completos",
+          "agendados": "Agendados",
+          "seleccionados": "Seleccionados",
+          "rechazados": "Rechazados"
+        }
+      },
+      "cadastros": {
+        "leads": "Leads",
+        "completos": "Completos",
+        "alocados": "Asignados",
+        "incompletos": "Incompletos",
+        "nuevosMes": "Nuevos completos (mes)",
+        "nuevosMesSub": "Registros completados este mes"
+      },
+      "gap": {
+        "pending": "Sin fuente de datos disponible todavía"
+      }
+    },
     "errorBoundary": {
       "title": "Error al cargar la página de admin",
       "description": "Ocurrió un error inesperado. Detalles técnicos:",
       "reload": "Recargar página"
     },
     "nav": {
+      "dashboard": "Gestión a la Vista",
       "users": "Usuarios",
       "vacancies": "Vacantes",
       "workers": "Prestadores",

@@ -19,6 +19,7 @@ import { ClickUpCaseRepository } from '../../../../infrastructure/repositories/C
 import { EncuadreRepository } from '../../infrastructure/EncuadreRepository';
 import { WorkerApplicationRepository } from '../../infrastructure/WorkerApplicationRepository';
 import { JobPostingARRepository } from '../../infrastructure/JobPostingARRepository';
+import { GetManagementDashboardUseCase } from '../../application/GetManagementDashboardUseCase';
 
 export class AnalyticsDashboardController {
   protected db: Pool;
@@ -81,6 +82,21 @@ export class AnalyticsDashboardController {
           cantidadEncuadres:          encuadresCount,
         },
       });
+    } catch (err) {
+      res.status(500).json({ success: false, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * GET /analytics/dashboard/management
+   * "Dashboard para Gestão à Vista" (ClickUp 86ajb4qnw): big numbers operacionais,
+   * prioridades de contato, totalização do funil e cadastros. Read-only, sem PII.
+   */
+  async getManagementMetrics(_req: Request, res: Response): Promise<void> {
+    try {
+      const useCase = new GetManagementDashboardUseCase(this.db);
+      const data = await useCase.execute();
+      res.json({ success: true, data });
     } catch (err) {
       res.status(500).json({ success: false, error: (err as Error).message });
     }

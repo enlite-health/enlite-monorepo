@@ -35,7 +35,7 @@ export default defineConfig({
     {
       name: 'chromium-admin',
       use: { ...devices['Desktop Chrome'] },
-      testMatch: ['**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts', '**/kanban-column-collapse.e2e.ts'],
+      testMatch: ['**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts', '**/kanban-column-collapse.e2e.ts', '**/management-dashboard-visual.e2e.ts'],
     },
     {
       name: 'firefox',
