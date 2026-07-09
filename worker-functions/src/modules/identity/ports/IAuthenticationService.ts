@@ -4,7 +4,7 @@ import { AuthContext, Credentials, Principal } from '../domain/Auth';
  * Port for Authentication Service
  * 
  * Handles multiple authentication methods:
- * - API Keys (for n8n, external SaaS)
+ * - API Keys (for external SaaS)
  * - JWT tokens (for React frontend users)
  * - mTLS (for service-to-service)
  * - Google Identity Platform tokens
@@ -24,7 +24,7 @@ export interface IAuthenticationService {
   validateCredentials(credentials: Credentials): Promise<boolean>;
 
   /**
-   * Generate API key for external services (n8n, SaaS partners)
+   * Generate API key for external services (SaaS partners)
    */
   generateApiKey(
     serviceName: string,

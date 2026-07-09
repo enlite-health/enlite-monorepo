@@ -249,7 +249,7 @@ export class AuthMiddleware {
   }
 
   /**
-   * Híbrido: aceita API key de serviço (triage-service, n8n) OU staff Firebase.
+   * Híbrido: aceita API key de serviço (triage-service) OU staff Firebase.
    * API key é verificada PRIMEIRO (lookup O(1) sem I/O).
    * Firebase só é chamado se a API key falhar.
    *

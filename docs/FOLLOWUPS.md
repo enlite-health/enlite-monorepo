@@ -1771,3 +1771,24 @@ A regra "tela X é admin-only" vive hoje em cópias não coordenadas: guard in-p
 **Como fechar:** guard no nível de ROTA — prop `requiredRole` no `AdminProtectedRoute` (App.tsx já envolve as 3 rotas; é o choke point natural) OU um `useIsAdmin()`/`RequireAdmin` compartilhado; remover as cópias in-page no mesmo PR. Considerar junto com a feature de permissões ABAC (em discovery) — se ABAC chegar antes, resolver lá.
 
 **Gatilho:** próxima página admin-only nova, ou início da implementação ABAC.
+
+### TD-062 — Webhook Talentum aceita QUALQUER Google ID Token (sem audience, sem allowlist)
+
+- **Status:** aberto, **segurança**.
+- **Descoberto em:** 2026-07-07, durante a remoção do n8n.
+- **Dono provável:** backend.
+- **Bloqueador?** Não bloqueia feature, mas é exposição real: qualquer pessoa com conta GCP consegue emitir um ID token válido do Google e postar prescreenings falsos (transições QUALIFIED forjadas).
+
+**O que é:**
+
+`TalentumWebhookController.verifyGoogleToken` valida o token só contra as chaves públicas do Google: `TALENTUM_WEBHOOK_AUDIENCE` **não está configurado em prod** (o check de audience é pulado com warning) e **não há allowlist de email** do emissor. Na prática o endpoint é público para qualquer identidade Google válida.
+
+Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos comentários como emissora) teve **0 eventos de autenticação em 7 dias** (métrica `iam.googleapis.com/service_account/authn_events_count`) enquanto o webhook recebia chamadas diárias com 200 — o emissor real é outro e é desconhecido. A SA n8n foi deletada nos dois projetos.
+
+**Como fechar:**
+1. Já plantado: `verifyGoogleToken` loga `payload.email` a cada chamada válida (este PR). Observar os logs por alguns dias para identificar o emissor real.
+2. Configurar `TALENTUM_WEBHOOK_AUDIENCE` em prod/stg com a URL do serviço.
+3. Adicionar allowlist de emails de emissor (env `TALENTUM_ALLOWED_ISSUERS`) e rejeitar o resto.
+4. Se o emissor identificado for uma key solta da era n8n, rotacionar para SA dedicada `talentum-webhook-identity`.
+
+**Gatilho:** logs do item 1 coletados (≥1 semana de tráfego) ou qualquer mudança na integração Talentum.
