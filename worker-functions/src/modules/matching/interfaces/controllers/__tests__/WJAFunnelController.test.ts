@@ -113,7 +113,8 @@ describe('WJAFunnelController', () => {
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: null }),
-          makeRow({ id: 'e2', funnel_stage: 'INVITED', source: 'system' }),
+          // system+INVITED counts only when actually messaged (real invite) — AC2 86ajb48v1
+          makeRow({ id: 'e2', funnel_stage: 'INVITED', source: 'system', messaged_at: '2026-07-09T10:00:00Z' }),
           makeRow({ id: 'e-manual', funnel_stage: 'INVITED', source: 'manual' }),
           makeRow({ id: 'e3', funnel_stage: 'PRE_SCREENING', talentum_status: 'PRE_SCREENING' }),
           makeRow({ id: 'e4', funnel_stage: 'IN_PROGRESS', talentum_status: 'IN_PROGRESS' }),
@@ -175,6 +176,33 @@ describe('WJAFunnelController', () => {
       // REJECTED
       expect(stages.REJECTED).toHaveLength(1);
       expect(stages.REJECTED[0].id).toBe('e10');
+    });
+
+    it('AC2 (86ajb48v1): system match never messaged NÃO conta em Invitados (métrica falsa)', async () => {
+      // Rodar o match persiste TODOS os top-N como INVITED/system. Só um envio
+      // real (messaged_at) vira convite. Aqui: 3 matches system, só 1 enviado.
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          makeRow({ id: 'm1', funnel_stage: 'INVITED', source: 'system', messaged_at: null }),
+          makeRow({ id: 'm2', funnel_stage: 'INVITED', source: 'system', messaged_at: null }),
+          makeRow({ id: 'sent', funnel_stage: 'INVITED', source: 'system', messaged_at: '2026-07-09T10:00:00Z' }),
+          makeRow({ id: 'manual', funnel_stage: 'INVITED', source: 'manual', messaged_at: null }),
+        ],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-002' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { data } = (res.json as jest.Mock).mock.calls[0][0];
+      const invitedIds = (data.stages.INVITED as Array<{ id: string }>).map(e => e.id);
+
+      // Só o realmente enviado aparece em Invitados — não os 2 match candidates.
+      expect(data.stages.INVITED).toHaveLength(1);
+      expect(invitedIds).toEqual(['sent']);
+      // manual continua indo pra INICIADO (não é system, não é filtrado)
+      expect((data.stages.INICIADO as unknown[]).length).toBe(1);
+      // totalEncuadres reflete só os cards visíveis (exclui os 2 match candidates)
+      expect(data.totalEncuadres).toBe(2);
     });
 
     it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true, workerPhone e contactNotesCount (migration 235)', async () => {

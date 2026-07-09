@@ -2474,6 +2474,11 @@
       "emptyBucket": "Sin candidatos en este rango.",
       "candidatesCount_one": "{{count}} candidato",
       "candidatesCount_other": "{{count}} candidatos",
+      "selectAllInGroup": "Seleccionar todos ({{group}})",
+      "totals": {
+        "available": "Disponibles",
+        "recruited": "Reclutados"
+      },
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_other": "{{count}} seleccionados",
       "inviteSelected": "Invitar seleccionados ({{count}})",
