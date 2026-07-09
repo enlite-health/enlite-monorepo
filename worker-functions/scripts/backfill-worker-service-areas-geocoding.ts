@@ -1,18 +1,23 @@
 /**
  * backfill-worker-service-areas-geocoding.ts
  *
- * Backfill: geocodifica `worker_service_areas` que ainda nao tem coords reais
- * (legacy ClickUp imports + workers cujo geocoding falhou no fluxo de cadastro).
- * Idempotente — so toca linhas com lat/lng NULL ou sentinela (0, 0) da migration 159.
+ * Backfill de geocodificação de `worker_service_areas`. Preenche, de forma
+ * IDEMPOTENTE e sem sobrescrever dado bom:
+ *   - latitude/longitude ausentes (NULL ou sentinela 0,0 da migration 159)
+ *   - state (provincia) vazio
+ *   - city (localidad) vazio OU lixo de CPA argentino ('AEJ','BSI'... → ^[A-Z]{2,4}$)
  *
- * A coluna `location` (geography) e GENERATED de latitude/longitude, entao
- * UPDATE em lat/lng atualiza `location` automaticamente.
+ * Fonte da query de geocoding, por linha:
+ *   1. address_line (quando preenchido — fluxo do app via Maps)
+ *   2. senão, a zona de texto livre: work_zone → interest_zone (imports legados
+ *      do ClickUp, que têm só "Flores"/"CABA"/"Avellaneda" e nunca city/state)
  *
- * Estrategia:
- *   - Busca wsa sem coords com address_line preenchido
- *   - Monta query: `address_line + neighborhood + city + state + country`
- *   - Usa `GeocodingService.geocodeBatch` (rate-limited, retry em OVER_QUERY_LIMIT)
- *   - UPDATE em lotes de 50 dentro de uma transacao
+ * `GeocodingService.geocode` devolve city (locality/admin_area_2) + state
+ * (admin_area_1) + lat/lng, e já descarta resultados imprecisos (isPreciseEnough),
+ * então zonas genéricas ("Oeste","Centro") não escrevem lixo — ficam como estão.
+ *
+ * Dedup por string de query (≈342 zonas distintas p/ ~475 linhas) → menos chamadas.
+ * A coluna `location` (geography) é GENERATED de lat/lng — atualiza sozinha.
  *
  * Uso:
  *   npx ts-node -r dotenv/config scripts/backfill-worker-service-areas-geocoding.ts --dry-run
@@ -32,7 +37,10 @@ interface ServiceAreaRow {
   neighborhood: string | null;
   city: string | null;
   state: string | null;
-  country: string | null;
+  work_zone: string | null;
+  interest_zone: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 const DATABASE_URL =
@@ -47,17 +55,34 @@ const BATCH_SIZE = 50;
 const RATE_LIMIT_MS = 200;
 const DEFAULT_COUNTRY = 'AR';
 
-function buildQuery(row: ServiceAreaRow): string | null {
+/** CPA argentino escrito errado em `city` por import legado (ex.: "AEJ","BSI"). */
+function isJunkCity(city: string | null): boolean {
+  return !!city && /^[A-Z]{2,4}$/.test(city.trim());
+}
+function isEmpty(v: string | null): boolean {
+  return !v || v.trim() === '';
+}
+function coordsMissing(row: ServiceAreaRow): boolean {
+  return (
+    row.latitude === null ||
+    row.longitude === null ||
+    (row.latitude === 0 && row.longitude === 0)
+  );
+}
+
+/** Constrói a string de geocoding: address_line quando houver; senão a zona livre. */
+export function buildQuery(row: ServiceAreaRow): string | null {
   const line = row.address_line?.trim();
-  if (!line) return null;
-
-  // Se address_line já parece formatado pelo Google Maps (já contém "Argentina"
-  // ou "Brasil"), usa direto — evita duplicar componentes e confundir o geocoder.
-  if (/argentina|brasil|brazil/i.test(line)) return line;
-
-  return [line, row.neighborhood?.trim(), row.city?.trim(), row.state?.trim(), 'Argentina']
-    .filter((p): p is string => !!p)
-    .join(', ');
+  if (line) {
+    // Se já parece formatado pelo Google (contém país), usa direto.
+    if (/argentina|brasil|brazil/i.test(line)) return line;
+    return [line, row.neighborhood?.trim(), row.city?.trim(), row.state?.trim(), 'Argentina']
+      .filter((p): p is string => !!p)
+      .join(', ');
+  }
+  const zone = row.work_zone?.trim() || row.interest_zone?.trim();
+  if (zone) return `${zone}, Argentina`;
+  return null;
 }
 
 async function main(): Promise<void> {
@@ -71,93 +96,109 @@ async function main(): Promise<void> {
 
   console.log(`[backfill-worker-geo] mode=${isDryRun ? 'DRY RUN' : 'EXECUTE'}${limit ? ` limit=${limit}` : ''}`);
 
+  // Candidatos: falta coords OU falta state OU city vazia/lixo — e há alguma
+  // fonte de geocoding (address_line OU zona livre).
   const { rows: candidates } = await pool.query<ServiceAreaRow>(
-    `SELECT id, worker_id, address_line, neighborhood, city, state, country
+    `SELECT id, worker_id, address_line, neighborhood, city, state,
+            work_zone, interest_zone, latitude, longitude
        FROM worker_service_areas
       WHERE deleted_at IS NULL
         AND (
-          latitude IS NULL
-          OR longitude IS NULL
-          OR (latitude = 0 AND longitude = 0)
+          latitude IS NULL OR longitude IS NULL OR (latitude = 0 AND longitude = 0)
+          OR state IS NULL OR btrim(state) = ''
+          OR city IS NULL OR btrim(city) = '' OR city ~ '^[A-Z]{2,4}$'
         )
-        AND NULLIF(TRIM(address_line), '') IS NOT NULL
+        AND (
+          NULLIF(btrim(address_line), '') IS NOT NULL
+          OR NULLIF(btrim(work_zone), '') IS NOT NULL
+          OR NULLIF(btrim(interest_zone), '') IS NOT NULL
+        )
       ORDER BY created_at ASC
       ${limit > 0 ? `LIMIT ${limit}` : ''}`,
   );
 
   console.log(`[backfill-worker-geo] candidates=${candidates.length}`);
 
-  let resolved = 0;
-  let unresolved = 0;
-  let skipped = 0;
-
-  for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
-    const batch = candidates.slice(i, i + BATCH_SIZE);
-    const queries: (string | null)[] = batch.map(buildQuery);
-
-    const indexedQueries = queries
-      .map((q, idx) => ({ q, idx }))
-      .filter((x): x is { q: string; idx: number } => x.q !== null);
-
-    skipped += batch.length - indexedQueries.length;
-    if (indexedQueries.length === 0) continue;
-
-    // Sempre AR — único mercado ativo. Coluna country tem ruído (default antigo 'BR').
-    const results = await geocoder.geocodeBatch(
-      indexedQueries.map((x) => x.q),
-      DEFAULT_COUNTRY,
-      RATE_LIMIT_MS,
-    );
-
-    if (isDryRun) {
-      results.forEach((res, k) => {
-        const original = batch[indexedQueries[k].idx];
-        if (res) {
-          console.log(`  ✓ wsa=${original.id} worker=${original.worker_id} → ${res.latitude}, ${res.longitude}`);
-          resolved++;
-        } else {
-          console.log(`  ✗ wsa=${original.id} worker=${original.worker_id} → NO RESULT for "${indexedQueries[k].q.slice(0, 80)}"`);
-          unresolved++;
-        }
-      });
-      continue;
+  // Dedup por query — geocoda cada string única uma vez.
+  const queryByRow = new Map<string, string>(); // rowId → query
+  const distinct = new Set<string>();
+  for (const row of candidates) {
+    const q = buildQuery(row);
+    if (q) {
+      queryByRow.set(row.id, q);
+      distinct.add(q);
     }
+  }
+  const uniqueQueries = [...distinct];
+  console.log(`[backfill-worker-geo] unique queries to geocode=${uniqueQueries.length} (skipped ${candidates.length - queryByRow.size} sem fonte)`);
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      for (let k = 0; k < results.length; k++) {
-        const res = results[k];
-        const original = batch[indexedQueries[k].idx];
-        if (!res) {
-          unresolved++;
-          continue;
-        }
-        await client.query(
-          'UPDATE worker_service_areas SET latitude = $1, longitude = $2, updated_at = now() WHERE id = $3',
-          [res.latitude, res.longitude, original.id],
-        );
-        resolved++;
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error(`[backfill-worker-geo] batch ${i / BATCH_SIZE} failed:`, err);
-      throw err;
-    } finally {
-      client.release();
-    }
-
-    console.log(
-      `[backfill-worker-geo] batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidates.length / BATCH_SIZE)} done — resolved=${resolved} unresolved=${unresolved} skipped=${skipped}`,
-    );
+  // Geocoda as strings únicas em lotes; monta mapa query → resultado.
+  const resultByQuery = new Map<string, { city: string | null; state: string | null; latitude: number; longitude: number } | null>();
+  for (let i = 0; i < uniqueQueries.length; i += BATCH_SIZE) {
+    const slice = uniqueQueries.slice(i, i + BATCH_SIZE);
+    const results = await geocoder.geocodeBatch(slice, DEFAULT_COUNTRY, RATE_LIMIT_MS);
+    slice.forEach((q, k) => resultByQuery.set(q, results[k] ?? null));
+    console.log(`[backfill-worker-geo] geocoded ${Math.min(i + BATCH_SIZE, uniqueQueries.length)}/${uniqueQueries.length}`);
   }
 
-  console.log(`[backfill-worker-geo] DONE — resolved=${resolved} unresolved=${unresolved} skipped=${skipped}`);
+  let updated = 0;
+  let unresolved = 0;
+  const client = await pool.connect();
+  try {
+    if (!isDryRun) await client.query('BEGIN');
+    for (const row of candidates) {
+      const q = queryByRow.get(row.id);
+      if (!q) continue;
+      const res = resultByQuery.get(q);
+      if (!res) {
+        unresolved++;
+        continue;
+      }
+      const willCoords = coordsMissing(row);
+      const willState = isEmpty(row.state) && !!res.state;
+      const willCity = (isEmpty(row.city) || isJunkCity(row.city)) && !!res.city;
+      if (!willCoords && !willState && !willCity) continue;
+
+      if (isDryRun) {
+        const parts: string[] = [];
+        if (willCoords) parts.push(`coords→${res.latitude.toFixed(4)},${res.longitude.toFixed(4)}`);
+        if (willState) parts.push(`state→${res.state}`);
+        if (willCity) parts.push(`city→${res.city}`);
+        console.log(`  ✓ wsa=${row.id} worker=${row.worker_id} "${q.slice(0, 50)}" ${parts.join(' ')}`);
+        updated++;
+        continue;
+      }
+
+      // UPDATE guardado: só toca o que está faltando/lixo; nunca sobrescreve dado bom.
+      await client.query(
+        `UPDATE worker_service_areas SET
+           latitude  = CASE WHEN (latitude IS NULL OR longitude IS NULL OR (latitude=0 AND longitude=0)) THEN $1 ELSE latitude END,
+           longitude = CASE WHEN (latitude IS NULL OR longitude IS NULL OR (latitude=0 AND longitude=0)) THEN $2 ELSE longitude END,
+           state = CASE WHEN (state IS NULL OR btrim(state)='') AND $3::text IS NOT NULL THEN $3 ELSE state END,
+           city  = CASE WHEN (city IS NULL OR btrim(city)='' OR city ~ '^[A-Z]{2,4}$') AND $4::text IS NOT NULL THEN $4 ELSE city END,
+           updated_at = now()
+         WHERE id = $5`,
+        [res.latitude, res.longitude, res.state, res.city, row.id],
+      );
+      updated++;
+    }
+    if (!isDryRun) await client.query('COMMIT');
+  } catch (err) {
+    if (!isDryRun) await client.query('ROLLBACK');
+    console.error('[backfill-worker-geo] FAILED — rolled back:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  console.log(`[backfill-worker-geo] DONE — ${isDryRun ? 'would update' : 'updated'}=${updated} unresolved=${unresolved}`);
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error('[backfill-worker-geo] FATAL:', err);
-  process.exit(1);
-});
+// Só executa quando rodado como script (não quando importado por um teste).
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[backfill-worker-geo] FATAL:', err);
+    process.exit(1);
+  });
+}
