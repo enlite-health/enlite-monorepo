@@ -129,6 +129,16 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(dataQueryCall).toContain('WHERE');
   });
 
+  it('list() — recomputa missing_fields ao vivo via fn_worker_missing_fields (mesmo fix do listByVacancy)', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await repo.list({ limit: 10, offset: 0 });
+
+    const dataQueryCall = mockQuery.mock.calls[0][0] as string;
+    expect(dataQueryCall).toContain('fn_worker_missing_fields(wba.worker_id)');
+    expect(dataQueryCall).toContain("wba.blocked_reason = 'registration_incomplete'");
+  });
+
   it('sem filtros: WHERE clause ausente e LIMIT/OFFSET usam índices $1/$2', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
@@ -281,5 +291,25 @@ describe('BlockedApplicationQueryRepository', () => {
 
     const result = await repo.listByVacancy(JOB_ID);
     expect(result).toHaveLength(0);
+  });
+
+  // ── Regressão: staleness de missing_fields ───────────────────────
+  // Bug: ao editar o perfil do worker (grava first_name/last_name), o nome do
+  // card atualizava (decrypt on-read) mas as tags de campos faltantes NÃO,
+  // porque vinham do snapshot materializado worker_blocked_applications.missing_fields.
+  // Fix: recomputar missing_fields ON-READ via fn_worker_missing_fields para
+  // registration_incomplete (worker existe), preservando o snapshot p/ os demais reasons.
+
+  it('listByVacancy() — recomputa missing_fields ao vivo via fn_worker_missing_fields p/ registration_incomplete', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await repo.listByVacancy(JOB_ID);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('fn_worker_missing_fields(wba.worker_id)');
+    // Só recomputa quando o worker existe e o motivo é registro incompleto;
+    // demais reasons (worker_not_found / worker_disabled) mantêm o snapshot.
+    expect(sql).toContain("wba.blocked_reason = 'registration_incomplete'");
+    expect(sql).toContain('wba.worker_id IS NOT NULL');
   });
 });

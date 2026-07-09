@@ -89,7 +89,13 @@ export class BlockedApplicationQueryRepository {
         wba.worker_id,
         wba.job_posting_id,
         wba.blocked_reason,
-        wba.missing_fields,
+        -- Recompute ON-READ (mesmo motivo do listByVacancy): o snapshot só é
+        -- atualizado numa nova tentativa; recalcula ao vivo p/ registro incompleto.
+        CASE
+          WHEN wba.blocked_reason = 'registration_incomplete' AND wba.worker_id IS NOT NULL
+          THEN fn_worker_missing_fields(wba.worker_id)
+          ELSE wba.missing_fields
+        END AS missing_fields,
         wba.attempt_count,
         wba.first_attempted_at,
         wba.last_attempted_at,
@@ -150,7 +156,16 @@ export class BlockedApplicationQueryRepository {
          wba.id,
          wba.worker_id,
          wba.blocked_reason,
-         wba.missing_fields,
+         -- missing_fields recomputado ON-READ: o snapshot materializado só é
+         -- atualizado numa nova tentativa de postulação, então editar o perfil
+         -- do worker (nome, doc, etc.) não zerava as tags. Recalcula ao vivo via
+         -- SSOT fn_worker_missing_fields quando o worker existe e o motivo é
+         -- registro incompleto; demais reasons mantêm o snapshot.
+         CASE
+           WHEN wba.blocked_reason = 'registration_incomplete' AND wba.worker_id IS NOT NULL
+           THEN fn_worker_missing_fields(wba.worker_id)
+           ELSE wba.missing_fields
+         END AS missing_fields,
          wba.attempt_count,
          wba.acquisition_channel,
          wba.last_attempted_at,
