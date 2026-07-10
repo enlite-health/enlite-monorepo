@@ -132,13 +132,20 @@ export class OutboxProcessor {
     // pelo Architect: sem o COALESCE, um worker mesclado sempre resolveria
     // como 'twilio' (default da coluna), mesmo que o canônico já tenha
     // passado pelo handover.
+    // Busca telefone/canal + flag de opt-out numa query só (evita round-trip extra
+    // por mensagem). opted_out = existe supressão ATIVA (opted_in_at IS NULL) pro worker.
     const workerResult = await this.db.query<{
       whatsapp_phone_encrypted: string | null;
       phone: string | null;
       messaging_channel: string | null;
+      opted_out: boolean;
     }>(
       `SELECT w1.whatsapp_phone_encrypted, w1.phone,
-              COALESCE(w2.messaging_channel, w1.messaging_channel) AS messaging_channel
+              COALESCE(w2.messaging_channel, w1.messaging_channel) AS messaging_channel,
+              EXISTS(
+                SELECT 1 FROM messaging_opt_out moo
+                WHERE moo.worker_id = w1.id AND moo.opted_in_at IS NULL
+              ) AS opted_out
        FROM workers w1
        LEFT JOIN workers w2 ON w2.id = w1.merged_into_id
        WHERE w1.id = $1
@@ -151,7 +158,29 @@ export class OutboxProcessor {
       return;
     }
 
-    const { whatsapp_phone_encrypted, phone, messaging_channel } = workerResult.rows[0];
+    const { whatsapp_phone_encrypted, phone, messaging_channel, opted_out } = workerResult.rows[0];
+
+    // --- Guard de opt-out (ponto ÚNICO de defesa antes de QUALQUER envio) ---
+    // Fecha o furo do incidente 2026-07-10: a seleção de algumas campanhas checava
+    // opt-out, mas o envio final (comum a TODAS — convite de vaga, lembrete de
+    // entrevista, bulk) NÃO checava. Marca 'suppressed' (não 'failed') pra não
+    // poluir métrica de falha de entrega nem consumir tentativa de retry.
+    if (opted_out) {
+      logger.info(
+        { outboxId: row.id, workerId: row.worker_id },
+        'OutboxProcessor: worker em opt-out, envio bloqueado (suppressed)',
+      );
+      await this.db.query(
+        `UPDATE messaging_outbox
+         SET status = 'suppressed',
+             error = 'suppressed: worker opted out',
+             processed_at = NOW()
+         WHERE id = $1`,
+        [row.id],
+      );
+      return;
+    }
+
     const whatsappPhone = whatsapp_phone_encrypted
       ? await this.encryptionService.decrypt(whatsapp_phone_encrypted)
       : null;

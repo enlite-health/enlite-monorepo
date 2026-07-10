@@ -338,6 +338,34 @@ describe('OutboxProcessor', () => {
       expect(failCall[0]).toContain("status = 'failed'");
       expect(failCall[1][1]).toBe('Worker sem telefone cadastrado');
     });
+
+    it('worker em opt-out → NÃO envia e marca suppressed (guard do incidente 2026-07-10)', async () => {
+      const outboxRow = {
+        id: 'ob-optout',
+        worker_id: 'w-optout',
+        template_slug: 'ar_vacancy_match_complete',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        // Worker COM telefone válido, mas opted_out=true
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100002222', messaging_channel: 'twilio', opted_out: true }],
+        })
+        // UPDATE status='suppressed'
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-optout');
+
+      // O ponto central: mesmo com telefone válido, NÃO envia.
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      const call = mockQuery.mock.calls[2];
+      expect(call[0]).toContain("status = 'suppressed'");
+      expect(call[1]).toContain('ob-optout');
+    });
   });
 
   // ─── Verifica que não existem mais start/stop/timer ───────────────

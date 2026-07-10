@@ -12,11 +12,7 @@ import {
   REMINDER_RESCHEDULE_SLUG,
   INTERVIEW_SLUGS,
 } from '../../domain/interviewFlowTemplateSlugs';
-
-const OPT_OUT_KEYWORDS = new Set([
-  'parar', 'stop', 'cancelar', 'desuscribir', 'desuscribirme',
-  'no quiero', 'basta', 'unsubscribe', 'optout', 'opt-out',
-]);
+import { matchesOptOut, OPT_OUT_BUTTON_PAYLOAD } from '../../domain/optOutMatch';
 
 /**
  * Controller para mensagens inbound do WhatsApp via Twilio.
@@ -59,10 +55,20 @@ export class InboundWhatsAppController {
     let buttonPayload = body['ButtonPayload'] ?? '';
     const originalMessageSid = body['OriginalRepliedMessageSid'] ?? '';
 
-    // Opt-out: interceptar PARAR/STOP antes de qualquer roteamento
+    // Opt-out por TEXTO: interceptar intenção de baixa antes de qualquer roteamento.
+    // matchesOptOut cobre frase ("quiero darme de baja") e termos es-AR (baja, salir,
+    // no me escriban…), não só match exato de palavra única (fix incidente 2026-07-10).
     const bodyTextRaw = (body['Body'] ?? '').trim();
-    if (bodyTextRaw && OPT_OUT_KEYWORDS.has(bodyTextRaw.toLowerCase())) {
+    if (bodyTextRaw && matchesOptOut(bodyTextRaw)) {
       await this.handleOptOut(from, bodyTextRaw);
+      res.status(200).send();
+      return;
+    }
+
+    // Opt-out por BOTÃO: quando o template ganhar o quick-reply "No recibir más"
+    // (payload OPT_OUT_BUTTON_PAYLOAD), tratar como baixa independente do fluxo.
+    if (buttonPayload === OPT_OUT_BUTTON_PAYLOAD) {
+      await this.handleOptOut(from, `button:${buttonPayload}`);
       res.status(200).send();
       return;
     }
@@ -73,6 +79,13 @@ export class InboundWhatsAppController {
     if (!buttonPayload) {
       const bodyText = (body['Body'] ?? '').trim();
       buttonPayload = await this.inferButtonPayloadFromBody(bodyText, originalMessageSid);
+
+      // O botão inferido também pode ser o de opt-out (título → payload 'optout').
+      if (buttonPayload === OPT_OUT_BUTTON_PAYLOAD) {
+        await this.handleOptOut(from, `button:${buttonPayload}`);
+        res.status(200).send();
+        return;
+      }
     }
 
     // Texto livre: se não tem ButtonPayload, checar se worker está em awaiting_reason
