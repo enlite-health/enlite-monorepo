@@ -7,7 +7,14 @@ import { ApiError } from '@infrastructure/http/ApiError';
 const SESSION_KEY_UTM = 'enlite_utm_source';
 const SESSION_KEY_RETURN_URL = 'enlite_vacancy_return_url';
 
-type PostularseState = 'idle' | 'loading' | 'unauthenticated' | 'incomplete' | 'ready' | 'not_available';
+type PostularseState =
+  | 'idle'
+  | 'loading'
+  | 'unauthenticated'
+  | 'incomplete'
+  | 'ready'
+  | 'not_available'
+  | 'error';
 
 /**
  * Missing fields as a plain string[] of snake_case tokens returned by the
@@ -56,26 +63,30 @@ export function usePostularseAction(
       const channel = sessionStorage.getItem(SESSION_KEY_UTM);
       try {
         await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
-        // Backend confirmed eligibility — clear UTM and open WhatsApp.
+        // Backend confirmed eligibility — ONLY here do we open WhatsApp.
         sessionStorage.removeItem(SESSION_KEY_UTM);
         window.open(whatsappUrl, '_blank');
         setState('idle');
         return;
       } catch (trackErr) {
+        // FAIL-CLOSED (ClickUp 86ajfkwf7): the pre-screening WhatsApp must never
+        // open unless the backend explicitly confirmed the worker is eligible.
+        // We never fall back to opening WhatsApp on error. UTM is preserved so a
+        // retry after completing registration keeps the acquisition attribution.
         if (trackErr instanceof ApiError && trackErr.code === 'WORKER_NOT_ELIGIBLE') {
           // Backend is the sole source of truth — use missingFields from the 403.
           setMissingFields(trackErr.missingFields ?? []);
           setState('incomplete');
           return;
         }
-        // Network failure or unexpected error: best-effort — open WhatsApp anyway.
-        sessionStorage.removeItem(SESSION_KEY_UTM);
-        window.open(whatsappUrl, '_blank');
-        setState('idle');
+        // Any other outcome (404 not found, 401, 500, network) → block, do NOT
+        // open WhatsApp. The worker is not verified as eligible.
+        setMissingFields(null);
+        setState('error');
       }
     } catch {
       setMissingFields(null);
-      setState('incomplete');
+      setState('error');
     }
   }, [whatsappUrl, isAuthenticated, jobPostingId]);
 

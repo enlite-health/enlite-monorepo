@@ -24,6 +24,7 @@ const MOCK_VACANCY_ID = 'bbbbbbbb-0001-0001-0001-bbbbbbbbbbbb';
 const MOCK_VACANCY = {
   id: MOCK_VACANCY_ID,
   case_number: 226,
+  vacancy_number: 2208,
   title: 'CASO 226 Acompañante Terapéutico',
   status: 'BUSQUEDA',
   dependency_level: 'Grau de Dependência',
@@ -531,5 +532,67 @@ test.describe('PublicVacancyPage', () => {
     // Verificar que window.open foi chamado com a URL do WhatsApp
     const openedUrls = await page.evaluate<string[]>(() => (window as any).__openedUrls ?? []);
     expect(openedUrls).toContain(MOCK_VACANCY.talentum_whatsapp_url);
+  });
+
+  // ── Cenário 7: FAIL-CLOSED — erro não-elegível NÃO abre WhatsApp ───────────
+  // Regressão ClickUp 86ajfkwf7: quando a checagem de elegibilidade falha com
+  // qualquer resposta que não seja o 200 (elegível) nem o 403 WORKER_NOT_ELIGIBLE,
+  // o sistema NUNCA pode mandar o prestador ao pré-screening do WhatsApp.
+
+  test('worker cuja checagem de elegibilidade falha (sem WORKER_NOT_ELIGIBLE) → NÃO abre WhatsApp, mostra erro', async ({
+    page,
+  }) => {
+    await createWorkerAndLogin(page);
+    await mockVacancySuccess(page);
+
+    // track-channel falha com 500 (sem o código WORKER_NOT_ELIGIBLE) → fail-closed.
+    // Reproduz também o caso do worker mínimo (404 "Worker not found").
+    await mockTrackChannel(page, { status: 500 });
+
+    await page.route('**/api/workers/me', (route) => {
+      if (route.request().url().includes('/documents')) return route.continue();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_WORKER_INCOMPLETE }),
+      });
+    });
+    await page.route('**/api/workers/me/documents', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_DOCS_INCOMPLETE }),
+      }),
+    );
+
+    await page.goto(`/vacantes/${MOCK_VACANCY_ID}`);
+    await expect(page.getByRole('button', { name: /Postularse/i })).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Interceptar window.open para provar que o WhatsApp NÃO abre
+    await page.evaluate(() => {
+      (window as any).__openedUrls = [];
+      window.open = (url?: string | URL) => {
+        (window as any).__openedUrls.push(String(url));
+        return null;
+      };
+    });
+
+    await page.getByRole('button', { name: /Postularse/i }).click();
+
+    // Modal de erro (fail-closed) deve aparecer
+    await expect(
+      page.locator('text=/No pudimos verificar tu registro/i').first(),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Prova dura: WhatsApp NÃO foi aberto
+    await page.waitForTimeout(500);
+    const openedUrls = await page.evaluate<string[]>(() => (window as any).__openedUrls ?? []);
+    expect(openedUrls).not.toContain(MOCK_VACANCY.talentum_whatsapp_url);
+    expect(openedUrls).toHaveLength(0);
+
+    // Screenshot: modal de erro fail-closed
+    await expect(page).toHaveScreenshot('public-vacancy-postularse-error-failclosed.png');
   });
 });

@@ -300,10 +300,12 @@ describe('usePostularseAction', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. Network failure (non-WORKER_NOT_ELIGIBLE) → best-effort open WhatsApp
+  // 6. Fail-closed: any non-success outcome must NOT open WhatsApp
+  //    (critical business rule — an unverified worker can never reach the
+  //    Talentum pre-screening WhatsApp. See ClickUp 86ajfkwf7.)
   // -------------------------------------------------------------------------
 
-  it('opens WhatsApp when track throws a network error (non-WORKER_NOT_ELIGIBLE)', async () => {
+  it('does NOT open WhatsApp when track throws a network error (fail-closed)', async () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(
@@ -315,8 +317,44 @@ describe('usePostularseAction', () => {
       await result.current.postularse();
     });
 
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-    expect(result.current.state).toBe('idle');
+    expect(window.open).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('error');
+  });
+
+  it('does NOT open WhatsApp when backend returns 404 Worker not found (no code)', async () => {
+    // A minimal account (email/password only) whose worker row is not yet
+    // REGISTERED / not found. Backend replies 404 without WORKER_NOT_ELIGIBLE.
+    const err = new ApiError({ success: false, error: 'Worker not found' }, 404);
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('error');
+  });
+
+  it('does NOT open WhatsApp on unexpected 500 (fail-closed)', async () => {
+    const err = new ApiError({ success: false, error: 'Internal error' }, 500);
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('error');
   });
 
   // -------------------------------------------------------------------------
@@ -391,7 +429,7 @@ describe('usePostularseAction', () => {
     expect(sessionStorage.getItem('enlite_utm_source')).toBe('whatsapp');
   });
 
-  it('clears sessionStorage on network failure (non-blocking path opens WhatsApp)', async () => {
+  it('preserves sessionStorage UTM on network failure (fail-closed, retry after fixing)', async () => {
     sessionStorage.setItem('enlite_utm_source', 'linkedin');
     mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
 
@@ -408,8 +446,9 @@ describe('usePostularseAction', () => {
       await Promise.resolve();
     });
 
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-    expect(sessionStorage.getItem('enlite_utm_source')).toBeNull();
+    // WhatsApp must NOT open, and UTM is preserved so the attribution survives a retry.
+    expect(window.open).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('enlite_utm_source')).toBe('linkedin');
   });
 
   // -------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import { usePostularseAction } from '@presentation/hooks/usePostularseAction';
 import { ScheduleSection } from './components/ScheduleSection';
 import { UnauthenticatedModal } from './components/UnauthenticatedModal';
 import { IncompleteRegistrationModal } from './components/IncompleteRegistrationModal';
+import { PostularseErrorModal } from './components/PostularseErrorModal';
 import type { PublicVacancyDetail } from '@domain/entities/Vacancy';
 
 const VALID_UTM_SOURCES = new Set(['facebook', 'instagram', 'whatsapp', 'linkedin', 'site']);
@@ -325,6 +326,14 @@ export default function PublicVacancyPage() {
 
       {state === 'incomplete' && (
         <IncompleteRegistrationModal missingFields={missingFields} onClose={dismissModal} />
+      )}
+
+      {state === 'error' && (
+        <PostularseErrorModal
+          onClose={dismissModal}
+          onRetry={postularse}
+          onCompleteRegistration={confirmRegister}
+        />
       )}
     </div>
   );
