@@ -13,6 +13,7 @@ import {
   INTERVIEW_SLUGS,
 } from '../../domain/interviewFlowTemplateSlugs';
 import { matchesOptOut, OPT_OUT_BUTTON_PAYLOAD } from '../../domain/optOutMatch';
+import { ChatwootClient } from '../../infrastructure/ChatwootClient';
 
 /**
  * Controller para mensagens inbound do WhatsApp via Twilio.
@@ -41,6 +42,12 @@ export class InboundWhatsAppController {
      * (apenas log "Message ignored") — flag default OFF, sem impacto em prod.
      */
     private readonly triggerHandoverUseCase?: TriggerWorkerHandoverUseCase,
+    /**
+     * Opcional: espelho do inbound pro Chatwoot (faz a Luz VER a resposta e
+     * responder). Só age quando CHATWOOT_INBOUND_MIRROR_ENABLED='true' E o client
+     * foi injetado — flag separada do espelho de outbound, então deploy é neutro.
+     */
+    private readonly chatwootMirror?: ChatwootClient,
   ) {}
 
   async handleInbound(req: Request, res: Response): Promise<void> {
@@ -100,6 +107,10 @@ export class InboundWhatsAppController {
         // Texto livre não-roteável: gatilho de handover Twilio → Periskope
         // (item de fundação do roteamento por worker). Flag default OFF.
         await this.maybeTriggerHandover(from);
+        // Espelha a resposta livre pro Chatwoot como `incoming` → a Luz VÊ e responde
+        // (o elo que faltava; hoje esse texto morria aqui). Gated por
+        // CHATWOOT_INBOUND_MIRROR_ENABLED — deploy neutro até o go-live.
+        await this.maybeMirrorIncomingToChatwoot(from, bodyText, body);
       }
       console.info('[InboundWhatsApp] Message ignored (no ButtonPayload)', { from });
       res.status(200).send();
@@ -261,6 +272,30 @@ export class InboundWhatsAppController {
       }
     } catch (err) {
       console.warn('[InboundWhatsApp] maybeTriggerHandover error:', err);
+    }
+  }
+
+  /**
+   * Espelha a resposta livre do worker pro Chatwoot como mensagem `incoming`, o que
+   * faz o Chatwoot disparar o webhook → a Luz (triage-service) processar e responder.
+   * É o elo que liga a resposta do convite (que hoje morre neste controller) ao motor
+   * reativo da Luz. Best-effort: nunca lança. Gated por CHATWOOT_INBOUND_MIRROR_ENABLED
+   * (flag separada do espelho de outbound) — deploy neutro até o go-live.
+   */
+  private async maybeMirrorIncomingToChatwoot(
+    from: string,
+    content: string,
+    body: Record<string, string>,
+  ): Promise<void> {
+    if (process.env.CHATWOOT_INBOUND_MIRROR_ENABLED !== 'true' || !this.chatwootMirror) return;
+    const phone = from.replace('whatsapp:', '');
+    // MessageSid do inbound = source_id do Chatwoot (dedup/idempotência).
+    const externalId = body['MessageSid'] || body['SmsSid'] || body['SmsMessageSid'] || '';
+    if (!externalId) return;
+    try {
+      await this.chatwootMirror.mirrorIncomingMessage({ phone, content, externalId });
+    } catch (err) {
+      console.warn('[InboundWhatsApp] maybeMirrorIncomingToChatwoot error:', err);
     }
   }
 

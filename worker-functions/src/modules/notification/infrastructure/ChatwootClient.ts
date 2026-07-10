@@ -34,6 +34,17 @@ export interface MirrorOutgoingOptions {
   twilioSid: string;
 }
 
+export interface MirrorIncomingOptions {
+  /** Telefone E.164 (+5511...) do worker que respondeu. */
+  phone: string;
+  /** Nome do worker, pra popular o contato se ele ainda não existir. */
+  name?: string;
+  /** Texto que o worker enviou. */
+  content: string;
+  /** ID único do inbound (Twilio MessageSid) — source_id pra dedup/idempotência. */
+  externalId: string;
+}
+
 interface ContactInbox {
   source_id: string;
   inbox: { id: number };
@@ -74,6 +85,19 @@ export class ChatwootClient {
   }
 
   /**
+   * Espelha a resposta INBOUND do worker (que chegou pelo Twilio no worker-functions)
+   * como mensagem `incoming` no Chatwoot. Isso faz o Chatwoot disparar o webhook
+   * `message_created` → a Luz (triage-service) processa e responde. É o elo que
+   * liga a resposta do convite (que hoje morre no InboundWhatsAppController) ao motor
+   * da Luz, reusando 100% do pipeline reativo. Idempotente por `externalId` (source_id).
+   */
+  async mirrorIncomingMessage(opts: MirrorIncomingOptions): Promise<void> {
+    const { contactId, sourceId } = await this.findOrCreateContact(opts);
+    const conversationId = await this.findOrCreateConversation(contactId, sourceId);
+    await this.createIncomingMessage(conversationId, opts.content, opts.externalId);
+  }
+
+  /**
    * Adiciona uma label ao contato (multi-add). No Chatwoot, labels de contato
    * são distintas de labels de conversa. Idempotente: o Chatwoot deduplica.
    */
@@ -84,7 +108,7 @@ export class ChatwootClient {
   // ─── Privados ───────────────────────────────────────────────────────────────
 
   private async findOrCreateContact(
-    opts: MirrorOutgoingOptions,
+    opts: { phone: string; name?: string; email?: string },
   ): Promise<{ contactId: number; sourceId: string }> {
     const found = await this.searchContactByPhone(opts.phone);
     if (found) {
@@ -166,6 +190,19 @@ export class ChatwootClient {
       message_type: 'outgoing',
       private: false,
       source_id: twilioSid,
+    });
+  }
+
+  private async createIncomingMessage(
+    conversationId: number,
+    content: string,
+    externalId: string,
+  ): Promise<void> {
+    await this.http.post(`/conversations/${conversationId}/messages`, {
+      content,
+      message_type: 'incoming',
+      private: false,
+      source_id: externalId,
     });
   }
 }

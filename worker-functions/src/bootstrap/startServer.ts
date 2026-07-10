@@ -18,6 +18,7 @@ import { PeriskopeWebhookController } from '@modules/notification/interfaces/con
 import { PeriskopeTicketService } from '@modules/notification/infrastructure/PeriskopeTicketService';
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
 import { PeriskopeMessagingService } from '@modules/notification/infrastructure/PeriskopeMessagingService';
+import { buildChatwootClient } from './buildChatwootClient';
 import { GoogleCalendarService } from '@modules/matching';
 
 /** Concretos de mensageria (não o RoutingMessagingService) — TriggerWorkerHandoverUseCase
@@ -61,11 +62,15 @@ export async function startServer(
     ticketService,
   );
 
+  // Espelho do inbound pro Chatwoot (faz a Luz ver a resposta e responder).
+  // buildChatwootClient retorna null se CHATWOOT_MIRROR_ENABLED != 'true' — e o
+  // envio do mirror ainda é gated por CHATWOOT_INBOUND_MIRROR_ENABLED no controller.
   const inboundWhatsAppController = new InboundWhatsAppController(
     DatabaseConnection.getInstance().getPool(),
     bookSlotUseCase,
     handleReminderResponseUseCase,
     triggerHandoverUseCase,
+    buildChatwootClient() ?? undefined,
   );
 
   // ── Periskope inbound webhook (migração Chatwoot → Periskope) ──

@@ -54,6 +54,53 @@ describe('InboundWhatsAppController', () => {
     jest.clearAllMocks();
     delete process.env.TWILIO_AUTH_TOKEN;
     delete process.env.TWILIO_INBOUND_WEBHOOK_URL;
+    delete process.env.CHATWOOT_INBOUND_MIRROR_ENABLED;
+  });
+
+  // ─── Espelho do inbound pro Chatwoot (faz a Luz ver e responder) ───
+  describe('mirror inbound → Chatwoot', () => {
+    it('texto livre não-roteável + flag ON → espelha como incoming', async () => {
+      const mirror = { mirrorIncomingMessage: jest.fn().mockResolvedValue(undefined) };
+      const c = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, undefined, mirror as any,
+      );
+      process.env.CHATWOOT_INBOUND_MIRROR_ENABLED = 'true';
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'hola, tengo una duda', MessageSid: 'SMabc' });
+
+      await c.handleInbound(req, mockRes());
+
+      expect(mirror.mirrorIncomingMessage).toHaveBeenCalledWith({
+        phone: '+5491112345678',
+        content: 'hola, tengo una duda',
+        externalId: 'SMabc',
+      });
+    });
+
+    it('flag OFF → NÃO espelha (deploy neutro)', async () => {
+      const mirror = { mirrorIncomingMessage: jest.fn() };
+      const c = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, undefined, mirror as any,
+      );
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'hola', MessageSid: 'SMx' });
+
+      await c.handleInbound(req, mockRes());
+
+      expect(mirror.mirrorIncomingMessage).not.toHaveBeenCalled();
+    });
+
+    it('opt-out ("baja") NÃO vira mirror (intercepta antes)', async () => {
+      const mirror = { mirrorIncomingMessage: jest.fn() };
+      const c = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, undefined, mirror as any,
+      );
+      process.env.CHATWOOT_INBOUND_MIRROR_ENABLED = 'true';
+      mockDbQuery.mockResolvedValue({ rows: [] }); // handleOptOut: worker lookup
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'baja', MessageSid: 'SMz' });
+
+      await c.handleInbound(req, mockRes());
+
+      expect(mirror.mirrorIncomingMessage).not.toHaveBeenCalled();
+    });
   });
 
   // ─── Signature validation ─────────────────────────────────────
