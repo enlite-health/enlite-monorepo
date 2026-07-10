@@ -2668,6 +2668,13 @@
     },
     "footer": {
       "tagline": "Marco profissional de Acompanhamento Terapêutico"
+    },
+    "errorModal": {
+      "title": "Não conseguimos verificar seu cadastro",
+      "body": "Não conseguimos confirmar que seu cadastro está completo. Por segurança, não te enviamos ao pré-screening do WhatsApp. Complete seu cadastro ou tente novamente.",
+      "retry": "Tentar novamente",
+      "complete": "Completar cadastro",
+      "cancel": "Fechar"
     }
   },
   "countries": {

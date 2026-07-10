@@ -2747,6 +2747,13 @@
     },
     "footer": {
       "tagline": "Marco profesional de Acompañamiento Terapéutico"
+    },
+    "errorModal": {
+      "title": "No pudimos verificar tu registro",
+      "body": "No pudimos confirmar que tu registro esté completo. Por tu seguridad, no te enviamos al pre-screening de WhatsApp. Completá tu registro o intentá nuevamente.",
+      "retry": "Reintentar",
+      "complete": "Completar registro",
+      "cancel": "Cerrar"
     }
   },
   "countries": {
