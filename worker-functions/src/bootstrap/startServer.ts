@@ -19,6 +19,8 @@ import { PeriskopeTicketService } from '@modules/notification/infrastructure/Per
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
 import { PeriskopeMessagingService } from '@modules/notification/infrastructure/PeriskopeMessagingService';
 import { buildChatwootClient } from './buildChatwootClient';
+import { PeriskopeNoteService } from '@modules/notification/infrastructure/PeriskopeNoteService';
+import { ChatwootMirrorController } from '@modules/notification/interfaces/controllers/ChatwootMirrorController';
 import { GoogleCalendarService } from '@modules/matching';
 
 /** Concretos de mensageria (não o RoutingMessagingService) — TriggerWorkerHandoverUseCase
@@ -108,6 +110,12 @@ export async function startServer(
 
   app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
   app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
+
+  // Espelho da conversa da Luz (Chatwoot) → NOTA no Periskope, pro time ver e assumir.
+  // Configurar um 2º webhook message_created no Chatwoot apontando pra cá (go-live).
+  // Gated por PERISKOPE_NOTE_MIRROR_ENABLED — neutro até virar a flag.
+  const chatwootMirrorController = new ChatwootMirrorController(new PeriskopeNoteService());
+  app.post('/api/webhooks/chatwoot/mirror', (req, res) => chatwootMirrorController.handle(req, res));
 
   // ── Start Server ──────────────────────────────────────────────────────────
   const PORT = process.env.PORT || 8080;
