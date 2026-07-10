@@ -43,7 +43,11 @@ interface AliasGroup {
   contains: string[];
 }
 
-const CABA_CANONICAL = 'Ciudad Autónoma de Buenos Aires';
+// Label canônico de CABA. Alinhado a 'CABA' — o mesmo SSOT de `argentinaLocationNormalizer.ts`
+// (PROVINCE_CANONICAL) e o valor persistido em `patient_addresses.state` (migs 242/243) — pra que
+// os contextos worker e paciente NUNCA mais divirjam nesse rótulo. O teste de consistência cruzada
+// em `__tests__/normalizeLocationValue.test.ts` trava a não-recorrência.
+const CABA_CANONICAL = 'CABA';
 
 const ALIAS_GROUPS: readonly AliasGroup[] = [
   {
@@ -119,7 +123,7 @@ export function canonicalLocation(raw: string | null | undefined): string | null
 
 /**
  * Canonical label IF the raw value is a recognized zone alias (e.g. work_zone
- * "CABA" → "Ciudad Autónoma de Buenos Aires"), else null. Used to surface CABA
+ * "Capital Federal" → "CABA"), else null. Used to surface CABA
  * into the dropdown from the free-text `work_zone` column WITHOUT admitting other
  * free-text zone strings.
  */
@@ -159,7 +163,7 @@ const PBA_CANONICAL = 'Provincia de Buenos Aires';
  * O Google Maps devolve a mesma provincia com nomes inconsistentes ("Buenos
  * Aires Province" em inglês, "Buenos Aires" cru, "Córdoba Province"), o que
  * fragmenta o dropdown/analytics. Regras:
- *   - CABA (várias grafias)                         → "Ciudad Autónoma de Buenos Aires"
+ *   - CABA (várias grafias)                         → "CABA"
  *   - "Buenos Aires" cru: desambigua pela localidad → city="Buenos Aires" é a
  *     CIDADE (CABA); qualquer outra localidad é a PROVINCIA (PBA)
  *   - "Buenos Aires Province" / "Provincia de …"    → "Provincia de Buenos Aires"

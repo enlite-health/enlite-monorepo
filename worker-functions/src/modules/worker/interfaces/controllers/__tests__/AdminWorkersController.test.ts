@@ -2281,8 +2281,8 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
       await auxController.getFilterOptions(req, res);
 
       const body = (res.json as jest.Mock).mock.calls[0][0];
-      expect(body.data.cities).toContain('Ciudad Autónoma de Buenos Aires');
-      expect(body.data.states).toContain('Ciudad Autónoma de Buenos Aires');
+      expect(body.data.cities).toContain('CABA');
+      expect(body.data.states).toContain('CABA');
       // free-text zone list is NOT surfaced as a locality
       expect(body.data.cities).not.toContain('Paternal, Villa Crespo');
     });

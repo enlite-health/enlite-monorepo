@@ -3,7 +3,9 @@ import {
   resolveLocationFilter,
   isJunkLocation,
   recognizedZoneLabel,
+  canonicalProvince,
 } from '../normalizeLocationValue';
+import { normalizeProvince } from '../argentinaLocationNormalizer';
 
 describe('normalizeLocationValue', () => {
   // ── isJunkLocation ──────────────────────────────────────────────────────────
@@ -51,9 +53,9 @@ describe('normalizeLocationValue', () => {
       expect(canonicalLocation(undefined)).toBeNull();
     });
 
-    it('maps CABA aliases to canonical "Ciudad Autónoma de Buenos Aires"', () => {
+    it('maps CABA aliases to canonical "CABA"', () => {
       for (const alias of ['CABA', 'caba', 'Capital Federal', 'capital', 'Ciudad de Buenos Aires']) {
-        expect(canonicalLocation(alias)).toBe('Ciudad Autónoma de Buenos Aires');
+        expect(canonicalLocation(alias)).toBe('CABA');
       }
     });
 
@@ -76,8 +78,8 @@ describe('normalizeLocationValue', () => {
   // ── recognizedZoneLabel (surface CABA from work_zone) ───────────────────────
   describe('recognizedZoneLabel', () => {
     it('returns the canonical label for a recognized zone alias', () => {
-      expect(recognizedZoneLabel('CABA')).toBe('Ciudad Autónoma de Buenos Aires');
-      expect(recognizedZoneLabel('Capital Federal')).toBe('Ciudad Autónoma de Buenos Aires');
+      expect(recognizedZoneLabel('CABA')).toBe('CABA');
+      expect(recognizedZoneLabel('Capital Federal')).toBe('CABA');
     });
 
     it('returns null for non-alias free text and empty input', () => {
@@ -124,5 +126,24 @@ describe('normalizeLocationValue', () => {
       const { exactKeys } = resolveLocationFilter('CABA');
       expect(exactKeys.every((k) => k === k.toLowerCase())).toBe(true);
     });
+  });
+});
+
+// ── Consistência cruzada worker (normalizeLocationValue) ↔ paciente (argentinaLocationNormalizer) ──
+// Prova de não-recorrência da divergência de label de CABA (worker usava a forma longa; paciente,
+// a sigla 'CABA'). Se alguém mexer num dos SSOTs sem alinhar o outro, este teste quebra.
+describe('cross-SSOT province canonical consistency', () => {
+  it('o label de CABA é idêntico nos dois normalizadores (e é a sigla "CABA")', () => {
+    for (const alias of ['CABA', 'Capital Federal', 'Ciudad Autónoma de Buenos Aires']) {
+      expect(canonicalProvince(alias)).toBe('CABA');
+      expect(canonicalProvince(alias)).toBe(normalizeProvince(alias));
+    }
+  });
+
+  it('o label de PBA é idêntico nos dois normalizadores', () => {
+    for (const alias of ['Provincia de Buenos Aires', 'Buenos Aires Province']) {
+      expect(canonicalProvince(alias)).toBe('Provincia de Buenos Aires');
+      expect(canonicalProvince(alias)).toBe(normalizeProvince(alias));
+    }
   });
 });

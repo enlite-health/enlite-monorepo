@@ -13,16 +13,16 @@ describe('canonicalProvince', () => {
 
   it('"Buenos Aires" cru desambigua pela localidad', () => {
     // city = a cidade "Buenos Aires" → CABA
-    expect(canonicalProvince('Buenos Aires', 'Buenos Aires')).toBe('Ciudad Autónoma de Buenos Aires');
+    expect(canonicalProvince('Buenos Aires', 'Buenos Aires')).toBe('CABA');
     // outra localidad (partido) → provincia
     expect(canonicalProvince('Buenos Aires', 'La Matanza')).toBe('Provincia de Buenos Aires');
     expect(canonicalProvince('Buenos Aires')).toBe('Provincia de Buenos Aires');
   });
 
   it('variações de CABA → canônico', () => {
-    expect(canonicalProvince('CABA')).toBe('Ciudad Autónoma de Buenos Aires');
-    expect(canonicalProvince('Capital Federal')).toBe('Ciudad Autónoma de Buenos Aires');
-    expect(canonicalProvince('Ciudad Autónoma de Buenos Aires')).toBe('Ciudad Autónoma de Buenos Aires');
+    expect(canonicalProvince('CABA')).toBe('CABA');
+    expect(canonicalProvince('Capital Federal')).toBe('CABA');
+    expect(canonicalProvince('Ciudad Autónoma de Buenos Aires')).toBe('CABA');
   });
 
   it('outras provincias e vazios ficam inalterados', () => {
