@@ -257,6 +257,13 @@ export class MatchmakingService {
          AND w.status = ANY($8::text[])
          AND w.deleted_at IS NULL
          AND bl.id IS NULL
+         -- Não convidar (nem colocar em Invitados) quem está na lista de supressão:
+         -- opt-out / bloqueio (undelivered_cap) / sem-resposta (no_response). Espelha
+         -- o corte do blacklist. Incidente 2026-07-10: bloqueado no funil = ruído.
+         AND NOT EXISTS (
+           SELECT 1 FROM messaging_opt_out moo
+           WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL
+         )
          AND (
            $2::JSONB IS NULL
            OR $2::JSONB ? COALESCE(w.occupation, w.profession)
