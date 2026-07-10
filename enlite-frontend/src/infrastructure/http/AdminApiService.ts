@@ -48,6 +48,7 @@ import {
 } from './AdminWorkerListApiService';
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
+import { withTransientRetry } from './retryTransient';
 export { ApiError } from './ApiError';
 
 class AdminApiServiceClass {
@@ -86,7 +87,7 @@ class AdminApiServiceClass {
   // ========== Auth / Profile ==========
 
   async getProfile(): Promise<AdminUser> {
-    return this.request<AdminUser>('GET', '/api/admin/auth/profile');
+    return withTransientRetry(() => this.request<AdminUser>('GET', '/api/admin/auth/profile'));
   }
 
   // ========== Admin Users ==========
