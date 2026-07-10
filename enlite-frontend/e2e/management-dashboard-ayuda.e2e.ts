@@ -42,7 +42,7 @@ const MOCK_DASHBOARD = {
   equipoArmada: { armados: 0, porArmar: 86, semConfig: 3, pendenteClasificacao: 56, pctRespostaRapidaArmado: { num: 0, den: 86, excluidos: 59, pct: 0 } },
   pacientes: { activos: 193, ubicacionesActivas: 341, solicitudes: 2, entrevistaAgendada: 0, enAdmision: 5, enBusca: 113, sobrepoe: true },
   horas: { totais: 3866.2, aPreencher: 2317.5, coberturaConSchedule: 119, coberturaSinSchedule: 26, ativas: 941.1, ativasConSchedule: 40, ativasSinSchedule: 13 },
-  prioridades: { completosEsperandoAgendamiento: 566, profesionalesBloqueados: 6825 },
+  prioridades: { completosEsperandoAgendamiento: 566, registrosIncompletos: 6825, bloqueadosAlPostularse: 484 },
   funnelPorPrestador: {
     total: 2590,
     recorte: 'vagas-vivas',

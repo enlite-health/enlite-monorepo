@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Flame, CalendarClock, Ban } from 'lucide-react';
+import { Flame, CalendarClock, Ban, UserX } from 'lucide-react';
 import { MetricCard } from '@presentation/components/atoms';
 import type { ManagementDashboardData } from '@domain/entities/ManagementDashboard';
 import { SectionHeader } from './SectionHeader';
@@ -22,7 +22,7 @@ export function PrioridadesSection({
         title={t('admin.managementDashboard.sections.prioridades')}
         hint={t('admin.managementDashboard.sections.prioridadesHint')}
       />
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <MetricCard
           icon={CalendarClock}
           accent="cyan"
@@ -32,12 +32,19 @@ export function PrioridadesSection({
           subtitle={t(`${p}esperandoAgendamientoSub`)}
         />
         <MetricCard
-          icon={Ban}
+          icon={UserX}
           accent="coordination"
-          title={t(`${p}bloqueados`)}
+          title={t(`${p}bloqueadosAlPostularse`)}
+          value={data.bloqueadosAlPostularse}
+          subtitle={t(`${p}bloqueadosAlPostularseSub`)}
+        />
+        <MetricCard
+          icon={Ban}
+          accent="neutral"
+          title={t(`${p}registrosIncompletos`)}
           {...helpProps('profesionalesBloqueados')}
-          value={data.profesionalesBloqueados}
-          subtitle={t(`${p}bloqueadosSub`)}
+          value={data.registrosIncompletos}
+          subtitle={t(`${p}registrosIncompletosSub`)}
         />
       </div>
 

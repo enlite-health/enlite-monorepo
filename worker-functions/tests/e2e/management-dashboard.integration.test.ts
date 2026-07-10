@@ -152,7 +152,7 @@ describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => 
     expect(data.horas.coberturaConSchedule).toBeGreaterThanOrEqual(2);
 
     // Funil / cadastros seguem funcionando (regressão).
-    expect(data.prioridades.profesionalesBloqueados).toBeGreaterThanOrEqual(1);
+    expect(data.prioridades.registrosIncompletos).toBeGreaterThanOrEqual(1);
     expect(data.funnel.invitados).toBeGreaterThanOrEqual(1);
     expect(data.funnel.bloqueados).toBeGreaterThanOrEqual(1);
     expect(data.cadastros.leads).toBeGreaterThanOrEqual(2);

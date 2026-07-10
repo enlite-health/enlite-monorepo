@@ -46,7 +46,10 @@ const PROD_PAYLOAD: ManagementDashboardData = {
     sobrepoe: true as const,
   },
   horas: { totais: 3763.7, aPreencher: 2155, ativas: 987.5, ativasConSchedule: 38, ativasSinSchedule: 12, coberturaConSchedule: 118, coberturaSinSchedule: 26 },
-  prioridades: { completosEsperandoAgendamiento: 569, profesionalesBloqueados: 6735 },
+  // registrosIncompletos = worker.incompletos (mesma fonte de cadastros.incompletos, 6735).
+  // bloqueadosAlPostularse = pessoas distintas em vaga viva, mesma fonte de
+  // funnelPorPrestador.bloqueados (355) neste payload.
+  prioridades: { completosEsperandoAgendamiento: 569, registrosIncompletos: 6735, bloqueadosAlPostularse: 355 },
   funnelPorPrestador: {
     total: 2576,
     recorte: 'vagas-vivas',

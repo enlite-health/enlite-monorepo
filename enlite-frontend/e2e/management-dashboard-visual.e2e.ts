@@ -69,7 +69,8 @@ const MOCK_DASHBOARD = {
   },
   prioridades: {
     completosEsperandoAgendamiento: 2387,
-    profesionalesBloqueados: 6632,
+    registrosIncompletos: 6632,
+    bloqueadosAlPostularse: 249,
   },
   // Funil por PRESTADOR (30/07/2026): a tela conta pessoas, não cards. Duas vistas —
   // a consolidada fecha com o total, a por-etapa não (pessoa em mais de uma coluna).
@@ -265,7 +266,14 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     // deram lugar às duas vistas por prestador.
     await expect(page.getByTestId('mgmt-funnel-consolidado-INVITED')).toContainText('303');
     await expect(page.getByTestId('mgmt-funnel-por-etapa-INVITED')).toContainText('466');
-    await expect(page.getByTestId('mgmt-prioridades')).toContainText('6632');
+    await expect(page.getByTestId('mgmt-prioridades')).toContainText('6632'); // registros incompletos
+    await expect(page.getByTestId('mgmt-prioridades')).toContainText('249'); // bloqueados al postularse (personas únicas)
+    // Prova visual dedicada dos 3 cards de Prioridades (fica abaixo da dobra do fullPage 720px):
+    // "Bloqueados al postularse" (249, personas únicas) vs "Registros incompletos" (6632, backlog).
+    await expect(page.getByTestId('mgmt-prioridades')).toHaveScreenshot(
+      'management-dashboard-prioridades.png',
+      { maxDiffPixelRatio: 0.03 },
+    );
     // Seção Equipe Armada com números reais + classificação honesta.
     await expect(page.getByTestId('mgmt-equipo-armada')).toBeVisible();
     await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('61'); // sem config

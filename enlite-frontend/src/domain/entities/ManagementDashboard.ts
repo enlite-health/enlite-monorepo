@@ -74,7 +74,10 @@ export interface ManagementDashboardData {
   };
   prioridades: {
     completosEsperandoAgendamiento: number;
-    profesionalesBloqueados: number;
+    /** workers.status = 'INCOMPLETE_REGISTER' (deduped) — backlog de cadastro incompleto. */
+    registrosIncompletos: number;
+    /** Pessoas distintas bloqueadas ao tentar postular (1 por profissional) — lista de contato. */
+    bloqueadosAlPostularse: number;
   };
   /**
    * Contagem por coluna do Kanban. As chaves são os ids de coluna do backend

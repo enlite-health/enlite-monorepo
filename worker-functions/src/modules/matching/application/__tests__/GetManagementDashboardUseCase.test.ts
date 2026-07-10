@@ -15,7 +15,9 @@ import { GetManagementDashboardUseCase } from '../GetManagementDashboardUseCase'
  *   9. funnel por etapa (LEGADO)     → rows [{k,count}]
  *  10. esperando agenda (fila real)  → rows [{esperando}]
  *  11. alocados (ana_care_status)    → rows [{activos, cubriendo_guardias}]
- *  12. blocked (pessoas, vaga viva)  → rows [{bloqueados}]
+ *  12. blocked (pessoas, vaga viva)  → rows [{bloqueados}] — alimenta TANTO
+ *      funnel.bloqueados QUANTO prioridades.bloqueadosAlPostularse (mesma fonte
+ *      já recortada a vaga viva + não desativado, ver GetManagementDashboardUseCase).
  *  13. encuadres semana + sem data   → rows [{agendados, sem_data}]
  */
 interface FunnelWorkerRow {
@@ -153,7 +155,7 @@ describe('GetManagementDashboardUseCase', () => {
       // alocados vem do ana_care_status (7 Activo + 3 Cubriendo guardias = 10),
       // DESACOPLADO do funil SELECTED (=2 acima). Prova que a fonte mudou.
       { activos: 7, cubriendoGuardias: 3 },
-      405,
+      405, // pessoas distintas em vaga viva → funnel.bloqueados E prioridades.bloqueadosAlPostularse
       8, // encuadres agendados esta semana (denominador de capacidade default = 80)
       // Funil por prestador: w1 em 2 vagas (IN_PROGRESS + REJECTED) e w2 rejeitado.
       [
@@ -210,7 +212,9 @@ describe('GetManagementDashboardUseCase', () => {
       },
       prioridades: {
         completosEsperandoAgendamiento: 569,
-        profesionalesBloqueados: 6632,
+        registrosIncompletos: 6632,
+        // mesma fonte de funnel.bloqueados (405): pessoas distintas em vaga viva.
+        bloqueadosAlPostularse: 405,
       },
       funnelPorPrestador: {
         total: 2,
