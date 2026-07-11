@@ -22,7 +22,7 @@ import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
 import { AdminPatientsController, createAdminPatientsRoutes } from '@modules/case';
 import { UserController } from '@modules/identity';
-import { AdminController } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes } from '@modules/identity';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -288,6 +288,8 @@ app.delete('/api/admin/users/by-email', authMiddleware.requireAdmin(), (req: Req
 app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);
 });
+// Telemetria do login admin (frontend → servidor); rota modularizada.
+app.use('/api', createAuthTelemetryRoutes(authMiddleware));
 
 // ========== Worker Status & Encuadres ==========
 app.use('/api', createWorkerEncuadreRoutes(encuadreController, authMiddleware));

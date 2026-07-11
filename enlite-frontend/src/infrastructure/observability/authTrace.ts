@@ -1,4 +1,5 @@
 import { ApiError } from '@infrastructure/http/ApiError';
+import { sendAuthTrace } from './authTelemetryClient';
 
 /**
  * Rastreabilidade do login administrativo (Google e email/senha).
@@ -68,9 +69,12 @@ export function startAuthTrace(flow: AuthFlow): AuthTraceHandle {
   counter += 1;
   const id = `login-${Date.now().toString(36)}-${counter}`;
   const t0 = now();
+  // Trilha só desta tentativa — enviada ao backend no end() (o ring é global).
+  const localSteps: Array<{ step: string; elapsedMs: number; level: TraceEntry['level']; data?: Record<string, unknown> }> = [];
 
   const emit = (level: TraceEntry['level'], name: string, data?: Record<string, unknown>): void => {
     const elapsedMs = Math.round(now() - t0);
+    localSteps.push({ step: name, elapsedMs, level, data });
     const buf = ringBuffer();
     buf.push({ trace: id, flow, step: name, elapsedMs, level, data });
     if (buf.length > RING_MAX) buf.splice(0, buf.length - RING_MAX);
@@ -87,6 +91,16 @@ export function startAuthTrace(flow: AuthFlow): AuthTraceHandle {
     id,
     step: (name, data) => emit('info', name, data),
     fail: (name, error) => emit('error', name, describeError(error)),
-    end: (outcome, data) => emit(outcome === 'success' ? 'info' : 'warn', `end:${outcome}`, data),
+    end: (outcome, data) => {
+      emit(outcome === 'success' ? 'info' : 'warn', `end:${outcome}`, data);
+      // Fire-and-forget: envia a trilha completa pro Cloud Logging via backend.
+      void sendAuthTrace({
+        traceId: id,
+        flow,
+        outcome,
+        durationMs: Math.round(now() - t0),
+        steps: localSteps.slice(-50),
+      });
+    },
   };
 }
