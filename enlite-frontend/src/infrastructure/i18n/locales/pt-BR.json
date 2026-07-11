@@ -2593,9 +2593,19 @@
     "jobDescription": "Descrição do trabalho:",
     "characteristics": "Características:",
     "ageRange": "Faixa Etária:",
+    "ageRangeUndefined": "Indistinta",
+    "ageRangeFrom": "A partir de {{min}} anos",
+    "ageRangeTo": "Até {{max}} anos",
     "location": "Localização:",
     "profile": "Perfil:",
     "serviceType": "Tipo de serviço:",
+    "serviceTypeLabels": {
+      "AT": "Acompanhante Terapêutico",
+      "CAREGIVER": "Cuidador",
+      "NURSE": "Enfermeiro(a)",
+      "KINESIOLOGIST": "Fisioterapeuta",
+      "PSYCHOLOGIST": "Psicólogo(a)"
+    },
     "daysAndHours": "Dias e Horários:",
     "modal": {
       "title": "Cadastro necessário",

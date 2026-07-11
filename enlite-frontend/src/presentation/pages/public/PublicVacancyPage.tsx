@@ -25,6 +25,22 @@ function normalizeUtmSource(raw: string): string {
   return lower;
 }
 
+/**
+ * Formats the "Rango Etario" value. Never returns a bare number when only
+ * one bound is set — that reads as ambiguous (e.g. "18" alone doesn't say
+ * whether it's a floor or a ceiling).
+ */
+function formatAgeRange(
+  min: number | null,
+  max: number | null,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (min != null && max != null) return `${min} - ${max}`;
+  if (min != null) return t('publicVacancy.ageRangeFrom', { min });
+  if (max != null) return t('publicVacancy.ageRangeTo', { max });
+  return t('publicVacancy.ageRangeUndefined');
+}
+
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 function VacancyCaseCard({
@@ -94,7 +110,7 @@ function VacancyCaseCard({
   );
 }
 
-function VacancyDetailsCard({
+export function VacancyDetailsCard({
   vacancy,
 }: {
   vacancy: PublicVacancyDetail;
@@ -135,25 +151,38 @@ function VacancyDetailsCard({
           </div>
         )}
 
+        {/* Patología (Hipótese Diagnóstica) — texto livre com possíveis quebras de linha */}
+        {vacancy.pathologies && (
+          <div className="flex flex-col gap-2">
+            <Heading level={4} weight="medium" color="primary" className="leading-[1.35]">
+              {t('publicVacancy.diagnosticHypothesis')}
+            </Heading>
+            <Text
+              size="sm"
+              weight="medium"
+              className="max-w-[68ch] whitespace-pre-line break-words leading-[1.6]"
+            >
+              {vacancy.pathologies}
+            </Text>
+          </div>
+        )}
+
         {/* Características */}
         <div className="flex flex-col gap-2">
           <Heading level={4} weight="medium" color="primary" className="leading-[1.35]">
             {t('publicVacancy.characteristics')}
           </Heading>
           <div className="flex flex-col gap-2.5">
-            {(vacancy.age_range_min != null || vacancy.age_range_max != null) && (
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-                <Text size="sm" weight="medium">
-                  {t('publicVacancy.ageRange')}{' '}
-                  <Text as="span" size="sm" weight="medium" color="primary">
-                    {vacancy.age_range_min != null && vacancy.age_range_max != null
-                      ? `${vacancy.age_range_min} - ${vacancy.age_range_max}`
-                      : vacancy.age_range_min ?? vacancy.age_range_max}
-                  </Text>
+            {/* Franja etaria — sempre visível; "Indistinta" quando não há limites definidos */}
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+              <Text size="sm" weight="medium">
+                {t('publicVacancy.ageRange')}{' '}
+                <Text as="span" size="sm" weight="medium" color="primary">
+                  {formatAgeRange(vacancy.age_range_min, vacancy.age_range_max, t)}
                 </Text>
-              </div>
-            )}
+              </Text>
+            </div>
             {vacancy.patient_zone && (
               <div className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
@@ -172,6 +201,19 @@ function VacancyDetailsCard({
                   {t('publicVacancy.profile')}{' '}
                   <Text as="span" size="sm" weight="medium" color="primary">
                     {vacancy.worker_attributes}
+                  </Text>
+                </Text>
+              </div>
+            )}
+            {vacancy.service_type && vacancy.service_type.length > 0 && (
+              <div className="flex items-start gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-1" />
+                <Text size="sm" weight="medium" className="max-w-[68ch] break-words">
+                  {t('publicVacancy.serviceType')}{' '}
+                  <Text as="span" size="sm" weight="medium" color="primary">
+                    {vacancy.service_type
+                      .map((type) => t(`publicVacancy.serviceTypeLabels.${type}`, type))
+                      .join(', ')}
                   </Text>
                 </Text>
               </div>
