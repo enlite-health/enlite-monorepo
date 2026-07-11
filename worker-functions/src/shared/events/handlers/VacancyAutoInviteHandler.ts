@@ -20,6 +20,7 @@ interface VacancyCreatedPayload {
 
 interface PatientZoneRow {
   patient_zone: string | null;
+  is_test: boolean;
 }
 
 interface WorkerDocumentsRow {
@@ -71,8 +72,9 @@ export function createVacancyAutoInviteHandler(
     log.info('Starting auto-invite');
 
     // 1. Buscar zona do paciente via JOIN (fix TD-019: não usa workZone do AT)
+    //    e is_test — vaga de teste/QA NUNCA deve gerar convites reais.
     const zoneRes = await db.query<PatientZoneRow>(
-      `SELECT p.zone_neighborhood AS patient_zone
+      `SELECT p.zone_neighborhood AS patient_zone, jp.is_test
        FROM job_postings jp
        LEFT JOIN patients p ON p.id = jp.patient_id
        WHERE jp.id = $1
@@ -83,6 +85,15 @@ export function createVacancyAutoInviteHandler(
       log.warn('Job posting not found, skipping');
       return;
     }
+
+    // Guarda de vaga de teste: pula matchmaking/WJA/outbox por completo —
+    // ANTES de qualquer efeito colateral. Evita que vagas de teste/QA
+    // disparem convites reais (WJA) e mensagens de WhatsApp para workers reais.
+    if (zoneRes.rows[0].is_test === true) {
+      log.info({ msg: 'skip auto-invite: test vacancy' });
+      return;
+    }
+
     const patientZone = zoneRes.rows[0].patient_zone ?? 'tu zona';
 
     // 2. Rodar matchmaking — includeIncompleteRegister=true: workers com cadastro

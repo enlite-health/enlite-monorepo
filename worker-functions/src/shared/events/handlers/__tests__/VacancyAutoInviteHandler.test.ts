@@ -114,6 +114,42 @@ describe('VacancyAutoInviteHandler', () => {
     expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
   });
 
+  // 2b — GUARD (bug-shield RED-FIRST): vaga marcada is_test NÃO deve gerar
+  // convites (WJA/matchmaking) nem outbox de WhatsApp.
+  it('vaga is_test=true → skip auto-invite (0 matchmaking, 0 WJA, 0 outbox/cloud tasks)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo', is_test: true }] });
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-test-1' });
+
+    expect(mockQuery).toHaveBeenCalledTimes(1); // só a query inicial — nada mais roda
+    expect(mockMatchWorkersForJob).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
+  });
+
+  // 2c — vaga normal (is_test=false/undefined) continua funcionando como antes.
+  it('vaga is_test=false → comportamento inalterado (matchmaking roda normalmente)', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo', is_test: false }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-normal-1' }] });
+
+    const candidate = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
+    mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-1' });
+
+    expect(mockMatchWorkersForJob).toHaveBeenCalledTimes(1);
+    expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
+      queue: 'whatsapp-paced',
+      url: '/api/internal/outbox/process-paced',
+      body: { outboxId: 'outbox-normal-1' },
+    });
+  });
+
   // 3
   it('candidatos com alreadyApplied=true são filtrados e não enfileiram', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] }); // SELECT patient_zone

@@ -117,6 +117,9 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.getPrescreeningConfig(req, res),
   );
+  router.get('/vacancies/:id/talentum-status', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.getTalentumStatus(req, res),
+  );
   router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.savePrescreeningConfig(req, res),
   );

@@ -14,6 +14,7 @@ import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
 import type { AuditActor } from '@modules/integration';
+import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
 
 /**
  * VacancyTalentumController
@@ -100,6 +101,38 @@ export class VacancyTalentumController {
       reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:unpublishFromTalentum' });
       res.status(500).json({ success: false, error: 'Failed to unpublish from Talentum', details: msg });
     }
+  }
+
+  /**
+   * GET /api/admin/vacancies/:id/talentum-status
+   *
+   * Verifica se a vaga está realmente publicada no Talentum (fonte de
+   * verdade externa), não apenas se `talentum_project_id` está preenchido
+   * no nosso banco. Usado pelo E2E para provar publish/unpublish.
+   * Lógica delegada a vacancyTalentumStatusHelper (limite de 400 linhas).
+   */
+  async getTalentumStatus(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    const result = await getVacancyTalentumStatus(this.db, id);
+
+    if (result.kind === 'not_found') {
+      res.status(404).json({ success: false, error: 'Vacancy not found' });
+      return;
+    }
+    if (result.kind === 'error') {
+      reportError(new Error(result.message), { source: 'VacancyTalentumController:getTalentumStatus', vacancyId: id });
+      res.status(502).json({ success: false, error: 'Failed to check Talentum status', details: result.message });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        published: result.published,
+        exists: result.exists,
+        ...(result.whatsappUrl ? { whatsappUrl: result.whatsappUrl } : {}),
+      },
+    });
   }
 
   async generateTalentumDescription(req: Request, res: Response): Promise<void> {
