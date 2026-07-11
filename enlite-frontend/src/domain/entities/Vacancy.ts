@@ -46,6 +46,13 @@ export interface PublicVacancyDetail {
   patient_zone: string | null;
   country: string | null;
   created_at: string;
+  /** Free-text pathology/diagnosis description (may contain literal `\n`). */
+  pathologies?: string | null;
+  /** Device/service type enum values. Full profession vocabulary:
+   *  `AT | CAREGIVER | NURSE | KINESIOLOGIST | PSYCHOLOGIST` (mirrors
+   *  worker-functions src/modules/worker/domain/enums/Profession.ts —
+   *  the ClickUp serviceMap can produce any of the 5). */
+  service_type?: string[] | null;
 }
 
 /** Extended fields for the admin vacancy detail view.

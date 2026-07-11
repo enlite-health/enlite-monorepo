@@ -2672,9 +2672,19 @@
     "jobDescription": "Descripción del trabajo:",
     "characteristics": "Características:",
     "ageRange": "Rango Etario:",
+    "ageRangeUndefined": "Indistinta",
+    "ageRangeFrom": "Desde {{min}} años",
+    "ageRangeTo": "Hasta {{max}} años",
     "location": "Ubicación:",
     "profile": "Perfil:",
     "serviceType": "Tipo de servicio:",
+    "serviceTypeLabels": {
+      "AT": "Acompañante Terapéutico",
+      "CAREGIVER": "Cuidador",
+      "NURSE": "Enfermero/a",
+      "KINESIOLOGIST": "Kinesiólogo/a",
+      "PSYCHOLOGIST": "Psicólogo/a"
+    },
     "daysAndHours": "Días y Horarios:",
     "modal": {
       "title": "Registro requerido",

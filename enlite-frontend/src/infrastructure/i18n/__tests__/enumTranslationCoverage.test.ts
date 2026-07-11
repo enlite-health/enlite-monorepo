@@ -27,6 +27,10 @@ const PROFESSION_GROUPS = [
   'admin.vacancyDetail.vacancyForm.professionOptions',
   'admin.workerDetail.professionValue',
   'jobs.profession',
+  // Public vacancy page (`vacancy.service_type`) — same full profession
+  // vocabulary; a raw leak here is public-facing (see BLOCKER fix for
+  // PSYCHOLOGIST/NURSE/KINESIOLOGIST leaking on the public page).
+  'publicVacancy.serviceTypeLabels',
 ];
 
 // Vacancy forms also allow the composite value on top of the worker professions.

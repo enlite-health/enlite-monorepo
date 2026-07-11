@@ -1,4 +1,5 @@
 import type { PublicJobRow, PublicJobDto } from '../domain/PublicJobDto';
+import { formatScheduleToText } from './formatScheduleToText';
 
 /**
  * Public `description` is sourced from `job_postings.talentum_description` — the
@@ -20,6 +21,19 @@ function normalizeWorkerType(raw: string[] | null): string[] | null {
   return raw;
 }
 
+/**
+ * `schedule_days_hours` (coluna legada, só preenchida no import ClickUp) fica
+ * NULL/vazia em vagas novas. Fallback: deriva o texto a partir do JSONB
+ * `job_postings.schedule`, que toda vaga nova (Gemini/form admin) preenche.
+ * O legado, quando presente, sempre tem precedência — nunca sobrescrito.
+ */
+function resolveScheduleDaysHours(row: PublicJobRow): string | null {
+  if (row.schedule_days_hours && row.schedule_days_hours.trim()) {
+    return row.schedule_days_hours;
+  }
+  return formatScheduleToText(row.schedule);
+}
+
 export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
   return {
     id: row.id,
@@ -28,7 +42,7 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     title: row.title,
     status: row.status,
     description: sanitizeDescription(row.description),
-    schedule_days_hours: row.schedule_days_hours,
+    schedule_days_hours: resolveScheduleDaysHours(row),
     worker_profile_sought: row.worker_profile_sought,
     service: row.service,
     pathologies: row.pathologies,
