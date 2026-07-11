@@ -73,7 +73,12 @@ RUN_JOB_ARGS=(
   --region="${REGION}"
   --image="${IMAGE_URI}"
   # ENFORCE_COVERAGE=smoke → gate com dentes; CI=true → forbidOnly + workers no config.
-  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true"
+  # MONITOR_ALERT_TO → destinatário do email de resultado (o reporter custom dispara a CADA run).
+  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com"
+  # SendGrid: o reporter custom (src/report/sendgridReporter.ts) envia UM EMAIL por execução
+  # (verde ✅ e vermelho 🔴, com falhas em arquivo:linha). Reusa a MESMA key/sender verificado
+  # que o backend já usa. Sem esta secret o reporter cai em DRY-RUN (não envia, só loga).
+  --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest"
   --max-retries=1          # 1 retry de nível-job absorve blip de cold start; alerta só em falha real
   --task-timeout=300s      # 5min: cobre cold start do /api/jobs (~5s) + toda a suíte smoke
 )

@@ -393,6 +393,20 @@ se is_test (falha visível, não skip silencioso). Red-first; 240 testes verdes;
   talentum-status exists:true → unpublish → exists:false → soft-delete → fora do feed). PENDENTES gerais: rotacionar
   [senha-owner-REDIGIDA]; deploy do runner do monitor (repo AR + canal alerta + senha dedicada no Secret Manager).
 
+## 2026-07-11 — PR #128 MERGEADO + guarda LIVE em prod (verificado) + e2e-prod no repo (#129) + email
+
+**Merge #128:** `--admin` (e2e da main já vermelho por teste pré-existente `prestadores-localidad` — confirmado NÃO
+regressão: arquivo não no PR + main já vermelha no HEAD de origem). Deploy Backend Production **success**. VERIFICADO
+LIVE: `GET /api/admin/vacancies/:id/talentum-status` → 401 (rota existe; 404 se não deployado); health 200. Guarda
+is_test + migration 248 no ar. **PARTE 2 DESBLOQUEADA.**
+
+**e2e-prod no repo:** worktree de main (53 arquivos), senha do owner REDIGIDA dos docs (security). **PR #129 aberto.**
+
+**Email (pedido user):** SendGrid JÁ existe — backend usa `@sendgrid/mail`, secret `sendgrid-api-key` no SM. Executor
+(a7d2): reporter custom Playwright que a CADA run manda email (total/passaram/falharam + por falha: teste+arquivo:linha)
++ grava `failures.json` estruturado pra AUTO-CURA (agente e2e-repair). Reusa secret no runner. MONITOR_ALERT_TO=owner.
+**Próximo:** reporter fecha → deploy runner (mount sendgrid-api-key) → 1 run → email chega = prova. Depois Parte 2.
+
 ## 2026-07-11 — Runner empacotado + fim da metade não-bloqueada
 
 **Executor (a742) retornou com prova:**

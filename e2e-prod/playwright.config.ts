@@ -63,6 +63,10 @@ export default defineConfig({
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
     ['json', { outputFile: 'test-results/results.json' }],
     ['junit', { outputFile: 'test-results/results.xml' }],
+    // Reporter custom: a cada run envia EMAIL (SendGrid, sender verificado do backend) com o
+    // resultado + grava test-results/failures.json (input do agente de auto-cura e2e-repair).
+    // DRY-RUN automático sem SENDGRID_API_KEY (ou MONITOR_EMAIL_DRYRUN=1) — não envia, só loga.
+    ['./src/report/sendgridReporter.ts'],
   ],
   use: {
     baseURL: BASE_URL,
