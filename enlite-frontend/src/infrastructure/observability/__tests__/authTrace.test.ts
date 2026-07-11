@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+vi.mock('../authTelemetryClient', () => ({
+  sendAuthTrace: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { startAuthTrace, describeError } from '../authTrace';
+import { sendAuthTrace } from '../authTelemetryClient';
 import { ApiError } from '@infrastructure/http/ApiError';
 
 describe('authTrace', () => {
   beforeEach(() => {
     (window as unknown as { __adminLoginTrace?: unknown }).__adminLoginTrace = undefined;
+    vi.mocked(sendAuthTrace).mockClear();
     vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -51,6 +58,23 @@ describe('authTrace', () => {
     const ok = startAuthTrace('google');
     ok.end('success');
     expect(last()).toMatchObject({ step: 'end:success', level: 'info' });
+  });
+
+  it('no end() envia a trilha completa pro backend (telemetria)', () => {
+    const trace = startAuthTrace('password');
+    trace.step('firebase-signin:ok', { uid: 'u1' });
+    trace.fail('backend-profile', new ApiError({ success: false, error: 'Admin user not found' }, 404));
+    trace.end('denied');
+
+    expect(sendAuthTrace).toHaveBeenCalledTimes(1);
+    const payload = vi.mocked(sendAuthTrace).mock.calls[0][0];
+    expect(payload).toMatchObject({ traceId: trace.id, flow: 'password', outcome: 'denied' });
+    expect(typeof payload.durationMs).toBe('number');
+    // a trilha inclui start + os steps + o end, com o status 404 preservado
+    const stepNames = payload.steps.map((s) => s.step);
+    expect(stepNames).toEqual(['start', 'firebase-signin:ok', 'backend-profile', 'end:denied']);
+    const failed = payload.steps.find((s) => s.step === 'backend-profile');
+    expect(failed?.data).toMatchObject({ status: 404 });
   });
 
   it('mantém o ring buffer limitado a 100 entradas', () => {
