@@ -10,6 +10,7 @@ import { FormField, InputWithIcon, PasswordInput } from '@presentation/component
 import { Button } from '@presentation/components/atoms/Button';
 import { AuthNavbar } from '@presentation/components/organisms/AuthNavbar';
 import { getAuthErrorMessage } from '@presentation/utils/authErrorMapper';
+import { startAuthTrace } from '@infrastructure/observability/authTrace';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'admin.login.emailRequired').email('register.invalidEmail'),
@@ -29,22 +30,29 @@ export function AdminLoginPage() {
   const handleGoogleLogin = async () => {
     setError(null);
     setIsGoogleLoading(true);
+    const trace = startAuthTrace('google');
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(trace);
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const { adminProfile: profile } = useAdminAuthStore.getState();
+      trace.step('store-read', { hasProfile: !!profile });
 
       if (!profile) {
+        trace.end('denied');
         setError(t('admin.login.notAuthorized', 'Acesso negado. Esta conta não possui permissões de administrador.'));
         const { logout: adminLogout } = useAdminAuthStore.getState();
         await adminLogout();
         return;
       }
 
+      trace.step('redirect', { to: '/admin' });
       navigate('/admin');
+      trace.end('success');
     } catch (err) {
+      trace.fail('login-flow', err);
+      trace.end('error');
       if (err instanceof Error && err.message === 'admin.login.unauthorizedDomain') {
         setError(t('admin.login.unauthorizedDomain', 'Acesso negado. Apenas emails @enlite.health têm acesso ao painel administrativo.'));
       } else {
@@ -66,17 +74,20 @@ export function AdminLoginPage() {
     }
 
     setIsLoading(true);
+    const trace = startAuthTrace('password');
     try {
-      await login(email, password);
+      await login(email, password, trace);
 
       // Aguarda um momento para o store atualizar o adminProfile
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // Verifica se o perfil admin foi carregado
       const { adminProfile: profile } = useAdminAuthStore.getState();
+      trace.step('store-read', { hasProfile: !!profile });
 
       if (!profile) {
         // Usuário autenticou no Firebase mas não tem perfil admin
+        trace.end('denied');
         console.warn('[AdminLoginPage] Login bloqueado - usuário não é admin');
         setError(t('admin.login.notAuthorized', 'Acesso negado. Esta conta não possui permissões de administrador.'));
 
@@ -88,8 +99,12 @@ export function AdminLoginPage() {
       }
 
       // Admin válido, redireciona
+      trace.step('redirect', { to: '/admin' });
       navigate('/admin');
+      trace.end('success');
     } catch (err) {
+      trace.fail('login-flow', err);
+      trace.end('error');
       const translatedError = getAuthErrorMessage(err, t);
       setError(translatedError);
     } finally {
