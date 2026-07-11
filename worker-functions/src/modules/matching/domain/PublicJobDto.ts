@@ -5,8 +5,16 @@ export interface PublicJobRow {
   title: string;
   status: string;
   description: string | null;   // sourced from jp.talentum_description (PII-free); legacy `description` column dropped in migration 214
-  schedule_days_hours: string | null;
-  worker_profile_sought: string | null;
+  schedule_days_hours: string | null;   // legacy column (ClickUp import) — null for vagas novas, see PublicJobMapper fallback
+  worker_profile_sought: string | null; // SQL COALESCE(worker_profile_sought, worker_attributes) — see JobPostingARRepository.findActivePublic
+  /**
+   * `jp.schedule` (JSONB) — fonte estruturada usada como fallback pra derivar
+   * `schedule_days_hours` quando a coluna legada está NULL (vagas novas).
+   * Forma pode ser array `[{dayOfWeek,startTime,endTime}]` (Gemini/form admin)
+   * ou objeto legado `{ <dia>: [{start,end}] }` — ver `scheduleNormalizer.ts`.
+   * `unknown` de propósito: normalizado só dentro de `formatScheduleToText`.
+   */
+  schedule: unknown;
   service: string | null;
   pathologies: string | null;
   state: string | null;

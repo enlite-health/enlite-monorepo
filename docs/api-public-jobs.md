@@ -98,8 +98,8 @@ Todos opcionais.
 | `title` | `string` | Título da vaga, padrão `"CASO {case_number}-{vacancy_number}"` |
 | `status` | `string` | Um de `ACTIVE`, `SEARCHING`, `SEARCHING_REPLACEMENT`, `RAPID_RESPONSE` |
 | `description` | `string` | Descrição da vaga. Texto genérico ("Caso operacional importado…") é sanitizado para `""` |
-| `schedule_days_hours` | `string \| null` | Dias e horários em texto livre (ex: `"Lunes a Viernes 08-14"`) |
-| `worker_profile_sought` | `string \| null` | Perfil de profissional desejado em texto livre |
+| `schedule_days_hours` | `string \| null` | Dias e horários em texto livre (ex: `"Lunes a Viernes 08-14"`). Vagas antigas (import ClickUp): coluna legada `schedule_days_hours`. Vagas novas: derivado automaticamente do schedule estruturado (`job_postings.schedule`, JSONB) quando a coluna legada está vazia — formato `"Lunes 09:00-12:00, Martes 09:00-12:00, ..."` |
+| `worker_profile_sought` | `string \| null` | Perfil de profissional desejado em texto livre. Vagas antigas (import ClickUp): coluna legada `worker_profile_sought`. Vagas novas: cai para `worker_attributes` (campo "Perfil buscado" do formulário admin, já público na página da vaga) quando a coluna legada está vazia |
 | `service` | `string[] \| null` | Serviços do paciente (ex: `["AT"]`, `["CUIDADOR"]`) |
 | `pathologies` | `string \| null` | Diagnóstico/patologia do paciente |
 | `country` | `string \| null` | País ISO-2 (`AR`, `BR`, `US`…). Hoje só há `AR` em produção |

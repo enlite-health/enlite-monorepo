@@ -56,6 +56,7 @@ describe('mapPublicJobRow', () => {
       description: 'Buscamos AT con experiencia.',
       schedule_days_hours: 'Lunes a Viernes 9-17',
       worker_profile_sought: 'Con experiencia en TEA',
+      schedule: null,
       service: 'DOMICILIO',
       pathologies: 'TEA',
       state: 'Buenos Aires',
@@ -208,5 +209,43 @@ describe('mapPublicJobRow', () => {
   it('maps country null to dto.country null', () => {
     const dto = mapPublicJobRow(makeRow({ country: null }));
     expect(dto.country).toBeNull();
+  });
+
+  // ── schedule_days_hours fallback (TD: schedule JSONB → texto derivado) ────
+
+  it('derives schedule_days_hours from schedule JSONB when the legacy column is null', () => {
+    const row = makeRow({
+      schedule_days_hours: null,
+      schedule: [
+        { dayOfWeek: 1, startTime: '09:00', endTime: '12:00' },
+        { dayOfWeek: 3, startTime: '09:00', endTime: '14:00' },
+      ],
+    });
+    const dto = mapPublicJobRow(row);
+    expect(dto.schedule_days_hours).toBe('Lunes 09:00-12:00, Miércoles 09:00-14:00');
+  });
+
+  it('keeps the legacy schedule_days_hours when present, even if schedule JSONB also has data', () => {
+    const row = makeRow({
+      schedule_days_hours: 'Lunes a Viernes 08-14',
+      schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '12:00' }],
+    });
+    const dto = mapPublicJobRow(row);
+    expect(dto.schedule_days_hours).toBe('Lunes a Viernes 08-14');
+  });
+
+  it('returns null schedule_days_hours when both legacy column and schedule JSONB are empty', () => {
+    const row = makeRow({ schedule_days_hours: null, schedule: null });
+    const dto = mapPublicJobRow(row);
+    expect(dto.schedule_days_hours).toBeNull();
+  });
+
+  it('treats an empty-string legacy schedule_days_hours as absent and falls back to schedule JSONB', () => {
+    const row = makeRow({
+      schedule_days_hours: '',
+      schedule: [{ dayOfWeek: 6, startTime: '12:00', endTime: '16:00' }],
+    });
+    const dto = mapPublicJobRow(row);
+    expect(dto.schedule_days_hours).toBe('Sábado 12:00-16:00');
   });
 });
