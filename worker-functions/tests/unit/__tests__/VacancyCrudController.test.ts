@@ -250,7 +250,7 @@ describe('VacancyCrudController', () => {
       expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*\$4,/);
     });
 
-    it('sends 21 parameters ($1 through $21, including patient_address_id, status, published_at, closes_at)', async () => {
+    it('sends 22 parameters ($1 through $22, including patient_address_id, status, published_at, closes_at, is_test)', async () => {
       mockCreateSuccess();
       const req = mockReq(FULL_BODY);
       const res = mockRes();
@@ -258,7 +258,7 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req as never, res as never);
 
       const params = mockQuery.mock.calls[2][1] as unknown[];
-      expect(params).toHaveLength(21);
+      expect(params).toHaveLength(22);
     });
 
     it('maps all fields to correct parameter positions', async () => {
@@ -290,6 +290,7 @@ describe('VacancyCrudController', () => {
       expect(params[16]).toBe('Nota interna');               // daily_obs
       expect(params[17]).toBeNull();                         // patient_address_id (not in FULL_BODY)
       expect(params[18]).toBe('PENDING_ACTIVATION');         // status default
+      expect(params[21]).toBe(false);                        // is_test default (not in FULL_BODY)
     });
 
     it('passes status as $19 param (defaulting to PENDING_ACTIVATION) and hardcodes country=AR', async () => {
@@ -418,9 +419,9 @@ describe('VacancyCrudController', () => {
       const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
-      // 21 param columns + country (literal 'AR') = 22 total
+      // 21 param columns + country (literal 'AR') + is_test (param) = 23 total
       // (description column dropped in migration 214 — no longer inserted)
-      expect(columns).toHaveLength(22);
+      expect(columns).toHaveLength(23);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {
@@ -456,6 +457,70 @@ describe('VacancyCrudController', () => {
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
       expect(columns).not.toContain('is_draft');
+    });
+
+    // ── is_test guard field (migration 248) ────────────────────────
+
+    describe('is_test field', () => {
+      it('defaults to false when not provided in body', async () => {
+        mockCreateSuccess();
+        const req = mockReq(FULL_BODY);
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[21]).toBe(false);
+        expect(res.status).toHaveBeenCalledWith(201);
+      });
+
+      it('persists is_test=true when explicitly provided', async () => {
+        mockCreateSuccess();
+        const req = mockReq({ ...FULL_BODY, is_test: true });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[21]).toBe(true);
+        expect(res.status).toHaveBeenCalledWith(201);
+      });
+
+      it('persists is_test=false when explicitly provided', async () => {
+        mockCreateSuccess();
+        const req = mockReq({ ...FULL_BODY, is_test: false });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[21]).toBe(false);
+      });
+
+      it('returns 400 when is_test is not a boolean (no query executed)', async () => {
+        const req = mockReq({ ...FULL_BODY, is_test: 'yes' });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining('is_test'),
+        }));
+        expect(mockQuery).not.toHaveBeenCalled();
+      });
+
+      it('INSERT SQL includes is_test column', async () => {
+        mockCreateSuccess();
+        const req = mockReq(FULL_BODY);
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const sql = mockQuery.mock.calls[2][0] as string;
+        expect(sql).toContain('is_test');
+      });
     });
   });
 
