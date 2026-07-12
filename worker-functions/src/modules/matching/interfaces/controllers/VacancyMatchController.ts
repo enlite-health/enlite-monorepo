@@ -28,22 +28,12 @@ export class VacancyMatchController {
       const excludeWithActiveCases = req.query.exclude_active === 'true';
       const useScoring             = req.query.use_scoring === 'true';
 
-      // Guarda de vaga de teste: espelha VacancyAutoInviteHandler — vaga is_test
-      // NUNCA convida ATs reais, seja pelo caminho automático (vacancy.created)
-      // ou pelo botão manual "Rodar match". Checa ANTES de qualquer efeito colateral.
-      const jobRes = await this.db.query<{ is_test: boolean }>(
-        `SELECT is_test FROM job_postings WHERE id = $1 LIMIT 1`,
+      const jobRes = await this.db.query<{ id: string }>(
+        `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
         [id],
       );
       if (jobRes.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Job posting not found' });
-        return;
-      }
-      if (jobRes.rows[0].is_test === true) {
-        res.status(409).json({
-          success: false,
-          error: 'Cannot run match on a test vacancy (is_test)',
-        });
         return;
       }
 
