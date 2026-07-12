@@ -66,8 +66,7 @@ import { RecruitmentHealthController } from '@modules/notification/interfaces/co
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
 import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
-import { AdminDedupController } from './interfaces/controllers/dedup/AdminDedupController';
-import { createDedupRoutes } from './interfaces/routes/dedupRoutes';
+import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
 
 const app = express();
@@ -152,7 +151,6 @@ const publicJobsController = new PublicJobsController();
 const workerContextController = new WorkerContextController();
 
 const claimController = createClaimController();
-const adminDedupController = new AdminDedupController();
 
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
@@ -311,8 +309,8 @@ app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsContr
 // ========== Admin Patients ==========
 app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
 
-// ========== Admin Dedup (Centro de Duplicados) ==========
-app.use('/api/admin/dedup', createDedupRoutes(adminDedupController, authMiddleware));
+// ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
+registerAdminMaintenanceRoutes(app, authMiddleware);
 
 // ========== Admin Integrations (AnaCare mirror etc.) ==========
 app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware));
