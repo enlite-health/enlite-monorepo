@@ -4,6 +4,9 @@
  * Cenários:
  *  1.  Payload sem jobPostingId lança erro
  *  2.  Job posting não encontrado → early return sem enfileirar
+ *  2b. Vaga TEST sem workers TEST elegíveis na zona → SameRealmSpecification
+ *      zera os candidatos no matchmaking → 0 WJA/0 outbox
+ *  2b'.Vaga TEST com worker TEST elegível na zona → convida normalmente
  *  3.  Candidatos com alreadyApplied=true são filtrados (não enfileiram)
  *  4.  Candidato com EXISTS=true no outbox é skippado (idempotência)
  *  5a. Worker REGISTERED → INSERT outbox com slug=ar_vacancy_match_complete + 3 vars (sem pending_documents)
@@ -114,23 +117,46 @@ describe('VacancyAutoInviteHandler', () => {
     expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
   });
 
-  // 2b — GUARD (bug-shield RED-FIRST): vaga marcada is_test NÃO deve gerar
-  // convites (WJA/matchmaking) nem outbox de WhatsApp.
-  it('vaga is_test=true → skip auto-invite (0 matchmaking, 0 WJA, 0 outbox/cloud tasks)', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo', is_test: true }] });
+  // 2b — SameRealmSpecification (DataRealm.TEST) já filtra os candidatos dentro
+  // do matchmaking: vaga TEST com zona só de workers LIVE não gera candidatos.
+  it('vaga TEST com só workers LIVE na zona → matchmaking roda mas retorna 0 candidatos → 0 WJA/0 outbox', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] });
+    mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([]));
 
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-test-1' });
 
-    expect(mockQuery).toHaveBeenCalledTimes(1); // só a query inicial — nada mais roda
-    expect(mockMatchWorkersForJob).not.toHaveBeenCalled();
+    expect(mockMatchWorkersForJob).toHaveBeenCalledTimes(1);
     expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
   });
 
-  // 2c — vaga normal (is_test=false/undefined) continua funcionando como antes.
-  it('vaga is_test=false → comportamento inalterado (matchmaking roda normalmente)', async () => {
+  // 2b' — vaga TEST com um worker TEST elegível na zona → convida normalmente
+  // (SameRealmSpecification deixou passar por casar TEST↔TEST).
+  it('vaga TEST com worker TEST elegível na zona → convida o worker TEST normalmente', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo', is_test: false }] })
+      .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-test-realm-1' }] });
+
+    const testCandidate = makeScoredCandidate({ workerId: 'worker-test-1', workerStatus: 'REGISTERED' });
+    mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([testCandidate]));
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-test-1' });
+
+    expect(mockCloudTasks.schedule).toHaveBeenCalledWith({
+      queue: 'whatsapp-paced',
+      url: '/api/internal/outbox/process-paced',
+      body: { outboxId: 'outbox-test-realm-1' },
+    });
+  });
+
+  // 2c — vaga normal continua funcionando como antes.
+  it('vaga LIVE → comportamento inalterado (matchmaking roda normalmente)', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] })
       .mockResolvedValueOnce({ rows: [{ exists: false }] })
       .mockResolvedValueOnce({ rows: [{ exists: false }] })
       .mockResolvedValueOnce({ rows: [{ exists: false }] })

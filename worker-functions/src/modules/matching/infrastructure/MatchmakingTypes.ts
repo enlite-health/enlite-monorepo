@@ -5,6 +5,8 @@
  * MatchmakingHardFilter e MatchmakingLLMScorer.
  */
 
+import { DataRealm } from '@shared/domain/DataRealm';
+
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
 export interface JobPosting {
@@ -18,6 +20,7 @@ export interface JobPosting {
   requiredSex: string | null;
   requiredProfessions: string[] | null;
   pathologyTypes: string | null;
+  realm: DataRealm;
 }
 
 export interface ActiveCase {
@@ -43,6 +46,7 @@ export interface WorkerCandidate {
   alreadyApplied: boolean;
   rejectionHistory: Record<string, number>;
   avgQualityRating: number | null;
+  realm: DataRealm;
 }
 
 export interface LLMMatchScore {

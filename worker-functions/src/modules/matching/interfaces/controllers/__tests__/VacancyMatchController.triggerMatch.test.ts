@@ -1,15 +1,16 @@
 /**
  * VacancyMatchController.triggerMatch.test.ts
  *
- * Guarda: vaga is_test NUNCA convida ATs — também no caminho MANUAL
- * (botão "Rodar match"). Espelha a guarda já existente no caminho
- * automático (VacancyAutoInviteHandler).
+ * Segregação de realm (LIVE/TEST) é responsabilidade do matchmaking
+ * (SameRealmSpecification dentro de MatchmakingService.hardFilter), não do
+ * controller — o botão manual "Rodar match" delega e confia no resultado
+ * já segregado, seja a vaga LIVE ou TEST.
  *
  * Cenários:
- * 1. Vaga is_test=true — NÃO chama matchmaking, responde 409 com skipped info
- * 2. Vaga is_test=false — chama matchmaking normalmente (fluxo intacto)
- * 3. Vaga não encontrada — 404 (não deixa matchWorkersForJob estourar em vão)
- * 4. Erro no matchmaking — 500 (fluxo de erro existente intacto)
+ * 1. Vaga encontrada — roda matchmaking normalmente e devolve o resultado
+ *    (candidatos já vêm segregados por realm; controller não decide nada)
+ * 2. Vaga não encontrada — 404 (não deixa matchWorkersForJob estourar em vão)
+ * 3. Erro no matchmaking — 500 (fluxo de erro existente intacto)
  */
 
 const mockQuery = jest.fn();
@@ -47,7 +48,7 @@ function makeReqRes(params: Record<string, string> = { id: JOB_ID }, query: Reco
   return [req, res];
 }
 
-describe('VacancyMatchController — triggerMatch (is_test guard)', () => {
+describe('VacancyMatchController — triggerMatch (segregação de realm delegada ao matchmaking)', () => {
   let controller: VacancyMatchController;
 
   beforeEach(() => {
@@ -55,21 +56,21 @@ describe('VacancyMatchController — triggerMatch (is_test guard)', () => {
     controller = new VacancyMatchController();
   });
 
-  it('vaga is_test=true — NÃO chama matchmaking e responde 409 skipped', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ is_test: true }] });
+  it('vaga TEST encontrada — controller NÃO bloqueia; roda matchmaking (SameRealmSpecification decide dentro)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: JOB_ID }] });
+    mockMatchWorkersForJob.mockResolvedValueOnce({ jobPostingId: JOB_ID, candidates: [] });
 
     const [req, res] = makeReqRes();
     await controller.triggerMatch(req, res);
 
-    expect(mockMatchWorkersForJob).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(409);
+    expect(mockMatchWorkersForJob).toHaveBeenCalledWith(JOB_ID, expect.objectContaining({ topN: 20 }));
+    expect(res.status).toHaveBeenCalledWith(200);
     const body = (res.json as jest.Mock).mock.calls[0][0];
-    expect(body.success).toBe(false);
-    expect(body.error).toMatch(/test vacancy/i);
+    expect(body.success).toBe(true);
   });
 
-  it('vaga is_test=false — roda matchmaking normalmente (fluxo intacto)', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ is_test: false }] });
+  it('vaga LIVE encontrada — roda matchmaking normalmente (fluxo intacto)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: JOB_ID }] });
     mockMatchWorkersForJob.mockResolvedValueOnce({ jobPostingId: JOB_ID, candidates: [] });
 
     const [req, res] = makeReqRes();
@@ -91,8 +92,8 @@ describe('VacancyMatchController — triggerMatch (is_test guard)', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  it('erro no matchmaking (vaga real) — 500 (fluxo de erro existente intacto)', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ is_test: false }] });
+  it('erro no matchmaking — 500 (fluxo de erro existente intacto)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: JOB_ID }] });
     mockMatchWorkersForJob.mockRejectedValueOnce(new Error('boom'));
 
     const [req, res] = makeReqRes();
