@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BulkDispatchIncompleteWorkersUseCase } from '../../application/BulkDispatchIncompleteWorkersUseCase';
 import { BuildVacancyMatchVariablesUseCase } from '../../application/BuildVacancyMatchVariablesUseCase';
+import { assertVacancyInviteAllowed } from '../../application/VacancyInviteGuard';
 import { AuthMiddleware } from '@modules/identity';
 import { logger, reportError } from '@shared/logging';
 
@@ -75,6 +76,16 @@ export class MessagingController {
           error: 'WORKER_STATUS_INVALID',
           detail: `Worker em status ${status ?? 'desconhecido'} não pode receber convite de match`,
         });
+      return;
+    }
+
+    // Travas anti-spam (espelham o VacancyAutoInviteHandler + throttle de
+    // não-resposta). Rodam ANTES de resolver telefone/variáveis pra não gerar
+    // token PII num envio que será bloqueado.
+    const guard = await assertVacancyInviteAllowed(this.db, String(workerId), String(jobPostingId));
+    if (!guard.allowed) {
+      logger.info({ workerId, jobPostingId, code: guard.code }, 'Convite de vaga bloqueado pelo guard');
+      res.status(422).json({ error: guard.code, detail: guard.detail });
       return;
     }
 

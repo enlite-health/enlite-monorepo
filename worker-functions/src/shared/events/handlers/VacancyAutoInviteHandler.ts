@@ -4,10 +4,10 @@ import { MatchmakingService } from '../../../modules/matching/infrastructure/Mat
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
 import { logger, reportError, loggingAls } from '../../logging';
 import { getRequiredColumns } from '../../../modules/worker/application/workerDocumentPolicy';
+import { assertVacancyInviteAllowed } from '../../../modules/notification/application/VacancyInviteGuard';
 
 const TEMPLATE_SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const TEMPLATE_SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
-const IDEMPOTENCY_DAYS = 7;
 
 // Queue dedicada com rate limit 0.5 msg/sec (config GCP) — paced pra
 // evitar burst que Meta classificaria como spam. Veja:
@@ -142,48 +142,13 @@ export function createVacancyAutoInviteHandler(
         const isComplete     = workerStatus === 'REGISTERED';
         const templateSlug   = isComplete ? TEMPLATE_SLUG_COMPLETE : TEMPLATE_SLUG_INCOMPLETE;
 
-        // Opt-out: worker pediu pra não receber mensagens
-        const optOutRes = await db.query<{ exists: boolean }>(
-          `SELECT EXISTS(
-            SELECT 1 FROM messaging_opt_out
-            WHERE worker_id = $1 AND opted_in_at IS NULL
-          ) AS exists`,
-          [candidate.workerId],
-        );
-        if (optOutRes.rows[0]?.exists) {
+        // Guard compartilhado (mesmas travas do disparo manual): opt-out,
+        // cooldown 3d, idempotência 7d (outbox + bulk logs) e throttle de
+        // não-resposta. Fonte única de verdade — auto e manual não divergem.
+        const guard = await assertVacancyInviteAllowed(db, candidate.workerId, jobPostingId);
+        if (!guard.allowed) {
           skipped++;
-          continue;
-        }
-
-        // Cooldown global: não enviar se worker recebeu qualquer msg nos últimos 3 dias
-        const cooldownRes = await db.query<{ exists: boolean }>(
-          `SELECT EXISTS(
-            SELECT 1 FROM whatsapp_bulk_dispatch_logs
-            WHERE worker_id = $1
-              AND status = 'sent'
-              AND dispatched_at > NOW() - INTERVAL '3 days'
-          ) AS exists`,
-          [candidate.workerId],
-        );
-        if (cooldownRes.rows[0]?.exists) {
-          skipped++;
-          continue;
-        }
-
-        // Idempotência: já enfileirado nos últimos 7 dias para qualquer template ar_vacancy_match_*?
-        const existsRes = await db.query<{ exists: boolean }>(
-          `SELECT EXISTS(
-            SELECT 1 FROM messaging_outbox
-            WHERE worker_id = $1
-              AND job_posting_id = $2
-              AND template_slug IN ($3, $4)
-              AND created_at > NOW() - INTERVAL '${IDEMPOTENCY_DAYS} days'
-              AND status IN ('pending', 'sent')
-          ) AS exists`,
-          [candidate.workerId, jobPostingId, TEMPLATE_SLUG_COMPLETE, TEMPLATE_SLUG_INCOMPLETE],
-        );
-        if (existsRes.rows[0]?.exists) {
-          skipped++;
+          log.info({ workerId: candidate.workerId, code: guard.code }, 'Convite bloqueado pelo guard');
           continue;
         }
 
