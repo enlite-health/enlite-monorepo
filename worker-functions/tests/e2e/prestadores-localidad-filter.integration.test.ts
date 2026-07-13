@@ -133,7 +133,10 @@ describe('Prestadores — filtro de Localidad/Provincia (banco real)', () => {
     );
 
     expect(cities.has('Buenos Aires')).toBe(true);
-    expect(cities.has('Ciudad Autónoma de Buenos Aires')).toBe(true); // surfaced from work_zone
+    // Canonical CABA label unificado em 'CABA' (commit 0a35343 — SSOT com
+    // argentinaLocationNormalizer.PROVINCE_CANONICAL). recognizedZoneLabel('CABA')
+    // surface o sinal de CABA que só vive em work_zone.
+    expect(cities.has('CABA')).toBe(true); // surfaced from work_zone
     expect(cities.has('AEJ')).toBe(false); // CPA junk dropped
   });
 });

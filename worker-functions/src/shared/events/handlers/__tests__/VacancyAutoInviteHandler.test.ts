@@ -153,6 +153,22 @@ describe('VacancyAutoInviteHandler', () => {
     });
   });
 
+  // 2c' — job_postings.is_test=true (guarda de vaga de teste/QA, migration 248) →
+  // handler faz early-return ANTES de rodar matchmaking. Isso é diferente de
+  // 2b/2b': naquelas o realm TEST é resolvido dentro do MatchmakingService via
+  // SameRealmSpecification; aqui é o próprio handler que lê jp.is_test na sua
+  // query e corta o fluxo inteiro (matchmaking + WJA + outbox + WhatsApp).
+  it('job_posting com is_test=true → retorna cedo sem chamar matchmaking nem inserir outbox', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo', is_test: true }] });
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-flagged-test' });
+
+    expect(mockQuery).toHaveBeenCalledTimes(1); // só a SELECT inicial
+    expect(mockMatchWorkersForJob).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
+  });
+
   // 2c — vaga normal continua funcionando como antes.
   it('vaga LIVE → comportamento inalterado (matchmaking roda normalmente)', async () => {
     mockQuery
