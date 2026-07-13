@@ -12,6 +12,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useInviteProgressStore } from '../inviteProgressStore';
+import { InviteBlockedError } from '@infrastructure/http/AdminMessagingApiService';
+import i18n from '@infrastructure/i18n/config';
 import type { InviteTarget } from '@presentation/components/features/admin/VacancyMatch/inviteTypes';
 
 const sendMock = vi.fn();
@@ -99,6 +101,38 @@ describe('inviteProgressStore', () => {
     expect(statuses.slice(1)).toEqual(['cancelled', 'cancelled']);
     expect(sendMock).toHaveBeenCalledTimes(1);
     expect(store().isSending).toBe(false);
+  });
+
+  it('mostra a razão localizada (ES) quando o envio é bloqueado (422)', async () => {
+    await i18n.changeLanguage('es');
+    sendMock.mockRejectedValueOnce(
+      new InviteBlockedError('UNANSWERED_THROTTLE', 'texto PT-BR do backend'),
+    );
+    store().enqueue('vac-1', targets(1));
+
+    await vi.advanceTimersByTimeAsync(6000);
+
+    const item = store().items[0];
+    expect(item.status).toBe('error');
+    expect(item.error).toBe(
+      i18n.t('admin.messaging.blocked.UNANSWERED_THROTTLE'),
+    );
+    // Nunca o CODE cru nem o detail PT-BR direto na tela.
+    expect(item.error).not.toBe('UNANSWERED_THROTTLE');
+    expect(item.error).not.toBe('texto PT-BR do backend');
+    expect(item.error).toContain('sin responder');
+  });
+
+  it('cai no detail do backend quando o CODE é desconhecido', async () => {
+    await i18n.changeLanguage('es');
+    sendMock.mockRejectedValueOnce(
+      new InviteBlockedError('SOME_NEW_CODE', 'motivo específico del backend'),
+    );
+    store().enqueue('vac-1', targets(1));
+
+    await vi.advanceTimersByTimeAsync(6000);
+
+    expect(store().items[0].error).toBe('motivo específico del backend');
   });
 
   it('deduplica re-enqueue do mesmo worker ainda pendente', async () => {

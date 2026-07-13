@@ -15,6 +15,37 @@ export interface VacancyMatchInviteResult {
   to: string;
 }
 
+/**
+ * Códigos com que o backend recusa (HTTP 422) o disparo individual de convite
+ * de match. São estáveis e usados como chave de i18n na UI — o `detail` do
+ * backend vem em PT-BR e NÃO deve ir cru pra tela (recrutadoras são argentinas).
+ */
+export const INVITE_BLOCKED_CODES = [
+  'OPTED_OUT',
+  'COOLDOWN',
+  'ALREADY_INVITED',
+  'UNANSWERED_THROTTLE',
+  'WORKER_STATUS_INVALID',
+] as const;
+export type InviteBlockedCode = (typeof INVITE_BLOCKED_CODES)[number];
+
+/**
+ * Lançado quando o backend responde 422 recusando o convite. Carrega o `code`
+ * (para mapear numa mensagem localizada) e o `detail` PT-BR (fallback quando o
+ * code é desconhecido pelo frontend).
+ */
+export class InviteBlockedError extends Error {
+  readonly code: string;
+  readonly detail?: string;
+
+  constructor(code: string, detail?: string) {
+    super(detail || code);
+    this.name = 'InviteBlockedError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
 interface ApiSuccessResponse<T> {
   success: true;
   data: T;
@@ -65,7 +96,13 @@ export class AdminMessagingApiServiceClass {
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const json: ApiResponse<T> = await response.json() as ApiResponse<T>;
+    const json = await response.json() as ApiResponse<T> & { detail?: string };
+    // 422 = recusa de negócio (opt-out, cooldown, …). O corpo é
+    // `{ error: <CODE>, detail: <PT-BR> }`; propaga como erro tipado para a UI
+    // resolver a mensagem localizada a partir do CODE.
+    if (response.status === 422 && typeof (json as ApiErrorResponse).error === 'string') {
+      throw new InviteBlockedError((json as ApiErrorResponse).error, json.detail);
+    }
     if (!json.success) {
       throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
     }
