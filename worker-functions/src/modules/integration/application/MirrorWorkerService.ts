@@ -35,6 +35,7 @@ interface WorkerRow {
   occupation: string | null;
   ana_care_id: string | null;
   ana_care_status: string | null;
+  is_test: boolean;
   // Encrypted PII
   first_name_encrypted: string | null;
   last_name_encrypted: string | null;
@@ -82,6 +83,13 @@ export class MirrorWorkerService {
     }
 
     try {
+      // Gate: worker de teste (is_test=true) NUNCA é enviado ao provider externo.
+      // Checado ANTES de qualquer chamada externa (upsert e deactivate).
+      if (row.is_test === true) {
+        log.info({ msg: `${TAG} skipped (is_test)`, reason: 'is_test' });
+        return 'skipped';
+      }
+
       // Deactivate path: Baja + known external ID (independente do status REGISTERED)
       if (row.ana_care_status === 'Baja' && row.ana_care_id !== null) {
         if (this.provider.deactivate) {
@@ -234,6 +242,7 @@ export class MirrorWorkerService {
          w.occupation,
          w.ana_care_id,
          w.ana_care_status,
+         w.is_test,
          w.first_name_encrypted,
          w.last_name_encrypted,
          w.sex_encrypted,

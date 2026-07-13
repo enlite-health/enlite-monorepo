@@ -85,6 +85,7 @@ interface RowOverrides {
   occupation?: string | null;
   ana_care_id?: string | null;
   ana_care_status?: string | null;
+  is_test?: boolean;
   first_name_encrypted?: string | null;
   last_name_encrypted?: string | null;
   sex_encrypted?: string | null;
@@ -102,6 +103,7 @@ function makeRow(overrides: RowOverrides = {}) {
     occupation: 'AT',
     ana_care_id: null,
     ana_care_status: null,
+    is_test: false,
     first_name_encrypted: 'enc-fn',
     last_name_encrypted: 'enc-ln',
     sex_encrypted: 'enc-MALE',
@@ -274,6 +276,25 @@ describe('MirrorWorkerService.mirrorOne', () => {
 
     expect(result).toBe('skipped');
     expect(provider.upsert).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────
+  // 4b. Skip quando is_test=true (worker de teste NUNCA vai ao AnaCare)
+  // ─────────────────────────────────────────────
+
+  it('retorna "skipped" e NÃO chama provider.upsert quando is_test=true e status=REGISTERED', async () => {
+    const row = makeRow({ is_test: true, status: 'REGISTERED' });
+    setupFetchWorker(row);
+    setupDecrypt();
+
+    const provider = makeFakeProvider();
+    const service = new MirrorWorkerService(provider);
+
+    const result = await service.mirrorOne(WORKER_ID);
+
+    expect(result).toBe('skipped');
+    expect(provider.upsert).not.toHaveBeenCalled();
+    expect(provider.deactivate).not.toHaveBeenCalled();
   });
 
   // ─────────────────────────────────────────────
