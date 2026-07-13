@@ -94,6 +94,7 @@ export default defineConfig({
     {
       name: 'regression',
       testDir: './regression',
+      testMatch: /\.regression\.ts$/, // specs deste projeto usam sufixo .regression.ts
       retries: IS_CI ? 1 : 0,
       use: { ...devices['Desktop Chrome'] },
     },

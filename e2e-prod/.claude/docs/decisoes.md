@@ -162,3 +162,50 @@ enlite-prd — validar antes de confiar em smoke admin autenticado.
 - Grandes players: microsoft.github.io/code-with-engineering-playbook (smoke + synthetic-monitoring),
   shopify.dev/docs (e2e Playwright + auth bypass token)
 - New Relic / Checkly / Datadog synthetic docs; USENIX "two sides of the same coin"
+
+## 2026-07-13 — TOP 1: jornada worker real (a razão de existir da suíte) + desenho das contas
+**Contexto:** auditoria constatou que a suíte tinha **0 cobertura happy / 0 jornada worker** — só
+casca (render + validação + auth negativo). Isso contradiz o propósito da suíte (monitorar jornadas
+REAIS). Elevado a PRIORIDADE #1.
+**Decisão — DOIS PAPÉIS, DUAS CONTAS (não confundir):**
+- **Admin** (`E2E_ADMIN_*` no .env.local) = STAFF, já existe. Papel na jornada: marcar o worker como
+  is_test (`PATCH /api/admin/workers/:id/test-flag`), verificar (`ana_care_id`, WJA via API admin),
+  cleanup (`POST /api/admin/test-fixtures/cleanup`).
+- **Worker (prestador)** = o ATOR da jornada. **NÃO é o admin** (admin é staff/custom-claim, não pode
+  ser candidato) e **NÃO é pré-criado**. Como a jornada é um fluxo de CADASTRO e o monitor roda todo
+  dia (cadastrar o mesmo email 2x falha), cada run faz **signup de alias fresco**
+  `gabriel+e2e-worker-<run>@gmail.com` (convenção da conta de teste) com senha definida pelo próprio
+  teste. Descartado o `worker.setup.ts` de login fixo (foi erro copiar o padrão do admin.setup).
+  Referência de signup+teardown: `enlite-frontend/e2e/staging-journey-clean.e2e.ts`.
+**Sequência is_test SEGURA (ordem importa):** signup worker → admin marca is_test IMEDIATAMENTE (antes
+de REGISTERED, arma o gate) → completar cadastro até REGISTERED → gate pula espelho AnaCare → assert
+`ana_care_id IS NULL` (não-espelho, observável via `GET /api/admin/workers/:id`) → criar vaga is_test
+via API → postularse → assert WJA INVITED + fidelidade request↔DOM → cleanup.
+**Resíduo aceito:** cleanup apaga a linha do banco (is_test), NÃO o usuário do Firebase Auth (runner
+sem credencial admin do Firebase, por segurança) → usar poucos aliases rotativos.
+**Por quê:** worker de teste REGISTERED espelhava no AnaCare real (sem DELETE) → o gate is_test no
+`MirrorWorkerService` (choke point) resolve; a jornada prova o não-espelho por `ana_care_id`.
+**Status:** gate DEPLOYADO em prod (PR #133, commit b9d3ae4, "Backend — Production" success). Jornada
+em construção na branch `feat/e2e-prod-worker-journey`. Contas: admin pronto; worker é signup-por-run.
+
+## 2026-07-13 — NOTA CI: "E2E Tests — Worker Functions" cronicamente vermelho (não é regressão)
+O workflow CI de E2E do worker-functions falha em TODOS os pushes recentes de main (≥8 seguidos desde
+2026-07-10, commits sem relação) por 1 teste: `prestadores-localidad-filter.integration.test.ts`
+("dropdown de cities exclui lixo CPA…"), 1 failed / 1660 passed. NÃO bloqueia deploy (Backend —
+Production sobe verde). O gate AnaCare (#133) NÃO causou — os testes de AnaCare passam. Follow-up do
+time: consertar/quarentenar esse teste pra o CI de E2E voltar a ter sinal.
+
+## 2026-07-13 — Email do monitor: total + LISTA de todos os testes (✅ conjunto/teste)
+**Decisão (user):** o email de resultado (`src/report/sendgridReporter.ts`) mantém a contabilidade
+total (Total/Passou/Falhou/Pulou/Flaky) E passa a mostrar uma LISTA de TODOS os testes da run,
+agrupada por "conjunto" (describe), com ícone por status: `✅` passou · `❌` falhou · `⚠️` flaky ·
+`⏭️` pulou. Formato: sob o nome do conjunto, um `✅ <nome do teste>` por linha.
+**Invariante:** TODO teste novo SEMPRE aumenta a conta E aparece na lista — o reporter enumera todos
+os testes (`finalByTest`), nunca só as falhas. Proibido filtrar testes fora da conta/lista.
+**Por quê:** o user quer o email como um livro-razão crescente do que o monitor PROVA (quais fluxos
+rodaram), não só "X de Y". Dá pra conferir sem SendGrid: dry-run (`MONITOR_EMAIL_DRYRUN=1`) loga o
+corpo do email inteiro.
+**Como manter:** ao adicionar teste, dar describe+título descritivos (renderizam no email) e garantir
+que roda sob o reporter (projetos smoke/regression/admin). Ver memória
+`feedback_e2e_email_report_lists_every_test`.
+**Status:** implementado (reporter + dry-run verificado). Ainda não commitado (vai com o PR da jornada).

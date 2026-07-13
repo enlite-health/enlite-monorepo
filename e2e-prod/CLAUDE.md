@@ -75,6 +75,13 @@ Pessoas: Gabriel (dono do produto, GCP-native, aprendendo E2E/monitoring junto) 
 
 ## Status atual
 
+> 🔴 **PRIORIDADE #1 — A RAZÃO DE EXISTIR DA SUÍTE: cobrir JORNADAS REAIS ponta-a-ponta.**
+> Hoje a suíte tem **0 cobertura happy** (`@depth:happy=0`) — só casca (render + validação + auth
+> negativo). Construir a **jornada worker real** (cadastro → REGISTERED → postularse) é o topo do
+> backlog, acima de qualquer novo smoke/erro. Bloqueios já caíram (gate AnaCare deployado + desenho
+> de conta firmado). Ver memórias `project_e2e_prod_real_journeys_top_priority` e
+> `project_e2e_worker_journey_design`, e a entrada 2026-07-13 em `.claude/docs/decisoes.md`.
+
 - [x] Mapeado E2E existente (nada roda em prod hoje — confirmado por evidência)
 - [x] Manifesto determinístico de rotas front+back extraído (denominador da cobertura)
 - [x] Best practices Playwright pesquisadas (fontes em decisoes.md)
@@ -87,7 +94,7 @@ Pessoas: Gabriel (dono do produto, GCP-native, aprendendo E2E/monitoring junto) 
 - [x] **Gate de cobertura COM DENTES** — `ENFORCE_COVERAGE=smoke` passa; credita smoke+admin; parseia `@depth:`; 0 órfãs
 - [x] Runner empacotado (`Dockerfile` + `deploy-monitor.sh` + README) — write-only, pronto (pende repo AR + canal de alerta + senha dedicada no Secret Manager)
 - [x] Frente ERRO: 3 levas seguras (público FE Zod + API + admin), profundidade erro 3→16
-- [ ] **Frente HAPPY + erros WORKER** (o miolo que falta): precisa conta-de-worker de teste + is_test CIRÚRGICO (matchmaking exclui + externo pula + cascade-delete). Bloqueia depth `happy` e a jornada do AT
+- [ ] 🔴 **[TOP 1] Jornada WORKER real — a razão de existir da suíte, 0 cobertura hoje.** Bloqueios RESOLVIDOS 2026-07-13: gate AnaCare is_test DEPLOYADO (PR #133); admin is_test toggle ✅; vaga is_test backend ✅; cleanup is_test ✅. Desenho firmado (ver `project_e2e_worker_journey_design`): admin FIXO=staff (marca is_test/verifica/cleanup) + worker=SIGNUP fresco por run (alias `gabriel+e2e-worker-<run>@`, senha no teste; NÃO pré-criar). Construindo em `feat/e2e-prod-worker-journey`. FALTA: fixtures de doc, vaga is_test via API, assert `ana_care_id IS NULL`. Prova final = flow-guard
 - [ ] Deploy do runner (Cloud Scheduler + Cloud Run Job) — precisa das 3 pendências acima + rotacionar `[senha-owner-REDIGIDA]`
 - [ ] Follow-ups backend achados pela suíte: (a) `/api/vacancies/:id` não-UUID→500 (+FE página branca); (b) `DELETE /api/admin/users/:id` antes de `/by-email` (colide); (c) data-loss service-area/availability/general-info; (d) i18n: msgs BE cruas + email zod inalcançável (HTML5 barra antes). NÃO-bug: "CORS em erro" era o header x-e2e-synthetic (removido)
 

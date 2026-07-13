@@ -44,6 +44,14 @@ interface FailureEntry {
   error: string;
 }
 
+/** Uma linha da LISTA DE TESTES do email — "✅ Conjunto / Nome do teste". Todo teste
+ *  da run aparece aqui (a contabilidade cresce sozinha a cada teste novo). */
+interface TestListEntry {
+  icon: string; // ✅ passou · ❌ falhou · ⚠️ flaky · ⏭️ pulou
+  suite: string; // "conjunto de testes" (describe, ou arquivo se não houver describe)
+  title: string; // nome do teste
+}
+
 interface FailuresReport {
   runAt: string;
   total: number;
@@ -53,6 +61,24 @@ interface FailuresReport {
   flaky: number;
   durationMs: number;
   failures: FailureEntry[];
+  /** TODOS os testes da run (não só falhas) — alimenta a lista "✅ Conjunto / teste". */
+  tests: TestListEntry[];
+}
+
+/** Ícone por veredito final do teste. */
+function outcomeIcon(outcome: string): string {
+  switch (outcome) {
+    case 'expected':
+      return '✅';
+    case 'unexpected':
+      return '❌';
+    case 'flaky':
+      return '⚠️';
+    case 'skipped':
+      return '⏭️';
+    default:
+      return '•';
+  }
 }
 
 // eslint-disable-next-line no-control-regex
@@ -93,9 +119,16 @@ export default class SendGridReporter implements Reporter {
     let skipped = 0;
     let flaky = 0;
     const failures: FailureEntry[] = [];
+    const tests: TestListEntry[] = [];
 
     for (const { test, result: testResult } of this.finalByTest.values()) {
-      switch (test.outcome()) {
+      const outcome = test.outcome();
+      tests.push({
+        icon: outcomeIcon(outcome),
+        suite: test.parent?.title?.trim() || this.relFile(test.location.file),
+        title: test.title,
+      });
+      switch (outcome) {
         case 'expected':
           passed++;
           break;
@@ -112,6 +145,9 @@ export default class SendGridReporter implements Reporter {
       }
     }
 
+    // Ordena por conjunto e depois por nome — a lista fica estável entre runs.
+    tests.sort((a, b) => a.suite.localeCompare(b.suite) || a.title.localeCompare(b.title));
+
     const total = passed + failed + skipped + flaky;
     const report: FailuresReport = {
       runAt,
@@ -122,6 +158,7 @@ export default class SendGridReporter implements Reporter {
       flaky,
       durationMs,
       failures,
+      tests,
     };
 
     const failuresPath = this.writeFailuresJson(report);
@@ -175,6 +212,22 @@ export default class SendGridReporter implements Reporter {
     lines.push(`Duração: ${(r.durationMs / 1000).toFixed(1)}s`);
     lines.push('');
     lines.push(`Total: ${r.total} · Passou: ${r.passed} · Falhou: ${r.failed} · Pulou: ${r.skipped} · Flaky: ${r.flaky}`);
+
+    // Lista de TODOS os testes (contabilidade completa), agrupada por conjunto.
+    if (r.tests.length > 0) {
+      lines.push('');
+      lines.push(`Testes (${r.tests.length}):`);
+      let currentSuite = '';
+      for (const t of r.tests) {
+        if (t.suite !== currentSuite) {
+          currentSuite = t.suite;
+          lines.push('');
+          lines.push(`  ${currentSuite}`);
+        }
+        lines.push(`    ${t.icon} ${t.title}`);
+      }
+    }
+
     if (r.failures.length > 0) {
       lines.push('');
       lines.push('Falhas:');
@@ -206,6 +259,34 @@ export default class SendGridReporter implements Reporter {
       )
       .join('');
 
+    // Lista de TODOS os testes (contabilidade completa), agrupada por conjunto.
+    let testsHtml = '';
+    if (r.tests.length > 0) {
+      const groups = new Map<string, TestListEntry[]>();
+      for (const t of r.tests) {
+        const arr = groups.get(t.suite) ?? [];
+        arr.push(t);
+        groups.set(t.suite, arr);
+      }
+      const groupsHtml = [...groups.entries()]
+        .map(([suite, items]) => {
+          const lis = items
+            .map(
+              (t) =>
+                `<li style="margin:2px 0;font-size:13px;color:#333;">${t.icon} ${escapeHtml(t.title)}</li>`,
+            )
+            .join('');
+          return (
+            `<div style="margin:0 0 12px;">` +
+            `<div style="font-weight:bold;color:#555;font-size:13px;">${escapeHtml(suite)}</div>` +
+            `<ul style="list-style:none;padding:0 0 0 8px;margin:4px 0;">${lis}</ul>` +
+            `</div>`
+          );
+        })
+        .join('');
+      testsHtml = `<h3 style="color:#1e8449;margin-bottom:6px;">Testes (${r.tests.length})</h3>${groupsHtml}`;
+    }
+
     let failuresHtml = '';
     if (r.failures.length > 0) {
       const items = r.failures
@@ -226,6 +307,7 @@ export default class SendGridReporter implements Reporter {
   <h2 style="color:${color};margin-bottom:4px;">Monitor Enlite prod</h2>
   <p style="color:#666;margin-top:0;font-size:13px;">Run: ${escapeHtml(r.runAt)} · Duração: ${(r.durationMs / 1000).toFixed(1)}s</p>
   <table style="border-collapse:collapse;margin:12px 0;">${rows}</table>
+  ${testsHtml}
   ${failuresHtml}
   <p style="color:#999;font-size:11px;margin-top:24px;">Email automático do synthetic monitoring (e2e-prod). Enviado a cada run.</p>
 </div>`;
@@ -248,7 +330,8 @@ export default class SendGridReporter implements Reporter {
           `  Assunto: ${subject}\n` +
           `  Para: ${to}\n` +
           `  Resumo: ${summary}\n` +
-          `  failures.json: ${failuresPath}`,
+          `  failures.json: ${failuresPath}\n` +
+          `  ── corpo (texto) ──\n${this.buildTextBody(report, failuresPath).replace(/^/gm, '  ')}`,
       );
       return;
     }
