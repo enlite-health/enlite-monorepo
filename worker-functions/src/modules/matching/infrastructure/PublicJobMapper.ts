@@ -1,5 +1,6 @@
 import type { PublicJobRow, PublicJobDto } from '../domain/PublicJobDto';
 import { formatScheduleToText } from './formatScheduleToText';
+import { buildScheduleWeek } from './buildScheduleWeek';
 
 /**
  * Public `description` is sourced from `job_postings.talentum_description` — the
@@ -58,5 +59,6 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     age_range_min: row.age_range_min ?? null,
     age_range_max: row.age_range_max ?? null,
     whatsapp_url: row.whatsapp_url ?? null,
+    schedule_week: buildScheduleWeek(row.schedule),
   };
 }

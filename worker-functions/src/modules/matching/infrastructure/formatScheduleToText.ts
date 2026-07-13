@@ -14,7 +14,8 @@ import { normalizeSchedule } from './scheduleNormalizer';
  * dayOfWeek válido, slot sem start/end) nunca lança; retorna `null`.
  */
 
-const DAY_ORDER = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+export const DAY_ORDER = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'] as const;
+export type DayName = (typeof DAY_ORDER)[number];
 
 const DAY_LABELS: Record<string, string> = {
   lunes: 'Lunes',

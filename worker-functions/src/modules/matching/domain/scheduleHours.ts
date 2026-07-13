@@ -19,7 +19,7 @@ interface ScheduleEntry {
 }
 
 /** "HH:MM" ou "HH:MM:SS" → horas decimais desde meia-noite; null se inválido. */
-function timeToHours(value: string): number | null {
+export function timeToHours(value: string): number | null {
   const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
   if (!match) return null;
   const hours = Number(match[1]);
@@ -27,6 +27,20 @@ function timeToHours(value: string): number | null {
   const seconds = match[3] ? Number(match[3]) : 0;
   if (hours > 23 || minutes > 59 || seconds > 59) return null;
   return hours + minutes / 60 + seconds / 3600;
+}
+
+/**
+ * Duração em horas de um turno "HH:MM"/"HH:MM:SS" → "HH:MM"/"HH:MM:SS".
+ * Trata virada de meia-noite (end <= start → 24 - start + end).
+ * Retorna `null` quando start/end não são horários válidos — chamadores
+ * devem tratar `null` como "entrada inválida, ignorar" (nunca somar 0
+ * silenciosamente, que colidiria com uma duração legítima de 0h).
+ */
+export function durationHours(start: string, end: string): number | null {
+  const startHours = timeToHours(start);
+  const endHours = timeToHours(end);
+  if (startHours === null || endHours === null) return null;
+  return endHours <= startHours ? 24 - startHours + endHours : endHours - startHours;
 }
 
 /**
@@ -42,12 +56,8 @@ export function computeScheduleWeeklyHours(schedule: unknown): number {
     const entry = raw as ScheduleEntry;
     if (typeof entry.startTime !== 'string' || typeof entry.endTime !== 'string') continue;
 
-    const start = timeToHours(entry.startTime);
-    const end = timeToHours(entry.endTime);
-    if (start === null || end === null) continue;
-
-    // Virada de meia-noite quando o turno termina no dia seguinte.
-    const duration = end <= start ? 24 - start + end : end - start;
+    const duration = durationHours(entry.startTime, entry.endTime);
+    if (duration === null) continue;
     total += duration;
   }
   return total;
