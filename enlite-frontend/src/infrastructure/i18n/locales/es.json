@@ -2630,6 +2630,13 @@
         "doneCancelled": "{{sent}} enviadas, {{cancelled}} canceladas",
         "expand": "Expandir",
         "collapse": "Contraer"
+      },
+      "blocked": {
+        "OPTED_OUT": "El trabajador pidió no recibir más mensajes (baja).",
+        "COOLDOWN": "El trabajador ya recibió un mensaje en los últimos 3 días.",
+        "ALREADY_INVITED": "El trabajador ya fue invitado a esta vacante en los últimos 7 días.",
+        "UNANSWERED_THROTTLE": "El trabajador recibió varias invitaciones sin responder nunca. Envío en pausa hasta que interactúe.",
+        "WORKER_STATUS_INVALID": "El estado del trabajador no permite enviar la invitación de match."
       }
     },
     "interviews": {
