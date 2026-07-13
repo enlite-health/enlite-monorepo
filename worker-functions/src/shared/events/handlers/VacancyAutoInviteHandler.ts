@@ -20,6 +20,7 @@ interface VacancyCreatedPayload {
 
 interface PatientZoneRow {
   patient_zone: string | null;
+  is_test: boolean;
 }
 
 interface WorkerDocumentsRow {
@@ -72,7 +73,7 @@ export function createVacancyAutoInviteHandler(
 
     // 1. Buscar zona do paciente via JOIN (fix TD-019: não usa workZone do AT)
     const zoneRes = await db.query<PatientZoneRow>(
-      `SELECT p.zone_neighborhood AS patient_zone
+      `SELECT p.zone_neighborhood AS patient_zone, jp.is_test
        FROM job_postings jp
        LEFT JOIN patients p ON p.id = jp.patient_id
        WHERE jp.id = $1
@@ -84,7 +85,24 @@ export function createVacancyAutoInviteHandler(
       return;
     }
 
-    const patientZone = zoneRes.rows[0].patient_zone ?? 'tu zona';
+    const row = zoneRes.rows[0];
+
+    // Guarda de vaga de teste/QA (migration 248, vacancyCrudHelpers.ts is_test):
+    // early-return ANTES de rodar matchmaking. Cobre matchmaking + WJA + outbox +
+    // WhatsApp de uma vez só, por ser o único ponto de entrada do handler.
+    //
+    // IMPLICAÇÃO (PR #128): o futuro teste do funil WhatsApp (tier-3) NÃO poderá
+    // usar o auto-invite pra disparar WhatsApp de vaga is_test — vai precisar
+    // disparar explicitamente via endpoint dedicado ou fluxo manual. Isso é
+    // diferente do isolamento de realm em SameRealmSpecification (que só filtra
+    // worker↔vaga por DataRealm dentro do matchmaking): aqui é bloqueio total,
+    // mesmo que exista worker is_test elegível na mesma zona.
+    if (row.is_test === true) {
+      log.info('is_test vacancy — skipping auto-invite');
+      return;
+    }
+
+    const patientZone = row.patient_zone ?? 'tu zona';
 
     // 2. Rodar matchmaking — includeIncompleteRegister=true: workers com cadastro
     //    pendente também recebem convite (template ar_vacancy_match_incomplete
