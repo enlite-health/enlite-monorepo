@@ -6,6 +6,7 @@
  * Extraído do AdminApiService pra respeitar o limite de 400 linhas — callers
  * continuam usando `AdminApiService` (delega transparentemente).
  */
+import type { TFunction } from 'i18next';
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 
 export interface VacancyMatchInviteResult {
@@ -44,6 +45,24 @@ export class InviteBlockedError extends Error {
     this.code = code;
     this.detail = detail;
   }
+}
+
+/**
+ * Traduz o motivo de um convite bloqueado (422) numa mensagem para a
+ * recrutadora. Função pura — recebe o `t` de quem tem contexto de i18n
+ * (o componente), no mesmo padrão de vacanciesData/workerDetailLabels.
+ * CODE conhecido → chave localizada (ES/PT); CODE desconhecido → `detail`
+ * PT-BR do backend; sem nada → genérico existente.
+ */
+export function blockedReasonMessage(
+  code: string,
+  detail: string | undefined,
+  t: TFunction,
+): string {
+  if ((INVITE_BLOCKED_CODES as readonly string[]).includes(code)) {
+    return t(`admin.messaging.blocked.${code}`);
+  }
+  return detail || t('admin.messaging.statusErrorFallback');
 }
 
 interface ApiSuccessResponse<T> {

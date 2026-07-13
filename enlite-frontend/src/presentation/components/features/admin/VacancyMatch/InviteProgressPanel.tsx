@@ -9,6 +9,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import {
@@ -57,7 +58,9 @@ function InviteRow({ item }: { item: SendItem }): JSX.Element {
         </Text>
         {item.status === 'error' && (
           <Text as="span" size="xs" color="inherit" className="text-red-500 truncate block">
-            {item.error ?? t('admin.messaging.statusErrorFallback')}
+            {item.errorCode
+              ? blockedReasonMessage(item.errorCode, item.errorDetail, t)
+              : item.error ?? t('admin.messaging.statusErrorFallback')}
           </Text>
         )}
       </div>

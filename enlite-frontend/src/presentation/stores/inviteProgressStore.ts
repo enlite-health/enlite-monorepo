@@ -1,23 +1,7 @@
 import { create } from 'zustand';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import {
-  InviteBlockedError,
-  INVITE_BLOCKED_CODES,
-} from '@infrastructure/http/AdminMessagingApiService';
-import i18n from '@infrastructure/i18n/config';
+import { InviteBlockedError } from '@infrastructure/http/AdminMessagingApiService';
 import type { InviteTarget } from '@presentation/components/features/admin/VacancyMatch/inviteTypes';
-
-/**
- * Traduz o motivo de um convite bloqueado (422) numa mensagem para a
- * recrutadora. CODE conhecido → chave i18n localizada (ES/PT); CODE
- * desconhecido → `detail` PT-BR do backend; sem nada → genérico existente.
- */
-export function blockedReasonMessage(code: string, detail?: string): string {
-  if ((INVITE_BLOCKED_CODES as readonly string[]).includes(code)) {
-    return i18n.t(`admin.messaging.blocked.${code}`);
-  }
-  return detail || i18n.t('admin.messaging.statusErrorFallback');
-}
 
 /** Intervalo entre envios — respeita o rate limit do Twilio. */
 const SEND_INTERVAL_MS = 300;
@@ -37,6 +21,9 @@ export interface SendItem {
   workerName: string;
   status: SendItemStatus;
   error?: string;
+  /** Convite recusado (422): o componente resolve a mensagem localizada. */
+  errorCode?: string;
+  errorDetail?: string;
 }
 
 export type MessagedCallback = (workerId: string, messagedAt: string) => void;
@@ -108,10 +95,14 @@ export const useInviteProgressStore = create<InviteProgressState>((set, get) => 
       messagedCallbacks.get(item.vacancyId)?.(item.workerId, messagedAt);
       patchItem(item.workerId, { status: 'sent' });
     } catch (err: unknown) {
-      const message = err instanceof InviteBlockedError
-        ? blockedReasonMessage(err.code, err.detail)
-        : err instanceof Error ? err.message : 'Falha no envio';
-      patchItem(item.workerId, { status: 'error', error: message });
+      if (err instanceof InviteBlockedError) {
+        // Guarda code+detail; a mensagem localizada é resolvida no componente
+        // (que tem o `t`), não aqui — o store não deve depender de i18n.
+        patchItem(item.workerId, { status: 'error', errorCode: err.code, errorDetail: err.detail });
+      } else {
+        const message = err instanceof Error ? err.message : 'Falha no envio';
+        patchItem(item.workerId, { status: 'error', error: message });
+      }
     }
   }
 
