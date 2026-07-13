@@ -3,5 +3,6 @@ export { EquipoArmadaSection } from './EquipoArmadaSection';
 export { PrioridadesSection } from './PrioridadesSection';
 export { FunnelTotalsSection } from './FunnelTotalsSection';
 export { CadastrosSection } from './CadastrosSection';
+export { ZoneAnalyticsSection } from './ZoneAnalyticsSection';
 export { GapNotice } from './GapNotice';
 export { SectionHeader } from './SectionHeader';
