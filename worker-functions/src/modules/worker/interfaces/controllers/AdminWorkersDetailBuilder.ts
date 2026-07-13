@@ -182,6 +182,11 @@ export async function buildWorkerDetailResponse(
     hobbies: w.hobbies ?? [], diagnosticPreferences: w.diagnostic_preferences ?? [],
     linkedinUrl: linkedinUrl ?? null, isMatchable, isActive,
     isTest: w.is_test ?? false,
+    // Espelho AnaCare (migrations 014/231) — status de sincronização do worker com
+    // o AnaCare. Usado pelo synthetic monitoring (e2e-prod) para provar via HTTP
+    // que um worker is_test não foi espelhado (anaCareId null).
+    anaCareId: w.ana_care_id ?? null,
+    anaCareSyncedAt: w.ana_care_synced_at ?? null,
     documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
     serviceAreas: serviceAreasResult.rows.map((sa: any) => ({
       id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,

@@ -1502,6 +1502,55 @@ describe('AdminWorkersController — getWorkerById', () => {
 
   // ── Cenário 17: Query parametrizada com o id correto ──────────────────────
 
+  // ── Cenário extra: anaCareId e anaCareSyncedAt (espelho AnaCare) ────────────
+  // Synthetic monitoring (e2e-prod) precisa provar via HTTP que um worker is_test
+  // NÃO foi espelhado no AnaCare (ana_care_id IS NULL). Também útil pro staff ver
+  // status de sync. Colunas: migrations 014 (ana_care_id) e 231 (ana_care_synced_at).
+  describe('anaCareId e anaCareSyncedAt', () => {
+    it('retorna anaCareId e anaCareSyncedAt quando o worker foi sincronizado', async () => {
+      setupFullMocks({
+        workerRow: makeWorkerRow({
+          ana_care_id: 'anacare-123',
+          ana_care_synced_at: '2026-01-01T12:00:00Z',
+        }),
+      });
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const data = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(data.anaCareId).toBe('anacare-123');
+      expect(data.anaCareSyncedAt).toBe('2026-01-01T12:00:00Z');
+    });
+
+    it('retorna anaCareId e anaCareSyncedAt como null quando o worker não foi sincronizado', async () => {
+      setupFullMocks({
+        workerRow: makeWorkerRow({
+          ana_care_id: null,
+          ana_care_synced_at: null,
+        }),
+      });
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const data = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(data.anaCareId).toBeNull();
+      expect(data.anaCareSyncedAt).toBeNull();
+    });
+
+    it('inclui ana_care_id e ana_care_synced_at no SELECT de detalhe do worker', async () => {
+      setupFullMocks();
+      const [req, res] = mockReqRes({ id: WORKER_ID });
+
+      await controller.getWorkerById(req, res);
+
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('ana_care_id');
+      expect(sql).toContain('ana_care_synced_at');
+    });
+  });
+
   describe('query usa o id do params', () => {
     it('passa o UUID correto para todas as queries', async () => {
       setupFullMocks();

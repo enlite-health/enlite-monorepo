@@ -6,7 +6,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { generatePhoneCandidates } from '@shared/utils/phoneNormalization';
-import { mapPlatformLabel, matchesSearch, WorkerListItem } from './AdminWorkersControllerHelpers';
+import { mapPlatformLabel, matchesSearch, WorkerListItem, WORKER_DETAIL_COLS } from './AdminWorkersControllerHelpers';
 import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
 import { ExportWorkersUseCase } from '../../application/ExportWorkersUseCase';
 import { WORKER_EXPORT_COLUMN_KEYS, WorkerExportColumnKey } from '../../application/export/workerExportColumns';
@@ -17,21 +17,6 @@ import {
   appendLanguageFilter,
 } from './AdminWorkersListHelpers';
 import { logger, reportError } from '@shared/logging';
-
-// Campos selecionados para detalhe de worker — compartilhado por getWorkerById e getWorkerByPhone
-const WORKER_DETAIL_COLS = [
-  'w.id, w.email, w.phone, w.country, w.timezone, w.status, w.is_test',
-  'w.data_sources, w.created_at, w.updated_at, w.deleted_at',
-  'w.document_type, w.profession, w.occupation, w.knowledge_level',
-  'w.title_certificate, w.experience_types, w.years_experience',
-  'w.preferred_types, w.preferred_age_range, w.hobbies, w.diagnostic_preferences',
-  'w.first_name_encrypted, w.last_name_encrypted, w.birth_date_encrypted',
-  'w.sex_encrypted, w.gender_encrypted, w.document_number_encrypted',
-  'w.profile_photo_url_encrypted, w.languages_encrypted',
-  'w.whatsapp_phone_encrypted, w.linkedin_url_encrypted',
-  'w.sexual_orientation_encrypted, w.race_encrypted, w.religion_encrypted',
-  'w.weight_kg_encrypted, w.height_cm_encrypted',
-].join(', ');
 
 // ── Shared docs_validated enum ────────────────────────────────────────────────
 
