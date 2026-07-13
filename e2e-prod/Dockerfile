@@ -7,7 +7,7 @@
 # "@playwright/test": "^1.49.0" do package.json — mismatch entre browser e client
 # do Playwright é fonte clássica de flake. NÃO rodar `playwright install` aqui:
 # a imagem base já tem os navegadores; reinstalar só incha o layer.
-FROM mcr.microsoft.com/playwright:v1.49.0-jammy
+FROM mcr.microsoft.com/playwright:v1.61.1-jammy
 
 WORKDIR /app
 
