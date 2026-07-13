@@ -408,7 +408,7 @@ describe('GET /api/public/v1/jobs', () => {
     expect(ids).not.toContain(IDS.activeNoSite);
   });
 
-  it('returns correct 19-field shape (18 original + country)', async () => {
+  it('returns correct 20-field shape (18 original + country + schedule_week)', async () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
     expect(job).toBeDefined();
@@ -422,10 +422,34 @@ describe('GET /api/public/v1/jobs', () => {
       'worker_type', 'worker_sex', 'job_zone', 'neighborhood', 'state_city',
       // New country field
       'country',
+      // Structured weekly schedule (feed B3 — powers the WordPress weekly table)
+      'schedule_week',
     ];
     for (const field of expectedFields) {
       expect(job).toHaveProperty(field);
     }
+  });
+
+  it('populates structured schedule_week from the schedule JSONB (real DB → HTTP)', async () => {
+    const res = await api.get('/api/public/v1/jobs');
+    const job = (res.data.data as Array<Record<string, unknown>>).find(
+      j => j.id === IDS.scheduleFallback,
+    );
+    expect(job).toBeDefined();
+
+    // Fixture schedule: Lun 09:00-12:00 (3h) + Mié 09:00-14:00 (5h) = 8h/semana, 1 turno/día → no coverage.
+    const week = job!.schedule_week as {
+      days: Record<string, Array<{ start: string; end: string }>>;
+      weekly_hours: number;
+      is_coverage: boolean;
+    };
+    expect(week).not.toBeNull();
+    expect(week.days.lunes).toEqual([{ start: '09:00', end: '12:00' }]);
+    expect(week.days.miercoles).toEqual([{ start: '09:00', end: '14:00' }]);
+    expect(week.days.martes).toEqual([]);
+    expect(week.days.domingo).toEqual([]);
+    expect(week.weekly_hours).toBe(8);
+    expect(week.is_coverage).toBe(false);
   });
 
   it('detail_link field matches social_short_links.site', async () => {

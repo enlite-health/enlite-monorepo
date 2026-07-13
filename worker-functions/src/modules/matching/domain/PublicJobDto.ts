@@ -32,6 +32,25 @@ export interface PublicJobRow {
   whatsapp_url: string | null;       // jp.talentum_whatsapp_url
 }
 
+/**
+ * Tabela semanal estruturada derivada do JSONB `job_postings.schedule` — ver
+ * `buildScheduleWeek.ts`. Usada pelo plugin WordPress pra renderizar a grade
+ * de horários sem re-parsear `schedule_days_hours` (texto livre).
+ */
+export interface ScheduleWeekDto {
+  days: {
+    lunes: { start: string; end: string }[];
+    martes: { start: string; end: string }[];
+    miercoles: { start: string; end: string }[];
+    jueves: { start: string; end: string }[];
+    viernes: { start: string; end: string }[];
+    sabado: { start: string; end: string }[];
+    domingo: { start: string; end: string }[];
+  };
+  weekly_hours: number;
+  is_coverage: boolean;
+}
+
 export interface PublicJobDto {
   id: string;
   case_number: number;
@@ -56,4 +75,5 @@ export interface PublicJobDto {
   age_range_min: number | null;
   age_range_max: number | null;
   whatsapp_url: string | null;
+  schedule_week: ScheduleWeekDto | null;
 }

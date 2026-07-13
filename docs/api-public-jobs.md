@@ -82,13 +82,26 @@ Todos opcionais.
       "worker_type": ["AT"],
       "worker_sex": "BOTH",
       "job_zone": null,
-      "detail_link": "https://go.enlite.health/flZvbo"
+      "detail_link": "https://go.enlite.health/flZvbo",
+      "schedule_week": {
+        "days": {
+          "lunes": [{ "start": "09:00", "end": "13:00" }],
+          "martes": [{ "start": "09:00", "end": "13:00" }],
+          "miercoles": [{ "start": "09:00", "end": "13:00" }],
+          "jueves": [{ "start": "09:00", "end": "13:00" }],
+          "viernes": [{ "start": "09:00", "end": "13:00" }],
+          "sabado": [],
+          "domingo": []
+        },
+        "weekly_hours": 20,
+        "is_coverage": false
+      }
     }
   ]
 }
 ```
 
-### Campos (19 no total)
+### Campos (20 no total)
 
 | Campo | Tipo | Descrição |
 |---|---|---|
@@ -111,6 +124,15 @@ Todos opcionais.
 | `worker_sex` | `string \| null` | Sexo requerido (`FEMALE`, `MALE`, `BOTH`) |
 | `job_zone` | `string \| null` | Zona inferida (uso interno, pode estar vazio) |
 | `detail_link` | `string` | URL pública pra ver detalhes da vaga / candidatar-se |
+| `schedule_week` | `object \| null` | Horário **estruturado** (dia → turnos) pro card renderizar a tabela semanal sem re-parsear texto. `null` quando o schedule não é estruturável (texto livre tipo `"168 horas"`) — nesse caso, cair no `schedule_days_hours`. Campo aditivo; consumidores antigos ignoram. Ver estrutura abaixo. |
+
+#### Estrutura de `schedule_week`
+
+| Subcampo | Tipo | Descrição |
+|---|---|---|
+| `days` | `object` | As **7 chaves sempre presentes** na ordem `lunes`→`domingo`; cada uma é um array de turnos `{ start: "HH:MM", end: "HH:MM" }`. Dia de folga = `[]` (não precisa checar existência no cliente). Turno que cruza a meia-noite tem `end <= start` (ex: `{ "start": "20:00", "end": "08:00" }`). |
+| `weekly_hours` | `number` | Total de horas/semana somando todos os turnos (trata virada de meia-noite). Arredondado a 2 casas. |
+| `is_coverage` | `boolean` | `true` quando o horário **não é a jornada de uma única pessoa** — cobertura por turnos (≥3 turnos no mesmo dia, ex: `08–14/14–20/20–08`) ou "día completo/cama adentro" (`start === end`). Regra pro card: quando `true`, **NÃO** exibir `weekly_hours` como "X h por semana" (assusta/confunde — 168h é a cobertura do caso, não do candidato); exibir framing de cobertura (`Cobertura 24h`) + a tira de turnos. Calibrado contra dados reais de prod (≥3-turnos = ~2.7% das vagas). |
 
 ---
 

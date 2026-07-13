@@ -101,6 +101,7 @@ describe('mapPublicJobRow', () => {
     expect(dto.age_range_min).toBe(5);
     expect(dto.age_range_max).toBe(12);
     expect(dto.whatsapp_url).toBe('https://wa.me/5491112345678');
+    expect(dto.schedule_week).toBeNull(); // makeRow() default schedule is null
   });
 
   it('passes description (from talentum_description) through trimmed', () => {
@@ -247,5 +248,34 @@ describe('mapPublicJobRow', () => {
     });
     const dto = mapPublicJobRow(row);
     expect(dto.schedule_days_hours).toBe('Sábado 12:00-16:00');
+  });
+
+  // ── schedule_week (TD: tabela semanal estruturada p/ WordPress) ───────────
+
+  it('populates schedule_week when the schedule JSONB is structurable', () => {
+    const row = makeRow({
+      schedule: [
+        { dayOfWeek: 1, startTime: '09:00', endTime: '12:00' },
+        { dayOfWeek: 3, startTime: '09:00', endTime: '14:00' },
+      ],
+    });
+    const dto = mapPublicJobRow(row);
+
+    expect(dto.schedule_week).not.toBeNull();
+    expect(dto.schedule_week?.days.lunes).toEqual([{ start: '09:00', end: '12:00' }]);
+    expect(dto.schedule_week?.days.miercoles).toEqual([{ start: '09:00', end: '14:00' }]);
+    expect(dto.schedule_week?.days.martes).toEqual([]);
+    expect(dto.schedule_week?.weekly_hours).toBe(8);
+    expect(dto.schedule_week?.is_coverage).toBe(false);
+  });
+
+  it('returns schedule_week null when the schedule JSONB is not structurable (null)', () => {
+    const dto = mapPublicJobRow(makeRow({ schedule: null }));
+    expect(dto.schedule_week).toBeNull();
+  });
+
+  it('returns schedule_week null when the schedule JSONB is free text (unstructurable)', () => {
+    const dto = mapPublicJobRow(makeRow({ schedule: 'Lunes a viernes 9 a 17hs' }));
+    expect(dto.schedule_week).toBeNull();
   });
 });
