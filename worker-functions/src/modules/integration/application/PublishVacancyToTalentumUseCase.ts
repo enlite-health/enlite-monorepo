@@ -17,6 +17,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumDescriptionService } from '../infrastructure/TalentumDescriptionService';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import type { TalentumQuestion, TalentumFaq } from '../domain/ITalentumApiClient';
+import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import {
   JobPostingAuditRepository,
   type AuditActorType,
@@ -123,7 +124,9 @@ export class PublishVacancyToTalentumUseCase {
     const questions: TalentumQuestion[] = questionsResult.rows.map(row => ({
       question: row.question,
       type: 'text' as const,
-      responseType: row.response_type ?? ['text', 'audio'],
+      // Ticket 86ajfm80t: envia o formato configurado (respeita só-texto
+      // deliberado); default seguro ['text','audio'] quando o dado é nulo/vazio.
+      responseType: normalizePrescreeningResponseType(row.response_type),
       desiredResponse: row.desired_response,
       weight: row.weight,
       required: row.required,

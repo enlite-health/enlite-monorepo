@@ -138,6 +138,13 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // 'regression'. Registradas aqui pra não ficarem invisíveis ao gate (nem virar órfãs).
   { route: 'POST /api/admin/vacancies', surface: 'api', tier: 'regression' },
   { route: 'PUT /api/admin/vacancies/:id', surface: 'api', tier: 'regression' },
+  // Talentum · publicação de vaga + pré-screening (ticket 86ajfm80t). O recrutador
+  // dispara pelo painel (/admin/vacancies/:id/talentum); a jornada de regressão
+  // talentum-prescreening-audio prova o fluxo real contra a Talentum de prod.
+  { route: 'POST /api/admin/vacancies/:id/prescreening-config', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/vacancies/:id/publish-talentum', surface: 'api', tier: 'regression' },
+  { route: 'GET /api/admin/vacancies/:id/talentum-status', surface: 'api', tier: 'regression' },
+  { route: 'DELETE /api/admin/vacancies/:id/publish-talentum', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/patients/:id', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/worker-tags', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/dedup/groups/:phoneNormalized', surface: 'api', tier: 'regression' },
