@@ -40,6 +40,19 @@ export interface CreatePrescreeningResult {
   publicId: string;
 }
 
+/**
+ * Corpo do UPDATE in-place (PUT /pre-screening/projects/:id). Edita um projeto já
+ * publicado SEM recriar — preserva projectId, whatsappUrl e slug (provado contra a
+ * Talentum real: PUT 204, links intactos). Diferente do create: NÃO aceita `type`
+ * no top-level, e cada pergunta pode carregar `questionId` (mantém a identidade).
+ */
+export interface UpdatePrescreeningInput {
+  title: string;
+  description: string;
+  questions: TalentumQuestionWithId[];
+  faq?: TalentumFaq[];
+}
+
 // Question as it comes back from GET — extends base with server-assigned ID
 export type TalentumQuestionWithId = TalentumQuestion & { questionId: string };
 
@@ -88,6 +101,12 @@ export interface ListPrescreeningsOpts {
 export interface ITalentumApiClient {
   /** Create a new prescreening project. Returns the server-assigned IDs. */
   createPrescreening(input: CreatePrescreeningInput): Promise<CreatePrescreeningResult>;
+
+  /**
+   * Edita um projeto existente in-place (PUT). Preserva projectId/whatsappUrl/slug
+   * — usado para atualizar perguntas (ex: habilitar áudio) sem recriar/repostar.
+   */
+  updatePrescreening(projectId: string, input: UpdatePrescreeningInput): Promise<void>;
 
   /** Fetch a prescreening project by its server-assigned projectId. */
   getPrescreening(projectId: string): Promise<TalentumProject>;
