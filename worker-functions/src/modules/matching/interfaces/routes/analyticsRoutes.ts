@@ -67,6 +67,10 @@ export function createAnalyticsRoutes(
     analyticsController.getManagementMetrics(req, res),
   );
 
+  router.get('/dashboard/zone-analytics', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    analyticsController.getZoneAnalytics(req, res),
+  );
+
   router.get('/dashboard/cases/:caseNumber', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     analyticsController.getCaseMetrics(req, res),
   );

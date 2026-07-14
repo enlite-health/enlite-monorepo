@@ -17,6 +17,7 @@ import {
   PrioridadesSection,
   FunnelTotalsSection,
   CadastrosSection,
+  ZoneAnalyticsSection,
 } from '@presentation/components/features/admin/ManagementDashboard';
 
 export function ManagementDashboardPage(): JSX.Element {
@@ -67,6 +68,7 @@ export function ManagementDashboardPage(): JSX.Element {
           <PrioridadesSection data={data.prioridades} />
           <FunnelTotalsSection funnel={data.funnel} encuadres={data.encuadres} />
           <CadastrosSection data={data.cadastros} />
+          <ZoneAnalyticsSection />
         </div>
       )}
     </PageContainer>

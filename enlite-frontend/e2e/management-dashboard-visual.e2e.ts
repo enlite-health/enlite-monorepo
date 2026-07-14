@@ -81,6 +81,28 @@ const MOCK_DASHBOARD = {
   },
 };
 
+const MOCK_ZONE_ANALYTICS = {
+  zones: [
+    { zone: 'Palermo', patients: 41, workersMale: 7, workersFemale: 13, demand: 55, availability: 9 },
+    { zone: 'Belgrano', patients: 22, workersMale: 4, workersFemale: 6, demand: 28, availability: 5 },
+    { zone: 'Não informado', patients: 3, workersMale: 0, workersFemale: 1, demand: 2, availability: 1 },
+  ],
+  unresolvedCount: 4,
+};
+
+function mockZoneAnalytics(page: Page, mode: 'ok' | 'empty' = 'ok'): void {
+  page.route('**/analytics/dashboard/zone-analytics*', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: mode === 'empty' ? { zones: [], unresolvedCount: 0 } : MOCK_ZONE_ANALYTICS,
+      }),
+    });
+  });
+}
+
 async function installFakeFirebaseAuth(page: Page): Promise<void> {
   await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
     const url = route.request().url();
@@ -197,9 +219,10 @@ function mockDashboard(page: Page, mode: 'ok' | 'error' | 'pendente' = 'ok'): vo
 test.describe('ManagementDashboardPage — visual proof', () => {
   test.setTimeout(90000);
 
-  test('POPULADO: big numbers + equipe armada + horas + funil + cadastros', async ({ page }) => {
+  test('POPULADO: big numbers + equipe armada + horas + funil + cadastros + analytics por zona', async ({ page }) => {
     await loginAsAdmin(page);
     mockDashboard(page, 'ok');
+    mockZoneAnalytics(page, 'ok');
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20000 });
@@ -212,6 +235,9 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('24'); // sem classificação
     // GAP notice de ubicaciones ainda existe (horas deixou de ser GAP).
     await expect(page.getByTestId('mgmt-gap-notice').first()).toBeVisible();
+    // Analytics por Zona: dado do mock chega intacto na tabela.
+    await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('Palermo');
+    await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('55');
 
     await expect(page).toHaveScreenshot('management-dashboard-populated.png', {
       fullPage: true,
@@ -219,9 +245,53 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     });
   });
 
+  test('ZONE ANALYTICS: tabela por zona + filtro de profissão + nota de "Não informado"', async ({ page }) => {
+    await loginAsAdmin(page);
+    mockDashboard(page, 'ok');
+    mockZoneAnalytics(page, 'ok');
+
+    await page.goto('/admin/dashboard');
+    await expect(page.getByTestId('mgmt-zone-analytics')).toBeVisible({ timeout: 20000 });
+
+    // Fidelidade request -> DOM: números do mock aparecem nas células.
+    await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('Palermo');
+    await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('Belgrano');
+    await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('41');
+    await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('13');
+
+    // Enum de profissão nunca cru — sempre rótulo traduzido no <select>.
+    await expect(
+      page.getByTestId('mgmt-zone-analytics-filters').getByRole('option', { name: 'Acompañante Terapéutico' }),
+    ).toBeAttached();
+    await expect(
+      page.getByTestId('mgmt-zone-analytics-filters').getByRole('option', { name: 'Cuidador/a' }),
+    ).toBeAttached();
+
+    // unresolvedCount é sinalizado, não some.
+    await expect(page.getByTestId('mgmt-zone-analytics-unresolved-note')).toContainText('4');
+
+    // Filtro dispara refetch com ?profession=CAREGIVER.
+    const filterReq = page.waitForRequest((req) => req.url().includes('profession=CAREGIVER'));
+    await page.getByTestId('mgmt-zone-analytics-filters').getByRole('combobox').selectOption('CAREGIVER');
+    await filterReq;
+
+    // Botão "Todas" volta ao geral (novo fetch sem query-param de profession).
+    const clearReq = page.waitForRequest(
+      (req) => req.url().includes('/zone-analytics') && !req.url().includes('profession='),
+    );
+    await page.getByRole('button', { name: 'Todas' }).click();
+    await clearReq;
+
+    await expect(page.getByTestId('mgmt-zone-analytics')).toHaveScreenshot(
+      'management-dashboard-zone-analytics.png',
+      { maxDiffPixelRatio: 0.03 },
+    );
+  });
+
   test('CONFIG PENDENTE: sem armados, mas expõe N sem classificação / N sem config', async ({ page }) => {
     await loginAsAdmin(page);
     mockDashboard(page, 'pendente');
+    mockZoneAnalytics(page, 'ok');
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-equipo-armada')).toBeVisible({ timeout: 20000 });

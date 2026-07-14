@@ -544,7 +544,9 @@
         "funnel": "Totalización del embudo",
         "funnelHint": "Dónde está cada prestador en el proceso de selección",
         "cadastros": "Registros de prestadores",
-        "cadastrosHint": "Cuántas personas se registraron y en qué estado están"
+        "cadastrosHint": "Cuántas personas se registraron y en qué estado están",
+        "zoneAnalytics": "Analytics por zona",
+        "zoneAnalyticsHint": "Pacientes, prestadores y demanda por zona geográfica"
       },
       "bigNumbers": {
         "equiposArmados": "Equipos armados",
@@ -602,6 +604,21 @@
       },
       "gap": {
         "pending": "Sin fuente de datos disponible todavía"
+      },
+      "zoneAnalytics": {
+        "filterLabel": "Profesión",
+        "filterAll": "Todas",
+        "table": {
+          "zone": "Zona",
+          "patients": "Pacientes",
+          "workersMale": "Prestadores ♂",
+          "workersFemale": "Prestadores ♀",
+          "demand": "Demanda (vacantes)",
+          "availability": "Disponibilidad (prestadores)"
+        },
+        "empty": "Todavía no hay datos de zona para mostrar",
+        "unresolvedNote_one": "{{count}} registro sin zona identificada — no se pierde, todavía no está geolocalizado",
+        "unresolvedNote_other": "{{count}} registros sin zona identificada — no se pierden, todavía no están geolocalizados"
       }
     },
     "errorBoundary": {
