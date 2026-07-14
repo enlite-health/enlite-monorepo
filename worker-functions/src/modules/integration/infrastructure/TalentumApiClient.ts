@@ -14,6 +14,7 @@ import type {
   ITalentumApiClient,
   CreatePrescreeningInput,
   CreatePrescreeningResult,
+  UpdatePrescreeningInput,
   ListPrescreeningsOpts,
   TalentumProject,
   TalentumDashboardProfile,
@@ -221,7 +222,7 @@ export class TalentumApiClient implements ITalentumApiClient {
    * response body in error messages for easier debugging).
    */
   private async request<T>(
-    method: 'GET' | 'POST' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown
   ): Promise<T> {
@@ -231,7 +232,7 @@ export class TalentumApiClient implements ITalentumApiClient {
       Origin: ORIGIN,
       Cookie: cookie,
     };
-    if (method === 'POST') {
+    if (method === 'POST' || method === 'PUT') {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -248,7 +249,8 @@ export class TalentumApiClient implements ITalentumApiClient {
       );
     }
 
-    if (method === 'DELETE') {
+    // DELETE e PUT (204 No Content) não devolvem corpo.
+    if (method === 'DELETE' || method === 'PUT' || res.status === 204) {
       return undefined as unknown as T;
     }
 
@@ -269,6 +271,31 @@ export class TalentumApiClient implements ITalentumApiClient {
 
   async getPrescreening(projectId: string): Promise<TalentumProject> {
     return this.request<TalentumProject>('GET', `/pre-screening/projects/${projectId}`);
+  }
+
+  /**
+   * Edita um projeto in-place (PUT → 204). Preserva projectId/whatsappUrl/slug.
+   * O schema do PUT difere do create: SEM `type` no top-level, COM `type:'text'`
+   * por pergunta (provado contra a Talentum real). `questionId` mantém a identidade
+   * das perguntas existentes.
+   */
+  async updatePrescreening(projectId: string, input: UpdatePrescreeningInput): Promise<void> {
+    await this.request<void>('PUT', `/pre-screening/projects/${projectId}`, {
+      title: input.title,
+      description: input.description,
+      faq: input.faq ?? [],
+      questions: input.questions.map((q) => ({
+        question: q.question,
+        type: 'text' as const,
+        responseType: q.responseType,
+        desiredResponse: q.desiredResponse,
+        weight: q.weight,
+        required: q.required,
+        analyzed: q.analyzed,
+        earlyStoppage: q.earlyStoppage,
+        ...(q.questionId ? { questionId: q.questionId } : {}),
+      })),
+    });
   }
 
   async deletePrescreening(projectId: string): Promise<void> {
