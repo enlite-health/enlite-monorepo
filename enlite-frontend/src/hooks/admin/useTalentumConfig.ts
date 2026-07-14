@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { withAudioDefault } from '@domain/value-objects/prescreeningResponseType';
 import type { PrescreeningQuestion, FaqItem } from '@presentation/components/features/admin/TalentumConfig/PrescreeningStep';
 import type { VacancySummaryData } from '@presentation/components/features/admin/TalentumConfig/VacancySummaryCard';
 import type { GenerateAIButtonStatus } from '@presentation/components/features/admin/TalentumConfig/GenerateAIButton';
@@ -84,7 +85,8 @@ export function useTalentumConfig(
   // skip re-generating when the user just completed Step 1.
   const [description, setDescription] = useState(preloaded?.description ?? '');
   const [prescreeningQuestions, setPrescreeningQuestions] = useState<PrescreeningQuestion[]>(
-    preloaded?.prescreeningQuestions ?? [],
+    // Ticket 86ajfm80t: perguntas semeadas pela IA nascem com áudio marcado.
+    withAudioDefault(preloaded?.prescreeningQuestions ?? []),
   );
   const [prescreeningFaq, setPrescreeningFaq] = useState<FaqItem[]>(
     preloaded?.prescreeningFaq ?? [],
@@ -129,7 +131,8 @@ export function useTalentumConfig(
     try {
       const result = await AdminApiService.generateAIContent(vacancyId);
       setDescription(result.description);
-      setPrescreeningQuestions(result.prescreening.questions);
+      // Ticket 86ajfm80t: garante áudio marcado por default nas perguntas da IA.
+      setPrescreeningQuestions(withAudioDefault(result.prescreening.questions));
       setPrescreeningFaq(result.prescreening.faq);
       setGenerateStatus('success');
     } catch (err: unknown) {

@@ -17,6 +17,7 @@ import type { TalentumProject, TalentumQuestionWithId, TalentumFaq } from '../do
 import {
   JobPostingAuditRepository,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
+import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -302,7 +303,9 @@ export class SyncTalentumVacanciesUseCase {
           jobPostingId,
           i + 1,
           q.question,
-          q.responseType,
+          // Ticket 86ajfm80t: respeita o formato da Talentum; default seguro
+          // ['text','audio'] só quando ausente/vazio/inválido.
+          normalizePrescreeningResponseType(q.responseType),
           q.desiredResponse,
           q.weight,
           q.required,

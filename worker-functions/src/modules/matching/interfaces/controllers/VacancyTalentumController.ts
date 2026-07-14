@@ -15,6 +15,7 @@ import {
 } from '../../infrastructure/JobPostingAuditRepository';
 import type { AuditActor } from '@modules/integration';
 import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
+import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 
 /**
  * VacancyTalentumController
@@ -131,6 +132,7 @@ export class VacancyTalentumController {
         published: result.published,
         exists: result.exists,
         ...(result.whatsappUrl ? { whatsappUrl: result.whatsappUrl } : {}),
+        ...(result.audioEnabled !== undefined ? { audioEnabled: result.audioEnabled } : {}),
       },
     });
   }
@@ -318,7 +320,9 @@ export class VacancyTalentumController {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
               id, i + 1, (q.question as string).trim(),
-              q.responseType ?? ['text', 'audio'],
+              // Ticket 86ajfm80t: persiste a escolha da UI (switch áudio+texto
+              // vs só-texto); default ['text','audio'] quando ausente/vazio.
+              normalizePrescreeningResponseType(q.responseType),
               (q.desiredResponse as string).trim(),
               Number(q.weight), q.required ?? false, q.analyzed ?? true, q.earlyStoppage ?? false,
             ],

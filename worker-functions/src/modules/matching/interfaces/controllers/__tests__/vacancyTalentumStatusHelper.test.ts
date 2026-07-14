@@ -41,7 +41,7 @@ describe('getVacancyTalentumStatus', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('projectId presente + GET ok → published=true, exists=true, whatsappUrl', async () => {
+  it('GET ok sem perguntas → audioEnabled=false (nada a avaliar)', async () => {
     const db = makeDb([{ talentum_project_id: 'proj-1' }]);
     mockGetPrescreening.mockResolvedValueOnce({
       projectId: 'proj-1',
@@ -53,8 +53,37 @@ describe('getVacancyTalentumStatus', () => {
       published: true,
       exists: true,
       whatsappUrl: 'https://wa.me/xyz',
+      audioEnabled: false,
     });
     expect(mockGetPrescreening).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('todas as perguntas aceitam áudio → audioEnabled=true (ticket 86ajfm80t)', async () => {
+    const db = makeDb([{ talentum_project_id: 'proj-1' }]);
+    mockGetPrescreening.mockResolvedValueOnce({
+      projectId: 'proj-1',
+      whatsappUrl: 'https://wa.me/xyz',
+      questions: [
+        { responseType: ['text', 'audio'] },
+        { responseType: ['audio', 'text'] },
+      ],
+    });
+    const result = await getVacancyTalentumStatus(db as never, 'vac-1');
+    expect(result).toMatchObject({ kind: 'ok', published: true, exists: true, audioEnabled: true });
+  });
+
+  it('alguma pergunta só-texto → audioEnabled=false (regressão do bug do ticket)', async () => {
+    const db = makeDb([{ talentum_project_id: 'proj-1' }]);
+    mockGetPrescreening.mockResolvedValueOnce({
+      projectId: 'proj-1',
+      whatsappUrl: 'https://wa.me/xyz',
+      questions: [
+        { responseType: ['text', 'audio'] },
+        { responseType: ['text'] }, // artefato da IA — áudio desativado
+      ],
+    });
+    const result = await getVacancyTalentumStatus(db as never, 'vac-1');
+    expect(result).toMatchObject({ kind: 'ok', audioEnabled: false });
   });
 
   it('projectId presente + GET 404 do Talentum → published=true, exists=false (não é erro)', async () => {
