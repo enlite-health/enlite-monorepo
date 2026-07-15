@@ -45,10 +45,11 @@ ADMIN_PW_SECRET="e2e-admin-password"                   # secret do Secret Manage
 # Menor privilégio: uma SA dedicada só pra isso, não a default do projeto.
 SCHEDULER_SA="e2e-prod-invoker@${PROJECT}.iam.gserviceaccount.com"
 
-# SA de RUNTIME do job (identidade com que o container roda). A suíte smoke é read-only
-# e não precisa de nenhuma permissão GCP — a default do Cloud Run já basta. Deixe vazio
-# pra usar a default, ou aponte uma SA sem roles (menor privilégio explícito).
-RUN_SA=""                                              # ex.: e2e-prod-runtime@${PROJECT}.iam.gserviceaccount.com
+# SA de RUNTIME do job (identidade com que o container roda). Menor privilégio: SA dedicada
+# `e2e-prod-runtime` (sem roles GCP amplos), a MESMA já provisionada no job e que lê o
+# sendgrid-api-key. É a ela que o grant de secretAccessor (senha do admin) precisa ir —
+# NÃO à compute default. Explícita pra grant e deploy ficarem consistentes.
+RUN_SA="e2e-prod-runtime@${PROJECT}.iam.gserviceaccount.com"
 
 # URLs de produção (Cloud Run) — injetadas como env do job (12-factor; fora da imagem).
 PROD_BASE_URL="https://enlite-frontend-byh3gvl5yq-tl.a.run.app"
@@ -146,6 +147,8 @@ gcloud run jobs add-iam-policy-binding "${JOB_NAME}" \
 RUN_JOB_URI="https://run.googleapis.com/v2/projects/${PROJECT}/locations/${REGION}/jobs/${JOB_NAME}:run"
 
 echo "==> [c] Cloud Scheduler (${SCHEDULER_NAME}) — cron '${CRON_SCHEDULE}' TZ ${TZ_ARG}"
+# Args comuns a create e update. O flag de HEADER difere entre os dois subcomandos:
+# `create http` usa --headers; `update http` usa --update-headers (--headers é inválido lá).
 SCHED_ARGS=(
   --project="${PROJECT}"
   --location="${SCHEDULER_REGION}"
@@ -154,17 +157,18 @@ SCHED_ARGS=(
   --uri="${RUN_JOB_URI}"
   --http-method=POST
   --oauth-service-account-email="${SCHEDULER_SA}"
-  --headers="Content-Type=application/json"
   --message-body='{}'
 )
 # Idempotência: existe? → update. Senão → create.
 if gcloud scheduler jobs describe "${SCHEDULER_NAME}" \
      --project="${PROJECT}" --location="${SCHEDULER_REGION}" >/dev/null 2>&1; then
   echo "    (existe → update)"
-  gcloud scheduler jobs update http "${SCHEDULER_NAME}" "${SCHED_ARGS[@]}"
+  gcloud scheduler jobs update http "${SCHEDULER_NAME}" "${SCHED_ARGS[@]}" \
+    --update-headers="Content-Type=application/json"
 else
   echo "    (não existe → create)"
-  gcloud scheduler jobs create http "${SCHEDULER_NAME}" "${SCHED_ARGS[@]}"
+  gcloud scheduler jobs create http "${SCHEDULER_NAME}" "${SCHED_ARGS[@]}" \
+    --headers="Content-Type=application/json"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
