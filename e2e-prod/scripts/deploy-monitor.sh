@@ -15,11 +15,31 @@ set -euo pipefail
 # Configuração (ajuste só se algum nome de recurso divergir do provisionado)
 # ─────────────────────────────────────────────────────────────────────────────
 PROJECT="enlite-prd"                                   # projeto GCP (confirmado: deploy do front)
-REGION="southamerica-west1"                            # MESMA região do front/back prod e do Artifact Registry
-REPO="e2e-prod"                                        # repo Docker do Artifact Registry (TODO: confirmar nome real — README)
+REGION="southamerica-west1"                            # região do Job/Artifact Registry (MESMA do front/back prod)
+# Cloud Scheduler NÃO existe em southamerica-west1 (região inválida pra Scheduler). O
+# scheduler vive em southamerica-east1 (SP) — onde já está provisionado. Var separada de REGION.
+SCHEDULER_REGION="southamerica-east1"
+REPO="e2e-prod"                                        # repo Docker do Artifact Registry (confirmado: existe)
 IMAGE_NAME="e2e-prod-smoke"                            # nome da imagem no repo
 JOB_NAME="e2e-prod-smoke"                              # Cloud Run Job
 SCHEDULER_NAME="e2e-prod-smoke-daily"                  # Cloud Scheduler que dispara o job
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Credenciais do monitor — carregadas do .env.local do operador NO MOMENTO do deploy
+# (gitignored; nunca hardcoded no script). A SENHA do admin vai pro Secret Manager
+# (nunca em texto plano no env do job). A apiKey web do Firebase NÃO é segredo (já vai
+# embarcada no bundle público do front) → env comum. Admin+Firebase são exigidos pelas
+# jornadas (regression) e pelos testes admin, que agora rodam no job diário.
+# ─────────────────────────────────────────────────────────────────────────────
+ENV_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env.local"
+if [[ -f "${ENV_LOCAL}" ]]; then
+  set -a; # shellcheck disable=SC1090
+  source "${ENV_LOCAL}"; set +a
+fi
+: "${E2E_ADMIN_EMAIL:?defina E2E_ADMIN_EMAIL no e2e-prod/.env.local antes do deploy}"
+: "${E2E_ADMIN_PASSWORD:?defina E2E_ADMIN_PASSWORD no e2e-prod/.env.local antes do deploy}"
+: "${FIREBASE_API_KEY:?defina FIREBASE_API_KEY no e2e-prod/.env.local antes do deploy}"
+ADMIN_PW_SECRET="e2e-admin-password"                   # secret do Secret Manager (criado/atualizado abaixo)
 
 # SA que o Cloud Scheduler usa pra INVOCAR o job (precisa de roles/run.invoker no job).
 # Menor privilégio: uma SA dedicada só pra isso, não a default do projeto.
@@ -66,21 +86,41 @@ gcloud container images add-tag "${IMAGE_URI}" "${IMAGE_LATEST}" \
 # ─────────────────────────────────────────────────────────────────────────────
 # (b) Cloud Run Job — create-or-update (gcloud run jobs deploy é idempotente por si)
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# (a.1) Secret Manager — senha do admin (nunca em env plano). Cria ou adiciona versão.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "==> [a.1] Secret Manager: ${ADMIN_PW_SECRET} (senha do admin)"
+if gcloud secrets describe "${ADMIN_PW_SECRET}" --project="${PROJECT}" >/dev/null 2>&1; then
+  printf '%s' "${E2E_ADMIN_PASSWORD}" | gcloud secrets versions add "${ADMIN_PW_SECRET}" \
+    --project="${PROJECT}" --data-file=-
+else
+  printf '%s' "${E2E_ADMIN_PASSWORD}" | gcloud secrets create "${ADMIN_PW_SECRET}" \
+    --project="${PROJECT}" --replication-policy=automatic --data-file=-
+fi
+# A SA de runtime do job precisa de secretAccessor no secret (idempotente). Se RUN_SA vazio,
+# o Cloud Run usa a compute default (mesma que já lê sendgrid-api-key).
+PROJECT_NUMBER="$(gcloud projects describe "${PROJECT}" --format='value(projectNumber)')"
+RUNTIME_SA="${RUN_SA:-${PROJECT_NUMBER}-compute@developer.gserviceaccount.com}"
+gcloud secrets add-iam-policy-binding "${ADMIN_PW_SECRET}" \
+  --project="${PROJECT}" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/secretmanager.secretAccessor" >/dev/null
+
 echo "==> [b] Deploy do Cloud Run Job (${JOB_NAME})"
 RUN_JOB_ARGS=(
   "${JOB_NAME}"
   --project="${PROJECT}"
   --region="${REGION}"
   --image="${IMAGE_URI}"
-  # ENFORCE_COVERAGE=smoke → gate com dentes; CI=true → forbidOnly + workers no config.
-  # MONITOR_ALERT_TO → destinatário do email de resultado (o reporter custom dispara a CADA run).
-  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com"
-  # SendGrid: o reporter custom (src/report/sendgridReporter.ts) envia UM EMAIL por execução
-  # (verde ✅ e vermelho 🔴, com falhas em arquivo:linha). Reusa a MESMA key/sender verificado
-  # que o backend já usa. Sem esta secret o reporter cai em DRY-RUN (não envia, só loga).
-  --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest"
-  --max-retries=1          # 1 retry de nível-job absorve blip de cold start; alerta só em falha real
-  --task-timeout=300s      # 5min: cobre cold start do /api/jobs (~5s) + toda a suíte smoke
+  # CI=true → forbidOnly + workers no config. ENFORCE_COVERAGE=smoke → gate de cobertura com dentes.
+  # MONITOR_ALERT_TO → destinatário do email (o reporter custom dispara a CADA run).
+  # Credenciais (admin + Firebase) exigidas pelas JORNADAS (regression) e testes admin, que o
+  # job agora exercita junto do smoke. FIREBASE_API_KEY é público (bundle do front) → env comum.
+  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com,E2E_ADMIN_EMAIL=${E2E_ADMIN_EMAIL},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}"
+  # Secrets (Secret Manager): SendGrid (email) + senha do admin (login staff das jornadas/admin).
+  --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest,E2E_ADMIN_PASSWORD=${ADMIN_PW_SECRET}:latest"
+  --max-retries=1          # 1 retry de nível-job absorve blip de cold start/egress; alerta só em falha real
+  --task-timeout=900s      # 15min: smoke + admin + jornadas reais (publish Talentum ~30s + teardown)
 )
 # SA de runtime só se definida (senão usa a default do Cloud Run).
 if [[ -n "${RUN_SA}" ]]; then
@@ -108,7 +148,7 @@ RUN_JOB_URI="https://run.googleapis.com/v2/projects/${PROJECT}/locations/${REGIO
 echo "==> [c] Cloud Scheduler (${SCHEDULER_NAME}) — cron '${CRON_SCHEDULE}' TZ ${TZ_ARG}"
 SCHED_ARGS=(
   --project="${PROJECT}"
-  --location="${REGION}"
+  --location="${SCHEDULER_REGION}"
   --schedule="${CRON_SCHEDULE}"
   --time-zone="${TZ_ARG}"
   --uri="${RUN_JOB_URI}"
@@ -119,7 +159,7 @@ SCHED_ARGS=(
 )
 # Idempotência: existe? → update. Senão → create.
 if gcloud scheduler jobs describe "${SCHEDULER_NAME}" \
-     --project="${PROJECT}" --location="${REGION}" >/dev/null 2>&1; then
+     --project="${PROJECT}" --location="${SCHEDULER_REGION}" >/dev/null 2>&1; then
   echo "    (existe → update)"
   gcloud scheduler jobs update http "${SCHEDULER_NAME}" "${SCHED_ARGS[@]}"
 else

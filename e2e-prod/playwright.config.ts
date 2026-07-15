@@ -57,7 +57,12 @@ export default defineConfig({
   fullyParallel: true,
   // Sem retry infinito mascarando instabilidade real; 1 retry no smoke tratado por projeto.
   retries: 0,
-  workers: IS_CI ? 2 : undefined,
+  // CI (job diário) = 1 worker = SERIAL global. Obrigatório: o job roda TODOS os projetos
+  // num único `playwright test`, e as jornadas de regression chamam o cleanup GLOBAL is_test
+  // (`DELETE ... WHERE is_test=true`). Dois testes is_test concorrentes → o cleanup de um
+  // apaga os dados do outro no meio (corrupção). Serial custa poucos minutos (~6min a suíte
+  // toda) e o job tem 15min de timeout — segurança > velocidade num monitor. Local = auto.
+  workers: IS_CI ? 1 : undefined,
   reporter: [
     ['list'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
@@ -135,7 +140,7 @@ export default defineConfig({
     {
       name: 'coverage-gate',
       testDir: './src/coverage',
-      testMatch: /coverage\.spec\.ts$/,
+      testMatch: /\.spec\.ts$/, // coverage.spec.ts (gate de rotas) + monitor-completeness.spec.ts (guard do runner)
       use: {},
     },
   ],

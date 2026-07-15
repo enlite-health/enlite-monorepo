@@ -19,18 +19,22 @@ COPY package.json package-lock.json ./
 #    (@playwright/test, tsx, typescript) — são o que a suíte usa em runtime.
 RUN npm ci
 
-# 3) Código da suíte: config + tsconfig + as duas camadas que o job exercita.
-#    (regression/ e .env* ficam de fora — ver .dockerignore.)
-COPY tsconfig.json playwright.config.ts ./
-COPY smoke/ ./smoke/
-COPY src/ ./src/
+# 3) Código da suíte INTEIRA — COPY . . (o .dockerignore exclui node_modules/.env*/.auth/
+#    test-results/.claude/.git). Copiar TUDO (não cherry-pick de dirs) é o que garante que
+#    um teste/spec NOVO entre na imagem AUTOMATICAMENTE, sem ninguém precisar editar este
+#    Dockerfile. O `npm ci` acima fica em layer separado (cache preservado); só este último
+#    layer rebuilda quando um spec muda.
+COPY . .
 
-# Ambiente do monitor. As URLs de prod são injetadas pelo Cloud Run Job (deploy-monitor.sh),
-# NÃO embutidas na imagem (12-factor + permite apontar pra outro ambiente sem rebuild).
-# CI=true → forbidOnly + workers=2 no config. ENFORCE_COVERAGE=smoke → gate com dentes.
+# Ambiente do monitor. As URLs de prod + credenciais (admin/Firebase) são injetadas pelo
+# Cloud Run Job (deploy-monitor.sh), NÃO embutidas na imagem (12-factor; segredo via Secret
+# Manager, nunca em texto plano na imagem). CI=true → forbidOnly + workers no config.
 ENV CI=true \
     ENFORCE_COVERAGE=smoke
 
-# Job diário: smoke (o monitor read-only) + coverage-gate (a garantia de que nenhuma
-# rota user-facing crítica ficou sem spec). Exit != 0 → o Cloud Run Job falha → alerta.
-CMD ["npx", "playwright", "test", "--project=smoke", "--project=coverage-gate"]
+# Job diário: RODA TODOS OS PROJETOS (sem filtro --project). Sem filtro = smoke + admin +
+# regression (jornadas reais) + coverage-gate, e um teste novo em QUALQUER projeto roda
+# sozinho no schedule (e entra no email pelo reporter, que lista toda a run). Um projeto
+# NOVO só precisa ser registrado no playwright.config.ts — o guard `monitor-completeness`
+# falha o build se este CMD voltar a filtrar projetos. Exit != 0 → o Job falha → alerta.
+CMD ["npx", "playwright", "test"]
