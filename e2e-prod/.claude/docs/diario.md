@@ -432,3 +432,156 @@ canal de alerta + repo AR) e a regressão (que depende dessa decisão).
 NÃO estava mais rodando (morreu/errou sem emitir notificação de conclusão, ou foi coletado). Não custou
 token à toa como eu temia; simplesmente não entregou resultado. Plano segue igual: relançar inventário
 por superfície quando formos pra regressão.
+
+## 2026-07-14 — Verificação da jornada worker: bug flaky ACHADO+CORRIGIDO + bloqueio de rede (Firebase)
+
+**Contexto:** user pediu pra verificar os testes atuais e provar a jornada worker verde antes de marcar
+o checkbox `[x]` do TOP 1 no CLAUDE.md. Rodei ANTES de marcar (regra: checkbox só depois de VER funcionar).
+
+**Inventário atual (evidência: grep/find):** 62 testes — smoke ~30 (15 arqs), admin ~29 (18 arqs + setup),
+regression 3 (jornada worker Fatias 1/2/3), coverage-gate 1. Docs de ontem (07-13): decisoes.md ATUALIZADO
+(3 entradas), diario.md e Status do CLAUDE.md estavam DESATUALIZADOS (Status ainda dizia jornada `[ ]`).
+
+**BUG REAL achado (determinismo) — CORRIGIDO:**
+- 1º run paralelo: Fatia 1 ✓, Fatias 2 e 3 ✗ com `PUT /api/workers/me/general-info` → **400**.
+- Reprodução isolada (scratchpad, signup→init→is_test→general-info): retornou **200**. Payload OK.
+- Causa-raiz: `uniqueArMobile()` usava só `Date.now()`.slice(-8). Sob `fullyParallel`, duas chamadas
+  no mesmo ms geram o MESMO telefone → violação de unicidade no backend → 400. Serial (`--workers=1`)
+  passou 3/3 (15.7s), confirmando a hipótese.
+- Fix (bug-shield, causa-raiz na função compartilhada — 2 callers, ambos na jornada): telefone agora
+  composto por `TEST_PARALLEL_INDEX` (distinto entre workers paralelos) + contador por-processo +
+  4 dígitos aleatórios. Unicidade determinística sob paralelismo, não só probabilística.
+  `src/support/workerRegistration.ts:52`. tsc OK.
+
+**BLOQUEIO ambiental (NÃO é bug do app/suíte) — impediu a prova final:**
+- Após o fix, runs seguintes (paralelo E serial) falharam com `TypeError: fetch failed` →
+  `[cause] ConnectTimeoutError` para 172.217.x.x:443 (Google/Firebase identitytoolkit), timeout 10s.
+- `curl` direto ao Firebase: **connect=14.5s, http=000** (estourou --max-time 15). Ou seja, o egress
+  TCP ao Google degradou NO MEIO DA SESSÃO (no começo serial passou em 15.7s e o repro deu 200).
+- Conclusão: condição de rede do MEU ambiente, não do app, não da lógica da suíte, não de concorrência.
+  NÃO reproduz no Cloud Run (egress ao Google é rápido lá). Parei de re-rodar (fútil enquanto o Google
+  está inacessível + cada tentativa cria conta).
+
+**Estado da jornada (honesto):** LÓGICA das 3 fatias PROVADA verde em serial (15.7s, antes do Google cair).
+Bug de determinismo do paralelo CORRIGIDO. FALTA: rodar o parelelo até verde (prova final) quando a rede
+ao Firebase normalizar — só então marcar `[x]`. Checkbox permanece `[ ]` de propósito.
+
+**Follow-up de robustez (monitor):** os `fetch` globais de auth (signup/admin-signin em workerApi.ts/
+adminApi.ts) não têm retry nem timeout tolerante — qualquer blip de rede derruba o teste. Pra um MONITOR,
+envolver as chamadas Firebase com retry+backoff. NÃO implementei agora (não dá pra verificar com o Google
+inacessível) — implementar + provar quando a rede voltar.
+
+## 2026-07-14 (cont.) — Serial resolveu Fatia 1/2; Fatia 3 PASSO 8 (nav pública) intermitente
+
+**Fixes aplicados e PROVADOS:**
+- Hardening de dados: `documentNumber` também virou `uniqueSuffix()` (era `Date.now()` cru, 2º vetor
+  de colisão além do phone). Extraído `uniqueSuffix()` compartilhado. `workerRegistration.ts`. tsc OK.
+- Jornada SERIALIZADA: `regression` project `fullyParallel:false` + `test:regression` usa `--workers=1`.
+  Motivo (evidência): paralelo falhava em passos DIFERENTES a cada run (general-info 400 → availability
+  404 → docs) por lag de read-replica sob concorrência — não é bug de usuário single-threaded.
+- Resultado: **Fatia 1 e Fatia 2 = VERDE ESTÁVEL** (2 runs limpos 3/3 em ~12s). Fatia 3 CORE (postularse
+  → WJA INVITED → Kanban INICIADO) também passa.
+
+**PENDÊNCIA REAL — Fatia 3 PASSO 8 (check visual da página pública da vaga):**
+- `page.goto('/vacantes/:id', {domcontentloaded})` estoura 30s de forma INTERMITENTE (passou em 2 runs,
+  falhou em 2 runs; no run com `retries:1` falhou original E retry — logo NÃO é cold-start de sorte).
+- Repro ISOLADO (chromium cru, mesma vaga draft is_test, quase no mesmo instante): navegou em **142ms**
+  (controle vaga pública: 765ms). Público `GET /api/vacancies/:id` retorna 200 pra draft (não filtra
+  is_draft/status — só `deleted_at`). Shell HTML por curl = 0.24s. Smoke de vaga = 1.7s.
+- Ou seja: trava no RUNNER do Playwright (projeto regression, device Desktop Chrome) mas NÃO no chromium
+  cru nem no smoke — no mesmo frontend, mesma rede, mesmo momento. Contradição ainda ABERTA.
+- Adicionei `retries:1` (warm-up) no regression — correto de qualquer forma, mas não cura este caso.
+
+**Estado honesto:** núcleo da jornada (as 3 fatias na lógica de negócio) PROVADO. Falta estabilizar
+1 assert secundário (fidelidade request↔DOM na página pública). Checkbox TOP 1 segue `[ ]` até PASSO 8
+verde estável. Decisão de escopo pendente com o user (hardening da nav vs investigar frontend vs isolar
+o check). NÃO marquei done.
+
+## 2026-07-14 (fecho) — Jornada 3/3 VERDE; PASSO 8 era rede ao Google, não defeito
+
+**Investigação profunda do PASSO 8 (a pedido do user) — causa fechada:**
+- Repro isolado (chromium cru, device Desktop Chrome, vaga draft is_test): 5/5 OK (~1-2.5s).
+- Repro idle-then-navigate (página ociosa 12s + tráfego API): 5/5 OK.
+- Fatia 3 ISOLADA via test-runner (`--trace on`): 6/6 OK.
+- Cold-start DESCARTADO: aquece → idle 30/60/120s sem tráfego → nav ainda 1-2s (frontend fica quente).
+- Suíte COMPLETA (3 na sequência, serial, trace on): 4/4 OK.
+- **Amarração:** os hangs de `page.goto` (30s) coincidiram com a janela em que o egress ao Google
+  degradou (curl ao Firebase connect=14.5s). O frontend é Cloud Run (`*.run.app` = Google); com a rede
+  ao Google lenta, o TLS-connect do browser ao frontend estourava 30s — MESMA raiz do `fetch failed`.
+  Com rede normal (connect 0.05s), a suíte passa consistente. NÃO é defeito de app/teste; não reproduz
+  no Cloud Run (egress ao Google é local lá).
+
+**PROVA FINAL:** `npm run test:regression` → 3 passed, 0 failed, 0 flaky (17.3s); reporter emite
+"✅ Monitor Enlite prod — 3/3 OK". 5+ runs consecutivos da suíte completa verdes após os fixes.
+
+**Fixes que ficam (todos com evidência):**
+1. `uniqueSuffix()` compartilhado (phone + documentNumber) — mata colisão de dados sob paralelismo.
+2. Jornada serial (`fullyParallel:false` no project + `--workers=1` no script) — mata flakiness de
+   read-replica; modo correto pra monitor de jornada-de-escrita.
+3. `retries:1` (warm-up) no regression — absorve blip transiente de rede/cold-start.
+
+**TOP 1 MARCADO [x] no CLAUDE.md** — vi funcionar, repetidamente, pelo comando real do monitor.
+
+**Follow-up aberto (não-bloqueante):** os `fetch` globais de auth (signup/admin-signin) não têm
+retry/backoff — num blip de rede ao Google eles falham hard. Envolver com retry tolerante deixaria o
+monitor ainda mais robusto. Implementar + provar quando for mexer nessa camada.
+
+---
+
+## 2026-07-14 — Jornada Talentum: pré-screening publicado nasce com ÁUDIO (ticket 86ajfm80t)
+
+**Contexto:** bug em prod — pré-screenings criados via API só aceitavam texto (bot Talentum:
+"Esta pregunta solamente puede ser contestada con text"). Fix no backend/frontend (áudio é o
+DEFAULT em toda fronteira via `normalizePrescreeningResponseType` + `forceAudio` na geração IA;
+backfill migration 249). Faltava o MONITOR provando isso em prod real, ponta-a-ponta.
+
+**Entregue:** `regression/talentum-prescreening-audio.regression.ts` — jornada happy REAL:
+cria vaga is_test (paciente real) → salva pré-screening com pergunta SEM responseType (o cenário
+do bug: valor ausente DEVE cair no default áudio) → publica na Talentum (chamada real) →
+`GET talentum-status` assere `audioEnabled=true` (fonte externa: o backend faz GET na Talentum) →
+despublica (apaga o projeto na Talentum) + cleanup is_test → prova 404. Zero mock.
+
+**Backend (worker-functions), pra a asserção existir via HTTP (padrão #134/ana_care_id):**
+`getVacancyTalentumStatus` agora computa `audioEnabled` (todas as perguntas do projeto na Talentum
+contêm 'audio') reusando o GET que já fazia; controller expõe o campo. Testes do helper cobrem
+todas/alguma-só-texto/sem-perguntas. **Precisa deploy** — até lá o assert é capability-gated no spec.
+
+**Cobertura:** +4 rotas de API Talentum no flow-map (prescreening-config, publish-talentum,
+talentum-status, DELETE publish-talentum). Gate: 81%→**87%**, e **happy 0→5** (primeira cobertura
+happy da suíte — o TOP-priority). 0 órfãs.
+
+**PROVA (rodado contra prod real):**
+- `npx playwright test --project=regression regression/talentum-prescreening-audio.regression.ts --workers=1 --retries=0` → **1 passed (30.4s)** com egress saudável.
+- Verificação direta na Talentum: a jornada de publish produziu `responseType=["text","audio"]` no
+  projeto criado (visto ao inspecionar "CASO 0-2422/2423" antes de limpar) — áudio confirmado do
+  lado da Talentum pelo NOSSO fluxo de publish.
+- Teardown impecável: checagem final `orfaos_CASO_0=0` (total 267 projetos, nenhum resíduo de teste).
+
+**Achados/decisões (com evidência):**
+1. Publish é LENTO (gera descrição via Gemini + cria na Talentum + GET) — timeout curto (20s default)
+   estourava e deixava PROJETO ÓRFÃO na Talentum (o publish completa server-side enquanto o cliente
+   desiste). Fix: `timeout: 120_000` no publish. `talentum_description` NÃO é settável via PUT, então
+   não dá pra pular o Gemini pré-setando a descrição — o custo Gemini é inerente ao 1º publish.
+2. `afterAll` robusto: tenta unpublish sempre que houver `vacancyId` (NÃO condiciona a um flag
+   `published`), ANTES do cleanup — porque um timeout do cliente pode ter publicado server-side. Sem
+   isso, o cleanup apaga a linha da vaga com o projectId e o projeto na Talentum vaza.
+3. `read ECONNRESET` num run intermediário (15.5m) = MESMA degradação de egress ao Google/Cloud Run
+   já documentada (some com rede normal; probe pós-incidente: health round-trip ~200-400ms → re-run
+   verde em 30s). Não é defeito de app/teste. Reforça o valor do `retries:1` (warm-up) do regression.
+4. Resíduo residual conhecido: se o processo morrer ENTRE o publish server-side e o unpublish do
+   afterAll, um projeto "CASO …" órfão fica na Talentum (sem marca [E2E] no lado deles). Baixo risco;
+   mitigação futura possível = título marcável no publish de teste. Documentado, não silencioso.
+
+### 2026-07-14 (adendo) — RISCO RESIDUAL do monitor de áudio: sync reimporta projeto de teste
+
+Achado ao verificar prod pós-deploy: 2 vagas `CASO 0-2424/2425` com **`is_test=FALSE`**, `worker_attributes=null`,
+`is_draft=true`, apontando pros projetos Talentum que meus runs FALHOS deixaram no ar (e que deletei manualmente).
+Causa: quando um run falha e deixa o projeto na Talentum por minutos, o **SyncTalentumVacanciesUseCase** (pull
+Talentum→DB) o importa como vaga NOVA `is_test=false` (o sync não marca is_test). Como é is_test=false, o
+`test-fixtures/cleanup` (só apaga is_test=true) NÃO pega → resíduo em prod. Runs que PASSAM despublicam em ~s,
+antes do sync → sem resíduo. Limpo via `DELETE /api/admin/vacancies/:id` (admin API); prod confirmado 0 `CASO 0-`.
+
+**Mitigação recomendada (follow-up, não-bloqueante):** ou (a) o sweeper pré-suíte apaga vagas `case_number=0` +
+title `CASO 0-` + is_draft + talentum_project_id inexistente; ou (b) o sync pular projetos cujo título casa marca
+de teste; ou (c) título marcável ([E2E]) no publish de teste pra o sweeper/sync identificar. Mesma família do
+risco de órfão-na-Talentum já documentado. Enquanto não implementado: se um run falhar, checar `case_number=0`.

@@ -91,11 +91,25 @@ export default defineConfig({
     },
     // CAMADA 2 — regression: writes + teardown, semanal/sob-demanda. Cobertura total.
     // TODO(recon): dependência do setup de auth (auth.setup.ts) — pendente do mecanismo de login prod.
+    //
+    // SERIAL DE PROPÓSITO (fullyParallel:false + `test:regression` usa --workers=1):
+    // são jornadas de ESCRITA reais contra prod. Rodá-las em paralelo é flaky — não por
+    // bug de usuário, mas por concorrência de infra: cada escrita vai no primário e a
+    // resolução seguinte (`resolveWorkerIdFromAuth`, save de doc, etc.) lê uma read-replica
+    // atrasada → 404/400 intermitente em passos DIFERENTES a cada run (evidência: diário
+    // 2026-07-14). Serial = 3/3 verde e determinístico, que é o ponto de um MONITOR. Um
+    // usuário real single-threaded nunca vê isso; disparar N jornadas simultâneas, sim.
     {
       name: 'regression',
       testDir: './regression',
       testMatch: /\.regression\.ts$/, // specs deste projeto usam sufixo .regression.ts
-      retries: IS_CI ? 1 : 0,
+      fullyParallel: false, // ver bloco acima — jornada de escrita não paraleliza
+      // retries: 1 = WARM-UP (mesma lógica do smoke). A jornada faz 1 navegação de UI
+      // (PASSO 8 da Fatia 3, página pública da vaga); um cold-start do Cloud Run do
+      // frontend pode estourar o navigationTimeout na PRIMEIRA tentativa. 1 retry
+      // distingue blip de outage — o monitor só alerta em falha CONSECUTIVA, não no
+      // cold-start. Evidência do transiente: diário 2026-07-14.
+      retries: 1,
       use: { ...devices['Desktop Chrome'] },
     },
     // SETUP DE AUTH ADMIN — loga real no /admin/login e salva .auth/admin.json (indexedDB).
