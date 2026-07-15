@@ -1,0 +1,82 @@
+name: E2E-Prod Monitor — Rebuild runner
+
+# Reconstrói AUTOMATICAMENTE a imagem do runner de synthetic monitoring e atualiza o
+# Cloud Run Job sempre que código de `e2e-prod/` entra em main. É o que fecha a garantia
+# "teste novo entra sozinho no schedule": o Dockerfile já faz `COPY . .` + roda todos os
+# projetos (sem filtro --project); este workflow só garante que a IMAGEM em prod acompanha
+# o código de main. O schedule (Cloud Scheduler 3h) e o env/secrets do job NÃO são tocados
+# aqui — já estão provisionados por scripts/deploy-monitor.sh; este job atualiza só a imagem.
+#
+# NÃO é cron (o veto a GitHub Actions cron é sobre AGENDAR os testes; isto dispara por push).
+#
+# Auth: Workload Identity Federation (mesmos secrets dos deploys de front/back). A SA do WIF
+# (github-deploy-sa) JÁ tem roles/artifactregistry.writer + roles/run.admin a nível de projeto
+# — cobre push no repo AR e2e-prod e update do Job. Nenhum grant novo necessário.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'e2e-prod/**'
+  workflow_dispatch: {}   # permite rebuild manual sob demanda
+
+concurrency:
+  group: e2e-prod-monitor
+  cancel-in-progress: false
+
+env:
+  REGION: southamerica-west1
+  REPO: e2e-prod
+  IMAGE_NAME: e2e-prod-smoke
+  JOB_NAME: e2e-prod-smoke
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: e2e-prod
+    permissions:
+      contents: 'read'
+      id-token: 'write'   # exigido pelo WIF (google-github-actions/auth)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Docker Auth (Artifact Registry)'
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: 'Build + push da imagem (suíte inteira)'
+        run: |
+          set -euo pipefail
+          IMAGE_BASE="${REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPO}/${IMAGE_NAME}"
+          IMAGE="${IMAGE_BASE}:${{ github.sha }}"
+          # docker build respeita o .dockerignore (não copia .env*/node_modules/.auth).
+          # Tag imutável (github.sha, rastreável) + :latest (alvo estável).
+          docker build -t "${IMAGE}" -t "${IMAGE_BASE}:latest" .
+          docker push "${IMAGE}"
+          docker push "${IMAGE_BASE}:latest"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: 'Atualiza a imagem do Cloud Run Job (mantém env/secrets/SA)'
+        run: |
+          set -euo pipefail
+          gcloud run jobs update "${JOB_NAME}" \
+            --project="${{ secrets.GCP_PROJECT_ID }}" \
+            --region="${REGION}" \
+            --image="${IMAGE}"
+
+      - name: 'Resumo'
+        run: |
+          echo "Runner atualizado para ${IMAGE}. Próxima run do scheduler (3h Argentina) usa a imagem nova." >> "$GITHUB_STEP_SUMMARY"
