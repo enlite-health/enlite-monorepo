@@ -44,14 +44,39 @@ export function readTinyDocumentPng(): Buffer {
   return readFileSync(join(FIXTURES_DIR, 'tiny-document.png'));
 }
 
+/** Contador monotônico por processo — distingue chamadas sucessivas no MESMO worker. */
+let mobileSeq = 0;
+
 /**
- * Número de celular AR único por run. `normalizePhoneAR` prepend '549' a 10 dígitos,
- * então '11' (CABA) + 8 dígitos do relógio → canônico 549XXXXXXXXXX de 13 dígitos,
- * praticamente sem chance de colidir com um worker real.
+ * Número de celular AR único por chamada, à prova de colisão sob `fullyParallel`.
+ * `normalizePhoneAR` prepend '549' a 10 dígitos → '11' (CABA) + 8 dígitos = canônico
+ * 549XXXXXXXXXX de 13 dígitos.
+ *
+ * Os 8 dígitos são compostos (não só `Date.now()`, que colide quando duas chamadas
+ * caem no mesmo milissegundo em workers paralelos — causou 400 na jornada, ver diário):
+ *   • `ww` = índice do worker paralelo do Playwright (TEST_PARALLEL_INDEX, 0-99) →
+ *     DISTINTO entre workers rodando ao mesmo tempo, logo dois testes paralelos NUNCA
+ *     geram o mesmo número.
+ *   • `ss` = contador por-processo (0-99) → DISTINTO entre chamadas sucessivas no
+ *     mesmo worker.
+ *   • `rrrr` = 4 dígitos aleatórios → entropia ENTRE runs (evita colidir com worker
+ *     real ou com um run anterior cujo teardown falhou).
  */
+/**
+ * 8 dígitos únicos por chamada, à prova de colisão sob paralelismo: `ww` (worker
+ * paralelo) + `ss` (contador por-processo) + `rrrr` (aleatório). Base de qualquer
+ * campo que precise ser único (telefone, documentNumber) — NÃO usar `Date.now()`
+ * cru, que colide quando duas chamadas caem no mesmo milissegundo.
+ */
+function uniqueSuffix(): string {
+  const ww = String(Number(process.env.TEST_PARALLEL_INDEX ?? 0) % 100).padStart(2, '0');
+  const ss = String(mobileSeq++ % 100).padStart(2, '0');
+  const rrrr = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  return `${ww}${ss}${rrrr}`;
+}
+
 export function uniqueArMobile(): string {
-  const suffix = String(Date.now()).slice(-8);
-  return `11${suffix}`;
+  return `11${uniqueSuffix()}`;
 }
 
 /**
@@ -66,7 +91,7 @@ export function buildCaregiverGeneralInfo(phone: string): Record<string, unknown
     gender: 'Masculino',
     birthDate: '1990-01-01',
     documentType: 'DNI',
-    documentNumber: `E2E-${Date.now()}`,
+    documentNumber: `E2E-${uniqueSuffix()}`, // único por chamada (não Date.now() cru → colide no paralelo)
     phone,
     languages: ['Español'],
     profession: 'CAREGIVER', // não-AT → CUIDADOR → só 2 docs (constraint valid_profession_values)

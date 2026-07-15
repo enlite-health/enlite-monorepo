@@ -209,3 +209,32 @@ corpo do email inteiro.
 que roda sob o reporter (projetos smoke/regression/admin). Ver memória
 `feedback_e2e_email_report_lists_every_test`.
 **Status:** implementado (reporter + dry-run verificado). Ainda não commitado (vai com o PR da jornada).
+
+## 2026-07-14 — Compactação do MEMORY.md: revertida a desindexação; teste canário plantado
+
+**Contexto:** um hook do harness pediu compactar o `MEMORY.md` (índice auto-carregado) de 20.3KB
+para <17.1KB. Compactei encurtando hooks + DESINDEXANDO 13 memórias (tirei do índice, mantive os
+arquivos), na hipótese de que a recall indexa os arquivos individualmente (frontmatter `description`
++ `node_type: memory`) e seria independente do índice.
+
+**Conflito:** pesquisa via claude-code-guide (docs OFICIAIS do Claude Code) diz o oposto — `MEMORY.md`
+é o índice ÚNICO; arquivo fora dele NÃO é recuperável de forma confiável; desindexar orfaniza. MAS o
+guia leu a doc PÚBLICA, que descreve um sistema mais simples do que ESTE setup (que tem recall via
+`<system-reminder>` + `description`/`node_type` no frontmatter — não cobertos pela doc pública).
+Os dois modelos conflitam e a documentação não resolve qual vale AQUI.
+
+**Decisão (não-destrutiva, à prova dos dois modelos):**
+1. REVERTIDA a desindexação — as 13 voltaram ao índice (0 órfãos). 2 delas tinham estado VIVO
+   (`periskope_migration` atrás de flag; `kanban_bloqueado_auto_promotion` NO WORKING TREE) — desindexá-las
+   foi o pior erro; agora seguras.
+2. `MEMORY.md` fica em 19.7KB/148 linhas — abaixo do limite REAL (~25KB/200 linhas), acima do alvo
+   conservador do hook (17.1KB). Aceito de propósito: só encolher DEPOIS de saber o método seguro.
+3. Plantado TESTE CANÁRIO: `canary_recall_test.md` fora do índice (protocolo fictício ZORBLAX-7719 →
+   código 4471-QX). Plano no topo do `MEMORY.md`. Próxima sessão: perguntar o tema e ver se o
+   `<system-reminder>` traz 4471-QX sem abrir o arquivo. Recuperou = recall independente (desindexar é
+   seguro). Não = índice único (só FUNDIR encolhe). Anotar resultado aqui + deletar canário.
+
+**Aprendizado (feedback):** não apostei certo ao inferir o mecanismo de recall e agi (desindexei) antes
+de provar — exatamente o que a regra "evidência, não afirmação" existe pra evitar. Corrigido + virou
+teste determinístico (o canário). Estratégia de encolhimento SEGURA sob qualquer modelo = FUNDIR
+memórias irmãs (clusters mapeados: worker×7, vacancy×4, patient×4, clickup×4), não desindexar.

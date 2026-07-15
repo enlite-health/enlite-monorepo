@@ -7,7 +7,7 @@
   "scripts": {
     "test": "playwright test",
     "test:smoke": "playwright test --project=smoke",
-    "test:regression": "playwright test --project=regression",
+    "test:regression": "playwright test --project=regression --workers=1",
     "sweep": "tsx src/sweeper/cleanup.ts",
     "report": "playwright show-report",
     "typecheck": "tsc --noEmit",
