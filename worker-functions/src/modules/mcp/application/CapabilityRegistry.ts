@@ -14,6 +14,7 @@ import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMem
 import type { WorkerCaseMemoryPutCapability } from './capabilities/WorkerCaseMemoryPutCapability';
 import type { WorkerOptOutRegisterCapability } from './capabilities/WorkerOptOutRegisterCapability';
 import type { WorkerAccountDeactivateCapability } from './capabilities/WorkerAccountDeactivateCapability';
+import type { WorkerAvailabilitySetCapability } from './capabilities/WorkerAvailabilitySetCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -45,6 +46,7 @@ interface RegistryDeps {
   caseMemoryPut: WorkerCaseMemoryPutCapability;
   optOutRegister: WorkerOptOutRegisterCapability;
   accountDeactivate: WorkerAccountDeactivateCapability;
+  availabilitySet: WorkerAvailabilitySetCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -60,6 +62,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.caseMemory.put',
   'worker.optOut.register',
   'worker.account.deactivate',
+  'worker.availability.set',
 ]);
 
 export class CapabilityRegistry {
@@ -108,6 +111,7 @@ export class CapabilityRegistry {
       caseMemoryPut,
       optOutRegister,
       accountDeactivate,
+      availabilitySet,
       dbQuery,
     } = this.deps;
 
@@ -264,6 +268,18 @@ export class CapabilityRegistry {
           (accountDeactivate.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => accountDeactivate.execute(args),
+      },
+      {
+        name:
+          (availabilitySet.constructor as { NAME?: string }).NAME ??
+          'worker.availability.set',
+        description:
+          (availabilitySet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Replace worker structured availability.',
+        inputShape:
+          (availabilitySet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => availabilitySet.execute(args),
       },
       ...(dbQuery !== undefined
         ? [
