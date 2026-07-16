@@ -34,6 +34,8 @@ import { WorkerCaseMemoryPutCapability } from '../application/capabilities/Worke
 import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
 import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
 import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
+import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
+import { FindNearbyVacanciesForWorkerUseCase } from '../../matching/application/FindNearbyVacanciesForWorkerUseCase';
 import { RegisterOptOutUseCase } from '../../notification/application/RegisterOptOutUseCase';
 import { DeactivateWorkerAccountUseCase } from '../../worker/application/DeactivateWorkerAccountUseCase';
 import { SetWorkerAvailabilityUseCase } from '../../worker/application/SetWorkerAvailabilityUseCase';
@@ -142,6 +144,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     availabilitySet: new WorkerAvailabilitySetCapability(
       new SetWorkerAvailabilityUseCase(dbPool),
+    ),
+    vacanciesNearby: new WorkerVacanciesNearbyCapability(
+      new FindNearbyVacanciesForWorkerUseCase(dbPool),
     ),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,

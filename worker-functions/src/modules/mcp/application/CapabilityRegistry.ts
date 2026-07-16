@@ -15,6 +15,7 @@ import type { WorkerCaseMemoryPutCapability } from './capabilities/WorkerCaseMem
 import type { WorkerOptOutRegisterCapability } from './capabilities/WorkerOptOutRegisterCapability';
 import type { WorkerAccountDeactivateCapability } from './capabilities/WorkerAccountDeactivateCapability';
 import type { WorkerAvailabilitySetCapability } from './capabilities/WorkerAvailabilitySetCapability';
+import type { WorkerVacanciesNearbyCapability } from './capabilities/WorkerVacanciesNearbyCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -47,6 +48,7 @@ interface RegistryDeps {
   optOutRegister: WorkerOptOutRegisterCapability;
   accountDeactivate: WorkerAccountDeactivateCapability;
   availabilitySet: WorkerAvailabilitySetCapability;
+  vacanciesNearby: WorkerVacanciesNearbyCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -112,6 +114,7 @@ export class CapabilityRegistry {
       optOutRegister,
       accountDeactivate,
       availabilitySet,
+      vacanciesNearby,
       dbQuery,
     } = this.deps;
 
@@ -280,6 +283,18 @@ export class CapabilityRegistry {
           (availabilitySet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => availabilitySet.execute(args),
+      },
+      {
+        name:
+          (vacanciesNearby.constructor as { NAME?: string }).NAME ??
+          'worker.vacancies.nearby',
+        description:
+          (vacanciesNearby.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'List vacancies the worker nearly matches.',
+        inputShape:
+          (vacanciesNearby.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => vacanciesNearby.execute(args),
       },
       ...(dbQuery !== undefined
         ? [
