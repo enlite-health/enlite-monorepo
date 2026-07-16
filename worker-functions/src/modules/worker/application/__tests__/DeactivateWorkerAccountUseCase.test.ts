@@ -38,7 +38,7 @@ describe('DeactivateWorkerAccountUseCase', () => {
     expect(sqls.some((s) => s.includes('COMMIT'))).toBe(true);
     expect(optOut.execute).toHaveBeenCalledWith({
       workerId: WID,
-      reason: 'account_baja',
+      reason: 'user_request',
       source: 'luz_conversation',
     });
   });

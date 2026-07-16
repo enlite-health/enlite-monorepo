@@ -70,9 +70,12 @@ export class DeactivateWorkerAccountUseCase {
     }
 
     // Para o contato na hora (belt-and-suspenders além do DISABLED). Fonte única.
+    // reason='user_request' (é pedido do próprio worker; a CHECK constraint de
+    // messaging_opt_out só aceita user_request|admin|undelivered_cap|no_response).
+    // A distinção "baixa de conta" fica no source e no status=DISABLED.
     await this.optOut.execute({
       workerId: input.workerId,
-      reason: 'account_baja',
+      reason: 'user_request',
       source,
     });
 
