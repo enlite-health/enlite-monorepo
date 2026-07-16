@@ -13,6 +13,7 @@ import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCa
 import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMemoryGetCapability';
 import type { WorkerCaseMemoryPutCapability } from './capabilities/WorkerCaseMemoryPutCapability';
 import type { WorkerOptOutRegisterCapability } from './capabilities/WorkerOptOutRegisterCapability';
+import type { WorkerAccountDeactivateCapability } from './capabilities/WorkerAccountDeactivateCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -43,6 +44,7 @@ interface RegistryDeps {
   caseMemoryGet: WorkerCaseMemoryGetCapability;
   caseMemoryPut: WorkerCaseMemoryPutCapability;
   optOutRegister: WorkerOptOutRegisterCapability;
+  accountDeactivate: WorkerAccountDeactivateCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -57,6 +59,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.documents.upload',
   'worker.caseMemory.put',
   'worker.optOut.register',
+  'worker.account.deactivate',
 ]);
 
 export class CapabilityRegistry {
@@ -104,6 +107,7 @@ export class CapabilityRegistry {
       caseMemoryGet,
       caseMemoryPut,
       optOutRegister,
+      accountDeactivate,
       dbQuery,
     } = this.deps;
 
@@ -248,6 +252,18 @@ export class CapabilityRegistry {
           (optOutRegister.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => optOutRegister.execute(args),
+      },
+      {
+        name:
+          (accountDeactivate.constructor as { NAME?: string }).NAME ??
+          'worker.account.deactivate',
+        description:
+          (accountDeactivate.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Deactivate a worker account at the worker request.',
+        inputShape:
+          (accountDeactivate.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => accountDeactivate.execute(args),
       },
       ...(dbQuery !== undefined
         ? [
