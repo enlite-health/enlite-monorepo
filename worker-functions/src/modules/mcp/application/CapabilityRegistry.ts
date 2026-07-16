@@ -12,6 +12,7 @@ import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapabili
 import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCapability';
 import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMemoryGetCapability';
 import type { WorkerCaseMemoryPutCapability } from './capabilities/WorkerCaseMemoryPutCapability';
+import type { WorkerOptOutRegisterCapability } from './capabilities/WorkerOptOutRegisterCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -41,6 +42,7 @@ interface RegistryDeps {
   workerSearch: WorkerSearchCapability;
   caseMemoryGet: WorkerCaseMemoryGetCapability;
   caseMemoryPut: WorkerCaseMemoryPutCapability;
+  optOutRegister: WorkerOptOutRegisterCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -54,6 +56,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.profile.confirmUpdate',
   'worker.documents.upload',
   'worker.caseMemory.put',
+  'worker.optOut.register',
 ]);
 
 export class CapabilityRegistry {
@@ -100,6 +103,7 @@ export class CapabilityRegistry {
       workerSearch,
       caseMemoryGet,
       caseMemoryPut,
+      optOutRegister,
       dbQuery,
     } = this.deps;
 
@@ -232,6 +236,18 @@ export class CapabilityRegistry {
           (caseMemoryPut.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => caseMemoryPut.execute(args),
+      },
+      {
+        name:
+          (optOutRegister.constructor as { NAME?: string }).NAME ??
+          'worker.optOut.register',
+        description:
+          (optOutRegister.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Register a messaging opt-out for a worker.',
+        inputShape:
+          (optOutRegister.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => optOutRegister.execute(args),
       },
       ...(dbQuery !== undefined
         ? [

@@ -11,6 +11,7 @@ import { WorkerStatsGetCapability } from '../capabilities/WorkerStatsGetCapabili
 import { WorkerSearchCapability } from '../capabilities/WorkerSearchCapability';
 import { WorkerCaseMemoryGetCapability } from '../capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../capabilities/WorkerCaseMemoryPutCapability';
+import { WorkerOptOutRegisterCapability } from '../capabilities/WorkerOptOutRegisterCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -103,6 +104,9 @@ function makeCapabilities() {
   const caseMemoryPut = new WorkerCaseMemoryPutCapability({
     put: jest.fn().mockResolvedValue({ caseMemory: {}, updatedAt: '2026-07-08T00:00:00.000Z' }),
   } as never);
+  const optOutRegister = new WorkerOptOutRegisterCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, workerId: 'w1' }),
+  } as never);
   return {
     profileGet,
     documentsList,
@@ -116,6 +120,7 @@ function makeCapabilities() {
     workerSearch,
     caseMemoryGet,
     caseMemoryPut,
+    optOutRegister,
   };
 }
 

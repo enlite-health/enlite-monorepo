@@ -26,6 +26,7 @@ import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStat
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
 import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
+import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -47,6 +48,7 @@ function makeRegistry(): CapabilityRegistry {
     workerSearch: new WorkerSearchCapability(stub),
     caseMemoryGet: new WorkerCaseMemoryGetCapability(stub),
     caseMemoryPut: new WorkerCaseMemoryPutCapability(stub),
+    optOutRegister: new WorkerOptOutRegisterCapability(stub),
     auditor: { emit: jest.fn() },
   });
 }
