@@ -13,6 +13,7 @@ import { WorkerCaseMemoryGetCapability } from '../capabilities/WorkerCaseMemoryG
 import { WorkerCaseMemoryPutCapability } from '../capabilities/WorkerCaseMemoryPutCapability';
 import { WorkerOptOutRegisterCapability } from '../capabilities/WorkerOptOutRegisterCapability';
 import { WorkerAccountDeactivateCapability } from '../capabilities/WorkerAccountDeactivateCapability';
+import { WorkerAvailabilitySetCapability } from '../capabilities/WorkerAvailabilitySetCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -111,6 +112,9 @@ function makeCapabilities() {
   const accountDeactivate = new WorkerAccountDeactivateCapability({
     execute: jest.fn().mockResolvedValue({ ok: true, alreadyDisabled: false }),
   } as never);
+  const availabilitySet = new WorkerAvailabilitySetCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, slots: 1 }),
+  } as never);
   return {
     profileGet,
     documentsList,
@@ -126,6 +130,7 @@ function makeCapabilities() {
     caseMemoryPut,
     optOutRegister,
     accountDeactivate,
+    availabilitySet,
   };
 }
 
