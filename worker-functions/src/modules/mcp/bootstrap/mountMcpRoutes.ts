@@ -31,6 +31,8 @@ import { WorkerSearchCapability } from '../application/capabilities/WorkerSearch
 import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryReadonlyCapability';
 import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
+import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
+import { RegisterOptOutUseCase } from '../../notification/application/RegisterOptOutUseCase';
 import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
@@ -128,6 +130,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
     caseMemoryGet: new WorkerCaseMemoryGetCapability(caseMemoryRepo),
     caseMemoryPut: new WorkerCaseMemoryPutCapability(caseMemoryRepo),
+    optOutRegister: new WorkerOptOutRegisterCapability(
+      new RegisterOptOutUseCase(dbPool),
+    ),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });

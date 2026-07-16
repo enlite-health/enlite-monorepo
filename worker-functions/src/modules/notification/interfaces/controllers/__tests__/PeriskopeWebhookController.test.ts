@@ -180,7 +180,7 @@ describe('PeriskopeWebhookController', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockDbQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO messaging_opt_out'),
-      ['worker-1', '+5491112345678'],
+      ['worker-1', '+5491112345678', 'user_request', 'whatsapp_inbound'],
     );
     expect(mockHandleReminder.executeTextResponse).not.toHaveBeenCalled();
     expect(mockInboundRouter.routeNumberedReply).not.toHaveBeenCalled();

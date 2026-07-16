@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
 import { PeriskopeInboundRouter } from '../../application/PeriskopeInboundRouter';
+import { RegisterOptOutUseCase } from '../../application/RegisterOptOutUseCase';
 import { mapPeriskopeAckToDeliveryStatus } from '../../domain/periskopeAckMapping';
 import {
   PeriskopeWebhookEnvelopeSchema,
@@ -202,27 +203,17 @@ export class PeriskopeWebhookController {
     const log = logger.child({ phone, keyword, handler: 'PeriskopeOptOut' });
 
     try {
-      const workerRes = await this.db.query<{ id: string }>(
-        `SELECT id FROM workers WHERE phone = $1 LIMIT 1`,
-        [phone],
-      );
+      const result = await new RegisterOptOutUseCase(this.db).execute({
+        phone,
+        source: 'whatsapp_inbound',
+      });
 
-      if (workerRes.rows.length === 0) {
+      if (!result.ok) {
         log.info('Opt-out request from unknown phone, ignoring');
         return;
       }
 
-      const workerId = workerRes.rows[0].id;
-
-      await this.db.query(
-        `INSERT INTO messaging_opt_out (worker_id, phone, reason, source)
-         VALUES ($1, $2, 'user_request', 'whatsapp_inbound')
-         ON CONFLICT (worker_id)
-         DO UPDATE SET opted_out_at = NOW(), opted_in_at = NULL, reason = 'user_request'`,
-        [workerId, phone],
-      );
-
-      log.info({ workerId }, 'Worker opted out of WhatsApp messages');
+      log.info({ workerId: result.workerId }, 'Worker opted out of WhatsApp messages');
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       log.error({ error: e.message }, 'Failed to process opt-out');
