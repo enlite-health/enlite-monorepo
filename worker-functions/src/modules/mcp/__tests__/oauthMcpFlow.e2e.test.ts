@@ -30,6 +30,7 @@ import { WorkerOptOutRegisterCapability } from '../application/capabilities/Work
 import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
 import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
 import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
+import { WorkerAvailabilityGetCapability } from '../application/capabilities/WorkerAvailabilityGetCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -54,6 +55,7 @@ function makeRegistry(): CapabilityRegistry {
     optOutRegister: new WorkerOptOutRegisterCapability(stub),
     accountDeactivate: new WorkerAccountDeactivateCapability(stub),
     availabilitySet: new WorkerAvailabilitySetCapability(stub),
+    availabilityGet: new WorkerAvailabilityGetCapability(stub),
     vacanciesNearby: new WorkerVacanciesNearbyCapability(stub),
     auditor: { emit: jest.fn() },
   });
