@@ -25,6 +25,11 @@ export async function runHardFilter(
 
   const excludeActiveCasesIndex = composedEligibility.params.length + 2;
   const statusIndex = excludeActiveCasesIndex + 1;
+  const availFlagIndex = statusIndex + 1;
+  // F1 (change matching-disponibilidade): COVERAGE por disponibilidade, atrás de flag.
+  // Default OFF → prod neutro. Travas anti-exclusão dentro da cláusula (worker sem
+  // disponibilidade passa; vaga sem schedule não filtra).
+  const respectAvailability = process.env.MATCHING_RESPECT_AVAILABILITY === 'true';
 
   const result = await db.query(
     `SELECT
@@ -83,6 +88,23 @@ export async function runHardFilter(
        AND wsa.location IS NOT NULL
        AND NOT (wsa.latitude = 0 AND wsa.longitude = 0)
        AND (
+         NOT $${availFlagIndex}::BOOLEAN
+         -- worker SEM disponibilidade declarada → não filtra (anti-exclusão)
+         OR NOT EXISTS (SELECT 1 FROM worker_availability wa WHERE wa.worker_id = w.id)
+         -- COVERAGE: nenhum dia do schedule da vaga fica descoberto pelo worker.
+         -- Vaga sem schedule (COALESCE '[]') → 0 dias → passa (não filtra por dia).
+         OR NOT EXISTS (
+           SELECT 1
+           FROM jsonb_to_recordset(
+             COALESCE((SELECT schedule FROM job_postings WHERE id = $1), '[]'::jsonb)
+           ) AS vd("dayOfWeek" int)
+           WHERE NOT EXISTS (
+             SELECT 1 FROM worker_availability wa
+             WHERE wa.worker_id = w.id AND wa.day_of_week = vd."dayOfWeek"
+           )
+         )
+       )
+       AND (
          NOT $${excludeActiveCasesIndex}::BOOLEAN
          OR NOT EXISTS (
            SELECT 1 FROM encuadres ea2
@@ -100,6 +122,7 @@ export async function runHardFilter(
       includeIncompleteRegister
         ? ['REGISTERED', 'INCOMPLETE_REGISTER']
         : ['REGISTERED'],
+      respectAvailability,
     ],
   );
 
