@@ -16,6 +16,7 @@ import type { WorkerOptOutRegisterCapability } from './capabilities/WorkerOptOut
 import type { WorkerAccountDeactivateCapability } from './capabilities/WorkerAccountDeactivateCapability';
 import type { WorkerAvailabilitySetCapability } from './capabilities/WorkerAvailabilitySetCapability';
 import type { WorkerVacanciesNearbyCapability } from './capabilities/WorkerVacanciesNearbyCapability';
+import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvailabilityGetCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -48,6 +49,7 @@ interface RegistryDeps {
   optOutRegister: WorkerOptOutRegisterCapability;
   accountDeactivate: WorkerAccountDeactivateCapability;
   availabilitySet: WorkerAvailabilitySetCapability;
+  availabilityGet: WorkerAvailabilityGetCapability;
   vacanciesNearby: WorkerVacanciesNearbyCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
@@ -114,6 +116,7 @@ export class CapabilityRegistry {
       optOutRegister,
       accountDeactivate,
       availabilitySet,
+      availabilityGet,
       vacanciesNearby,
       dbQuery,
     } = this.deps;
@@ -283,6 +286,18 @@ export class CapabilityRegistry {
           (availabilitySet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => availabilitySet.execute(args),
+      },
+      {
+        name:
+          (availabilityGet.constructor as { NAME?: string }).NAME ??
+          'worker.availability.get',
+        description:
+          (availabilityGet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Get worker structured availability.',
+        inputShape:
+          (availabilityGet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => availabilityGet.execute(args),
       },
       {
         name:

@@ -15,6 +15,7 @@ import { WorkerOptOutRegisterCapability } from '../capabilities/WorkerOptOutRegi
 import { WorkerAccountDeactivateCapability } from '../capabilities/WorkerAccountDeactivateCapability';
 import { WorkerAvailabilitySetCapability } from '../capabilities/WorkerAvailabilitySetCapability';
 import { WorkerVacanciesNearbyCapability } from '../capabilities/WorkerVacanciesNearbyCapability';
+import { WorkerAvailabilityGetCapability } from '../capabilities/WorkerAvailabilityGetCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -119,6 +120,9 @@ function makeCapabilities() {
   const vacanciesNearby = new WorkerVacanciesNearbyCapability({
     execute: jest.fn().mockResolvedValue({ vacancies: [] }),
   } as never);
+  const availabilityGet = new WorkerAvailabilityGetCapability({
+    findByWorkerId: jest.fn().mockResolvedValue({ isSuccess: true, getValue: () => [] }),
+  } as never);
   return {
     profileGet,
     documentsList,
@@ -135,6 +139,7 @@ function makeCapabilities() {
     optOutRegister,
     accountDeactivate,
     availabilitySet,
+    availabilityGet,
     vacanciesNearby,
   };
 }

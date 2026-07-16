@@ -35,7 +35,9 @@ import { WorkerOptOutRegisterCapability } from '../application/capabilities/Work
 import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
 import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
 import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
+import { WorkerAvailabilityGetCapability } from '../application/capabilities/WorkerAvailabilityGetCapability';
 import { FindNearbyVacanciesForWorkerUseCase } from '../../matching/application/FindNearbyVacanciesForWorkerUseCase';
+import { AvailabilityRepository } from '../../worker/infrastructure/AvailabilityRepository';
 import { RegisterOptOutUseCase } from '../../notification/application/RegisterOptOutUseCase';
 import { DeactivateWorkerAccountUseCase } from '../../worker/application/DeactivateWorkerAccountUseCase';
 import { SetWorkerAvailabilityUseCase } from '../../worker/application/SetWorkerAvailabilityUseCase';
@@ -144,6 +146,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     availabilitySet: new WorkerAvailabilitySetCapability(
       new SetWorkerAvailabilityUseCase(dbPool),
+    ),
+    availabilityGet: new WorkerAvailabilityGetCapability(
+      new AvailabilityRepository(),
     ),
     vacanciesNearby: new WorkerVacanciesNearbyCapability(
       new FindNearbyVacanciesForWorkerUseCase(dbPool),
