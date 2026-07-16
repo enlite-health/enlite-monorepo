@@ -32,7 +32,9 @@ import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryRe
 import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
 import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
+import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
 import { RegisterOptOutUseCase } from '../../notification/application/RegisterOptOutUseCase';
+import { DeactivateWorkerAccountUseCase } from '../../worker/application/DeactivateWorkerAccountUseCase';
 import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
@@ -132,6 +134,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     caseMemoryPut: new WorkerCaseMemoryPutCapability(caseMemoryRepo),
     optOutRegister: new WorkerOptOutRegisterCapability(
       new RegisterOptOutUseCase(dbPool),
+    ),
+    accountDeactivate: new WorkerAccountDeactivateCapability(
+      new DeactivateWorkerAccountUseCase(dbPool, new RegisterOptOutUseCase(dbPool)),
     ),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
