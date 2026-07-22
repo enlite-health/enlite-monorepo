@@ -20,6 +20,10 @@ interface KanbanBoardProps {
     rejectionReasonCategory?: string,
     role?: EncuadreRole,
   ) => Promise<MoveEncuadreError | null>;
+  /** "Rechazar" de um card BLOQUEADO: soft-dismiss com motivo → vai p/ RECHAZADOS. */
+  onRejectBlocked: (blockedId: string, rejectionReasonCategory: string) => Promise<MoveEncuadreError | null>;
+  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
+  onUnrejectBlocked: (blockedId: string) => Promise<MoveEncuadreError | null>;
 }
 
 interface ColumnConfig {
@@ -45,13 +49,20 @@ const COLUMN_CONFIG: ColumnConfig[] = [
 // Droppable columns map directly to application_funnel_stage values
 const DROPPABLE_STAGES = new Set(['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED']);
 
-export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked }: KanbanBoardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeId, setActiveId] = useState<string | null>(null);
   /** Stores the encuadreId (not wja.id) of the card being dragged */
   const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
-  const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
+  /**
+   * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
+   *  - { encuadreId } → mover encuadre para REJECTED (onMove).
+   *  - { blockedId }  → rejeitar tentativa bloqueada, promovendo a RECHAZADOS (onRejectBlocked).
+   */
+  const [showRejectionSelect, setShowRejectionSelect] = useState<
+    { encuadreId: string } | { blockedId: string } | null
+  >(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
   /**
@@ -149,9 +160,16 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
     await onMove(encuadreId, targetStage);
   }
 
-  async function handleRejectionSubmit(encuadreId: string, category: string) {
+  async function handleRejectionSubmit(
+    target: { encuadreId: string } | { blockedId: string },
+    category: string,
+  ) {
     setShowRejectionSelect(null);
-    await onMove(encuadreId, 'REJECTED', category);
+    if ('blockedId' in target) {
+      await onRejectBlocked(target.blockedId, category);
+    } else {
+      await onMove(target.encuadreId, 'REJECTED', category);
+    }
   }
 
   async function handleRoleSubmit(encuadreId: string, role: EncuadreRole) {
@@ -205,8 +223,20 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
                       blockedReason={enc.blockedReason}
                       missingFields={enc.missingFields}
                       attemptCount={enc.attemptCount}
+                      isDismissed={enc.isDismissed}
                       onWorkerClick={handleWorkerClick}
-                      onReject={enc.encuadreId ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! }) : undefined}
+                      onReject={
+                        enc.encuadreId
+                          ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
+                          : enc.isBlocked && !enc.isDismissed
+                            ? () => setShowRejectionSelect({ blockedId: enc.id })
+                            : undefined
+                      }
+                      onUndismiss={
+                        enc.isBlocked && enc.isDismissed
+                          ? () => onUnrejectBlocked(enc.id)
+                          : undefined
+                      }
                       onMoveTo={enc.encuadreId ? (target) => handleCardMoveTo(enc.encuadreId!, target) : undefined}
                       onOpenNotes={
                         enc.workerId
@@ -254,7 +284,7 @@ export function KanbanBoard({ stages, vacancyId, onMove }: KanbanBoardProps) {
 
       {showRejectionSelect && (
         <RejectionReasonSelect
-          onSubmit={(category) => handleRejectionSubmit(showRejectionSelect.encuadreId, category)}
+          onSubmit={(category) => handleRejectionSubmit(showRejectionSelect, category)}
           onCancel={() => setShowRejectionSelect(null)}
         />
       )}

@@ -32,8 +32,12 @@ interface KanbanCardProps {
   missingFields?: string[];
   /** How many times this worker attempted to apply */
   attemptCount?: number;
+  /** Blocked card "rechazado" (soft-dismiss) — aparece em RECHAZADOS com botão de voltar. */
+  isDismissed?: boolean;
   onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
+  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (só para isDismissed). */
+  onUndismiss?: () => void;
   /** Move o card para outro stage via menu de clique (alternativa ao arrasto).
    *  Só é passado para cards movíveis (com encuadre) — orphans/BLOQUEADO ficam sem. */
   onMoveTo?: (targetStage: string) => void;
@@ -93,8 +97,10 @@ export function KanbanCard({
   blockedReason,
   missingFields,
   attemptCount,
+  isDismissed,
   onWorkerClick,
   onReject,
+  onUndismiss,
   onMoveTo,
   onOpenNotes,
   contactNotesCount = 0,
@@ -285,6 +291,20 @@ export function KanbanCard({
           className="mt-2 w-full text-left px-2 py-1 rounded-lg text-[10px] font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors border border-transparent hover:border-red-100"
         >
           {t('admin.kanban.rejectButton')}
+        </button>
+      )}
+
+      {isDismissed && onUndismiss && (
+        <button
+          data-testid="undismiss-button"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUndismiss();
+          }}
+          className="mt-2 w-full text-left px-2 py-1 rounded-lg text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-primary transition-colors border border-transparent hover:border-slate-200"
+        >
+          {t('admin.kanban.undismissButton')}
         </button>
       )}
     </div>

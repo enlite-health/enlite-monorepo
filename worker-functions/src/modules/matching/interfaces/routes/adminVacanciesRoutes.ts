@@ -149,6 +149,15 @@ export function createAdminVacanciesRoutes(
   router.put('/encuadres/:id/move', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.moveEncuadre(req, res),
   );
+  // "Rechazar" de um card BLOQUEADO (soft-dismiss): sai de BLOQUEADO, vai p/ RECHAZADOS
+  // como card de bloqueado. Segmento próprio (não colide com /vacancies/:id).
+  router.post('/vacancies/blocked-applications/:blockedId/reject', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    funnelController.rejectBlockedApplication(req, res),
+  );
+  // "Voltar a bloqueados": desfaz o rechazo (RECHAZADOS → BLOQUEADO).
+  router.post('/vacancies/blocked-applications/:blockedId/restore', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    funnelController.undismissBlockedApplication(req, res),
+  );
 
   // ── Encuadre Funnel Table — audit table (WJAFunnelTableController) ───────────
   if (funnelTableController) {

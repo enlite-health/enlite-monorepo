@@ -9,6 +9,22 @@ export type RejectionReasonCategory =
   | 'TALENTUM_NOT_QUALIFIED'
   | 'OTHER';
 
+/**
+ * Valores válidos de rejection_reason_category em runtime — espelha o CHECK de
+ * encuadres (migrations 094 + 117). SSOT para validar entradas de API.
+ */
+export const REJECTION_REASON_CATEGORIES = [
+  'DISTANCE',
+  'SCHEDULE_INCOMPATIBLE',
+  'INSUFFICIENT_EXPERIENCE',
+  'SALARY_EXPECTATION',
+  'WORKER_DECLINED',
+  'OVERQUALIFIED',
+  'DEPENDENCY_MISMATCH',
+  'TALENTUM_NOT_QUALIFIED',
+  'OTHER',
+] as const satisfies readonly RejectionReasonCategory[];
+
 export type EncuadreResultado =
   | 'SELECCIONADO'
   | 'RECHAZADO'

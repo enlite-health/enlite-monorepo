@@ -1126,6 +1126,7 @@
       "collapseColumn": "Colapsar coluna",
       "expandColumn": "Expandir coluna",
       "rejectButton": "Rejeitar",
+      "undismissButton": "Voltar a bloqueados",
       "rejectionModal": {
         "title": "Motivo de rejeição",
         "cancel": "Cancelar",

@@ -139,13 +139,16 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(dataQueryCall).toContain("wba.blocked_reason = 'registration_incomplete'");
   });
 
-  it('sem filtros: WHERE clause ausente e LIMIT/OFFSET usam índices $1/$2', async () => {
+  it('sem filtros: filtra apenas ativos (dismissed_at IS NULL) e LIMIT/OFFSET usam índices $1/$2', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
     await repo.list({ limit: 50, offset: 0 });
 
     const dataQueryCall = mockQuery.mock.calls[0][0] as string;
-    expect(dataQueryCall).not.toContain('WHERE');
+    // Migration 250: os "rechazados" (soft-dismiss) saem do painel — sempre há um WHERE base.
+    expect(dataQueryCall).toContain('WHERE');
+    expect(dataQueryCall).toContain('wba.dismissed_at IS NULL');
+    // A condição base não consome placeholder → LIMIT/OFFSET seguem $1/$2.
     expect(dataQueryCall).toContain('LIMIT $1 OFFSET $2');
   });
 
