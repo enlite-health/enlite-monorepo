@@ -15,7 +15,7 @@ export function VacancyFunnelKanban({
   vacancyId,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, moveEncuadre } =
+  const { data, isLoading, error, refetch, moveEncuadre, rejectBlocked, unrejectBlocked } =
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
@@ -26,6 +26,24 @@ export function VacancyFunnelKanban({
       return err;
     },
     [moveEncuadre],
+  );
+
+  const handleRejectBlocked = useCallback(
+    async (blockedId: string, rejectionReasonCategory: string) => {
+      const err = await rejectBlocked(blockedId, rejectionReasonCategory);
+      setMoveError(err);
+      return err;
+    },
+    [rejectBlocked],
+  );
+
+  const handleUnrejectBlocked = useCallback(
+    async (blockedId: string) => {
+      const err = await unrejectBlocked(blockedId);
+      setMoveError(err);
+      return err;
+    },
+    [unrejectBlocked],
   );
 
   return (
@@ -108,7 +126,7 @@ export function VacancyFunnelKanban({
 
       {/* Board */}
       {data?.stages && (
-        <KanbanBoard stages={data.stages} vacancyId={vacancyId} onMove={handleMove} />
+        <KanbanBoard stages={data.stages} vacancyId={vacancyId} onMove={handleMove} onRejectBlocked={handleRejectBlocked} onUnrejectBlocked={handleUnrejectBlocked} />
       )}
     </div>
   );

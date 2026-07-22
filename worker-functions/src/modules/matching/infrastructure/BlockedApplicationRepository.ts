@@ -211,4 +211,43 @@ export class BlockedApplicationRepository {
     const expanded = await this.expandDocumentToken(params.workerId, missingFields);
     return expanded;
   }
+
+  /**
+   * "Rechazar" (soft-dismiss) uma tentativa bloqueada — o botão da coluna BLOQUEADO.
+   *
+   * Não cria WJA: o trigger 183 (enforce_worker_registered_for_application) proíbe
+   * candidatura de worker não-REGISTERED, e todo bloqueado é não-REGISTERED. Então só
+   * marca dismissed_at + dismissed_reason: o card sai de BLOQUEADO e passa a aparecer
+   * em RECHAZADOS como card de bloqueado (não-arrastável). Reversível via undismiss.
+   *
+   * Retorna true se marcou; false se o id não existe (→ 404 no controller).
+   */
+  async dismiss(id: string, reason: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE worker_blocked_applications
+       SET dismissed_at = NOW(), dismissed_reason = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [id, reason],
+    );
+    const ok = (result.rowCount ?? 0) > 0;
+    logger.info({ msg: 'BlockedApplicationRepository.dismiss: blocked attempt dismissed', blockedApplicationId: id, reason, ok });
+    return ok;
+  }
+
+  /**
+   * "Voltar a bloqueados" — desfaz o rechazo (limpa dismissed_at/reason). O card
+   * volta de RECHAZADOS para BLOQUEADO (único destino válido para um incompleto).
+   * Retorna true se desfez; false se o id não existe.
+   */
+  async undismiss(id: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE worker_blocked_applications
+       SET dismissed_at = NULL, dismissed_reason = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [id],
+    );
+    const ok = (result.rowCount ?? 0) > 0;
+    logger.info({ msg: 'BlockedApplicationRepository.undismiss: blocked attempt restored', blockedApplicationId: id, ok });
+    return ok;
+  }
 }

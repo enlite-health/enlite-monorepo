@@ -9,7 +9,9 @@ import {
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
 import { deriveKanbanColumn, isMatchedNotInvited } from '../../domain/kanbanColumn';
+import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -45,10 +47,12 @@ const encuadreRoleSchema = z.enum(['TITULAR', 'RAPID_RESPONSE']);
 export class WJAFunnelController {
   private db: Pool;
   private blockedRepo: BlockedApplicationQueryRepository;
+  private blockedWriteRepo: BlockedApplicationRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.blockedRepo = new BlockedApplicationQueryRepository();
+    this.blockedWriteRepo = new BlockedApplicationRepository();
   }
 
   /**
@@ -213,13 +217,16 @@ export class WJAFunnelController {
         stages[deriveKanbanColumn(stage, source)].push(item);
       }
 
-      // Merge blocked attempt cards into their own BLOQUEADO column (not promoted yet —
-      // listByVacancy já faz NOT EXISTS contra worker_job_applications, então uma linha
-      // promovida vira WJA real e some daqui automaticamente).
+      // Merge blocked attempt cards. Ativos → BLOQUEADO; "rechazados" (soft-dismiss,
+      // migration 250) → RECHAZADOS como card de bloqueado (não-arrastável, encuadreId
+      // null — coerente: um incompleto não pode ter WJA nem andar no funil). listByVacancy
+      // já faz NOT EXISTS contra worker_job_applications, então um bloqueado promovido vira
+      // WJA real e some daqui automaticamente.
       for (let i = 0; i < blockedAttempts.length; i++) {
         const ba = blockedAttempts[i];
         const blockedWorker = decryptedBlockedNames[i];
-        stages.BLOQUEADO.push({
+        const isDismissed = ba.dismissedAt != null;
+        stages[isDismissed ? 'REJECTED' : 'BLOQUEADO'].push({
           id: ba.id,
           encuadreId: null,
           workerId: ba.workerId ?? null,
@@ -231,7 +238,8 @@ export class WJAFunnelController {
           meetLink: null,
           resultado: null,
           attended: null,
-          rejectionReasonCategory: null,
+          // Card rechazado mostra o badge de motivo (mesmo enum do rejeitado normal).
+          rejectionReasonCategory: isDismissed ? ba.dismissedReason : null,
           rejectionReason: null,
           matchScore: null,
           interviewResponse: null,
@@ -248,6 +256,8 @@ export class WJAFunnelController {
           blockedReason: ba.blockedReason,
           missingFields: ba.missingFields,
           attemptCount: ba.attemptCount,
+          // Rechazado (soft-dismiss): habilita "voltar a bloqueados" no card em RECHAZADOS.
+          isDismissed,
         });
       }
 
@@ -370,6 +380,78 @@ export class WJAFunnelController {
       const message = error instanceof Error ? error.message : 'Unknown error';
       const status = message.includes('not found') ? 404 : 500;
       res.status(status).json({ success: false, error: message });
+    }
+  }
+
+  /**
+   * POST /api/admin/vacancies/blocked-applications/:blockedId/reject
+   *
+   * "Rechazar" um card da coluna BLOQUEADO (soft-dismiss). NÃO cria candidatura: o
+   * trigger 183 proíbe WJA de worker não-REGISTERED (e todo bloqueado é não-REGISTERED).
+   * Marca a tentativa como rechazada, com motivo — o card sai de BLOQUEADO e aparece em
+   * RECHAZADOS como card de bloqueado (não-arrastável). Reversível via undismiss.
+   * Escopo estrito à vaga.
+   */
+  async rejectBlockedApplication(req: Request, res: Response): Promise<void> {
+    try {
+      const { blockedId } = req.params;
+      if (!blockedId || !z.string().uuid().safeParse(blockedId).success) {
+        res.status(400).json({ success: false, error: 'blockedId must be a valid UUID' });
+        return;
+      }
+
+      const { rejectionReasonCategory } = req.body ?? {};
+      if (!rejectionReasonCategory || !REJECTION_REASON_CATEGORIES.includes(rejectionReasonCategory)) {
+        res.status(400).json({
+          success: false,
+          error: `rejectionReasonCategory must be one of: ${REJECTION_REASON_CATEGORIES.join(', ')}`,
+        });
+        return;
+      }
+
+      const ok = await this.blockedWriteRepo.dismiss(blockedId, rejectionReasonCategory);
+      if (!ok) {
+        res.status(404).json({ success: false, error: 'Blocked application not found' });
+        return;
+      }
+
+      res.json({ success: true, data: { blockedId, dismissedReason: rejectionReasonCategory } });
+    } catch (error) {
+      reportError(error instanceof Error ? error : new Error(String(error)), {
+        source: 'WJAFunnelController.rejectBlockedApplication',
+      });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ success: false, error: message });
+    }
+  }
+
+  /**
+   * POST /api/admin/vacancies/blocked-applications/:blockedId/restore
+   *
+   * "Voltar a bloqueados" — desfaz o rechazo. O card volta de RECHAZADOS para BLOQUEADO
+   * (único destino válido para um worker incompleto).
+   */
+  async undismissBlockedApplication(req: Request, res: Response): Promise<void> {
+    try {
+      const { blockedId } = req.params;
+      if (!blockedId || !z.string().uuid().safeParse(blockedId).success) {
+        res.status(400).json({ success: false, error: 'blockedId must be a valid UUID' });
+        return;
+      }
+
+      const ok = await this.blockedWriteRepo.undismiss(blockedId);
+      if (!ok) {
+        res.status(404).json({ success: false, error: 'Blocked application not found' });
+        return;
+      }
+
+      res.json({ success: true, data: { blockedId } });
+    } catch (error) {
+      reportError(error instanceof Error ? error : new Error(String(error)), {
+        source: 'WJAFunnelController.undismissBlockedApplication',
+      });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ success: false, error: message });
     }
   }
 }

@@ -287,6 +287,22 @@ class AdminApiServiceClass {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
   }
 
+  /**
+   * "Rechazar" um card BLOQUEADO: promove a tentativa bloqueada daquela vaga para
+   * RECHAZADOS (com motivo). Escopo estrito à vaga — não afeta o cadastro nem outras vagas.
+   */
+  async rejectBlockedAttempt(
+    blockedId: string,
+    data: { rejectionReasonCategory: string; rejectionReason?: string },
+  ): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/reject`, data);
+  }
+
+  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
+  async restoreBlockedAttempt(blockedId: string): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/restore`);
+  }
+
   async getVacancyFunnelTable(
     vacancyId: string,
     bucket?: 'INVITED' | 'POSTULATED' | 'PRE_SELECTED' | 'REJECTED' | 'WITHDREW' | 'ALL',

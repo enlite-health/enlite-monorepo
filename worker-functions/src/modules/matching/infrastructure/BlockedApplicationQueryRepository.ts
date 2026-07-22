@@ -31,6 +31,10 @@ export interface BlockedAttemptForFunnelDto {
   lastAttemptedAt: string;
   /** Notas escritas enquanto o card estava bloqueado (migration 235 — chave estável worker_id+job_posting_id). */
   contactNotesCount: number;
+  /** Soft-dismiss (migration 250): quando "rechazado" no kanban. null = ativo em BLOQUEADO, senão vai p/ RECHAZADOS. */
+  dismissedAt: string | null;
+  /** Categoria do motivo do rechazo (enum rejection_reason_category). null quando não rechazado. */
+  dismissedReason: string | null;
 }
 
 export interface BlockedAggregates {
@@ -66,7 +70,8 @@ export class BlockedApplicationQueryRepository {
   }
 
   async list(params: ListBlockedAttemptsParams): Promise<ListBlockedAttemptsResult> {
-    const conditions: string[] = [];
+    // Só tentativas ativas — as "rechazadas" (soft-dismiss, migration 250) saem do painel.
+    const conditions: string[] = ['wba.dismissed_at IS NULL'];
     const values: unknown[] = [];
     let idx = 1;
 
@@ -171,6 +176,8 @@ export class BlockedApplicationQueryRepository {
          wba.attempt_count,
          wba.acquisition_channel,
          wba.last_attempted_at,
+         wba.dismissed_at,
+         wba.dismissed_reason,
          (SELECT COUNT(*)::int FROM wja_contact_notes cn
           WHERE cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count
        FROM worker_blocked_applications wba
@@ -193,6 +200,8 @@ export class BlockedApplicationQueryRepository {
       acquisitionChannel: (r.acquisition_channel as string | null) ?? null,
       lastAttemptedAt:   (r.last_attempted_at as Date).toISOString(),
       contactNotesCount: Number(r.contact_notes_count ?? 0),
+      dismissedAt:       r.dismissed_at ? (r.dismissed_at as Date).toISOString() : null,
+      dismissedReason:   (r.dismissed_reason as string | null) ?? null,
     }));
   }
 
@@ -227,6 +236,7 @@ export class BlockedApplicationQueryRepository {
        LEFT JOIN job_postings jp ON jp.id = wba.job_posting_id
        LEFT JOIN patients p ON jp.patient_id = p.id
        WHERE wba.worker_id = $1
+         AND wba.dismissed_at IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM worker_job_applications wja
            WHERE wja.worker_id = wba.worker_id
@@ -264,6 +274,7 @@ export class BlockedApplicationQueryRepository {
     const result = await this.pool.query<{ blocked_reason: string; count: number }>(
       `SELECT blocked_reason, COUNT(*)::int AS count
        FROM worker_blocked_applications
+       WHERE dismissed_at IS NULL
        GROUP BY blocked_reason`,
     );
 

@@ -439,4 +439,48 @@ describe('BlockedApplicationRepository', () => {
       expect.objectContaining({ msg: expect.stringContaining('expandDocumentToken') }),
     );
   });
+
+  // ── dismiss / undismiss (soft-dismiss do "Rechazar" no kanban, migration 250) ──
+  describe('dismiss', () => {
+    const ID = 'aabbccdd-0000-0000-0000-999999999999';
+
+    it('seta dismissed_at + dismissed_reason e retorna true quando marca uma linha', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+
+      const ok = await repo.dismiss(ID, 'WORKER_DECLINED');
+
+      expect(ok).toBe(true);
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toMatch(/UPDATE worker_blocked_applications/i);
+      expect(sql).toMatch(/dismissed_at = NOW\(\)/i);
+      expect(sql).toMatch(/dismissed_reason = \$2/i);
+      expect(params).toEqual([ID, 'WORKER_DECLINED']);
+    });
+
+    it('retorna false quando o id não existe (rowCount 0)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 0 });
+      expect(await repo.dismiss(ID, 'OTHER')).toBe(false);
+    });
+  });
+
+  describe('undismiss', () => {
+    const ID = 'aabbccdd-0000-0000-0000-888888888888';
+
+    it('limpa dismissed_at/reason e retorna true', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+
+      const ok = await repo.undismiss(ID);
+
+      expect(ok).toBe(true);
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toMatch(/dismissed_at = NULL/i);
+      expect(sql).toMatch(/dismissed_reason = NULL/i);
+      expect(params).toEqual([ID]);
+    });
+
+    it('retorna false quando o id não existe', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 0 });
+      expect(await repo.undismiss(ID)).toBe(false);
+    });
+  });
 });
