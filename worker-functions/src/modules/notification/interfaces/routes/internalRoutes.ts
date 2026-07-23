@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { internalAuthMiddleware } from '../middleware/InternalAuthMiddleware';
 import { InternalController } from '../controllers/InternalController';
 import { pingVertex } from '@modules/integration/infrastructure/vertex-health';
+import { ReconcileClickUpPatientsController } from '@modules/integration/interfaces/controllers/ReconcileClickUpPatientsController';
 
 /**
  * Routes for internal endpoints — Pub/Sub push, Cloud Tasks, Cloud Scheduler.
@@ -9,6 +10,9 @@ import { pingVertex } from '@modules/integration/infrastructure/vertex-health';
  */
 export function createInternalRoutes(controller: InternalController): Router {
   const router = Router();
+
+  // Monta o use case só na primeira chamada (I/O contra o ClickUp) — ver controller.
+  const reconcileController = new ReconcileClickUpPatientsController();
 
   router.use(internalAuthMiddleware);
 
@@ -86,6 +90,14 @@ export function createInternalRoutes(controller: InternalController): Router {
   // Cloud Scheduler: daily Talentum incomplete reminder
   router.post('/bulk-dispatch/talentum-incomplete', (req: Request, res: Response) => {
     controller.processBulkDispatchTalentum(req, res);
+  });
+
+  // Cloud Scheduler (a cada 10 min): reconciliação ClickUp→pacientes.
+  // Rede de segurança do webhook: `incremental` pega eventos perdidos, `orphans`
+  // ressuscita casos travados por CASE_NUMBER_CONFLICT já resolvido no ClickUp
+  // (incidente do caso 601). Default `mode=cycle` = os dois.
+  router.post('/sync-clickup-patients', (req: Request, res: Response) => {
+    reconcileController.handle(req, res);
   });
 
   return router;
