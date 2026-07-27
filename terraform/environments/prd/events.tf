@@ -176,13 +176,26 @@ resource "google_cloud_scheduler_job" "events_sweep_safe" {
 resource "google_logging_metric" "domain_event_delivery_failure" {
   project     = var.project_id
   name        = "domain_event_delivery_failure"
-  description = "Outbox/domain_event delivery falhou silenciosamente (publish Pub/Sub falhou OU sem handler). Tripwire do buraco AnaCare 2026-07."
-  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg:\"Pub/Sub publish failed\" OR jsonPayload.msg:\"No handler registered for event\")"
+  description = "Outbox/domain_event delivery falhou silenciosamente (publish Pub/Sub falhou OU sem handler) OU o mirror worker→AnaCare falhou ([MirrorWorkerService]:mirrorOne — ex. HTTP 400 duplicado/id inválido). Tripwire do buraco AnaCare 2026-07."
+  # Inclui as falhas do sync AnaCare via jsonPayload.source: antes o filtro só
+  # pegava outbox/handler e as 80+ falhas de mirror passavam silenciosas apesar
+  # do nome do alerta citar "AnaCare". Ver docs/FOLLOWUPS.md (2026-07-27).
+  filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg:\"Pub/Sub publish failed\" OR jsonPayload.msg:\"No handler registered for event\" OR jsonPayload.source=\"[MirrorWorkerService]:mirrorOne\")"
 
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
     unit        = "1"
+
+    labels {
+      key         = "worker_id"
+      value_type  = "STRING"
+      description = "workerId do mirror AnaCare que falhou (vazio para falhas de outbox sem worker associado)"
+    }
+  }
+
+  label_extractors = {
+    "worker_id" = "EXTRACT(jsonPayload.workerId)"
   }
 }
 
