@@ -364,6 +364,9 @@ class AdminApiServiceClass {
   publishToTalentum(vacancyId: string) { return AdminTalentumApiService.publishToTalentum(vacancyId); }
   unpublishFromTalentum(vacancyId: string) { return AdminTalentumApiService.unpublishFromTalentum(vacancyId); }
   generateAIContent(vacancyId: string) { return AdminTalentumApiService.generateAIContent(vacancyId); }
+  updateTalentumDescription(vacancyId: string, description: string) {
+    return AdminTalentumApiService.updateTalentumDescription(vacancyId, description);
+  }
   generateSocialLink(vacancyId: string, channel: 'facebook' | 'instagram' | 'whatsapp' | 'linkedin' | 'site') {
     return AdminTalentumApiService.generateSocialLink(vacancyId, channel);
   }

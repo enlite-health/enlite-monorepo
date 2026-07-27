@@ -1942,7 +1942,11 @@
       "descriptionEditor": {
         "label": "Descrição do trabalho (gerada por IA)",
         "placeholder": "Clique em 'Gerar com IA' para criar a descrição",
-        "helper": "Você pode editar livremente o texto gerado"
+        "helper": "Você pode editar livremente o texto gerado",
+        "saveButton": "Salvar descrição",
+        "saving": "Salvando...",
+        "saved": "Descrição salva",
+        "savedAndPropagated": "Salva e atualizada no Talentum"
       }
     },
     "createVacancyV2": {

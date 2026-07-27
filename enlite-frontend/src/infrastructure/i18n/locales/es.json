@@ -2021,7 +2021,11 @@
       "descriptionEditor": {
         "label": "Descripción del trabajo (generada por IA)",
         "placeholder": "Hacé clic en 'Generar con IA' para crear la descripción",
-        "helper": "Podés editar libremente el texto generado"
+        "helper": "Podés editar libremente el texto generado",
+        "saveButton": "Guardar descripción",
+        "saving": "Guardando...",
+        "saved": "Descripción guardada",
+        "savedAndPropagated": "Guardada y actualizada en Talentum"
       }
     },
     "createVacancyV2": {
