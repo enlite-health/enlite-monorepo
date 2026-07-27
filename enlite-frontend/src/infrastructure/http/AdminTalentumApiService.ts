@@ -111,6 +111,26 @@ export const AdminTalentumApiService = {
     await request<unknown>('DELETE', `/api/admin/vacancies/${vacancyId}/publish-talentum`);
   },
 
+  // ========== Description (manual edit) ==========
+
+  /**
+   * Persiste a descrição EDITADA MANUALMENTE. Se a vaga já estiver publicada no
+   * Talentum, o backend propaga a edição in-place (retorna propagated=true).
+   * Usa a URL direta (bypassa o timeout de 60s do Hosting) porque o backend fala
+   * com a API externa do Talentum (GET + PUT).
+   */
+  async updateTalentumDescription(
+    vacancyId: string,
+    description: string,
+  ): Promise<{ description: string; propagated: boolean }> {
+    return request<{ description: string; propagated: boolean }>(
+      'PUT',
+      `/api/admin/vacancies/${vacancyId}/talentum-description`,
+      { description },
+      { useDirectURL: true },
+    );
+  },
+
   // ========== AI Content Generation ==========
 
   async generateAIContent(vacancyId: string): Promise<AIContentResult> {

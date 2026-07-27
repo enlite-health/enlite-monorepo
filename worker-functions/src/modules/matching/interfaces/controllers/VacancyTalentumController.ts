@@ -6,6 +6,8 @@ import {
   PublishError,
   SyncTalentumVacanciesUseCase,
   TalentumDescriptionService,
+  UpdateTalentumDescriptionUseCase,
+  UpdateDescriptionError,
   GeminiVacancyParserService,
   GeminiApiError,
 } from '@modules/integration';
@@ -147,6 +149,36 @@ export class VacancyTalentumController {
     } catch (error: unknown) {
       reportError(error instanceof Error ? error : new Error(String(error)), { source: 'VacancyTalentumController:generateTalentumDescription' });
       this.respondAIError(res, error, 'Failed to generate description');
+    }
+  }
+
+  /**
+   * PUT /api/admin/vacancies/:id/talentum-description
+   *
+   * Persiste uma descrição EDITADA MANUALMENTE e, se a vaga já estiver publicada
+   * no Talentum, propaga a edição in-place (preserva whatsappUrl/slug/perguntas).
+   * Diferente de generate-talentum-description (que regenera via Gemini).
+   */
+  async updateTalentumDescription(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { description } = req.body as { description?: unknown };
+      if (typeof description !== 'string' || description.trim() === '') {
+        res.status(400).json({ success: false, error: 'description is required and must be a non-empty string' });
+        return;
+      }
+      const actor = this.extractActor(req);
+      const useCase = new UpdateTalentumDescriptionUseCase();
+      const result = await useCase.execute({ jobPostingId: id, description }, actor);
+      res.status(200).json({ success: true, data: { description: result.description, propagated: result.propagated } });
+    } catch (error: unknown) {
+      if (error instanceof UpdateDescriptionError) {
+        res.status(error.statusCode).json({ success: false, error: error.message });
+        return;
+      }
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyTalentumController:updateTalentumDescription' });
+      res.status(500).json({ success: false, error: 'Failed to update description', details: msg });
     }
   }
 

@@ -34,6 +34,11 @@ interface UseTalentumConfigState {
   isSaving: boolean;
   saveError: string | null;
 
+  isSavingDescription: boolean;
+  saveDescriptionError: string | null;
+  descriptionSaved: boolean;
+  descriptionPropagated: boolean;
+
   isPublishing: boolean;
   publishError: string | null;
 }
@@ -41,6 +46,7 @@ interface UseTalentumConfigState {
 interface UseTalentumConfigActions {
   setDescription: (v: string) => void;
   generateAIContent: () => Promise<void>;
+  saveDescription: () => Promise<void>;
   savePrescreening: (data: { questions: PrescreeningQuestion[]; faq: FaqItem[] }) => Promise<void>;
   publish: () => Promise<void>;
 }
@@ -100,6 +106,11 @@ export function useTalentumConfig(
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const [saveDescriptionError, setSaveDescriptionError] = useState<string | null>(null);
+  const [descriptionSaved, setDescriptionSaved] = useState(false);
+  const [descriptionPropagated, setDescriptionPropagated] = useState(false);
+
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
 
@@ -125,12 +136,38 @@ export function useTalentumConfig(
     return () => { cancelled = true; };
   }, [vacancyId]);
 
+  // Wrapped setter: editar o texto invalida o estado "salvo" e limpa erro.
+  const handleSetDescription = useCallback((v: string) => {
+    setDescription(v);
+    setDescriptionSaved(false);
+    setDescriptionPropagated(false);
+    setSaveDescriptionError(null);
+  }, []);
+
+  const saveDescription = useCallback(async () => {
+    setIsSavingDescription(true);
+    setSaveDescriptionError(null);
+    setDescriptionSaved(false);
+    try {
+      const result = await AdminApiService.updateTalentumDescription(vacancyId, description);
+      setDescription(result.description);
+      setDescriptionSaved(true);
+      setDescriptionPropagated(result.propagated);
+    } catch (err: unknown) {
+      setSaveDescriptionError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      setIsSavingDescription(false);
+    }
+  }, [vacancyId, description]);
+
   const generateAIContent = useCallback(async () => {
     setGenerateStatus('loading');
     setGenerateError(null);
     try {
       const result = await AdminApiService.generateAIContent(vacancyId);
       setDescription(result.description);
+      setDescriptionSaved(false);
       // Ticket 86ajfm80t: garante áudio marcado por default nas perguntas da IA.
       setPrescreeningQuestions(withAudioDefault(result.prescreening.questions));
       setPrescreeningFaq(result.prescreening.faq);
@@ -173,6 +210,13 @@ export function useTalentumConfig(
         questions: prescreeningQuestions,
         faq: prescreeningFaq,
       });
+      // Persiste a descrição editada ANTES de publicar, senão o backend
+      // regenera via Gemini (talentum_description null) e perde o texto do
+      // operador. Só quando há texto — vazio deixa o publish gerar via IA.
+      if (description.trim().length > 0) {
+        await AdminApiService.updateTalentumDescription(vacancyId, description);
+        setDescriptionSaved(true);
+      }
       await AdminApiService.publishToTalentum(vacancyId);
       // Re-fetch vacancy to get updated publishedAt
       const raw = await AdminApiService.getVacancyById(vacancyId);
@@ -184,7 +228,7 @@ export function useTalentumConfig(
     } finally {
       setIsPublishing(false);
     }
-  }, [vacancyId, prescreeningQuestions, prescreeningFaq]);
+  }, [vacancyId, prescreeningQuestions, prescreeningFaq, description]);
 
   return {
     vacancyData,
@@ -197,10 +241,15 @@ export function useTalentumConfig(
     generateError,
     isSaving,
     saveError,
+    isSavingDescription,
+    saveDescriptionError,
+    descriptionSaved,
+    descriptionPropagated,
     isPublishing,
     publishError,
-    setDescription,
+    setDescription: handleSetDescription,
     generateAIContent,
+    saveDescription,
     savePrescreening,
     publish,
   };
