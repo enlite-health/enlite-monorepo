@@ -21,7 +21,7 @@
  *  13. mapPublicJobRow — country null maps to dto.country null
  */
 
-import { sanitizeDescription, mapPublicJobRow } from '../PublicJobMapper';
+import { sanitizeDescription, mapPublicJobRow, resolveLocationLabel } from '../PublicJobMapper';
 import type { PublicJobRow } from '../../domain/PublicJobDto';
 
 describe('sanitizeDescription', () => {
@@ -97,6 +97,7 @@ describe('mapPublicJobRow', () => {
     expect(dto.job_zone).toBe('NORTE');
     expect(dto.neighborhood).toBe('Palermo Soho');
     expect(dto.state_city).toBe('Buenos Aires / CABA');
+    expect(dto.location_label).toBe('Palermo Soho');
     expect(dto.country).toBe('AR');
     expect(dto.age_range_min).toBe(5);
     expect(dto.age_range_max).toBe(12);
@@ -210,6 +211,38 @@ describe('mapPublicJobRow', () => {
   it('maps country null to dto.country null', () => {
     const dto = mapPublicJobRow(makeRow({ country: null }));
     expect(dto.country).toBeNull();
+  });
+
+  // ── location_label (rótulo único de localização p/ título do accordion WP) ─
+
+  it('uses neighborhood (barrio) as location_label when present', () => {
+    const dto = mapPublicJobRow(makeRow({ neighborhood: 'Palermo Soho', city: 'Palermo', state: 'CABA' }));
+    expect(dto.location_label).toBe('Palermo Soho');
+  });
+
+  it('falls back to city (localidad) when neighborhood is null', () => {
+    const dto = mapPublicJobRow(makeRow({ neighborhood: null, city: 'Belén de Escobar', state: 'Provincia de Buenos Aires' }));
+    expect(dto.location_label).toBe('Belén de Escobar');
+  });
+
+  it('falls back to state (provincia) when neighborhood and city are null', () => {
+    const dto = mapPublicJobRow(makeRow({ neighborhood: null, city: null, state: 'Mendoza' }));
+    expect(dto.location_label).toBe('Mendoza');
+  });
+
+  it('returns null location_label when neighborhood, city and state are all absent', () => {
+    const dto = mapPublicJobRow(makeRow({ neighborhood: null, city: null, state: null }));
+    expect(dto.location_label).toBeNull();
+  });
+
+  it('skips whitespace-only fields and trims the chosen location_label', () => {
+    const dto = mapPublicJobRow(makeRow({ neighborhood: '   ', city: '  Ramos Mejía  ', state: 'Provincia de Buenos Aires' }));
+    expect(dto.location_label).toBe('Ramos Mejía');
+  });
+
+  it('resolveLocationLabel is exported and prefers the most specific field', () => {
+    expect(resolveLocationLabel(makeRow({ neighborhood: 'Barracas', city: null, state: null }))).toBe('Barracas');
+    expect(resolveLocationLabel(makeRow({ neighborhood: null, city: null, state: null }))).toBeNull();
   });
 
   // ── schedule_days_hours fallback (TD: schedule JSONB → texto derivado) ────
