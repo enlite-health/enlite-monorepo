@@ -9,7 +9,7 @@
  *   - Propagação de erro da API
  */
 
-import { AnaCareMirrorProvider } from '../AnaCareMirrorProvider';
+import { AnaCareMirrorProvider, toAnaCareNurseId } from '../AnaCareMirrorProvider';
 import type { IAnaCareApiClient, AnaCareNurse } from '../../../domain/IAnaCareApiClient';
 import type { WorkerMirrorRecord } from '../../../domain/WorkerMirrorRecord';
 
@@ -112,6 +112,27 @@ describe('AnaCareMirrorProvider.upsert', () => {
       await expect(provider.upsert(makeRecord(), 'not-a-number')).rejects.toThrow(
         'invalid externalId',
       );
+    });
+
+    it('externalId com prefixo do import ("A86109") → PATCH no id numérico 86109', async () => {
+      const client = makeClient();
+      const provider = new AnaCareMirrorProvider(client);
+      await provider.upsert(makeRecord(), 'A86109');
+      expect(client.updateNurse).toHaveBeenCalledWith(86109, expect.any(Object));
+      expect(client.createNurse).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('toAnaCareNurseId', () => {
+    it('numérico puro → mesmo número', () => {
+      expect(toAnaCareNurseId('86109')).toBe(86109);
+    });
+    it('prefixo alfabético do import → só os dígitos', () => {
+      expect(toAnaCareNurseId('A86109')).toBe(86109);
+    });
+    it('sem dígito nenhum → null', () => {
+      expect(toAnaCareNurseId('ABC')).toBeNull();
+      expect(toAnaCareNurseId('')).toBeNull();
     });
   });
 

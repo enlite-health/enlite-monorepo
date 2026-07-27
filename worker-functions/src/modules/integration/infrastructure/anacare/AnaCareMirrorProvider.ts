@@ -22,6 +22,21 @@ import { logger } from '@shared/logging';
 
 const TAG = '[AnaCareMirrorProvider]';
 
+/**
+ * Converte o externalId (ana_care_id) no id numérico que a API do AnaCare espera.
+ *
+ * O import do AnaCare grava o id COM prefixo alfabético (ex. "A86109"), mas o
+ * endpoint /nurses/{id}/ usa o numérico ("86109" = mesma enfermeira, confirmado).
+ * `parseInt("A86109")` é NaN → antes isso derrubava o mirror. Removemos os não-
+ * dígitos primeiro. Retorna null quando não sobra dígito nenhum (dado inválido).
+ */
+export function toAnaCareNurseId(externalId: string): number | null {
+  const digits = externalId.replace(/\D/g, '');
+  if (!digits) return null;
+  const id = parseInt(digits, 10);
+  return isNaN(id) ? null : id;
+}
+
 export class AnaCareMirrorProvider implements WorkerMirrorProvider {
   readonly name = 'anacare';
 
@@ -47,10 +62,10 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
 
     if (externalId !== null) {
       // PATCH — worker já existe no AnaCare
-      const id = parseInt(externalId, 10);
-      if (isNaN(id)) {
+      const id = toAnaCareNurseId(externalId);
+      if (id === null) {
         throw new Error(
-          `${TAG} upsert: invalid externalId (not a number): ${externalId}`,
+          `${TAG} upsert: invalid externalId (no numeric id): ${externalId}`,
         );
       }
 
@@ -78,10 +93,10 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
    *       NÃO é chamado no backfill v1.
    */
   async deactivate(externalId: string): Promise<void> {
-    const id = parseInt(externalId, 10);
-    if (isNaN(id)) {
+    const id = toAnaCareNurseId(externalId);
+    if (id === null) {
       throw new Error(
-        `${TAG} deactivate: invalid externalId (not a number): ${externalId}`,
+        `${TAG} deactivate: invalid externalId (no numeric id): ${externalId}`,
       );
     }
     // TODO: confirmar campo/valor de desativação com AnaCare antes de usar em produção.
