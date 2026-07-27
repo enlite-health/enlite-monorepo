@@ -20,6 +20,15 @@ export class DomainEventProcessor {
   }
 
   /**
+   * Nomes de evento com handler registrado. Usado pelo health check para NÃO
+   * alarmar sobre eventos sem dono (emitidos mas sem consumidor — ex.
+   * `funnel_stage.not_qualified/rejected`), que ficariam "stuck" para sempre.
+   */
+  getHandledEvents(): string[] {
+    return [...this.handlers.keys()];
+  }
+
+  /**
    * Process a single domain event by ID.
    * Called from Pub/Sub push → POST /api/internal/events/process
    */

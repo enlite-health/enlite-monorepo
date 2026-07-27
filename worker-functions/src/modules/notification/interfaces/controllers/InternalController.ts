@@ -22,10 +22,17 @@ const SweepSafeQuerySchema = z.object({
 /**
  * Allowlist explícito de eventos elegíveis para o sweep de durabilidade
  * (POST /api/internal/events/sweep-safe). Cada entrada precisa ter handler
- * idempotente confirmado — NUNCA incluir `vacancy.created` (dispara convites
- * WhatsApp; reprocessar um evento já entregue re-envia mensagem ao worker).
+ * idempotente confirmado.
+ *
+ * `vacancy.created` é o ÚNICO caminho de despacho do auto-convite (não há topic
+ * Pub/Sub dedicado): o sweep-safe é quem chama o handler. Reprocesso é seguro
+ * porque (1) o sweep só toca status='pending' — evento entregue vira 'processed'
+ * e não volta; (2) o handler tem flag `VACANCY_AUTO_INVITE_ENABLED` (default OFF)
+ * que reconhece sem enviar; (3) `assertVacancyInviteAllowed` mantém idempotência
+ * de 7 dias — nunca re-envia convite da mesma vaga. Foi removido do sweep durante
+ * o incidente de spam; reintroduzido com essas três travas.
  */
-export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registration_completed'] as const;
+export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registration_completed', 'vacancy.created'] as const;
 
 /**
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
@@ -220,9 +227,12 @@ export class InternalController {
       }
 
       const { recentWindowHours, stuckThresholdMinutes } = parsed.data;
+      // Só eventos COM handler podem ficar "stuck" — órfãos (emitidos sem
+      // consumidor) seguem visíveis no summary, mas não disparam o alarme.
       const summary = await this.domainEventBacklogService.getBacklogSummary(
         recentWindowHours,
         stuckThresholdMinutes,
+        this.eventProcessor.getHandledEvents(),
       );
 
       const stuckRows = summary.filter(row => row.stuck);

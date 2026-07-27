@@ -81,8 +81,13 @@ describe('VacancyAutoInviteHandler', () => {
   let mockMatchWorkersForJob: jest.Mock;
   let mockGenerate: jest.Mock;
 
+  const ORIGINAL_FLAG = process.env.VACANCY_AUTO_INVITE_ENABLED;
+
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Flag ligada nestes testes — o comportamento OFF (no-op) é coberto à parte.
+    process.env.VACANCY_AUTO_INVITE_ENABLED = 'true';
 
     mockQuery = jest.fn();
     mockDb = { query: mockQuery };
@@ -98,6 +103,18 @@ describe('VacancyAutoInviteHandler', () => {
       generate: mockGenerate,
     }) as unknown as TokenService);
   });
+
+  afterEach(() => {
+    if (ORIGINAL_FLAG === undefined) delete process.env.VACANCY_AUTO_INVITE_ENABLED;
+    else process.env.VACANCY_AUTO_INVITE_ENABLED = ORIGINAL_FLAG;
+  });
+
+  // Helper: encontra a chamada de INSERT no outbox sem depender do índice
+  // absoluto (robusto a queries adicionadas antes, ex. o filtro de alvo).
+  const findOutboxInsert = () =>
+    mockQuery.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('INSERT INTO messaging_outbox'),
+    );
 
   // 1
   it('lança erro se jobPostingId estiver ausente no payload', async () => {
@@ -140,6 +157,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })  // guard: idempotência
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })           // guard: count não-resposta
       .mockResolvedValueOnce({ rows: [{ exists: false }] })  // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo: primeira vaga → passa
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-test-realm-1' }] });
 
     const testCandidate = makeScoredCandidate({ workerId: 'worker-test-1', workerStatus: 'REGISTERED' });
@@ -180,6 +198,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })  // guard: idempotência
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })           // guard: count não-resposta
       .mockResolvedValueOnce({ rows: [{ exists: false }] })  // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo: primeira vaga → passa
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-normal-1' }] });
 
     const candidate = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
@@ -237,6 +256,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })               // guard: idempotência
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })                        // guard: count não-resposta
       .mockResolvedValueOnce({ rows: [{ exists: false }] })               // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo: primeira vaga → passa
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-99' }] });            // INSERT outbox RETURNING id
 
     const candidate = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
@@ -245,7 +265,7 @@ describe('VacancyAutoInviteHandler', () => {
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    const insertCall = mockQuery.mock.calls[6];
+    const insertCall = findOutboxInsert()!;
     expect(insertCall[0]).toContain('INSERT INTO messaging_outbox');
     expect(insertCall[1][0]).toBe('worker-1');                     // $1 worker_id
     expect(insertCall[1][1]).toBe('job-1');                        // $2 job_posting_id
@@ -273,6 +293,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })              // guard: idempotência
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })                       // guard: count não-resposta
       .mockResolvedValueOnce({ rows: [{ exists: false }] })              // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo: primeira vaga → passa
       // formatPendingDocuments: JOIN workers + worker_documents (AT sem CV e sem at_certificate)
       .mockResolvedValueOnce({ rows: [{
         profession: 'AT',
@@ -291,7 +312,7 @@ describe('VacancyAutoInviteHandler', () => {
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    const insertCall = mockQuery.mock.calls[7];
+    const insertCall = findOutboxInsert()!;
     expect(insertCall[1][2]).toBe('ar_vacancy_match_incomplete'); // $3 template_slug
 
     const vars = JSON.parse(insertCall[1][3]);
@@ -339,6 +360,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })               // guard: idempotência c2
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })                        // guard: count não-resposta c2
       .mockResolvedValueOnce({ rows: [{ exists: false }] })               // guard: engaged c2
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo c2: primeira vaga → passa
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-2' }] });             // INSERT c2
 
     const c1 = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
@@ -365,6 +387,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })        // guard: idempotência
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })                 // guard: count não-resposta
       .mockResolvedValueOnce({ rows: [{ exists: false }] })        // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo: primeira vaga → passa
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });     // INSERT outbox
 
     const candidate = makeScoredCandidate({ workerStatus: 'REGISTERED' });
@@ -373,7 +396,7 @@ describe('VacancyAutoInviteHandler', () => {
     const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
     await handler({ jobPostingId: 'job-1' });
 
-    const vars = JSON.parse(mockQuery.mock.calls[6][1][3]);
+    const vars = JSON.parse(findOutboxInsert()![1][3]);
     expect(vars.patient_zone).toBe('tu zona');
   });
 
@@ -386,6 +409,7 @@ describe('VacancyAutoInviteHandler', () => {
       .mockResolvedValueOnce({ rows: [{ exists: false }] })        // guard: idempotência
       .mockResolvedValueOnce({ rows: [{ n: 0 }] })                 // guard: count não-resposta
       .mockResolvedValueOnce({ rows: [{ exists: false }] })        // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: false }] }) // filtro alvo: primeira vaga → passa
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });     // INSERT outbox
 
     const candidate = makeScoredCandidate({ workerId: 'worker-xyz', workerStatus: 'REGISTERED' });
@@ -395,9 +419,46 @@ describe('VacancyAutoInviteHandler', () => {
     await handler({ jobPostingId: 'job-1' });
 
     expect(mockGenerate).toHaveBeenCalledWith('worker-xyz', 'worker_name');
-    const vars = JSON.parse(mockQuery.mock.calls[6][1][3]);
+    const vars = JSON.parse(findOutboxInsert()![1][3]);
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.worker_name).toMatch(/^tk_/);
+  });
+
+  // 11 — feature flag OFF: no-op total (nem matchmaking nem query)
+  it('VACANCY_AUTO_INVITE_ENABLED off → no-op: nada de matchmaking, query ou envio', async () => {
+    process.env.VACANCY_AUTO_INVITE_ENABLED = 'false';
+
+    const candidate = makeScoredCandidate({ workerStatus: 'REGISTERED' });
+    mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-1' });
+
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockMatchWorkersForJob).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
+  });
+
+  // 12 — filtro de alvo controlado: não engajou E já recebeu vaga antes → skip
+  it('filtro de alvo: não engajado + já recebeu vaga antes → skip (não enfileira nem gera token)', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ patient_zone: 'Palermo' }] })  // patient_zone
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })            // guard: opt-out
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })            // guard: cooldown
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })            // guard: idempotência
+      .mockResolvedValueOnce({ rows: [{ n: 0 }] })                     // guard: count não-resposta
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })            // guard: engaged
+      .mockResolvedValueOnce({ rows: [{ engaged: false, prior_invite: true }] }); // filtro alvo → BLOQUEIA
+
+    const candidate = makeScoredCandidate({ workerId: 'worker-1', workerStatus: 'REGISTERED' });
+    mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-1' });
+
+    expect(findOutboxInsert()).toBeUndefined();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
   });
 });
 

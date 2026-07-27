@@ -5,6 +5,7 @@ import { TokenService } from '../../../modules/notification/infrastructure/Token
 import { logger, reportError, loggingAls } from '../../logging';
 import { getRequiredColumns } from '../../../modules/worker/application/workerDocumentPolicy';
 import { assertVacancyInviteAllowed } from '../../../modules/notification/application/VacancyInviteGuard';
+import { assertAutoInviteTargetAllowed } from '../../../modules/notification/application/AutoInviteTargeting';
 
 const TEMPLATE_SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const TEMPLATE_SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
@@ -69,6 +70,16 @@ export function createVacancyAutoInviteHandler(
     }
 
     const log = logger.child({ jobPostingId, handler: 'VacancyAutoInvite' });
+
+    // Feature flag (default OFF) — o auto-convite ficou desligado após o incidente
+    // de spam. Quando OFF, o handler só reconhece o evento (marca processed) sem
+    // rodar matchmaking nem enviar nada — evita órfão pending e qualquer disparo.
+    // Go-live = ligar esta flag E resumir a fila whatsapp-paced, deliberadamente.
+    if (process.env.VACANCY_AUTO_INVITE_ENABLED !== 'true') {
+      log.info('VACANCY_AUTO_INVITE_ENABLED off — evento reconhecido sem convite');
+      return;
+    }
+
     log.info('Starting auto-invite');
 
     // 1. Buscar zona do paciente via JOIN (fix TD-019: não usa workZone do AT)
@@ -149,6 +160,15 @@ export function createVacancyAutoInviteHandler(
         if (!guard.allowed) {
           skipped++;
           log.info({ workerId: candidate.workerId, code: guard.code }, 'Convite bloqueado pelo guard');
+          continue;
+        }
+
+        // Filtro de alvo do auto-convite controlado (auto-only): só ativos
+        // (engajaram no funil) OU quem ainda não recebeu nenhuma outra vaga.
+        const target = await assertAutoInviteTargetAllowed(db, candidate.workerId);
+        if (!target.allowed) {
+          skipped++;
+          log.info({ workerId: candidate.workerId, code: target.code }, 'Fora do alvo do auto-convite controlado');
           continue;
         }
 

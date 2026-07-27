@@ -55,6 +55,7 @@ describe('InternalController', () => {
       sweepPendingByEvent: jest.fn().mockResolvedValue({ processed: 2, total: 3 }),
       deleteRedundantMirrorEvents: jest.fn().mockResolvedValue(1),
       registerHandler: jest.fn(),
+      getHandledEvents: jest.fn().mockReturnValue(['worker.registration_completed', 'vacancy.created']),
     } as unknown as jest.Mocked<DomainEventProcessor>;
 
     outboxProcessor = {
@@ -239,6 +240,7 @@ describe('InternalController', () => {
       eventProcessor.sweepPendingByEvent.mockImplementation(async (eventName: string) => {
         if (eventName === 'worker.mirror_requested') return { processed: 2, total: 3 };
         if (eventName === 'worker.registration_completed') return { processed: 1, total: 1 };
+        if (eventName === 'vacancy.created') return { processed: 5, total: 7 };
         throw new Error(`unexpected event in sweep-safe: ${eventName}`);
       });
     });
@@ -256,26 +258,31 @@ describe('InternalController', () => {
         5,
         100,
       );
-      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(2);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('vacancy.created', 5, 100);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(3);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         deleted: 1,
-        processed: 3, // 2 + 1
-        total: 4, // 3 + 1
+        processed: 8, // 2 + 1 + 5
+        total: 11, // 3 + 1 + 7
         byEvent: {
           'worker.mirror_requested': { processed: 2, total: 3 },
           'worker.registration_completed': { processed: 1, total: 1 },
+          'vacancy.created': { processed: 5, total: 7 },
         },
       });
     });
 
-    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. vacancy.created)', async () => {
+    it('sweeps exatamente o allowlist (mirror + registration_completed + vacancy.created), nada fora dele', async () => {
       const res = mockRes();
       await controller.sweepSafeEvents(mockReq(), res);
 
       const calledEvents = eventProcessor.sweepPendingByEvent.mock.calls.map(c => c[0]);
-      expect(calledEvents).not.toContain('vacancy.created');
-      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed'].sort());
+      // eventos sem handler (ex. funnel_stage.rejected) nunca são varridos aqui
+      expect(calledEvents).not.toContain('funnel_stage.rejected');
+      expect(calledEvents.sort()).toEqual(
+        ['vacancy.created', 'worker.mirror_requested', 'worker.registration_completed'].sort(),
+      );
     });
 
     it('parses olderThanMinutes/limit from query and forwards to every allowlist event', async () => {
@@ -321,6 +328,7 @@ describe('InternalController', () => {
           oldestRecentAgeMinutes: 5,
           failedTotal: 0,
           stuck: false,
+          unhandled: false,
         },
       ]);
       const req = mockReq({}, {});
@@ -328,7 +336,7 @@ describe('InternalController', () => {
 
       await controller.getEventsHealth(req, res);
 
-      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(6, 15);
+      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(6, 15, ['worker.registration_completed', 'vacancy.created']);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         summary: [
@@ -339,6 +347,7 @@ describe('InternalController', () => {
             oldestRecentAgeMinutes: 5,
             failedTotal: 0,
             stuck: false,
+            unhandled: false,
           },
         ],
         stuckCount: 0,
@@ -352,7 +361,7 @@ describe('InternalController', () => {
 
       await controller.getEventsHealth(req, res);
 
-      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(12, 30);
+      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(12, 30, ['worker.registration_completed', 'vacancy.created']);
     });
 
     it('returns 400 for invalid query params', async () => {
@@ -367,8 +376,8 @@ describe('InternalController', () => {
 
     it('computes stuckCount from rows with stuck=true', async () => {
       domainEventBacklogService.getBacklogSummary.mockResolvedValue([
-        { event: 'a', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 20, failedTotal: 0, stuck: true },
-        { event: 'b', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 2, failedTotal: 0, stuck: false },
+        { event: 'a', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 20, failedTotal: 0, stuck: true, unhandled: false },
+        { event: 'b', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 2, failedTotal: 0, stuck: false, unhandled: false },
       ]);
       const res = mockRes();
 
