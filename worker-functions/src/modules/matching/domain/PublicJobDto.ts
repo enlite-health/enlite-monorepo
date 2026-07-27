@@ -71,6 +71,12 @@ export interface PublicJobDto {
   job_zone: string | null;
   neighborhood: string | null;
   state_city: string | null;
+  /**
+   * Rótulo único de localização (mais específico disponível: barrio → localidad →
+   * provincia). Derivado no mapper — ver `resolveLocationLabel`. Consumido pelo
+   * portal WordPress pra compor o título do accordion sem escolher entre 3 campos.
+   */
+  location_label: string | null;
   country: string | null;
   age_range_min: number | null;
   age_range_max: number | null;

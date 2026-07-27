@@ -35,6 +35,26 @@ function resolveScheduleDaysHours(row: PublicJobRow): string | null {
   return formatScheduleToText(row.schedule);
 }
 
+/**
+ * `location_label` — rótulo único de localização pro consumidor externo (o portal
+ * WordPress `filtro-avancado-vacantes`) exibir no título do accordion sem re-parsear
+ * nem escolher entre 3 campos. Pega o mais ESPECÍFICO disponível:
+ * bairro → cidade → estado (barrio → localidad → provincia).
+ *
+ * Por que o mais específico, e não a província: medido nas 183 vagas AR ativas,
+ * ~90% estão em `CABA`/`Provincia de Buenos Aires` — a província sozinha não
+ * distingue as vagas (o problema que a task pede pra resolver). O barrio/localidad
+ * é o discriminador real ("Palermo", "Barracas", "Ramos Mejía").
+ *
+ * Derivado em tempo de request — NÃO cria coluna nova; usa campos que a query já traz.
+ */
+export function resolveLocationLabel(row: PublicJobRow): string | null {
+  for (const candidate of [row.neighborhood, row.city, row.state]) {
+    if (candidate && candidate.trim()) return candidate.trim();
+  }
+  return null;
+}
+
 export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
   return {
     id: row.id,
@@ -55,6 +75,7 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     job_zone: row.job_zone ?? null,
     neighborhood: row.neighborhood ?? null,
     state_city: normalizeStateCity(row.state_city),
+    location_label: resolveLocationLabel(row),
     country: row.country ?? null,
     age_range_min: row.age_range_min ?? null,
     age_range_max: row.age_range_max ?? null,

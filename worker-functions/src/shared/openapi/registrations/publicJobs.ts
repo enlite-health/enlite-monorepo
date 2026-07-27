@@ -41,6 +41,10 @@ const PublicJobV1ItemSchema = registry.register(
     country: z.string().openapi({ example: 'AR' }),
     state: z.string().nullable().openapi({ example: 'Buenos Aires' }),
     city: z.string().nullable().openapi({ example: 'Palermo' }),
+    location_label: z.string().nullable().openapi({
+      example: 'Palermo',
+      description: 'Rótulo único de localização (o mais específico: barrio → localidad → provincia). Pronto pro portal exibir no título do accordion sem escolher entre campos.',
+    }),
     pathology: z.string().nullable().openapi({ example: 'TEA' }),
     worker_sex: z.string().nullable().openapi({ example: 'FEMALE' }),
     worker_type: z.string().nullable().openapi({ example: 'AT' }),

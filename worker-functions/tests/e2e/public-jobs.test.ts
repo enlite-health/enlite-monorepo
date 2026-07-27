@@ -422,6 +422,8 @@ describe('GET /api/public/v1/jobs', () => {
       'worker_type', 'worker_sex', 'job_zone', 'neighborhood', 'state_city',
       // New country field
       'country',
+      // Single location label (barrio → localidad → provincia) for the WP accordion title
+      'location_label',
       // Structured weekly schedule (feed B3 — powers the WordPress weekly table)
       'schedule_week',
     ];
@@ -500,6 +502,12 @@ describe('GET /api/public/v1/jobs', () => {
     expect(
       job!.state_city === null || (typeof job!.state_city === 'string' && job!.state_city.trim().length > 0),
     ).toBe(true);
+
+    // location_label = o mais específico disponível (barrio → localidad → provincia), trimado.
+    // Invariante relacional: robusto a qualquer valor de fixture.
+    const pick = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const expectedLabel = pick(job!.neighborhood) ?? pick(job!.city) ?? pick(job!.state);
+    expect(job!.location_label).toBe(expectedLabel);
   });
 
   it('does NOT return PENDING_ACTIVATION vacancies', async () => {
