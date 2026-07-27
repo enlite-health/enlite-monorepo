@@ -35,3 +35,30 @@ export function initClarity(projectId: string = ENV.CLARITY_PROJECT_ID): void {
     document.head.appendChild(script);
   }
 }
+
+/**
+ * Amarra a sessão atual do Clarity a um id estável e, opcionalmente, a tags
+ * customizadas filtráveis no dashboard — para achar a sessão de um usuário
+ * específico ao dar suporte (hoje as sessões são anônimas e não-buscáveis).
+ *
+ * ⚠️ PRIVACIDADE (Ley 25.326 / regra "nunca logar PII"): passe SOMENTE
+ * identificadores OPACOS — Firebase uid, workerId (UUID), status. NUNCA
+ * email, nome, telefone, endereço ou qualquer dado pessoal/clínico.
+ *
+ * No-op seguro quando o Clarity não foi inicializado (project id vazio):
+ * `window.clarity` é undefined e a função retorna sem efeito. Antes do script
+ * real carregar, o stub criado por initClarity enfileira as chamadas.
+ */
+export function identifyClarity(
+  userId: string,
+  tags: Record<string, string> = {},
+): void {
+  if (!userId) return;
+  const clarity = window.clarity;
+  if (typeof clarity !== 'function') return;
+
+  clarity('identify', userId);
+  for (const [key, value] of Object.entries(tags)) {
+    if (value) clarity('set', key, value);
+  }
+}
