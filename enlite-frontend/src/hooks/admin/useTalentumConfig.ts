@@ -124,7 +124,17 @@ export function useTalentumConfig(
       setVacancyError(null);
       try {
         const raw = await AdminApiService.getVacancyById(vacancyId);
-        if (!cancelled) setVacancyData(mapVacancyToSummary(raw));
+        if (!cancelled) {
+          setVacancyData(mapVacancyToSummary(raw));
+          // Semeia o textarea com a descrição JÁ SALVA da vaga (ex: vaga publicada
+          // que o operador quer reeditar), a menos que o Step 1 já tenha pré-carregado
+          // um texto. Sem isso a página auto-gera via Gemini (custo + descarta a atual).
+          const existing = (raw as { talentum_description?: unknown })?.talentum_description;
+          if (!preloaded?.description && typeof existing === 'string' && existing.trim().length > 0) {
+            setDescription(existing);
+            setGenerateStatus('success');
+          }
+        }
       } catch (err: unknown) {
         if (!cancelled) setVacancyError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -134,7 +144,7 @@ export function useTalentumConfig(
 
     fetchVacancy();
     return () => { cancelled = true; };
-  }, [vacancyId]);
+  }, [vacancyId, preloaded?.description]);
 
   // Wrapped setter: editar o texto invalida o estado "salvo" e limpa erro.
   const handleSetDescription = useCallback((v: string) => {

@@ -86,6 +86,34 @@ describe('useTalentumConfig', () => {
     expect(mockGetVacancy).toHaveBeenCalledWith(VACANCY_ID);
   });
 
+  it('seeds the textarea with the vacancy existing talentum_description', async () => {
+    mockGetVacancy.mockResolvedValueOnce({
+      ...MOCK_VACANCY,
+      talentum_description: 'Descripción ya publicada en Talentum',
+    } as any);
+    const { result } = renderHook(() => useTalentumConfig(VACANCY_ID));
+
+    await waitFor(() => expect(result.current.isLoadingVacancy).toBe(false));
+
+    expect(result.current.description).toBe('Descripción ya publicada en Talentum');
+    // marca como gerado → a página NÃO auto-gera via Gemini
+    expect(result.current.generateStatus).toBe('success');
+    expect(mockGenerateAI).not.toHaveBeenCalled();
+  });
+
+  it('preloaded description wins over the fetched talentum_description', async () => {
+    mockGetVacancy.mockResolvedValueOnce({
+      ...MOCK_VACANCY,
+      talentum_description: 'do banco',
+    } as any);
+    const { result } = renderHook(() =>
+      useTalentumConfig(VACANCY_ID, { description: 'do step 1' }),
+    );
+
+    await waitFor(() => expect(result.current.isLoadingVacancy).toBe(false));
+    expect(result.current.description).toBe('do step 1');
+  });
+
   it('sets vacancyError on fetch failure', async () => {
     mockGetVacancy.mockRejectedValueOnce(new Error('Not found'));
     const { result } = renderHook(() => useTalentumConfig(VACANCY_ID));
