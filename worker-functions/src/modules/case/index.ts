@@ -42,6 +42,8 @@ export type {
 } from './application/PatientService';
 export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
+export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
+export type { CreatePatientInput } from './application/CreatePatientUseCase';
 
 // Infrastructure (exposed for explicit consumers like backfill scripts)
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';

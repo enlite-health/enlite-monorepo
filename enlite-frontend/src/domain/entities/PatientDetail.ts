@@ -97,6 +97,29 @@ export interface PatientDetail {
   updatedAt: string; // ISO string
 }
 
+/**
+ * Body for POST /api/admin/patients — manual creation of a native patient by
+ * the admission team (Fase 1 Task 2). Only firstName is required; the rest is
+ * filled by the team over time. Must mirror the backend zod validator
+ * (createPatientSchema) and the CreatePatientUseCase input.
+ */
+export interface CreatePatientPayload {
+  firstName: string;
+  lastName?: string;
+  phoneWhatsapp?: string;
+  contactEmail?: string;
+  documentType?: string; // 'DNI'|'PASSPORT'|'CEDULA'|'LE_LC'|'CPF'
+  documentNumber?: string;
+  healthInsuranceName?: string;
+  healthInsuranceMemberId?: string;
+  serviceType?: string[]; // Profession[]: 'AT'|'CAREGIVER'|'NURSE'|'KINESIOLOGIST'|'PSYCHOLOGIST'
+}
+
+/** Result of a successful patient creation. */
+export interface CreatePatientResult {
+  id: string;
+}
+
 /** Vacancy summary returned by GET /api/admin/patients/:id/vacancies */
 export interface PatientVacancySummary {
   id: string;

@@ -6,7 +6,12 @@
  * Callers use `AdminApiService` — it delegates here transparently.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { PatientDetail, PatientVacancySummary } from '@domain/entities/PatientDetail';
+import type {
+  PatientDetail,
+  PatientVacancySummary,
+  CreatePatientPayload,
+  CreatePatientResult,
+} from '@domain/entities/PatientDetail';
 
 export interface PatientListFilters {
   search?: string;
@@ -93,6 +98,30 @@ export class AdminPatientsApiServiceClass {
 
   async getPatientVacancies(patientId: string): Promise<PatientVacancySummary[]> {
     return this.request<PatientVacancySummary[]>('GET', `/api/admin/patients/${patientId}/vacancies`);
+  }
+
+  /**
+   * POST /api/admin/patients — manual creation of a native patient.
+   * The base `request` helper is GET-only, so this issues its own POST with the
+   * JSON body. Surfaces the backend's clear 400 message (e.g. contact-channel
+   * invariant) as the thrown Error, so the modal can show it inline.
+   */
+  async createPatient(payload: CreatePatientPayload): Promise<CreatePatientResult> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}/api/admin/patients`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(`Erro ao conectar ao servidor (HTTP ${response.status})`);
+    }
+    const json: ApiResponse<CreatePatientResult> = await response.json();
+    if (!json.success) {
+      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+    }
+    return (json as ApiSuccessResponse<CreatePatientResult>).data;
   }
 }
 

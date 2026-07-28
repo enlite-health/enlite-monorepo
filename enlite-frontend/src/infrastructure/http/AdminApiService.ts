@@ -266,6 +266,7 @@ class AdminApiServiceClass {
   searchPatients(search: string, limit = 10) { return AdminPatientsApiService.listPatients({ search, limit: String(limit) }); }
   getPatientByIdFull(id: string) { return AdminPatientsApiService.getPatientById(id); }
   getPatientVacancies(patientId: string) { return AdminPatientsApiService.getPatientVacancies(patientId); }
+  createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
 
   // ========== Encuadres Methods ==========
 

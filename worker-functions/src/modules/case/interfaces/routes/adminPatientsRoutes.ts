@@ -25,6 +25,12 @@ export function createAdminPatientsRoutes(
     controller.listPatients(req, res),
   );
 
+  // Manual creation of a native patient (admission team). No :id in the path,
+  // so it is safe here; POST does not collide with the GET /:id capture.
+  router.post('/patients', staffOnly, (req: Request, res: Response) =>
+    controller.createPatient(req, res),
+  );
+
   // Dynamic route last — Express would capture /stats as /:id otherwise.
   router.get('/patients/:id', staffOnly, (req: Request, res: Response) =>
     controller.getPatientById(req, res),

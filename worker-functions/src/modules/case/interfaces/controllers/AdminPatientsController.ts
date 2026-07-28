@@ -4,8 +4,14 @@ import { Pool } from 'pg';
 import { reportError } from '@shared/logging';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
+import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
+import {
+  CreatePatientUseCase,
+  PatientContactValidationError,
+  type CreatePatientInput,
+} from '../../application/CreatePatientUseCase';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
@@ -35,14 +41,51 @@ const patientIdSchema = z.object({
 export class AdminPatientsController {
   private readonly repo: PatientQueryRepository;
   private readonly getPatientByIdUseCase: GetPatientByIdUseCase;
+  private readonly createPatientUseCase: CreatePatientUseCase;
   private readonly db: Pool;
   private readonly geocoder: GeocodingService;
 
-  constructor(geocoder?: GeocodingService) {
+  constructor(geocoder?: GeocodingService, createPatientUseCase?: CreatePatientUseCase) {
     this.repo = new PatientQueryRepository();
     this.getPatientByIdUseCase = new GetPatientByIdUseCase(this.repo);
+    this.createPatientUseCase = createPatientUseCase ?? new CreatePatientUseCase();
     this.db = DatabaseConnection.getInstance().getPool();
     this.geocoder = geocoder ?? new GeocodingService();
+  }
+
+  /**
+   * POST /api/admin/patients — manual creation of a native patient by the
+   * admission team (Fase 1 Task 2). Born origin='admin_manual', status
+   * ADMISSION. The contact-channel invariant is enforced by the use-case and
+   * surfaced here as a 400 (client problem), never a 500.
+   */
+  async createPatient(req: Request, res: Response): Promise<void> {
+    const parsed = createPatientSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid body',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    try {
+      const { id } = await this.createPatientUseCase.execute(parsed.data as CreatePatientInput);
+      res.status(201).json({ success: true, data: { id } });
+    } catch (err: unknown) {
+      if (err instanceof PatientContactValidationError) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:createPatient' });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create patient',
+        details: e.message,
+      });
+    }
   }
 
   /** GET /api/admin/patients */

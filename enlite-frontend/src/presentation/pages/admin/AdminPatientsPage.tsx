@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
+import { Button } from '@presentation/components/atoms/Button';
+import { PatientCreateModal } from '@presentation/components/features/admin/PatientCreateModal';
 import { PatientFilters } from '@presentation/components/features/admin/PatientFilters';
 import { PatientStatsCards } from '@presentation/components/features/admin/PatientStatsCards';
 import { PatientsTable } from '@presentation/components/features/admin/PatientsTable';
@@ -37,6 +39,7 @@ export function AdminPatientsPage(): JSX.Element {
   const [selectedDependency, setSelectedDependency] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const codeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -89,7 +92,7 @@ export function AdminPatientsPage(): JSX.Element {
     currentPage,
   ]);
 
-  const { patients: rawPatients, total, stats, isLoading, error } = usePatientsData(filters);
+  const { patients: rawPatients, total, stats, isLoading, error, refetch } = usePatientsData(filters);
 
   const patients = useMemo(
     () =>
@@ -137,6 +140,18 @@ export function AdminPatientsPage(): JSX.Element {
           <Typography variant="h1" weight="semibold" className="text-[#737373] font-poppins text-2xl">
             {t('admin.patients.listTitle')}
           </Typography>
+          <Button
+            variant="outline"
+            size="md"
+            className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"
+            onClick={() => setIsCreateOpen(true)}
+            data-testid="new-patient-btn"
+          >
+            <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base">
+              {t('admin.patients.create.new')}
+            </Typography>
+            <Plus className="w-3.5 h-3.5 text-primary" />
+          </Button>
         </div>
 
         <PatientFilters
@@ -216,6 +231,16 @@ export function AdminPatientsPage(): JSX.Element {
           </div>
         </div>
       </div>
+
+      {isCreateOpen && (
+        <PatientCreateModal
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={() => {
+            setCurrentPage(1);
+            refetch();
+          }}
+        />
+      )}
     </PageContainer>
   );
 }
