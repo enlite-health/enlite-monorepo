@@ -20,7 +20,7 @@ import express, { Request, Response } from 'express';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
-import { AdminPatientsController, createAdminPatientsRoutes } from '@modules/case';
+import { AdminPatientsController, createAdminPatientsRoutes, PublicLeadsController } from '@modules/case';
 import { UserController } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes } from '@modules/identity';
 import {
@@ -210,6 +210,21 @@ const publicJobsRateLimit = rateLimit({
 
 app.get('/api/public/v1/jobs', publicJobsRateLimit, (req: Request, res: Response) => {
   publicJobsController.listActiveJobs(req, res);
+});
+
+// Public B2C patient intake (Task 1) — no staff auth, rate-limited like public jobs.
+// CORS is handled by the global corsMiddleware (our own /admision page origin is allowed).
+const publicLeadsController = new PublicLeadsController();
+const publicLeadsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10, // write endpoint — tighter than the read-only jobs list
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.post('/api/public/v1/leads', publicLeadsRateLimit, (req: Request, res: Response) => {
+  publicLeadsController.createLead(req, res);
 });
 
 // ========== Protected Worker Routes ==========

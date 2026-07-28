@@ -37,6 +37,8 @@ import { InviteProgressPanel } from './components/features/admin/VacancyMatch/In
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
+// Public B2C patient intake (Task 1) — no auth, outside the admin shell.
+const AdmisionPage = lazyWithRetry(() => import('./pages/public/AdmisionPage'));
 // Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
 // quando staff abre /admin/api-docs.
 const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
@@ -87,6 +89,17 @@ export function App() {
         />
         {/* Alias EN → ES: resgata links antigos enviados como /vacancies/:id */}
         <Route path="/vacancies/:id" element={<VacancyEnAliasRedirect />} />
+        {/* Public patient intake (Task 1) — the WP /registrar/admisión iframe points here */}
+        <Route
+          path="/admision"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
         <Route
           path="/worker-registration"
           element={<Navigate to="/worker/profile" replace />}

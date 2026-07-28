@@ -10,6 +10,13 @@ export const ENV = {
   FIREBASE_APP_ID: import.meta.env.VITE_FIREBASE_APP_ID || '',
   FIREBASE_AUTH_EMULATOR: import.meta.env.VITE_FIREBASE_AUTH_EMULATOR || '',
   CLARITY_PROJECT_ID: import.meta.env.VITE_CLARITY_PROJECT_ID || '',
+  // Public patient intake (Task 1) — lead scheduling step (decisão D8).
+  // Mode selects the LeadSchedulingProvider impl: 'embed' (Google Appointment
+  // Schedule iframe, now) | 'native' (backend slot finder via DWD, future).
+  LEAD_SCHEDULING_MODE: (import.meta.env.VITE_LEAD_SCHEDULING_MODE || 'embed') as 'embed' | 'native',
+  // URL of the Google Appointment Schedule for the "consulta de admisión".
+  // Empty → GoogleAppointmentEmbed renders a configure-URL warning.
+  ADMISSION_BOOKING_URL: import.meta.env.VITE_ADMISSION_BOOKING_URL || '',
   IS_PRODUCTION: import.meta.env.PROD,
   IS_DEVELOPMENT: import.meta.env.DEV,
 } as const;
