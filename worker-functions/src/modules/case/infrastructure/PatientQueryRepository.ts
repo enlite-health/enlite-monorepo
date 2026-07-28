@@ -110,6 +110,8 @@ export interface PatientListRow {
   documentType: string | null;
   documentNumber: string | null;
   sex: string | null;
+  /** Patient lifecycle status (kanban column). Null for rows whose ClickUp status is unrecognised. */
+  status: string | null;
   needsAttention: boolean;
   attentionReasons: string[];
   /** Number of addresses linked to this patient. */
@@ -219,6 +221,7 @@ export class PatientQueryRepository {
         document_type          AS "documentType",
         document_number        AS "documentNumber",
         sex,
+        status,
         needs_attention        AS "needsAttention",
         attention_reasons      AS "attentionReasons",
         (SELECT COUNT(*) FROM patient_addresses pa
@@ -265,6 +268,7 @@ export class PatientQueryRepository {
       documentType: row.documentType,
       documentNumber: row.documentNumber,
       sex: row.sex,
+      status: row.status,
       needsAttention: row.needsAttention,
       attentionReasons: row.attentionReasons ?? [],
       addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,

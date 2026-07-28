@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, LayoutGrid } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
@@ -140,18 +140,32 @@ export function AdminPatientsPage(): JSX.Element {
           <Typography variant="h1" weight="semibold" className="text-[#737373] font-poppins text-2xl">
             {t('admin.patients.listTitle')}
           </Typography>
-          <Button
-            variant="outline"
-            size="md"
-            className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"
-            onClick={() => setIsCreateOpen(true)}
-            data-testid="new-patient-btn"
-          >
-            <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base">
-              {t('admin.patients.create.new')}
-            </Typography>
-            <Plus className="w-3.5 h-3.5 text-primary" />
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="md"
+              className="h-10 flex items-center justify-center gap-2"
+              onClick={() => navigate('/admin/patients/kanban')}
+              data-testid="patients-kanban-link"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <Typography variant="h3" weight="semibold" className="font-poppins text-base">
+                {t('admin.patients.kanban.toggleKanban')}
+              </Typography>
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"
+              onClick={() => setIsCreateOpen(true)}
+              data-testid="new-patient-btn"
+            >
+              <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base">
+                {t('admin.patients.create.new')}
+              </Typography>
+              <Plus className="w-3.5 h-3.5 text-primary" />
+            </Button>
+          </div>
         </div>
 
         <PatientFilters

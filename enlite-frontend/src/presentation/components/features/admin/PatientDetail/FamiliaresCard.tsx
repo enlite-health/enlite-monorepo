@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Search } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -12,9 +13,14 @@ import {
 } from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+import { PatientSupportNetworkEditDrawer } from './edit/PatientSupportNetworkEditDrawer';
 
 interface FamiliaresCardProps {
   responsibles: PatientResponsibleDetail[];
+  /** Patient id — required to save the support-network section. */
+  patientId?: string;
+  /** Called after a successful edit so the page can refetch the detail. */
+  onSaved?: () => void;
 }
 
 function formatRelationship(value: string | null, fallback: string): string {
@@ -22,8 +28,9 @@ function formatRelationship(value: string | null, fallback: string): string {
   return value;
 }
 
-export function FamiliaresCard({ responsibles }: FamiliaresCardProps) {
+export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresCardProps) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
   const rows = responsibles ?? [];
   const empty = '—';
 
@@ -46,12 +53,21 @@ export function FamiliaresCard({ responsibles }: FamiliaresCardProps) {
               className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg font-lexend text-sm text-gray-700 bg-gray-50 cursor-default outline-none"
             />
           </div>
-          <Button variant="outline" size="sm" disabled onClick={() => {}} className="flex items-center gap-1">
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
             <Plus className="w-4 h-4" />
             {t('admin.patients.detail.new')}
           </Button>
         </div>
       </div>
+
+      {editing && patientId && (
+        <PatientSupportNetworkEditDrawer
+          patientId={patientId}
+          responsibles={rows}
+          onClose={() => setEditing(false)}
+          onSaved={() => onSaved?.()}
+        />
+      )}
 
       <Table>
         <TableHeader>

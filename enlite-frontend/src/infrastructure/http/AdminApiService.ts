@@ -267,6 +267,10 @@ class AdminApiServiceClass {
   getPatientByIdFull(id: string) { return AdminPatientsApiService.getPatientById(id); }
   getPatientVacancies(patientId: string) { return AdminPatientsApiService.getPatientVacancies(patientId); }
   createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
+  updatePatientSection(...args: Parameters<typeof AdminPatientsApiService.updatePatientSection>) { return AdminPatientsApiService.updatePatientSection(...args); }
+  updatePatientStatus(id: string, status: string) { return AdminPatientsApiService.updatePatientStatus(id, status); }
+  activatePatient(id: string) { return AdminPatientsApiService.activatePatient(id); }
+  listPatientsForKanban() { return AdminPatientsApiService.listPatientsForKanban(); }
 
   // ========== Encuadres Methods ==========
 

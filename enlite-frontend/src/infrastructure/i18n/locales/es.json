@@ -2287,6 +2287,51 @@
     "patients": {
       "title": "Pacientes",
       "listTitle": "Lista de Pacientes",
+      "activate": {
+        "button": "Activar paciente",
+        "confirmTitle": "Activar paciente",
+        "confirmBody": "Se generará una vacante borrador por cada localización activa y el paciente pasará a Activo. ¿Confirmás?",
+        "confirm": "Activar",
+        "cancel": "Cancelar",
+        "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
+        "noAddress": "Agregá al menos una localización antes de activar.",
+        "error": "No se pudo activar el paciente"
+      },
+      "editDrawer": {
+        "generalTitle": "Editar información general",
+        "clinicalTitle": "Editar diagnóstico",
+        "supportTitle": "Editar familiares",
+        "serviceTitle": "Editar servicios contratados",
+        "save": "Guardar",
+        "close": "Cerrar",
+        "unset": "—",
+        "saveError": "Error al guardar",
+        "deviceType": "Dispositivo",
+        "hasConsent": "Consentimiento",
+        "responsible": "Familiar",
+        "addResponsible": "Agregar familiar",
+        "removeResponsible": "Quitar",
+        "isPrimary": "Contacto principal",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "relationship": "Parentesco",
+        "phone": "Teléfono",
+        "email": "E-mail"
+      },
+      "kanban": {
+        "title": "Pacientes — Kanban",
+        "toggleList": "Lista",
+        "toggleKanban": "Kanban",
+        "caseNumber": "Caso",
+        "noName": "Sin nombre",
+        "moveError": "No se pudo mover el paciente",
+        "columns": {
+          "SOLICITANTE": "Solicitante",
+          "ADMISSION": "Admisión",
+          "PENDING_ADMISSION": "Esperando Activación",
+          "ACTIVE": "Activo"
+        }
+      },
       "create": {
         "new": "Crear nuevo",
         "title": "Nuevo paciente",

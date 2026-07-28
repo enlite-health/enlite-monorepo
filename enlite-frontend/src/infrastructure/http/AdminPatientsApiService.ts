@@ -11,7 +11,26 @@ import type {
   PatientVacancySummary,
   CreatePatientPayload,
   CreatePatientResult,
+  PatientSectionName,
+  PatientSectionPayload,
+  UpdatePatientStatusResult,
+  ActivatePatientResult,
+  PatientKanbanItem,
 } from '@domain/entities/PatientDetail';
+
+/**
+ * Error thrown by the pipeline mutations (section edit / status / activate) that
+ * carries the HTTP status so callers can branch on it — e.g. 422 (no active
+ * address) shows a specific inline message instead of the generic one.
+ */
+export class PatientApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'PatientApiError';
+    this.status = status;
+  }
+}
 
 export interface PatientListFilters {
   search?: string;
@@ -122,6 +141,68 @@ export class AdminPatientsApiServiceClass {
       throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
     }
     return (json as ApiSuccessResponse<CreatePatientResult>).data;
+  }
+
+  /**
+   * Shared writer for the pipeline mutations. The base `request` helper is
+   * GET-only, so this issues its own method+body and throws a `PatientApiError`
+   * (carrying the HTTP status) on failure so callers can branch on 422/404.
+   */
+  private async writeJson<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new PatientApiError(`Erro ao conectar ao servidor (HTTP ${response.status})`, response.status);
+    }
+    const json: ApiResponse<T> = await response.json();
+    if (!json.success) {
+      throw new PatientApiError((json as ApiErrorResponse).error || `HTTP ${response.status}`, response.status);
+    }
+    return (json as ApiSuccessResponse<T>).data;
+  }
+
+  /** PATCH /api/admin/patients/:id/:section — section-scoped partial edit. */
+  async updatePatientSection(
+    id: string,
+    section: PatientSectionName,
+    data: PatientSectionPayload,
+  ): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${id}/${section}`, data);
+  }
+
+  /** PUT /api/admin/patients/:id/status — kanban lifecycle move. */
+  async updatePatientStatus(id: string, status: string): Promise<UpdatePatientStatusResult> {
+    return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, { status });
+  }
+
+  /**
+   * POST /api/admin/patients/:id/activate — approve → one draft vacancy per
+   * active location + move to ACTIVE. Idempotent (already-ACTIVE → []).
+   * Throws PatientApiError with status 422 when the patient has no active address.
+   */
+  async activatePatient(id: string): Promise<ActivatePatientResult> {
+    return this.writeJson<ActivatePatientResult>('POST', `/api/admin/patients/${id}/activate`);
+  }
+
+  /**
+   * Fetch a large page of patients for the kanban board. Reuses the same list
+   * endpoint as the table; the board groups the rows by status client-side.
+   */
+  async listPatientsForKanban(): Promise<PatientKanbanItem[]> {
+    const { data } = await this.listPatients({ limit: '500', offset: '0' });
+    return (data ?? []).map((p: any): PatientKanbanItem => ({
+      id: p.id,
+      firstName: p.firstName ?? null,
+      lastName: p.lastName ?? null,
+      caseNumber: p.caseNumber ?? null,
+      dependencyLevel: p.dependencyLevel ?? null,
+      status: p.status ?? null,
+    }));
   }
 }
 

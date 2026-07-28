@@ -292,6 +292,7 @@ export class AdminPatientsController {
         documentType: row.documentType,
         documentNumber: row.documentNumber,
         sex: row.sex,
+        status: row.status,
         needsAttention: row.needsAttention,
         attentionReasons: row.attentionReasons,
         addressesCount: row.addressesCount,

@@ -26,6 +26,7 @@ import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
+import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
@@ -160,6 +161,7 @@ export function App() {
           <Route path="workers" element={<AdminWorkersPage />} />
           <Route path="workers/:id" element={<WorkerDetailPage />} />
           <Route path="patients" element={<AdminPatientsPage />} />
+          <Route path="patients/kanban" element={<PatientKanbanPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="dedup" element={<DedupCenterPage />} />

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -12,13 +13,17 @@ import {
 } from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { PatientServiceEditDrawer } from './edit/PatientServiceEditDrawer';
 
 interface ServicosContratadosCardProps {
   patient: PatientDetail;
+  /** Called after a successful edit so the page can refetch the detail. */
+  onSaved?: () => void;
 }
 
-export function ServicosContratadosCard({ patient }: ServicosContratadosCardProps) {
+export function ServicosContratadosCard({ patient, onSaved }: ServicosContratadosCardProps) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
   const empty = '—';
   const services = patient.serviceType ?? [];
 
@@ -31,11 +36,19 @@ export function ServicosContratadosCard({ patient }: ServicosContratadosCardProp
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.contractedServicesCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled onClick={() => {}} className="flex items-center gap-1">
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="flex items-center gap-1" data-testid="edit-service-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
         </Button>
       </div>
+
+      {editing && (
+        <PatientServiceEditDrawer
+          patient={patient}
+          onClose={() => setEditing(false)}
+          onSaved={() => onSaved?.()}
+        />
+      )}
 
       <Table>
         <TableHeader>

@@ -130,3 +130,90 @@ export interface PatientVacancySummary {
   isDraft: boolean;
   createdAt: string;
 }
+
+// ============================================================================
+// Fase 2b — pipeline de ativação (edição de seções, mudança de status, ativar)
+// ============================================================================
+
+/** Section names accepted by PATCH /api/admin/patients/:id/:section. */
+export type PatientSectionName = 'general' | 'clinical' | 'support-network' | 'service';
+
+/**
+ * section = 'general' — identity fields. Mirrors generalSectionSchema (backend).
+ * Every field is a partial update; `null` explicitly clears a nullable column.
+ */
+export interface PatientGeneralSectionPayload {
+  firstName?: string;
+  lastName?: string | null;
+  birthDate?: string | null; // yyyy-MM-dd (backend coerces to Date)
+  documentType?: string | null;
+  documentNumber?: string | null;
+  sex?: string | null;
+  phoneWhatsapp?: string | null;
+  contactEmail?: string | null;
+}
+
+/** section = 'clinical' — mirrors clinicalSectionSchema (backend). */
+export interface PatientClinicalSectionPayload {
+  diagnosis?: string | null;
+  dependencyLevel?: string | null;
+  clinicalSpecialty?: string | null;
+  serviceType?: string[] | null;
+  deviceType?: string | null;
+  additionalComments?: string | null;
+  hasJudicialProtection?: boolean | null;
+  hasCud?: boolean | null;
+  hasConsent?: boolean | null;
+}
+
+/** One responsible in the support-network replace payload. */
+export interface PatientResponsibleInput {
+  firstName: string;
+  lastName: string;
+  relationship?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  documentType?: string | null;
+  documentNumber?: string | null;
+  isPrimary: boolean;
+  displayOrder: number;
+}
+
+/** section = 'support-network' — replaces the whole responsibles set. */
+export interface PatientSupportNetworkSectionPayload {
+  responsibles: PatientResponsibleInput[];
+}
+
+/** section = 'service' — targeted service_type update. */
+export interface PatientServiceSectionPayload {
+  serviceType?: string[] | null;
+}
+
+export type PatientSectionPayload =
+  | PatientGeneralSectionPayload
+  | PatientClinicalSectionPayload
+  | PatientSupportNetworkSectionPayload
+  | PatientServiceSectionPayload;
+
+/** Result of PUT /api/admin/patients/:id/status. */
+export interface UpdatePatientStatusResult {
+  id: string;
+  status: string;
+}
+
+/** Result of POST /api/admin/patients/:id/activate. */
+export interface ActivatePatientResult {
+  patientId: string;
+  status: string; // always 'ACTIVE'
+  createdVacancyIds: string[];
+}
+
+/** Row shape used by the patient kanban board (grouped by status). */
+export interface PatientKanbanItem {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  caseNumber: number | null;
+  dependencyLevel: string | null;
+  status: string | null;
+}
