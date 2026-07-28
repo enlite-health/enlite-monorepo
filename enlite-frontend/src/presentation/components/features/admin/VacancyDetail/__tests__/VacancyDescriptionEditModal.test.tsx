@@ -31,7 +31,9 @@ function renderModal(props: Record<string, unknown> = {}) {
   return { onClose, onSuccess };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('VacancyDescriptionEditModal', () => {
   it('pré-preenche o textarea com a descrição atual', () => {
