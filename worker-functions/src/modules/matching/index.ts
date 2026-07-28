@@ -56,6 +56,15 @@ export { PublicVacancyController } from './interfaces/controllers/PublicVacancyC
 export { RecruitmentAnalyticsController } from './interfaces/controllers/RecruitmentAnalyticsController';
 export { RecruitmentController } from './interfaces/controllers/RecruitmentController';
 export { VacancyCrudController } from './interfaces/controllers/VacancyCrudController';
+// Vacancy INSERT building blocks — reused by ActivatePatientUseCase (case module)
+// so the draft-vacancy creation on patient activation goes through the SAME SQL
+// as POST /api/admin/vacancies (no duplicated INSERT).
+export {
+  buildInsertQuery,
+  buildInsertParams,
+  CANONICAL_STATUSES,
+} from './interfaces/controllers/vacancyCrudHelpers';
+export type { VacancyInsertParams } from './interfaces/controllers/vacancyCrudHelpers';
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
 export { VacancySocialLinksController } from './interfaces/controllers/VacancySocialLinksController';
 export { WorkerApplicationsController } from './interfaces/controllers/WorkerApplicationsController';

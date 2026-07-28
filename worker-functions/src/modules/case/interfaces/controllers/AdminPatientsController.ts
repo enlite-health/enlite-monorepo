@@ -12,6 +12,22 @@ import {
   PatientContactValidationError,
   type CreatePatientInput,
 } from '../../application/CreatePatientUseCase';
+import {
+  ActivatePatientUseCase,
+  PatientNotFoundError,
+  NoActiveAddressError,
+} from '../../application/ActivatePatientUseCase';
+import {
+  PatientService,
+  type PatientGeneralSectionData,
+  type PatientRelatedInput,
+} from '../../application/PatientService';
+import type { PatientStatus } from '../../domain/enums/PatientStatus';
+import {
+  SECTION_SCHEMAS,
+  patientSectionParamSchema,
+  patientStatusSchema,
+} from '../validators/patientSectionSchemas';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
@@ -42,15 +58,176 @@ export class AdminPatientsController {
   private readonly repo: PatientQueryRepository;
   private readonly getPatientByIdUseCase: GetPatientByIdUseCase;
   private readonly createPatientUseCase: CreatePatientUseCase;
+  private readonly activatePatientUseCase: ActivatePatientUseCase;
+  private readonly patientService: PatientService;
   private readonly db: Pool;
   private readonly geocoder: GeocodingService;
 
-  constructor(geocoder?: GeocodingService, createPatientUseCase?: CreatePatientUseCase) {
+  constructor(
+    geocoder?: GeocodingService,
+    createPatientUseCase?: CreatePatientUseCase,
+    patientService?: PatientService,
+    activatePatientUseCase?: ActivatePatientUseCase,
+  ) {
     this.repo = new PatientQueryRepository();
     this.getPatientByIdUseCase = new GetPatientByIdUseCase(this.repo);
     this.createPatientUseCase = createPatientUseCase ?? new CreatePatientUseCase();
+    this.patientService = patientService ?? new PatientService();
+    this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
     this.db = DatabaseConnection.getInstance().getPool();
     this.geocoder = geocoder ?? new GeocodingService();
+  }
+
+  /**
+   * PATCH /api/admin/patients/:id/:section
+   *   section ∈ general | clinical | support-network | service
+   *
+   * Section-scoped partial update. The section decides the whitelist (a
+   * per-section zod schema); an unknown section or an unknown field is a 400.
+   * 404 when the patient does not exist. Delegates the write to
+   * PatientService.updatePatientSection.
+   */
+  async updatePatientSection(req: Request, res: Response): Promise<void> {
+    const paramsResult = patientSectionParamSchema.safeParse(req.params);
+    if (!paramsResult.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid params',
+        details: paramsResult.error.flatten(),
+      });
+      return;
+    }
+
+    const { id, section } = paramsResult.data;
+    const bodyResult = SECTION_SCHEMAS[section].safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid body',
+        details: bodyResult.error.flatten(),
+      });
+      return;
+    }
+
+    try {
+      const exists = await this.db.query('SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);
+      if (exists.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+
+      await this.patientService.updatePatientSection(
+        id,
+        section,
+        bodyResult.data as PatientGeneralSectionData | PatientRelatedInput,
+      );
+      res.status(200).json({ success: true, data: { id } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:updatePatientSection', section });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update patient section',
+        details: e.message,
+      });
+    }
+  }
+
+  /**
+   * PUT /api/admin/patients/:id/status — used by the kanban to move a card.
+   * Body: { status }. A value outside PatientStatus is a 400 (validated here,
+   * before hitting the service). 404 when the patient does not exist.
+   */
+  async updatePatientStatus(req: Request, res: Response): Promise<void> {
+    const paramsResult = adminPatientParamsSchema.safeParse(req.params);
+    if (!paramsResult.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid params',
+        details: paramsResult.error.flatten(),
+      });
+      return;
+    }
+
+    const bodyResult = patientStatusSchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid status',
+        details: bodyResult.error.flatten(),
+      });
+      return;
+    }
+
+    const { id } = paramsResult.data;
+    const { status } = bodyResult.data;
+
+    try {
+      const result = await this.patientService.moveStatus(id, status as PatientStatus);
+      res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      if (/not found/i.test(e.message)) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      reportError(e, { source: 'AdminPatientsController:updatePatientStatus' });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update patient status',
+        details: e.message,
+      });
+    }
+  }
+
+  /**
+   * POST /api/admin/patients/:id/activate
+   *
+   * Approves the patient and opens recruitment: creates ONE draft vacancy per
+   * active location (decisão D5) and moves the patient to ACTIVE. Idempotent —
+   * an already-ACTIVE patient returns 200 with createdVacancyIds:[] (no dup).
+   *   - 404 when the patient does not exist.
+   *   - 422 when the patient has no active address (cannot activate without a
+   *     location — nothing to create).
+   */
+  async activatePatient(req: Request, res: Response): Promise<void> {
+    const parsed = adminPatientParamsSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid params',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    try {
+      const result = await this.activatePatientUseCase.execute(parsed.data.id);
+      res.status(200).json({
+        success: true,
+        data: {
+          patientId: result.patientId,
+          status: result.status,
+          createdVacancyIds: result.createdVacancyIds,
+        },
+      });
+    } catch (err: unknown) {
+      if (err instanceof PatientNotFoundError) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      if (err instanceof NoActiveAddressError) {
+        res.status(422).json({ success: false, error: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:activatePatient' });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to activate patient',
+        details: e.message,
+      });
+    }
   }
 
   /**

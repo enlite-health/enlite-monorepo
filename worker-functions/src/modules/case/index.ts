@@ -44,6 +44,12 @@ export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
 export type { CreatePatientInput } from './application/CreatePatientUseCase';
+export {
+  ActivatePatientUseCase,
+  PatientNotFoundError,
+  NoActiveAddressError,
+} from './application/ActivatePatientUseCase';
+export type { ActivatePatientResult } from './application/ActivatePatientUseCase';
 
 // Infrastructure (exposed for explicit consumers like backfill scripts)
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';

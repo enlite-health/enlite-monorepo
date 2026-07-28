@@ -49,5 +49,27 @@ export function createAdminPatientsRoutes(
     controller.listPatientVacancies(req, res),
   );
 
+  // ── Write / lifecycle (Fase 2 Task 3) ──────────────────────────────────────
+  // Literal-second-segment routes first (status, activate) so they read clearly;
+  // they never collide with the addresses/vacancies routes (distinct methods or
+  // distinct literal segments). The fully-dynamic PATCH /:id/:section goes LAST —
+  // it is PATCH-only (no other PATCH route exists) and its :section is validated
+  // against a hard whitelist (general|clinical|support-network|service).
+
+  // PUT /patients/:id/status — kanban move (change lifecycle status)
+  router.put('/patients/:id/status', staffOnly, (req: Request, res: Response) =>
+    controller.updatePatientStatus(req, res),
+  );
+
+  // POST /patients/:id/activate — approve → generate one draft vacancy per location
+  router.post('/patients/:id/activate', staffOnly, (req: Request, res: Response) =>
+    controller.activatePatient(req, res),
+  );
+
+  // PATCH /patients/:id/:section — section-scoped partial edit (last: fully dynamic)
+  router.patch('/patients/:id/:section', staffOnly, (req: Request, res: Response) =>
+    controller.updatePatientSection(req, res),
+  );
+
   return router;
 }
