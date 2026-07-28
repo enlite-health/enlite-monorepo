@@ -125,8 +125,8 @@ export class UpdateTalentumDescriptionUseCase {
         if (msg.includes('HTTP 403') || msg.toLowerCase().includes('not allowed to access')) {
           throw new UpdateDescriptionError(
             409,
-            'Esta vaga foi criada diretamente no Talentum por outra conta, então sua descrição ' +
-              'não pode ser editada pelo painel. Edite-a no próprio Talentum.',
+            'Esta vacante fue creada directamente en Talentum por otra cuenta, así que su ' +
+              'descripción no puede editarse desde el panel. Editala en Talentum.',
           );
         }
         throw new UpdateDescriptionError(502, `Talentum API error (update): ${msg}`);
