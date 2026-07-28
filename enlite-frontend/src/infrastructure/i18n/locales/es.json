@@ -1814,6 +1814,7 @@
         "availableFor": "Disponible para:",
         "diagnosis": "Hipótesis Diagnóstica - CID:",
         "description": "Descripción del trabajo:",
+        "descriptionEmpty": "Sin descripción todavía. Hacé clic en el lápiz para agregarla.",
         "characteristics": "Características:",
         "ageRange": "Rango etario:",
         "ageRangeAny": "Indistinto",
@@ -1823,6 +1824,7 @@
         "daysAndHours": "Días y Horarios:",
         "edit": "Editar",
         "editSchedule": "Editar horarios",
+        "editDescription": "Editar descripción",
         "weekdays": {
           "sunday": "Domingo:",
           "monday": "Lunes:",
@@ -1847,6 +1849,16 @@
         "cancel": "Cancelar",
         "close": "Cerrar",
         "errorEmpty": "Agregá al menos un horario válido (día + desde + hasta)."
+      },
+      "descriptionEditor": {
+        "title": "Editar descripción",
+        "subtitle": "Editá la descripción de la vacante. Si ya está publicada en Talentum, el cambio se refleja ahí automáticamente.",
+        "placeholder": "Escribí la descripción de la vacante...",
+        "save": "Guardar descripción",
+        "saving": "Guardando...",
+        "cancel": "Cancelar",
+        "close": "Cerrar",
+        "errorEmpty": "La descripción no puede quedar vacía."
       }
     },
     "vacancyModal": {

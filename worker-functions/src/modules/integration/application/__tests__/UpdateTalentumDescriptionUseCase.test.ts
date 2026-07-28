@@ -146,7 +146,7 @@ describe('UpdateTalentumDescriptionUseCase', () => {
     const err = await useCase.execute({ jobPostingId: JP_ID, description: 'Editada' }, ACTOR).catch(e => e);
     expect(err).toBeInstanceOf(UpdateDescriptionError);
     expect(err.statusCode).toBe(409);
-    expect(err.message).toContain('outra conta');
+    expect(err.message).toContain('otra cuenta');
     const updateCall = mockClientQuery.mock.calls.find(c => String(c[0]).includes('UPDATE job_postings SET talentum_description'));
     expect(updateCall).toBeUndefined();
   });
