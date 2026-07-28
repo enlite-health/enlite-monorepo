@@ -15,7 +15,7 @@
 
 import type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from '../../domain/WorkerMirrorProvider';
 import type { WorkerMirrorRecord } from '../../domain/WorkerMirrorRecord';
-import type { IAnaCareApiClient } from '../../domain/IAnaCareApiClient';
+import type { IAnaCareApiClient, AnaCareNursePayload } from '../../domain/IAnaCareApiClient';
 import { AnaCareTypeResolver } from './anaCareTypeResolver';
 import { mapWorkerToAnaCarePayload } from './anaCareMapper';
 import { logger } from '@shared/logging';
@@ -54,10 +54,18 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
         );
       }
 
-      const payload = mapWorkerToAnaCarePayload(record, resolvedTypes);
-      // Para PATCH, email não é enviado se já existe (evitar conflito de unicidade)
-      // A API aceita PATCH com todos os campos — mantemos o payload completo.
-      const updated = await this.client.updateNurse(id, payload);
+      // PATCH: OMITIR email e telefono. São campos de unicidade no AnaCare —
+      // reenviá-los num update de um nurse que já existe dispara HTTP 400
+      // ("No es posible usar este correo/teléfono") sem necessidade, pois o
+      // registro já tem esses dados. Atualizamos só os demais campos (nome,
+      // endereço, tipos, nascimento, documento). Ver falha real do nurse 90468.
+      const updatePayload: Partial<AnaCareNursePayload> = {
+        ...mapWorkerToAnaCarePayload(record, resolvedTypes),
+      };
+      delete updatePayload.email;
+      delete updatePayload.telefono;
+
+      const updated = await this.client.updateNurse(id, updatePayload);
       logger.info({ msg: `${TAG} updated nurse`, anaCareId: updated.id });
       return { externalId: String(updated.id) };
     }

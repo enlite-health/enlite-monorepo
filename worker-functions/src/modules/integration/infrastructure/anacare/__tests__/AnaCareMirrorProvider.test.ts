@@ -99,6 +99,19 @@ describe('AnaCareMirrorProvider.upsert', () => {
       expect(client.createNurse).not.toHaveBeenCalled();
     });
 
+    it('PATCH NÃO envia email nem telefono (unicidade), mas mantém os demais campos', async () => {
+      const client = makeClient();
+      const provider = new AnaCareMirrorProvider(client);
+      await provider.upsert(makeRecord(), '42');
+      const patchPayload = (client.updateNurse as jest.Mock).mock.calls[0][1];
+      expect(patchPayload.email).toBeUndefined();
+      expect(patchPayload.telefono).toBeUndefined();
+      // demais campos seguem no update
+      expect(patchPayload.nombre).toBe('María');
+      expect(patchPayload.apellidos).toBe('González');
+      expect(patchPayload.genero).toBe('M');
+    });
+
     it('retorna externalId do objeto retornado pelo PATCH', async () => {
       const client = makeClient();
       const provider = new AnaCareMirrorProvider(client);
