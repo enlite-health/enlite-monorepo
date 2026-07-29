@@ -1,4 +1,65 @@
 {
+  "admission": {
+    "title": "Solicite sua admissão",
+    "subtitle": "Preencha estes dados e agendamos sua entrevista de admissão. Você não precisa criar uma conta.",
+    "services": {
+      "cuidadores": "Cuidadores",
+      "acompanantes_terapeuticos": "Acompanhantes Terapêuticos",
+      "psicologos": "Psicólogos"
+    },
+    "form": {
+      "serviceType": {
+        "label": "Qual serviço você precisa?",
+        "placeholder": "Escolha um serviço",
+        "required": "Escolha um serviço"
+      },
+      "requesterType": {
+        "label": "É para você ou para outra pessoa?",
+        "patient": "Para mim",
+        "responsible": "Para outra pessoa",
+        "required": "Indique para quem é"
+      },
+      "email": {
+        "label": "E-mail",
+        "placeholder": "seuemail@exemplo.com",
+        "required": "Informe seu e-mail",
+        "invalid": "Informe um e-mail válido"
+      },
+      "phone": {
+        "label": "Telefone",
+        "placeholder": "+54 9 11 1234 5678",
+        "required": "Informe seu telefone"
+      },
+      "submit": "Enviar solicitação",
+      "submitError": "Não conseguimos enviar sua solicitação. Tente novamente."
+    },
+    "scheduling": {
+      "title": "Agende sua entrevista",
+      "subtitle": "Escolha um horário disponível para sua entrevista de admissão.",
+      "iframeTitle": "Agenda da entrevista de admissão",
+      "configureWarning": "Agenda em configuração: falta a URL real da consulta. Um placeholder está sendo exibido.",
+      "nativeNotImplemented": "A seleção de horários integrada estará disponível em breve."
+    },
+    "slots": {
+      "title": "Escolha um horário",
+      "subtitle": "Estes são os horários disponíveis para sua entrevista de admissão.",
+      "loading": "Buscando horários disponíveis…",
+      "empty": "Não há horários disponíveis no momento. Entraremos em contato para agendar.",
+      "loadError": "Não conseguimos carregar os horários. Tente novamente.",
+      "retry": "Tentar de novo",
+      "slotTaken": "Esse horário acabou de ser ocupado, escolha outro.",
+      "bookError": "Não conseguimos reservar o horário. Tente novamente.",
+      "booking": "Reservando seu horário…"
+    },
+    "confirmation": {
+      "title": "Pronto! Sua entrevista está agendada",
+      "hostLabel": "Com",
+      "datetimeLabel": "Data e hora",
+      "meetLabel": "Link da videochamada",
+      "joinMeet": "Entrar na videochamada",
+      "whatsapp": "Enviamos um WhatsApp com a confirmação."
+    }
+  },
   "app": {
     "newVersion": {
       "message": "Há uma nova versão disponível. Recarregue a página para aplicar as melhorias.",

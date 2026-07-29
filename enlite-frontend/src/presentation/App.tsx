@@ -38,6 +38,19 @@ import { InviteProgressPanel } from './components/features/admin/VacancyMatch/In
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
+// Public B2C patient intake (Task 2) — no auth, outside the admin shell.
+// Same page, parametrized by country; wrapped so each lazy module is a
+// zero-arg component (the prop is bound here) and keeps chunk-retry.
+const AdmisionArPage = lazyWithRetry(() =>
+  import('./pages/public/AdmisionPage').then((m) => ({
+    default: () => <m.default country="AR" />,
+  })),
+);
+const AdmisionBrPage = lazyWithRetry(() =>
+  import('./pages/public/AdmisionPage').then((m) => ({
+    default: () => <m.default country="BR" />,
+  })),
+);
 // Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
 // quando staff abre /admin/api-docs.
 const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
@@ -88,6 +101,31 @@ export function App() {
         />
         {/* Alias EN → ES: resgata links antigos enviados como /vacancies/:id */}
         <Route path="/vacancies/:id" element={<VacancyEnAliasRedirect />} />
+        {/* Public patient intake (Task 2) — country-parametrized native scheduler.
+            AR → es, BR → pt-BR (page forces its own language). The WP
+            /registrar/admisión iframe points at the country-specific route. */}
+        <Route
+          path="/admission-ar"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionArPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/admission-br"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionBrPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
+        {/* Compat alias: the original /admision now points at AR. */}
+        <Route path="/admision" element={<Navigate to="/admission-ar" replace />} />
         <Route
           path="/worker-registration"
           element={<Navigate to="/worker/profile" replace />}

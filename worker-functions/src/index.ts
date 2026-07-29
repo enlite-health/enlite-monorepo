@@ -20,7 +20,7 @@ import express, { Request, Response } from 'express';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
-import { AdminPatientsController, createAdminPatientsRoutes } from '@modules/case';
+import { AdminPatientsController, createAdminPatientsRoutes, PublicLeadsController } from '@modules/case';
 import { UserController } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes } from '@modules/identity';
 import {
@@ -31,7 +31,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
@@ -62,6 +62,11 @@ import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
+import { internalAuthMiddleware } from '@modules/notification';
+import { AdmissionSchedulingService } from '@modules/matching/application/AdmissionSchedulingService';
+import { AdmissionReminderService } from '@modules/matching/application/AdmissionReminderService';
+import { AdmissionReminderController } from '@modules/matching/interfaces/controllers/AdmissionReminderController';
+import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
 import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
@@ -210,6 +215,55 @@ const publicJobsRateLimit = rateLimit({
 
 app.get('/api/public/v1/jobs', publicJobsRateLimit, (req: Request, res: Response) => {
   publicJobsController.listActiveJobs(req, res);
+});
+
+// Public B2C patient intake (Task 1) — no staff auth, rate-limited like public jobs.
+// CORS is handled by the global corsMiddleware (our own /admision page origin is allowed).
+const publicLeadsController = new PublicLeadsController();
+const publicLeadsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10, // write endpoint — tighter than the read-only jobs list
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.post('/api/public/v1/leads', publicLeadsRateLimit, (req: Request, res: Response) => {
+  publicLeadsController.createLead(req, res);
+});
+
+// Public B2C admission scheduling (multi-country AR + BR) — no staff auth, rate-limited.
+// Real notifier: immediate WhatsApp confirmation to the patient (direct Content
+// API, no outbox — the patient is not a worker) + a 30-min-before reminder via
+// Cloud Task. Injected in place of the default LoggingAdmissionNotifier.
+const admissionNotifier = new RealAdmissionNotifier(
+  twilioMessagingService,
+  new CloudTasksClient(),
+  DatabaseConnection.getInstance().getPool(),
+);
+const admissionSchedulingController = new AdmissionSchedulingController(
+  new AdmissionSchedulingService(undefined, admissionNotifier),
+);
+const admissionSlotsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30, // read endpoint
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+const admissionBookRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10, // write endpoint — tighter
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, (req: Request, res: Response) => {
+  admissionSchedulingController.getSlots(req, res);
+});
+app.post('/api/public/v1/admission/book', admissionBookRateLimit, (req: Request, res: Response) => {
+  admissionSchedulingController.book(req, res);
 });
 
 // ========== Protected Worker Routes ==========
@@ -377,6 +431,16 @@ const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService);
 app.use('/api/internal', createInternalRoutes(internalController));
+
+// Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
+// Kept on the app (not the notification router) to avoid a notification→matching
+// import; guarded by the same internalAuthMiddleware (X-Internal-Secret).
+const admissionReminderController = new AdmissionReminderController(
+  new AdmissionReminderService(twilioMessagingService, dbPool),
+);
+app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, (req: Request, res: Response) =>
+  admissionReminderController.handle(req, res),
+);
 
 // ========== Recruitment Health Dashboard ==========
 app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response) =>
