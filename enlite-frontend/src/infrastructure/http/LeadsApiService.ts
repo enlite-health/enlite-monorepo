@@ -17,6 +17,8 @@ export interface CreateLeadInput {
   phone: string;
   name?: string;
   country: AdmissionCountry;
+  /** Explicit consent to be contacted (WhatsApp/email). Required by the form. */
+  consent: boolean;
 }
 
 export interface CreateLeadResult {

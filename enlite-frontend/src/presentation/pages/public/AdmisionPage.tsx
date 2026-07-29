@@ -70,6 +70,9 @@ function useLeadSchema(t: TFunction) {
           .trim()
           .min(6, { message: t('admission.form.phone.required') }),
         name: z.string().trim().optional(),
+        consent: z.boolean().refine((v) => v === true, {
+          message: t('admission.form.consent.required'),
+        }),
       }),
     [t],
   );
@@ -81,6 +84,7 @@ type LeadFormValues = {
   email: string;
   phone: string;
   name?: string;
+  consent: boolean;
 };
 
 export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Element {
@@ -96,11 +100,14 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<LeadFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { requesterType: 'patient' },
+    defaultValues: { requesterType: 'patient', consent: false },
   });
+
+  const consentChecked = watch('consent');
 
   const serviceOptions = SERVICE_TYPES.map((value) => ({
     value,
@@ -117,6 +124,7 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
         phone: values.phone,
         name: values.name?.trim() || undefined,
         country,
+        consent: values.consent,
       });
       setLeadId(id);
     } catch (err) {
@@ -235,6 +243,23 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
               />
             </FormField>
 
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                data-testid="lead-consent"
+                className="mt-1 h-4 w-4 accent-primary"
+                {...register('consent')}
+              />
+              <Text as="span" size="sm" color="secondary">
+                {t('admission.form.consent.label')}
+              </Text>
+            </label>
+            {errors.consent && (
+              <Text size="xs" className="text-red-500" data-testid="lead-consent-error">
+                {errors.consent.message}
+              </Text>
+            )}
+
             {submitError && (
               <div
                 data-testid="lead-submit-error"
@@ -250,6 +275,7 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
               size="lg"
               fullWidth
               isLoading={isSubmitting}
+              disabled={!consentChecked}
               data-testid="lead-submit"
             >
               {t('admission.form.submit')}

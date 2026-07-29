@@ -30,6 +30,10 @@
         "placeholder": "+54 9 11 1234 5678",
         "required": "Informe seu telefone"
       },
+      "consent": {
+        "label": "Concordo que a EnLite entre em contato por WhatsApp ou email sobre minha solicitação de admissão.",
+        "required": "Você precisa aceitar para continuar"
+      },
       "submit": "Enviar solicitação",
       "submitError": "Não conseguimos enviar sua solicitação. Tente novamente."
     },

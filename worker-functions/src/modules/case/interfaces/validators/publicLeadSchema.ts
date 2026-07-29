@@ -51,6 +51,9 @@ export const publicLeadSchema = z
     name: z.string().trim().min(1).optional(),
     /** Country the lead belongs to (drives admission scheduling). Defaults to AR. */
     country: z.enum(['AR', 'BR']).default('AR'),
+    /** Explicit consent to be contacted (WhatsApp/email). The form requires true;
+     * persisted as patients.has_consent (Ley 25.326 / LGPD). Defaults false. */
+    consent: z.boolean().optional().default(false),
   })
   .strict();
 
