@@ -152,7 +152,6 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
             <FormField
               label={t('admission.form.serviceType.label')}
               required
-              error={errors.serviceType?.message}
             >
               <Controller
                 control={control}
@@ -207,7 +206,6 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
             <FormField
               label={t('admission.form.email.label')}
               required
-              error={errors.email?.message}
             >
               <InputWithIcon
                 data-testid="lead-email"
@@ -224,7 +222,6 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
             <FormField
               label={t('admission.form.phone.label')}
               required
-              error={errors.phone?.message}
             >
               <InputWithIcon
                 data-testid="lead-phone"

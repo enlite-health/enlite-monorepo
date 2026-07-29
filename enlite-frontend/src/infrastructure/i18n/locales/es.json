@@ -11,7 +11,7 @@
       "serviceType": {
         "label": "¿Qué servicio necesitás?",
         "placeholder": "Elegí un servicio",
-        "required": "Elegí un servicio"
+        "required": "Seleccioná el servicio que necesitás"
       },
       "requesterType": {
         "label": "¿Es para vos o para otra persona?",
