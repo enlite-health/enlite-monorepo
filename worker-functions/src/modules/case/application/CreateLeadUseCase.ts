@@ -69,6 +69,8 @@ export class CreateLeadUseCase {
         // Patient's own WhatsApp only when the requester IS the patient.
         phoneWhatsapp: isResponsible ? null : input.phone,
         serviceType: [profession],
+        // Country drives admission scheduling (timezone/holidays/calendar).
+        country: input.country,
         responsibles,
       },
       {

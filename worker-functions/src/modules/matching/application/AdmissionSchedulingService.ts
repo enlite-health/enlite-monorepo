@@ -1,0 +1,381 @@
+import { DateTime } from 'luxon';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import {
+  AdmissionCalendarService,
+  admissionCalendarService,
+  BusyInterval,
+  computeFreeSlots,
+} from '../infrastructure/AdmissionCalendarService';
+import {
+  ADMISSION_COUNTRIES,
+  AdmissionCountry,
+  getAdmissionCountryConfig,
+} from '../domain/admissionCountries';
+import {
+  AdmissionNotifier,
+  LoggingAdmissionNotifier,
+} from './AdmissionNotifier';
+
+// ─── Errors ────────────────────────────────────────────────────────────────
+
+/** No free host at the requested slot (busy after re-check, or DB double-book). */
+export class SlotTakenError extends Error {
+  readonly code = 'SLOT_TAKEN';
+  constructor(message = 'Slot no longer available') {
+    super(message);
+    this.name = 'SlotTakenError';
+  }
+}
+
+/** Patient not found, or not in the requested country. */
+export class PatientNotFoundError extends Error {
+  readonly code = 'PATIENT_NOT_FOUND';
+  constructor(message = 'Patient not found') {
+    super(message);
+    this.name = 'PatientNotFoundError';
+  }
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface PublicSlot {
+  startISO: string;
+  /** Human label formatted in the country's timezone (no host name). */
+  label: string;
+}
+
+export interface BookParams {
+  patientId: string;
+  slotStartISO: string;
+  country: AdmissionCountry;
+}
+
+export interface BookResult {
+  appointmentId: string;
+  hostDisplayName: string | null;
+  slotStartISO: string;
+  meetLink: string;
+}
+
+interface InterviewHostRow {
+  email: string;
+  display_name: string | null;
+}
+
+interface PatientRow {
+  id: string;
+  country: string;
+  contact_email_encrypted: string | null;
+}
+
+const SLOT_MINUTES = 45;
+
+/**
+ * AdmissionSchedulingService — orchestrates the admission interview scheduling
+ * core (multi-country AR + BR).
+ *
+ *   getAvailableSlots(country) — public availability: reads the active hosts'
+ *   PERSONAL calendars, computes free slots with the country config, returns
+ *   times only (no host names).
+ *
+ *   book({ patientId, slotStartISO, country }) — assigns the least-loaded free
+ *   host, re-checks against a live read (anti-race), inserts the appointment
+ *   under a UNIQUE(host_email, slot_start) guard, creates the Meet event on the
+ *   DEDICATED admission calendar (impersonating enlite@enlite.health, host as
+ *   co-host), and notifies via the AdmissionNotifier port.
+ */
+export class AdmissionSchedulingService {
+  constructor(
+    private readonly calendar: AdmissionCalendarService = admissionCalendarService,
+    private readonly notifier: AdmissionNotifier = new LoggingAdmissionNotifier(),
+    private readonly encryption: KMSEncryptionService = new KMSEncryptionService(),
+    private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
+      'enlite@enlite.health',
+  ) {}
+
+  /** Active interview hosts for a country. */
+  private async getActiveHosts(country: AdmissionCountry): Promise<InterviewHostRow[]> {
+    const db = DatabaseConnection.getInstance().getPool();
+    const res = await db.query<InterviewHostRow>(
+      `SELECT email, display_name
+         FROM interview_hosts
+        WHERE country = $1 AND active = true
+        ORDER BY email ASC`,
+      [country],
+    );
+    return res.rows;
+  }
+
+  private resolveCalendarId(country: AdmissionCountry): string {
+    const cfg = getAdmissionCountryConfig(country);
+    const calendarId = process.env[cfg.admissionCalendarIdEnv];
+    if (!calendarId) {
+      throw new Error(
+        `[AdmissionSchedulingService] missing env ${cfg.admissionCalendarIdEnv} for country ${country}`,
+      );
+    }
+    return calendarId;
+  }
+
+  /**
+   * Public availability for a country. Reads each active host's PERSONAL busy
+   * intervals and unions the free slots. Returns times + labels only.
+   */
+  async getAvailableSlots(country: AdmissionCountry, now: Date = new Date()): Promise<PublicSlot[]> {
+    const cfg = getAdmissionCountryConfig(country);
+    const hosts = await this.getActiveHosts(country);
+    if (hosts.length === 0) return [];
+
+    // Read window: from now to a generous horizon (the pure fn trims to N
+    // business days + lead time).
+    const fromISO = DateTime.fromJSDate(now, { zone: cfg.timezone }).startOf('day').toISO() as string;
+    const toISO = DateTime.fromJSDate(now, { zone: cfg.timezone })
+      .plus({ days: 21 })
+      .endOf('day')
+      .toISO() as string;
+
+    const busyIntervalsByHost: Record<string, BusyInterval[]> = {};
+    await Promise.all(
+      hosts.map(async (h) => {
+        busyIntervalsByHost[h.email] = await this.calendar.getBusyIntervals(
+          h.email,
+          fromISO,
+          toISO,
+          cfg.timezone,
+        );
+      }),
+    );
+
+    const slots = computeFreeSlots({
+      busyIntervalsByHost,
+      now,
+      timezone: cfg.timezone,
+      holidays: cfg.holidays,
+      businessHours: cfg.businessHours,
+    });
+
+    return slots.map((s) => ({
+      startISO: s.startISO,
+      label: DateTime.fromISO(s.startISO)
+        .setZone(cfg.timezone)
+        .setLocale('es')
+        .toFormat("cccc d LLL, HH:mm"),
+    }));
+  }
+
+  /**
+   * Books an admission interview: least-loaded free host + anti-race re-check +
+   * UNIQUE guard + Meet event on the dedicated calendar + notify.
+   */
+  async book(params: BookParams): Promise<BookResult> {
+    const { patientId, slotStartISO, country } = params;
+    const cfg = getAdmissionCountryConfig(country);
+
+    // 1) Patient exists and belongs to the country.
+    const patient = await this.loadPatientForCountry(patientId, country);
+
+    const slotStart = DateTime.fromISO(slotStartISO, { zone: cfg.timezone });
+    if (!slotStart.isValid) throw new Error(`Invalid slotStartISO: ${slotStartISO}`);
+    const slotEnd = slotStart.plus({ minutes: SLOT_MINUTES });
+    const startISO = slotStart.toISO() as string;
+    const endISO = slotEnd.toISO() as string;
+
+    // 2) Candidate hosts that were free at that slot (from a fresh read),
+    //    ranked least-loaded → email asc.
+    const rankedHosts = await this.rankFreeHostsForSlot(country, slotStart, slotEnd);
+    if (rankedHosts.length === 0) throw new SlotTakenError();
+
+    // 3) Anti-race: re-read the chosen host in the slot range; if busy, try the
+    //    next. The UNIQUE(host_email, slot_start) INSERT is the final guard.
+    for (const host of rankedHosts) {
+      const stillFree = await this.isHostFree(host.email, startISO, endISO, cfg.timezone);
+      if (!stillFree) continue;
+
+      // 3b) Reserve our side first (UNIQUE guard) BEFORE creating the calendar
+      //     event, so two concurrent books can't both create Meet events.
+      let appointmentId: string;
+      try {
+        appointmentId = await this.insertAppointment({
+          patientId,
+          country,
+          hostEmail: host.email,
+          hostDisplayName: host.display_name,
+          slotStartISO: startISO,
+          slotEndISO: endISO,
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) continue; // someone booked this host+slot; try next
+        throw err;
+      }
+
+      // 4) Create the Meet event on the dedicated admission calendar.
+      const patientEmail = await this.decryptPatientEmail(patient);
+      const { eventId, meetLink } = await this.calendar.createEventWithMeet({
+        calendarId: this.resolveCalendarId(country),
+        impersonateEmail: this.impersonateEmail,
+        summary: `Entrevista de admisión — ${host.display_name ?? host.email}`,
+        description: `Entrevista de admisión Enlite (${country}).`,
+        startISO,
+        endISO,
+        timezone: cfg.timezone,
+        coHostEmail: host.email,
+        patientEmail,
+      });
+
+      // 5) Persist calendar refs on the appointment.
+      await this.attachCalendarRefs(appointmentId, eventId, meetLink);
+
+      // 6) Notify (port — no-op logging impl for now).
+      await this.notifier.onBooked({
+        appointmentId,
+        patientId,
+        country,
+        hostEmail: host.email,
+        hostDisplayName: host.display_name,
+        slotStartISO: startISO,
+        slotEndISO: endISO,
+        meetLink,
+        patientEmail,
+      });
+
+      return {
+        appointmentId,
+        hostDisplayName: host.display_name,
+        slotStartISO: startISO,
+        meetLink,
+      };
+    }
+
+    // Every candidate turned out busy / double-booked.
+    throw new SlotTakenError();
+  }
+
+  // ─── internals ─────────────────────────────────────────────────────────────
+
+  private async loadPatientForCountry(
+    patientId: string,
+    country: AdmissionCountry,
+  ): Promise<PatientRow> {
+    const db = DatabaseConnection.getInstance().getPool();
+    const res = await db.query<PatientRow>(
+      `SELECT id, country, contact_email_encrypted
+         FROM patients
+        WHERE id = $1 AND deleted_at IS NULL`,
+      [patientId],
+    );
+    const row = res.rows[0];
+    if (!row) throw new PatientNotFoundError();
+    if (row.country !== country) {
+      throw new PatientNotFoundError(`Patient ${patientId} is not in country ${country}`);
+    }
+    return row;
+  }
+
+  private async decryptPatientEmail(patient: PatientRow): Promise<string | undefined> {
+    if (!patient.contact_email_encrypted) return undefined;
+    const email = await this.encryption.decrypt(patient.contact_email_encrypted);
+    return email.trim() ? email.trim() : undefined;
+  }
+
+  /**
+   * Hosts free at [slotStart, slotEnd) from a fresh calendar read, ranked by
+   * weekly load (least-loaded first, email asc on tie).
+   */
+  private async rankFreeHostsForSlot(
+    country: AdmissionCountry,
+    slotStart: DateTime,
+    slotEnd: DateTime,
+  ): Promise<InterviewHostRow[]> {
+    const cfg = getAdmissionCountryConfig(country);
+    const hosts = await this.getActiveHosts(country);
+    const startISO = slotStart.toISO() as string;
+    const endISO = slotEnd.toISO() as string;
+
+    const freeHosts: InterviewHostRow[] = [];
+    for (const h of hosts) {
+      if (await this.isHostFree(h.email, startISO, endISO, cfg.timezone)) {
+        freeHosts.push(h);
+      }
+    }
+
+    const loadByEmail = new Map<string, number>();
+    await Promise.all(
+      freeHosts.map(async (h) => {
+        loadByEmail.set(
+          h.email,
+          await this.calendar.countEventsInWeek(h.email, startISO, cfg.timezone),
+        );
+      }),
+    );
+
+    return freeHosts.sort((a, b) => {
+      const la = loadByEmail.get(a.email) ?? 0;
+      const lb = loadByEmail.get(b.email) ?? 0;
+      if (la !== lb) return la - lb;
+      return a.email.localeCompare(b.email);
+    });
+  }
+
+  private async isHostFree(
+    hostEmail: string,
+    fromISO: string,
+    toISO: string,
+    timezone: string,
+  ): Promise<boolean> {
+    const busy = await this.calendar.getBusyIntervals(hostEmail, fromISO, toISO, timezone);
+    const start = new Date(fromISO).getTime();
+    const end = new Date(toISO).getTime();
+    return !busy.some((b) => start < b.end.getTime() && b.start.getTime() < end);
+  }
+
+  private async insertAppointment(input: {
+    patientId: string;
+    country: AdmissionCountry;
+    hostEmail: string;
+    hostDisplayName: string | null;
+    slotStartISO: string;
+    slotEndISO: string;
+  }): Promise<string> {
+    const db = DatabaseConnection.getInstance().getPool();
+    const res = await db.query<{ id: string }>(
+      `INSERT INTO admission_appointments
+         (patient_id, country, host_email, host_display_name, slot_start, slot_end, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'booked')
+       RETURNING id`,
+      [
+        input.patientId,
+        input.country,
+        input.hostEmail,
+        input.hostDisplayName,
+        input.slotStartISO,
+        input.slotEndISO,
+      ],
+    );
+    return res.rows[0].id;
+  }
+
+  private async attachCalendarRefs(
+    appointmentId: string,
+    calendarEventId: string,
+    meetLink: string,
+  ): Promise<void> {
+    const db = DatabaseConnection.getInstance().getPool();
+    await db.query(
+      `UPDATE admission_appointments
+          SET calendar_event_id = $2, meet_link = $3, updated_at = NOW()
+        WHERE id = $1`,
+      [appointmentId, calendarEventId, meetLink],
+    );
+  }
+}
+
+/** Postgres unique_violation. */
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+}
+
+export const admissionSchedulingService = new AdmissionSchedulingService();
+
+/** Re-export for callers wiring env-based country configs. */
+export { ADMISSION_COUNTRIES };

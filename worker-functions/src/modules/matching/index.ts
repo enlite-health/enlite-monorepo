@@ -62,6 +62,8 @@ export { WorkerApplicationsController } from './interfaces/controllers/WorkerApp
 export { RecruitmentBlockedController } from './interfaces/controllers/RecruitmentBlockedController';
 
 export { PublicJobsController } from './interfaces/controllers/PublicJobsController';
+export { AdmissionSchedulingController } from './interfaces/controllers/AdmissionSchedulingController';
+export { AdmissionSchedulingService, admissionSchedulingService } from './application/AdmissionSchedulingService';
 export { ListActivePublicJobsUseCase } from './application/ListActivePublicJobsUseCase';
 export { EnsureVacancyShortLinkUseCase } from './application/EnsureVacancyShortLinkUseCase';
 export { PurgeVacancyShortLinksUseCase } from './application/PurgeVacancyShortLinksUseCase';

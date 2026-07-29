@@ -38,6 +38,7 @@ describe('CreateLeadUseCase', () => {
       email: 'lead@example.com',
       phone: '+5491133334444',
       name: 'Marina',
+      country: 'AR',
     });
 
     expect(result).toEqual({ id: 'lead-001' });
@@ -65,6 +66,7 @@ describe('CreateLeadUseCase', () => {
       email: 'family@example.com',
       phone: '+5491155556666',
       name: 'Jorge',
+      country: 'AR',
     });
 
     const [input, opts] = createNativePatient.mock.calls[0];
@@ -94,6 +96,7 @@ describe('CreateLeadUseCase', () => {
       requesterType: 'patient',
       email: 'noname@example.com',
       phone: '+5491100000000',
+      country: 'AR',
     });
 
     const [input] = createNativePatient.mock.calls[0];

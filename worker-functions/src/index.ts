@@ -31,7 +31,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
@@ -225,6 +225,30 @@ const publicLeadsRateLimit = rateLimit({
 
 app.post('/api/public/v1/leads', publicLeadsRateLimit, (req: Request, res: Response) => {
   publicLeadsController.createLead(req, res);
+});
+
+// Public B2C admission scheduling (multi-country AR + BR) — no staff auth, rate-limited.
+const admissionSchedulingController = new AdmissionSchedulingController();
+const admissionSlotsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30, // read endpoint
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+const admissionBookRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10, // write endpoint — tighter
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, (req: Request, res: Response) => {
+  admissionSchedulingController.getSlots(req, res);
+});
+app.post('/api/public/v1/admission/book', admissionBookRateLimit, (req: Request, res: Response) => {
+  admissionSchedulingController.book(req, res);
 });
 
 // ========== Protected Worker Routes ==========

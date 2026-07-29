@@ -49,6 +49,8 @@ export const publicLeadSchema = z
     email: z.string().trim().toLowerCase().email(),
     phone: z.string().trim().min(1, { message: 'phone is required' }),
     name: z.string().trim().min(1).optional(),
+    /** Country the lead belongs to (drives admission scheduling). Defaults to AR. */
+    country: z.enum(['AR', 'BR']).default('AR'),
   })
   .strict();
 
