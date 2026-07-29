@@ -28,13 +28,13 @@ interface ApptRow {
   reminder_30min_sent_at: Date | null;
 }
 
-function makeService(apptRow: ApptRow | null) {
+function makeService(apptRow: ApptRow | null, hasConsent = true) {
   const query = jest.fn(async (sql: string, _params?: unknown[]) => {
     if (sql.includes('FROM admission_appointments')) {
       return { rows: apptRow ? [apptRow] : [] };
     }
     if (sql.includes('FROM patients')) {
-      return { rows: [{ phone_whatsapp: PHONE }] };
+      return { rows: [{ phone_whatsapp: PHONE, has_consent: hasConsent }] };
     }
     return { rows: [] }; // UPDATE
   });
@@ -98,6 +98,15 @@ describe('AdmissionReminderService.send30MinReminder', () => {
     expect(updateCall).toBeTruthy();
     expect(updateCall![0]).toContain('reminder_30min_sent_at');
     expect(updateCall![1]).toEqual([APPT_ID]);
+  });
+
+  it('sem consentimento (has_consent=false): não envia o lembrete', async () => {
+    const { service, sendWithContentSid } = makeService(bookedRow(), false);
+
+    const result = await service.send30MinReminder(APPT_ID);
+
+    expect(result).toEqual({ sent: false, reason: 'no_consent' });
+    expect(sendWithContentSid).not.toHaveBeenCalled();
   });
 
   it('idempotente: já enviado (reminder_30min_sent_at preenchido) → não reenvia', async () => {

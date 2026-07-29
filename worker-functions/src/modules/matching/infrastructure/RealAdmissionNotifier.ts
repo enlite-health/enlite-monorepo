@@ -25,6 +25,7 @@ const REMINDER_LEAD_MS = 30 * 60 * 1000;
 interface PatientContactRow {
   phone_whatsapp: string | null;
   first_name: string | null;
+  has_consent: boolean | null;
 }
 
 /**
@@ -51,6 +52,17 @@ export class RealAdmissionNotifier implements AdmissionNotifier {
   ) {}
 
   async onBooked(appt: BookedAppointmentNotice): Promise<void> {
+    // Consent gate: only message patients who explicitly agreed (patients.has_consent,
+    // set from the form checkbox / Ley 25.326 / LGPD). No consent → no confirmation,
+    // no reminder scheduled. The checkbox is enforced, not decorative.
+    const contact = await this.loadPatientContact(appt.patientId);
+    if (!contact?.has_consent) {
+      functions.logger.info('admission.notifier.skipped_no_consent', {
+        appointmentId: appt.appointmentId,
+        patientId: appt.patientId,
+      });
+      return;
+    }
     await this.safe('confirmation', () => this.sendConfirmation(appt), appt);
     await this.safe('reminder_schedule', () => this.scheduleReminder(appt), appt);
   }
@@ -157,7 +169,7 @@ export class RealAdmissionNotifier implements AdmissionNotifier {
 
   private async loadPatientContact(patientId: string): Promise<PatientContactRow | null> {
     const res = await this.db.query<PatientContactRow>(
-      `SELECT phone_whatsapp, first_name
+      `SELECT phone_whatsapp, first_name, has_consent
          FROM patients
         WHERE id = $1 AND deleted_at IS NULL`,
       [patientId],

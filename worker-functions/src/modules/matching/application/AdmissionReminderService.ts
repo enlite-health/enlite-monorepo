@@ -65,7 +65,17 @@ export class AdmissionReminderService {
       return { sent: false, reason: 'bad_country' };
     }
 
-    const phone = await this.loadPatientPhone(appt.patient_id);
+    const contact = await this.loadPatientContact(appt.patient_id);
+    // Consent gate (defense-in-depth): consent may have been revoked between
+    // booking and the reminder. No consent → don't message.
+    if (!contact?.has_consent) {
+      functions.logger.info('admission.reminder.skip_no_consent', {
+        appointmentId,
+        patientId: appt.patient_id,
+      });
+      return { sent: false, reason: 'no_consent' };
+    }
+    const phone = contact.phone_whatsapp;
     if (!phone) {
       functions.logger.warn('admission.reminder.no_phone', { appointmentId, patientId: appt.patient_id });
       return { sent: false, reason: 'no_phone' };
@@ -119,13 +129,15 @@ export class AdmissionReminderService {
     return res.rows[0] ?? null;
   }
 
-  private async loadPatientPhone(patientId: string): Promise<string | null> {
-    const res = await this.db.query<{ phone_whatsapp: string | null }>(
-      `SELECT phone_whatsapp
+  private async loadPatientContact(
+    patientId: string,
+  ): Promise<{ phone_whatsapp: string | null; has_consent: boolean | null } | null> {
+    const res = await this.db.query<{ phone_whatsapp: string | null; has_consent: boolean | null }>(
+      `SELECT phone_whatsapp, has_consent
          FROM patients
         WHERE id = $1 AND deleted_at IS NULL`,
       [patientId],
     );
-    return res.rows[0]?.phone_whatsapp ?? null;
+    return res.rows[0] ?? null;
   }
 }

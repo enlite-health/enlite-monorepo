@@ -24,14 +24,14 @@ const SLOT_ISO = '2026-08-03T10:00:00-03:00'; // segunda 10:00 AR
 const PHONE = '+5491122334455';
 
 function makeNotifier(opts: {
-  patientRow?: { phone_whatsapp: string | null; first_name: string | null } | null;
+  patientRow?: { phone_whatsapp: string | null; first_name: string | null; has_consent?: boolean | null } | null;
   now: string;
   scheduleReturns?: string | null;
 }) {
   const query = jest.fn(async (sql: string, _params?: unknown[]) => {
     if (sql.includes('FROM patients')) {
       return { rows: opts.patientRow === undefined
-        ? [{ phone_whatsapp: PHONE, first_name: 'Carla' }]
+        ? [{ phone_whatsapp: PHONE, first_name: 'Carla', has_consent: true }]
         : opts.patientRow
           ? [opts.patientRow]
           : [] };
@@ -142,5 +142,17 @@ describe('RealAdmissionNotifier', () => {
 
     expect(sendWithContentSid).not.toHaveBeenCalled();
     expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem consentimento (has_consent=false): NÃO envia confirmação NEM agenda reminder', async () => {
+    const { notifier, schedule, sendWithContentSid } = makeNotifier({
+      now: '2026-08-01T00:00:00-03:00',
+      patientRow: { phone_whatsapp: PHONE, first_name: 'Carla', has_consent: false },
+    });
+
+    await notifier.onBooked(APPT);
+
+    expect(sendWithContentSid).not.toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
   });
 });
