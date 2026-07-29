@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { List, LayoutGrid } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
+import { Select } from '@presentation/components/atoms/Select';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useToast } from '@presentation/hooks/useToast';
 import { usePatientKanban } from '@hooks/admin/usePatientKanban';
+import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 import { PatientKanbanBoard } from '@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard';
 
 /** Patient lifecycle kanban page. Route: /admin/patients/kanban. */
@@ -14,7 +17,9 @@ export function PatientKanbanPage(): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const showToast = useToast();
-  const { groups, isLoading, error, moveStatus } = usePatientKanban();
+  const [country, setCountry] = useState('');
+  const { groups, isLoading, error, moveStatus } = usePatientKanban(country);
+  const countryOptions = getCountryOptions(t);
 
   return (
     <PageContainer>
@@ -23,6 +28,15 @@ export function PatientKanbanPage(): JSX.Element {
           {t('admin.patients.kanban.title')}
         </Typography>
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
+          <div className="w-[150px]" data-testid="patient-country-filter">
+            <Select
+              inputSize="compact"
+              options={countryOptions}
+              value={country}
+              onValueChange={setCountry}
+              placeholder={t('admin.patients.countryOptions.all')}
+            />
+          </div>
           <Button
             variant="outline"
             size="sm"

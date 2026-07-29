@@ -19,6 +19,10 @@ interface PatientFiltersProps {
   reasonOptions: SelectOption[];
   specialtyOptions: SelectOption[];
   dependencyOptions: SelectOption[];
+  /** Fase 4 — country scope (optional; omit to hide the country filter). */
+  selectedCountry?: string;
+  onCountryChange?: (value: string) => void;
+  countryOptions?: SelectOption[];
 }
 
 export function PatientFilters({
@@ -38,12 +42,17 @@ export function PatientFilters({
   reasonOptions,
   specialtyOptions,
   dependencyOptions,
+  selectedCountry,
+  onCountryChange,
+  countryOptions,
 }: PatientFiltersProps): JSX.Element {
   const { t } = useTranslation();
 
+  const showCountryFilter = !!countryOptions && !!onCountryChange;
   const showReasonFilter = selectedAttention === 'needs_attention';
   const hasActiveFilters =
-    searchValue || codeValue || selectedAttention || selectedSpecialty || selectedDependency;
+    searchValue || codeValue || selectedAttention || selectedSpecialty || selectedDependency
+    || selectedCountry;
 
   const handleClearAll = () => {
     onSearchChange('');
@@ -52,6 +61,7 @@ export function PatientFilters({
     onReasonChange('');
     onSpecialtyChange('');
     onDependencyChange('');
+    onCountryChange?.('');
   };
 
   return (
@@ -131,6 +141,22 @@ export function PatientFilters({
             placeholder={t('admin.patients.specialtyOptions.all')}
           />
         </div>
+
+        {/* Country filter (Fase 4) */}
+        {showCountryFilter && (
+          <div className="w-[160px]" data-testid="patient-country-filter">
+            <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
+              {t('admin.patients.countryLabel')}
+            </label>
+            <Select
+              inputSize="compact"
+              options={countryOptions!}
+              value={selectedCountry ?? ''}
+              onValueChange={onCountryChange!}
+              placeholder={t('admin.patients.countryOptions.all')}
+            />
+          </div>
+        )}
 
         {/* Dependency filter */}
         <div className="w-[180px]" data-testid="filter-dependency">

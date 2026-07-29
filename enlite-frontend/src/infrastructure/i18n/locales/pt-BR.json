@@ -2314,6 +2314,30 @@
           "ACTIVE": "Ativo"
         }
       },
+      "countryLabel": "País",
+      "countryOptions": {
+        "all": "Todos os países",
+        "AR": "Argentina",
+        "BR": "Brasil"
+      },
+      "sla": {
+        "inStage": "parado há {{hours}}h",
+        "breached": "⚠ SLA · {{hours}}h"
+      },
+      "funnel": {
+        "title": "Funil de pacientes",
+        "solicitantes": "Solicitantes",
+        "admision": "Admissão",
+        "agendadas": "Agendadas",
+        "vacantes": "Vagas",
+        "conversion": "{{from}} → {{to}}: {{rate}}%",
+        "error": "Não foi possível carregar as métricas",
+        "period": {
+          "7": "Últimos 7 dias",
+          "30": "Últimos 30 dias",
+          "90": "Últimos 90 dias"
+        }
+      },
       "create": {
         "new": "Criar novo",
         "title": "Novo paciente",

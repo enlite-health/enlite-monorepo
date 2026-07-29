@@ -9,6 +9,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { PatientCreateModal } from '@presentation/components/features/admin/PatientCreateModal';
 import { PatientFilters } from '@presentation/components/features/admin/PatientFilters';
 import { PatientStatsCards } from '@presentation/components/features/admin/PatientStatsCards';
+import { PatientFunnelSection } from '@presentation/components/features/admin/PatientFunnelSection';
 import { PatientsTable } from '@presentation/components/features/admin/PatientsTable';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { usePatientsData } from '@hooks/admin/usePatientsData';
@@ -17,6 +18,7 @@ import {
   getReasonOptions,
   getSpecialtyOptions,
   getDependencyOptions,
+  getCountryOptions,
   attentionToApiParam,
 } from './patientsData';
 
@@ -28,6 +30,7 @@ export function AdminPatientsPage(): JSX.Element {
   const reasonOptions = getReasonOptions(t);
   const specialtyOptions = getSpecialtyOptions(t);
   const dependencyOptions = getDependencyOptions(t);
+  const countryOptions = getCountryOptions(t);
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -37,6 +40,7 @@ export function AdminPatientsPage(): JSX.Element {
   const [selectedReason, setSelectedReason] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedDependency, setSelectedDependency] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -66,6 +70,7 @@ export function AdminPatientsPage(): JSX.Element {
   const handleReasonChange = (v: string) => { setSelectedReason(v); setCurrentPage(1); };
   const handleSpecialtyChange = (v: string) => { setSelectedSpecialty(v); setCurrentPage(1); };
   const handleDependencyChange = (v: string) => { setSelectedDependency(v); setCurrentPage(1); };
+  const handleCountryChange = (v: string) => { setSelectedCountry(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
 
   const filters = useMemo(() => {
@@ -78,6 +83,7 @@ export function AdminPatientsPage(): JSX.Element {
       clinical_specialty: selectedSpecialty || undefined,
       dependency_level: selectedDependency || undefined,
       case_number: debouncedCode || undefined,
+      country: selectedCountry || undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
@@ -88,6 +94,7 @@ export function AdminPatientsPage(): JSX.Element {
     selectedReason,
     selectedSpecialty,
     selectedDependency,
+    selectedCountry,
     itemsPerPage,
     currentPage,
   ]);
@@ -132,6 +139,9 @@ export function AdminPatientsPage(): JSX.Element {
       </div>
 
       <PatientStatsCards stats={stats} />
+
+      {/* Funnel / traceability metrics (Fase 4) */}
+      <PatientFunnelSection />
 
       {/* Table section */}
       <div className="flex flex-col">
@@ -185,6 +195,9 @@ export function AdminPatientsPage(): JSX.Element {
           reasonOptions={reasonOptions}
           specialtyOptions={specialtyOptions}
           dependencyOptions={dependencyOptions}
+          selectedCountry={selectedCountry}
+          onCountryChange={handleCountryChange}
+          countryOptions={countryOptions}
         />
 
         {error ? (

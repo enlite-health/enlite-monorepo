@@ -22,6 +22,19 @@ export const getSpecialtyOptions = (t: TFunction): SelectOption[] => [
   { value: 'CUSTOM', label: t('admin.patients.specialtyOptions.CUSTOM') },
 ];
 
+/** Fase 4 — country scope options (Todos = empty value / placeholder). */
+export const getCountryOptions = (t: TFunction): SelectOption[] => [
+  { value: 'AR', label: t('admin.patients.countryOptions.AR') },
+  { value: 'BR', label: t('admin.patients.countryOptions.BR') },
+];
+
+/** Fase 4 — funnel period presets (relative to now). */
+export const getFunnelPeriodOptions = (t: TFunction): SelectOption[] => [
+  { value: '7', label: t('admin.patients.funnel.period.7') },
+  { value: '30', label: t('admin.patients.funnel.period.30') },
+  { value: '90', label: t('admin.patients.funnel.period.90') },
+];
+
 export const getDependencyOptions = (t: TFunction): SelectOption[] => [
   { value: 'SEVERE', label: t('admin.patients.dependencyOptions.SEVERE') },
   { value: 'VERY_SEVERE', label: t('admin.patients.dependencyOptions.VERY_SEVERE') },

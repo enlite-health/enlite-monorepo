@@ -7,6 +7,8 @@ import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
+import { GetPatientFunnelUseCase } from '../../application/GetPatientFunnelUseCase';
+import { patientFunnelQuerySchema } from '../../application/patientFunnelSchema';
 import {
   CreatePatientUseCase,
   PatientContactValidationError,
@@ -57,6 +59,7 @@ const patientIdSchema = z.object({
 export class AdminPatientsController {
   private readonly repo: PatientQueryRepository;
   private readonly getPatientByIdUseCase: GetPatientByIdUseCase;
+  private readonly getPatientFunnelUseCase: GetPatientFunnelUseCase;
   private readonly createPatientUseCase: CreatePatientUseCase;
   private readonly activatePatientUseCase: ActivatePatientUseCase;
   private readonly patientService: PatientService;
@@ -71,10 +74,11 @@ export class AdminPatientsController {
   ) {
     this.repo = new PatientQueryRepository();
     this.getPatientByIdUseCase = new GetPatientByIdUseCase(this.repo);
+    this.db = DatabaseConnection.getInstance().getPool();
+    this.getPatientFunnelUseCase = new GetPatientFunnelUseCase(this.db);
     this.createPatientUseCase = createPatientUseCase ?? new CreatePatientUseCase();
     this.patientService = patientService ?? new PatientService();
     this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
-    this.db = DatabaseConnection.getInstance().getPool();
     this.geocoder = geocoder ?? new GeocodingService();
   }
 
@@ -299,6 +303,11 @@ export class AdminPatientsController {
         caseNumber: row.caseNumber,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
+        // SLA de inatividade (Fase 4) — o kanban lê isto. Aditivo.
+        stageEnteredAt: row.stageEnteredAt ?? null,
+        hoursInStage: row.hoursInStage ?? null,
+        slaThresholdHours: row.slaThresholdHours ?? null,
+        slaBreached: row.slaBreached ?? false,
       }));
 
       res.status(200).json({ success: true, data, total });
@@ -463,10 +472,13 @@ export class AdminPatientsController {
     }
   }
 
-  /** GET /api/admin/patients/stats */
-  async getPatientStats(_req: Request, res: Response): Promise<void> {
+  /** GET /api/admin/patients/stats?country=AR|BR */
+  async getPatientStats(req: Request, res: Response): Promise<void> {
     try {
-      const stats = await this.repo.stats();
+      const country = req.query.country === 'AR' || req.query.country === 'BR'
+        ? req.query.country
+        : undefined;
+      const stats = await this.repo.stats(country);
       res.status(200).json({ success: true, data: stats });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -474,6 +486,37 @@ export class AdminPatientsController {
       res.status(500).json({
         success: false,
         error: 'Failed to get patient stats',
+        details: e.message,
+      });
+    }
+  }
+
+  /**
+   * GET /api/admin/patients/funnel?country=AR|BR&from=ISO&to=ISO
+   *
+   * Conversão do funil de pacientes por país e período (Fase 4). Sem from/to,
+   * usa os últimos 30 dias. Controller fino — delega ao GetPatientFunnelUseCase.
+   */
+  async getPatientFunnel(req: Request, res: Response): Promise<void> {
+    const parsed = patientFunnelQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid query params',
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    try {
+      const data = await this.getPatientFunnelUseCase.execute(parsed.data);
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientFunnel' });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get patient funnel',
         details: e.message,
       });
     }

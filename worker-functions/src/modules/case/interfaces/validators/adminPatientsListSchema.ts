@@ -20,6 +20,8 @@ export const adminPatientsListSchema = z.object({
     .trim()
     .regex(/^\d+$/, { message: 'case_number must contain digits only' })
     .optional(),
+  /** País do paciente. Ausente = todos os países (comportamento atual). */
+  country: z.enum(['AR', 'BR']).optional(),
   limit: z.coerce
     .number()
     .int()

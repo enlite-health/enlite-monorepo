@@ -21,6 +21,11 @@ export function createAdminPatientsRoutes(
     controller.getPatientStats(req, res),
   );
 
+  // Funnel de conversão (Fase 4) — static, ANTES de /patients/:id.
+  router.get('/patients/funnel', staffOnly, (req: Request, res: Response) =>
+    controller.getPatientFunnel(req, res),
+  );
+
   router.get('/patients', staffOnly, (req: Request, res: Response) =>
     controller.listPatients(req, res),
   );

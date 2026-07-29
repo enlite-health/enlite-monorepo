@@ -35,7 +35,7 @@ function groupByStatus(items: PatientKanbanItem[]): PatientKanbanGroups {
  *
  * NOTE: grouping depends on each row carrying `status`. See listPatientsForKanban.
  */
-export function usePatientKanban() {
+export function usePatientKanban(country?: string) {
   const [groups, setGroups] = useState<PatientKanbanGroups>(emptyGroups);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export function usePatientKanban() {
     try {
       setIsLoading(true);
       setError(null);
-      const items = await AdminApiService.listPatientsForKanban();
+      const items = await AdminApiService.listPatientsForKanban(country || undefined);
       setGroups(groupByStatus(items));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load patients');
@@ -55,7 +55,7 @@ export function usePatientKanban() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, []);
+  }, [country]);
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
 

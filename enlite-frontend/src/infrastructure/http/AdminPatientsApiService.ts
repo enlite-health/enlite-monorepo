@@ -16,6 +16,7 @@ import type {
   UpdatePatientStatusResult,
   ActivatePatientResult,
   PatientKanbanItem,
+  PatientFunnelData,
 } from '@domain/entities/PatientDetail';
 
 /**
@@ -39,6 +40,8 @@ export interface PatientListFilters {
   clinical_specialty?: string;
   dependency_level?: string;
   case_number?: string;
+  /** Fase 4 — country scope: 'AR' | 'BR' (omit for all). */
+  country?: string;
   limit?: string;
   offset?: string;
 }
@@ -192,9 +195,11 @@ export class AdminPatientsApiServiceClass {
   /**
    * Fetch a large page of patients for the kanban board. Reuses the same list
    * endpoint as the table; the board groups the rows by status client-side.
+   * Fase 4: forwards the optional `country` scope and maps the additive SLA
+   * fields (stageEnteredAt/hoursInStage/slaBreached/slaThresholdHours).
    */
-  async listPatientsForKanban(): Promise<PatientKanbanItem[]> {
-    const { data } = await this.listPatients({ limit: '500', offset: '0' });
+  async listPatientsForKanban(country?: string): Promise<PatientKanbanItem[]> {
+    const { data } = await this.listPatients({ limit: '500', offset: '0', country });
     return (data ?? []).map((p: any): PatientKanbanItem => ({
       id: p.id,
       firstName: p.firstName ?? null,
@@ -202,7 +207,27 @@ export class AdminPatientsApiServiceClass {
       caseNumber: p.caseNumber ?? null,
       dependencyLevel: p.dependencyLevel ?? null,
       status: p.status ?? null,
+      stageEnteredAt: p.stageEnteredAt ?? null,
+      hoursInStage: p.hoursInStage ?? null,
+      slaBreached: p.slaBreached ?? false,
+      slaThresholdHours: p.slaThresholdHours ?? null,
     }));
+  }
+
+  /**
+   * Fase 4 — GET /api/admin/patients/funnel. Traceability aggregate scoped by
+   * country and date window. `request` unwraps `{ success, data }`.
+   */
+  async getPatientFunnel(params?: {
+    country?: string;
+    from?: string;
+    to?: string;
+  }): Promise<PatientFunnelData> {
+    const clean = Object.fromEntries(
+      Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== ''),
+    );
+    const qs = new URLSearchParams(clean as Record<string, string>).toString();
+    return this.request<PatientFunnelData>('GET', `/api/admin/patients/funnel${qs ? `?${qs}` : ''}`);
   }
 }
 

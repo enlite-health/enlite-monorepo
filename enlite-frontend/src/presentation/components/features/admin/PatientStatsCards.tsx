@@ -21,14 +21,15 @@ function SkeletonCard(): JSX.Element {
   );
 }
 
-interface StatCardProps {
+export interface StatCardProps {
   label: string;
   value: number;
   icon: JSX.Element;
   testId: string;
 }
 
-function StatCard({ label, value, icon, testId }: StatCardProps): JSX.Element {
+/** Primary KPI card. Reused by the Fase 4 funnel strip (PatientFunnelSection). */
+export function StatCard({ label, value, icon, testId }: StatCardProps): JSX.Element {
   return (
     <div
       data-testid={testId}

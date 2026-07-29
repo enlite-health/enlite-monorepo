@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
+import { derivePatientSla } from '../domain/PatientSla';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
 
@@ -124,6 +125,15 @@ export interface PatientListRow {
   caseNumber: number | null;
   createdAt: Date;
   updatedAt: Date;
+  // ── SLA de inatividade (Fase 4, aditivo) ─────────────────────────────────
+  /** Instante em que o paciente entrou no status atual (ISO), ou null. */
+  stageEnteredAt: string | null;
+  /** Horas inteiras no estágio atual, ou null se sem âncora. */
+  hoursInStage: number | null;
+  /** Teto de horas do estágio, ou null quando o estágio não tem SLA. */
+  slaThresholdHours: number | null;
+  /** true quando há teto e hoursInStage o ultrapassa. */
+  slaBreached: boolean;
 }
 
 export interface PatientStatsRow {
@@ -190,7 +200,11 @@ export class PatientQueryRepository {
     params.push(filters.case_number ?? null);
     const caseNumberIdx = i++;
 
-    // $7 limit, $8 offset
+    // $7 country filter (null = todos os países)
+    params.push(filters.country ?? null);
+    const countryIdx = i++;
+
+    // $8 limit, $9 offset
     params.push(filters.limit);
     const limitIdx = i++;
     params.push(filters.offset);
@@ -231,6 +245,16 @@ export class PatientQueryRepository {
                                AS "caseNumber",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
+        -- SLA (Fase 4): quando o paciente entrou no status ATUAL. MAX(created_at)
+        -- do histórico para new_value = status atual; fallback = created_at do
+        -- paciente (legado sem histórico / status recém-atribuído).
+        COALESCE(
+          (SELECT MAX(psh.created_at)
+             FROM patient_status_history psh
+            WHERE psh.patient_id = p.id
+              AND psh.new_value = p.status),
+          p.created_at
+        )                      AS "stageEnteredAt",
         COUNT(*) OVER()        AS total_count
       FROM patients p
       WHERE
@@ -244,6 +268,7 @@ export class PatientQueryRepository {
         AND ($${dependencyLevelIdx}::text IS NULL OR p.dependency_level = $${dependencyLevelIdx})
         AND ($${caseNumberIdx}::text IS NULL
           OR CAST((${effectiveCaseNumber}) AS TEXT) ILIKE '%' || $${caseNumberIdx} || '%')
+        AND ($${countryIdx}::text IS NULL OR p.country = $${countryIdx})
         AND p.deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -256,31 +281,41 @@ export class PatientQueryRepository {
         ? parseInt(result.rows[0].total_count as string, 10)
         : 0;
 
-    const rows: PatientListRow[] = result.rows.map((row) => ({
-      id: row.id,
-      clickupTaskId: row.clickupTaskId,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      diagnosis: row.diagnosis,
-      dependencyLevel: row.dependencyLevel,
-      clinicalSpecialty: row.clinicalSpecialty,
-      serviceType: row.serviceType,
-      documentType: row.documentType,
-      documentNumber: row.documentNumber,
-      sex: row.sex,
-      status: row.status,
-      needsAttention: row.needsAttention,
-      attentionReasons: row.attentionReasons ?? [],
-      addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,
-      caseNumber: row.caseNumber != null ? parseInt(row.caseNumber as unknown as string, 10) : null,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    const now = new Date();
+    const rows: PatientListRow[] = result.rows.map((row) => {
+      const stageEnteredAt =
+        row.stageEnteredAt != null ? new Date(row.stageEnteredAt as string) : null;
+      const sla = derivePatientSla(row.status, stageEnteredAt, now);
+      return {
+        id: row.id,
+        clickupTaskId: row.clickupTaskId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        diagnosis: row.diagnosis,
+        dependencyLevel: row.dependencyLevel,
+        clinicalSpecialty: row.clinicalSpecialty,
+        serviceType: row.serviceType,
+        documentType: row.documentType,
+        documentNumber: row.documentNumber,
+        sex: row.sex,
+        status: row.status,
+        needsAttention: row.needsAttention,
+        attentionReasons: row.attentionReasons ?? [],
+        addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,
+        caseNumber: row.caseNumber != null ? parseInt(row.caseNumber as unknown as string, 10) : null,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        stageEnteredAt: sla.stageEnteredAt,
+        hoursInStage: sla.hoursInStage,
+        slaThresholdHours: sla.slaThresholdHours,
+        slaBreached: sla.slaBreached,
+      };
+    });
 
     return { rows, total };
   }
 
-  async stats(): Promise<PatientStatsRow> {
+  async stats(country?: 'AR' | 'BR'): Promise<PatientStatsRow> {
     const result = await this.pool.query<{
       total: string;
       complete: string;
@@ -301,7 +336,8 @@ export class PatientQueryRepository {
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int        AS created_last_7_days
       FROM patients
       WHERE deleted_at IS NULL
-    `);
+        AND ($1::text IS NULL OR country = $1)
+    `, [country ?? null]);
 
     const row = result.rows[0];
     return {

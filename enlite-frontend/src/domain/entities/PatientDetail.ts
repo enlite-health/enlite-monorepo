@@ -216,4 +216,26 @@ export interface PatientKanbanItem {
   caseNumber: number | null;
   dependencyLevel: string | null;
   status: string | null;
+  // Fase 4 — rastreabilidade / SLA (aditivo; opcional para não quebrar fixtures).
+  /** ISO string of when the patient entered the current status column. */
+  stageEnteredAt?: string | null;
+  /** How long the patient has sat in the current status, in hours. */
+  hoursInStage?: number | null;
+  /** True when hoursInStage crossed the configured SLA threshold. */
+  slaBreached?: boolean;
+  /** The SLA threshold (hours) that applies to the current status. */
+  slaThresholdHours?: number | null;
+}
+
+/**
+ * Fase 4 — funnel/traceability aggregate returned by
+ * GET /api/admin/patients/funnel?country=&from=&to=.
+ * The four headline stages plus the raw per-status counts.
+ */
+export interface PatientFunnelData {
+  solicitantes: number;
+  admision: number;
+  agendadas: number;
+  vacantes: number;
+  byStatus: Record<string, number>;
 }
