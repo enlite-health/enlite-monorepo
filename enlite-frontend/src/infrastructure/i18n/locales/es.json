@@ -39,6 +39,25 @@
       "iframeTitle": "Agenda de entrevista de admisión",
       "configureWarning": "Agenda en configuración: falta la URL real de la cita. Se muestra un marcador de posición.",
       "nativeNotImplemented": "La selección de horarios integrada estará disponible pronto."
+    },
+    "slots": {
+      "title": "Elegí un horario",
+      "subtitle": "Estos son los horarios disponibles para tu entrevista de admisión.",
+      "loading": "Buscando horarios disponibles…",
+      "empty": "No hay horarios disponibles por el momento. Te contactaremos para coordinar.",
+      "loadError": "No pudimos cargar los horarios. Intentá de nuevo.",
+      "retry": "Reintentar",
+      "slotTaken": "Ese horario acaba de ocuparse, elegí otro.",
+      "bookError": "No pudimos reservar el horario. Intentá de nuevo.",
+      "booking": "Reservando tu horario…"
+    },
+    "confirmation": {
+      "title": "¡Listo! Tu entrevista está reservada",
+      "hostLabel": "Con",
+      "datetimeLabel": "Fecha y hora",
+      "meetLabel": "Enlace de la videollamada",
+      "joinMeet": "Unirse a la videollamada",
+      "whatsapp": "Te enviamos un WhatsApp con la confirmación."
     }
   },
   "app": {

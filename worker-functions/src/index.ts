@@ -62,6 +62,11 @@ import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
+import { internalAuthMiddleware } from '@modules/notification';
+import { AdmissionSchedulingService } from '@modules/matching/application/AdmissionSchedulingService';
+import { AdmissionReminderService } from '@modules/matching/application/AdmissionReminderService';
+import { AdmissionReminderController } from '@modules/matching/interfaces/controllers/AdmissionReminderController';
+import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
 import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
@@ -228,7 +233,17 @@ app.post('/api/public/v1/leads', publicLeadsRateLimit, (req: Request, res: Respo
 });
 
 // Public B2C admission scheduling (multi-country AR + BR) — no staff auth, rate-limited.
-const admissionSchedulingController = new AdmissionSchedulingController();
+// Real notifier: immediate WhatsApp confirmation to the patient (direct Content
+// API, no outbox — the patient is not a worker) + a 30-min-before reminder via
+// Cloud Task. Injected in place of the default LoggingAdmissionNotifier.
+const admissionNotifier = new RealAdmissionNotifier(
+  twilioMessagingService,
+  new CloudTasksClient(),
+  DatabaseConnection.getInstance().getPool(),
+);
+const admissionSchedulingController = new AdmissionSchedulingController(
+  new AdmissionSchedulingService(undefined, admissionNotifier),
+);
 const admissionSlotsRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30, // read endpoint
@@ -416,6 +431,16 @@ const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService);
 app.use('/api/internal', createInternalRoutes(internalController));
+
+// Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
+// Kept on the app (not the notification router) to avoid a notification→matching
+// import; guarded by the same internalAuthMiddleware (X-Internal-Secret).
+const admissionReminderController = new AdmissionReminderController(
+  new AdmissionReminderService(twilioMessagingService, dbPool),
+);
+app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, (req: Request, res: Response) =>
+  admissionReminderController.handle(req, res),
+);
 
 // ========== Recruitment Health Dashboard ==========
 app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response) =>
