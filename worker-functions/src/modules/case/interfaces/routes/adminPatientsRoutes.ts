@@ -15,6 +15,9 @@ export function createAdminPatientsRoutes(
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
+  // test-flag e purge são admin-only (mais estrito que staff) — mesmo critério
+  // do equivalente em workers. São ferramentas do synthetic monitoring.
+  const adminOnly = authMiddleware.requireAdmin();
 
   // Static routes first (guard against future /:id capture)
   router.get('/patients/stats', staffOnly, (req: Request, res: Response) =>
@@ -69,6 +72,17 @@ export function createAdminPatientsRoutes(
   // POST /patients/:id/activate — approve → generate one draft vacancy per location
   router.post('/patients/:id/activate', staffOnly, (req: Request, res: Response) =>
     controller.activatePatient(req, res),
+  );
+
+  // ── Synthetic monitoring (e2e-prod) ────────────────────────────────────────
+  // Literais ANTES do PATCH dinâmico /:id/:section — senão 'test-flag' seria
+  // capturado como :section e barrado pelo whitelist.
+  router.patch('/patients/:id/test-flag', adminOnly, (req: Request, res: Response) =>
+    controller.updatePatientTestFlag(req, res),
+  );
+  // Purga só de paciente is_test (real → 409). Ver PatientTestFixtureService.
+  router.delete('/patients/:id', adminOnly, (req: Request, res: Response) =>
+    controller.purgeTestPatient(req, res),
   );
 
   // PATCH /patients/:id/:section — section-scoped partial edit (last: fully dynamic)

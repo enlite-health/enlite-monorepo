@@ -37,6 +37,27 @@ jest.mock('../../../infrastructure/PatientQueryRepository', () => ({
   })),
 }));
 
+// Mock PatientTestFixtureService — o controller só traduz resultado→HTTP;
+// a lógica da trava é testada em PatientTestFixtureService.test.ts.
+const mockSetTestFlag = jest.fn();
+const mockPurge = jest.fn();
+jest.mock('../../../application/PatientTestFixtureService', () => {
+  class NotATestPatientError extends Error {
+    readonly code = 'NOT_A_TEST_PATIENT';
+    constructor(id: string) {
+      super(`Patient ${id} is not marked as is_test — refusing to purge`);
+      this.name = 'NotATestPatientError';
+    }
+  }
+  return {
+    NotATestPatientError,
+    PatientTestFixtureService: jest.fn().mockImplementation(() => ({
+      setTestFlag: mockSetTestFlag,
+      purge: mockPurge,
+    })),
+  };
+});
+
 // Mock PatientVacanciesQueryHelper
 jest.mock('../../../infrastructure/PatientVacanciesQueryHelper', () => ({
   fetchPatientVacancies: (...args: unknown[]) => mockFetchPatientVacancies(...args),
@@ -410,5 +431,106 @@ describe('AdminPatientsController.listPatients — caseNumber', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
     });
+  });
+});
+
+// ─── test-flag / purge (synthetic monitoring) ─────────────────────────────────
+
+describe('AdminPatientsController — purge de paciente sintético', () => {
+  beforeEach(() => {
+    mockPurge.mockReset();
+    mockSetTestFlag.mockReset();
+  });
+
+  it('409 quando o paciente NÃO é de teste (a trava chega intacta no HTTP)', async () => {
+    const { NotATestPatientError } = jest.requireMock('../../../application/PatientTestFixtureService');
+    mockPurge.mockRejectedValue(new NotATestPatientError(PATIENT_ID));
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+
+    await controller.purgeTestPatient(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    const body = (res.status as jest.Mock).mock.results[0].value.json.mock.calls[0][0];
+    expect(body).toMatchObject({ success: false, code: 'NOT_A_TEST_PATIENT' });
+  });
+
+  it('404 quando o paciente não existe', async () => {
+    mockPurge.mockResolvedValue(null);
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+
+    await controller.purgeTestPatient(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('200 devolvendo a evidência do que foi limpo', async () => {
+    const evidencia = {
+      patientId: PATIENT_ID,
+      appointmentsCancelled: 1,
+      calendarEventsDeleted: 1,
+      calendarEventsFailed: 0,
+      vacanciesDeleted: 0,
+    };
+    mockPurge.mockResolvedValue(evidencia);
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+
+    await controller.purgeTestPatient(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const body = (res.status as jest.Mock).mock.results[0].value.json.mock.calls[0][0];
+    expect(body).toEqual({ success: true, data: evidencia });
+  });
+
+  it('400 quando o id não é UUID (não chega no serviço)', async () => {
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: 'nao-e-uuid' });
+
+    await controller.purgeTestPatient(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockPurge).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminPatientsController — test-flag', () => {
+  beforeEach(() => {
+    mockSetTestFlag.mockReset();
+  });
+
+  it('200 e devolve a marca gravada', async () => {
+    mockSetTestFlag.mockResolvedValue(true);
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+    (req as unknown as { body: unknown }).body = { isTest: true };
+
+    await controller.updatePatientTestFlag(req, res);
+
+    expect(mockSetTestFlag).toHaveBeenCalledWith(PATIENT_ID, true);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('400 quando o body não traz isTest booleano', async () => {
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+    (req as unknown as { body: unknown }).body = { isTest: 'sim' };
+
+    await controller.updatePatientTestFlag(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockSetTestFlag).not.toHaveBeenCalled();
+  });
+
+  it('404 quando o paciente não existe', async () => {
+    mockSetTestFlag.mockResolvedValue(null);
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+    (req as unknown as { body: unknown }).body = { isTest: true };
+
+    await controller.updatePatientTestFlag(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 });
