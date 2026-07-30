@@ -42,6 +42,14 @@ export type {
 } from './application/PatientService';
 export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
+export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
+export type { CreatePatientInput } from './application/CreatePatientUseCase';
+export {
+  ActivatePatientUseCase,
+  PatientNotFoundError,
+  NoActiveAddressError,
+} from './application/ActivatePatientUseCase';
+export type { ActivatePatientResult } from './application/ActivatePatientUseCase';
 
 // Infrastructure (exposed for explicit consumers like backfill scripts)
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';
@@ -62,3 +70,15 @@ export type {
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
 export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
+export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
+
+// Application — public intake (Task 1)
+export { CreateLeadUseCase } from './application/CreateLeadUseCase';
+export type { CreateLeadResult } from './application/CreateLeadUseCase';
+export {
+  publicLeadSchema,
+  LEAD_SERVICE_SLUGS,
+  LEAD_SERVICE_VALUES,
+  LEAD_SERVICE_TO_PROFESSION,
+} from './interfaces/validators/publicLeadSchema';
+export type { PublicLeadBody, LeadServiceSlug } from './interfaces/validators/publicLeadSchema';

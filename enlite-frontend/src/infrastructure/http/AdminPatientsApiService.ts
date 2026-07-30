@@ -6,7 +6,32 @@
  * Callers use `AdminApiService` — it delegates here transparently.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { PatientDetail, PatientVacancySummary } from '@domain/entities/PatientDetail';
+import type {
+  PatientDetail,
+  PatientVacancySummary,
+  CreatePatientPayload,
+  CreatePatientResult,
+  PatientSectionName,
+  PatientSectionPayload,
+  UpdatePatientStatusResult,
+  ActivatePatientResult,
+  PatientKanbanItem,
+  PatientFunnelData,
+} from '@domain/entities/PatientDetail';
+
+/**
+ * Error thrown by the pipeline mutations (section edit / status / activate) that
+ * carries the HTTP status so callers can branch on it — e.g. 422 (no active
+ * address) shows a specific inline message instead of the generic one.
+ */
+export class PatientApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'PatientApiError';
+    this.status = status;
+  }
+}
 
 export interface PatientListFilters {
   search?: string;
@@ -15,6 +40,8 @@ export interface PatientListFilters {
   clinical_specialty?: string;
   dependency_level?: string;
   case_number?: string;
+  /** Fase 4 — country scope: 'AR' | 'BR' (omit for all). */
+  country?: string;
   limit?: string;
   offset?: string;
 }
@@ -93,6 +120,114 @@ export class AdminPatientsApiServiceClass {
 
   async getPatientVacancies(patientId: string): Promise<PatientVacancySummary[]> {
     return this.request<PatientVacancySummary[]>('GET', `/api/admin/patients/${patientId}/vacancies`);
+  }
+
+  /**
+   * POST /api/admin/patients — manual creation of a native patient.
+   * The base `request` helper is GET-only, so this issues its own POST with the
+   * JSON body. Surfaces the backend's clear 400 message (e.g. contact-channel
+   * invariant) as the thrown Error, so the modal can show it inline.
+   */
+  async createPatient(payload: CreatePatientPayload): Promise<CreatePatientResult> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}/api/admin/patients`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(`Erro ao conectar ao servidor (HTTP ${response.status})`);
+    }
+    const json: ApiResponse<CreatePatientResult> = await response.json();
+    if (!json.success) {
+      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+    }
+    return (json as ApiSuccessResponse<CreatePatientResult>).data;
+  }
+
+  /**
+   * Shared writer for the pipeline mutations. The base `request` helper is
+   * GET-only, so this issues its own method+body and throws a `PatientApiError`
+   * (carrying the HTTP status) on failure so callers can branch on 422/404.
+   */
+  private async writeJson<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new PatientApiError(`Erro ao conectar ao servidor (HTTP ${response.status})`, response.status);
+    }
+    const json: ApiResponse<T> = await response.json();
+    if (!json.success) {
+      throw new PatientApiError((json as ApiErrorResponse).error || `HTTP ${response.status}`, response.status);
+    }
+    return (json as ApiSuccessResponse<T>).data;
+  }
+
+  /** PATCH /api/admin/patients/:id/:section — section-scoped partial edit. */
+  async updatePatientSection(
+    id: string,
+    section: PatientSectionName,
+    data: PatientSectionPayload,
+  ): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${id}/${section}`, data);
+  }
+
+  /** PUT /api/admin/patients/:id/status — kanban lifecycle move. */
+  async updatePatientStatus(id: string, status: string): Promise<UpdatePatientStatusResult> {
+    return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, { status });
+  }
+
+  /**
+   * POST /api/admin/patients/:id/activate — approve → one draft vacancy per
+   * active location + move to ACTIVE. Idempotent (already-ACTIVE → []).
+   * Throws PatientApiError with status 422 when the patient has no active address.
+   */
+  async activatePatient(id: string): Promise<ActivatePatientResult> {
+    return this.writeJson<ActivatePatientResult>('POST', `/api/admin/patients/${id}/activate`);
+  }
+
+  /**
+   * Fetch a large page of patients for the kanban board. Reuses the same list
+   * endpoint as the table; the board groups the rows by status client-side.
+   * Fase 4: forwards the optional `country` scope and maps the additive SLA
+   * fields (stageEnteredAt/hoursInStage/slaBreached/slaThresholdHours).
+   */
+  async listPatientsForKanban(country?: string): Promise<PatientKanbanItem[]> {
+    const { data } = await this.listPatients({ limit: '500', offset: '0', country });
+    return (data ?? []).map((p: any): PatientKanbanItem => ({
+      id: p.id,
+      firstName: p.firstName ?? null,
+      lastName: p.lastName ?? null,
+      caseNumber: p.caseNumber ?? null,
+      dependencyLevel: p.dependencyLevel ?? null,
+      status: p.status ?? null,
+      stageEnteredAt: p.stageEnteredAt ?? null,
+      hoursInStage: p.hoursInStage ?? null,
+      slaBreached: p.slaBreached ?? false,
+      slaThresholdHours: p.slaThresholdHours ?? null,
+    }));
+  }
+
+  /**
+   * Fase 4 — GET /api/admin/patients/funnel. Traceability aggregate scoped by
+   * country and date window. `request` unwraps `{ success, data }`.
+   */
+  async getPatientFunnel(params?: {
+    country?: string;
+    from?: string;
+    to?: string;
+  }): Promise<PatientFunnelData> {
+    const clean = Object.fromEntries(
+      Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== ''),
+    );
+    const qs = new URLSearchParams(clean as Record<string, string>).toString();
+    return this.request<PatientFunnelData>('GET', `/api/admin/patients/funnel${qs ? `?${qs}` : ''}`);
   }
 }
 

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'fs';
+import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -6,7 +8,7 @@ export const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z0-9]+-[a-z0-9]
 
 const METADATA_BASE = 'http://metadata.google.internal/computeMetadata/v1';
 const METADATA_HEADERS = { 'Metadata-Flavor': 'Google' };
-const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
 const SEARCH_BATCH_SIZE = 5;
 
 // ─── Internal types ───────────────────────────────────────────────────────────
@@ -36,10 +38,71 @@ export function extractMeetingCode(link: string): string {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+interface ServiceAccountKey {
+  client_email?: string;
+  private_key?: string;
+}
+
+/**
+ * Caminho LOCAL (dev): se GOOGLE_APPLICATION_CREDENTIALS aponta pra um arquivo de
+ * chave de SA com private_key, assina o JWT DWD localmente (RS256) e troca por
+ * access_token. Em Cloud Run essa env NÃO está setada → retorna null e o
+ * chamador cai no caminho metadata+signJwt (keyless). NUNCA usado em prod.
+ */
+async function getLocalDwdToken(subject: string): Promise<string | null> {
+  const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!keyPath || !existsSync(keyPath)) return null;
+
+  let key: ServiceAccountKey;
+  try {
+    key = JSON.parse(readFileSync(keyPath, 'utf8')) as ServiceAccountKey;
+  } catch (err: unknown) {
+    console.warn('[GoogleCalendarService] could not parse GOOGLE_APPLICATION_CREDENTIALS:', err instanceof Error ? err.message : err);
+    return null;
+  }
+  if (!key.private_key || !key.client_email) return null;
+
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const assertion = jwt.sign(
+      {
+        iss: key.client_email,
+        sub: subject,
+        scope: CALENDAR_SCOPE,
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+      },
+      key.private_key,
+      { algorithm: 'RS256' },
+    );
+
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion,
+      }),
+    });
+    if (!tokenRes.ok) {
+      const detail = await tokenRes.text().catch(() => '');
+      console.warn(`[GoogleCalendarService] local token exchange error ${tokenRes.status}: ${detail}`);
+      return null;
+    }
+    const { access_token } = (await tokenRes.json()) as { access_token: string };
+    return access_token ?? null;
+  } catch (err: unknown) {
+    console.warn('[GoogleCalendarService] local DWD sign error:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 /**
  * Obtém access token impersonando via signJwt (Domain-Wide Delegation).
  * No Cloud Run, GoogleAuth ignora clientOptions.subject — por isso usamos
  * metadata server → signJwt → token exchange.
+ * LOCAL (dev): se GOOGLE_APPLICATION_CREDENTIALS existe, assina o JWT localmente.
  */
 export async function getAccessToken(subjectEmail: string, fallbackEmail: string): Promise<string | null> {
   const subject = subjectEmail || fallbackEmail;
@@ -47,6 +110,11 @@ export async function getAccessToken(subjectEmail: string, fallbackEmail: string
     console.warn('[GoogleCalendarService] GOOGLE_CALENDAR_IMPERSONATE_EMAIL not set');
     return null;
   }
+
+  // Caminho LOCAL (dev) — só dispara se a chave de SA estiver presente.
+  const localToken = await getLocalDwdToken(subject);
+  if (localToken) return localToken;
+
   try {
     const [saEmailRes, saTokenRes] = await Promise.all([
       fetch(`${METADATA_BASE}/instance/service-accounts/default/email`, { headers: METADATA_HEADERS }),

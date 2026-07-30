@@ -1,4 +1,69 @@
 {
+  "admission": {
+    "title": "Solicite sua admissão",
+    "subtitle": "Preencha estes dados e agendamos sua entrevista de admissão. Você não precisa criar uma conta.",
+    "services": {
+      "cuidadores": "Cuidadores",
+      "acompanantes_terapeuticos": "Acompanhantes Terapêuticos",
+      "psicologos": "Psicólogos"
+    },
+    "form": {
+      "serviceType": {
+        "label": "Qual serviço você precisa?",
+        "placeholder": "Escolha um serviço",
+        "required": "Selecione o serviço que precisa"
+      },
+      "requesterType": {
+        "label": "É para você ou para outra pessoa?",
+        "patient": "Para mim",
+        "responsible": "Para outra pessoa",
+        "required": "Indique para quem é"
+      },
+      "email": {
+        "label": "E-mail",
+        "placeholder": "seuemail@exemplo.com",
+        "required": "Informe seu e-mail",
+        "invalid": "Informe um e-mail válido"
+      },
+      "phone": {
+        "label": "Telefone",
+        "placeholder": "+54 9 11 1234 5678",
+        "required": "Informe seu telefone"
+      },
+      "consent": {
+        "label": "Concordo que a EnLite entre em contato por WhatsApp ou email sobre minha solicitação de admissão.",
+        "required": "Você precisa aceitar para continuar"
+      },
+      "submit": "Enviar solicitação",
+      "submitError": "Não conseguimos enviar sua solicitação. Tente novamente."
+    },
+    "scheduling": {
+      "title": "Agende sua entrevista",
+      "subtitle": "Escolha um horário disponível para sua entrevista de admissão.",
+      "iframeTitle": "Agenda da entrevista de admissão",
+      "configureWarning": "Agenda em configuração: falta a URL real da consulta. Um placeholder está sendo exibido.",
+      "nativeNotImplemented": "A seleção de horários integrada estará disponível em breve."
+    },
+    "slots": {
+      "title": "Escolha um horário",
+      "subtitle": "Estes são os horários disponíveis para sua entrevista de admissão.",
+      "loading": "Buscando horários disponíveis…",
+      "empty": "Não há horários disponíveis no momento. Entraremos em contato para agendar.",
+      "loadError": "Não conseguimos carregar os horários. Tente novamente.",
+      "retry": "Tentar de novo",
+      "slotTaken": "Esse horário acabou de ser ocupado, escolha outro.",
+      "bookError": "Não conseguimos reservar o horário. Tente novamente.",
+      "booking": "Reservando seu horário…"
+    },
+    "confirmation": {
+      "title": "Pronto! Sua entrevista está agendada",
+      "hostLabel": "Com",
+      "datetimeLabel": "Data e hora",
+      "meetLabel": "Link da videochamada",
+      "joinMeet": "Entrar na videochamada",
+      "whatsapp": "Enviamos um WhatsApp com a confirmação."
+    }
+  },
   "app": {
     "newVersion": {
       "message": "Há uma nova versão disponível. Recarregue a página para aplicar as melhorias.",
@@ -2220,6 +2285,94 @@
     "patients": {
       "title": "Pacientes",
       "listTitle": "Lista de Pacientes",
+      "activate": {
+        "button": "Ativar paciente",
+        "confirmTitle": "Ativar paciente",
+        "confirmBody": "Será gerada uma vaga rascunho por localização ativa e o paciente passará a Ativo. Confirmar?",
+        "confirm": "Ativar",
+        "cancel": "Cancelar",
+        "successToast": "Paciente ativado — {{count}} vagas rascunho criadas",
+        "noAddress": "Adicione ao menos uma localização antes de ativar.",
+        "error": "Não foi possível ativar o paciente"
+      },
+      "editDrawer": {
+        "generalTitle": "Editar informações gerais",
+        "clinicalTitle": "Editar diagnóstico",
+        "supportTitle": "Editar familiares",
+        "serviceTitle": "Editar serviços contratados",
+        "save": "Salvar",
+        "close": "Fechar",
+        "unset": "—",
+        "saveError": "Erro ao salvar",
+        "deviceType": "Dispositivo",
+        "hasConsent": "Consentimento",
+        "responsible": "Familiar",
+        "addResponsible": "Adicionar familiar",
+        "removeResponsible": "Remover",
+        "isPrimary": "Contato principal",
+        "firstName": "Nome",
+        "lastName": "Sobrenome",
+        "relationship": "Parentesco",
+        "phone": "Telefone",
+        "email": "E-mail"
+      },
+      "kanban": {
+        "title": "Pacientes — Kanban",
+        "toggleList": "Lista",
+        "toggleKanban": "Kanban",
+        "caseNumber": "Caso",
+        "noName": "Sem nome",
+        "moveError": "Não foi possível mover o paciente",
+        "columns": {
+          "SOLICITANTE": "Solicitante",
+          "ADMISSION": "Admissão",
+          "PENDING_ADMISSION": "Aguardando Ativação",
+          "ACTIVE": "Ativo"
+        }
+      },
+      "countryLabel": "País",
+      "countryOptions": {
+        "all": "Todos os países",
+        "AR": "Argentina",
+        "BR": "Brasil"
+      },
+      "sla": {
+        "inStage": "parado há {{hours}}h",
+        "breached": "⚠ SLA · {{hours}}h"
+      },
+      "funnel": {
+        "title": "Funil de pacientes",
+        "solicitantes": "Solicitantes",
+        "admision": "Admissão",
+        "agendadas": "Agendadas",
+        "vacantes": "Vagas",
+        "conversion": "{{from}} → {{to}}: {{rate}}%",
+        "error": "Não foi possível carregar as métricas",
+        "period": {
+          "7": "Últimos 7 dias",
+          "30": "Últimos 30 dias",
+          "90": "Últimos 90 dias"
+        }
+      },
+      "create": {
+        "new": "Criar novo",
+        "title": "Novo paciente",
+        "save": "Salvar",
+        "close": "Fechar",
+        "unset": "—",
+        "firstName": "Nome",
+        "lastName": "Sobrenome",
+        "phoneWhatsapp": "WhatsApp",
+        "contactEmail": "E-mail de contato",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número do documento",
+        "coverageSection": "Cobertura médica",
+        "healthInsuranceName": "Nome da cobertura",
+        "healthInsuranceMemberId": "Número de afiliado",
+        "serviceSection": "Serviço requerido",
+        "serviceType": "Tipo de serviço",
+        "saveError": "Erro ao criar o paciente"
+      },
       "errorLoading": "Erro ao carregar pacientes",
       "noPatients": "Nenhum paciente encontrado",
       "searchLabel": "Buscar",
