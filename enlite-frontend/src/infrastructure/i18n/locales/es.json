@@ -596,7 +596,7 @@
         "completos": "Completos",
         "completosSub": "Registros listos para usar",
         "alocados": "Asignados",
-        "alocadosSub": "Prestadores ya en un caso",
+        "alocadosSub": "{{activos}} activos · {{guardias}} cubriendo guardias",
         "incompletos": "Incompletos",
         "incompletosSub": "Faltan datos o documentos",
         "nuevosMes": "Nuevos del mes",

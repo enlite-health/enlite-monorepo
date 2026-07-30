@@ -78,7 +78,9 @@ export const managementDashboardSchema = z.object({
   cadastros: z.object({
     leads: nonNegInt, // total workers deduped
     completos: nonNegInt, // REGISTERED
-    alocados: nonNegInt, // distinct workers com WJA SELECTED
+    alocados: nonNegInt, // EM UM CASO no Ana Care = Activo + Cubriendo guardias (NÃO o funil). Ver D53.
+    alocadosActivos: nonNegInt, // ana_care_status = 'Activo' (ocupado, atendendo paciente)
+    alocadosCubriendoGuardias: nonNegInt, // ana_care_status = 'Cubriendo guardias' (disponível, cobrindo plantão)
     incompletos: nonNegInt, // INCOMPLETE_REGISTER
     nuevosCompletosMes: nonNegInt, // REGISTERED criados no mês corrente
   }),

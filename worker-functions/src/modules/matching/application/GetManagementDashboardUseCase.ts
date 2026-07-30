@@ -54,10 +54,21 @@ export class GetManagementDashboardUseCase {
              FROM worker_job_applications
             GROUP BY application_funnel_stage`,
         ),
-        this.db.query<{ alocados: number }>(
-          `SELECT COUNT(DISTINCT worker_id)::int AS alocados
-             FROM worker_job_applications
-            WHERE application_funnel_stage = 'SELECTED'`,
+        this.db.query<{ activos: number; cubriendo_guardias: number }>(
+          // "Alocados" = prestadores EM UM CASO segundo o Ana Care (workers.ana_care_status),
+          // não o funil. O funil ('SELECTED') morre antes da alocação real — overlap ZERO
+          // com quem atende paciente (verificado prod 22/07). Ver decisoes.md D53.
+          // Composição explícita: 'Activo' = ocupado num paciente; 'Cubriendo guardias' =
+          // disponível cobrindo plantão (migração 049). O card mostra os dois separados.
+          // ⚠️ ana_care_status é FOTO de import — NÃO sincroniza ao vivo (zero writers inbound;
+          // a integração AnaCare é outbound-only). Leitura viva depende do conector inbound
+          // Ana Care (ClickUp 86ajgv39a, 31/07).
+          `SELECT
+             COUNT(*) FILTER (WHERE ana_care_status = 'Activo')::int             AS activos,
+             COUNT(*) FILTER (WHERE ana_care_status = 'Cubriendo guardias')::int AS cubriendo_guardias
+             FROM workers
+            WHERE merged_into_id IS NULL
+              AND ana_care_status IN ('Activo', 'Cubriendo guardias')`,
         ),
         this.db.query<{ bloqueados: number }>(
           `SELECT COUNT(*)::int AS bloqueados
@@ -77,7 +88,9 @@ export class GetManagementDashboardUseCase {
 
     const patient = patientRows.rows[0] ?? { activos: 0 };
     const worker = workerRow.rows[0] ?? { leads: 0, completos: 0, incompletos: 0, nuevos: 0 };
-    const allocated = allocatedRow.rows[0]?.alocados ?? 0;
+    const alocadosActivos = allocatedRow.rows[0]?.activos ?? 0;
+    const alocadosCubriendoGuardias = allocatedRow.rows[0]?.cubriendo_guardias ?? 0;
+    const allocated = alocadosActivos + alocadosCubriendoGuardias;
     const blocked = blockedRow.rows[0]?.bloqueados ?? 0;
     const encuadre = encuadreRow.rows[0]?.agendados ?? 0;
 
@@ -127,6 +140,8 @@ export class GetManagementDashboardUseCase {
         leads: worker.leads,
         completos: worker.completos,
         alocados: allocated,
+        alocadosActivos,
+        alocadosCubriendoGuardias,
         incompletos: worker.incompletos,
         nuevosCompletosMes: worker.nuevos,
       },

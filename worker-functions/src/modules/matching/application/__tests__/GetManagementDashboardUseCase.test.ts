@@ -7,7 +7,7 @@ import { GetManagementDashboardUseCase } from '../GetManagementDashboardUseCase'
  *   3. patients activos              → rows [{activos}]
  *   4. workers agregados             → rows [{leads,completos,incompletos,nuevos}]
  *   5. funnel por etapa              → rows [{k,count}]
- *   6. alocados (distinct SELECTED)  → rows [{alocados}]
+ *   6. alocados (ana_care_status)    → rows [{activos, cubriendo_guardias}]
  *   7. blocked registration_incompl  → rows [{bloqueados}]
  *   8. encuadres semana              → rows [{agendados}]
  */
@@ -26,7 +26,7 @@ function mockDb(
   patient: { activos: number },
   worker: { leads: number; completos: number; incompletos: number; nuevos: number },
   funnel: Array<{ k: string; count: number }>,
-  alocados: number,
+  alocados: { activos: number; cubriendoGuardias: number },
   bloqueados: number,
   agendados: number,
 ): { query: jest.Mock } {
@@ -37,7 +37,7 @@ function mockDb(
     .mockResolvedValueOnce({ rows: [patient] })
     .mockResolvedValueOnce({ rows: [worker] })
     .mockResolvedValueOnce({ rows: funnel })
-    .mockResolvedValueOnce({ rows: [{ alocados }] })
+    .mockResolvedValueOnce({ rows: [{ activos: alocados.activos, cubriendo_guardias: alocados.cubriendoGuardias }] })
     .mockResolvedValueOnce({ rows: [{ bloqueados }] })
     .mockResolvedValueOnce({ rows: [{ agendados }] });
   return { query };
@@ -95,7 +95,9 @@ describe('GetManagementDashboardUseCase', () => {
         { k: 'SELECTED', count: 2 },
         { k: 'REJECTED', count: 2498 },
       ],
-      2,
+      // alocados vem do ana_care_status (7 Activo + 3 Cubriendo guardias = 10),
+      // DESACOPLADO do funil SELECTED (=2 acima). Prova que a fonte mudou.
+      { activos: 7, cubriendoGuardias: 3 },
       405,
       0,
     );
@@ -140,7 +142,9 @@ describe('GetManagementDashboardUseCase', () => {
       cadastros: {
         leads: 6882,
         completos: 250,
-        alocados: 2,
+        alocados: 10, // 7 Activo + 3 Cubriendo guardias — NÃO o funil SELECTED (=2)
+        alocadosActivos: 7,
+        alocadosCubriendoGuardias: 3,
         incompletos: 6632,
         nuevosCompletosMes: 14,
       },
@@ -149,7 +153,16 @@ describe('GetManagementDashboardUseCase', () => {
   });
 
   it('trata status/etapas ausentes como zero (sem chaves parciais)', async () => {
-    const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], 0, 0, 0);
+    const db = mockDb(
+      [],
+      [],
+      { activos: 0 },
+      { leads: 0, completos: 0, incompletos: 0, nuevos: 0 },
+      [],
+      { activos: 0, cubriendoGuardias: 0 },
+      0,
+      0,
+    );
 
     const useCase = new GetManagementDashboardUseCase(db as never);
     const result = await useCase.execute();
@@ -186,6 +199,8 @@ describe('GetManagementDashboardUseCase', () => {
     expect(result.bigNumbers.equiposArmados).toBe(0);
     expect(result.bigNumbers.pacientesActivos).toBe(0);
     expect(result.cadastros.alocados).toBe(0);
+    expect(result.cadastros.alocadosActivos).toBe(0);
+    expect(result.cadastros.alocadosCubriendoGuardias).toBe(0);
     expect(result.encuadres.agendadosEstaSemana).toBe(0);
   });
 
@@ -196,7 +211,7 @@ describe('GetManagementDashboardUseCase', () => {
       { activos: 0 },
       { leads: 0, completos: 0, incompletos: 0, nuevos: 0 },
       [],
-      0,
+      { activos: 0, cubriendoGuardias: 0 },
       0,
       0,
     );

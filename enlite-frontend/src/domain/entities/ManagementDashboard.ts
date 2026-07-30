@@ -48,8 +48,11 @@ export interface ManagementDashboardData {
   };
   cadastros: {
     leads: number;
-    completos: number;
+    /** EM UM CASO no Ana Care = Activo + Cubriendo guardias (não o funil). */
     alocados: number;
+    alocadosActivos: number;
+    alocadosCubriendoGuardias: number;
+    completos: number;
     incompletos: number;
     nuevosCompletosMes: number;
   };

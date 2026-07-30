@@ -596,7 +596,7 @@
         "completos": "Completos",
         "completosSub": "Cadastros prontos para uso",
         "alocados": "Alocados",
-        "alocadosSub": "Prestadores já em um caso",
+        "alocadosSub": "{{activos}} ativos · {{guardias}} cobrindo plantões",
         "incompletos": "Incompletos",
         "incompletosSub": "Faltam dados ou documentos",
         "nuevosMes": "Novos do mês",
