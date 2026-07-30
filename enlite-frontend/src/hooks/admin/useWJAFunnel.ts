@@ -104,12 +104,15 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     targetStage: string,
     rejectionReasonCategory?: string,
     role?: EncuadreRole,
+    /** Data/hora da entrevista ao agendar. Ausente = "ainda não sei" (válido). */
+    schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
   ): Promise<MoveEncuadreError | null> => {
     try {
       await AdminApiService.moveEncuadre(encuadreId, {
         targetStage,
         rejectionReasonCategory,
         role,
+        ...schedule,
       });
       await fetchFunnel();
       return null;

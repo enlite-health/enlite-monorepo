@@ -563,7 +563,24 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     expect(screen.queryByTestId('move-to-button')).not.toBeInTheDocument();
   });
 
-  it('escolher um destino chama onMove(encuadreId, targetStage)', () => {
+  it('escolher um destino sem pergunta extra chama onMove(encuadreId, targetStage)', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-INVITED'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED');
+  });
+
+  /**
+   * O menu não pode ser a porta dos fundos: se só o arrasto pedisse a data, mover pelo
+   * menu gravaria card agendado sem QUANDO — que é o problema que a captura conserta.
+   */
+  it('mover para CONFIRMED pelo menu abre o modal de data antes de chamar onMove', () => {
     const onMove = vi.fn(async () => null);
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
@@ -573,7 +590,42 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     fireEvent.click(screen.getByTestId('move-to-button'));
     fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
 
-    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED');
+    expect(screen.getByTestId('interview-schedule-modal')).toBeInTheDocument();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('"ainda não sei" no modal move para CONFIRMED sem data', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    fireEvent.click(screen.getByTestId('interview-schedule-unknown'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, undefined);
+  });
+
+  it('confirmar data no modal repassa o agendamento para onMove', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    fireEvent.change(screen.getByTestId('interview-date-input'), { target: { value: '2026-08-05' } });
+    fireEvent.change(screen.getByTestId('interview-time-input'), { target: { value: '14:30' } });
+    fireEvent.click(screen.getByTestId('interview-schedule-confirm'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, {
+      interviewDate: '2026-08-05',
+      interviewTime: '14:30',
+      interviewMeetLink: undefined,
+    });
   });
 
   it('mover para SELECTED abre o modal de papel antes de chamar onMove', () => {

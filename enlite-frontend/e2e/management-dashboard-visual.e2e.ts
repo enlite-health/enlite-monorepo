@@ -62,6 +62,28 @@ const MOCK_DASHBOARD = {
     completosEsperandoAgendamiento: 2387,
     profesionalesBloqueados: 6632,
   },
+  // Funil por PRESTADOR (30/07/2026): a tela conta pessoas, não cards. Duas vistas —
+  // a consolidada fecha com o total, a por-etapa não (pessoa em mais de uma coluna).
+  funnelPorPrestador: {
+    total: 2576,
+    recorte: 'vagas-vivas',
+    bloqueados: 355,
+    porEtapa: {
+      somavel: false,
+      colunas: {
+        INVITED: 466, INICIADO: 182, PRE_SCREENING: 49, IN_PROGRESS: 1347,
+        COMPLETED: 604, CONFIRMED: 27, SELECTED: 10, REJECTED: 626,
+      },
+    },
+    consolidado: {
+      somavel: true,
+      colunas: {
+        INVITED: 303, INICIADO: 84, PRE_SCREENING: 23, IN_PROGRESS: 1173,
+        COMPLETED: 585, CONFIRMED: 27, SELECTED: 10, REJECTED: 371,
+      },
+    },
+  },
+  // Legado (por candidatura), mantido por uma release para comparação lado a lado.
   funnel: {
     invitados: 3435,
     bloqueados: 405,
@@ -71,11 +93,13 @@ const MOCK_DASHBOARD = {
     seleccionados: 2,
     rechazados: 2498,
   },
-  encuadres: { agendadosEstaSemana: 7 },
+  encuadres: { agendadosEstaSemana: 7, semDataRegistrada: 36 },
   cadastros: {
     leads: 6882,
     completos: 250,
     alocados: 2,
+    alocadosActivos: 2,
+    alocadosCubriendoGuardias: 0,
     incompletos: 6632,
     nuevosCompletosMes: 14,
   },
@@ -227,7 +251,10 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20000 });
     await expect(page.getByTestId('mgmt-big-numbers')).toBeVisible();
-    await expect(page.getByTestId('mgmt-funnel-invitados')).toContainText('3435');
+    // O funil passou a contar PESSOAS: os cards por etapa crua (mgmt-funnel-invitados)
+    // deram lugar às duas vistas por prestador.
+    await expect(page.getByTestId('mgmt-funnel-consolidado-INVITED')).toContainText('303');
+    await expect(page.getByTestId('mgmt-funnel-por-etapa-INVITED')).toContainText('466');
     await expect(page.getByTestId('mgmt-prioridades')).toContainText('6632');
     // Seção Equipe Armada com números reais + classificação honesta.
     await expect(page.getByTestId('mgmt-equipo-armada')).toBeVisible();

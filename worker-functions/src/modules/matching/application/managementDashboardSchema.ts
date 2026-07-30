@@ -12,6 +12,23 @@ import { z } from 'zod';
 const nonNegInt = z.number().int().nonnegative();
 const nonNegNumber = z.number().nonnegative();
 
+/**
+ * Contagem por coluna do Kanban. As chaves são os ids de coluna de
+ * `deriveKanbanColumn` (domain/kanbanColumn.ts) — deliberadamente NÃO rótulos
+ * traduzidos: o id é o contrato, a tradução é da tela. BLOQUEADO fica de fora
+ * (vem de worker_blocked_applications, não tem WJA).
+ */
+const funnelColumnCountsSchema = z.object({
+  INVITED: nonNegInt,
+  INICIADO: nonNegInt,
+  PRE_SCREENING: nonNegInt,
+  IN_PROGRESS: nonNegInt,
+  COMPLETED: nonNegInt,
+  CONFIRMED: nonNegInt,
+  SELECTED: nonNegInt,
+  REJECTED: nonNegInt,
+});
+
 export const managementDashboardSchema = z.object({
   /** Big numbers operacionais. */
   bigNumbers: z.object({
@@ -60,7 +77,44 @@ export const managementDashboardSchema = z.object({
     /** workers.status = 'INCOMPLETE_REGISTER' (deduped). */
     profesionalesBloqueados: nonNegInt,
   }),
-  /** Totalização do funil (postulações por etapa). */
+  /**
+   * Funil contado por PRESTADOR (pedido do Diego, 30/07/2026) e recortado à
+   * operação viva. Chaves = colunas do Kanban (mesmo SSOT `deriveKanbanColumn`),
+   * pra que painel e board não possam divergir.
+   *
+   * `somavel` viaja no PAYLOAD, não só no texto da tela: o Greenhouse documenta a
+   * não-somabilidade em página de ajuda e quem exporta soma assim mesmo. Aqui todo
+   * consumidor (tela, export, Sol) herda o aviso junto com o número.
+   */
+  funnelPorPrestador: z.object({
+    /** Prestadores distintos no recorte. */
+    total: nonNegInt,
+    /** Recorte aplicado — explícito para quem consome o número fora da tela. */
+    recorte: z.literal('vagas-vivas'),
+    /**
+     * Pessoas com TENTATIVA barrada pelo gate de cadastro incompleto, em vaga viva.
+     * Fica FORA das colunas de propósito: tentativa bloqueada não tem candidatura
+     * (`worker_blocked_applications`), então somá-la às colunas quebraria a invariante
+     * "consolidado soma == total". É a coluna BLOQUEADO do Kanban.
+     */
+    bloqueados: nonNegInt,
+    /** Prestadores distintos por coluna; um prestador pode estar em várias. */
+    porEtapa: z.object({
+      somavel: z.literal(false),
+      colunas: funnelColumnCountsSchema,
+    }),
+    /** Cada prestador uma vez, na coluna mais avançada. Soma == total. */
+    consolidado: z.object({
+      somavel: z.literal(true),
+      colunas: funnelColumnCountsSchema,
+    }),
+  }),
+  /**
+   * Totalização do funil por CANDIDATURA, sem recorte de vaga.
+   * @deprecated LEGADO — conta card (não pessoa) e inclui vaga apagada/rascunho.
+   * Mantido por uma release para comparação lado a lado; a tela já usa
+   * `funnelPorPrestador`. Remover na change seguinte.
+   */
   funnel: z.object({
     invitados: nonNegInt, // INVITED
     bloqueados: nonNegInt, // worker_blocked_applications (registration_incomplete)
@@ -70,9 +124,19 @@ export const managementDashboardSchema = z.object({
     seleccionados: nonNegInt, // SELECTED
     rechazados: nonNegInt, // REJECTED
   }),
-  /** Encuadres agendados na semana corrente (ISO week). */
+  /**
+   * Entrevistas da semana corrente, no fuso da operação (segunda→domingo em Buenos Aires).
+   * A data é resolvida das duas fontes (`wja.interview_datetime` atual + `encuadres.interview_date`
+   * legado) pelo helper único em `domain/interviewSchedule`.
+   */
   encuadres: z.object({
     agendadosEstaSemana: nonNegInt,
+    /**
+     * Cards em "Agendados" SEM data registrada — medida de adoção da captura.
+     * Enquanto for alto, `agendadosEstaSemana` subestima; exibir os dois juntos evita que a
+     * lacuna vire um zero mudo (design D4).
+     */
+    semDataRegistrada: nonNegInt,
   }),
   /** Cadastros de prestadores. */
   cadastros: z.object({

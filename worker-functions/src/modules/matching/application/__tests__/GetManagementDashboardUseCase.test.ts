@@ -1,16 +1,24 @@
 import { GetManagementDashboardUseCase } from '../GetManagementDashboardUseCase';
 
 /**
- * Ordem das 8 queries (Promise.all, invocação síncrona em ordem de array):
+ * Ordem das 10 queries (Promise.all, invocação síncrona em ordem de array):
  *   1. GetArmedCasesUseCase          → rows por caso [{providers_needed, schedule, sel_*}]
- *   2. job_postings status           → rows [{k,count}]
- *   3. patients activos              → rows [{activos}]
- *   4. workers agregados             → rows [{leads,completos,incompletos,nuevos}]
- *   5. funnel por etapa              → rows [{k,count}]
- *   6. alocados (ana_care_status)    → rows [{activos, cubriendo_guardias}]
- *   7. blocked registration_incompl  → rows [{bloqueados}]
- *   8. encuadres semana              → rows [{agendados}]
+ *   2. GetFunnelByWorkerUseCase      → rows por candidatura [{worker_id, stage, source, messaged_at}]
+ *   3. job_postings status           → rows [{k,count}]
+ *   4. patients activos              → rows [{activos}]
+ *   5. workers agregados             → rows [{leads,completos,incompletos,nuevos}]
+ *   6. funnel por etapa (LEGADO)     → rows [{k,count}]
+ *   7. esperando agenda (fila real)  → rows [{esperando}]
+ *   8. alocados (ana_care_status)    → rows [{activos, cubriendo_guardias}]
+ *   9. blocked (pessoas, vaga viva)  → rows [{bloqueados}]
+ *  10. encuadres semana + sem data   → rows [{agendados, sem_data}]
  */
+interface FunnelWorkerRow {
+  worker_id: string;
+  stage: string | null;
+  source: string | null;
+  messaged_at: Date | null;
+}
 interface ArmedRow {
   providers_needed: string | null;
   schedule: unknown;
@@ -29,17 +37,22 @@ function mockDb(
   alocados: { activos: number; cubriendoGuardias: number },
   bloqueados: number,
   agendados: number,
+  funnelPorPrestador: FunnelWorkerRow[] = [],
+  encuadresSemData = 0,
+  esperandoAgenda = 0,
 ): { query: jest.Mock } {
   const query = jest
     .fn()
     .mockResolvedValueOnce({ rows: armed })
+    .mockResolvedValueOnce({ rows: funnelPorPrestador })
     .mockResolvedValueOnce({ rows: jobs })
     .mockResolvedValueOnce({ rows: [patient] })
     .mockResolvedValueOnce({ rows: [worker] })
     .mockResolvedValueOnce({ rows: funnel })
+    .mockResolvedValueOnce({ rows: [{ esperando: esperandoAgenda }] })
     .mockResolvedValueOnce({ rows: [{ activos: alocados.activos, cubriendo_guardias: alocados.cubriendoGuardias }] })
     .mockResolvedValueOnce({ rows: [{ bloqueados }] })
-    .mockResolvedValueOnce({ rows: [{ agendados }] });
+    .mockResolvedValueOnce({ rows: [{ agendados, sem_data: encuadresSemData }] });
   return { query };
 }
 
@@ -100,6 +113,15 @@ describe('GetManagementDashboardUseCase', () => {
       { activos: 7, cubriendoGuardias: 3 },
       405,
       0,
+      // Funil por prestador: w1 em 2 vagas (IN_PROGRESS + REJECTED) e w2 rejeitado.
+      // Prova a dedup (w1 conta 1) e a coluna mais avançada (w1 → IN_PROGRESS).
+      [
+        { worker_id: 'w1', stage: 'IN_PROGRESS', source: 'talentum', messaged_at: null },
+        { worker_id: 'w1', stage: 'REJECTED', source: 'talentum', messaged_at: null },
+        { worker_id: 'w2', stage: 'REJECTED', source: 'manual', messaged_at: null },
+      ],
+      0,   // encuadres sem data
+      569, // esperando agenda: PESSOAS em vaga viva (não as 2.387 candidaturas do legado)
     );
 
     const useCase = new GetManagementDashboardUseCase(db as never);
@@ -126,8 +148,29 @@ describe('GetManagementDashboardUseCase', () => {
         coberturaSinSchedule: 2,
       },
       prioridades: {
-        completosEsperandoAgendamiento: 2387,
+        completosEsperandoAgendamiento: 569,
         profesionalesBloqueados: 6632,
+      },
+      funnelPorPrestador: {
+        total: 2, // w1 + w2 — nunca a soma de cards (são 3)
+        recorte: 'vagas-vivas',
+        bloqueados: 405,
+        porEtapa: {
+          somavel: false,
+          // w1 aparece em IN_PROGRESS E em REJECTED; w2 só em REJECTED → soma 3 ≠ total 2
+          colunas: {
+            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
+            COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, REJECTED: 2,
+          },
+        },
+        consolidado: {
+          somavel: true,
+          // w1 colapsa na coluna mais avançada (IN_PROGRESS), w2 fica em REJECTED → soma 2 == total
+          colunas: {
+            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
+            COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, REJECTED: 1,
+          },
+        },
       },
       funnel: {
         invitados: 3435,
@@ -138,7 +181,7 @@ describe('GetManagementDashboardUseCase', () => {
         seleccionados: 2,
         rechazados: 2498,
       },
-      encuadres: { agendadosEstaSemana: 0 },
+      encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 0 },
       cadastros: {
         leads: 6882,
         completos: 250,
@@ -149,7 +192,7 @@ describe('GetManagementDashboardUseCase', () => {
         nuevosCompletosMes: 14,
       },
     });
-    expect(db.query).toHaveBeenCalledTimes(8);
+    expect(db.query).toHaveBeenCalledTimes(10);
   });
 
   it('trata status/etapas ausentes como zero (sem chaves parciais)', async () => {
@@ -184,10 +227,12 @@ describe('GetManagementDashboardUseCase', () => {
     const query = jest
       .fn()
       .mockResolvedValueOnce({ rows: [] }) // armed vazio
+      .mockResolvedValueOnce({ rows: [] }) // funil por prestador vazio
       .mockResolvedValueOnce({ rows: [{ k: 'ACTIVE', count: 5 }] })
       .mockResolvedValueOnce({ rows: [] }) // patients vazio
       .mockResolvedValueOnce({ rows: [] }) // workers vazio
       .mockResolvedValueOnce({ rows: [] }) // funnel vazio
+      .mockResolvedValueOnce({ rows: [] }) // esperando agenda vazio
       .mockResolvedValueOnce({ rows: [] }) // alocados vazio
       .mockResolvedValueOnce({ rows: [] }) // blocked vazio
       .mockResolvedValueOnce({ rows: [] }); // encuadres vazio
@@ -202,6 +247,33 @@ describe('GetManagementDashboardUseCase', () => {
     expect(result.cadastros.alocadosActivos).toBe(0);
     expect(result.cadastros.alocadosCubriendoGuardias).toBe(0);
     expect(result.encuadres.agendadosEstaSemana).toBe(0);
+  });
+
+  it('conta entrevistas da semana no fuso da OPERAÇÃO e expõe quantos estão sem data', async () => {
+    // O card mostrava 0 desde sempre: lia só `encuadres.interview_date`, que nenhuma origem
+    // do produto jamais preencheu. Agora resolve as duas fontes e mede a adoção da captura.
+    const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 7, [], 12);
+    const result = await new GetManagementDashboardUseCase(db as never).execute();
+
+    expect(result.encuadres).toEqual({ agendadosEstaSemana: 7, semDataRegistrada: 12 });
+
+    const encuadresSql: string = db.query.mock.calls[9][0];
+    expect(encuadresSql).toContain('worker_job_applications');
+    expect(encuadresSql).toContain('interview_datetime'); // fonte atual
+    expect(encuadresSql).toContain('e.interview_date'); // fallback do legado da importação
+    expect(encuadresSql).toContain("America/Argentina/Buenos_Aires"); // não UTC
+  });
+
+  it('não conta paciente apagado em pacientesActivos', async () => {
+    // Regressão: o card mostrava 192 com 190 reais — faltava `deleted_at IS NULL`,
+    // filtro que todas as outras queries do dashboard já aplicavam (prod, 30/07).
+    // O filtro é SQL: com pool mockado, a trava é a forma da query.
+    const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
+    await new GetManagementDashboardUseCase(db as never).execute();
+
+    const patientsSql: string = db.query.mock.calls[3][0];
+    expect(patientsSql).toContain('FROM patients');
+    expect(patientsSql).toContain('deleted_at IS NULL');
   });
 
   it('rejeita saída inválida via contrato Zod (defesa em profundidade)', async () => {

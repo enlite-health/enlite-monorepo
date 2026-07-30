@@ -7,6 +7,7 @@ import {
   computeScheduleWeeklyHours,
   hasStructuredSchedule,
 } from '../domain/scheduleHours';
+import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 
 /** Linha por job_posting (não-draft, não deletado) com contagens de seleção. */
 interface JobPostingArmedRow {
@@ -44,6 +45,13 @@ export interface ArmedCasesResult {
  * Toda a classificação (buckets, cast defensivo, horas) é delegada às funções
  * puras de domínio (`armedCases.ts` / `scheduleHours.ts`), testadas isoladamente.
  * Nunca toca colunas *_encrypted (zero PII).
+ *
+ * ESCOPO = VAGA VIVA (30/07/2026). Antes o filtro era só `is_draft`/`deleted_at`, sem
+ * olhar o status — então vaga FECHADA e SUSPENSA entrava na conta. Efeito medido em
+ * produção: "Equipos por armar" mostrava **134** com **50 vagas mortas** dentro (fila real
+ * 84), e "casos sem classificação" mostrava **135** com **78 mortas** (real 57). Estes
+ * números são FILA DE TRABALHO — caso fechado não é trabalho a fazer, e as horas dele não
+ * são demanda a cobrir. Mesmo recorte do funil por prestador (decisão do Diego, 30/07).
  */
 export class GetArmedCasesUseCase {
   constructor(private readonly db: Pool) {}
@@ -69,7 +77,7 @@ export class GetArmedCasesUseCase {
          WHERE job_posting_id IS NOT NULL
          GROUP BY job_posting_id
        ) s ON s.job_posting_id = jp.id
-       WHERE jp.is_draft = false AND jp.deleted_at IS NULL`,
+       WHERE ${LIVE_JOB_POSTING_SQL}`,
     );
 
     const buckets: Record<ArmedCaseBucket, number> = {

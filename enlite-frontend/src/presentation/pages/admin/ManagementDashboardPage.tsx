@@ -66,7 +66,10 @@ export function ManagementDashboardPage(): JSX.Element {
           <BigNumbersSection data={data.bigNumbers} />
           <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />
           <PrioridadesSection data={data.prioridades} />
-          <FunnelTotalsSection funnel={data.funnel} encuadres={data.encuadres} />
+          <FunnelTotalsSection
+            funnelPorPrestador={data.funnelPorPrestador}
+            encuadres={data.encuadres}
+          />
           <CadastrosSection data={data.cadastros} />
           <ZoneAnalyticsSection />
         </div>

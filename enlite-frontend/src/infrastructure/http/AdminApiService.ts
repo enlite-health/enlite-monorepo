@@ -282,7 +282,16 @@ class AdminApiServiceClass {
 
   async moveEncuadre(
     encuadreId: string,
-    data: { targetStage: string; rejectionReasonCategory?: string; rejectionReason?: string; role?: 'TITULAR' | 'RAPID_RESPONSE' }
+    data: {
+      targetStage: string;
+      rejectionReasonCategory?: string;
+      rejectionReason?: string;
+      role?: 'TITULAR' | 'RAPID_RESPONSE';
+      /** Data (YYYY-MM-DD) e hora (HH:MM) locais da operação; o servidor converte o fuso. */
+      interviewDate?: string;
+      interviewTime?: string;
+      interviewMeetLink?: string;
+    }
   ): Promise<void> {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
   }

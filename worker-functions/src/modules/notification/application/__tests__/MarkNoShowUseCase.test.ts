@@ -17,15 +17,21 @@ describe('MarkNoShowUseCase', () => {
   let mockQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
   let useCase: MarkNoShowUseCase;
+  const envOriginal = process.env.NO_SHOW_AUTO_ENABLED;
 
   beforeEach(() => {
     mockQuery = jest.fn();
     mockDb = { query: mockQuery };
     useCase = new MarkNoShowUseCase(mockDb as any);
+    // Estes casos descrevem o comportamento HABILITADO. O default (desligado)
+    // é coberto no bloco "flag NO_SHOW_AUTO_ENABLED" no fim do arquivo.
+    process.env.NO_SHOW_AUTO_ENABLED = 'true';
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+    if (envOriginal === undefined) delete process.env.NO_SHOW_AUTO_ENABLED;
+    else process.env.NO_SHOW_AUTO_ENABLED = envOriginal;
   });
 
   it('retorna { marked: 0, stageMovedToInDoubt: 0 } quando não há no-shows', async () => {
@@ -129,5 +135,60 @@ describe('MarkNoShowUseCase', () => {
 
     expect(result).toEqual({ marked: 3, stageMovedToInDoubt: 2 });
     expect(mockQuery).toHaveBeenCalledTimes(4); // 1 SELECT + 3 UPDATEs
+  });
+
+  /**
+   * A automação só pode mover card por decisão explícita (D3 de captura-data-entrevista).
+   * Sem a flag, o primeiro lote depois que a captura da data entrar em produção acharia de
+   * uma vez as 74 candidaturas paradas em 'pending' e as moveria — card saindo de "Agendados"
+   * sem ninguém tocar.
+   */
+  describe('flag NO_SHOW_AUTO_ENABLED (default: desligado)', () => {
+    beforeEach(() => {
+      delete process.env.NO_SHOW_AUTO_ENABLED;
+    });
+
+    const vencidas = [
+      { worker_id: 'w1', job_posting_id: 'j1', application_funnel_stage: 'CONFIRMED' },
+      { worker_id: 'w2', job_posting_id: 'j2', application_funnel_stage: 'CONFIRMED' },
+      { worker_id: 'w3', job_posting_id: 'j3', application_funnel_stage: 'IN_PROGRESS' },
+    ];
+
+    it('não move NENHUM card quando a flag está ausente', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: vencidas });
+
+      const result = await useCase.execute();
+
+      expect(result.marked).toBe(0);
+      expect(result.stageMovedToInDoubt).toBe(0);
+      // Só o SELECT rodou — nenhum UPDATE foi emitido.
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('reporta quantos SERIAM marcados, para a decisão de ligar ser informada', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: vencidas });
+
+      const result = await useCase.execute();
+
+      expect(result.wouldMark).toBe(3);
+    });
+
+    it('permanece desligado com valor diferente de "true"', async () => {
+      process.env.NO_SHOW_AUTO_ENABLED = 'false';
+      mockQuery.mockResolvedValueOnce({ rows: vencidas });
+
+      const result = await useCase.execute();
+
+      expect(result.marked).toBe(0);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('não reporta nada a observar quando não há vencidas', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const result = await useCase.execute();
+
+      expect(result).toEqual({ marked: 0, stageMovedToInDoubt: 0 });
+    });
   });
 });
