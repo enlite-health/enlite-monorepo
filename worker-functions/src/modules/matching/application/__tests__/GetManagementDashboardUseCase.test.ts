@@ -189,6 +189,26 @@ describe('GetManagementDashboardUseCase', () => {
     expect(result.encuadres.agendadosEstaSemana).toBe(0);
   });
 
+  it('não conta paciente soft-deletado em pacientesActivos', async () => {
+    const db = mockDb(
+      [],
+      [],
+      { activos: 0 },
+      { leads: 0, completos: 0, incompletos: 0, nuevos: 0 },
+      [],
+      0,
+      0,
+      0,
+    );
+    const useCase = new GetManagementDashboardUseCase(db as never);
+    await useCase.execute();
+
+    // 3ª query (ordem do Promise.all) = pacientes ativos.
+    const patientsSql = db.query.mock.calls[2][0] as string;
+    expect(patientsSql).toContain('FROM patients');
+    expect(patientsSql).toContain('deleted_at IS NULL');
+  });
+
   it('rejeita saída inválida via contrato Zod (defesa em profundidade)', async () => {
     const db = mockDb(
       [],

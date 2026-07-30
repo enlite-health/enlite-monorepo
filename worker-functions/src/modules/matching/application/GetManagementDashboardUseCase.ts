@@ -31,7 +31,11 @@ export class GetManagementDashboardUseCase {
             GROUP BY status`,
         ),
         this.db.query<{ activos: number }>(
-          `SELECT COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS activos FROM patients`,
+          // deleted_at IS NULL: paciente soft-deletado não está em atenção. Sem
+          // esse filtro o card contava 192 em vez de 190 (2 apagados em prod).
+          `SELECT COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS activos
+             FROM patients
+            WHERE deleted_at IS NULL`,
         ),
         this.db.query<{
           leads: number;

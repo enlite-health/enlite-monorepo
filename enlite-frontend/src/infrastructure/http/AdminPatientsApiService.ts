@@ -110,8 +110,11 @@ export class AdminPatientsApiServiceClass {
     return { data: json.data ?? [], total: json.total ?? 0 };
   }
 
-  async getPatientStats(): Promise<PatientStats> {
-    return this.request<PatientStats>('GET', '/api/admin/patients/stats');
+  /** GET /api/admin/patients/stats — `country` opcional escopa por país (AR|BR). */
+  async getPatientStats(params?: { country?: string }): Promise<PatientStats> {
+    const country = params?.country;
+    const qs = country ? `?country=${encodeURIComponent(country)}` : '';
+    return this.request<PatientStats>('GET', `/api/admin/patients/stats${qs}`);
   }
 
   async getPatientById(id: string): Promise<PatientDetail> {
