@@ -11,10 +11,16 @@ import { AR_HOLIDAYS_2026 } from '../infrastructure/AdmissionCalendarService';
  * differs per country.
  *
  * The admission calendar itself is a DEDICATED Google calendar per country
- * (not the host's primary): the event is created there, impersonating
- * `enlite@enlite.health`, with the interviewer as co-host. The calendar id
- * lives in an env var (`ADMISSION_CALENDAR_ID_AR` / `_BR`) so ops can point it
- * at the real calendar without a redeploy of code.
+ * (not the host's primary): availability IS this calendar (business hours minus
+ * whatever is already booked on it — capacity 1, one interview per slot), and
+ * the event is created there impersonating `enlite@enlite.health`. There is no
+ * per-interviewer roster anymore: the people rotate, the country calendar does
+ * not. The calendar id lives in an env var (`ADMISSION_CALENDAR_ID_AR` / `_BR`)
+ * so ops can point it at the real calendar without a redeploy of code.
+ *
+ * The confirmation names the TEAM generically (`teamDisplayName`, e.g.
+ * "Equipo de Admisión EnLite"), not an individual — overridable per country via
+ * env (`ADMISSION_TEAM_NAME_AR` / `_BR`) without a redeploy.
  */
 
 export type AdmissionCountry = 'AR' | 'BR';
@@ -33,6 +39,13 @@ export interface AdmissionCountryConfig {
   businessHours: BusinessHours;
   /** Name of the env var holding the dedicated admission calendar id. */
   admissionCalendarIdEnv: string;
+  /**
+   * Generic team name shown in the patient confirmation/reminder (no individual
+   * interviewer). Default; overridable at runtime via `teamDisplayNameEnv`.
+   */
+  teamDisplayName: string;
+  /** Name of the env var that overrides `teamDisplayName` (optional at runtime). */
+  teamDisplayNameEnv: string;
 }
 
 /**
@@ -63,14 +76,28 @@ export const ADMISSION_COUNTRIES: Record<AdmissionCountry, AdmissionCountryConfi
     holidays: AR_HOLIDAYS_2026,
     businessHours: DEFAULT_BUSINESS_HOURS,
     admissionCalendarIdEnv: 'ADMISSION_CALENDAR_ID_AR',
+    teamDisplayName: 'Equipo de Admisión EnLite',
+    teamDisplayNameEnv: 'ADMISSION_TEAM_NAME_AR',
   },
   BR: {
     timezone: countryToTimezone('BR'), // America/Sao_Paulo
     holidays: BR_HOLIDAYS_2026,
     businessHours: DEFAULT_BUSINESS_HOURS,
     admissionCalendarIdEnv: 'ADMISSION_CALENDAR_ID_BR',
+    teamDisplayName: 'Equipe de Admissão EnLite',
+    teamDisplayNameEnv: 'ADMISSION_TEAM_NAME_BR',
   },
 };
+
+/**
+ * Resolve the generic team display name for a country: runtime env override
+ * (`ADMISSION_TEAM_NAME_{country}`) if set, else the config default.
+ */
+export function resolveTeamDisplayName(country: AdmissionCountry): string {
+  const cfg = ADMISSION_COUNTRIES[country];
+  const override = process.env[cfg.teamDisplayNameEnv];
+  return override && override.trim() ? override.trim() : cfg.teamDisplayName;
+}
 
 /** Type guard for the public `country` query/body param. */
 export function isAdmissionCountry(v: unknown): v is AdmissionCountry {

@@ -11,6 +11,7 @@ import {
   ADMISSION_COUNTRIES,
   AdmissionCountry,
   getAdmissionCountryConfig,
+  resolveTeamDisplayName,
 } from '../domain/admissionCountries';
 import {
   AdmissionNotifier,
@@ -58,11 +59,6 @@ export interface BookResult {
   meetLink: string;
 }
 
-interface InterviewHostRow {
-  email: string;
-  display_name: string | null;
-}
-
 interface PatientRow {
   id: string;
   country: string;
@@ -75,15 +71,22 @@ const SLOT_MINUTES = 45;
  * AdmissionSchedulingService — orchestrates the admission interview scheduling
  * core (multi-country AR + BR).
  *
- *   getAvailableSlots(country) — public availability: reads the active hosts'
- *   PERSONAL calendars, computes free slots with the country config, returns
- *   times only (no host names).
+ * Availability is NO LONGER per-interviewer. There is no roster: the people who
+ * run interviews rotate, so availability is the COUNTRY'S admission calendar —
+ * business hours minus whatever is already booked on it (capacity 1: one
+ * interview per slot). The old `interview_hosts` table is orphaned (not queried
+ * anymore); see migration 256 which flips the anti-double-book guard from
+ * UNIQUE(host_email, slot_start) to UNIQUE(country, slot_start).
  *
- *   book({ patientId, slotStartISO, country }) — assigns the least-loaded free
- *   host, re-checks against a live read (anti-race), inserts the appointment
- *   under a UNIQUE(host_email, slot_start) guard, creates the Meet event on the
- *   DEDICATED admission calendar (impersonating enlite@enlite.health, host as
- *   co-host), and notifies via the AdmissionNotifier port.
+ *   getAvailableSlots(country) — reads the country's admission calendar (impersonating
+ *   enlite@enlite.health), computes free slots with the country config, returns
+ *   times only.
+ *
+ *   book({ patientId, slotStartISO, country }) — re-checks the admission calendar
+ *   at the slot (anti-race), inserts the appointment under UNIQUE(country,
+ *   slot_start), creates the Meet event on the DEDICATED admission calendar
+ *   (impersonating enlite@enlite.health, NO co-host), and notifies via the
+ *   AdmissionNotifier port. The confirmation names the TEAM generically.
  */
 export class AdmissionSchedulingService {
   constructor(
@@ -93,19 +96,6 @@ export class AdmissionSchedulingService {
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
   ) {}
-
-  /** Active interview hosts for a country. */
-  private async getActiveHosts(country: AdmissionCountry): Promise<InterviewHostRow[]> {
-    const db = DatabaseConnection.getInstance().getPool();
-    const res = await db.query<InterviewHostRow>(
-      `SELECT email, display_name
-         FROM interview_hosts
-        WHERE country = $1 AND active = true
-        ORDER BY email ASC`,
-      [country],
-    );
-    return res.rows;
-  }
 
   private resolveCalendarId(country: AdmissionCountry): string {
     const cfg = getAdmissionCountryConfig(country);
@@ -119,13 +109,13 @@ export class AdmissionSchedulingService {
   }
 
   /**
-   * Public availability for a country. Reads each active host's PERSONAL busy
-   * intervals and unions the free slots. Returns times + labels only.
+   * Public availability for a country: business hours MINUS whatever is already
+   * booked on the country's admission calendar (capacity 1). Returns times +
+   * labels only.
    */
   async getAvailableSlots(country: AdmissionCountry, now: Date = new Date()): Promise<PublicSlot[]> {
     const cfg = getAdmissionCountryConfig(country);
-    const hosts = await this.getActiveHosts(country);
-    if (hosts.length === 0) return [];
+    const calendarId = this.resolveCalendarId(country);
 
     // Read window: from now to a generous horizon (the pure fn trims to N
     // business days + lead time).
@@ -135,20 +125,16 @@ export class AdmissionSchedulingService {
       .endOf('day')
       .toISO() as string;
 
-    const busyIntervalsByHost: Record<string, BusyInterval[]> = {};
-    await Promise.all(
-      hosts.map(async (h) => {
-        busyIntervalsByHost[h.email] = await this.calendar.getBusyIntervals(
-          h.email,
-          fromISO,
-          toISO,
-          cfg.timezone,
-        );
-      }),
+    const busyIntervals: BusyInterval[] = await this.calendar.getBusyIntervals(
+      calendarId,
+      this.impersonateEmail,
+      fromISO,
+      toISO,
+      cfg.timezone,
     );
 
     const slots = computeFreeSlots({
-      busyIntervalsByHost,
+      busyIntervals,
       now,
       timezone: cfg.timezone,
       holidays: cfg.holidays,
@@ -165,12 +151,15 @@ export class AdmissionSchedulingService {
   }
 
   /**
-   * Books an admission interview: least-loaded free host + anti-race re-check +
-   * UNIQUE guard + Meet event on the dedicated calendar + notify.
+   * Books an admission interview: anti-race re-check against the country's
+   * admission calendar + UNIQUE(country, slot_start) guard + Meet event on the
+   * dedicated calendar + notify. No roster, no assignment — capacity 1 per slot.
    */
   async book(params: BookParams): Promise<BookResult> {
     const { patientId, slotStartISO, country } = params;
     const cfg = getAdmissionCountryConfig(country);
+    const calendarId = this.resolveCalendarId(country);
+    const teamName = resolveTeamDisplayName(country);
 
     // 1) Patient exists and belongs to the country.
     const patient = await this.loadPatientForCountry(patientId, country);
@@ -181,74 +170,66 @@ export class AdmissionSchedulingService {
     const startISO = slotStart.toISO() as string;
     const endISO = slotEnd.toISO() as string;
 
-    // 2) Candidate hosts that were free at that slot (from a fresh read),
-    //    ranked least-loaded → email asc.
-    const rankedHosts = await this.rankFreeHostsForSlot(country, slotStart, slotEnd);
-    if (rankedHosts.length === 0) throw new SlotTakenError();
-
-    // 3) Anti-race: re-read the chosen host in the slot range; if busy, try the
-    //    next. The UNIQUE(host_email, slot_start) INSERT is the final guard.
-    for (const host of rankedHosts) {
-      const stillFree = await this.isHostFree(host.email, startISO, endISO, cfg.timezone);
-      if (!stillFree) continue;
-
-      // 3b) Reserve our side first (UNIQUE guard) BEFORE creating the calendar
-      //     event, so two concurrent books can't both create Meet events.
-      let appointmentId: string;
-      try {
-        appointmentId = await this.insertAppointment({
-          patientId,
-          country,
-          hostEmail: host.email,
-          hostDisplayName: host.display_name,
-          slotStartISO: startISO,
-          slotEndISO: endISO,
-        });
-      } catch (err) {
-        if (isUniqueViolation(err)) continue; // someone booked this host+slot; try next
-        throw err;
-      }
-
-      // 4) Create the Meet event on the dedicated admission calendar.
-      const patientEmail = await this.decryptPatientEmail(patient);
-      const { eventId, meetLink } = await this.calendar.createEventWithMeet({
-        calendarId: this.resolveCalendarId(country),
-        impersonateEmail: this.impersonateEmail,
-        summary: `Entrevista de admisión — ${host.display_name ?? host.email}`,
-        description: `Entrevista de admisión Enlite (${country}).`,
-        startISO,
-        endISO,
-        timezone: cfg.timezone,
-        coHostEmail: host.email,
-        patientEmail,
-      });
-
-      // 5) Persist calendar refs on the appointment.
-      await this.attachCalendarRefs(appointmentId, eventId, meetLink);
-
-      // 6) Notify (port — no-op logging impl for now).
-      await this.notifier.onBooked({
-        appointmentId,
-        patientId,
-        country,
-        hostEmail: host.email,
-        hostDisplayName: host.display_name,
-        slotStartISO: startISO,
-        slotEndISO: endISO,
-        meetLink,
-        patientEmail,
-      });
-
-      return {
-        appointmentId,
-        hostDisplayName: host.display_name,
-        slotStartISO: startISO,
-        meetLink,
-      };
+    // 2) Anti-race (a): fresh read of the admission calendar at the slot range.
+    //    If anything already overlaps, the slot is gone.
+    if (await this.isAdmissionCalendarBusy(calendarId, startISO, endISO, cfg.timezone)) {
+      throw new SlotTakenError();
     }
 
-    // Every candidate turned out busy / double-booked.
-    throw new SlotTakenError();
+    // 3) Anti-race (b): reserve our side first under UNIQUE(country, slot_start)
+    //    BEFORE creating the calendar event, so two concurrent books can't both
+    //    create Meet events. host_email stores the country calendar (no person);
+    //    host_display_name is the generic team name.
+    let appointmentId: string;
+    try {
+      appointmentId = await this.insertAppointment({
+        patientId,
+        country,
+        hostEmail: calendarId,
+        hostDisplayName: teamName,
+        slotStartISO: startISO,
+        slotEndISO: endISO,
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new SlotTakenError();
+      throw err;
+    }
+
+    // 4) Create the Meet event on the dedicated admission calendar (no co-host).
+    const patientEmail = await this.decryptPatientEmail(patient);
+    const { eventId, meetLink } = await this.calendar.createEventWithMeet({
+      calendarId,
+      impersonateEmail: this.impersonateEmail,
+      summary: `Entrevista de admisión — ${teamName}`,
+      description: `Entrevista de admisión Enlite (${country}).`,
+      startISO,
+      endISO,
+      timezone: cfg.timezone,
+      patientEmail,
+    });
+
+    // 5) Persist calendar refs on the appointment.
+    await this.attachCalendarRefs(appointmentId, eventId, meetLink);
+
+    // 6) Notify (port — no-op logging impl for now).
+    await this.notifier.onBooked({
+      appointmentId,
+      patientId,
+      country,
+      hostEmail: calendarId,
+      hostDisplayName: teamName,
+      slotStartISO: startISO,
+      slotEndISO: endISO,
+      meetLink,
+      patientEmail,
+    });
+
+    return {
+      appointmentId,
+      hostDisplayName: teamName,
+      slotStartISO: startISO,
+      meetLink,
+    };
   }
 
   // ─── internals ─────────────────────────────────────────────────────────────
@@ -279,54 +260,25 @@ export class AdmissionSchedulingService {
   }
 
   /**
-   * Hosts free at [slotStart, slotEnd) from a fresh calendar read, ranked by
-   * weekly load (least-loaded first, email asc on tie).
+   * True if the country's admission calendar has any event overlapping
+   * [fromISO, toISO) (capacity 1 — one interview per slot). Fresh live read.
    */
-  private async rankFreeHostsForSlot(
-    country: AdmissionCountry,
-    slotStart: DateTime,
-    slotEnd: DateTime,
-  ): Promise<InterviewHostRow[]> {
-    const cfg = getAdmissionCountryConfig(country);
-    const hosts = await this.getActiveHosts(country);
-    const startISO = slotStart.toISO() as string;
-    const endISO = slotEnd.toISO() as string;
-
-    const freeHosts: InterviewHostRow[] = [];
-    for (const h of hosts) {
-      if (await this.isHostFree(h.email, startISO, endISO, cfg.timezone)) {
-        freeHosts.push(h);
-      }
-    }
-
-    const loadByEmail = new Map<string, number>();
-    await Promise.all(
-      freeHosts.map(async (h) => {
-        loadByEmail.set(
-          h.email,
-          await this.calendar.countEventsInWeek(h.email, startISO, cfg.timezone),
-        );
-      }),
-    );
-
-    return freeHosts.sort((a, b) => {
-      const la = loadByEmail.get(a.email) ?? 0;
-      const lb = loadByEmail.get(b.email) ?? 0;
-      if (la !== lb) return la - lb;
-      return a.email.localeCompare(b.email);
-    });
-  }
-
-  private async isHostFree(
-    hostEmail: string,
+  private async isAdmissionCalendarBusy(
+    calendarId: string,
     fromISO: string,
     toISO: string,
     timezone: string,
   ): Promise<boolean> {
-    const busy = await this.calendar.getBusyIntervals(hostEmail, fromISO, toISO, timezone);
+    const busy = await this.calendar.getBusyIntervals(
+      calendarId,
+      this.impersonateEmail,
+      fromISO,
+      toISO,
+      timezone,
+    );
     const start = new Date(fromISO).getTime();
     const end = new Date(toISO).getTime();
-    return !busy.some((b) => start < b.end.getTime() && b.start.getTime() < end);
+    return busy.some((b) => start < b.end.getTime() && b.start.getTime() < end);
   }
 
   private async insertAppointment(input: {

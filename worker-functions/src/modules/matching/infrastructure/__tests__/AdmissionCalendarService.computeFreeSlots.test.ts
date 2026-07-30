@@ -23,16 +23,13 @@ function startsOf(slots: { startISO: string }[]): string[] {
   return slots.map((s) => DateTime.fromISO(s.startISO).setZone(AR_ZONE).toFormat("yyyy-MM-dd'T'HH:mm"));
 }
 
-const HOST_A = 'a@enlite.health';
-const HOST_B = 'b@enlite.health';
-
 describe('computeFreeSlots', () => {
   // Segunda-feira 2026-08-03 06:00 AR — bem antes do expediente, sem feriado por perto.
   const MONDAY_EARLY = ar('2026-08-03T06:00');
 
   it('(a) respeita 09-18 seg-sex (slots começam 09..17, terminam ≤18)', () => {
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now: MONDAY_EARLY,
     });
     // Todos os slots do dia da segunda: horas 9..17.
@@ -50,7 +47,7 @@ describe('computeFreeSlots', () => {
 
   it('(b) pula fim de semana', () => {
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now: MONDAY_EARLY,
     });
     const weekdays = new Set(
@@ -65,7 +62,7 @@ describe('computeFreeSlots', () => {
     // Agora: segunda 10:10 → earliest = 12:10. Slots 09,10,11,12 (≤12:10 start) fora; 13+ dentro.
     const now = ar('2026-08-03T10:10');
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now,
     });
     const mondayHours = slots
@@ -76,39 +73,40 @@ describe('computeFreeSlots', () => {
     expect(mondayHours).not.toContain(12);
   });
 
-  it('(d) dedupe entre 2 hosts: ambos livres 10h → um slot 10h com 2 hostEmails', () => {
+  it('(d) capacidade 1: um evento na agenda de admissão ocupa o slot correspondente', () => {
+    // Um evento 10:00–10:45 → o slot das 10h some; os demais do dia continuam.
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [], [HOST_B]: [] },
+      busyIntervals: [busy('2026-08-03T10:00', '2026-08-03T10:45')],
       now: MONDAY_EARLY,
     });
-    const tenAm = slots.find((s) => s.startISO.startsWith('2026-08-03T10:00'));
-    expect(tenAm).toBeDefined();
-    expect(new Set(tenAm!.hostEmails)).toEqual(new Set([HOST_A, HOST_B]));
-    // Só um slot para as 10h de segunda (dedupe).
-    expect(slots.filter((s) => s.startISO.startsWith('2026-08-03T10:00'))).toHaveLength(1);
+    const mondayHours = slots
+      .filter((s) => s.startISO.startsWith('2026-08-03'))
+      .map((s) => DateTime.fromISO(s.startISO).setZone(AR_ZONE).hour);
+    expect(mondayHours).not.toContain(10);
+    expect(mondayHours).toEqual([9, 11, 12, 13, 14, 15, 16, 17]);
   });
 
-  it('(e) union: A livre 10h (ocupado 11h), B livre 11h (ocupado 10h) → slots 10h e 11h', () => {
+  it('(e) vários eventos bloqueiam vários slots (só a agenda importa, sem roster)', () => {
     const slots = computeFreeSlots({
-      busyIntervalsByHost: {
-        [HOST_A]: [busy('2026-08-03T11:00', '2026-08-03T11:45')],
-        [HOST_B]: [busy('2026-08-03T10:00', '2026-08-03T10:45')],
-      },
+      busyIntervals: [
+        busy('2026-08-03T10:00', '2026-08-03T10:45'),
+        busy('2026-08-03T11:00', '2026-08-03T11:45'),
+      ],
       now: MONDAY_EARLY,
     });
-    const ten = slots.find((s) => s.startISO.startsWith('2026-08-03T10:00'));
-    const eleven = slots.find((s) => s.startISO.startsWith('2026-08-03T11:00'));
-    expect(ten).toBeDefined();
-    expect(ten!.hostEmails).toEqual([HOST_A]); // B ocupado 10h
-    expect(eleven).toBeDefined();
-    expect(eleven!.hostEmails).toEqual([HOST_B]); // A ocupado 11h
+    const mondayHours = slots
+      .filter((s) => s.startISO.startsWith('2026-08-03'))
+      .map((s) => DateTime.fromISO(s.startISO).setZone(AR_ZONE).hour);
+    expect(mondayHours).not.toContain(10);
+    expect(mondayHours).not.toContain(11);
+    expect(mondayHours).toEqual([9, 12, 13, 14, 15, 16, 17]);
   });
 
   it('(f) pula feriado AR (17/08/2026 = San Martín, segunda)', () => {
     // Agora: quinta 2026-08-13 06:00 → horizonte cruza o feriado de segunda 17/08.
     const now = ar('2026-08-13T06:00');
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now,
     });
     const onHoliday = slots.filter((s) => s.startISO.startsWith('2026-08-17'));
@@ -119,7 +117,7 @@ describe('computeFreeSlots', () => {
 
   it('slots ordenados por horário', () => {
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now: MONDAY_EARLY,
     });
     const iso = startsOf(slots);
@@ -142,7 +140,7 @@ describe('computeFreeSlots — config BR', () => {
     // Segunda 2026-08-10 06:00 BR (sem feriado por perto).
     const now = br('2026-08-10T06:00');
     const slots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now,
       timezone: BR_ZONE,
       holidays: BR_HOLIDAYS_2026,
@@ -160,7 +158,7 @@ describe('computeFreeSlots — config BR', () => {
     // Agora: terça 2026-09-01 06:00 BR → horizonte cruza segunda 07/09.
     const now = br('2026-09-01T06:00');
     const brSlots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now,
       timezone: BR_ZONE,
       holidays: BR_HOLIDAYS_2026,
@@ -169,7 +167,7 @@ describe('computeFreeSlots — config BR', () => {
     expect(brSlots.filter((s) => s.startISO.startsWith('2026-09-07'))).toHaveLength(0);
     // 07/09 NÃO é feriado AR → com a config default (AR) o dia tem slots.
     const arSlots = computeFreeSlots({
-      busyIntervalsByHost: { [HOST_A]: [] },
+      busyIntervals: [],
       now: DateTime.fromISO('2026-09-01T06:00', { zone: AR_ZONE }).toJSDate(),
     });
     expect(arSlots.some((s) => s.startISO.startsWith('2026-09-07'))).toBe(true);

@@ -38,7 +38,6 @@ export interface BusyInterval {
 
 export interface FreeSlot {
   startISO: string;
-  hostEmails: string[];
 }
 
 export interface BusinessHoursConfig {
@@ -49,8 +48,13 @@ export interface BusinessHoursConfig {
 }
 
 export interface ComputeFreeSlotsParams {
-  /** Busy intervals por host (chaves = e-mails dos hosts a considerar). */
-  busyIntervalsByHost: Record<string, BusyInterval[]>;
+  /**
+   * Busy intervals da ÚNICA fonte de disponibilidade: a agenda de admissão do
+   * país (capacidade 1). Um slot está livre se nenhum destes intervalos o
+   * sobrepõe. (Antes era por-entrevistadora; o roster foi descontinuado —
+   * as pessoas mudam, a agenda do país não.)
+   */
+  busyIntervals: BusyInterval[];
   /** Instante "agora" (injetável pra teste determinístico). */
   now: Date;
   /** Zona horária do país (default AR). Slots são calculados nesta zona. */
@@ -65,9 +69,10 @@ export interface ComputeFreeSlotsParams {
 }
 
 /**
- * Nova assinatura (multi-país): cria o evento numa AGENDA DEDICADA de admissão
- * (não na primary do host), impersonando `impersonateEmail` (= enlite@enlite.health),
- * com a entrevistadora como co-host.
+ * Cria o evento numa AGENDA DEDICADA de admissão (não na primary de ninguém),
+ * impersonando `impersonateEmail` (= enlite@enlite.health). A disponibilidade
+ * é a própria agenda do país, então NÃO há co-host por entrevistadora (as
+ * pessoas mudam) — `coHostEmail` é opcional/legado.
  */
 export interface CreateEventParams {
   /** Agenda de admissão dedicada (ADMISSION_CALENDAR_ID_{country}). */
@@ -80,8 +85,8 @@ export interface CreateEventParams {
   endISO: string;
   /** Zona horária do evento (default AR). */
   timezone?: string;
-  /** Entrevistadora escolhida — attendee com poder de editar o evento. */
-  coHostEmail: string;
+  /** (Opcional/legado) attendee com poder de editar o evento. Não é mais usado. */
+  coHostEmail?: string;
   /** E-mail de contato do paciente/lead (attendee), se houver. */
   patientEmail?: string;
 }
@@ -89,7 +94,7 @@ export interface CreateEventParams {
 interface RawCalendarEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
-  attendees?: { email?: string; self?: boolean; responseStatus?: string }[];
+  status?: string;
 }
 
 // ─── Pure slot computation (testável, sem I/O) ─────────────────────────────────
@@ -102,15 +107,15 @@ function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): b
 /**
  * PURO: gera slots de 45min, hora em hora, seg–sex no expediente (default 09–18),
  * de now+leadMin até +N dias úteis, pulando fim de semana e feriados do país.
- * Um slot entra pra um host se não overlapa nenhum busy dele. Agrega hosts
- * livres por horário (dedupe), ordenado por horário.
+ * Fonte de disponibilidade ÚNICA: a agenda de admissão do país (capacidade 1) —
+ * um slot é livre se NENHUM evento (`busyIntervals`) o sobrepõe.
  *
  * Multi-país: `timezone`, `holidays` e `businessHours` são parâmetros
  * (default = Argentina), então nada aqui é hardcodado por país.
  */
 export function computeFreeSlots(params: ComputeFreeSlotsParams): FreeSlot[] {
   const {
-    busyIntervalsByHost,
+    busyIntervals,
     now,
     timezone = AR_ZONE,
     holidays = AR_HOLIDAYS_2026,
@@ -127,17 +132,13 @@ export function computeFreeSlots(params: ComputeFreeSlotsParams): FreeSlot[] {
     return !holidays.has(dt.toFormat('yyyy-MM-dd'));
   };
 
-  const hostEmails = Object.keys(busyIntervalsByHost);
   const earliestMs = now.getTime() + minLeadMinutes * 60_000;
 
-  // Pré-computa busy em ms por host.
-  const busyMsByHost: Record<string, { start: number; end: number }[]> = {};
-  for (const host of hostEmails) {
-    busyMsByHost[host] = (busyIntervalsByHost[host] ?? []).map((b) => ({
-      start: b.start.getTime(),
-      end: b.end.getTime(),
-    }));
-  }
+  // Pré-computa busy em ms (fonte única = agenda de admissão do país).
+  const busyMs = (busyIntervals ?? []).map((b) => ({
+    start: b.start.getTime(),
+    end: b.end.getTime(),
+  }));
 
   const slots: FreeSlot[] = [];
   let cursor = DateTime.fromJSDate(now, { zone: timezone }).startOf('day');
@@ -157,13 +158,10 @@ export function computeFreeSlots(params: ComputeFreeSlotsParams): FreeSlot[] {
         const endMs = slotEnd.toMillis();
         if (startMs < earliestMs) continue;
 
-        const freeHosts = hostEmails.filter((host) => {
-          const busy = busyMsByHost[host];
-          return !busy.some((b) => overlaps(startMs, endMs, b.start, b.end));
-        });
-
-        if (freeHosts.length > 0) {
-          slots.push({ startISO: slotStart.toISO() as string, hostEmails: freeHosts });
+        // Capacidade 1: livre se nenhum evento da agenda sobrepõe.
+        const taken = busyMs.some((b) => overlaps(startMs, endMs, b.start, b.end));
+        if (!taken) {
+          slots.push({ startISO: slotStart.toISO() as string });
         }
       }
     }
@@ -182,18 +180,21 @@ export class AdmissionCalendarService {
   }
 
   /**
-   * Busy intervals reais do host via DWD-read events.list na primary.
-   * Ignora eventos onde o host tem responseStatus='declined'.
-   * Evento all-day = dia inteiro ocupado.
+   * Busy intervals da AGENDA DE ADMISSÃO do país (não a primary de ninguém):
+   * lê `calendars/{calendarId}/events` impersonando `impersonateEmail` (dono da
+   * agenda, ex. enlite@enlite.health) via DWD. Capacidade 1: QUALQUER evento na
+   * agenda ocupa o horário — não há filtro de "declined" por pessoa, porque a
+   * disponibilidade é da agenda, não de um roster. Evento all-day = dia inteiro.
    */
   async getBusyIntervals(
-    hostEmail: string,
+    calendarId: string,
+    impersonateEmail: string,
     fromISO: string,
     toISO: string,
     timezone: string = AR_ZONE,
   ): Promise<BusyInterval[]> {
-    const token = await this.token(hostEmail);
-    if (!token) throw new Error(`[AdmissionCalendarService] no DWD token for ${hostEmail}`);
+    const token = await this.token(impersonateEmail);
+    if (!token) throw new Error(`[AdmissionCalendarService] no DWD token for ${impersonateEmail}`);
 
     const params = new URLSearchParams({
       singleEvents: 'true',
@@ -201,27 +202,24 @@ export class AdmissionCalendarService {
       maxResults: '2500',
       timeMin: fromISO,
       timeMax: toISO,
-      fields: 'items(start,end,attendees(email,self,responseStatus))',
+      fields: 'items(start,end,status)',
     });
 
     const res = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] events.list ${res.status} for ${hostEmail}: ${detail}`);
+      throw new Error(`[AdmissionCalendarService] events.list ${res.status} on ${calendarId}: ${detail}`);
     }
 
     const data = (await res.json()) as { items?: RawCalendarEvent[] };
     const intervals: BusyInterval[] = [];
 
     for (const ev of data.items ?? []) {
-      // Host recusou → não conta como ocupado.
-      const hostAttendee = (ev.attendees ?? []).find(
-        (a) => a.self === true || a.email?.toLowerCase() === hostEmail.toLowerCase(),
-      );
-      if (hostAttendee?.responseStatus === 'declined') continue;
+      // Evento cancelado não ocupa.
+      if (ev.status === 'cancelled') continue;
 
       if (ev.start?.date && ev.end?.date) {
         // All-day: end.date é exclusivo (dia seguinte). Ocupa [start, end).
@@ -245,9 +243,10 @@ export class AdmissionCalendarService {
 
   /**
    * Cria evento com Google Meet numa AGENDA DEDICADA de admissão (não na primary
-   * do host), impersonando `impersonateEmail` (= enlite@enlite.health), com a
-   * entrevistadora como co-host (attendee que pode editar o evento). Attendees =
-   * [coHost, patient?]. Retorna id + hangoutLink.
+   * de ninguém), impersonando `impersonateEmail` (= enlite@enlite.health). Sem
+   * co-host por entrevistadora (o roster foi descontinuado). Attendees =
+   * [patient?] (+ coHost só se explicitamente passado, legado). Retorna id +
+   * hangoutLink.
    */
   async createEventWithMeet(
     {
@@ -266,7 +265,7 @@ export class AdmissionCalendarService {
     if (!token) throw new Error(`[AdmissionCalendarService] no DWD token for ${impersonateEmail}`);
 
     const attendees = [
-      { email: coHostEmail },
+      ...(coHostEmail ? [{ email: coHostEmail }] : []),
       ...(patientEmail ? [{ email: patientEmail }] : []),
     ];
 
@@ -276,7 +275,7 @@ export class AdmissionCalendarService {
       start: { dateTime: startISO, timeZone: timezone },
       end: { dateTime: endISO, timeZone: timezone },
       attendees,
-      // Co-host: a entrevistadora pode editar/remarcar o evento na agenda dedicada.
+      // Convidados (o paciente) podem editar/reagendar via convite.
       guestsCanModify: true,
       conferenceData: {
         createRequest: {
