@@ -41,6 +41,13 @@ fi
 : "${FIREBASE_API_KEY:?defina FIREBASE_API_KEY no e2e-prod/.env.local antes do deploy}"
 ADMIN_PW_SECRET="e2e-admin-password"                   # secret do Secret Manager (criado/atualizado abaixo)
 
+# IAM que a jornada do paciente exige na SA do JOB (concedidos 2026-07-30):
+#   • roles/logging.viewer no projeto        → ler os logs reais (Cloud Logging)
+#   • roles/iam.serviceAccountTokenCreator   → SÓ em enlite-functions-sa, para
+#     assinar o JWT de Domain-Wide Delegation e LER a agenda de admissão. A SA do
+#     runner não ganha nada além disso: sem banco, sem secrets, sem escrita.
+#     (Autorizar a SA do runner direto na DWD exigiria ação de admin do Workspace.)
+#
 # SA que o Cloud Scheduler usa pra INVOCAR o job (precisa de roles/run.invoker no job).
 # Menor privilégio: uma SA dedicada só pra isso, não a default do projeto.
 SCHEDULER_SA="e2e-prod-invoker@${PROJECT}.iam.gserviceaccount.com"
@@ -117,7 +124,7 @@ RUN_JOB_ARGS=(
   # MONITOR_ALERT_TO → destinatário do email (o reporter custom dispara a CADA run).
   # Credenciais (admin + Firebase) exigidas pelas JORNADAS (regression) e testes admin, que o
   # job agora exercita junto do smoke. FIREBASE_API_KEY é público (bundle do front) → env comum.
-  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com,E2E_ADMIN_EMAIL=${E2E_ADMIN_EMAIL},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}"
+  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com,E2E_ADMIN_EMAIL=${E2E_ADMIN_EMAIL},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-},GCP_PROJECT_ID=${GCP_PROJECT_ID:-enlite-prd},ADMISSION_IMPERSONATE_EMAIL=${ADMISSION_IMPERSONATE_EMAIL:-enlite@enlite.health},ADMISSION_CALENDAR_ID_AR=${ADMISSION_CALENDAR_ID_AR},ADMISSION_CALENDAR_ID_BR=${ADMISSION_CALENDAR_ID_BR},DWD_SIGNER_SA=${DWD_SIGNER_SA:-enlite-functions-sa@enlite-prd.iam.gserviceaccount.com}"
   # Secrets (Secret Manager): SendGrid (email) + senha do admin (login staff das jornadas/admin).
   --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest,E2E_ADMIN_PASSWORD=${ADMIN_PW_SECRET}:latest"
   --max-retries=1          # 1 retry de nível-job absorve blip de cold start/egress; alerta só em falha real
