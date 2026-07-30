@@ -26,6 +26,7 @@ interface PatientContactRow {
   phone_whatsapp: string | null;
   first_name: string | null;
   has_consent: boolean | null;
+  is_test: boolean | null;
 }
 
 /**
@@ -52,10 +53,25 @@ export class RealAdmissionNotifier implements AdmissionNotifier {
   ) {}
 
   async onBooked(appt: BookedAppointmentNotice): Promise<void> {
+    // Synthetic gate (ANTES do consentimento): paciente marcado is_test é do
+    // synthetic monitoring, que roda todo dia contra produção. Mandar WhatsApp
+    // para ele seria (a) cobrar Twilio por um teste e (b) — pior — arriscar
+    // enviar mensagem de verdade se o telefone sintético colidir com um número
+    // real. O monitor exercita todo o caminho até aqui e assere ESTE log; a
+    // saúde do envio de verdade é medida sobre os pacientes reais.
+    const testCheck = await this.loadPatientContact(appt.patientId);
+    if (testCheck?.is_test) {
+      functions.logger.info('admission.notifier.skipped_test_patient', {
+        appointmentId: appt.appointmentId,
+        patientId: appt.patientId,
+      });
+      return;
+    }
+
     // Consent gate: only message patients who explicitly agreed (patients.has_consent,
     // set from the form checkbox / Ley 25.326 / LGPD). No consent → no confirmation,
     // no reminder scheduled. The checkbox is enforced, not decorative.
-    const contact = await this.loadPatientContact(appt.patientId);
+    const contact = testCheck;
     if (!contact?.has_consent) {
       functions.logger.info('admission.notifier.skipped_no_consent', {
         appointmentId: appt.appointmentId,
@@ -169,7 +185,7 @@ export class RealAdmissionNotifier implements AdmissionNotifier {
 
   private async loadPatientContact(patientId: string): Promise<PatientContactRow | null> {
     const res = await this.db.query<PatientContactRow>(
-      `SELECT phone_whatsapp, first_name, has_consent
+      `SELECT phone_whatsapp, first_name, has_consent, is_test
          FROM patients
         WHERE id = $1 AND deleted_at IS NULL`,
       [patientId],
