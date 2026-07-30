@@ -142,9 +142,10 @@ export function PatientFilters({
           />
         </div>
 
-        {/* Country filter (Fase 4) */}
+        {/* Country filter (Fase 4). 210px: cabe o rótulo mais longo ("Todos los
+            países") — select nativo trunca sem reticências quando não cabe. */}
         {showCountryFilter && (
-          <div className="w-[160px]" data-testid="patient-country-filter">
+          <div className="w-[210px]" data-testid="patient-country-filter">
             <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
               {t('admin.patients.countryLabel')}
             </label>

@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Plus, LayoutGrid } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, LayoutGrid, Globe } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { Button } from '@presentation/components/atoms/Button';
 import { PatientCreateModal } from '@presentation/components/features/admin/PatientCreateModal';
 import { PatientFilters } from '@presentation/components/features/admin/PatientFilters';
-import { PatientStatsCards } from '@presentation/components/features/admin/PatientStatsCards';
-import { PatientFunnelSection } from '@presentation/components/features/admin/PatientFunnelSection';
 import { PatientsTable } from '@presentation/components/features/admin/PatientsTable';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { usePatientsData } from '@hooks/admin/usePatientsData';
@@ -99,7 +97,7 @@ export function AdminPatientsPage(): JSX.Element {
     currentPage,
   ]);
 
-  const { patients: rawPatients, total, stats, isLoading, error, refetch } = usePatientsData(filters);
+  const { patients: rawPatients, total, isLoading, error, refetch } = usePatientsData(filters);
 
   const patients = useMemo(
     () =>
@@ -127,21 +125,19 @@ export function AdminPatientsPage(): JSX.Element {
           {t('admin.patients.title')}
         </Typography>
         <div className="flex items-center gap-2">
-          <img
-            className="w-7 h-5"
-            alt="Argentina"
-            src="https://c.animaapp.com/UVSSEdVv/img/group-237688.svg"
-          />
+          {/* Era um <img> do CDN do Anima (c.animaapp.com) que responde 403 —
+              renderizava ícone de imagem quebrada em todo carregamento. */}
+          <Globe className="w-5 h-5 text-[#737373]" strokeWidth={1.5} aria-hidden="true" />
           <Typography variant="body" weight="medium" className="text-[#737373]">
             {t('common.country')}
           </Typography>
         </div>
       </div>
 
-      <PatientStatsCards stats={stats} />
-
-      {/* Funnel / traceability metrics (Fase 4) */}
-      <PatientFunnelSection />
+      {/*
+        Os big numbers (estado dos pacientes + embudo) vivem em "Gestión a la
+        vista" (/admin/dashboard) — esta tela é operação: lista, filtros, kanban.
+      */}
 
       {/* Table section */}
       <div className="flex flex-col">
@@ -166,11 +162,13 @@ export function AdminPatientsPage(): JSX.Element {
             <Button
               variant="outline"
               size="md"
-              className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"
+              className="h-10 px-5 border-primary text-primary flex items-center justify-center gap-2"
               onClick={() => setIsCreateOpen(true)}
               data-testid="new-patient-btn"
             >
-              <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base">
+              {/* rótulo curto de propósito: com "Crear nuevo" a largura fixa
+                  quebrava em duas linhas dentro do botão */}
+              <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base whitespace-nowrap">
                 {t('admin.patients.create.new')}
               </Typography>
               <Plus className="w-3.5 h-3.5 text-primary" />

@@ -28,7 +28,8 @@ export function PatientKanbanPage(): JSX.Element {
           {t('admin.patients.kanban.title')}
         </Typography>
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
-          <div className="w-[150px]" data-testid="patient-country-filter">
+          {/* 210px: cabe "Todos los países" sem cortar (ver PatientFilters) */}
+          <div className="w-[210px]" data-testid="patient-country-filter">
             <Select
               inputSize="compact"
               options={countryOptions}

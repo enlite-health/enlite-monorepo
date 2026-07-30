@@ -611,7 +611,9 @@
         "cadastros": "Cadastros de prestadores",
         "cadastrosHint": "Quantas pessoas se cadastraram e em que estado estão",
         "zoneAnalytics": "Analytics por zona",
-        "zoneAnalyticsHint": "Pacientes, prestadores e demanda por zona geográfica"
+        "zoneAnalyticsHint": "Pacientes, prestadores e demanda por zona geográfica",
+        "pacientes": "Pacientes",
+        "pacientesHint": "Estado da base de pacientes e funil de admissão"
       },
       "bigNumbers": {
         "equiposArmados": "Equipes armadas",
@@ -2352,10 +2354,16 @@
           "7": "Últimos 7 dias",
           "30": "Últimos 30 dias",
           "90": "Últimos 90 dias"
+        },
+        "sub": {
+          "solicitantes": "Pacientes criados no período (todas as origens)",
+          "admision": "Desses, os que chegaram a Admissão ou além",
+          "agendadas": "Com entrevista de admissão agendada no período",
+          "vacantes": "Com vaga publicada (não conta rascunhos)"
         }
       },
       "create": {
-        "new": "Criar novo",
+        "new": "Novo",
         "title": "Novo paciente",
         "save": "Salvar",
         "close": "Fechar",
@@ -2433,7 +2441,10 @@
       "stats": {
         "total": "Total de pacientes",
         "complete": "Completos",
-        "needsAttention": "Precisa atenção"
+        "needsAttention": "Precisa atenção",
+        "totalSub": "Pacientes cadastrados (sem os excluídos)",
+        "completeSub": "Sem dados obrigatórios faltando",
+        "needsAttentionSub": "Com dado faltando ou conflito de nº de caso"
       },
       "detail": {
         "pageTitle": "Cadastro do Paciente",
