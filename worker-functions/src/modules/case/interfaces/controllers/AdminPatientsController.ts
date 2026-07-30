@@ -30,6 +30,10 @@ import {
   patientSectionParamSchema,
   patientStatusSchema,
 } from '../validators/patientSectionSchemas';
+import {
+  PatientTestFixtureService,
+  NotATestPatientError,
+} from '../../application/PatientTestFixtureService';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
@@ -63,6 +67,7 @@ export class AdminPatientsController {
   private readonly createPatientUseCase: CreatePatientUseCase;
   private readonly activatePatientUseCase: ActivatePatientUseCase;
   private readonly patientService: PatientService;
+  private readonly testFixtures: PatientTestFixtureService;
   private readonly db: Pool;
   private readonly geocoder: GeocodingService;
 
@@ -80,6 +85,78 @@ export class AdminPatientsController {
     this.patientService = patientService ?? new PatientService();
     this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
     this.geocoder = geocoder ?? new GeocodingService();
+    this.testFixtures = new PatientTestFixtureService(this.db);
+  }
+
+  /**
+   * PATCH /api/admin/patients/:id/test-flag   body: { isTest: boolean }
+   *
+   * Marca um paciente como sintético (synthetic monitoring). Espelha
+   * `PATCH /api/admin/workers/:id/test-flag`. admin-only na rota.
+   */
+  async updatePatientTestFlag(req: Request, res: Response): Promise<void> {
+    const paramsResult = patientIdSchema.safeParse({ patientId: req.params.id });
+    if (!paramsResult.success) {
+      res.status(400).json({ success: false, error: 'Invalid patient id' });
+      return;
+    }
+    const bodyResult = z.object({ isTest: z.boolean() }).safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid body',
+        details: bodyResult.error.flatten(),
+      });
+      return;
+    }
+
+    try {
+      const isTest = await this.testFixtures.setTestFlag(
+        paramsResult.data.patientId,
+        bodyResult.data.isTest,
+      );
+      if (isTest === null) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      res.status(200).json({ success: true, data: { isTest } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:updatePatientTestFlag' });
+      res.status(500).json({ success: false, error: 'Failed to update test flag' });
+    }
+  }
+
+  /**
+   * DELETE /api/admin/patients/:id — purga um paciente SINTÉTICO.
+   *
+   * Só age sobre `is_test = true`; paciente real devolve **409**, nunca apaga.
+   * Limpa junto o evento do Google Calendar, a entrevista e as vagas geradas —
+   * é o teardown da jornada diária do synthetic monitoring.
+   */
+  async purgeTestPatient(req: Request, res: Response): Promise<void> {
+    const paramsResult = patientIdSchema.safeParse({ patientId: req.params.id });
+    if (!paramsResult.success) {
+      res.status(400).json({ success: false, error: 'Invalid patient id' });
+      return;
+    }
+
+    try {
+      const result = await this.testFixtures.purge(paramsResult.data.patientId);
+      if (result === null) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      res.status(200).json({ success: true, data: result });
+    } catch (err: unknown) {
+      if (err instanceof NotATestPatientError) {
+        res.status(409).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:purgeTestPatient' });
+      res.status(500).json({ success: false, error: 'Failed to purge test patient' });
+    }
   }
 
   /**
