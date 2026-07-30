@@ -108,6 +108,9 @@ export default defineConfig({
       name: 'regression',
       testDir: './regression',
       testMatch: /\.regression\.ts$/, // specs deste projeto usam sufixo .regression.ts
+      // A jornada do paciente precisa da sessão admin (ler o big number NA TELA e
+      // marcar/purgar o registro sintético). O storageState é criado pelo admin-setup.
+      dependencies: ['admin-setup'],
       fullyParallel: false, // ver bloco acima — jornada de escrita não paraleliza
       // retries: 1 = WARM-UP (mesma lógica do smoke). A jornada faz 1 navegação de UI
       // (PASSO 8 da Fatia 3, página pública da vaga); um cold-start do Cloud Run do

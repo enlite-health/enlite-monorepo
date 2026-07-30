@@ -50,6 +50,15 @@ interface TestListEntry {
   icon: string; // ✅ passou · ❌ falhou · ⚠️ flaky · ⏭️ pulou
   suite: string; // "conjunto de testes" (describe, ou arquivo se não houver describe)
   title: string; // nome do teste
+  /**
+   * Linhas de EVIDÊNCIA anotadas pelo próprio teste
+   * (`test.info().annotations.push({ type: 'evidência', description })`).
+   *
+   * Existe porque "✅ passou" não conta o que foi observado. Numa jornada que
+   * mexe em produção, o dono quer LER no email que o big number foi de 11 para
+   * 12 e voltou, e qual evento entrou na agenda — não confiar que passou.
+   */
+  evidence: string[];
 }
 
 interface FailuresReport {
@@ -127,6 +136,10 @@ export default class SendGridReporter implements Reporter {
         icon: outcomeIcon(outcome),
         suite: test.parent?.title?.trim() || this.relFile(test.location.file),
         title: test.title,
+        evidence: (testResult?.annotations ?? test.annotations ?? [])
+          .filter((a) => a.type === 'evidência' || a.type === 'validacao')
+          .map((a) => a.description ?? '')
+          .filter(Boolean),
       });
       switch (outcome) {
         case 'expected':
@@ -225,6 +238,8 @@ export default class SendGridReporter implements Reporter {
           lines.push(`  ${currentSuite}`);
         }
         lines.push(`    ${t.icon} ${t.title}`);
+        // Evidência do próprio teste — o que foi OBSERVADO, não só "passou".
+        for (const e of t.evidence) lines.push(`         ↳ ${e}`);
       }
     }
 
@@ -272,8 +287,18 @@ export default class SendGridReporter implements Reporter {
         .map(([suite, items]) => {
           const lis = items
             .map(
-              (t) =>
-                `<li style="margin:2px 0;font-size:13px;color:#333;">${t.icon} ${escapeHtml(t.title)}</li>`,
+              (t) => {
+                const ev = t.evidence
+                  .map(
+                    (e) =>
+                      `<div style="margin:1px 0 1px 18px;font-size:12px;color:#666;">↳ ${escapeHtml(e)}</div>`,
+                  )
+                  .join('');
+                return (
+                  `<li style="margin:2px 0;font-size:13px;color:#333;">` +
+                  `${t.icon} ${escapeHtml(t.title)}${ev}</li>`
+                );
+              },
             )
             .join('');
           return (
