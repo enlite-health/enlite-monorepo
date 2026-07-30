@@ -24,7 +24,7 @@ const SLOT_ISO = '2026-08-03T10:00:00-03:00'; // segunda 10:00 AR
 const PHONE = '+5491122334455';
 
 function makeNotifier(opts: {
-  patientRow?: { phone_whatsapp: string | null; first_name: string | null; has_consent?: boolean | null } | null;
+  patientRow?: { phone_whatsapp: string | null; first_name: string | null; has_consent?: boolean | null; is_test?: boolean | null } | null;
   now: string;
   scheduleReturns?: string | null;
 }) {
@@ -154,5 +154,42 @@ describe('RealAdmissionNotifier', () => {
 
     expect(sendWithContentSid).not.toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
+  });
+
+  // O synthetic monitoring roda esta MESMA rota contra produção todo dia. Sem
+  // este gate, cada run cobraria a Twilio — e, se o telefone sintético colidisse
+  // com um número real, mandaria mensagem para uma pessoa de verdade.
+  it('paciente sintético (is_test): NÃO envia NEM agenda, mesmo COM consentimento', async () => {
+    const { notifier, schedule, sendWithContentSid } = makeNotifier({
+      now: '2026-08-01T00:00:00-03:00',
+      patientRow: { phone_whatsapp: PHONE, first_name: 'Carla', has_consent: true, is_test: true },
+    });
+
+    await notifier.onBooked(APPT);
+
+    expect(sendWithContentSid).not.toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('o gate sintético vem ANTES do de consentimento (is_test manda, qualquer que seja o consent)', async () => {
+    const { notifier, sendWithContentSid } = makeNotifier({
+      now: '2026-08-01T00:00:00-03:00',
+      patientRow: { phone_whatsapp: PHONE, first_name: 'Carla', has_consent: false, is_test: true },
+    });
+
+    await notifier.onBooked(APPT);
+
+    expect(sendWithContentSid).not.toHaveBeenCalled();
+  });
+
+  it('paciente real (is_test=false) segue enviando normalmente', async () => {
+    const { notifier, sendWithContentSid } = makeNotifier({
+      now: '2026-08-01T00:00:00-03:00',
+      patientRow: { phone_whatsapp: PHONE, first_name: 'Carla', has_consent: true, is_test: false },
+    });
+
+    await notifier.onBooked(APPT);
+
+    expect(sendWithContentSid).toHaveBeenCalledTimes(1);
   });
 });

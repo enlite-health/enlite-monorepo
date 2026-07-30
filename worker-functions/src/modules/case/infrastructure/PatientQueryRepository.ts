@@ -115,6 +115,8 @@ export interface PatientListRow {
   status: string | null;
   needsAttention: boolean;
   attentionReasons: string[];
+  /** Registro sintético do synthetic monitoring — alvo do sweeper (migration 257). */
+  isTest: boolean;
   /** Number of addresses linked to this patient. */
   addressesCount: number;
   /**
@@ -237,6 +239,7 @@ export class PatientQueryRepository {
         sex,
         status,
         needs_attention        AS "needsAttention",
+        is_test                AS "isTest",
         attention_reasons      AS "attentionReasons",
         (SELECT COUNT(*) FROM patient_addresses pa
           WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)::int
@@ -288,6 +291,7 @@ export class PatientQueryRepository {
       const sla = derivePatientSla(row.status, stageEnteredAt, now);
       return {
         id: row.id,
+        isTest: row.isTest === true,
         clickupTaskId: row.clickupTaskId,
         firstName: row.firstName,
         lastName: row.lastName,
