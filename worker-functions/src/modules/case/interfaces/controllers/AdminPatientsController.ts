@@ -375,6 +375,7 @@ export class AdminPatientsController {
         sex: row.sex,
         status: row.status,
         needsAttention: row.needsAttention,
+        isTest: row.isTest,
         attentionReasons: row.attentionReasons,
         addressesCount: row.addressesCount,
         caseNumber: row.caseNumber,
