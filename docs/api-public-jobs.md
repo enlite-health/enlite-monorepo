@@ -79,6 +79,7 @@ Todos opcionais.
       "city": "Provincia de Buenos Aires",
       "neighborhood": "Temperley",
       "state_city": "Provincia de Buenos Aires / Provincia de Buenos Aires",
+      "location_label": "Temperley",
       "worker_type": ["AT"],
       "worker_sex": "BOTH",
       "job_zone": null,
@@ -120,6 +121,7 @@ Todos opcionais.
 | `city` | `string \| null` | Cidade do endereço |
 | `neighborhood` | `string \| null` | Bairro do endereço |
 | `state_city` | `string \| null` | Concatenação `"{state} / {city}"` (`null` se ambos vazios) |
+| `location_label` | `string \| null` | Rótulo único de localização, o **mais específico** disponível: `neighborhood` → `city` → `state` (barrio → localidad → provincia). Derivado no request (sem coluna nova). Pronto pro portal exibir no título do accordion sem escolher entre campos; `null` se os três vazios |
 | `worker_type` | `string[] \| null` | Tipos de profissional aceitos (ex: `["AT"]`, `["AT", "CUIDADOR"]`) |
 | `worker_sex` | `string \| null` | Sexo requerido (`FEMALE`, `MALE`, `BOTH`) |
 | `job_zone` | `string \| null` | Zona inferida (uso interno, pode estar vazio) |

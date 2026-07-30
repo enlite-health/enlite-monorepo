@@ -20,11 +20,13 @@ export const adminPatientsListSchema = z.object({
     .trim()
     .regex(/^\d+$/, { message: 'case_number must contain digits only' })
     .optional(),
+  /** País do paciente. Ausente = todos os países (comportamento atual). */
+  country: z.enum(['AR', 'BR']).optional(),
   limit: z.coerce
     .number()
     .int()
     .min(1)
-    .max(100)
+    .max(1000) // raised from 100 for the patient kanban board (fetches all patients grouped by status)
     .default(20),
   offset: z.coerce
     .number()

@@ -1,6 +1,12 @@
 import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { PatientIdentityRepository, PatientIdentityUpsertInput } from '../infrastructure/PatientIdentityRepository';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import {
+  PatientIdentityRepository,
+  PatientIdentityUpsertInput,
+  PatientIdentityNativeInsertInput,
+  NativePatientOrigin,
+} from '../infrastructure/PatientIdentityRepository';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
@@ -14,6 +20,7 @@ import type { DependencyLevel } from '../domain/enums/DependencyLevel';
 import type { ClinicalSpecialty } from '../domain/enums/ClinicalSpecialty';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { Profession } from '../../worker/domain/enums/Profession';
+import { isPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
 
 /** Strategy for handling missing contact channel during upsert. */
 export type MissingContactStrategy = 'error' | 'flag';
@@ -69,6 +76,61 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
 }
 
 /**
+ * The auxiliary collections + clinical block attached to a patient, shared by
+ * both the ClickUp upsert path and the native create path. Extracted so
+ * upsertRelated can serve both without depending on clickupTaskId.
+ */
+export type PatientRelatedInput = Pick<
+  PatientServiceUpsertInput,
+  | 'diagnosis'
+  | 'dependencyLevel'
+  | 'clinicalSpecialty'
+  | 'clinicalSegments'
+  | 'serviceType'
+  | 'deviceType'
+  | 'additionalComments'
+  | 'hasJudicialProtection'
+  | 'hasCud'
+  | 'hasConsent'
+  | 'responsibles'
+  | 'addresses'
+  | 'professionals'
+>;
+
+/**
+ * Input for native patient creation (migration 251). Same shape as the ClickUp
+ * upsert input but WITHOUT clickupTaskId (native rows have none) — origin,
+ * status and contactEmail are supplied via the `opts` arg, not here.
+ */
+export type CreateNativePatientInput = Omit<PatientServiceUpsertInput, 'clickupTaskId'>;
+
+export interface CreateNativePatientOptions {
+  origin: NativePatientOrigin;         // 'web_form' | 'admin_manual'
+  status: PatientStatus;               // set directly — no vacancyStatusMap
+  /** Plaintext contact email; encrypted with KMS before storage. */
+  contactEmail?: string;
+}
+
+/** Section-scoped partial update of a native (or any) patient. */
+export type PatientSection = 'general' | 'clinical' | 'support-network' | 'service';
+
+/** Identity fields updatable via the 'general' section. */
+export interface PatientGeneralSectionData {
+  firstName?: string | null;
+  lastName?: string | null;
+  birthDate?: Date | null;
+  documentType?: PatientServiceUpsertInput['documentType'];
+  documentNumber?: string | null;
+  affiliateId?: string | null;
+  sex?: PatientServiceUpsertInput['sex'];
+  phoneWhatsapp?: string | null;
+  healthInsuranceName?: string | null;
+  healthInsuranceMemberId?: string | null;
+  /** Plaintext; encrypted with KMS before storage. */
+  contactEmail?: string | null;
+}
+
+/**
  * PatientService — orchestrates Identity, Clinical, and Responsible repositories.
  * All writes happen inside a single Postgres transaction.
  * Enforces cross-domain invariants (e.g. contact channel validation).
@@ -79,11 +141,15 @@ export class PatientService {
   private clinicalRepo: PatientClinicalRepository;
   private responsibleRepo: PatientResponsibleRepository;
   private geocoder: GeocodingService;
+  private encryptionService: KMSEncryptionService;
 
   constructor(geocoder?: GeocodingService) {
     this.identityRepo    = new PatientIdentityRepository();
     this.clinicalRepo    = new PatientClinicalRepository();
     this.responsibleRepo = new PatientResponsibleRepository();
+    // Same KMS mechanism the responsibles use (email_encrypted). Passthrough
+    // (base64) in test/local when USE_KMS_ENCRYPTION=false or NODE_ENV=test.
+    this.encryptionService = new KMSEncryptionService();
     // Injected for tests; defaults to a real instance that no-ops when
     // GOOGLE_MAPS_API_KEY is missing (see GeocodingService.geocode).
     this.geocoder = geocoder ?? new GeocodingService();
@@ -249,7 +315,7 @@ export class PatientService {
 
   private async upsertRelated(
     patientId: string,
-    input: PatientServiceUpsertInput,
+    input: PatientRelatedInput,
     client: import('pg').PoolClient,
   ): Promise<void> {
     await this.clinicalRepo.upsert(
@@ -279,6 +345,291 @@ export class PatientService {
 
     if (input.professionals !== undefined) {
       await replacePatientProfessionals(patientId, input.professionals, client);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NATIVE write path (migration 251) — patient born inside Enlite, not synced
+  // from ClickUp. Separate from upsertFromClickUp: inserts clickup_task_id NULL,
+  // origin != 'clickup', status set directly (no vacancyStatusMap), no ON
+  // CONFLICT. Enlite is the source of truth for these rows (decisão D2/D7).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Creates a native patient (web-form lead or manual admin creation) inside a
+   * single Postgres transaction. Reuses the contact-channel validation, the
+   * case_number conflict handling, the KMS encryption of the responsibles, and
+   * upsertRelated for clinical/responsibles/addresses/professionals.
+   */
+  async createNativePatient(
+    input: CreateNativePatientInput,
+    opts: CreateNativePatientOptions,
+  ): Promise<{ id: string; created: true }> {
+    // Contact-channel invariant (same validator as the ClickUp path). A native
+    // patient's own contact email (new column, migration 251) is ALSO a valid
+    // channel, so skip the responsible/phone check when it's present.
+    const primary = input.responsibles?.find(r => r.isPrimary);
+    if (!opts.contactEmail?.trim()) {
+      validateContactChannel({
+        patientPhoneWhatsapp: input.phoneWhatsapp,
+        primaryResponsible:   primary,
+      });
+    }
+
+    // Encrypt the contact email with the SAME KMSEncryptionService the
+    // responsibles use for email_encrypted (base64 ciphertext, null when empty).
+    const contactEmailEncrypted = await this.encryptionService.encrypt(opts.contactEmail ?? null);
+
+    const nativeInput: PatientIdentityNativeInsertInput = {
+      origin:                  opts.origin,
+      status:                  opts.status,
+      contactEmailEncrypted,
+      firstName:               input.firstName,
+      lastName:                input.lastName,
+      birthDate:               input.birthDate,
+      documentType:            input.documentType,
+      documentNumber:          input.documentNumber,
+      affiliateId:             input.affiliateId,
+      sex:                     input.sex,
+      phoneWhatsapp:           input.phoneWhatsapp,
+      insuranceInformed:       input.insuranceInformed,
+      insuranceVerified:       input.insuranceVerified,
+      cityLocality:            input.cityLocality,
+      province:                input.province,
+      zoneNeighborhood:        input.zoneNeighborhood,
+      country:                 input.country,
+      needsAttention:          input.needsAttention,
+      attentionReasons:        input.attentionReasons,
+      healthInsuranceName:     input.healthInsuranceName,
+      healthInsuranceMemberId: input.healthInsuranceMemberId,
+      caseNumber:              input.caseNumber,
+    };
+
+    return this.runNativeCreateTransaction(nativeInput, input);
+  }
+
+  private async runNativeCreateTransaction(
+    nativeInput: PatientIdentityNativeInsertInput,
+    related: PatientRelatedInput,
+  ): Promise<{ id: string; created: true }> {
+    const db     = DatabaseConnection.getInstance();
+    const client = await db.getClient();
+
+    try {
+      await client.query('BEGIN');
+
+      let patientId: string;
+      try {
+        ({ id: patientId } = await this.identityRepo.insertNative(nativeInput, client));
+      } catch (err) {
+        if (isCaseNumberConflict(err)) {
+          // Same conflict handling as the ClickUp path: rollback and retry
+          // without case_number, flagging the row for operational review.
+          await client.query('ROLLBACK');
+          client.release();
+          functions.logger.warn('patient_service.native_case_number_conflict_retry', {
+            origin:             nativeInput.origin,
+            rejectedCaseNumber: nativeInput.caseNumber ?? null,
+          });
+          return this.retryNativeWithoutCaseNumber(nativeInput, related);
+        }
+        throw err;
+      }
+
+      await this.upsertRelated(patientId, related, client);
+
+      await client.query('COMMIT');
+      return { id: patientId, created: true };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      try { client.release(); } catch { /* already released on conflict path */ }
+    }
+  }
+
+  private async retryNativeWithoutCaseNumber(
+    nativeInput: PatientIdentityNativeInsertInput,
+    related: PatientRelatedInput,
+  ): Promise<{ id: string; created: true }> {
+    const attentionReasons = new Set<AttentionReason>(nativeInput.attentionReasons ?? []);
+    attentionReasons.add('CASE_NUMBER_CONFLICT');
+
+    const safeInput: PatientIdentityNativeInsertInput = {
+      ...nativeInput,
+      caseNumber:       null,
+      needsAttention:   true,
+      attentionReasons: Array.from(attentionReasons),
+    };
+
+    const db     = DatabaseConnection.getInstance();
+    const client = await db.getClient();
+
+    try {
+      await client.query('BEGIN');
+      const { id: patientId } = await this.identityRepo.insertNative(safeInput, client);
+      await this.upsertRelated(patientId, related, client);
+      await client.query('COMMIT');
+      return { id: patientId, created: true };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Partial, section-scoped update of a patient (native or ClickUp-origin).
+   *   - general:         identity fields (name, doc, phone, contact email…)
+   *   - clinical:        the full PatientClinical block (reuses clinicalRepo)
+   *   - support-network: responsibles (reuses responsibleRepo.replaceAll)
+   *   - service:         just service_type (targeted UPDATE — does NOT clobber
+   *                      the rest of the clinical block)
+   * Does NOT touch `origin`. Runs in a single transaction.
+   */
+  async updatePatientSection(
+    patientId: string,
+    section: PatientSection,
+    data: PatientGeneralSectionData | PatientRelatedInput,
+  ): Promise<{ id: string; updated: true }> {
+    const db     = DatabaseConnection.getInstance();
+    const client = await db.getClient();
+
+    try {
+      await client.query('BEGIN');
+
+      switch (section) {
+        case 'general':
+          await this.updateGeneralSection(patientId, data as PatientGeneralSectionData, client);
+          break;
+        case 'clinical': {
+          const c = data as PatientRelatedInput;
+          await this.clinicalRepo.upsert(
+            {
+              patientId,
+              diagnosis:             c.diagnosis,
+              dependencyLevel:       c.dependencyLevel,
+              clinicalSpecialty:     c.clinicalSpecialty,
+              clinicalSegments:      c.clinicalSegments,
+              serviceType:           c.serviceType,
+              deviceType:            c.deviceType,
+              additionalComments:    c.additionalComments,
+              hasJudicialProtection: c.hasJudicialProtection,
+              hasCud:                c.hasCud,
+              hasConsent:            c.hasConsent,
+            },
+            client,
+          );
+          break;
+        }
+        case 'support-network': {
+          const responsibles = (data as PatientRelatedInput).responsibles ?? [];
+          await this.responsibleRepo.replaceAll(patientId, responsibles, client);
+          break;
+        }
+        case 'service': {
+          // Targeted: only service_type. Passing this through clinicalRepo.upsert
+          // would null out the rest of the clinical block, so update directly.
+          const serviceType = (data as PatientRelatedInput).serviceType;
+          const value =
+            serviceType !== undefined && serviceType !== null && serviceType.length > 0
+              ? serviceType
+              : null;
+          await client.query(
+            'UPDATE patients SET service_type = $2, updated_at = NOW() WHERE id = $1',
+            [patientId, value],
+          );
+          break;
+        }
+      }
+
+      await client.query('COMMIT');
+      return { id: patientId, updated: true };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async updateGeneralSection(
+    patientId: string,
+    data: PatientGeneralSectionData,
+    client: import('pg').PoolClient,
+  ): Promise<void> {
+    // Column whitelist — partial update: only columns present in `data` are set.
+    const columnByKey: Record<string, string> = {
+      firstName:               'first_name',
+      lastName:                'last_name',
+      birthDate:               'birth_date',
+      documentType:            'document_type',
+      documentNumber:          'document_number',
+      affiliateId:             'affiliate_id',
+      sex:                     'sex',
+      phoneWhatsapp:           'phone_whatsapp',
+      healthInsuranceName:     'health_insurance_name',
+      healthInsuranceMemberId: 'health_insurance_member_id',
+    };
+
+    const sets: string[] = [];
+    const values: unknown[] = [patientId];
+
+    for (const [key, column] of Object.entries(columnByKey)) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        values.push((data as Record<string, unknown>)[key] ?? null);
+        sets.push(`${column} = $${values.length}`);
+      }
+    }
+
+    // Contact email is encrypted (KMS) before storage, like the responsibles.
+    if (Object.prototype.hasOwnProperty.call(data, 'contactEmail')) {
+      const enc = await this.encryptionService.encrypt(data.contactEmail ?? null);
+      values.push(enc);
+      sets.push(`contact_email_encrypted = $${values.length}`);
+    }
+
+    if (sets.length === 0) return; // nothing to update
+
+    sets.push('updated_at = NOW()');
+    await client.query(
+      `UPDATE patients SET ${sets.join(', ')} WHERE id = $1`,
+      values,
+    );
+  }
+
+  /**
+   * Moves a patient to a new lifecycle status. Validates the value is a known
+   * PatientStatus. Never touches `origin` (a native patient stays native).
+   */
+  async moveStatus(
+    patientId: string,
+    status: PatientStatus,
+  ): Promise<{ id: string; status: PatientStatus }> {
+    if (!isPatientStatus(status)) {
+      throw new Error(`Invalid patient status: ${String(status)}`);
+    }
+
+    const db     = DatabaseConnection.getInstance();
+    const client = await db.getClient();
+
+    try {
+      await client.query('BEGIN');
+      const res = await client.query<{ id: string }>(
+        'UPDATE patients SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING id',
+        [patientId, status],
+      );
+      if ((res.rowCount ?? 0) === 0) {
+        throw new Error(`Patient not found: ${patientId}`);
+      }
+      await client.query('COMMIT');
+      return { id: patientId, status };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
 }

@@ -54,6 +54,7 @@ export { PublishVacancyToTalentumUseCase, PublishError } from './application/Pub
 export type { AuditActor } from './application/PublishVacancyToTalentumUseCase';
 export { SyncTalentumVacanciesUseCase } from './application/SyncTalentumVacanciesUseCase';
 export type { SyncReport } from './application/SyncTalentumVacanciesUseCase';
+export { UpdateTalentumDescriptionUseCase, UpdateDescriptionError } from './application/UpdateTalentumDescriptionUseCase';
 export { SyncTalentumWorkersUseCase } from './application/SyncTalentumWorkersUseCase';
 export type { WorkerSyncReport } from './application/SyncTalentumWorkersUseCase';
 export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPostingFromTalentumUseCase';

@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
-import { KanbanColumn } from './KanbanColumn';
+import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from './KanbanBoardShell';
 import { KanbanCard } from './KanbanCard';
-import { DraggableCard } from './DraggableCard';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
@@ -29,15 +27,9 @@ interface KanbanBoardProps {
   onUnrejectBlocked: (blockedId: string) => Promise<MoveEncuadreError | null>;
 }
 
-interface ColumnConfig {
-  id: string;
-  color: string;
-  droppable: boolean;
-  /** Alert-styled header (red/amber tone) for columns that need operator attention, e.g. BLOQUEADO */
-  alert?: boolean;
-}
-
-const COLUMN_CONFIG: ColumnConfig[] = [
+/** Colunas do funil de vaga. Fonte ÚNICA de quais aceitam drop (`droppable`) —
+ *  antes existia também um Set DROPPABLE_STAGES espelhando isto à mão. */
+const COLUMN_CONFIG: Omit<KanbanColumnSpec, 'title'>[] = [
   { id: 'INVITED', color: 'bg-blue-400', droppable: true },
   { id: 'BLOQUEADO', color: 'bg-red-500', droppable: false, alert: true },
   { id: 'INICIADO', color: 'bg-indigo-400', droppable: false },
@@ -49,15 +41,42 @@ const COLUMN_CONFIG: ColumnConfig[] = [
   { id: 'REJECTED', color: 'bg-red-400', droppable: true },
 ];
 
-// Droppable columns map directly to application_funnel_stage values
-const DROPPABLE_STAGES = new Set(['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED']);
+/** Um card do funil (o mesmo shape em qualquer etapa). */
+type FunnelCard = FunnelStages[keyof FunnelStages][number];
+
+/**
+ * Props de exibição do card — as MESMAS na coluna e no overlay de arrasto.
+ * Estavam escritas duas vezes; qualquer campo novo entrava só numa e o card
+ * arrastado ficava diferente do card parado.
+ */
+function cardProps(enc: FunnelCard, stage: string) {
+  return {
+    id: enc.id,
+    workerId: enc.workerId,
+    workerName: enc.workerName,
+    workerPhone: enc.workerPhone,
+    occupation: enc.occupation,
+    workZone: enc.workZone,
+    matchScore: enc.matchScore,
+    talentumStatus: enc.talentumStatus,
+    rejectionReasonCategory: enc.rejectionReasonCategory,
+    interviewDate: enc.interviewDate,
+    interviewTime: enc.interviewTime,
+    stage,
+    interviewResponse: enc.interviewResponse,
+    meetLink: enc.meetLink,
+    acquisitionChannel: enc.acquisitionChannel,
+    internalStage: enc.internalStage ?? null,
+    isBlocked: enc.isBlocked,
+    blockedReason: enc.blockedReason,
+    missingFields: enc.missingFields,
+    attemptCount: enc.attemptCount,
+  };
+}
 
 export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked }: KanbanBoardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [activeId, setActiveId] = useState<string | null>(null);
-  /** Stores the encuadreId (not wja.id) of the card being dragged */
-  const [activeDragEncuadreId, setActiveDragEncuadreId] = useState<string | null>(null);
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
    *  - { encuadreId } → mover encuadre para REJECTED (onMove).
@@ -76,99 +95,40 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
    */
   const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
 
-  /** Colunas colapsadas num trilho fino (estilo ClickUp), persistidas por vaga. */
-  const collapsedStorageKey = `kanban-collapsed-${vacancyId}`;
-  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem(collapsedStorageKey);
-      return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set<string>();
-    } catch {
-      return new Set<string>();
-    }
-  });
-
-  function toggleColumnCollapse(columnId: string) {
-    setCollapsedColumns((prev) => {
-      const next = new Set(prev);
-      if (next.has(columnId)) next.delete(columnId);
-      else next.add(columnId);
-      try {
-        localStorage.setItem(collapsedStorageKey, JSON.stringify([...next]));
-      } catch {
-        // localStorage indisponível (modo privado etc.) — o colapso fica só em memória.
-      }
-      return next;
-    });
-  }
-
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const columns = COLUMN_CONFIG.map((col) => ({
+    ...col,
+    title: t(`admin.kanban.columns.${col.id}`),
+  }));
 
-  // Find the active card and its stage across all stages
-  const activeCardInfo = activeId
-    ? (Object.entries(stages) as [string, FunnelStages[keyof FunnelStages]][]).reduce<{ card: FunnelStages[keyof FunnelStages][0]; stage: string } | null>((found, [stage, items]) => {
-        if (found) return found;
-        const card = items.find((e) => e.id === activeId);
-        return card ? { card, stage } : null;
-      }, null)
-    : null;
+  /**
+   * Drop numa coluna que aceita: o shell já filtrou coluna inválida. Aqui só
+   * fica a regra do funil — card órfão (sem encuadre) não move, e REJECTED /
+   * SELECTED abrem modal em vez de mover direto.
+   */
+  function handleDrop({ item, toColumnId }: KanbanDropEvent<FunnelCard>) {
+    const encuadreId = item.encuadreId;
+    // Órfão já é drag-disabled no card; o guard evita request por estado velho.
+    if (!encuadreId) return;
 
-  function handleDragStart(event: DragStartEvent) {
-    const wjaId = String(event.active.id);
-    setActiveId(wjaId);
-    // Resolve encuadreId from the card data — may be null for orphans
-    const encuadreId = (Object.values(stages) as FunnelStages[keyof FunnelStages][])
-      .flat()
-      .find((c) => c.id === wjaId)?.encuadreId ?? null;
-    setActiveDragEncuadreId(encuadreId);
-  }
-
-  async function handleDragEnd(event: DragEndEvent) {
-    setActiveId(null);
-    const { over } = event;
-    if (!over) {
-      setActiveDragEncuadreId(null);
-      return;
-    }
-
-    // Orphan cards (encuadreId=null) are drag-disabled via DraggableCard, but
-    // guard here as well so no stale state can trigger a request.
-    if (!activeDragEncuadreId) {
-      setActiveDragEncuadreId(null);
-      return;
-    }
-
-    const encuadreId = activeDragEncuadreId;
-    setActiveDragEncuadreId(null);
-
-    const targetStage = String(over.id);
-    if (!DROPPABLE_STAGES.has(targetStage)) return;
-
-    // If moving to REJECTED, show rejection reason select
-    if (targetStage === 'REJECTED') {
+    if (toColumnId === 'REJECTED') {
       setShowRejectionSelect({ encuadreId });
       return;
     }
-
-    // If moving to SELECTED, ask whether the worker is Titular or Substituto.
-    if (targetStage === 'SELECTED') {
+    if (toColumnId === 'SELECTED') {
       setShowRoleSelect({ encuadreId });
       return;
     }
-
     // Ao agendar, perguntar QUANDO — é o único ponto em que o sistema captura a data
     // da entrevista (sem ela, lembretes e no-show não têm do que disparar).
-    if (targetStage === 'CONFIRMED') {
+    if (toColumnId === 'CONFIRMED') {
       setShowScheduleSelect({ encuadreId });
       return;
     }
-
-    await onMove(encuadreId, targetStage);
+    void onMove(encuadreId, toColumnId);
   }
 
   async function handleScheduleSubmit(
@@ -179,6 +139,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
     // schedule=null → "ainda não sei": move mesmo assim, sem inventar horário.
     await onMove(encuadreId, 'CONFIRMED', undefined, undefined, schedule ?? undefined);
   }
+
 
   async function handleRejectionSubmit(
     target: { encuadreId: string } | { blockedId: string },
@@ -216,99 +177,42 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
 
   return (
     <>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        autoScroll={{ threshold: { x: 0.2, y: 0 }, acceleration: 18 }}
-      >
-        <div data-testid="kanban-board" className="flex gap-3 overflow-x-auto pb-4">
-          {COLUMN_CONFIG.map((col) => {
-            const items = stages[col.id as keyof FunnelStages] ?? [];
-            return (
-              <KanbanColumn key={col.id} id={col.id} title={t(`admin.kanban.columns.${col.id}`)} count={items.length} color={col.color} droppable={col.droppable} alert={col.alert} dragActive={activeId !== null} collapsed={collapsedColumns.has(col.id)} onToggleCollapse={() => toggleColumnCollapse(col.id)}>
-                {items.map((enc) => (
-                  <DraggableCard key={enc.id} id={enc.id} disabled={!enc.encuadreId}>
-                    <KanbanCard
-                      id={enc.id}
-                      workerId={enc.workerId}
-                      workerName={enc.workerName}
-                      workerPhone={enc.workerPhone}
-                      occupation={enc.occupation}
-                      workZone={enc.workZone}
-                      matchScore={enc.matchScore}
-                      talentumStatus={enc.talentumStatus}
-                      rejectionReasonCategory={enc.rejectionReasonCategory}
-                      interviewDate={enc.interviewDate}
-                      interviewTime={enc.interviewTime}
-                      stage={col.id}
-                      interviewResponse={enc.interviewResponse}
-                      meetLink={enc.meetLink}
-                      acquisitionChannel={enc.acquisitionChannel}
-                      internalStage={enc.internalStage ?? null}
-                      isBlocked={enc.isBlocked}
-                      blockedReason={enc.blockedReason}
-                      missingFields={enc.missingFields}
-                      attemptCount={enc.attemptCount}
-                      isDismissed={enc.isDismissed}
-                      onWorkerClick={handleWorkerClick}
-                      onReject={
-                        enc.encuadreId
-                          ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
-                          : enc.isBlocked && !enc.isDismissed
-                            ? () => setShowRejectionSelect({ blockedId: enc.id })
-                            : undefined
-                      }
-                      onUndismiss={
-                        enc.isBlocked && enc.isDismissed
-                          ? () => onUnrejectBlocked(enc.id)
-                          : undefined
-                      }
-                      onMoveTo={enc.encuadreId ? (target) => handleCardMoveTo(enc.encuadreId!, target) : undefined}
-                      onOpenNotes={
-                        enc.workerId
-                          ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })
-                          : undefined
-                      }
-                      contactNotesCount={enc.contactNotesCount}
-                    />
-                  </DraggableCard>
-                ))}
-              </KanbanColumn>
-            );
-          })}
-        </div>
-
-        <DragOverlay>
-          {activeCardInfo ? (
-            <div className="opacity-80 rotate-2">
-              <KanbanCard
-                id={activeCardInfo.card.id}
-                workerId={activeCardInfo.card.workerId}
-                workerName={activeCardInfo.card.workerName}
-                workerPhone={activeCardInfo.card.workerPhone}
-                occupation={activeCardInfo.card.occupation}
-                workZone={activeCardInfo.card.workZone}
-                matchScore={activeCardInfo.card.matchScore}
-                talentumStatus={activeCardInfo.card.talentumStatus}
-                rejectionReasonCategory={activeCardInfo.card.rejectionReasonCategory}
-                interviewDate={activeCardInfo.card.interviewDate}
-                interviewTime={activeCardInfo.card.interviewTime}
-                stage={activeCardInfo.stage}
-                interviewResponse={activeCardInfo.card.interviewResponse}
-                meetLink={activeCardInfo.card.meetLink}
-                internalStage={activeCardInfo.card.internalStage ?? null}
-                acquisitionChannel={activeCardInfo.card.acquisitionChannel}
-                isBlocked={activeCardInfo.card.isBlocked}
-                blockedReason={activeCardInfo.card.blockedReason}
-                missingFields={activeCardInfo.card.missingFields}
-                attemptCount={activeCardInfo.card.attemptCount}
-              />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      <KanbanBoardShell<FunnelCard>
+        columns={columns}
+        itemsOf={(columnId) => stages[columnId as keyof FunnelStages] ?? []}
+        getItemId={(enc) => enc.id}
+        isDragDisabled={(enc) => !enc.encuadreId}
+        onDrop={handleDrop}
+        collapseStorageKey={`kanban-collapsed-${vacancyId}`}
+        renderCard={(enc, columnId) => (
+          <KanbanCard
+            {...cardProps(enc, columnId)}
+            isDismissed={enc.isDismissed}
+            onWorkerClick={handleWorkerClick}
+            onReject={
+              enc.encuadreId
+                ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
+                : enc.isBlocked && !enc.isDismissed
+                  ? () => setShowRejectionSelect({ blockedId: enc.id })
+                  : undefined
+            }
+            onUndismiss={
+              enc.isBlocked && enc.isDismissed
+                ? () => onUnrejectBlocked(enc.id)
+                : undefined
+            }
+            onMoveTo={enc.encuadreId ? (target) => handleCardMoveTo(enc.encuadreId!, target) : undefined}
+            onOpenNotes={
+              enc.workerId
+                ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })
+                : undefined
+            }
+            contactNotesCount={enc.contactNotesCount}
+          />
+        )}
+        /* O card sob o cursor é só leitura: sem handlers, sem menu de mover. */
+        renderDragOverlay={(enc, columnId) => <KanbanCard {...cardProps(enc, columnId)} />}
+      />
 
       {showRejectionSelect && (
         <RejectionReasonSelect

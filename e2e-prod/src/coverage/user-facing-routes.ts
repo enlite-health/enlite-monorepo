@@ -69,7 +69,14 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: '/admin/workers/:id', surface: 'admin', tier: 'regression' },
   { route: '/admin/patients', surface: 'admin', tier: 'regression' },
   { route: '/admin/patients/:id', surface: 'admin', tier: 'regression' },
+  // App de Pacientes (PR #166) — rotas que existiam em produção sem entrar aqui.
+  // Foi o gate que denunciou, ao rodar a jornada nova. Manifesto é denominador:
+  // rota fora dele é cobertura fantasma.
+  { route: '/admin/patients/kanban', surface: 'admin', tier: 'regression' },
   { route: '/admin/tags', surface: 'admin', tier: 'regression' },
+  // Páginas PÚBLICAS de admissão (form B2C multi-país, sem login).
+  { route: '/admission-ar', surface: 'public', tier: 'smoke' },
+  { route: '/admission-br', surface: 'public', tier: 'smoke' },
   { route: '/admin/dedup', surface: 'admin', tier: 'regression' },
   { route: '/admin/api-docs', surface: 'admin', tier: 'regression' },
 
@@ -107,6 +114,18 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'GET /api/admin/workers', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/workers/stats', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/patients', surface: 'api', tier: 'regression' },
+  { route: 'GET /api/admin/patients/funnel', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/patients', surface: 'api', tier: 'regression' },
+  { route: 'PUT /api/admin/patients/:id/status', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/patients/:id/activate', surface: 'api', tier: 'regression' },
+  { route: 'PATCH /api/admin/patients/:id/:section', surface: 'api', tier: 'regression' },
+  // Ferramentas do synthetic monitoring (admin-only): marcar e purgar sintético.
+  { route: 'PATCH /api/admin/patients/:id/test-flag', surface: 'api', tier: 'regression' },
+  { route: 'DELETE /api/admin/patients/:id', surface: 'api', tier: 'regression' },
+  // Superfície PÚBLICA do fluxo de admissão (sem auth, rate-limited).
+  { route: 'POST /api/public/v1/leads', surface: 'api', tier: 'smoke' },
+  { route: 'GET /api/public/v1/admission/slots', surface: 'api', tier: 'smoke' },
+  { route: 'POST /api/public/v1/admission/book', surface: 'api', tier: 'smoke' },
   { route: 'GET /api/admin/vacancies', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/dedup/groups', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/recruitment/health', surface: 'api', tier: 'regression' },

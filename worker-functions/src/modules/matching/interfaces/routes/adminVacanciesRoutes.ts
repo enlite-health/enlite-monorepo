@@ -108,6 +108,9 @@ export function createAdminVacanciesRoutes(
   router.post('/vacancies/:id/generate-talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateTalentumDescription(req, res),
   );
+  router.put('/vacancies/:id/talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.updateTalentumDescription(req, res),
+  );
   router.post('/vacancies/:id/generate-ai-content', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateAIContent(req, res),
   );

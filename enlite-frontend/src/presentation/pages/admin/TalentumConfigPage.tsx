@@ -57,10 +57,15 @@ export default function TalentumConfigPage(): JSX.Element {
     prescreeningFaq,
     generateStatus,
     generateError,
+    isSavingDescription,
+    saveDescriptionError,
+    descriptionSaved,
+    descriptionPropagated,
     isPublishing,
     publishError,
     setDescription,
     generateAIContent,
+    saveDescription,
     publish,
   } = useTalentumConfig(vacancyId, preloaded);
 
@@ -184,7 +189,15 @@ export default function TalentumConfigPage(): JSX.Element {
             </div>
           )}
 
-          <AIDescriptionEditor value={description} onChange={setDescription} />
+          <AIDescriptionEditor
+            value={description}
+            onChange={setDescription}
+            onSave={() => { saveDescription().catch(() => { /* erro exposto via saveDescriptionError */ }); }}
+            isSaving={isSavingDescription}
+            saved={descriptionSaved}
+            propagated={descriptionPropagated}
+            saveError={saveDescriptionError}
+          />
 
           {/* Prescreening */}
           <Heading level={3} weight="semibold">

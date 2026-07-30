@@ -12,7 +12,7 @@
  *   - Filtro dependency_level=SEVERE inclui parâmetro na requisição
  *   - Paginação envia offset correto
  *   - Erro de API exibe mensagem de erro
- *   - Stats cards exibem valores corretos
+ *   - Big numbers NAO aparecem aqui (moveram para Gestión a la vista)
  *   - Screenshot visual obrigatório
  */
 
@@ -169,7 +169,7 @@ async function mockStatsAfterListMock(
 test.describe('AdminPatientsPage', () => {
   test.setTimeout(60000);
 
-  test('página /admin/patients renderiza título, tabela e stats', async ({ page }) => {
+  test('página /admin/patients renderiza título e tabela (sem big numbers)', async ({ page }) => {
     await seedAdminAndLogin(page);
 
     await page.route('**/api/admin/patients*', (route) =>
@@ -182,15 +182,10 @@ test.describe('AdminPatientsPage', () => {
     await expect(page.locator('text=Pacientes').first()).toBeVisible({ timeout: 15000 });
     await expect(page.locator('text=Lista de Pacientes').first()).toBeVisible({ timeout: 10000 });
 
-    // Stats cards
-    await expect(page.getByTestId('patient-stats-total')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('patient-stats-complete')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByTestId('patient-stats-needs-attention')).toBeVisible({ timeout: 5000 });
-
-    // Stats values
-    await expect(page.getByTestId('patient-stats-total').getByText('303')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByTestId('patient-stats-complete').getByText('133')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByTestId('patient-stats-needs-attention').getByText('170')).toBeVisible({ timeout: 5000 });
+    // Os big numbers (stats + embudo) moveram para /admin/dashboard — esta tela
+    // é operação: lista, filtros e kanban. Aqui garantimos que NAO aparecem.
+    await expect(page.getByTestId('patient-stats-total')).toHaveCount(0);
+    await expect(page.getByTestId('patient-funnel-section')).toHaveCount(0);
 
     // Table headers
     await expect(page.locator('text=Nombre').first()).toBeVisible({ timeout: 5000 });
@@ -385,8 +380,6 @@ test.describe('AdminPatientsPage', () => {
 
     // Wait for content to be fully loaded
     await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId('patient-stats-total')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('patient-stats-total').getByText('303')).toBeVisible({ timeout: 5000 });
 
     // Screenshot assertion — captures and compares the visual state
     await expect(page).toHaveScreenshot('admin-patients-loaded.png', {

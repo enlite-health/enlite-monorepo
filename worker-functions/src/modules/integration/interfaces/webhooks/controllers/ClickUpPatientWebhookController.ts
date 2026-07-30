@@ -99,8 +99,14 @@ export class ClickUpPatientWebhookController {
 
     // ── taskDeleted: soft-delete without fetching full task ───────────────────
     if (body.event === 'taskDeleted') {
+      // Guard (migration 251): only ever soft-delete patients that came FROM
+      // ClickUp. Native patients (origin != 'clickup') have clickup_task_id
+      // NULL so they can never match this WHERE anyway, but the explicit
+      // `AND origin = 'clickup'` is defense-in-depth against a future ClickUp
+      // task id colliding with a native row — Enlite is the source of truth
+      // for native patients and ClickUp must never delete them.
       const result = await this.db.query(
-        'UPDATE patients SET deleted_at = NOW() WHERE clickup_task_id = $1 AND deleted_at IS NULL RETURNING id',
+        "UPDATE patients SET deleted_at = NOW() WHERE clickup_task_id = $1 AND origin = 'clickup' AND deleted_at IS NULL RETURNING id",
         [body.task_id],
       );
       const affected = result.rowCount ?? 0;

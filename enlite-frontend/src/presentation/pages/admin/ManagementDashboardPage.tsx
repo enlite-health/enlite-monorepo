@@ -17,6 +17,7 @@ import {
   PrioridadesSection,
   FunnelTotalsSection,
   CadastrosSection,
+  PacientesSection,
   ZoneAnalyticsSection,
 } from '@presentation/components/features/admin/ManagementDashboard';
 
@@ -74,6 +75,15 @@ export function ManagementDashboardPage(): JSX.Element {
           <ZoneAnalyticsSection />
         </div>
       )}
+
+      {/*
+        Pacientes tem fonte própria (/patients/stats + /patients/funnel), por isso
+        fica FORA do bloco acima: se a agregação de recrutamento falhar, estes
+        números continuam aparecendo.
+      */}
+      <div className="mt-10">
+        <PacientesSection />
+      </div>
     </PageContainer>
   );
 }

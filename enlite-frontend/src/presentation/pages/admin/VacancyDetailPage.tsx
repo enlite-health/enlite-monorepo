@@ -24,6 +24,7 @@ import { VacancyFunnelView } from '@presentation/components/features/admin/Vacan
 import { VacancyMeetLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard';
 import { VacancySocialLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard';
 import { VacancyScheduleEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal';
+import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
 import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
@@ -37,6 +38,7 @@ export default function VacancyDetailPage() {
   const { t } = useTranslation();
   const { vacancy, isLoading, error, refetch } = useVacancyDetail(id);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
@@ -200,6 +202,7 @@ export default function VacancyDetailPage() {
           serviceType={vacancy.service_type ?? null}
           schedule={vacancy.schedule ?? null}
           onEditSchedule={() => setShowScheduleModal(true)}
+          onEditDescription={() => setShowDescriptionModal(true)}
         />
       </div>
 
@@ -314,6 +317,19 @@ export default function VacancyDetailPage() {
           onClose={() => setShowScheduleModal(false)}
           onSuccess={() => {
             setShowScheduleModal(false);
+            refetch();
+          }}
+        />
+      )}
+
+      {vacancy && id && (
+        <VacancyDescriptionEditModal
+          isOpen={showDescriptionModal}
+          vacancyId={id}
+          currentDescription={vacancy.talentum_description ?? null}
+          onClose={() => setShowDescriptionModal(false)}
+          onSuccess={() => {
+            setShowDescriptionModal(false);
             refetch();
           }}
         />

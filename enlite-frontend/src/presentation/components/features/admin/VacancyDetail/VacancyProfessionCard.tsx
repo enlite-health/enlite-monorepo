@@ -125,6 +125,7 @@ interface VacancyProfessionCardProps {
   serviceType: string[] | null;
   schedule: Record<string, TimeSlot[]> | null;
   onEditSchedule?: () => void;
+  onEditDescription?: () => void;
 }
 
 export function VacancyProfessionCard({
@@ -139,6 +140,7 @@ export function VacancyProfessionCard({
   serviceType,
   schedule,
   onEditSchedule,
+  onEditDescription,
 }: VacancyProfessionCardProps) {
   const { t } = useTranslation();
 
@@ -203,13 +205,26 @@ export function VacancyProfessionCard({
         </Text>
       </div>
 
-      {talentumDescription && (
+      {(talentumDescription || onEditDescription) && (
         <div className="flex flex-col gap-2">
-          <Text size="base" color="primary" weight="medium">
-            {t('admin.vacancyDetail.professionCard.description')}
-          </Text>
-          <Text size="sm" color="secondary" className="leading-[1.5]">
-            {talentumDescription}
+          <div className="flex items-center justify-between gap-2">
+            <Text size="base" color="primary" weight="medium">
+              {t('admin.vacancyDetail.professionCard.description')}
+            </Text>
+            {onEditDescription && (
+              <button
+                type="button"
+                onClick={onEditDescription}
+                aria-label={t('admin.vacancyDetail.professionCard.editDescription')}
+                data-testid="vacancy-edit-description-trigger"
+                className="text-primary hover:text-primary/70 transition-colors p-1 rounded"
+              >
+                <Pencil className="w-4 h-4" strokeWidth={2} />
+              </button>
+            )}
+          </div>
+          <Text size="sm" color="secondary" className="leading-[1.5] whitespace-pre-line">
+            {talentumDescription || t('admin.vacancyDetail.professionCard.descriptionEmpty')}
           </Text>
         </div>
       )}

@@ -1,11 +1,15 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { PatientGeneralEditDrawer } from './edit/PatientGeneralEditDrawer';
 
 interface PatientGeneralInfoCardProps {
   patient: PatientDetail;
+  /** Called after a successful edit so the page can refetch the detail. */
+  onSaved?: () => void;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -52,8 +56,9 @@ function formatBirthDate(iso: string | null): string | null {
   }
 }
 
-export function PatientGeneralInfoCard({ patient }: PatientGeneralInfoCardProps) {
+export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoCardProps) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
 
   const age = calculateAge(patient.birthDate);
   const ageBracket = getAgeBracket(age);
@@ -67,10 +72,18 @@ export function PatientGeneralInfoCard({ patient }: PatientGeneralInfoCardProps)
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.generalInfoCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled onClick={() => {}} className="w-28">
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
           {t('admin.patients.detail.edit')}
         </Button>
       </div>
+
+      {editing && (
+        <PatientGeneralEditDrawer
+          patient={patient}
+          onClose={() => setEditing(false)}
+          onSaved={() => onSaved?.()}
+        />
+      )}
 
       <div className="flex flex-col gap-2.5">
         <Field label={`${t('admin.patients.detail.generalInfoCard.birthDate')}:`} value={formatBirthDate(patient.birthDate)} />

@@ -145,10 +145,12 @@ describe('PatientGeneralInfoCard', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('has Edit button that is disabled', () => {
+  it('has an enabled Edit button that opens the edit drawer', () => {
     render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
-    const editButton = screen.getByText('Editar');
-    expect(editButton.closest('button')).toBeDisabled();
+    const editButton = screen.getByTestId('edit-general-btn');
+    expect(editButton).not.toBeDisabled();
+    fireEvent.click(editButton);
+    expect(screen.getByTestId('patient-general-edit-drawer')).toBeInTheDocument();
   });
 });
 
@@ -187,10 +189,12 @@ describe('DiagnosticoCard', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('has Edit button that is disabled', () => {
+  it('has an enabled Edit button that opens the edit drawer', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
-    const editButton = screen.getByText('Editar');
-    expect(editButton.closest('button')).toBeDisabled();
+    const editButton = screen.getByTestId('edit-clinical-btn');
+    expect(editButton).not.toBeDisabled();
+    fireEvent.click(editButton);
+    expect(screen.getByTestId('patient-clinical-edit-drawer')).toBeInTheDocument();
   });
 });
 
@@ -573,10 +577,12 @@ describe('ServicosContratadosCard', () => {
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
   });
 
-  it('Novo button is disabled', () => {
+  it('has an enabled edit button that opens the service edit drawer', () => {
     render(<ServicosContratadosCard patient={patientDetailMinimal} />);
-    const btn = screen.getByText('Novo').closest('button');
-    expect(btn).toBeDisabled();
+    const btn = screen.getByTestId('edit-service-btn');
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(screen.getByTestId('patient-service-edit-drawer')).toBeInTheDocument();
   });
 });
 
