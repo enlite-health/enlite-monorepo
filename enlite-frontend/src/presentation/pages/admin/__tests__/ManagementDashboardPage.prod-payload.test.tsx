@@ -34,12 +34,23 @@ const PROD_PAYLOAD: ManagementDashboardData = {
     vacantesAbiertas: 144,
     vacantesPausadas: 21,
   },
-  equipoArmada: { armados: 0, porArmar: 84, semConfig: 3, pendenteClasificacao: 57 },
-  horas: { totais: 3763.7, aPreencher: 2155, coberturaConSchedule: 118, coberturaSinSchedule: 26 },
+  equipoArmada: {
+    armados: 0, porArmar: 84, semConfig: 3, pendenteClasificacao: 57,
+    // 0% honesto: nenhum caso medível com 10 substitutos; 60 casos fora do denominador.
+    pctRespostaRapidaArmado: { num: 0, den: 84, excluidos: 60, pct: 0 },
+  },
+  // Linha RODANDO + CHEGANDO (payload real de 31/07: prova da task 1.0)
+  pacientes: {
+    activos: 190, ubicacionesActivas: 339,
+    solicitudes: 0, entrevistaAgendada: 1, enAdmision: 5, enBusca: 112,
+    sobrepoe: true as const,
+  },
+  horas: { totais: 3763.7, aPreencher: 2155, ativas: 987.5, ativasConSchedule: 38, ativasSinSchedule: 12, coberturaConSchedule: 118, coberturaSinSchedule: 26 },
   prioridades: { completosEsperandoAgendamiento: 569, profesionalesBloqueados: 6735 },
   funnelPorPrestador: {
     total: 2576,
     recorte: 'vagas-vivas',
+    periodoDias: null,
     bloqueados: 355,
     porEtapa: {
       somavel: false,
@@ -60,7 +71,11 @@ const PROD_PAYLOAD: ManagementDashboardData = {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
     agendados: 37, seleccionados: 10, rechazados: 2557,
   },
-  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 37 },
+  encuadres: {
+    agendadosEstaSemana: 0,
+    semDataRegistrada: 37,
+    pctCapacidadeSemana: { agendados: 0, capacidade: 80, pct: 0 },
+  },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
     alocadosCubriendoGuardias: 12, incompletos: 6735, nuevosCompletosMes: 41,
@@ -87,6 +102,38 @@ describe('ManagementDashboardPage — payload real de produção (30/07/2026)', 
     render(<ManagementDashboardPage />);
     await waitFor(() => expect(screen.getByTestId('mgmt-content')).toBeInTheDocument());
     expect(screen.queryByTestId('mgmt-error')).toBeNull();
+  });
+
+  it('números clave no desenho do Diego: percentuais, RODANDO e CHEGANDO (sem soma entre linhas)', async () => {
+    render(<ManagementDashboardPage />);
+    await waitFor(() => expect(screen.getByTestId('mgmt-big-numbers')).toBeInTheDocument());
+
+    // Percentuais em linha própria (call 02:01), com as partes visíveis.
+    const pcts = screen.getByTestId('mgmt-percentuais');
+    // % RR honesto (0/84) e % capacidade (0/80) — os DOIS cards, cada um com as partes.
+    expect(within(pcts).getAllByText('0%')).toHaveLength(2);
+    expect(within(pcts).getByText(/num=0 den=84 excluidos=60/)).toBeInTheDocument();
+    expect(within(pcts).getByText(/agendados=0 capacidade=80/)).toBeInTheDocument();
+
+    // RODANDO: ubicaciones deduplicadas + horas ativas.
+    const rodando = screen.getByTestId('mgmt-rodando');
+    expect(within(rodando).getByText('339')).toBeInTheDocument();
+    expect(within(rodando).getByText('987.5')).toBeInTheDocument();
+
+    // CHEGANDO: os 4 estados do Diego, com os números provados contra prod (1.0).
+    const chegando = screen.getByTestId('mgmt-chegando');
+    expect(within(chegando).getByText('112')).toBeInTheDocument(); // Em Busca
+    expect(within(chegando).getByText('5')).toBeInTheDocument(); // Em Admissão
+  });
+
+  it('ordem das seções: Registros de prestadores vem ANTES da Totalización (call 02:21)', async () => {
+    render(<ManagementDashboardPage />);
+    await waitFor(() => expect(screen.getByTestId('mgmt-content')).toBeInTheDocument());
+
+    const cadastros = screen.getByTestId('mgmt-cadastros');
+    const funnel = screen.getByTestId('mgmt-funnel');
+    // DOCUMENT_POSITION_FOLLOWING (4): funnel vem DEPOIS de cadastros no DOM.
+    expect(cadastros.compareDocumentPosition(funnel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('mostra o funil por PESSOA, com as duas vistas e o total que fecha', async () => {

@@ -51,12 +51,18 @@ const PROD_PAYLOAD = {
     vacantesAbiertas: 144,
     vacantesPausadas: 21,
   },
-  equipoArmada: { armados: 0, porArmar: 134, semConfig: 5, pendenteClasificacao: 135 },
-  horas: { totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 274 },
+  equipoArmada: { armados: 0, porArmar: 134, semConfig: 5, pendenteClasificacao: 135, pctRespostaRapidaArmado: { num: 0, den: 84, excluidos: 60, pct: 0 } },
+  pacientes: {
+    activos: 190, ubicacionesActivas: 339,
+    solicitudes: 0, entrevistaAgendada: 1, enAdmision: 5, enBusca: 112,
+    sobrepoe: true,
+  },
+  horas: { ativas: 987.5, ativasConSchedule: 38, ativasSinSchedule: 12, totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 274 },
   prioridades: { completosEsperandoAgendamiento: 2431, profesionalesBloqueados: 6735 },
   funnelPorPrestador: {
     total: 2576,
     recorte: 'vagas-vivas',
+    periodoDias: null,
     bloqueados: 355,
     porEtapa: {
       somavel: false,
@@ -77,7 +83,7 @@ const PROD_PAYLOAD = {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
     agendados: 37, seleccionados: 10, rechazados: 2557,
   },
-  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36 },
+  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
     alocadosCubriendoGuardias: 12, incompletos: 6735, nuevosCompletosMes: 41,
@@ -101,7 +107,7 @@ const PROD_PAYLOAD_DEPOIS = {
       colunas: { ...PROD_PAYLOAD.funnelPorPrestador.consolidado.colunas, IN_PROGRESS: 1172, CONFIRMED: 28 },
     },
   },
-  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36 },
+  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
 };
 
 const MOCK_ZONE_ANALYTICS = { zones: [], unresolvedCount: 0 };

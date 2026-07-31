@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { FunnelTotalsSection } from '../FunnelTotalsSection';
 import type { FunnelColumnCounts } from '@domain/entities/ManagementDashboard';
 
@@ -32,6 +32,7 @@ function counts(partial: Partial<FunnelColumnCounts>): FunnelColumnCounts {
 const funnelPorPrestador = {
   total: 2575,
   recorte: 'vagas-vivas' as const,
+  periodoDias: null,
   bloqueados: 355,
   porEtapa: {
     somavel: false as const,
@@ -122,5 +123,27 @@ describe('FunnelTotalsSection', () => {
     render(<FunnelTotalsSection funnelPorPrestador={vazio} encuadres={encuadres} />);
 
     expect(screen.getByTestId('mgmt-funnel-consolidado-SELECTED')).toHaveTextContent('0');
+  });
+
+  it('seletor de período: só aparece com callback, e clicar chama onPeriodChange', () => {
+    const onPeriodChange = vi.fn();
+    const { rerender } = render(
+      <FunnelTotalsSection funnelPorPrestador={funnelPorPrestador} encuadres={encuadres} />,
+    );
+    // Sem callback (ex.: consumidor antigo) o filtro não renderiza.
+    expect(screen.queryByTestId('mgmt-funnel-period-filter')).not.toBeInTheDocument();
+
+    rerender(
+      <FunnelTotalsSection
+        funnelPorPrestador={funnelPorPrestador}
+        encuadres={encuadres}
+        period={null}
+        onPeriodChange={onPeriodChange}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('mgmt-funnel-period-7'));
+    expect(onPeriodChange).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByTestId('mgmt-funnel-period-todo'));
+    expect(onPeriodChange).toHaveBeenCalledWith(null);
   });
 });

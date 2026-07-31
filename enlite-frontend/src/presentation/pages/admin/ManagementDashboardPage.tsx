@@ -23,7 +23,8 @@ import {
 
 export function ManagementDashboardPage(): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch } = useManagementDashboard();
+  const { data, isLoading, error, refetch, funnelPeriod, setFunnelPeriod } =
+    useManagementDashboard();
 
   return (
     <PageContainer>
@@ -64,14 +65,23 @@ export function ManagementDashboardPage(): JSX.Element {
 
       {!isLoading && !error && data && (
         <div data-testid="mgmt-content" className="space-y-10">
-          <BigNumbersSection data={data.bigNumbers} />
+          <BigNumbersSection
+            data={data.bigNumbers}
+            pacientes={data.pacientes}
+            horas={data.horas}
+            pctRespostaRapida={data.equipoArmada.pctRespostaRapidaArmado}
+            pctCapacidade={data.encuadres.pctCapacidadeSemana}
+          />
           <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />
           <PrioridadesSection data={data.prioridades} />
+          {/* Registros ANTES da Totalización — acordo da call 22/07 (02:21, D7). */}
+          <CadastrosSection data={data.cadastros} />
           <FunnelTotalsSection
             funnelPorPrestador={data.funnelPorPrestador}
             encuadres={data.encuadres}
+            period={funnelPeriod}
+            onPeriodChange={setFunnelPeriod}
           />
-          <CadastrosSection data={data.cadastros} />
           <ZoneAnalyticsSection />
         </div>
       )}

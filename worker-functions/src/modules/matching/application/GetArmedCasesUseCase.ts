@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import {
   classifyArmedCase,
+  REQUIRED_SUBSTITUTES,
   type ArmedCaseBucket,
 } from '../domain/armedCases';
 import {
@@ -11,6 +12,7 @@ import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 
 /** Linha por job_posting (não-draft, não deletado) com contagens de seleção. */
 interface JobPostingArmedRow {
+  id: string;
   providers_needed: string | null;
   schedule: unknown;
   sel_total: number;
@@ -36,6 +38,18 @@ export interface ArmedCasesResult {
   coberturaConSchedule: number;
   /** Quantos casos ativos NÃO têm schedule estruturado. */
   coberturaSinSchedule: number;
+  /**
+   * % de grupo de resposta rápida armado (call 22/07, linha 1 dos números clave).
+   * num = casos MEDÍVEIS com substitutos ≥ REQUIRED_SUBSTITUTES; den = ARMADA+POR_ARMAR;
+   * excluidos = SEM_CONFIG + PENDENTE_CLASSIFICACAO (não dá para julgar → fora do
+   * denominador, mas visíveis — percentual sem partes é chute).
+   */
+  respostaRapida: { num: number; den: number; excluidos: number };
+  /**
+   * job_postings.id dos casos ARMADA — consumido pelo card "Em Busca" do dashboard
+   * (paciente com vaga viva NÃO-armada). Vazio hoje (ARMADA=0 por falta de papel).
+   */
+  armadaCaseIds: string[];
 }
 
 /**
@@ -59,6 +73,7 @@ export class GetArmedCasesUseCase {
   async execute(): Promise<ArmedCasesResult> {
     const { rows } = await this.db.query<JobPostingArmedRow>(
       `SELECT
+         jp.id,
          jp.providers_needed,
          jp.schedule,
          COALESCE(s.sel_total, 0)::int      AS sel_total,
@@ -90,6 +105,8 @@ export class GetArmedCasesUseCase {
     let horasAPreencher = 0;
     let coberturaConSchedule = 0;
     let coberturaSinSchedule = 0;
+    let respostaRapidaArmada = 0;
+    const armadaCaseIds: string[] = [];
 
     for (const row of rows) {
       const bucket = classifyArmedCase({
@@ -100,6 +117,15 @@ export class GetArmedCasesUseCase {
         selecSubstituto: row.sel_substituto,
       });
       buckets[bucket] += 1;
+      if (bucket === 'ARMADA') armadaCaseIds.push(row.id);
+
+      // RR armado é julgamento sobre casos MEDÍVEIS (mesmo denominador do bucket).
+      if (
+        (bucket === 'ARMADA' || bucket === 'POR_ARMAR') &&
+        row.sel_substituto >= REQUIRED_SUBSTITUTES
+      ) {
+        respostaRapidaArmada += 1;
+      }
 
       const hours = computeScheduleWeeklyHours(row.schedule);
       horasTotais += hours;
@@ -118,6 +144,12 @@ export class GetArmedCasesUseCase {
       horasAPreencher: round1(horasAPreencher),
       coberturaConSchedule,
       coberturaSinSchedule,
+      respostaRapida: {
+        num: respostaRapidaArmada,
+        den: buckets.ARMADA + buckets.POR_ARMAR,
+        excluidos: buckets.SEM_CONFIG + buckets.PENDENTE_CLASSIFICACAO,
+      },
+      armadaCaseIds,
     };
   }
 }
