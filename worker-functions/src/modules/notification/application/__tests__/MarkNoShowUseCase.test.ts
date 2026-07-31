@@ -183,12 +183,14 @@ describe('MarkNoShowUseCase', () => {
       expect(mockQuery).toHaveBeenCalledTimes(1);
     });
 
-    it('não reporta nada a observar quando não há vencidas', async () => {
+    it('reporta wouldMark: 0 quando não há vencidas (distingue "nada a marcar" de "flag ligada")', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await useCase.execute();
 
-      expect(result).toEqual({ marked: 0, stageMovedToInDoubt: 0 });
+      // wouldMark presente MESMO vazio: quem monitora a virada da flag precisa saber que o
+      // modo-observação está ativo. `wouldMark` ausente passa a significar "flag já ligada".
+      expect(result).toEqual({ marked: 0, stageMovedToInDoubt: 0, wouldMark: 0 });
     });
   });
 });

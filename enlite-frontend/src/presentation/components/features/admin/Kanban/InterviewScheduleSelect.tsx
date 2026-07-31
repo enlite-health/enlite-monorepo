@@ -37,6 +37,17 @@ export function InterviewScheduleSelect({ onSubmit, onCancel }: InterviewSchedul
   // Data e hora andam juntas: hora sem data não localiza, data sem hora não permite lembrete.
   const canConfirm = date !== '' && time !== '';
 
+  /**
+   * O backend valida o link com z.string().url(). Quem cola "meet.google.com/abc" (sem
+   * esquema) receberia 400 DEPOIS do modal fechar — movimento perdido junto com o que
+   * digitou. Normalizar aqui é mais gentil que bloquear: prefixa https:// quando falta.
+   */
+  function normalizeMeetLink(raw: string): string | undefined {
+    const v = raw.trim();
+    if (v === '') return undefined;
+    return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
@@ -111,7 +122,7 @@ export function InterviewScheduleSelect({ onSubmit, onCancel }: InterviewSchedul
                 onSubmit({
                   interviewDate: date,
                   interviewTime: time,
-                  interviewMeetLink: meetLink.trim() === '' ? undefined : meetLink.trim(),
+                  interviewMeetLink: normalizeMeetLink(meetLink),
                 })
               }
               disabled={!canConfirm}

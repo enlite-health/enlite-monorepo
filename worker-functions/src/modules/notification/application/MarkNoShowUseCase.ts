@@ -50,7 +50,11 @@ export class MarkNoShowUseCase {
     );
 
     if (selectResult.rows.length === 0) {
-      return { marked: 0, stageMovedToInDoubt: 0 };
+      // wouldMark presente também no vazio: quem monitora a virada da flag precisa
+      // distinguir "0 candidatas a marcar" (wouldMark: 0) de "flag já ligada" (ausente).
+      return this.isEnabled()
+        ? { marked: 0, stageMovedToInDoubt: 0 }
+        : { marked: 0, stageMovedToInDoubt: 0, wouldMark: 0 };
     }
 
     // Modo observação: não toca em nada, só reporta o tamanho do efeito.

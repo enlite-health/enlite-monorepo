@@ -160,8 +160,12 @@ describe('WJAFunnelController — moveEncuadre', () => {
     const upsertCall = mockQuery.mock.calls[2];
     expect(upsertCall[0]).toContain('worker_job_applications');
     expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'CONFIRMED', null, null, null]);
-    // Sem data informada, o upsert NÃO escreve interview_datetime (nem apaga o que houver).
-    expect(upsertCall[0]).not.toContain('interview_datetime =');
+    // O SQL é ESTÁTICO (sempre referencia $4/$5 — interpolar 'NULL' deixando 6 valores no
+    // array quebrava TODO movimento sem data: "could not determine data type of parameter
+    // $4"). A invariante "mover sem data não apaga agendamento existente" vive no CASE:
+    expect(upsertCall[0]).toContain(
+      'CASE WHEN $4::date IS NULL THEN worker_job_applications.interview_datetime',
+    );
   });
 
   /**

@@ -378,8 +378,16 @@ export class WJAFunnelController {
       // 2. Atualizar application_funnel_stage (fonte de verdade) + agendamento quando informado.
       // A conversão para timestamptz é feita pelo Postgres a partir do fuso da OPERAÇÃO
       // (interviewDatetimeSql) — nunca do fuso do navegador de quem arrastou o card.
+      //
+      // SQL ESTÁTICO de propósito: os placeholders $4/$5 são SEMPRE referenciados, com
+      // CASE null-safe. A versão anterior interpolava 'NULL' quando não havia agendamento
+      // e mantinha 6 valores no array → Postgres: "could not determine data type of
+      // parameter $4" → 500 em TODO movimento sem data (pego pelo e2e de banco real;
+      // mocks de db.query não veem isso).
       const { interviewDate, interviewTime, interviewMeetLink } = schedule.data;
-      const hasSchedule = interviewDate != null && interviewTime != null;
+      const datetimeInsertSql = `CASE WHEN $4::date IS NULL THEN NULL ELSE ${interviewDatetimeSql('$4', '$5')} END`;
+      // No conflito, mover sem data NÃO apaga um agendamento já gravado.
+      const datetimeUpdateSql = `CASE WHEN $4::date IS NULL THEN worker_job_applications.interview_datetime ELSE ${interviewDatetimeSql('$4', '$5')} END`;
 
       await this.db.query(
         `INSERT INTO worker_job_applications (
@@ -387,13 +395,11 @@ export class WJAFunnelController {
            interview_datetime, interview_meet_link)
          VALUES (
            $1, $2, $3, 'manual',
-           ${hasSchedule ? interviewDatetimeSql('$4', '$5') : 'NULL'},
+           ${datetimeInsertSql},
            $6)
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            application_funnel_stage = $3,
-           ${hasSchedule
-             ? `interview_datetime = ${interviewDatetimeSql('$4', '$5')},`
-             : ''}
+           interview_datetime = ${datetimeUpdateSql},
            interview_meet_link = COALESCE($6, worker_job_applications.interview_meet_link),
            updated_at = NOW()`,
         [

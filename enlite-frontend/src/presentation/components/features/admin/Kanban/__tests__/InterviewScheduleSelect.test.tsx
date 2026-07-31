@@ -46,6 +46,21 @@ describe('InterviewScheduleSelect', () => {
     );
   });
 
+  it('normaliza link colado sem https:// (o backend valida URL e devolveria 400 com o modal já fechado)', () => {
+    const onSubmit = vi.fn();
+    render(<InterviewScheduleSelect onSubmit={onSubmit} onCancel={vi.fn()} />);
+
+    preencher('2026-08-05', '09:00');
+    fireEvent.change(screen.getByTestId('interview-meet-input'), {
+      target: { value: 'meet.google.com/abc-defg-hij' },
+    });
+    fireEvent.click(screen.getByTestId('interview-schedule-confirm'));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ interviewMeetLink: 'https://meet.google.com/abc-defg-hij' }),
+    );
+  });
+
   it('não deixa confirmar com metade do agendamento', () => {
     render(<InterviewScheduleSelect onSubmit={vi.fn()} onCancel={vi.fn()} />);
 

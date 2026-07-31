@@ -94,9 +94,14 @@ export function FunnelTotalsSection({
 }: {
   funnelPorPrestador: ManagementDashboardData['funnelPorPrestador'];
   encuadres: ManagementDashboardData['encuadres'];
-}): JSX.Element {
+}): JSX.Element | null {
   const { t } = useTranslation();
   const p = 'admin.managementDashboard.funnel.';
+
+  // Janela de deploy: frontend e backend sobem por workflows separados no mesmo merge.
+  // Se este bundle carregar antes do backend novo, o payload ainda não tem
+  // funnelPorPrestador — a seção some por alguns minutos em vez de quebrar a página.
+  if (!funnelPorPrestador) return null;
 
   return (
     <section data-testid="mgmt-funnel" className="space-y-6">
