@@ -334,4 +334,74 @@ test.describe('Gestión a la Vista — funil por prestador (prova visual)', () =
       path: 'e2e/__screenshots__/gestao-a-vista-depois-do-movimento.png',
     });
   });
+
+  /**
+   * Acordos da call 22/07 (PR #174): as duas linhas de pacientes + percentuais
+   * APARECEM, e o filtro de período dispara request novo e MUDA o número em tela.
+   */
+  test('duas linhas de pacientes visíveis e filtro de período muda os números em tela', async ({ page }) => {
+    const PAYLOAD_7D = {
+      ...PROD_PAYLOAD,
+      funnelPorPrestador: {
+        ...PROD_PAYLOAD.funnelPorPrestador,
+        total: 214,
+        periodoDias: 7,
+        consolidado: {
+          somavel: true,
+          colunas: {
+            INVITED: 80, INICIADO: 20, PRE_SCREENING: 10, IN_PROGRESS: 74,
+            COMPLETED: 18, CONFIRMED: 7, SELECTED: 2, REJECTED: 3,
+          },
+        },
+        porEtapa: {
+          somavel: false,
+          colunas: {
+            INVITED: 90, INICIADO: 22, PRE_SCREENING: 11, IN_PROGRESS: 80,
+            COMPLETED: 20, CONFIRMED: 7, SELECTED: 2, REJECTED: 5,
+          },
+        },
+      },
+    };
+    const requests: string[] = [];
+    await page.route('**/analytics/dashboard/management*', (route) => {
+      const url = route.request().url();
+      requests.push(url);
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: url.includes('funnelPeriodDays=7') ? PAYLOAD_7D : PROD_PAYLOAD,
+        }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    await page.goto('/admin/dashboard');
+    await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20000 });
+
+    // As duas linhas + percentuais estão NA TELA (não só no DOM: visíveis).
+    await expect(page.getByTestId('mgmt-percentuais')).toBeVisible();
+    await expect(page.getByTestId('mgmt-rodando')).toBeVisible();
+    await expect(page.getByTestId('mgmt-chegando')).toBeVisible();
+    await expect(page.getByTestId('mgmt-rodando')).toContainText('339'); // ubicaciones
+    await expect(page.getByTestId('mgmt-chegando')).toContainText('112'); // em busca
+    await page.getByTestId('mgmt-big-numbers').screenshot({
+      path: 'e2e/__screenshots__/gestao-a-vista-duas-linhas.png',
+    });
+
+    // Clicar em "7 dias" dispara request com o parâmetro e MUDA o número em tela.
+    await page.getByTestId('mgmt-funnel').scrollIntoViewIfNeeded();
+    await expect(page.getByTestId('mgmt-funnel')).toContainText('2576');
+    await page.getByTestId('mgmt-funnel-period-7').click();
+    await expect(page.getByTestId('mgmt-funnel')).toContainText('214', { timeout: 15000 });
+    expect(requests.some((u) => u.includes('funnelPeriodDays=7'))).toBe(true);
+    await page.getByTestId('mgmt-funnel').screenshot({
+      path: 'e2e/__screenshots__/gestao-a-vista-periodo-7d.png',
+    });
+
+    // Voltar para "Todo" restaura o total cheio.
+    await page.getByTestId('mgmt-funnel-period-todo').click();
+    await expect(page.getByTestId('mgmt-funnel')).toContainText('2576', { timeout: 15000 });
+  });
 });

@@ -271,7 +271,9 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('61'); // sem config
     await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('24'); // sem classificação
     // GAP notice de ubicaciones ainda existe (horas deixou de ser GAP).
-    await expect(page.getByTestId('mgmt-gap-notice').first()).toBeVisible();
+    // O antigo GAP de Ubicaciones virou card real em 31/07 (linha RODANDO).
+    await expect(page.getByTestId('mgmt-rodando')).toBeVisible();
+    await expect(page.getByTestId('mgmt-chegando')).toBeVisible();
     // Analytics por Zona: dado do mock chega intacto na tabela.
     await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('Palermo');
     await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('55');
