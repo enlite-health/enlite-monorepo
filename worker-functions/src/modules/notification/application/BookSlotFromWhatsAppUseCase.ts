@@ -97,12 +97,32 @@ export class BookSlotFromWhatsAppUseCase {
     }
 
     const vacancy = vacancyResult.rows[0] as Record<string, string | null>;
-    const meetLink = vacancy[`meet_link_${slotIndex}`];
-    const meetDatetime = vacancy[`meet_datetime_${slotIndex}`];
 
-    if (!meetLink || !meetDatetime) {
-      return Result.fail('Invalid slot');
+    // Fallback: com <3 slots configurados o convite repete o último horário
+    // válido nas posições vazias (variável vazia é rejeitada pela Meta), então
+    // o botão 2/3 pode apontar pra slot inexistente — e o worker viu um
+    // horário REAL na mensagem. Cai no primeiro slot futuro configurado em
+    // vez de falhar. Também cobre slot escolhido que já passou (resposta tardia).
+    const slotOf = (n: number) => ({
+      link: vacancy[`meet_link_${n}`],
+      datetime: vacancy[`meet_datetime_${n}`],
+    });
+    const isBookable = (s: { link: string | null; datetime: string | null }): s is { link: string; datetime: string } =>
+      Boolean(s.link && s.datetime && new Date(s.datetime).getTime() > Date.now());
+
+    const chosen = slotOf(slotIndex);
+    let effective: { link: string; datetime: string } | undefined = isBookable(chosen) ? chosen : undefined;
+    if (!effective) {
+      effective = [1, 2, 3].map(slotOf).find(isBookable);
+      if (!effective) {
+        return Result.fail('Invalid slot');
+      }
+      console.warn(
+        `[BookSlotFromWhatsApp] slot_${slotIndex} inválido/passado para job ${application.job_posting_id} — usando primeiro slot futuro configurado`,
+      );
     }
+    const meetLink = effective.link;
+    const meetDatetime = effective.datetime;
 
     // 4. Google Calendar — adicionar worker como convidado
     if (worker.email) {

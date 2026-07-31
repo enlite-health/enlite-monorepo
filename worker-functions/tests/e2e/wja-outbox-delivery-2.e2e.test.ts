@@ -6,8 +6,9 @@
  * Faz o cleanup completo de todos os dados no afterAll.
  *
  * Cenários:
- *   Step 4 — T6 slots parciais: vaga com 1 meet link → slot_2/slot_3 = ''
- *   Step 5 — T7 invalid slot: slot_2 inexistente → backend não crasha + WJA não atualiza
+ *   Step 4 — T6 slots parciais: vaga com 1 meet link → slot_2/slot_3 repetem o slot_1
+ *              (variável vazia é rejeitada pela Meta — causa do outage do convite)
+ *   Step 5 — T7 slot sem link: slot_2 inexistente → fallback agenda o primeiro slot futuro
  */
 
 import * as fs from 'fs';
@@ -20,6 +21,7 @@ import {
   OD_CASE_2,
   OD_PHONE_2,
   OD_EMAIL_2,
+  OD_ML_1,
   OD_PSC,
 } from './wja-outbox-delivery-1.e2e.test';
 
@@ -109,7 +111,7 @@ describe('WJA Outbox Delivery Part 2 — T6 Slots Parciais + T7 Invalid Slot @in
     await pool.end();
   });
 
-  // ── Step 4: T6 vaga com 1 meet link → slot_2/slot_3 = '' ─────────────────
+  // ── Step 4: T6 vaga com 1 meet link → slot_2/slot_3 repetem slot_1 ───────
 
   describe('Step 4 — T6 slots parciais: vaga com 1 meet link (Worker 2)', () => {
     const ENDPOINT = '/api/webhooks/talentum/prescreening';
@@ -163,7 +165,7 @@ describe('WJA Outbox Delivery Part 2 — T6 Slots Parciais + T7 Invalid Slot @in
       expect(procRes.status).toBe(200);
     });
 
-    it('messaging_outbox: slot_1 formatado + slot_2="" + slot_3="" (datetimes NULL)', async () => {
+    it('messaging_outbox: slot_1 formatado + slot_2/slot_3 repetem slot_1 (nunca vazios)', async () => {
       const { rows } = await pool.query(
         `SELECT template_slug, status, attempts, variables, twilio_sid
          FROM messaging_outbox
@@ -188,17 +190,18 @@ describe('WJA Outbox Delivery Part 2 — T6 Slots Parciais + T7 Invalid Slot @in
 
       // slot_1: vaga tem DT_1 preenchido → formatSlotOption(DT_1)
       expect(outbox.variables.slot_1).toBe('Lun 10/08 10:00');
-      // slot_2/slot_3: meet_datetime_2/3 = NULL → string vazia
-      expect(outbox.variables.slot_2).toBe('');
-      expect(outbox.variables.slot_3).toBe('');
+      // slot_2/slot_3: meet_datetime_2/3 = NULL → repetem o último slot válido
+      // (variável vazia derruba o envio na Meta: 'Content Variables invalid')
+      expect(outbox.variables.slot_2).toBe('Lun 10/08 10:00');
+      expect(outbox.variables.slot_3).toBe('Lun 10/08 10:00');
       expect(outbox.variables.case_number).toBe(String(OD_CASE_2));
       expect(outbox.variables.job_posting_id).toBe(job2Id);
     });
   });
 
-  // ── Step 5: T7 invalid slot — slot_2 não existe na vaga 2 ────────────────
+  // ── Step 5: T7 slot sem link — fallback agenda o primeiro slot futuro ────
 
-  describe('Step 5 — T7 invalid slot: ButtonPayload=slot_2 sem meet_link_2 (Worker 2)', () => {
+  describe('Step 5 — T7 fallback: ButtonPayload=slot_2 sem meet_link_2 agenda slot_1 (Worker 2)', () => {
     const INVITE_SID = 'SM_OD2_INVITE_FIXED';
 
     beforeAll(async () => {
@@ -219,7 +222,7 @@ describe('WJA Outbox Delivery Part 2 — T6 Slots Parciais + T7 Invalid Slot @in
       );
     });
 
-    it('POST ButtonPayload=slot_2 → 200 (backend não crasha com slot inválido)', async () => {
+    it('POST ButtonPayload=slot_2 → 200 (fallback, não crasha)', async () => {
       const res = await api.post(
         '/api/webhooks/twilio/inbound',
         new URLSearchParams({
@@ -232,24 +235,25 @@ describe('WJA Outbox Delivery Part 2 — T6 Slots Parciais + T7 Invalid Slot @in
       expect(res.status).toBe(200);
     });
 
-    it('WJA permanece QUALIFIED + interview_response=pending (slot inválido não confirma)', async () => {
+    it('WJA CONFIRMED no slot 1 (o convite mostrou esse horário nos 3 botões)', async () => {
       const { rows } = await pool.query(
-        `SELECT application_funnel_stage, interview_response
+        `SELECT application_funnel_stage, interview_response, interview_meet_link
          FROM worker_job_applications
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [worker2Id, job2Id],
       );
-      expect(rows[0].application_funnel_stage).toBe('QUALIFIED');
-      expect(rows[0].interview_response).toBe('pending');
+      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
+      expect(rows[0].interview_response).toBe('confirmed');
+      expect(rows[0].interview_meet_link).toBe(OD_ML_1);
     });
 
-    it('NÃO há qualified_worker_response enfileirado para Worker 2 (slot inválido)', async () => {
+    it('qualified_worker_response enfileirado para Worker 2 (fallback confirmou)', async () => {
       const { rows } = await pool.query(
         `SELECT COUNT(*)::int AS qtd FROM messaging_outbox
          WHERE worker_id = $1 AND template_slug = 'qualified_worker_response'`,
         [worker2Id],
       );
-      expect(rows[0].qtd).toBe(0);
+      expect(rows[0].qtd).toBe(1);
     });
   });
 
