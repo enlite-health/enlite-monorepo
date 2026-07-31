@@ -12,9 +12,9 @@ describe('BookSlotFromWhatsAppUseCase', () => {
   const APPLICATION = { id: 'app-1', job_posting_id: 'jp-1' };
   const VACANCY = {
     meet_link_1: 'https://meet.google.com/abc-defg-hij',
-    meet_datetime_1: '2026-04-10T14:00:00.000Z',
+    meet_datetime_1: '2027-04-10T14:00:00.000Z',
     meet_link_2: 'https://meet.google.com/klm-nopq-rst',
-    meet_datetime_2: '2026-04-11T10:00:00.000Z',
+    meet_datetime_2: '2027-04-11T10:00:00.000Z',
     meet_link_3: null,
     meet_datetime_3: null,
   };
@@ -235,13 +235,36 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     expect(result.error).toBe('Invalid slot index');
   });
 
-  it('retorna fail se meet_link_N é null', async () => {
+  it('slot escolhido sem link (slot_3) cai no primeiro slot futuro configurado e AGENDA', async () => {
+    // O convite repete o último horário válido nos botões vazios (variável
+    // vazia é rejeitada pela Meta) — logo o botão 3 pode chegar mesmo sem
+    // meet_link_3. O worker viu um horário real: agenda no primeiro futuro.
+    setupHappyPathWithSid();
+
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_3', 'SM-abc123');
+
+    expect(result.isSuccess).toBe(true);
+    const updateCall = mockQuery.mock.calls[3];
+    expect(updateCall[0]).toContain('interview_meet_link');
+    expect(updateCall[1][0]).toBe(VACANCY.meet_link_1);
+    expect(updateCall[1][1]).toBe(VACANCY.meet_datetime_1);
+  });
+
+  it('retorna fail se NENHUM slot é agendável (todos passados/sem link)', async () => {
+    const staleVacancy = {
+      meet_link_1: 'https://meet.google.com/abc-defg-hij',
+      meet_datetime_1: '2026-04-10T14:00:00.000Z', // passado
+      meet_link_2: null,
+      meet_datetime_2: null,
+      meet_link_3: null,
+      meet_datetime_3: null,
+    };
     mockQuery
       .mockResolvedValueOnce({ rows: [WORKER] })
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })
-      .mockResolvedValueOnce({ rows: [VACANCY] });
+      .mockResolvedValueOnce({ rows: [staleVacancy] });
 
-    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_3', 'SM-abc123');
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe('Invalid slot');
@@ -283,7 +306,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
     const insertCall = mockQuery.mock.calls[4];
     const vars = JSON.parse(insertCall[1][1]);
-    // meet_datetime_1 = '2026-04-10T14:00:00.000Z'
+    // meet_datetime_1 = '2027-04-10T14:00:00.000Z'
     expect(vars.date).toBe('10/04');
     expect(vars.time).toBe('14:00');
   });
