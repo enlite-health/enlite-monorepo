@@ -22,10 +22,16 @@ const SweepSafeQuerySchema = z.object({
 /**
  * Allowlist explícito de eventos elegíveis para o sweep de durabilidade
  * (POST /api/internal/events/sweep-safe). Cada entrada precisa ter handler
- * idempotente confirmado — NUNCA incluir `vacancy.created` (dispara convites
- * WhatsApp; reprocessar um evento já entregue re-envia mensagem ao worker).
+ * idempotente confirmado.
+ *
+ * `vacancy.created` (go-live do auto-invite): idempotência provada em 3
+ * camadas — matchmaking só convida quem não tem candidatura (alreadyApplied),
+ * VacancyInviteGuard (opt-out + cooldown 3d + idempotência 7d sobre
+ * outbox ∪ bulk logs, compartilhado com o disparo manual) e a queue
+ * whatsapp-paced com rate limit 0.5 msg/s. Reprocessar um evento já
+ * entregue NÃO re-envia mensagem.
  */
-export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registration_completed'] as const;
+export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registration_completed', 'vacancy.created'] as const;
 
 /**
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
@@ -156,7 +162,8 @@ export class InternalController {
    * POST /api/internal/events/sweep-safe
    * Trigger: Cloud Scheduler / manual incident response — safety net escopado
    * a um ALLOWLIST explícito de eventos (`SWEEP_SAFE_EVENTS`), nunca "todos os
-   * pendentes" (evita reprocessar `vacancy.created` e reenviar convites).
+   * pendentes" (só entra evento com idempotência provada — ver o comentário
+   * do allowlist).
    *
    * Flow: (1) apaga eventos `worker.mirror_requested` provadamente redundantes
    * (mirror-only — usa `ana_care_synced_at`, que só existe para esse evento),

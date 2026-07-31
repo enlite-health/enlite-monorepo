@@ -239,6 +239,7 @@ describe('InternalController', () => {
       eventProcessor.sweepPendingByEvent.mockImplementation(async (eventName: string) => {
         if (eventName === 'worker.mirror_requested') return { processed: 2, total: 3 };
         if (eventName === 'worker.registration_completed') return { processed: 1, total: 1 };
+        if (eventName === 'vacancy.created') return { processed: 4, total: 5 };
         throw new Error(`unexpected event in sweep-safe: ${eventName}`);
       });
     });
@@ -256,26 +257,28 @@ describe('InternalController', () => {
         5,
         100,
       );
-      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(2);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('vacancy.created', 5, 100);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(3);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         deleted: 1,
-        processed: 3, // 2 + 1
-        total: 4, // 3 + 1
+        processed: 7, // 2 + 1 + 4
+        total: 9, // 3 + 1 + 5
         byEvent: {
           'worker.mirror_requested': { processed: 2, total: 3 },
           'worker.registration_completed': { processed: 1, total: 1 },
+          'vacancy.created': { processed: 4, total: 5 },
         },
       });
     });
 
-    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. vacancy.created)', async () => {
+    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. funnel_stage.qualified)', async () => {
       const res = mockRes();
       await controller.sweepSafeEvents(mockReq(), res);
 
       const calledEvents = eventProcessor.sweepPendingByEvent.mock.calls.map(c => c[0]);
-      expect(calledEvents).not.toContain('vacancy.created');
-      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed'].sort());
+      expect(calledEvents).not.toContain('funnel_stage.qualified');
+      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed', 'vacancy.created'].sort());
     });
 
     it('parses olderThanMinutes/limit from query and forwards to every allowlist event', async () => {
