@@ -19,9 +19,21 @@ export function VacancyFunnelKanban({
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
+  /**
+   * ⚠️ Repassar TODOS os argumentos. Função com menos parâmetros é atribuível a um tipo
+   * com mais em TypeScript, então esquecer um argumento aqui não gera erro de compilação —
+   * ele simplesmente some no caminho. Foi o que aconteceu com o agendamento: o modal
+   * coletava data e hora, e o PUT saía sem elas. Só o e2e no navegador pegou.
+   */
   const handleMove = useCallback(
-    async (encuadreId: string, targetStage: string, rejectionReasonCategory?: string, role?: EncuadreRole) => {
-      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory, role);
+    async (
+      encuadreId: string,
+      targetStage: string,
+      rejectionReasonCategory?: string,
+      role?: EncuadreRole,
+      schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
+    ) => {
+      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory, role, schedule);
       setMoveError(err);
       return err;
     },

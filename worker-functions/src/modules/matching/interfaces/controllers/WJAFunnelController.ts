@@ -11,6 +11,12 @@ import {
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
 import { deriveKanbanColumn, isMatchedNotInvited } from '../../domain/kanbanColumn';
+import {
+  interviewScheduleSchema,
+  interviewDatetimeSql,
+  INTERVIEW_DATE_RESOLVED_SQL,
+  INTERVIEW_TIME_RESOLVED_SQL,
+} from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
 
 /**
@@ -84,8 +90,12 @@ export class WJAFunnelController {
              w.last_name_encrypted,
              COALESCE(w.phone, e.worker_raw_phone) AS worker_phone,
              e.occupation_raw,
-             COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::date, e.interview_date) AS interview_date,
-             COALESCE((wja.interview_datetime AT TIME ZONE 'UTC')::time, e.interview_time) AS interview_time,
+             -- Resolução das duas fontes num helper único (domain/interviewSchedule), agora no
+             -- fuso da OPERAÇÃO e não em UTC: entrevista às 21h em Buenos Aires é meia-noite
+             -- UTC e aparecia no dia seguinte. Sem impacto retroativo: interview_datetime
+             -- está em 0 de 13.046 linhas hoje; só o legado (date puro) alimenta a tela.
+             ${INTERVIEW_DATE_RESOLVED_SQL} AS interview_date,
+             ${INTERVIEW_TIME_RESOLVED_SQL} AS interview_time,
              COALESCE(wja.interview_meet_link, e.meet_link) AS meet_link,
              e.resultado,
              e.attended,
@@ -281,16 +291,36 @@ export class WJAFunnelController {
    * Moves encuadre to a new Kanban column by updating application_funnel_stage.
    * Also syncs encuadre.resultado for terminal states (SELECTED/REJECTED).
    *
-   * Body: { targetStage, rejectionReasonCategory?, rejectionReason? }
+   * Body: { targetStage, rejectionReasonCategory?, rejectionReason?, role?,
+   *         interviewDate?, interviewTime?, interviewMeetLink? }
    *
    * Migration 230: INITIATED replaced by PRE_SCREENING in validStages.
    * INVITED added to validStages — "Invitados" is a droppable column in the kanban
    * (KanbanBoard DROPPABLE_STAGES); its omission here 400'd every drop into it.
+   *
+   * interviewDate/Time (2026-07-30): mover para CONFIRMED registra QUANDO a entrevista é.
+   * Até aqui o sistema gravava só que ela foi agendada — por isso lembrete de véspera,
+   * lembrete de 5min e marcação de falta nunca dispararam (0 execuções cada). Ambas são
+   * OPCIONAIS: "ainda não sei" é caminho válido (design D4), porque bloquear o movimento
+   * faria a recrutadora inventar horário para destravar o card.
    */
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
       const { targetStage, rejectionReasonCategory, rejectionReason, role } = req.body;
+
+      const schedule = interviewScheduleSchema.safeParse({
+        interviewDate: req.body?.interviewDate ?? undefined,
+        interviewTime: req.body?.interviewTime ?? undefined,
+        interviewMeetLink: req.body?.interviewMeetLink ?? undefined,
+      });
+      if (!schedule.success) {
+        res.status(400).json({
+          success: false,
+          error: schedule.error.errors[0]?.message ?? 'Dados de agendamento inválidos',
+        });
+        return;
+      }
 
       const validStages = [
         'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
@@ -345,14 +375,41 @@ export class WJAFunnelController {
         throw err;
       }
 
-      // 2. Atualizar application_funnel_stage (fonte de verdade)
+      // 2. Atualizar application_funnel_stage (fonte de verdade) + agendamento quando informado.
+      // A conversão para timestamptz é feita pelo Postgres a partir do fuso da OPERAÇÃO
+      // (interviewDatetimeSql) — nunca do fuso do navegador de quem arrastou o card.
+      //
+      // SQL ESTÁTICO de propósito: os placeholders $4/$5 são SEMPRE referenciados, com
+      // CASE null-safe. A versão anterior interpolava 'NULL' quando não havia agendamento
+      // e mantinha 6 valores no array → Postgres: "could not determine data type of
+      // parameter $4" → 500 em TODO movimento sem data (pego pelo e2e de banco real;
+      // mocks de db.query não veem isso).
+      const { interviewDate, interviewTime, interviewMeetLink } = schedule.data;
+      const datetimeInsertSql = `CASE WHEN $4::date IS NULL THEN NULL ELSE ${interviewDatetimeSql('$4', '$5')} END`;
+      // No conflito, mover sem data NÃO apaga um agendamento já gravado.
+      const datetimeUpdateSql = `CASE WHEN $4::date IS NULL THEN worker_job_applications.interview_datetime ELSE ${interviewDatetimeSql('$4', '$5')} END`;
+
       await this.db.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-         VALUES ($1, $2, $3, 'manual')
+        `INSERT INTO worker_job_applications (
+           worker_id, job_posting_id, application_funnel_stage, source,
+           interview_datetime, interview_meet_link)
+         VALUES (
+           $1, $2, $3, 'manual',
+           ${datetimeInsertSql},
+           $6)
          ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
            application_funnel_stage = $3,
+           interview_datetime = ${datetimeUpdateSql},
+           interview_meet_link = COALESCE($6, worker_job_applications.interview_meet_link),
            updated_at = NOW()`,
-        [workerId, jobPostingId, targetStage],
+        [
+          workerId,
+          jobPostingId,
+          targetStage,
+          interviewDate ?? null,
+          interviewTime ?? null,
+          interviewMeetLink ?? null,
+        ],
       );
 
       // 3. Sincronizar encuadre.resultado para estados terminais

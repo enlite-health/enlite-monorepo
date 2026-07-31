@@ -47,6 +47,58 @@ export function isMatchedNotInvited(
 }
 
 /**
+ * Display order of the Kanban columns, from least to most advanced.
+ *
+ * Used by the management dashboard to collapse a worker with N applications into
+ * the SINGLE column that best describes where that person stands ("furthest
+ * column reached"), so the consolidated view sums to the distinct-worker total.
+ *
+ * ⚠️ This is NOT `funnel_stage_precedence(text)` (migrations 185/190) and must not
+ * be replaced by it. That function ranks REJECTED at 7, TIED with SELECTED —
+ * correct for its purpose (the upsert guard "a stage never regresses": a fresh
+ * invite must not overwrite a rejection), wrong for display: a worker REJECTED on
+ * vacancy A and IN_PROGRESS on vacancy B is an active candidate, not a rejected
+ * one. Here REJECTED ranks LAST: it only describes a person when nothing else does.
+ *
+ * BLOQUEADO is absent on purpose — blocked attempts have no WJA and are counted
+ * from `worker_blocked_applications`, never collapsed into a worker's funnel column.
+ */
+const KANBAN_COLUMN_ADVANCEMENT: readonly KanbanColumn[] = [
+  'REJECTED',
+  'INVITED',
+  'INICIADO',
+  'PRE_SCREENING',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'CONFIRMED',
+  'SELECTED',
+];
+
+/**
+ * Rank of a column in the advancement order — higher = further along the funnel.
+ * Throws on an unranked column so that adding a Kanban column without deciding
+ * where it sits fails the build instead of silently vanishing from the dashboard.
+ */
+export function kanbanColumnRank(column: KanbanColumn): number {
+  const rank = KANBAN_COLUMN_ADVANCEMENT.indexOf(column);
+  if (rank === -1) {
+    throw new Error(
+      `kanbanColumnRank: column "${column}" has no declared advancement rank. ` +
+        'Add it to KANBAN_COLUMN_ADVANCEMENT (kanbanColumn.ts) before using it in the dashboard.',
+    );
+  }
+  return rank;
+}
+
+/** Columns a worker can occupy in the funnel, least → most advanced. */
+export const FUNNEL_COLUMNS: readonly KanbanColumn[] = KANBAN_COLUMN_ADVANCEMENT;
+
+/** Returns the most advanced of two columns (used to collapse a worker's N applications). */
+export function mostAdvancedColumn(a: KanbanColumn, b: KanbanColumn): KanbanColumn {
+  return kanbanColumnRank(a) >= kanbanColumnRank(b) ? a : b;
+}
+
+/**
  * Derives the Kanban column for a WJA row from its funnel stage + source.
  * Mirrors the classification chain in WJAFunnelController.getEncuadreFunnel.
  *

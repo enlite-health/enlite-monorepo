@@ -6,6 +6,7 @@ import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from '.
 import { KanbanCard } from './KanbanCard';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
+import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
@@ -17,6 +18,8 @@ interface KanbanBoardProps {
     targetStage: string,
     rejectionReasonCategory?: string,
     role?: EncuadreRole,
+    /** Data/hora da entrevista ao mover para CONFIRMED. Ausente = "ainda não sei". */
+    schedule?: InterviewSchedule,
   ) => Promise<MoveEncuadreError | null>;
   /** "Rechazar" de um card BLOQUEADO: soft-dismiss com motivo → vai p/ RECHAZADOS. */
   onRejectBlocked: (blockedId: string, rejectionReasonCategory: string) => Promise<MoveEncuadreError | null>;
@@ -84,6 +87,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
   >(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
+  const [showScheduleSelect, setShowScheduleSelect] = useState<{ encuadreId: string } | null>(null);
   /**
    * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
    * por workerId (não wjaId): o histórico é o MESMO em todas as colunas —
@@ -118,8 +122,24 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
       setShowRoleSelect({ encuadreId });
       return;
     }
+    // Ao agendar, perguntar QUANDO — é o único ponto em que o sistema captura a data
+    // da entrevista (sem ela, lembretes e no-show não têm do que disparar).
+    if (toColumnId === 'CONFIRMED') {
+      setShowScheduleSelect({ encuadreId });
+      return;
+    }
     void onMove(encuadreId, toColumnId);
   }
+
+  async function handleScheduleSubmit(
+    encuadreId: string,
+    schedule: InterviewSchedule | null,
+  ) {
+    setShowScheduleSelect(null);
+    // schedule=null → "ainda não sei": move mesmo assim, sem inventar horário.
+    await onMove(encuadreId, 'CONFIRMED', undefined, undefined, schedule ?? undefined);
+  }
+
 
   async function handleRejectionSubmit(
     target: { encuadreId: string } | { blockedId: string },
@@ -138,10 +158,18 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
     await onMove(encuadreId, 'SELECTED', undefined, role);
   }
 
-  /** Move click (MoveToMenu): intercept SELECTED to ask the role first. */
+  /**
+   * Move click (MoveToMenu): mesma pergunta do arrasto — papel ao selecionar, data ao
+   * agendar. Os dois caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos
+   * fundos que grava card sem data.
+   */
   function handleCardMoveTo(encuadreId: string, target: string) {
     if (target === 'SELECTED') {
       setShowRoleSelect({ encuadreId });
+      return;
+    }
+    if (target === 'CONFIRMED') {
+      setShowScheduleSelect({ encuadreId });
       return;
     }
     void onMove(encuadreId, target);
@@ -197,6 +225,13 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
         <RoleSelect
           onSubmit={(role) => handleRoleSubmit(showRoleSelect.encuadreId, role)}
           onCancel={() => setShowRoleSelect(null)}
+        />
+      )}
+
+      {showScheduleSelect && (
+        <InterviewScheduleSelect
+          onSubmit={(schedule) => handleScheduleSubmit(showScheduleSelect.encuadreId, schedule)}
+          onCancel={() => setShowScheduleSelect(null)}
         />
       )}
 

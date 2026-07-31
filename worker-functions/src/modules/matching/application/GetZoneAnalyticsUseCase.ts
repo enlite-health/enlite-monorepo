@@ -2,22 +2,17 @@ import type { Pool } from 'pg';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import { resolveZoneKey, UNRESOLVED_ZONE_KEY } from '@shared/utils/zoneKey';
+import { OPEN_JOB_STATUSES_SET } from '../domain/openJobStatuses';
 import {
   zoneAnalyticsSchema,
   type ZoneAnalyticsData,
   type ZoneAnalyticsZone,
 } from './zoneAnalyticsSchema';
 
-/** Statuses de vaga considerados "demanda aberta" — mesmo set de vacantesAbiertas
- *  no GetManagementDashboardUseCase (job_postings.status, migration 166).
+/** Statuses de vaga considerados "demanda aberta" — SSOT em domain/openJobStatuses.
  *  Filtrado em JS (não SQL): "patients" precisa de TODAS as vagas do paciente,
  *  não só as abertas; "demand" é um FILTER sobre a mesma linha já buscada. */
-const OPEN_JOB_STATUSES = new Set([
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-]);
+const OPEN_JOB_STATUSES = OPEN_JOB_STATUSES_SET;
 
 export interface ZoneAnalyticsFilters {
   /** workers.profession / job_postings.required_professions — ver Profession (@modules/worker/domain/enums/Profession): 'AT'|'CAREGIVER'|'NURSE'|'KINESIOLOGIST'|'PSYCHOLOGIST'. */

@@ -1,6 +1,12 @@
 import type { Pool } from 'pg';
 import { managementDashboardSchema, type ManagementDashboardData } from './managementDashboardSchema';
 import { GetArmedCasesUseCase } from './GetArmedCasesUseCase';
+import { GetFunnelByWorkerUseCase } from './GetFunnelByWorkerUseCase';
+import {
+  INTERVIEW_DATE_RESOLVED_SQL,
+  CURRENT_WEEK_START_SQL,
+} from '../domain/interviewSchedule';
+import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 
 /** Linha de contagem simples chave→valor. */
 interface CountRow {
@@ -19,11 +25,24 @@ export class GetManagementDashboardUseCase {
   constructor(private readonly db: Pool) {}
 
   async execute(): Promise<ManagementDashboardData> {
-    const [armed, jobRows, patientRows, workerRow, funnelRows, allocatedRow, blockedRow, encuadreRow] =
+    const [
+      armed,
+      funnelPorPrestador,
+      jobRows,
+      patientRows,
+      workerRow,
+      funnelRows,
+      esperandoRow,
+      allocatedRow,
+      blockedRow,
+      encuadreRow,
+    ] =
       await Promise.all([
         // Equipe Armada + horas: agregação por caso (buckets honestos, ver
         // GetArmedCasesUseCase). É a 1ª promise → 1ª chamada a this.db.query.
         new GetArmedCasesUseCase(this.db).execute(),
+        // Funil por PRESTADOR, recortado à operação viva (ver GetFunnelByWorkerUseCase).
+        new GetFunnelByWorkerUseCase(this.db).execute(),
         this.db.query<CountRow>(
           `SELECT status AS k, COUNT(*)::int AS count
              FROM job_postings
@@ -58,21 +77,68 @@ export class GetManagementDashboardUseCase {
              FROM worker_job_applications
             GROUP BY application_funnel_stage`,
         ),
-        this.db.query<{ alocados: number }>(
-          `SELECT COUNT(DISTINCT worker_id)::int AS alocados
-             FROM worker_job_applications
-            WHERE application_funnel_stage = 'SELECTED'`,
+        this.db.query<{ esperando: number }>(
+          // "Completos esperando agenda" é FILA DE CONTATO: quem ligar primeiro.
+          // Conta PESSOAS distintas em VAGA VIVA. Sem esse recorte eram 2.429 candidaturas
+          // (incluindo vaga apagada, rascunho e fechada, e a mesma pessoa N vezes);
+          // o trabalho real são 569 pessoas — 4,3× menos.
+          `SELECT COUNT(DISTINCT wja.worker_id)::int AS esperando
+             FROM worker_job_applications wja
+             JOIN job_postings jp ON jp.id = wja.job_posting_id
+             JOIN workers      w  ON w.id  = wja.worker_id
+            WHERE wja.application_funnel_stage = 'QUALIFIED'
+              AND ${LIVE_JOB_POSTING_SQL}
+              AND w.merged_into_id IS NULL`,
+        ),
+        this.db.query<{ activos: number; cubriendo_guardias: number }>(
+          // "Alocados" = prestadores EM UM CASO segundo o Ana Care (workers.ana_care_status),
+          // não o funil. O funil ('SELECTED') morre antes da alocação real — overlap ZERO
+          // com quem atende paciente (verificado prod 22/07). Ver decisoes.md D53.
+          // Composição explícita: 'Activo' = ocupado num paciente; 'Cubriendo guardias' =
+          // disponível cobrindo plantão (migração 049). O card mostra os dois separados.
+          // ⚠️ ana_care_status é FOTO de import — NÃO sincroniza ao vivo (zero writers inbound;
+          // a integração AnaCare é outbound-only). Leitura viva depende do conector inbound
+          // Ana Care (ClickUp 86ajgv39a, 31/07).
+          `SELECT
+             COUNT(*) FILTER (WHERE ana_care_status = 'Activo')::int             AS activos,
+             COUNT(*) FILTER (WHERE ana_care_status = 'Cubriendo guardias')::int AS cubriendo_guardias
+             FROM workers
+            WHERE merged_into_id IS NULL
+              AND ana_care_status IN ('Activo', 'Cubriendo guardias')`,
         ),
         this.db.query<{ bloqueados: number }>(
-          `SELECT COUNT(*)::int AS bloqueados
-             FROM worker_blocked_applications
-            WHERE blocked_reason = 'registration_incomplete'`,
+          // Tentativas de candidatura barradas pelo gate de cadastro incompleto.
+          // Conta PESSOAS distintas em VAGA VIVA: é fila de trabalho ("quem quis
+          // trabalhar e não conseguiu"), não acervo. Sem o recorte eram 668; com ele, 355.
+          `SELECT COUNT(DISTINCT b.worker_id)::int AS bloqueados
+             FROM worker_blocked_applications b
+             JOIN job_postings jp ON jp.id = b.job_posting_id
+            WHERE b.blocked_reason = 'registration_incomplete'
+              AND ${LIVE_JOB_POSTING_SQL}`,
         ),
-        this.db.query<{ agendados: number }>(
-          `SELECT COUNT(*)::int AS agendados
-             FROM encuadres
-            WHERE interview_date >= date_trunc('week', CURRENT_DATE)
-              AND interview_date <  date_trunc('week', CURRENT_DATE) + INTERVAL '7 days'`,
+        this.db.query<{ agendados: number; sem_data: number }>(
+          // Entrevistas da semana + quantos cards estão em "Agendados" SEM data.
+          //
+          // O card mostrava 0 desde sempre: lia só `encuadres.interview_date`, campo que
+          // nenhuma origem do produto jamais preencheu (as 9.214 datas vieram todas da
+          // importação de 22-23/03/2026). Agora resolve as duas fontes pelo helper
+          // compartilhado e conta a semana no fuso da OPERAÇÃO, não em UTC.
+          //
+          // `semData` é a medida de ADOÇÃO da captura (design D4): enquanto for alto, o
+          // número da semana subestima — e isso fica visível em vez de virar zero mudo.
+          `SELECT
+             COUNT(*) FILTER (
+               WHERE ${INTERVIEW_DATE_RESOLVED_SQL} >= ${CURRENT_WEEK_START_SQL}::date
+                 AND ${INTERVIEW_DATE_RESOLVED_SQL} <  ${CURRENT_WEEK_START_SQL}::date + INTERVAL '7 days'
+             )::int AS agendados,
+             COUNT(*) FILTER (
+               WHERE wja.application_funnel_stage = 'CONFIRMED'
+                 AND ${INTERVIEW_DATE_RESOLVED_SQL} IS NULL
+             )::int AS sem_data
+             FROM worker_job_applications wja
+             LEFT JOIN encuadres e
+                    ON e.worker_id = wja.worker_id
+                   AND e.job_posting_id = wja.job_posting_id`,
         ),
       ]);
 
@@ -81,9 +147,12 @@ export class GetManagementDashboardUseCase {
 
     const patient = patientRows.rows[0] ?? { activos: 0 };
     const worker = workerRow.rows[0] ?? { leads: 0, completos: 0, incompletos: 0, nuevos: 0 };
-    const allocated = allocatedRow.rows[0]?.alocados ?? 0;
+    const alocadosActivos = allocatedRow.rows[0]?.activos ?? 0;
+    const alocadosCubriendoGuardias = allocatedRow.rows[0]?.cubriendo_guardias ?? 0;
+    const allocated = alocadosActivos + alocadosCubriendoGuardias;
     const blocked = blockedRow.rows[0]?.bloqueados ?? 0;
     const encuadre = encuadreRow.rows[0]?.agendados ?? 0;
+    const encuadreSemData = encuadreRow.rows[0]?.sem_data ?? 0;
 
     // Vagas abertas POR STATUS — conceito distinto de "equipe por armar" (bucket).
     // Mantido como estava para não quebrar vacantesAbiertas (teste de regressão).
@@ -112,8 +181,16 @@ export class GetManagementDashboardUseCase {
         coberturaSinSchedule: armed.coberturaSinSchedule,
       },
       prioridades: {
-        completosEsperandoAgendamiento: pick(funnel, 'QUALIFIED'),
+        // Pessoas distintas em vaga viva — fila de contato, não acervo de candidaturas.
+        completosEsperandoAgendamiento: esperandoRow.rows[0]?.esperando ?? 0,
         profesionalesBloqueados: worker.incompletos,
+      },
+      funnelPorPrestador: {
+        total: funnelPorPrestador.total,
+        recorte: 'vagas-vivas',
+        bloqueados: blocked,
+        porEtapa: { somavel: false, colunas: funnelPorPrestador.porEtapa },
+        consolidado: { somavel: true, colunas: funnelPorPrestador.consolidado },
       },
       funnel: {
         invitados: pick(funnel, 'INVITED'),
@@ -126,11 +203,14 @@ export class GetManagementDashboardUseCase {
       },
       encuadres: {
         agendadosEstaSemana: encuadre,
+        semDataRegistrada: encuadreSemData,
       },
       cadastros: {
         leads: worker.leads,
         completos: worker.completos,
         alocados: allocated,
+        alocadosActivos,
+        alocadosCubriendoGuardias,
         incompletos: worker.incompletos,
         nuevosCompletosMes: worker.nuevos,
       },

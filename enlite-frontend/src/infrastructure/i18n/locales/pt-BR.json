@@ -607,7 +607,7 @@
         "prioridades": "Prioridades de contato",
         "prioridadesHint": "Quem precisa ser contatado primeiro",
         "funnel": "Totalização do funil",
-        "funnelHint": "Onde cada prestador está no processo de seleção",
+        "funnelHint": "Quantas PESSOAS estão no processo — vagas ativas, sem duplicar quem está em várias",
         "cadastros": "Cadastros de prestadores",
         "cadastrosHint": "Quantas pessoas se cadastraram e em que estado estão",
         "zoneAnalytics": "Analytics por zona",
@@ -640,22 +640,37 @@
       },
       "prioridades": {
         "esperandoAgendamiento": "Cadastros completos aguardando agenda",
-        "esperandoAgendamientoSub": "Qualificados pela Talentum, sem encuadre agendado",
+        "esperandoAgendamientoSub": "Qualificados pela Talentum, sem encuadre agendado · pessoas distintas em vagas ativas",
         "bloqueados": "Profissionais bloqueados",
         "bloqueadosSub": "Cadastro incompleto"
       },
       "funnel": {
+        "totalPrestadores": "Prestadores no funil",
+        "totalPrestadoresSub": "Pessoas distintas em vagas ativas — não é soma de cards",
         "agendadosSemana": "Encuadres agendados na semana",
-        "agendadosSemanaSub": "Semana corrente",
+        "agendadosSemanaSub": "Semana corrente (segunda a domingo, hora de Buenos Aires)",
+        "sumsToTotal": "Cada pessoa aparece uma vez só — as colunas somam {{total}}.",
+        "doesNotSum": "Uma pessoa pode estar em mais de uma coluna — as colunas NÃO somam {{total}}.",
+        "views": {
+          "consolidado": "Onde cada pessoa está",
+          "consolidadoHint": "Coluna mais avançada de cada prestador · responde \"quantos faltam contatar\"",
+          "porEtapa": "Quantas pessoas há em cada etapa",
+          "porEtapaHint": "Prestadores distintos por coluna · responde \"quantos tenho para entrevistar\""
+        },
         "stage": {
-          "invitados": "Invitados",
-          "bloqueados": "Bloqueados",
-          "preScreening": "Pre Screening",
-          "completos": "Completos",
-          "agendados": "Agendados",
-          "seleccionados": "Selecionados",
-          "rechazados": "Recusados"
-        }
+          "INVITED": "Invitados",
+          "INICIADO": "Iniciado",
+          "PRE_SCREENING": "Pre Screening",
+          "IN_PROGRESS": "Em progresso",
+          "COMPLETED": "Completos",
+          "CONFIRMED": "Agendados",
+          "SELECTED": "Selecionados",
+          "REJECTED": "Recusados"
+        },
+        "semData": "{{count}} agendados sem data registrada",
+        "semDataSub": "O número acima deixa esses de fora. Ao mover o card para \"Agendados\", informe data e hora.",
+        "bloqueados": "Bloqueados",
+        "bloqueadosSub": "Tentaram se candidatar e o cadastro incompleto barrou — vagas ativas"
       },
       "cadastros": {
         "leads": "Leads",
@@ -663,7 +678,7 @@
         "completos": "Completos",
         "completosSub": "Cadastros prontos para uso",
         "alocados": "Alocados",
-        "alocadosSub": "Prestadores já em um caso",
+        "alocadosSub": "{{activos}} ativos · {{guardias}} cobrindo plantões",
         "incompletos": "Incompletos",
         "incompletosSub": "Faltam dados ou documentos",
         "nuevosMes": "Novos do mês",
@@ -1226,7 +1241,17 @@
       },
       "blockedBadge": "BLOQUEADO",
       "blockedAttemptCount_one": "Tentou {{count}} vez",
-      "blockedAttemptCount_other": "Tentou {{count}} vezes"
+      "blockedAttemptCount_other": "Tentou {{count}} vezes",
+      "scheduleModal": {
+        "title": "Quando é a entrevista?",
+        "subtitle": "Com data e hora o sistema consegue lembrar o prestador e avisar se ele não aparecer.",
+        "dateLabel": "Data",
+        "timeLabel": "Hora",
+        "meetLabel": "Link da videochamada (opcional)",
+        "confirm": "Agendar",
+        "cancel": "Cancelar",
+        "unknown": "Ainda não sei a data — mover assim mesmo"
+      }
     },
     "workerDetail": {
       "status": "Status do Prestador",

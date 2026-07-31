@@ -23,7 +23,16 @@ export function CadastrosSection({
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-5">
         <MetricCard icon={UserPlus} accent="primary" title={t(`${p}leads`)} value={data.leads} subtitle={t(`${p}leadsSub`)} />
         <MetricCard icon={UserCheck} accent="success" title={t(`${p}completos`)} value={data.completos} subtitle={t(`${p}completosSub`)} />
-        <MetricCard icon={UserCog} accent="clinic" title={t(`${p}alocados`)} value={data.alocados} subtitle={t(`${p}alocadosSub`)} />
+        <MetricCard
+          icon={UserCog}
+          accent="clinic"
+          title={t(`${p}alocados`)}
+          value={data.alocados}
+          subtitle={t(`${p}alocadosSub`, {
+            activos: data.alocadosActivos,
+            guardias: data.alocadosCubriendoGuardias,
+          })}
+        />
         <MetricCard icon={UserX} accent="coordination" title={t(`${p}incompletos`)} value={data.incompletos} subtitle={t(`${p}incompletosSub`)} />
         <MetricCard icon={Sparkles} accent="learn" title={t(`${p}nuevosMes`)} value={data.nuevosCompletosMes} subtitle={t(`${p}nuevosMesSub`)} />
       </div>

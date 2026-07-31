@@ -607,7 +607,7 @@
         "prioridades": "Prioridades de contacto",
         "prioridadesHint": "A quién hay que llamar primero",
         "funnel": "Totalización del embudo",
-        "funnelHint": "Dónde está cada prestador en el proceso de selección",
+        "funnelHint": "Cuántas PERSONAS hay en el proceso — vacantes activas, sin duplicar a quien está en varias",
         "cadastros": "Registros de prestadores",
         "cadastrosHint": "Cuántas personas se registraron y en qué estado están",
         "zoneAnalytics": "Analytics por zona",
@@ -640,22 +640,37 @@
       },
       "prioridades": {
         "esperandoAgendamiento": "Registros completos esperando agenda",
-        "esperandoAgendamientoSub": "Calificados por Talentum, sin encuadre agendado",
+        "esperandoAgendamientoSub": "Calificados por Talentum, sin encuadre agendado · personas distintas en vacantes activas",
         "bloqueados": "Profesionales bloqueados",
         "bloqueadosSub": "Registro incompleto"
       },
       "funnel": {
+        "totalPrestadores": "Prestadores en el embudo",
+        "totalPrestadoresSub": "Personas distintas en vacantes activas — no suma de tarjetas",
         "agendadosSemana": "Encuadres agendados esta semana",
-        "agendadosSemanaSub": "Semana en curso",
+        "agendadosSemanaSub": "Semana en curso (lunes a domingo, hora de Buenos Aires)",
+        "sumsToTotal": "Cada persona aparece una sola vez — las columnas suman {{total}}.",
+        "doesNotSum": "Una persona puede estar en más de una columna — las columnas NO suman {{total}}.",
+        "views": {
+          "consolidado": "Dónde está cada persona",
+          "consolidadoHint": "Columna más avanzada de cada prestador · responde \"cuántos faltan contactar\"",
+          "porEtapa": "Cuántas personas hay en cada etapa",
+          "porEtapaHint": "Prestadores distintos por columna · responde \"cuántos tengo para entrevistar\""
+        },
         "stage": {
-          "invitados": "Invitados",
-          "bloqueados": "Bloqueados",
-          "preScreening": "Pre Screening",
-          "completos": "Completos",
-          "agendados": "Agendados",
-          "seleccionados": "Seleccionados",
-          "rechazados": "Rechazados"
-        }
+          "INVITED": "Invitados",
+          "INICIADO": "Iniciado",
+          "PRE_SCREENING": "Pre Screening",
+          "IN_PROGRESS": "En progreso",
+          "COMPLETED": "Completos",
+          "CONFIRMED": "Agendados",
+          "SELECTED": "Seleccionados",
+          "REJECTED": "Rechazados"
+        },
+        "semData": "{{count}} agendados sin fecha registrada",
+        "semDataSub": "El número de arriba los deja de fuera. Al mover la tarjeta a \"Agendados\", cargá fecha y hora.",
+        "bloqueados": "Bloqueados",
+        "bloqueadosSub": "Intentaron postularse y el registro incompleto lo impidió — vacantes activas"
       },
       "cadastros": {
         "leads": "Leads",
@@ -663,7 +678,7 @@
         "completos": "Completos",
         "completosSub": "Registros listos para usar",
         "alocados": "Asignados",
-        "alocadosSub": "Prestadores ya en un caso",
+        "alocadosSub": "{{activos}} activos · {{guardias}} cubriendo guardias",
         "incompletos": "Incompletos",
         "incompletosSub": "Faltan datos o documentos",
         "nuevosMes": "Nuevos del mes",
@@ -1226,7 +1241,17 @@
       },
       "blockedBadge": "BLOQUEADO",
       "blockedAttemptCount_one": "Intentó {{count}} vez",
-      "blockedAttemptCount_other": "Intentó {{count}} veces"
+      "blockedAttemptCount_other": "Intentó {{count}} veces",
+      "scheduleModal": {
+        "title": "¿Cuándo es la entrevista?",
+        "subtitle": "Con fecha y hora el sistema puede recordarle al prestador y avisar si no aparece.",
+        "dateLabel": "Fecha",
+        "timeLabel": "Hora",
+        "meetLabel": "Link de la videollamada (opcional)",
+        "confirm": "Agendar",
+        "cancel": "Cancelar",
+        "unknown": "Todavía no sé la fecha — mover igual"
+      }
     },
     "workerDetail": {
       "status": "Estado del Prestador",

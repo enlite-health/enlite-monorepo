@@ -161,14 +161,27 @@ describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => 
   it('mantém o contrato: inteiros >= 0 (horas podem ser decimais >= 0)', async () => {
     const data = await new GetManagementDashboardUseCase(pool).execute();
 
-    for (const [groupName, group] of Object.entries(data)) {
-      for (const value of Object.values(group as Record<string, number>)) {
-        expect(value).toBeGreaterThanOrEqual(0);
-        // horas.totais / horas.aPreencher são decimais; o resto é inteiro.
-        if (groupName !== 'horas') {
-          expect(Number.isInteger(value)).toBe(true);
+    // Percorre RECURSIVAMENTE: funnelPorPrestador tem objetos aninhados (porEtapa/
+    // consolidado) e campos não-numéricos legítimos (recorte: 'vagas-vivas',
+    // somavel: boolean) — a invariante numérica vale para as FOLHAS numéricas.
+    let numericLeaves = 0;
+    function assertNumbers(node: unknown, path: string): void {
+      if (typeof node === 'number') {
+        numericLeaves += 1;
+        expect(node).toBeGreaterThanOrEqual(0);
+        // horas.* são decimais; todo o resto é contagem inteira.
+        if (!path.startsWith('horas.')) {
+          expect(Number.isInteger(node)).toBe(true);
+        }
+        return;
+      }
+      if (node !== null && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+          assertNumbers(value, path === '' ? key : `${path}.${key}`);
         }
       }
     }
+    assertNumbers(data, '');
+    expect(numericLeaves).toBeGreaterThan(20); // o payload é majoritariamente numérico
   });
 });
