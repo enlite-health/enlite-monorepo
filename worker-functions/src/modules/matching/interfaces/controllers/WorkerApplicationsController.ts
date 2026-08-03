@@ -4,14 +4,11 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { logger } from '@shared/logging';
 import { GetWorkerProgressUseCase, WorkerRepository } from '@modules/worker';
-import {
-  assertWorkerCanApply,
-  WorkerNotEligibleError,
-} from '../../domain/WorkerApplicationEligibility';
-import { RecordBlockedAttemptUseCase } from '../../application/RecordBlockedAttemptUseCase';
-import { CreateManualWjaWithEncuadreUseCase } from '../../application/CreateManualWjaWithEncuadreUseCase';
+import { ApplyToVacancyUseCase } from '../../application/ApplyToVacancyUseCase';
 
-const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
+// 'luz_whatsapp' = postulação registrada pela Luz na conversa (≠ 'whatsapp',
+// que é clique humano em link de WhatsApp) — atribuição da conversão da IA.
+const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site', 'luz_whatsapp'] as const;
 
 const TrackChannelSchema = z.object({
   jobPostingId: z.string().min(1, 'jobPostingId is required'),
@@ -40,14 +37,12 @@ const TrackChannelSchema = z.object({
 export class WorkerApplicationsController {
   private readonly db: Pool;
   private readonly getProgressUseCase: GetWorkerProgressUseCase;
-  private readonly recordBlockedAttemptUseCase: RecordBlockedAttemptUseCase;
-  private readonly createManualWjaWithEncuadreUseCase: CreateManualWjaWithEncuadreUseCase;
+  private readonly applyToVacancyUseCase: ApplyToVacancyUseCase;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.getProgressUseCase = new GetWorkerProgressUseCase(new WorkerRepository());
-    this.recordBlockedAttemptUseCase = new RecordBlockedAttemptUseCase();
-    this.createManualWjaWithEncuadreUseCase = new CreateManualWjaWithEncuadreUseCase();
+    this.applyToVacancyUseCase = new ApplyToVacancyUseCase();
   }
 
   private getAuthUid(req: Request): string | null {
@@ -101,44 +96,29 @@ export class WorkerApplicationsController {
         return;
       }
 
-      try {
-        await assertWorkerCanApply(this.db, worker.id);
-      } catch (err) {
-        if (err instanceof WorkerNotEligibleError) {
-          // Instrumenta a tentativa bloqueada. Awaited de propósito: em Cloud Run,
-          // trabalho em background após o response é estrangulado/descartado, o que
-          // perderia a gravação. A conexão já está quente (assertWorkerCanApply acima)
-          // e o upsert é single-row indexado (latência sub-ms). O use case é à prova de
-          // falha (try/catch interno, nunca lança), então o 403 nunca é bloqueado por erro.
-          const missingFields = await this.recordBlockedAttemptUseCase.execute({
-            workerId: worker.id,
-            jobPostingId,
-            reason: err.reason,
-            acquisitionChannel: channel,
-          });
-          res.status(err.status).json({
-            success: false,
-            error: 'registration_incomplete',
-            code: err.code,
-            reason: err.reason,
-            workerStatus: err.workerStatus,
-            missingFields,
-          });
-          return;
-        }
-        throw err;
-      }
-
       // Worker self-applied via public link, lands in INVITED column.
       // (Clicou no link, ainda não entrou no WhatsApp Talentum — INITIATED só via webhook.)
-      // Extraído para CreateManualWjaWithEncuadreUseCase (reusado por PromoteBlockedApplicationsUseCase).
-      await this.createManualWjaWithEncuadreUseCase.execute(this.db, {
+      // Elegibilidade + instrumentação de bloqueio + criação vivem no
+      // ApplyToVacancyUseCase (fonte única — mesma composição da capability da Luz).
+      const applyResult = await this.applyToVacancyUseCase.execute(this.db, {
         workerId: worker.id,
         jobPostingId,
         acquisitionChannel: channel,
         workerName: worker.name,
         workerPhone: worker.phone,
       });
+
+      if (!applyResult.ok) {
+        res.status(applyResult.httpStatus).json({
+          success: false,
+          error: 'registration_incomplete',
+          code: applyResult.code,
+          reason: applyResult.reason,
+          workerStatus: applyResult.workerStatus,
+          missingFields: applyResult.missingFields,
+        });
+        return;
+      }
 
       res.status(200).json({ success: true });
     } catch (error) {
