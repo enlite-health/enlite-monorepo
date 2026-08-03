@@ -45,6 +45,7 @@ import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastruct
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
+import { noStoreMiddleware } from './shared/http/noStoreMiddleware';
 import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
@@ -80,6 +81,9 @@ const app = express();
 
 // CORS — origens default + CORS_ALLOWED_ORIGINS (CSV). Ver shared/http/corsConfig.
 app.use(corsMiddleware());
+
+// Cache-Control: no-store por default (rotas cacheáveis sobrescrevem). Ver shared/http/noStoreMiddleware.
+app.use(noStoreMiddleware);
 
 app.use(express.json({
   limit: '60mb',
