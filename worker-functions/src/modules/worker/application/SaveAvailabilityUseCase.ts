@@ -33,13 +33,15 @@ export class SaveAvailabilityUseCase {
       return Result.fail<Worker>(workerResult.error!);
     }
 
+    // Mensagens de erro em es-AR: o toast do app mostra este texto direto ao
+    // prestador — nada de inglês nem detalhe técnico aqui.
     const worker = workerResult.getValue();
     if (!worker) {
-      return Result.fail<Worker>('Worker not found');
+      return Result.fail<Worker>('No encontramos tu registro. Cerrá sesión y volvé a entrar.');
     }
 
     if (data.availability.length === 0) {
-      return Result.fail<Worker>('At least one availability slot is required');
+      return Result.fail<Worker>('Dejá al menos un día con horario cargado.');
     }
 
     // Valida TUDO antes de tocar o banco: um slot inválido não pode custar a
@@ -89,7 +91,14 @@ export class SaveAvailabilityUseCase {
     );
 
     if (replaceResult.isFailure) {
-      return Result.fail<Worker>(replaceResult.error!);
+      // O detalhe técnico (erro SQL) vai pro log; o prestador recebe mensagem
+      // amigável — erro de banco não é acionável por quem está no app.
+      console.warn(
+        `[SaveAvailabilityUseCase] replace failed | workerId: ${data.workerId} | error: ${replaceResult.error}`,
+      );
+      return Result.fail<Worker>(
+        'No pudimos guardar tu disponibilidad. Esperá un momento y probá de nuevo.',
+      );
     }
 
     await this.workerRepository.recalculateStatus(data.workerId);

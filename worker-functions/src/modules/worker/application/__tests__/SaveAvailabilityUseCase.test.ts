@@ -236,7 +236,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({ workerId: 'worker-123', availability: [] });
 
       expect(result.isFailure).toBe(true);
-      expect(result.error).toBe('At least one availability slot is required');
+      expect(result.error).toBe('Dejá al menos un día con horario cargado.');
       expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
     });
   });
@@ -252,7 +252,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute(availabilityPayload);
 
       expect(result.isFailure).toBe(true);
-      expect(result.error).toBe('Worker not found');
+      expect(result.error).toBe('No encontramos tu registro. Cerrá sesión y volvé a entrar.');
       expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
     });
   });
@@ -275,19 +275,26 @@ describe('SaveAvailabilityUseCase', () => {
   });
 
   describe('falha no repositório', () => {
-    it('deve propagar erro do replaceByWorkerId sem recalcular status', async () => {
+    it('falha do replaceByWorkerId vira mensagem amigável (técnico só no log), sem recalcular status', async () => {
       const workerRepo = makeWorkerRepo();
       const availabilityRepo = makeAvailabilityRepo({
-        replaceByWorkerId: jest.fn().mockResolvedValue(Result.fail('DB error')),
+        replaceByWorkerId: jest.fn().mockResolvedValue(Result.fail('duplicate key value violates unique constraint')),
       });
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const result = await useCase.execute(availabilityPayload);
 
       expect(result.isFailure).toBe(true);
-      expect(result.error).toBe('DB error');
+      // O prestador vê texto acionável em es, nunca o erro SQL
+      expect(result.error).toBe('No pudimos guardar tu disponibilidad. Esperá un momento y probá de nuevo.');
+      expect(result.error).not.toContain('duplicate key');
+      // O técnico fica no log
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('duplicate key value violates unique constraint'));
       expect(workerRepo.updateStep).not.toHaveBeenCalled();
       expect(workerRepo.recalculateStatus).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
     });
   });
 });
