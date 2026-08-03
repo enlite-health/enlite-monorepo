@@ -2,6 +2,24 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { IAvailabilityRepository } from '../ports/IAvailabilityRepository';
 import { SaveAvailabilityDTO, Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
+
+const DAY_NAMES_ES = [
+  'domingo',
+  'lunes',
+  'martes',
+  'miércoles',
+  'jueves',
+  'viernes',
+  'sábado',
+];
+
+const toMinutes = (time: string): number => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
 export class SaveAvailabilityUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
@@ -10,7 +28,7 @@ export class SaveAvailabilityUseCase {
 
   async execute(data: SaveAvailabilityDTO): Promise<Result<Worker>> {
     const workerResult = await this.workerRepository.findById(data.workerId);
-    
+
     if (workerResult.isFailure) {
       return Result.fail<Worker>(workerResult.error!);
     }
@@ -24,15 +42,43 @@ export class SaveAvailabilityUseCase {
       return Result.fail<Worker>('At least one availability slot is required');
     }
 
-    const timezone = worker.timezone || 'UTC';
+    // Valida TUDO antes de tocar o banco: um slot inválido não pode custar a
+    // disponibilidade já salva (o frontend auto-salva estados intermediários,
+    // então payload inválido aqui é rotina, não exceção). Slots idênticos
+    // (mesmo dia+início+fim) são deduplicados em silêncio: é o duplo toque no
+    // "+" do app, não intenção do prestador. Mensagens em es: o toast do app
+    // mostra este texto direto ao prestador.
+    const seen = new Set<string>();
+    const slots: SaveAvailabilityDTO['availability'] = [];
+    for (const slot of data.availability) {
+      if (!Number.isInteger(slot.dayOfWeek) || slot.dayOfWeek < 0 || slot.dayOfWeek > 6) {
+        return Result.fail<Worker>(`Horario inválido: día de la semana fuera de rango (${slot.dayOfWeek})`);
+      }
+      const day = DAY_NAMES_ES[slot.dayOfWeek];
+      if (!TIME_RE.test(slot.startTime) || !TIME_RE.test(slot.endTime)) {
+        return Result.fail<Worker>(`Horario inválido el ${day}: formato de hora no reconocido`);
+      }
+      if (!slot.crossesMidnight && toMinutes(slot.endTime) <= toMinutes(slot.startTime)) {
+        return Result.fail<Worker>(
+          `Horario inválido el ${day} (${slot.startTime}–${slot.endTime}): la hora de fin debe ser posterior a la de inicio`,
+        );
+      }
 
-    const deleteResult = await this.availabilityRepository.deleteByWorkerId(data.workerId);
-    if (deleteResult.isFailure) {
-      return Result.fail<Worker>(deleteResult.error!);
+      const key = `${slot.dayOfWeek}|${slot.startTime}|${slot.endTime}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      slots.push(slot);
     }
 
-    const createResult = await this.availabilityRepository.createBatch(
-      data.availability.map(slot => ({
+    const timezone = worker.timezone || 'UTC';
+
+    // Delete + insert numa transação única: se qualquer insert falhar, o delete
+    // sofre rollback junto e a disponibilidade anterior fica intacta. (Antes
+    // eram duas transações — um save falhado destruía os slots existentes e o
+    // worker caía de REGISTERED em silêncio.)
+    const replaceResult = await this.availabilityRepository.replaceByWorkerId(
+      data.workerId,
+      slots.map(slot => ({
         workerId: data.workerId,
         dayOfWeek: slot.dayOfWeek,
         startTime: slot.startTime,
@@ -42,8 +88,8 @@ export class SaveAvailabilityUseCase {
       }))
     );
 
-    if (createResult.isFailure) {
-      return Result.fail<Worker>(createResult.error!);
+    if (replaceResult.isFailure) {
+      return Result.fail<Worker>(replaceResult.error!);
     }
 
     await this.workerRepository.recalculateStatus(data.workerId);

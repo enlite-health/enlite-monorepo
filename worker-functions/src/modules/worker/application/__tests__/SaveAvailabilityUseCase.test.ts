@@ -31,6 +31,7 @@ const makeWorkerRepo = (overrides = {}) => ({
 });
 
 const makeAvailabilityRepo = (overrides = {}) => ({
+  replaceByWorkerId: jest.fn().mockResolvedValue(Result.ok(undefined)),
   deleteByWorkerId: jest.fn().mockResolvedValue(Result.ok(undefined)),
   createBatch: jest.fn().mockResolvedValue(Result.ok([])),
   findByWorkerId: jest.fn(),
@@ -48,7 +49,7 @@ const availabilityPayload = {
 
 describe('SaveAvailabilityUseCase', () => {
   describe('sucesso', () => {
-    it('deve deletar slots anteriores e criar novos', async () => {
+    it('deve substituir os slots via replaceByWorkerId (transação única)', async () => {
       const workerRepo = makeWorkerRepo();
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
@@ -56,14 +57,17 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute(availabilityPayload);
 
       expect(result.isFailure).toBe(false);
-      expect(availabilityRepo.deleteByWorkerId).toHaveBeenCalledWith('worker-123');
-      expect(availabilityRepo.createBatch).toHaveBeenCalledWith(
+      expect(availabilityRepo.replaceByWorkerId).toHaveBeenCalledWith(
+        'worker-123',
         expect.arrayContaining([
           expect.objectContaining({ workerId: 'worker-123', dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }),
           expect.objectContaining({ workerId: 'worker-123', dayOfWeek: 3 }),
           expect.objectContaining({ workerId: 'worker-123', dayOfWeek: 5 }),
         ])
       );
+      // O caminho antigo (delete e insert em transações separadas) não existe mais
+      expect(availabilityRepo.deleteByWorkerId).not.toHaveBeenCalled();
+      expect(availabilityRepo.createBatch).not.toHaveBeenCalled();
     });
 
     it('NÃO deve chamar updateStep — sem avanço de step na edição por abas', async () => {
@@ -83,9 +87,9 @@ describe('SaveAvailabilityUseCase', () => {
 
       await useCase.execute(availabilityPayload);
 
-      const batchArg = availabilityRepo.createBatch.mock.calls[0][0];
-      expect(batchArg[0].timezone).toBe('America/Argentina/Buenos_Aires');
-      expect(batchArg[1].timezone).toBe('America/Argentina/Buenos_Aires');
+      const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
+      expect(slotsArg[0].timezone).toBe('America/Argentina/Buenos_Aires');
+      expect(slotsArg[1].timezone).toBe('America/Argentina/Buenos_Aires');
     });
 
     it('deve definir crossesMidnight como false por padrão', async () => {
@@ -95,24 +99,25 @@ describe('SaveAvailabilityUseCase', () => {
 
       await useCase.execute(availabilityPayload);
 
-      const batchArg = availabilityRepo.createBatch.mock.calls[0][0];
-      batchArg.forEach((slot: any) => {
+      const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
+      slotsArg.forEach((slot: any) => {
         expect(slot.crossesMidnight).toBe(false);
       });
     });
 
-    it('deve respeitar crossesMidnight quando informado', async () => {
+    it('deve respeitar crossesMidnight quando informado (turno noturno)', async () => {
       const workerRepo = makeWorkerRepo();
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      await useCase.execute({
+      const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 6, startTime: '22:00', endTime: '02:00', crossesMidnight: true }],
       });
 
-      const batchArg = availabilityRepo.createBatch.mock.calls[0][0];
-      expect(batchArg[0].crossesMidnight).toBe(true);
+      expect(result.isFailure).toBe(false);
+      const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
+      expect(slotsArg[0].crossesMidnight).toBe(true);
     });
 
     it('deve retornar o worker original (sem status review forçado)', async () => {
@@ -128,6 +133,100 @@ describe('SaveAvailabilityUseCase', () => {
     });
   });
 
+  describe('validação antes do banco (bug do wipe: payload inválido NUNCA pode tocar o repositório)', () => {
+    it('deve rejeitar fim < início sem chamar o repositório', async () => {
+      const workerRepo = makeWorkerRepo();
+      const availabilityRepo = makeAvailabilityRepo();
+      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+
+      const result = await useCase.execute({
+        workerId: 'worker-123',
+        availability: [{ dayOfWeek: 1, startTime: '20:00', endTime: '17:00' }],
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toContain('lunes');
+      expect(result.error).toContain('la hora de fin debe ser posterior a la de inicio');
+      expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
+      expect(workerRepo.recalculateStatus).not.toHaveBeenCalled();
+    });
+
+    it('deve rejeitar fim == início sem chamar o repositório', async () => {
+      const workerRepo = makeWorkerRepo();
+      const availabilityRepo = makeAvailabilityRepo();
+      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+
+      const result = await useCase.execute({
+        workerId: 'worker-123',
+        availability: [{ dayOfWeek: 2, startTime: '09:00', endTime: '09:00' }],
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
+    });
+
+    it('deve aceitar fim <= início quando crossesMidnight=true', async () => {
+      const workerRepo = makeWorkerRepo();
+      const availabilityRepo = makeAvailabilityRepo();
+      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+
+      const result = await useCase.execute({
+        workerId: 'worker-123',
+        availability: [{ dayOfWeek: 5, startTime: '20:00', endTime: '08:00', crossesMidnight: true }],
+      });
+
+      expect(result.isFailure).toBe(false);
+    });
+
+    it('deve rejeitar dayOfWeek fora de 0-6 sem chamar o repositório', async () => {
+      const workerRepo = makeWorkerRepo();
+      const availabilityRepo = makeAvailabilityRepo();
+      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+
+      const result = await useCase.execute({
+        workerId: 'worker-123',
+        availability: [{ dayOfWeek: 7, startTime: '09:00', endTime: '17:00' }],
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
+    });
+
+    it('deve rejeitar hora com formato inválido sem chamar o repositório', async () => {
+      const workerRepo = makeWorkerRepo();
+      const availabilityRepo = makeAvailabilityRepo();
+      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+
+      const result = await useCase.execute({
+        workerId: 'worker-123',
+        availability: [{ dayOfWeek: 1, startTime: '9am', endTime: '17:00' }],
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
+    });
+
+    it('deve deduplicar slots idênticos em silêncio (duplo toque no "+")', async () => {
+      const workerRepo = makeWorkerRepo();
+      const availabilityRepo = makeAvailabilityRepo();
+      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
+
+      const result = await useCase.execute({
+        workerId: 'worker-123',
+        availability: [
+          { dayOfWeek: 1, startTime: '09:00', endTime: '17:00' },
+          { dayOfWeek: 1, startTime: '09:00', endTime: '17:00' },
+          { dayOfWeek: 2, startTime: '09:00', endTime: '17:00' },
+        ],
+      });
+
+      expect(result.isFailure).toBe(false);
+      const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
+      expect(slotsArg).toHaveLength(2);
+      expect(slotsArg.map((s: any) => s.dayOfWeek)).toEqual([1, 2]);
+    });
+  });
+
   describe('validação: lista vazia', () => {
     it('deve falhar se availability estiver vazia', async () => {
       const workerRepo = makeWorkerRepo();
@@ -138,7 +237,7 @@ describe('SaveAvailabilityUseCase', () => {
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('At least one availability slot is required');
-      expect(availabilityRepo.deleteByWorkerId).not.toHaveBeenCalled();
+      expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
     });
   });
 
@@ -154,7 +253,7 @@ describe('SaveAvailabilityUseCase', () => {
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Worker not found');
-      expect(availabilityRepo.createBatch).not.toHaveBeenCalled();
+      expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
     });
   });
 
@@ -168,40 +267,27 @@ describe('SaveAvailabilityUseCase', () => {
 
       await useCase.execute(availabilityPayload);
 
-      const batchArg = availabilityRepo.createBatch.mock.calls[0][0];
-      batchArg.forEach((slot: any) => {
+      const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
+      slotsArg.forEach((slot: any) => {
         expect(slot.timezone).toBe('UTC');
       });
     });
   });
 
   describe('falha no repositório', () => {
-    it('deve propagar erro do deleteByWorkerId', async () => {
+    it('deve propagar erro do replaceByWorkerId sem recalcular status', async () => {
       const workerRepo = makeWorkerRepo();
       const availabilityRepo = makeAvailabilityRepo({
-        deleteByWorkerId: jest.fn().mockResolvedValue(Result.fail('Delete failed')),
+        replaceByWorkerId: jest.fn().mockResolvedValue(Result.fail('DB error')),
       });
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
       const result = await useCase.execute(availabilityPayload);
 
       expect(result.isFailure).toBe(true);
-      expect(result.error).toBe('Delete failed');
-      expect(availabilityRepo.createBatch).not.toHaveBeenCalled();
-    });
-
-    it('deve propagar erro do createBatch', async () => {
-      const workerRepo = makeWorkerRepo();
-      const availabilityRepo = makeAvailabilityRepo({
-        createBatch: jest.fn().mockResolvedValue(Result.fail('DB insert error')),
-      });
-      const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
-
-      const result = await useCase.execute(availabilityPayload);
-
-      expect(result.isFailure).toBe(true);
-      expect(result.error).toBe('DB insert error');
+      expect(result.error).toBe('DB error');
       expect(workerRepo.updateStep).not.toHaveBeenCalled();
+      expect(workerRepo.recalculateStatus).not.toHaveBeenCalled();
     });
   });
 });
