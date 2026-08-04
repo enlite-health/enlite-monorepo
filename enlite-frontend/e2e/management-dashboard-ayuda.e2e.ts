@@ -131,6 +131,34 @@ async function openDashboard(page: Page): Promise<void> {
       body: JSON.stringify({ success: true, data: MOCK_DASHBOARD }),
     }),
   );
+  page.route('**/api/admin/patients/stats*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { total: 352, complete: 153, needsAttention: 199, createdToday: 0, createdYesterday: 1, createdLast7Days: 6 },
+      }),
+    }),
+  );
+  page.route('**/api/admin/patients/funnel*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          period: { from: '2026-07-05T00:00:00.000Z', to: '2026-08-04T00:00:00.000Z' },
+          country: null,
+          solicitantes: 13,
+          admision: 11,
+          agendadas: 2,
+          vacantes: 8,
+          byStatus: { SOLICITANTE: 2, ACTIVE: 193 },
+        },
+      }),
+    }),
+  );
   page.route('**/analytics/dashboard/zone-analytics*', (route) =>
     route.fulfill({
       status: 200,
@@ -213,5 +241,26 @@ test.describe('Gestión a la Vista — ¿Qué es este número?', () => {
 
     await page.getByTestId('mgmt-zone-analytics').getByTestId('metric-help').click();
     await expect(page.getByTestId('mgmt-help-drawer')).toContainText('Analytics por zona');
+  });
+
+  test('os cards de Pacientes e as etapas do embudo têm documento próprio', async ({ page }) => {
+    await openDashboard(page);
+
+    // Card de stats: "Precisa atención" (o mais precisa de explicação).
+    await page.getByTestId('patient-stats-needs-attention').getByTestId('metric-help').click();
+    const drawer = page.getByTestId('mgmt-help-drawer');
+    await expect(drawer).toContainText('Precisa atención');
+    await expect(drawer).toContainText('número de caso');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('mgmt-help-drawer')).toHaveCount(0, { timeout: 2000 });
+
+    // Etapa do embudo: "Agendadas" carrega o aviso de coorte.
+    await page.getByTestId('funnel-agendadas').getByTestId('metric-help').click();
+    await expect(page.getByTestId('mgmt-help-drawer')).toContainText('Agendadas (embudo)');
+    await expect(page.getByTestId('mgmt-help-drawer')).toContainText('cohorte');
+
+    await page.waitForTimeout(400); // fim da transição
+    // Artefato rastreado no repo (mesma convenção dos demais specs da tela).
+    await page.screenshot({ path: 'e2e/__screenshots__/gestao-a-vista-ayuda-pacientes.png' });
   });
 });

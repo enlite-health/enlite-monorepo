@@ -896,6 +896,52 @@
           "origen": "• Pacientes: pacientes con vacante en la provincia (cada uno cuenta una vez).\n• Prestadores: quienes declararon atender en esa provincia.\n• Demanda: vacantes abiertas ahí.\n• Quien no tiene dirección identificada cae en \"No informado\", con aviso.",
           "cambia": "• Crear/editar vacantes y direcciones de pacientes.\n• El prestador carga su zona de atención.\n• El filtro de profesión recorta todo el bloque.",
           "ojo": "\"Disponibilidad\" mide zona declarada, no agenda libre. La granularidad es provincia a propósito: es el nivel en que el dato es confiable."
+        },
+        "pacTotal": {
+          "title": "Total de pacientes",
+          "que": "Todos los pacientes registrados en el sistema, en cualquier situación — incluidos los que ya salieron (alta, discontinuados). Responde \"cuántos pacientes pasaron por acá\", no \"cuántos atendemos hoy\".",
+          "origen": "• Cuenta todas las fichas de paciente no borradas.\n• No mira la situación: activo, suspendido, discontinuado, de alta y solicitante cuentan igual.\n• El filtro de país de la sección recorta la cuenta.",
+          "cambia": "• Entra un paciente nuevo (formulario del sitio, carga manual o importación): sube.\n• Borrar una ficha: baja.\n• Cambiar la situación (alta, baja) NO mueve este número.",
+          "ojo": "No confundir con \"Pacientes activos\": buena parte de esta base es histórica. Total = Completos + Precisa atención — los dos cards de al lado dividen esta misma base por calidad de la ficha."
+        },
+        "pacCompletos": {
+          "title": "Completos (fichas de pacientes)",
+          "que": "Pacientes cuya ficha está en orden: sin dato obligatorio faltante y sin conflicto de número de caso. Es el complemento exacto de \"Precisa atención\".",
+          "origen": "• Cada ficha lleva una marca de \"precisa atención\".\n• Este card cuenta las fichas SIN esa marca, en toda la base (cualquier situación del paciente).",
+          "cambia": "• Completar o corregir los datos de una ficha marcada: sube.\n• Entrar un paciente nuevo con ficha completa: sube.\n• Una ficha gana la marca: baja.",
+          "ojo": "\"Completo\" habla de la FICHA, no del paciente: un paciente discontinuado con registro en orden cuenta acá. Es calidad de dato, no pacientes listos para operar."
+        },
+        "pacAtencion": {
+          "title": "Precisa atención",
+          "que": "Fichas de paciente con pendiente marcada: falta un dato obligatorio, o el número de caso informado ya pertenecía a otro paciente, o alguien la marcó a mano.",
+          "origen": "• En la entrada (admisión pública, importación, carga), si falta un dato esencial el sistema guarda igual y marca para revisión — en vez de perder el lead.\n• Si el número de caso choca con el de otro paciente, guarda la ficha SIN el número y la marca — en vez de pisar el de alguien.\n• El card cuenta todas las fichas con la marca encendida.",
+          "cambia": "• Revisar la ficha en el panel y completar el dato / resolver el número de caso: baja.\n• Entrada nueva con pendiente: sube.",
+          "ojo": "Es una fila de trabajo real de calidad de dato: revisar estas fichas destrava la operación del caso."
+        },
+        "embudoSolicitantes": {
+          "title": "Solicitantes (embudo)",
+          "que": "Pacientes CREADOS en el período elegido (7/30/90 días), de cualquier origen y en cualquier situación actual. Es la entrada del embudo.",
+          "origen": "• Cuenta pacientes creados dentro de la ventana de tiempo, sin borrados.\n• No es \"quién está parado en la etapa Solicitante\" — es la cohorte de entrada del período.",
+          "cambia": "• Entrada nueva (formulario del sitio, carga manual, importación) dentro del período: sube.\n• Cambiar la ventana (7/30/90): recalcula."
+        },
+        "embudoAdmision": {
+          "title": "Admisión (embudo)",
+          "que": "De los pacientes creados en el período, cuántos LLEGARON a Admisión o más allá (incluye a los que ya están activos).",
+          "origen": "• Mira la situación actual Y el historial: quien avanzó y después salió también cuenta.\n• Suspendidos, discontinuados y de alta no cuentan como avance.",
+          "cambia": "• Pasar un paciente del período a admisión o a activo: sube."
+        },
+        "embudoAgendadas": {
+          "title": "Agendadas (embudo)",
+          "que": "Pacientes con entrevista de admisión agendada DENTRO del período.",
+          "origen": "• Cuenta por el momento en que el turno fue reservado (agenda del app de pacientes) — el paciente puede haber sido creado antes del período.",
+          "cambia": "• Reservar un turno de admisión: sube.",
+          "ojo": "Mide otra cohorte que las demás etapas (agendamientos del período, no pacientes creados en el período): puede quedar mayor o menor que el paso anterior sin significar embudo roto. Leer las conversiones como tendencia, no como aritmética exacta."
+        },
+        "embudoVacantes": {
+          "title": "Vacantes (embudo)",
+          "que": "De los pacientes creados en el período, cuántos ya tienen vacante publicada — el caso avanzó hasta generar búsqueda.",
+          "origen": "• Cuenta pacientes del período con al menos una vacante publicada. Borrador no cuenta; vacante cerrada sí.",
+          "cambia": "• Publicar la vacante del caso: sube."
         }
       },
       "title": "Gestión a la Vista",
