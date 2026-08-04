@@ -42,6 +42,14 @@ import { RegisterOptOutUseCase } from '../../notification/application/RegisterOp
 import { DeactivateWorkerAccountUseCase } from '../../worker/application/DeactivateWorkerAccountUseCase';
 import { SetWorkerAvailabilityUseCase } from '../../worker/application/SetWorkerAvailabilityUseCase';
 import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
+import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
+import { WorkerInterviewSlotsListCapability } from '../application/capabilities/WorkerInterviewSlotsListCapability';
+import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
+import { ApplyToVacancyUseCase } from '../../matching/application/ApplyToVacancyUseCase';
+import { ListInterviewSlotsForVacancyUseCase } from '../../matching/application/ListInterviewSlotsForVacancyUseCase';
+import { BookInterviewSlotUseCase } from '../../notification/application/BookInterviewSlotUseCase';
+import { GoogleCalendarService } from '../../matching/infrastructure/GoogleCalendarService';
+import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -104,6 +112,17 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   // Camada A: dossiê da Luz (worker_case_memory).
   const caseMemoryRepo = new CaseMemoryRepository(dbPool);
 
+  // Conversão convite→postulação→entrevista pela Luz (change luz-conversao-entrevista):
+  // Calendar (DWD; mock via USE_MOCK_GOOGLE_CALENDAR) + Cloud Tasks (lembretes) que
+  // antes só o webhook de botão injetava.
+  const getWorkerById = new GetWorkerByIdUseCase(new WorkerRepository(pubsub));
+  const bookInterviewSlotUseCase = new BookInterviewSlotUseCase(
+    dbPool,
+    pubsub,
+    new CloudTasksClient(),
+    new GoogleCalendarService(),
+  );
+
   const registry = new CapabilityRegistry({
     profileGet: new WorkerProfileGetCapability(
       new GetWorkerByIdUseCase(new WorkerRepository(pubsub)),
@@ -153,6 +172,15 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     vacanciesNearby: new WorkerVacanciesNearbyCapability(
       new FindNearbyVacanciesForWorkerUseCase(dbPool),
     ),
+    applicationRegister: new WorkerApplicationRegisterCapability(
+      new ApplyToVacancyUseCase(),
+      dbPool,
+      getWorkerById,
+    ),
+    interviewSlotsList: new WorkerInterviewSlotsListCapability(
+      new ListInterviewSlotsForVacancyUseCase(dbPool),
+    ),
+    interviewBook: new WorkerInterviewBookCapability(bookInterviewSlotUseCase, getWorkerById),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });

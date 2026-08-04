@@ -31,6 +31,9 @@ import { WorkerAccountDeactivateCapability } from '../application/capabilities/W
 import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
 import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
 import { WorkerAvailabilityGetCapability } from '../application/capabilities/WorkerAvailabilityGetCapability';
+import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
+import { WorkerInterviewSlotsListCapability } from '../application/capabilities/WorkerInterviewSlotsListCapability';
+import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -57,6 +60,9 @@ function makeRegistry(): CapabilityRegistry {
     availabilitySet: new WorkerAvailabilitySetCapability(stub),
     availabilityGet: new WorkerAvailabilityGetCapability(stub),
     vacanciesNearby: new WorkerVacanciesNearbyCapability(stub),
+    applicationRegister: new WorkerApplicationRegisterCapability(stub, {} as never, stub),
+    interviewSlotsList: new WorkerInterviewSlotsListCapability(stub),
+    interviewBook: new WorkerInterviewBookCapability(stub, stub),
     auditor: { emit: jest.fn() },
   });
 }
