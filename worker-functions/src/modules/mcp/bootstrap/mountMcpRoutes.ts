@@ -32,6 +32,10 @@ import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryRe
 import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
 import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
+import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
+import { NotifyHandoverUseCase } from '../../notification/application/NotifyHandoverUseCase';
+import { PeriskopeGroupNotifyService } from '../../notification/infrastructure/PeriskopeGroupNotifyService';
+import { PeriskopeTicketService } from '../../notification/infrastructure/PeriskopeTicketService';
 import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
 import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
 import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
@@ -181,6 +185,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       new ListInterviewSlotsForVacancyUseCase(dbPool),
     ),
     interviewBook: new WorkerInterviewBookCapability(bookInterviewSlotUseCase, getWorkerById),
+    handoverNotify: new HandoverNotifyCapability(
+      new NotifyHandoverUseCase(new PeriskopeGroupNotifyService(), new PeriskopeTicketService()),
+    ),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });
