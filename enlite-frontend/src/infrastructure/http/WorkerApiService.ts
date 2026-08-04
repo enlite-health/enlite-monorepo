@@ -1,5 +1,6 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { ApiError } from '@infrastructure/http/ApiError';
+import type { DedupFieldComparison } from '@domain/entities/DedupGroup';
 
 /**
  * Discriminated union returned by POST /api/workers/init (Onda 2).
@@ -103,6 +104,25 @@ export interface WorkerLookupResponse {
   phoneMasked?: string;
 }
 
+// ── Account link (vínculo self-service por colisão de telefone) ─────────────
+
+/** POST /api/workers/me/account-link/start */
+export interface AccountLinkStartResponse {
+  otherEmailMasked: string;
+  phoneMasked: string;
+  verificationSid: string;
+  /** Só os campos em conflito REAL, rotulados no servidor. */
+  conflicts: DedupFieldComparison[];
+}
+
+/** POST /api/workers/me/account-link/confirm */
+export interface AccountLinkConfirmResponse {
+  status: 'merged' | 'REQUIRES_REVIEW';
+  /** Linhas recuperadas por entidade (ex.: worker_job_applications → postulações). */
+  recovered: Record<string, number>;
+  workerStatus?: string;
+}
+
 class WorkerApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -193,6 +213,29 @@ class WorkerApiServiceClass {
    */
   async saveGeneralInfo(data: Record<string, any>): Promise<void> {
     await this.request<unknown>('PUT', '/api/workers/me/general-info', data);
+  }
+
+  /**
+   * POST /api/workers/me/account-link/start
+   * Inicia o vínculo self-service quando o telefone digitado pertence a outra
+   * conta REAL. O backend dispara OTP pro número DA CONTA ANTIGA (anti-hijack).
+   * Com ACCOUNT_LINK_ENABLED=false o endpoint não existe (404) — o caller trata
+   * como fallback pro comportamento atual (toast).
+   */
+  async startAccountLink(phone: string): Promise<AccountLinkStartResponse> {
+    return this.request<AccountLinkStartResponse>('POST', '/api/workers/me/account-link/start', { phone });
+  }
+
+  /**
+   * POST /api/workers/me/account-link/confirm
+   * Confirma o OTP e executa o merge (survivor = conta logada).
+   */
+  async confirmAccountLink(payload: {
+    verificationSid: string;
+    otp: string;
+    fieldChoices?: Record<string, string>;
+  }): Promise<AccountLinkConfirmResponse> {
+    return this.request<AccountLinkConfirmResponse>('POST', '/api/workers/me/account-link/confirm', payload);
   }
 
   /**

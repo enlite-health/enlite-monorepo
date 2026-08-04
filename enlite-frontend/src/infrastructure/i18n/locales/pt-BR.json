@@ -177,6 +177,46 @@
       "errorNotFound": "Não conseguimos encontrar sua ficha. Continue com a criação de nova conta."
     }
   },
+  "accountLink": {
+    "choice": {
+      "title": "Este número já está associado a outra conta",
+      "phoneEntered": "Número informado:",
+      "otherAccount": "Conta associada:",
+      "explanation": "É a sua conta anterior? Você pode vinculá-la e recuperar suas candidaturas e documentos. Vamos enviar um código ao número para confirmar que é seu.",
+      "linkButton": "Sim, é minha conta — vincular",
+      "noAccessButton": "Não tenho acesso a esse número",
+      "notMineLink": "Não é minha conta — falar com o suporte"
+    },
+    "otp": {
+      "title": "Confirme que o número é seu",
+      "subtitle": "Enviamos um código de 6 dígitos para {{phoneMasked}}.",
+      "inputLabel": "Código",
+      "confirmButton": "Confirmar",
+      "cancelButton": "Cancelar",
+      "errorInvalid": "Código incorreto. Revise e tente de novo.",
+      "errorExpired": "O código expirou. Peça um novo."
+    },
+    "conflicts": {
+      "title": "Escolha quais informações manter",
+      "subtitle": "As duas contas têm valores diferentes nestes campos. Escolha qual vale.",
+      "confirmButton": "Vincular contas"
+    },
+    "fields": {
+      "profession": "Profissão",
+      "knowledge_level": "Nível de estudos",
+      "years_experience": "Anos de experiência"
+    },
+    "summary": {
+      "title": "Contas vinculadas!",
+      "recovered": "Recuperamos {{applications}} candidaturas e {{documents}} documentos da sua conta anterior. Seu telefone já ficou salvo.",
+      "closeButton": "Continuar"
+    },
+    "review": {
+      "title": "Vamos terminar o vínculo por você",
+      "explanation": "Sua conta anterior tem atividade importante, então nosso time vai completar o vínculo manualmente. Avisamos assim que estiver pronto.",
+      "closeButton": "Entendido"
+    }
+  },
   "completeWhatsapp": {
     "title": "Complete seu WhatsApp",
     "subtitle": "Precisamos do seu número de WhatsApp para vinculá-lo à sua ficha (se já existir) e enviar atualizações importantes.",
