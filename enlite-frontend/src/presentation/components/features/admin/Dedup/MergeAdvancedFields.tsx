@@ -13,8 +13,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { ChevronDown, ChevronUp, Lock } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { FieldChoiceList } from '@presentation/components/shared/FieldChoiceList/FieldChoiceList';
 import {
   getSexLabel,
   getGenderLabel,
@@ -120,66 +121,17 @@ export function MergeAdvancedFields({
         )}
       </button>
 
-      {/* Field-level rows */}
+      {/* Field-level rows — núcleo compartilhado com o vínculo self-service */}
       {open && (
-        <div className="divide-y divide-slate-100">
-          {conflictingFields.map((field) => {
-            const chosenId = fieldChoices[field.field] ?? survivorId;
-
-            return (
-              <div key={field.field} className="px-4 py-3 flex flex-col gap-2">
-                <Text as="span" size="xs" weight="semibold" color="muted">
-                  {t(`admin.dedup.field.${field.field}`, {
-                    defaultValue: field.field,
-                  })}
-                </Text>
-
-                <div className="flex flex-wrap gap-2">
-                  {accounts.map((account) => {
-                    const displayValue = renderFieldValue(
-                      t,
-                      field.field,
-                      field.values[account.id],
-                    );
-                    const isChosen = chosenId === account.id;
-
-                    return (
-                      <button
-                        key={account.id}
-                        type="button"
-                        onClick={() => onFieldChoiceChange(field.field, account.id)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-left transition-all cursor-pointer ${
-                          isChosen
-                            ? 'border-primary bg-primary/5'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                        aria-pressed={isChosen}
-                        aria-label={`${accountLabel(account)}: ${displayValue ?? '—'}`}
-                      >
-                        {field.is_encrypted ? (
-                          <Lock
-                            className="w-3 h-3 text-slate-400 shrink-0"
-                            aria-label={t('admin.dedup.merge.encryptedField', 'Campo cifrado')}
-                          />
-                        ) : null}
-                        <Text as="span" size="xs" color={isChosen ? 'primary' : undefined}>
-                          {displayValue ?? (
-                            <span className="text-slate-400 italic">
-                              {t('admin.dedup.merge.emptyValue', 'vacío')}
-                            </span>
-                          )}
-                        </Text>
-                        <Text as="span" size="xs" color="muted">
-                          ({accountLabel(account)})
-                        </Text>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <FieldChoiceList
+          comparisons={fieldComparisons}
+          options={accounts.map((a) => ({ id: a.id, label: accountLabel(a) }))}
+          choices={fieldChoices}
+          fallbackChoiceId={survivorId}
+          onChange={onFieldChoiceChange}
+          fieldLabel={(field) => t(`admin.dedup.field.${field}`, { defaultValue: field })}
+          valueLabel={(field, raw) => renderFieldValue(t, field, raw)}
+        />
       )}
     </div>
   );

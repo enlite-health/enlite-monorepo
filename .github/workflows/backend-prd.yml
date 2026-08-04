@@ -107,6 +107,8 @@ jobs:
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
             MATCHING_RESPECT_AVAILABILITY=true
+            ACCOUNT_LINK_ENABLED=true
+            ACCOUNT_LINK_PUBLIC_BASE_URL=https://api.enlite.health
             ADMISSION_CALENDAR_ID_AR=c_2b45b5a65a8cc01085d06a6c7576067dc019716e4448d156482a9060bac97be4@group.calendar.google.com
             ADMISSION_CALENDAR_ID_BR=c_4269afcf3b1a3e84facf0215e4cab5aa48d6286ade21c3aed5240262e418bad8@group.calendar.google.com
             ADMISSION_IMPERSONATE_EMAIL=enlite@enlite.health
@@ -120,6 +122,7 @@ jobs:
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             SENDGRID_API_KEY=sendgrid-api-key:latest
+            ACCOUNT_LINK_TOKEN_SECRET=account-link-token-secret:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
