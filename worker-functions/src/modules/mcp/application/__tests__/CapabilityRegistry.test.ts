@@ -16,6 +16,9 @@ import { WorkerAccountDeactivateCapability } from '../capabilities/WorkerAccount
 import { WorkerAvailabilitySetCapability } from '../capabilities/WorkerAvailabilitySetCapability';
 import { WorkerVacanciesNearbyCapability } from '../capabilities/WorkerVacanciesNearbyCapability';
 import { WorkerAvailabilityGetCapability } from '../capabilities/WorkerAvailabilityGetCapability';
+import { WorkerApplicationRegisterCapability } from '../capabilities/WorkerApplicationRegisterCapability';
+import { WorkerInterviewSlotsListCapability } from '../capabilities/WorkerInterviewSlotsListCapability';
+import { WorkerInterviewBookCapability } from '../capabilities/WorkerInterviewBookCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -123,6 +126,18 @@ function makeCapabilities() {
   const availabilityGet = new WorkerAvailabilityGetCapability({
     findByWorkerId: jest.fn().mockResolvedValue({ isSuccess: true, getValue: () => [] }),
   } as never);
+  const applicationRegister = new WorkerApplicationRegisterCapability(
+    { execute: jest.fn().mockResolvedValue({ ok: true, wjaId: 'wja-1' }) } as never,
+    {} as never,
+    { execute: jest.fn().mockResolvedValue({ worker: { firstName: 'Ana', lastName: 'Test', phone: '+54911', email: 'a@t.com' } }) } as never,
+  );
+  const interviewSlotsList = new WorkerInterviewSlotsListCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, caseNumber: 795, slots: [] }),
+  } as never);
+  const interviewBook = new WorkerInterviewBookCapability(
+    { execute: jest.fn().mockResolvedValue({ ok: true, confirmedDate: '10/04', confirmedTime: '14:00', meetDatetime: '2027-04-10T14:00:00.000Z', usedSlotIndex: 1, calendarInvite: 'sent' }) } as never,
+    { execute: jest.fn().mockResolvedValue({ worker: { email: 'a@t.com' } }) } as never,
+  );
   return {
     profileGet,
     documentsList,
@@ -141,6 +156,9 @@ function makeCapabilities() {
     availabilitySet,
     availabilityGet,
     vacanciesNearby,
+    applicationRegister,
+    interviewSlotsList,
+    interviewBook,
   };
 }
 
@@ -450,5 +468,71 @@ describe('CapabilityRegistry', () => {
     expect(auditor.emit).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'success', capability: 'worker.documents.upload' }),
     );
+  });
+});
+
+// ── Capabilities da conversão da Luz (change luz-conversao-entrevista) ────────
+
+describe('CapabilityRegistry — conversão da Luz', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const LUZ_CAPS = [
+    'worker.application.register',
+    'worker.interview.slots.list',
+    'worker.interview.book',
+  ];
+
+  it('registra as 3 capabilities quando o principal permite e devolve o resultado do use case', async () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
+
+    expect(server.registerTool).toHaveBeenCalledTimes(3);
+    const handler = getHandler(server, 'worker.interview.book');
+    const res = await handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID, slotIndex: 1 });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({
+      ok: true,
+      confirmedDate: '10/04',
+      confirmedTime: '14:00',
+      calendarInvite: 'sent',
+    });
+  });
+
+  it('application.register e interview.book são WRITE: rate limiter negando → RateLimitExceededError', async () => {
+    const { registry } = makeRegistry({ writeRateLimiter: makeDenyingRateLimiter() });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
+
+    for (const cap of ['worker.application.register', 'worker.interview.book']) {
+      const handler = getHandler(server, cap);
+      await expect(
+        handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID, slotIndex: 1 }),
+      ).rejects.toThrow(RateLimitExceededError);
+    }
+  });
+
+  it('interview.slots.list é leitura: passa mesmo com rate limiter negando', async () => {
+    const { registry } = makeRegistry({ writeRateLimiter: makeDenyingRateLimiter() });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
+
+    const handler = getHandler(server, 'worker.interview.slots.list');
+    const res = await handler({ jobPostingId: WORKER_ID });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ ok: true, caseNumber: 795 });
+  });
+
+  it('principal SEM as caps novas não as vê (allowlist manda)', () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(READ_CAPS));
+
+    const names = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(([n]) => n);
+    for (const cap of LUZ_CAPS) {
+      expect(names).not.toContain(cap);
+    }
   });
 });

@@ -17,6 +17,9 @@ import type { WorkerAccountDeactivateCapability } from './capabilities/WorkerAcc
 import type { WorkerAvailabilitySetCapability } from './capabilities/WorkerAvailabilitySetCapability';
 import type { WorkerVacanciesNearbyCapability } from './capabilities/WorkerVacanciesNearbyCapability';
 import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvailabilityGetCapability';
+import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerApplicationRegisterCapability';
+import type { WorkerInterviewSlotsListCapability } from './capabilities/WorkerInterviewSlotsListCapability';
+import type { WorkerInterviewBookCapability } from './capabilities/WorkerInterviewBookCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -51,6 +54,9 @@ interface RegistryDeps {
   availabilitySet: WorkerAvailabilitySetCapability;
   availabilityGet: WorkerAvailabilityGetCapability;
   vacanciesNearby: WorkerVacanciesNearbyCapability;
+  applicationRegister: WorkerApplicationRegisterCapability;
+  interviewSlotsList: WorkerInterviewSlotsListCapability;
+  interviewBook: WorkerInterviewBookCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -67,6 +73,8 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.optOut.register',
   'worker.account.deactivate',
   'worker.availability.set',
+  'worker.application.register',
+  'worker.interview.book',
 ]);
 
 export class CapabilityRegistry {
@@ -118,6 +126,9 @@ export class CapabilityRegistry {
       availabilitySet,
       availabilityGet,
       vacanciesNearby,
+      applicationRegister,
+      interviewSlotsList,
+      interviewBook,
       dbQuery,
     } = this.deps;
 
@@ -310,6 +321,41 @@ export class CapabilityRegistry {
           (vacanciesNearby.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => vacanciesNearby.execute(args),
+      },
+      {
+        name:
+          (applicationRegister.constructor as { NAME?: string }).NAME ??
+          'worker.application.register',
+        description:
+          (applicationRegister.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Register a job application for a worker on a vacancy.',
+        inputShape:
+          (applicationRegister.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => applicationRegister.execute(args),
+      },
+      {
+        name:
+          (interviewSlotsList.constructor as { NAME?: string }).NAME ??
+          'worker.interview.slots.list',
+        description:
+          (interviewSlotsList.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'List future interview slots of a vacancy.',
+        inputShape:
+          (interviewSlotsList.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => interviewSlotsList.execute(args),
+      },
+      {
+        name:
+          (interviewBook.constructor as { NAME?: string }).NAME ?? 'worker.interview.book',
+        description:
+          (interviewBook.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Book an interview slot for a qualified worker.',
+        inputShape:
+          (interviewBook.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => interviewBook.execute(args),
       },
       ...(dbQuery !== undefined
         ? [
