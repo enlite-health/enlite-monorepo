@@ -1,0 +1,14 @@
+# Override local para o E2E full-stack do vínculo de contas (NÃO usar em prod).
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml \
+#     -f docker-compose.accountlink.yml up -d --no-deps --force-recreate api
+#
+# E2E_OTP_BYPASS é ignorado (com erro reportado) se vazar pro Cloud Run.
+services:
+  api:
+    environment:
+      ACCOUNT_LINK_ENABLED: "true"
+      ACCOUNT_LINK_TOKEN_SECRET: "local-fullstack-e2e-secret"
+      ACCOUNT_LINK_PUBLIC_BASE_URL: "http://localhost:8080"
+      E2E_OTP_BYPASS: "true"
+      E2E_OTP_CODE: "123456"

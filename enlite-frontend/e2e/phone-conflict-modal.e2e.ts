@@ -180,8 +180,12 @@ test.describe('PhoneConflictModal — colisão de telefone vira caminho, não be
     // ── 3. Passo de conflito (profession divergente) ─────────────────────
     await expect(page.getByTestId('phone-conflict-step-conflicts')).toBeVisible();
     await expect(page.getByTestId('conflict-field-profession')).toBeVisible();
-    await expect(page.getByText('AT', { exact: true })).toBeVisible();
-    await expect(page.getByText('CAREGIVER', { exact: true })).toBeVisible();
+    // Enums TRADUZIDOS (achado do e2e real: valor cru de banco não é amigável).
+    // Escopado ao passo de conflitos: o select de Profesión do form atrás da
+    // modal tem o mesmo rótulo (strict mode).
+    const conflictsStep = page.getByTestId('phone-conflict-step-conflicts');
+    await expect(conflictsStep.getByText('Acompañante Terapéutico', { exact: true })).toBeVisible();
+    await expect(conflictsStep.getByText('Cuidador(a)', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'e2e/__screenshots__/vinculo-3-conflitos.png', fullPage: false });
 
     // escolhe o valor da conta anterior (chip do FieldChoiceList) e confirma
@@ -190,8 +194,8 @@ test.describe('PhoneConflictModal — colisão de telefone vira caminho, não be
 
     // ── 4. Resumo com contagens REAIS ────────────────────────────────────
     await expect(page.getByTestId('phone-conflict-step-summary')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('account-link-summary-text')).toContainText('2 postulaciones');
-    await expect(page.getByTestId('account-link-summary-text')).toContainText('1 documentos');
+    await expect(page.getByTestId('account-link-summary-text')).toContainText('tus 2 postulaciones');
+    await expect(page.getByTestId('account-link-summary-text')).toContainText('tus documentos');
     await page.screenshot({ path: 'e2e/__screenshots__/vinculo-4-resumo.png', fullPage: false });
 
     await page.getByTestId('account-link-summary-close').click();

@@ -152,6 +152,28 @@ export function PhoneConflictModal({
   const recoveredApplications = recovered.worker_job_applications ?? 0;
   const recoveredDocuments = recovered.worker_documents ?? 0;
 
+  // Copy adaptativa (achado do e2e REAL: "0 postulaciones y 1 documentos" soa
+  // a bug e erra o plural) — só cita o que de fato veio, com plural correto.
+  const summaryText = ((): string => {
+    const apps = recoveredApplications === 1
+      ? t('accountLink.summary.oneApplication', 'tu postulación')
+      : t('accountLink.summary.manyApplications', 'tus {{count}} postulaciones', { count: recoveredApplications });
+    if (recoveredApplications > 0 && recoveredDocuments > 0) {
+      return t('accountLink.summary.recoveredBoth',
+        'Recuperamos {{apps}} y tus documentos de tu cuenta anterior. Tu teléfono ya quedó guardado.', { apps });
+    }
+    if (recoveredApplications > 0) {
+      return t('accountLink.summary.recoveredApplications',
+        'Recuperamos {{apps}} de tu cuenta anterior. Tu teléfono ya quedó guardado.', { apps });
+    }
+    if (recoveredDocuments > 0) {
+      return t('accountLink.summary.recoveredDocuments',
+        'Recuperamos tus documentos de tu cuenta anterior. Tu teléfono ya quedó guardado.');
+    }
+    return t('accountLink.summary.recoveredNone',
+      '¡Listo! Tu cuenta anterior quedó vinculada y tu teléfono ya quedó guardado.');
+  })();
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" aria-hidden="true" onClick={step === 'summary' ? onClose : undefined} />
@@ -214,7 +236,7 @@ export function PhoneConflictModal({
                   href="https://wa.me/5491133339999"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-center text-sm text-gray-700 underline"
+                  className="text-center text-sm text-primary underline"
                   data-testid="phone-conflict-support-link"
                 >
                   {t('accountLink.choice.notMineLink', 'No es mi cuenta — hablar con soporte')}
@@ -251,7 +273,7 @@ export function PhoneConflictModal({
                   href="https://wa.me/5491133339999"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-center text-sm text-gray-700 underline"
+                  className="text-center text-sm text-primary underline"
                 >
                   {t('accountLink.noAccess.supportLink', 'Hablar con soporte')}
                 </a>
@@ -360,7 +382,8 @@ export function PhoneConflictModal({
                   fallbackChoiceId={accounts.current}
                   onChange={(field, accountId) => setFieldChoices((prev) => ({ ...prev, [field]: accountId }))}
                   fieldLabel={(field) => t(`accountLink.fields.${field}`, field)}
-                  valueLabel={(_field, raw) => raw}
+                  valueLabel={(_field, raw) =>
+                    raw == null ? null : t(`workerRegistration.generalInfo.${raw}`, raw)}
                 />
               </div>
 
@@ -386,10 +409,7 @@ export function PhoneConflictModal({
                   {t('accountLink.summary.title', '¡Cuentas vinculadas!')}
                 </Heading>
                 <span className="text-sm text-gray-800" data-testid="account-link-summary-text">
-                  {t('accountLink.summary.recovered', 'Recuperamos {{applications}} postulaciones y {{documents}} documentos de tu cuenta anterior. Tu teléfono ya quedó guardado.', {
-                    applications: recoveredApplications,
-                    documents: recoveredDocuments,
-                  })}
+                  {summaryText}
                 </span>
               </div>
               <Button type="button" variant="primary" size="lg" fullWidth onClick={onClose} data-testid="account-link-summary-close">

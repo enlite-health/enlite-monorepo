@@ -137,7 +137,7 @@ describe('PhoneConflictModal — conflitos → finalize → resumo', () => {
     await waitFor(() => expect(screen.getByTestId('phone-conflict-step-summary')).toBeTruthy());
     expect(mockFinalize).toHaveBeenCalledWith({ linkToken: 'LT-1', fieldChoices: { profession: OTHER } });
     expect(baseProps.onLinked).toHaveBeenCalled();
-    expect(screen.getByTestId('account-link-summary-text').textContent).toContain('2,1');
+    expect(screen.getByTestId('account-link-summary-text').textContent).toContain('recoveredBoth');
   });
 
   it('sem conflito → resumo direto', async () => {

@@ -215,7 +215,13 @@
     "summary": {
       "title": "Contas vinculadas!",
       "recovered": "Recuperamos {{applications}} candidaturas e {{documents}} documentos da sua conta anterior. Seu telefone já ficou salvo.",
-      "closeButton": "Continuar"
+      "closeButton": "Continuar",
+      "oneApplication": "sua candidatura",
+      "manyApplications": "suas {{count}} candidaturas",
+      "recoveredBoth": "Recuperamos {{apps}} e seus documentos da sua conta anterior. Seu telefone já ficou salvo.",
+      "recoveredApplications": "Recuperamos {{apps}} da sua conta anterior. Seu telefone já ficou salvo.",
+      "recoveredDocuments": "Recuperamos seus documentos da sua conta anterior. Seu telefone já ficou salvo.",
+      "recoveredNone": "Pronto! Sua conta anterior foi vinculada e seu telefone já ficou salvo."
     },
     "review": {
       "title": "Vamos terminar o vínculo por você",
