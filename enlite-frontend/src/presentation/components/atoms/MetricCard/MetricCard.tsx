@@ -8,6 +8,7 @@
  * a categoria de cada número seja lida num relance (scan de ~1s).
  */
 import type { LucideIcon } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 
 export type MetricAccent =
   | 'neutral'
@@ -29,6 +30,10 @@ interface MetricCardProps {
   icon?: LucideIcon;
   /** Cor de marca aplicada ao chip do ícone e ao número. Default: neutral. */
   accent?: MetricAccent;
+  /** Abre a ajuda "o que é este número" — renderiza um "?" no canto do card. */
+  onHelpClick?: () => void;
+  /** aria-label do botão de ajuda (obrigatório junto com onHelpClick). */
+  helpAriaLabel?: string;
 }
 
 /** chip = fundo tint + ícone; value = cor legível (escurecida) do accent. */
@@ -51,6 +56,8 @@ export function MetricCard({
   className = '',
   icon: Icon,
   accent,
+  onHelpClick,
+  helpAriaLabel,
 }: MetricCardProps): JSX.Element {
   const isClickable = !!onClick;
   const styled = !!accent || !!Icon;
@@ -59,10 +66,25 @@ export function MetricCard({
   return (
     <div
       onClick={onClick}
-      className={`bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-3 transition-all duration-200 ${
+      className={`relative bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-3 transition-all duration-200 ${
         isClickable ? `cursor-pointer hover:shadow-md ${styled ? a.hover : 'hover:border-primary'}` : ''
       } ${className}`}
     >
+      {onHelpClick && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onHelpClick();
+          }}
+          aria-label={helpAriaLabel}
+          title={helpAriaLabel}
+          data-testid="metric-help"
+          className="absolute top-3 right-3 rounded-full p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+        >
+          <HelpCircle className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
       <div className="flex items-start gap-4">
         {Icon && (
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${a.chip}`}>

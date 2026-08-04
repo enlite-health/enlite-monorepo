@@ -17,7 +17,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('lucide-react', () => {
   const Stub = (props: Record<string, unknown>) => <svg {...props} />;
-  return { Filter: Stub, Users: Stub, AlertTriangle: Stub, Info: Stub, CalendarCheck: Stub, ShieldAlert: Stub };
+  return { Filter: Stub, Users: Stub, AlertTriangle: Stub, Info: Stub, CalendarCheck: Stub, ShieldAlert: Stub, HelpCircle: Stub, X: Stub };
 });
 
 function counts(partial: Partial<FunnelColumnCounts>): FunnelColumnCounts {

@@ -17,7 +17,7 @@ vi.mock('react-i18next', () => ({
 // Ícones lucide usados pela seção viram <svg> stub (vitest exige exports nomeados).
 vi.mock('lucide-react', () => {
   const Stub = (props: Record<string, unknown>) => <svg {...props} />;
-  return { Info: Stub, Clock: Stub, AlarmClock: Stub, Users: Stub };
+  return { Info: Stub, Clock: Stub, AlarmClock: Stub, Users: Stub, HelpCircle: Stub, X: Stub };
 });
 
 const horas = { totais: 12.5, aPreencher: 6, ativas: 4, ativasConSchedule: 1, ativasSinSchedule: 0, coberturaConSchedule: 3, coberturaSinSchedule: 2 };
