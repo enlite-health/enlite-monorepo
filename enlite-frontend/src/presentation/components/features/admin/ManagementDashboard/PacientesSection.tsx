@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { HeartPulse, Users, CheckCircle, AlertTriangle } from 'lucide-react';
+import { HeartPulse, Users, CheckCircle, AlertTriangle, HelpCircle } from 'lucide-react';
 import { Text, MetricCard } from '@presentation/components/atoms';
 import { Select } from '@presentation/components/atoms/Select';
 import { usePatientStats } from '@hooks/admin/usePatientStats';
 import { usePatientFunnel } from '@hooks/admin/usePatientFunnel';
 import { getCountryOptions, getFunnelPeriodOptions } from '@presentation/pages/admin/patientsData';
 import { SectionHeader } from './SectionHeader';
+import { useMetricHelp } from './useMetricHelp';
+import type { ManagementHelpKey } from './helpKeys';
 
 /** Conversão inteira entre duas etapas consecutivas do embudo. */
 function conversionRate(prev: number, next: number): number {
@@ -14,6 +16,13 @@ function conversionRate(prev: number, next: number): number {
 }
 
 /** Etapas do embudo, na ordem canônica. `dot`/`value` = cor de leitura rápida. */
+const STAGE_HELP: Record<string, ManagementHelpKey> = {
+  solicitantes: 'embudoSolicitantes',
+  admision: 'embudoAdmision',
+  agendadas: 'embudoAgendadas',
+  vacantes: 'embudoVacantes',
+};
+
 const STAGES = [
   { key: 'solicitantes', dot: 'bg-primary', value: 'text-primary' },
   { key: 'admision', dot: 'bg-[#8932FD]', value: 'text-[#6B21C7]' },
@@ -38,6 +47,7 @@ const STAGES = [
  */
 export function PacientesSection(): JSX.Element {
   const { t } = useTranslation();
+  const { helpProps, openHelp, helpAriaLabel, helpDrawer } = useMetricHelp();
   const [country, setCountry] = useState('');
   const [periodDays, setPeriodDays] = useState('30');
 
@@ -92,6 +102,7 @@ export function PacientesSection(): JSX.Element {
               icon={Users}
               accent="primary"
               title={t('admin.patients.stats.total')}
+              {...helpProps('pacTotal')}
               value={stats?.total ?? 0}
               subtitle={t('admin.patients.stats.totalSub')}
             />
@@ -101,6 +112,7 @@ export function PacientesSection(): JSX.Element {
               icon={CheckCircle}
               accent="success"
               title={t('admin.patients.stats.complete')}
+              {...helpProps('pacCompletos')}
               value={stats?.complete ?? 0}
               subtitle={t('admin.patients.stats.completeSub')}
             />
@@ -110,6 +122,7 @@ export function PacientesSection(): JSX.Element {
               icon={AlertTriangle}
               accent="coordination"
               title={t('admin.patients.stats.needsAttention')}
+              {...helpProps('pacAtencion')}
               value={stats?.needsAttention ?? 0}
               subtitle={t('admin.patients.stats.needsAttentionSub')}
             />
@@ -154,6 +167,16 @@ export function PacientesSection(): JSX.Element {
                     <Text as="p" size="xs" weight="medium" color="inherit" className="text-slate-500">
                       {t(`admin.patients.funnel.${key}`)}
                     </Text>
+                    <button
+                      type="button"
+                      onClick={() => openHelp(STAGE_HELP[key])}
+                      aria-label={helpAriaLabel}
+                      title={helpAriaLabel}
+                      data-testid="metric-help"
+                      className="ml-auto rounded-full p-0.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                    >
+                      <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
                   </div>
                   <p className={`font-poppins text-2xl font-bold leading-tight ${value} dark:text-slate-100`}>
                     {values[key]}
@@ -181,6 +204,8 @@ export function PacientesSection(): JSX.Element {
           </>
         )}
       </div>
+
+      {helpDrawer}
     </section>
   );
 }

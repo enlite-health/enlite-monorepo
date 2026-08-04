@@ -27,7 +27,7 @@ beforeAll(async () => {
   });
 });
 
-const esHelp = (esJson as { admin: { managementDashboard: { help: Record<string, { title: string }> } } })
+const esHelp = (esJson as unknown as { admin: { managementDashboard: { help: Record<string, { title: string }> } } })
   .admin.managementDashboard.help;
 
 describe('HelpDrawer (i18n real, es)', () => {

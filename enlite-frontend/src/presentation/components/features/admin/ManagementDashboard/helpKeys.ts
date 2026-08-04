@@ -51,6 +51,14 @@ export const MANAGEMENT_HELP_KEYS = [
   'stage_REJECTED',
   // Analytics por zona
   'zona',
+  // Pacientes (stats + embudo de admissão — endpoints próprios)
+  'pacTotal',
+  'pacCompletos',
+  'pacAtencion',
+  'embudoSolicitantes',
+  'embudoAdmision',
+  'embudoAgendadas',
+  'embudoVacantes',
 ] as const;
 
 export type ManagementHelpKey = (typeof MANAGEMENT_HELP_KEYS)[number];

@@ -896,6 +896,52 @@
           "origen": "• Pacientes: pacientes com vaga na província (cada um conta uma vez).\n• Prestadores: quem declarou atender naquela província.\n• Demanda: vagas abertas ali.\n• Quem não tem endereço identificado cai em \"Não informado\", com aviso.",
           "cambia": "• Criar/editar vagas e endereços de pacientes.\n• O prestador cadastrar sua zona de atendimento.\n• O filtro de profissão recorta o bloco inteiro.",
           "ojo": "\"Disponibilidad\" mede zona declarada, não agenda livre. A granularidade é província de propósito: é o nível em que o dado é confiável."
+        },
+        "pacTotal": {
+          "title": "Total de pacientes",
+          "que": "Todos os pacientes registrados no sistema, em qualquer situação — inclusive os que já saíram (alta, descontinuados). Responde \"quantos pacientes passaram por aqui\", não \"quantos atendemos hoje\".",
+          "origen": "• Conta todas as fichas de paciente não apagadas.\n• Não olha a situação: ativo, suspenso, descontinuado, de alta e solicitante contam igual.\n• O filtro de país da seção recorta a conta.",
+          "cambia": "• Entra um paciente novo (formulário do site, cadastro manual ou importação): sobe.\n• Apagar uma ficha: desce.\n• Mudar a situação (alta, desistência) NÃO move este número.",
+          "ojo": "Não confundir com \"Pacientes ativos\": boa parte desta base é histórica. Total = Completos + Precisa atención — os dois cards ao lado dividem esta mesma base pela qualidade da ficha."
+        },
+        "pacCompletos": {
+          "title": "Completos (fichas de pacientes)",
+          "que": "Pacientes cuja ficha está em ordem: sem dado obrigatório faltando e sem conflito de número de caso. É o complemento exato de \"Precisa atención\".",
+          "origen": "• Cada ficha carrega uma marca de \"precisa atenção\".\n• Este card conta as fichas SEM essa marca, na base toda (qualquer situação do paciente).",
+          "cambia": "• Completar ou corrigir os dados de uma ficha marcada: sobe.\n• Entrar paciente novo com ficha completa: sobe.\n• Uma ficha ganhar a marca: desce.",
+          "ojo": "\"Completo\" fala da FICHA, não do paciente: um paciente descontinuado com cadastro em ordem conta aqui. É qualidade de dado, não pacientes prontos para operar."
+        },
+        "pacAtencion": {
+          "title": "Precisa atención",
+          "que": "Fichas de paciente com pendência marcada: falta um dado obrigatório, ou o número de caso informado já pertencia a outro paciente, ou alguém marcou manualmente.",
+          "origen": "• Na entrada (admissão pública, importação, cadastro), se falta um dado essencial o sistema grava mesmo assim e marca para revisão — em vez de perder o lead.\n• Se o número de caso colide com o de outro paciente, grava a ficha SEM o número e marca — em vez de sobrescrever o de alguém.\n• O card conta todas as fichas com a marca ligada.",
+          "cambia": "• Revisar a ficha no painel e completar o dado / resolver o número de caso: desce.\n• Entrada nova com pendência: sobe.",
+          "ojo": "É fila de trabalho real de qualidade de dado: revisar essas fichas destrava a operação do caso."
+        },
+        "embudoSolicitantes": {
+          "title": "Solicitantes (embudo)",
+          "que": "Pacientes CRIADOS no período escolhido (7/30/90 dias), de qualquer origem e em qualquer situação atual. É a entrada do funil.",
+          "origen": "• Conta pacientes criados dentro da janela de tempo, sem apagados.\n• Não é \"quem está parado na etapa Solicitante\" — é a coorte de entrada do período.",
+          "cambia": "• Entrada nova (formulário do site, cadastro manual, importação) dentro do período: sobe.\n• Mudar a janela (7/30/90): recalcula."
+        },
+        "embudoAdmision": {
+          "title": "Admisión (embudo)",
+          "que": "Dos pacientes criados no período, quantos CHEGARAM a Admissão ou além (inclui os que já estão ativos).",
+          "origen": "• Olha a situação atual E o histórico: quem avançou e depois saiu também conta.\n• Suspensos, descontinuados e de alta não contam como avanço.",
+          "cambia": "• Passar um paciente do período para admissão ou ativo: sobe."
+        },
+        "embudoAgendadas": {
+          "title": "Agendadas (embudo)",
+          "que": "Pacientes com entrevista de admissão agendada DENTRO do período.",
+          "origen": "• Conta pelo momento em que o horário foi reservado (agenda do app de pacientes) — o paciente pode ter sido criado antes do período.",
+          "cambia": "• Reservar um horário de admissão: sobe.",
+          "ojo": "Mede outra coorte que as demais etapas (agendamentos do período, não pacientes criados no período): pode ficar maior ou menor que o passo anterior sem significar funil furado. Ler as conversões como tendência, não como aritmética exata."
+        },
+        "embudoVacantes": {
+          "title": "Vacantes (embudo)",
+          "que": "Dos pacientes criados no período, quantos já têm vaga publicada — o caso avançou até gerar busca.",
+          "origen": "• Conta pacientes do período com pelo menos uma vaga publicada. Rascunho não conta; vaga fechada sim.",
+          "cambia": "• Publicar a vaga do caso: sobe."
         }
       },
       "title": "Gestão à Vista",
