@@ -7,11 +7,32 @@ import {
   CURRENT_WEEK_START_SQL,
 } from '../domain/interviewSchedule';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
+import {
+  computeScheduleWeeklyHours,
+  hasStructuredSchedule,
+} from '../domain/scheduleHours';
 
 /** Linha de contagem simples chave→valor. */
 interface CountRow {
   k: string;
   count: number;
+}
+
+export interface ManagementDashboardOptions {
+  /** Filtro por ENTRADA no funil por prestador (7/30/90 dias). Ausente = tudo. */
+  funnelPeriodDays?: number;
+}
+
+/**
+ * Capacidade semanal contratada de encuadres (reuniões de coordenação).
+ * Origem: call 22/07 (Marcel, 01:53 — "80 reuniões = 40h × 2/h, contratadas"),
+ * confirmada em 30/07 com pedido explícito de ser CONFIGURÁVEL. Zero/inválida →
+ * o percentual é OMITIDO do payload (nunca divisão por zero, nunca 0% falso).
+ */
+function readEncuadreWeeklyCapacity(): number | null {
+  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '80';
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 /**
@@ -24,12 +45,19 @@ interface CountRow {
 export class GetManagementDashboardUseCase {
   constructor(private readonly db: Pool) {}
 
-  async execute(): Promise<ManagementDashboardData> {
+  async execute(options?: ManagementDashboardOptions): Promise<ManagementDashboardData> {
+    // Equipe Armada RODA ANTES do Promise.all: o card "Em Busca" precisa dos ids
+    // dos casos ARMADA (classificação de domínio em JS — nunca replicada em SQL).
+    // Custo: 1 query serializada (~17ms em prod, medido na change anterior).
+    const armed = await new GetArmedCasesUseCase(this.db).execute();
+
     const [
-      armed,
       funnelPorPrestador,
       jobRows,
       patientRows,
+      pacienteEstadosRow,
+      ubicacionesRow,
+      horasAtivasRows,
       workerRow,
       funnelRows,
       esperandoRow,
@@ -38,11 +66,8 @@ export class GetManagementDashboardUseCase {
       encuadreRow,
     ] =
       await Promise.all([
-        // Equipe Armada + horas: agregação por caso (buckets honestos, ver
-        // GetArmedCasesUseCase). É a 1ª promise → 1ª chamada a this.db.query.
-        new GetArmedCasesUseCase(this.db).execute(),
         // Funil por PRESTADOR, recortado à operação viva (ver GetFunnelByWorkerUseCase).
-        new GetFunnelByWorkerUseCase(this.db).execute(),
+        new GetFunnelByWorkerUseCase(this.db).execute(options?.funnelPeriodDays),
         this.db.query<CountRow>(
           `SELECT status AS k, COUNT(*)::int AS count
              FROM job_postings
@@ -55,6 +80,74 @@ export class GetManagementDashboardUseCase {
           `SELECT COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS activos
              FROM patients
             WHERE deleted_at IS NULL`,
+        ),
+        this.db.query<{
+          solicitudes: number;
+          entrevista_agendada: number;
+          en_admision: number;
+          en_busca: number;
+        }>(
+          // Linha CHEGANDO (Diego, 30/07): 4 estados ATUAIS com precedência exclusiva
+          // Em Busca > Em Admissão > Entrevista Agendada > Solicitações.
+          // - Em Busca: ≥1 vaga viva de caso NÃO-ARMADA ($1 = ids ARMADA vindos do
+          //   classificador de domínio), status não-terminal. Vaga viva de paciente
+          //   DISCONTINUED/DISCHARGED é zumbi de dado (16 em prod, 31/07) — fora.
+          // - Em Admissão: ADMISSION/PENDING_ADMISSION ainda sem vaga ("precisam
+          //   gerar vacante").
+          // - Entrevista Agendada: admission_appointments 'booked' no futuro.
+          `WITH base AS (
+             SELECT p.status,
+               EXISTS (
+                 SELECT 1 FROM job_postings jp
+                  WHERE jp.patient_id = p.id AND ${LIVE_JOB_POSTING_SQL}
+                    AND NOT (jp.id = ANY($1::uuid[]))
+               ) AS em_busca_vaga,
+               EXISTS (
+                 SELECT 1 FROM admission_appointments aa
+                  WHERE aa.patient_id = p.id AND aa.status = 'booked' AND aa.slot_start > NOW()
+               ) AS entrevista_futura
+             FROM patients p
+             WHERE p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
+           )
+           SELECT
+             COUNT(*) FILTER (
+               WHERE em_busca_vaga AND status NOT IN ('DISCONTINUED', 'DISCHARGED')
+             )::int AS en_busca,
+             COUNT(*) FILTER (
+               WHERE NOT em_busca_vaga AND status IN ('ADMISSION', 'PENDING_ADMISSION')
+             )::int AS en_admision,
+             COUNT(*) FILTER (
+               WHERE NOT em_busca_vaga AND status = 'SOLICITANTE' AND entrevista_futura
+             )::int AS entrevista_agendada,
+             COUNT(*) FILTER (
+               WHERE NOT em_busca_vaga AND status = 'SOLICITANTE' AND NOT entrevista_futura
+             )::int AS solicitudes
+           FROM base`,
+          [armed.armadaCaseIds],
+        ),
+        this.db.query<{ ubicaciones: number }>(
+          // Ubicaciones DISTINTAS de pacientes ativos (D8). Dedup por (paciente,
+          // texto do endereço): a importação grava linhas repetidas — 566 cruas
+          // viram 339 reais (prod, 31/07). Endereço vazio não é ubicación.
+          `SELECT COUNT(*)::int AS ubicaciones FROM (
+             SELECT DISTINCT pa.patient_id,
+               COALESCE(NULLIF(TRIM(pa.address_formatted), ''), NULLIF(TRIM(pa.address_raw), '')) AS addr
+             FROM patient_addresses pa
+             JOIN patients p ON p.id = pa.patient_id
+             WHERE p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
+               AND p.status = 'ACTIVE'
+               AND COALESCE(NULLIF(TRIM(pa.address_formatted), ''), NULLIF(TRIM(pa.address_raw), '')) IS NOT NULL
+           ) u`,
+        ),
+        this.db.query<{ schedule: unknown }>(
+          // Horas EM ATENDIMENTO (linha RODANDO, D2 resolvida 31/07): vagas
+          // status='ACTIVE' — fora do recorte "vivo", que é só busca. O parser de
+          // horas é o mesmo do domínio (computeScheduleWeeklyHours), em JS.
+          `SELECT jp.schedule
+             FROM job_postings jp
+             JOIN patients p ON p.id = jp.patient_id
+            WHERE jp.deleted_at IS NULL AND jp.is_draft = false AND jp.status = 'ACTIVE'
+              AND p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false`,
         ),
         this.db.query<{
           leads: number;
@@ -146,6 +239,25 @@ export class GetManagementDashboardUseCase {
     const funnel = toRecord(funnelRows.rows);
 
     const patient = patientRows.rows[0] ?? { activos: 0 };
+    const estados = pacienteEstadosRow.rows[0] ?? {
+      solicitudes: 0,
+      entrevista_agendada: 0,
+      en_admision: 0,
+      en_busca: 0,
+    };
+    const ubicaciones = ubicacionesRow.rows[0]?.ubicaciones ?? 0;
+
+    // Horas ativas: soma em JS com o parser de domínio (mesmo padrão do armed).
+    let horasAtivas = 0;
+    let ativasConSchedule = 0;
+    let ativasSinSchedule = 0;
+    for (const row of horasAtivasRows.rows) {
+      horasAtivas += computeScheduleWeeklyHours(row.schedule);
+      if (hasStructuredSchedule(row.schedule)) ativasConSchedule += 1;
+      else ativasSinSchedule += 1;
+    }
+
+    const capacidadeSemana = readEncuadreWeeklyCapacity();
     const worker = workerRow.rows[0] ?? { leads: 0, completos: 0, incompletos: 0, nuevos: 0 };
     const alocadosActivos = allocatedRow.rows[0]?.activos ?? 0;
     const alocadosCubriendoGuardias = allocatedRow.rows[0]?.cubriendo_guardias ?? 0;
@@ -173,10 +285,31 @@ export class GetManagementDashboardUseCase {
         porArmar: armed.porArmar,
         semConfig: armed.semConfig,
         pendenteClasificacao: armed.pendenteClasificacao,
+        pctRespostaRapidaArmado: {
+          num: armed.respostaRapida.num,
+          den: armed.respostaRapida.den,
+          excluidos: armed.respostaRapida.excluidos,
+          pct:
+            armed.respostaRapida.den > 0
+              ? round1Pct((armed.respostaRapida.num / armed.respostaRapida.den) * 100)
+              : null,
+        },
+      },
+      pacientes: {
+        activos: patient.activos,
+        ubicacionesActivas: ubicaciones,
+        solicitudes: estados.solicitudes,
+        entrevistaAgendada: estados.entrevista_agendada,
+        enAdmision: estados.en_admision,
+        enBusca: estados.en_busca,
+        sobrepoe: true,
       },
       horas: {
         totais: armed.horasTotais,
         aPreencher: armed.horasAPreencher,
+        ativas: round1(horasAtivas),
+        ativasConSchedule,
+        ativasSinSchedule,
         coberturaConSchedule: armed.coberturaConSchedule,
         coberturaSinSchedule: armed.coberturaSinSchedule,
       },
@@ -188,6 +321,7 @@ export class GetManagementDashboardUseCase {
       funnelPorPrestador: {
         total: funnelPorPrestador.total,
         recorte: 'vagas-vivas',
+        periodoDias: options?.funnelPeriodDays ?? null,
         bloqueados: blocked,
         porEtapa: { somavel: false, colunas: funnelPorPrestador.porEtapa },
         consolidado: { somavel: true, colunas: funnelPorPrestador.consolidado },
@@ -204,6 +338,16 @@ export class GetManagementDashboardUseCase {
       encuadres: {
         agendadosEstaSemana: encuadre,
         semDataRegistrada: encuadreSemData,
+        // Omitido quando a capacidade está zerada/inválida (nunca 0% fabricado).
+        ...(capacidadeSemana != null
+          ? {
+              pctCapacidadeSemana: {
+                agendados: encuadre,
+                capacidade: capacidadeSemana,
+                pct: round1Pct((encuadre / capacidadeSemana) * 100),
+              },
+            }
+          : {}),
       },
       cadastros: {
         leads: worker.leads,
@@ -231,4 +375,14 @@ function toRecord(rows: CountRow[]): Record<string, number> {
 
 function pick(record: Record<string, number>, key: string): number {
   return record[key] ?? 0;
+}
+
+/** Arredonda a 1 casa (mesma convenção de scheduleHours). */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** Percentual com 1 casa — 0.0 real continua 0.0; nunca NaN (guard no caller). */
+function round1Pct(value: number): number {
+  return Math.round(value * 10) / 10;
 }

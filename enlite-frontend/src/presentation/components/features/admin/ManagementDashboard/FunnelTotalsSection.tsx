@@ -91,9 +91,14 @@ function FunnelView({
 export function FunnelTotalsSection({
   funnelPorPrestador,
   encuadres,
+  period,
+  onPeriodChange,
 }: {
   funnelPorPrestador: ManagementDashboardData['funnelPorPrestador'];
   encuadres: ManagementDashboardData['encuadres'];
+  /** Filtro por ENTRADA no funil (call 22/07). null = todo o histórico vivo. */
+  period?: 7 | 30 | 90 | null;
+  onPeriodChange?: (period: 7 | 30 | 90 | null) => void;
 }): JSX.Element | null {
   const { t } = useTranslation();
   const p = 'admin.managementDashboard.funnel.';
@@ -103,6 +108,8 @@ export function FunnelTotalsSection({
   // funnelPorPrestador — a seção some por alguns minutos em vez de quebrar a página.
   if (!funnelPorPrestador) return null;
 
+  const PERIOD_OPTIONS: Array<7 | 30 | 90 | null> = [null, 7, 30, 90];
+
   return (
     <section data-testid="mgmt-funnel" className="space-y-6">
       <SectionHeader
@@ -111,6 +118,32 @@ export function FunnelTotalsSection({
         title={t('admin.managementDashboard.sections.funnel')}
         hint={t('admin.managementDashboard.sections.funnelHint')}
       />
+
+      {/*
+        Filtro por período — mesma UX do funil de pacientes (funnel-period-filter).
+        Filtra por ENTRADA da candidatura no funil (created_at), não por movimentação:
+        não existe timestamp de transição por etapa, e o rótulo diz isso.
+      */}
+      {onPeriodChange && (
+        <div className="flex items-center gap-2" data-testid="mgmt-funnel-period-filter">
+          <span className="text-xs text-slate-500">{t(`${p}periodLabel`)}</span>
+          {PERIOD_OPTIONS.map((option) => (
+            <button
+              key={option ?? 'todo'}
+              type="button"
+              data-testid={`mgmt-funnel-period-${option ?? 'todo'}`}
+              onClick={() => onPeriodChange(option)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                (period ?? null) === option
+                  ? 'bg-primary text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {option == null ? t(`${p}periodAll`) : t(`${p}periodDays`, { count: option })}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <MetricCard

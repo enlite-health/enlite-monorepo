@@ -91,14 +91,29 @@ export class AnalyticsDashboardController {
   }
 
   /**
-   * GET /analytics/dashboard/management
+   * GET /analytics/dashboard/management?funnelPeriodDays=7|30|90
    * "Dashboard para Gestão à Vista" (ClickUp 86ajb4qnw): big numbers operacionais,
    * prioridades de contato, totalização do funil e cadastros. Read-only, sem PII.
+   * `funnelPeriodDays` (opcional) filtra o funil por prestador pela ENTRADA da
+   * candidatura (call 22/07); ausente = tudo. Valor fora do conjunto é 400.
    */
-  async getManagementMetrics(_req: Request, res: Response): Promise<void> {
+  async getManagementMetrics(req: Request, res: Response): Promise<void> {
     try {
+      const rawPeriod = req.query.funnelPeriodDays;
+      let funnelPeriodDays: number | undefined;
+      if (rawPeriod !== undefined) {
+        if (typeof rawPeriod !== 'string' || !['7', '30', '90'].includes(rawPeriod)) {
+          res.status(400).json({
+            success: false,
+            error: 'funnelPeriodDays deve ser 7, 30 ou 90 (ou ausente para todo o período)',
+          });
+          return;
+        }
+        funnelPeriodDays = Number(rawPeriod);
+      }
+
       const useCase = new GetManagementDashboardUseCase(this.db);
-      const data = await useCase.execute();
+      const data = await useCase.execute({ funnelPeriodDays });
       res.json({ success: true, data });
     } catch (err) {
       res.status(500).json({ success: false, error: (err as Error).message });

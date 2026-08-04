@@ -55,19 +55,73 @@ export const managementDashboardSchema = z.object({
     semConfig: nonNegInt,
     /** ≥1 SELECCIONADO mas nenhum com papel setado (rollout do papel). */
     pendenteClasificacao: nonNegInt,
+    /**
+     * % de grupo de resposta rápida armado (call 22/07). Percentual NUNCA viaja
+     * sozinho: num/den/excluidos vêm junto (regra da casa). `pct` é null quando
+     * den = 0 — nunca um 0% fabricado por divisão degenerada.
+     */
+    pctRespostaRapidaArmado: z.object({
+      num: nonNegInt,
+      den: nonNegInt,
+      /** SEM_CONFIG + PENDENTE_CLASSIFICACAO — fora do denominador, mas visíveis. */
+      excluidos: nonNegInt,
+      pct: z.number().min(0).max(100).nullable(),
+    }),
+  }),
+  /**
+   * Estados de paciente nas duas linhas da call de 22/07, refinadas pelo Diego
+   * (WhatsApp 30/07). São estados ATUAIS, não coortes por período. A linha
+   * CHEGANDO tem precedência exclusiva (Em Busca > Em Admissão > Entrevista >
+   * Solicitações); `enBusca` INCLUI pacientes ACTIVE — sobrepõe com `activos`
+   * de propósito (o "193" antigo somava os dois; agora se expõem separados,
+   * NUNCA somados — `sobrepoe` avisa qualquer consumidor).
+   */
+  pacientes: z.object({
+    /** = bigNumbers.pacientesActivos (linha RODANDO). */
+    activos: nonNegInt,
+    /**
+     * Ubicaciones (endereços) DISTINTAS de pacientes ativos — dedup por
+     * (paciente, texto): a importação duplica linhas (566 cruas → 339 reais em
+     * 31/07). É o multiplicador pacientes→vagas do Diego (call 02:02:35).
+     */
+    ubicacionesActivas: nonNegInt,
+    /** SOLICITANTE sem entrevista de admissão futura. */
+    solicitudes: nonNegInt,
+    /** Entrevista de admissão marcada (admission_appointments booked, futura). */
+    entrevistaAgendada: nonNegInt,
+    /** ADMISSION/PENDING_ADMISSION sem vaga viva — "precisam gerar vacante". */
+    enAdmision: nonNegInt,
+    /**
+     * ≥1 vaga viva de caso NÃO-armado, status não-terminal (DISCONTINUED/
+     * DISCHARGED fora — vaga viva de paciente terminal é zumbi de dado, não fila).
+     */
+    enBusca: nonNegInt,
+    /** enBusca sobrepõe activos (paciente 24/7 com turno descoberto está nos dois). */
+    sobrepoe: z.literal(true),
   }),
   /**
    * Horas semanais calculadas do JSONB job_postings.schedule (soma por dia-turno,
-   * trata virada de meia-noite). Cobertura = quantos casos ativos têm schedule.
+   * trata virada de meia-noite). Cobertura = quantos casos têm schedule.
    */
   horas: z.object({
-    /** Soma das horas/semana dos casos ativos com schedule. */
+    /**
+     * Horas/semana das vagas VIVAS (em busca) — na tela é o "a serem ativadas"
+     * da linha CHEGANDO (semântica confirmada com dado em 31/07, design D2).
+     */
     totais: nonNegNumber,
     /** Horas/semana ainda descobertas (soma dos casos POR_ARMAR). */
     aPreencher: nonNegNumber,
-    /** Casos ativos COM schedule estruturado. */
+    /**
+     * Horas/semana EM ATENDIMENTO: vagas `status='ACTIVE'` (fora do recorte
+     * vivo, que é só busca) de pacientes não apagados. Linha RODANDO.
+     */
+    ativas: nonNegNumber,
+    /** Vagas ACTIVE com/sem schedule estruturado (cobertura das horas ativas). */
+    ativasConSchedule: nonNegInt,
+    ativasSinSchedule: nonNegInt,
+    /** Casos vivos COM schedule estruturado. */
     coberturaConSchedule: nonNegInt,
-    /** Casos ativos SEM schedule estruturado. */
+    /** Casos vivos SEM schedule estruturado. */
     coberturaSinSchedule: nonNegInt,
   }),
   /** Prioridades de contato para a recrutadora agir rápido. */
@@ -91,6 +145,12 @@ export const managementDashboardSchema = z.object({
     total: nonNegInt,
     /** Recorte aplicado — explícito para quem consome o número fora da tela. */
     recorte: z.literal('vagas-vivas'),
+    /**
+     * Filtro por período aplicado (dias desde a ENTRADA da candidatura no funil;
+     * `wja.created_at`), ecoado para a tela. null = sem filtro (tudo). NÃO é
+     * data de movimentação — não existe timestamp de transição por etapa.
+     */
+    periodoDias: z.number().int().positive().nullable(),
     /**
      * Pessoas com TENTATIVA barrada pelo gate de cadastro incompleto, em vaga viva.
      * Fica FORA das colunas de propósito: tentativa bloqueada não tem candidatura
@@ -137,6 +197,20 @@ export const managementDashboardSchema = z.object({
      * lacuna vire um zero mudo (design D4).
      */
     semDataRegistrada: nonNegInt,
+    /**
+     * % da capacidade semanal contratada de encuadres (call 22/07, "regra de
+     * três" interina até plugar o Google Calendar). `capacidade` vem de config
+     * (ENCUADRE_WEEKLY_CAPACITY — Marcel confirmou 80 e pediu configurável).
+     * AUSENTE quando a config está zerada/inválida — nunca divisão por zero.
+     * `pct` pode passar de 100 (semana com mais encuadres que o contratado).
+     */
+    pctCapacidadeSemana: z
+      .object({
+        agendados: nonNegInt,
+        capacidade: z.number().int().positive(),
+        pct: nonNegNumber,
+      })
+      .optional(),
   }),
   /** Cadastros de prestadores. */
   cadastros: z.object({

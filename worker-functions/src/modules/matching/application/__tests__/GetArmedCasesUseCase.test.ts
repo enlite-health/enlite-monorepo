@@ -1,6 +1,7 @@
 import { GetArmedCasesUseCase } from '../GetArmedCasesUseCase';
 
 interface Row {
+  id: string;
   providers_needed: string | null;
   schedule: unknown;
   sel_total: number;
@@ -11,6 +12,7 @@ interface Row {
 
 function row(partial: Partial<Row>): Row {
   return {
+    id: 'jp-1',
     providers_needed: '2',
     schedule: null,
     sel_total: 0,
@@ -83,6 +85,26 @@ describe('GetArmedCasesUseCase', () => {
       horasAPreencher: 0,
       coberturaConSchedule: 0,
       coberturaSinSchedule: 0,
+      respostaRapida: { num: 0, den: 0, excluidos: 0 },
+      armadaCaseIds: [],
     });
+  });
+
+  it('% RR: numerador conta caso medível com substitutos suficientes; ids ARMADA saem na lista', async () => {
+    const rows = [
+      // ARMADA (1 titular exigido, 10 substitutos) → num E armadaCaseIds
+      row({ id: 'jp-armada', providers_needed: '1', sel_total: 11, sel_with_role: 11, sel_titular: 1, sel_substituto: 10 }),
+      // POR_ARMAR com 10 substitutos mas sem titular → conta no num (RR pronto, titular não)
+      row({ id: 'jp-rr', providers_needed: '1', sel_total: 10, sel_with_role: 10, sel_titular: 0, sel_substituto: 10 }),
+      // POR_ARMAR sem substitutos → só denominador
+      row({ id: 'jp-vazio', providers_needed: '1', sel_total: 1, sel_with_role: 1, sel_titular: 1, sel_substituto: 0 }),
+      // PENDENTE (sem papel) e SEM_CONFIG → excluidos, nunca no denominador
+      row({ id: 'jp-pendente', providers_needed: '1', sel_total: 3, sel_with_role: 0 }),
+      row({ id: 'jp-sem-config', providers_needed: null }),
+    ];
+    const result = await new GetArmedCasesUseCase(mockDb(rows) as never).execute();
+
+    expect(result.respostaRapida).toEqual({ num: 2, den: 3, excluidos: 2 });
+    expect(result.armadaCaseIds).toEqual(['jp-armada']);
   });
 });

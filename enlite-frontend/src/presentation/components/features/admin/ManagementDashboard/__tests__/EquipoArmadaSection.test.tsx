@@ -20,13 +20,13 @@ vi.mock('lucide-react', () => {
   return { Info: Stub, Clock: Stub, AlarmClock: Stub, Users: Stub };
 });
 
-const horas = { totais: 12.5, aPreencher: 6, coberturaConSchedule: 3, coberturaSinSchedule: 2 };
+const horas = { totais: 12.5, aPreencher: 6, ativas: 4, ativasConSchedule: 1, ativasSinSchedule: 0, coberturaConSchedule: 3, coberturaSinSchedule: 2 };
 
 describe('EquipoArmadaSection (estados honestos)', () => {
   it('mostra horas totais/a preencher e cobertura', () => {
     render(
       <EquipoArmadaSection
-        equipoArmada={{ armados: 4, porArmar: 5, semConfig: 7, pendenteClasificacao: 2 }}
+        equipoArmada={{ armados: 4, porArmar: 5, semConfig: 7, pendenteClasificacao: 2, pctRespostaRapidaArmado: { num: 0, den: 9, excluidos: 9, pct: 0 } }}
         horas={horas}
       />,
     );
@@ -39,8 +39,8 @@ describe('EquipoArmadaSection (estados honestos)', () => {
   it('nunca mostra 0 falso: expõe "N sem classificação" e "N sem config"', () => {
     render(
       <EquipoArmadaSection
-        equipoArmada={{ armados: 0, porArmar: 0, semConfig: 7, pendenteClasificacao: 2 }}
-        horas={{ totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 9 }}
+        equipoArmada={{ armados: 0, porArmar: 0, semConfig: 7, pendenteClasificacao: 2, pctRespostaRapidaArmado: { num: 0, den: 0, excluidos: 9, pct: null } }}
+        horas={{ totais: 0, aPreencher: 0, ativas: 0, ativasConSchedule: 0, ativasSinSchedule: 0, coberturaConSchedule: 0, coberturaSinSchedule: 9 }}
       />,
     );
     expect(screen.getByText(/pendenteClasificacao count=2/)).toBeInTheDocument();

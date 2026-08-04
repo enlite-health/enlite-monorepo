@@ -51,12 +51,21 @@ const MOCK_DASHBOARD = {
     porArmar: 148,
     semConfig: 61,
     pendenteClasificacao: 24,
+    pctRespostaRapidaArmado: { num: 0, den: 84, excluidos: 60, pct: 0 },
+  },
+  pacientes: {
+    activos: 190, ubicacionesActivas: 339,
+    solicitudes: 0, entrevistaAgendada: 1, enAdmision: 5, enBusca: 112,
+    sobrepoe: true,
   },
   horas: {
     totais: 1240.5,
     aPreencher: 612,
     coberturaConSchedule: 160,
     coberturaSinSchedule: 105,
+    ativas: 987.5,
+    ativasConSchedule: 38,
+    ativasSinSchedule: 12,
   },
   prioridades: {
     completosEsperandoAgendamiento: 2387,
@@ -67,6 +76,7 @@ const MOCK_DASHBOARD = {
   funnelPorPrestador: {
     total: 2576,
     recorte: 'vagas-vivas',
+    periodoDias: null,
     bloqueados: 355,
     porEtapa: {
       somavel: false,
@@ -93,7 +103,7 @@ const MOCK_DASHBOARD = {
     seleccionados: 2,
     rechazados: 2498,
   },
-  encuadres: { agendadosEstaSemana: 7, semDataRegistrada: 36 },
+  encuadres: { agendadosEstaSemana: 7, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
   cadastros: {
     leads: 6882,
     completos: 250,
@@ -215,8 +225,8 @@ async function loginAsAdmin(page: Page): Promise<void> {
 const MOCK_DASHBOARD_PENDENTE = {
   ...MOCK_DASHBOARD,
   bigNumbers: { ...MOCK_DASHBOARD.bigNumbers, equiposArmados: 0, equiposPorArmar: 0 },
-  equipoArmada: { armados: 0, porArmar: 0, semConfig: 61, pendenteClasificacao: 204 },
-  horas: { totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 265 },
+  equipoArmada: { armados: 0, porArmar: 0, semConfig: 61, pendenteClasificacao: 204, pctRespostaRapidaArmado: { num: 0, den: 84, excluidos: 60, pct: 0 } },
+  horas: { ativas: 987.5, ativasConSchedule: 38, ativasSinSchedule: 12, totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 265 },
 };
 
 function mockDashboard(page: Page, mode: 'ok' | 'error' | 'pendente' = 'ok'): void {
@@ -261,7 +271,9 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('61'); // sem config
     await expect(page.getByTestId('mgmt-armada-clasificacion')).toContainText('24'); // sem classificação
     // GAP notice de ubicaciones ainda existe (horas deixou de ser GAP).
-    await expect(page.getByTestId('mgmt-gap-notice').first()).toBeVisible();
+    // O antigo GAP de Ubicaciones virou card real em 31/07 (linha RODANDO).
+    await expect(page.getByTestId('mgmt-rodando')).toBeVisible();
+    await expect(page.getByTestId('mgmt-chegando')).toBeVisible();
     // Analytics por Zona: dado do mock chega intacto na tabela.
     await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('Palermo');
     await expect(page.getByTestId('mgmt-zone-analytics')).toContainText('55');

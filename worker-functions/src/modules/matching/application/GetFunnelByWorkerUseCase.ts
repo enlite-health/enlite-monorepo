@@ -60,7 +60,16 @@ interface FunnelRow {
 export class GetFunnelByWorkerUseCase {
   constructor(private readonly db: Pool) {}
 
-  async execute(): Promise<FunnelByWorkerResult> {
+  /**
+   * @param periodDays filtro opcional por ENTRADA no funil (`wja.created_at` nos
+   *   últimos N dias) — acordo da call 22/07 (02:13, "o filtro por período vai
+   *   resolver boa parte da discussão"). É data de CRIAÇÃO da candidatura, não de
+   *   movimentação (não existe timestamp de transição por etapa — limitação
+   *   documentada em docs/gestao-a-vista/13). Ausente = tudo, comportamento de sempre.
+   */
+  async execute(periodDays?: number): Promise<FunnelByWorkerResult> {
+    const periodSql =
+      periodDays != null ? 'AND wja.created_at >= NOW() - make_interval(days => $1)' : '';
     const { rows } = await this.db.query<FunnelRow>(
       `SELECT wja.worker_id,
               wja.application_funnel_stage AS stage,
@@ -70,7 +79,9 @@ export class GetFunnelByWorkerUseCase {
          JOIN job_postings jp ON jp.id = wja.job_posting_id
          JOIN workers      w  ON w.id  = wja.worker_id
         WHERE ${LIVE_JOB_POSTING_SQL}
-          AND w.merged_into_id IS NULL`,
+          AND w.merged_into_id IS NULL
+          ${periodSql}`,
+      periodDays != null ? [periodDays] : [],
     );
 
     // Sets de worker_id (não contadores): o mesmo prestador em N vagas da MESMA

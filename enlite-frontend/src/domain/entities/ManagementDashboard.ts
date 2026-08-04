@@ -38,11 +38,37 @@ export interface ManagementDashboardData {
     porArmar: number;
     semConfig: number;
     pendenteClasificacao: number;
+    /**
+     * % de grupo de resposta rápida armado (call 22/07). Percentual nunca viaja
+     * sozinho: num/den/excluidos vêm junto. pct null = denominador zerado.
+     */
+    pctRespostaRapidaArmado: { num: number; den: number; excluidos: number; pct: number | null };
   };
-  /** Horas semanais calculadas do schedule JSONB dos casos ativos. */
+  /**
+   * Duas linhas de estado de paciente (call 22/07, refinadas pelo Diego 30/07).
+   * Estados ATUAIS; CHEGANDO é exclusiva por precedência (Busca > Admissão >
+   * Entrevista > Solicitações). `enBusca` SOBREPÕE `activos` de propósito —
+   * nunca somar linhas (era a origem do "193" falso).
+   */
+  pacientes: {
+    activos: number;
+    /** Ubicaciones (endereços) DISTINTAS de pacientes ativos — dedup por (paciente, texto). */
+    ubicacionesActivas: number;
+    solicitudes: number;
+    entrevistaAgendada: number;
+    enAdmision: number;
+    enBusca: number;
+    sobrepoe: true;
+  };
+  /** Horas semanais calculadas do schedule JSONB. */
   horas: {
+    /** Vagas VIVAS (em busca) — na tela: "a serem ativadas" (linha CHEGANDO). */
     totais: number;
     aPreencher: number;
+    /** Vagas status='ACTIVE' (em atendimento) — linha RODANDO. */
+    ativas: number;
+    ativasConSchedule: number;
+    ativasSinSchedule: number;
     coberturaConSchedule: number;
     coberturaSinSchedule: number;
   };
@@ -58,6 +84,11 @@ export interface ManagementDashboardData {
     /** Prestadores distintos no recorte. */
     total: number;
     recorte: 'vagas-vivas';
+    /**
+     * Filtro por período aplicado (dias desde a ENTRADA no funil; null = tudo).
+     * Não é data de movimentação — não existe timestamp de transição por etapa.
+     */
+    periodoDias: number | null;
     /**
      * Pessoas com tentativa de candidatura barrada (cadastro incompleto), em vaga viva.
      * Fora das colunas: não tem candidatura, e somá-la quebraria a invariante do total.
@@ -85,6 +116,11 @@ export interface ManagementDashboardData {
     agendadosEstaSemana: number;
     /** Cards em "Agendados" sem data registrada — medida de adoção da captura. */
     semDataRegistrada: number;
+    /**
+     * % da capacidade semanal contratada (config ENCUADRE_WEEKLY_CAPACITY; 80).
+     * AUSENTE quando a config está zerada — nunca 0% fabricado. pct pode passar de 100.
+     */
+    pctCapacidadeSemana?: { agendados: number; capacidade: number; pct: number };
   };
   cadastros: {
     leads: number;

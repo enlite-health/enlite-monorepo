@@ -14,9 +14,11 @@ function getBaseURL(): string {
  * demais dashboards de analytics no worker-functions.
  */
 export const ManagementDashboardApiService = {
-  async getManagementDashboard(): Promise<ManagementDashboardData> {
+  /** @param funnelPeriodDays filtro por ENTRADA no funil por prestador (7/30/90; null = tudo). */
+  async getManagementDashboard(funnelPeriodDays: 7 | 30 | 90 | null = null): Promise<ManagementDashboardData> {
     const token = await authService.getIdToken();
-    const resp = await fetch(`${getBaseURL()}/analytics/dashboard/management`, {
+    const query = funnelPeriodDays != null ? `?funnelPeriodDays=${funnelPeriodDays}` : '';
+    const resp = await fetch(`${getBaseURL()}/analytics/dashboard/management${query}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

@@ -51,12 +51,18 @@ const PROD_PAYLOAD = {
     vacantesAbiertas: 144,
     vacantesPausadas: 21,
   },
-  equipoArmada: { armados: 0, porArmar: 134, semConfig: 5, pendenteClasificacao: 135 },
-  horas: { totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 274 },
+  equipoArmada: { armados: 0, porArmar: 134, semConfig: 5, pendenteClasificacao: 135, pctRespostaRapidaArmado: { num: 0, den: 84, excluidos: 60, pct: 0 } },
+  pacientes: {
+    activos: 190, ubicacionesActivas: 339,
+    solicitudes: 0, entrevistaAgendada: 1, enAdmision: 5, enBusca: 112,
+    sobrepoe: true,
+  },
+  horas: { ativas: 987.5, ativasConSchedule: 38, ativasSinSchedule: 12, totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 274 },
   prioridades: { completosEsperandoAgendamiento: 2431, profesionalesBloqueados: 6735 },
   funnelPorPrestador: {
     total: 2576,
     recorte: 'vagas-vivas',
+    periodoDias: null,
     bloqueados: 355,
     porEtapa: {
       somavel: false,
@@ -77,7 +83,7 @@ const PROD_PAYLOAD = {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
     agendados: 37, seleccionados: 10, rechazados: 2557,
   },
-  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36 },
+  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
     alocadosCubriendoGuardias: 12, incompletos: 6735, nuevosCompletosMes: 41,
@@ -101,7 +107,7 @@ const PROD_PAYLOAD_DEPOIS = {
       colunas: { ...PROD_PAYLOAD.funnelPorPrestador.consolidado.colunas, IN_PROGRESS: 1172, CONFIRMED: 28 },
     },
   },
-  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36 },
+  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
 };
 
 const MOCK_ZONE_ANALYTICS = { zones: [], unresolvedCount: 0 };
@@ -327,5 +333,75 @@ test.describe('Gestión a la Vista — funil por prestador (prova visual)', () =
     await page.getByTestId('mgmt-funnel').screenshot({
       path: 'e2e/__screenshots__/gestao-a-vista-depois-do-movimento.png',
     });
+  });
+
+  /**
+   * Acordos da call 22/07 (PR #174): as duas linhas de pacientes + percentuais
+   * APARECEM, e o filtro de período dispara request novo e MUDA o número em tela.
+   */
+  test('duas linhas de pacientes visíveis e filtro de período muda os números em tela', async ({ page }) => {
+    const PAYLOAD_7D = {
+      ...PROD_PAYLOAD,
+      funnelPorPrestador: {
+        ...PROD_PAYLOAD.funnelPorPrestador,
+        total: 214,
+        periodoDias: 7,
+        consolidado: {
+          somavel: true,
+          colunas: {
+            INVITED: 80, INICIADO: 20, PRE_SCREENING: 10, IN_PROGRESS: 74,
+            COMPLETED: 18, CONFIRMED: 7, SELECTED: 2, REJECTED: 3,
+          },
+        },
+        porEtapa: {
+          somavel: false,
+          colunas: {
+            INVITED: 90, INICIADO: 22, PRE_SCREENING: 11, IN_PROGRESS: 80,
+            COMPLETED: 20, CONFIRMED: 7, SELECTED: 2, REJECTED: 5,
+          },
+        },
+      },
+    };
+    const requests: string[] = [];
+    await page.route('**/analytics/dashboard/management*', (route) => {
+      const url = route.request().url();
+      requests.push(url);
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: url.includes('funnelPeriodDays=7') ? PAYLOAD_7D : PROD_PAYLOAD,
+        }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    await page.goto('/admin/dashboard');
+    await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20000 });
+
+    // As duas linhas + percentuais estão NA TELA (não só no DOM: visíveis).
+    await expect(page.getByTestId('mgmt-percentuais')).toBeVisible();
+    await expect(page.getByTestId('mgmt-rodando')).toBeVisible();
+    await expect(page.getByTestId('mgmt-chegando')).toBeVisible();
+    await expect(page.getByTestId('mgmt-rodando')).toContainText('339'); // ubicaciones
+    await expect(page.getByTestId('mgmt-chegando')).toContainText('112'); // em busca
+    await page.getByTestId('mgmt-big-numbers').screenshot({
+      path: 'e2e/__screenshots__/gestao-a-vista-duas-linhas.png',
+    });
+
+    // Clicar em "7 dias" dispara request com o parâmetro e MUDA o número em tela.
+    await page.getByTestId('mgmt-funnel').scrollIntoViewIfNeeded();
+    await expect(page.getByTestId('mgmt-funnel')).toContainText('2576');
+    await page.getByTestId('mgmt-funnel-period-7').click();
+    await expect(page.getByTestId('mgmt-funnel')).toContainText('214', { timeout: 15000 });
+    expect(requests.some((u) => u.includes('funnelPeriodDays=7'))).toBe(true);
+    await page.getByTestId('mgmt-funnel').screenshot({
+      path: 'e2e/__screenshots__/gestao-a-vista-periodo-7d.png',
+    });
+
+    // Voltar para "Todo" restaura o total cheio.
+    await page.getByTestId('mgmt-funnel-period-todo').click();
+    await expect(page.getByTestId('mgmt-funnel')).toContainText('2576', { timeout: 15000 });
   });
 });

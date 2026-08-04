@@ -9,17 +9,24 @@ import type { ManagementDashboardData } from '@domain/entities/ManagementDashboa
  */
 const POLL_INTERVAL_MS = 30_000;
 
+/** Períodos aceitos pelo backend (?funnelPeriodDays=). null = todo o histórico vivo. */
+export type FunnelPeriodDays = 7 | 30 | 90 | null;
+
 interface UseManagementDashboardResult {
   data: ManagementDashboardData | null;
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
+  /** Filtro por ENTRADA no funil por prestador (call 22/07). Muda → refetch imediato. */
+  funnelPeriod: FunnelPeriodDays;
+  setFunnelPeriod: (period: FunnelPeriodDays) => void;
 }
 
 export function useManagementDashboard(): UseManagementDashboardResult {
   const [data, setData] = useState<ManagementDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [funnelPeriod, setFunnelPeriod] = useState<FunnelPeriodDays>(null);
   /** Guarda de concorrência: nunca duas buscas em voo (padrão do useWJAFunnel). */
   const isFetchingRef = useRef(false);
 
@@ -35,7 +42,7 @@ export function useManagementDashboard(): UseManagementDashboardResult {
         setIsLoading(true);
         setError(null);
       }
-      const result = await ManagementDashboardApiService.getManagementDashboard();
+      const result = await ManagementDashboardApiService.getManagementDashboard(funnelPeriod);
       setData(result);
       if (!silent) setError(null);
     } catch (err: unknown) {
@@ -46,7 +53,7 @@ export function useManagementDashboard(): UseManagementDashboardResult {
       if (!silent) setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, []);
+  }, [funnelPeriod]);
 
   const refetch = useCallback(() => {
     void fetchData();
@@ -70,5 +77,7 @@ export function useManagementDashboard(): UseManagementDashboardResult {
     };
   }, [fetchData]);
 
-  return { data, isLoading, error, refetch };
+  // Trocar o período refaz a busca imediatamente (fetchData depende de funnelPeriod,
+  // então o useEffect acima re-executa e re-arma polling/visibilidade com o filtro novo).
+  return { data, isLoading, error, refetch, funnelPeriod, setFunnelPeriod };
 }
