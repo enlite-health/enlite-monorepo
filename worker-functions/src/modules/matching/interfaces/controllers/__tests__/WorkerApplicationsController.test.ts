@@ -259,7 +259,8 @@ describe('WorkerApplicationsController — trackChannel', () => {
   // ── All channels ───────────────────────────────────────────────────────
 
   it('accepts all valid channels and passes each as import_source_audit', async () => {
-    const channels = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
+    // 'luz_whatsapp' = postulação registrada pela Luz na conversa (atribuição da IA)
+    const channels = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site', 'luz_whatsapp'] as const;
     for (const channel of channels) {
       jest.clearAllMocks();
       decryptCallIndex = 0;
