@@ -23,24 +23,36 @@ test.use({ storageState: 'e2e/.auth/profile-worker.json' });
 
 const PHONE_TYPED = '1133336012'; // dígitos nacionais AR (o input tem +54)
 
+// Contrato v2: lookup SEM SMS e só mascarados; valores de conflito só no confirm.
+const LOOKUP_RESPONSE = {
+  success: true,
+  data: { otherEmailMasked: 'kete•••@gmail.com', phoneMasked: '+54 9 11 ****-6012' },
+};
+
 const START_RESPONSE = {
   success: true,
+  data: { verificationSid: 'VE-e2e-mock', phoneMasked: '+54 9 11 ****-6012' },
+};
+
+const CONFIRM_RESPONSE = {
+  success: true,
   data: {
-    otherEmailMasked: 'kete•••@gmail.com',
-    phoneMasked: '+54 9 11 ****-6012',
-    verificationSid: 'VE-e2e-mock',
+    status: 'conflicts',
     conflicts: [
       {
         field: 'profession',
         values: { 'cuenta-actual': 'AT', 'cuenta-anterior': 'CAREGIVER' },
         is_encrypted: false,
         has_conflict: true,
+        suggested: 'cuenta-actual',
       },
     ],
+    linkToken: 'LT-e2e-mock',
+    accounts: { current: 'cuenta-actual', other: 'cuenta-anterior' },
   },
 };
 
-const CONFIRM_RESPONSE = {
+const FINALIZE_RESPONSE = {
   success: true,
   data: {
     status: 'merged',
@@ -120,11 +132,17 @@ test.describe('PhoneConflictModal — colisão de telefone vira caminho, não be
   test('fluxo completo: 409 → modal → OTP → conflito → resumo (screenshots)', async ({ page }) => {
     await mockProfileApis(page);
     await mockGeneralInfo409(page);
+    await page.route('**/api/workers/me/account-link/lookup', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LOOKUP_RESPONSE) }),
+    );
     await page.route('**/api/workers/me/account-link/start', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(START_RESPONSE) }),
     );
     await page.route('**/api/workers/me/account-link/confirm', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CONFIRM_RESPONSE) }),
+    );
+    await page.route('**/api/workers/me/account-link/finalize', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FINALIZE_RESPONSE) }),
     );
 
     await page.goto('/worker/profile');
@@ -166,8 +184,8 @@ test.describe('PhoneConflictModal — colisão de telefone vira caminho, não be
     await expect(page.getByText('CAREGIVER', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'e2e/__screenshots__/vinculo-3-conflitos.png', fullPage: false });
 
-    // escolhe o valor da conta anterior e confirma
-    await page.getByTestId('conflict-profession-cuenta-anterior').check();
+    // escolhe o valor da conta anterior (chip do FieldChoiceList) e confirma
+    await page.getByTestId('conflict-profession-cuenta-anterior').click();
     await page.getByTestId('account-link-conflicts-confirm').click();
 
     // ── 4. Resumo com contagens REAIS ────────────────────────────────────
@@ -183,7 +201,7 @@ test.describe('PhoneConflictModal — colisão de telefone vira caminho, não be
   test('flag OFF (start 404): comportamento atual preservado — toast de erro, sem modal', async ({ page }) => {
     await mockProfileApis(page);
     await mockGeneralInfo409(page);
-    await page.route('**/api/workers/me/account-link/start', (route) =>
+    await page.route('**/api/workers/me/account-link/lookup', (route) =>
       route.fulfill({
         status: 404,
         contentType: 'application/json',

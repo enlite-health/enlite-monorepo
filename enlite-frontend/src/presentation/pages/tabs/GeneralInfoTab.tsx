@@ -12,7 +12,7 @@ import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useToast } from '@presentation/hooks/useToast';
 import { GeneralInfoFormFields } from './GeneralInfoFormFields';
 import { PhoneConflictModal } from '@presentation/components/shared/PhoneConflictModal/PhoneConflictModal';
-import { WorkerApiService, AccountLinkStartResponse } from '@infrastructure/http/WorkerApiService';
+import { WorkerApiService, AccountLinkLookupResponse } from '@infrastructure/http/WorkerApiService';
 
 export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const { t } = useTranslation();
@@ -28,7 +28,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   // Vínculo self-service por colisão de telefone (409 PHONE_NOT_AVAILABLE).
   // Enquanto a modal está aberta, TODO toast do autosave é suprimido — no caso
   // Edith os toasts de sucesso dos outros campos abafavam o erro do telefone.
-  const [phoneConflict, setPhoneConflict] = useState<{ phoneEntered: string; startData: AccountLinkStartResponse } | null>(null);
+  const [phoneConflict, setPhoneConflict] = useState<{ phoneEntered: string; lookupData: AccountLinkLookupResponse } | null>(null);
   const phoneConflictOpenRef = useRef(false);
   phoneConflictOpenRef.current = phoneConflict !== null;
 
@@ -130,18 +130,19 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     return error instanceof Error ? error.message : t('workerRegistration.generalInfo.saveError');
   };
 
-  // 409 no telefone → tenta abrir o fluxo de vínculo self-service. O start só
-  // sucede quando o dono é conta REAL e a flag ACCOUNT_LINK_ENABLED está ligada;
-  // 404 (flag OFF) ou qualquer falha → fallback pro comportamento atual (toast).
+  // 409 no telefone → tenta abrir o fluxo de vínculo self-service via LOOKUP
+  // (contrato v2: SEM SMS — o OTP só dispara no clique em "vincular"). Lookup
+  // só sucede quando a dona é conta REAL e ACCOUNT_LINK_ENABLED está ligada;
+  // 404 (flag OFF), USE_CLAIM ou erro → fallback pro comportamento atual (toast).
   const tryOpenPhoneConflict = async (): Promise<boolean> => {
     const phoneEntered = getValues().phone || '';
     if (!phoneEntered) return false;
     try {
-      const startData = await WorkerApiService.startAccountLink(phoneEntered);
-      setPhoneConflict({ phoneEntered, startData });
+      const lookupData = await WorkerApiService.lookupAccountLink(phoneEntered);
+      setPhoneConflict({ phoneEntered, lookupData });
       return true;
     } catch {
-      return false; // flag OFF (404), dono importado (USE_CLAIM) ou erro → toast
+      return false;
     }
   };
 
@@ -243,7 +244,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
         <PhoneConflictModal
           open
           phoneEntered={phoneConflict.phoneEntered}
-          startData={phoneConflict.startData}
+          lookupData={phoneConflict.lookupData}
           onClose={() => setPhoneConflict(null)}
           onLinked={() => {
             // Merge concluído: o telefone agora vive na conta logada e o status

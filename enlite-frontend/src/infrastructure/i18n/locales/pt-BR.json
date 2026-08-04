@@ -194,12 +194,18 @@
       "confirmButton": "Confirmar",
       "cancelButton": "Cancelar",
       "errorInvalid": "Código incorreto. Revise e tente de novo.",
-      "errorExpired": "O código expirou. Peça um novo."
+      "errorExpired": "O código expirou. Peça um novo.",
+      "resendButton": "Reenviar código",
+      "resent": "Código reenviado.",
+      "errorRateLimited": "Muitas tentativas. Espere uma hora e tente de novo.",
+      "errorStart": "Não conseguimos enviar o código. Tente de novo."
     },
     "conflicts": {
       "title": "Escolha quais informações manter",
-      "subtitle": "As duas contas têm valores diferentes nestes campos. Escolha qual vale.",
-      "confirmButton": "Vincular contas"
+      "subtitle": "As duas contas têm valores diferentes nestes campos. Escolha qual vale (pré-selecionamos o mais recente).",
+      "confirmButton": "Vincular contas",
+      "currentAccount": "Sua conta atual",
+      "otherAccount": "Conta anterior"
     },
     "fields": {
       "profession": "Profissão",
@@ -215,6 +221,13 @@
       "title": "Vamos terminar o vínculo por você",
       "explanation": "Sua conta anterior tem atividade importante, então nosso time vai completar o vínculo manualmente. Avisamos assim que estiver pronto.",
       "closeButton": "Entendido"
+    },
+    "noAccess": {
+      "title": "Sem acesso a esse número?",
+      "optionNewNumber": "Se você tem um número NOVO que é seu e está ativo, feche esta janela e informe-o no campo de telefone — com isso já dá para completar seu cadastro.",
+      "optionSupport": "Se quiser recuperar a conta anterior (candidaturas, documentos), fale com o suporte e o time termina o vínculo por você.",
+      "closeButton": "Usar outro número",
+      "supportLink": "Falar com o suporte"
     }
   },
   "completeWhatsapp": {

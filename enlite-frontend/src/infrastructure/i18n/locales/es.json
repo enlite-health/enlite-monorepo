@@ -194,12 +194,18 @@
       "confirmButton": "Confirmar",
       "cancelButton": "Cancelar",
       "errorInvalid": "Código incorrecto. Revisá e intentá de nuevo.",
-      "errorExpired": "El código expiró. Pedí uno nuevo."
+      "errorExpired": "El código expiró. Pedí uno nuevo.",
+      "resendButton": "Reenviar código",
+      "resent": "Código reenviado.",
+      "errorRateLimited": "Demasiados intentos. Esperá una hora y probá de nuevo.",
+      "errorStart": "No pudimos enviar el código. Probá de nuevo."
     },
     "conflicts": {
       "title": "Elegí qué información mantener",
-      "subtitle": "Las dos cuentas tienen valores distintos en estos campos. Elegí cuál vale.",
-      "confirmButton": "Vincular cuentas"
+      "subtitle": "Las dos cuentas tienen valores distintos en estos campos. Elegí cuál vale (pre-seleccionamos el más reciente).",
+      "confirmButton": "Vincular cuentas",
+      "currentAccount": "Tu cuenta actual",
+      "otherAccount": "Cuenta anterior"
     },
     "fields": {
       "profession": "Profesión",
@@ -215,6 +221,13 @@
       "title": "Vamos a terminar el vínculo por vos",
       "explanation": "Tu cuenta anterior tiene actividad importante, así que nuestro equipo va a completar el vínculo manualmente. Te avisamos apenas esté listo.",
       "closeButton": "Entendido"
+    },
+    "noAccess": {
+      "title": "¿Sin acceso a ese número?",
+      "optionNewNumber": "Si tenés un número NUEVO que es tuyo y está activo, cerrá esta ventana y cargalo en el campo de teléfono — con eso ya podés completar tu registro.",
+      "optionSupport": "Si querés recuperar la cuenta anterior (postulaciones, documentos), hablá con soporte y el equipo termina el vínculo por vos.",
+      "closeButton": "Usar otro número",
+      "supportLink": "Hablar con soporte"
     }
   },
   "completeWhatsapp": {
