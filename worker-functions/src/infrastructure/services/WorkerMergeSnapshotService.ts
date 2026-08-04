@@ -164,6 +164,14 @@ export async function restoreSnapshot(
     [absorbedId],
   );
 
+  // 2b. Devolve os campos de identidade únicos movidos no merge: limpa do
+  //     SOBREVIVENTE antes de restaurar o absorvido — na ordem inversa, o
+  //     restore violaria idx_workers_phone_unique/idx_workers_ana_care_id_unique
+  //     (que não filtram merged_into_id). Só limpa quando o valor atual do
+  //     sobrevivente é exatamente o que o snapshot guarda para o absorvido
+  //     (i.e., veio do move — valor próprio do sobrevivente nunca é tocado).
+  await clearMovedFieldsFromSurvivor(client, survivorId, payload.worker_row);
+
   // 3. Restaura a linha completa de workers para o estado do snapshot
   await restoreWorkerRow(client, absorbedId, payload.worker_row);
 
@@ -199,6 +207,47 @@ export async function restoreSnapshot(
 }
 
 // ── Helpers privados ───────────────────────────────────────────────────────
+
+/** Campos que moveUniqueIdentityFields pode ter movido absorvido→sobrevivente. */
+const MOVABLE_IDENTITY_COLS = [
+  'phone',
+  'phone_encrypted',
+  'whatsapp_phone_encrypted',
+  'ana_care_id',
+] as const;
+
+/**
+ * Limpa do sobrevivente os campos de identidade cujo valor atual bate com o
+ * snapshot do absorvido (ou seja, chegaram lá via move no merge). Deve rodar
+ * ANTES de restoreWorkerRow — índices únicos são checados por statement.
+ */
+async function clearMovedFieldsFromSurvivor(
+  client: PoolClient,
+  survivorId: string,
+  absorbedSnapshotRow: Record<string, unknown>,
+): Promise<void> {
+  const survivorRes = await client.query<Record<string, unknown>>(
+    `SELECT ${MOVABLE_IDENTITY_COLS.join(', ')} FROM workers WHERE id = $1::uuid FOR UPDATE`,
+    [survivorId],
+  );
+  if (survivorRes.rows.length === 0) return;
+  const survivorRow = survivorRes.rows[0];
+
+  const colsToClear = MOVABLE_IDENTITY_COLS.filter(col => {
+    const snapVal = absorbedSnapshotRow[col];
+    return snapVal != null && survivorRow[col] === snapVal;
+  });
+  if (colsToClear.length === 0) return;
+
+  await client.query(
+    `UPDATE workers
+     SET ${colsToClear.map(c => `${c} = NULL`).join(', ')}, updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [survivorId],
+  );
+
+  log.info({ msg: 'undo_moved_fields_cleared', survivorId, cols: colsToClear });
+}
 
 /**
  * Restaura a linha de workers via UPDATE SET com os valores do snapshot.

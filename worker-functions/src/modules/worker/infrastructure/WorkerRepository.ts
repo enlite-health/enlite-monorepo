@@ -260,12 +260,16 @@ export class WorkerRepository implements IWorkerRepository {
   async findByPhoneCandidates(candidates: string[]): Promise<Result<Worker | null>> {
     try {
       if (candidates.length === 0) return Result.ok<Worker | null>(null);
-      // Só considera workers ATIVOS (não-merged) — espelha idx_workers_phone_normalized (mig 219).
+      // Só considera workers ATIVOS: não-merged (espelha idx_workers_phone_normalized,
+      // mig 219) e não soft-deletados — conta com deleted_at não pode bloquear o
+      // número de quem está se cadastrando (caso Edith, diagnóstico 03/08).
       const result = await this.pool.query(
         `SELECT id, auth_uid as "authUid", email, phone, country,
                 created_at as "createdAt", updated_at as "updatedAt"
          FROM workers
-         WHERE phone = ANY($1::text[]) AND merged_into_id IS NULL
+         WHERE phone = ANY($1::text[])
+           AND merged_into_id IS NULL
+           AND deleted_at IS NULL
          LIMIT 1`,
         [candidates],
       );
