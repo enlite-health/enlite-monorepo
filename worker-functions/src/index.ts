@@ -71,6 +71,8 @@ import { RecruitmentHealthController } from '@modules/notification/interfaces/co
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
 import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
+import { AccountLinkController } from '@modules/account-link/AccountLinkController';
+import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
 
@@ -184,6 +186,12 @@ app.post('/api/workers/init', (req: Request, res: Response) => {
 });
 
 app.use('/api', createClaimRoutes(claimController));
+
+// Vínculo self-service de contas por colisão de telefone (ACCOUNT_LINK_ENABLED
+// gate por request → OFF = 404 em tudo, prod neutro). openspec:
+// vinculo-contas-colisao-telefone.
+const accountLinkController = new AccountLinkController(DatabaseConnection.getInstance().getPool());
+app.use('/api', createAccountLinkRoutes(accountLinkController, authMiddleware));
 
 const workerLookupRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
