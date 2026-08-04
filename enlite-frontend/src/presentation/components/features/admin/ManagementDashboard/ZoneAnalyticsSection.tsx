@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, AlertTriangle, Info } from 'lucide-react';
+import { MapPin, AlertTriangle, Info, HelpCircle } from 'lucide-react';
 import {
   Text,
   Select,
@@ -16,6 +16,7 @@ import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useZoneAnalytics } from '@hooks/admin/useZoneAnalytics';
 import { WORKER_PROFESSIONS, type WorkerProfession } from '@domain/entities/Worker';
 import { SectionHeader } from './SectionHeader';
+import { useMetricHelp } from './useMetricHelp';
 
 const P = 'admin.managementDashboard.zoneAnalytics.';
 /**
@@ -35,6 +36,7 @@ const PROFESSION_LABEL_KEY = 'admin.vacancyDetail.vacancyForm.professionOptions'
  */
 export function ZoneAnalyticsSection(): JSX.Element {
   const { t } = useTranslation();
+  const { openHelp, helpAriaLabel, helpDrawer } = useMetricHelp();
   const [profession, setProfession] = useState<WorkerProfession | undefined>(undefined);
   const { data, isLoading, error, refetch } = useZoneAnalytics(profession);
 
@@ -45,12 +47,24 @@ export function ZoneAnalyticsSection(): JSX.Element {
 
   return (
     <section data-testid="mgmt-zone-analytics" className="space-y-4">
-      <SectionHeader
-        icon={MapPin}
-        accent="cyan"
-        title={t('admin.managementDashboard.sections.zoneAnalytics')}
-        hint={t('admin.managementDashboard.sections.zoneAnalyticsHint')}
-      />
+      <div className="flex items-start gap-2">
+        <SectionHeader
+          icon={MapPin}
+          accent="cyan"
+          title={t('admin.managementDashboard.sections.zoneAnalytics')}
+          hint={t('admin.managementDashboard.sections.zoneAnalyticsHint')}
+        />
+        <button
+          type="button"
+          onClick={() => openHelp('zona')}
+          aria-label={helpAriaLabel}
+          title={helpAriaLabel}
+          data-testid="metric-help"
+          className="mt-1 rounded-full p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+        >
+          <HelpCircle className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
 
       <div
         className="flex flex-wrap items-end gap-3"
@@ -154,6 +168,8 @@ export function ZoneAnalyticsSection(): JSX.Element {
           )}
         </>
       )}
+
+      {helpDrawer}
     </section>
   );
 }

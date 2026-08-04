@@ -3,6 +3,7 @@ import { Flame, CalendarClock, Ban } from 'lucide-react';
 import { MetricCard } from '@presentation/components/atoms';
 import type { ManagementDashboardData } from '@domain/entities/ManagementDashboard';
 import { SectionHeader } from './SectionHeader';
+import { useMetricHelp } from './useMetricHelp';
 
 export function PrioridadesSection({
   data,
@@ -11,6 +12,7 @@ export function PrioridadesSection({
 }): JSX.Element {
   const { t } = useTranslation();
   const p = 'admin.managementDashboard.prioridades.';
+  const { helpProps, helpDrawer } = useMetricHelp();
 
   return (
     <section data-testid="mgmt-prioridades" className="space-y-4">
@@ -25,6 +27,7 @@ export function PrioridadesSection({
           icon={CalendarClock}
           accent="cyan"
           title={t(`${p}esperandoAgendamiento`)}
+          {...helpProps('esperandoAgendamiento')}
           value={data.completosEsperandoAgendamiento}
           subtitle={t(`${p}esperandoAgendamientoSub`)}
         />
@@ -32,10 +35,13 @@ export function PrioridadesSection({
           icon={Ban}
           accent="coordination"
           title={t(`${p}bloqueados`)}
+          {...helpProps('profesionalesBloqueados')}
           value={data.profesionalesBloqueados}
           subtitle={t(`${p}bloqueadosSub`)}
         />
       </div>
+
+      {helpDrawer}
     </section>
   );
 }

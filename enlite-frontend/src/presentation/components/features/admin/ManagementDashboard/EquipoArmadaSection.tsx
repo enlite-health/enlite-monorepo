@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { Info, Clock, AlarmClock, Users } from 'lucide-react';
+import { Info, Clock, AlarmClock, Users, HelpCircle } from 'lucide-react';
 import { MetricCard, Text } from '@presentation/components/atoms';
 import type { ManagementDashboardData } from '@domain/entities/ManagementDashboard';
 import { SectionHeader } from './SectionHeader';
+import { useMetricHelp } from './useMetricHelp';
 
 /**
  * Seção "Equipe Armada" — leitura honesta do quadro (nunca um 0 falso):
@@ -18,6 +19,7 @@ export function EquipoArmadaSection({
 }): JSX.Element {
   const { t } = useTranslation();
   const p = 'admin.managementDashboard.equipoArmada.';
+  const { helpProps, openHelp, helpAriaLabel, helpDrawer } = useMetricHelp();
 
   return (
     <section data-testid="mgmt-equipo-armada" className="space-y-4">
@@ -33,6 +35,7 @@ export function EquipoArmadaSection({
           icon={Clock}
           accent="cyan"
           title={t(`${p}horasTotais`)}
+          {...helpProps('horasTotais')}
           value={horas.totais}
           subtitle={t(`${p}cobertura`, {
             con: horas.coberturaConSchedule,
@@ -43,6 +46,7 @@ export function EquipoArmadaSection({
           icon={AlarmClock}
           accent="learn"
           title={t(`${p}horasAPreencher`)}
+          {...helpProps('horasAPreencher')}
           value={horas.aPreencher}
           subtitle={t(`${p}horasAPreencherSub`)}
         />
@@ -56,6 +60,16 @@ export function EquipoArmadaSection({
             <Text as="p" size="xs" weight="semibold" className="uppercase tracking-wide text-[#B45309]">
               {t(`${p}clasificacionTitulo`)}
             </Text>
+            <button
+              type="button"
+              onClick={() => openHelp('casosSinMedir')}
+              aria-label={helpAriaLabel}
+              title={helpAriaLabel}
+              data-testid="metric-help"
+              className="ml-auto rounded-full p-1 text-[#D98A00]/60 transition-colors hover:bg-[#FFB607]/20 hover:text-[#B45309]"
+            >
+              <HelpCircle className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
           <div className="flex items-start gap-2">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#D98A00]" />
@@ -71,6 +85,8 @@ export function EquipoArmadaSection({
           </div>
         </div>
       </div>
+
+      {helpDrawer}
     </section>
   );
 }

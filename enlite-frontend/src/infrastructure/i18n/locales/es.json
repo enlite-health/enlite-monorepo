@@ -655,6 +655,249 @@
   },
   "admin": {
     "managementDashboard": {
+      "help": {
+        "ariaLabel": "¿Qué es este número?",
+        "_sections": {
+          "que": "¿Qué significa?",
+          "origen": "¿De dónde sale?",
+          "cambia": "¿Con qué acciones cambia?",
+          "ojo": "A tener en cuenta"
+        },
+        "pctRespostaRapida": {
+          "title": "% de grupo de respuesta rápida armado",
+          "que": "De todos los casos que se pueden evaluar, qué porcentaje ya tiene el equipo de respuesta rápida completo (los suplentes que cubren urgencias). Al lado del porcentaje están las partes: cuántos casos lo cumplen, sobre cuántos medibles, y cuántos quedaron afuera por no poder medirse.",
+          "origen": "• El sistema clasifica cada caso vivo mirando las selecciones del Kanban y el rol de cada persona (titular o suplente).\n• Cuenta cuántos casos ya juntaron los suplentes de respuesta rápida requeridos.\n• Los casos sin rol definido o sin dotación configurada no entran en la cuenta — se informan como \"afuera\".",
+          "cambia": "• Definir el rol (titular/suplente) al mover una tarjeta a Seleccionados en el Kanban: vuelve el caso medible.\n• Completar los suplentes de un caso: sube.\n• Abrir un caso nuevo sin equipo: baja.",
+          "ojo": "Hoy casi ninguna selección tiene el rol cargado, por eso el porcentaje arranca bajo. No es que el trabajo no exista: el sistema no puede verlo hasta que el rol se cargue."
+        },
+        "pctCapacidadEncuadres": {
+          "title": "% de la agenda de encuadres usada",
+          "que": "Cuántas entrevistas (encuadres) están agendadas esta semana, comparado con la capacidad semanal contratada de la coordinación. 100% = semana llena.",
+          "origen": "• Numerador: encuadres con fecha dentro de la semana en curso (lunes a domingo, hora de Buenos Aires).\n• Denominador: la capacidad semanal contratada — es una configuración del sistema; si el contrato cambia, se actualiza sin tocar código.",
+          "cambia": "• Agendar una entrevista cargando la fecha al mover la tarjeta a Agendados: sube.\n• Cambio de semana: se reinicia el lunes.",
+          "ojo": "Si la fecha no se carga al agendar, la entrevista no cuenta acá. El contador \"sin fecha\" mide justamente eso: mientras sea alto, este porcentaje subestima."
+        },
+        "pacientesActivos": {
+          "title": "Pacientes activos",
+          "que": "Pacientes en atención hoy. Es un conteo directo de la ficha del paciente — no pasa por el Kanban ni por las vacantes.",
+          "origen": "• Cada paciente tiene un estado (activo, suspendido, de alta, discontinuado…).\n• Este número cuenta solamente los que están en estado ACTIVO, ignorando fichas borradas.",
+          "cambia": "• Marcar un paciente como activo: sube.\n• Alta, suspensión o discontinuación: baja.\n• El formulario público de admisión NO mueve este número: crea el paciente como solicitante; recién cuenta acá cuando alguien lo marca activo.",
+          "ojo": "No mira si el paciente tiene vacante abierta ni equipo completo: un paciente activo sin ningún prestador cuenta igual. Por eso puede aparecer también en \"En búsqueda\" — las tarjetas no se suman entre sí."
+        },
+        "ubicacionesActivas": {
+          "title": "Ubicaciones activas",
+          "que": "Cuántas direcciones distintas tienen los pacientes activos. Un paciente con dos domicilios cuenta dos ubicaciones — cada dirección exige sus propias vacantes y servicios.",
+          "origen": "• Toma los pacientes activos y cuenta sus direcciones distintas, ignorando direcciones vacías y repeticiones de importación.",
+          "cambia": "• Cargar o quitar una dirección de un paciente activo.\n• Un paciente pasa a activo (entran sus direcciones) o deja de serlo (salen)."
+        },
+        "horasActivas": {
+          "title": "Horas activas por semana",
+          "que": "Las horas semanales de cuidado de las vacantes que están en atención (estado ACTIVO). Es la operación andando, medida en horas.",
+          "origen": "• Cada vacante tiene su horario cargado (días y turnos).\n• El sistema suma la duración de cada turno de las vacantes activas.\n• Vacante activa sin horario estructurado suma cero — al lado se informa cuántas están así.",
+          "cambia": "• Cargar o editar el horario de una vacante activa.\n• Una vacante pasa a ACTIVO o sale de ese estado.",
+          "ojo": "Depende de que el equipo mantenga actualizado el estado de la vacante. Horario escrito en texto libre no se interpreta: cae en \"sin horario\" y suma cero."
+        },
+        "solicitudes": {
+          "title": "Solicitudes",
+          "que": "Pacientes que entraron (por el formulario del sitio o carga manual) y todavía no tienen entrevista de admisión agendada. Es la puerta de entrada.",
+          "origen": "• Cuenta pacientes en estado Solicitante sin turno de admisión futuro reservado.",
+          "cambia": "• Entra una solicitud nueva: sube.\n• Se agenda la entrevista de admisión: pasa a \"Entrevista agendada\"."
+        },
+        "entrevistaAgendada": {
+          "title": "Entrevista agendada",
+          "que": "Pacientes solicitantes con la entrevista de admisión ya reservada (por la agenda del app de pacientes) y aún por realizarse.",
+          "origen": "• Cuenta solicitantes con turno reservado y fecha futura.",
+          "cambia": "• Reservar un turno de admisión: sube.\n• Realizada la entrevista o admitido el paciente: sale de acá."
+        },
+        "enAdmision": {
+          "title": "En admisión",
+          "que": "Pacientes admitidos que todavía no tienen ninguna vacante viva generada. El próximo paso concreto es crear la vacante.",
+          "origen": "• Cuenta pacientes en estado de admisión sin ninguna vacante viva asociada.",
+          "cambia": "• Admitir un paciente: entra acá.\n• Crear la vacante del caso: pasa a \"En búsqueda\"."
+        },
+        "enBusca": {
+          "title": "En búsqueda",
+          "que": "Pacientes con al menos una vacante viva buscando prestador, hasta completar el equipo (incluido el grupo de respuesta rápida).",
+          "origen": "• Cuenta pacientes (no de alta ni desistidos) con al menos una vacante viva de un caso cuyo equipo todavía no está completo.",
+          "cambia": "• Crear una vacante para el caso: entra.\n• Completar el equipo o cerrar la vacante: sale.",
+          "ojo": "Se superpone a propósito con \"Pacientes activos\": el paciente en atención con un turno descubierto está en los dos. Nunca sumar las tarjetas entre sí."
+        },
+        "equiposArmados": {
+          "title": "Equipos armados",
+          "que": "Casos que ya tienen el equipo cerrado: todos los titulares que el caso pide más los suplentes de respuesta rápida.",
+          "origen": "• Al mover una tarjeta a Seleccionados en el Kanban, el sistema pregunta el rol: titular o suplente.\n• El caso cuenta como armado cuando junta titulares suficientes (lo que pide el campo \"prestadores necesarios\" de la vacante) y además los suplentes requeridos.\n• Si falta cualquiera de los dos, el caso queda en \"Equipos por armar\".",
+          "cambia": "• Seleccionar a una persona CON el rol cargado.\n• Cambiar cuántos prestadores pide la vacante.\n• Sacar a alguien de la selección.",
+          "ojo": "Si se selecciona gente sin definir el rol, el sistema no puede juzgar el caso y este número no se mueve — el caso cae en \"casos sin clasificación de rol\". Es la causa principal de que esté bajo aunque el trabajo se haga."
+        },
+        "equiposPorArmar": {
+          "title": "Equipos por armar",
+          "que": "Casos vivos que se pueden evaluar y todavía no tienen el equipo completo. Es la fila de trabajo del reclutamiento.",
+          "origen": "• Toma los casos vivos (vacante publicada, no borrada, no borrador, en búsqueda).\n• Descarta los que no se pueden juzgar (sin dotación configurada o con selecciones sin rol).\n• De los que quedan, cuenta los que aún no cerraron titulares + suplentes.",
+          "cambia": "• Abrir una vacante nueva: sube.\n• Completar el equipo de un caso: baja.\n• Cargar el rol de una selección: el caso sale de \"sin clasificación\" y entra acá.",
+          "ojo": "Subestima la fila real: los casos con selecciones sin rol también están por armar, pero se muestran aparte (en \"casos que no se pueden medir\") para no dar un número falso."
+        },
+        "vacantesAbiertas": {
+          "title": "Vacantes abiertas",
+          "que": "Puestos de trabajo que están buscando prestador ahora.",
+          "origen": "• Cuenta las vacantes en estado de búsqueda: búsqueda normal, búsqueda de reemplazo, respuesta rápida y pendiente de activación.\n• Descarta borradores y vacantes borradas.",
+          "cambia": "• Publicar una vacante nueva: sube.\n• Cerrar, suspender o borrar la vacante: baja.",
+          "ojo": "Mover tarjetas en el Kanban NO mueve este número: eso cambia el embudo de candidatos, no el estado de la vacante. Es el comportamiento correcto."
+        },
+        "vacantesPausadas": {
+          "title": "Vacantes pausadas",
+          "que": "Vacantes que existen pero están frenadas a propósito (suspendidas temporalmente).",
+          "origen": "• Cuenta las vacantes en estado Suspendida, sin borradores ni borradas.",
+          "cambia": "• Suspender una vacante: sube.\n• Reactivarla o cerrarla: baja.",
+          "ojo": "Vacante pausada es demanda represada: si este número crece, hay trabajo que no aparece en \"Vacantes abiertas\" ni en la fila del reclutamiento."
+        },
+        "horasTotais": {
+          "title": "Horas semanales totales",
+          "que": "Cuántas horas de cuidado por semana tiene la operación hoy, sumando todos los casos vivos.",
+          "origen": "• Cada vacante tiene su horario (días de la semana y turnos).\n• El sistema suma la duración de cada turno de cada vacante viva — incluso turnos que cruzan la medianoche.\n• Abajo aparece la cobertura: cuántos casos tienen horario cargado y cuántos no (esos suman cero).",
+          "cambia": "• Cargar o editar el horario de una vacante.\n• Abrir una vacante nueva con horario, o borrar una.",
+          "ojo": "Horario escrito en texto libre no se interpreta — el caso aparece en \"sin horario\" y no suma horas."
+        },
+        "horasAPreencher": {
+          "title": "Horas por cubrir",
+          "que": "De las horas semanales totales, cuántas todavía no tienen prestador asignado. Es la demanda descubierta.",
+          "origen": "• El sistema clasifica cada caso (armado, por armar, sin clasificación, sin configuración).\n• Suma las horas solamente de los casos \"por armar\".",
+          "cambia": "• Completar el equipo de un caso: sus horas salen de la cuenta.\n• Abrir un caso nuevo con horario: entran.\n• Editar horarios.",
+          "ojo": "Subestima: los casos con selecciones sin rol también están descubiertos, pero suman cero acá. La solución no es cambiar esta cuenta — es cargar el rol de las selecciones pendientes."
+        },
+        "casosSinMedir": {
+          "title": "Casos que todavía no se pueden medir",
+          "que": "Dos grupos de casos que el sistema no puede evaluar: los que tienen gente seleccionada pero nadie con rol definido (titular o suplente), y los que no tienen escrito cuántos prestadores pide la vacante.",
+          "origen": "• Sin clasificación de rol: alguien fue movido a Seleccionados pero no se eligió su rol.\n• Sin configuración de dotación: el campo \"prestadores necesarios\" de la vacante está vacío o no es un número.",
+          "cambia": "• Cargar el rol de al menos una selección del caso: sale del primer grupo.\n• Completar \"prestadores necesarios\" con un número: sale del segundo.",
+          "ojo": "Es el freno principal de la pantalla: mientras estos casos existan, \"Equipos armados\", \"Equipos por armar\" y \"Horas por cubrir\" cuentan de menos. Se resuelve cargando datos, no con código."
+        },
+        "esperandoAgendamiento": {
+          "title": "Registros completos esperando agenda",
+          "que": "Personas que ya pasaron la selección inicial (triage) y esperan que se les agende la entrevista (encuadre). Es la fila de \"llamar primero\".",
+          "origen": "• El prestador completa el formulario de triage (Talentum) y el sistema lo califica.\n• Mientras nadie agenda la entrevista, la persona aparece acá.\n• Cuenta personas (no candidaturas) en vacantes vivas.",
+          "cambia": "• El triage califica a alguien: sube.\n• Agendar la entrevista, mover la tarjeta o rechazar: baja."
+        },
+        "profesionalesBloqueados": {
+          "title": "Profesionales bloqueados",
+          "que": "Personas cuyo registro está incompleto — les falta algún dato o documento. Mientras estén así no pueden postularse a ninguna vacante.",
+          "origen": "• Cuenta todas las personas de la base con registro incompleto, sin límite de tiempo.",
+          "cambia": "• Registro nuevo sin completar: sube.\n• Importación de base: sube mucho de una vez.\n• La persona completa datos/documentos: baja y pasa a \"Completos\".",
+          "ojo": "El nombre engaña: no es una fila de trabajo para hoy. La gran mayoría son registros importados de planillas que nunca tuvieron los datos completos — no gente que abandonó el registro. Es el mismo número que \"Incompletos\" en Registros de prestadores. No confundir con \"Bloqueados\" del embudo, que son intentos de postulación frenados en vacantes vivas."
+        },
+        "leads": {
+          "title": "Leads",
+          "que": "Todas las personas que existen en la base de prestadores, en cualquier estado de registro. Es el tamaño total de la base.",
+          "origen": "• Cuenta todos los registros, descartando duplicados ya unificados.\n• La base viene de dos mundos: importaciones históricas (planillas, ClickUp, Talent Search, Ana Care) y el registro vivo en el app del prestador.",
+          "cambia": "• Registro nuevo en el app: sube.\n• Nueva importación: sube en bloque.\n• Unificación de duplicados: baja.",
+          "ojo": "Base grande no es base usable: la enorme mayoría está con registro incompleto. El stock utilizable es \"Completos\"."
+        },
+        "completosRegistros": {
+          "title": "Completos (registros)",
+          "que": "Prestadores con registro completo: datos y documentos en orden. Son los que se pueden ofrecer a una vacante.",
+          "origen": "• La persona completa el registro en el app y sube los documentos.\n• Cuando no falta nada, el registro pasa a completo y cuenta acá (sin duplicados).",
+          "cambia": "• Alguien termina su registro: sube.\n• Un documento vence o el registro vuelve a incompleto: baja.",
+          "ojo": "Registro completo no significa disponible: no dice si la persona está activa ni queriendo trabajar. La disponibilidad no se mide en este panel."
+        },
+        "alocados": {
+          "title": "Asignados",
+          "que": "Prestadores que están efectivamente en un caso, atendiendo pacientes: los activos con paciente y los que cubren guardias.",
+          "origen": "• Quién trabaja de verdad se registra en Ana Care (el sistema asistencial).\n• Ese dato se importó a esta base; el panel cuenta los marcados como activos o cubriendo guardias.",
+          "cambia": "• Solamente una nueva importación desde Ana Care. Nada lo actualiza automáticamente.",
+          "ojo": "Es una foto, no tiempo real: la integración con Ana Care es solo de ida. Y no sale del Kanban a propósito: \"seleccionado\" en el embudo no es \"trabajando\"."
+        },
+        "incompletos": {
+          "title": "Incompletos",
+          "que": "Personas de la base cuyo registro no está completo — falta algún dato o documento.",
+          "origen": "• La mayoría entró por importaciones históricas de planillas que nunca tuvieron datos completos.\n• El resto es el flujo vivo: gente que empezó el registro en el app y no lo terminó.",
+          "cambia": "• Nueva importación: sube en bloque.\n• Entrada por el app sin completar: sube.\n• La persona completa el registro: baja y pasa a \"Completos\".",
+          "ojo": "Son dos problemas distintos con el mismo rótulo: el stock importado (calidad de dato heredado) y el flujo vivo (mide si el registro es demasiado difícil). Aparece dos veces en la pantalla: acá y como \"Profesionales bloqueados\"."
+        },
+        "nuevosMes": {
+          "title": "Nuevos del mes",
+          "que": "Prestadores que completaron el registro en el mes en curso. Es el caudal de entrada de la base.",
+          "origen": "• Cuenta personas con registro completo creadas desde el día 1 del mes.\n• Se reinicia solo con el cambio de mes.",
+          "cambia": "• Un registro nuevo que se completa en el mismo mes: sube.\n• Cambio de mes: vuelve a cero.",
+          "ojo": "Filtra por fecha de CREACIÓN del registro, no por cuándo se completó: quien entró hace meses y terminó el registro hoy no cuenta acá."
+        },
+        "totalPrestadores": {
+          "title": "Prestadores en el embudo",
+          "que": "Cuántas PERSONAS hay en el embudo de reclutamiento — no cuántas tarjetas. Una persona postulada a 10 vacantes cuenta una sola vez.",
+          "origen": "• Toma las candidaturas de vacantes vivas (publicada, no borrada, no borrador, en búsqueda).\n• Descarta registros duplicados y las invitaciones de matching que nunca se enviaron.\n• Cuenta personas distintas.\n• Las dos vistas de abajo muestran lo mismo de dos maneras: \"dónde está cada persona\" (cada una en su etapa más avanzada; las columnas suman el total) y \"personas por etapa\" (una persona puede estar en varias columnas; no se suma).",
+          "cambia": "• Invitación o postulación nueva de una persona que no estaba: sube.\n• Mover tarjetas entre columnas: cambia la distribución, no el total.\n• Cerrar o borrar la vacante: sus candidaturas salen del recorte."
+        },
+        "bloqueadosFunil": {
+          "title": "Bloqueados (embudo)",
+          "que": "Personas que intentaron postularse a una vacante viva y fueron frenadas porque su registro estaba incompleto. La postulación no se crea; queda el intento registrado.",
+          "origen": "• Al postularse, el sistema verifica el registro. Si falta algo, registra el intento con el motivo y qué faltó.\n• En el Kanban de la vacante es la columna roja BLOQUEADO (la tarjeta no se puede arrastrar).",
+          "cambia": "• Alguien con registro incompleto intenta postularse: sube.\n• La persona completa el registro y el intento se promueve a postulación real: baja.\n• Rechazar el intento: sale.",
+          "ojo": "Queda afuera de las columnas del embudo a propósito (no hay candidatura real, y sumarlo rompería el total). Es la fila más accionable del panel: la persona ya mostró interés — falta un documento. No confundir con \"Profesionales bloqueados\"."
+        },
+        "agendadosSemana": {
+          "title": "Encuadres agendados esta semana",
+          "que": "Cuántas entrevistas (encuadres) están marcadas para la semana en curso.",
+          "origen": "• Al mover la tarjeta a Agendados en el Kanban, el sistema pregunta cuándo es la entrevista (se puede responder \"todavía no sé\").\n• El panel cuenta los encuadres con fecha entre lunes y domingo de esta semana (hora de Buenos Aires).",
+          "cambia": "• Agendar con fecha: sube.\n• Cambio de semana: se reinicia.",
+          "ojo": "La captura de la fecha es reciente: el contador \"sin fecha\" de al lado mide cuántos agendados no la tienen. Mientras sea alto, este número subestima — y eso queda a la vista en vez de ser un cero mudo."
+        },
+        "stage_INVITED": {
+          "title": "Invitados (columna)",
+          "que": "Prestadores invitados a una vacante que todavía no dieron ningún paso.",
+          "origen": "• El matching de la vacante elige candidatos y les envía la invitación por WhatsApp.\n• Solo cuentan los que recibieron el mensaje de verdad: el candidato elegido al que nunca se le envió nada NO aparece (misma regla que el Kanban).",
+          "cambia": "• Enviar invitaciones de una vacante: sube.\n• La persona responde y avanza: pasa a otra columna."
+        },
+        "stage_INICIADO": {
+          "title": "Iniciado (columna)",
+          "que": "Personas que se postularon por su propia cuenta (no fueron invitadas por el matching) y todavía están al comienzo del proceso.",
+          "origen": "• Una postulación espontánea crea la tarjeta en esta columna, separada de Invitados — igual que en el Kanban.",
+          "cambia": "• Postulación espontánea nueva: sube.\n• Avanzar en el proceso: pasa de columna."
+        },
+        "stage_PRE_SCREENING": {
+          "title": "Pre Screening (columna)",
+          "que": "Prestadores que entraron al formulario de selección (Talentum) y todavía no terminaron de responder.",
+          "origen": "• Al abrir el link del formulario, la candidatura pasa a esta etapa.\n• Cuando la persona termina y el sistema evalúa, sale de acá.",
+          "cambia": "• Alguien abre el formulario: sube.\n• Termina el triage: baja.",
+          "ojo": "Es la etapa de menor permanencia. Un número estancado acá es gente que abrió el formulario y abandonó a mitad de camino."
+        },
+        "stage_IN_PROGRESS": {
+          "title": "En progreso (columna)",
+          "que": "Candidaturas en conversación: la persona avanzó del primer contacto y todavía no completó el triage. Es la columna más grande del Kanban.",
+          "origen": "• La tarjeta llega acá al avanzar desde Invitados/Iniciado — por respuesta de la persona o movimiento de la reclutadora.",
+          "cambia": "• Avances de conversación: entra.\n• Completar el triage, agendar, seleccionar o rechazar: sale."
+        },
+        "stage_COMPLETED": {
+          "title": "Completos (columna)",
+          "que": "Prestadores que terminaron el triage y están listos para la próxima etapa. La columna agrupa tres situaciones internas: completo, calificado y en duda (por ejemplo, ausencia en la entrevista).",
+          "origen": "• Es la misma agrupación que la columna Completos del Kanban — panel y Kanban cuentan igual.",
+          "cambia": "• El triage califica a alguien: entra.\n• Agendar entrevista, seleccionar o rechazar: sale.\n• Una ausencia en la entrevista trae la tarjeta de vuelta acá (\"en duda\")."
+        },
+        "stage_CONFIRMED": {
+          "title": "Agendados (columna)",
+          "que": "Prestadores con entrevista (encuadre) marcada.",
+          "origen": "• La reclutadora arrastra la tarjeta a Agendados en el Kanban — y el sistema también pregunta cuándo es la entrevista.",
+          "cambia": "• Agendar: sube.\n• Seleccionar o rechazar: baja.\n• Ausencia en la entrevista: la tarjeta pasa a \"en duda\" (columna Completos)."
+        },
+        "stage_SELECTED": {
+          "title": "Seleccionados (columna)",
+          "que": "Prestadores elegidos para la vacante.",
+          "origen": "• La reclutadora arrastra la tarjeta a Seleccionados y elige el rol: titular o suplente.\n• La selección se graba también en el encuadre, que alimenta \"Equipos armados\".",
+          "cambia": "• Seleccionar: sube.\n• Mover a otra columna: baja.",
+          "ojo": "Cargar el rol acá es lo que permite medir \"Equipos armados\" — una selección sin rol deja el caso sin poder evaluarse."
+        },
+        "stage_REJECTED": {
+          "title": "Perdidos (columna)",
+          "que": "Candidaturas cerradas sin selección — antes esta columna se llamaba \"Rechazados\".",
+          "origen": "• Cuatro caminos: la reclutadora rechaza con motivo · el triage reprueba automáticamente · la persona declina por WhatsApp · se rechaza un intento bloqueado.",
+          "cambia": "• En la práctica solo sube: es acumulado, el rechazo no se deshace.",
+          "ojo": "Perdido en UNA vacante no es perdido como prestador: mucha gente rechazada en una vacante sigue activa en otras."
+        },
+        "zona": {
+          "title": "Analytics por zona",
+          "que": "Dónde están los pacientes y dónde están los prestadores, provincia por provincia. Muestra el descalce geográfico: zonas con mucha demanda y poca gente disponible.",
+          "origen": "• Pacientes: pacientes con vacante en la provincia (cada uno cuenta una vez).\n• Prestadores: quienes declararon atender en esa provincia.\n• Demanda: vacantes abiertas ahí.\n• Quien no tiene dirección identificada cae en \"No informado\", con aviso.",
+          "cambia": "• Crear/editar vacantes y direcciones de pacientes.\n• El prestador carga su zona de atención.\n• El filtro de profesión recorta todo el bloque.",
+          "ojo": "\"Disponibilidad\" mide zona declarada, no agenda libre. La granularidad es provincia a propósito: es el nivel en que el dato es confiable."
+        }
+      },
       "title": "Gestión a la Vista",
       "errorLoading": "No se pudieron cargar las métricas",
       "retry": "Reintentar",

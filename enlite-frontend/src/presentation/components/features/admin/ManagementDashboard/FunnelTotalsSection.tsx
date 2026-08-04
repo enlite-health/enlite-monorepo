@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Filter, Users, AlertTriangle, CalendarCheck, ShieldAlert } from 'lucide-react';
+import { Filter, Users, AlertTriangle, CalendarCheck, ShieldAlert, HelpCircle } from 'lucide-react';
 import { Text, MetricCard } from '@presentation/components/atoms';
 import {
   FUNNEL_COLUMN_ORDER,
@@ -8,6 +8,8 @@ import {
   type ManagementDashboardData,
 } from '@domain/entities/ManagementDashboard';
 import { SectionHeader } from './SectionHeader';
+import { useMetricHelp } from './useMetricHelp';
+import type { ManagementHelpKey } from './helpKeys';
 
 /**
  * Cor do "ponto" de cada coluna, para leitura de fluxo num relance:
@@ -36,6 +38,8 @@ function FunnelView({
   colunas,
   somavel,
   total,
+  onColumnHelp,
+  helpAriaLabel,
 }: {
   testId: string;
   titleKey: string;
@@ -43,6 +47,8 @@ function FunnelView({
   colunas: FunnelColumnCounts;
   somavel: boolean;
   total: number;
+  onColumnHelp: (column: FunnelColumnId) => void;
+  helpAriaLabel: string;
 }): JSX.Element {
   const { t } = useTranslation();
   const p = 'admin.managementDashboard.funnel.';
@@ -70,6 +76,16 @@ function FunnelView({
               <Text as="p" size="xs" weight="medium" className="text-slate-500">
                 {t(`${p}stage.${column}`)}
               </Text>
+              <button
+                type="button"
+                onClick={() => onColumnHelp(column)}
+                aria-label={helpAriaLabel}
+                title={helpAriaLabel}
+                data-testid="metric-help"
+                className="ml-auto rounded-full p-0.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
             </div>
             <p
               className={`font-poppins text-2xl font-bold leading-tight ${COLUMN_DOT[column].value} dark:text-slate-100`}
@@ -102,6 +118,8 @@ export function FunnelTotalsSection({
 }): JSX.Element | null {
   const { t } = useTranslation();
   const p = 'admin.managementDashboard.funnel.';
+  const { helpProps, openHelp, helpAriaLabel, helpDrawer } = useMetricHelp();
+  const onColumnHelp = (column: FunnelColumnId): void => openHelp(`stage_${column}` as ManagementHelpKey);
 
   // Janela de deploy: frontend e backend sobem por workflows separados no mesmo merge.
   // Se este bundle carregar antes do backend novo, o payload ainda não tem
@@ -150,6 +168,7 @@ export function FunnelTotalsSection({
           icon={Users}
           accent="primary"
           title={t(`${p}totalPrestadores`)}
+          {...helpProps('totalPrestadores')}
           value={funnelPorPrestador.total}
           subtitle={t(`${p}totalPrestadoresSub`)}
         />
@@ -162,6 +181,7 @@ export function FunnelTotalsSection({
           icon={ShieldAlert}
           accent="coordination"
           title={t(`${p}bloqueados`)}
+          {...helpProps('bloqueadosFunil')}
           value={funnelPorPrestador.bloqueados}
           subtitle={t(`${p}bloqueadosSub`)}
         />
@@ -176,6 +196,7 @@ export function FunnelTotalsSection({
           icon={CalendarCheck}
           accent="cyan"
           title={t(`${p}agendadosSemana`)}
+          {...helpProps('agendadosSemana')}
           value={encuadres.agendadosEstaSemana}
           subtitle={t(`${p}agendadosSemanaSub`)}
         />
@@ -206,6 +227,8 @@ export function FunnelTotalsSection({
         colunas={funnelPorPrestador.consolidado.colunas}
         somavel={funnelPorPrestador.consolidado.somavel}
         total={funnelPorPrestador.total}
+        onColumnHelp={onColumnHelp}
+        helpAriaLabel={helpAriaLabel}
       />
 
       <FunnelView
@@ -215,7 +238,11 @@ export function FunnelTotalsSection({
         colunas={funnelPorPrestador.porEtapa.colunas}
         somavel={funnelPorPrestador.porEtapa.somavel}
         total={funnelPorPrestador.total}
+        onColumnHelp={onColumnHelp}
+        helpAriaLabel={helpAriaLabel}
       />
+
+      {helpDrawer}
     </section>
   );
 }
