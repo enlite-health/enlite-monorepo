@@ -19,6 +19,7 @@ import { WorkerAvailabilityGetCapability } from '../capabilities/WorkerAvailabil
 import { WorkerApplicationRegisterCapability } from '../capabilities/WorkerApplicationRegisterCapability';
 import { WorkerInterviewSlotsListCapability } from '../capabilities/WorkerInterviewSlotsListCapability';
 import { WorkerInterviewBookCapability } from '../capabilities/WorkerInterviewBookCapability';
+import { HandoverNotifyCapability } from '../capabilities/HandoverNotifyCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -134,6 +135,9 @@ function makeCapabilities() {
   const interviewSlotsList = new WorkerInterviewSlotsListCapability({
     execute: jest.fn().mockResolvedValue({ ok: true, caseNumber: 795, slots: [] }),
   } as never);
+  const handoverNotify = new HandoverNotifyCapability({
+    execute: jest.fn().mockResolvedValue({ skipped: false, groupNotified: true, ticketCreated: false }),
+  } as never);
   const interviewBook = new WorkerInterviewBookCapability(
     { execute: jest.fn().mockResolvedValue({ ok: true, confirmedDate: '10/04', confirmedTime: '14:00', meetDatetime: '2027-04-10T14:00:00.000Z', usedSlotIndex: 1, calendarInvite: 'sent' }) } as never,
     { execute: jest.fn().mockResolvedValue({ worker: { email: 'a@t.com' } }) } as never,
@@ -159,6 +163,7 @@ function makeCapabilities() {
     applicationRegister,
     interviewSlotsList,
     interviewBook,
+    handoverNotify,
   };
 }
 

@@ -34,6 +34,7 @@ import { WorkerAvailabilityGetCapability } from '../application/capabilities/Wor
 import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
 import { WorkerInterviewSlotsListCapability } from '../application/capabilities/WorkerInterviewSlotsListCapability';
 import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
+import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -63,6 +64,7 @@ function makeRegistry(): CapabilityRegistry {
     applicationRegister: new WorkerApplicationRegisterCapability(stub, {} as never, stub),
     interviewSlotsList: new WorkerInterviewSlotsListCapability(stub),
     interviewBook: new WorkerInterviewBookCapability(stub, stub),
+    handoverNotify: new HandoverNotifyCapability(stub),
     auditor: { emit: jest.fn() },
   });
 }

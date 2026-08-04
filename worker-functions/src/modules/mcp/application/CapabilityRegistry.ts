@@ -20,6 +20,7 @@ import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvail
 import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerApplicationRegisterCapability';
 import type { WorkerInterviewSlotsListCapability } from './capabilities/WorkerInterviewSlotsListCapability';
 import type { WorkerInterviewBookCapability } from './capabilities/WorkerInterviewBookCapability';
+import type { HandoverNotifyCapability } from './capabilities/HandoverNotifyCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -57,6 +58,7 @@ interface RegistryDeps {
   applicationRegister: WorkerApplicationRegisterCapability;
   interviewSlotsList: WorkerInterviewSlotsListCapability;
   interviewBook: WorkerInterviewBookCapability;
+  handoverNotify: HandoverNotifyCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -75,6 +77,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.availability.set',
   'worker.application.register',
   'worker.interview.book',
+  'handover.notify',
 ]);
 
 export class CapabilityRegistry {
@@ -129,6 +132,7 @@ export class CapabilityRegistry {
       applicationRegister,
       interviewSlotsList,
       interviewBook,
+      handoverNotify,
       dbQuery,
     } = this.deps;
 
@@ -356,6 +360,17 @@ export class CapabilityRegistry {
           (interviewBook.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => interviewBook.execute(args),
+      },
+      {
+        name:
+          (handoverNotify.constructor as { NAME?: string }).NAME ?? 'handover.notify',
+        description:
+          (handoverNotify.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Notify the human team on Periskope that Luz handed a conversation over.',
+        inputShape:
+          (handoverNotify.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => handoverNotify.execute(args),
       },
       ...(dbQuery !== undefined
         ? [
