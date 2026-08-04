@@ -302,7 +302,8 @@ describe('restoreSnapshot', () => {
         callIdx++;
         if (callIdx === 1) return Promise.resolve({ rows: [{ id: 'snap-sc', payload: snapshotSkipOnly, undone_at: null }] });
         if (callIdx === 2) return Promise.resolve({ rows: [] }); // merged_into_id = NULL
-        // callIdx 3 seria restoreWorkerRow mas como setClauses.length===0, não há chamada de UPDATE
+        if (callIdx === 3) return Promise.resolve({ rows: [] }); // clearMovedFieldsFromSurvivor: SELECT survivor (vazio → skip)
+        // callIdx 4 seria restoreWorkerRow mas como setClauses.length===0, não há chamada de UPDATE
         // undone_at update
         return Promise.resolve({ rows: [] });
       }),
@@ -316,8 +317,9 @@ describe('restoreSnapshot', () => {
 
     expect(result.alreadyUndone).toBe(false);
 
-    // Apenas 3 chamadas: SELECT snapshot, UPDATE merged_into_id=NULL, UPDATE undone_at
-    expect((clientSkipCols.query as jest.Mock)).toHaveBeenCalledTimes(3);
+    // 4 chamadas: SELECT snapshot, UPDATE merged_into_id=NULL,
+    // SELECT survivor (clearMovedFieldsFromSurvivor), UPDATE undone_at
+    expect((clientSkipCols.query as jest.Mock)).toHaveBeenCalledTimes(4);
   });
 
   it('skip quando information_schema falha ao buscar colunas da tabela FK (branch 270-271)', async () => {
