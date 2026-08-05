@@ -20,6 +20,7 @@ import { WorkerApplicationRegisterCapability } from '../capabilities/WorkerAppli
 import { WorkerInterviewSlotsListCapability } from '../capabilities/WorkerInterviewSlotsListCapability';
 import { WorkerInterviewBookCapability } from '../capabilities/WorkerInterviewBookCapability';
 import { HandoverNotifyCapability } from '../capabilities/HandoverNotifyCapability';
+import { WorkerApplicationsListCapability } from '../capabilities/WorkerApplicationsListCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -135,6 +136,9 @@ function makeCapabilities() {
   const interviewSlotsList = new WorkerInterviewSlotsListCapability({
     execute: jest.fn().mockResolvedValue({ ok: true, caseNumber: 795, slots: [] }),
   } as never);
+  const applicationsList = new WorkerApplicationsListCapability({
+    execute: jest.fn().mockResolvedValue({ applications: [] }),
+  } as never);
   const handoverNotify = new HandoverNotifyCapability({
     execute: jest.fn().mockResolvedValue({ skipped: false, groupNotified: true, ticketCreated: false }),
   } as never);
@@ -164,6 +168,7 @@ function makeCapabilities() {
     interviewSlotsList,
     interviewBook,
     handoverNotify,
+    applicationsList,
   };
 }
 

@@ -33,6 +33,8 @@ import { WorkerCaseMemoryGetCapability } from '../application/capabilities/Worke
 import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
 import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
 import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
+import { WorkerApplicationsListCapability } from '../application/capabilities/WorkerApplicationsListCapability';
+import { ListWorkerApplicationsUseCase } from '../../matching/application/ListWorkerApplicationsUseCase';
 import { NotifyHandoverUseCase } from '../../notification/application/NotifyHandoverUseCase';
 import { PeriskopeGroupNotifyService } from '../../notification/infrastructure/PeriskopeGroupNotifyService';
 import { PeriskopeTicketService } from '../../notification/infrastructure/PeriskopeTicketService';
@@ -187,6 +189,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     interviewBook: new WorkerInterviewBookCapability(bookInterviewSlotUseCase, getWorkerById),
     handoverNotify: new HandoverNotifyCapability(
       new NotifyHandoverUseCase(new PeriskopeGroupNotifyService(), new PeriskopeTicketService()),
+    ),
+    applicationsList: new WorkerApplicationsListCapability(
+      new ListWorkerApplicationsUseCase(dbPool),
     ),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
