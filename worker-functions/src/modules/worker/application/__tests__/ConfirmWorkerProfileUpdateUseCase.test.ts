@@ -6,7 +6,6 @@ import type {
   PendingProfileChangeRepository,
   PendingProfileChangeRecord,
 } from '../../infrastructure/PendingProfileChangeRepository';
-import type { ProfileChangeAuditRepository } from '../../infrastructure/ProfileChangeAuditRepository';
 import type { UpdateWorkerProfileFieldsUseCase } from '../UpdateWorkerProfileFieldsUseCase';
 import type { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
@@ -28,7 +27,6 @@ function makeRecord(): PendingProfileChangeRecord {
 
 interface Mocks {
   pending: jest.Mocked<Pick<PendingProfileChangeRepository, 'findActive' | 'markConsumed'>>;
-  audit: jest.Mocked<Pick<ProfileChangeAuditRepository, 'recordBatch'>>;
   kms: jest.Mocked<Pick<KMSEncryptionService, 'decrypt'>>;
   update: jest.Mocked<Pick<UpdateWorkerProfileFieldsUseCase, 'execute'>>;
 }
@@ -40,7 +38,6 @@ function makeMocks(over: Partial<Mocks> = {}): Mocks {
       markConsumed: jest.fn().mockResolvedValue(true),
       ...over.pending,
     } as Mocks['pending'],
-    audit: { recordBatch: jest.fn().mockResolvedValue(undefined), ...over.audit } as Mocks['audit'],
     kms: {
       decrypt: jest
         .fn()
@@ -59,7 +56,6 @@ function makeMocks(over: Partial<Mocks> = {}): Mocks {
 function makeUseCase(m: Mocks): ConfirmWorkerProfileUpdateUseCase {
   return new ConfirmWorkerProfileUpdateUseCase(
     m.pending as unknown as PendingProfileChangeRepository,
-    m.audit as unknown as ProfileChangeAuditRepository,
     m.kms as unknown as KMSEncryptionService,
     m.update as unknown as UpdateWorkerProfileFieldsUseCase,
   );
@@ -68,30 +64,48 @@ function makeUseCase(m: Mocks): ConfirmWorkerProfileUpdateUseCase {
 describe('ConfirmWorkerProfileUpdateUseCase', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('applies the staged value and writes redacted audit', async () => {
+  it('applies the staged value with luz_conversation attribution', async () => {
     const m = makeMocks();
     const uc = makeUseCase(m);
 
     const result = await uc.execute({ workerId: WORKER_ID, handle: HANDLE });
 
-    // applies EXACTLY the decrypted staged fields — Luz passes no value here
-    expect(m.update.execute).toHaveBeenCalledWith({
-      workerId: WORKER_ID,
-      documentType: 'DNI',
-      documentNumber: '12345678',
-    });
-    // audit redacts the document number (last-4)
-    expect(m.audit.recordBatch).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          fieldName: 'documentNumber',
-          newValueRedacted: '***5678',
-          changedBy: 'luz',
-          source: 'triage',
-        }),
-      ]),
+    // applies EXACTLY the decrypted staged fields — Luz passes no value here;
+    // the source trail is written by the update use case in the same transaction
+    expect(m.update.execute).toHaveBeenCalledWith(
+      {
+        workerId: WORKER_ID,
+        documentType: 'DNI',
+        documentNumber: '12345678',
+      },
+      {
+        source: 'luz_conversation',
+        actorUid: 'luz:profile-confirm',
+        conversationRef: 'conv-1',
+        pendingChangeId: HANDLE,
+      },
     );
     expect(result).toMatchObject({ applied: true, fieldsUpdated: expect.any(Array) });
+  });
+
+  it('caller-provided conversationRef and source take precedence', async () => {
+    const m = makeMocks();
+    const uc = makeUseCase(m);
+
+    await uc.execute({
+      workerId: WORKER_ID,
+      handle: HANDLE,
+      conversationRef: 'conv-override',
+      source: 'luz_conversation',
+    });
+
+    expect(m.update.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ workerId: WORKER_ID }),
+      expect.objectContaining({
+        source: 'luz_conversation',
+        conversationRef: 'conv-override',
+      }),
+    );
   });
 
   it('claims (markConsumed) BEFORE applying — idempotency ordering', async () => {
@@ -125,6 +139,5 @@ describe('ConfirmWorkerProfileUpdateUseCase', () => {
       PendingChangeNotFoundError,
     );
     expect(m.update.execute).not.toHaveBeenCalled();
-    expect(m.audit.recordBatch).not.toHaveBeenCalled();
   });
 });

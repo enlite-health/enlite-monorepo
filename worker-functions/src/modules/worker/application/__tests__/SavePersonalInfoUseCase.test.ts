@@ -263,4 +263,102 @@ describe('SavePersonalInfoUseCase', () => {
       expect(result.isFailure).toBe(false);
     });
   });
+
+  describe('trilha de fonte worker_self (self deixou de ser cego — D92)', () => {
+    // Linha crua do captureWorkerBefore com o MESMO estado do payload.
+    // KMS em testMode (NODE_ENV=test) decripta com base64-decode — as colunas
+    // *_encrypted do fixture precisam estar em base64.
+    const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
+    const beforeRowIdentico = {
+      email: 'test@example.com',
+      document_type: 'DNI',
+      profession: 'CAREGIVER',
+      occupation: null,
+      knowledge_level: 'SECONDARY',
+      title_certificate: 'Cert XYZ',
+      years_experience: '3_5',
+      experience_types: ['adicciones'],
+      preferred_types: ['adicciones'],
+      preferred_age_range: ['adolescents'],
+      first_name_encrypted: b64('Gabriel'),
+      last_name_encrypted: b64('Stein'),
+      birth_date_encrypted: b64('1990-04-18'),
+      document_number_encrypted: b64('12345678'),
+      languages_encrypted: b64('["pt","es"]'),
+      linkedin_url_encrypted: null,
+    };
+
+    function makePool(beforeRow: Record<string, unknown> = {}) {
+      return {
+        query: jest.fn().mockImplementation((sql: string) => {
+          if (String(sql).startsWith('SELECT email')) return Promise.resolve({ rows: [beforeRow] });
+          return Promise.resolve({ rows: [{ id: 'evt-1' }] });
+        }),
+      };
+    }
+
+    function auditCall(pool: { query: jest.Mock }) {
+      return pool.query.mock.calls.find(([sql]: [string]) =>
+        String(sql).includes('worker_profile_changes_audit'),
+      );
+    }
+
+    it('grava o audit com changed_by=worker_self e valores REDIGIDOS', async () => {
+      const repo = makeRepository();
+      const pool = makePool(); // snapshot vazio → tudo é edição nova
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any);
+
+      await useCase.execute(personalInfoPayload);
+
+      const call = auditCall(pool);
+      expect(call).toBeDefined();
+      const values = call![1] as unknown[];
+      // changed_by/source em toda linha
+      expect(values).toContain('worker_self');
+      expect(values).toContain('platform');
+      // documento redigido last-4, nome mascarado — nunca o valor cru
+      expect(values).toContain('***5678');
+      expect(values).not.toContain('Gabriel');
+      expect(values).not.toContain('12345678');
+      // campo profissional plaintext passa legível
+      expect(values).toContain('CAREGIVER');
+    });
+
+    it('só audita campos que MUDARAM (wizard reenvia o form inteiro)', async () => {
+      const repo = makeRepository();
+      const pool = makePool(beforeRowIdentico);
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any);
+
+      // round-trip idêntico → nenhuma linha de audit
+      await useCase.execute(personalInfoPayload);
+      expect(auditCall(pool)).toBeUndefined();
+
+      // muda SÓ a profissão → o audit sai com exatamente 1 linha (8 valores)
+      pool.query.mockClear();
+      await useCase.execute({ ...personalInfoPayload, profession: 'AT' });
+      const call = auditCall(pool);
+      expect(call).toBeDefined();
+      expect((call![1] as unknown[]).length).toBe(8);
+      expect(call![1]).toEqual(
+        expect.arrayContaining(['profession', 'CAREGIVER', 'AT', 'worker_self']),
+      );
+    });
+
+    it('falha do audit NÃO derruba o save (best-effort)', async () => {
+      const repo = makeRepository();
+      const pool = {
+        query: jest.fn().mockImplementation((sql: string) => {
+          if (String(sql).includes('worker_profile_changes_audit')) {
+            return Promise.reject(new Error('db down'));
+          }
+          if (String(sql).startsWith('SELECT email')) return Promise.resolve({ rows: [{}] });
+          return Promise.resolve({ rows: [{ id: 'evt-1' }] });
+        }),
+      };
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any);
+
+      const result = await useCase.execute(personalInfoPayload);
+      expect(result.isFailure).toBe(false);
+    });
+  });
 });

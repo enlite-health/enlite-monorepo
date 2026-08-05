@@ -8,6 +8,7 @@ import { WorkerProfileProposeUpdateCapability } from '../capabilities/WorkerProf
 import { WorkerProfileConfirmUpdateCapability } from '../capabilities/WorkerProfileConfirmUpdateCapability';
 import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
 import { WorkerStatsGetCapability } from '../capabilities/WorkerStatsGetCapability';
+import { WorkerProfileEditsStatsCapability } from '../capabilities/WorkerProfileEditsStatsCapability';
 import { WorkerSearchCapability } from '../capabilities/WorkerSearchCapability';
 import { WorkerCaseMemoryGetCapability } from '../capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../capabilities/WorkerCaseMemoryPutCapability';
@@ -104,6 +105,9 @@ function makeCapabilities() {
   const statsGet = new WorkerStatsGetCapability({
     execute: jest.fn().mockResolvedValue({ totalWorkers: 0, byStatus: {} }),
   } as never);
+  const profileEditsStats = new WorkerProfileEditsStatsCapability({
+    execute: jest.fn().mockResolvedValue({ sinceDays: 30, totalEdits: 0, bySource: [] }),
+  } as never);
   const workerSearch = new WorkerSearchCapability({
     execute: jest.fn().mockResolvedValue({ workers: [], total: 0, limit: 20, offset: 0 }),
   } as never);
@@ -156,6 +160,7 @@ function makeCapabilities() {
     profileConfirm,
     documentsUpload,
     statsGet,
+    profileEditsStats,
     workerSearch,
     caseMemoryGet,
     caseMemoryPut,

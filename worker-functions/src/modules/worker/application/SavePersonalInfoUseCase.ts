@@ -7,6 +7,11 @@ import type { Pool } from 'pg';
 import { logger, loggingAls } from '@shared/logging';
 import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
 import type { PubSubClient } from '@shared/events/PubSubClient';
+import { ProfileChangeAuditRepository } from '../infrastructure/ProfileChangeAuditRepository';
+import { redactProfileValue } from './profileChangeRedaction';
+import { logProfileEdit } from '../domain/profileEditSource';
+import { captureWorkerBefore } from './workerAuditDiff';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
 const TAG = '[SavePersonalInfoUseCase]';
 const MIRROR_EVENT = 'worker.mirror_requested';
@@ -75,6 +80,11 @@ export class SavePersonalInfoUseCase {
       return Result.fail<Worker>(phoneToPersist.error!);
     }
 
+    // Snapshot "antes" pro diff da trilha de fonte — findById NÃO hidrata os
+    // campos pessoais (só básicos), então o diff precisa do captureWorkerBefore
+    // (decriptado). Capturado ANTES do update; null = trilha é pulada.
+    const beforeSnapshot = await this.captureBeforeSafe(data.workerId);
+
     const updateResult = await this.workerRepository.updatePersonalInfo({
       workerId: data.workerId,
       firstName: data.firstName,
@@ -104,6 +114,15 @@ export class SavePersonalInfoUseCase {
 
     await this.workerRepository.recalculateStatus(data.workerId);
 
+    // Trilha de fonte: o prestador editando o próprio cadastro deixava ZERO
+    // rastro (self cego — change luz-cadastro-assistido-rastreavel). Grava
+    // worker_profile_changes_audit com changed_by='worker_self', só pros campos
+    // que MUDARAM de verdade (o wizard reenvia o form inteiro a cada save).
+    // Best-effort como o mirror event: falha de audit não derruba o save.
+    if (beforeSnapshot) {
+      await this.recordSelfEditTrail(data, beforeSnapshot);
+    }
+
     // Enqueue worker.mirror_requested (outbox best-effort).
     // updatePersonalInfo does not use an explicit transaction, so the INSERT
     // runs after — not atomic, but the DomainEventProcessor sweep is the
@@ -112,6 +131,54 @@ export class SavePersonalInfoUseCase {
     await this.enqueueMirrorEvent(data.workerId);
 
     return Result.ok<Worker>(updateResult.getValue());
+  }
+
+  // ── Trilha de fonte (worker_self) ───────────────────────────────
+
+  private async captureBeforeSafe(workerId: string): Promise<Record<string, unknown> | null> {
+    try {
+      return await captureWorkerBefore(this.getPool(), new KMSEncryptionService(), workerId);
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId }).warn({
+        msg: `${TAG} failed to capture before-snapshot for edit trail (best-effort, ignoring)`,
+        error: e.message,
+      });
+      return null;
+    }
+  }
+
+  private async recordSelfEditTrail(
+    data: SavePersonalInfoDTO,
+    before: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const changed = diffPersonalInfo(data, before);
+      if (changed.length === 0) return;
+
+      await new ProfileChangeAuditRepository(this.getPool()).recordBatch(
+        changed.map(({ field, oldValue, newValue }) => ({
+          workerId: data.workerId,
+          pendingChangeId: null,
+          fieldName: field,
+          oldValueRedacted:
+            oldValue === '' ? null : redactProfileValue(field, oldValue),
+          newValueRedacted: redactProfileValue(field, newValue),
+          changedBy: 'worker_self',
+          source: 'platform',
+          conversationRef: null,
+        })),
+      );
+      for (const { field } of changed) {
+        logProfileEdit(data.workerId, field, 'worker_self');
+      }
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      logger.child({ workerId: data.workerId }).warn({
+        msg: `${TAG} failed to record self edit trail (best-effort, ignoring)`,
+        error: e.message,
+      });
+    }
   }
 
   // ── Enqueue outbox ──────────────────────────────────────────────
@@ -170,4 +237,63 @@ export class SavePersonalInfoUseCase {
 
     return Result.ok<string>(incomingNorm);
   }
+}
+
+// ── Diff DTO × snapshot "antes" ───────────────────────────────────
+//
+// O wizard reenvia TODOS os campos a cada save; sem diff, um save viraria ~15
+// linhas de "edição" falsas na trilha. Compara com o captureWorkerBefore
+// (decriptado — findById NÃO hidrata os pessoais) e devolve só o que mudou.
+// sex/gender ficam fora: o snapshot compartilhado não os cobre e, sem "antes",
+// entrariam como falso-mudado em todo save.
+
+interface SelfEditDiff {
+  field: string;
+  oldValue: string;
+  newValue: string;
+}
+
+const SELF_TRACKED_FIELDS: Array<keyof SavePersonalInfoDTO> = [
+  'firstName',
+  'lastName',
+  'documentType',
+  'documentNumber',
+  'languages',
+  'profession',
+  'knowledgeLevel',
+  'titleCertificate',
+  'experienceTypes',
+  'yearsExperience',
+  'preferredTypes',
+  'preferredAgeRange',
+];
+
+function diffPersonalInfo(data: SavePersonalInfoDTO, before: Record<string, unknown>): SelfEditDiff[] {
+  const diffs: SelfEditDiff[] = [];
+
+  for (const field of SELF_TRACKED_FIELDS) {
+    const incoming = normalizeForDiff(data[field]);
+    if (incoming === '') continue; // vazio não sobrescreve (COALESCE no repo)
+    const existing = normalizeForDiff(before[field]);
+    if (incoming !== existing) {
+      diffs.push({ field, oldValue: existing, newValue: incoming });
+    }
+  }
+
+  // birthDate: compara por YYYY-MM-DD (os dois lados chegam como string ISO).
+  const incomingBirth = (data.birthDate ?? '').slice(0, 10);
+  if (incomingBirth !== '') {
+    const existingBirth = normalizeForDiff(before.birthDate).slice(0, 10);
+    if (incomingBirth !== existingBirth) {
+      diffs.push({ field: 'birthDate', oldValue: existingBirth, newValue: incomingBirth });
+    }
+  }
+
+  return diffs;
+}
+
+function normalizeForDiff(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).join(', ');
+  return String(value).trim();
 }

@@ -21,10 +21,11 @@ import { UpdateWorkerProfileFieldsUseCase } from '../../worker/application/Updat
 import { ProposeWorkerProfileUpdateUseCase } from '../../worker/application/ProposeWorkerProfileUpdateUseCase';
 import { ConfirmWorkerProfileUpdateUseCase } from '../../worker/application/ConfirmWorkerProfileUpdateUseCase';
 import { PendingProfileChangeRepository } from '../../worker/infrastructure/PendingProfileChangeRepository';
-import { ProfileChangeAuditRepository } from '../../worker/infrastructure/ProfileChangeAuditRepository';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDocumentFromUrlUseCase';
 import { GetWorkerStatsUseCase } from '../../worker/application/GetWorkerStatsUseCase';
+import { GetProfileEditsStatsUseCase } from '../../worker/application/GetProfileEditsStatsUseCase';
+import { WorkerProfileEditsStatsCapability } from '../application/capabilities/WorkerProfileEditsStatsCapability';
 import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseCase';
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
@@ -113,7 +114,6 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   // Shared deps for the propose/confirm profile-update flow (Luz).
   const kms = new KMSEncryptionService();
   const pendingProfileRepo = new PendingProfileChangeRepository(dbPool);
-  const profileAuditRepo = new ProfileChangeAuditRepository(dbPool);
 
   // Camada A: dossiê da Luz (worker_case_memory).
   const caseMemoryRepo = new CaseMemoryRepository(dbPool);
@@ -151,7 +151,6 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     profileConfirm: new WorkerProfileConfirmUpdateCapability(
       new ConfirmWorkerProfileUpdateUseCase(
         pendingProfileRepo,
-        profileAuditRepo,
         kms,
         new UpdateWorkerProfileFieldsUseCase(pubsub),
       ),
@@ -160,6 +159,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       new IngestDocumentFromUrlUseCase(),
     ),
     statsGet: new WorkerStatsGetCapability(new GetWorkerStatsUseCase(dbPool)),
+    profileEditsStats: new WorkerProfileEditsStatsCapability(
+      new GetProfileEditsStatsUseCase(dbPool),
+    ),
     workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
     caseMemoryGet: new WorkerCaseMemoryGetCapability(caseMemoryRepo),
     caseMemoryPut: new WorkerCaseMemoryPutCapability(caseMemoryRepo),

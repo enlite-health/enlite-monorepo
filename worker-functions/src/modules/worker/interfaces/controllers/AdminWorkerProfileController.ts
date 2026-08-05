@@ -81,7 +81,10 @@ export class AdminWorkerProfileController {
     const patch: WorkerProfilePatch = { workerId: id, ...parsed.data };
 
     try {
-      const result = await this.useCase.execute(patch);
+      const result = await this.useCase.execute(patch, {
+        source: 'admin_panel',
+        actorUid: uid,
+      });
       logger.info({ msg: 'worker profile updated by admin', workerId: id, uid, fieldsUpdated: result.fieldsUpdated });
       // Trilho de auditoria detalhado (quem/o-quê/quando/de-onde) — best-effort.
       await this.auditRepo.recordFieldChanges({

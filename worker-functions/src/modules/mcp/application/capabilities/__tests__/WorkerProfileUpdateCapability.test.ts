@@ -58,6 +58,8 @@ describe('WorkerProfileUpdateCapability', () => {
 
     expect(useCase.execute).toHaveBeenCalledWith(
       expect.objectContaining({ workerId: WORKER_ID, firstName: 'Ana', lastName: 'Silva' }),
+      // atribuição default do canal MCP: Luz na conversa (rastreabilidade D92)
+      expect.objectContaining({ source: 'luz_conversation', actorUid: 'luz:profile-update' }),
     );
     expect(result).toEqual({
       updated: true,
