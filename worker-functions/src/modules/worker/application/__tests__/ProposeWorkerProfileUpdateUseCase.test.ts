@@ -71,6 +71,28 @@ describe('ProposeWorkerProfileUpdateUseCase', () => {
     );
   });
 
+  it('summary inclui os campos do cadastro assistido (escalares e arrays)', async () => {
+    const uc = makeUseCase();
+    const result = await uc.execute({
+      workerId: WORKER_ID,
+      fields: {
+        profession: 'CAREGIVER',
+        yearsExperience: '3_5',
+        experienceTypes: ['TEA', 'adicciones'],
+        languages: ['es'],
+      },
+    });
+
+    expect(result.summary).toEqual(
+      expect.arrayContaining([
+        { field: 'profession', newValue: 'CAREGIVER' },
+        { field: 'yearsExperience', newValue: '3_5' },
+        { field: 'experienceTypes', newValue: 'TEA, adicciones' },
+        { field: 'languages', newValue: 'es' },
+      ]),
+    );
+  });
+
   it('throws NoFieldsToUpdateError when nothing is provided', async () => {
     const pending = makePending();
     const uc = makeUseCase(pending);

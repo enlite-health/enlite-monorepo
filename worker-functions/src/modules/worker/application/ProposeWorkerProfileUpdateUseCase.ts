@@ -26,7 +26,10 @@ export interface LuzProfileAddress {
   state?: string;
 }
 
-/** Campos que a Luz pode propor na v1 (sem email/phone — esses são handover). */
+/**
+ * Campos que a Luz pode propor (sem email/phone — esses são handover).
+ * Cadastro assistido (D92) ampliou com os profissionais que o backend já aceita.
+ */
 export interface LuzProfileFields {
   firstName?: string;
   lastName?: string;
@@ -34,6 +37,13 @@ export interface LuzProfileFields {
   documentType?: string;
   documentNumber?: string;
   address?: LuzProfileAddress;
+  profession?: string;
+  knowledgeLevel?: string;
+  titleCertificate?: string;
+  yearsExperience?: string;
+  experienceTypes?: string[];
+  preferredTypes?: string[];
+  languages?: string[];
 }
 
 export interface ProposeSummaryItem {
@@ -103,11 +113,26 @@ function buildSummary(fields: LuzProfileFields): ProposeSummaryItem[] {
     'birthDate',
     'documentType',
     'documentNumber',
+    'profession',
+    'knowledgeLevel',
+    'titleCertificate',
+    'yearsExperience',
   ];
   for (const key of scalarKeys) {
     const v = fields[key];
     if (typeof v === 'string' && v.length > 0) {
       items.push({ field: key, newValue: v });
+    }
+  }
+  const arrayKeys: (keyof LuzProfileFields)[] = [
+    'experienceTypes',
+    'preferredTypes',
+    'languages',
+  ];
+  for (const key of arrayKeys) {
+    const v = fields[key];
+    if (Array.isArray(v) && v.length > 0) {
+      items.push({ field: key, newValue: v.join(', ') });
     }
   }
   if (fields.address) {

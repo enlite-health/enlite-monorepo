@@ -134,4 +134,47 @@ describe('WorkerProfileProposeUpdateCapability', () => {
     ).rejects.toThrow();
     expect(useCase.execute).not.toHaveBeenCalled();
   });
+
+  // ── Cadastro assistido (D92): campos profissionais ────────────────────────────
+  it('accepts the assisted-registration fields (profession, level, experience, languages)', async () => {
+    const useCase = makeUseCase();
+    const cap = makeCap(useCase);
+    await expect(
+      cap.execute({
+        workerId: WORKER_ID,
+        fields: {
+          profession: 'CAREGIVER',
+          knowledgeLevel: 'UNIVERSITY',
+          titleCertificate: 'Titulo AT',
+          yearsExperience: '3_5',
+          experienceTypes: ['TEA', 'adicciones'],
+          preferredTypes: ['TEA'],
+          languages: ['es', 'pt'],
+        },
+      }),
+    ).resolves.toMatchObject({ handle: expect.any(String) });
+    expect(useCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: expect.objectContaining({ profession: 'CAREGIVER', languages: ['es', 'pt'] }),
+      }),
+    );
+  });
+
+  it('rejects profession outside the canonical enum', async () => {
+    const useCase = makeUseCase();
+    const cap = makeCap(useCase);
+    await expect(
+      cap.execute({ workerId: WORKER_ID, fields: { profession: 'HACKER' } }),
+    ).rejects.toThrow();
+    expect(useCase.execute).not.toHaveBeenCalled();
+  });
+
+  it('still rejects occupation (not in the propose whitelist)', async () => {
+    const useCase = makeUseCase();
+    const cap = makeCap(useCase);
+    await expect(
+      cap.execute({ workerId: WORKER_ID, fields: { occupation: 'CAREGIVER' } }),
+    ).rejects.toThrow();
+    expect(useCase.execute).not.toHaveBeenCalled();
+  });
 });
