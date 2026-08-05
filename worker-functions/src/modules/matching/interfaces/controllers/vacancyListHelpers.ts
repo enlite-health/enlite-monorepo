@@ -16,6 +16,7 @@ import {
   parseDaysCsv,
   parseTimeHHMM,
 } from './vacancyScheduleFilter';
+import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -41,6 +42,9 @@ export function mapStatus(status: string | null): string {
 
 // ── listVacancies query builder ────────────────────────────────────────────────
 
+/** Recorte "não conta quem deu baixa" — mesmo predicado do kanban da vaga. */
+const WORKER_ACTIVE_SQL = workerNotDisabledSql('wja.worker_id');
+
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
 const CONFIRMED_KANBAN_SQL = toSqlInList(CONFIRMED_KANBAN_STAGES);
 const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
@@ -58,7 +62,12 @@ const LIST_VACANCIES_BASE = `
     jp.search_start_date,
     jp.created_at,
     jp.updated_at,
-    get_applicant_count(jp.id) AS current_applicants,
+    -- Era get_applicant_count(jp.id) (função STABLE no banco, sem recorte de
+    -- status). Virou subselect para excluir quem deu baixa na conta e bater com
+    -- os contadores abaixo e com o kanban da vaga.
+    (SELECT COUNT(*) FROM worker_job_applications wja
+      WHERE wja.job_posting_id = jp.id
+        AND ${WORKER_ACTIVE_SQL}) AS current_applicants,
     jp.max_applicants,
     p.first_name as patient_first_name,
     p.last_name as patient_last_name,
@@ -68,23 +77,29 @@ const LIST_VACANCIES_BASE = `
       ELSE 0
     END as dias_aberto,
     (SELECT COUNT(*) FROM worker_job_applications wja
-      WHERE wja.job_posting_id = jp.id) as convidados,
+      WHERE wja.job_posting_id = jp.id
+        AND ${WORKER_ACTIVE_SQL}) as convidados,
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
-        AND wja.application_funnel_stage IN (${POSTULATED_SQL})) as postulados,
+        AND wja.application_funnel_stage IN (${POSTULATED_SQL})
+        AND ${WORKER_ACTIVE_SQL}) as postulados,
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
-        AND wja.application_funnel_stage IN (${CONFIRMED_KANBAN_SQL})) as confirmados,
+        AND wja.application_funnel_stage IN (${CONFIRMED_KANBAN_SQL})
+        AND ${WORKER_ACTIVE_SQL}) as confirmados,
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
-        AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})) as selecionados,
+        AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
+        AND ${WORKER_ACTIVE_SQL}) as selecionados,
     CASE
       WHEN jp.providers_needed IS NOT NULL AND jp.providers_needed ~ '^[0-9]+$'
       THEN GREATEST(
+        -- quem deu baixa não ocupa a vaga: a posição volta a faltar
         jp.providers_needed::INTEGER - (
           SELECT COUNT(*) FROM worker_job_applications wja
           WHERE wja.job_posting_id = jp.id
             AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
+            AND ${WORKER_ACTIVE_SQL}
         ),
         0
       )

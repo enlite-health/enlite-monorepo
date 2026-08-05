@@ -7,6 +7,7 @@ import {
   type KanbanColumn,
 } from '../domain/kanbanColumn';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 /** Contagem por coluna do Kanban — as MESMAS colunas que o operador vê no board. */
 export type FunnelColumnCounts = Record<Exclude<KanbanColumn, 'BLOQUEADO'>, number>;
@@ -80,6 +81,7 @@ export class GetFunnelByWorkerUseCase {
          JOIN workers      w  ON w.id  = wja.worker_id
         WHERE ${LIVE_JOB_POSTING_SQL}
           AND w.merged_into_id IS NULL
+          AND ${excludeDisabledWorkersSql('w')}
           ${periodSql}`,
       periodDays != null ? [periodDays] : [],
     );

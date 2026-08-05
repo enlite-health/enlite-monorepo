@@ -8,6 +8,10 @@ import {
 } from '../domain/interviewSchedule';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import {
+  excludeDisabledWorkersSql,
+  workerNotDisabledSql,
+} from '@shared/database/activeWorkerFilter';
+import {
   computeScheduleWeeklyHours,
   hasStructuredSchedule,
 } from '../domain/scheduleHours';
@@ -162,12 +166,16 @@ export class GetManagementDashboardUseCase {
              COUNT(*) FILTER (
                WHERE status = 'REGISTERED' AND created_at >= date_trunc('month', CURRENT_DATE)
              )::int AS nuevos
-           FROM workers
-           WHERE merged_into_id IS NULL`,
+           FROM workers w
+           WHERE merged_into_id IS NULL
+             -- quem deu baixa sai do acervo de prestadores; a contagem de
+             -- desativados vive em GET /workers/status ("Desativados")
+             AND ${excludeDisabledWorkersSql('w')}`,
         ),
         this.db.query<CountRow>(
           `SELECT application_funnel_stage AS k, COUNT(*)::int AS count
-             FROM worker_job_applications
+             FROM worker_job_applications wja
+            WHERE ${workerNotDisabledSql('wja.worker_id')}
             GROUP BY application_funnel_stage`,
         ),
         this.db.query<{ esperando: number }>(
@@ -181,7 +189,9 @@ export class GetManagementDashboardUseCase {
              JOIN workers      w  ON w.id  = wja.worker_id
             WHERE wja.application_funnel_stage = 'QUALIFIED'
               AND ${LIVE_JOB_POSTING_SQL}
-              AND w.merged_into_id IS NULL`,
+              AND w.merged_into_id IS NULL
+              -- fila de contato: quem deu baixa não deve ser ligado
+              AND ${excludeDisabledWorkersSql('w')}`,
         ),
         this.db.query<{ activos: number; cubriendo_guardias: number }>(
           // "Alocados" = prestadores EM UM CASO segundo o Ana Care (workers.ana_care_status),
@@ -207,7 +217,9 @@ export class GetManagementDashboardUseCase {
              FROM worker_blocked_applications b
              JOIN job_postings jp ON jp.id = b.job_posting_id
             WHERE b.blocked_reason = 'registration_incomplete'
-              AND ${LIVE_JOB_POSTING_SQL}`,
+              AND ${LIVE_JOB_POSTING_SQL}
+              -- fila de trabalho: quem deu baixa não é mais destravável
+              AND ${workerNotDisabledSql('b.worker_id')}`,
         ),
         this.db.query<{ agendados: number; sem_data: number }>(
           // Entrevistas da semana + quantos cards estão em "Agendados" SEM data.
@@ -231,7 +243,8 @@ export class GetManagementDashboardUseCase {
              FROM worker_job_applications wja
              LEFT JOIN encuadres e
                     ON e.worker_id = wja.worker_id
-                   AND e.job_posting_id = wja.job_posting_id`,
+                   AND e.job_posting_id = wja.job_posting_id
+            WHERE ${workerNotDisabledSql('wja.worker_id')}`,
         ),
       ]);
 
