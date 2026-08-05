@@ -41,6 +41,9 @@ const AddressSchema = z
   })
   .strict();
 
+// Profissões canônicas — mesmas do painel admin (workers.profession enum).
+const ProfessionEnum = z.enum(['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST']);
+
 const FieldsSchema = z
   .object({
     firstName: z.string().min(1).max(100).optional(),
@@ -52,6 +55,14 @@ const FieldsSchema = z
     documentType: DocumentTypeEnum.optional(),
     documentNumber: z.string().min(4).max(30).optional(),
     address: AddressSchema.optional(),
+    // ── Cadastro assistido (D92): campos profissionais que o backend já aceita ──
+    profession: ProfessionEnum.optional(),
+    knowledgeLevel: z.string().trim().min(1).max(40).optional(),
+    titleCertificate: z.string().trim().min(1).max(80).optional(),
+    yearsExperience: z.string().trim().min(1).max(20).optional(),
+    experienceTypes: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+    preferredTypes: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+    languages: z.array(z.string().trim().min(1).max(10)).max(10).optional(),
   })
   .strict() // rejeita email, phone, status, etc.
   .superRefine((val, ctx) => {
@@ -93,7 +104,9 @@ export class WorkerProfileProposeUpdateCapability {
   static readonly DESCRIPTION =
     'Propose (stage) a worker profile update for explicit confirmation. Validates fields ' +
     'server-side and returns an opaque handle + a summary to show the worker ("update X to Y, confirm?"). ' +
-    'Does NOT write. Editable: name, birthDate, document (DNI/CPF/CEDULA/LE_LC/PASSPORT), address. ' +
+    'Does NOT write. Editable: name, birthDate, document (DNI/CPF/CEDULA/LE_LC/PASSPORT), address, ' +
+    'profession (AT/CAREGIVER/NURSE/KINESIOLOGIST/PSYCHOLOGIST), knowledgeLevel, titleCertificate, ' +
+    'yearsExperience, experienceTypes, preferredTypes, languages. ' +
     'email and phone are NEVER editable here — route those to a human handover.';
   static readonly INPUT_SHAPE = {
     workerId: z.string().uuid(),

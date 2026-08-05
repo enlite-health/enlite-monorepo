@@ -8,6 +8,7 @@ import type { WorkerProfileProposeUpdateCapability } from './capabilities/Worker
 import type { WorkerProfileConfirmUpdateCapability } from './capabilities/WorkerProfileConfirmUpdateCapability';
 import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocumentsUploadCapability';
 import type { WorkerStatsGetCapability } from './capabilities/WorkerStatsGetCapability';
+import type { WorkerProfileEditsStatsCapability } from './capabilities/WorkerProfileEditsStatsCapability';
 import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapability';
 import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCapability';
 import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMemoryGetCapability';
@@ -48,6 +49,7 @@ interface RegistryDeps {
   profileConfirm: WorkerProfileConfirmUpdateCapability;
   documentsUpload: WorkerDocumentsUploadCapability;
   statsGet: WorkerStatsGetCapability;
+  profileEditsStats: WorkerProfileEditsStatsCapability;
   workerSearch: WorkerSearchCapability;
   caseMemoryGet: WorkerCaseMemoryGetCapability;
   caseMemoryPut: WorkerCaseMemoryPutCapability;
@@ -123,6 +125,7 @@ export class CapabilityRegistry {
       profileConfirm,
       documentsUpload,
       statsGet,
+      profileEditsStats,
       workerSearch,
       caseMemoryGet,
       caseMemoryPut,
@@ -234,6 +237,18 @@ export class CapabilityRegistry {
         inputShape:
           (statsGet.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ?? {},
         execute: (args) => statsGet.execute(args),
+      },
+      {
+        name:
+          (profileEditsStats.constructor as { NAME?: string }).NAME ??
+          'worker.profile.edits.stats',
+        description:
+          (profileEditsStats.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Profile edits distribution by source.',
+        inputShape:
+          (profileEditsStats.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => profileEditsStats.execute(args),
       },
       {
         name: (workerSearch.constructor as { NAME?: string }).NAME ?? 'worker.search',

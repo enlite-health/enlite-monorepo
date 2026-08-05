@@ -3,20 +3,19 @@
  *
  * Fase 2 do fluxo propose/confirm da Luz. Carrega o change estacionado, faz o
  * claim atômico (idempotência), descriptografa o payload e aplica EXATAMENTE o
- * que foi validado no propose — a Luz não passa valor aqui, só o handle. Depois
- * grava o audit (de→para redigido).
+ * que foi validado no propose — a Luz não passa valor aqui, só o handle.
+ *
+ * A trilha de fonte (worker_profile_changes_audit, de→para redigido) é gravada
+ * pelo UpdateWorkerProfileFieldsUseCase na MESMA transação da escrita, com
+ * changed_by='luz_conversation' (enum de profileEditSource).
  */
 
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { logger } from '@shared/logging';
 import { PendingProfileChangeRepository } from '../infrastructure/PendingProfileChangeRepository';
-import {
-  ProfileChangeAuditRepository,
-  ProfileChangeAuditEntry,
-} from '../infrastructure/ProfileChangeAuditRepository';
 import { UpdateWorkerProfileFieldsUseCase } from './UpdateWorkerProfileFieldsUseCase';
 import { LuzProfileFields } from './ProposeWorkerProfileUpdateUseCase';
-import { redactProfileValue } from './profileChangeRedaction';
+import type { ProfileEditSource } from '../domain/profileEditSource';
 
 export interface ConfirmProfileUpdateResult {
   applied: true;
@@ -38,7 +37,6 @@ export class PendingChangeNotFoundError extends Error {
 export class ConfirmWorkerProfileUpdateUseCase {
   constructor(
     private readonly pending: PendingProfileChangeRepository,
-    private readonly audit: ProfileChangeAuditRepository,
     private readonly encryption: KMSEncryptionService,
     private readonly updateUseCase: UpdateWorkerProfileFieldsUseCase,
   ) {}
@@ -47,6 +45,8 @@ export class ConfirmWorkerProfileUpdateUseCase {
     workerId: string;
     handle?: string;
     conversationRef?: string;
+    /** Fonte explícita do chamador (task 2.2); default = Luz na conversa. */
+    source?: ProfileEditSource;
   }): Promise<ConfirmProfileUpdateResult> {
     const record = await this.pending.findActive(input.workerId, input.handle);
     if (!record) {
@@ -63,13 +63,17 @@ export class ConfirmWorkerProfileUpdateUseCase {
     const json = await this.encryption.decrypt(record.payloadEncrypted);
     const fields = JSON.parse(json) as LuzProfileFields;
 
-    const result = await this.updateUseCase.execute({
-      workerId: input.workerId,
-      ...fields,
-    });
-
-    await this.audit.recordBatch(
-      buildAuditEntries(record.id, input, fields, record.conversationRef),
+    const result = await this.updateUseCase.execute(
+      {
+        workerId: input.workerId,
+        ...fields,
+      },
+      {
+        source: input.source ?? 'luz_conversation',
+        actorUid: 'luz:profile-confirm',
+        conversationRef: input.conversationRef ?? record.conversationRef,
+        pendingChangeId: record.id,
+      },
     );
 
     logger
@@ -78,57 +82,4 @@ export class ConfirmWorkerProfileUpdateUseCase {
 
     return { applied: true, workerId: result.workerId, fieldsUpdated: result.fieldsUpdated };
   }
-}
-
-function buildAuditEntries(
-  pendingChangeId: string,
-  input: { workerId: string; conversationRef?: string },
-  fields: LuzProfileFields,
-  recordConversationRef: string | null,
-): ProfileChangeAuditEntry[] {
-  const conversationRef = input.conversationRef ?? recordConversationRef;
-  const entries: ProfileChangeAuditEntry[] = [];
-
-  const scalarKeys: (keyof LuzProfileFields)[] = [
-    'firstName',
-    'lastName',
-    'birthDate',
-    'documentType',
-    'documentNumber',
-  ];
-  for (const key of scalarKeys) {
-    const v = fields[key];
-    if (typeof v === 'string' && v.length > 0) {
-      entries.push(makeEntry(pendingChangeId, input.workerId, key, v, conversationRef));
-    }
-  }
-  if (fields.address) {
-    for (const [k, v] of Object.entries(fields.address)) {
-      if (typeof v === 'string' && v.length > 0) {
-        entries.push(
-          makeEntry(pendingChangeId, input.workerId, `address.${k}`, v, conversationRef),
-        );
-      }
-    }
-  }
-  return entries;
-}
-
-function makeEntry(
-  pendingChangeId: string,
-  workerId: string,
-  field: string,
-  newValue: string,
-  conversationRef: string | null,
-): ProfileChangeAuditEntry {
-  return {
-    workerId,
-    pendingChangeId,
-    fieldName: field,
-    oldValueRedacted: null, // coluna de origem é criptografada; old não é lido na v1
-    newValueRedacted: redactProfileValue(field, newValue),
-    changedBy: 'luz',
-    source: 'triage',
-    conversationRef,
-  };
 }
