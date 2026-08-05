@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 /**
  * Raw database row returned by the funnel-table query (before domain mapping).
@@ -84,6 +85,9 @@ export class FunnelTableRepository {
          LIMIT 1
        ) latest_wbdl ON true
        WHERE wja.job_posting_id = $1
+         -- Worker que deu baixa na conta some do kanban (linhas E contadores das
+         -- abas, que o GetFunnelTableUseCase deriva destas linhas).
+         AND ${excludeDisabledWorkersSql('w')}
        ORDER BY wja.created_at DESC NULLS LAST`,
       [jobPostingId],
     );

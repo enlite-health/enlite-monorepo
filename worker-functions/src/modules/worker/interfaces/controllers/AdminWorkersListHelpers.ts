@@ -16,6 +16,7 @@
  */
 
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import {
   resolveLocationFilter,
@@ -59,6 +60,13 @@ export interface WorkerListFilters {
   city?: string;
   /** CSV of day-of-week ints (0-6) — EXISTS on worker_availability.day_of_week */
   days?: string;
+  /**
+   * Status exato (REGISTERED | INCOMPLETE_REGISTER | DISABLED). Quando ausente,
+   * a lista exclui os DISABLED (baixa de conta) — ver activeWorkerFilter.
+   * Passar `DISABLED` explicitamente continua listando os desativados, que é
+   * como o admin acha alguém para reverter a baixa.
+   */
+  status?: string;
   limit: string;
   offset: string;
 }
@@ -125,6 +133,17 @@ export function buildWorkerListWhereClause(filters: WorkerListFilters): WorkerLi
   const params: unknown[] = [];
   let paramIndex = 1;
   let whereClause = 'WHERE w.merged_into_id IS NULL';
+
+  // ── Status ──────────────────────────────────────────────────────────────────
+  // Filtro explícito manda (inclusive `DISABLED`); sem filtro, quem deu baixa
+  // na conta não aparece na lista/busca.
+  if (typeof filters.status === 'string' && filters.status.trim() !== '') {
+    whereClause += ` AND w.status = $${paramIndex}`;
+    params.push(filters.status.trim());
+    paramIndex++;
+  } else {
+    whereClause += ` AND ${excludeDisabledWorkersSql('w')}`;
+  }
 
   // ── Platform ────────────────────────────────────────────────────────────────
   if (filters.platform) {

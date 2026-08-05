@@ -26,6 +26,15 @@ type DocsValidated = z.infer<typeof DocsValidatedEnum>;
 // ── List query params schema ──────────────────────────────────────────────────
 
 const ListWorkersQuerySchema = z.object({
+  /**
+   * Status exato do worker. Ausente = a lista exclui os DISABLED (baixa de
+   * conta) — ver activeWorkerFilter. Passar `DISABLED` é como o admin acha
+   * quem deu baixa para eventualmente reverter.
+   *
+   * Faltava no schema: `?status=` era aceito pela rota e descartado em silêncio
+   * pelo strip do zod, então o filtro nunca teve efeito (achado por e2e, 05/08).
+   */
+  status: z.enum(['REGISTERED', 'INCOMPLETE_REGISTER', 'DISABLED']).optional(),
   platform: z.string().optional(),
   docs_complete: z.string().optional(),
   docs_validated: DocsValidatedEnum.optional(),

@@ -4,6 +4,10 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
 import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import {
+  excludeDisabledWorkersSql,
+  workerNotDisabledSql,
+} from '@shared/database/activeWorkerFilter';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
 
@@ -62,7 +66,9 @@ export class VacancyMatchController {
       const metaResult = await this.db.query<{ total: string; last_match_at: Date | null }>(
         `SELECT COUNT(*)::text AS total, MAX(wja.updated_at) AS last_match_at
          FROM worker_job_applications wja
-         WHERE wja.job_posting_id = $1`,
+         WHERE wja.job_posting_id = $1
+           -- total tem que bater com a lista abaixo (que exclui baixados)
+           AND ${workerNotDisabledSql('wja.worker_id')}`,
         [id]
       );
       const totalCandidates = parseInt(metaResult.rows[0]?.total || '0');
@@ -108,6 +114,8 @@ export class VacancyMatchController {
          LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
          LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
          WHERE wja.job_posting_id = $1
+           -- worker que deu baixa na conta não é candidato contatável
+           AND ${excludeDisabledWorkersSql('w')}
          ORDER BY wja.match_score DESC NULLS LAST
          LIMIT $2 OFFSET $3`,
         [id, limit, offset]
