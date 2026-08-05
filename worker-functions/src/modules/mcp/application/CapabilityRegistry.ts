@@ -21,6 +21,7 @@ import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerA
 import type { WorkerInterviewSlotsListCapability } from './capabilities/WorkerInterviewSlotsListCapability';
 import type { WorkerInterviewBookCapability } from './capabilities/WorkerInterviewBookCapability';
 import type { HandoverNotifyCapability } from './capabilities/HandoverNotifyCapability';
+import type { WorkerApplicationsListCapability } from './capabilities/WorkerApplicationsListCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -59,6 +60,7 @@ interface RegistryDeps {
   interviewSlotsList: WorkerInterviewSlotsListCapability;
   interviewBook: WorkerInterviewBookCapability;
   handoverNotify: HandoverNotifyCapability;
+  applicationsList: WorkerApplicationsListCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -133,6 +135,7 @@ export class CapabilityRegistry {
       interviewSlotsList,
       interviewBook,
       handoverNotify,
+      applicationsList,
       dbQuery,
     } = this.deps;
 
@@ -371,6 +374,18 @@ export class CapabilityRegistry {
           (handoverNotify.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => handoverNotify.execute(args),
+      },
+      {
+        name:
+          (applicationsList.constructor as { NAME?: string }).NAME ??
+          'worker.applications.list',
+        description:
+          (applicationsList.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          "List a worker's own job applications.",
+        inputShape:
+          (applicationsList.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => applicationsList.execute(args),
       },
       ...(dbQuery !== undefined
         ? [
