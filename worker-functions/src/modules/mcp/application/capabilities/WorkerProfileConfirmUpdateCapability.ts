@@ -10,12 +10,15 @@
 
 import { z } from 'zod';
 import type { ConfirmWorkerProfileUpdateUseCase } from '../../../worker/application/ConfirmWorkerProfileUpdateUseCase';
+import { PROFILE_EDIT_SOURCES } from '../../../worker/domain/profileEditSource';
 
 const ArgsSchema = z
   .object({
     workerId: z.string().uuid(),
     handle: z.string().uuid().optional(),
     conversationRef: z.string().max(120).optional(),
+    /** Fonte da edição (rastreabilidade D92). Default: luz_conversation. */
+    source: z.enum(PROFILE_EDIT_SOURCES).optional(),
   })
   .strict(); // no field values accepted here — only the handle
 
@@ -31,6 +34,7 @@ export class WorkerProfileConfirmUpdateCapability {
     workerId: z.string().uuid(),
     handle: z.string().uuid().optional(),
     conversationRef: z.string().max(120).optional(),
+    source: z.enum(PROFILE_EDIT_SOURCES).optional(),
   };
 
   constructor(private readonly useCase: ConfirmWorkerProfileUpdateUseCase) {}
@@ -45,6 +49,7 @@ export class WorkerProfileConfirmUpdateCapability {
       workerId: parsed.workerId,
       handle: parsed.handle,
       conversationRef: parsed.conversationRef,
+      source: parsed.source,
     });
   }
 }
