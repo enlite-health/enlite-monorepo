@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
@@ -389,48 +390,54 @@ export class WJAFunnelController {
       // No conflito, mover sem data NÃO apaga um agendamento já gravado.
       const datetimeUpdateSql = `CASE WHEN $4::date IS NULL THEN worker_job_applications.interview_datetime ELSE ${interviewDatetimeSql('$4', '$5')} END`;
 
-      await this.db.query(
-        `INSERT INTO worker_job_applications (
-           worker_id, job_posting_id, application_funnel_stage, source,
-           interview_datetime, interview_meet_link)
-         VALUES (
-           $1, $2, $3, 'manual',
-           ${datetimeInsertSql},
-           $6)
-         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-           application_funnel_stage = $3,
-           interview_datetime = ${datetimeUpdateSql},
-           interview_meet_link = COALESCE($6, worker_job_applications.interview_meet_link),
-           updated_at = NOW()`,
-        [
-          workerId,
-          jobPostingId,
-          targetStage,
-          interviewDate ?? null,
-          interviewTime ?? null,
-          interviewMeetLink ?? null,
-        ],
-      );
+      // As duas escritas rodam numa transação ÚNICA que carimba quem moveu o
+      // card (o trigger de histórico lê `app.current_uid` — ver actorContext).
+      // Efeito colateral desejado: a candidatura e o encuadre passam a mudar
+      // juntos; antes, falha na 2ª query deixava a etapa já alterada.
+      await withActorContext(this.db, async (client) => {
+        await client.query(
+          `INSERT INTO worker_job_applications (
+             worker_id, job_posting_id, application_funnel_stage, source,
+             interview_datetime, interview_meet_link)
+           VALUES (
+             $1, $2, $3, 'manual',
+             ${datetimeInsertSql},
+             $6)
+           ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+             application_funnel_stage = $3,
+             interview_datetime = ${datetimeUpdateSql},
+             interview_meet_link = COALESCE($6, worker_job_applications.interview_meet_link),
+             updated_at = NOW()`,
+          [
+            workerId,
+            jobPostingId,
+            targetStage,
+            interviewDate ?? null,
+            interviewTime ?? null,
+            interviewMeetLink ?? null,
+          ],
+        );
 
-      // 3. Sincronizar encuadre.resultado para estados terminais
-      if (targetStage === 'SELECTED') {
-        // Grava o papel quando informado; sem papel o COALESCE preserva o
-        // existente (re-mover não apaga a classificação anterior). Encuadre
-        // selecionado sem papel = PENDENTE_CLASSIFICACAO no dashboard.
-        await this.db.query(
-          `UPDATE encuadres SET resultado = 'SELECCIONADO', role = COALESCE($2, role), updated_at = NOW() WHERE id = $1`,
-          [id, selectedRole],
-        );
-      } else if (targetStage === 'REJECTED') {
-        await this.db.query(
-          `UPDATE encuadres SET resultado = 'RECHAZADO',
-             rejection_reason_category = COALESCE($2, rejection_reason_category),
-             rejection_reason = COALESCE($3, rejection_reason),
-             updated_at = NOW()
-           WHERE id = $1`,
-          [id, rejectionReasonCategory ?? null, rejectionReason ?? null],
-        );
-      }
+        // 3. Sincronizar encuadre.resultado para estados terminais
+        if (targetStage === 'SELECTED') {
+          // Grava o papel quando informado; sem papel o COALESCE preserva o
+          // existente (re-mover não apaga a classificação anterior). Encuadre
+          // selecionado sem papel = PENDENTE_CLASSIFICACAO no dashboard.
+          await client.query(
+            `UPDATE encuadres SET resultado = 'SELECCIONADO', role = COALESCE($2, role), updated_at = NOW() WHERE id = $1`,
+            [id, selectedRole],
+          );
+        } else if (targetStage === 'REJECTED') {
+          await client.query(
+            `UPDATE encuadres SET resultado = 'RECHAZADO',
+               rejection_reason_category = COALESCE($2, rejection_reason_category),
+               rejection_reason = COALESCE($3, rejection_reason),
+               updated_at = NOW()
+             WHERE id = $1`,
+            [id, rejectionReasonCategory ?? null, rejectionReason ?? null],
+          );
+        }
+      });
 
       res.json({ success: true, data: { encuadreId: id, targetStage } });
     } catch (error) {

@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { withActorContext } from '@shared/database/actorContext';
+import type { ActorContext } from '@shared/audit/actorSource';
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
@@ -16,6 +18,13 @@ export interface ApplyToVacancyParams {
   workerName?: string;
   /** Telefone do worker (auditoria worker_raw_phone do encuadre). */
   workerPhone?: string;
+  /**
+   * Quem está postulando. Omitido, usa o ator da request (ALS) — que no app é o
+   * próprio prestador. A capability da Luz passa `luzActor('apply')`, senão a
+   * postulação feita na conversa não teria ator (chamada MCP não tem sessão de
+   * painel) e cairia em `nao_instrumentado`.
+   */
+  actor?: ActorContext;
 }
 
 export type ApplyToVacancyResult =
@@ -48,7 +57,7 @@ export class ApplyToVacancyUseCase {
   ) {}
 
   async execute(db: Pool, params: ApplyToVacancyParams): Promise<ApplyToVacancyResult> {
-    const { workerId, jobPostingId, acquisitionChannel, workerName, workerPhone } = params;
+    const { workerId, jobPostingId, acquisitionChannel, workerName, workerPhone, actor } = params;
 
     try {
       await assertWorkerCanApply(db, workerId);
@@ -77,13 +86,20 @@ export class ApplyToVacancyUseCase {
       throw err;
     }
 
-    const { wjaId } = await this.createManualWjaWithEncuadreUseCase.execute(db, {
-      workerId,
-      jobPostingId,
-      acquisitionChannel,
-      workerName,
-      workerPhone,
-    });
+    // Transação com carimbo de ator: o trigger de histórico grava quem postulou
+    // (a Luz na conversa × o próprio prestador no app) — ver actorContext.
+    const { wjaId } = await withActorContext(
+      db,
+      (client) =>
+        this.createManualWjaWithEncuadreUseCase.execute(client, {
+          workerId,
+          jobPostingId,
+          acquisitionChannel,
+          workerName,
+          workerPhone,
+        }),
+      actor,
+    );
 
     return { ok: true, wjaId };
   }

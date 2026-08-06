@@ -21,7 +21,7 @@ const mockDbQuery = jest.fn();
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: () => ({
-      getPool: () => ({ query: mockDbQuery }),
+      getPool: () => (require('@shared/database/poolMockSupport') as typeof import('@shared/database/poolMockSupport')).poolMockWithConnect(mockDbQuery),
     }),
   },
 }));

@@ -1,4 +1,5 @@
 import { BookInterviewSlotUseCase } from '../BookInterviewSlotUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('BookInterviewSlotUseCase', () => {
   let mockQuery: jest.Mock;
@@ -31,7 +32,7 @@ describe('BookInterviewSlotUseCase', () => {
     mockCalendar = { addGuestToMeeting: jest.fn().mockResolvedValue({ success: true }) };
 
     useCase = new BookInterviewSlotUseCase(
-      { query: mockQuery } as any,
+      poolMockWithConnect(mockQuery) as any,
       mockPubsub as any,
       mockCloudTasks as any,
       mockCalendar as any,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { luzActor } from '@shared/audit/actorSource';
 import type { BookInterviewSlotUseCase } from '../../../notification/application/BookInterviewSlotUseCase';
 import type { BookInterviewSlotResult } from '../../../notification/application/BookInterviewSlotUseCase';
 import type { GetWorkerByIdUseCase } from '../../../worker/application/GetWorkerByIdUseCase';
@@ -44,6 +45,14 @@ export class WorkerInterviewBookCapability {
       /* segue sem email */
     }
 
-    return this.bookInterviewSlot.execute({ workerId, workerEmail, jobPostingId, slotIndex });
+    // Agendamento feito NA CONVERSA: sem ator explícito, contaria como se o
+    // próprio candidato tivesse agendado pelo botão do WhatsApp.
+    return this.bookInterviewSlot.execute({
+      workerId,
+      workerEmail,
+      jobPostingId,
+      slotIndex,
+      actor: luzActor('book-interview'),
+    });
   }
 }

@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 import { formatDateUTC, formatTimeUTC } from '@shared/utils/dateFormatters';
+import { withActorContext } from '@shared/database/actorContext';
+import { workerSelfActor, type ActorContext } from '@shared/audit/actorSource';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { GoogleCalendarService } from '@modules/matching';
@@ -22,6 +24,12 @@ export interface BookInterviewSlotParams {
   jobPostingId: string;
   /** 1..3 — posição do meet_link_N/meet_datetime_N na vaga. */
   slotIndex: number;
+  /**
+   * Quem agendou. O caminho por BOTÃO no WhatsApp é o próprio candidato; a tool
+   * `book_interview` da Luz passa `luzActor('book-interview')`. Omitido, cai no
+   * ator da request (ALS) — e sem nenhum, a linha fica sem autor, como hoje.
+   */
+  actor?: ActorContext;
 }
 
 export type BookInterviewSlotResult =
@@ -155,15 +163,22 @@ export class BookInterviewSlotUseCase {
       calendarInvite = 'no_email';
     }
 
-    await this.db.query(
-      `UPDATE worker_job_applications
-       SET interview_meet_link       = $1,
-           interview_datetime        = $2,
-           interview_response        = 'confirmed',
-           application_funnel_stage  = 'CONFIRMED',
-           updated_at                = NOW()
-       WHERE worker_id = $3 AND job_posting_id = $4`,
-      [meetLink, meetDatetime, workerId, jobPostingId],
+    // Muda a etapa para CONFIRMED → dispara o trigger de histórico. Carimbado
+    // para a medição saber se quem agendou foi a Luz ou o próprio candidato.
+    await withActorContext(
+      this.db,
+      (client) =>
+        client.query(
+          `UPDATE worker_job_applications
+           SET interview_meet_link       = $1,
+               interview_datetime        = $2,
+               interview_response        = 'confirmed',
+               application_funnel_stage  = 'CONFIRMED',
+               updated_at                = NOW()
+           WHERE worker_id = $3 AND job_posting_id = $4`,
+          [meetLink, meetDatetime, workerId, jobPostingId],
+        ),
+      params.actor ?? workerSelfActor(workerId),
     );
 
     const confirmedDate = formatDateUTC(meetDatetime);

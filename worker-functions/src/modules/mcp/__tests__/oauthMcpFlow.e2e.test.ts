@@ -37,6 +37,7 @@ import { WorkerInterviewBookCapability } from '../application/capabilities/Worke
 import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
 import { WorkerApplicationsListCapability } from '../application/capabilities/WorkerApplicationsListCapability';
 import { WorkerProfileEditsStatsCapability } from '../application/capabilities/WorkerProfileEditsStatsCapability';
+import { FunnelActivityStatsCapability } from '../application/capabilities/FunnelActivityStatsCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -56,6 +57,7 @@ function makeRegistry(): CapabilityRegistry {
     documentsUpload: new WorkerDocumentsUploadCapability(stub),
     statsGet: new WorkerStatsGetCapability(stub),
     profileEditsStats: new WorkerProfileEditsStatsCapability(stub),
+    funnelActivityStats: new FunnelActivityStatsCapability(stub),
     workerSearch: new WorkerSearchCapability(stub),
     caseMemoryGet: new WorkerCaseMemoryGetCapability(stub),
     caseMemoryPut: new WorkerCaseMemoryPutCapability(stub),

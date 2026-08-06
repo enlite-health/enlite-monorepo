@@ -26,6 +26,8 @@ import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDoc
 import { GetWorkerStatsUseCase } from '../../worker/application/GetWorkerStatsUseCase';
 import { GetProfileEditsStatsUseCase } from '../../worker/application/GetProfileEditsStatsUseCase';
 import { WorkerProfileEditsStatsCapability } from '../application/capabilities/WorkerProfileEditsStatsCapability';
+import { GetFunnelActivityStatsUseCase } from '../../matching/application/GetFunnelActivityStatsUseCase';
+import { FunnelActivityStatsCapability } from '../application/capabilities/FunnelActivityStatsCapability';
 import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseCase';
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
@@ -161,6 +163,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     statsGet: new WorkerStatsGetCapability(new GetWorkerStatsUseCase(dbPool)),
     profileEditsStats: new WorkerProfileEditsStatsCapability(
       new GetProfileEditsStatsUseCase(dbPool),
+    ),
+    funnelActivityStats: new FunnelActivityStatsCapability(
+      new GetFunnelActivityStatsUseCase(dbPool),
     ),
     workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
     caseMemoryGet: new WorkerCaseMemoryGetCapability(caseMemoryRepo),

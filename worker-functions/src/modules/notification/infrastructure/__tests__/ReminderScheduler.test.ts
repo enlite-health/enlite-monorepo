@@ -18,6 +18,7 @@
  */
 
 import { ReminderScheduler } from '../ReminderScheduler';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('ReminderScheduler', () => {
   let mockQuery: jest.Mock;
@@ -27,7 +28,7 @@ describe('ReminderScheduler', () => {
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     mockCloudTasks = {
       schedule: jest.fn().mockResolvedValue('task-name-123'),
       deleteTask: jest.fn().mockResolvedValue(undefined),

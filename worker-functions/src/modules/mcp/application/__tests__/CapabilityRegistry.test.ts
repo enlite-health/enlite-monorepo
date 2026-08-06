@@ -9,6 +9,7 @@ import { WorkerProfileConfirmUpdateCapability } from '../capabilities/WorkerProf
 import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
 import { WorkerStatsGetCapability } from '../capabilities/WorkerStatsGetCapability';
 import { WorkerProfileEditsStatsCapability } from '../capabilities/WorkerProfileEditsStatsCapability';
+import { FunnelActivityStatsCapability } from '../capabilities/FunnelActivityStatsCapability';
 import { WorkerSearchCapability } from '../capabilities/WorkerSearchCapability';
 import { WorkerCaseMemoryGetCapability } from '../capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../capabilities/WorkerCaseMemoryPutCapability';
@@ -108,6 +109,9 @@ function makeCapabilities() {
   const profileEditsStats = new WorkerProfileEditsStatsCapability({
     execute: jest.fn().mockResolvedValue({ sinceDays: 30, totalEdits: 0, bySource: [] }),
   } as never);
+  const funnelActivityStats = new FunnelActivityStatsCapability({
+    execute: jest.fn().mockResolvedValue({ sinceDays: 30, totalActions: 0, byActor: [] }),
+  } as never);
   const workerSearch = new WorkerSearchCapability({
     execute: jest.fn().mockResolvedValue({ workers: [], total: 0, limit: 20, offset: 0 }),
   } as never);
@@ -161,6 +165,7 @@ function makeCapabilities() {
     documentsUpload,
     statsGet,
     profileEditsStats,
+    funnelActivityStats,
     workerSearch,
     caseMemoryGet,
     caseMemoryPut,

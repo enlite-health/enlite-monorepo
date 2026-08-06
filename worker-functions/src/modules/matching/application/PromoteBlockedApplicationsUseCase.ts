@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
+import { systemActor } from '@shared/audit/actorSource';
 import { logger } from '@shared/logging';
 import {
   assertWorkerCanApply,
@@ -127,17 +129,26 @@ export class PromoteBlockedApplicationsUseCase {
           continue;
         }
 
-        const { wjaId } = await this.createWjaUseCase.execute(this.pool, {
-          workerId,
-          jobPostingId: row.job_posting_id,
-          acquisitionChannel: row.acquisition_channel ?? NEUTRAL_CHANNEL,
-        });
+        // Promoção automática (worker completou o cadastro) — não é ação de
+        // ninguém do time. A marcação de promovido entra na MESMA transação:
+        // se ela falhar, a candidatura não fica criada sem o vínculo.
+        await withActorContext(
+          this.pool,
+          async (client) => {
+            const { wjaId } = await this.createWjaUseCase.execute(client, {
+              workerId,
+              jobPostingId: row.job_posting_id,
+              acquisitionChannel: row.acquisition_channel ?? NEUTRAL_CHANNEL,
+            });
 
-        await this.pool.query(
-          `UPDATE worker_blocked_applications
-           SET promoted_at = NOW(), promoted_wja_id = $2
-           WHERE id = $1`,
-          [row.id, wjaId],
+            await client.query(
+              `UPDATE worker_blocked_applications
+               SET promoted_at = NOW(), promoted_wja_id = $2
+               WHERE id = $1`,
+              [row.id, wjaId],
+            );
+          },
+          systemActor('promote-blocked'),
         );
 
         result.promoted += 1;
