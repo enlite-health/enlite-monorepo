@@ -1,4 +1,5 @@
 import { ApplyToVacancyUseCase } from '../ApplyToVacancyUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('ApplyToVacancyUseCase', () => {
   let mockQuery: jest.Mock;
@@ -17,7 +18,7 @@ describe('ApplyToVacancyUseCase', () => {
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     mockRecordBlocked = { execute: jest.fn().mockResolvedValue(['doc_dni_front']) };
     mockCreateWja = { execute: jest.fn().mockResolvedValue({ wjaId: 'wja-1' }) };
     useCase = new ApplyToVacancyUseCase(mockRecordBlocked as any, mockCreateWja as any);
@@ -31,7 +32,12 @@ describe('ApplyToVacancyUseCase', () => {
     const result = await useCase.execute(mockDb as any, PARAMS);
 
     expect(result).toEqual({ ok: true, wjaId: 'wja-1' });
-    expect(mockCreateWja.execute).toHaveBeenCalledWith(mockDb, {
+    // Recebe o CLIENT da transação (não o pool): a criação da candidatura passou
+    // a rodar sob `withActorContext` para carimbar quem postulou.
+    expect(mockCreateWja.execute).toHaveBeenCalledWith(expect.objectContaining({
+      query: expect.any(Function),
+      release: expect.any(Function),
+    }), {
       workerId: 'w-1',
       jobPostingId: 'jp-1',
       acquisitionChannel: 'luz_whatsapp',

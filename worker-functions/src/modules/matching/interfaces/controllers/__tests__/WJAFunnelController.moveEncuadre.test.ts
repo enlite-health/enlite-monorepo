@@ -21,9 +21,7 @@ jest.mock('@modules/matching/infrastructure/BlockedApplicationQueryRepository', 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
-      getPool: jest.fn().mockReturnValue({
-        query: mockQuery,
-      }),
+      getPool: jest.fn().mockReturnValue((require('@shared/database/poolMockSupport') as typeof import('@shared/database/poolMockSupport')).poolMockWithConnect(mockQuery)),
     }),
   },
 }));

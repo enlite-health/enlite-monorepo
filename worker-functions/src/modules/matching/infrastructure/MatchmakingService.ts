@@ -19,6 +19,8 @@
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
+import { systemActor } from '@shared/audit/actorSource';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { DataRealm } from '@shared/domain/DataRealm';
 import {
@@ -202,24 +204,33 @@ export class MatchmakingService {
   // ─── Persistência ─────────────────────────────────────────────────────────
 
   private async saveMatchResults(jobPostingId: string, candidates: ScoredCandidate[]): Promise<void> {
-    for (const candidate of candidates) {
-      // When scoring is disabled, finalScore=0 — persist as NULL so dashboards
-      // can distinguish "not scored yet" from "scored 0".
-      const matchScore = candidate.llmScore !== null || candidate.structuredScore !== 0
-        ? candidate.finalScore
-        : null;
-      // F7.c (ADR-004): application_status removido. source/acquisition_channel='system' adicionados.
-      await this.db.query(
-        `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, match_score, application_funnel_stage, source, acquisition_channel, internal_notes)
-         VALUES ($1, $2, $3, 'INVITED', 'system', 'system', $4)
-         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-           match_score    = EXCLUDED.match_score,
-           internal_notes = EXCLUDED.internal_notes,
-           updated_at     = NOW()`,
-        [candidate.workerId, jobPostingId, matchScore, candidate.llmReasoning],
-      );
-    }
+    // Uma transação para o lote inteiro, carimbada como rotina do sistema: sem
+    // isso, cada candidato salvo pelo algoritmo entraria na medição como autor
+    // desconhecido e inflaria a fatia `nao_instrumentado`.
+    await withActorContext(
+      this.db,
+      async (client) => {
+        for (const candidate of candidates) {
+          // When scoring is disabled, finalScore=0 — persist as NULL so dashboards
+          // can distinguish "not scored yet" from "scored 0".
+          const matchScore = candidate.llmScore !== null || candidate.structuredScore !== 0
+            ? candidate.finalScore
+            : null;
+          // F7.c (ADR-004): application_status removido. source/acquisition_channel='system' adicionados.
+          await client.query(
+            `INSERT INTO worker_job_applications
+               (worker_id, job_posting_id, match_score, application_funnel_stage, source, acquisition_channel, internal_notes)
+             VALUES ($1, $2, $3, 'INVITED', 'system', 'system', $4)
+             ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+               match_score    = EXCLUDED.match_score,
+               internal_notes = EXCLUDED.internal_notes,
+               updated_at     = NOW()`,
+            [candidate.workerId, jobPostingId, matchScore, candidate.llmReasoning],
+          );
+        }
+      },
+      systemActor('matchmaking'),
+    );
   }
 }
 

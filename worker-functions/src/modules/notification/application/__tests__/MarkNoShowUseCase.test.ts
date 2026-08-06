@@ -12,6 +12,7 @@
  */
 
 import { MarkNoShowUseCase } from '../MarkNoShowUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('MarkNoShowUseCase', () => {
   let mockQuery: jest.Mock;
@@ -21,7 +22,7 @@ describe('MarkNoShowUseCase', () => {
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     useCase = new MarkNoShowUseCase(mockDb as any);
     // Estes casos descrevem o comportamento HABILITADO. O default (desligado)
     // é coberto no bloco "flag NO_SHOW_AUTO_ENABLED" no fim do arquivo.

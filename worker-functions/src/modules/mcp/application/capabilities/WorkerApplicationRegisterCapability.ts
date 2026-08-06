@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Pool } from 'pg';
+import { luzActor } from '@shared/audit/actorSource';
 import type { ApplyToVacancyUseCase } from '../../../matching/application/ApplyToVacancyUseCase';
 import type { GetWorkerByIdUseCase } from '../../../worker/application/GetWorkerByIdUseCase';
 
@@ -56,6 +57,9 @@ export class WorkerApplicationRegisterCapability {
       acquisitionChannel: 'luz_whatsapp',
       workerName,
       workerPhone,
+      // Chamada MCP não tem sessão de painel: sem ator explícito a postulação
+      // feita na conversa cairia em `nao_instrumentado`.
+      actor: luzActor('apply'),
     });
 
     if (!result.ok) {

@@ -9,6 +9,7 @@ import type { WorkerProfileConfirmUpdateCapability } from './capabilities/Worker
 import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocumentsUploadCapability';
 import type { WorkerStatsGetCapability } from './capabilities/WorkerStatsGetCapability';
 import type { WorkerProfileEditsStatsCapability } from './capabilities/WorkerProfileEditsStatsCapability';
+import type { FunnelActivityStatsCapability } from './capabilities/FunnelActivityStatsCapability';
 import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapability';
 import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCapability';
 import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMemoryGetCapability';
@@ -50,6 +51,8 @@ interface RegistryDeps {
   documentsUpload: WorkerDocumentsUploadCapability;
   statsGet: WorkerStatsGetCapability;
   profileEditsStats: WorkerProfileEditsStatsCapability;
+  /** Medição Luz × time humano (change rastreabilidade-ator-recrutamento). */
+  funnelActivityStats: FunnelActivityStatsCapability;
   workerSearch: WorkerSearchCapability;
   caseMemoryGet: WorkerCaseMemoryGetCapability;
   caseMemoryPut: WorkerCaseMemoryPutCapability;
@@ -126,6 +129,7 @@ export class CapabilityRegistry {
       documentsUpload,
       statsGet,
       profileEditsStats,
+      funnelActivityStats,
       workerSearch,
       caseMemoryGet,
       caseMemoryPut,
@@ -249,6 +253,17 @@ export class CapabilityRegistry {
           (profileEditsStats.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => profileEditsStats.execute(args),
+      },
+      {
+        name:
+          (funnelActivityStats.constructor as { NAME?: string }).NAME ?? 'funnel.activity.stats',
+        description:
+          (funnelActivityStats.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Recruitment activity by actor.',
+        inputShape:
+          (funnelActivityStats.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => funnelActivityStats.execute(args),
       },
       {
         name: (workerSearch.constructor as { NAME?: string }).NAME ?? 'worker.search',

@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 import { logger } from '@shared/logging';
+import { withActorContext } from '@shared/database/actorContext';
+import { systemActor } from '@shared/audit/actorSource';
 
 export interface NoShowResult {
   marked: number;
@@ -72,23 +74,32 @@ export class MarkNoShowUseCase {
     let marked = 0;
     let stageMovedToInDoubt = 0;
 
-    for (const row of selectResult.rows) {
-      const shouldMoveStage = row.application_funnel_stage === 'CONFIRMED';
+    // Carimbado como rotina do sistema: mover para IN_DOUBT por falta não é
+    // trabalho de ninguém do time nem da Luz, e sem o carimbo entraria como
+    // autor desconhecido na medição.
+    await withActorContext(
+      this.db,
+      async (client) => {
+        for (const row of selectResult.rows) {
+          const shouldMoveStage = row.application_funnel_stage === 'CONFIRMED';
 
-      await this.db.query(
-        `UPDATE worker_job_applications
-         SET interview_response = 'no_response',
-             updated_at = NOW()
-             ${shouldMoveStage ? ", application_funnel_stage = 'IN_DOUBT'" : ''}
-         WHERE worker_id = $1
-           AND job_posting_id = $2
-           AND interview_response = 'pending'`,
-        [row.worker_id, row.job_posting_id],
-      );
+          await client.query(
+            `UPDATE worker_job_applications
+             SET interview_response = 'no_response',
+                 updated_at = NOW()
+                 ${shouldMoveStage ? ", application_funnel_stage = 'IN_DOUBT'" : ''}
+             WHERE worker_id = $1
+               AND job_posting_id = $2
+               AND interview_response = 'pending'`,
+            [row.worker_id, row.job_posting_id],
+          );
 
-      marked += 1;
-      if (shouldMoveStage) stageMovedToInDoubt += 1;
-    }
+          marked += 1;
+          if (shouldMoveStage) stageMovedToInDoubt += 1;
+        }
+      },
+      systemActor('no-show-auto'),
+    );
 
     logger.info(
       { marked, stageMovedToInDoubt },

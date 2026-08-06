@@ -1,4 +1,5 @@
 import { BookSlotFromWhatsAppUseCase } from '../BookSlotFromWhatsAppUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('BookSlotFromWhatsAppUseCase', () => {
   let mockQuery: jest.Mock;
@@ -21,7 +22,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     mockPubsub = { publish: jest.fn().mockResolvedValue('msg-1') };
     mockCloudTasks = { schedule: jest.fn().mockResolvedValue('task-123') };
     mockCalendar = { addGuestToMeeting: jest.fn().mockResolvedValue({ success: true }) };

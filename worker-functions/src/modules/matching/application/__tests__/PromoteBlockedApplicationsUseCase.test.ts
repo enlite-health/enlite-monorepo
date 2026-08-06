@@ -14,11 +14,12 @@
 
 import { PromoteBlockedApplicationsUseCase } from '../PromoteBlockedApplicationsUseCase';
 import type { CreateManualWjaWithEncuadreUseCase } from '../CreateManualWjaWithEncuadreUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 type QueryFn = jest.Mock;
 
 function makePool(query: QueryFn) {
-  return { query } as unknown as { query: QueryFn };
+  return poolMockWithConnect(query) as unknown as { query: QueryFn };
 }
 
 function makeCreateWjaUseCase(execute: jest.Mock) {
