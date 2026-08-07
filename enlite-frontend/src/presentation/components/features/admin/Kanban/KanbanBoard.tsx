@@ -208,6 +208,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
                 : undefined
             }
             contactNotesCount={enc.contactNotesCount}
+            selfAppliedAt={enc.selfAppliedAt}
           />
         )}
         /* O card sob o cursor é só leitura: sem handlers, sem menu de mover. */

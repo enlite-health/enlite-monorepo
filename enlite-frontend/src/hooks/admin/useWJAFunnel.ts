@@ -45,6 +45,8 @@ interface FunnelEncuadre {
   attemptCount?: number;
   /** Number of contact notes (comentários) registered for this WJA. 0 for blocked cards. */
   contactNotesCount?: number;
+  /** ISO de quando o próprio prestador entrou na vaga pelo link (null = desconhecido). */
+  selfAppliedAt?: string | null;
   /** Blocked card que foi "rechazado" (soft-dismiss): aparece em RECHAZADOS, com botão de voltar. */
   isDismissed?: boolean;
 }
