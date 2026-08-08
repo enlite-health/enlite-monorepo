@@ -25,6 +25,12 @@ export { PATIENT_STATUSES, isPatientStatus } from './domain/enums/PatientStatus'
 
 // Domain types
 export type { PatientIdentity } from './domain/PatientIdentity';
+export type { PatientChatIds } from './domain/PatientChatId';
+export {
+  GROUP_CHAT_ID_PATTERN,
+  CHAT_ID_MAX_LENGTH,
+  isGroupChatId,
+} from './domain/PatientChatId';
 export type { PatientClinical } from './domain/PatientClinical';
 export type {
   PatientResponsible,
@@ -40,6 +46,18 @@ export type {
   UpsertFromClickUpOptions,
   MissingContactStrategy,
 } from './application/PatientService';
+export {
+  PatientChatIdsService,
+  PatientChatIdsNotFoundError,
+  ChatIdAlreadyLinkedError,
+} from './application/PatientChatIdsService';
+export {
+  FindPatientChatCandidatesUseCase,
+  DEFAULT_CANDIDATE_LIMIT,
+} from './application/FindPatientChatCandidatesUseCase';
+export type { FindPatientChatCandidatesOutput } from './application/FindPatientChatCandidatesUseCase';
+export { rankChatCandidates, scoreGroupName, toMatchTerms, normalizeForMatch } from './application/rankChatCandidates';
+export type { ChatCandidate } from './application/rankChatCandidates';
 export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
@@ -56,6 +74,8 @@ export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepos
 export { PatientClinicalRepository } from './infrastructure/PatientClinicalRepository';
 export { PatientResponsibleRepository } from './infrastructure/PatientResponsibleRepository';
 export { PatientQueryRepository } from './infrastructure/PatientQueryRepository';
+export { PatientChatIdsRepository } from './infrastructure/PatientChatIdsRepository';
+export type { PatientChatIdsRow, ChatIdConflict } from './infrastructure/PatientChatIdsRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
 export type {
@@ -69,6 +89,8 @@ export type {
 
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
+export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
+export { patientChatIdsSchema } from './interfaces/validators/patientChatIdsSchema';
 export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
 

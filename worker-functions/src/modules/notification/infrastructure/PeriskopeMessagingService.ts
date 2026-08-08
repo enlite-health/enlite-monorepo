@@ -1,4 +1,5 @@
-import axios, { AxiosInstance } from 'axios';
+import { AxiosInstance } from 'axios';
+import { createPeriskopeHttpClient } from './periskopeHttpClient';
 import { IMessagingService, MessageSentResult, SendWhatsAppOptions } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
 import { MessageTemplate } from '../domain/MessageTemplate';
@@ -28,24 +29,10 @@ export class PeriskopeMessagingService implements IMessagingService {
   constructor(templateRepo: MessageTemplateRepository) {
     this.templateRepo = templateRepo;
 
-    const apiKey = process.env.PERISKOPE_API_KEY;
-    // Número conectado no Periskope: DDI + número, só dígitos (ex: 5491122334455)
-    const phone = process.env.PERISKOPE_PHONE;
+    this.http = createPeriskopeHttpClient();
+    this.isConfigured = this.http !== null;
 
-    this.isConfigured = !!(apiKey && phone);
-
-    if (this.isConfigured) {
-      this.http = axios.create({
-        baseURL: 'https://api.periskope.app/v1',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'x-phone': phone!,
-          'Content-Type': 'application/json',
-        },
-        timeout: 15000,
-      });
-    } else {
-      this.http = null;
+    if (!this.isConfigured) {
       console.warn('[Periskope] Service not configured - messaging features will be disabled');
     }
   }

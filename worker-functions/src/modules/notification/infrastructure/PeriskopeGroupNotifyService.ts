@@ -1,4 +1,5 @@
-import axios, { AxiosInstance } from 'axios';
+import { AxiosInstance } from 'axios';
+import { createPeriskopeHttpClient } from './periskopeHttpClient';
 import { logger, reportError } from '@shared/logging';
 
 /**
@@ -15,23 +16,10 @@ export class PeriskopeGroupNotifyService {
   private isConfigured: boolean;
 
   constructor() {
-    const apiKey = process.env.PERISKOPE_API_KEY;
-    const phone = process.env.PERISKOPE_PHONE;
+    this.http = createPeriskopeHttpClient();
+    this.isConfigured = this.http !== null;
 
-    this.isConfigured = !!(apiKey && phone);
-
-    if (this.isConfigured) {
-      this.http = axios.create({
-        baseURL: 'https://api.periskope.app/v1',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'x-phone': phone!,
-          'Content-Type': 'application/json',
-        },
-        timeout: 15000,
-      });
-    } else {
-      this.http = null;
+    if (!this.isConfigured) {
       logger.warn({ msg: '[PeriskopeGroupNotifyService] Not configured — group notify disabled' });
     }
   }

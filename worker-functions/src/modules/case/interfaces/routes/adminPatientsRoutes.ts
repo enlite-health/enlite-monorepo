@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AdminPatientsController } from '../controllers/AdminPatientsController';
+import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatIdsController';
 import { AuthMiddleware } from '@modules/identity';
 
 /**
@@ -12,6 +13,7 @@ import { AuthMiddleware } from '@modules/identity';
 export function createAdminPatientsRoutes(
   controller: AdminPatientsController,
   authMiddleware: AuthMiddleware,
+  chatIdsController: AdminPatientChatIdsController = new AdminPatientChatIdsController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -72,6 +74,18 @@ export function createAdminPatientsRoutes(
   // POST /patients/:id/activate — approve → generate one draft vacancy per location
   router.post('/patients/:id/activate', staffOnly, (req: Request, res: Response) =>
     controller.activatePatient(req, res),
+  );
+
+  // ── Chat IDs do Periskope (tasks 86ajy0859 / 86ajy085a) ────────────────────
+  // GET  candidatos: leitura no Periskope, atrás de PATIENT_CHAT_LOOKUP_ENABLED.
+  // PUT  chat-ids:   grava o par escolhido pelo humano.
+  // PUT (não PATCH) de propósito: o PATCH /:id/:section é fully-dynamic e
+  // capturaria 'chat-ids' como :section, devolvendo 400 pelo whitelist.
+  router.get('/patients/:id/chat-candidates', staffOnly, (req: Request, res: Response) =>
+    chatIdsController.getChatCandidates(req, res),
+  );
+  router.put('/patients/:id/chat-ids', staffOnly, (req: Request, res: Response) =>
+    chatIdsController.updateChatIds(req, res),
   );
 
   // ── Synthetic monitoring (e2e-prod) ────────────────────────────────────────

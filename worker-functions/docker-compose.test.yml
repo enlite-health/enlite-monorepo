@@ -55,6 +55,14 @@ services:
       OPENAPI_PUBLIC: "true"
       # Habilita a rota condicional de webhook ClickUp pro teste de cobertura
       CLICKUP_WEBHOOK_SECRET: "test-secret-clickup-e2e-only"
+      # Chat IDs do paciente (migration 260): kill-switch da busca no Periskope.
+      # Default false — o e2e liga explicitamente e aponta PERISKOPE_BASE_URL
+      # para um servidor local com o payload real capturado de produção, para
+      # NUNCA tocar a API do Periskope de verdade a partir de um teste.
+      PATIENT_CHAT_LOOKUP_ENABLED: ${PATIENT_CHAT_LOOKUP_ENABLED:-false}
+      PERISKOPE_API_KEY: ${PERISKOPE_API_KEY:-}
+      PERISKOPE_PHONE: ${PERISKOPE_PHONE:-}
+      PERISKOPE_BASE_URL: ${PERISKOPE_BASE_URL:-}
 
 volumes:
   firebase_emulator_data:

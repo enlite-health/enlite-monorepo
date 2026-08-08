@@ -234,6 +234,8 @@ export class PatientIdentityRepository {
         city_locality AS "cityLocality", province,
         zone_neighborhood AS "zoneNeighborhood",
         country,
+        family_chat_id AS "familyChatId",
+        providers_chat_id AS "providersChatId",
         needs_attention AS "needsAttention",
         attention_reasons AS "attentionReasons",
         created_at AS "createdAt", updated_at AS "updatedAt"

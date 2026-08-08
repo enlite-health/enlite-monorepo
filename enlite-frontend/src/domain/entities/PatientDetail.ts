@@ -70,6 +70,10 @@ export interface PatientDetail {
   affiliateId: string | null;
   sex: string | null; // 'MALE'|'FEMALE'|'INTERSEX'|'UNDISCLOSED'
   phoneWhatsapp: string | null;
+  /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
+  familyChatId: string | null;
+  /** chat_id do grupo de WhatsApp dos PRESTADORES no Periskope (@g.us). Migration 260. */
+  providersChatId: string | null;
   diagnosis: string | null;
   dependencyLevel: string | null;
   clinicalSpecialty: string | null;
@@ -194,6 +198,33 @@ export type PatientSectionPayload =
   | PatientClinicalSectionPayload
   | PatientSupportNetworkSectionPayload
   | PatientServiceSectionPayload;
+
+/**
+ * Body de PUT /api/admin/patients/:id/chat-ids — espelha patientChatIdsSchema
+ * (backend). Os dois campos são obrigatórios; `null` desvincula.
+ */
+export interface PatientChatIdsPayload {
+  familyChatId: string | null;
+  providersChatId: string | null;
+}
+
+/** Um grupo do Periskope candidato, já pontuado — GET /:id/chat-candidates. */
+export interface PatientChatCandidate {
+  chatId: string;
+  chatName: string | null;
+  memberCount: number | null;
+  /** 0..1 — semelhança com o nome do paciente. */
+  score: number;
+  matchedTerms: string[];
+  /** true quando o grupo já está preso a OUTRO paciente. */
+  linkedToOtherPatient: boolean;
+}
+
+export interface PatientChatCandidatesResult {
+  candidates: PatientChatCandidate[];
+  /** Quantos grupos foram varridos no Periskope. */
+  totalGroups: number;
+}
 
 /** Result of PUT /api/admin/patients/:id/status. */
 export interface UpdatePatientStatusResult {

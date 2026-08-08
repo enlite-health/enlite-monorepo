@@ -1,5 +1,6 @@
-import axios, { AxiosInstance } from 'axios';
+import { AxiosInstance } from 'axios';
 import { logger, reportError } from '@shared/logging';
+import { createPeriskopeHttpClient } from './periskopeHttpClient';
 
 /**
  * PeriskopeNoteService — posta NOTAS internas no chat do worker no Periskope.
@@ -22,24 +23,14 @@ export class PeriskopeNoteService {
   private orgId: string | undefined;
 
   constructor() {
-    const apiKey = process.env.PERISKOPE_API_KEY;
-    const phone = process.env.PERISKOPE_PHONE;
     this.author = process.env.PERISKOPE_NOTE_AUTHOR;
     this.orgId = process.env.PERISKOPE_ORG_ID;
-    this.isConfigured = !!(apiKey && phone && this.author);
 
-    if (this.isConfigured) {
-      this.http = axios.create({
-        baseURL: 'https://api.periskope.app/v1',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'x-phone': phone!,
-          'Content-Type': 'application/json',
-        },
-        timeout: 15000,
-      });
-    } else {
-      this.http = null;
+    const http = createPeriskopeHttpClient();
+    this.isConfigured = !!(http && this.author);
+    this.http = this.isConfigured ? http : null;
+
+    if (!this.isConfigured) {
       logger.warn({ msg: '[PeriskopeNoteService] Not configured (falta API_KEY/PHONE/NOTE_AUTHOR) — notas desabilitadas' });
     }
   }

@@ -84,6 +84,10 @@ export interface PatientDetailRow {
   province: string | null;
   zoneNeighborhood: string | null;
   country: string;
+  // Chat IDs dos grupos do Periskope (migration 260) — chave de join com a
+  // auditoria de informes (Candela). Sempre @g.us, ou null quando não vinculado.
+  familyChatId: string | null;
+  providersChatId: string | null;
   // Status / flags
   status: string | null;
   needsAttention: boolean;
