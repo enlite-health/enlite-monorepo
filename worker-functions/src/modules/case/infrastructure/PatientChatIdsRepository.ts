@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { PatientChatIdMap, PatientChatIdWriteMap } from '../domain/PatientChatId';
-import { isExclusiveChatRole } from '../domain/PatientChatRole';
+import { isExclusiveChatRole, type PatientChatRoleCatalog } from '../domain/PatientChatRole';
 
 /** Nome + grupos atuais de um paciente, por papel. */
 export interface PatientChatIdsRow {
@@ -16,7 +16,11 @@ export interface ChatIdConflict {
   chatId: string;
   patientId: string;
   role: string;
-  /** O papel em que ele está preso lá é exclusivo? Decide se o conflito barra. */
+  /**
+   * O papel em que ele está preso lá é exclusivo? Decide se o conflito barra.
+   * Lido da coluna derivada `patient_chat_ids.is_exclusive`, que o catálogo
+   * mantém em dia (PatientChatRolesRepository.update, na mesma transação).
+   */
   exclusive: boolean;
 }
 
@@ -87,17 +91,16 @@ export class PatientChatIdsRepository {
    * que ninguém mais enxerga.
    */
   async findLinkedElsewhere(exceptPatientId: string): Promise<ChatIdConflict[]> {
-    const res = await this.pool.query<{ chatId: string; patientId: string; role: string }>(
-      `SELECT c.chat_id AS "chatId", c.patient_id AS "patientId", c.role
+    const res = await this.pool.query<ChatIdConflict>(
+      `SELECT c.chat_id AS "chatId", c.patient_id AS "patientId", c.role,
+              c.is_exclusive AS "exclusive"
          FROM patient_chat_ids c
          JOIN patients p ON p.id = c.patient_id
         WHERE c.patient_id <> $1
           AND p.deleted_at IS NULL`,
       [exceptPatientId],
     );
-    // `exclusive` vem do CATÁLOGO, não da coluna: é o catálogo que manda, e a
-    // coluna is_exclusive é a cópia dele no banco (para o índice parcial).
-    return res.rows.map(r => ({ ...r, exclusive: isExclusiveChatRole(r.role) }));
+    return res.rows;
   }
 
   /**
@@ -175,8 +178,16 @@ export class PatientChatIdsRepository {
    *
    * Devolve o estado final completo, para a resposta nunca ser um palpite do
    * que "provavelmente" ficou gravado.
+   *
+   * `catalog` entra por parâmetro em vez de ser lido aqui dentro: o serviço já
+   * o carregou para validar os papéis, e ler duas vezes abriria uma janela em
+   * que a validação e a gravação usariam políticas diferentes.
    */
-  async applyChatIds(patientId: string, changes: PatientChatIdWriteMap): Promise<PatientChatIdMap> {
+  async applyChatIds(
+    patientId: string,
+    changes: PatientChatIdWriteMap,
+    catalog: PatientChatRoleCatalog,
+  ): Promise<PatientChatIdMap> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -197,7 +208,9 @@ export class PatientChatIdsRepository {
            DO UPDATE SET chat_id      = EXCLUDED.chat_id,
                          is_exclusive = EXCLUDED.is_exclusive,
                          updated_at   = NOW()`,
-          [patientId, role, chatId, isExclusiveChatRole(role)],
+          // A exclusividade sai do CATÁLOGO (ponto único). Esta coluna é só a
+          // cópia que o índice parcial consegue enxergar.
+          [patientId, role, chatId, isExclusiveChatRole(catalog, role)],
         );
       }
 

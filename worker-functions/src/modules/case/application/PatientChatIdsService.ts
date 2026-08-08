@@ -1,6 +1,7 @@
 import { PatientChatIdsRepository, type ChatIdConflict } from '../infrastructure/PatientChatIdsRepository';
+import { PatientChatRolesRepository } from '../infrastructure/PatientChatRolesRepository';
 import type { PatientChatIdMap, PatientChatIdWriteMap } from '../domain/PatientChatId';
-import { isExclusiveChatRole } from '../domain/PatientChatRole';
+import { isExclusiveChatRole, toRoleCatalog } from '../domain/PatientChatRole';
 
 /** O paciente pedido não existe (ou está soft-deleted). */
 export class PatientChatIdsNotFoundError extends Error {
@@ -19,7 +20,25 @@ export class ChatIdAlreadyLinkedError extends Error {
 }
 
 /**
+ * O body trouxe papel que não existe no catálogo, ou que está desativado.
+ *
+ * Erro separado do 400 genérico de schema porque a causa é outra: o formato
+ * está certo, o vocabulário é que não confere — e quem opera precisa saber que
+ * o caminho é a tela de administração de papéis, não corrigir o texto.
+ */
+export class UnknownChatRoleError extends Error {
+  constructor(public readonly roles: string[]) {
+    super(`Unknown or inactive chat role(s): ${roles.join(', ')}`);
+    this.name = 'UnknownChatRoleError';
+  }
+}
+
+/**
  * PatientChatIdsService — grava os grupos de WhatsApp do paciente, por papel.
+ *
+ * Os papéis válidos e a exclusividade de cada um vêm do CATÁLOGO
+ * (`patient_chat_roles`, migration 262), não de código. Ver
+ * `domain/PatientChatRole.isExclusiveChatRole` — o ponto único da decisão.
  *
  * A trava de unicidade tem duas metades, e as duas são necessárias:
  *
@@ -29,7 +48,7 @@ export class ChatIdAlreadyLinkedError extends Error {
  *     um psql à mão furam.
  *   - AQUI: a mesma regra, antes de bater na constraint, para devolver 409 com
  *     a LISTA DE CONFLITOS em vez de um erro de banco opaco — e para cobrir o
- *     caso misto (papel não-exclusivo tentando tomar um grupo que já é de um
+ *     caso misto (papel compartilhável tentando tomar um grupo que já é de um
  *     papel exclusivo alheio), que o índice parcial sozinho não vê.
  *
  * Ceiling honesto (ponytail): entre a leitura e a escrita há uma janela em que
@@ -40,14 +59,24 @@ export class ChatIdAlreadyLinkedError extends Error {
  */
 export class PatientChatIdsService {
   private readonly repo: PatientChatIdsRepository;
+  private readonly rolesRepo: PatientChatRolesRepository;
 
-  constructor(repo?: PatientChatIdsRepository) {
+  constructor(repo?: PatientChatIdsRepository, rolesRepo?: PatientChatRolesRepository) {
     this.repo = repo ?? new PatientChatIdsRepository();
+    this.rolesRepo = rolesRepo ?? new PatientChatRolesRepository();
   }
 
   async update(patientId: string, changes: PatientChatIdWriteMap): Promise<PatientChatIdMap> {
     const patient = await this.repo.findById(patientId);
     if (!patient) throw new PatientChatIdsNotFoundError(patientId);
+
+    // Uma leitura só do catálogo, usada tanto para validar quanto para gravar:
+    // ler duas vezes abriria uma janela em que a validação e a escrita
+    // enxergariam políticas diferentes.
+    const catalog = toRoleCatalog(await this.rolesRepo.listActive());
+
+    const unknown = Object.keys(changes).filter(role => !catalog.has(role));
+    if (unknown.length > 0) throw new UnknownChatRoleError(unknown);
 
     const wanted = Object.entries(changes).filter(
       (entry): entry is [string, string] => entry[1] !== null,
@@ -60,16 +89,15 @@ export class PatientChatIdsService {
           ([role, chatId]) =>
             chatId === taken.chatId &&
             // Basta UM dos dois lados ser exclusivo para o vínculo ser proibido:
-            // um grupo compartilhável (ex.: o do plano de saúde, se o Marcel
-            // disser que é um por plano) ainda assim não pode ser a família de
-            // alguém. Hoje os três papéis são exclusivos, então isto vale para
-            // tudo — e continua correto no dia em que um deixar de ser.
-            (taken.exclusive || isExclusiveChatRole(role)),
+            // um grupo compartilhável (o do plano de saúde, que nasce assim
+            // porque são 27 pagadores para 236 pacientes) ainda assim não pode
+            // ser a família de alguém.
+            (taken.exclusive || isExclusiveChatRole(catalog, role)),
         ),
       );
       if (conflicts.length > 0) throw new ChatIdAlreadyLinkedError(conflicts);
     }
 
-    return this.repo.applyChatIds(patientId, changes);
+    return this.repo.applyChatIds(patientId, changes, catalog);
   }
 }

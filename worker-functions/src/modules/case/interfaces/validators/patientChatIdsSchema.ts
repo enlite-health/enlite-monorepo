@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { CHAT_ID_MAX_LENGTH, GROUP_CHAT_ID_PATTERN } from '../../domain/PatientChatId';
 import type { PatientChatIdWriteMap } from '../../domain/PatientChatId';
-import { PATIENT_CHAT_ROLE_VALUES } from '../../domain/PatientChatRole';
+import {
+  PATIENT_CHAT_ROLE_PATTERN,
+  PATIENT_CHAT_ROLE_MAX_LENGTH,
+} from '../../domain/PatientChatRole';
 
 const GROUP_ONLY_MESSAGE =
   'chat_id deve ser de GRUPO do Periskope (termina em @g.us). Conversa 1-1 (@c.us) não é aceita.';
@@ -13,25 +16,31 @@ const groupChatId = z
   .regex(GROUP_CHAT_ID_PATTERN, GROUP_ONLY_MESSAGE);
 
 /**
- * O objeto `chatIds` do body, MONTADO A PARTIR DO CATÁLOGO de papéis.
+ * O objeto `chatIds` do body.
  *
- * É por isto que somar um papel não mexe na API: `PATIENT_CHAT_ROLE_VALUES`
- * ganha uma entrada e a rota passa a aceitá-la, com a mesma validação. Não há
- * lista de papéis escrita duas vezes.
+ * ⚠️ Aqui só se valida a FORMA. Quais papéis existem é DADO (tabela
+ * `patient_chat_roles`, administrada na tela), não código — então o schema não
+ * pode carregar a lista. Quem confere o vocabulário contra o catálogo é o
+ * serviço, que devolve `UNKNOWN_CHAT_ROLE` com os códigos recusados. Um schema
+ * com a lista embutida voltaria a exigir deploy a cada papel novo, que é
+ * exatamente o que esta mudança elimina.
  *
  * Semântica de cada chave:
- *   ausente → não mexe        (uma versão antiga do painel não apaga o que não conhece)
  *   null    → DESVINCULA
  *   string  → vincula (só @g.us)
- * `.strict()` transforma papel desconhecido em 400 em vez de no-op silencioso.
+ * Chave AUSENTE não é mexida — é o que permite uma versão antiga do painel
+ * salvar sem apagar um papel que ela nem sabe que existe.
  */
-const chatIdsObject = z
-  .object(
-    Object.fromEntries(
-      PATIENT_CHAT_ROLE_VALUES.map(role => [role, groupChatId.nullable().optional()]),
-    ) as Record<string, z.ZodOptional<z.ZodNullable<typeof groupChatId>>>,
-  )
-  .strict();
+const roleCode = z
+  .string()
+  .trim()
+  .max(PATIENT_CHAT_ROLE_MAX_LENGTH)
+  .regex(
+    PATIENT_CHAT_ROLE_PATTERN,
+    'papel deve ser um código em INGLÊS MAIÚSCULO (ex.: FAMILY, HEALTH_PLAN)',
+  );
+
+const chatIdsObject = z.record(roleCode, groupChatId.nullable());
 
 /** Contrato novo: um mapa de papéis. */
 const roleBody = z.object({ chatIds: chatIdsObject }).strict();
