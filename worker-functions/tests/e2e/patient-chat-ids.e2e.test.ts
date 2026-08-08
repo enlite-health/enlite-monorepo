@@ -21,10 +21,13 @@
  * sonda ao vivo separada, somente leitura: `scripts/probe-periskope-chats.ts`.
  * Se o Periskope mudar, é a sonda que quebra — não este teste.
  *
- * Requer a stack com:
- *   PATIENT_CHAT_LOOKUP_ENABLED=true
- *   PERISKOPE_API_KEY / PERISKOPE_PHONE (valores fake, só para o cliente existir)
- *   PERISKOPE_BASE_URL=http://host.docker.internal:9911/v1
+ * NÃO exige preparo manual: o `docker-compose.test.yml` já sobe a stack com a
+ * flag ligada e o `PERISKOPE_BASE_URL` apontando para o stub local, mais o
+ * `extra_hosts` que o Linux do CI precisa para achar o host.
+ *
+ * (Antes era preciso exportar 4 variáveis à mão. O teste passava na máquina de
+ * quem sabia disso e falhava no CI, que não sabia — e o CI é justamente quem
+ * precisa do gate. Teste que depende de alguém lembrar não é gate.)
  */
 
 import { Pool } from 'pg';
