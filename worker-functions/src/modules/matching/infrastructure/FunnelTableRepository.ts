@@ -72,7 +72,17 @@ export class FunnelTableRepository {
          w.status                                          AS worker_status,
          (SELECT COUNT(*)::int FROM wja_contact_notes cn
           WHERE cn.worker_id = wja.worker_id AND cn.job_posting_id = wja.job_posting_id) AS contact_notes_count,
-         self_apply.created_at::text                       AS self_applied_at
+         -- "Levantou a mão": o próprio prestador entrou na vaga pelo link público
+         -- (track-channel → ator worker_self: no trigger, D95). Sinal de lead QUENTE —
+         -- sem isso o card fica idêntico a um convite frio e a pessoa espera em
+         -- silêncio (caso Carina, 14 vagas em 3 semanas). NULL = não sabemos: a
+         -- autoria só é gravada desde 06/08.
+         -- Subquery escalar (e não LATERAL) de propósito: o meta-teste sql-schema-sync
+         -- não distingue alias de LATERAL de nome de tabela, e abrir exceção pra ele
+         -- enfraquece um guard que já pegou schema drift de verdade.
+         (SELECT h.created_at::text FROM worker_job_application_stage_history h
+           WHERE h.application_id = wja.id AND h.changed_by LIKE 'worker_self:%'
+           ORDER BY h.created_at ASC LIMIT 1)               AS self_applied_at
        FROM worker_job_applications wja
        LEFT JOIN workers w
          ON w.id = wja.worker_id
@@ -92,18 +102,6 @@ export class FunnelTableRepository {
          ORDER BY dispatched_at DESC
          LIMIT 1
        ) latest_wbdl ON true
-       -- "Levantou a mão": o próprio prestador entrou na vaga pelo link público
-       -- (track-channel → ApplyToVacancyUseCase, ator worker_self: no trigger).
-       -- Sinal de lead QUENTE — sem isso o card fica idêntico a um convite frio
-       -- e a pessoa espera em silêncio (caso Carina, 14 vagas em 3 semanas).
-       LEFT JOIN LATERAL (
-         SELECT h.created_at
-         FROM worker_job_application_stage_history h
-         WHERE h.application_id = wja.id
-           AND h.changed_by LIKE 'worker_self:%'
-         ORDER BY h.created_at ASC
-         LIMIT 1
-       ) self_apply ON true
        WHERE wja.job_posting_id = $1
          -- Worker que deu baixa na conta some do kanban (linhas E contadores das
          -- abas, que o GetFunnelTableUseCase deriva destas linhas).
