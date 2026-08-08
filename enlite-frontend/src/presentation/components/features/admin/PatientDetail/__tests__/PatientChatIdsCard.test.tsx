@@ -120,6 +120,42 @@ describe('PatientChatIdsCard', () => {
     await waitFor(() => expect(screen.getByTestId('chat-ids-empty')).toBeInTheDocument());
   });
 
+  it('lista incompleta AVISA na tela — o operador não pode ler "não achei" e ser "cortei"', async () => {
+    // Este é o conserto do teto silencioso: antes, a lista podia vir cortada e a
+    // tela dizia só "nenhum candidato". Quem vincula precisa saber a diferença.
+    getPatientChatCandidates.mockResolvedValue({
+      candidates: [],
+      totalGroups: 10000,
+      groupListTruncated: true,
+    });
+    render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+    fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
+
+    const aviso = await screen.findByTestId('chat-ids-truncated-warning');
+    expect(aviso).toHaveTextContent(
+      ptBR.admin.patients.detail.chatIdsCard.listTruncated,
+    );
+    // O aviso é role=alert: chega a leitor de tela, não é só cor.
+    expect(aviso).toHaveAttribute('role', 'alert');
+    // E o vazio continua aparecendo — são duas informações diferentes.
+    expect(screen.getByTestId('chat-ids-empty')).toBeInTheDocument();
+  });
+
+  it('lista completa NÃO mostra o aviso de truncamento', async () => {
+    getPatientChatCandidates.mockResolvedValue({
+      candidates: CANDIDATES,
+      totalGroups: 774,
+      groupListTruncated: false,
+    });
+    render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+    fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
+    expect(screen.queryByTestId('chat-ids-truncated-warning')).not.toBeInTheDocument();
+  });
+
   it('erro na busca (ex.: kill-switch 503) aparece na tela', async () => {
     getPatientChatCandidates.mockRejectedValue(new Error('Chat lookup disabled'));
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);

@@ -114,7 +114,11 @@ export class AdminPatientChatIdsController {
 
       res.status(200).json({
         success: true,
-        data: { candidates: result.candidates, totalGroups: result.totalGroups },
+        data: {
+          candidates: result.candidates,
+          totalGroups: result.totalGroups,
+          groupListTruncated: result.groupListTruncated,
+        },
       });
     } catch (err: unknown) {
       if (err instanceof PatientChatIdsNotFoundError) {

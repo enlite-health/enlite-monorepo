@@ -224,6 +224,12 @@ export interface PatientChatCandidatesResult {
   candidates: PatientChatCandidate[];
   /** Quantos grupos foram varridos no Periskope. */
   totalGroups: number;
+  /**
+   * `true` = a lista de grupos veio INCOMPLETA do Periskope. A tela precisa
+   * avisar: sem isso o operador lê "nenhum candidato" quando a verdade é que a
+   * lista foi cortada antes de chegar no grupo do paciente.
+   */
+  groupListTruncated?: boolean;
 }
 
 /** Result of PUT /api/admin/patients/:id/status. */

@@ -3124,7 +3124,8 @@
           "searchError": "No se pudieron buscar los chats.",
           "saveError": "No se pudieron guardar los chat IDs.",
           "save": "Guardar",
-          "close": "Cerrar"
+          "close": "Cerrar",
+          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico."
         }
       }
     },

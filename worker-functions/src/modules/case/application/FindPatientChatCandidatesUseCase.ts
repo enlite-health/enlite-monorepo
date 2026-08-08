@@ -7,7 +7,17 @@ import { PatientChatIdsNotFoundError } from './PatientChatIdsService';
 export const DEFAULT_CANDIDATE_LIMIT = 10;
 
 export type FindPatientChatCandidatesOutput =
-  | { ok: true; candidates: ChatCandidate[]; totalGroups: number }
+  | {
+      ok: true;
+      candidates: ChatCandidate[];
+      totalGroups: number;
+      /**
+       * `true` = a lista de grupos do Periskope veio INCOMPLETA. Sobe até a tela
+       * de propósito: sem isso, o operador lê "nenhum candidato" quando a
+       * verdade é "a lista foi cortada antes de chegar no grupo dele".
+       */
+      groupListTruncated: boolean;
+    }
   /** Não deu para consultar o Periskope (sem credencial, rede, HTTP). */
   | { ok: false; reason: 'periskope_unavailable' }
   /** O paciente não tem nome no cadastro — não há por onde ranquear. */
@@ -41,8 +51,9 @@ export class FindPatientChatCandidatesUseCase {
     const patientName = [patient.firstName, patient.lastName].filter(Boolean).join(' ').trim();
     if (!patientName) return { ok: false, reason: 'patient_has_no_name' };
 
-    const groups = await this.periskope.listGroupChats();
-    if (groups === null) return { ok: false, reason: 'periskope_unavailable' };
+    const listed = await this.periskope.listGroupChats();
+    if (listed === null) return { ok: false, reason: 'periskope_unavailable' };
+    const { groups, truncated } = listed;
 
     const linkedElsewhere = new Set(
       (await this.repo.findLinkedElsewhere(patientId)).map(c => c.chatId),
@@ -52,6 +63,7 @@ export class FindPatientChatCandidatesUseCase {
       ok: true,
       candidates: rankChatCandidates({ patientName, groups, linkedElsewhere, limit }),
       totalGroups: groups.length,
+      groupListTruncated: truncated,
     };
   }
 }

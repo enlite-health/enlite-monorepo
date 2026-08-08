@@ -39,6 +39,7 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
   const [searched, setSearched] = useState(false);
   const [candidates, setCandidates] = useState<PatientChatCandidate[]>([]);
   const [totalGroups, setTotalGroups] = useState(0);
+  const [listTruncated, setListTruncated] = useState(false);
   const [family, setFamily] = useState<string>(patient.familyChatId ?? '');
   const [providers, setProviders] = useState<string>(patient.providersChatId ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +68,7 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
       const res = await AdminApiService.getPatientChatCandidates(patient.id);
       setCandidates(res.candidates);
       setTotalGroups(res.totalGroups);
+      setListTruncated(res.groupListTruncated === true);
       setSearched(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : tc('searchError'));
@@ -182,6 +184,15 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
               <Text size="sm" weight="medium" color="primary">
                 {tc('candidatesTitle')} ({candidates.length}/{totalGroups})
               </Text>
+              {listTruncated && (
+                <div
+                  className="border border-amber-400 bg-amber-50 rounded-lg px-4 py-2"
+                  data-testid="chat-ids-truncated-warning"
+                  role="alert"
+                >
+                  <Text size="sm" className="text-amber-800">{tc('listTruncated')}</Text>
+                </div>
+              )}
               {candidates.length === 0 && (
                 <div data-testid="chat-ids-empty">
                   <Text size="sm" color="muted">{tc('noCandidates')}</Text>

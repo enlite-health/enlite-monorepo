@@ -27,8 +27,16 @@ function repoMock(over: Record<string, unknown> = {}) {
   } as unknown as PatientChatIdsRepository;
 }
 
-function periskopeMock(groups: unknown) {
-  return { listGroupChats: jest.fn().mockResolvedValue(groups) } as unknown as PeriskopeChatReadService;
+/**
+ * `groups === null` = não deu para consultar o Periskope. Caso contrário devolve
+ * o envelope novo do serviço: a lista MAIS o sinal de lista incompleta, que o
+ * use case precisa repassar até a tela.
+ */
+function periskopeMock(groups: unknown, truncated = false) {
+  const result = groups === null ? null : { groups, truncated };
+  return {
+    listGroupChats: jest.fn().mockResolvedValue(result),
+  } as unknown as PeriskopeChatReadService;
 }
 
 const GROUPS = [
@@ -112,7 +120,19 @@ describe('FindPatientChatCandidatesUseCase', () => {
 
   it('Periskope sem nenhum grupo → ok com lista vazia', async () => {
     const out = await new FindPatientChatCandidatesUseCase(repoMock(), periskopeMock([])).execute(PATIENT);
-    expect(out).toEqual({ ok: true, candidates: [], totalGroups: 0 });
+    expect(out).toEqual({ ok: true, candidates: [], totalGroups: 0, groupListTruncated: false });
+  });
+
+  it('lista incompleta VIAJA até a saída — "não achei" nunca se confunde com "cortei"', async () => {
+    // Sem este repasse, o operador lê "nenhum candidato" quando a verdade é que
+    // a varredura parou antes de chegar no grupo dele. É o defeito que o teto
+    // silencioso de 1.000 grupos criava.
+    const out = await new FindPatientChatCandidatesUseCase(
+      repoMock(),
+      periskopeMock([], true),
+    ).execute(PATIENT);
+
+    expect(out).toEqual({ ok: true, candidates: [], totalGroups: 0, groupListTruncated: true });
   });
 
   it('nenhum grupo parecido → ok com lista vazia (não devolve os 774 por desencargo)', async () => {

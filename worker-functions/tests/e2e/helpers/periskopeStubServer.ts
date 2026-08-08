@@ -66,7 +66,13 @@ export async function startPeriskopeStub(chats: StubChat[], port: number): Promi
 
     const wantGroups = url.searchParams.get('chat_type') === 'group';
     const limit = Number(url.searchParams.get('limit') ?? '100');
-    const filtered = (wantGroups ? chats.filter(c => c.chat_type === 'group') : chats).slice(0, limit);
+    // `offset` PAGINA de verdade, igual à API real (verificado pela sonda em
+    // produção). Ignorar o offset aqui faria o stub devolver a mesma página para
+    // sempre, e a varredura do serviço só pararia no limite de segurança —
+    // escondendo no e2e exatamente o bug que a paginação veio consertar.
+    const offset = Number(url.searchParams.get('offset') ?? '0');
+    const all = wantGroups ? chats.filter(c => c.chat_type === 'group') : chats;
+    const filtered = all.slice(offset, offset + limit);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(

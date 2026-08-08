@@ -3045,7 +3045,8 @@
           "searchError": "Não foi possível buscar os chats.",
           "saveError": "Não foi possível salvar os chat IDs.",
           "save": "Salvar",
-          "close": "Fechar"
+          "close": "Fechar",
+          "listTruncated": "Atenção: a lista de grupos do Periskope veio incompleta. Se o grupo que você procura não aparece, ele pode ter ficado de fora — refaça a busca ou avise o time técnico."
         }
       }
     },
