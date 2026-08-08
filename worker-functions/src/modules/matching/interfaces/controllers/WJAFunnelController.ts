@@ -115,6 +115,14 @@ export class WJAFunnelController {
                ELSE wja.application_funnel_stage END AS talentum_status,
              (SELECT COUNT(*)::int FROM wja_contact_notes cn
               WHERE cn.worker_id = wja.worker_id AND cn.job_posting_id = wja.job_posting_id) AS contact_notes_count,
+             -- "Levantou a mão": o PRÓPRIO prestador entrou nesta vaga pelo link
+             -- público (track-channel → ator worker_self: no trigger, D95). Sem
+             -- este sinal o card fica idêntico a um convite frio e a pessoa espera
+             -- em silêncio (caso Carina: 14 vagas em 3 semanas, ninguém falou com ela).
+             -- NULL = não sabemos: a autoria só é gravada desde 06/08.
+             (SELECT h.created_at::text FROM worker_job_application_stage_history h
+              WHERE h.application_id = wja.id AND h.changed_by LIKE 'worker_self:%'
+              ORDER BY h.created_at ASC LIMIT 1) AS self_applied_at,
              wsa.work_zone
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
@@ -221,6 +229,7 @@ export class WJAFunnelController {
           redireccionamiento: row.redireccionamiento,
           internalStage: stage ?? null,
           contactNotesCount: Number(row.contact_notes_count ?? 0),
+          selfAppliedAt: row.self_applied_at ?? null,
         };
 
         // Classificação 100% baseada em (stage, source) — SSOT em deriveKanbanColumn

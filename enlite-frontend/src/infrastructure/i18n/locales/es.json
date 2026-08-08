@@ -1556,6 +1556,8 @@
         "OTHER": "Otro"
       },
       "noName": "Sin nombre",
+      "selfApplied": "Se postuló sola",
+      "selfAppliedTitle": "La persona entró a esta vacante por el link, por su cuenta ({{date}})",
       "blockedNoName": "Sin nombre registrado",
       "orphanDragTooltip": "Pendiente de registro de encuadre — el arrastre estará disponible en breve",
       "acquisitionChannel": {

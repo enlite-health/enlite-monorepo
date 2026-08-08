@@ -25,6 +25,13 @@ export interface FunnelTableRawRow {
   wbdl_status: string | null; // 'sent' | 'error'
   worker_status: string | null;
   contact_notes_count: number | string | null;
+  /**
+   * Quando o PRÓPRIO prestador criou/mexeu nesta candidatura (clicou no link da
+   * vaga e entrou sozinho). Vem do trigger de histórico com ator `worker_self:`
+   * (D95). NULL = não sabemos — a autoria só passou a ser gravada em 06/08, e
+   * card antigo sem carimbo NÃO significa que a pessoa não se manifestou.
+   */
+  self_applied_at: string | null;
 }
 
 /**
@@ -64,7 +71,18 @@ export class FunnelTableRepository {
          latest_wbdl.status                               AS wbdl_status,
          w.status                                          AS worker_status,
          (SELECT COUNT(*)::int FROM wja_contact_notes cn
-          WHERE cn.worker_id = wja.worker_id AND cn.job_posting_id = wja.job_posting_id) AS contact_notes_count
+          WHERE cn.worker_id = wja.worker_id AND cn.job_posting_id = wja.job_posting_id) AS contact_notes_count,
+         -- "Levantou a mão": o próprio prestador entrou na vaga pelo link público
+         -- (track-channel → ator worker_self: no trigger, D95). Sinal de lead QUENTE —
+         -- sem isso o card fica idêntico a um convite frio e a pessoa espera em
+         -- silêncio (caso Carina, 14 vagas em 3 semanas). NULL = não sabemos: a
+         -- autoria só é gravada desde 06/08.
+         -- Subquery escalar (e não LATERAL) de propósito: o meta-teste sql-schema-sync
+         -- não distingue alias de LATERAL de nome de tabela, e abrir exceção pra ele
+         -- enfraquece um guard que já pegou schema drift de verdade.
+         (SELECT h.created_at::text FROM worker_job_application_stage_history h
+           WHERE h.application_id = wja.id AND h.changed_by LIKE 'worker_self:%'
+           ORDER BY h.created_at ASC LIMIT 1)               AS self_applied_at
        FROM worker_job_applications wja
        LEFT JOIN workers w
          ON w.id = wja.worker_id

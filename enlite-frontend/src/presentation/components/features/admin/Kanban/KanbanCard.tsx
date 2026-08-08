@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
+import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
@@ -45,6 +45,12 @@ interface KanbanCardProps {
   onOpenNotes?: () => void;
   /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
+  /**
+   * ISO de quando o PRÓPRIO prestador entrou nesta vaga pelo link público —
+   * levantou a mão sozinho, é lead quente. null/undefined = não sabemos
+   * (a autoria só é gravada desde 06/08): ausência NÃO significa desinteresse.
+   */
+  selfAppliedAt?: string | null;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -104,6 +110,7 @@ export function KanbanCard({
   onMoveTo,
   onOpenNotes,
   contactNotesCount = 0,
+  selfAppliedAt,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -158,6 +165,22 @@ export function KanbanCard({
       {occupation && (
         <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
           {occupation}
+        </span>
+      )}
+
+      {/* "Se postuló sola": a pessoa clicou no link da vaga por conta própria.
+          Sem este selo o card é idêntico a um convite frio que ninguém pediu —
+          foi assim que a Carina ficou 3 semanas esperando em 14 vagas. */}
+      {selfAppliedAt && (
+        <span
+          data-testid="self-applied-badge"
+          title={t('admin.kanban.selfAppliedTitle', {
+            date: new Date(selfAppliedAt).toLocaleDateString('es-AR'),
+          })}
+          className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
+        >
+          <Hand className="w-3 h-3" />
+          {t('admin.kanban.selfApplied')}
         </span>
       )}
 

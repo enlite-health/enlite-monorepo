@@ -23,6 +23,7 @@ vi.mock('lucide-react', () => ({
   MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
+  Hand: (props: Record<string, unknown>) => <svg data-testid="icon-hand" {...props} />,
 }));
 
 // ── Default props ────────────────────────────────────────────────────────────
@@ -752,5 +753,25 @@ describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
     );
     // Full date format should appear
     expect(screen.getByText(/15\/3\/2026.*10:30/)).toBeInTheDocument();
+  });
+});
+
+// ── "Levantou a mão" (lead que se postulou sozinho) ─────────────────────────
+describe('KanbanCard — selo de auto-postulação', () => {
+  it('mostra o selo quando o próprio prestador entrou na vaga', () => {
+    render(<KanbanCard {...defaultProps} selfAppliedAt="2026-08-07T13:51:19.923Z" />);
+    expect(screen.getByTestId('self-applied-badge')).toHaveTextContent(
+      'admin.kanban.selfApplied',
+    );
+  });
+
+  it('sem carimbo NÃO mostra o selo — ausência não é prova de desinteresse', () => {
+    render(<KanbanCard {...defaultProps} selfAppliedAt={null} />);
+    expect(screen.queryByTestId('self-applied-badge')).toBeNull();
+  });
+
+  it('prop ausente (card antigo, anterior à autoria) também não mostra', () => {
+    render(<KanbanCard {...defaultProps} />);
+    expect(screen.queryByTestId('self-applied-badge')).toBeNull();
   });
 });
