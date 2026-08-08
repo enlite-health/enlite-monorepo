@@ -72,6 +72,13 @@ services:
       PERISKOPE_API_KEY: ${PERISKOPE_API_KEY:-stub-key-e2e-only}
       PERISKOPE_PHONE: ${PERISKOPE_PHONE:-5491100000000}
       PERISKOPE_BASE_URL: ${PERISKOPE_BASE_URL:-http://host.docker.internal:9911/v1}
+      # Cache DESLIGADO no e2e, de propósito. O cache é bom em produção (um
+      # backfill de ~350 pacientes viraria ~350 varreduras da mesma lista), mas
+      # no e2e ele torna o teste dependente de ORDEM: um caso popula o cache e o
+      # seguinte, que afirma "chegou 1 requisição no Periskope", vê zero.
+      # O comportamento do cache é provado por unit (TTL, forceRefresh,
+      # clearCache, truncada-não-cacheia). Aqui queremos determinismo.
+      PERISKOPE_CHATS_CACHE_TTL_MS: ${PERISKOPE_CHATS_CACHE_TTL_MS:-0}
     # host.docker.internal existe sozinho no Docker Desktop (macOS), mas NÃO no
     # Linux do runner do CI — sem isto o container não acha o stub e os testes de
     # candidatos falham só no CI.
