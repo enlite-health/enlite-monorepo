@@ -2003,6 +2003,7 @@
       "funnelTable": {
         "headers": {
           "name": "NOME",
+          "origin": "Origem",
           "phone": "TELEFONE",
           "inviteDate": "DATA DO CONVITE",
           "whatsapp": "WHATSAPP",

@@ -2019,6 +2019,7 @@
       "funnelTable": {
         "headers": {
           "name": "NOMBRE",
+          "origin": "Origen",
           "phone": "TELÉFONO",
           "inviteDate": "FECHA DE INVITACIÓN",
           "whatsapp": "WHATSAPP",
