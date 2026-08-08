@@ -27,6 +27,7 @@ import type { WorkerApplicationsListCapability } from './capabilities/WorkerAppl
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
+import { PatientChatMapCapability } from './capabilities/PatientChatMapCapability';
 import { WriteRateLimiter } from './WriteRateLimiter';
 
 interface IAuditEmitter {
@@ -66,6 +67,8 @@ interface RegistryDeps {
   interviewBook: WorkerInterviewBookCapability;
   handoverNotify: HandoverNotifyCapability;
   applicationsList: WorkerApplicationsListCapability;
+  /** Mapa paciente <-> ClickUp <-> Periskope em massa (tasks 86ajy0859/86ajy085a). */
+  patientChatMap: PatientChatMapCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -143,6 +146,7 @@ export class CapabilityRegistry {
       interviewBook,
       handoverNotify,
       applicationsList,
+      patientChatMap,
       dbQuery,
     } = this.deps;
 
@@ -416,6 +420,16 @@ export class CapabilityRegistry {
           (applicationsList.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => applicationsList.execute(args),
+      },
+      {
+        name: (patientChatMap.constructor as { NAME?: string }).NAME ?? 'patient.chat.map',
+        description:
+          (patientChatMap.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Map patients to their WhatsApp group chat IDs and ClickUp task id.',
+        inputShape:
+          (patientChatMap.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => patientChatMap.execute(args),
       },
       ...(dbQuery !== undefined
         ? [

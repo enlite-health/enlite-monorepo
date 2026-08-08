@@ -38,3 +38,17 @@ export type PatientChatIdsBody = z.infer<typeof patientChatIdsSchema>;
 export const patientChatCandidatesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });
+
+/**
+ * Query de GET /api/admin/patients/chat-map.
+ * `chatId` liga a direção REVERSA (de qual paciente é este grupo) e, quando
+ * presente, torna `filter`/`offset` irrelevantes — é busca por chave única.
+ */
+export const patientChatMapQuerySchema = z
+  .object({
+    filter: z.enum(['linked', 'unlinked', 'all']).optional(),
+    chatId: groupChatId.optional(),
+    limit: z.coerce.number().int().min(1).max(1000).optional(),
+    offset: z.coerce.number().int().min(0).optional(),
+  })
+  .strict();

@@ -4,7 +4,9 @@ import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema
 import {
   patientChatIdsSchema,
   patientChatCandidatesQuerySchema,
+  patientChatMapQuerySchema,
 } from '../validators/patientChatIdsSchema';
+import { GetPatientChatMapUseCase } from '../../application/GetPatientChatMapUseCase';
 import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
@@ -45,7 +47,35 @@ export class AdminPatientChatIdsController {
     private readonly service: PatientChatIdsService = new PatientChatIdsService(),
     private readonly findCandidates: FindPatientChatCandidatesUseCase =
       new FindPatientChatCandidatesUseCase(),
+    private readonly chatMap: GetPatientChatMapUseCase = new GetPatientChatMapUseCase(),
   ) {}
+
+  /**
+   * GET /api/admin/patients/chat-map — o mapa de três pontas, em massa.
+   *
+   * `?chatId=` liga a direção REVERSA (de qual paciente é este grupo), que é a
+   * que a auditoria de informes consome. `?filter=unlinked` devolve a fila de
+   * trabalho do backfill.
+   *
+   * Sem kill-switch: é leitura do NOSSO banco, não fala com serviço externo.
+   * O payload só carrega identificadores — nunca nome, telefone ou documento.
+   */
+  async getChatMap(req: Request, res: Response): Promise<void> {
+    const query = patientChatMapQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query', details: query.error.flatten() });
+      return;
+    }
+
+    try {
+      const result = await this.chatMap.execute(query.data);
+      res.status(200).json({ success: true, data: result });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientChatIdsController:getChatMap' });
+      res.status(500).json({ success: false, error: 'Failed to read patient chat map' });
+    }
+  }
 
   /** GET /api/admin/patients/:id/chat-candidates?limit=10 */
   async getChatCandidates(req: Request, res: Response): Promise<void> {

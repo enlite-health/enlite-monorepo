@@ -6,6 +6,7 @@ import {
   ChatIdAlreadyLinkedError,
 } from '../../../application/PatientChatIdsService';
 import { FindPatientChatCandidatesUseCase } from '../../../application/FindPatientChatCandidatesUseCase';
+import { GetPatientChatMapUseCase } from '../../../application/GetPatientChatMapUseCase';
 
 jest.mock('@shared/logging', () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
@@ -18,6 +19,10 @@ jest.mock('../../../application/PatientChatIdsService', () => {
 jest.mock('../../../application/FindPatientChatCandidatesUseCase', () => {
   const actual = jest.requireActual('../../../application/FindPatientChatCandidatesUseCase');
   return { ...actual, FindPatientChatCandidatesUseCase: jest.fn().mockImplementation(() => ({})) };
+});
+jest.mock('../../../application/GetPatientChatMapUseCase', () => {
+  const actual = jest.requireActual('../../../application/GetPatientChatMapUseCase');
+  return { ...actual, GetPatientChatMapUseCase: jest.fn().mockImplementation(() => ({})) };
 });
 
 const PATIENT = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -38,10 +43,19 @@ function req(over: Partial<Request> = {}): Request {
 function build(over: {
   update?: jest.Mock;
   execute?: jest.Mock;
+  mapExecute?: jest.Mock;
 } = {}) {
   const service = { update: over.update ?? jest.fn() } as unknown as PatientChatIdsService;
   const finder = { execute: over.execute ?? jest.fn() } as unknown as FindPatientChatCandidatesUseCase;
-  return { controller: new AdminPatientChatIdsController(service, finder), service, finder };
+  const chatMap = {
+    execute: over.mapExecute ?? jest.fn().mockResolvedValue({
+      patients: [], total: 0, limit: 500, offset: 0, hasMore: false,
+    }),
+  } as unknown as GetPatientChatMapUseCase;
+  return {
+    controller: new AdminPatientChatIdsController(service, finder, chatMap),
+    service, finder, chatMap,
+  };
 }
 
 describe('AdminPatientChatIdsController', () => {
@@ -242,6 +256,93 @@ describe('AdminPatientChatIdsController', () => {
       const { controller } = build({ update: jest.fn().mockRejectedValue('texto') });
       const r = res();
       await controller.updateChatIds(req({ body }), r);
+      expect(r.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('GET chat-map (mapa em massa)', () => {
+    const ROW = {
+      patientId: PATIENT, clickupTaskId: '86a4d52bf',
+      familyChatId: GROUP_A, providersChatId: GROUP_B,
+    };
+
+    it('200 com o mapa das três pontas', async () => {
+      const mapExecute = jest.fn().mockResolvedValue({
+        patients: [ROW], total: 1, limit: 500, offset: 0, hasMore: false,
+      });
+      const { controller } = build({ mapExecute });
+      const r = res();
+
+      await controller.getChatMap(req({ query: {} as never }), r);
+
+      expect(mapExecute).toHaveBeenCalledWith({});
+      expect(r.status).toHaveBeenCalledWith(200);
+      expect(r.json).toHaveBeenCalledWith({
+        success: true,
+        data: { patients: [ROW], total: 1, limit: 500, offset: 0, hasMore: false },
+      });
+    });
+
+    it('repassa filter, limit e offset', async () => {
+      const mapExecute = jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 10, offset: 20, hasMore: false });
+      const { controller } = build({ mapExecute });
+      await controller.getChatMap(req({ query: { filter: 'unlinked', limit: '10', offset: '20' } as never }), res());
+      expect(mapExecute).toHaveBeenCalledWith({ filter: 'unlinked', limit: 10, offset: 20 });
+    });
+
+    it('repassa chatId (direção reversa)', async () => {
+      const mapExecute = jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 500, offset: 0, hasMore: false });
+      const { controller } = build({ mapExecute });
+      await controller.getChatMap(req({ query: { chatId: GROUP_A } as never }), res());
+      expect(mapExecute).toHaveBeenCalledWith({ chatId: GROUP_A });
+    });
+
+    it('400 para filter fora do enum', async () => {
+      const mapExecute = jest.fn();
+      const { controller } = build({ mapExecute });
+      const r = res();
+      await controller.getChatMap(req({ query: { filter: 'todos' } as never }), r);
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(mapExecute).not.toHaveBeenCalled();
+    });
+
+    it('400 para chatId que não é grupo (@c.us)', async () => {
+      const { controller } = build();
+      const r = res();
+      await controller.getChatMap(req({ query: { chatId: '5491162180721@c.us' } as never }), r);
+      expect(r.status).toHaveBeenCalledWith(400);
+    });
+
+    it('400 para limit acima do teto e para campo desconhecido', async () => {
+      const { controller } = build();
+      const r1 = res();
+      await controller.getChatMap(req({ query: { limit: '5000' } as never }), r1);
+      expect(r1.status).toHaveBeenCalledWith(400);
+
+      const r2 = res();
+      await controller.getChatMap(req({ query: { foo: 'x' } as never }), r2);
+      expect(r2.status).toHaveBeenCalledWith(400);
+    });
+
+    it('NÃO depende do kill-switch — é leitura do nosso banco', async () => {
+      delete process.env.PATIENT_CHAT_LOOKUP_ENABLED;
+      const { controller } = build();
+      const r = res();
+      await controller.getChatMap(req({ query: {} as never }), r);
+      expect(r.status).toHaveBeenCalledWith(200);
+    });
+
+    it('500 em erro inesperado', async () => {
+      const { controller } = build({ mapExecute: jest.fn().mockRejectedValue(new Error('boom')) });
+      const r = res();
+      await controller.getChatMap(req({ query: {} as never }), r);
+      expect(r.status).toHaveBeenCalledWith(500);
+    });
+
+    it('500 para rejeição não-Error', async () => {
+      const { controller } = build({ mapExecute: jest.fn().mockRejectedValue('texto') });
+      const r = res();
+      await controller.getChatMap(req({ query: {} as never }), r);
       expect(r.status).toHaveBeenCalledWith(500);
     });
   });

@@ -32,6 +32,8 @@ import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseC
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
 import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryReadonlyCapability';
+import { PatientChatMapCapability } from '../application/capabilities/PatientChatMapCapability';
+import { GetPatientChatMapUseCase } from '@modules/case';
 import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
 import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
 import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
@@ -197,6 +199,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     handoverNotify: new HandoverNotifyCapability(
       new NotifyHandoverUseCase(new PeriskopeGroupNotifyService(), new PeriskopeTicketService()),
     ),
+    patientChatMap: new PatientChatMapCapability(new GetPatientChatMapUseCase()),
     applicationsList: new WorkerApplicationsListCapability(
       new ListWorkerApplicationsUseCase(dbPool),
     ),

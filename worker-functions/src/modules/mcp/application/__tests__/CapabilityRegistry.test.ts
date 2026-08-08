@@ -22,6 +22,7 @@ import { WorkerApplicationRegisterCapability } from '../capabilities/WorkerAppli
 import { WorkerInterviewSlotsListCapability } from '../capabilities/WorkerInterviewSlotsListCapability';
 import { WorkerInterviewBookCapability } from '../capabilities/WorkerInterviewBookCapability';
 import { HandoverNotifyCapability } from '../capabilities/HandoverNotifyCapability';
+import { PatientChatMapCapability } from '../capabilities/PatientChatMapCapability';
 import { WorkerApplicationsListCapability } from '../capabilities/WorkerApplicationsListCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
@@ -147,6 +148,9 @@ function makeCapabilities() {
   const applicationsList = new WorkerApplicationsListCapability({
     execute: jest.fn().mockResolvedValue({ applications: [] }),
   } as never);
+  const patientChatMap = new PatientChatMapCapability({
+    execute: jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 500, offset: 0, hasMore: false }),
+  } as never);
   const handoverNotify = new HandoverNotifyCapability({
     execute: jest.fn().mockResolvedValue({ skipped: false, groupNotified: true, ticketCreated: false }),
   } as never);
@@ -179,6 +183,7 @@ function makeCapabilities() {
     interviewBook,
     handoverNotify,
     applicationsList,
+    patientChatMap,
   };
 }
 

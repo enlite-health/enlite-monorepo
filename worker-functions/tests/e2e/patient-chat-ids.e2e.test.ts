@@ -65,12 +65,21 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
     return { headers: { Authorization: `Bearer ${token}` } };
   }
 
-  async function seedPatient(firstName: string, lastName: string): Promise<string> {
+  async function seedPatient(
+    firstName: string,
+    lastName: string,
+    opts: { deleted?: boolean } = {},
+  ): Promise<string> {
     const id = randomUUID();
     await pool.query(
-      `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, status)
-       VALUES ($1, $2, $3, $4, 'AR', 'ACTIVE')`,
-      [id, `e2e-chatid-${id}`, firstName, lastName],
+      `INSERT INTO patients (id, clickup_task_id, first_name, last_name, phone_whatsapp,
+                             document_number, country, status, deleted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'AR', 'ACTIVE', $7)`,
+      [
+        id, `e2e-chatid-${id}`, firstName, lastName,
+        '+5491100000123', 'DOC-E2E-CHATID',
+        opts.deleted ? new Date() : null,
+      ],
     );
     insertedIds.push(id);
     return id;
@@ -421,4 +430,183 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(detail.data.data.providersChatId).toBe(GROUP_PROVIDERS);
     });
   });
+
+  // ── GET /chat-map — a ponte de três pontas, em massa ───────────────────────
+
+  describe('GET /api/admin/patients/chat-map', () => {
+    let deletedPatient: string;
+
+    beforeAll(async () => {
+      deletedPatient = await seedPatient('Apagado', 'Softdeleted', { deleted: true });
+    });
+
+    async function link(patientId: string, family: string | null, providers: string | null) {
+      const res = await api.put(
+        `/api/admin/patients/${patientId}/chat-ids`,
+        { familyChatId: family, providersChatId: providers },
+        authHeaders(staffToken),
+      );
+      expect(res.status).toBe(200);
+    }
+
+    it('27. a rota NÃO é capturada por /patients/:id (é estática e vem antes)', async () => {
+      const res = await api.get('/api/admin/patients/chat-map', authHeaders(staffToken));
+      // Se o Express tratasse 'chat-map' como :id, seria 400 de UUID inválido.
+      expect(res.status).toBe(200);
+      expect(res.data.data).toHaveProperty('patients');
+    });
+
+    it('28. devolve as TRÊS chaves juntas: patientId + clickupTaskId + os 2 chat IDs', async () => {
+      await link(patientA, GROUP_FAMILY, GROUP_PROVIDERS);
+
+      const res = await api.get(
+        '/api/admin/patients/chat-map?filter=linked&limit=1000',
+        authHeaders(staffToken),
+      );
+
+      expect(res.status).toBe(200);
+      const mine = res.data.data.patients.find((p: { patientId: string }) => p.patientId === patientA);
+      expect(mine).toEqual({
+        patientId: patientA,
+        clickupTaskId: expect.stringContaining('e2e-chatid-'),
+        familyChatId: GROUP_FAMILY,
+        providersChatId: GROUP_PROVIDERS,
+      });
+    });
+
+    it('29. ZERO PII no payload — nem nome, nem telefone, nem documento', async () => {
+      await link(patientA, GROUP_FAMILY, GROUP_PROVIDERS);
+
+      const res = await api.get(
+        '/api/admin/patients/chat-map?filter=all&limit=1000',
+        authHeaders(staffToken),
+      );
+
+      // (a) nenhuma CHAVE de PII em nenhuma linha
+      const PII_KEYS = [
+        'firstName', 'lastName', 'phoneWhatsapp', 'documentNumber', 'birthDate',
+        'first_name', 'last_name', 'phone_whatsapp', 'document_number', 'sex',
+        'contactEmail', 'diagnosis',
+      ];
+      for (const row of res.data.data.patients) {
+        expect(Object.keys(row).sort()).toEqual(
+          ['clickupTaskId', 'familyChatId', 'patientId', 'providersChatId'],
+        );
+        for (const k of PII_KEYS) expect(row).not.toHaveProperty(k);
+      }
+
+      // (b) nenhum VALOR de PII semeado aparece no corpo cru da resposta
+      const raw = JSON.stringify(res.data);
+      expect(raw).not.toContain('Zortea');
+      expect(raw).not.toContain('+5491100000123');
+      expect(raw).not.toContain('DOC-E2E-CHATID');
+    });
+
+    it('30. filter=unlinked devolve a fila de trabalho do backfill', async () => {
+      await link(patientA, GROUP_FAMILY, null);
+      await link(patientB, null, null);
+
+      const res = await api.get(
+        '/api/admin/patients/chat-map?filter=unlinked&limit=1000',
+        authHeaders(staffToken),
+      );
+
+      const ids = res.data.data.patients.map((p: { patientId: string }) => p.patientId);
+      expect(ids).toContain(patientB);
+      expect(ids).not.toContain(patientA);
+      for (const row of res.data.data.patients) {
+        expect(row.familyChatId).toBeNull();
+        expect(row.providersChatId).toBeNull();
+      }
+    });
+
+    it('31. paciente soft-deleted nunca aparece, em nenhum filtro', async () => {
+      for (const filter of ['linked', 'unlinked', 'all']) {
+        const res = await api.get(
+          `/api/admin/patients/chat-map?filter=${filter}&limit=1000`,
+          authHeaders(staffToken),
+        );
+        const ids = res.data.data.patients.map((p: { patientId: string }) => p.patientId);
+        expect(ids).not.toContain(deletedPatient);
+      }
+    });
+
+    it('32. DIREÇÃO REVERSA: chatId devolve o paciente e o papel', async () => {
+      await link(patientA, GROUP_FAMILY, GROUP_PROVIDERS);
+
+      const familia = await api.get(
+        `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_FAMILY)}`,
+        authHeaders(staffToken),
+      );
+      expect(familia.status).toBe(200);
+      expect(familia.data.data.patients).toEqual([
+        {
+          patientId: patientA,
+          clickupTaskId: expect.any(String),
+          familyChatId: GROUP_FAMILY,
+          providersChatId: GROUP_PROVIDERS,
+          matchedRole: 'family',
+        },
+      ]);
+
+      const prestadores = await api.get(
+        `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_PROVIDERS)}`,
+        authHeaders(staffToken),
+      );
+      expect(prestadores.data.data.patients[0].matchedRole).toBe('providers');
+    });
+
+    it('33. reverso de grupo sem dono devolve lista vazia, não erro', async () => {
+      const res = await api.get(
+        `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_OTHER)}`,
+        authHeaders(staffToken),
+      );
+      expect(res.status).toBe(200);
+      expect(res.data.data).toMatchObject({ patients: [], total: 0, hasMore: false });
+    });
+
+    it('34. paginação: total é o do recorte e hasMore acompanha', async () => {
+      await link(patientA, GROUP_FAMILY, null);
+      await link(patientB, GROUP_PROVIDERS, null);
+
+      const page1 = await api.get(
+        '/api/admin/patients/chat-map?filter=linked&limit=1&offset=0',
+        authHeaders(staffToken),
+      );
+      expect(page1.data.data.patients).toHaveLength(1);
+      expect(page1.data.data.total).toBeGreaterThanOrEqual(2);
+      expect(page1.data.data.hasMore).toBe(true);
+
+      const page2 = await api.get(
+        `/api/admin/patients/chat-map?filter=linked&limit=1&offset=${page1.data.data.total - 1}`,
+        authHeaders(staffToken),
+      );
+      expect(page2.data.data.hasMore).toBe(false);
+      // páginas diferentes não repetem paciente (ordem estável por id)
+      expect(page2.data.data.patients[0].patientId)
+        .not.toBe(page1.data.data.patients[0].patientId);
+    });
+
+    it('35. 400 para chatId 1-1, filter inválido, limit fora da faixa e campo desconhecido', async () => {
+      const bad = [
+        'chatId=5491162180721%40c.us',
+        'filter=todos',
+        'limit=5000',
+        'offset=-1',
+        'foo=bar',
+      ];
+      for (const qs of bad) {
+        const res = await api.get(`/api/admin/patients/chat-map?${qs}`, authHeaders(staffToken));
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('36. 401 sem token e 403 para worker', async () => {
+      expect((await api.get('/api/admin/patients/chat-map')).status).toBe(401);
+      expect(
+        (await api.get('/api/admin/patients/chat-map', authHeaders(workerToken))).status,
+      ).toBe(403);
+    });
+  });
+
 });

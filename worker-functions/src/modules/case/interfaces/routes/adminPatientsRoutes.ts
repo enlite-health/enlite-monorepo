@@ -31,6 +31,13 @@ export function createAdminPatientsRoutes(
     controller.getPatientFunnel(req, res),
   );
 
+  // Mapa Postgres <-> ClickUp <-> Periskope, em massa. ESTÁTICA, e por isso
+  // registrada aqui em cima: se ficasse depois de /patients/:id, o Express
+  // capturaria 'chat-map' como :id e devolveria 400 de UUID inválido.
+  router.get('/patients/chat-map', staffOnly, (req: Request, res: Response) =>
+    chatIdsController.getChatMap(req, res),
+  );
+
   router.get('/patients', staffOnly, (req: Request, res: Response) =>
     controller.listPatients(req, res),
   );

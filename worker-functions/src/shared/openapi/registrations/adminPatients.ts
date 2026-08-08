@@ -93,6 +93,34 @@ const PatientChatIdsBody = z.object({
 
 registry.registerPath({
   method: 'get',
+  path: '/api/admin/patients/chat-map',
+  tags: ['Admin · Patients'],
+  summary: 'Mapa Postgres ↔ ClickUp ↔ Periskope (em massa)',
+  description:
+    'Devolve, para vários pacientes de uma vez, o patientId + clickupTaskId + os dois chat_ids ' +
+    'de grupo do WhatsApp. É a chave de join da auditoria de informes. ' +
+    'filter=linked (default) traz quem já tem vínculo; filter=unlinked é a fila do backfill. ' +
+    '?chatId= faz a busca REVERSA (de qual paciente é este grupo, e em qual papel). ' +
+    'SÓ IDENTIFICADORES: nunca nome, telefone ou documento do paciente.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    query: z.object({
+      filter: z.enum(['linked', 'unlinked', 'all']).optional().openapi({ description: 'Recorte (default linked).', example: 'unlinked' }),
+      chatId: z.string().optional().openapi({ description: 'Busca reversa por chat_id de grupo (@g.us).', example: '120363001234567890@g.us' }),
+      limit: z.coerce.number().optional().openapi({ description: 'Tamanho da página (1..1000, default 500).', example: 500 }),
+      offset: z.coerce.number().optional().openapi({ description: 'Linhas a pular (default 0).', example: 0 }),
+    }),
+  },
+  responses: {
+    200: { description: 'Mapa paginado (patients, total, limit, offset, hasMore).', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Query inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
   path: '/api/admin/patients/{id}/chat-candidates',
   tags: ['Admin · Patients'],
   summary: 'Grupos do Periskope candidatos ao paciente',

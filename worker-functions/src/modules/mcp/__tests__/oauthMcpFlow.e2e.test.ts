@@ -36,6 +36,7 @@ import { WorkerInterviewSlotsListCapability } from '../application/capabilities/
 import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
 import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
 import { WorkerApplicationsListCapability } from '../application/capabilities/WorkerApplicationsListCapability';
+import { PatientChatMapCapability } from '../application/capabilities/PatientChatMapCapability';
 import { WorkerProfileEditsStatsCapability } from '../application/capabilities/WorkerProfileEditsStatsCapability';
 import { FunnelActivityStatsCapability } from '../application/capabilities/FunnelActivityStatsCapability';
 
@@ -71,6 +72,7 @@ function makeRegistry(): CapabilityRegistry {
     interviewBook: new WorkerInterviewBookCapability(stub, stub),
     handoverNotify: new HandoverNotifyCapability(stub),
     applicationsList: new WorkerApplicationsListCapability(stub),
+    patientChatMap: new PatientChatMapCapability(stub),
     auditor: { emit: jest.fn() },
   });
 }

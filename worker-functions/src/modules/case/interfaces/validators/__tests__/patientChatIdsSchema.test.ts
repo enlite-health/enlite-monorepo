@@ -1,6 +1,7 @@
 import {
   patientChatIdsSchema,
   patientChatCandidatesQuerySchema,
+  patientChatMapQuerySchema,
 } from '../patientChatIdsSchema';
 
 const GROUP_A = '120363001111111111@g.us';
@@ -81,5 +82,53 @@ describe('patientChatCandidatesQuerySchema', () => {
   it('aceita as bordas 1 e 50', () => {
     expect(patientChatCandidatesQuerySchema.safeParse({ limit: 1 }).success).toBe(true);
     expect(patientChatCandidatesQuerySchema.safeParse({ limit: 50 }).success).toBe(true);
+  });
+});
+
+describe('patientChatMapQuerySchema', () => {
+  const GROUP = '120363001111111111@g.us';
+
+  it('query vazia é válida (usa os defaults do use case)', () => {
+    const r = patientChatMapQuerySchema.safeParse({});
+    expect(r.success).toBe(true);
+    expect(r.success && r.data).toEqual({});
+  });
+
+  it.each(['linked', 'unlinked', 'all'])('aceita filter=%s', filter => {
+    expect(patientChatMapQuerySchema.safeParse({ filter }).success).toBe(true);
+  });
+
+  it('recusa filter fora do enum', () => {
+    expect(patientChatMapQuerySchema.safeParse({ filter: 'todos' }).success).toBe(false);
+  });
+
+  it('aceita chatId de GRUPO e coage limit/offset', () => {
+    const r = patientChatMapQuerySchema.safeParse({ chatId: GROUP, limit: '250', offset: '10' });
+    expect(r.success && r.data).toEqual({ chatId: GROUP, limit: 250, offset: 10 });
+  });
+
+  it('recusa chatId 1-1 (@c.us) — só grupo é vínculo de paciente', () => {
+    expect(patientChatMapQuerySchema.safeParse({ chatId: '5491162180721@c.us' }).success).toBe(false);
+  });
+
+  it.each([['0', 0], ['acima do teto', 1001], ['fracionário', 2.5]])(
+    'recusa limit %s',
+    (_l, limit) => {
+      expect(patientChatMapQuerySchema.safeParse({ limit }).success).toBe(false);
+    },
+  );
+
+  it('aceita as bordas 1 e 1000 de limit, e offset 0', () => {
+    expect(patientChatMapQuerySchema.safeParse({ limit: 1 }).success).toBe(true);
+    expect(patientChatMapQuerySchema.safeParse({ limit: 1000 }).success).toBe(true);
+    expect(patientChatMapQuerySchema.safeParse({ offset: 0 }).success).toBe(true);
+  });
+
+  it('recusa offset negativo', () => {
+    expect(patientChatMapQuerySchema.safeParse({ offset: -1 }).success).toBe(false);
+  });
+
+  it('campo desconhecido é 400, não no-op silencioso', () => {
+    expect(patientChatMapQuerySchema.safeParse({ foo: 'x' }).success).toBe(false);
   });
 });

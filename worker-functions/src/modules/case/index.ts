@@ -58,6 +58,15 @@ export {
 export type { FindPatientChatCandidatesOutput } from './application/FindPatientChatCandidatesUseCase';
 export { rankChatCandidates, scoreGroupName, toMatchTerms, normalizeForMatch } from './application/rankChatCandidates';
 export type { ChatCandidate } from './application/rankChatCandidates';
+export {
+  GetPatientChatMapUseCase,
+  DEFAULT_CHAT_MAP_LIMIT,
+  MAX_CHAT_MAP_LIMIT,
+} from './application/GetPatientChatMapUseCase';
+export type {
+  GetPatientChatMapInput,
+  GetPatientChatMapResult,
+} from './application/GetPatientChatMapUseCase';
 export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
@@ -75,7 +84,12 @@ export { PatientClinicalRepository } from './infrastructure/PatientClinicalRepos
 export { PatientResponsibleRepository } from './infrastructure/PatientResponsibleRepository';
 export { PatientQueryRepository } from './infrastructure/PatientQueryRepository';
 export { PatientChatIdsRepository } from './infrastructure/PatientChatIdsRepository';
-export type { PatientChatIdsRow, ChatIdConflict } from './infrastructure/PatientChatIdsRepository';
+export type {
+  PatientChatIdsRow,
+  ChatIdConflict,
+  PatientChatMapRow,
+  ChatMapFilter,
+} from './infrastructure/PatientChatIdsRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
 export type {
@@ -90,7 +104,7 @@ export type {
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
-export { patientChatIdsSchema } from './interfaces/validators/patientChatIdsSchema';
+export { patientChatIdsSchema, patientChatMapQuerySchema } from './interfaces/validators/patientChatIdsSchema';
 export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
 
