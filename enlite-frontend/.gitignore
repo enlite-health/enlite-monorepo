@@ -24,3 +24,6 @@ e2e/**-snapshots/
 e2e/fixtures/figma/*.actual.png
 e2e/fixtures/figma/*.diff.png
 e2e/fixtures/figma/*.expected.png
+
+# Provas visuais geradas pelos testes @integration (screenshots/vídeo)
+e2e/artifacts

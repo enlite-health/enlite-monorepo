@@ -80,6 +80,97 @@ registry.registerPath({
   },
 });
 
+const PatientChatIdsBody = z.object({
+  familyChatId: z.string().nullable().openapi({
+    description: 'chat_id do grupo de WhatsApp da FAMÍLIA no Periskope. Só grupo (@g.us); null desvincula.',
+    example: '120363001234567890@g.us',
+  }),
+  providersChatId: z.string().nullable().openapi({
+    description: 'chat_id do grupo de WhatsApp dos PRESTADORES no Periskope. Só grupo (@g.us); null desvincula.',
+    example: '5491112345678-1600000000@g.us',
+  }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/patients/chat-map',
+  tags: ['Admin · Patients'],
+  summary: 'Mapa Postgres ↔ ClickUp ↔ Periskope (em massa)',
+  description:
+    'Devolve, para vários pacientes de uma vez, o patientId + clickupTaskId + os dois chat_ids ' +
+    'de grupo do WhatsApp. É a chave de join da auditoria de informes. ' +
+    'filter=linked (default) traz quem já tem vínculo; filter=unlinked é a fila do backfill. ' +
+    '?chatId= faz a busca REVERSA (de qual paciente é este grupo, e em qual papel). ' +
+    'SÓ IDENTIFICADORES: nunca nome, telefone ou documento do paciente.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    query: z.object({
+      filter: z.enum(['linked', 'unlinked', 'all']).optional().openapi({ description: 'Recorte (default linked).', example: 'unlinked' }),
+      chatId: z.string().optional().openapi({ description: 'Busca reversa por chat_id de grupo (@g.us).', example: '120363001234567890@g.us' }),
+      limit: z.coerce.number().optional().openapi({ description: 'Tamanho da página (1..1000, default 500).', example: 500 }),
+      offset: z.coerce.number().optional().openapi({ description: 'Linhas a pular (default 0).', example: 0 }),
+    }),
+  },
+  responses: {
+    200: { description: 'Mapa paginado (patients, total, limit, offset, hasMore).', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Query inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/patients/{id}/chat-candidates',
+  tags: ['Admin · Patients'],
+  summary: 'Grupos do Periskope candidatos ao paciente',
+  description:
+    'Consulta os grupos de WhatsApp no Periskope (somente leitura, GET /chats) e devolve os mais ' +
+    'parecidos com o nome do paciente, ordenados por score, marcando os que já estão vinculados a ' +
+    'outro paciente. RANQUEIA, NUNCA ESCOLHE: qual é o da família e qual é o dos prestadores é ' +
+    'decisão humana. Atrás do kill-switch PATIENT_CHAT_LOOKUP_ENABLED (503 quando desligado).',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({ id: UuidParam }),
+    query: z.object({
+      limit: z.coerce.number().optional().openapi({ description: 'Máximo de candidatos (1..50, default 10).', example: 10 }),
+    }),
+  },
+  responses: {
+    200: { description: 'Candidatos ranqueados.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Params/query inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Paciente não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    422: { description: 'Paciente sem nome — não há por onde ranquear.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    502: { description: 'Periskope indisponível.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    503: { description: 'Funcionalidade desligada (PATIENT_CHAT_LOOKUP_ENABLED).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/admin/patients/{id}/chat-ids',
+  tags: ['Admin · Patients'],
+  summary: 'Vincula os chat IDs de grupo (família / prestadores) ao paciente',
+  description:
+    'Grava o par de chat_ids de GRUPO do Periskope no paciente. Só aceita @g.us (conversa 1-1 @c.us ' +
+    'é 400). Um mesmo grupo não pode ficar em dois pacientes: colisão devolve 409 CHAT_ID_ALREADY_LINKED. ' +
+    'null desvincula.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({ id: UuidParam }),
+    body: { content: { 'application/json': { schema: PatientChatIdsBody } } },
+  },
+  responses: {
+    200: { description: 'Chat IDs gravados.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Body inválido (formato de chat_id, campo desconhecido, par igual).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Paciente não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'chat_id já vinculado a outro paciente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/admin/patients/{patientId}/addresses',

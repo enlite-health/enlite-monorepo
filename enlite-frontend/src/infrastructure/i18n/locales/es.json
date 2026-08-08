@@ -3104,6 +3104,28 @@
             "inService": "En Atendimiento",
             "rejected": "Rechazado"
           }
+        },
+        "chatIdsCard": {
+          "title": "Chat IDs de WhatsApp (Periskope)",
+          "subtitle": "Los dos grupos del paciente. Por ellos la auditoría de informes cruza Periskope con nuestra base.",
+          "family": "Grupo de la familia",
+          "providers": "Grupo de los prestadores",
+          "notLinked": "Sin vincular",
+          "link": "Vincular chats",
+          "drawerTitle": "Vincular chats del paciente",
+          "drawerHelp": "Buscá los grupos en Periskope y decí cuál es el de la familia y cuál el de los prestadores. El sistema ordena por parecido con el nombre del paciente, pero quien elige sos vos.",
+          "searchChats": "Buscar chats",
+          "candidatesTitle": "Grupos encontrados",
+          "noCandidates": "Ningún grupo parecido al nombre de este paciente.",
+          "choose": "Elegí un grupo",
+          "score": "Parecido",
+          "members": "miembros",
+          "alreadyLinked": "ya vinculado a otro paciente",
+          "searchError": "No se pudieron buscar los chats.",
+          "saveError": "No se pudieron guardar los chat IDs.",
+          "save": "Guardar",
+          "close": "Cerrar",
+          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico."
         }
       }
     },

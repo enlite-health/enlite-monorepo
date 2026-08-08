@@ -23,6 +23,7 @@ import { ServicosContratadosCard } from '@presentation/components/features/admin
 import { EnquadreTerapeuticoCard } from '@presentation/components/features/admin/PatientDetail/EnquadreTerapeuticoCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
+import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 
 const COUNTRY_FLAG: Record<string, string> = {
   AR: '🇦🇷',
@@ -112,7 +113,13 @@ export default function PatientDetailPage() {
           </>
         )}
         {activeTab === 'supportNetwork' && (
-          <FamiliaresCard responsibles={patient.responsibles ?? []} patientId={patient.id} onSaved={refetch} />
+          <>
+            <FamiliaresCard responsibles={patient.responsibles ?? []} patientId={patient.id} onSaved={refetch} />
+            {/* Chat IDs dos grupos do Periskope — a chave de join da auditoria
+                de informes (Candela). Fica na rede de apoio porque é onde a
+                família e a equipe de prestadores já são tratadas. */}
+            <PatientChatIdsCard patient={patient} onSaved={refetch} />
+          </>
         )}
         {activeTab === 'contractedService' && (
           <>

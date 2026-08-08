@@ -17,6 +17,8 @@ import type {
   ActivatePatientResult,
   PatientKanbanItem,
   PatientFunnelData,
+  PatientChatIdsPayload,
+  PatientChatCandidatesResult,
 } from '@domain/entities/PatientDetail';
 
 /**
@@ -179,6 +181,28 @@ export class AdminPatientsApiServiceClass {
     data: PatientSectionPayload,
   ): Promise<{ id: string }> {
     return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${id}/${section}`, data);
+  }
+
+  /**
+   * GET /api/admin/patients/:id/chat-candidates — grupos do Periskope parecidos
+   * com o nome do paciente. Só leitura; RANQUEIA, nunca escolhe. 503 quando o
+   * kill-switch PATIENT_CHAT_LOOKUP_ENABLED está desligado.
+   */
+  async getPatientChatCandidates(id: string, limit?: number): Promise<PatientChatCandidatesResult> {
+    const qs = limit ? `?limit=${limit}` : '';
+    return this.writeJson<PatientChatCandidatesResult>(
+      'GET', `/api/admin/patients/${id}/chat-candidates${qs}`,
+    );
+  }
+
+  /** PUT /api/admin/patients/:id/chat-ids — vincula os 2 grupos ao paciente. */
+  async updatePatientChatIds(
+    id: string,
+    payload: PatientChatIdsPayload,
+  ): Promise<PatientChatIdsPayload & { id: string }> {
+    return this.writeJson<PatientChatIdsPayload & { id: string }>(
+      'PUT', `/api/admin/patients/${id}/chat-ids`, payload,
+    );
   }
 
   /** PUT /api/admin/patients/:id/status — kanban lifecycle move. */

@@ -30,6 +30,9 @@ export { MessageTemplateRepository } from './infrastructure/MessageTemplateRepos
 export { InterviewSlotRepository } from './infrastructure/InterviewSlotRepository';
 export { TwilioMessagingService } from './infrastructure/TwilioMessagingService';
 export { PeriskopeMessagingService } from './infrastructure/PeriskopeMessagingService';
+export { PeriskopeChatReadService } from './infrastructure/PeriskopeChatReadService';
+export type { PeriskopeGroupChat, GroupChatsResult } from './infrastructure/PeriskopeChatReadService';
+export { createPeriskopeHttpClient, PERISKOPE_BASE_URL } from './infrastructure/periskopeHttpClient';
 export { ChatwootClient } from './infrastructure/ChatwootClient';
 export type { ChatwootClientConfig, MirrorOutgoingOptions } from './infrastructure/ChatwootClient';
 export { OutboxProcessor } from './infrastructure/OutboxProcessor';
