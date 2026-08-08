@@ -14,6 +14,10 @@
  * PERISKOPE_BASE_URL para o stub local abaixo, que responde no formato
  * capturado da produção. Teste não fala com serviço externo vivo.
  *
+ * ⚠️ Portanto este teste prova A NOSSA TELA e o nosso backend, não o contrato
+ * com o fornecedor. Essa outra metade é a sonda ao vivo somente leitura em
+ * `worker-functions/scripts/probe-periskope-chats.ts`.
+ *
  * Grava VÍDEO do caminho feliz (recordVideo) e uma screenshot do card com o
  * valor persistido.
  */

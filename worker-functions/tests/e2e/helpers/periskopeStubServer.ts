@@ -3,12 +3,25 @@ import { AddressInfo } from 'net';
 
 /**
  * periskopeStubServer — servidor HTTP local que responde `GET /v1/chats` no
- * FORMATO REAL da API do Periskope.
+ * formato da API do Periskope.
  *
- * Por que existe: o e2e roda contra a NOSSA API e o NOSSO Postgres de verdade,
- * mas não pode chamar a API do Periskope de produção — é serviço externo vivo,
- * e o repo tem incidente registrado de teste que tocou canal real. Aqui só há
- * leitura, mas a regra é dura: teste não fala com o Periskope.
+ * ⚠️ ESCOPO — LEIA ANTES DE CONFIAR NESTE ARQUIVO:
+ *
+ *   Este stub prova O NOSSO LADO, **não** o contrato com o Periskope.
+ *   O que o e2e que o usa demonstra: que a nossa API pede só grupos, que o
+ *   ranqueamento e a atribuição de papel funcionam, que as constraints da
+ *   migration 260 mordem, e que o par persiste e volta pela API. Tudo isso
+ *   contra Postgres REAL e a nossa API REAL.
+ *
+ *   O que ele NÃO pode provar: que o fornecedor não mudou o envelope nem
+ *   renomeou um campo. Stub nenhum pega isso — ele responde o que a gente
+ *   escreveu aqui. Essa metade é coberta pela sonda ao vivo, somente leitura:
+ *       scripts/probe-periskope-chats.ts
+ *   Se o Periskope mudar o contrato, é a SONDA que quebra, não este stub.
+ *
+ * Por que não chamar o Periskope real no e2e: é serviço externo vivo e o repo
+ * tem incidente registrado de teste que tocou canal real. O e2e precisa ser
+ * determinístico e rodar em CI sem credencial.
  *
  * O envelope e os nomes de campo abaixo foram capturados da API de produção em
  * 08/08/2026 (774 grupos): `{ from, to, count, chats: [...] }`, e cada chat tem

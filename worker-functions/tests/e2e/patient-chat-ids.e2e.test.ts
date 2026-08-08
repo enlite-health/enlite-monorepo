@@ -11,9 +11,15 @@
  * nossa API real via HTTP. As constraints da migration são exercidas por SQL
  * direto — é o tipo de invariante que unit com pool falso nunca pega.
  *
- * ÚNICA peça substituída: a API do PERISKOPE, por um servidor HTTP local que
- * responde no formato real capturado de produção. Teste não fala com serviço
- * externo vivo — regra dura do repo (há incidente registrado).
+ * ÚNICA peça substituída: a API do PERISKOPE, por um servidor HTTP local
+ * (`helpers/periskopeStubServer.ts`) que responde no formato real capturado de
+ * produção. Teste não fala com serviço externo vivo — regra dura do repo (há
+ * incidente registrado).
+ *
+ * ⚠️ Logo, este arquivo prova O NOSSO LADO, não o contrato com o fornecedor.
+ * A validação de que o Periskope não mudou o envelope/os campos é feita por uma
+ * sonda ao vivo separada, somente leitura: `scripts/probe-periskope-chats.ts`.
+ * Se o Periskope mudar, é a sonda que quebra — não este teste.
  *
  * Requer a stack com:
  *   PATIENT_CHAT_LOOKUP_ENABLED=true
