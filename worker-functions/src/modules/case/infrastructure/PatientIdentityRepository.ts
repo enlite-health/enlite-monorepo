@@ -234,12 +234,13 @@ export class PatientIdentityRepository {
         city_locality AS "cityLocality", province,
         zone_neighborhood AS "zoneNeighborhood",
         country,
-        family_chat_id AS "familyChatId",
-        providers_chat_id AS "providersChatId",
+        COALESCE((SELECT jsonb_object_agg(c.role, c.chat_id)
+                    FROM patient_chat_ids c
+                   WHERE c.patient_id = p.id), '{}'::jsonb) AS "chatIds",
         needs_attention AS "needsAttention",
         attention_reasons AS "attentionReasons",
         created_at AS "createdAt", updated_at AS "updatedAt"
-       FROM patients WHERE id = $1`,
+       FROM patients p WHERE p.id = $1`,
       [id],
     );
     return result.rows[0] ?? null;

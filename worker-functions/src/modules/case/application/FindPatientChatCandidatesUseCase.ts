@@ -28,10 +28,10 @@ export type FindPatientChatCandidatesOutput =
  * Periskope mais parecidos com o nome dele, já marcando quais já estão presos a
  * outro paciente.
  *
- * SÓ LEITURA: nada aqui escreve no paciente nem no Periskope. Quem é família e
- * quem é prestador é escolha do humano na tela seguinte — este caso de uso
- * automatiza a BUSCA, nunca a ATRIBUIÇÃO (é o desenho aceito na call: "fica
- * humano na escolha, automático na busca").
+ * SÓ LEITURA: nada aqui escreve no paciente nem no Periskope. Qual grupo é da
+ * família, dos prestadores ou do plano de saúde é escolha do humano na tela
+ * seguinte — este caso de uso automatiza a BUSCA, nunca a ATRIBUIÇÃO (é o
+ * desenho aceito na call: "fica humano na escolha, automático na busca").
  *
  * Nunca loga nome de paciente nem de grupo (PII, Ley 25.326).
  */

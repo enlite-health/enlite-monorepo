@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { PatientChatIdsRepository } from '../PatientChatIdsRepository';
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
@@ -12,16 +12,27 @@ function poolWith(query: jest.Mock): Pool {
   return { query } as unknown as Pool;
 }
 
+/** Pool com `connect()` para o caminho transacional de `applyChatIds`. */
+function poolWithClient(clientQuery: jest.Mock): { pool: Pool; release: jest.Mock } {
+  const release = jest.fn();
+  const client = { query: clientQuery, release } as unknown as PoolClient;
+  const pool = { connect: jest.fn().mockResolvedValue(client) } as unknown as Pool;
+  return { pool, release };
+}
+
 /**
  * Unit com pool falso: cobre a FORMA da query (filtros de soft-delete, exclusão
- * do próprio paciente) e o mapeamento. A prova de que o SQL roda de verdade —
- * e de que as constraints da migration 260 mordem — está no e2e contra Postgres
- * real (tests/e2e/patient-chat-ids.e2e.test.ts).
+ * do próprio paciente, transação) e o mapeamento. A prova de que o SQL roda de
+ * verdade — e de que as constraints da migration 261 mordem — está no e2e contra
+ * Postgres real (tests/e2e/patient-chat-ids.e2e.test.ts).
  */
 describe('PatientChatIdsRepository', () => {
   describe('findById', () => {
-    it('devolve a linha e filtra soft-delete', async () => {
-      const row = { id: PATIENT, firstName: 'Maria', lastName: 'Perez', familyChatId: null, providersChatId: null };
+    it('devolve a linha com o mapa de papéis e filtra soft-delete', async () => {
+      const row = {
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez',
+        chatIds: { FAMILY: '1@g.us' },
+      };
       const query = jest.fn().mockResolvedValue({ rows: [row] });
 
       const out = await new PatientChatIdsRepository(poolWith(query)).findById(PATIENT);
@@ -29,6 +40,7 @@ describe('PatientChatIdsRepository', () => {
       expect(out).toEqual(row);
       const [sql, params] = query.mock.calls[0];
       expect(sql).toContain('deleted_at IS NULL');
+      expect(sql).toContain('jsonb_object_agg(c.role, c.chat_id)');
       expect(params).toEqual([PATIENT]);
     });
 
@@ -39,22 +51,32 @@ describe('PatientChatIdsRepository', () => {
   });
 
   describe('findLinkedElsewhere', () => {
-    it('achata os dois papéis em conflitos, ignorando colunas nulas', async () => {
+    it('marca a exclusividade a partir do CATÁLOGO, não da coluna', async () => {
       const query = jest.fn().mockResolvedValue({
         rows: [
-          { id: OTHER, family: '1@g.us', providers: '2@g.us' },
-          { id: 'p3', family: null, providers: '3@g.us' },
-          { id: 'p4', family: '4@g.us', providers: null },
+          { chatId: '1@g.us', patientId: OTHER, role: 'FAMILY' },
+          { chatId: '2@g.us', patientId: OTHER, role: 'PROVIDERS' },
+          { chatId: '3@g.us', patientId: 'p3', role: 'HEALTH_PLAN' },
         ],
       });
 
       const out = await new PatientChatIdsRepository(poolWith(query)).findLinkedElsewhere(PATIENT);
 
       expect(out).toEqual([
-        { chatId: '1@g.us', patientId: OTHER, role: 'family' },
-        { chatId: '2@g.us', patientId: OTHER, role: 'providers' },
-        { chatId: '3@g.us', patientId: 'p3', role: 'providers' },
-        { chatId: '4@g.us', patientId: 'p4', role: 'family' },
+        { chatId: '1@g.us', patientId: OTHER, role: 'FAMILY', exclusive: true },
+        { chatId: '2@g.us', patientId: OTHER, role: 'PROVIDERS', exclusive: true },
+        { chatId: '3@g.us', patientId: 'p3', role: 'HEALTH_PLAN', exclusive: true },
+      ]);
+    });
+
+    it('papel DESCONHECIDO (gravado por versão futura) conta como exclusivo', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [{ chatId: '9@g.us', patientId: OTHER, role: 'MANAGEMENT' }],
+      });
+
+      const out = await new PatientChatIdsRepository(poolWith(query)).findLinkedElsewhere(PATIENT);
+      expect(out).toEqual([
+        { chatId: '9@g.us', patientId: OTHER, role: 'MANAGEMENT', exclusive: true },
       ]);
     });
 
@@ -63,8 +85,8 @@ describe('PatientChatIdsRepository', () => {
       await new PatientChatIdsRepository(poolWith(query)).findLinkedElsewhere(PATIENT);
 
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('id <> $1');
-      expect(sql).toContain('deleted_at IS NULL');
+      expect(sql).toContain('c.patient_id <> $1');
+      expect(sql).toContain('p.deleted_at IS NULL');
       expect(params).toEqual([PATIENT]);
     });
 
@@ -90,8 +112,7 @@ describe('PatientChatIdsRepository', () => {
       const [sql] = query.mock.calls[0];
       expect(sql).toContain('"patientId"');
       expect(sql).toContain('"clickupTaskId"');
-      expect(sql).toContain('"familyChatId"');
-      expect(sql).toContain('"providersChatId"');
+      expect(sql).toContain('"chatIds"');
       for (const pii of ['first_name', 'last_name', 'phone_whatsapp', 'document_number', 'birth_date']) {
         expect(sql).not.toContain(pii);
       }
@@ -104,14 +125,14 @@ describe('PatientChatIdsRepository', () => {
       });
 
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('deleted_at IS NULL');
-      expect(sql).toContain('ORDER BY id');
+      expect(sql).toContain('p.deleted_at IS NULL');
+      expect(sql).toContain('ORDER BY p.id');
       expect(params).toEqual([25, 50]);
     });
 
     it.each([
-      ['linked', '(family_chat_id IS NOT NULL OR providers_chat_id IS NOT NULL)'],
-      ['unlinked', '(family_chat_id IS NULL AND providers_chat_id IS NULL)'],
+      ['linked', 'EXISTS (SELECT 1 FROM patient_chat_ids c WHERE c.patient_id = p.id)'],
+      ['unlinked', 'NOT EXISTS (SELECT 1 FROM patient_chat_ids c WHERE c.patient_id = p.id)'],
       ['all', 'TRUE'],
     ] as const)('filtro %s vira o WHERE certo', async (filter, expected) => {
       const query = poolFor([], '0');
@@ -123,7 +144,7 @@ describe('PatientChatIdsRepository', () => {
     });
 
     it('devolve as linhas e o total convertido para número', async () => {
-      const row = { patientId: PATIENT, clickupTaskId: 'cu-1', familyChatId: '1@g.us', providersChatId: null };
+      const row = { patientId: PATIENT, clickupTaskId: 'cu-1', chatIds: { FAMILY: '1@g.us' } };
       const query = poolFor([row], '357');
 
       const out = await new PatientChatIdsRepository(poolWith(query)).findChatMap({
@@ -136,14 +157,15 @@ describe('PatientChatIdsRepository', () => {
   });
 
   describe('findByChatId (direção reversa)', () => {
-    it('busca nas DUAS colunas e deriva o papel que bateu', async () => {
+    it('busca na tabela de vínculos e devolve o papel que bateu', async () => {
       const query = jest.fn().mockResolvedValue({ rows: [] });
       await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us');
 
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('family_chat_id = $1 OR providers_chat_id = $1');
+      expect(sql).toContain('FROM patient_chat_ids m');
+      expect(sql).toContain('m.chat_id = $1');
       expect(sql).toContain('"matchedRole"');
-      expect(sql).toContain('deleted_at IS NULL');
+      expect(sql).toContain('p.deleted_at IS NULL');
       expect(params).toEqual(['1@g.us']);
     });
 
@@ -163,42 +185,96 @@ describe('PatientChatIdsRepository', () => {
     });
 
     it('devolve as linhas encontradas', async () => {
-      const row = { patientId: PATIENT, clickupTaskId: null, familyChatId: '1@g.us', providersChatId: null, matchedRole: 'family' };
+      const row = {
+        patientId: PATIENT, clickupTaskId: null,
+        chatIds: { FAMILY: '1@g.us' }, matchedRole: 'FAMILY',
+      };
       const query = jest.fn().mockResolvedValue({ rows: [row] });
       expect(await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us')).toEqual([row]);
     });
   });
 
-  describe('updateChatIds', () => {
-    it('grava os dois campos e toca updated_at', async () => {
-      const query = jest.fn().mockResolvedValue({ rowCount: 1 });
-
-      const ok = await new PatientChatIdsRepository(poolWith(query)).updateChatIds(PATIENT, {
-        familyChatId: '1@g.us', providersChatId: '2@g.us',
+  describe('applyChatIds', () => {
+    /** BEGIN, os writes, o toque no paciente, o SELECT final e o COMMIT. */
+    function transactionalQuery(finalRows: Array<{ role: string; chatId: string }>) {
+      return jest.fn().mockImplementation((sql: string) => {
+        if (sql.startsWith('SELECT role')) return Promise.resolve({ rows: finalRows });
+        return Promise.resolve({ rows: [], rowCount: 1 });
       });
+    }
 
-      expect(ok).toBe(true);
-      const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('updated_at        = NOW()');
-      expect(params).toEqual([PATIENT, '1@g.us', '2@g.us']);
+    it('faz UPSERT do papel com valor e grava is_exclusive do catálogo', async () => {
+      const clientQuery = transactionalQuery([{ role: 'FAMILY', chatId: '1@g.us' }]);
+      const { pool, release } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' });
+
+      expect(out).toEqual({ FAMILY: '1@g.us' });
+      const insert = clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO patient_chat_ids'));
+      expect(insert![1]).toEqual([PATIENT, 'FAMILY', '1@g.us', true]);
+      expect(insert![0]).toContain('ON CONFLICT (patient_id, role)');
+      expect(clientQuery.mock.calls[0][0]).toBe('BEGIN');
+      expect(clientQuery.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(true);
+      expect(release).toHaveBeenCalled();
     });
 
-    it('false quando nenhuma linha foi atingida', async () => {
-      const query = jest.fn().mockResolvedValue({ rowCount: 0 });
-      expect(
-        await new PatientChatIdsRepository(poolWith(query)).updateChatIds(PATIENT, {
-          familyChatId: null, providersChatId: null,
-        }),
-      ).toBe(false);
+    it('null APAGA a linha do papel, e não grava string vazia', async () => {
+      const clientQuery = transactionalQuery([]);
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { PROVIDERS: null });
+
+      expect(out).toEqual({});
+      const del = clientQuery.mock.calls.find(([sql]) => String(sql).startsWith('DELETE FROM patient_chat_ids'));
+      expect(del![1]).toEqual([PATIENT, 'PROVIDERS']);
+      expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO patient_chat_ids'))).toBe(false);
     });
 
-    it('rowCount ausente conta como zero linha', async () => {
-      const query = jest.fn().mockResolvedValue({});
+    it('papel AUSENTE não vira write nenhum (não apaga o que a versão antiga não conhece)', async () => {
+      const clientQuery = transactionalQuery([
+        { role: 'FAMILY', chatId: '1@g.us' },
+        { role: 'HEALTH_PLAN', chatId: '3@g.us' },
+      ]);
+      const { pool } = poolWithClient(clientQuery);
+
+      await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' });
+
+      const touched = clientQuery.mock.calls
+        .filter(([sql]) => String(sql).includes('patient_chat_ids') && !String(sql).startsWith('SELECT role'))
+        .map(([, params]) => (params as string[])[1]);
+      expect(touched).toEqual(['FAMILY']);
+    });
+
+    it('toca updated_at do paciente e devolve o estado FINAL lido do banco', async () => {
+      const clientQuery = transactionalQuery([
+        { role: 'FAMILY', chatId: '1@g.us' },
+        { role: 'HEALTH_PLAN', chatId: '3@g.us' },
+      ]);
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' });
+
+      expect(out).toEqual({ FAMILY: '1@g.us', HEALTH_PLAN: '3@g.us' });
       expect(
-        await new PatientChatIdsRepository(poolWith(query)).updateChatIds(PATIENT, {
-          familyChatId: null, providersChatId: null,
-        }),
-      ).toBe(false);
+        clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE patients SET updated_at')),
+      ).toBe(true);
+    });
+
+    it('erro no meio faz ROLLBACK, solta o client e propaga', async () => {
+      const boom = Object.assign(new Error('unique_violation'), { code: '23505' });
+      const clientQuery = jest.fn().mockImplementation((sql: string) => {
+        if (String(sql).includes('INSERT INTO patient_chat_ids')) return Promise.reject(boom);
+        return Promise.resolve({ rows: [] });
+      });
+      const { pool, release } = poolWithClient(clientQuery);
+
+      await expect(
+        new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }),
+      ).rejects.toBe(boom);
+
+      expect(clientQuery.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
+      expect(clientQuery.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(false);
+      expect(release).toHaveBeenCalled();
     });
   });
 

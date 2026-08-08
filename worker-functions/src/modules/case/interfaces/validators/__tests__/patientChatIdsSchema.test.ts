@@ -3,27 +3,50 @@ import {
   patientChatCandidatesQuerySchema,
   patientChatMapQuerySchema,
 } from '../patientChatIdsSchema';
+import { PATIENT_CHAT_ROLE_VALUES } from '../../../domain/PatientChatRole';
 
 const GROUP_A = '120363001111111111@g.us';
 const GROUP_B = '5491112345678-1600000000@g.us';
+const GROUP_C = '120363003333333333@g.us';
 
-describe('patientChatIdsSchema', () => {
-  it('aceita o par de grupos', () => {
-    const r = patientChatIdsSchema.safeParse({ familyChatId: GROUP_A, providersChatId: GROUP_B });
+describe('patientChatIdsSchema — contrato NOVO (mapa por papel)', () => {
+  it('aceita os três papéis do catálogo de uma vez', () => {
+    const r = patientChatIdsSchema.safeParse({
+      chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_B, HEALTH_PLAN: GROUP_C },
+    });
     expect(r.success).toBe(true);
+    expect(r.success && r.data).toEqual({ FAMILY: GROUP_A, PROVIDERS: GROUP_B, HEALTH_PLAN: GROUP_C });
   });
 
-  it('aceita null nos dois (desvincular)', () => {
-    expect(patientChatIdsSchema.safeParse({ familyChatId: null, providersChatId: null }).success).toBe(true);
+  it('aceita um papel só — os ausentes ficam INALTERADOS, não são apagados', () => {
+    const r = patientChatIdsSchema.safeParse({ chatIds: { HEALTH_PLAN: GROUP_A } });
+    expect(r.success && r.data).toEqual({ HEALTH_PLAN: GROUP_A });
+    expect(r.success && Object.keys(r.data)).not.toContain('FAMILY');
+  });
+
+  it('null desvincula', () => {
+    const r = patientChatIdsSchema.safeParse({ chatIds: { FAMILY: null, PROVIDERS: null } });
+    expect(r.success && r.data).toEqual({ FAMILY: null, PROVIDERS: null });
+  });
+
+  it('mapa vazio é válido (no-op explícito)', () => {
+    const r = patientChatIdsSchema.safeParse({ chatIds: {} });
+    expect(r.success && r.data).toEqual({});
+  });
+
+  it('o schema é MONTADO do catálogo — todo papel conhecido é aceito', () => {
+    for (const role of PATIENT_CHAT_ROLE_VALUES) {
+      expect(patientChatIdsSchema.safeParse({ chatIds: { [role]: GROUP_A } }).success).toBe(true);
+    }
   });
 
   it('apara espaços das pontas', () => {
-    const r = patientChatIdsSchema.safeParse({ familyChatId: `  ${GROUP_A}  `, providersChatId: null });
-    expect(r.success && r.data.familyChatId).toBe(GROUP_A);
+    const r = patientChatIdsSchema.safeParse({ chatIds: { FAMILY: `  ${GROUP_A}  ` } });
+    expect(r.success && r.data.FAMILY).toBe(GROUP_A);
   });
 
   it('RECUSA conversa 1-1 (@c.us) — a trava que a task pede', () => {
-    const r = patientChatIdsSchema.safeParse({ familyChatId: '5491162180721@c.us', providersChatId: null });
+    const r = patientChatIdsSchema.safeParse({ chatIds: { FAMILY: '5491162180721@c.us' } });
     expect(r.success).toBe(false);
     if (!r.success) expect(JSON.stringify(r.error.issues)).toContain('@g.us');
   });
@@ -34,31 +57,84 @@ describe('patientChatIdsSchema', () => {
     ['vazio', ''],
     ['só sufixo', '@g.us'],
   ])('recusa %s', (_l, value) => {
-    expect(patientChatIdsSchema.safeParse({ familyChatId: value, providersChatId: null }).success).toBe(false);
+    expect(patientChatIdsSchema.safeParse({ chatIds: { FAMILY: value } }).success).toBe(false);
   });
 
   it('recusa acima de 64 caracteres (tamanho da coluna)', () => {
     const tooLong = `${'1'.repeat(64)}@g.us`;
-    expect(patientChatIdsSchema.safeParse({ familyChatId: tooLong, providersChatId: null }).success).toBe(false);
+    expect(patientChatIdsSchema.safeParse({ chatIds: { FAMILY: tooLong } }).success).toBe(false);
   });
 
-  it('recusa o MESMO grupo nos dois papéis', () => {
-    const r = patientChatIdsSchema.safeParse({ familyChatId: GROUP_A, providersChatId: GROUP_A });
+  it('recusa PAPEL desconhecido — não é no-op silencioso', () => {
+    expect(patientChatIdsSchema.safeParse({ chatIds: { NEIGHBOURS: GROUP_A } }).success).toBe(false);
+    expect(patientChatIdsSchema.safeParse({ chatIds: { family: GROUP_A } }).success).toBe(false);
+  });
+
+  it('recusa o MESMO grupo em dois papéis, apontando o segundo', () => {
+    const r = patientChatIdsSchema.safeParse({ chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_A } });
     expect(r.success).toBe(false);
-    if (!r.success) expect(r.error.issues[0].path).toEqual(['providersChatId']);
+    if (!r.success) {
+      expect(r.error.issues[0].path).toEqual(['PROVIDERS']);
+      expect(r.error.issues[0].message).toContain('FAMILY');
+    }
   });
 
-  it('campo desconhecido é 400, não no-op silencioso', () => {
-    const r = patientChatIdsSchema.safeParse({ familyChatId: null, providersChatId: null, foo: 'x' });
-    expect(r.success).toBe(false);
+  it('dois papéis com null NÃO contam como grupo repetido', () => {
+    expect(
+      patientChatIdsSchema.safeParse({ chatIds: { FAMILY: null, PROVIDERS: null, HEALTH_PLAN: null } }).success,
+    ).toBe(true);
   });
 
-  it('campo faltando é rejeitado — a tela grava o par inteiro', () => {
-    expect(patientChatIdsSchema.safeParse({ familyChatId: GROUP_A }).success).toBe(false);
+  it('campo desconhecido no topo é 400', () => {
+    expect(patientChatIdsSchema.safeParse({ chatIds: {}, foo: 'x' }).success).toBe(false);
+  });
+
+  it('body vazio é 400 — não casa com nenhum dos dois contratos', () => {
+    expect(patientChatIdsSchema.safeParse({}).success).toBe(false);
   });
 
   it('tipo errado é rejeitado', () => {
-    expect(patientChatIdsSchema.safeParse({ familyChatId: 123, providersChatId: null }).success).toBe(false);
+    expect(patientChatIdsSchema.safeParse({ chatIds: { FAMILY: 123 } }).success).toBe(false);
+    expect(patientChatIdsSchema.safeParse({ chatIds: 'x' }).success).toBe(false);
+  });
+});
+
+describe('patientChatIdsSchema — contrato LEGADO (migration 260)', () => {
+  it('traduz { familyChatId, providersChatId } para FAMILY/PROVIDERS', () => {
+    const r = patientChatIdsSchema.safeParse({ familyChatId: GROUP_A, providersChatId: GROUP_B });
+    expect(r.success && r.data).toEqual({ FAMILY: GROUP_A, PROVIDERS: GROUP_B });
+  });
+
+  it('null legado desvincula', () => {
+    const r = patientChatIdsSchema.safeParse({ familyChatId: null, providersChatId: null });
+    expect(r.success && r.data).toEqual({ FAMILY: null, PROVIDERS: null });
+  });
+
+  it('o legado NÃO toca no HEALTH_PLAN — bundle antigo não apaga o que não conhece', () => {
+    const r = patientChatIdsSchema.safeParse({ familyChatId: GROUP_A, providersChatId: null });
+    expect(r.success && Object.keys(r.data).sort()).toEqual(['FAMILY', 'PROVIDERS']);
+  });
+
+  it('legado com campo faltando é 400 (lá o par era obrigatório)', () => {
+    expect(patientChatIdsSchema.safeParse({ familyChatId: GROUP_A }).success).toBe(false);
+  });
+
+  it('legado com @c.us é 400', () => {
+    expect(
+      patientChatIdsSchema.safeParse({ familyChatId: '5491162180721@c.us', providersChatId: null }).success,
+    ).toBe(false);
+  });
+
+  it('legado com o mesmo grupo nos dois papéis é 400', () => {
+    expect(
+      patientChatIdsSchema.safeParse({ familyChatId: GROUP_A, providersChatId: GROUP_A }).success,
+    ).toBe(false);
+  });
+
+  it('legado + campo desconhecido é 400', () => {
+    expect(
+      patientChatIdsSchema.safeParse({ familyChatId: null, providersChatId: null, foo: 'x' }).success,
+    ).toBe(false);
   });
 });
 

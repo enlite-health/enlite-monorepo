@@ -195,7 +195,10 @@ export class AdminPatientsApiServiceClass {
     );
   }
 
-  /** PUT /api/admin/patients/:id/chat-ids — vincula os 2 grupos ao paciente. */
+  /**
+   * PUT /api/admin/patients/:id/chat-ids — vincula os grupos ao paciente, por
+   * papel. `null` desvincula; papel ausente do mapa fica inalterado.
+   */
   async updatePatientChatIds(
     id: string,
     payload: PatientChatIdsPayload,

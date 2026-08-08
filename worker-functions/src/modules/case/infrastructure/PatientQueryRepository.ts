@@ -84,9 +84,13 @@ export interface PatientDetailRow {
   province: string | null;
   zoneNeighborhood: string | null;
   country: string;
-  // Chat IDs dos grupos do Periskope (migration 260) — chave de join com a
-  // auditoria de informes (Candela). Sempre @g.us, ou null quando não vinculado.
+  // Grupos de WhatsApp do Periskope por PAPEL (migration 261) — chave de join
+  // com a auditoria de informes (Candela). Sempre @g.us. Papel ausente do mapa
+  // = não vinculado.
+  chatIds: Record<string, string>;
+  /** @deprecated alias de `chatIds.FAMILY`; sai com a migration de contract. */
   familyChatId: string | null;
+  /** @deprecated alias de `chatIds.PROVIDERS`; sai com a migration de contract. */
   providersChatId: string | null;
   // Status / flags
   status: string | null;

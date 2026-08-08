@@ -1,4 +1,9 @@
-import { CHAT_ID_MAX_LENGTH, GROUP_CHAT_ID_PATTERN, isGroupChatId } from '../PatientChatId';
+import {
+  CHAT_ID_MAX_LENGTH,
+  GROUP_CHAT_ID_PATTERN,
+  isGroupChatId,
+  legacyChatIdAliases,
+} from '../PatientChatId';
 
 describe('PatientChatId', () => {
   describe('isGroupChatId — aceita só GRUPO', () => {
@@ -45,5 +50,30 @@ describe('PatientChatId', () => {
       expect(GROUP_CHAT_ID_PATTERN.test(value)).toBe(true);
       expect(GROUP_CHAT_ID_PATTERN.test(value)).toBe(true);
     });
+  });
+});
+
+describe('legacyChatIdAliases (expand/contract)', () => {
+  it('deriva os dois campos antigos do mapa de papéis', () => {
+    expect(legacyChatIdAliases({ FAMILY: 'a@g.us', PROVIDERS: 'b@g.us' })).toEqual({
+      familyChatId: 'a@g.us',
+      providersChatId: 'b@g.us',
+    });
+  });
+
+  it('papel ausente vira null — o bundle antigo lê "não vinculado", não undefined', () => {
+    expect(legacyChatIdAliases({ HEALTH_PLAN: 'c@g.us' })).toEqual({
+      familyChatId: null,
+      providersChatId: null,
+    });
+  });
+
+  it('mapa vazio devolve os dois null', () => {
+    expect(legacyChatIdAliases({})).toEqual({ familyChatId: null, providersChatId: null });
+  });
+
+  it('NÃO vaza os papéis novos para o contrato antigo', () => {
+    const out = legacyChatIdAliases({ FAMILY: 'a@g.us', HEALTH_PLAN: 'c@g.us' });
+    expect(Object.keys(out).sort()).toEqual(['familyChatId', 'providersChatId']);
   });
 });

@@ -170,23 +170,87 @@ describe('AdminPatientChatIdsController', () => {
   });
 
   describe('PUT chat-ids', () => {
-    const body = { familyChatId: GROUP_A, providersChatId: GROUP_B };
+    const body = { chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_B } };
+    const saved = { FAMILY: GROUP_A, PROVIDERS: GROUP_B };
 
-    it('200 e devolve o par gravado', async () => {
-      const update = jest.fn().mockResolvedValue(body);
+    it('200 com o mapa gravado + os aliases legados derivados', async () => {
+      const update = jest.fn().mockResolvedValue(saved);
       const { controller } = build({ update });
       const r = res();
 
       await controller.updateChatIds(req({ body }), r);
 
-      expect(update).toHaveBeenCalledWith(PATIENT, body);
+      expect(update).toHaveBeenCalledWith(PATIENT, saved);
       expect(r.status).toHaveBeenCalledWith(200);
-      expect(r.json).toHaveBeenCalledWith({ success: true, data: { id: PATIENT, ...body } });
+      expect(r.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          id: PATIENT,
+          chatIds: saved,
+          familyChatId: GROUP_A,
+          providersChatId: GROUP_B,
+        },
+      });
+    });
+
+    it('aceita o body LEGADO { familyChatId, providersChatId } e traduz para papéis', async () => {
+      const update = jest.fn().mockResolvedValue(saved);
+      const { controller } = build({ update });
+      const r = res();
+
+      await controller.updateChatIds(
+        req({ body: { familyChatId: GROUP_A, providersChatId: GROUP_B } }),
+        r,
+      );
+
+      expect(update).toHaveBeenCalledWith(PATIENT, { FAMILY: GROUP_A, PROVIDERS: GROUP_B });
+      expect(r.status).toHaveBeenCalledWith(200);
+    });
+
+    it('papel NOVO do catálogo já atravessa sem mudança de rota', async () => {
+      const update = jest.fn().mockResolvedValue({ HEALTH_PLAN: GROUP_A });
+      const { controller } = build({ update });
+      const r = res();
+
+      await controller.updateChatIds(req({ body: { chatIds: { HEALTH_PLAN: GROUP_A } } }), r);
+
+      expect(update).toHaveBeenCalledWith(PATIENT, { HEALTH_PLAN: GROUP_A });
+      expect(r.status).toHaveBeenCalledWith(200);
+      expect(r.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          id: PATIENT,
+          chatIds: { HEALTH_PLAN: GROUP_A },
+          familyChatId: null,
+          providersChatId: null,
+        },
+      });
+    });
+
+    it('400 para papel DESCONHECIDO no mapa', async () => {
+      const update = jest.fn();
+      const { controller } = build({ update });
+      const r = res();
+      await controller.updateChatIds(req({ body: { chatIds: { NEIGHBOURS: GROUP_A } } }), r);
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('400 para o MESMO grupo em dois papéis do mesmo paciente', async () => {
+      const update = jest.fn();
+      const { controller } = build({ update });
+      const r = res();
+      await controller.updateChatIds(
+        req({ body: { chatIds: { FAMILY: GROUP_A, HEALTH_PLAN: GROUP_A } } }),
+        r,
+      );
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('não exige a flag de lookup — gravar é caminho interno', async () => {
       delete process.env.PATIENT_CHAT_LOOKUP_ENABLED;
-      const update = jest.fn().mockResolvedValue(body);
+      const update = jest.fn().mockResolvedValue(saved);
       const { controller } = build({ update });
       const r = res();
       await controller.updateChatIds(req({ body }), r);
@@ -204,7 +268,7 @@ describe('AdminPatientChatIdsController', () => {
       const update = jest.fn();
       const { controller } = build({ update });
       const r = res();
-      await controller.updateChatIds(req({ body: { familyChatId: '549116@c.us', providersChatId: null } }), r);
+      await controller.updateChatIds(req({ body: { chatIds: { FAMILY: '549116@c.us' } } }), r);
       expect(r.status).toHaveBeenCalledWith(400);
       expect(update).not.toHaveBeenCalled();
     });
@@ -219,7 +283,7 @@ describe('AdminPatientChatIdsController', () => {
     });
 
     it('409 CHAT_ID_ALREADY_LINKED com a lista de conflitos', async () => {
-      const conflicts = [{ chatId: GROUP_A, patientId: 'outro', role: 'family' as const }];
+      const conflicts = [{ chatId: GROUP_A, patientId: 'outro', role: 'FAMILY', exclusive: true }];
       const { controller } = build({
         update: jest.fn().mockRejectedValue(new ChatIdAlreadyLinkedError(conflicts)),
       });
@@ -263,7 +327,7 @@ describe('AdminPatientChatIdsController', () => {
   describe('GET chat-map (mapa em massa)', () => {
     const ROW = {
       patientId: PATIENT, clickupTaskId: '86a4d52bf',
-      familyChatId: GROUP_A, providersChatId: GROUP_B,
+      chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_B },
     };
 
     it('200 com o mapa das três pontas', async () => {

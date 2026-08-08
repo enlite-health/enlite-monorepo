@@ -2,7 +2,7 @@
  * PatientChatMapCapability
  *
  * A ponte de três pontas em massa: Postgres (`patientId`) ↔ ClickUp
- * (`clickupTaskId`) ↔ Periskope (os dois chat IDs de grupo do paciente).
+ * (`clickupTaskId`) ↔ Periskope (os grupos de WhatsApp do paciente, POR PAPEL).
  *
  * POR QUE NÃO BASTA `db.query.readonly` (verificado, não suposto):
  *   1. Teto de linhas. `HARD_MAX_ROWS = 200` no ReadonlyDbQueryService, e a base
@@ -27,7 +27,7 @@ import type {
   GetPatientChatMapUseCase,
   GetPatientChatMapResult,
 } from '@modules/case';
-import { GROUP_CHAT_ID_PATTERN, MAX_CHAT_MAP_LIMIT } from '@modules/case';
+import { GROUP_CHAT_ID_PATTERN, MAX_CHAT_MAP_LIMIT, PATIENT_CHAT_ROLE_VALUES } from '@modules/case';
 
 const ArgsShape = {
   filter: z
@@ -44,7 +44,8 @@ const ArgsShape = {
     .optional()
     .describe(
       'REVERSE lookup: given a Periskope group chat_id (…@g.us), return which patient ' +
-        'it belongs to and in which role (family or providers). Overrides filter/offset.',
+        `it belongs to and in which role (${PATIENT_CHAT_ROLE_VALUES.join(' | ')}). ` +
+        'Overrides filter/offset.',
     ),
   limit: z.number().int().min(1).max(MAX_CHAT_MAP_LIMIT).optional().describe('Page size (default 500, max 1000).'),
   offset: z.number().int().min(0).optional().describe('Rows to skip (default 0).'),
@@ -54,11 +55,12 @@ const ArgsSchema = z.object(ArgsShape).strip();
 export class PatientChatMapCapability {
   static readonly NAME = 'patient.chat.map';
   static readonly DESCRIPTION =
-    'Map patients to their two WhatsApp group chat IDs (Periskope) and their ClickUp task id, ' +
-    'in bulk — the join key for auditing daily reports. Returns patientId, clickupTaskId, ' +
-    'familyChatId and providersChatId. Supports reverse lookup by chatId (which patient owns ' +
-    'this group, and in which role) and filter=unlinked for the backfill queue. ' +
-    'Identifiers only — never patient name, phone or document. Read-only.';
+    'Map patients to their WhatsApp group chat IDs (Periskope) and their ClickUp task id, ' +
+    'in bulk — the join key for auditing daily reports. Returns patientId, clickupTaskId and ' +
+    `chatIds: an object keyed by role (${PATIENT_CHAT_ROLE_VALUES.join(' | ')}); a role absent ` +
+    'from the object means that group is not linked yet. Supports reverse lookup by chatId ' +
+    '(which patient owns this group, and in which role) and filter=unlinked for the backfill ' +
+    'queue. Identifiers only — never patient name, phone or document. Read-only.';
   static readonly INPUT_SHAPE = ArgsShape;
 
   constructor(private readonly useCase: GetPatientChatMapUseCase) {}

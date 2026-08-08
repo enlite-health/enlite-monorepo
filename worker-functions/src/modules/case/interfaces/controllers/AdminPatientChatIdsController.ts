@@ -7,6 +7,7 @@ import {
   patientChatMapQuerySchema,
 } from '../validators/patientChatIdsSchema';
 import { GetPatientChatMapUseCase } from '../../application/GetPatientChatMapUseCase';
+import { legacyChatIdAliases } from '../../domain/PatientChatId';
 import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
@@ -30,11 +31,11 @@ function isChatLookupEnabled(): boolean {
 }
 
 /**
- * AdminPatientChatIdsController — os dois chat IDs de grupo do paciente.
+ * AdminPatientChatIdsController — os chat IDs de grupo do paciente, por papel.
  *
  *   GET /api/admin/patients/:id/chat-candidates — grupos parecidos com o nome
  *       do paciente (leitura no Periskope, atrás do kill-switch).
- *   PUT /api/admin/patients/:id/chat-ids        — grava o par escolhido.
+ *   PUT /api/admin/patients/:id/chat-ids        — grava os papéis escolhidos.
  *
  * Controller separado do AdminPatientsController de propósito: aquele já passa
  * de 600 linhas, e o 409 de vínculo duplicado é semântica que vive só aqui.
@@ -146,8 +147,11 @@ export class AdminPatientChatIdsController {
     }
 
     try {
-      const saved = await this.service.update(params.data.id, body.data);
-      res.status(200).json({ success: true, data: { id: params.data.id, ...saved } });
+      const chatIds = await this.service.update(params.data.id, body.data);
+      res.status(200).json({
+        success: true,
+        data: { id: params.data.id, chatIds, ...legacyChatIdAliases(chatIds) },
+      });
     } catch (err: unknown) {
       if (err instanceof PatientChatIdsNotFoundError) {
         res.status(404).json({ success: false, error: 'Patient not found' });

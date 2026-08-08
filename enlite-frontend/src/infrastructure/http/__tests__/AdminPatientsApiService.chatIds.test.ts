@@ -86,32 +86,44 @@ describe('AdminPatientsApiService — chat IDs do Periskope', () => {
   });
 
   describe('updatePatientChatIds', () => {
-    it('PUT com o par no body', async () => {
-      mockJson({ success: true, data: { id: PATIENT, familyChatId: FAMILY, providersChatId: PROVIDERS } });
+    it('PUT com o mapa de papéis no body', async () => {
+      mockJson({ success: true, data: { id: PATIENT, chatIds: { FAMILY, PROVIDERS } } });
 
       const out = await AdminPatientsApiService.updatePatientChatIds(PATIENT, {
-        familyChatId: FAMILY, providersChatId: PROVIDERS,
+        chatIds: { FAMILY, PROVIDERS },
       });
 
       expect(call().url).toContain(`/api/admin/patients/${PATIENT}/chat-ids`);
       expect(call().init.method).toBe('PUT');
       expect(JSON.parse(call().init.body as string)).toEqual({
-        familyChatId: FAMILY, providersChatId: PROVIDERS,
+        chatIds: { FAMILY, PROVIDERS },
       });
-      expect(out.familyChatId).toBe(FAMILY);
+      expect(out.chatIds.FAMILY).toBe(FAMILY);
+    });
+
+    it('o TERCEIRO papel atravessa o cliente sem nenhuma mudança de rota', async () => {
+      mockJson({ success: true, data: { id: PATIENT, chatIds: { HEALTH_PLAN: FAMILY } } });
+
+      await AdminPatientsApiService.updatePatientChatIds(PATIENT, { chatIds: { HEALTH_PLAN: FAMILY } });
+
+      expect(JSON.parse(call().init.body as string)).toEqual({ chatIds: { HEALTH_PLAN: FAMILY } });
     });
 
     it('null desvincula', async () => {
-      mockJson({ success: true, data: { id: PATIENT, familyChatId: null, providersChatId: null } });
-      await AdminPatientsApiService.updatePatientChatIds(PATIENT, { familyChatId: null, providersChatId: null });
-      expect(JSON.parse(call().init.body as string)).toEqual({ familyChatId: null, providersChatId: null });
+      mockJson({ success: true, data: { id: PATIENT, chatIds: {} } });
+      await AdminPatientsApiService.updatePatientChatIds(PATIENT, {
+        chatIds: { FAMILY: null, PROVIDERS: null },
+      });
+      expect(JSON.parse(call().init.body as string)).toEqual({
+        chatIds: { FAMILY: null, PROVIDERS: null },
+      });
     });
 
     it('409 (grupo já vinculado) chega ao caller com o status', async () => {
       mockJson({ success: false, error: 'Chat id already linked to another patient' }, 409);
 
       await expect(
-        AdminPatientsApiService.updatePatientChatIds(PATIENT, { familyChatId: FAMILY, providersChatId: null }),
+        AdminPatientsApiService.updatePatientChatIds(PATIENT, { chatIds: { FAMILY } }),
       ).rejects.toMatchObject({ status: 409 });
     });
   });

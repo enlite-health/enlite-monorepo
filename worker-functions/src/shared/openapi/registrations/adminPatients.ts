@@ -1,5 +1,6 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
+import { PATIENT_CHAT_ROLE_VALUES } from '@modules/case';
 
 const AdminPatientsListQuery = z.object({
   status: z.string().optional().openapi({ description: 'Filtro por status do paciente.', example: 'ACTIVE' }),
@@ -80,15 +81,26 @@ registry.registerPath({
   },
 });
 
+/**
+ * Body de PUT /chat-ids — montado A PARTIR do catálogo de papéis, para a doc
+ * não poder divergir do que a rota aceita quando um papel novo entrar.
+ */
 const PatientChatIdsBody = z.object({
-  familyChatId: z.string().nullable().openapi({
-    description: 'chat_id do grupo de WhatsApp da FAMÍLIA no Periskope. Só grupo (@g.us); null desvincula.',
-    example: '120363001234567890@g.us',
-  }),
-  providersChatId: z.string().nullable().openapi({
-    description: 'chat_id do grupo de WhatsApp dos PRESTADORES no Periskope. Só grupo (@g.us); null desvincula.',
-    example: '5491112345678-1600000000@g.us',
-  }),
+  chatIds: z
+    .object(
+      Object.fromEntries(
+        PATIENT_CHAT_ROLE_VALUES.map(role => [
+          role,
+          z.string().nullable().optional().openapi({
+            description:
+              `chat_id do grupo de WhatsApp do papel ${role} no Periskope. Só grupo (@g.us). ` +
+              'null DESVINCULA; papel ausente do objeto fica INALTERADO.',
+            example: '120363001234567890@g.us',
+          }),
+        ]),
+      ) as Record<string, z.ZodTypeAny>,
+    )
+    .openapi({ description: 'Papel -> chat_id de grupo. Papéis conhecidos: ' + PATIENT_CHAT_ROLE_VALUES.join(', ') + '.' }),
 });
 
 registry.registerPath({
@@ -97,8 +109,8 @@ registry.registerPath({
   tags: ['Admin · Patients'],
   summary: 'Mapa Postgres ↔ ClickUp ↔ Periskope (em massa)',
   description:
-    'Devolve, para vários pacientes de uma vez, o patientId + clickupTaskId + os dois chat_ids ' +
-    'de grupo do WhatsApp. É a chave de join da auditoria de informes. ' +
+    'Devolve, para vários pacientes de uma vez, o patientId + clickupTaskId + `chatIds` ' +
+    '(objeto papel -> chat_id de grupo do WhatsApp). É a chave de join da auditoria de informes. ' +
     'filter=linked (default) traz quem já tem vínculo; filter=unlinked é a fila do backfill. ' +
     '?chatId= faz a busca REVERSA (de qual paciente é este grupo, e em qual papel). ' +
     'SÓ IDENTIFICADORES: nunca nome, telefone ou documento do paciente.',
@@ -127,7 +139,7 @@ registry.registerPath({
   description:
     'Consulta os grupos de WhatsApp no Periskope (somente leitura, GET /chats) e devolve os mais ' +
     'parecidos com o nome do paciente, ordenados por score, marcando os que já estão vinculados a ' +
-    'outro paciente. RANQUEIA, NUNCA ESCOLHE: qual é o da família e qual é o dos prestadores é ' +
+    'outro paciente. RANQUEIA, NUNCA ESCOLHE: qual grupo pertence a qual papel é ' +
     'decisão humana. Atrás do kill-switch PATIENT_CHAT_LOOKUP_ENABLED (503 quando desligado).',
   security: [{ firebaseAuth: [] }],
   request: {
@@ -151,11 +163,14 @@ registry.registerPath({
   method: 'put',
   path: '/api/admin/patients/{id}/chat-ids',
   tags: ['Admin · Patients'],
-  summary: 'Vincula os chat IDs de grupo (família / prestadores) ao paciente',
+  summary: 'Vincula os chat IDs de grupo do paciente, por papel',
   description:
-    'Grava o par de chat_ids de GRUPO do Periskope no paciente. Só aceita @g.us (conversa 1-1 @c.us ' +
-    'é 400). Um mesmo grupo não pode ficar em dois pacientes: colisão devolve 409 CHAT_ID_ALREADY_LINKED. ' +
-    'null desvincula.',
+    'Grava os chat_ids de GRUPO do Periskope no paciente, um por papel (' +
+    PATIENT_CHAT_ROLE_VALUES.join(' | ') + '). Só aceita @g.us (conversa 1-1 @c.us é 400). ' +
+    'Um mesmo grupo não pode ficar em dois pacientes quando o papel é EXCLUSIVO: colisão devolve ' +
+    '409 CHAT_ID_ALREADY_LINKED. null desvincula; papel ausente fica inalterado. ' +
+    'O body legado { familyChatId, providersChatId } (migration 260) continua aceito e é ' +
+    'traduzido para FAMILY/PROVIDERS — sai com a migration de contract.',
   security: [{ firebaseAuth: [] }],
   request: {
     params: z.object({ id: UuidParam }),
@@ -163,7 +178,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: 'Chat IDs gravados.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: 'Body inválido (formato de chat_id, campo desconhecido, par igual).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    400: { description: 'Body inválido (formato de chat_id, papel desconhecido, mesmo grupo em dois papéis).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Paciente não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     409: { description: 'chat_id já vinculado a outro paciente.', content: { 'application/json': { schema: ErrorResponseSchema } } },

@@ -5,6 +5,8 @@
  * JSON.stringify). Consumers parse them with `new Date(value)` if needed.
  */
 
+import type { PatientChatIdMap } from '@domain/value-objects/patientChatRole';
+
 export interface PatientResponsibleDetail {
   id: string;
   firstName: string | null;
@@ -71,8 +73,15 @@ export interface PatientDetail {
   sex: string | null; // 'MALE'|'FEMALE'|'INTERSEX'|'UNDISCLOSED'
   phoneWhatsapp: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
+  /**
+   * Grupos de WhatsApp do Periskope por PAPEL (migration 261): papel -> chat_id
+   * (@g.us). Papel ausente = não vinculado. Catálogo em
+   * `@domain/value-objects/patientChatRole`.
+   */
+  chatIds: PatientChatIdMap;
+  /** @deprecated alias de `chatIds.FAMILY`; sai com a migration de contract. */
   familyChatId: string | null;
-  /** chat_id do grupo de WhatsApp dos PRESTADORES no Periskope (@g.us). Migration 260. */
+  /** @deprecated alias de `chatIds.PROVIDERS`; sai com a migration de contract. */
   providersChatId: string | null;
   diagnosis: string | null;
   dependencyLevel: string | null;
@@ -201,11 +210,10 @@ export type PatientSectionPayload =
 
 /**
  * Body de PUT /api/admin/patients/:id/chat-ids — espelha patientChatIdsSchema
- * (backend). Os dois campos são obrigatórios; `null` desvincula.
+ * (backend). `null` DESVINCULA; papel ausente do mapa fica INALTERADO.
  */
 export interface PatientChatIdsPayload {
-  familyChatId: string | null;
-  providersChatId: string | null;
+  chatIds: Record<string, string | null>;
 }
 
 /** Um grupo do Periskope candidato, já pontuado — GET /:id/chat-candidates. */

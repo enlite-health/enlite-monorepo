@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { CHAT_ID_MAX_LENGTH, GROUP_CHAT_ID_PATTERN } from '../../domain/PatientChatId';
+import type { PatientChatIdWriteMap } from '../../domain/PatientChatId';
+import { PATIENT_CHAT_ROLE_VALUES } from '../../domain/PatientChatRole';
 
 const GROUP_ONLY_MESSAGE =
   'chat_id deve ser de GRUPO do Periskope (termina em @g.us). Conversa 1-1 (@c.us) não é aceita.';
@@ -11,26 +13,81 @@ const groupChatId = z
   .regex(GROUP_CHAT_ID_PATTERN, GROUP_ONLY_MESSAGE);
 
 /**
- * Body de PUT /api/admin/patients/:id/chat-ids.
+ * O objeto `chatIds` do body, MONTADO A PARTIR DO CATÁLOGO de papéis.
  *
- * Os dois campos são obrigatórios na requisição mas aceitam `null` — a tela
- * grava o par inteiro de uma vez, e `null` é o jeito explícito de DESVINCULAR.
- * `.strict()` transforma campo desconhecido em 400 em vez de no-op silencioso.
+ * É por isto que somar um papel não mexe na API: `PATIENT_CHAT_ROLE_VALUES`
+ * ganha uma entrada e a rota passa a aceitá-la, com a mesma validação. Não há
+ * lista de papéis escrita duas vezes.
  *
- * O par igual é recusado aqui e também no banco (CHECK
- * `patients_chat_ids_distinct`, migration 260): o mesmo grupo não pode ser ao
- * mesmo tempo o da família e o dos prestadores.
+ * Semântica de cada chave:
+ *   ausente → não mexe        (uma versão antiga do painel não apaga o que não conhece)
+ *   null    → DESVINCULA
+ *   string  → vincula (só @g.us)
+ * `.strict()` transforma papel desconhecido em 400 em vez de no-op silencioso.
  */
-export const patientChatIdsSchema = z
+const chatIdsObject = z
+  .object(
+    Object.fromEntries(
+      PATIENT_CHAT_ROLE_VALUES.map(role => [role, groupChatId.nullable().optional()]),
+    ) as Record<string, z.ZodOptional<z.ZodNullable<typeof groupChatId>>>,
+  )
+  .strict();
+
+/** Contrato novo: um mapa de papéis. */
+const roleBody = z.object({ chatIds: chatIdsObject }).strict();
+
+/**
+ * Contrato LEGADO da migration 260 — `{ familyChatId, providersChatId }`.
+ *
+ * @deprecated Aceito só enquanto um bundle antigo do painel puder estar em
+ * cache no navegador de quem opera. O painel novo manda `chatIds`. Sai junto com
+ * a migration de contract (`migrations/pending/`).
+ *
+ * Traduzido para o mapa: os dois campos eram obrigatórios lá, então o body
+ * legado descreve o par inteiro e `null` desvincula — exatamente como antes.
+ */
+const legacyBody = z
   .object({
     familyChatId: groupChatId.nullable(),
     providersChatId: groupChatId.nullable(),
   })
-  .strict()
-  .refine(
-    v => v.familyChatId === null || v.providersChatId === null || v.familyChatId !== v.providersChatId,
-    { message: 'familyChatId e providersChatId não podem ser o mesmo grupo', path: ['providersChatId'] },
-  );
+  .strict();
+
+/**
+ * Body de PUT /api/admin/patients/:id/chat-ids.
+ *
+ * Aceita o contrato novo OU o legado e devolve sempre o mapa normalizado.
+ */
+export const patientChatIdsSchema = z
+  .union([roleBody, legacyBody])
+  .transform((body): PatientChatIdWriteMap => {
+    if ('chatIds' in body) {
+      // Chave presente com `undefined` (JSON não produz isso, mas um cliente
+      // TypeScript sim) é o mesmo que ausente: não mexe.
+      return Object.fromEntries(
+        Object.entries(body.chatIds).filter(([, v]) => v !== undefined),
+      ) as PatientChatIdWriteMap;
+    }
+    return { FAMILY: body.familyChatId, PROVIDERS: body.providersChatId };
+  })
+  .superRefine((map, ctx) => {
+    // O mesmo grupo em dois papéis do MESMO paciente é recusado aqui e também no
+    // banco (UNIQUE `patient_chat_ids_one_role_per_chat`, migration 261).
+    const seen = new Map<string, string>();
+    for (const [role, chatId] of Object.entries(map)) {
+      if (chatId === null) continue;
+      const first = seen.get(chatId);
+      if (first) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [role],
+          message: `o mesmo grupo não pode ser ${first} e ${role} do mesmo paciente`,
+        });
+        return;
+      }
+      seen.set(chatId, role);
+    }
+  });
 
 export type PatientChatIdsBody = z.infer<typeof patientChatIdsSchema>;
 

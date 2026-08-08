@@ -4,6 +4,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { chatRolesToDisplay, chatRoleLabelKey } from '@domain/value-objects/patientChatRole';
 import { PatientChatIdsEditDrawer } from './edit/PatientChatIdsEditDrawer';
 
 interface Props {
@@ -24,16 +25,23 @@ function Field({ label, value, testId }: { label: string; value: string | null; 
 }
 
 /**
- * PatientChatIdsCard — os dois grupos de WhatsApp (Periskope) presos ao paciente.
+ * PatientChatIdsCard — os grupos de WhatsApp (Periskope) do paciente, POR PAPEL.
  *
  * É a chave de join Postgres ↔ Periskope ↔ ClickUp que a auditoria de informes
  * (Candela) precisa. Exibe o valor cru de propósito: quem opera precisa poder
  * conferir o chat_id contra o Periskope sem clicar em nada.
+ *
+ * A lista de papéis vem de `chatRolesToDisplay`, não é escrita aqui: papel novo
+ * aparece sozinho, e papel que o backend já grava mas o painel não conhece
+ * também — esconder um vínculo existente seria pior que mostrar o código cru.
  */
 export function PatientChatIdsCard({ patient, onSaved }: Props) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const tc = (k: string) => t(`admin.patients.detail.chatIdsCard.${k}`);
+
+  const chatIds = patient.chatIds ?? {};
+  const roles = chatRolesToDisplay(chatIds);
 
   return (
     <div
@@ -55,8 +63,14 @@ export function PatientChatIdsCard({ patient, onSaved }: Props) {
       <Text size="sm" color="muted">{tc('subtitle')}</Text>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-        <Field label={tc('family')} value={patient.familyChatId} testId="chat-id-family-value" />
-        <Field label={tc('providers')} value={patient.providersChatId} testId="chat-id-providers-value" />
+        {roles.map(role => (
+          <Field
+            key={role}
+            label={t(chatRoleLabelKey(role), { defaultValue: role })}
+            value={chatIds[role] ?? null}
+            testId={`chat-id-${role}-value`}
+          />
+        ))}
       </div>
 
       {editing && (

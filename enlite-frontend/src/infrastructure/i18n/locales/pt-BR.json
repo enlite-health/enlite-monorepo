@@ -3028,13 +3028,11 @@
         },
         "chatIdsCard": {
           "title": "Chat IDs do WhatsApp (Periskope)",
-          "subtitle": "Os dois grupos do paciente. É por eles que a auditoria de informes cruza o Periskope com o nosso banco.",
-          "family": "Grupo da família",
-          "providers": "Grupo dos prestadores",
+          "subtitle": "Os grupos do paciente, um por papel. É por eles que a auditoria de informes cruza o Periskope com o nosso banco.",
           "notLinked": "Não vinculado",
           "link": "Vincular chats",
           "drawerTitle": "Vincular chats do paciente",
-          "drawerHelp": "Busque os grupos no Periskope e diga qual é o da família e qual é o dos prestadores. O sistema ordena por semelhança com o nome do paciente, mas quem escolhe é você.",
+          "drawerHelp": "Busque os grupos no Periskope e diga qual corresponde a cada papel. O sistema ordena por semelhança com o nome do paciente, mas quem escolhe é você.",
           "searchChats": "Buscar chats",
           "candidatesTitle": "Grupos encontrados",
           "noCandidates": "Nenhum grupo parecido com o nome deste paciente.",
@@ -3046,7 +3044,12 @@
           "saveError": "Não foi possível salvar os chat IDs.",
           "save": "Salvar",
           "close": "Fechar",
-          "listTruncated": "Atenção: a lista de grupos do Periskope veio incompleta. Se o grupo que você procura não aparece, ele pode ter ficado de fora — refaça a busca ou avise o time técnico."
+          "listTruncated": "Atenção: a lista de grupos do Periskope veio incompleta. Se o grupo que você procura não aparece, ele pode ter ficado de fora — refaça a busca ou avise o time técnico.",
+          "roles": {
+            "FAMILY": "Grupo da família",
+            "PROVIDERS": "Grupo dos prestadores",
+            "HEALTH_PLAN": "Grupo do plano de saúde"
+          }
         }
       }
     },

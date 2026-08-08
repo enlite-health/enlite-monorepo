@@ -25,12 +25,22 @@ export { PATIENT_STATUSES, isPatientStatus } from './domain/enums/PatientStatus'
 
 // Domain types
 export type { PatientIdentity } from './domain/PatientIdentity';
-export type { PatientChatIds } from './domain/PatientChatId';
+export type { PatientChatIdMap, PatientChatIdWriteMap } from './domain/PatientChatId';
 export {
   GROUP_CHAT_ID_PATTERN,
   CHAT_ID_MAX_LENGTH,
   isGroupChatId,
+  legacyChatIdAliases,
 } from './domain/PatientChatId';
+export type { PatientChatRole, PatientChatRoleSpec } from './domain/PatientChatRole';
+export {
+  PATIENT_CHAT_ROLES,
+  PATIENT_CHAT_ROLE_VALUES,
+  PATIENT_CHAT_ROLE_PATTERN,
+  PATIENT_CHAT_ROLE_MAX_LENGTH,
+  isPatientChatRole,
+  isExclusiveChatRole,
+} from './domain/PatientChatRole';
 export type { PatientClinical } from './domain/PatientClinical';
 export type {
   PatientResponsible,

@@ -12,7 +12,7 @@ export const MAX_CHAT_MAP_LIMIT = 1000;
 export interface GetPatientChatMapInput {
   /** Recorte. Default 'linked' (o mapa pronto para cruzar). */
   filter?: ChatMapFilter;
-  /** Direção REVERSA: dado um chat_id do Periskope, de quem ele é. */
+  /** Direção REVERSA: dado um chat_id do Periskope, de quem ele é e em que papel. */
   chatId?: string;
   limit?: number;
   offset?: number;
@@ -30,6 +30,14 @@ export interface GetPatientChatMapResult {
 /**
  * GetPatientChatMapUseCase — a ponte de três pontas, em massa:
  * Postgres (`patientId`) ↔ ClickUp (`clickupTaskId`) ↔ Periskope (chat IDs).
+ *
+ * ⚠️ MUDANÇA DE CONTRATO na migration 261: cada linha traz `chatIds` (mapa
+ * papel → chat_id, papéis em MAIÚSCULO) no lugar dos antigos `familyChatId` /
+ * `providersChatId`, e `matchedRole` passa a ser 'FAMILY'/'PROVIDERS'/... em vez
+ * de 'family'/'providers'. Diferente do detalhe do paciente, aqui NÃO há alias
+ * legado: este payload é lido por agente (capability MCP `patient.chat.map`), e
+ * duas grafias do mesmo fato num payload de LLM é convite a erro. O corte é
+ * seguro porque a base está zerada — nenhum consumidor tem dado real ainda.
  *
  * Existe porque a auditoria de informes (Candela) processa a BASE INTEIRA de uma
  * vez, não um paciente por vez, e consome principalmente a direção reversa: ela

@@ -1,5 +1,6 @@
 import { PatientChatIdsRepository, type ChatIdConflict } from '../infrastructure/PatientChatIdsRepository';
-import type { PatientChatIds } from '../domain/PatientChatId';
+import type { PatientChatIdMap, PatientChatIdWriteMap } from '../domain/PatientChatId';
+import { isExclusiveChatRole } from '../domain/PatientChatRole';
 
 /** O paciente pedido não existe (ou está soft-deleted). */
 export class PatientChatIdsNotFoundError extends Error {
@@ -9,7 +10,7 @@ export class PatientChatIdsNotFoundError extends Error {
   }
 }
 
-/** Um dos chat_ids já está preso a outro paciente. */
+/** Um dos chat_ids já está preso a outro paciente, num papel exclusivo. */
 export class ChatIdAlreadyLinkedError extends Error {
   constructor(public readonly conflicts: ChatIdConflict[]) {
     super(`Chat id already linked to another patient: ${conflicts.map(c => c.chatId).join(', ')}`);
@@ -18,20 +19,24 @@ export class ChatIdAlreadyLinkedError extends Error {
 }
 
 /**
- * PatientChatIdsService — grava os dois chat IDs de grupo do paciente.
+ * PatientChatIdsService — grava os grupos de WhatsApp do paciente, por papel.
  *
  * A trava de unicidade tem duas metades, e as duas são necessárias:
  *
- *   - MESMO PAPEL entre pacientes (A.family == B.family): coberta por índice
- *     único parcial no banco (migration 260). É a metade dura — nem um script
- *     nem um psql à mão furam.
- *   - PAPEL CRUZADO (A.family == B.providers): Postgres não tem índice único
- *     cross-column, então é validada AQUI, com 409 e a lista de conflitos.
- *     Ceiling honesto: duas gravações simultâneas em papéis cruzados ainda
- *     passariam pela janela entre a leitura e o UPDATE. Não vale um lock de
- *     tabela — a operação é uma pessoa por vez numa tela de admin, e o efeito
- *     de perder a corrida é um vínculo duplicado que a próxima leitura mostra.
- *     Upgrade path: tabela `patient_chat_links(chat_id PK, ...)`.
+ *   - NO BANCO: índice único parcial `idx_patient_chat_ids_exclusive_chat`
+ *     (`WHERE is_exclusive`) — o mesmo grupo não entra duas vezes entre os
+ *     papéis exclusivos, de nenhum paciente. É a metade dura: nem um script nem
+ *     um psql à mão furam.
+ *   - AQUI: a mesma regra, antes de bater na constraint, para devolver 409 com
+ *     a LISTA DE CONFLITOS em vez de um erro de banco opaco — e para cobrir o
+ *     caso misto (papel não-exclusivo tentando tomar um grupo que já é de um
+ *     papel exclusivo alheio), que o índice parcial sozinho não vê.
+ *
+ * Ceiling honesto (ponytail): entre a leitura e a escrita há uma janela em que
+ * duas gravações simultâneas passariam pela checagem daqui. O índice do banco
+ * segura o caso exclusivo×exclusivo (vira 23505 → 409 no controller); o caso
+ * misto perderia a corrida. Não vale um lock de tabela — é uma tela de admin
+ * operada por uma pessoa por vez, e a próxima leitura mostra o resultado.
  */
 export class PatientChatIdsService {
   private readonly repo: PatientChatIdsRepository;
@@ -40,23 +45,31 @@ export class PatientChatIdsService {
     this.repo = repo ?? new PatientChatIdsRepository();
   }
 
-  async update(patientId: string, chatIds: PatientChatIds): Promise<PatientChatIds> {
+  async update(patientId: string, changes: PatientChatIdWriteMap): Promise<PatientChatIdMap> {
     const patient = await this.repo.findById(patientId);
     if (!patient) throw new PatientChatIdsNotFoundError(patientId);
 
-    const wanted = [chatIds.familyChatId, chatIds.providersChatId].filter(
-      (v): v is string => v !== null,
+    const wanted = Object.entries(changes).filter(
+      (entry): entry is [string, string] => entry[1] !== null,
     );
 
     if (wanted.length > 0) {
       const linked = await this.repo.findLinkedElsewhere(patientId);
-      const conflicts = linked.filter(c => wanted.includes(c.chatId));
+      const conflicts = linked.filter(taken =>
+        wanted.some(
+          ([role, chatId]) =>
+            chatId === taken.chatId &&
+            // Basta UM dos dois lados ser exclusivo para o vínculo ser proibido:
+            // um grupo compartilhável (ex.: o do plano de saúde, se o Marcel
+            // disser que é um por plano) ainda assim não pode ser a família de
+            // alguém. Hoje os três papéis são exclusivos, então isto vale para
+            // tudo — e continua correto no dia em que um deixar de ser.
+            (taken.exclusive || isExclusiveChatRole(role)),
+        ),
+      );
       if (conflicts.length > 0) throw new ChatIdAlreadyLinkedError(conflicts);
     }
 
-    const updated = await this.repo.updateChatIds(patientId, chatIds);
-    if (!updated) throw new PatientChatIdsNotFoundError(patientId);
-
-    return chatIds;
+    return this.repo.applyChatIds(patientId, changes);
   }
 }
