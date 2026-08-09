@@ -26,18 +26,45 @@ function resolveBaseUrl(): string {
  * Retorna `null` quando falta credencial — cada serviço decide o que fazer com
  * isso (todos degradam para no-op; nenhum lança no construtor).
  */
-export function createPeriskopeHttpClient(timeoutMs = 15000): AxiosInstance | null {
+export interface PeriskopeClientOptions {
+  /**
+   * `true` (default) = manda `x-phone`, que **escopa a chamada a UM número
+   * conectado**. É obrigatório para ENVIAR: o header escolhe de qual número a
+   * mensagem sai.
+   *
+   * `false` = omite o header, e a API responde por **todos os números que o
+   * token alcança**. É o que a LEITURA quer: a org tem mais de um número
+   * conectado, e um grupo vinculável pode estar em qualquer um deles.
+   *
+   * ⚠️ Medido em 09/08/2026 contra a API real: com o header, `GET /chats`
+   * devolvia **774** grupos; sem ele, **788** — os 14 do segundo número
+   * (`5491127671720`, "Reclutamiento Enlite H") eram um ponto cego silencioso.
+   * A própria doc do fornecedor confirma: o parâmetro de telefone é opcional e
+   * "omit to return data across all phones the API token can access".
+   */
+  scopeToPhone?: boolean;
+}
+
+export function createPeriskopeHttpClient(
+  timeoutMs = 15000,
+  opts: PeriskopeClientOptions = {},
+): AxiosInstance | null {
   const apiKey = process.env.PERISKOPE_API_KEY;
   // Número conectado no Periskope: DDI + número, só dígitos (ex: 5491122334455)
   const phone = process.env.PERISKOPE_PHONE;
+  const scopeToPhone = opts.scopeToPhone ?? true;
 
-  if (!apiKey || !phone) return null;
+  // Sem chave não há chamada. O NÚMERO só é exigido de quem escopa por número —
+  // para a leitura da org inteira ele é irrelevante, e exigi-lo transformaria
+  // uma variável de ENVIO em pré-requisito de LEITURA.
+  if (!apiKey) return null;
+  if (scopeToPhone && !phone) return null;
 
   return axios.create({
     baseURL: resolveBaseUrl(),
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      'x-phone': phone,
+      ...(scopeToPhone ? { 'x-phone': phone as string } : {}),
       'Content-Type': 'application/json',
     },
     timeout: timeoutMs,

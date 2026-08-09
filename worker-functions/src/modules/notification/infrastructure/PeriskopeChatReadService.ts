@@ -80,7 +80,13 @@ export class PeriskopeChatReadService {
   private cache: CacheEntry | null = null;
 
   constructor(http?: AxiosInstance | null, cacheTtlMs?: number) {
-    this.http = http !== undefined ? http : createPeriskopeHttpClient();
+    // `scopeToPhone: false` — a org tem MAIS DE UM número conectado, e um grupo
+    // vinculável pode estar em qualquer um deles. Com o escopo ligado
+    // enxergávamos 774 de 788 grupos, e os 14 que faltavam não apareciam como
+    // erro nenhum: a tela diria "nenhum candidato" para quem tem grupo lá.
+    // Ler é da ORG; enviar é DE UM NÚMERO — por isso só os serviços de envio
+    // continuam escopados.
+    this.http = http !== undefined ? http : createPeriskopeHttpClient(15000, { scopeToPhone: false });
     this.cacheTtlMs = cacheTtlMs ?? readCacheTtlFromEnv();
     if (!this.http) {
       logger.warn({ msg: '[PeriskopeChatReadService] Not configured — chat lookup disabled' });
