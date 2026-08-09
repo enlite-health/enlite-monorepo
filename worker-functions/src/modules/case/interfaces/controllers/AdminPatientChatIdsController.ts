@@ -5,7 +5,9 @@ import {
   patientChatIdsSchema,
   patientChatCandidatesQuerySchema,
   patientChatMapQuerySchema,
+  chatGroupsQuerySchema,
 } from '../validators/patientChatIdsSchema';
+import { ListChatGroupsUseCase } from '../../application/ListChatGroupsUseCase';
 import { GetPatientChatMapUseCase } from '../../application/GetPatientChatMapUseCase';
 import { legacyChatIdAliases } from '../../domain/PatientChatId';
 import {
@@ -50,7 +52,44 @@ export class AdminPatientChatIdsController {
     private readonly findCandidates: FindPatientChatCandidatesUseCase =
       new FindPatientChatCandidatesUseCase(),
     private readonly chatMap: GetPatientChatMapUseCase = new GetPatientChatMapUseCase(),
+    private readonly listGroups: ListChatGroupsUseCase = new ListChatGroupsUseCase(),
   ) {}
+
+  /**
+   * GET /api/admin/chat-groups?search=&limit=&offset= — TODOS os grupos da org.
+   *
+   * Não é escopado a paciente de propósito: a pergunta que ele responde é "qual
+   * é o grupo da obra social?", que não tem nada a ver com o nome de um
+   * paciente. Para "qual destes é o grupo DELE?" existe /chat-candidates.
+   *
+   * Atrás do MESMO kill-switch do lookup: é a mesma leitura no Periskope.
+   */
+  async getChatGroups(req: Request, res: Response): Promise<void> {
+    const query = chatGroupsQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query', details: query.error.flatten() });
+      return;
+    }
+
+    if (!isChatLookupEnabled()) {
+      res.status(503).json({ success: false, error: 'Chat lookup disabled', code: 'FEATURE_DISABLED' });
+      return;
+    }
+
+    try {
+      const result = await this.listGroups.execute(query.data);
+      if (!result.ok) {
+        res.status(502).json({ success: false, error: result.reason, code: result.reason.toUpperCase() });
+        return;
+      }
+      const { ok: _ok, ...data } = result;
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientChatIdsController:getChatGroups' });
+      res.status(500).json({ success: false, error: 'Failed to list chat groups' });
+    }
+  }
 
   /**
    * GET /api/admin/patients/chat-map — o mapa de três pontas, em massa.

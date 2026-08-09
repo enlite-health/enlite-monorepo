@@ -10,7 +10,9 @@ import {
 import type { PeriskopeGroupChat } from '@modules/notification';
 
 function group(chatId: string, chatName: string | null, memberCount: number | null = 10): PeriskopeGroupChat {
-  return { chatId, chatName, memberCount };
+  // `orgPhone` não participa do ranqueamento — ele só viaja até a tela para
+  // responder "o nosso número está nesse grupo?".
+  return { chatId, chatName, memberCount, orgPhone: '5491176360496@c.us' };
 }
 
 describe('rankChatCandidates', () => {

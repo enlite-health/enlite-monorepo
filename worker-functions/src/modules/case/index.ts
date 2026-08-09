@@ -92,6 +92,16 @@ export type {
   GetPatientChatMapInput,
   GetPatientChatMapResult,
 } from './application/GetPatientChatMapUseCase';
+export {
+  ListChatGroupsUseCase,
+  DEFAULT_GROUP_PAGE_SIZE,
+  MAX_GROUP_PAGE_SIZE,
+} from './application/ListChatGroupsUseCase';
+export type {
+  ChatGroupListItem,
+  ListChatGroupsInput,
+  ListChatGroupsOutput,
+} from './application/ListChatGroupsUseCase';
 export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
@@ -136,7 +146,7 @@ export type {
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
-export { patientChatIdsSchema, patientChatMapQuerySchema } from './interfaces/validators/patientChatIdsSchema';
+export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';
 export {
   createPatientChatRoleSchema,
   updatePatientChatRoleSchema,

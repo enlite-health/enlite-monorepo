@@ -104,6 +104,31 @@ export class PatientChatIdsRepository {
   }
 
   /**
+   * Quantos PACIENTES usam cada um dos `chatIds` pedidos, em qualquer papel.
+   *
+   * Recebe a lista de ids em vez de varrer a tabela inteira porque quem chama é
+   * uma tela com busca: perguntar pelos 775 grupos a cada tecla digitada seria
+   * varrer tudo para exibir 50 linhas.
+   *
+   * Paciente soft-deleted não conta — ele não segura grupo nenhum, pela mesma
+   * razão de `findLinkedElsewhere`.
+   */
+  async countPatientsByChatIds(chatIds: readonly string[]): Promise<Record<string, number>> {
+    if (chatIds.length === 0) return {};
+
+    const res = await this.pool.query<{ chatId: string; n: string }>(
+      `SELECT c.chat_id AS "chatId", COUNT(DISTINCT c.patient_id)::text AS n
+         FROM patient_chat_ids c
+         JOIN patients p ON p.id = c.patient_id
+        WHERE c.chat_id = ANY($1::text[])
+          AND p.deleted_at IS NULL
+        GROUP BY c.chat_id`,
+      [chatIds],
+    );
+    return Object.fromEntries(res.rows.map(r => [r.chatId, Number(r.n)]));
+  }
+
+  /**
    * MAPA EM MASSA — a ponte de três pontas para a auditoria de informes.
    *
    * Devolve `patient_id` + `clickup_task_id` + os grupos por papel de uma vez,

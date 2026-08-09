@@ -5,6 +5,7 @@ import {
   PATIENT_CHAT_ROLE_PATTERN,
   PATIENT_CHAT_ROLE_MAX_LENGTH,
 } from '../../domain/PatientChatRole';
+import { MAX_GROUP_PAGE_SIZE } from '../../application/ListChatGroupsUseCase';
 
 const GROUP_ONLY_MESSAGE =
   'chat_id deve ser de GRUPO do Periskope (termina em @g.us). Conversa 1-1 (@c.us) não é aceita.';
@@ -115,6 +116,21 @@ export const patientChatMapQuerySchema = z
     filter: z.enum(['linked', 'unlinked', 'all']).optional(),
     chatId: groupChatId.optional(),
     limit: z.coerce.number().int().min(1).max(1000).optional(),
+    offset: z.coerce.number().int().min(0).optional(),
+  })
+  .strict();
+
+/**
+ * Query de GET /api/admin/chat-groups — a lista de TODOS os grupos da org.
+ *
+ * `search` casa por NOME do grupo. Sem ele, devolve a lista inteira paginada:
+ * é assim que o operador acha o grupo da obra social, que não se parece com o
+ * nome de paciente nenhum.
+ */
+export const chatGroupsQuerySchema = z
+  .object({
+    search: z.string().trim().max(120).optional(),
+    limit: z.coerce.number().int().min(1).max(MAX_GROUP_PAGE_SIZE).optional(),
     offset: z.coerce.number().int().min(0).optional(),
   })
   .strict();

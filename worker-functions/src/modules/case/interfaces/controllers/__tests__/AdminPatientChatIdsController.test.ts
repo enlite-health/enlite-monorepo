@@ -8,6 +8,7 @@ import {
 } from '../../../application/PatientChatIdsService';
 import { FindPatientChatCandidatesUseCase } from '../../../application/FindPatientChatCandidatesUseCase';
 import { GetPatientChatMapUseCase } from '../../../application/GetPatientChatMapUseCase';
+import { ListChatGroupsUseCase } from '../../../application/ListChatGroupsUseCase';
 
 jest.mock('@shared/logging', () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
@@ -24,6 +25,10 @@ jest.mock('../../../application/FindPatientChatCandidatesUseCase', () => {
 jest.mock('../../../application/GetPatientChatMapUseCase', () => {
   const actual = jest.requireActual('../../../application/GetPatientChatMapUseCase');
   return { ...actual, GetPatientChatMapUseCase: jest.fn().mockImplementation(() => ({})) };
+});
+jest.mock('../../../application/ListChatGroupsUseCase', () => {
+  const actual = jest.requireActual('../../../application/ListChatGroupsUseCase');
+  return { ...actual, ListChatGroupsUseCase: jest.fn().mockImplementation(() => ({})) };
 });
 
 const PATIENT = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -45,6 +50,7 @@ function build(over: {
   update?: jest.Mock;
   execute?: jest.Mock;
   mapExecute?: jest.Mock;
+  groupsExecute?: jest.Mock;
 } = {}) {
   const service = { update: over.update ?? jest.fn() } as unknown as PatientChatIdsService;
   const finder = { execute: over.execute ?? jest.fn() } as unknown as FindPatientChatCandidatesUseCase;
@@ -53,9 +59,14 @@ function build(over: {
       patients: [], total: 0, limit: 500, offset: 0, hasMore: false,
     }),
   } as unknown as GetPatientChatMapUseCase;
+  const listGroups = {
+    execute: over.groupsExecute ?? jest.fn().mockResolvedValue({
+      ok: true, groups: [], total: 0, limit: 50, offset: 0, hasMore: false, listTruncated: false,
+    }),
+  } as unknown as ListChatGroupsUseCase;
   return {
-    controller: new AdminPatientChatIdsController(service, finder, chatMap),
-    service, finder, chatMap,
+    controller: new AdminPatientChatIdsController(service, finder, chatMap, listGroups),
+    service, finder, chatMap, listGroups,
   };
 }
 
@@ -434,5 +445,90 @@ describe('AdminPatientChatIdsController', () => {
 
   it('sem dependências injetadas, instancia os padrões', () => {
     expect(() => new AdminPatientChatIdsController()).not.toThrow();
+  });
+
+  describe('GET /chat-groups — a lista da org', () => {
+    const LOOKUP = process.env.PATIENT_CHAT_LOOKUP_ENABLED;
+    beforeEach(() => { process.env.PATIENT_CHAT_LOOKUP_ENABLED = 'true'; });
+    afterAll(() => { process.env.PATIENT_CHAT_LOOKUP_ENABLED = LOOKUP; });
+
+    it('200 com a página, sem o `ok` interno vazando no payload', async () => {
+      const groupsExecute = jest.fn().mockResolvedValue({
+        ok: true,
+        groups: [{ chatId: GROUP_A, chatName: 'Gestión: EnLite <> DAS', memberCount: 16, orgPhone: 'p@c.us', linkedPatientCount: 40 }],
+        total: 1, limit: 50, offset: 0, hasMore: false, listTruncated: false,
+      });
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req({ query: { search: 'gestion' } }), r);
+
+      expect(groupsExecute).toHaveBeenCalledWith({ search: 'gestion' });
+      expect(r.status).toHaveBeenCalledWith(200);
+      const payload = r.json.mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      expect(payload.data).not.toHaveProperty('ok');
+      expect(payload.data.groups[0].linkedPatientCount).toBe(40);
+    });
+
+    it('passa limit e offset adiante', async () => {
+      const groupsExecute = jest.fn().mockResolvedValue({
+        ok: true, groups: [], total: 0, limit: 10, offset: 20, hasMore: false, listTruncated: false,
+      });
+      const { controller } = build({ groupsExecute });
+
+      await controller.getChatGroups(req({ query: { limit: '10', offset: '20' } }), res());
+
+      expect(groupsExecute).toHaveBeenCalledWith({ limit: 10, offset: 20 });
+    });
+
+    it('503 quando o kill-switch do lookup está desligado', async () => {
+      process.env.PATIENT_CHAT_LOOKUP_ENABLED = 'false';
+      const groupsExecute = jest.fn();
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req(), r);
+
+      expect(r.status).toHaveBeenCalledWith(503);
+      expect(groupsExecute).not.toHaveBeenCalled();
+    });
+
+    it('502 quando o Periskope não responde — não é "achei zero"', async () => {
+      const groupsExecute = jest.fn().mockResolvedValue({ ok: false, reason: 'periskope_unavailable' });
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req(), r);
+
+      expect(r.status).toHaveBeenCalledWith(502);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PERISKOPE_UNAVAILABLE' }));
+    });
+
+    it.each([
+      ['campo desconhecido', { foo: 'x' }],
+      ['limit fora da faixa', { limit: '9999' }],
+      ['offset negativo', { offset: '-1' }],
+    ])('400 para %s, sem chamar o caso de uso', async (_l, query) => {
+      const groupsExecute = jest.fn();
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req({ query }), r);
+
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(groupsExecute).not.toHaveBeenCalled();
+    });
+
+    it('erro inesperado vira 500 sem vazar a mensagem interna', async () => {
+      const groupsExecute = jest.fn().mockRejectedValue(new Error('connection terminated'));
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req(), r);
+
+      expect(r.status).toHaveBeenCalledWith(500);
+      expect(JSON.stringify(r.json.mock.calls)).not.toContain('connection terminated');
+    });
   });
 });

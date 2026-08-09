@@ -45,6 +45,15 @@ export function createAdminPatientsRoutes(
     chatRolesController.delete(req, res),
   );
 
+  // ── Lista de TODOS os grupos que a org enxerga no Periskope ────────────────
+  // FORA de /patients/* de propósito: não é recurso de paciente nenhum. Responde
+  // "qual é o grupo da obra social?", que o /patients/:id/chat-candidates NÃO
+  // pode responder — lá o ranqueamento é por semelhança com o nome do paciente,
+  // e o grupo do pagador não se parece com paciente nenhum.
+  router.get('/chat-groups', staffOnly, (req: Request, res: Response) =>
+    chatIdsController.getChatGroups(req, res),
+  );
+
   // Static routes first (guard against future /:id capture)
   router.get('/patients/stats', staffOnly, (req: Request, res: Response) =>
     controller.getPatientStats(req, res),
