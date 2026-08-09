@@ -5,7 +5,7 @@
  * JSON.stringify). Consumers parse them with `new Date(value)` if needed.
  */
 
-import type { PatientChatIdMap } from '@domain/value-objects/patientChatRole';
+import type { PatientChatIdMap, PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 
 export interface PatientResponsibleDetail {
   id: string;
@@ -230,6 +230,19 @@ export interface PatientChatCandidate {
 
 export interface PatientChatCandidatesResult {
   candidates: PatientChatCandidate[];
+  /**
+   * Papel -> os MESMOS `chatId`s de `candidates`, na ordem daquele papel.
+   *
+   * Só a ORDEM muda entre um papel e outro. Existe porque os dois grupos do
+   * mesmo paciente ("Flia. Perez" e "Equipo Perez") têm score IDÊNTICO, e o
+   * desempate antigo era alfabético — o que punha o grupo dos prestadores em
+   * primeiro nos DOIS seletores. Medido contra o gabarito do Marcel: o grupo da
+   * família em 1º lugar subiu de 52,4% para 71,4%, sem tirar ninguém do top 3.
+   *
+   * Opcional no tipo porque um backend anterior a esta mudança não manda o
+   * campo; a tela cai no ranking global nesse caso.
+   */
+  candidatesByRole?: Record<string, string[]>;
   /** Quantos grupos foram varridos no Periskope. */
   totalGroups: number;
   /**
@@ -238,6 +251,26 @@ export interface PatientChatCandidatesResult {
    * lista foi cortada antes de chegar no grupo do paciente.
    */
   groupListTruncated?: boolean;
+}
+
+/**
+ * GET /api/admin/patient-chat-roles — o catálogo.
+ * `usage` só vem com `?includeInactive=true` (visão de administração).
+ */
+export interface PatientChatRolesResult {
+  roles: PatientChatRoleSpec[];
+  /** Código do papel -> quantos PACIENTES o usam hoje. */
+  usage?: Record<string, number>;
+}
+
+/** Body de POST /api/admin/patient-chat-roles. */
+export interface PatientChatRolePayload {
+  code: string;
+  labelEs: string;
+  labelPtBr: string;
+  isExclusive: boolean;
+  displayOrder: number;
+  matchKeywords: string[];
 }
 
 /** Result of PUT /api/admin/patients/:id/status. */

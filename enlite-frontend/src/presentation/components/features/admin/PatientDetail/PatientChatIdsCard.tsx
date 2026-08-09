@@ -4,7 +4,8 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
-import { chatRolesToDisplay, chatRoleLabelKey } from '@domain/value-objects/patientChatRole';
+import { chatRolesToDisplay, chatRoleLabel } from '@domain/value-objects/patientChatRole';
+import { usePatientChatRoles } from '@presentation/hooks/usePatientChatRoles';
 import { PatientChatIdsEditDrawer } from './edit/PatientChatIdsEditDrawer';
 
 interface Props {
@@ -31,17 +32,20 @@ function Field({ label, value, testId }: { label: string; value: string | null; 
  * (Candela) precisa. Exibe o valor cru de propósito: quem opera precisa poder
  * conferir o chat_id contra o Periskope sem clicar em nada.
  *
- * A lista de papéis vem de `chatRolesToDisplay`, não é escrita aqui: papel novo
- * aparece sozinho, e papel que o backend já grava mas o painel não conhece
- * também — esconder um vínculo existente seria pior que mostrar o código cru.
+ * A lista de papéis e os RÓTULOS vêm do CATÁLOGO (`patient_chat_roles`, via
+ * API), não deste arquivo nem do `es.json`: papel criado na tela de
+ * administração aparece aqui sozinho, sem deploy. E papel que o paciente já tem
+ * gravado mas saiu do catálogo continua visível — esconder um vínculo existente
+ * seria pior que mostrar o código cru.
  */
 export function PatientChatIdsCard({ patient, onSaved }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState(false);
   const tc = (k: string) => t(`admin.patients.detail.chatIdsCard.${k}`);
+  const { roles: catalog } = usePatientChatRoles();
 
   const chatIds = patient.chatIds ?? {};
-  const roles = chatRolesToDisplay(chatIds);
+  const roles = chatRolesToDisplay(catalog, chatIds);
 
   return (
     <div
@@ -66,7 +70,7 @@ export function PatientChatIdsCard({ patient, onSaved }: Props) {
         {roles.map(role => (
           <Field
             key={role}
-            label={t(chatRoleLabelKey(role), { defaultValue: role })}
+            label={chatRoleLabel(catalog, role, i18n.language)}
             value={chatIds[role] ?? null}
             testId={`chat-id-${role}-value`}
           />
@@ -76,6 +80,7 @@ export function PatientChatIdsCard({ patient, onSaved }: Props) {
       {editing && (
         <PatientChatIdsEditDrawer
           patient={patient}
+          catalog={catalog}
           onClose={() => setEditing(false)}
           onSaved={() => onSaved?.()}
         />

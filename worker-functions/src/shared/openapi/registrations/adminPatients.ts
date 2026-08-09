@@ -1,6 +1,6 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
-import { PATIENT_CHAT_ROLE_VALUES } from '@modules/case';
+import { PATIENT_CHAT_ROLE_PATTERN } from '@modules/case';
 
 const AdminPatientsListQuery = z.object({
   status: z.string().optional().openapi({ description: 'Filtro por status do paciente.', example: 'ACTIVE' }),
@@ -82,25 +82,27 @@ registry.registerPath({
 });
 
 /**
- * Body de PUT /chat-ids — montado A PARTIR do catálogo de papéis, para a doc
- * não poder divergir do que a rota aceita quando um papel novo entrar.
+ * Body de PUT /chat-ids — um MAPA ABERTO de papel -> chat_id.
+ *
+ * A doc descreve a FORMA da chave, não a lista de papéis: quais papéis existem é
+ * DADO (`patient_chat_roles`, administrado em /admin/patient-chat-roles), e
+ * enumerá-los aqui faria a doc mentir no instante em que alguém criasse um papel
+ * pela tela. Quem quer a lista viva chama GET /api/admin/patient-chat-roles.
  */
 const PatientChatIdsBody = z.object({
   chatIds: z
-    .object(
-      Object.fromEntries(
-        PATIENT_CHAT_ROLE_VALUES.map(role => [
-          role,
-          z.string().nullable().optional().openapi({
-            description:
-              `chat_id do grupo de WhatsApp do papel ${role} no Periskope. Só grupo (@g.us). ` +
-              'null DESVINCULA; papel ausente do objeto fica INALTERADO.',
-            example: '120363001234567890@g.us',
-          }),
-        ]),
-      ) as Record<string, z.ZodTypeAny>,
+    .record(
+      z.string().regex(PATIENT_CHAT_ROLE_PATTERN),
+      z.string().nullable().openapi({ example: '120363001234567890@g.us' }),
     )
-    .openapi({ description: 'Papel -> chat_id de grupo. Papéis conhecidos: ' + PATIENT_CHAT_ROLE_VALUES.join(', ') + '.' }),
+    .openapi({
+      description:
+        'Objeto com o CÓDIGO DO PAPEL na chave (INGLÊS MAIÚSCULO — FAMILY, PROVIDERS, ' +
+        'HEALTH_PLAN, ou qualquer outro criado na tela de papéis) e o chat_id do grupo no ' +
+        'valor. Só grupo (@g.us). null DESVINCULA; papel AUSENTE do objeto fica INALTERADO. ' +
+        'Papel fora do catálogo ativo é 400 UNKNOWN_CHAT_ROLE.',
+      example: { FAMILY: '120363001234567890@g.us', PROVIDERS: null },
+    }),
 });
 
 registry.registerPath({
@@ -165,8 +167,9 @@ registry.registerPath({
   tags: ['Admin · Patients'],
   summary: 'Vincula os chat IDs de grupo do paciente, por papel',
   description:
-    'Grava os chat_ids de GRUPO do Periskope no paciente, um por papel (' +
-    PATIENT_CHAT_ROLE_VALUES.join(' | ') + '). Só aceita @g.us (conversa 1-1 @c.us é 400). ' +
+    'Grava os chat_ids de GRUPO do Periskope no paciente, um por papel. Os papéis válidos vêm do ' +
+    'CATÁLOGO (GET /api/admin/patient-chat-roles), não de uma lista em código — papel fora do ' +
+    'catálogo ativo é 400 UNKNOWN_CHAT_ROLE. Só aceita @g.us (conversa 1-1 @c.us é 400). ' +
     'Um mesmo grupo não pode ficar em dois pacientes quando o papel é EXCLUSIVO: colisão devolve ' +
     '409 CHAT_ID_ALREADY_LINKED. null desvincula; papel ausente fica inalterado. ' +
     'O body legado { familyChatId, providersChatId } (migration 260) continua aceito e é ' +
@@ -227,6 +230,133 @@ registry.registerPath({
     201: { description: 'Endereço criado.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ── CATÁLOGO de papéis de chat (migration 262) ───────────────────────────────
+// Leitura é staff (a ficha do paciente precisa dos rótulos); escrita é ADMIN.
+
+const RoleCodeParam = z
+  .string()
+  .regex(PATIENT_CHAT_ROLE_PATTERN)
+  .openapi({ description: 'Código do papel (INGLÊS MAIÚSCULO).', example: 'HEALTH_PLAN' });
+
+const PatientChatRoleBody = z.object({
+  code: RoleCodeParam,
+  labelEs: z.string().openapi({ description: 'Rótulo em espanhol (obrigatório).', example: 'Grupo de la obra social' }),
+  labelPtBr: z.string().openapi({ description: 'Rótulo em pt-BR (obrigatório).', example: 'Grupo do plano de saúde' }),
+  isExclusive: z.boolean().optional().openapi({
+    description:
+      'true (default) = um grupo deste papel pertence a NO MÁXIMO um paciente — é a trava que ' +
+      'impede a auditoria de contar a mesma conversa duas vezes. false = compartilhável entre ' +
+      'pacientes (caso do grupo por pagador).',
+    example: true,
+  }),
+  displayOrder: z.number().int().optional().openapi({ description: 'Ordem na tela.', example: 3 }),
+  matchKeywords: z.array(z.string()).optional().openapi({
+    description:
+      'Palavras que identificam este papel no NOME do grupo ("flia" × "equipo"). Usadas SÓ para ' +
+      'DESEMPATAR o ranqueamento de candidatos — nunca para escolher sozinho.',
+    example: ['obra', 'social', 'prepaga'],
+  }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/patient-chat-roles',
+  tags: ['Admin · Patients'],
+  summary: 'Catálogo de papéis de grupo de WhatsApp do paciente',
+  description:
+    'Lista os papéis (FAMILY, PROVIDERS, HEALTH_PLAN e os que a administração criar). Sem query, ' +
+    'devolve só os ATIVOS — o que a ficha do paciente exibe e o que se pode gravar. ' +
+    '?includeInactive=true devolve todos MAIS `usage` (quantos pacientes usam cada papel), que é a ' +
+    'visão da tela de administração.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    query: z.object({
+      includeInactive: z.enum(['true', 'false']).optional().openapi({
+        description: 'Inclui papéis desativados e a contagem de uso. Visão de administração.',
+        example: 'true',
+      }),
+    }),
+  },
+  responses: {
+    200: { description: 'Catálogo de papéis.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Query inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/patient-chat-roles',
+  tags: ['Admin · Patients'],
+  summary: 'Cria um papel no catálogo (ADMIN)',
+  description:
+    'Cria um papel novo. Nenhuma migration: o catálogo é dado. `code` é imutável depois de criado — ' +
+    'trocá-lo renomearia a chave de join da auditoria sem ninguém perceber.',
+  security: [{ firebaseAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: PatientChatRoleBody } } } },
+  responses: {
+    201: { description: 'Papel criado.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Body inválido (forma do código, rótulo em branco).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer admin.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'CHAT_ROLE_ALREADY_EXISTS — já existe papel com este código.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/admin/patient-chat-roles/{code}',
+  tags: ['Admin · Patients'],
+  summary: 'Edita um papel do catálogo (ADMIN)',
+  description:
+    'Campo ausente fica INALTERADO. Duas recusas com número, que nunca são silenciosas: ' +
+    '(a) virar `isExclusive` de false para true quando já existe grupo repetido entre pacientes → ' +
+    '409 CHAT_ROLE_EXCLUSIVITY_CONFLICT com a lista de grupos e a contagem de pacientes (o software ' +
+    'não escolhe qual paciente perde o vínculo); (b) `isActive: false` em papel em uso → ' +
+    '409 CHAT_ROLE_IN_USE com quantos pacientes dependem. Nada de cascata. ' +
+    'Virar a política atualiza `patient_chat_ids.is_exclusive` na MESMA transação — senão o índice ' +
+    'parcial ficaria trancando um papel que a tela diz ser compartilhável.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({ code: RoleCodeParam }),
+    body: { content: { 'application/json': { schema: PatientChatRoleBody.omit({ code: true }).extend({ isActive: z.boolean().optional() }).partial() } } },
+  },
+  responses: {
+    200: { description: 'Papel atualizado.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Body inválido ou vazio.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer admin.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'CHAT_ROLE_NOT_FOUND.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'CHAT_ROLE_IN_USE ou CHAT_ROLE_EXCLUSIVITY_CONFLICT — sempre com a contagem.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/admin/patient-chat-roles/{code}',
+  tags: ['Admin · Patients'],
+  summary: 'Apaga um papel do catálogo (ADMIN)',
+  description:
+    'Só apaga papel que NENHUM paciente usa — em uso é 409 CHAT_ROLE_IN_USE com a contagem. Os ' +
+    'vínculos são a chave de join da auditoria; apagá-los junto com uma linha de catálogo seria ' +
+    'perder dado operacional por um clique de configuração. Para tirar da tela sem perder ' +
+    'histórico, use `isActive: false`.',
+  security: [{ firebaseAuth: [] }],
+  request: { params: z.object({ code: RoleCodeParam }) },
+  responses: {
+    204: { description: 'Papel apagado.' },
+    400: { description: 'Código inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer admin.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'CHAT_ROLE_NOT_FOUND.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'CHAT_ROLE_IN_USE — quantos pacientes dependem.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });

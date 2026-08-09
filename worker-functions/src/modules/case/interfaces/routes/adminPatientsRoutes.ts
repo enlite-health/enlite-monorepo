@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AdminPatientsController } from '../controllers/AdminPatientsController';
 import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatIdsController';
+import { AdminPatientChatRolesController } from '../controllers/AdminPatientChatRolesController';
 import { AuthMiddleware } from '@modules/identity';
 
 /**
@@ -14,12 +15,35 @@ export function createAdminPatientsRoutes(
   controller: AdminPatientsController,
   authMiddleware: AuthMiddleware,
   chatIdsController: AdminPatientChatIdsController = new AdminPatientChatIdsController(),
+  chatRolesController: AdminPatientChatRolesController = new AdminPatientChatRolesController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
   // test-flag e purge são admin-only (mais estrito que staff) — mesmo critério
   // do equivalente em workers. São ferramentas do synthetic monitoring.
   const adminOnly = authMiddleware.requireAdmin();
+
+  // ── CATÁLOGO de papéis de chat (migration 262) ─────────────────────────────
+  // LEITURA é staff: a ficha de qualquer paciente precisa dos RÓTULOS dos
+  // papéis para renderizar, e quem abre ficha é staff, não só admin.
+  // ESCRITA é admin: mudar o catálogo muda a política de unicidade de TODOS os
+  // pacientes de uma vez (é a trava da auditoria da Candela) — não é edição de
+  // um registro, é configuração do sistema.
+  //
+  // Registradas ANTES de /patients/* só por clareza de leitura; o caminho
+  // '/patient-chat-roles' não colide com '/patients/:id' (segmentos distintos).
+  router.get('/patient-chat-roles', staffOnly, (req: Request, res: Response) =>
+    chatRolesController.list(req, res),
+  );
+  router.post('/patient-chat-roles', adminOnly, (req: Request, res: Response) =>
+    chatRolesController.create(req, res),
+  );
+  router.patch('/patient-chat-roles/:code', adminOnly, (req: Request, res: Response) =>
+    chatRolesController.update(req, res),
+  );
+  router.delete('/patient-chat-roles/:code', adminOnly, (req: Request, res: Response) =>
+    chatRolesController.delete(req, res),
+  );
 
   // Static routes first (guard against future /:id capture)
   router.get('/patients/stats', staffOnly, (req: Request, res: Response) =>

@@ -32,14 +32,14 @@ export {
   isGroupChatId,
   legacyChatIdAliases,
 } from './domain/PatientChatId';
-export type { PatientChatRole, PatientChatRoleSpec } from './domain/PatientChatRole';
+export type { PatientChatRoleSpec, PatientChatRoleCatalog } from './domain/PatientChatRole';
 export {
-  PATIENT_CHAT_ROLES,
-  PATIENT_CHAT_ROLE_VALUES,
   PATIENT_CHAT_ROLE_PATTERN,
   PATIENT_CHAT_ROLE_MAX_LENGTH,
-  isPatientChatRole,
+  isPatientChatRoleCode,
   isExclusiveChatRole,
+  toRoleCatalog,
+  chatRoleLabel,
 } from './domain/PatientChatRole';
 export type { PatientClinical } from './domain/PatientClinical';
 export type {
@@ -60,14 +60,29 @@ export {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  UnknownChatRoleError,
 } from './application/PatientChatIdsService';
+export {
+  PatientChatRolesService,
+  ChatRoleNotFoundError,
+  ChatRoleAlreadyExistsError,
+  ChatRoleInUseError,
+  ChatRoleExclusivityConflictError,
+} from './application/PatientChatRolesService';
 export {
   FindPatientChatCandidatesUseCase,
   DEFAULT_CANDIDATE_LIMIT,
 } from './application/FindPatientChatCandidatesUseCase';
 export type { FindPatientChatCandidatesOutput } from './application/FindPatientChatCandidatesUseCase';
-export { rankChatCandidates, scoreGroupName, toMatchTerms, normalizeForMatch } from './application/rankChatCandidates';
-export type { ChatCandidate } from './application/rankChatCandidates';
+export {
+  rankChatCandidates,
+  scoreGroupName,
+  toMatchTerms,
+  normalizeForMatch,
+  roleAffinity,
+  orderCandidatesForRole,
+} from './application/rankChatCandidates';
+export type { ChatCandidate, RoleMatchSpec } from './application/rankChatCandidates';
 export {
   GetPatientChatMapUseCase,
   DEFAULT_CHAT_MAP_LIMIT,
@@ -100,6 +115,12 @@ export type {
   PatientChatMapRow,
   ChatMapFilter,
 } from './infrastructure/PatientChatIdsRepository';
+export { PatientChatRolesRepository } from './infrastructure/PatientChatRolesRepository';
+export type {
+  CreateChatRoleInput,
+  UpdateChatRoleInput,
+  SharedGroupConflict,
+} from './infrastructure/PatientChatRolesRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
 export type {
@@ -114,7 +135,14 @@ export type {
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
+export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema } from './interfaces/validators/patientChatIdsSchema';
+export {
+  createPatientChatRoleSchema,
+  updatePatientChatRoleSchema,
+  patientChatRoleParamsSchema,
+  listPatientChatRolesQuerySchema,
+} from './interfaces/validators/patientChatRolesSchema';
 export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
 

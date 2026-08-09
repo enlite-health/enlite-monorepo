@@ -8,9 +8,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
-import es from '@infrastructure/i18n/locales/es.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
-import { PATIENT_CHAT_ROLES } from '@domain/value-objects/patientChatRole';
+import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
+
+/**
+ * O CATÁLOGO vem da API, não de uma constante do painel — é a mudança da
+ * migration 262. Aqui ele é o que a migration semeia.
+ */
+const CATALOG: PatientChatRoleSpec[] = [
+  { code: 'FAMILY', labelEs: 'Grupo de la familia', labelPtBr: 'Grupo da família', isExclusive: true, displayOrder: 1, isActive: true, matchKeywords: ['flia'] },
+  { code: 'PROVIDERS', labelEs: 'Grupo de los prestadores', labelPtBr: 'Grupo dos prestadores', isExclusive: true, displayOrder: 2, isActive: true, matchKeywords: ['equipo'] },
+  { code: 'HEALTH_PLAN', labelEs: 'Grupo de la obra social', labelPtBr: 'Grupo do plano de saúde', isExclusive: false, displayOrder: 3, isActive: true, matchKeywords: ['obra'] },
+];
+const ROLE_CODES = CATALOG.map(r => r.code);
 
 const translations = ptBR as Record<string, any>;
 
@@ -23,14 +33,16 @@ function t(key: string, optsOrDefault?: any): string {
   return key;
 }
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }) }));
 
 const getPatientChatCandidates = vi.fn();
 const updatePatientChatIds = vi.fn();
+const listPatientChatRoles = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     getPatientChatCandidates: (...a: unknown[]) => getPatientChatCandidates(...a),
     updatePatientChatIds: (...a: unknown[]) => updatePatientChatIds(...a),
+    listPatientChatRoles: (...a: unknown[]) => listPatientChatRoles(...a),
   },
 }));
 
@@ -49,33 +61,42 @@ describe('PatientChatIdsCard', () => {
     vi.clearAllMocks();
     getPatientChatCandidates.mockResolvedValue({ candidates: CANDIDATES, totalGroups: 774 });
     updatePatientChatIds.mockResolvedValue({ id: 'x', chatIds: { FAMILY, PROVIDERS } });
+    listPatientChatRoles.mockResolvedValue({ roles: CATALOG });
   });
 
-  it('mostra os chat IDs gravados, um por papel', () => {
+  // ⚠️ Todo teste espera `chat-id-FAMILY-value` depois de renderizar: o catálogo
+  // chega por REDE (migration 262), então no primeiro render a lista de papéis
+  // ainda está vazia e um assert imediato mediria a tela errada.
+
+  it('mostra os chat IDs gravados, um por papel', async () => {
     render(<PatientChatIdsCard patient={patientDetailFixture} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
 
     expect(screen.getByTestId('chat-id-FAMILY-value')).toHaveTextContent(FAMILY);
     expect(screen.getByTestId('chat-id-PROVIDERS-value')).toHaveTextContent(PROVIDERS);
   });
 
-  it('paciente sem vínculo mostra "Não vinculado" em TODOS os papéis', () => {
+  it('paciente sem vínculo mostra "Não vinculado" em TODOS os papéis', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
 
     const notLinked = ptBR.admin.patients.detail.chatIdsCard.notLinked;
-    for (const role of PATIENT_CHAT_ROLES) {
+    for (const role of ROLE_CODES) {
       expect(screen.getByTestId(`chat-id-${role}-value`)).toHaveTextContent(notLinked);
     }
   });
 
-  it('o TERCEIRO papel (plano de saúde) aparece na tela — é o pedido do áudio', () => {
+  it('o TERCEIRO papel (plano de saúde) aparece na tela — é o pedido do áudio', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
 
     const slot = screen.getByTestId('chat-id-HEALTH_PLAN-value');
-    expect(slot).toHaveTextContent(ptBR.admin.patients.detail.chatIdsCard.roles.HEALTH_PLAN);
+    // O rótulo vem do CATÁLOGO (label pt-BR), não mais de uma chave de i18n.
+    expect(slot).toHaveTextContent('Grupo do plano de saúde');
     expect(slot).toHaveTextContent(ptBR.admin.patients.detail.chatIdsCard.notLinked);
   });
 
-  it('mostra o vínculo de um papel que o painel NÃO conhece, com o código cru', () => {
+  it('mostra o vínculo de um papel que o painel NÃO conhece, com o código cru', async () => {
     // Deploy fora de ordem: o backend já grava um papel novo. Esconder o vínculo
     // seria pior que mostrar o código — quem opera precisa ver que existe.
     const withUnknown = {
@@ -83,6 +104,7 @@ describe('PatientChatIdsCard', () => {
       chatIds: { MANAGEMENT: '120363090000000009@g.us' },
     };
     render(<PatientChatIdsCard patient={withUnknown} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
 
     const slot = screen.getByTestId('chat-id-MANAGEMENT-value');
     expect(slot).toHaveTextContent('MANAGEMENT');
@@ -91,53 +113,70 @@ describe('PatientChatIdsCard', () => {
 
   it('salvar NÃO manda papel que a tela não mostra — só o que a pessoa viu', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-save'));
 
     await waitFor(() => expect(updatePatientChatIds).toHaveBeenCalled());
     const [, payload] = updatePatientChatIds.mock.calls[0];
-    expect(Object.keys(payload.chatIds).sort()).toEqual([...PATIENT_CHAT_ROLES].sort());
+    expect(Object.keys(payload.chatIds).sort()).toEqual([...ROLE_CODES].sort());
   });
 
-  it('TODO papel do catálogo tem rótulo em es E em pt-BR', () => {
-    // Papel novo sem rótulo apareceria na tela como o código cru. O teste é
-    // aqui e não no domínio porque a regra de arquitetura proíbe domain
-    // importar de infrastructure (os locales).
-    for (const role of PATIENT_CHAT_ROLES) {
-      expect(
-        (es.admin.patients.detail.chatIdsCard.roles as Record<string, string>)[role],
-        `falta rótulo es para ${role}`,
-      ).toBeTruthy();
-      expect(
-        (ptBR.admin.patients.detail.chatIdsCard.roles as Record<string, string>)[role],
-        `falta rótulo pt-BR para ${role}`,
-      ).toBeTruthy();
-    }
+  it('o rótulo segue o IDIOMA e vem do catálogo, não do arquivo de traduções', async () => {
+    // Papel criado na tela de administração não teria como ter chave de i18n —
+    // por isso os dois rótulos viajam no próprio catálogo. A garantia de que
+    // nenhum papel fica sem rótulo é do BANCO (CHECK labels_not_blank) e do
+    // schema Zod, não de um arquivo de locale.
+    render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
+
+    expect(screen.getByTestId('chat-id-FAMILY-value')).toHaveTextContent('Grupo da família');
+    expect(screen.getByTestId('chat-id-PROVIDERS-value')).toHaveTextContent('Grupo dos prestadores');
+    // e o rótulo em espanhol existe no mesmo registro, para o painel es-AR
+    expect(CATALOG.every(r => r.labelEs.trim() !== '' && r.labelPtBr.trim() !== '')).toBe(true);
   });
 
-  it('as chaves de i18n existem (nada renderiza a chave crua)', () => {
+  it('catálogo que NÃO carregou ainda mostra o vínculo gravado', async () => {
+    // Rede caída não pode fazer um vínculo existente sumir da tela: quem abre a
+    // ficha vincularia outro grupo por cima sem saber que já havia um.
+    listPatientChatRoles.mockRejectedValue(new Error('offline'));
     render(<PatientChatIdsCard patient={patientDetailFixture} />);
+
+    const slot = await screen.findByTestId('chat-id-FAMILY-value');
+    expect(slot).toHaveTextContent(FAMILY);
+    // sem catálogo, o rótulo cai no próprio código — nunca em campo sem nome
+    expect(slot).toHaveTextContent('FAMILY');
+  });
+
+  it('as chaves de i18n existem (nada renderiza a chave crua)', async () => {
+    render(<PatientChatIdsCard patient={patientDetailFixture} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     expect(screen.queryByText(/admin\.patients\.detail\.chatIdsCard/)).toBeNull();
   });
 
-  it('resposta SEM `chatIds` (revisão antiga da API) não quebra o card', () => {
+  it('resposta SEM `chatIds` (revisão antiga da API) não quebra o card', async () => {
     // Expand/contract: durante a janela de deploy, uma revisão anterior do
     // backend pode responder sem o campo novo. A tela tem de dizer "não
     // vinculado", não estourar.
     const semCampo = { ...patientDetailMinimal, chatIds: undefined as never };
     render(<PatientChatIdsCard patient={semCampo} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
 
     const notLinked = ptBR.admin.patients.detail.chatIdsCard.notLinked;
-    for (const role of PATIENT_CHAT_ROLES) {
+    for (const role of ROLE_CODES) {
       expect(screen.getByTestId(`chat-id-${role}-value`)).toHaveTextContent(notLinked);
     }
   });
 
-  it('papel que APARECE com o drawer aberto entra vazio, sem quebrar o select', () => {
-    // O paciente é recarregado no pai e ganha um papel que a seleção do drawer
-    // ainda não tinha. O seletor novo tem de abrir em branco, não em undefined
-    // (React reclama de input não-controlado e o valor some ao salvar).
+  it('papel que APARECE com o drawer aberto mostra o que está GRAVADO', async () => {
+    // O paciente é recarregado no pai e ganha um papel que o drawer ainda não
+    // tinha na tela. O seletor novo abre com o valor gravado — nunca em branco
+    // e nunca em `undefined` (React reclamaria de input não-controlado).
+    //
+    // ⚠️ Abrir em branco seria pior que feio: salvar mandaria `null` naquele
+    // papel e apagaria o vínculo que a pessoa nunca chegou a ver.
     const { rerender } = render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
 
     rerender(
@@ -145,21 +184,24 @@ describe('PatientChatIdsCard', () => {
         patient={{ ...patientDetailMinimal, chatIds: { MANAGEMENT: '120363090000000009@g.us' } }}
       />,
     );
+    await screen.findByTestId('chat-id-FAMILY-value');
 
     const novo = screen.getByTestId('chat-ids-MANAGEMENT-select') as HTMLSelectElement;
-    expect(novo.value).toBe('');
+    expect(novo.value).toBe('120363090000000009@g.us');
   });
 
-  it('o drawer só aparece depois do clique', () => {
+  it('o drawer só aparece depois do clique', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     expect(screen.queryByTestId('chat-ids-drawer')).toBeNull();
 
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     expect(screen.getByTestId('chat-ids-drawer')).toBeInTheDocument();
   });
 
-  it('não busca nada antes de clicar em "buscar chats"', () => {
+  it('não busca nada antes de clicar em "buscar chats"', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
 
     expect(getPatientChatCandidates).not.toHaveBeenCalled();
@@ -168,6 +210,7 @@ describe('PatientChatIdsCard', () => {
 
   it('buscar → lista candidatos com score, membros e total varrido', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -185,6 +228,7 @@ describe('PatientChatIdsCard', () => {
       totalGroups: 774,
     });
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -195,6 +239,7 @@ describe('PatientChatIdsCard', () => {
   it('busca sem resultado mostra o vazio explícito', async () => {
     getPatientChatCandidates.mockResolvedValue({ candidates: [], totalGroups: 774 });
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -210,6 +255,7 @@ describe('PatientChatIdsCard', () => {
       groupListTruncated: true,
     });
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -230,6 +276,7 @@ describe('PatientChatIdsCard', () => {
       groupListTruncated: false,
     });
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -240,6 +287,7 @@ describe('PatientChatIdsCard', () => {
   it('erro na busca (ex.: kill-switch 503) aparece na tela', async () => {
     getPatientChatCandidates.mockRejectedValue(new Error('Chat lookup disabled'));
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -249,6 +297,7 @@ describe('PatientChatIdsCard', () => {
   it('escolher os papéis e salvar manda o mapa inteiro e avisa o pai', async () => {
     const onSaved = vi.fn();
     render(<PatientChatIdsCard patient={patientDetailMinimal} onSaved={onSaved} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
@@ -265,6 +314,7 @@ describe('PatientChatIdsCard', () => {
 
   it('o grupo escolhido para um papel some das opções do outro', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
@@ -280,6 +330,7 @@ describe('PatientChatIdsCard', () => {
   it('salvar vazio desvincula (null em todos os papéis)', async () => {
     updatePatientChatIds.mockResolvedValue({ id: 'x', chatIds: {} });
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-save'));
 
@@ -291,6 +342,7 @@ describe('PatientChatIdsCard', () => {
   it('erro do backend no salvar (ex.: 409) aparece na tela e não fecha', async () => {
     updatePatientChatIds.mockRejectedValue(new Error('Chat id already linked to another patient'));
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-save'));
 
@@ -299,8 +351,9 @@ describe('PatientChatIdsCard', () => {
     expect(screen.getByTestId('chat-ids-drawer')).toBeInTheDocument();
   });
 
-  it('drawer abre já com o que o paciente tem gravado, sem option duplicada', () => {
+  it('drawer abre já com o que o paciente tem gravado, sem option duplicada', async () => {
     render(<PatientChatIdsCard patient={patientDetailFixture} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
 
     const familySelect = screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement;
@@ -314,6 +367,7 @@ describe('PatientChatIdsCard', () => {
 
   it('a UI torna impossível escolher o mesmo grupo nos dois papéis', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
@@ -335,6 +389,7 @@ describe('PatientChatIdsCard', () => {
       totalGroups: 1,
     });
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -348,6 +403,7 @@ describe('PatientChatIdsCard', () => {
   it('falha sem mensagem cai no texto traduzido de erro', async () => {
     getPatientChatCandidates.mockRejectedValue('sem message');
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
@@ -362,6 +418,7 @@ describe('PatientChatIdsCard', () => {
 
   it('ESC fecha o drawer', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
 
     fireEvent.keyDown(document, { key: 'Enter' });
@@ -373,6 +430,7 @@ describe('PatientChatIdsCard', () => {
 
   it('o X do cabeçalho fecha o drawer', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
 
     fireEvent.click(screen.getByLabelText(ptBR.admin.patients.detail.chatIdsCard.close));
@@ -381,6 +439,7 @@ describe('PatientChatIdsCard', () => {
 
   it('backdrop fecha o drawer', async () => {
     render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
     fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
 

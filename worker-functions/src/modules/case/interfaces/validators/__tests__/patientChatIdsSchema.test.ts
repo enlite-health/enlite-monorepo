@@ -3,7 +3,7 @@ import {
   patientChatCandidatesQuerySchema,
   patientChatMapQuerySchema,
 } from '../patientChatIdsSchema';
-import { PATIENT_CHAT_ROLE_VALUES } from '../../../domain/PatientChatRole';
+import { PATIENT_CHAT_ROLE_MAX_LENGTH } from '../../../domain/PatientChatRole';
 
 const GROUP_A = '120363001111111111@g.us';
 const GROUP_B = '5491112345678-1600000000@g.us';
@@ -34,10 +34,28 @@ describe('patientChatIdsSchema — contrato NOVO (mapa por papel)', () => {
     expect(r.success && r.data).toEqual({});
   });
 
-  it('o schema é MONTADO do catálogo — todo papel conhecido é aceito', () => {
-    for (const role of PATIENT_CHAT_ROLE_VALUES) {
+  it('aceita papel que NÃO existe em código — o vocabulário é dado, não schema', () => {
+    // Esta é a prova de que criar um papel na tela não exige deploy: o schema
+    // valida a FORMA da chave e nada mais. Quem confere o vocabulário contra o
+    // catálogo é o serviço, que devolve UNKNOWN_CHAT_ROLE.
+    for (const role of ['FAMILY', 'PROVIDERS', 'HEALTH_PLAN', 'MANAGEMENT', 'OBRA_SOCIAL_2']) {
       expect(patientChatIdsSchema.safeParse({ chatIds: { [role]: GROUP_A } }).success).toBe(true);
     }
+  });
+
+  it.each([
+    ['minúsculo', 'family'],
+    ['com espaço', 'HEALTH PLAN'],
+    ['com hífen', 'HEALTH-PLAN'],
+    ['começando com dígito', '1FAMILY'],
+    ['acento', 'FAMÍLIA'],
+  ])('recusa chave de papel %s — a FORMA continua sendo lei', (_l, role) => {
+    expect(patientChatIdsSchema.safeParse({ chatIds: { [role]: GROUP_A } }).success).toBe(false);
+  });
+
+  it('recusa código de papel maior que a coluna do banco', () => {
+    const tooLong = 'A'.repeat(PATIENT_CHAT_ROLE_MAX_LENGTH + 1);
+    expect(patientChatIdsSchema.safeParse({ chatIds: { [tooLong]: GROUP_A } }).success).toBe(false);
   });
 
   it('apara espaços das pontas', () => {
@@ -65,8 +83,13 @@ describe('patientChatIdsSchema — contrato NOVO (mapa por papel)', () => {
     expect(patientChatIdsSchema.safeParse({ chatIds: { FAMILY: tooLong } }).success).toBe(false);
   });
 
-  it('recusa PAPEL desconhecido — não é no-op silencioso', () => {
-    expect(patientChatIdsSchema.safeParse({ chatIds: { NEIGHBOURS: GROUP_A } }).success).toBe(false);
+  it('o VOCABULÁRIO não é conferido aqui — quem recusa papel inexistente é o serviço', () => {
+    // Regressão de fronteira: se alguém trouxer a lista de papéis de volta para
+    // o schema, papel criado na tela passa a exigir deploy outra vez. A recusa
+    // existe (UNKNOWN_CHAT_ROLE), mas mora no PatientChatIdsService, que lê o
+    // catálogo do banco — ver PatientChatIdsService.test.ts.
+    expect(patientChatIdsSchema.safeParse({ chatIds: { NEIGHBOURS: GROUP_A } }).success).toBe(true);
+    // A FORMA continua sendo lei: minúsculo não é código de papel.
     expect(patientChatIdsSchema.safeParse({ chatIds: { family: GROUP_A } }).success).toBe(false);
   });
 

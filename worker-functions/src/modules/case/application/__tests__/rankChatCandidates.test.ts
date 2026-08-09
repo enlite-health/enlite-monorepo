@@ -3,6 +3,9 @@ import {
   toMatchTerms,
   scoreGroupName,
   rankChatCandidates,
+  roleAffinity,
+  orderCandidatesForRole,
+  type ChatCandidate,
 } from '../rankChatCandidates';
 import type { PeriskopeGroupChat } from '@modules/notification';
 
@@ -138,6 +141,124 @@ describe('rankChatCandidates', () => {
       const names = out.map(c => c.chatName);
       expect(names).toContain('Flia Maria Perez');
       expect(names).toContain('Prestadores Maria Perez');
+    });
+  });
+});
+
+// ── DESEMPATE POR PAPEL ──────────────────────────────────────────────────────
+
+describe('roleAffinity / orderCandidatesForRole', () => {
+  const FAMILY = { code: 'FAMILY', matchKeywords: ['flia', 'familia'] };
+  const PROVIDERS = { code: 'PROVIDERS', matchKeywords: ['equipo', 'prestadores'] };
+  const ROLES = [FAMILY, PROVIDERS];
+
+  function candidate(chatId: string, chatName: string, score: number): ChatCandidate {
+    return { chatId, chatName, memberCount: null, score, matchedTerms: [], linkedToOtherPatient: false };
+  }
+
+  describe('roleAffinity', () => {
+    it('1 quando o nome do grupo tem palavra DESTE papel', () => {
+      expect(roleAffinity('Flia Perez', FAMILY, [PROVIDERS])).toBe(1);
+      expect(roleAffinity('Equipo Perez', PROVIDERS, [FAMILY])).toBe(1);
+    });
+
+    it('-1 quando o nome se declara de OUTRO papel', () => {
+      expect(roleAffinity('Equipo Perez', FAMILY, [PROVIDERS])).toBe(-1);
+    });
+
+    it('0 quando o nome não diz nada sobre papel', () => {
+      expect(roleAffinity('Perez Maria', FAMILY, [PROVIDERS])).toBe(0);
+    });
+
+    it('nome com palavra DOS DOIS papéis fica com o papel perguntado (1 ganha do -1)', () => {
+      // "Flia y equipo Perez" existe na base real. Rebaixá-lo seria pior: ele é
+      // candidato legítimo para os dois, e quem escolhe é a pessoa.
+      expect(roleAffinity('Flia y equipo Perez', FAMILY, [PROVIDERS])).toBe(1);
+      expect(roleAffinity('Flia y equipo Perez', PROVIDERS, [FAMILY])).toBe(1);
+    });
+
+    it('ignora acento e caixa — as palavras do catálogo já vêm normalizadas', () => {
+      expect(roleAffinity('FLIA. PÉREZ', FAMILY, [PROVIDERS])).toBe(1);
+    });
+
+    it('casa palavra INTEIRA, não pedaço — "familiar" não é "familia"', () => {
+      // Pedaço casaria "prestadora de servicios" com PROVIDERS em qualquer
+      // grupo; o desempate ficaria ruidoso sem ganhar precisão.
+      expect(roleAffinity('Grupo familiar Perez', FAMILY, [PROVIDERS])).toBe(0);
+    });
+
+    it('nome nulo e papel sem palavras nenhuma → 0', () => {
+      expect(roleAffinity(null, FAMILY, [PROVIDERS])).toBe(0);
+      expect(roleAffinity('Flia Perez', { code: 'X', matchKeywords: [] }, [])).toBe(0);
+    });
+  });
+
+  describe('orderCandidatesForRole', () => {
+    const flia = candidate('1@g.us', 'Flia Perez', 1);
+    const equipo = candidate('2@g.us', 'Equipo Perez', 1);
+
+    it('resolve o EMPATE a favor do papel perguntado', () => {
+      // Sem isto, localeCompare põe "Equipo" antes de "Flia" nos dois seletores.
+      expect(orderCandidatesForRole([flia, equipo], FAMILY, ROLES).map(c => c.chatId)).toEqual([
+        '1@g.us', '2@g.us',
+      ]);
+      expect(orderCandidatesForRole([flia, equipo], PROVIDERS, ROLES).map(c => c.chatId)).toEqual([
+        '2@g.us', '1@g.us',
+      ]);
+    });
+
+    it('NUNCA reordena scores diferentes — a invariante que protege o top 3', () => {
+      // Um grupo de "flia" de OUTRO paciente (score menor) não pode subir acima
+      // do grupo certo deste paciente só porque tem a palavra certa.
+      const certo = candidate('1@g.us', 'Perez Maria', 1);
+      const fliaAlheia = candidate('9@g.us', 'Flia Gomez', 0.4);
+
+      expect(
+        orderCandidatesForRole([certo, fliaAlheia], FAMILY, ROLES).map(c => c.chatId),
+      ).toEqual(['1@g.us', '9@g.us']);
+    });
+
+    it('a sequência de scores é a MESMA antes e depois — prova estrutural da invariante', () => {
+      const list = [
+        candidate('a@g.us', 'Equipo Perez', 1),
+        candidate('b@g.us', 'Flia Perez', 1),
+        candidate('c@g.us', 'Perez', 0.6),
+        candidate('d@g.us', 'Flia Perez Jr', 0.6),
+        candidate('e@g.us', 'Gomez', 0.2),
+      ];
+      const before = list.map(c => c.score);
+      const after = orderCandidatesForRole(list, FAMILY, ROLES).map(c => c.score);
+      expect(after).toEqual(before);
+    });
+
+    it('mantém a lista inteira — desempate reordena, não filtra', () => {
+      const list = [flia, equipo, candidate('3@g.us', 'Perez', 0.5)];
+      const out = orderCandidatesForRole(list, FAMILY, ROLES);
+      expect(out).toHaveLength(3);
+      expect(out.map(c => c.chatId).sort()).toEqual(['1@g.us', '2@g.us', '3@g.us']);
+    });
+
+    it('não muta a lista recebida', () => {
+      const list = [equipo, flia];
+      orderCandidatesForRole(list, FAMILY, ROLES);
+      expect(list.map(c => c.chatId)).toEqual(['2@g.us', '1@g.us']);
+    });
+
+    it('empate sem afinidade nenhuma cai no alfabeto — ordem estável e reproduzível', () => {
+      const a = candidate('a@g.us', 'Perez A', 1);
+      const b = candidate('b@g.us', 'Perez B', 1);
+      expect(orderCandidatesForRole([b, a], FAMILY, ROLES).map(c => c.chatId)).toEqual([
+        'a@g.us', 'b@g.us',
+      ]);
+    });
+
+    it('papel único no catálogo: sem "outro" para rebaixar, ninguém leva -1', () => {
+      const out = orderCandidatesForRole([equipo, flia], FAMILY, [FAMILY]);
+      expect(out.map(c => c.chatId)).toEqual(['1@g.us', '2@g.us']);
+    });
+
+    it('lista vazia devolve lista vazia', () => {
+      expect(orderCandidatesForRole([], FAMILY, ROLES)).toEqual([]);
     });
   });
 });

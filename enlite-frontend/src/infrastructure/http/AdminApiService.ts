@@ -271,6 +271,10 @@ class AdminApiServiceClass {
   updatePatientStatus(id: string, status: string) { return AdminPatientsApiService.updatePatientStatus(id, status); }
   getPatientChatCandidates(id: string, limit?: number) { return AdminPatientsApiService.getPatientChatCandidates(id, limit); }
   updatePatientChatIds(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatIds>) { return AdminPatientsApiService.updatePatientChatIds(...args); }
+  listPatientChatRoles(includeInactive?: boolean) { return AdminPatientsApiService.listPatientChatRoles(includeInactive); }
+  createPatientChatRole(...args: Parameters<typeof AdminPatientsApiService.createPatientChatRole>) { return AdminPatientsApiService.createPatientChatRole(...args); }
+  updatePatientChatRole(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatRole>) { return AdminPatientsApiService.updatePatientChatRole(...args); }
+  deletePatientChatRole(code: string) { return AdminPatientsApiService.deletePatientChatRole(code); }
   activatePatient(id: string) { return AdminPatientsApiService.activatePatient(id); }
   listPatientsForKanban(country?: string) { return AdminPatientsApiService.listPatientsForKanban(country); }
   getPatientFunnel(p?: Parameters<typeof AdminPatientsApiService.getPatientFunnel>[0]) { return AdminPatientsApiService.getPatientFunnel(p); }

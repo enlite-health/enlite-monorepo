@@ -1,5 +1,29 @@
 import type { Pool, PoolClient } from 'pg';
 import { PatientChatIdsRepository } from '../PatientChatIdsRepository';
+import { toRoleCatalog, type PatientChatRoleSpec } from '../../domain/PatientChatRole';
+
+/**
+ * O catálogo entra por parâmetro — o repositório não o lê do banco. Aqui ele é o
+ * que a 262 semeia: FAMILY/PROVIDERS exclusivos, HEALTH_PLAN compartilhável.
+ * É o que prova que `is_exclusive` gravado na linha é DERIVADO daqui.
+ */
+const CATALOG = toRoleCatalog(
+  (
+    [
+      ['FAMILY', true],
+      ['PROVIDERS', true],
+      ['HEALTH_PLAN', false],
+    ] as const
+  ).map(([code, isExclusive], i): PatientChatRoleSpec => ({
+    code,
+    labelEs: code,
+    labelPtBr: code,
+    isExclusive,
+    displayOrder: i,
+    isActive: true,
+    matchKeywords: [],
+  })),
+);
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: jest.fn() }) }) },
@@ -51,12 +75,16 @@ describe('PatientChatIdsRepository', () => {
   });
 
   describe('findLinkedElsewhere', () => {
-    it('marca a exclusividade a partir do CATÁLOGO, não da coluna', async () => {
+    it('lê a exclusividade da COLUNA — é a mesma que o índice parcial enxerga', async () => {
+      // A coluna é a cópia DERIVADA do catálogo (a 262 semeia e o
+      // PatientChatRolesRepository.update a mantém em dia, na mesma transação).
+      // Ler daqui e não do catálogo carregado é de propósito: um papel
+      // DESATIVADO não está no catálogo ativo, mas os vínculos dele continuam
+      // segurando o grupo no banco — e é isso que precisa aparecer no conflito.
       const query = jest.fn().mockResolvedValue({
         rows: [
-          { chatId: '1@g.us', patientId: OTHER, role: 'FAMILY' },
-          { chatId: '2@g.us', patientId: OTHER, role: 'PROVIDERS' },
-          { chatId: '3@g.us', patientId: 'p3', role: 'HEALTH_PLAN' },
+          { chatId: '1@g.us', patientId: OTHER, role: 'FAMILY', exclusive: true },
+          { chatId: '3@g.us', patientId: 'p3', role: 'HEALTH_PLAN', exclusive: false },
         ],
       });
 
@@ -64,20 +92,9 @@ describe('PatientChatIdsRepository', () => {
 
       expect(out).toEqual([
         { chatId: '1@g.us', patientId: OTHER, role: 'FAMILY', exclusive: true },
-        { chatId: '2@g.us', patientId: OTHER, role: 'PROVIDERS', exclusive: true },
-        { chatId: '3@g.us', patientId: 'p3', role: 'HEALTH_PLAN', exclusive: true },
+        { chatId: '3@g.us', patientId: 'p3', role: 'HEALTH_PLAN', exclusive: false },
       ]);
-    });
-
-    it('papel DESCONHECIDO (gravado por versão futura) conta como exclusivo', async () => {
-      const query = jest.fn().mockResolvedValue({
-        rows: [{ chatId: '9@g.us', patientId: OTHER, role: 'MANAGEMENT' }],
-      });
-
-      const out = await new PatientChatIdsRepository(poolWith(query)).findLinkedElsewhere(PATIENT);
-      expect(out).toEqual([
-        { chatId: '9@g.us', patientId: OTHER, role: 'MANAGEMENT', exclusive: true },
-      ]);
+      expect(query.mock.calls[0][0]).toContain('c.is_exclusive AS "exclusive"');
     });
 
     it('exclui o próprio paciente e o soft-deleted na query', async () => {
@@ -207,7 +224,7 @@ describe('PatientChatIdsRepository', () => {
       const clientQuery = transactionalQuery([{ role: 'FAMILY', chatId: '1@g.us' }]);
       const { pool, release } = poolWithClient(clientQuery);
 
-      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' });
+      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }, CATALOG);
 
       expect(out).toEqual({ FAMILY: '1@g.us' });
       const insert = clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO patient_chat_ids'));
@@ -218,11 +235,45 @@ describe('PatientChatIdsRepository', () => {
       expect(release).toHaveBeenCalled();
     });
 
+    it('papel COMPARTILHÁVEL grava is_exclusive=false — a coluna segue o catálogo', async () => {
+      // Sem isto o índice parcial trancaria o grupo do plano de saúde no
+      // primeiro paciente, e os outros 235 levariam 409 sem ninguém entender.
+      const clientQuery = transactionalQuery([{ role: 'HEALTH_PLAN', chatId: '3@g.us' }]);
+      const { pool } = poolWithClient(clientQuery);
+
+      await new PatientChatIdsRepository(pool).applyChatIds(
+        PATIENT,
+        { HEALTH_PLAN: '3@g.us' },
+        CATALOG,
+      );
+
+      const insert = clientQuery.mock.calls.find(([sql]) =>
+        String(sql).includes('INSERT INTO patient_chat_ids'),
+      );
+      expect(insert![1]).toEqual([PATIENT, 'HEALTH_PLAN', '3@g.us', false]);
+    });
+
+    it('papel fora do catálogo recebido aqui grava is_exclusive=true (na dúvida, tranca)', async () => {
+      const clientQuery = transactionalQuery([{ role: 'MANAGEMENT', chatId: '9@g.us' }]);
+      const { pool } = poolWithClient(clientQuery);
+
+      await new PatientChatIdsRepository(pool).applyChatIds(
+        PATIENT,
+        { MANAGEMENT: '9@g.us' },
+        CATALOG,
+      );
+
+      const insert = clientQuery.mock.calls.find(([sql]) =>
+        String(sql).includes('INSERT INTO patient_chat_ids'),
+      );
+      expect(insert![1]).toEqual([PATIENT, 'MANAGEMENT', '9@g.us', true]);
+    });
+
     it('null APAGA a linha do papel, e não grava string vazia', async () => {
       const clientQuery = transactionalQuery([]);
       const { pool } = poolWithClient(clientQuery);
 
-      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { PROVIDERS: null });
+      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { PROVIDERS: null }, CATALOG);
 
       expect(out).toEqual({});
       const del = clientQuery.mock.calls.find(([sql]) => String(sql).startsWith('DELETE FROM patient_chat_ids'));
@@ -237,7 +288,7 @@ describe('PatientChatIdsRepository', () => {
       ]);
       const { pool } = poolWithClient(clientQuery);
 
-      await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' });
+      await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }, CATALOG);
 
       const touched = clientQuery.mock.calls
         .filter(([sql]) => String(sql).includes('patient_chat_ids') && !String(sql).startsWith('SELECT role'))
@@ -252,7 +303,7 @@ describe('PatientChatIdsRepository', () => {
       ]);
       const { pool } = poolWithClient(clientQuery);
 
-      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' });
+      const out = await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }, CATALOG);
 
       expect(out).toEqual({ FAMILY: '1@g.us', HEALTH_PLAN: '3@g.us' });
       expect(
@@ -269,7 +320,7 @@ describe('PatientChatIdsRepository', () => {
       const { pool, release } = poolWithClient(clientQuery);
 
       await expect(
-        new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }),
+        new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }, CATALOG),
       ).rejects.toBe(boom);
 
       expect(clientQuery.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);

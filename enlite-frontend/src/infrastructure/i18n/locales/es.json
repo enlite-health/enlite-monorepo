@@ -1087,7 +1087,8 @@
       "apiDocs": "API Docs",
       "tags": "Etiquetas",
       "dedup": "Duplicados",
-      "adminSection": "Administración"
+      "adminSection": "Administración",
+      "patientChatRoles": "Roles de grupos"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -3123,12 +3124,7 @@
           "saveError": "No se pudieron guardar los chat IDs.",
           "save": "Guardar",
           "close": "Cerrar",
-          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico.",
-          "roles": {
-            "FAMILY": "Grupo de la familia",
-            "PROVIDERS": "Grupo de los prestadores",
-            "HEALTH_PLAN": "Grupo de la obra social / prepaga"
-          }
+          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico."
         }
       }
     },
@@ -3279,6 +3275,52 @@
       "done": "Listo",
       "slotAvailability_one": "{{start}} - {{end}} ({{count}} cupo disponible)",
       "slotAvailability_other": "{{start}} - {{end}} ({{count}} cupos disponibles)"
+    },
+    "patientChatRoles": {
+      "title": "Roles de grupos de WhatsApp",
+      "subtitle": "El catálogo de roles de los grupos del paciente (familia, prestadores, obra social…). Se edita acá, sin deploy ni migración. Cambiar un rol cambia la política de unicidad de TODOS los pacientes.",
+      "newRole": "Nuevo rol",
+      "editRole": "Editar rol",
+      "deleteRole": "Eliminar rol",
+      "noRoles": "Todavía no hay roles en el catálogo.",
+      "code": "Código",
+      "codeHelp": "En INGLÉS MAYÚSCULA, sin espacios ni acentos. Ej.: HEALTH_PLAN.",
+      "codeImmutable": "El código no se puede cambiar: es la clave con la que la auditoría cruza los grupos.",
+      "codeInvalid": "Código inválido: solo A-Z, dígitos y guión bajo, empezando por una letra.",
+      "labelEs": "Etiqueta en español",
+      "labelPtBr": "Etiqueta en portugués",
+      "labelsHelp": "Las dos son obligatorias: el panel se usa en Argentina y en Brasil.",
+      "exclusive": "Exclusivo de un paciente",
+      "exclusiveHelp": "Marcado: un grupo de este rol pertenece como máximo a UN paciente — es la traba que evita que la auditoría cuente la misma conversación dos veces. Sin marcar: el grupo puede ser compartido entre pacientes (caso del grupo por pagador).",
+      "exclusiveWarning": "Este rol lo usan {{count}} paciente(s). Si ya hay un grupo compartido entre dos, el cambio va a ser rechazado con la cuenta exacta.",
+      "exclusiveYes": "Exclusivo",
+      "exclusiveNo": "Compartido",
+      "displayOrder": "Orden en pantalla",
+      "matchKeywords": "Palabras del nombre del grupo",
+      "matchKeywordsHelp": "Separadas por coma. Se usan SOLO para desempatar el orden de los candidatos (\"flia\" × \"equipo\"), nunca para elegir solo.",
+      "usageCount": "{{count}} paciente(s)",
+      "active": "Activo",
+      "inactive": "Inactivo",
+      "activate": "Activar",
+      "deactivate": "Desactivar",
+      "deleteConfirm": "¿Eliminar el rol {{code}}? Lo usan {{count}} paciente(s) — si es más de cero, el servidor lo va a rechazar.",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "saveError": "No se pudo guardar el rol.",
+      "table": {
+        "code": "Código",
+        "labels": "Etiquetas",
+        "exclusive": "Unicidad",
+        "usage": "En uso",
+        "status": "Estado",
+        "actions": "Acciones"
+      },
+      "errors": {
+        "CHAT_ROLE_IN_USE": "No se puede: este rol lo usan {{count}} paciente(s). Desvinculá esos pacientes primero — el sistema no elimina vínculos por vos.",
+        "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "No se puede hacerlo exclusivo: {{groupCount}} grupo(s) están compartidos hoy entre {{patientCount}} pacientes. Resolvé esos casos primero — el sistema no elige cuál paciente pierde el vínculo.",
+        "CHAT_ROLE_ALREADY_EXISTS": "Ya existe un rol con ese código.",
+        "CHAT_ROLE_NOT_FOUND": "Ese rol no existe (¿alguien lo eliminó mientras tanto?)."
+      }
     }
   },
   "publicVacancy": {

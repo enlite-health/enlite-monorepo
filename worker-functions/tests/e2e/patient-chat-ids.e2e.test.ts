@@ -360,7 +360,9 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(await readChatIds(patientB)).toEqual({});
     });
 
-    it('18. 409 na colisão CRUZADA entre papéis exclusivos diferentes', async () => {
+    it('18. 409 na colisão CRUZADA — basta UM lado ser exclusivo', async () => {
+      // HEALTH_PLAN é compartilhável no catálogo (27 pagadores), mas o grupo
+      // alvo já é a FAMÍLIA de outro paciente — e esse lado é exclusivo.
       await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
         { chatIds: { FAMILY: GROUP_FAMILY } },
@@ -397,10 +399,25 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(await readChatIds(patientA)).toEqual({});
     });
 
-    it('21. 400 para PAPEL desconhecido e para campo desconhecido no topo', async () => {
-      const bad = [
+    it('21. 400 para PAPEL fora do CATÁLOGO, com código próprio', async () => {
+      // ⚠️ Esta recusa MUDOU DE LUGAR na migration 262: quais papéis existem é
+      // dado, não schema, então quem barra é o serviço (depois de ler o
+      // catálogo) e não mais o Zod. O código próprio existe para a tela poder
+      // dizer "esse papel não está cadastrado" em vez de um erro de validação.
+      const desconhecido = await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
         { chatIds: { NEIGHBOURS: GROUP_FAMILY } },
+        authHeaders(staffToken),
+      );
+      expect(desconhecido.status).toBe(400);
+      expect(desconhecido.data.code).toBe('UNKNOWN_CHAT_ROLE');
+      expect(desconhecido.data.details.roles).toEqual(['NEIGHBOURS']);
+      expect(await readChatIds(patientA)).toEqual({});
+
+      // A FORMA da chave continua sendo lei do schema.
+      const bad = [
         { chatIds: { family: GROUP_FAMILY } },
+        { chatIds: { 'HEALTH PLAN': GROUP_FAMILY } },
         { chatIds: {}, foo: 'x' },
         {},
       ];

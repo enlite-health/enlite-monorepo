@@ -4,6 +4,7 @@ import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  UnknownChatRoleError,
 } from '../../../application/PatientChatIdsService';
 import { FindPatientChatCandidatesUseCase } from '../../../application/FindPatientChatCandidatesUseCase';
 import { GetPatientChatMapUseCase } from '../../../application/GetPatientChatMapUseCase';
@@ -227,11 +228,31 @@ describe('AdminPatientChatIdsController', () => {
       });
     });
 
-    it('400 para papel DESCONHECIDO no mapa', async () => {
+    it('400 UNKNOWN_CHAT_ROLE quando o serviço recusa o papel, com a lista', async () => {
+      // O papel fora do catálogo não é mais barrado pelo schema (o catálogo é
+      // dado, não código): o serviço o recusa depois de ler o banco, e o
+      // controller precisa traduzir isso em 400 com código próprio — senão a
+      // tela mostraria "erro interno" para um caso que tem conserto claro.
+      const update = jest.fn().mockRejectedValue(new UnknownChatRoleError(['NEIGHBOURS']));
+      const { controller } = build({ update });
+      const r = res();
+
+      await controller.updateChatIds(req({ body: { chatIds: { NEIGHBOURS: GROUP_A } } }), r);
+
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(r.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Unknown or inactive chat role',
+        code: 'UNKNOWN_CHAT_ROLE',
+        details: { roles: ['NEIGHBOURS'] },
+      });
+    });
+
+    it('400 para chave de papel FORA DA FORMA — este o schema ainda barra', async () => {
       const update = jest.fn();
       const { controller } = build({ update });
       const r = res();
-      await controller.updateChatIds(req({ body: { chatIds: { NEIGHBOURS: GROUP_A } } }), r);
+      await controller.updateChatIds(req({ body: { chatIds: { 'health plan': GROUP_A } } }), r);
       expect(r.status).toHaveBeenCalledWith(400);
       expect(update).not.toHaveBeenCalled();
     });

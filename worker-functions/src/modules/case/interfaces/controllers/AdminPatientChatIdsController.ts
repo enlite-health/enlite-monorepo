@@ -12,6 +12,7 @@ import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  UnknownChatRoleError,
 } from '../../application/PatientChatIdsService';
 import {
   FindPatientChatCandidatesUseCase,
@@ -117,6 +118,7 @@ export class AdminPatientChatIdsController {
         success: true,
         data: {
           candidates: result.candidates,
+          candidatesByRole: result.candidatesByRole,
           totalGroups: result.totalGroups,
           groupListTruncated: result.groupListTruncated,
         },
@@ -155,6 +157,19 @@ export class AdminPatientChatIdsController {
     } catch (err: unknown) {
       if (err instanceof PatientChatIdsNotFoundError) {
         res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      // Papel fora do catálogo ATIVO. 400 (não 404): o recurso pedido é o
+      // paciente, que existe — o que não confere é o vocabulário do body. O
+      // código próprio existe para a tela poder dizer "esse papel não está
+      // cadastrado, veja a tela de papéis" em vez de um erro de validação cru.
+      if (err instanceof UnknownChatRoleError) {
+        res.status(400).json({
+          success: false,
+          error: 'Unknown or inactive chat role',
+          code: 'UNKNOWN_CHAT_ROLE',
+          details: { roles: err.roles },
+        });
         return;
       }
       if (err instanceof ChatIdAlreadyLinkedError) {

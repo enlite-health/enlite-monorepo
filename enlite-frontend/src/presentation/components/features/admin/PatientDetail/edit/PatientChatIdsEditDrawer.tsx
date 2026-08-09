@@ -6,7 +6,8 @@ import type {
   PatientDetail,
   PatientChatCandidate,
 } from '@domain/entities/PatientDetail';
-import { chatRolesToDisplay, chatRoleLabelKey } from '@domain/value-objects/patientChatRole';
+import { chatRolesToDisplay, chatRoleLabel } from '@domain/value-objects/patientChatRole';
+import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -15,6 +16,15 @@ import { SelectField, type SelectOption } from '@presentation/components/molecul
 
 interface Props {
   patient: PatientDetail;
+  /**
+   * O catálogo de papéis, vindo do CARD — não relido aqui.
+   *
+   * O drawer relendo por conta própria criava uma janela em que ele estava
+   * montado com a lista VAZIA: salvar nesse instante mandava `chatIds: {}` e a
+   * gravação virava um no-op silencioso. Além de ser uma segunda chamada HTTP
+   * para o mesmo dado que a ficha acabou de buscar.
+   */
+  catalog: readonly PatientChatRoleSpec[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -33,23 +43,35 @@ const CLOSE_MS = 300;
  * Um seletor por papel, gerados a partir do catálogo — somar um papel não mexe
  * neste arquivo.
  */
-export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): JSX.Element {
-  const { t } = useTranslation();
+export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }: Props): JSX.Element {
+  const { t, i18n } = useTranslation();
   const tc = (k: string) => t(`admin.patients.detail.chatIdsCard.${k}`);
 
-  const roles = chatRolesToDisplay(patient.chatIds);
+  const roles = chatRolesToDisplay(catalog, patient.chatIds);
 
   const [show, setShow] = useState(false);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searched, setSearched] = useState(false);
   const [candidates, setCandidates] = useState<PatientChatCandidate[]>([]);
+  const [byRole, setByRole] = useState<Record<string, string[]>>({});
   const [totalGroups, setTotalGroups] = useState(0);
   const [listTruncated, setListTruncated] = useState(false);
-  const [selection, setSelection] = useState<Record<string, string>>(() =>
-    Object.fromEntries(roles.map(role => [role, patient.chatIds?.[role] ?? ''])),
-  );
+  /**
+   * SÓ o que a pessoa mexeu nesta sessão do drawer. O que está gravado no
+   * paciente NÃO é copiado para cá.
+   *
+   * Porque o catálogo chega por rede: uma cópia feita na montagem nasceria
+   * vazia (a lista de papéis ainda não existe) e, quando o catálogo chegasse, o
+   * seletor de um papel JÁ VINCULADO abriria em branco — a tela dizendo "nada
+   * escolhido" para quem tem vínculo. Pior, o salvar mandaria `null` e
+   * desvincularia sozinho. Mantendo aqui só a edição, o valor efetivo é sempre
+   * `edição ?? gravado`.
+   */
+  const [edited, setEdited] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+
+  const valueFor = (role: string): string => edited[role] ?? patient.chatIds?.[role] ?? '';
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setShow(true));
@@ -74,6 +96,7 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
     try {
       const res = await AdminApiService.getPatientChatCandidates(patient.id);
       setCandidates(res.candidates);
+      setByRole(res.candidatesByRole ?? {});
       setTotalGroups(res.totalGroups);
       setListTruncated(res.groupListTruncated === true);
       setSearched(true);
@@ -92,7 +115,7 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
       // o que a pessoa vê é o que fica gravado. Papel que a tela não mostra não
       // entra no payload e por isso não é apagado.
       await AdminApiService.updatePatientChatIds(patient.id, {
-        chatIds: Object.fromEntries(roles.map(role => [role, selection[role] || null])),
+        chatIds: Object.fromEntries(roles.map(role => [role, valueFor(role) || null])),
       });
       onSaved();
       handleClose();
@@ -104,7 +127,13 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
   };
 
   /**
-   * Opções do seletor de um papel.
+   * Opções do seletor de um papel, NA ORDEM DAQUELE PAPEL.
+   *
+   * `candidatesByRole` traz os mesmos candidatos reordenados pelo backend com as
+   * palavras do catálogo ("flia" × "equipo"): sem isso, os dois grupos do mesmo
+   * paciente têm score idêntico e o desempate acabava sendo alfabético, o que
+   * punha o mesmo grupo em primeiro nos DOIS seletores. Medido contra o gabarito
+   * do Marcel: o grupo da família em 1º subiu de 52,4% para 71,4%.
    *
    * Inclui o que JÁ está gravado no paciente mesmo antes de qualquer busca —
    * sem isso o `<select>` abre em branco para quem já tem vínculo (o valor não
@@ -114,10 +143,15 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
    */
   const optionsFor = (role: string): SelectOption[] => {
     const takenHere = new Set(
-      roles.filter(r => r !== role).map(r => selection[r]).filter(Boolean),
+      roles.filter(r => r !== role).map(r => valueFor(r)).filter(Boolean),
     );
 
-    const fromCandidates: SelectOption[] = candidates.map(c => ({
+    const order = byRole[role];
+    const ranked = order
+      ? [...candidates].sort((a, b) => order.indexOf(a.chatId) - order.indexOf(b.chatId))
+      : candidates;
+
+    const fromCandidates: SelectOption[] = ranked.map(c => ({
       value: c.chatId,
       label: `${c.chatName ?? c.chatId}${c.linkedToOtherPatient ? ` — ${tc('alreadyLinked')}` : ''}`,
     }));
@@ -126,7 +160,7 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
     const linked: SelectOption[] = [];
     // `seen` cresce no laço: os valores podem coincidir entre si, e uma option
     // repetida quebra a key do React (chave duplicada no <select>).
-    for (const v of [selection[role], ...roles.map(r => patient.chatIds?.[r])]) {
+    for (const v of [valueFor(role), ...roles.map(r => patient.chatIds?.[r])]) {
       if (v && !seen.has(v)) {
         seen.add(v);
         linked.push({ value: v, label: v });
@@ -233,7 +267,7 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
           {roles.map(role => (
             <FormField
               key={role}
-              label={t(chatRoleLabelKey(role), { defaultValue: role })}
+              label={chatRoleLabel(catalog, role, i18n.language)}
               htmlFor={`chat-ids-${role}`}
               optional
             >
@@ -241,8 +275,8 @@ export function PatientChatIdsEditDrawer({ patient, onClose, onSaved }: Props): 
                 inputSize="compact"
                 options={optionsFor(role)}
                 placeholder={tc('choose')}
-                value={selection[role] ?? ''}
-                onChange={value => setSelection(prev => ({ ...prev, [role]: value }))}
+                value={valueFor(role)}
+                onChange={value => setEdited(prev => ({ ...prev, [role]: value }))}
                 data-testid={`chat-ids-${role}-select`}
               />
             </FormField>

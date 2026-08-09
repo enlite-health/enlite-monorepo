@@ -31,6 +31,7 @@ import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
@@ -202,6 +203,7 @@ export function App() {
           <Route path="patients/kanban" element={<PatientKanbanPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
           <Route
             path="api-docs"

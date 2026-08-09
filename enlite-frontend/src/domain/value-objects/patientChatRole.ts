@@ -1,42 +1,80 @@
 /**
- * Papéis de grupo de WhatsApp (Periskope) do paciente — espelho do catálogo do
- * backend (`worker-functions/src/modules/case/domain/PatientChatRole.ts`).
+ * Papéis de grupo de WhatsApp (Periskope) do paciente.
  *
- * ⚠️ POR QUE ESTÁ ESCRITO DUAS VEZES: o painel é um bundle estático, não importa
- * do backend. O que evita a divergência virar bug silencioso:
- *   - a ORDEM e a lista daqui só governam a TELA; quem valida é o backend, que
- *     devolve 400 para papel que não conhece;
- *   - a leitura NUNCA depende desta lista — o card e o drawer renderizam o que
- *     vier no `chatIds` do paciente, e um papel desconhecido aparece com o
- *     próprio código como rótulo em vez de sumir da tela (`chatRoleLabelKey`).
+ * ⚠️ NÃO EXISTE MAIS LISTA AQUI. O catálogo vive na tabela `patient_chat_roles`
+ * (migration 262) e chega pela API (`GET /api/admin/patient-chat-roles`). Antes
+ * ele estava escrito duas vezes — aqui e no backend — e as duas cópias
+ * envelheciam junto com a operação: em um único dia o papel foi de 2 para 3,
+ * com um quarto citado solto. Papel novo passou a ser um clique na tela
+ * `/admin/patient-chat-roles`, sem deploy nem migration, e por isso o painel não
+ * pode ter opinião própria sobre quais papéis existem.
  *
- * Somar um papel: uma entrada aqui, uma no catálogo do backend, e os rótulos em
- * `es.json` + `pt-BR.json` (`admin.patients.detail.chatIdsCard.roles.<PAPEL>`).
- * Nenhuma migration.
+ * Os RÓTULOS também vêm do catálogo (es + pt-BR), não do `es.json`/`pt-BR.json`:
+ * um papel criado pela administração não teria como ter chave de i18n.
  */
-export const PATIENT_CHAT_ROLES = ['FAMILY', 'PROVIDERS', 'HEALTH_PLAN'] as const;
 
-export type PatientChatRole = (typeof PATIENT_CHAT_ROLES)[number];
+/** Uma linha do catálogo, como a API devolve. */
+export interface PatientChatRoleSpec {
+  code: string;
+  labelEs: string;
+  labelPtBr: string;
+  /**
+   * `true` = um grupo deste papel pertence a NO MÁXIMO um paciente. É a trava
+   * que impede a auditoria de informes de contar a mesma conversa duas vezes.
+   */
+  isExclusive: boolean;
+  displayOrder: number;
+  isActive: boolean;
+  /** Palavras que identificam o papel no NOME do grupo ("flia" × "equipo"). */
+  matchKeywords: string[];
+}
 
 /** Papel -> chat_id do grupo. Papel ausente = não vinculado. */
 export type PatientChatIdMap = Partial<Record<string, string>>;
 
 /**
- * Os papéis a exibir para um paciente: os conhecidos, na ordem do catálogo, mais
- * qualquer papel que o backend já grave e o painel ainda não conheça (deploy
- * fora de ordem, papel novo). Sem isso a tela esconderia um vínculo existente —
- * e esconder é pior que mostrar um código cru.
+ * Os papéis a EXIBIR para um paciente: os do catálogo, na ordem dele, mais
+ * qualquer papel que o paciente já tenha gravado e que o catálogo não traga
+ * (papel desativado depois de vinculado, ou catálogo que não carregou).
+ *
+ * Esconder um vínculo existente é pior que mostrar um código cru: a pessoa que
+ * abre a ficha precisa ver que aquele grupo está lá, mesmo que o papel tenha
+ * saído do catálogo — senão ela vincula outro por cima sem saber.
  */
-export function chatRolesToDisplay(chatIds: PatientChatIdMap | null | undefined): string[] {
-  const known: string[] = [...PATIENT_CHAT_ROLES];
+export function chatRolesToDisplay(
+  catalog: readonly PatientChatRoleSpec[],
+  chatIds: PatientChatIdMap | null | undefined,
+): string[] {
+  const known = catalog.map(r => r.code);
   const extras = Object.keys(chatIds ?? {}).filter(role => !known.includes(role));
   return [...known, ...extras.sort()];
 }
 
 /**
- * Chave de i18n do rótulo do papel. Papel sem tradução cai no próprio código
- * (via o `defaultValue` de quem chama), nunca em string vazia.
+ * Rótulo do papel no idioma da tela. Papel fora do catálogo cai no próprio
+ * código — nunca em string vazia, que apareceria como um campo sem nome.
  */
-export function chatRoleLabelKey(role: string): string {
-  return `admin.patients.detail.chatIdsCard.roles.${role}`;
+export function chatRoleLabel(
+  catalog: readonly PatientChatRoleSpec[],
+  code: string,
+  locale: string,
+): string {
+  const spec = catalog.find(r => r.code === code);
+  if (!spec) return code;
+  return locale.toLowerCase().startsWith('pt') ? spec.labelPtBr : spec.labelEs;
+}
+
+/**
+ * Forma exigida de um código de papel — espelha os CHECKs do banco
+ * (`patient_chat_ids_role_shape` e `patient_chat_roles_code_shape`) e o schema
+ * Zod do backend. Validar na tela é só para dar erro ANTES do round-trip; a
+ * garantia é do banco.
+ */
+export const PATIENT_CHAT_ROLE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+
+/** Comprimento da coluna `patient_chat_roles.code`. */
+export const PATIENT_CHAT_ROLE_MAX_LENGTH = 32;
+
+export function isPatientChatRoleCode(value: string): boolean {
+  return value.length <= PATIENT_CHAT_ROLE_MAX_LENGTH && PATIENT_CHAT_ROLE_PATTERN.test(value);
 }
