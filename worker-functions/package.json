@@ -19,6 +19,8 @@
     "geocode:jobs:dry": "ts-node -r dotenv/config scripts/backfill-patient-addresses-geocoding.ts --dry-run",
     "backfill:worker-names": "ts-node -r dotenv/config scripts/backfill-worker-names-from-encuadres.ts",
     "backfill:worker-names:dry": "ts-node -r dotenv/config scripts/backfill-worker-names-from-encuadres.ts --dry-run",
+    "archive:stale-workers": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts --execute",
+    "archive:stale-workers:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts",
     "sync:talentum": "ts-node -r dotenv/config scripts/sync-talentum-status.ts",
     "sync:talentum:dry": "ts-node -r dotenv/config scripts/sync-talentum-status.ts --dry-run",
     "sync:ana-care": "ts-node -r dotenv/config scripts/sync-ana-care-status.ts",

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
@@ -137,6 +138,9 @@ export class WJAFunnelController {
            ) e ON true
            LEFT JOIN worker_service_areas wsa ON wsa.worker_id = wja.worker_id AND wsa.deleted_at IS NULL
            WHERE wja.job_posting_id = $1
+             -- worker que deu baixa na conta não pode aparecer no kanban da vaga
+             -- (mesmo recorte de FunnelTableRepository/VacancyMatchController)
+             AND ${excludeDisabledWorkersSql('w')}
            ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
           [id],
         ),
