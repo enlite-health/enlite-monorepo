@@ -6,6 +6,7 @@ import {
   buildPaginationClause,
   createPaginatedResponse,
 } from '@shared/utils/pagination';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 /**
  * RecruitmentController
@@ -299,6 +300,9 @@ export class RecruitmentController {
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN coordinators c ON c.id = e.coordinator_id
         WHERE 1=1
+          -- worker que deu baixa na conta não é candidato contatável (mesmo recorte
+          -- de FunnelTableRepository/VacancyMatchController/WJAFunnelController)
+          AND ${excludeDisabledWorkersSql('w')}
       `;
 
       const params: any[] = [];

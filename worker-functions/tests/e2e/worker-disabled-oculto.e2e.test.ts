@@ -77,9 +77,15 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     // A baixa acontece DEPOIS da candidatura — como no caso real (o worker é
     // convidado, responde "baja", e a Luz desativa a conta).
     await pool.query(`UPDATE workers SET status = 'DISABLED' WHERE id = $1`, [disabledWorkerId]);
+
+    // Nada a inserir em encuadres: trg_ensure_encuadre_on_wja_insert (migration 189)
+    // já criou 1 encuadre por WJA automaticamente — é isso que alimenta
+    // /admin/recruitment/encuadres (tela "Salud del Reclutamiento").
   });
 
   afterAll(async () => {
+    // encuadres.worker_id é ON DELETE SET NULL (não CASCADE) — apagar explícito.
+    await pool.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [vacancyId]);
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [vacancyId]);
     await pool.query(`DELETE FROM job_postings WHERE id = $1`, [vacancyId]);
     await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [
@@ -138,6 +144,20 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     expect(vacancy!.convidados).toBe('01');
     // 2 vagas pedidas, ninguém selecionado ainda.
     expect(vacancy!.faltantes).toBe('02');
+  });
+
+  it('salud del reclutamiento (/recruitment/encuadres): não lista o worker que deu baixa', async () => {
+    const res = await api.get(
+      `/api/admin/recruitment/encuadres?caseNumber=${uniqueCaseNumber}&limit=50`,
+      auth(),
+    );
+
+    expect(res.status).toBe(200);
+    // Colunas cruas do Postgres (snake_case) — este controller não remapeia pra camelCase.
+    const ids = (res.data.data as Array<{ worker_id: string }>).map((e) => e.worker_id);
+    expect(ids).toContain(activeWorkerId);
+    expect(ids).not.toContain(disabledWorkerId);
+    expect(res.data.pagination.total).toBe(1);
   });
 
   it('busca do painel: some por padrão, mas ?status=DISABLED continua achando', async () => {
