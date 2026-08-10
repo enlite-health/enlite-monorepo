@@ -10,6 +10,7 @@
 
 import type { WorkerMirrorRecord } from '../../domain/WorkerMirrorRecord';
 import type { AnaCareNursePayload } from '../../domain/IAnaCareApiClient';
+import { toNationalAR } from '../../../../shared/utils/phoneNormalization';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 
 /**
@@ -87,8 +88,12 @@ export function mapWorkerToAnaCarePayload(
     email: record.email.toLowerCase().trim(),
   };
 
-  // Telefone — omitir se vazio (deve ser único se enviado)
-  const telefono = nonEmpty(record.phone);
+  // Telefone — omitir se vazio (deve ser único se enviado).
+  // NACIONAL, sem código de país: o Ana Care guarda o país num campo próprio e o
+  // `telefono` da API v2 não tem onde recebê-lo. Mandar o canônico interno
+  // (549XXXXXXXXXX) fazia o país virar parte do número, e alguém corrigia à mão
+  // depois. Ver toNationalAR.
+  const telefono = nonEmpty(toNationalAR(record.phone));
   if (telefono) payload.telefono = telefono;
 
   // Endereço da área de atuação (worker_service_areas)

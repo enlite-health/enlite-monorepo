@@ -1,4 +1,4 @@
-import { normalizePhoneAR, generatePhoneCandidates } from '../phoneNormalization';
+import { normalizePhoneAR, generatePhoneCandidates, toNationalAR } from '../phoneNormalization';
 
 // ─── normalizePhoneAR ─────────────────────────────────────────────────────────
 
@@ -117,5 +117,82 @@ describe('generatePhoneCandidates', () => {
     // número inválido curto
     const candidates = generatePhoneCandidates('12345');
     expect(candidates.every(c => c.replace('+', '').length >= 7)).toBe(true);
+  });
+});
+
+// ─── toNationalAR ─────────────────────────────────────────────────────────────
+
+describe('toNationalAR', () => {
+  describe('entradas nulas ou vazias', () => {
+    it('devolve string vazia para null, undefined, vazio e sem dígitos', () => {
+      expect(toNationalAR(null)).toBe('');
+      expect(toNationalAR(undefined)).toBe('');
+      expect(toNationalAR('')).toBe('');
+      expect(toNationalAR('   ')).toBe('');
+      expect(toNationalAR('sin numero')).toBe('');
+    });
+  });
+
+  describe('remove o código de país argentino', () => {
+    it('13 dígitos 549XXXXXXXXXX → 10 dígitos (o caso dos 81 nurses defeituosos)', () => {
+      expect(toNationalAR('5491151265663')).toBe('1151265663');
+    });
+
+    it('12 dígitos 549XXXXXXXXX (interior) → 9 dígitos', () => {
+      expect(toNationalAR('549351265663')).toBe('351265663');
+    });
+
+    it('12 dígitos 54XXXXXXXXXX (sem o 9 do móvel) → 10 dígitos', () => {
+      expect(toNationalAR('541151265663')).toBe('1151265663');
+    });
+
+    it('11 dígitos 54XXXXXXXXX (sem o 9) → 9 dígitos', () => {
+      expect(toNationalAR('54351265663')).toBe('351265663');
+    });
+
+    it('ignora formatação: +, espaços e hífens', () => {
+      expect(toNationalAR('+54 9 11 5126-5663')).toBe('1151265663');
+    });
+  });
+
+  describe('não mexe no que já está nacional', () => {
+    it('10 dígitos (87% da base do Ana Care) passa intacto', () => {
+      expect(toNationalAR('1151265663')).toBe('1151265663');
+    });
+
+    it('9 dígitos passa intacto', () => {
+      expect(toNationalAR('351265663')).toBe('351265663');
+    });
+  });
+
+  describe('conservador: só remove quando sobra comprimento nacional plausível', () => {
+    it('número curto começando com 54 NÃO é mutilado', () => {
+      // '54' aqui é o início do número local, não código de país
+      expect(toNationalAR('5412345')).toBe('5412345');
+    });
+
+    it('8 dígitos começando com 54 passa intacto', () => {
+      expect(toNationalAR('54123456')).toBe('54123456');
+    });
+
+    it('14+ dígitos (estrangeiro/malformado) passa intacto', () => {
+      expect(toNationalAR('54911512656631')).toBe('54911512656631');
+    });
+
+    it('número que não começa com 54 passa intacto', () => {
+      expect(toNationalAR('5511987654321')).toBe('5511987654321');
+    });
+  });
+
+  describe('é o inverso de normalizePhoneAR para os formatos canônicos', () => {
+    it('ida e volta preserva o número nacional', () => {
+      const nacional = '1151265663';
+      expect(toNationalAR(normalizePhoneAR(nacional))).toBe(nacional);
+    });
+
+    it('é idempotente — aplicar duas vezes não tira mais nada', () => {
+      const once = toNationalAR('5491151265663');
+      expect(toNationalAR(once)).toBe(once);
+    });
   });
 });
