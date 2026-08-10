@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import { resolveZoneKey, UNRESOLVED_ZONE_KEY } from '@shared/utils/zoneKey';
@@ -65,6 +66,7 @@ const WORKER_ZONE_SQL = `
   LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id
   WHERE w.merged_into_id IS NULL
     AND w.is_test = false
+    AND ${excludeDisabledWorkersSql('w')}
     AND ($1::text IS NULL OR w.profession = $1)
 `;
 
