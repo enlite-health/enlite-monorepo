@@ -223,6 +223,33 @@ resource "google_logging_metric" "domain_event_backlog_stuck" {
 }
 
 # ---------------------------------------------------------------------------
+# Espelho worker -> Ana Care: métrica de ESTADO
+# ---------------------------------------------------------------------------
+# Emitida pelo health check (GET /api/internal/events/health, cron a cada 5min)
+# a CADA ciclo em que existir prestador REGISTERED sem `ana_care_id` além do
+# limite. É heartbeat de estado, não contador de borda: a linha de log reaparece
+# sozinha enquanto o problema estiver de pé.
+#
+# Por que a métrica existente não bastava (incidente de 30/07/2026):
+#   - `domain_event_delivery_failure` conta linhas de falha em 5min. Passada a
+#     rajada zera -> "[RESOLVED] Alert recovered" com o sistema quebrado.
+#   - `domain_event_backlog_stuck` decide por `status='pending'`; os 197+ eventos
+#     do incidente estavam `status='failed'` (Invalid API key). Cego por
+#     construção.
+resource "google_logging_metric" "anacare_mirror_stuck" {
+  project     = var.project_id
+  name        = "anacare_mirror_stuck"
+  description = "Existe prestador REGISTERED sem ana_care_id além do limite. Sinal de ESTADO reemitido a cada ciclo do cron enquanto o espelho estiver quebrado."
+  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"[mirror/health] anacare mirror stuck\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Alert policies (notification channel existente via var)
 # ---------------------------------------------------------------------------
 resource "google_monitoring_alert_policy" "domain_event_delivery_failure" {
@@ -230,12 +257,48 @@ resource "google_monitoring_alert_policy" "domain_event_delivery_failure" {
   display_name = "[URGENTE] Domain event delivery falhou (outbox/AnaCare)"
   combiner     = "OR"
   enabled      = true
+  # WARNING (não CRITICAL) de propósito: é sinal de borda e ruidoso. Quem pagina
+  # de verdade é a policy de ESTADO `anacare_mirror_stuck`. Sem `severity` o
+  # Google gerava assunto "[ALERT - No severity]", que não nomeava nada.
+  severity = "WARNING"
 
   notification_channels = [var.events_notification_channel]
 
   documentation {
     mime_type = "text/markdown"
-    content   = "Um domain_event NÃO foi entregue: publish no Pub/Sub falhou (ex: topic inexistente) OU nenhum handler registrado. Foi ASSIM que o sync AnaCare ficou 5 dias quebrado em silencio (jul/2026). Checar: (1) topic+sub do evento existem em prod? (2) handler registrado em src/index.ts? (3) backlog em domain_events WHERE status='pending'."
+    subject   = "Entrega de domain_event falhou (outbox / espelho Ana Care)"
+    content   = <<-EOT
+      ## O que este alerta é — e o que ele NÃO é
+      Alerta de **BORDA**: contou linhas de log de falha nos últimos 5 minutos. Passada a rajada
+      a métrica zera e o Monitoring manda `[RESOLVED] Alert recovered` **mesmo com o sistema
+      quebrado**. Em 30/07-08/08/2026 isso produziu ~201 pares ALERT/RESOLVED em 11 dias.
+
+      **Não use o RESOLVED deste alerta como prova de que voltou.** Quem responde
+      "ainda está quebrado?" é a policy de estado
+      `[URGENTE] Espelho Ana Care parado — prestadores REGISTERED sem ana_care_id`.
+
+      ## Modos de falha que caem aqui
+      1. **Credencial inválida do Ana Care** — secret `anacare-api-key` (`enlite-prd`) expirado
+         ou rotacionado. Sintoma: `HTTP 403 {"detail":"Invalid API key."}` em `MirrorWorkerService:mirrorOne`.
+         Foi a causa do incidente de **30/07/2026 16:58 UTC** (197 eventos, 58 prestadores presos).
+      2. **Falha de linking** no Ana Care (duplicado / worker não casa). Ver `workers.ana_care_sync_error`.
+      3. **Ana Care indisponível** (5xx, timeout).
+      4. **Publish no Pub/Sub falhou** (topic inexistente) ou **nenhum handler registrado**
+         para o evento — foi o incidente anterior, de jul/2026.
+
+      ## Diagnóstico (nesta ordem)
+      1. **`status='failed'` + a coluna `error`** — é onde a causa está escrita:
+         `SELECT event, left(error, 120) AS causa, count(*), max(created_at)
+          FROM domain_events WHERE status='failed'
+            AND created_at > now() - interval '2 days' GROUP BY 1,2 ORDER BY 3 DESC;`
+      2. Só depois olhar `status='pending'` (modo 4). No incidente de 30/07 o pending
+         esteve **zerado o tempo todo** — quem procurou pending concluiu, errado, que estava tudo bem.
+      3. Se for modo 4: topic+subscription existem em prd? Handler registrado em `src/index.ts`?
+
+      ## Correção
+      Eventos `failed` **não voltam sozinhos** — o sweep só varre `pending`. Depois de corrigir a
+      causa, reprocessar com `BackfillWorkerMirrorUseCase` (dryRun primeiro).
+    EOT
   }
 
   alert_strategy {
@@ -304,4 +367,97 @@ resource "google_monitoring_alert_policy" "domain_event_backlog_stuck" {
   }
 
   depends_on = [google_logging_metric.domain_event_backlog_stuck]
+}
+
+# ---------------------------------------------------------------------------
+# Espelho Ana Care: alerta de ESTADO (o que faltava em 30/07)
+# ---------------------------------------------------------------------------
+resource "google_monitoring_alert_policy" "anacare_mirror_stuck" {
+  project      = var.project_id
+  display_name = "[URGENTE] Espelho Ana Care parado — prestadores REGISTERED sem ana_care_id"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "CRITICAL"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Espelho Ana Care parado: prestador cadastrado não chega no Ana Care"
+    content   = <<-EOT
+      ## Impacto
+      Prestador termina o cadastro (`status='REGISTERED'`) e **não aparece no Ana Care**.
+      Ele não entra em caso, não é alocado, e ninguém percebe pela tela — o Kanban segue normal.
+
+      ## O que este alerta afirma
+      Existe **pelo menos um** worker `REGISTERED` com `ana_care_id IS NULL` há mais de
+      **2 horas** (default de `mirrorStuckThresholdHours`), criado nos últimos 7 dias.
+      É sinal de **ESTADO**: enquanto houver alguém preso, o health check reemite a linha a cada
+      5 minutos. **Ele não se auto-resolve com o problema de pé** — só apaga quando o backlog zera.
+
+      Limite defendido por medição: entre 15/07 e 30/07 (janela saudável, 2.861 eventos
+      `worker.mirror_requested`) o espelho fechou em p50 = 1,2s, p95 = 5,3min, p99 = 11min,
+      **máximo 22,9min**. 2h é ~5x o pior caso observado.
+
+      ## Modos de falha reais (em ordem de frequência observada)
+      1. **Credencial inválida** — secret `anacare-api-key` (projeto `enlite-prd`) expirado/rotacionado.
+         Foi o incidente de **30/07/2026 16:58 UTC**: toda escrita virou `HTTP 403 {"detail":"Invalid API key."}`,
+         197 eventos falharam, 58 prestadores ficaram de fora, **11 dias sem ninguém ver**.
+         Confirmar com: `SELECT error, count(*) FROM domain_events WHERE event='worker.mirror_requested'
+         AND status='failed' AND created_at > now() - interval '2 days' GROUP BY 1;`
+      2. **Falha de linking** (worker existe dos dois lados mas não casa) — `POST /api/v2/agencies/...`
+         devolve erro de duplicado. Ver `workers.ana_care_sync_error`. Não re-tenta sozinho.
+      3. **Ana Care fora do ar / timeout** — erro de rede em `domain_events.error`.
+      4. **Evento nunca emitido** — worker virou REGISTERED sem `worker.mirror_requested`.
+         Único modo que o `domain_events` não explica; casar `workers` contra `payload->>'workerId'`.
+
+      ## Diagnóstico (nesta ordem)
+      1. `GET /api/internal/events/health` → campo `anaCareMirror`
+         (`stuckRecent`, `oldestStuckAgeHours`, `chronicTotal`).
+      2. **`status='failed'` + a coluna `error`** — é aqui que mora a causa. NÃO basta olhar
+         `status='pending'`: no incidente de 30/07 o pending estava zerado o tempo todo.
+      3. Testar a credencial antes de culpar o código.
+
+      ## Correção
+      Rotacionar/corrigir o secret e então **reprocessar**: os eventos `failed` não voltam sozinhos.
+      Usar `BackfillWorkerMirrorUseCase` (dryRun primeiro).
+
+      ## Nota sobre `chronicTotal`
+      Presos há mais de 7 dias saem da conta que dispara este alerta **de propósito**. São backlog
+      histórico que não volta sozinho (modos 2 e 4). Se contassem, o alerta nasceria vermelho pra
+      sempre e viraria ruído — que é exatamente o defeito que esta policy conserta.
+      `chronicTotal` é reportado no log e no JSON para ficar visível sem paginar.
+    EOT
+  }
+
+  # 7 dias: o alerta NÃO deve fechar sozinho por decurso de prazo. Enquanto o
+  # espelho estiver quebrado o heartbeat renova; se o heartbeat sumir (serviço
+  # fora do ar), fechar em silêncio seria a mesma mentira de 30/07.
+  alert_strategy {
+    auto_close = "604800s"
+  }
+
+  conditions {
+    display_name = "existe prestador REGISTERED sem ana_care_id há mais de 2h"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/anacare_mirror_stuck\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      # 1800s = 6 ciclos do cron de 5min. Um ciclo perdido (deploy, cold start,
+      # scheduler atrasado) não zera a janela e não fabrica um "recovered".
+      aggregations {
+        alignment_period     = "1800s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  depends_on = [google_logging_metric.anacare_mirror_stuck]
 }

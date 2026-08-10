@@ -54,6 +54,7 @@ import { ReminderScheduler } from '@modules/notification/infrastructure/Reminder
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
+import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
@@ -441,7 +442,8 @@ const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
 const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService);
+const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService);
 app.use('/api/internal', createInternalRoutes(internalController));
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
