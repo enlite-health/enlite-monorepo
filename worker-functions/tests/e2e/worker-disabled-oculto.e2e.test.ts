@@ -5,7 +5,8 @@
  * `deactivate_account`) não pode continuar aparecendo como se fosse contatável.
  *
  * Cobre as superfícies operacionais contra Postgres + API reais:
- *   - kanban da vaga (GET /vacancies/:id/funnel-table) — linhas E contadores
+ *   - kanban da vaga, tabela (GET /vacancies/:id/funnel-table) — linhas E contadores
+ *   - kanban da vaga, cards (GET /vacancies/:id/funnel) — colunas do Kanban
  *   - candidatos da vaga (GET /vacancies/:id/match-results) — lista E total
  *   - contadores da listagem de vagas (GET /vacancies)
  *   - busca do painel (GET /workers) — some por padrão, aparece com
@@ -100,6 +101,19 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     // O contador da aba é derivado das MESMAS linhas — não pode divergir.
     expect(res.data.data.counts.ALL).toBe(1);
     expect(res.data.data.counts.INVITED).toBe(1);
+  });
+
+  it('kanban da vaga (cards): não lista o worker que deu baixa em nenhuma coluna', async () => {
+    const res = await api.get(`/api/admin/vacancies/${vacancyId}/funnel`, auth());
+
+    expect(res.status).toBe(200);
+    const stages = res.data.data.stages as Record<string, Array<{ workerId: string }>>;
+    const allIds = Object.values(stages)
+      .flat()
+      .map((card) => card.workerId);
+
+    expect(allIds).toContain(activeWorkerId);
+    expect(allIds).not.toContain(disabledWorkerId);
   });
 
   it('candidatos da vaga: fora da lista e fora do total', async () => {
