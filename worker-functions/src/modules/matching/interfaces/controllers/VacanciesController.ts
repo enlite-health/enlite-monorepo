@@ -9,6 +9,7 @@ import {
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 /**
  * VacanciesController
@@ -169,7 +170,7 @@ export class VacanciesController {
               'rejection_reason_category', e.rejection_reason_category,
               'rejection_reason', e.rejection_reason
             )
-          ) FILTER (WHERE e.id IS NOT NULL) as encuadres,
+          ) FILTER (WHERE e.id IS NOT NULL AND ${excludeDisabledWorkersSql('w')}) as encuadres,
           json_agg(
             DISTINCT jsonb_build_object(
               'channel', pub.channel,

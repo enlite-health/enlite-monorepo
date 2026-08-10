@@ -9,6 +9,11 @@
  *   - kanban da vaga, cards (GET /vacancies/:id/funnel) — colunas do Kanban
  *   - candidatos da vaga (GET /vacancies/:id/match-results) — lista E total
  *   - contadores da listagem de vagas (GET /vacancies)
+ *   - salud del reclutamiento (GET /admin/recruitment/encuadres)
+ *   - detalhe da vaga (GET /vacancies/:id) — array de encuadres agregado
+ *   - analytics: missing-documents, incomplete-registrations, métricas de
+ *     caso e reemplazos (GET /analytics/*)
+ *   - bulk-dispatch-incomplete dry-run (POST /admin/messaging/bulk-dispatch-incomplete)
  *   - busca do painel (GET /workers) — some por padrão, aparece com
  *     ?status=DISABLED (é assim que o admin acha alguém para reverter a baixa)
  *
@@ -158,6 +163,81 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     expect(ids).toContain(activeWorkerId);
     expect(ids).not.toContain(disabledWorkerId);
     expect(res.data.pagination.total).toBe(1);
+  });
+
+  it('detalhe da vaga (/vacancies/:id): worker que deu baixa some do array de encuadres', async () => {
+    const encuadreRows = await pool.query(
+      `SELECT id, worker_id FROM encuadres WHERE job_posting_id = $1`,
+      [vacancyId],
+    );
+    const activeEncuadreId = encuadreRows.rows.find((r) => r.worker_id === activeWorkerId)?.id;
+    const disabledEncuadreId = encuadreRows.rows.find((r) => r.worker_id === disabledWorkerId)?.id;
+    expect(activeEncuadreId).toBeDefined();
+    expect(disabledEncuadreId).toBeDefined();
+
+    const res = await api.get(`/api/admin/vacancies/${vacancyId}`, auth());
+    expect(res.status).toBe(200);
+    // Resposta não traz worker_id no array agregado — identifica pelo id do encuadre.
+    const encuadreIds = ((res.data.data.encuadres ?? []) as Array<{ id: string }>).map((e) => e.id);
+    expect(encuadreIds).toContain(activeEncuadreId);
+    expect(encuadreIds).not.toContain(disabledEncuadreId);
+  });
+
+  it('analytics: workers sem documentos não inclui quem deu baixa', async () => {
+    const res = await api.get('/analytics/workers/missing-documents?limit=5000', auth());
+    expect(res.status).toBe(200);
+    const ids = (res.data.data as Array<{ workerId: string }>).map((w) => w.workerId);
+    expect(ids).toContain(activeWorkerId);
+    expect(ids).not.toContain(disabledWorkerId);
+  });
+
+  it('analytics: cadastros incompletos da vaga não inclui quem deu baixa', async () => {
+    const res = await api.get(`/analytics/vacancies/${vacancyId}/incomplete-registrations`, auth());
+    expect(res.status).toBe(200);
+    const ids = (res.data.data as Array<{ workerId: string }>).map((w) => w.workerId);
+    expect(ids).toContain(activeWorkerId);
+    expect(ids).not.toContain(disabledWorkerId);
+  });
+
+  it('métricas do caso (/analytics/dashboard/cases/:caseNumber): contadores não incluem quem deu baixa', async () => {
+    const res = await api.get(`/analytics/dashboard/cases/${uniqueCaseNumber}`, auth());
+    expect(res.status).toBe(200);
+    // 2 encuadres existem (1 por worker), mas o desativado não deve contar.
+    expect(res.data.data.candidatosCount).toBe(1);
+    expect(res.data.data.invitados).toBe(1);
+  });
+
+  it('reemplazos (/analytics/dashboard/reemplazos): contador de seleccionados não conta quem deu baixa', async () => {
+    await pool.query(`UPDATE encuadres SET resultado = 'SELECCIONADO' WHERE job_posting_id = $1`, [
+      vacancyId,
+    ]);
+
+    const res = await api.get('/analytics/dashboard/reemplazos?country=AR', auth());
+    expect(res.status).toBe(200);
+    const caseCounts = res.data.data.reemplazosCounts[String(uniqueCaseNumber)];
+    expect(caseCounts).toBeDefined();
+    expect(caseCounts.sel).toBe(1);
+
+    await pool.query(`UPDATE encuadres SET resultado = NULL WHERE job_posting_id = $1`, [vacancyId]);
+  });
+
+  it('bulk-dispatch-incomplete (dry-run): não inclui quem deu baixa, mesmo sem opt-out gravado', async () => {
+    // Fixture não tem opt-out formal — reproduz o cenário do reforço (baixa manual
+    // via PUT /workers/:id/status não grava messaging_opt_out).
+    const phoneActive = `+549111${Date.now().toString().slice(-7)}1`;
+    const phoneDisabled = `+549111${Date.now().toString().slice(-7)}2`;
+    await pool.query(`UPDATE workers SET phone = $2 WHERE id = $1`, [activeWorkerId, phoneActive]);
+    await pool.query(`UPDATE workers SET phone = $2 WHERE id = $1`, [disabledWorkerId, phoneDisabled]);
+
+    const res = await api.post('/api/admin/messaging/bulk-dispatch-incomplete?dryRun=true', {}, auth());
+    expect(res.status).toBe(200);
+    const ids = (res.data.data.details as Array<{ workerId: string }>).map((d) => d.workerId);
+    expect(ids).toContain(activeWorkerId);
+    expect(ids).not.toContain(disabledWorkerId);
+
+    await pool.query(`UPDATE workers SET phone = NULL WHERE id = ANY($1::uuid[])`, [
+      [activeWorkerId, disabledWorkerId],
+    ]);
   });
 
   it('busca do painel: some por padrão, mas ?status=DISABLED continua achando', async () => {

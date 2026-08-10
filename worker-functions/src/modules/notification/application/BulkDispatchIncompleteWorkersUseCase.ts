@@ -4,6 +4,7 @@ import { IMessagingService } from '../domain/IMessagingService';
 import { CadencePolicy } from '../domain/CadencePolicy';
 import { Result } from '@shared/utils/Result';
 import { logger, reportError } from '@shared/logging';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
@@ -58,6 +59,12 @@ const INCOMPLETE_WORKERS_QUERY = `
     w.email NOT LIKE '%@enlite.import'
     AND w.phone IS NOT NULL
     AND w.phone <> ''
+    -- Reforço explícito (belt-and-suspenders): o NOT EXISTS de messaging_opt_out
+    -- abaixo já cobre quem foi desativado via DeactivateWorkerAccountUseCase ou
+    -- pelo arquivamento em massa (D103), mas a baixa manual via
+    -- PUT /workers/:id/status não grava opt-out — sem este filtro, esse worker
+    -- continuaria elegível ao disparo em massa.
+    AND ${excludeDisabledWorkersSql('w')}
     AND (
       wd.documents_status IS NULL
       OR wd.documents_status NOT IN ('submitted', 'under_review', 'approved')
