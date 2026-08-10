@@ -253,6 +253,34 @@ export interface PatientChatCandidatesResult {
   groupListTruncated?: boolean;
 }
 
+/** Uma linha de GET /api/admin/chat-groups — um grupo que a org enxerga. */
+export interface ChatGroupListItem {
+  chatId: string;
+  chatName: string | null;
+  memberCount: number | null;
+  /** De qual número conectado o grupo veio — responde "por que não vejo o meu?". */
+  orgPhone: string | null;
+  /**
+   * Quantos PACIENTES já usam este grupo, em qualquer papel.
+   *
+   * O que significa depende do papel: num COMPARTILHADO (obra social), 40 é o
+   * esperado; num EXCLUSIVO, qualquer número > 0 significa que gravar dará 409.
+   */
+  linkedPatientCount: number;
+}
+
+/** GET /api/admin/chat-groups?search=&limit=&offset= */
+export interface ChatGroupsResult {
+  groups: ChatGroupListItem[];
+  /** Total DEPOIS do filtro de busca. */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  /** A varredura do Periskope parou no limite: a lista está incompleta. */
+  listTruncated: boolean;
+}
+
 /**
  * GET /api/admin/patient-chat-roles — o catálogo.
  * `usage` só vem com `?includeInactive=true` (visão de administração).

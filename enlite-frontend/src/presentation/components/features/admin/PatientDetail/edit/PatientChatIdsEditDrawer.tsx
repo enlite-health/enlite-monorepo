@@ -8,6 +8,7 @@ import type {
 } from '@domain/entities/PatientDetail';
 import { chatRolesToDisplay, chatRoleLabel } from '@domain/value-objects/patientChatRole';
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
+import { ChatGroupPicker } from './ChatGroupPicker';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -264,23 +265,47 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
             </div>
           )}
 
-          {roles.map(role => (
-            <FormField
-              key={role}
-              label={chatRoleLabel(catalog, role, i18n.language)}
-              htmlFor={`chat-ids-${role}`}
-              optional
-            >
-              <SelectField
-                inputSize="compact"
-                options={optionsFor(role)}
-                placeholder={tc('choose')}
-                value={valueFor(role)}
-                onChange={value => setEdited(prev => ({ ...prev, [role]: value }))}
-                data-testid={`chat-ids-${role}-select`}
-              />
-            </FormField>
-          ))}
+          {roles.map(role => {
+            // ⚠️ A FERRAMENTA MUDA CONFORME O PAPEL, e o dado que decide já
+            // existe no catálogo (`isExclusive`).
+            //
+            // Papel EXCLUSIVO (família, prestadores) é nomeado pelo PACIENTE →
+            // o ranqueamento por semelhança acerta o primeiro lugar em 94% dos
+            // casos, medido contra o gabarito. Continua sendo o seletor.
+            //
+            // Papel COMPARTILHADO (obra social) é nomeado pelo PAGADOR →
+            // semelhança com o nome do paciente é zero, e o grupo nunca chegava
+            // a aparecer. Ali a pergunta é outra, e a ferramenta também: busca
+            // na lista inteira da org.
+            const shared = catalog.find(r => r.code === role)?.isExclusive === false;
+            const label = chatRoleLabel(catalog, role, i18n.language);
+            const takenElsewhere = roles
+              .filter(r => r !== role)
+              .map(r => valueFor(r))
+              .filter(Boolean);
+
+            return (
+              <FormField key={role} label={label} htmlFor={`chat-ids-${role}`} optional>
+                {shared ? (
+                  <ChatGroupPicker
+                    value={valueFor(role)}
+                    onChange={value => setEdited(prev => ({ ...prev, [role]: value }))}
+                    excludeChatIds={takenElsewhere}
+                    testIdPrefix={`chat-ids-${role}`}
+                  />
+                ) : (
+                  <SelectField
+                    inputSize="compact"
+                    options={optionsFor(role)}
+                    placeholder={tc('choose')}
+                    value={valueFor(role)}
+                    onChange={value => setEdited(prev => ({ ...prev, [role]: value }))}
+                    data-testid={`chat-ids-${role}-select`}
+                  />
+                )}
+              </FormField>
+            );
+          })}
 
           {error && (
             <div data-testid="chat-ids-error">

@@ -465,14 +465,27 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(res.data.data.totalGroups).toBe(3); // só os @g.us do payload
     });
 
-    it('25. a nossa API pede ao Periskope só GRUPOS, com auth de Bearer + x-phone', async () => {
+    it('25. a nossa API pede ao Periskope só GRUPOS, com Bearer e SEM escopo de número', async () => {
+      // ⚠️ A AUSÊNCIA do `x-phone` é deliberada e é o ponto do teste.
+      //
+      // Esse header escopa a leitura a UM número conectado. A org tem mais de
+      // um, e um grupo vinculável pode estar em qualquer um deles — com o
+      // escopo ligado, os grupos dos outros números simplesmente não existiam
+      // para nós, sem erro nenhum: a tela dizia "nenhum candidato".
+      //
+      // Medido contra a API real em 09/08: 774 grupos com o header, 788 brutos
+      // sem ele (775 após deduplicar por chat_id). E é o que faz conectar um
+      // número novo passar a valer — com o escopo, conectar não mudaria nada.
+      //
+      // LER é da org; ENVIAR é de um número. O `x-phone` continua obrigatório
+      // nos serviços de envio, onde ele escolhe de qual número a mensagem sai.
       stub.requests.length = 0;
       await api.get(`/api/admin/patients/${patientA}/chat-candidates`, authHeaders(staffToken));
 
       expect(stub.requests).toHaveLength(1);
       expect(stub.requests[0].path).toContain('chat_type=group');
       expect(stub.requests[0].auth).toMatch(/^Bearer /);
-      expect(stub.requests[0].phone).toBeTruthy();
+      expect(stub.requests[0].phone).toBeUndefined();
     });
 
     it('26. NENHUMA requisição de escrita chega ao Periskope em todo o fluxo', () => {

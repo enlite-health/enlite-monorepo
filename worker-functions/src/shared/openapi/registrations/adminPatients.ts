@@ -360,3 +360,39 @@ registry.registerPath({
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/chat-groups',
+  tags: ['Admin · Patients'],
+  summary: 'Todos os grupos de WhatsApp que a org enxerga, com busca',
+  description:
+    'Lista os grupos do Periskope de TODOS os números conectados da org, com busca por nome. ' +
+    'NÃO é escopado a paciente — responde "qual é o grupo da obra social?", que o ' +
+    '/patients/{id}/chat-candidates não pode responder: lá o ranqueamento é por semelhança com o ' +
+    'NOME DO PACIENTE e descarta score zero, e o grupo do pagador (`Gestión: EnLite <> DAS`) não se ' +
+    'parece com paciente nenhum. Cada linha traz `linkedPatientCount` (quantos pacientes já usam o ' +
+    'grupo — num papel compartilhado é o esperado, num exclusivo significa 409 na gravação) e ' +
+    '`orgPhone` (de qual número conectado o grupo veio, que é o que explica um grupo não aparecer: ' +
+    'grupo em que nenhum número nosso está não existe para nós). ' +
+    'Atrás do kill-switch PATIENT_CHAT_LOOKUP_ENABLED (503 quando desligado). Somente leitura.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    query: z.object({
+      search: z.string().optional().openapi({
+        description: 'Filtro por NOME do grupo, sem acento e sem caixa. Vazio = todos.',
+        example: 'gestion',
+      }),
+      limit: z.coerce.number().optional().openapi({ description: 'Tamanho da página (1..200, default 50).', example: 20 }),
+      offset: z.coerce.number().optional().openapi({ description: 'Linhas a pular (default 0).', example: 0 }),
+    }),
+  },
+  responses: {
+    200: { description: 'Página de grupos (groups, total, limit, offset, hasMore, listTruncated).', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Query inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    502: { description: 'Periskope indisponível — diferente de "achei zero".', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    503: { description: 'Funcionalidade desligada (PATIENT_CHAT_LOOKUP_ENABLED).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});

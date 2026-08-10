@@ -3124,7 +3124,13 @@
           "saveError": "No se pudieron guardar los chat IDs.",
           "save": "Guardar",
           "close": "Cerrar",
-          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico."
+          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico.",
+          "searchGroupPlaceholder": "Buscá el grupo por nombre (ej.: gestion, DAS)",
+          "searching": "Buscando…",
+          "noGroupsFound": "Ningún grupo con ese nombre. Ojo: solo vemos los grupos donde alguno de nuestros números está adentro — si el grupo existe pero no aparece, hay que agregar nuestro número a él.",
+          "groupsFound": "{{shown}} de {{total}} grupo(s)",
+          "usedByPatients": "{{count}} paciente(s) usan este grupo",
+          "clear": "Quitar"
         }
       }
     },

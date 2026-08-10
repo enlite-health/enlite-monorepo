@@ -21,6 +21,7 @@ import type {
   PatientChatCandidatesResult,
   PatientChatRolesResult,
   PatientChatRolePayload,
+  ChatGroupsResult,
 } from '@domain/entities/PatientDetail';
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 
@@ -227,6 +228,23 @@ export class AdminPatientsApiServiceClass {
     return this.writeJson<PatientChatIdsPayload & { id: string }>(
       'PUT', `/api/admin/patients/${id}/chat-ids`, payload,
     );
+  }
+
+  /**
+   * GET /api/admin/chat-groups — TODOS os grupos que a org enxerga, com busca.
+   *
+   * NÃO é escopado a paciente: responde "qual é o grupo da obra social?", que o
+   * `/chat-candidates` não pode responder — lá o ranqueamento é por semelhança
+   * com o nome do paciente, e o grupo do pagador não se parece com paciente
+   * nenhum, então nunca aparecia.
+   */
+  async listChatGroups(params: { search?: string; limit?: number; offset?: number } = {}): Promise<ChatGroupsResult> {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return this.writeJson<ChatGroupsResult>('GET', `/api/admin/chat-groups${suffix}`);
   }
 
   // ── CATÁLOGO de papéis (migration 262) ────────────────────────────────────
