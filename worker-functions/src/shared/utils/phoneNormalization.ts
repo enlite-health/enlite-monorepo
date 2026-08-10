@@ -42,6 +42,43 @@ export function normalizePhoneAR(phone: string | null | undefined): string {
 }
 
 /**
+ * Inverso de normalizePhoneAR: devolve o número NACIONAL, sem o código de país.
+ *
+ * Existe porque sistemas de terceiro guardam o país num campo próprio (select box)
+ * e esperam só o número nacional no campo de telefone. Mandar o E.164 inteiro faz
+ * o país virar parte do número — foi o que aconteceu com o espelho do Ana Care:
+ * 85 de 777 enfermeiras ficaram com '549...' no campo `telefono`, e todas as 85
+ * eram registros criados por nós (medido em 10/08/2026; 87% da base deles é
+ * nacional de 10 dígitos).
+ *
+ * Regras (espelham normalizePhoneAR, na direção contrária):
+ *   13 dígitos começando com '549' → tira '549'  → 10 dígitos (ex: 5491151265663 → 1151265663)
+ *   12 dígitos começando com '549' → tira '549'  →  9 dígitos (interior)
+ *   12 dígitos começando com '54' (não '549')    → tira '54' → 10 dígitos
+ *   11 dígitos começando com '54' (não '549')    → tira '54' →  9 dígitos
+ *   Qualquer outro caso                          → só dígitos, inalterado
+ *
+ * Conservador de propósito: só remove quando o que sobra tem comprimento nacional
+ * plausível (9 ou 10). Número curto/estrangeiro/malformado passa intacto — melhor
+ * espelhar como está do que mutilar um dado que não entendemos.
+ */
+export function toNationalAR(phone: string | null | undefined): string {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (!digits) return '';
+
+  if (digits.startsWith('549') && (digits.length === 13 || digits.length === 12)) {
+    return digits.slice(3);
+  }
+  if (digits.startsWith('54') && !digits.startsWith('549')
+      && (digits.length === 12 || digits.length === 11)) {
+    return digits.slice(2);
+  }
+
+  return digits;
+}
+
+/**
  * Gera todas as variantes de formato de um número de telefone
  * que podem estar armazenadas no banco de dados.
  *

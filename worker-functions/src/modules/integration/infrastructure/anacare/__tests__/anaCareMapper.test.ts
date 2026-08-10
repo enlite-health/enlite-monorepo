@@ -224,9 +224,17 @@ describe('mapWorkerToAnaCarePayload', () => {
       expect(p.telefono).toBeUndefined();
     });
 
-    it('inclui telefono quando phone presente', () => {
+    it('envia telefono NACIONAL, sem o código de país', () => {
+      // Regressão medida em 10/08/2026: mandar o canônico interno (+549...) fazia o
+      // país virar parte do número no Ana Care — 85 de 777 enfermeiras ficaram assim,
+      // todas criadas por nós, e alguém corrigia à mão. A API v2 não tem campo de país.
       const p = mapWorkerToAnaCarePayload(makeRecord({ phone: '+5491123456789' }));
-      expect(p.telefono).toBe('+5491123456789');
+      expect(p.telefono).toBe('1123456789');
+    });
+
+    it('não mexe em telefone que já chega nacional', () => {
+      const p = mapWorkerToAnaCarePayload(makeRecord({ phone: '1123456789' }));
+      expect(p.telefono).toBe('1123456789');
     });
 
     it('omite telefono quando phone string vazia', () => {
