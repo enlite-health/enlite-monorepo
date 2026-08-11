@@ -116,6 +116,19 @@ export class AdminPatientChatRolesController {
     } catch (err: unknown) {
       if (this.replyRefusal(err, res)) return;
       const e = err instanceof Error ? err : new Error(String(err));
+      // 23505 no índice único parcial (`idx_patient_chat_ids_exclusive_chat`):
+      // outra transação linkou um grupo conflitante ENTRE a checagem da TRAVA 1
+      // (`findSharedGroups`) e este UPDATE — mesma corrida que `create()` cobre
+      // na PK, só que aqui bate na exclusividade. Sem isto, virava 500 genérico
+      // numa race real (achado de review, 11/08).
+      if ((err as { code?: string }).code === '23505') {
+        res.status(409).json({
+          success: false,
+          error: 'Cannot make role exclusive: a conflicting group appeared between the check and the write',
+          code: 'CHAT_ROLE_EXCLUSIVITY_CONFLICT',
+        });
+        return;
+      }
       reportError(e, { source: 'AdminPatientChatRolesController:update' });
       res.status(500).json({ success: false, error: 'Failed to update patient chat role' });
     }

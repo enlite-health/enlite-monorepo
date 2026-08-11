@@ -45,32 +45,42 @@ describe('rankChatCandidates', () => {
 
   describe('scoreGroupName', () => {
     it('score 0 quando o paciente não tem termo útil', () => {
-      expect(scoreGroupName([], 'Flia Perez')).toEqual({ score: 0, matchedTerms: [] });
+      expect(scoreGroupName([], 'Flia Perez')).toEqual({ score: 0, matchedTerms: [], contiguousBonus: false });
     });
     it('score 0 quando o grupo não tem nome', () => {
-      expect(scoreGroupName(['perez'], null)).toEqual({ score: 0, matchedTerms: [] });
+      expect(scoreGroupName(['perez'], null)).toEqual({ score: 0, matchedTerms: [], contiguousBonus: false });
     });
     it('score 0 quando o nome do grupo normaliza para vazio', () => {
-      expect(scoreGroupName(['perez'], '!!!')).toEqual({ score: 0, matchedTerms: [] });
+      expect(scoreGroupName(['perez'], '!!!')).toEqual({ score: 0, matchedTerms: [], contiguousBonus: false });
     });
     it('score 0 quando nada bate', () => {
-      expect(scoreGroupName(['perez'], 'Flia Gomez')).toEqual({ score: 0, matchedTerms: [] });
+      expect(scoreGroupName(['perez'], 'Flia Gomez')).toEqual({ score: 0, matchedTerms: [], contiguousBonus: false });
     });
     it('meio termo batendo = 0.5', () => {
       const r = scoreGroupName(['maria', 'gomez'], 'Flia Maria Lopez');
       expect(r.score).toBe(0.5);
       expect(r.matchedTerms).toEqual(['maria']);
+      expect(r.contiguousBonus).toBe(false);
     });
-    it('nome inteiro contíguo ganha bônus e satura em 1', () => {
+    it('nome inteiro contíguo: score continua sendo a cobertura de termos, e contiguousBonus fica marcado à parte', () => {
+      // Achado de review 11/08: a versão antiga somava +0.25 ao score e
+      // CLAMPAVA em 1 — como a cobertura de termos aqui já é 1, o clamp
+      // escondia o bônus por completo (1.0 + 0.25 → min(1, 1.25) = 1, igual a
+      // não ter bônus nenhum). Agora o bônus não entra na conta do score: vira
+      // um campo separado, consumido como CRITÉRIO DE DESEMPATE em
+      // rankChatCandidates — é isso que o próximo describe prova.
       const r = scoreGroupName(['maria', 'perez'], 'Flia Maria Perez - Prestadores');
-      expect(r.score).toBe(1); // 1.0 + 0.25 saturado
+      expect(r.score).toBe(1); // cobertura de termos: 2/2
       expect(r.matchedTerms).toEqual(['maria', 'perez']);
+      expect(r.contiguousBonus).toBe(true);
     });
     it('mesmos termos fora de ordem NÃO ganham o bônus de contiguidade', () => {
       const espalhado = scoreGroupName(['maria', 'perez'], 'Perez, Maria');
       expect(espalhado.score).toBe(1); // já era 1 pela cobertura de termos
+      expect(espalhado.contiguousBonus).toBe(false);
       const parcial = scoreGroupName(['maria', 'perez', 'lopez'], 'Perez Lopez');
       expect(parcial.score).toBeCloseTo(0.6667, 3); // 2/3, sem bônus
+      expect(parcial.contiguousBonus).toBe(false);
     });
     it('prefixo (≥4 chars) casa abreviação nos dois sentidos', () => {
       expect(scoreGroupName(['rodriguez'], 'Flia Rodrig').score).toBeGreaterThan(0);
@@ -109,6 +119,24 @@ describe('rankChatCandidates', () => {
       const tied = [group('b@g.us', 'Zeta Perez'), group('a@g.us', 'Alfa Perez')];
       const out = rankChatCandidates({ patientName: 'Perez', groups: tied, limit: 10 });
       expect(out.map(c => c.chatId)).toEqual(['a@g.us', 'b@g.us']);
+    });
+
+    it('contiguousBonus DESEMPATA scores iguais ANTES do alfabeto (achado de review, 11/08)', () => {
+      // "Zzz Maria Perez" contém "maria perez" CONTÍGUO; "Aaa Perez Maria" tem
+      // os DOIS termos (mesmo score=1) mas em ordem trocada — não contíguo. Se
+      // o bônus não desempatasse nada (o bug antigo: soma pré-clamp, sempre
+      // saturado em 1 quando a cobertura já é 1), o alfabeto poria "Aaa..."
+      // primeiro. Com o fix, o contíguo vence mesmo perdendo no alfabeto.
+      const tied = [
+        group('aaa@g.us', 'Aaa Perez Maria'),
+        group('zzz@g.us', 'Zzz Maria Perez'),
+      ];
+      const out = rankChatCandidates({ patientName: 'Maria Perez', groups: tied, limit: 10 });
+
+      expect(out.map(c => c.score)).toEqual([1, 1]); // scores EMPATADOS
+      expect(out.map(c => c.chatId)).toEqual(['zzz@g.us', 'aaa@g.us']); // contíguo primeiro
+      expect(out[0].contiguousBonus).toBe(true);
+      expect(out[1].contiguousBonus).toBe(false);
     });
 
     it('marca o grupo já preso a outro paciente', () => {
@@ -155,7 +183,10 @@ describe('roleAffinity / orderCandidatesForRole', () => {
   const ROLES = [FAMILY, PROVIDERS];
 
   function candidate(chatId: string, chatName: string, score: number): ChatCandidate {
-    return { chatId, chatName, memberCount: null, score, matchedTerms: [], linkedToOtherPatient: false };
+    return {
+      chatId, chatName, memberCount: null, score, matchedTerms: [],
+      linkedToOtherPatient: false, contiguousBonus: false,
+    };
   }
 
   describe('roleAffinity', () => {

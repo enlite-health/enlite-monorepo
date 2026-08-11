@@ -4,6 +4,7 @@ import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  ChatIdOwnedBySamePatientRoleError,
   UnknownChatRoleError,
 } from '../../../application/PatientChatIdsService';
 import { FindPatientChatCandidatesUseCase } from '../../../application/FindPatientChatCandidatesUseCase';
@@ -330,8 +331,57 @@ describe('AdminPatientChatIdsController', () => {
       }));
     });
 
-    it('409 também quando a corrida bate no unique_violation (23505) do banco', async () => {
+    it('409 também quando a corrida bate no unique_violation (23505) do banco, SEM constraint reconhecida', async () => {
       const pgErr = Object.assign(new Error('duplicate key'), { code: '23505' });
+      const { controller } = build({ update: jest.fn().mockRejectedValue(pgErr) });
+      const r = res();
+
+      await controller.updateChatIds(req({ body }), r);
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CHAT_ID_ALREADY_LINKED' }));
+    });
+
+    it('409 CHAT_ID_OWNED_BY_SAME_PATIENT quando o mesmo chat_id já é do MESMO paciente noutro papel', async () => {
+      // Achado de review 11/08: sem isto, "mover" um grupo entre papéis sem
+      // incluir o papel antigo no body virava 23505 → mensagem FALSA de "outro
+      // paciente" (é o mesmo).
+      const conflicts = [{ chatId: GROUP_A, requestedRole: 'HEALTH_PLAN', currentRole: 'FAMILY' }];
+      const { controller } = build({
+        update: jest.fn().mockRejectedValue(new ChatIdOwnedBySamePatientRoleError(conflicts)),
+      });
+      const r = res();
+
+      await controller.updateChatIds(req({ body: { chatIds: { HEALTH_PLAN: GROUP_A } } }), r);
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'CHAT_ID_OWNED_BY_SAME_PATIENT',
+        details: { conflicts },
+      }));
+    });
+
+    it('23505 com constraint patient_chat_ids_one_role_per_chat também vira CHAT_ID_OWNED_BY_SAME_PATIENT', async () => {
+      // A mesma corrida do teste acima, só que descoberta pela CONSTRAINT em
+      // vez do check prévio (concorrência real batendo direto no banco).
+      const pgErr = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'patient_chat_ids_one_role_per_chat',
+      });
+      const { controller } = build({ update: jest.fn().mockRejectedValue(pgErr) });
+      const r = res();
+
+      await controller.updateChatIds(req({ body }), r);
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CHAT_ID_OWNED_BY_SAME_PATIENT' }));
+    });
+
+    it('23505 com constraint do índice de exclusividade continua CHAT_ID_ALREADY_LINKED', async () => {
+      const pgErr = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'idx_patient_chat_ids_exclusive_chat',
+      });
       const { controller } = build({ update: jest.fn().mockRejectedValue(pgErr) });
       const r = res();
 

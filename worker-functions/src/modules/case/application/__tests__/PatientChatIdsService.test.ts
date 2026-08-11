@@ -2,6 +2,7 @@ import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  ChatIdOwnedBySamePatientRoleError,
   UnknownChatRoleError,
 } from '../PatientChatIdsService';
 import type { PatientChatIdsRepository, ChatIdConflict } from '../../infrastructure/PatientChatIdsRepository';
@@ -187,6 +188,57 @@ describe('PatientChatIdsService', () => {
     await expect(service(repo).update(PATIENT, { FAMILY, PROVIDERS })).rejects.toMatchObject({
       conflicts,
     });
+  });
+
+  // ── mesmo paciente, papel diferente (achado de review, 11/08) ──────────────
+  // `findLinkedElsewhere` só enxerga OUTROS pacientes — mover um chat_id entre
+  // papéis do MESMO paciente sem incluir o papel antigo explicitamente batia
+  // direto na constraint e voltava como "outro paciente" (mensagem falsa).
+
+  it('chat_id já é do MESMO paciente, em papel FORA do body → ChatIdOwnedBySamePatientRoleError', async () => {
+    const repo = repoMock({
+      findById: jest.fn().mockResolvedValue({
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez', chatIds: { FAMILY: PROVIDERS },
+      }),
+    } as never);
+
+    const promise = service(repo).update(PATIENT, { HEALTH_PLAN: PROVIDERS });
+
+    await expect(promise).rejects.toBeInstanceOf(ChatIdOwnedBySamePatientRoleError);
+    await expect(promise).rejects.toMatchObject({
+      conflicts: [{ chatId: PROVIDERS, requestedRole: 'HEALTH_PLAN', currentRole: 'FAMILY' }],
+    });
+    expect(repo.applyChatIds).not.toHaveBeenCalled();
+    // e nem chega a consultar OUTROS pacientes — o conflito já é conhecido.
+    expect(repo.findLinkedElsewhere).not.toHaveBeenCalled();
+  });
+
+  it('MOVER o mesmo grupo incluindo o papel antigo (mesmo que null) NÃO é conflito', async () => {
+    // Esta é a forma explícita de mover: o papel antigo está NO BODY.
+    const repo = repoMock({
+      findById: jest.fn().mockResolvedValue({
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez', chatIds: { FAMILY: PROVIDERS },
+      }),
+    } as never);
+
+    await expect(
+      service(repo).update(PATIENT, { FAMILY: null, HEALTH_PLAN: PROVIDERS }),
+    ).resolves.toBeDefined();
+    expect(repo.applyChatIds).toHaveBeenCalledWith(
+      PATIENT,
+      { FAMILY: null, HEALTH_PLAN: PROVIDERS },
+      expect.any(Map),
+    );
+  });
+
+  it('re-salvar o MESMO chat_id no MESMO papel não é conflito (no-op)', async () => {
+    const repo = repoMock({
+      findById: jest.fn().mockResolvedValue({
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez', chatIds: { FAMILY },
+      }),
+    } as never);
+
+    await expect(service(repo).update(PATIENT, { FAMILY })).resolves.toBeDefined();
   });
 
   it('grupo de OUTRO paciente que não é o pedido não bloqueia', async () => {

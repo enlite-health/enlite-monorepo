@@ -20,6 +20,30 @@ export class ChatIdAlreadyLinkedError extends Error {
 }
 
 /**
+ * O `chat_id` pedido já é DESTE MESMO paciente, só que preso a um papel que o
+ * body não tocou.
+ *
+ * `findLinkedElsewhere` só enxerga OUTROS pacientes (`c.patient_id <> $1`) —
+ * então mover um grupo de um papel para outro, ou reaproveitar um chat_id que
+ * já é seu em outro papel, passava batido pela checagem e ia direto para
+ * `applyChatIds`. Lá o INSERT bate em `patient_chat_ids_one_role_per_chat`
+ * (UNIQUE `patient_id, chat_id`) → 23505 → o catch-all do controller dizia
+ * "já vinculado a OUTRO paciente" — mensagem FALSA (é o mesmo paciente) e sem
+ * pista de como resolver (achado de review, 11/08).
+ */
+export class ChatIdOwnedBySamePatientRoleError extends Error {
+  constructor(
+    public readonly conflicts: { chatId: string; requestedRole: string; currentRole: string }[],
+  ) {
+    super(
+      `Chat id already linked to this same patient under a different role: ` +
+        conflicts.map(c => `${c.chatId} is ${c.currentRole}, requested for ${c.requestedRole}`).join('; '),
+    );
+    this.name = 'ChatIdOwnedBySamePatientRoleError';
+  }
+}
+
+/**
  * O body trouxe papel que não existe no catálogo, ou que está desativado.
  *
  * Erro separado do 400 genérico de schema porque a causa é outra: o formato
@@ -81,6 +105,25 @@ export class PatientChatIdsService {
     const wanted = Object.entries(changes).filter(
       (entry): entry is [string, string] => entry[1] !== null,
     );
+
+    // Mesmo paciente, chat_id já usado num papel FORA do payload — não é
+    // colisão com estranho, é MOVER um grupo sem dizer. `findLinkedElsewhere`
+    // não vê isto (só olha outros pacientes); sem detectar aqui, o INSERT bate
+    // na constraint patient_chat_ids_one_role_per_chat e o erro que sobe é
+    // FALSO ("outro paciente"). Um papel presente no BODY (mesmo que como
+    // `null`) não conta como conflito — é a forma explícita de "mover".
+    const ownConflicts = wanted
+      .map(([role, chatId]) => {
+        const currentRole = Object.entries(patient.chatIds).find(
+          ([r, c]) => c === chatId && r !== role,
+        )?.[0];
+        return currentRole && !(currentRole in changes)
+          ? { chatId, requestedRole: role, currentRole }
+          : null;
+      })
+      .filter((c): c is { chatId: string; requestedRole: string; currentRole: string } => c !== null);
+
+    if (ownConflicts.length > 0) throw new ChatIdOwnedBySamePatientRoleError(ownConflicts);
 
     if (wanted.length > 0) {
       const linked = await this.repo.findLinkedElsewhere(patientId);

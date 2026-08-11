@@ -14,6 +14,7 @@ import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  ChatIdOwnedBySamePatientRoleError,
   UnknownChatRoleError,
 } from '../../application/PatientChatIdsService';
 import {
@@ -220,10 +221,43 @@ export class AdminPatientChatIdsController {
         });
         return;
       }
+      // Mesmo paciente, papel diferente do que o body tocou — mensagem PRÓPRIA
+      // porque "já vinculado a outro paciente" seria FALSO aqui (achado de
+      // review, 11/08). A saída é incluir o papel antigo no MESMO body (`null`
+      // desvincula) para mover o chat_id de propósito.
+      if (err instanceof ChatIdOwnedBySamePatientRoleError) {
+        res.status(409).json({
+          success: false,
+          error:
+            'Chat id already linked to this same patient under a different role; ' +
+            'include the old role explicitly (set it to null) in the same request to move it',
+          code: 'CHAT_ID_OWNED_BY_SAME_PATIENT',
+          details: { conflicts: err.conflicts },
+        });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
-      // 23505 = unique_violation do índice parcial (mesmo papel, migration 260).
-      // Chega aqui quando outra transação gravou entre a checagem e o UPDATE.
+      // 23505 = unique_violation de alguma das 3 constraints da tabela (migration
+      // 261): o índice único parcial (exclusividade entre PACIENTES, migration
+      // 260/261), `patient_chat_ids_one_role_per_chat` (mesmo paciente, chat_id
+      // já em OUTRO papel — o caso do ChatIdOwnedBySamePatientRoleError acima,
+      // só que chegando por uma corrida em vez do check prévio) ou
+      // `patient_chat_ids_one_per_role` (defensivo — o UPSERT em
+      // `applyChatIds` já usa ON CONFLICT (patient_id, role), então esta nunca
+      // deveria disparar por aqui). `err.constraint` (achado de review, 11/08 —
+      // antes este catch tratava QUALQUER 23505 como "outro paciente", inclusive
+      // quando o verdadeiro conflito era com o PRÓPRIO paciente) escolhe a
+      // mensagem certa; sem constraint reconhecida, cai no genérico de sempre.
       if ((err as { code?: string }).code === '23505') {
+        const constraint = (err as { constraint?: string }).constraint;
+        if (constraint === 'patient_chat_ids_one_role_per_chat') {
+          res.status(409).json({
+            success: false,
+            error: 'Chat id already linked to this same patient under a different role',
+            code: 'CHAT_ID_OWNED_BY_SAME_PATIENT',
+          });
+          return;
+        }
         res.status(409).json({
           success: false,
           error: 'Chat id already linked to another patient',

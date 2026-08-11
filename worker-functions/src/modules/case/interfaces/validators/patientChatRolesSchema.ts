@@ -3,6 +3,7 @@ import {
   PATIENT_CHAT_ROLE_PATTERN,
   PATIENT_CHAT_ROLE_MAX_LENGTH,
 } from '../../domain/PatientChatRole';
+import { normalizeForMatch } from '../../application/rankChatCandidates';
 
 const LABEL_MAX_LENGTH = 120;
 
@@ -30,9 +31,21 @@ const roleCode = z
 const label = z.string().trim().min(1).max(LABEL_MAX_LENGTH);
 
 /**
- * Palavras de desempate no nome do grupo. Normalizadas aqui (minúsculas, sem
- * acento) para o ranqueamento poder comparar direto, sem normalizar a cada
- * consulta; e sem duplicata, que só inflaria o array.
+ * Palavras de desempate no nome do grupo. Normalizadas aqui com a MESMA
+ * tokenização de `rankChatCandidates.normalizeForMatch` (minúsculas, sem
+ * acento, sem pontuação, uma palavra por token) para o ranqueamento poder
+ * comparar direto, sem normalizar a cada consulta; e sem duplicata, que só
+ * inflaria o array.
+ *
+ * ⚠️ Até 11/08 (achado de review) isto só fazia `toLowerCase` + tirar acento,
+ * sem separar palavras nem tirar pontuação — uma keyword salva como
+ * "Prestador!" ou "obra social" (uma string com espaço) nunca batia contra
+ * `nameMatchesKeywords`, que compara contra um Set de TOKENS limpos
+ * (`normalizeForMatch(chatName).split(' ')`). O desempate por keyword ficava
+ * silenciosamente morto pra esses casos. `flatMap` + a mesma função de
+ * `rankChatCandidates` tokeniza "obra social" em `['obra', 'social']` — cada
+ * palavra vira um critério de desempate próprio, exatamente como o nome do
+ * grupo é tokenizado do outro lado.
  *
  * ⚠️ Não são PII: são vocabulário da operação ("flia", "equipo"), nunca o nome
  * de um paciente. Quem digitar um nome de pessoa aqui está errando o campo — o
@@ -42,9 +55,7 @@ const matchKeywords = z
   .array(z.string().trim().min(1).max(24))
   .max(20)
   .transform(words => [
-    ...new Set(
-      words.map(w => w.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')),
-    ),
+    ...new Set(words.flatMap(w => normalizeForMatch(w).split(' ').filter(Boolean))),
   ]);
 
 /** POST /api/admin/patient-chat-roles */

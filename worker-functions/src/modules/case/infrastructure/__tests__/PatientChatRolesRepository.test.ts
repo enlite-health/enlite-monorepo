@@ -192,17 +192,189 @@ describe('PatientChatRolesRepository', () => {
     });
   });
 
+  /**
+   * `updateChecked`/`deleteChecked` — fecham a janela TOCTOU achada em review
+   * (11/08): até então TRAVA 1 (`findSharedGroups`) e TRAVA 2 (`countUsage`)
+   * rodavam no `PatientChatRolesService`, numa conexão SEPARADA do `update()`/
+   * `delete()` que de fato escreve (cada um abre o SEU `pool.connect()`).
+   * Estes testes prova que agora tudo roda num client SÓ, dentro de UMA
+   * transação — o mesmo padrão que `PatientChatIdsRepository.applyChatIds` já
+   * usava.
+   */
+  describe('updateChecked / deleteChecked — check e write na MESMA transação', () => {
+    /** Roteia pela FORMA do SQL — mais específico primeiro. */
+    function checkedClientQuery(opts: {
+      current?: unknown;
+      sharedGroups?: unknown[];
+      usageCount?: string;
+      updateRow?: unknown;
+      deleteRowCount?: number;
+    }) {
+      return jest.fn().mockImplementation((sql: string) => {
+        const s = String(sql);
+        if (s.includes('would_be_exclusive')) {
+          return Promise.resolve({ rows: opts.sharedGroups ?? [] });
+        }
+        if (s.includes('FROM patient_chat_ids') && s.includes('COUNT(DISTINCT patient_id)')) {
+          return Promise.resolve({ rows: [{ n: opts.usageCount ?? '0' }] });
+        }
+        if (s.trim().startsWith('SELECT') && s.includes('FROM patient_chat_roles')) {
+          return Promise.resolve({ rows: opts.current ? [opts.current] : [] });
+        }
+        if (s.startsWith('UPDATE patient_chat_roles')) {
+          return Promise.resolve({ rows: opts.updateRow ? [opts.updateRow] : [] });
+        }
+        if (s.startsWith('UPDATE patient_chat_ids')) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (s.startsWith('DELETE FROM patient_chat_roles')) {
+          return Promise.resolve({ rowCount: opts.deleteRowCount ?? 0 });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+    }
+
+    it('updateChecked: sem conflito, TRAVA 1 e o write correm no MESMO client, e grava', async () => {
+      const clientQuery = checkedClientQuery({ current: { ...ROW, isExclusive: false }, sharedGroups: [], updateRow: ROW });
+      const { pool, release } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).updateChecked('HEALTH_PLAN', { isExclusive: true });
+
+      expect(out).toEqual({ outcome: 'updated', role: ROW });
+      const sqls = clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls[0]).toBe('BEGIN');
+      expect(sqls).toContain('COMMIT');
+      expect(sqls.some(s => s.includes('would_be_exclusive'))).toBe(true);
+      expect(sqls.some(s => s.startsWith('UPDATE patient_chat_roles'))).toBe(true);
+      // UMA conexão só: prova de que check e write compartilham o client.
+      expect((pool.connect as jest.Mock)).toHaveBeenCalledTimes(1);
+      expect(release).toHaveBeenCalled();
+    });
+
+    it('updateChecked: TRAVA 1 conflita → ROLLBACK, NUNCA chega a escrever', async () => {
+      const conflicts = [{ chatId: '1@g.us', patientCount: 2 }];
+      const clientQuery = checkedClientQuery({
+        current: { ...ROW, isExclusive: false },
+        sharedGroups: [{ chatId: '1@g.us', patientCount: '2' }],
+      });
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).updateChecked('HEALTH_PLAN', { isExclusive: true });
+
+      expect(out).toEqual({ outcome: 'exclusivity_conflict', conflicts });
+      const sqls = clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls).toContain('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+      expect(sqls.some(s => s.startsWith('UPDATE patient_chat_roles'))).toBe(false);
+    });
+
+    it('updateChecked: TRAVA 2 (desativar em uso) conflita → ROLLBACK, sem escrever', async () => {
+      const clientQuery = checkedClientQuery({ current: { ...ROW, isActive: true }, usageCount: '21' });
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).updateChecked('FAMILY', { isActive: false });
+
+      expect(out).toEqual({ outcome: 'in_use', patientCount: 21 });
+      const sqls = clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls).toContain('ROLLBACK');
+      expect(sqls.some(s => s.startsWith('UPDATE patient_chat_roles'))).toBe(false);
+    });
+
+    it('updateChecked: papel inexistente → not_found, ROLLBACK', async () => {
+      const clientQuery = checkedClientQuery({ current: undefined });
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).updateChecked('NOPE', { labelEs: 'x' });
+
+      expect(out).toEqual({ outcome: 'not_found' });
+      expect(clientQuery.mock.calls.map(([sql]) => String(sql))).toContain('ROLLBACK');
+    });
+
+    it('updateChecked: reativar (isActive:true) nunca consulta countUsage — mesma regra do serviço antigo', async () => {
+      const clientQuery = checkedClientQuery({ current: { ...ROW, isActive: false }, updateRow: ROW });
+      const { pool } = poolWithClient(clientQuery);
+
+      await new PatientChatRolesRepository(pool).updateChecked('FAMILY', { isActive: true });
+
+      const sqls = clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls.some(s => s.includes('COUNT(DISTINCT patient_id)'))).toBe(false);
+    });
+
+    it('deleteChecked: papel EM USO → ROLLBACK, NUNCA chega a apagar', async () => {
+      const clientQuery = checkedClientQuery({ current: ROW, usageCount: '15' });
+      const { pool, release } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).deleteChecked('FAMILY');
+
+      expect(out).toEqual({ outcome: 'in_use', patientCount: 15 });
+      const sqls = clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls).toContain('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+      expect(sqls.some(s => s.startsWith('DELETE FROM patient_chat_roles'))).toBe(false);
+      expect(release).toHaveBeenCalled();
+    });
+
+    it('deleteChecked: livre → apaga no MESMO client, COMMIT', async () => {
+      const clientQuery = checkedClientQuery({ current: ROW, usageCount: '0', deleteRowCount: 1 });
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).deleteChecked('FAMILY');
+
+      expect(out).toEqual({ outcome: 'deleted' });
+      const sqls = clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls[0]).toBe('BEGIN');
+      expect(sqls).toContain('COMMIT');
+      expect(sqls.some(s => s.startsWith('DELETE FROM patient_chat_roles'))).toBe(true);
+    });
+
+    it('deleteChecked: papel inexistente → not_found, ROLLBACK', async () => {
+      const clientQuery = checkedClientQuery({ current: undefined });
+      const { pool } = poolWithClient(clientQuery);
+
+      const out = await new PatientChatRolesRepository(pool).deleteChecked('NOPE');
+
+      expect(out).toEqual({ outcome: 'not_found' });
+      expect(clientQuery.mock.calls.map(([sql]) => String(sql))).toContain('ROLLBACK');
+    });
+  });
+
   describe('countUsage', () => {
-    it('conta PACIENTES distintos e ignora soft-deleted', async () => {
+    it('conta PACIENTES distintos', async () => {
       const query = jest.fn().mockResolvedValue({ rows: [{ n: '21' }] });
       const out = await new PatientChatRolesRepository(poolWith(query)).countUsage('FAMILY');
 
       expect(out).toBe(21);
       expect(typeof out).toBe('number');
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('COUNT(DISTINCT ci.patient_id)');
-      expect(sql).toContain('p.deleted_at IS NULL');
+      expect(sql).toContain('COUNT(DISTINCT patient_id)');
       expect(params).toEqual(['FAMILY']);
+    });
+
+    it('NÃO ignora soft-deleted (achado de review, 11/08)', async () => {
+      // Até 11/08 filtrava `p.deleted_at IS NULL`: um papel usado SÓ por
+      // pacientes já soft-deleted contava 0 e podia ser apagado do catálogo
+      // com linhas de `patient_chat_ids` ainda existindo — não há FK entre
+      // `patient_chat_ids.role` e o catálogo para impedir isso. A migration 263
+      // passou a liberar essas linhas no MOMENTO do soft-delete, mas a contagem
+      // aqui não pode depender disso: tem de contar TODAS as linhas do papel.
+      const query = jest.fn().mockResolvedValue({ rows: [{ n: '0' }] });
+      await new PatientChatRolesRepository(poolWith(query)).countUsage('FAMILY');
+
+      const [sql] = query.mock.calls[0];
+      expect(sql).not.toContain('deleted_at');
+      expect(sql).not.toContain('JOIN patients');
+    });
+
+    it('aceita um client de transação (para rodar dentro do MESMO client de updateChecked/deleteChecked)', async () => {
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [{ n: '3' }] });
+      const client = { query: clientQuery } as unknown as PoolClient;
+      const query = jest.fn(); // não deve ser usada quando um client é passado
+
+      const out = await new PatientChatRolesRepository(poolWith(query)).countUsage('FAMILY', client);
+
+      expect(out).toBe(3);
+      expect(clientQuery).toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
     });
   });
 

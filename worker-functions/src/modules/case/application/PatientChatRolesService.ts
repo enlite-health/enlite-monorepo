@@ -96,36 +96,39 @@ export class PatientChatRolesService {
     return this.repo.create(input);
   }
 
+  /**
+   * Delegado inteiro para `repo.updateChecked`: as duas travas (TRAVA 1
+   * exclusividade, TRAVA 2 uso) e o write rodam na MESMA transação, no mesmo
+   * client — até 11/08 o check rodava numa consulta em conexão SEPARADA do
+   * write (`repo.update` abre a sua própria), o que deixava uma janela real
+   * (TOCTOU) para outro processo inserir um vínculo conflitante entre o check
+   * e a gravação. Aqui o serviço só traduz o `outcome` no erro certo.
+   */
   async update(code: string, input: UpdateChatRoleInput): Promise<PatientChatRoleSpec> {
-    const current = await this.repo.findByCode(code);
-    if (!current) throw new ChatRoleNotFoundError(code);
-
-    // TRAVA 1 — compartilhado → exclusivo
-    if (input.isExclusive === true && !current.isExclusive) {
-      const conflicts = await this.repo.findSharedGroups(code);
-      if (conflicts.length > 0) throw new ChatRoleExclusivityConflictError(code, conflicts);
+    const result = await this.repo.updateChecked(code, input);
+    switch (result.outcome) {
+      case 'not_found':
+        throw new ChatRoleNotFoundError(code);
+      case 'exclusivity_conflict':
+        throw new ChatRoleExclusivityConflictError(code, result.conflicts);
+      case 'in_use':
+        throw new ChatRoleInUseError(code, result.patientCount, 'deactivate');
+      case 'updated':
+        return result.role;
     }
-
-    // TRAVA 2 — desativar papel em uso
-    if (input.isActive === false && current.isActive) {
-      const patientCount = await this.repo.countUsage(code);
-      if (patientCount > 0) throw new ChatRoleInUseError(code, patientCount, 'deactivate');
-    }
-
-    const updated = await this.repo.update(code, input);
-    if (!updated) throw new ChatRoleNotFoundError(code);
-    return updated;
   }
 
+  /** Mesmo espírito de `update()`: check (TRAVA 2) + delete numa transação só. */
   async delete(code: string): Promise<void> {
-    const current = await this.repo.findByCode(code);
-    if (!current) throw new ChatRoleNotFoundError(code);
-
-    const patientCount = await this.repo.countUsage(code);
-    if (patientCount > 0) throw new ChatRoleInUseError(code, patientCount, 'delete');
-
-    const deleted = await this.repo.delete(code);
-    if (!deleted) throw new ChatRoleNotFoundError(code);
+    const result = await this.repo.deleteChecked(code);
+    switch (result.outcome) {
+      case 'not_found':
+        throw new ChatRoleNotFoundError(code);
+      case 'in_use':
+        throw new ChatRoleInUseError(code, result.patientCount, 'delete');
+      case 'deleted':
+        return;
+    }
   }
 
   /** Quantos pacientes usam cada papel — a tela mostra junto, para a pessoa saber o peso antes de mexer. */

@@ -63,24 +63,41 @@ const legacyBody = z
   })
   .strict();
 
+/** Papel interno -> nome do campo que o cliente LEGADO realmente enviou. */
+const LEGACY_FIELD_NAME: Record<string, string> = {
+  FAMILY: 'familyChatId',
+  PROVIDERS: 'providersChatId',
+};
+
 /**
  * Body de PUT /api/admin/patients/:id/chat-ids.
  *
  * Aceita o contrato novo OU o legado e devolve sempre o mapa normalizado.
+ *
+ * ⚠️ O `transform` roda ANTES do `superRefine` — quando chega lá, o mapa já
+ * está normalizado e a informação de qual FORMATO o cliente mandou se perdeu.
+ * Por isso o transform carrega um `isLegacy` junto (achado de review, 11/08):
+ * sem ele, o erro de "mesmo grupo em dois papéis" sempre apontava `path:
+ * [role]` com o código interno maiúsculo (`PROVIDERS`), mesmo quando o cliente
+ * legado mandou `providersChatId` — e um painel antigo que faz
+ * `error.issues[0].path` → destaca campo nunca achava o campo certo.
  */
 export const patientChatIdsSchema = z
   .union([roleBody, legacyBody])
-  .transform((body): PatientChatIdWriteMap => {
+  .transform((body): { map: PatientChatIdWriteMap; isLegacy: boolean } => {
     if ('chatIds' in body) {
       // Chave presente com `undefined` (JSON não produz isso, mas um cliente
       // TypeScript sim) é o mesmo que ausente: não mexe.
-      return Object.fromEntries(
-        Object.entries(body.chatIds).filter(([, v]) => v !== undefined),
-      ) as PatientChatIdWriteMap;
+      return {
+        map: Object.fromEntries(
+          Object.entries(body.chatIds).filter(([, v]) => v !== undefined),
+        ) as PatientChatIdWriteMap,
+        isLegacy: false,
+      };
     }
-    return { FAMILY: body.familyChatId, PROVIDERS: body.providersChatId };
+    return { map: { FAMILY: body.familyChatId, PROVIDERS: body.providersChatId }, isLegacy: true };
   })
-  .superRefine((map, ctx) => {
+  .superRefine(({ map, isLegacy }, ctx) => {
     // O mesmo grupo em dois papéis do MESMO paciente é recusado aqui e também no
     // banco (UNIQUE `patient_chat_ids_one_role_per_chat`, migration 261).
     const seen = new Map<string, string>();
@@ -88,16 +105,18 @@ export const patientChatIdsSchema = z
       if (chatId === null) continue;
       const first = seen.get(chatId);
       if (first) {
+        const path = isLegacy && LEGACY_FIELD_NAME[role] ? [LEGACY_FIELD_NAME[role]] : [role];
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: [role],
+          path,
           message: `o mesmo grupo não pode ser ${first} e ${role} do mesmo paciente`,
         });
         return;
       }
       seen.set(chatId, role);
     }
-  });
+  })
+  .transform(({ map }) => map);
 
 export type PatientChatIdsBody = z.infer<typeof patientChatIdsSchema>;
 

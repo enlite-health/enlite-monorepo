@@ -28,8 +28,61 @@ function spec(over: Partial<PatientChatRoleSpec> & { code: string }): PatientCha
 const FAMILY = spec({ code: 'FAMILY' });
 const PLAN = spec({ code: 'HEALTH_PLAN', isExclusive: false });
 
+/**
+ * `updateChecked`/`deleteChecked` fazem check+write NA MESMA transação (achado
+ * de review, 11/08 — ver PatientChatRolesRepository). Esta função reproduz,
+ * sobre os mocks das leituras individuais, EXATAMENTE as duas travas que a
+ * repository real roda dentro da transação — assim o teste continua provando
+ * a decisão (quando recusa, quando grava) sem reimplementar a repository real
+ * nem testar a repository de dentro do teste do serviço (isso já é coberto em
+ * PatientChatRolesRepository.test.ts).
+ */
+/** Formato mínimo que os dois helpers abaixo precisam — frouxo de propósito, para aceitar qualquer sabor de jest.fn/jest.Mocked. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Callable = (...args: any[]) => any;
+
+function defaultUpdateChecked(repo: {
+  findByCode: Callable;
+  findSharedGroups: Callable;
+  countUsage: Callable;
+  update: Callable;
+}) {
+  return jest.fn().mockImplementation(async (code: string, input: Record<string, unknown>) => {
+    const current = await repo.findByCode(code);
+    if (!current) return { outcome: 'not_found' };
+
+    if (input.isExclusive === true && !current.isExclusive) {
+      const conflicts = await repo.findSharedGroups(code);
+      if (conflicts.length > 0) return { outcome: 'exclusivity_conflict', conflicts };
+    }
+
+    if (input.isActive === false && current.isActive) {
+      const patientCount = await repo.countUsage(code);
+      if (patientCount > 0) return { outcome: 'in_use', patientCount };
+    }
+
+    const role = await repo.update(code, input);
+    if (!role) return { outcome: 'not_found' };
+    return { outcome: 'updated', role };
+  });
+}
+
+function defaultDeleteChecked(repo: { findByCode: Callable; countUsage: Callable; delete: Callable }) {
+  return jest.fn().mockImplementation(async (code: string) => {
+    const current = await repo.findByCode(code);
+    if (!current) return { outcome: 'not_found' };
+
+    const patientCount = await repo.countUsage(code);
+    if (patientCount > 0) return { outcome: 'in_use', patientCount };
+
+    const deleted = await repo.delete(code);
+    if (!deleted) return { outcome: 'not_found' };
+    return { outcome: 'deleted' };
+  });
+}
+
 function repoMock(over: Partial<jest.Mocked<PatientChatRolesRepository>> = {}) {
-  return {
+  const base = {
     listAll: jest.fn().mockResolvedValue([FAMILY, PLAN]),
     listActive: jest.fn().mockResolvedValue([FAMILY, PLAN]),
     findByCode: jest.fn().mockResolvedValue(null),
@@ -39,6 +92,11 @@ function repoMock(over: Partial<jest.Mocked<PatientChatRolesRepository>> = {}) {
     countUsage: jest.fn().mockResolvedValue(0),
     findSharedGroups: jest.fn().mockResolvedValue([]),
     ...over,
+  };
+  return {
+    ...base,
+    updateChecked: over.updateChecked ?? defaultUpdateChecked(base),
+    deleteChecked: over.deleteChecked ?? defaultDeleteChecked(base),
   } as unknown as jest.Mocked<PatientChatRolesRepository>;
 }
 
@@ -225,6 +283,25 @@ describe('PatientChatRolesService', () => {
     });
   });
 
+  describe('update — TOCTOU (achado de review, 11/08)', () => {
+    it('delega em updateChecked — check e write têm de estar na MESMA transação (na infra)', async () => {
+      // Até 11/08 o serviço fazia findByCode → findSharedGroups/countUsage →
+      // update() em CONEXÕES separadas: janela real para outro processo
+      // inserir um conflito entre o check e a escrita. `updateChecked` reúne
+      // as duas coisas num client só (ver PatientChatRolesRepository); aqui só
+      // provamos que o serviço PARIU de chamar o check e o write como passos
+      // distintos e passou a delegar tudo numa chamada única.
+      const repo = repoMock({ findByCode: jest.fn().mockResolvedValue(FAMILY) } as never);
+      await new PatientChatRolesService(repo).update('FAMILY', { labelEs: 'x' });
+
+      // Uma chamada só, com o code e o input crus — nada de o SERVIÇO orquestrar
+      // findByCode/findSharedGroups/countUsage/update em passos separados (isso
+      // agora é responsabilidade da infra, dentro de uma transação).
+      expect(repo.updateChecked).toHaveBeenCalledTimes(1);
+      expect(repo.updateChecked).toHaveBeenCalledWith('FAMILY', { labelEs: 'x' });
+    });
+  });
+
   describe('delete', () => {
     it('apaga papel que ninguém usa', async () => {
       const repo = repoMock({ findByCode: jest.fn().mockResolvedValue(FAMILY) } as never);
@@ -265,6 +342,14 @@ describe('PatientChatRolesService', () => {
       await expect(new PatientChatRolesService(repo).delete('FAMILY')).rejects.toBeInstanceOf(
         ChatRoleNotFoundError,
       );
+    });
+
+    it('delega em deleteChecked — mesma razão do update: check e delete na MESMA transação', async () => {
+      const repo = repoMock({ findByCode: jest.fn().mockResolvedValue(FAMILY) } as never);
+      await new PatientChatRolesService(repo).delete('FAMILY');
+
+      expect(repo.deleteChecked).toHaveBeenCalledTimes(1);
+      expect(repo.deleteChecked).toHaveBeenCalledWith('FAMILY');
     });
   });
 

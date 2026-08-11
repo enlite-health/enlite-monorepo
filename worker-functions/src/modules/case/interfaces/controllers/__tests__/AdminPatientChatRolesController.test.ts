@@ -283,11 +283,52 @@ describe('AdminPatientChatRolesController', () => {
       expect(update).toHaveBeenCalledWith('FAMILY', { matchKeywords: ['familia', 'flia'] });
     });
 
+    it('quebra pontuação E múltiplas palavras — a MESMA tokenização de rankChatCandidates (achado de review, 11/08)', async () => {
+      // Até 11/08 isto só fazia toLowerCase + tirar acento. Uma keyword salva
+      // como "Prestador!" ou "obra social" (uma string com espaço) nunca batia
+      // contra `nameMatchesKeywords`, que compara contra um Set de TOKENS
+      // limpos (`normalizeForMatch(chatName).split(' ')`) — o desempate por
+      // keyword ficava silenciosamente morto pra esses casos.
+      const update = jest.fn().mockResolvedValue(ROLE);
+
+      await build({ update }).update(
+        req({
+          params: { code: 'HEALTH_PLAN' },
+          body: { matchKeywords: ['Prestador!', 'obra social', 'Équipe-médica'] },
+        }),
+        res(),
+      );
+
+      expect(update).toHaveBeenCalledWith('HEALTH_PLAN', {
+        matchKeywords: ['prestador', 'obra', 'social', 'equipe', 'medica'],
+      });
+    });
+
     it('erro inesperado vira 500', async () => {
       const update = jest.fn().mockRejectedValue(new Error('boom'));
       const r = res();
       await build({ update }).update(req({ params: { code: 'FAMILY' }, body: { labelEs: 'x' } }), r);
       expect(r.status).toHaveBeenCalledWith(500);
+    });
+
+    it('23505 (corrida real de exclusividade) vira 409, não 500 (achado de review, 11/08)', async () => {
+      // Diferente do create() na PK: aqui a corrida é entre a checagem da
+      // TRAVA 1 e o UPDATE — outra transação linkou um grupo conflitante no
+      // meio do caminho, e bate no índice único parcial. Antes deste fix o
+      // PATCH era o ÚNICO dos três verbos (create/PATCH/updateChatIds) sem
+      // este tratamento — vazava como 500 genérico.
+      const update = jest.fn().mockRejectedValue(Object.assign(new Error('dup'), { code: '23505' }));
+      const r = res();
+
+      await build({ update }).update(
+        req({ params: { code: 'HEALTH_PLAN' }, body: { isExclusive: true } }),
+        r,
+      );
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'CHAT_ROLE_EXCLUSIVITY_CONFLICT' }),
+      );
     });
   });
 

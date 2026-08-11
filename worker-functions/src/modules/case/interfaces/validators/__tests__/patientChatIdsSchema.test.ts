@@ -154,6 +154,18 @@ describe('patientChatIdsSchema — contrato LEGADO (migration 260)', () => {
     ).toBe(false);
   });
 
+  it('o erro do MESMO grupo aponta o campo LEGADO (providersChatId), não o código interno (achado de review, 11/08)', () => {
+    // Sem isto, um painel antigo que faz error.issues[0].path → destaca campo
+    // nunca acharia o campo certo: o path vinha sempre PROVIDERS (maiúsculo),
+    // que não existe no body legado.
+    const r = patientChatIdsSchema.safeParse({ familyChatId: GROUP_A, providersChatId: GROUP_A });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0].path).toEqual(['providersChatId']);
+      expect(r.error.issues[0].message).toContain('FAMILY');
+    }
+  });
+
   it('legado + campo desconhecido é 400', () => {
     expect(
       patientChatIdsSchema.safeParse({ familyChatId: null, providersChatId: null, foo: 'x' }).success,

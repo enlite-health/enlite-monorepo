@@ -19,6 +19,23 @@ export interface SharedGroupConflict {
   patientCount: number;
 }
 
+/**
+ * O que `updateChecked` devolve — o serviço traduz `outcome` no erro de
+ * domínio certo. A infra não precisa (nem deve) conhecer os tipos de erro do
+ * `PatientChatRolesService`; devolver um resultado tipado mantém a fronteira.
+ */
+export type UpdateCheckedResult =
+  | { outcome: 'not_found' }
+  | { outcome: 'exclusivity_conflict'; conflicts: SharedGroupConflict[] }
+  | { outcome: 'in_use'; patientCount: number }
+  | { outcome: 'updated'; role: PatientChatRoleSpec };
+
+/** O que `deleteChecked` devolve — mesmo espírito de `UpdateCheckedResult`. */
+export type DeleteCheckedResult =
+  | { outcome: 'not_found' }
+  | { outcome: 'in_use'; patientCount: number }
+  | { outcome: 'deleted' };
+
 const SELECT_COLUMNS = `
   code,
   label_es       AS "labelEs",
@@ -60,8 +77,9 @@ export class PatientChatRolesRepository {
     return res.rows;
   }
 
-  async findByCode(code: string): Promise<PatientChatRoleSpec | null> {
-    const res = await this.pool.query<PatientChatRoleSpec>(
+  async findByCode(code: string, client?: PoolClient): Promise<PatientChatRoleSpec | null> {
+    const runner = client ?? this.pool;
+    const res = await runner.query<PatientChatRoleSpec>(
       `SELECT ${SELECT_COLUMNS} FROM patient_chat_roles WHERE code = $1`,
       [code],
     );
@@ -96,50 +114,19 @@ export class PatientChatRolesRepository {
    * trancar sem ninguém saber).
    */
   async update(code: string, input: UpdateChatRoleInput): Promise<PatientChatRoleSpec | null> {
-    const sets: string[] = [];
-    const values: unknown[] = [code];
-    const push = (column: string, value: unknown): void => {
-      values.push(value);
-      sets.push(`${column} = $${values.length}`);
-    };
-
-    if (input.labelEs !== undefined) push('label_es', input.labelEs);
-    if (input.labelPtBr !== undefined) push('label_pt_br', input.labelPtBr);
-    if (input.isExclusive !== undefined) push('is_exclusive', input.isExclusive);
-    if (input.displayOrder !== undefined) push('display_order', input.displayOrder);
-    if (input.isActive !== undefined) push('is_active', input.isActive);
-    if (input.matchKeywords !== undefined) push('match_keywords', input.matchKeywords);
-
+    const { sets, values } = buildUpdateSets(code, input);
     if (sets.length === 0) return this.findByCode(code);
 
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-
-      const res = await client.query<PatientChatRoleSpec>(
-        `UPDATE patient_chat_roles
-            SET ${sets.join(', ')}, updated_at = NOW()
-          WHERE code = $1
-        RETURNING ${SELECT_COLUMNS}`,
-        values,
-      );
-
-      if (res.rows.length === 0) {
+      const role = await this.writeUpdate(code, input, sets, values, client);
+      if (role === null) {
         await client.query('ROLLBACK');
         return null;
       }
-
-      if (input.isExclusive !== undefined) {
-        await client.query(
-          `UPDATE patient_chat_ids
-              SET is_exclusive = $2, updated_at = NOW()
-            WHERE role = $1 AND is_exclusive IS DISTINCT FROM $2`,
-          [code, input.isExclusive],
-        );
-      }
-
       await client.query('COMMIT');
-      return res.rows[0];
+      return role;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -148,20 +135,160 @@ export class PatientChatRolesRepository {
     }
   }
 
+  /**
+   * update() acima faz seu PRÓPRIO BEGIN/COMMIT; até 11/08 as duas travas do
+   * serviço (TRAVA 1 exclusividade, TRAVA 2 uso) rodavam antes disso, numa
+   * consulta em conexão SEPARADA — janela TOCTOU real: outro processo podia
+   * inserir um conflito entre o check e este write (achado de review, 11/08).
+   *
+   * `updateChecked` reúne check + write num client só: abre a transação, roda
+   * as MESMAS duas travas que o serviço rodava, e só então grava — tudo antes
+   * do COMMIT. Devolve um resultado com `outcome` para o serviço decidir qual
+   * erro lançar, sem a infra precisar conhecer os tipos de erro do domínio.
+   */
+  async updateChecked(code: string, input: UpdateChatRoleInput): Promise<UpdateCheckedResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const current = await this.findByCode(code, client);
+      if (!current) {
+        await client.query('ROLLBACK');
+        return { outcome: 'not_found' };
+      }
+
+      // TRAVA 1 — compartilhado → exclusivo
+      if (input.isExclusive === true && !current.isExclusive) {
+        const conflicts = await this.findSharedGroups(code, client);
+        if (conflicts.length > 0) {
+          await client.query('ROLLBACK');
+          return { outcome: 'exclusivity_conflict', conflicts };
+        }
+      }
+
+      // TRAVA 2 — desativar papel em uso
+      if (input.isActive === false && current.isActive) {
+        const patientCount = await this.countUsage(code, client);
+        if (patientCount > 0) {
+          await client.query('ROLLBACK');
+          return { outcome: 'in_use', patientCount };
+        }
+      }
+
+      const { sets, values } = buildUpdateSets(code, input);
+      if (sets.length === 0) {
+        // Body só com campos que não mudam nada gravável (não deveria acontecer
+        // — o schema exige ao menos um campo — mas defensivo: não abre UPDATE vazio).
+        await client.query('COMMIT');
+        return { outcome: 'updated', role: current };
+      }
+
+      const role = await this.writeUpdate(code, input, sets, values, client);
+      if (role === null) {
+        await client.query('ROLLBACK');
+        return { outcome: 'not_found' };
+      }
+      await client.query('COMMIT');
+      return { outcome: 'updated', role };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** O UPDATE em si + a sincronização da coluna derivada, dado um client já em transação. */
+  private async writeUpdate(
+    code: string,
+    input: UpdateChatRoleInput,
+    sets: string[],
+    values: unknown[],
+    client: PoolClient,
+  ): Promise<PatientChatRoleSpec | null> {
+    const res = await client.query<PatientChatRoleSpec>(
+      `UPDATE patient_chat_roles
+          SET ${sets.join(', ')}, updated_at = NOW()
+        WHERE code = $1
+      RETURNING ${SELECT_COLUMNS}`,
+      values,
+    );
+
+    if (res.rows.length === 0) return null;
+
+    if (input.isExclusive !== undefined) {
+      await client.query(
+        `UPDATE patient_chat_ids
+            SET is_exclusive = $2, updated_at = NOW()
+          WHERE role = $1 AND is_exclusive IS DISTINCT FROM $2`,
+        [code, input.isExclusive],
+      );
+    }
+
+    return res.rows[0];
+  }
+
   /** Remove o papel do catálogo. Só é chamado quando `countUsage` deu zero. */
   async delete(code: string): Promise<boolean> {
     const res = await this.pool.query('DELETE FROM patient_chat_roles WHERE code = $1', [code]);
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Quantos PACIENTES (não apagados) usam este papel hoje. */
+  /**
+   * `delete()` acima é uma query só, sem transação — a checagem de uso (TRAVA 2)
+   * rodava antes, em outra conexão: mesma janela TOCTOU de `updateChecked`.
+   * `deleteChecked` reúne check + delete no MESMO client.
+   */
+  async deleteChecked(code: string): Promise<DeleteCheckedResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const current = await this.findByCode(code, client);
+      if (!current) {
+        await client.query('ROLLBACK');
+        return { outcome: 'not_found' };
+      }
+
+      const patientCount = await this.countUsage(code, client);
+      if (patientCount > 0) {
+        await client.query('ROLLBACK');
+        return { outcome: 'in_use', patientCount };
+      }
+
+      const res = await client.query('DELETE FROM patient_chat_roles WHERE code = $1', [code]);
+      if ((res.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        return { outcome: 'not_found' };
+      }
+
+      await client.query('COMMIT');
+      return { outcome: 'deleted' };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Quantos PACIENTES usam este papel hoje — INCLUINDO os soft-deleted.
+   *
+   * ⚠️ Até 11/08 filtrava `p.deleted_at IS NULL` (achado de review): um papel
+   * usado SÓ por pacientes já soft-deleted contava 0 e podia ser apagado do
+   * catálogo com linhas de `patient_chat_ids` ainda existindo (não há FK entre
+   * `patient_chat_ids.role` e este catálogo — nada além desta contagem impedia).
+   * A migration 263 passou a liberar (deletar) as linhas de `patient_chat_ids`
+   * no MOMENTO do soft-delete do paciente — então a contagem certa aqui é
+   * simplesmente TODAS as linhas do papel, sem depender do estado do paciente.
+   */
   async countUsage(code: string, client?: PoolClient): Promise<number> {
     const runner = client ?? this.pool;
     const res = await runner.query<{ n: string }>(
-      `SELECT COUNT(DISTINCT ci.patient_id)::text AS n
-         FROM patient_chat_ids ci
-         JOIN patients p ON p.id = ci.patient_id
-        WHERE ci.role = $1 AND p.deleted_at IS NULL`,
+      `SELECT COUNT(DISTINCT patient_id)::text AS n
+         FROM patient_chat_ids
+        WHERE role = $1`,
       [code],
     );
     return Number(res.rows[0].n);
@@ -176,8 +303,9 @@ export class PatientChatRolesRepository {
    * e "resolver" escolhendo um vencedor sozinho é escolher qual paciente perde
    * o vínculo, o que não é decisão de software.
    */
-  async findSharedGroups(code: string): Promise<SharedGroupConflict[]> {
-    const res = await this.pool.query<{ chatId: string; patientCount: string }>(
+  async findSharedGroups(code: string, client?: PoolClient): Promise<SharedGroupConflict[]> {
+    const runner = client ?? this.pool;
+    const res = await runner.query<{ chatId: string; patientCount: string }>(
       // O índice que esta trava protege (`idx_patient_chat_ids_exclusive_chat`) é
       // GLOBAL sobre chat_id, parcial só em `WHERE is_exclusive` — ele não olha o
       // papel. Filtrar por `role = $1` media a coisa errada: um grupo dividido
@@ -206,4 +334,31 @@ export class PatientChatRolesRepository {
     );
     return res.rows.map(r => ({ chatId: r.chatId, patientCount: Number(r.patientCount) }));
   }
+}
+
+/**
+ * Monta o `SET` do UPDATE só com os campos mandados. Módulo-level (não método)
+ * porque é usada tanto por `update()` quanto por `updateChecked()`, e as duas
+ * precisam do resultado ANTES de decidir se abrem transação — uma função pura
+ * evita duplicar a lista de campos duas vezes.
+ */
+function buildUpdateSets(
+  code: string,
+  input: UpdateChatRoleInput,
+): { sets: string[]; values: unknown[] } {
+  const sets: string[] = [];
+  const values: unknown[] = [code];
+  const push = (column: string, value: unknown): void => {
+    values.push(value);
+    sets.push(`${column} = $${values.length}`);
+  };
+
+  if (input.labelEs !== undefined) push('label_es', input.labelEs);
+  if (input.labelPtBr !== undefined) push('label_pt_br', input.labelPtBr);
+  if (input.isExclusive !== undefined) push('is_exclusive', input.isExclusive);
+  if (input.displayOrder !== undefined) push('display_order', input.displayOrder);
+  if (input.isActive !== undefined) push('is_active', input.isActive);
+  if (input.matchKeywords !== undefined) push('match_keywords', input.matchKeywords);
+
+  return { sets, values };
 }

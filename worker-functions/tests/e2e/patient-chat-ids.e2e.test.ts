@@ -251,6 +251,36 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       // e o grupo volta a estar livre para outro paciente
       await expect(insertLink(patientA, 'FAMILY', GROUP_PLAN)).resolves.toBeDefined();
     });
+
+    it('11b. SOFT-DELETE também libera os vínculos (migration 263, trigger) — o grupo não fica preso PRA SEMPRE', async () => {
+      // Achado de review do PR #205 (11/08): o índice único parcial não olha
+      // patients.deleted_at — sem o trigger da 263, um chat_id preso a um
+      // paciente soft-deleted ficaria ocupando a vaga NO ÍNDICE para sempre,
+      // mesmo já tendo sumido de toda LEITURA (que filtra deleted_at IS NULL).
+      const softDoomed = await seedPatient('Softapagavel', 'Trigger263');
+      await insertLink(softDoomed, 'FAMILY', GROUP_PLAN);
+
+      await pool.query('UPDATE patients SET deleted_at = NOW() WHERE id = $1', [softDoomed]);
+
+      const left = await pool.query('SELECT 1 FROM patient_chat_ids WHERE patient_id = $1', [softDoomed]);
+      expect(left.rowCount).toBe(0);
+      // e o grupo volta a estar livre — inclusive pela API, não só por SQL direto
+      const res = await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { chatIds: { FAMILY: GROUP_PLAN } },
+        authHeaders(staffToken),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it('11c. UPDATE que NÃO muda deleted_at não dispara o trigger (só a transição NULL → valor)', async () => {
+      // Guarda contra falso-positivo: re-salvar deleted_at (ou tocar outra
+      // coluna) num paciente já ativo não pode apagar vínculo nenhum.
+      await insertLink(patientA, 'FAMILY', GROUP_FAMILY);
+      await pool.query('UPDATE patients SET first_name = first_name WHERE id = $1', [patientA]);
+
+      expect(await readChatIds(patientA)).toEqual({ FAMILY: GROUP_FAMILY });
+    });
   });
 
   // ── PUT /chat-ids ──────────────────────────────────────────────────────────
