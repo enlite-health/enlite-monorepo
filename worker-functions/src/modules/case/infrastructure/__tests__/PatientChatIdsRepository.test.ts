@@ -235,6 +235,37 @@ describe('PatientChatIdsRepository', () => {
       expect(release).toHaveBeenCalled();
     });
 
+    it('MOVER grupo entre papéis: o DELETE vem antes do INSERT, nos dois sentidos', async () => {
+      // Regressão achada em review (11/08). `Object.entries` seguia a ordem do
+      // body, então mover um grupo de PROVIDERS para FAMILY numa gravação só
+      // podia rodar o INSERT antes do DELETE que libera o grupo → violação de
+      // `patient_chat_ids_one_role_per_chat` → rollback → 409 "já vinculado a
+      // outro paciente", que é FALSO (é o mesmo paciente) e deixava a correção
+      // impossível pela tela. O sentido inverso passava por acaso.
+      //
+      // Por isso as duas ordens são testadas: o bug era assimétrico, e testar só
+      // uma delas dava verde num código quebrado.
+      for (const changes of [
+        { FAMILY: '7@g.us', PROVIDERS: null },
+        { PROVIDERS: null, FAMILY: '7@g.us' },
+      ] as const) {
+        const clientQuery = transactionalQuery([{ role: 'FAMILY', chatId: '7@g.us' }]);
+        const { pool } = poolWithClient(clientQuery);
+
+        await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { ...changes }, CATALOG);
+
+        const idxDelete = clientQuery.mock.calls.findIndex(([sql]) =>
+          String(sql).startsWith('DELETE FROM patient_chat_ids'),
+        );
+        const idxInsert = clientQuery.mock.calls.findIndex(([sql]) =>
+          String(sql).includes('INSERT INTO patient_chat_ids'),
+        );
+        expect(idxDelete).toBeGreaterThan(-1);
+        expect(idxInsert).toBeGreaterThan(-1);
+        expect(idxDelete).toBeLessThan(idxInsert);
+      }
+    });
+
     it('papel COMPARTILHÁVEL grava is_exclusive=false — a coluna segue o catálogo', async () => {
       // Sem isto o índice parcial trancaria o grupo do plano de saúde no
       // primeiro paciente, e os outros 235 levariam 409 sem ninguém entender.

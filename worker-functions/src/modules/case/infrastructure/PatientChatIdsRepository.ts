@@ -217,14 +217,27 @@ export class PatientChatIdsRepository {
     try {
       await client.query('BEGIN');
 
-      for (const [role, chatId] of Object.entries(changes)) {
-        if (chatId === null) {
-          await client.query('DELETE FROM patient_chat_ids WHERE patient_id = $1 AND role = $2', [
-            patientId,
-            role,
-          ]);
-          continue;
-        }
+      // ORDEM IMPORTA: todos os DELETEs antes de qualquer INSERT.
+      //
+      // `Object.entries` segue a ordem do body, então um upsert podia rodar antes
+      // do delete que libera o grupo. Mover um grupo de PROVIDERS para FAMILY na
+      // mesma gravação (`{FAMILY:'X', PROVIDERS:null}`) violava
+      // `patient_chat_ids_one_role_per_chat` → 23505 → rollback → 409 "já
+      // vinculado a outro paciente", que é FALSO (é o mesmo paciente) e deixava a
+      // correção impossível pela tela. O sentido inverso funcionava por acaso, só
+      // porque o DELETE vinha primeiro na ordem do objeto — assimetria silenciosa.
+      const entries = Object.entries(changes);
+
+      for (const [role, chatId] of entries) {
+        if (chatId !== null) continue;
+        await client.query('DELETE FROM patient_chat_ids WHERE patient_id = $1 AND role = $2', [
+          patientId,
+          role,
+        ]);
+      }
+
+      for (const [role, chatId] of entries) {
+        if (chatId === null) continue;
 
         await client.query(
           `INSERT INTO patient_chat_ids (patient_id, role, chat_id, is_exclusive)

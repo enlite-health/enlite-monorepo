@@ -215,8 +215,27 @@ describe('PatientChatRolesRepository', () => {
       const out = await new PatientChatRolesRepository(poolWith(query)).findSharedGroups('HEALTH_PLAN');
 
       expect(out).toEqual([{ chatId: '1@g.us', patientCount: 3 }]);
-      expect(query.mock.calls[0][0]).toContain('HAVING COUNT(DISTINCT ci.patient_id) > 1');
+      expect(query.mock.calls[0][0]).toContain('HAVING COUNT(DISTINCT patient_id) > 1');
       expect(query.mock.calls[0][0]).toContain('p.deleted_at IS NULL');
+    });
+
+    it('olha ALÉM do papel — o índice que a trava protege é global sobre chat_id', () => {
+      // Regressão achada em review (11/08): a query filtrava `WHERE ci.role = $1`,
+      // mas `idx_patient_chat_ids_exclusive_chat` é global e parcial só em
+      // `is_exclusive`. Um grupo dividido entre DOIS papéis compartilhados de
+      // pacientes diferentes passava na checagem (dentro do papel havia 1 só) e
+      // criava a contagem dupla que esta trava existe para impedir.
+      //
+      // Asserção sobre a FORMA da pergunta, não sobre o texto: o universo tem que
+      // incluir as linhas já exclusivas de qualquer papel.
+      const query = jest.fn().mockResolvedValue({ rows: [] });
+      return new PatientChatRolesRepository(poolWith(query))
+        .findSharedGroups('HEALTH_PLAN')
+        .then(() => {
+          const sql = String(query.mock.calls[0][0]);
+          expect(sql).toContain('ci.is_exclusive');
+          expect(sql).toMatch(/ci\.role\s*=\s*\$1\s+OR\s+ci\.is_exclusive/);
+        });
     });
 
     it('nenhum grupo dividido → lista vazia (a virada pode seguir)', async () => {

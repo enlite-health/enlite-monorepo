@@ -178,13 +178,30 @@ export class PatientChatRolesRepository {
    */
   async findSharedGroups(code: string): Promise<SharedGroupConflict[]> {
     const res = await this.pool.query<{ chatId: string; patientCount: string }>(
-      `SELECT ci.chat_id AS "chatId", COUNT(DISTINCT ci.patient_id)::text AS "patientCount"
-         FROM patient_chat_ids ci
-         JOIN patients p ON p.id = ci.patient_id
-        WHERE ci.role = $1 AND p.deleted_at IS NULL
-        GROUP BY ci.chat_id
-       HAVING COUNT(DISTINCT ci.patient_id) > 1
-        ORDER BY ci.chat_id`,
+      // O índice que esta trava protege (`idx_patient_chat_ids_exclusive_chat`) é
+      // GLOBAL sobre chat_id, parcial só em `WHERE is_exclusive` — ele não olha o
+      // papel. Filtrar por `role = $1` media a coisa errada: um grupo dividido
+      // entre DOIS papéis compartilhados de pacientes diferentes passava na
+      // checagem (dentro do papel havia só 1 paciente), virava exclusivo, e criava
+      // justamente a contagem dupla que esta flag existe para impedir — ou
+      // estourava 23505 na virada seguinte, caindo no 500 genérico em vez do 409
+      // com a contagem.
+      //
+      // A pergunta certa é: depois da virada, que chat_ids ficariam exclusivos em
+      // mais de um paciente? O universo é (linhas deste papel) ∪ (linhas já
+      // exclusivas), porque são essas que o índice parcial passa a enxergar.
+      `WITH would_be_exclusive AS (
+         SELECT ci.chat_id, ci.patient_id
+           FROM patient_chat_ids ci
+           JOIN patients p ON p.id = ci.patient_id
+          WHERE p.deleted_at IS NULL
+            AND (ci.role = $1 OR ci.is_exclusive)
+       )
+       SELECT chat_id AS "chatId", COUNT(DISTINCT patient_id)::text AS "patientCount"
+         FROM would_be_exclusive
+        GROUP BY chat_id
+       HAVING COUNT(DISTINCT patient_id) > 1
+        ORDER BY chat_id`,
       [code],
     );
     return res.rows.map(r => ({ chatId: r.chatId, patientCount: Number(r.patientCount) }));

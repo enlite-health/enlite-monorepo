@@ -41,13 +41,27 @@ export default defineConfig({
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
       dependencies: ['setup'],
-      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts',
+        // Os três specs de chat/papel semeiam chat_ids EXCLUSIVOS com paciente
+        // aleatório e escrevem os mesmos arquivos em e2e/__screenshots__/. Com
+        // fullyParallel, rodar em mais de um projeto faz o segundo levar 409 no
+        // índice único e os dois brigarem pelo mesmo screenshot. São visuais de
+        // tela admin — chromium-admin basta.
+        '**/admin-patient-chat-roles-visual.e2e.ts', '**/admin-patient-chat-ids-roles-visual.e2e.ts',
+        '**/vacancy-enum-i18n-real.e2e.ts'],
     },
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
       dependencies: ['setup'],
-      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts',
+        // Os três specs de chat/papel semeiam chat_ids EXCLUSIVOS com paciente
+        // aleatório e escrevem os mesmos arquivos em e2e/__screenshots__/. Com
+        // fullyParallel, rodar em mais de um projeto faz o segundo levar 409 no
+        // índice único e os dois brigarem pelo mesmo screenshot. São visuais de
+        // tela admin — chromium-admin basta.
+        '**/admin-patient-chat-roles-visual.e2e.ts', '**/admin-patient-chat-ids-roles-visual.e2e.ts',
+        '**/vacancy-enum-i18n-real.e2e.ts'],
     },
 
     // Integration — full-stack tests (real backend + real DB). No Firebase Emulator needed.
