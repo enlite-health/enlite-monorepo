@@ -161,7 +161,11 @@ resource "google_cloud_scheduler_job" "events_sweep_safe" {
 
   http_target {
     http_method = "POST"
-    uri         = "${var.events_api_base_url}/api/internal/events/sweep-safe"
+    # `?limit=20` existe na produção desde antes do import (11/08/2026) e é
+    # deliberado: segura o lote por ciclo. Sem ele o schema cai no default de
+    # 100, triplicando o trabalho de cada execução do cron. Declarado aqui para
+    # o apply não silenciar um ajuste de operação que ninguém pediu para desfazer.
+    uri         = "${var.events_api_base_url}/api/internal/events/sweep-safe?limit=20"
     body        = base64encode("{}")
     headers = {
       "Content-Type"      = "application/json"
@@ -177,7 +181,14 @@ resource "google_logging_metric" "domain_event_delivery_failure" {
   project     = var.project_id
   name        = "domain_event_delivery_failure"
   description = "Outbox/domain_event delivery falhou silenciosamente (publish Pub/Sub falhou OU sem handler). Tripwire do buraco AnaCare 2026-07."
-  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg:\"Pub/Sub publish failed\" OR jsonPayload.msg:\"No handler registered for event\")"
+  # ⚠️ A cláusula `jsonPayload.source="[MirrorWorkerService]:mirrorOne"` é o
+  # conserto de 27/07/2026, quando se descobriu que este alerta era CEGO às
+  # falhas do espelho Ana Care — o nome citava AnaCare, o filtro não pegava.
+  # Ele foi aplicado ao vivo (`gcloud logging metrics update`) e nunca chegou
+  # ao HCL. Como o recurso também não estava no state, o desvio ficou invisível
+  # até o import de 11/08/2026: o `plan` queria REMOVER a cláusula e cegar o
+  # alerta de novo. Mantida aqui para que código e produção digam a mesma coisa.
+  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg:\"Pub/Sub publish failed\" OR jsonPayload.msg:\"No handler registered for event\" OR jsonPayload.source=\"[MirrorWorkerService]:mirrorOne\")"
 
   metric_descriptor {
     metric_kind = "DELTA"
