@@ -464,3 +464,69 @@ describe('AnaCareMirrorProvider.upsert', () => {
     });
   });
 });
+
+// ─── Conflito de unicidade no PATCH (worker JÁ linkado) ──────────────────────
+//
+// Regressão introduzida pelo #196 e medida em produção em 11/08/2026: mandar o
+// telefone em formato NACIONAL colocou o valor no mesmo espaço dos 692 registros
+// já nacionais do AnaCare, e a unicidade deles passou a disparar em PATCH —
+// 9 falhas em 24h. Como o evento não tem retry, o worker parava de sincronizar
+// de vez. O #201 protegeu só o POST.
+
+describe('conflito de unicidade no PATCH (worker já linkado)', () => {
+  function conflictOn(fields: Record<string, string[]>) {
+    return new AnaCareApiError(
+      'PATCH', '/api/v2/agencies/nurses/42/', 400, JSON.stringify(fields),
+    );
+  }
+
+  it('telefone em conflito → reenvia SEM telefone e o resto do cadastro sincroniza', async () => {
+    const client = makeClient();
+    (client.updateNurse as jest.Mock)
+      .mockRejectedValueOnce(conflictOn({ telefono: ['No es posible usar este número de teléfono'] }))
+      .mockResolvedValueOnce(nurseResponse);
+
+    const out = await new AnaCareMirrorProvider(client).upsert(makeRecord(), '42');
+
+    expect(out).toEqual({ externalId: '42' });
+    expect(client.updateNurse).toHaveBeenCalledTimes(2);
+    const [, retryPayload] = (client.updateNurse as jest.Mock).mock.calls[1];
+    expect(retryPayload).not.toHaveProperty('telefono');
+    // o resto continua indo — é o ponto do conserto
+    expect(retryPayload).toHaveProperty('nombre');
+    expect(retryPayload).toHaveProperty('email');
+  });
+
+  it('telefone E email em conflito → tira os dois', async () => {
+    const client = makeClient();
+    (client.updateNurse as jest.Mock)
+      .mockRejectedValueOnce(conflictOn({ telefono: ['x'], email: ['y'] }))
+      .mockResolvedValueOnce(nurseResponse);
+
+    await new AnaCareMirrorProvider(client).upsert(makeRecord(), '42');
+
+    const [, retryPayload] = (client.updateNurse as jest.Mock).mock.calls[1];
+    expect(retryPayload).not.toHaveProperty('telefono');
+    expect(retryPayload).not.toHaveProperty('email');
+    expect(retryPayload).toHaveProperty('nombre');
+  });
+
+  it('400 que NÃO é de unicidade continua propagando — não engolir erro de payload', async () => {
+    const client = makeClient();
+    (client.updateNurse as jest.Mock).mockRejectedValue(
+      conflictOn({ nombre: ['obrigatório'] } as unknown as Record<string, string[]>),
+    );
+
+    await expect(new AnaCareMirrorProvider(client).upsert(makeRecord(), '42')).rejects.toThrow();
+    expect(client.updateNurse).toHaveBeenCalledTimes(1);
+  });
+
+  it('se o retry TAMBÉM falhar, o erro propaga (não mascara falha real)', async () => {
+    const client = makeClient();
+    (client.updateNurse as jest.Mock)
+      .mockRejectedValueOnce(conflictOn({ telefono: ['x'] }))
+      .mockRejectedValueOnce(new Error('HTTP 500'));
+
+    await expect(new AnaCareMirrorProvider(client).upsert(makeRecord(), '42')).rejects.toThrow('HTTP 500');
+  });
+});
