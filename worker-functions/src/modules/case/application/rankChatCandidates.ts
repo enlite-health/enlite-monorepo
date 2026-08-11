@@ -24,6 +24,14 @@ export interface ChatCandidate {
   matchedTerms: string[];
   /** true quando este grupo já está preso a OUTRO paciente. */
   linkedToOtherPatient: boolean;
+  /**
+   * O NOME INTEIRO do paciente aparece contíguo no nome do grupo (ex.: "Maria
+   * Perez" dentro de "Flia Maria Perez") — sinal mais forte que os mesmos
+   * termos espalhados. Critério de DESEMPATE em `rankChatCandidates`, separado
+   * do `score` — ver a nota em `scoreGroupName` sobre por que não é somado ao
+   * score.
+   */
+  contiguousBonus: boolean;
 }
 
 /**
@@ -75,28 +83,45 @@ function matchesTerm(term: string, groupTerms: string[]): boolean {
 
 /**
  * Pontua um nome de grupo contra os termos do nome do paciente.
- * Retorna `score` (0..1) e os termos que bateram.
+ * Retorna `score` (0..1), os termos que bateram, e o bônus de contiguidade.
+ *
+ * ⚠️ Achado de review (11/08): o bônus de nome-inteiro-contíguo (`+0.25`) só
+ * consegue se aplicar quando `base` JÁ é 1 na prática (ver nota abaixo), mas a
+ * versão antiga fazia `Math.min(1, base + bonus)` — travando o resultado em 1
+ * de qualquer forma. O bônus nunca mudava o score final nem o desempate,
+ * apesar do comentário dizer "sinal mais forte": dois grupos com os MESMOS
+ * termos, um contíguo ("Flia Maria Perez") e outro espalhado ("Perez, Maria"),
+ * empatavam em score=1 e o desempate voltava a ser alfabético — exatamente o
+ * problema que este sinal existe para resolver.
+ *
+ * Por que o bônus só se aplica com `base` já em 1: `contiguous` é o nome
+ * INTEIRO do paciente (todos os termos, em ordem, com um espaço). Se essa
+ * string aparece como substring do nome do grupo, cada termo individual
+ * também aparece — então `matchedTerms` bate todos e `base` já é 1. Dado isso,
+ * somar ao score e clampar é matematicamente incapaz de diferenciar: a saída
+ * certa é um critério de DESEMPATE separado, não uma soma pré-clamp — é o que
+ * `contiguousBonus` vira aqui, consumido em `rankChatCandidates`.
  */
 export function scoreGroupName(
   patientTerms: string[],
   groupName: string | null,
-): { score: number; matchedTerms: string[] } {
-  if (patientTerms.length === 0 || !groupName) return { score: 0, matchedTerms: [] };
+): { score: number; matchedTerms: string[]; contiguousBonus: boolean } {
+  if (patientTerms.length === 0 || !groupName) {
+    return { score: 0, matchedTerms: [], contiguousBonus: false };
+  }
 
   const groupTerms = normalizeForMatch(groupName).split(' ').filter(Boolean);
-  if (groupTerms.length === 0) return { score: 0, matchedTerms: [] };
+  if (groupTerms.length === 0) return { score: 0, matchedTerms: [], contiguousBonus: false };
 
   const matchedTerms = patientTerms.filter(t => matchesTerm(t, groupTerms));
-  if (matchedTerms.length === 0) return { score: 0, matchedTerms: [] };
+  if (matchedTerms.length === 0) return { score: 0, matchedTerms: [], contiguousBonus: false };
 
-  const base = matchedTerms.length / patientTerms.length;
+  const score = matchedTerms.length / patientTerms.length;
 
-  // Bônus de nome inteiro contíguo: "Maria Perez" dentro de "Flia Maria Perez"
-  // é sinal mais forte que os mesmos dois termos espalhados. Nunca passa de 1.
   const contiguous = normalizeForMatch(patientTerms.join(' '));
-  const bonus = normalizeForMatch(groupName).includes(contiguous) ? 0.25 : 0;
+  const contiguousBonus = normalizeForMatch(groupName).includes(contiguous);
 
-  return { score: Math.min(1, Number((base + bonus).toFixed(4))), matchedTerms };
+  return { score: Number(score.toFixed(4)), matchedTerms, contiguousBonus };
 }
 
 export interface RankChatCandidatesInput {
@@ -114,8 +139,10 @@ export interface RankChatCandidatesInput {
  * melhores. Grupo com score 0 não entra — devolver a lista inteira de 774
  * grupos "por via das dúvidas" só empurra a decisão errada para o operador.
  *
- * Empate resolvido por nome do grupo (ordem estável e reproduzível), nunca pela
- * ordem em que o Periskope devolveu.
+ * Desempate: 1º `contiguousBonus` (o nome inteiro do paciente aparece contíguo
+ * no nome do grupo — sinal mais forte que os mesmos termos espalhados), depois
+ * nome do grupo (ordem estável e reproduzível), nunca pela ordem em que o
+ * Periskope devolveu.
  */
 export function rankChatCandidates(input: RankChatCandidatesInput): ChatCandidate[] {
   const patientTerms = toMatchTerms(input.patientName);
@@ -123,7 +150,7 @@ export function rankChatCandidates(input: RankChatCandidatesInput): ChatCandidat
 
   return input.groups
     .map(g => {
-      const { score, matchedTerms } = scoreGroupName(patientTerms, g.chatName);
+      const { score, matchedTerms, contiguousBonus } = scoreGroupName(patientTerms, g.chatName);
       return {
         chatId: g.chatId,
         chatName: g.chatName,
@@ -131,11 +158,99 @@ export function rankChatCandidates(input: RankChatCandidatesInput): ChatCandidat
         score,
         matchedTerms,
         linkedToOtherPatient: linked.has(g.chatId),
+        contiguousBonus,
       };
     })
     .filter(c => c.score > 0)
     // `score > 0` só acontece com chatName preenchido (ver scoreGroupName), então
     // `String(...)` aqui é conversão de tipo, não fallback de caso possível.
-    .sort((a, b) => b.score - a.score || String(a.chatName).localeCompare(String(b.chatName)))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        Number(b.contiguousBonus) - Number(a.contiguousBonus) ||
+        String(a.chatName).localeCompare(String(b.chatName)),
+    )
     .slice(0, input.limit);
+}
+
+// ── DESEMPATE POR PAPEL ──────────────────────────────────────────────────────
+//
+// POR QUE EXISTE, com número. Rodando o ranqueamento acima contra o mapeamento
+// manual do Marcel (238 pacientes, gabarito real): o grupo dos PRESTADORES vinha
+// em 1º lugar em 91,8% dos casos, o da FAMÍLIA em só 52,4% — e os dois estavam
+// no top 3 em 100% dos casos, com zero falhas em 253.
+//
+// A causa do 52,4% não é o score: é o EMPATE. "Flia. Perez Maria" e "Equipo
+// Perez Maria" contêm exatamente os mesmos termos do nome do paciente, então
+// ficam com o MESMO score, e o desempate era `localeCompare` do nome do grupo —
+// que põe "Equipo" antes de "Flia" sempre. Era alfabeto decidindo papel.
+//
+// As palavras que distinguem ("flia" × "equipo") são justamente as que a
+// STOPWORDS acima descarta — de propósito, porque elas não distinguem PACIENTE.
+// Agora que o papel existe como conceito, elas voltam a servir, mas para outra
+// pergunta: não "de quem é este grupo?", e sim "de qual PAPEL ele é?".
+//
+// ⚠️ INVARIANTE DELIBERADA: a afinidade só desempata score IGUAL. Ela nunca
+// reordena candidatos de scores diferentes. É o que garante, por construção,
+// que os 100% de "está no top 3" não podem piorar: a multiset de scores em cada
+// posição não muda. Uma afinidade que somasse ao score poderia empurrar um grupo
+// de "flia" alheio para cima do grupo certo do paciente — trocaria um acerto
+// medido por uma esperança.
+
+/** Uma linha do catálogo, no recorte que o desempate usa. */
+export interface RoleMatchSpec {
+  code: string;
+  /** `match_keywords` do catálogo, já normalizadas (minúsculas, sem acento). */
+  matchKeywords: readonly string[];
+}
+
+/** Um termo do nome do grupo bate com alguma palavra do papel? */
+function nameMatchesKeywords(chatName: string | null, keywords: readonly string[]): boolean {
+  if (!chatName || keywords.length === 0) return false;
+  const terms = new Set(normalizeForMatch(chatName).split(' ').filter(Boolean));
+  return keywords.some(k => terms.has(k));
+}
+
+/**
+ * Afinidade de um grupo com um papel: 1 (o nome tem palavra DESTE papel),
+ * -1 (tem palavra de OUTRO papel e nenhuma deste) ou 0 (não diz nada).
+ *
+ * O -1 é o que resolve o caso real: sem ele, o grupo "Equipo Perez" ficaria
+ * empatado em 0 com um grupo de nome neutro na disputa pelo papel FAMILY, e o
+ * alfabeto voltaria a decidir. Com ele, o grupo que se declara de outro papel
+ * desce — sem nunca sair do top 3, porque o score não mudou.
+ */
+export function roleAffinity(
+  chatName: string | null,
+  role: RoleMatchSpec,
+  otherRoles: readonly RoleMatchSpec[],
+): -1 | 0 | 1 {
+  if (nameMatchesKeywords(chatName, role.matchKeywords)) return 1;
+  const claimedByOther = otherRoles.some(
+    other => other.code !== role.code && nameMatchesKeywords(chatName, other.matchKeywords),
+  );
+  return claimedByOther ? -1 : 0;
+}
+
+/**
+ * Reordena candidatos JÁ ranqueados para um papel específico.
+ *
+ * Não recalcula score nenhum: só troca o critério de desempate, de "ordem
+ * alfabética do nome do grupo" para "quem se declara deste papel primeiro, quem
+ * se declara de outro por último". Fora do empate, a ordem é a mesma.
+ */
+export function orderCandidatesForRole(
+  candidates: readonly ChatCandidate[],
+  role: RoleMatchSpec,
+  allRoles: readonly RoleMatchSpec[],
+): ChatCandidate[] {
+  const others = allRoles.filter(r => r.code !== role.code);
+  const affinity = new Map(candidates.map(c => [c.chatId, roleAffinity(c.chatName, role, others)]));
+
+  return [...candidates].sort(
+    (a, b) =>
+      b.score - a.score ||
+      (affinity.get(b.chatId) ?? 0) - (affinity.get(a.chatId) ?? 0) ||
+      String(a.chatName).localeCompare(String(b.chatName)),
+  );
 }

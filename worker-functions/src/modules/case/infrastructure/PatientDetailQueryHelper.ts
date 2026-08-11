@@ -6,6 +6,7 @@ import type {
   PatientAddressDetail,
   PatientProfessionalDetail,
 } from './PatientQueryRepository';
+import { legacyChatIdAliases } from '../domain/PatientChatId';
 import {
   computeAddressAvailability,
   type AddressAvailability,
@@ -40,8 +41,11 @@ const PATIENT_DETAIL_SQL = `
     province,
     zone_neighborhood        AS "zoneNeighborhood",
     country,
-    family_chat_id           AS "familyChatId",
-    providers_chat_id        AS "providersChatId",
+    -- Grupos de WhatsApp por PAPEL (migration 261). Agregados aqui em vez de
+    -- lidos das colunas fixas da 260, que ficaram sem uso até o contract.
+    COALESCE((SELECT jsonb_object_agg(c.role, c.chat_id)
+                FROM patient_chat_ids c
+               WHERE c.patient_id = p.id), '{}'::jsonb) AS "chatIds",
     status,
     needs_attention          AS "needsAttention",
     attention_reasons        AS "attentionReasons",
@@ -226,8 +230,8 @@ export async function fetchPatientDetail(
     province: p.province,
     zoneNeighborhood: p.zoneNeighborhood,
     country: p.country,
-    familyChatId: p.familyChatId,
-    providersChatId: p.providersChatId,
+    chatIds: p.chatIds ?? {},
+    ...legacyChatIdAliases(p.chatIds ?? {}),
     status: p.status,
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],

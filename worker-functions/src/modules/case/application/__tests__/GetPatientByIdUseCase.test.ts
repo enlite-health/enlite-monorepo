@@ -42,6 +42,7 @@ const mockPatient: PatientDetailRow = {
   province: 'Buenos Aires',
   zoneNeighborhood: 'Palermo',
   country: 'AR',
+  chatIds: {},
   familyChatId: null,
   providersChatId: null,
   status: 'ACTIVE',

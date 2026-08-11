@@ -5,6 +5,8 @@
  * JSON.stringify). Consumers parse them with `new Date(value)` if needed.
  */
 
+import type { PatientChatIdMap, PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
+
 export interface PatientResponsibleDetail {
   id: string;
   firstName: string | null;
@@ -71,8 +73,15 @@ export interface PatientDetail {
   sex: string | null; // 'MALE'|'FEMALE'|'INTERSEX'|'UNDISCLOSED'
   phoneWhatsapp: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
+  /**
+   * Grupos de WhatsApp do Periskope por PAPEL (migration 261): papel -> chat_id
+   * (@g.us). Papel ausente = não vinculado. Catálogo em
+   * `@domain/value-objects/patientChatRole`.
+   */
+  chatIds: PatientChatIdMap;
+  /** @deprecated alias de `chatIds.FAMILY`; sai com a migration de contract. */
   familyChatId: string | null;
-  /** chat_id do grupo de WhatsApp dos PRESTADORES no Periskope (@g.us). Migration 260. */
+  /** @deprecated alias de `chatIds.PROVIDERS`; sai com a migration de contract. */
   providersChatId: string | null;
   diagnosis: string | null;
   dependencyLevel: string | null;
@@ -201,11 +210,10 @@ export type PatientSectionPayload =
 
 /**
  * Body de PUT /api/admin/patients/:id/chat-ids — espelha patientChatIdsSchema
- * (backend). Os dois campos são obrigatórios; `null` desvincula.
+ * (backend). `null` DESVINCULA; papel ausente do mapa fica INALTERADO.
  */
 export interface PatientChatIdsPayload {
-  familyChatId: string | null;
-  providersChatId: string | null;
+  chatIds: Record<string, string | null>;
 }
 
 /** Um grupo do Periskope candidato, já pontuado — GET /:id/chat-candidates. */
@@ -222,6 +230,19 @@ export interface PatientChatCandidate {
 
 export interface PatientChatCandidatesResult {
   candidates: PatientChatCandidate[];
+  /**
+   * Papel -> os MESMOS `chatId`s de `candidates`, na ordem daquele papel.
+   *
+   * Só a ORDEM muda entre um papel e outro. Existe porque os dois grupos do
+   * mesmo paciente ("Flia. Perez" e "Equipo Perez") têm score IDÊNTICO, e o
+   * desempate antigo era alfabético — o que punha o grupo dos prestadores em
+   * primeiro nos DOIS seletores. Medido contra o gabarito do Marcel: o grupo da
+   * família em 1º lugar subiu de 52,4% para 71,4%, sem tirar ninguém do top 3.
+   *
+   * Opcional no tipo porque um backend anterior a esta mudança não manda o
+   * campo; a tela cai no ranking global nesse caso.
+   */
+  candidatesByRole?: Record<string, string[]>;
   /** Quantos grupos foram varridos no Periskope. */
   totalGroups: number;
   /**
@@ -230,6 +251,54 @@ export interface PatientChatCandidatesResult {
    * lista foi cortada antes de chegar no grupo do paciente.
    */
   groupListTruncated?: boolean;
+}
+
+/** Uma linha de GET /api/admin/chat-groups — um grupo que a org enxerga. */
+export interface ChatGroupListItem {
+  chatId: string;
+  chatName: string | null;
+  memberCount: number | null;
+  /** De qual número conectado o grupo veio — responde "por que não vejo o meu?". */
+  orgPhone: string | null;
+  /**
+   * Quantos PACIENTES já usam este grupo, em qualquer papel.
+   *
+   * O que significa depende do papel: num COMPARTILHADO (obra social), 40 é o
+   * esperado; num EXCLUSIVO, qualquer número > 0 significa que gravar dará 409.
+   */
+  linkedPatientCount: number;
+}
+
+/** GET /api/admin/chat-groups?search=&limit=&offset= */
+export interface ChatGroupsResult {
+  groups: ChatGroupListItem[];
+  /** Total DEPOIS do filtro de busca. */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  /** A varredura do Periskope parou no limite: a lista está incompleta. */
+  listTruncated: boolean;
+}
+
+/**
+ * GET /api/admin/patient-chat-roles — o catálogo.
+ * `usage` só vem com `?includeInactive=true` (visão de administração).
+ */
+export interface PatientChatRolesResult {
+  roles: PatientChatRoleSpec[];
+  /** Código do papel -> quantos PACIENTES o usam hoje. */
+  usage?: Record<string, number>;
+}
+
+/** Body de POST /api/admin/patient-chat-roles. */
+export interface PatientChatRolePayload {
+  code: string;
+  labelEs: string;
+  labelPtBr: string;
+  isExclusive: boolean;
+  displayOrder: number;
+  matchKeywords: string[];
 }
 
 /** Result of PUT /api/admin/patients/:id/status. */

@@ -88,4 +88,46 @@ describe('createPeriskopeHttpClient', () => {
     process.env.PERISKOPE_PHONE = 'p';
     expect(createPeriskopeHttpClient()).toBeNull();
   });
+
+  // ── escopo por número: LER é da org, ENVIAR é de um número ────────────────
+
+  it('scopeToPhone: false OMITE o x-phone — a leitura é da ORG inteira', () => {
+    // Medido contra a API real em 09/08/2026: com o header, GET /chats devolvia
+    // os grupos de UM número; sem ele, os de todos os números do token. O
+    // fornecedor documenta isso ("omit to return data across all phones").
+    process.env.PERISKOPE_API_KEY = 'k-123';
+    process.env.PERISKOPE_PHONE = '5491176360496';
+
+    createPeriskopeHttpClient(15000, { scopeToPhone: false });
+
+    const cfg = mockedAxios.create.mock.calls[0][0] as { headers: Record<string, string> };
+    expect(cfg.headers).not.toHaveProperty('x-phone');
+    expect(cfg.headers.Authorization).toBe('Bearer k-123');
+  });
+
+  it('sem PERISKOPE_PHONE, a LEITURA ainda funciona', () => {
+    // O número é variável de ENVIO. Exigi-lo para ler transformaria a falta de
+    // uma config de envio numa tela de vinculação vazia, sem erro nenhum.
+    process.env.PERISKOPE_API_KEY = 'k-123';
+    delete process.env.PERISKOPE_PHONE;
+
+    expect(createPeriskopeHttpClient(15000, { scopeToPhone: false })).not.toBeNull();
+  });
+
+  it('sem PERISKOPE_PHONE, o ENVIO continua recusando (null)', () => {
+    // Escopado sem número não tem de qual número mandar — melhor null do que
+    // deixar o fornecedor escolher.
+    process.env.PERISKOPE_API_KEY = 'k-123';
+    delete process.env.PERISKOPE_PHONE;
+
+    expect(createPeriskopeHttpClient()).toBeNull();
+  });
+
+  it('sem API key, nenhum dos dois modos monta cliente', () => {
+    delete process.env.PERISKOPE_API_KEY;
+    process.env.PERISKOPE_PHONE = '549';
+
+    expect(createPeriskopeHttpClient()).toBeNull();
+    expect(createPeriskopeHttpClient(15000, { scopeToPhone: false })).toBeNull();
+  });
 });

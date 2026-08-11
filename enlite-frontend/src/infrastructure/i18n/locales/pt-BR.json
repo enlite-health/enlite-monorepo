@@ -1087,7 +1087,8 @@
       "apiDocs": "API Docs",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
-      "adminSection": "Administração"
+      "adminSection": "Administração",
+      "patientChatRoles": "Papéis de grupos"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3028,13 +3029,11 @@
         },
         "chatIdsCard": {
           "title": "Chat IDs do WhatsApp (Periskope)",
-          "subtitle": "Os dois grupos do paciente. É por eles que a auditoria de informes cruza o Periskope com o nosso banco.",
-          "family": "Grupo da família",
-          "providers": "Grupo dos prestadores",
+          "subtitle": "Os grupos do paciente, um por papel. É por eles que a auditoria de informes cruza o Periskope com o nosso banco.",
           "notLinked": "Não vinculado",
           "link": "Vincular chats",
           "drawerTitle": "Vincular chats do paciente",
-          "drawerHelp": "Busque os grupos no Periskope e diga qual é o da família e qual é o dos prestadores. O sistema ordena por semelhança com o nome do paciente, mas quem escolhe é você.",
+          "drawerHelp": "Busque os grupos no Periskope e diga qual corresponde a cada papel. O sistema ordena por semelhança com o nome do paciente, mas quem escolhe é você.",
           "searchChats": "Buscar chats",
           "candidatesTitle": "Grupos encontrados",
           "noCandidates": "Nenhum grupo parecido com o nome deste paciente.",
@@ -3046,7 +3045,13 @@
           "saveError": "Não foi possível salvar os chat IDs.",
           "save": "Salvar",
           "close": "Fechar",
-          "listTruncated": "Atenção: a lista de grupos do Periskope veio incompleta. Se o grupo que você procura não aparece, ele pode ter ficado de fora — refaça a busca ou avise o time técnico."
+          "listTruncated": "Atenção: a lista de grupos do Periskope veio incompleta. Se o grupo que você procura não aparece, ele pode ter ficado de fora — refaça a busca ou avise o time técnico.",
+          "searchGroupPlaceholder": "Busque o grupo pelo nome (ex.: gestion, DAS)",
+          "searching": "Buscando…",
+          "noGroupsFound": "Nenhum grupo com esse nome. Atenção: só enxergamos os grupos em que algum número nosso está dentro — se o grupo existe mas não aparece, é preciso adicionar o nosso número a ele.",
+          "groupsFound": "{{shown}} de {{total}} grupo(s)",
+          "usedByPatients": "{{count}} paciente(s) usam este grupo",
+          "clear": "Remover"
         }
       }
     },
@@ -3197,6 +3202,52 @@
       "done": "Pronto",
       "slotAvailability_one": "{{start}} - {{end}} ({{count}} vaga disponível)",
       "slotAvailability_other": "{{start}} - {{end}} ({{count}} vagas disponíveis)"
+    },
+    "patientChatRoles": {
+      "title": "Papéis de grupos de WhatsApp",
+      "subtitle": "O catálogo de papéis dos grupos do paciente (família, prestadores, plano de saúde…). Editado aqui, sem deploy nem migration. Mudar um papel muda a política de unicidade de TODOS os pacientes.",
+      "newRole": "Novo papel",
+      "editRole": "Editar papel",
+      "deleteRole": "Apagar papel",
+      "noRoles": "Ainda não há papéis no catálogo.",
+      "code": "Código",
+      "codeHelp": "Em INGLÊS MAIÚSCULO, sem espaço nem acento. Ex.: HEALTH_PLAN.",
+      "codeImmutable": "O código não pode ser trocado: é a chave com que a auditoria cruza os grupos.",
+      "codeInvalid": "Código inválido: só A-Z, dígitos e underscore, começando por letra.",
+      "labelEs": "Rótulo em espanhol",
+      "labelPtBr": "Rótulo em português",
+      "labelsHelp": "Os dois são obrigatórios: o painel é usado na Argentina e no Brasil.",
+      "exclusive": "Exclusivo de um paciente",
+      "exclusiveHelp": "Marcado: um grupo deste papel pertence a NO MÁXIMO um paciente — é a trava que impede a auditoria de contar a mesma conversa duas vezes. Desmarcado: o grupo pode ser compartilhado entre pacientes (caso do grupo por pagador).",
+      "exclusiveWarning": "Este papel é usado por {{count}} paciente(s). Se já houver grupo dividido entre dois, a mudança será recusada com a contagem exata.",
+      "exclusiveYes": "Exclusivo",
+      "exclusiveNo": "Compartilhado",
+      "displayOrder": "Ordem na tela",
+      "matchKeywords": "Palavras do nome do grupo",
+      "matchKeywordsHelp": "Separadas por vírgula. Usadas SÓ para desempatar a ordem dos candidatos (\"flia\" × \"equipo\"), nunca para escolher sozinho.",
+      "usageCount": "{{count}} paciente(s)",
+      "active": "Ativo",
+      "inactive": "Inativo",
+      "activate": "Ativar",
+      "deactivate": "Desativar",
+      "deleteConfirm": "Apagar o papel {{code}}? Ele é usado por {{count}} paciente(s) — se for mais que zero, o servidor vai recusar.",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "saveError": "Não foi possível salvar o papel.",
+      "table": {
+        "code": "Código",
+        "labels": "Rótulos",
+        "exclusive": "Unicidade",
+        "usage": "Em uso",
+        "status": "Status",
+        "actions": "Ações"
+      },
+      "errors": {
+        "CHAT_ROLE_IN_USE": "Não dá: este papel é usado por {{count}} paciente(s). Desvincule esses pacientes primeiro — o sistema não apaga vínculos por você.",
+        "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "Não dá para tornar exclusivo: {{groupCount}} grupo(s) estão hoje divididos entre {{patientCount}} pacientes. Resolva esses casos primeiro — o sistema não escolhe qual paciente perde o vínculo.",
+        "CHAT_ROLE_ALREADY_EXISTS": "Já existe um papel com esse código.",
+        "CHAT_ROLE_NOT_FOUND": "Esse papel não existe (alguém apagou enquanto isso?)."
+      }
     }
   },
   "publicVacancy": {

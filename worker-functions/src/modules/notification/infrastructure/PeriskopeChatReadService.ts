@@ -7,6 +7,18 @@ export interface PeriskopeGroupChat {
   chatId: string;
   chatName: string | null;
   memberCount: number | null;
+  /**
+   * De QUAL número conectado este grupo veio (`5491176360496@c.us`).
+   *
+   * A leitura é da org inteira (ver `scopeToPhone: false`), então um grupo pode
+   * vir de qualquer número. Sobe até a tela porque responde sozinha a pergunta
+   * que a operação faz quando um grupo não aparece: **"o nosso número está
+   * nesse grupo?"** — um grupo em que nenhum número nosso entrou simplesmente
+   * não existe para nós, e isso é membresia de WhatsApp, não bug de software.
+   *
+   * `null` quando a API não informa (contrato defensivo, não caso esperado).
+   */
+  orgPhone: string | null;
 }
 
 export interface GroupChatsResult {
@@ -41,6 +53,7 @@ interface PeriskopeChatsResponse {
     chat_id?: string;
     chat_name?: string | null;
     member_count?: number | null;
+    org_phone?: string | null;
   }>;
 }
 
@@ -80,7 +93,13 @@ export class PeriskopeChatReadService {
   private cache: CacheEntry | null = null;
 
   constructor(http?: AxiosInstance | null, cacheTtlMs?: number) {
-    this.http = http !== undefined ? http : createPeriskopeHttpClient();
+    // `scopeToPhone: false` — a org tem MAIS DE UM número conectado, e um grupo
+    // vinculável pode estar em qualquer um deles. Com o escopo ligado
+    // enxergávamos 774 de 788 grupos, e os 14 que faltavam não apareciam como
+    // erro nenhum: a tela diria "nenhum candidato" para quem tem grupo lá.
+    // Ler é da ORG; enviar é DE UM NÚMERO — por isso só os serviços de envio
+    // continuam escopados.
+    this.http = http !== undefined ? http : createPeriskopeHttpClient(15000, { scopeToPhone: false });
     this.cacheTtlMs = cacheTtlMs ?? readCacheTtlFromEnv();
     if (!this.http) {
       logger.warn({ msg: '[PeriskopeChatReadService] Not configured — chat lookup disabled' });
@@ -130,6 +149,7 @@ export class PeriskopeChatReadService {
             chatId: chat.chat_id,
             chatName: chat.chat_name ?? null,
             memberCount: typeof chat.member_count === 'number' ? chat.member_count : null,
+            orgPhone: typeof chat.org_phone === 'string' ? chat.org_phone : null,
           });
         }
 

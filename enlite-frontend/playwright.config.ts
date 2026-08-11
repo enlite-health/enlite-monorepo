@@ -28,26 +28,40 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['setup'],
-      testIgnore: ['**/integration/**', '**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts', '**/admin-patient-chat-roles-visual.e2e.ts', '**/admin-patient-chat-ids-roles-visual.e2e.ts', '**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts'],
     },
 
     // Chromium-admin — testes admin que fazem login manual (não usam o storageState do worker)
     {
       name: 'chromium-admin',
       use: { ...devices['Desktop Chrome'] },
-      testMatch: ['**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts', '**/kanban-column-collapse.e2e.ts', '**/worker-detail-blocked-encuadre.e2e.ts', '**/prestadores-localidad-filter-visual.e2e.ts', '**/match-modal-select-and-totals.e2e.ts', '**/management-dashboard-visual.e2e.ts', '**/management-dashboard-por-prestador.e2e.ts', '**/management-dashboard-ayuda.e2e.ts', '**/kanban-role-modal.e2e.ts', '**/kanban-schedule-modal.e2e.ts'],
+      testMatch: ['**/admin-chat-group-picker-visual.e2e.ts', '**/admin-patient-chat-roles-visual.e2e.ts', '**/admin-patient-chat-ids-roles-visual.e2e.ts', '**/vacancy-detail-localized-edit.e2e.ts', '**/kanban-card-notes-button.e2e.ts', '**/kanban-card-blocked-notes-button.e2e.ts', '**/vacancy-enum-i18n-real.e2e.ts', '**/kanban-column-collapse.e2e.ts', '**/worker-detail-blocked-encuadre.e2e.ts', '**/prestadores-localidad-filter-visual.e2e.ts', '**/match-modal-select-and-totals.e2e.ts', '**/management-dashboard-visual.e2e.ts', '**/management-dashboard-por-prestador.e2e.ts', '**/management-dashboard-ayuda.e2e.ts', '**/kanban-role-modal.e2e.ts', '**/kanban-schedule-modal.e2e.ts'],
     },
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
       dependencies: ['setup'],
-      testIgnore: ['**/integration/**', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts',
+        // Os três specs de chat/papel semeiam chat_ids EXCLUSIVOS com paciente
+        // aleatório e escrevem os mesmos arquivos em e2e/__screenshots__/. Com
+        // fullyParallel, rodar em mais de um projeto faz o segundo levar 409 no
+        // índice único e os dois brigarem pelo mesmo screenshot. São visuais de
+        // tela admin — chromium-admin basta.
+        '**/admin-patient-chat-roles-visual.e2e.ts', '**/admin-patient-chat-ids-roles-visual.e2e.ts',
+        '**/vacancy-enum-i18n-real.e2e.ts'],
     },
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
       dependencies: ['setup'],
-      testIgnore: ['**/integration/**', '**/vacancy-enum-i18n-real.e2e.ts'],
+      testIgnore: ['**/integration/**', '**/admin-chat-group-picker-visual.e2e.ts',
+        // Os três specs de chat/papel semeiam chat_ids EXCLUSIVOS com paciente
+        // aleatório e escrevem os mesmos arquivos em e2e/__screenshots__/. Com
+        // fullyParallel, rodar em mais de um projeto faz o segundo levar 409 no
+        // índice único e os dois brigarem pelo mesmo screenshot. São visuais de
+        // tela admin — chromium-admin basta.
+        '**/admin-patient-chat-roles-visual.e2e.ts', '**/admin-patient-chat-ids-roles-visual.e2e.ts',
+        '**/vacancy-enum-i18n-real.e2e.ts'],
     },
 
     // Integration — full-stack tests (real backend + real DB). No Firebase Emulator needed.

@@ -93,8 +93,8 @@ describe('PeriskopeChatReadService', () => {
       });
       expect(out).toEqual({
         groups: [
-          { chatId: '120363000000000000@g.us', chatName: 'G0', memberCount: 5 },
-          { chatId: '120363000000000001@g.us', chatName: 'G1', memberCount: 5 },
+          { chatId: '120363000000000000@g.us', chatName: 'G0', memberCount: 5, orgPhone: null },
+          { chatId: '120363000000000001@g.us', chatName: 'G1', memberCount: 5, orgPhone: null },
         ],
         truncated: false,
       });
@@ -159,7 +159,7 @@ describe('PeriskopeChatReadService', () => {
       const out = await new PeriskopeChatReadService(httpWith(get), 0).listGroupChats();
 
       expect(out?.groups).toEqual([
-        { chatId: '120363001234567890@g.us', chatName: 'Flia Perez', memberCount: null },
+        { chatId: '120363001234567890@g.us', chatName: 'Flia Perez', memberCount: null, orgPhone: null },
       ]);
     });
 
@@ -170,8 +170,20 @@ describe('PeriskopeChatReadService', () => {
       const out = await new PeriskopeChatReadService(httpWith(get), 0).listGroupChats();
 
       expect(out?.groups).toEqual([
-        { chatId: '120363004444444444@g.us', chatName: null, memberCount: null },
+        { chatId: '120363004444444444@g.us', chatName: null, memberCount: null, orgPhone: null },
       ]);
+    });
+
+    it('leva o NÚMERO de origem do grupo', async () => {
+      // A leitura é da org inteira, então um grupo pode vir de qualquer número
+      // conectado. Saber de qual é o que responde "por que não vejo o meu?" —
+      // grupo em que nenhum número nosso entrou não existe para nós.
+      const get = pagedGet([[
+        { chat_id: '120363005555555555@g.us', chat_name: 'G', org_phone: '5491127671720@c.us' },
+      ] as never]);
+      const out = await new PeriskopeChatReadService(httpWith(get), 0).listGroupChats();
+
+      expect(out?.groups[0].orgPhone).toBe('5491127671720@c.us');
     });
 
     it('payload sem `chats` e resposta sem body devolvem lista vazia, não null', async () => {

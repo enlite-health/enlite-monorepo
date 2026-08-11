@@ -4,9 +4,12 @@ import {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  ChatIdOwnedBySamePatientRoleError,
+  UnknownChatRoleError,
 } from '../../../application/PatientChatIdsService';
 import { FindPatientChatCandidatesUseCase } from '../../../application/FindPatientChatCandidatesUseCase';
 import { GetPatientChatMapUseCase } from '../../../application/GetPatientChatMapUseCase';
+import { ListChatGroupsUseCase } from '../../../application/ListChatGroupsUseCase';
 
 jest.mock('@shared/logging', () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
@@ -23,6 +26,10 @@ jest.mock('../../../application/FindPatientChatCandidatesUseCase', () => {
 jest.mock('../../../application/GetPatientChatMapUseCase', () => {
   const actual = jest.requireActual('../../../application/GetPatientChatMapUseCase');
   return { ...actual, GetPatientChatMapUseCase: jest.fn().mockImplementation(() => ({})) };
+});
+jest.mock('../../../application/ListChatGroupsUseCase', () => {
+  const actual = jest.requireActual('../../../application/ListChatGroupsUseCase');
+  return { ...actual, ListChatGroupsUseCase: jest.fn().mockImplementation(() => ({})) };
 });
 
 const PATIENT = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -44,6 +51,7 @@ function build(over: {
   update?: jest.Mock;
   execute?: jest.Mock;
   mapExecute?: jest.Mock;
+  groupsExecute?: jest.Mock;
 } = {}) {
   const service = { update: over.update ?? jest.fn() } as unknown as PatientChatIdsService;
   const finder = { execute: over.execute ?? jest.fn() } as unknown as FindPatientChatCandidatesUseCase;
@@ -52,9 +60,14 @@ function build(over: {
       patients: [], total: 0, limit: 500, offset: 0, hasMore: false,
     }),
   } as unknown as GetPatientChatMapUseCase;
+  const listGroups = {
+    execute: over.groupsExecute ?? jest.fn().mockResolvedValue({
+      ok: true, groups: [], total: 0, limit: 50, offset: 0, hasMore: false, listTruncated: false,
+    }),
+  } as unknown as ListChatGroupsUseCase;
   return {
-    controller: new AdminPatientChatIdsController(service, finder, chatMap),
-    service, finder, chatMap,
+    controller: new AdminPatientChatIdsController(service, finder, chatMap, listGroups),
+    service, finder, chatMap, listGroups,
   };
 }
 
@@ -170,23 +183,107 @@ describe('AdminPatientChatIdsController', () => {
   });
 
   describe('PUT chat-ids', () => {
-    const body = { familyChatId: GROUP_A, providersChatId: GROUP_B };
+    const body = { chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_B } };
+    const saved = { FAMILY: GROUP_A, PROVIDERS: GROUP_B };
 
-    it('200 e devolve o par gravado', async () => {
-      const update = jest.fn().mockResolvedValue(body);
+    it('200 com o mapa gravado + os aliases legados derivados', async () => {
+      const update = jest.fn().mockResolvedValue(saved);
       const { controller } = build({ update });
       const r = res();
 
       await controller.updateChatIds(req({ body }), r);
 
-      expect(update).toHaveBeenCalledWith(PATIENT, body);
+      expect(update).toHaveBeenCalledWith(PATIENT, saved);
       expect(r.status).toHaveBeenCalledWith(200);
-      expect(r.json).toHaveBeenCalledWith({ success: true, data: { id: PATIENT, ...body } });
+      expect(r.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          id: PATIENT,
+          chatIds: saved,
+          familyChatId: GROUP_A,
+          providersChatId: GROUP_B,
+        },
+      });
+    });
+
+    it('aceita o body LEGADO { familyChatId, providersChatId } e traduz para papéis', async () => {
+      const update = jest.fn().mockResolvedValue(saved);
+      const { controller } = build({ update });
+      const r = res();
+
+      await controller.updateChatIds(
+        req({ body: { familyChatId: GROUP_A, providersChatId: GROUP_B } }),
+        r,
+      );
+
+      expect(update).toHaveBeenCalledWith(PATIENT, { FAMILY: GROUP_A, PROVIDERS: GROUP_B });
+      expect(r.status).toHaveBeenCalledWith(200);
+    });
+
+    it('papel NOVO do catálogo já atravessa sem mudança de rota', async () => {
+      const update = jest.fn().mockResolvedValue({ HEALTH_PLAN: GROUP_A });
+      const { controller } = build({ update });
+      const r = res();
+
+      await controller.updateChatIds(req({ body: { chatIds: { HEALTH_PLAN: GROUP_A } } }), r);
+
+      expect(update).toHaveBeenCalledWith(PATIENT, { HEALTH_PLAN: GROUP_A });
+      expect(r.status).toHaveBeenCalledWith(200);
+      expect(r.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          id: PATIENT,
+          chatIds: { HEALTH_PLAN: GROUP_A },
+          familyChatId: null,
+          providersChatId: null,
+        },
+      });
+    });
+
+    it('400 UNKNOWN_CHAT_ROLE quando o serviço recusa o papel, com a lista', async () => {
+      // O papel fora do catálogo não é mais barrado pelo schema (o catálogo é
+      // dado, não código): o serviço o recusa depois de ler o banco, e o
+      // controller precisa traduzir isso em 400 com código próprio — senão a
+      // tela mostraria "erro interno" para um caso que tem conserto claro.
+      const update = jest.fn().mockRejectedValue(new UnknownChatRoleError(['NEIGHBOURS']));
+      const { controller } = build({ update });
+      const r = res();
+
+      await controller.updateChatIds(req({ body: { chatIds: { NEIGHBOURS: GROUP_A } } }), r);
+
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(r.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Unknown or inactive chat role',
+        code: 'UNKNOWN_CHAT_ROLE',
+        details: { roles: ['NEIGHBOURS'] },
+      });
+    });
+
+    it('400 para chave de papel FORA DA FORMA — este o schema ainda barra', async () => {
+      const update = jest.fn();
+      const { controller } = build({ update });
+      const r = res();
+      await controller.updateChatIds(req({ body: { chatIds: { 'health plan': GROUP_A } } }), r);
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('400 para o MESMO grupo em dois papéis do mesmo paciente', async () => {
+      const update = jest.fn();
+      const { controller } = build({ update });
+      const r = res();
+      await controller.updateChatIds(
+        req({ body: { chatIds: { FAMILY: GROUP_A, HEALTH_PLAN: GROUP_A } } }),
+        r,
+      );
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('não exige a flag de lookup — gravar é caminho interno', async () => {
       delete process.env.PATIENT_CHAT_LOOKUP_ENABLED;
-      const update = jest.fn().mockResolvedValue(body);
+      const update = jest.fn().mockResolvedValue(saved);
       const { controller } = build({ update });
       const r = res();
       await controller.updateChatIds(req({ body }), r);
@@ -204,7 +301,7 @@ describe('AdminPatientChatIdsController', () => {
       const update = jest.fn();
       const { controller } = build({ update });
       const r = res();
-      await controller.updateChatIds(req({ body: { familyChatId: '549116@c.us', providersChatId: null } }), r);
+      await controller.updateChatIds(req({ body: { chatIds: { FAMILY: '549116@c.us' } } }), r);
       expect(r.status).toHaveBeenCalledWith(400);
       expect(update).not.toHaveBeenCalled();
     });
@@ -219,7 +316,7 @@ describe('AdminPatientChatIdsController', () => {
     });
 
     it('409 CHAT_ID_ALREADY_LINKED com a lista de conflitos', async () => {
-      const conflicts = [{ chatId: GROUP_A, patientId: 'outro', role: 'family' as const }];
+      const conflicts = [{ chatId: GROUP_A, patientId: 'outro', role: 'FAMILY', exclusive: true }];
       const { controller } = build({
         update: jest.fn().mockRejectedValue(new ChatIdAlreadyLinkedError(conflicts)),
       });
@@ -234,8 +331,57 @@ describe('AdminPatientChatIdsController', () => {
       }));
     });
 
-    it('409 também quando a corrida bate no unique_violation (23505) do banco', async () => {
+    it('409 também quando a corrida bate no unique_violation (23505) do banco, SEM constraint reconhecida', async () => {
       const pgErr = Object.assign(new Error('duplicate key'), { code: '23505' });
+      const { controller } = build({ update: jest.fn().mockRejectedValue(pgErr) });
+      const r = res();
+
+      await controller.updateChatIds(req({ body }), r);
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CHAT_ID_ALREADY_LINKED' }));
+    });
+
+    it('409 CHAT_ID_OWNED_BY_SAME_PATIENT quando o mesmo chat_id já é do MESMO paciente noutro papel', async () => {
+      // Achado de review 11/08: sem isto, "mover" um grupo entre papéis sem
+      // incluir o papel antigo no body virava 23505 → mensagem FALSA de "outro
+      // paciente" (é o mesmo).
+      const conflicts = [{ chatId: GROUP_A, requestedRole: 'HEALTH_PLAN', currentRole: 'FAMILY' }];
+      const { controller } = build({
+        update: jest.fn().mockRejectedValue(new ChatIdOwnedBySamePatientRoleError(conflicts)),
+      });
+      const r = res();
+
+      await controller.updateChatIds(req({ body: { chatIds: { HEALTH_PLAN: GROUP_A } } }), r);
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'CHAT_ID_OWNED_BY_SAME_PATIENT',
+        details: { conflicts },
+      }));
+    });
+
+    it('23505 com constraint patient_chat_ids_one_role_per_chat também vira CHAT_ID_OWNED_BY_SAME_PATIENT', async () => {
+      // A mesma corrida do teste acima, só que descoberta pela CONSTRAINT em
+      // vez do check prévio (concorrência real batendo direto no banco).
+      const pgErr = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'patient_chat_ids_one_role_per_chat',
+      });
+      const { controller } = build({ update: jest.fn().mockRejectedValue(pgErr) });
+      const r = res();
+
+      await controller.updateChatIds(req({ body }), r);
+
+      expect(r.status).toHaveBeenCalledWith(409);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CHAT_ID_OWNED_BY_SAME_PATIENT' }));
+    });
+
+    it('23505 com constraint do índice de exclusividade continua CHAT_ID_ALREADY_LINKED', async () => {
+      const pgErr = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'idx_patient_chat_ids_exclusive_chat',
+      });
       const { controller } = build({ update: jest.fn().mockRejectedValue(pgErr) });
       const r = res();
 
@@ -263,7 +409,7 @@ describe('AdminPatientChatIdsController', () => {
   describe('GET chat-map (mapa em massa)', () => {
     const ROW = {
       patientId: PATIENT, clickupTaskId: '86a4d52bf',
-      familyChatId: GROUP_A, providersChatId: GROUP_B,
+      chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_B },
     };
 
     it('200 com o mapa das três pontas', async () => {
@@ -349,5 +495,90 @@ describe('AdminPatientChatIdsController', () => {
 
   it('sem dependências injetadas, instancia os padrões', () => {
     expect(() => new AdminPatientChatIdsController()).not.toThrow();
+  });
+
+  describe('GET /chat-groups — a lista da org', () => {
+    const LOOKUP = process.env.PATIENT_CHAT_LOOKUP_ENABLED;
+    beforeEach(() => { process.env.PATIENT_CHAT_LOOKUP_ENABLED = 'true'; });
+    afterAll(() => { process.env.PATIENT_CHAT_LOOKUP_ENABLED = LOOKUP; });
+
+    it('200 com a página, sem o `ok` interno vazando no payload', async () => {
+      const groupsExecute = jest.fn().mockResolvedValue({
+        ok: true,
+        groups: [{ chatId: GROUP_A, chatName: 'Gestión: EnLite <> DAS', memberCount: 16, orgPhone: 'p@c.us', linkedPatientCount: 40 }],
+        total: 1, limit: 50, offset: 0, hasMore: false, listTruncated: false,
+      });
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req({ query: { search: 'gestion' } }), r);
+
+      expect(groupsExecute).toHaveBeenCalledWith({ search: 'gestion' });
+      expect(r.status).toHaveBeenCalledWith(200);
+      const payload = r.json.mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      expect(payload.data).not.toHaveProperty('ok');
+      expect(payload.data.groups[0].linkedPatientCount).toBe(40);
+    });
+
+    it('passa limit e offset adiante', async () => {
+      const groupsExecute = jest.fn().mockResolvedValue({
+        ok: true, groups: [], total: 0, limit: 10, offset: 20, hasMore: false, listTruncated: false,
+      });
+      const { controller } = build({ groupsExecute });
+
+      await controller.getChatGroups(req({ query: { limit: '10', offset: '20' } }), res());
+
+      expect(groupsExecute).toHaveBeenCalledWith({ limit: 10, offset: 20 });
+    });
+
+    it('503 quando o kill-switch do lookup está desligado', async () => {
+      process.env.PATIENT_CHAT_LOOKUP_ENABLED = 'false';
+      const groupsExecute = jest.fn();
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req(), r);
+
+      expect(r.status).toHaveBeenCalledWith(503);
+      expect(groupsExecute).not.toHaveBeenCalled();
+    });
+
+    it('502 quando o Periskope não responde — não é "achei zero"', async () => {
+      const groupsExecute = jest.fn().mockResolvedValue({ ok: false, reason: 'periskope_unavailable' });
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req(), r);
+
+      expect(r.status).toHaveBeenCalledWith(502);
+      expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PERISKOPE_UNAVAILABLE' }));
+    });
+
+    it.each([
+      ['campo desconhecido', { foo: 'x' }],
+      ['limit fora da faixa', { limit: '9999' }],
+      ['offset negativo', { offset: '-1' }],
+    ])('400 para %s, sem chamar o caso de uso', async (_l, query) => {
+      const groupsExecute = jest.fn();
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req({ query }), r);
+
+      expect(r.status).toHaveBeenCalledWith(400);
+      expect(groupsExecute).not.toHaveBeenCalled();
+    });
+
+    it('erro inesperado vira 500 sem vazar a mensagem interna', async () => {
+      const groupsExecute = jest.fn().mockRejectedValue(new Error('connection terminated'));
+      const { controller } = build({ groupsExecute });
+      const r = res();
+
+      await controller.getChatGroups(req(), r);
+
+      expect(r.status).toHaveBeenCalledWith(500);
+      expect(JSON.stringify(r.json.mock.calls)).not.toContain('connection terminated');
+    });
   });
 });

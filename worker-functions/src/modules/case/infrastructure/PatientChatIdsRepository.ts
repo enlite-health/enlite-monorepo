@@ -1,24 +1,32 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import type { PatientChatIds } from '../domain/PatientChatId';
+import type { PatientChatIdMap, PatientChatIdWriteMap } from '../domain/PatientChatId';
+import { isExclusiveChatRole, type PatientChatRoleCatalog } from '../domain/PatientChatRole';
 
-/** Nome + chat IDs atuais de um paciente. */
-export interface PatientChatIdsRow extends PatientChatIds {
+/** Nome + grupos atuais de um paciente, por papel. */
+export interface PatientChatIdsRow {
   id: string;
   firstName: string | null;
   lastName: string | null;
+  chatIds: PatientChatIdMap;
 }
 
 /** Um chat_id já preso a outro paciente, e em qual papel. */
 export interface ChatIdConflict {
   chatId: string;
   patientId: string;
-  role: 'family' | 'providers';
+  role: string;
+  /**
+   * O papel em que ele está preso lá é exclusivo? Decide se o conflito barra.
+   * Lido da coluna derivada `patient_chat_ids.is_exclusive`, que o catálogo
+   * mantém em dia (PatientChatRolesRepository.update, na mesma transação).
+   */
+  exclusive: boolean;
 }
 
 /**
  * Uma linha do MAPA de três pontas: Postgres (`patientId`) ↔ ClickUp
- * (`clickupTaskId`) ↔ Periskope (os dois `*ChatId`).
+ * (`clickupTaskId`) ↔ Periskope (os grupos, por papel).
  *
  * ⚠️ SÓ IDENTIFICADORES, por construção. Nome, telefone e documento do paciente
  * NUNCA entram aqui — quem consome é uma auditoria de contagem, que não precisa
@@ -27,20 +35,29 @@ export interface ChatIdConflict {
 export interface PatientChatMapRow {
   patientId: string;
   clickupTaskId: string | null;
-  familyChatId: string | null;
-  providersChatId: string | null;
+  /** Papel -> chat_id. Só os papéis vinculados aparecem. */
+  chatIds: PatientChatIdMap;
   /** Só na busca reversa (por chat_id): em qual papel o chat bateu. */
-  matchedRole?: 'family' | 'providers';
+  matchedRole?: string;
 }
 
-/** Recorte do mapa. `linked` = tem pelo menos um dos dois grupos. */
+/** Recorte do mapa. `linked` = tem pelo menos um grupo, em qualquer papel. */
 export type ChatMapFilter = 'linked' | 'unlinked' | 'all';
 
 /**
- * PatientChatIdsRepository — leitura/escrita SÓ das duas colunas de chat_id do
- * paciente (migration 260). Fatia estreita de propósito: a escrita destes dois
- * campos tem regra própria (unicidade cruzada) e não passa pelo
- * `updatePatientSection` genérico.
+ * Agregação SQL dos grupos de um paciente em `{"FAMILY":"...@g.us", ...}`.
+ * Reusada pelo mapa, pela reversa e pelo detalhe do paciente — uma escrita só,
+ * para as três leituras não divergirem.
+ */
+export const PATIENT_CHAT_IDS_JSON_SUBQUERY = `
+  COALESCE((SELECT jsonb_object_agg(c.role, c.chat_id)
+              FROM patient_chat_ids c
+             WHERE c.patient_id = p.id), '{}'::jsonb)`;
+
+/**
+ * PatientChatIdsRepository — leitura/escrita da tabela `patient_chat_ids`
+ * (migration 261). Fatia estreita de propósito: a escrita tem regra própria
+ * (unicidade por papel) e não passa pelo `updatePatientSection` genérico.
  *
  * Nunca decripta PII: `first_name`/`last_name` de paciente são texto puro na
  * tabela (só responsáveis/profissionais são KMS).
@@ -54,47 +71,70 @@ export class PatientChatIdsRepository {
 
   async findById(patientId: string): Promise<PatientChatIdsRow | null> {
     const res = await this.pool.query<PatientChatIdsRow>(
-      `SELECT id,
-              first_name        AS "firstName",
-              last_name         AS "lastName",
-              family_chat_id    AS "familyChatId",
-              providers_chat_id AS "providersChatId"
-         FROM patients
-        WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT p.id,
+              p.first_name AS "firstName",
+              p.last_name  AS "lastName",
+              ${PATIENT_CHAT_IDS_JSON_SUBQUERY} AS "chatIds"
+         FROM patients p
+        WHERE p.id = $1 AND p.deleted_at IS NULL`,
       [patientId],
     );
     return res.rows[0] ?? null;
   }
 
   /**
-   * Todos os chat_ids (dos dois papéis) presos a pacientes DIFERENTES de
-   * `exceptPatientId`. Usado para (a) marcar candidato já tomado na tela e
-   * (b) recusar a gravação antes de bater na constraint.
+   * Todos os grupos presos a pacientes DIFERENTES de `exceptPatientId`. Usado
+   * para (a) marcar candidato já tomado na tela e (b) recusar a gravação antes
+   * de bater na constraint, devolvendo 409 com a lista.
+   *
+   * Paciente soft-deleted fica de fora: o vínculo dele não deve segurar um grupo
+   * que ninguém mais enxerga.
    */
   async findLinkedElsewhere(exceptPatientId: string): Promise<ChatIdConflict[]> {
-    const res = await this.pool.query<{ id: string; family: string | null; providers: string | null }>(
-      `SELECT id, family_chat_id AS family, providers_chat_id AS providers
-         FROM patients
-        WHERE id <> $1
-          AND deleted_at IS NULL
-          AND (family_chat_id IS NOT NULL OR providers_chat_id IS NOT NULL)`,
+    const res = await this.pool.query<ChatIdConflict>(
+      `SELECT c.chat_id AS "chatId", c.patient_id AS "patientId", c.role,
+              c.is_exclusive AS "exclusive"
+         FROM patient_chat_ids c
+         JOIN patients p ON p.id = c.patient_id
+        WHERE c.patient_id <> $1
+          AND p.deleted_at IS NULL`,
       [exceptPatientId],
     );
+    return res.rows;
+  }
 
-    const conflicts: ChatIdConflict[] = [];
-    for (const row of res.rows) {
-      if (row.family) conflicts.push({ chatId: row.family, patientId: row.id, role: 'family' });
-      if (row.providers) conflicts.push({ chatId: row.providers, patientId: row.id, role: 'providers' });
-    }
-    return conflicts;
+  /**
+   * Quantos PACIENTES usam cada um dos `chatIds` pedidos, em qualquer papel.
+   *
+   * Recebe a lista de ids em vez de varrer a tabela inteira porque quem chama é
+   * uma tela com busca: perguntar pelos 775 grupos a cada tecla digitada seria
+   * varrer tudo para exibir 50 linhas.
+   *
+   * Paciente soft-deleted não conta — ele não segura grupo nenhum, pela mesma
+   * razão de `findLinkedElsewhere`.
+   */
+  async countPatientsByChatIds(chatIds: readonly string[]): Promise<Record<string, number>> {
+    if (chatIds.length === 0) return {};
+
+    const res = await this.pool.query<{ chatId: string; n: string }>(
+      `SELECT c.chat_id AS "chatId", COUNT(DISTINCT c.patient_id)::text AS n
+         FROM patient_chat_ids c
+         JOIN patients p ON p.id = c.patient_id
+        WHERE c.chat_id = ANY($1::text[])
+          AND p.deleted_at IS NULL
+        GROUP BY c.chat_id`,
+      [chatIds],
+    );
+    return Object.fromEntries(res.rows.map(r => [r.chatId, Number(r.n)]));
   }
 
   /**
    * MAPA EM MASSA — a ponte de três pontas para a auditoria de informes.
    *
-   * Devolve `patient_id` + `clickup_task_id` + os dois chat IDs de uma vez, para
-   * a base inteira, em vez de obrigar quem consome a iterar paciente a paciente.
-   * `deleted_at IS NULL` sempre. Ordenado por `id` para a paginação ser estável.
+   * Devolve `patient_id` + `clickup_task_id` + os grupos por papel de uma vez,
+   * para a base inteira, em vez de obrigar quem consome a iterar paciente a
+   * paciente. `deleted_at IS NULL` sempre. Ordenado por `id` para a paginação
+   * ser estável.
    *
    * Nenhuma coluna de PII entra no SELECT — a garantia é a lista de colunas
    * abaixo, não a boa vontade de quem chama.
@@ -108,18 +148,17 @@ export class PatientChatIdsRepository {
 
     const [rowsResult, totalResult] = await Promise.all([
       this.pool.query<PatientChatMapRow>(
-        `SELECT id                AS "patientId",
-                clickup_task_id   AS "clickupTaskId",
-                family_chat_id    AS "familyChatId",
-                providers_chat_id AS "providersChatId"
-           FROM patients
-          WHERE deleted_at IS NULL AND ${where}
-          ORDER BY id
+        `SELECT p.id              AS "patientId",
+                p.clickup_task_id AS "clickupTaskId",
+                ${PATIENT_CHAT_IDS_JSON_SUBQUERY} AS "chatIds"
+           FROM patients p
+          WHERE p.deleted_at IS NULL AND ${where}
+          ORDER BY p.id
           LIMIT $1 OFFSET $2`,
         [opts.limit, opts.offset],
       ),
       this.pool.query<{ total: string }>(
-        `SELECT COUNT(*)::text AS total FROM patients WHERE deleted_at IS NULL AND ${where}`,
+        `SELECT COUNT(*)::text AS total FROM patients p WHERE p.deleted_at IS NULL AND ${where}`,
       ),
     ]);
 
@@ -127,46 +166,108 @@ export class PatientChatIdsRepository {
   }
 
   /**
-   * DIREÇÃO REVERSA — de qual paciente é este grupo?
+   * DIREÇÃO REVERSA — de qual paciente é este grupo, e em que papel?
    *
    * É a direção que a auditoria consome de fato: ela parte das conversas do
    * Periskope (que têm `chat_id`) e precisa saber a que paciente cada uma
-   * pertence. Os índices únicos parciais da migration 260
-   * (`idx_patients_family_chat_id_unique` / `..._providers_...`) sustentam isso
-   * sem varredura — e garantem no máximo uma linha por coluna.
+   * pertence. O índice `idx_patient_chat_ids_chat_id` sustenta isso sem
+   * varredura.
    *
-   * Devolve no máximo um resultado por papel; se o mesmo chat_id estiver nos
-   * dois papéis de pacientes diferentes (colisão cruzada, que índice não cobre),
-   * os dois aparecem — mentir sobre isso esconderia justamente a contagem dupla
-   * que essa feature existe para evitar.
+   * Pode devolver MAIS DE UMA linha quando o papel não é exclusivo (ex.: se o
+   * grupo do plano de saúde vier a ser compartilhado). Mentir sobre isso
+   * esconderia justamente a contagem dupla que essa feature existe para evitar.
    */
   async findByChatId(chatId: string): Promise<PatientChatMapRow[]> {
     const result = await this.pool.query<PatientChatMapRow>(
-      `SELECT id                AS "patientId",
-              clickup_task_id   AS "clickupTaskId",
-              family_chat_id    AS "familyChatId",
-              providers_chat_id AS "providersChatId",
-              CASE WHEN family_chat_id = $1 THEN 'family' ELSE 'providers' END AS "matchedRole"
-         FROM patients
-        WHERE deleted_at IS NULL
-          AND (family_chat_id = $1 OR providers_chat_id = $1)
-        ORDER BY id`,
+      `SELECT p.id              AS "patientId",
+              p.clickup_task_id AS "clickupTaskId",
+              m.role            AS "matchedRole",
+              ${PATIENT_CHAT_IDS_JSON_SUBQUERY} AS "chatIds"
+         FROM patient_chat_ids m
+         JOIN patients p ON p.id = m.patient_id
+        WHERE m.chat_id = $1
+          AND p.deleted_at IS NULL
+        ORDER BY p.id, m.role`,
       [chatId],
     );
     return result.rows;
   }
 
-  /** Grava os dois campos. `null` limpa o vínculo. Retorna false se o paciente não existe. */
-  async updateChatIds(patientId: string, chatIds: PatientChatIds): Promise<boolean> {
-    const res = await this.pool.query(
-      `UPDATE patients
-          SET family_chat_id    = $2,
-              providers_chat_id = $3,
-              updated_at        = NOW()
-        WHERE id = $1 AND deleted_at IS NULL`,
-      [patientId, chatIds.familyChatId, chatIds.providersChatId],
-    );
-    return (res.rowCount ?? 0) > 0;
+  /**
+   * Aplica o mapa de escrita, numa transação só.
+   *
+   * Semântica (documentada no domínio): `null` DESVINCULA, papel AUSENTE fica
+   * inalterado. Não é PUT-substitui-tudo de propósito — assim uma versão antiga
+   * do painel, que só conhece FAMILY e PROVIDERS, não apaga o HEALTH_PLAN que
+   * ela nem sabe que existe.
+   *
+   * Devolve o estado final completo, para a resposta nunca ser um palpite do
+   * que "provavelmente" ficou gravado.
+   *
+   * `catalog` entra por parâmetro em vez de ser lido aqui dentro: o serviço já
+   * o carregou para validar os papéis, e ler duas vezes abriria uma janela em
+   * que a validação e a gravação usariam políticas diferentes.
+   */
+  async applyChatIds(
+    patientId: string,
+    changes: PatientChatIdWriteMap,
+    catalog: PatientChatRoleCatalog,
+  ): Promise<PatientChatIdMap> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // ORDEM IMPORTA: todos os DELETEs antes de qualquer INSERT.
+      //
+      // `Object.entries` segue a ordem do body, então um upsert podia rodar antes
+      // do delete que libera o grupo. Mover um grupo de PROVIDERS para FAMILY na
+      // mesma gravação (`{FAMILY:'X', PROVIDERS:null}`) violava
+      // `patient_chat_ids_one_role_per_chat` → 23505 → rollback → 409 "já
+      // vinculado a outro paciente", que é FALSO (é o mesmo paciente) e deixava a
+      // correção impossível pela tela. O sentido inverso funcionava por acaso, só
+      // porque o DELETE vinha primeiro na ordem do objeto — assimetria silenciosa.
+      const entries = Object.entries(changes);
+
+      for (const [role, chatId] of entries) {
+        if (chatId !== null) continue;
+        await client.query('DELETE FROM patient_chat_ids WHERE patient_id = $1 AND role = $2', [
+          patientId,
+          role,
+        ]);
+      }
+
+      for (const [role, chatId] of entries) {
+        if (chatId === null) continue;
+
+        await client.query(
+          `INSERT INTO patient_chat_ids (patient_id, role, chat_id, is_exclusive)
+                VALUES ($1, $2, $3, $4)
+           ON CONFLICT (patient_id, role)
+           DO UPDATE SET chat_id      = EXCLUDED.chat_id,
+                         is_exclusive = EXCLUDED.is_exclusive,
+                         updated_at   = NOW()`,
+          // A exclusividade sai do CATÁLOGO (ponto único). Esta coluna é só a
+          // cópia que o índice parcial consegue enxergar.
+          [patientId, role, chatId, isExclusiveChatRole(catalog, role)],
+        );
+      }
+
+      // `updated_at` do paciente acompanha: a ficha mudou.
+      await client.query('UPDATE patients SET updated_at = NOW() WHERE id = $1', [patientId]);
+
+      const final = await client.query<{ role: string; chatId: string }>(
+        'SELECT role, chat_id AS "chatId" FROM patient_chat_ids WHERE patient_id = $1',
+        [patientId],
+      );
+
+      await client.query('COMMIT');
+      return Object.fromEntries(final.rows.map(r => [r.role, r.chatId]));
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -175,12 +276,13 @@ export class PatientChatIdsRepository {
  * nada aqui vem do usuário, então não há superfície de injeção.
  */
 function chatMapWhere(filter: ChatMapFilter): string {
+  const HAS_ANY = 'EXISTS (SELECT 1 FROM patient_chat_ids c WHERE c.patient_id = p.id)';
   switch (filter) {
     case 'linked':
-      return '(family_chat_id IS NOT NULL OR providers_chat_id IS NOT NULL)';
+      return HAS_ANY;
     case 'unlinked':
-      // A fila de trabalho do backfill: quem ainda não tem NENHUM dos dois.
-      return '(family_chat_id IS NULL AND providers_chat_id IS NULL)';
+      // A fila de trabalho do backfill: quem ainda não tem NENHUM grupo.
+      return `NOT ${HAS_ANY}`;
     case 'all':
       return 'TRUE';
   }

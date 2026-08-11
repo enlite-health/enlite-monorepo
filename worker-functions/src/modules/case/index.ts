@@ -25,12 +25,22 @@ export { PATIENT_STATUSES, isPatientStatus } from './domain/enums/PatientStatus'
 
 // Domain types
 export type { PatientIdentity } from './domain/PatientIdentity';
-export type { PatientChatIds } from './domain/PatientChatId';
+export type { PatientChatIdMap, PatientChatIdWriteMap } from './domain/PatientChatId';
 export {
   GROUP_CHAT_ID_PATTERN,
   CHAT_ID_MAX_LENGTH,
   isGroupChatId,
+  legacyChatIdAliases,
 } from './domain/PatientChatId';
+export type { PatientChatRoleSpec, PatientChatRoleCatalog } from './domain/PatientChatRole';
+export {
+  PATIENT_CHAT_ROLE_PATTERN,
+  PATIENT_CHAT_ROLE_MAX_LENGTH,
+  isPatientChatRoleCode,
+  isExclusiveChatRole,
+  toRoleCatalog,
+  chatRoleLabel,
+} from './domain/PatientChatRole';
 export type { PatientClinical } from './domain/PatientClinical';
 export type {
   PatientResponsible,
@@ -50,14 +60,29 @@ export {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
   ChatIdAlreadyLinkedError,
+  UnknownChatRoleError,
 } from './application/PatientChatIdsService';
+export {
+  PatientChatRolesService,
+  ChatRoleNotFoundError,
+  ChatRoleAlreadyExistsError,
+  ChatRoleInUseError,
+  ChatRoleExclusivityConflictError,
+} from './application/PatientChatRolesService';
 export {
   FindPatientChatCandidatesUseCase,
   DEFAULT_CANDIDATE_LIMIT,
 } from './application/FindPatientChatCandidatesUseCase';
 export type { FindPatientChatCandidatesOutput } from './application/FindPatientChatCandidatesUseCase';
-export { rankChatCandidates, scoreGroupName, toMatchTerms, normalizeForMatch } from './application/rankChatCandidates';
-export type { ChatCandidate } from './application/rankChatCandidates';
+export {
+  rankChatCandidates,
+  scoreGroupName,
+  toMatchTerms,
+  normalizeForMatch,
+  roleAffinity,
+  orderCandidatesForRole,
+} from './application/rankChatCandidates';
+export type { ChatCandidate, RoleMatchSpec } from './application/rankChatCandidates';
 export {
   GetPatientChatMapUseCase,
   DEFAULT_CHAT_MAP_LIMIT,
@@ -67,6 +92,16 @@ export type {
   GetPatientChatMapInput,
   GetPatientChatMapResult,
 } from './application/GetPatientChatMapUseCase';
+export {
+  ListChatGroupsUseCase,
+  DEFAULT_GROUP_PAGE_SIZE,
+  MAX_GROUP_PAGE_SIZE,
+} from './application/ListChatGroupsUseCase';
+export type {
+  ChatGroupListItem,
+  ListChatGroupsInput,
+  ListChatGroupsOutput,
+} from './application/ListChatGroupsUseCase';
 export { GetPatientByIdUseCase } from './application/GetPatientByIdUseCase';
 export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
@@ -90,6 +125,12 @@ export type {
   PatientChatMapRow,
   ChatMapFilter,
 } from './infrastructure/PatientChatIdsRepository';
+export { PatientChatRolesRepository } from './infrastructure/PatientChatRolesRepository';
+export type {
+  CreateChatRoleInput,
+  UpdateChatRoleInput,
+  SharedGroupConflict,
+} from './infrastructure/PatientChatRolesRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
 export type {
@@ -104,7 +145,14 @@ export type {
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
-export { patientChatIdsSchema, patientChatMapQuerySchema } from './interfaces/validators/patientChatIdsSchema';
+export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
+export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';
+export {
+  createPatientChatRoleSchema,
+  updatePatientChatRoleSchema,
+  patientChatRoleParamsSchema,
+  listPatientChatRolesQuerySchema,
+} from './interfaces/validators/patientChatRolesSchema';
 export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
 

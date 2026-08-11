@@ -19,7 +19,11 @@ import type {
   PatientFunnelData,
   PatientChatIdsPayload,
   PatientChatCandidatesResult,
+  PatientChatRolesResult,
+  PatientChatRolePayload,
+  ChatGroupsResult,
 } from '@domain/entities/PatientDetail';
+import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 
 /**
  * Error thrown by the pipeline mutations (section edit / status / activate) that
@@ -28,10 +32,27 @@ import type {
  */
 export class PatientApiError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) {
+  /**
+   * O `code` do corpo do erro (ex.: `CHAT_ROLE_IN_USE`), quando o backend manda.
+   *
+   * Existe para a tela poder TRADUZIR a recusa em vez de repetir a frase em
+   * inglês do servidor: o painel é operado em es-AR e pt-BR. O `details` traz o
+   * número (quantos pacientes, quantos grupos) — que é o que decide o que a
+   * pessoa faz em seguida, e por isso não pode se perder na tradução.
+   */
+  readonly code?: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(
+    message: string,
+    status: number,
+    body?: { code?: string; details?: Record<string, unknown> },
+  ) {
     super(message);
     this.name = 'PatientApiError';
     this.status = status;
+    this.code = body?.code;
+    this.details = body?.details;
   }
 }
 
@@ -169,7 +190,8 @@ export class AdminPatientsApiServiceClass {
     }
     const json: ApiResponse<T> = await response.json();
     if (!json.success) {
-      throw new PatientApiError((json as ApiErrorResponse).error || `HTTP ${response.status}`, response.status);
+      const err = json as ApiErrorResponse & { code?: string; details?: Record<string, unknown> };
+      throw new PatientApiError(err.error || `HTTP ${response.status}`, response.status, err);
     }
     return (json as ApiSuccessResponse<T>).data;
   }
@@ -195,7 +217,10 @@ export class AdminPatientsApiServiceClass {
     );
   }
 
-  /** PUT /api/admin/patients/:id/chat-ids — vincula os 2 grupos ao paciente. */
+  /**
+   * PUT /api/admin/patients/:id/chat-ids — vincula os grupos ao paciente, por
+   * papel. `null` desvincula; papel ausente do mapa fica inalterado.
+   */
   async updatePatientChatIds(
     id: string,
     payload: PatientChatIdsPayload,
@@ -203,6 +228,85 @@ export class AdminPatientsApiServiceClass {
     return this.writeJson<PatientChatIdsPayload & { id: string }>(
       'PUT', `/api/admin/patients/${id}/chat-ids`, payload,
     );
+  }
+
+  /**
+   * GET /api/admin/chat-groups — TODOS os grupos que a org enxerga, com busca.
+   *
+   * NÃO é escopado a paciente: responde "qual é o grupo da obra social?", que o
+   * `/chat-candidates` não pode responder — lá o ranqueamento é por semelhança
+   * com o nome do paciente, e o grupo do pagador não se parece com paciente
+   * nenhum, então nunca aparecia.
+   */
+  async listChatGroups(params: { search?: string; limit?: number; offset?: number } = {}): Promise<ChatGroupsResult> {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return this.writeJson<ChatGroupsResult>('GET', `/api/admin/chat-groups${suffix}`);
+  }
+
+  // ── CATÁLOGO de papéis (migration 262) ────────────────────────────────────
+  // Leitura é staff; escrita é ADMIN (403 do backend para quem não é).
+
+  /**
+   * GET /api/admin/patient-chat-roles — o catálogo.
+   *
+   * `includeInactive` é a visão da tela de ADMINISTRAÇÃO: traz também os
+   * desativados e o `usage` (quantos pacientes usam cada papel), que é o número
+   * que a pessoa precisa ver ANTES de desativar ou apagar. A ficha do paciente
+   * chama sem ele — não tem o que fazer com a contagem, e ela custa uma query
+   * por papel no backend.
+   */
+  async listPatientChatRoles(includeInactive = false): Promise<PatientChatRolesResult> {
+    const qs = includeInactive ? '?includeInactive=true' : '';
+    return this.writeJson<PatientChatRolesResult>('GET', `/api/admin/patient-chat-roles${qs}`);
+  }
+
+  /** POST /api/admin/patient-chat-roles (ADMIN). */
+  async createPatientChatRole(payload: PatientChatRolePayload): Promise<PatientChatRoleSpec> {
+    return this.writeJson<PatientChatRoleSpec>('POST', '/api/admin/patient-chat-roles', payload);
+  }
+
+  /**
+   * PATCH /api/admin/patient-chat-roles/:code (ADMIN).
+   * Campo ausente fica inalterado. `code` não é editável.
+   */
+  async updatePatientChatRole(
+    code: string,
+    payload: Partial<Omit<PatientChatRolePayload, 'code'>> & { isActive?: boolean },
+  ): Promise<PatientChatRoleSpec> {
+    return this.writeJson<PatientChatRoleSpec>(
+      'PATCH', `/api/admin/patient-chat-roles/${encodeURIComponent(code)}`, payload,
+    );
+  }
+
+  /**
+   * DELETE /api/admin/patient-chat-roles/:code (ADMIN).
+   *
+   * Não passa pelo `writeJson`: a resposta de sucesso é 204 SEM CORPO, e aquele
+   * helper exige `content-type: application/json` — usá-lo aqui transformaria
+   * todo sucesso em erro de conexão. O caminho de ERRO continua vindo em JSON
+   * (409 CHAT_ROLE_IN_USE com a contagem), e é ele que precisa chegar na tela.
+   */
+  async deletePatientChatRole(code: string): Promise<void> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${this.baseURL}/api/admin/patient-chat-roles/${encodeURIComponent(code)}`,
+      { method: 'DELETE', headers },
+    );
+    if (response.status === 204) return;
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new PatientApiError(`Erro ao conectar ao servidor (HTTP ${response.status})`, response.status);
+    }
+    const json = (await response.json()) as ApiErrorResponse & {
+      code?: string;
+      details?: Record<string, unknown>;
+    };
+    throw new PatientApiError(json.error || `HTTP ${response.status}`, response.status, json);
   }
 
   /** PUT /api/admin/patients/:id/status — kanban lifecycle move. */

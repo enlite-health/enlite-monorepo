@@ -1,13 +1,15 @@
 /**
  * patient-chat-ids.e2e.test.ts
  *
- * E2E das duas tasks de Chat ID do paciente (ClickUp 86ajy0859 / 86ajy085a):
+ * E2E dos Chat IDs do paciente POR PAPEL (ClickUp 86ajy1jhz; antes 86ajy0859 /
+ * 86ajy085a):
  *
- *   PUT /api/admin/patients/:id/chat-ids          — grava o par família/prestadores
- *   GET /api/admin/patients/:id                   — devolve o par gravado
+ *   PUT /api/admin/patients/:id/chat-ids          — grava N papéis
+ *   GET /api/admin/patients/:id                   — devolve o mapa gravado
  *   GET /api/admin/patients/:id/chat-candidates   — grupos ranqueados
+ *   GET /api/admin/patients/chat-map              — o mapa em massa (zero PII)
  *
- * SEM MOCK: Postgres real (migration 260 aplicada pelo runner do container) e a
+ * SEM MOCK: Postgres real (migration 261 aplicada pelo runner do container) e a
  * nossa API real via HTTP. As constraints da migration são exercidas por SQL
  * direto — é o tipo de invariante que unit com pool falso nunca pega.
  *
@@ -44,6 +46,7 @@ const STUB_PORT = Number(process.env.PERISKOPE_STUB_PORT ?? 9911);
 const GROUP_FAMILY = '120363090000000001@g.us';
 const GROUP_PROVIDERS = '120363090000000002@g.us';
 const GROUP_OTHER = '5491190000000-1600000009@g.us';
+const GROUP_PLAN = '120363090000000003@g.us';
 const CHAT_ONE_TO_ONE = '5491162180721@c.us';
 
 const STUB_CHATS: StubChat[] = [
@@ -88,12 +91,21 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
     return id;
   }
 
-  async function readChatIds(id: string) {
-    const r = await pool.query<{ family: string | null; providers: string | null }>(
-      'SELECT family_chat_id AS family, providers_chat_id AS providers FROM patients WHERE id = $1',
+  /** O que está DE FATO no banco, lido da tabela de vínculos. */
+  async function readChatIds(id: string): Promise<Record<string, string>> {
+    const r = await pool.query<{ role: string; chat_id: string }>(
+      'SELECT role, chat_id FROM patient_chat_ids WHERE patient_id = $1 ORDER BY role',
       [id],
     );
-    return r.rows[0];
+    return Object.fromEntries(r.rows.map(row => [row.role, row.chat_id]));
+  }
+
+  /** Grava direto no banco, pulando a API — para exercitar as constraints. */
+  function insertLink(patientId: string, role: string, chatId: string, exclusive = true) {
+    return pool.query(
+      'INSERT INTO patient_chat_ids (patient_id, role, chat_id, is_exclusive) VALUES ($1,$2,$3,$4)',
+      [patientId, role, chatId, exclusive],
+    );
   }
 
   beforeAll(async () => {
@@ -121,205 +133,342 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
   });
 
   beforeEach(async () => {
-    await pool.query(
-      'UPDATE patients SET family_chat_id = NULL, providers_chat_id = NULL WHERE id = ANY($1::uuid[])',
-      [insertedIds],
-    );
+    await pool.query('DELETE FROM patient_chat_ids WHERE patient_id = ANY($1::uuid[])', [insertedIds]);
   });
 
-  // ── Migration 260: as constraints mordem no banco real ─────────────────────
+  // ── Migration 261: as constraints mordem no banco real ─────────────────────
 
-  describe('constraints da migration 260 (SQL direto)', () => {
-    it('1. colunas existem com o tipo e a nulidade esperados', async () => {
+  describe('constraints da migration 261 (SQL direto)', () => {
+    it('1. a tabela existe com as colunas e a nulidade esperadas', async () => {
       const r = await pool.query(
         `SELECT column_name, data_type, character_maximum_length, is_nullable
            FROM information_schema.columns
+          WHERE table_name = 'patient_chat_ids'
+            AND column_name IN ('patient_id','role','chat_id','is_exclusive')
+          ORDER BY column_name`,
+      );
+      expect(r.rows).toEqual([
+        { column_name: 'chat_id', data_type: 'character varying', character_maximum_length: 64, is_nullable: 'NO' },
+        { column_name: 'is_exclusive', data_type: 'boolean', character_maximum_length: null, is_nullable: 'NO' },
+        { column_name: 'patient_id', data_type: 'uuid', character_maximum_length: null, is_nullable: 'NO' },
+        { column_name: 'role', data_type: 'character varying', character_maximum_length: 32, is_nullable: 'NO' },
+      ]);
+    });
+
+    it('2. CHECK recusa conversa 1-1 (@c.us) em qualquer papel', async () => {
+      for (const role of ['FAMILY', 'PROVIDERS', 'HEALTH_PLAN']) {
+        await expect(insertLink(patientA, role, CHAT_ONE_TO_ONE)).rejects.toMatchObject({
+          code: '23514', constraint: 'patient_chat_ids_is_group',
+        });
+      }
+    });
+
+    it('3. CHECK recusa papel fora da FORMA de enum (minúsculo, espaço, hífen)', async () => {
+      for (const bad of ['family', 'HEALTH PLAN', 'HEALTH-PLAN', '1FAMILY']) {
+        await expect(insertLink(patientA, bad, GROUP_FAMILY)).rejects.toMatchObject({
+          code: '23514', constraint: 'patient_chat_ids_role_shape',
+        });
+      }
+    });
+
+    it('4. UNIQUE recusa o mesmo grupo em dois papéis do MESMO paciente', async () => {
+      await insertLink(patientA, 'FAMILY', GROUP_FAMILY);
+      await expect(insertLink(patientA, 'PROVIDERS', GROUP_FAMILY)).rejects.toMatchObject({
+        code: '23505', constraint: 'patient_chat_ids_one_role_per_chat',
+      });
+    });
+
+    it('5. ÍNDICE ÚNICO impede o mesmo grupo em dois pacientes (a trava da Candela)', async () => {
+      await insertLink(patientA, 'FAMILY', GROUP_FAMILY);
+      await expect(insertLink(patientB, 'FAMILY', GROUP_FAMILY)).rejects.toMatchObject({ code: '23505' });
+      // e também no papel CRUZADO, que na migration 260 o banco não cobria
+      await expect(insertLink(patientB, 'PROVIDERS', GROUP_FAMILY)).rejects.toMatchObject({ code: '23505' });
+    });
+
+    it('6. a trava é do PAPEL: linha NÃO exclusiva pode repetir o grupo em dois pacientes', async () => {
+      // É o cenário do grupo do plano de saúde, se o Marcel responder que ele é
+      // um por plano. Aqui o banco já aceita — falta só virar o catálogo.
+      await insertLink(patientA, 'HEALTH_PLAN', GROUP_PLAN, false);
+      await expect(insertLink(patientB, 'HEALTH_PLAN', GROUP_PLAN, false)).resolves.toBeDefined();
+    });
+
+    it('7. UNIQUE (patient_id, role) — um paciente não tem dois grupos no mesmo papel', async () => {
+      await insertLink(patientA, 'FAMILY', GROUP_FAMILY);
+      await expect(insertLink(patientA, 'FAMILY', GROUP_OTHER)).rejects.toMatchObject({
+        code: '23505', constraint: 'patient_chat_ids_one_per_role',
+      });
+    });
+
+    it('8. aceita os dois formatos reais de chat_id de grupo, e um papel NOVO sem migration', async () => {
+      await insertLink(patientA, 'FAMILY', GROUP_FAMILY);      // 18 dígitos
+      await insertLink(patientA, 'PROVIDERS', GROUP_OTHER);    // criador-timestamp
+      // MANAGEMENT não existe no catálogo do código — e o banco aceita, que é
+      // exatamente o requisito: papel novo não pode exigir migration.
+      await insertLink(patientA, 'MANAGEMENT', GROUP_PLAN);
+
+      expect(await readChatIds(patientA)).toEqual({
+        FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_OTHER, MANAGEMENT: GROUP_PLAN,
+      });
+    });
+
+    it('9. as colunas ANTIGAS continuam no banco (expand/contract: nada foi derrubado)', async () => {
+      const r = await pool.query(
+        `SELECT column_name FROM information_schema.columns
           WHERE table_name = 'patients'
             AND column_name IN ('family_chat_id','providers_chat_id')
           ORDER BY column_name`,
       );
-      expect(r.rows).toEqual([
-        { column_name: 'family_chat_id', data_type: 'character varying', character_maximum_length: 64, is_nullable: 'YES' },
-        { column_name: 'providers_chat_id', data_type: 'character varying', character_maximum_length: 64, is_nullable: 'YES' },
-      ]);
+      expect(r.rows.map(x => x.column_name)).toEqual(['family_chat_id', 'providers_chat_id']);
     });
 
-    it('2. CHECK recusa conversa 1-1 (@c.us) em family_chat_id', async () => {
-      await expect(
-        pool.query('UPDATE patients SET family_chat_id = $2 WHERE id = $1', [patientA, CHAT_ONE_TO_ONE]),
-      ).rejects.toMatchObject({ code: '23514', constraint: 'patients_family_chat_id_is_group' });
-    });
-
-    it('3. CHECK recusa conversa 1-1 (@c.us) em providers_chat_id', async () => {
-      await expect(
-        pool.query('UPDATE patients SET providers_chat_id = $2 WHERE id = $1', [patientA, CHAT_ONE_TO_ONE]),
-      ).rejects.toMatchObject({ code: '23514', constraint: 'patients_providers_chat_id_is_group' });
-    });
-
-    it('4. CHECK recusa o mesmo grupo nos dois papéis do MESMO paciente', async () => {
-      await expect(
-        pool.query(
-          'UPDATE patients SET family_chat_id = $2, providers_chat_id = $2 WHERE id = $1',
-          [patientA, GROUP_FAMILY],
-        ),
-      ).rejects.toMatchObject({ code: '23514', constraint: 'patients_chat_ids_distinct' });
-    });
-
-    it('5. ÍNDICE ÚNICO impede o mesmo grupo em dois pacientes (a trava da Candela)', async () => {
+    it('10. a migration de dados é IDEMPOTENTE — re-rodar não duplica nem estoura', async () => {
       await pool.query('UPDATE patients SET family_chat_id = $2 WHERE id = $1', [patientA, GROUP_FAMILY]);
-      await expect(
-        pool.query('UPDATE patients SET family_chat_id = $2 WHERE id = $1', [patientB, GROUP_FAMILY]),
-      ).rejects.toMatchObject({ code: '23505' });
+      try {
+        const copy = `INSERT INTO patient_chat_ids (patient_id, role, chat_id, is_exclusive)
+                      SELECT id, 'FAMILY', family_chat_id, TRUE FROM patients
+                       WHERE family_chat_id IS NOT NULL AND deleted_at IS NULL
+                      ON CONFLICT DO NOTHING`;
+        await pool.query(copy);
+        await pool.query(copy); // segunda vez: sem erro, sem linha nova
+        const n = await pool.query<{ n: string }>(
+          'SELECT COUNT(*)::text AS n FROM patient_chat_ids WHERE patient_id = $1',
+          [patientA],
+        );
+        expect(Number(n.rows[0].n)).toBe(1);
+        expect(await readChatIds(patientA)).toEqual({ FAMILY: GROUP_FAMILY });
+      } finally {
+        await pool.query('UPDATE patients SET family_chat_id = NULL WHERE id = $1', [patientA]);
+      }
     });
 
-    it('6. NULL não colide com NULL — vários pacientes sem vínculo convivem', async () => {
-      const r = await pool.query(
-        'SELECT COUNT(*)::int AS n FROM patients WHERE id = ANY($1::uuid[]) AND family_chat_id IS NULL',
-        [insertedIds],
-      );
-      expect(r.rows[0].n).toBe(insertedIds.length);
+    it('11. apagar o paciente leva os vínculos junto (CASCADE) — grupo não fica preso', async () => {
+      const doomed = await seedPatient('Apagavel', 'Cascade');
+      await insertLink(doomed, 'FAMILY', GROUP_PLAN);
+      await pool.query('DELETE FROM patients WHERE id = $1', [doomed]);
+
+      const left = await pool.query('SELECT 1 FROM patient_chat_ids WHERE patient_id = $1', [doomed]);
+      expect(left.rowCount).toBe(0);
+      // e o grupo volta a estar livre para outro paciente
+      await expect(insertLink(patientA, 'FAMILY', GROUP_PLAN)).resolves.toBeDefined();
     });
 
-    it('7. aceita os dois formatos reais de chat_id de grupo', async () => {
-      await pool.query(
-        'UPDATE patients SET family_chat_id = $2, providers_chat_id = $3 WHERE id = $1',
-        [patientA, GROUP_FAMILY, GROUP_OTHER],
+    it('11b. SOFT-DELETE também libera os vínculos (migration 263, trigger) — o grupo não fica preso PRA SEMPRE', async () => {
+      // Achado de review do PR #205 (11/08): o índice único parcial não olha
+      // patients.deleted_at — sem o trigger da 263, um chat_id preso a um
+      // paciente soft-deleted ficaria ocupando a vaga NO ÍNDICE para sempre,
+      // mesmo já tendo sumido de toda LEITURA (que filtra deleted_at IS NULL).
+      const softDoomed = await seedPatient('Softapagavel', 'Trigger263');
+      await insertLink(softDoomed, 'FAMILY', GROUP_PLAN);
+
+      await pool.query('UPDATE patients SET deleted_at = NOW() WHERE id = $1', [softDoomed]);
+
+      const left = await pool.query('SELECT 1 FROM patient_chat_ids WHERE patient_id = $1', [softDoomed]);
+      expect(left.rowCount).toBe(0);
+      // e o grupo volta a estar livre — inclusive pela API, não só por SQL direto
+      const res = await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { chatIds: { FAMILY: GROUP_PLAN } },
+        authHeaders(staffToken),
       );
-      expect(await readChatIds(patientA)).toEqual({ family: GROUP_FAMILY, providers: GROUP_OTHER });
+      expect(res.status).toBe(200);
+    });
+
+    it('11c. UPDATE que NÃO muda deleted_at não dispara o trigger (só a transição NULL → valor)', async () => {
+      // Guarda contra falso-positivo: re-salvar deleted_at (ou tocar outra
+      // coluna) num paciente já ativo não pode apagar vínculo nenhum.
+      await insertLink(patientA, 'FAMILY', GROUP_FAMILY);
+      await pool.query('UPDATE patients SET first_name = first_name WHERE id = $1', [patientA]);
+
+      expect(await readChatIds(patientA)).toEqual({ FAMILY: GROUP_FAMILY });
     });
   });
 
   // ── PUT /chat-ids ──────────────────────────────────────────────────────────
 
   describe('PUT /api/admin/patients/:id/chat-ids', () => {
-    it('8. grava o par e devolve 200', async () => {
+    it('12. grava os TRÊS papéis de uma vez e devolve 200', async () => {
       const res = await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: GROUP_PROVIDERS },
+        { chatIds: { FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS, HEALTH_PLAN: GROUP_PLAN } },
         authHeaders(staffToken),
       );
 
       expect(res.status).toBe(200);
-      expect(res.data.data).toMatchObject({
-        id: patientA, familyChatId: GROUP_FAMILY, providersChatId: GROUP_PROVIDERS,
+      expect(res.data.data.chatIds).toEqual({
+        FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS, HEALTH_PLAN: GROUP_PLAN,
       });
-      expect(await readChatIds(patientA)).toEqual({ family: GROUP_FAMILY, providers: GROUP_PROVIDERS });
+      expect(await readChatIds(patientA)).toEqual({
+        FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS, HEALTH_PLAN: GROUP_PLAN,
+      });
     });
 
-    it('9. GET /patients/:id devolve os chat IDs gravados (o join da Candela)', async () => {
+    it('13. GET /patients/:id devolve o mapa gravado (o join da Candela)', async () => {
       await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: GROUP_PROVIDERS },
+        { chatIds: { FAMILY: GROUP_FAMILY, HEALTH_PLAN: GROUP_PLAN } },
         authHeaders(staffToken),
       );
 
       const res = await api.get(`/api/admin/patients/${patientA}`, authHeaders(staffToken));
       expect(res.status).toBe(200);
-      expect(res.data.data).toMatchObject({
-        familyChatId: GROUP_FAMILY, providersChatId: GROUP_PROVIDERS,
+      expect(res.data.data.chatIds).toEqual({ FAMILY: GROUP_FAMILY, HEALTH_PLAN: GROUP_PLAN });
+    });
+
+    it('14. EXPAND: o detalhe ainda traz os aliases antigos (bundle em cache não mente)', async () => {
+      await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { chatIds: { FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS } },
+        authHeaders(staffToken),
+      );
+
+      const res = await api.get(`/api/admin/patients/${patientA}`, authHeaders(staffToken));
+      expect(res.data.data.familyChatId).toBe(GROUP_FAMILY);
+      expect(res.data.data.providersChatId).toBe(GROUP_PROVIDERS);
+    });
+
+    it('15. papel AUSENTE do body fica INALTERADO (versão antiga não apaga o que não conhece)', async () => {
+      await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { chatIds: { FAMILY: GROUP_FAMILY, HEALTH_PLAN: GROUP_PLAN } },
+        authHeaders(staffToken),
+      );
+
+      // body LEGADO da migration 260: só conhece família e prestadores
+      const legacy = await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { familyChatId: GROUP_FAMILY, providersChatId: GROUP_PROVIDERS },
+        authHeaders(staffToken),
+      );
+
+      expect(legacy.status).toBe(200);
+      expect(await readChatIds(patientA)).toEqual({
+        FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS, HEALTH_PLAN: GROUP_PLAN,
       });
     });
 
-    it('10. null desvincula e libera o grupo para outro paciente', async () => {
+    it('16. null desvincula só aquele papel, e libera o grupo para outro paciente', async () => {
       await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS } },
         authHeaders(staffToken),
       );
 
       const clear = await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: null, providersChatId: null },
+        { chatIds: { FAMILY: null } },
         authHeaders(staffToken),
       );
       expect(clear.status).toBe(200);
-      expect(await readChatIds(patientA)).toEqual({ family: null, providers: null });
+      expect(await readChatIds(patientA)).toEqual({ PROVIDERS: GROUP_PROVIDERS });
 
       const reuse = await api.put(
         `/api/admin/patients/${patientB}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
       expect(reuse.status).toBe(200);
     });
 
-    it('11. 409 quando o grupo já é de outro paciente no MESMO papel', async () => {
+    it('17. 409 quando o grupo já é de outro paciente no MESMO papel', async () => {
       await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
 
       const res = await api.put(
         `/api/admin/patients/${patientB}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
 
       expect(res.status).toBe(409);
       expect(res.data.code).toBe('CHAT_ID_ALREADY_LINKED');
       expect(res.data.details.conflicts).toEqual([
-        { chatId: GROUP_FAMILY, patientId: patientA, role: 'family' },
+        { chatId: GROUP_FAMILY, patientId: patientA, role: 'FAMILY', exclusive: true },
       ]);
-      expect(await readChatIds(patientB)).toEqual({ family: null, providers: null });
+      expect(await readChatIds(patientB)).toEqual({});
     });
 
-    it('12. 409 na colisão CRUZADA (família de um == prestadores de outro)', async () => {
+    it('18. 409 na colisão CRUZADA — basta UM lado ser exclusivo', async () => {
+      // HEALTH_PLAN é compartilhável no catálogo (27 pagadores), mas o grupo
+      // alvo já é a FAMÍLIA de outro paciente — e esse lado é exclusivo.
       await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
 
       const res = await api.put(
         `/api/admin/patients/${patientB}/chat-ids`,
-        { familyChatId: null, providersChatId: GROUP_FAMILY },
+        { chatIds: { HEALTH_PLAN: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
 
       expect(res.status).toBe(409);
-      expect(res.data.details.conflicts[0]).toMatchObject({ role: 'family', patientId: patientA });
+      expect(res.data.details.conflicts[0]).toMatchObject({ role: 'FAMILY', patientId: patientA });
     });
 
-    it('13. 400 para conversa 1-1 (@c.us) — nunca chega ao banco', async () => {
+    it('19. 400 para conversa 1-1 (@c.us) — nunca chega ao banco', async () => {
       const res = await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: CHAT_ONE_TO_ONE, providersChatId: null },
+        { chatIds: { FAMILY: CHAT_ONE_TO_ONE } },
         authHeaders(staffToken),
       );
       expect(res.status).toBe(400);
-      expect(await readChatIds(patientA)).toEqual({ family: null, providers: null });
+      expect(await readChatIds(patientA)).toEqual({});
     });
 
-    it('14. 400 para o mesmo grupo nos dois papéis', async () => {
+    it('20. 400 para o mesmo grupo em dois papéis do mesmo paciente', async () => {
       const res = await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: GROUP_FAMILY },
+        { chatIds: { FAMILY: GROUP_FAMILY, HEALTH_PLAN: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
       expect(res.status).toBe(400);
+      expect(await readChatIds(patientA)).toEqual({});
     });
 
-    it('15. 400 para campo desconhecido no body', async () => {
-      const res = await api.put(
+    it('21. 400 para PAPEL fora do CATÁLOGO, com código próprio', async () => {
+      // ⚠️ Esta recusa MUDOU DE LUGAR na migration 262: quais papéis existem é
+      // dado, não schema, então quem barra é o serviço (depois de ler o
+      // catálogo) e não mais o Zod. O código próprio existe para a tela poder
+      // dizer "esse papel não está cadastrado" em vez de um erro de validação.
+      const desconhecido = await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: null, providersChatId: null, chatId: GROUP_FAMILY },
+        { chatIds: { NEIGHBOURS: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
-      expect(res.status).toBe(400);
+      expect(desconhecido.status).toBe(400);
+      expect(desconhecido.data.code).toBe('UNKNOWN_CHAT_ROLE');
+      expect(desconhecido.data.details.roles).toEqual(['NEIGHBOURS']);
+      expect(await readChatIds(patientA)).toEqual({});
+
+      // A FORMA da chave continua sendo lei do schema.
+      const bad = [
+        { chatIds: { family: GROUP_FAMILY } },
+        { chatIds: { 'HEALTH PLAN': GROUP_FAMILY } },
+        { chatIds: {}, foo: 'x' },
+        {},
+      ];
+      for (const body of bad) {
+        const res = await api.put(`/api/admin/patients/${patientA}/chat-ids`, body, authHeaders(staffToken));
+        expect(res.status).toBe(400);
+      }
+      expect(await readChatIds(patientA)).toEqual({});
     });
 
-    it('16. 404 para paciente inexistente', async () => {
+    it('22. 404 para paciente inexistente', async () => {
       const res = await api.put(
         `/api/admin/patients/${randomUUID()}/chat-ids`,
-        { familyChatId: GROUP_FAMILY, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_FAMILY } },
         authHeaders(staffToken),
       );
       expect(res.status).toBe(404);
     });
 
-    it('17. 401 sem token e 403 para worker', async () => {
-      const body = { familyChatId: null, providersChatId: null };
+    it('23. 401 sem token e 403 para worker', async () => {
+      const body = { chatIds: { FAMILY: null } };
       expect((await api.put(`/api/admin/patients/${patientA}/chat-ids`, body)).status).toBe(401);
       expect(
         (await api.put(`/api/admin/patients/${patientA}/chat-ids`, body, authHeaders(workerToken))).status,
@@ -330,7 +479,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
   // ── GET /chat-candidates ───────────────────────────────────────────────────
 
   describe('GET /api/admin/patients/:id/chat-candidates', () => {
-    it('18. devolve os grupos parecidos com o nome do paciente, ranqueados', async () => {
+    it('24. devolve os grupos parecidos com o nome do paciente, ranqueados', async () => {
       const res = await api.get(
         `/api/admin/patients/${patientA}/chat-candidates`,
         authHeaders(staffToken),
@@ -346,25 +495,38 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(res.data.data.totalGroups).toBe(3); // só os @g.us do payload
     });
 
-    it('19. a nossa API pede ao Periskope só GRUPOS, com auth de Bearer + x-phone', async () => {
+    it('25. a nossa API pede ao Periskope só GRUPOS, com Bearer e SEM escopo de número', async () => {
+      // ⚠️ A AUSÊNCIA do `x-phone` é deliberada e é o ponto do teste.
+      //
+      // Esse header escopa a leitura a UM número conectado. A org tem mais de
+      // um, e um grupo vinculável pode estar em qualquer um deles — com o
+      // escopo ligado, os grupos dos outros números simplesmente não existiam
+      // para nós, sem erro nenhum: a tela dizia "nenhum candidato".
+      //
+      // Medido contra a API real em 09/08: 774 grupos com o header, 788 brutos
+      // sem ele (775 após deduplicar por chat_id). E é o que faz conectar um
+      // número novo passar a valer — com o escopo, conectar não mudaria nada.
+      //
+      // LER é da org; ENVIAR é de um número. O `x-phone` continua obrigatório
+      // nos serviços de envio, onde ele escolhe de qual número a mensagem sai.
       stub.requests.length = 0;
       await api.get(`/api/admin/patients/${patientA}/chat-candidates`, authHeaders(staffToken));
 
       expect(stub.requests).toHaveLength(1);
       expect(stub.requests[0].path).toContain('chat_type=group');
       expect(stub.requests[0].auth).toMatch(/^Bearer /);
-      expect(stub.requests[0].phone).toBeTruthy();
+      expect(stub.requests[0].phone).toBeUndefined();
     });
 
-    it('20. NENHUMA requisição de escrita chega ao Periskope em todo o fluxo', () => {
+    it('26. NENHUMA requisição de escrita chega ao Periskope em todo o fluxo', () => {
       const escritas = stub.requests.filter(r => !r.path.startsWith('/v1/chats'));
       expect(escritas).toEqual([]);
     });
 
-    it('21. marca o candidato já preso a outro paciente', async () => {
+    it('27. marca o candidato já preso a outro paciente', async () => {
       await api.put(
         `/api/admin/patients/${patientB}/chat-ids`,
-        { familyChatId: GROUP_PROVIDERS, providersChatId: null },
+        { chatIds: { FAMILY: GROUP_PROVIDERS } },
         authHeaders(staffToken),
       );
 
@@ -379,7 +541,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(free.linkedToOtherPatient).toBe(false);
     });
 
-    it('22. respeita o limit', async () => {
+    it('28. respeita o limit', async () => {
       const res = await api.get(
         `/api/admin/patients/${patientA}/chat-candidates?limit=1`,
         authHeaders(staffToken),
@@ -387,7 +549,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(res.data.data.candidates).toHaveLength(1);
     });
 
-    it('23. 400 para limit fora da faixa', async () => {
+    it('29. 400 para limit fora da faixa', async () => {
       const res = await api.get(
         `/api/admin/patients/${patientA}/chat-candidates?limit=999`,
         authHeaders(staffToken),
@@ -395,7 +557,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(res.status).toBe(400);
     });
 
-    it('24. 404 para paciente inexistente', async () => {
+    it('30. 404 para paciente inexistente', async () => {
       const res = await api.get(
         `/api/admin/patients/${randomUUID()}/chat-candidates`,
         authHeaders(staffToken),
@@ -403,14 +565,14 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(res.status).toBe(404);
     });
 
-    it('25. 401 sem token e 403 para worker', async () => {
+    it('31. 401 sem token e 403 para worker', async () => {
       expect((await api.get(`/api/admin/patients/${patientA}/chat-candidates`)).status).toBe(401);
       expect(
         (await api.get(`/api/admin/patients/${patientA}/chat-candidates`, authHeaders(workerToken))).status,
       ).toBe(403);
     });
 
-    it('26. fluxo completo: buscar → escolher → salvar → ler de volta', async () => {
+    it('32. fluxo completo: buscar → escolher → salvar → ler de volta', async () => {
       const search = await api.get(
         `/api/admin/patients/${patientA}/chat-candidates`,
         authHeaders(staffToken),
@@ -423,14 +585,15 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
 
       const save = await api.put(
         `/api/admin/patients/${patientA}/chat-ids`,
-        { familyChatId: familia.chatId, providersChatId: prestadores.chatId },
+        { chatIds: { FAMILY: familia.chatId, PROVIDERS: prestadores.chatId } },
         authHeaders(staffToken),
       );
       expect(save.status).toBe(200);
 
       const detail = await api.get(`/api/admin/patients/${patientA}`, authHeaders(staffToken));
-      expect(detail.data.data.familyChatId).toBe(GROUP_FAMILY);
-      expect(detail.data.data.providersChatId).toBe(GROUP_PROVIDERS);
+      expect(detail.data.data.chatIds).toEqual({
+        FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS,
+      });
     });
   });
 
@@ -446,21 +609,25 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
     async function link(patientId: string, family: string | null, providers: string | null) {
       const res = await api.put(
         `/api/admin/patients/${patientId}/chat-ids`,
-        { familyChatId: family, providersChatId: providers },
+        { chatIds: { FAMILY: family, PROVIDERS: providers, HEALTH_PLAN: null } },
         authHeaders(staffToken),
       );
       expect(res.status).toBe(200);
     }
 
-    it('27. a rota NÃO é capturada por /patients/:id (é estática e vem antes)', async () => {
+    it('33. a rota NÃO é capturada por /patients/:id (é estática e vem antes)', async () => {
       const res = await api.get('/api/admin/patients/chat-map', authHeaders(staffToken));
       // Se o Express tratasse 'chat-map' como :id, seria 400 de UUID inválido.
       expect(res.status).toBe(200);
       expect(res.data.data).toHaveProperty('patients');
     });
 
-    it('28. devolve as TRÊS chaves juntas: patientId + clickupTaskId + os 2 chat IDs', async () => {
-      await link(patientA, GROUP_FAMILY, GROUP_PROVIDERS);
+    it('34. devolve as TRÊS pontas juntas: patientId + clickupTaskId + os papéis', async () => {
+      await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { chatIds: { FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS, HEALTH_PLAN: GROUP_PLAN } },
+        authHeaders(staffToken),
+      );
 
       const res = await api.get(
         '/api/admin/patients/chat-map?filter=linked&limit=1000',
@@ -472,12 +639,15 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(mine).toEqual({
         patientId: patientA,
         clickupTaskId: expect.stringContaining('e2e-chatid-'),
-        familyChatId: GROUP_FAMILY,
-        providersChatId: GROUP_PROVIDERS,
+        chatIds: {
+          FAMILY: GROUP_FAMILY,
+          PROVIDERS: GROUP_PROVIDERS,
+          HEALTH_PLAN: GROUP_PLAN,
+        },
       });
     });
 
-    it('29. ZERO PII no payload — nem nome, nem telefone, nem documento', async () => {
+    it('35. ZERO PII no payload — nem nome, nem telefone, nem documento', async () => {
       await link(patientA, GROUP_FAMILY, GROUP_PROVIDERS);
 
       const res = await api.get(
@@ -492,9 +662,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
         'contactEmail', 'diagnosis',
       ];
       for (const row of res.data.data.patients) {
-        expect(Object.keys(row).sort()).toEqual(
-          ['clickupTaskId', 'familyChatId', 'patientId', 'providersChatId'],
-        );
+        expect(Object.keys(row).sort()).toEqual(['chatIds', 'clickupTaskId', 'patientId']);
         for (const k of PII_KEYS) expect(row).not.toHaveProperty(k);
       }
 
@@ -505,7 +673,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(raw).not.toContain('DOC-E2E-CHATID');
     });
 
-    it('30. filter=unlinked devolve a fila de trabalho do backfill', async () => {
+    it('36. filter=unlinked devolve a fila de trabalho do backfill', async () => {
       await link(patientA, GROUP_FAMILY, null);
       await link(patientB, null, null);
 
@@ -518,12 +686,11 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(ids).toContain(patientB);
       expect(ids).not.toContain(patientA);
       for (const row of res.data.data.patients) {
-        expect(row.familyChatId).toBeNull();
-        expect(row.providersChatId).toBeNull();
+        expect(row.chatIds).toEqual({});
       }
     });
 
-    it('31. paciente soft-deleted nunca aparece, em nenhum filtro', async () => {
+    it('37. paciente soft-deleted nunca aparece, em nenhum filtro', async () => {
       for (const filter of ['linked', 'unlinked', 'all']) {
         const res = await api.get(
           `/api/admin/patients/chat-map?filter=${filter}&limit=1000`,
@@ -534,7 +701,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       }
     });
 
-    it('32. DIREÇÃO REVERSA: chatId devolve o paciente e o papel', async () => {
+    it('38. DIREÇÃO REVERSA: chatId devolve o paciente e o papel', async () => {
       await link(patientA, GROUP_FAMILY, GROUP_PROVIDERS);
 
       const familia = await api.get(
@@ -546,9 +713,8 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
         {
           patientId: patientA,
           clickupTaskId: expect.any(String),
-          familyChatId: GROUP_FAMILY,
-          providersChatId: GROUP_PROVIDERS,
-          matchedRole: 'family',
+          chatIds: { FAMILY: GROUP_FAMILY, PROVIDERS: GROUP_PROVIDERS },
+          matchedRole: 'FAMILY',
         },
       ]);
 
@@ -556,10 +722,10 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
         `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_PROVIDERS)}`,
         authHeaders(staffToken),
       );
-      expect(prestadores.data.data.patients[0].matchedRole).toBe('providers');
+      expect(prestadores.data.data.patients[0].matchedRole).toBe('PROVIDERS');
     });
 
-    it('33. reverso de grupo sem dono devolve lista vazia, não erro', async () => {
+    it('39. reverso de grupo sem dono devolve lista vazia, não erro', async () => {
       const res = await api.get(
         `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_OTHER)}`,
         authHeaders(staffToken),
@@ -568,7 +734,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       expect(res.data.data).toMatchObject({ patients: [], total: 0, hasMore: false });
     });
 
-    it('34. paginação: total é o do recorte e hasMore acompanha', async () => {
+    it('40. paginação: total é o do recorte e hasMore acompanha', async () => {
       await link(patientA, GROUP_FAMILY, null);
       await link(patientB, GROUP_PROVIDERS, null);
 
@@ -590,7 +756,7 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
         .not.toBe(page1.data.data.patients[0].patientId);
     });
 
-    it('35. 400 para chatId 1-1, filter inválido, limit fora da faixa e campo desconhecido', async () => {
+    it('41. 400 para chatId 1-1, filter inválido, limit fora da faixa e campo desconhecido', async () => {
       const bad = [
         'chatId=5491162180721%40c.us',
         'filter=todos',
@@ -604,7 +770,53 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       }
     });
 
-    it('36. 401 sem token e 403 para worker', async () => {
+    it('42. REVERSA do TERCEIRO papel: o grupo do plano acha o paciente', async () => {
+      await api.put(
+        `/api/admin/patients/${patientA}/chat-ids`,
+        { chatIds: { HEALTH_PLAN: GROUP_PLAN } },
+        authHeaders(staffToken),
+      );
+
+      const res = await api.get(
+        `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_PLAN)}`,
+        authHeaders(staffToken),
+      );
+      expect(res.data.data.patients).toEqual([
+        {
+          patientId: patientA,
+          clickupTaskId: expect.any(String),
+          chatIds: { HEALTH_PLAN: GROUP_PLAN },
+          matchedRole: 'HEALTH_PLAN',
+        },
+      ]);
+    });
+
+    it('43. papel que o CÓDIGO não conhece atravessa a leitura (mapa e reversa)', async () => {
+      // A leitura tem de ser aberta: o banco aceita qualquer papel na forma de
+      // enum, então uma linha de uma versão mais nova não pode derrubar o mapa.
+      await insertLink(patientA, 'MANAGEMENT', GROUP_PLAN);
+
+      const mapa = await api.get(
+        '/api/admin/patients/chat-map?filter=linked&limit=1000',
+        authHeaders(staffToken),
+      );
+      const mine = mapa.data.data.patients.find((p: { patientId: string }) => p.patientId === patientA);
+      expect(mine.chatIds).toEqual({ MANAGEMENT: GROUP_PLAN });
+
+      const reversa = await api.get(
+        `/api/admin/patients/chat-map?chatId=${encodeURIComponent(GROUP_PLAN)}`,
+        authHeaders(staffToken),
+      );
+      expect(reversa.data.data.patients[0].matchedRole).toBe('MANAGEMENT');
+
+      const detalhe = await api.get(`/api/admin/patients/${patientA}`, authHeaders(staffToken));
+      expect(detalhe.status).toBe(200);
+      expect(detalhe.data.data.chatIds).toEqual({ MANAGEMENT: GROUP_PLAN });
+      // e os aliases legados não inventam nada
+      expect(detalhe.data.data.familyChatId).toBeNull();
+    });
+
+    it('44. 401 sem token e 403 para worker', async () => {
       expect((await api.get('/api/admin/patients/chat-map')).status).toBe(401);
       expect(
         (await api.get('/api/admin/patients/chat-map', authHeaders(workerToken))).status,
