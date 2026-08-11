@@ -372,7 +372,7 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 
 ### TD-011 — Cloud SQL prd com `authorized_networks: 0.0.0.0/0` (descoberto 2026-05-08)
 
-- **Status:** aberto, segurança
+- **Status:** ✅ **RESOLVIDO em 2026-08-11 (PR #202)** — ver "Desfecho" no fim desta entrada
 - **Descoberto em:** 2026-05-08 ao inspecionar config Cloud SQL para mirror stg
 - **Dono:** infra + sec
 - **Bloqueador?** Não — SSL é obrigatório (sslMode=TRUSTED_CLIENT_CERTIFICATE_REQUIRED), mas o IP público está aberto pra internet
@@ -384,6 +384,20 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 Stg foi configurado com a mesma rule por paridade. Idem `enlite-n8n-db-ar` (que tem `requireSsl=false` — pior ainda, mas o n8n acessa via Cloud SQL Proxy interno, não via IP público; a rule 0.0.0.0/0 não está nesse).
 
 **Plano:** restringir authorized_networks a IPs específicos (Cloud Run NAT, GitHub Actions runners, IPs do escritório) ou migrar pra Private IP exclusivamente. Cloud SQL Proxy via service account já cobre acesso via aplicação.
+
+**Desfecho (2026-08-11, PR #202):**
+
+A regra **já havia sido removida da instância viva** em algum momento entre maio e agosto — `gcloud sql instances describe enlite-ar-db` devolve `authorizedNetworks` vazio. Mas o HCL nunca foi atualizado, e a instância **estava** no state: o `terraform plan` pedia `update in-place` **re-adicionando** `0.0.0.0/0`. Ou seja, o conserto tinha sido feito à mão e o código estava pronto para desfazê-lo no próximo `apply` — feito para qualquer outra coisa.
+
+Removido o bloco do `cloud_sql.tf` (o módulo já tem `default = []`). Verificado que nada depende de acesso pelo IP público:
+- nenhuma referência a `34.176.140.205` em código, CI, scripts, docs ou `.env`;
+- todos os workflows de deploy usam socket Unix (`DB_HOST=/cloudsql/...` + `--add-cloudsql-instances`), que passa pelo agente do Cloud SQL e não pela rede autorizada;
+- acesso operacional é por `cloud-sql-proxy`, que autentica por credencial IAM;
+- empiricamente: a instância já roda sem redes autorizadas, e deploys, migrations, e2e e o espelho do Ana Care funcionam.
+
+**Lição registrada (D106):** conserto aplicado à mão por `gcloud`/Console **não fecha** enquanto não estiver no HCL — o comando é o remendo, o código é o conserto. Enquanto os dois discordam, a ferramenta correta vira arma.
+
+⚠️ **Ainda aberto:** `stg` recebeu a mesma rule "por paridade" e não foi tocado aqui. Conferir e, se confirmado, remover lá também.
 
 ---
 
