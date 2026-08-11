@@ -55,15 +55,31 @@ function isUniqueFieldConflict(body: string): boolean {
   return Array.isArray(parsed.telefono) || Array.isArray(parsed.email);
 }
 
+export interface AnaCareMirrorProviderDeps {
+  /**
+   * Diz se um ana_care_id já está gravado em OUTRO worker nosso. Só é chamado
+   * quando um match por telefone+nome é encontrado (ver findExistingByPhoneAndName)
+   * — sem isso, um `d65e1378` que casa com a nurse do `81f4add0` (provável
+   * duplicata de cadastro — mesmo telefone, mesma profissão) tentaria linkar e
+   * bateria numa constraint de unicidade DEPOIS de já ter mandado o PATCH pro
+   * AnaCare (achado real em prod, 11/08). Se ausente (ex: testes), assume que
+   * nada está reivindicado — o provider não tem acesso à tabela `workers` por
+   * padrão, quem injeta é o factory de produção.
+   */
+  isExternalIdClaimed?: (externalId: string) => Promise<boolean>;
+}
+
 export class AnaCareMirrorProvider implements WorkerMirrorProvider {
   readonly name = 'anacare';
 
   private readonly client: IAnaCareApiClient;
   private readonly typeResolver: AnaCareTypeResolver;
+  private readonly isExternalIdClaimed?: (externalId: string) => Promise<boolean>;
 
-  constructor(client: IAnaCareApiClient) {
+  constructor(client: IAnaCareApiClient, deps: AnaCareMirrorProviderDeps = {}) {
     this.client = client;
     this.typeResolver = new AnaCareTypeResolver(client);
+    this.isExternalIdClaimed = deps.isExternalIdClaimed;
   }
 
   async upsert(
@@ -111,16 +127,34 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
           return null;
         });
         if (match) {
-          // Não reenviamos email: o registro encontrado tem um email PRÓPRIO
-          // (gerado pelo AnaCare) que colidiu no POST — reenviar o nosso
-          // causaria o mesmo 400 de novo no PATCH.
-          const { email: _email, ...linkPayload } = payload;
-          const updated = await this.client.updateNurse(match.id, linkPayload);
-          logger.info({
-            msg: `${TAG} linked existing nurse via phone+name match (conflito de unicidade resolvido)`,
-            anaCareId: updated.id,
-          });
-          return { externalId: String(updated.id) };
+          // Antes de escrever no AnaCare, confirma que esse ana_care_id está
+          // LIVRE no nosso lado. Sem isso: acha o match certo, manda o PATCH
+          // de verdade pro AnaCare, e só DEPOIS descobre (constraint de
+          // unicidade) que outro worker nosso já é dono desse id — geralmente
+          // duplicata de cadastro (mesma pessoa, dois workerId). Nesse caso
+          // não é um match errado, é um conflito que precisa de revisão
+          // humana (merge de conta) — não linkamos no escuro.
+          const claimed = this.isExternalIdClaimed
+            ? await this.isExternalIdClaimed(String(match.id)).catch(() => true) // incerto → conservador
+            : false;
+
+          if (claimed) {
+            logger.warn({
+              msg: `${TAG} match por telefone+nome encontrado, mas ana_care_id já pertence a OUTRO worker nosso — provável duplicata de cadastro, não linka (revisão manual)`,
+              anaCareId: match.id,
+            });
+          } else {
+            // Não reenviamos email: o registro encontrado tem um email PRÓPRIO
+            // (gerado pelo AnaCare) que colidiu no POST — reenviar o nosso
+            // causaria o mesmo 400 de novo no PATCH.
+            const { email: _email, ...linkPayload } = payload;
+            const updated = await this.client.updateNurse(match.id, linkPayload);
+            logger.info({
+              msg: `${TAG} linked existing nurse via phone+name match (conflito de unicidade resolvido)`,
+              anaCareId: updated.id,
+            });
+            return { externalId: String(updated.id) };
+          }
         }
       }
       throw err;

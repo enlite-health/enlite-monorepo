@@ -251,4 +251,68 @@ describe('AnaCareMirrorProvider.upsert', () => {
       await expect(provider.upsert(makeRecord(), null)).rejects.toBe(conflictError);
     });
   });
+
+  describe('match encontrado, mas ana_care_id já pertence a outro worker nosso (duplicata de cadastro)', () => {
+    const conflictError = new AnaCareApiError(
+      'POST',
+      '/api/v2/agencies/nurses/',
+      400,
+      JSON.stringify({
+        telefono: ['No es posible usar este número de teléfono para el registro.'],
+        email: ['No es posible usar este correo electrónico para el registro.'],
+      }),
+    );
+
+    function pagedResponse(results: AnaCareNurse[], next: string | null = null): AnaCarePagedResponse<AnaCareNurse> {
+      return { count: results.length, next, previous: null, results };
+    }
+
+    const existingMatch: AnaCareNurse = {
+      id: 999,
+      nombre: 'María',
+      apellidos: 'González',
+      genero: 'M',
+      email: 'gerado-pelo-anacare@ana.care',
+      telefono: '1123456789',
+    };
+
+    it('NÃO linka (não chama updateNurse) quando isExternalIdClaimed retorna true — propaga o erro original', async () => {
+      const client = makeClient();
+      (client.createNurse as jest.Mock).mockRejectedValue(conflictError);
+      (client.listNurses as jest.Mock).mockResolvedValue(pagedResponse([existingMatch]));
+      const isExternalIdClaimed = jest.fn().mockResolvedValue(true);
+
+      const provider = new AnaCareMirrorProvider(client, { isExternalIdClaimed });
+
+      await expect(provider.upsert(makeRecord(), null)).rejects.toBe(conflictError);
+      expect(isExternalIdClaimed).toHaveBeenCalledWith('999');
+      expect(client.updateNurse).not.toHaveBeenCalled();
+    });
+
+    it('linka normalmente quando isExternalIdClaimed retorna false', async () => {
+      const client = makeClient();
+      (client.createNurse as jest.Mock).mockRejectedValue(conflictError);
+      (client.listNurses as jest.Mock).mockResolvedValue(pagedResponse([existingMatch]));
+      (client.updateNurse as jest.Mock).mockResolvedValue({ ...existingMatch, id: 999 });
+      const isExternalIdClaimed = jest.fn().mockResolvedValue(false);
+
+      const provider = new AnaCareMirrorProvider(client, { isExternalIdClaimed });
+      const result = await provider.upsert(makeRecord(), null);
+
+      expect(result.externalId).toBe('999');
+      expect(client.updateNurse).toHaveBeenCalledWith(999, expect.any(Object));
+    });
+
+    it('trata falha do próprio checker como "reivindicado" (conservador) — não linka', async () => {
+      const client = makeClient();
+      (client.createNurse as jest.Mock).mockRejectedValue(conflictError);
+      (client.listNurses as jest.Mock).mockResolvedValue(pagedResponse([existingMatch]));
+      const isExternalIdClaimed = jest.fn().mockRejectedValue(new Error('db down'));
+
+      const provider = new AnaCareMirrorProvider(client, { isExternalIdClaimed });
+
+      await expect(provider.upsert(makeRecord(), null)).rejects.toBe(conflictError);
+      expect(client.updateNurse).not.toHaveBeenCalled();
+    });
+  });
 });
