@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
+import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
@@ -12,6 +13,21 @@ import { logger, reportError } from '@shared/logging';
 const EventsHealthQuerySchema = z.object({
   recentWindowHours: z.coerce.number().int().positive().max(168).optional().default(6),
   stuckThresholdMinutes: z.coerce.number().int().positive().max(1440).optional().default(15),
+  /**
+   * Espelho Ana Care (estado, não borda). Default 2h: a distribuição saudável
+   * medida em prod (2.861 eventos worker.mirror_requested entre 15/07 e 30/07)
+   * fecha em p99 = 11min e MÁXIMO = 22,9min ponta a ponta. 2h é ~5x o pior caso
+   * observado — margem pra blip transitório do Ana Care sem perder o incidente.
+   */
+  mirrorStuckThresholdHours: z.coerce.number().int().positive().max(720).optional().default(2),
+  /**
+   * Acima disto o preso vira backlog CRÔNICO: reportado, não paginado.
+   * Default 168h (7d). Volume medido: mediana de 10,4 cadastros/dia, ZERO dias
+   * sem cadastro em 44 dias, menor soma móvel de 7 dias = 10. Ou seja, enquanto
+   * o espelho estiver quebrado sempre entra gente nova na janela — ela não
+   * drena sozinha.
+   */
+  mirrorRecencyWindowHours: z.coerce.number().int().positive().max(8760).optional().default(168),
 });
 
 const SweepSafeQuerySchema = z.object({
@@ -45,6 +61,7 @@ export class InternalController {
     private readonly bulkDispatchScheduler: BulkDispatchScheduler,
     private readonly bulkDispatchTalentumScheduler: BulkDispatchTalentumScheduler,
     private readonly domainEventBacklogService: DomainEventBacklogService,
+    private readonly anaCareMirrorHealthService: AnaCareMirrorHealthService,
   ) {}
 
   /**
@@ -226,11 +243,48 @@ export class InternalController {
         return;
       }
 
-      const { recentWindowHours, stuckThresholdMinutes } = parsed.data;
+      const {
+        recentWindowHours,
+        stuckThresholdMinutes,
+        mirrorStuckThresholdHours,
+        mirrorRecencyWindowHours,
+      } = parsed.data;
       const summary = await this.domainEventBacklogService.getBacklogSummary(
         recentWindowHours,
         stuckThresholdMinutes,
       );
+
+      /**
+       * Espelho Ana Care: checagem de ESTADO, complementar ao backlog acima.
+       *
+       * O backlog de outbox só enxerga `status='pending'`. Quando a chave da
+       * API do Ana Care foi invalidada (30/07/2026 16:58 UTC), os eventos
+       * ficaram `status='failed'` com `error` = 'Invalid API key' — invisíveis
+       * pro backlog — e o alerta de borda mandou ~201 pares ALERT/RESOLVED
+       * enquanto 58 prestadores ficavam de fora do Ana Care por 11 dias.
+       *
+       * Este bloco reemite o WARN a CADA ciclo do cron enquanto existir alguém
+       * preso. É o heartbeat que impede o auto-resolve.
+       */
+      const mirror = await this.anaCareMirrorHealthService.getMirrorHealth(
+        mirrorStuckThresholdHours,
+        mirrorRecencyWindowHours,
+      );
+
+      if (mirror.stuck) {
+        logger.warn({
+          msg: '[mirror/health] anacare mirror stuck',
+          stuckRecent: mirror.stuckRecent,
+          oldestStuckAgeHours: mirror.oldestStuckAgeHours,
+          chronicTotal: mirror.chronicTotal,
+          thresholdHours: mirrorStuckThresholdHours,
+        });
+      } else {
+        logger.info({
+          msg: '[mirror/health] ok',
+          chronicTotal: mirror.chronicTotal,
+        });
+      }
 
       const stuckRows = summary.filter(row => row.stuck);
 
@@ -257,6 +311,7 @@ export class InternalController {
         summary,
         stuckCount: stuckRows.length,
         worstOldestRecentAgeMinutes,
+        anaCareMirror: mirror,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
