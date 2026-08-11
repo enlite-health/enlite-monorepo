@@ -35,6 +35,13 @@ export interface LoginRecord {
  * Regras, e o porquê de cada uma:
  *  - uid ausente do mapa → conta não existe → NÃO é vivo (é o caso dos 3.745).
  *  - conta existe mas nunca logou → NÃO é vivo.
+ *  - conta existe mas `lastLoginAtMs` é NaN (timestamp do Firebase malformado,
+ *    ex.: `Date.parse` falhando em `lastSignInTime`) → VIVO (protegido).
+ *    Fail-closed, igual ao resto do módulo: `now - NaN` é sempre `false` em
+ *    qualquer comparação, então sem este caso explícito o worker cairia no
+ *    ramo "não logou recentemente" por um dado malformado, não por ausência
+ *    real de login — silenciosamente fail-OPEN, o oposto do que este guard
+ *    existe para garantir.
  *  - login dentro da janela → VIVO (protegido do arquivamento).
  *  - `now` é injetado para o teste não depender do relógio.
  */
@@ -48,6 +55,7 @@ export function isRecentLogin(
   if (!logins.has(uid)) return false;
   const last = logins.get(uid) ?? null;
   if (last === null) return false;
+  if (Number.isNaN(last)) return true;
   return now - last <= windowDays * DAY_MS;
 }
 

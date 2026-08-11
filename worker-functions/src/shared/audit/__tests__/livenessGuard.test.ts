@@ -43,6 +43,21 @@ describe('isRecentLogin — separa registro velho de pessoa viva', () => {
       expect(isRecentLogin('uid-pessoa-real', logins, 30, AGORA)).toBe(true);
     });
   });
+
+  describe('timestamp malformado (NaN) — fail-closed, não fail-open', () => {
+    it('conta existe mas lastLoginAtMs é NaN (Date.parse falhou) = PROTEGIDO', () => {
+      // Sem o guard explícito, `now - NaN <= janela` é sempre false e o worker
+      // cairia como "não logou recentemente" por dado malformado, não por
+      // ausência real de login — o oposto da filosofia fail-closed do módulo.
+      const logins = new Map<string, number | null>([['uid-a', NaN]]);
+      expect(isRecentLogin('uid-a', logins, 90, AGORA)).toBe(true);
+    });
+
+    it('NaN protege mesmo em janela curta (não é sensível a windowDays)', () => {
+      const logins = new Map<string, number | null>([['uid-a', NaN]]);
+      expect(isRecentLogin('uid-a', logins, 1, AGORA)).toBe(true);
+    });
+  });
 });
 
 describe('fetchLastLogins', () => {

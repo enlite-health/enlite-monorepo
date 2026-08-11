@@ -47,6 +47,34 @@ import * as path from 'path';
 import { withActorContext } from '@shared/database/actorContext';
 import { systemActor } from '@shared/audit/actorSource';
 import { fetchLastLogins, isRecentLogin, LoginRecord } from '@shared/audit/livenessGuard';
+import { isFakeAuthUid } from './shared/fakeAuthUid';
+
+/**
+ * Projeto do Identity Platform consultado para descobrir último login.
+ *
+ * DELIBERADAMENTE sem default silencioso. Um `?? 'enlite-prd'` faria um
+ * `--dry-run` rodado contra staging (DATABASE_URL de stg, GCP_PROJECT_ID
+ * esquecido) consultar o Firebase de PRODUÇÃO sem avisar — as contagens de
+ * "protegido por login" sairiam certas por acidente (ou erradas por engano),
+ * sem ninguém notar que o ambiente estava trocado. Resolvida no momento do
+ * uso (não no import do módulo) para não quebrar quem importa este arquivo
+ * só pelas funções puras/consts em teste.
+ *
+ * Uso: GCP_PROJECT_ID=enlite-prd npm run archive:stale-workers:dry
+ */
+function resolveIdpProject(): string {
+  const value = process.env.GCP_PROJECT_ID;
+  if (!value) {
+    throw new Error(
+      '[bulk-archive] GCP_PROJECT_ID não informado. Este script consulta o Identity ' +
+      'Platform para decidir quem está vivo (isRecentLogin) — sem a variável explícita, ' +
+      'um default silencioso arriscaria consultar o Firebase de PRODUÇÃO mesmo rodando ' +
+      '--dry-run contra staging. Informe: GCP_PROJECT_ID=enlite-prd (ou o projeto de stg) ' +
+      'antes de rodar.',
+    );
+  }
+  return value;
+}
 
 /**
  * Adaptador do Identity Platform. Usa firebase-admin (já dependência do projeto).
@@ -56,12 +84,15 @@ import { fetchLastLogins, isRecentLogin, LoginRecord } from '@shared/audit/liven
  * guard trata ausência como "não vivo" (ver livenessGuard).
  */
 async function fetchFromIdentityPlatform(batch: string[]): Promise<LoginRecord[]> {
+  const projectId = resolveIdpProject();
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const admin = require('firebase-admin');
-  if (admin.apps.length === 0) admin.initializeApp({ projectId: IDP_PROJECT });
+  if (admin.apps.length === 0) admin.initializeApp({ projectId });
   const res = await admin.auth().getUsers(batch.map((uid: string) => ({ uid })));
   return res.users.map((u: { uid: string; metadata?: { lastSignInTime?: string } }) => ({
     uid: u.uid,
+    // Date.parse de string malformada devolve NaN (não null) — isRecentLogin
+    // trata NaN como "login desconhecido, conta existe" e PROTEGE (fail-closed).
     lastLoginAtMs: u.metadata?.lastSignInTime ? Date.parse(u.metadata.lastSignInTime) : null,
   }));
 }
@@ -75,7 +106,7 @@ const rollbackCsvPath = rollbackFlagIndex >= 0 ? process.argv[rollbackFlagIndex 
 const isDryRun = !process.argv.includes('--execute');
 const JOB_ID = 'bulk-archive-stale-2026-01-30';
 const OPT_OUT_SOURCE = 'bulk_archive_stale_2026_01_30';
-const CUTOFF_DATE = '2026-01-30';
+export const CUTOFF_DATE = '2026-01-30';
 
 /**
  * Janela de PROTEÇÃO por pessoa (não confundir com CUTOFF_DATE, que é do registro).
@@ -83,12 +114,9 @@ const CUTOFF_DATE = '2026-01-30';
  * protegendo só devolve ruído ao Kanban; errar arquivando silencia gente viva
  * sob opt-out formal (Ley 25.326). As direções de risco não são simétricas.
  */
-const LIVENESS_WINDOW_DAYS = 90;
+export const LIVENESS_WINDOW_DAYS = 90;
 
-/** Projeto do Identity Platform consultado para descobrir último login. */
-const IDP_PROJECT = process.env.GCP_PROJECT_ID ?? 'enlite-prd';
-
-interface EligibleRow {
+export interface EligibleRow {
   worker_id: string;
   status_before: string;
   ana_care_status: string | null;
@@ -98,7 +126,12 @@ interface EligibleRow {
   auth_uid: string | null;
 }
 
-const ELIGIBILITY_QUERY = `
+// ELIGIBILITY_QUERY e REVIEW_QUERY são exportadas para o e2e
+// (tests/e2e/bulk-archive-stale-workers-eligibility.e2e.test.ts) exercitar o SQL
+// LITERAL contra um Postgres real — não uma cópia que pode divergir do que roda
+// em produção. Este módulo é seguro de importar: main() só roda sob
+// `require.main === module` (ver rodapé do arquivo).
+export const ELIGIBILITY_QUERY = `
   WITH eligible AS (
     SELECT w.id
     FROM workers w
@@ -146,7 +179,7 @@ const ELIGIBILITY_QUERY = `
 // Agora esses casos são INELEGÍVEIS e saem no CSV de revisão.
 
 /** Workers barrados por data desconhecida — saem para revisão, não para o lote. */
-const REVIEW_QUERY = `
+export const REVIEW_QUERY = `
   SELECT
     w.id AS worker_id,
     w.status AS status_before,
@@ -309,7 +342,12 @@ async function runArchive(pool: Pool): Promise<void> {
   }
 
   // Última trava, e a mais importante: pessoa que logou na plataforma sai do lote.
-  const uids = candidates.map((r) => r.auth_uid).filter((u): u is string => !!u);
+  // auth_uid SINTÉTICO (prefixo de import em massa) nunca vai casar com conta real
+  // no Identity Platform — filtrar ANTES de consultar evita chamada desperdiçada
+  // (e, em volume, uma fração grande do lote: a maioria dos importados é assim).
+  const uids = candidates
+    .map((r) => r.auth_uid)
+    .filter((u): u is string => !!u && !isFakeAuthUid(u));
   const logins = await fetchLastLogins(uids, fetchFromIdentityPlatform);
   const now = Date.now();
   const rows = candidates.filter(
