@@ -46,6 +46,56 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { withActorContext } from '@shared/database/actorContext';
 import { systemActor } from '@shared/audit/actorSource';
+import { fetchLastLogins, isRecentLogin, LoginRecord } from '@shared/audit/livenessGuard';
+import { isFakeAuthUid } from './shared/fakeAuthUid';
+
+/**
+ * Projeto do Identity Platform consultado para descobrir último login.
+ *
+ * DELIBERADAMENTE sem default silencioso. Um `?? 'enlite-prd'` faria um
+ * `--dry-run` rodado contra staging (DATABASE_URL de stg, GCP_PROJECT_ID
+ * esquecido) consultar o Firebase de PRODUÇÃO sem avisar — as contagens de
+ * "protegido por login" sairiam certas por acidente (ou erradas por engano),
+ * sem ninguém notar que o ambiente estava trocado. Resolvida no momento do
+ * uso (não no import do módulo) para não quebrar quem importa este arquivo
+ * só pelas funções puras/consts em teste.
+ *
+ * Uso: GCP_PROJECT_ID=enlite-prd npm run archive:stale-workers:dry
+ */
+function resolveIdpProject(): string {
+  const value = process.env.GCP_PROJECT_ID;
+  if (!value) {
+    throw new Error(
+      '[bulk-archive] GCP_PROJECT_ID não informado. Este script consulta o Identity ' +
+      'Platform para decidir quem está vivo (isRecentLogin) — sem a variável explícita, ' +
+      'um default silencioso arriscaria consultar o Firebase de PRODUÇÃO mesmo rodando ' +
+      '--dry-run contra staging. Informe: GCP_PROJECT_ID=enlite-prd (ou o projeto de stg) ' +
+      'antes de rodar.',
+    );
+  }
+  return value;
+}
+
+/**
+ * Adaptador do Identity Platform. Usa firebase-admin (já dependência do projeto).
+ * `getUsers` aceita até 100 identificadores por chamada.
+ *
+ * uid que não volta = conta inexistente; fica FORA do mapa de propósito, e o
+ * guard trata ausência como "não vivo" (ver livenessGuard).
+ */
+async function fetchFromIdentityPlatform(batch: string[]): Promise<LoginRecord[]> {
+  const projectId = resolveIdpProject();
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const admin = require('firebase-admin');
+  if (admin.apps.length === 0) admin.initializeApp({ projectId });
+  const res = await admin.auth().getUsers(batch.map((uid: string) => ({ uid })));
+  return res.users.map((u: { uid: string; metadata?: { lastSignInTime?: string } }) => ({
+    uid: u.uid,
+    // Date.parse de string malformada devolve NaN (não null) — isRecentLogin
+    // trata NaN como "login desconhecido, conta existe" e PROTEGE (fail-closed).
+    lastLoginAtMs: u.metadata?.lastSignInTime ? Date.parse(u.metadata.lastSignInTime) : null,
+  }));
+}
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -56,18 +106,32 @@ const rollbackCsvPath = rollbackFlagIndex >= 0 ? process.argv[rollbackFlagIndex 
 const isDryRun = !process.argv.includes('--execute');
 const JOB_ID = 'bulk-archive-stale-2026-01-30';
 const OPT_OUT_SOURCE = 'bulk_archive_stale_2026_01_30';
-const CUTOFF_DATE = '2026-01-30';
+export const CUTOFF_DATE = '2026-01-30';
 
-interface EligibleRow {
+/**
+ * Janela de PROTEÇÃO por pessoa (não confundir com CUTOFF_DATE, que é do registro).
+ * 90 dias, deliberadamente mais largo que qualquer corte de restauração: errar
+ * protegendo só devolve ruído ao Kanban; errar arquivando silencia gente viva
+ * sob opt-out formal (Ley 25.326). As direções de risco não são simétricas.
+ */
+export const LIVENESS_WINDOW_DAYS = 90;
+
+export interface EligibleRow {
   worker_id: string;
   status_before: string;
   ana_care_status: string | null;
   encuadres_count: number;
   most_recent_recruitment_date: string | null;
   has_phone: boolean;
+  auth_uid: string | null;
 }
 
-const ELIGIBILITY_QUERY = `
+// ELIGIBILITY_QUERY e REVIEW_QUERY são exportadas para o e2e
+// (tests/e2e/bulk-archive-stale-workers-eligibility.e2e.test.ts) exercitar o SQL
+// LITERAL contra um Postgres real — não uma cópia que pode divergir do que roda
+// em produção. Este módulo é seguro de importar: main() só roda sob
+// `require.main === module` (ver rodapé do arquivo).
+export const ELIGIBILITY_QUERY = `
   WITH eligible AS (
     SELECT w.id
     FROM workers w
@@ -75,9 +139,21 @@ const ELIGIBILITY_QUERY = `
       AND w.status <> 'DISABLED'
       AND (w.ana_care_status IS NULL OR w.ana_care_status NOT IN ('Activo', 'Cubriendo guardias'))
       AND EXISTS (SELECT 1 FROM encuadres e WHERE e.worker_id = w.id)
+      -- DATA CONHECIDA: precisa existir ao menos um encuadre COM data. Sem isto,
+      -- quem só tem recruitment_date NULL era arquivado como "antigo" (ver nota).
+      AND EXISTS (
+        SELECT 1 FROM encuadres e
+        WHERE e.worker_id = w.id AND e.recruitment_date IS NOT NULL
+      )
       AND NOT EXISTS (
         SELECT 1 FROM encuadres e
         WHERE e.worker_id = w.id AND e.recruitment_date >= $1::date
+      )
+      -- PESSOA VIVA: disponibilidade recente é ação do próprio prestador.
+      AND NOT EXISTS (
+        SELECT 1 FROM worker_availability v
+        WHERE v.worker_id = w.id
+          AND v.created_at >= NOW() - ($2::int * INTERVAL '1 day')
       )
   )
   SELECT
@@ -86,14 +162,39 @@ const ELIGIBILITY_QUERY = `
     w.ana_care_status,
     (SELECT COUNT(*) FROM encuadres e WHERE e.worker_id = w.id)::int AS encuadres_count,
     (SELECT MAX(e.recruitment_date) FROM encuadres e WHERE e.worker_id = w.id) AS most_recent_recruitment_date,
-    (w.phone IS NOT NULL) AS has_phone
+    (w.phone IS NOT NULL) AS has_phone,
+    w.auth_uid
   FROM workers w
   JOIN eligible el ON el.id = w.id
   ORDER BY w.id;
 `;
-// NOT EXISTS (... recruitment_date >= cutoff) já cobre "< cutoff", sentinela
-// 2000-01-01 e NULL como "antigo" automaticamente — NULL >= data avalia UNKNOWN,
-// nunca TRUE, então a linha nunca "conta" para o EXISTS interno.
+// ⚠️ HISTÓRICO — por que existe o EXISTS de "data conhecida" acima.
+// A versão anterior tinha só o NOT EXISTS (... >= cutoff) e a nota dizia que ele
+// "cobre NULL como antigo automaticamente". Cobre — mas isso estava ERRADO como
+// regra de negócio: `NULL >= data` avalia UNKNOWN, nunca TRUE, então quem tem
+// APENAS datas nulas passava no filtro. NULL é DESCONHECIDO, não velho, e é
+// exatamente a cara de um cadastro novo que ainda não teve encuadre agendado.
+// Em 10/08/2026 isso arquivou 1.998 de 5.169 workers por esse ramo, incluindo
+// pessoas que haviam se cadastrado e se candidatado no mesmo mês.
+// Agora esses casos são INELEGÍVEIS e saem no CSV de revisão.
+
+/** Workers barrados por data desconhecida — saem para revisão, não para o lote. */
+export const REVIEW_QUERY = `
+  SELECT
+    w.id AS worker_id,
+    w.status AS status_before,
+    (SELECT COUNT(*) FROM encuadres e WHERE e.worker_id = w.id)::int AS encuadres_count
+  FROM workers w
+  WHERE w.merged_into_id IS NULL
+    AND w.status <> 'DISABLED'
+    AND (w.ana_care_status IS NULL OR w.ana_care_status NOT IN ('Activo', 'Cubriendo guardias'))
+    AND EXISTS (SELECT 1 FROM encuadres e WHERE e.worker_id = w.id)
+    AND NOT EXISTS (
+      SELECT 1 FROM encuadres e
+      WHERE e.worker_id = w.id AND e.recruitment_date IS NOT NULL
+    )
+  ORDER BY w.id;
+`;
 
 /**
  * pg devolve DATE como objeto Date à meia-noite LOCAL — usar métodos locais
@@ -107,6 +208,25 @@ function formatDateOnly(value: string | null): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * CSV dos barrados por data desconhecida. Não é rollback — é fila de revisão:
+ * alguém precisa olhar por que esses encuadres estão sem `recruitment_date`.
+ */
+function writeReviewCsv(
+  rows: Array<{ worker_id: string; status_before: string; encuadres_count: number }>,
+  exportedAt: string,
+): string {
+  const outDir = path.join(__dirname, 'bulk-archive-output');
+  fs.mkdirSync(outDir, { recursive: true });
+  const filePath = path.join(outDir, `review-encuadre-sem-data-${exportedAt.replace(/[:.]/g, '-')}.csv`);
+  const header = 'worker_id,status_before,encuadres_count,motivo,exported_at';
+  const lines = rows.map((r) =>
+    [r.worker_id, r.status_before, r.encuadres_count, 'encuadre_sem_recruitment_date', exportedAt].join(','),
+  );
+  fs.writeFileSync(filePath, [header, ...lines].join('\n') + '\n', 'utf8');
+  return filePath;
 }
 
 function writeCsv(rows: EligibleRow[], exportedAt: string): string {
@@ -207,7 +327,37 @@ async function main(): Promise<void> {
 async function runArchive(pool: Pool): Promise<void> {
   console.log(`[bulk-archive] mode=${isDryRun ? 'DRY RUN (--execute para escrever)' : 'EXECUTE'} cutoff=${CUTOFF_DATE}`);
 
-  const { rows } = await pool.query<EligibleRow>(ELIGIBILITY_QUERY, [CUTOFF_DATE]);
+  const { rows: candidates } = await pool.query<EligibleRow>(
+    ELIGIBILITY_QUERY, [CUTOFF_DATE, LIVENESS_WINDOW_DAYS],
+  );
+  console.log(`[bulk-archive] candidatos (após filtros de banco): ${candidates.length}`);
+
+  // Quem tem data desconhecida NÃO entra no lote — sai para revisão humana.
+  const { rows: review } = await pool.query(REVIEW_QUERY);
+  if (review.length > 0) {
+    const reviewPath = writeReviewCsv(review, new Date().toISOString());
+    console.log(
+      `[bulk-archive] ${review.length} worker(s) com encuadre SEM data → NÃO arquivados, exportados para revisão: ${reviewPath}`,
+    );
+  }
+
+  // Última trava, e a mais importante: pessoa que logou na plataforma sai do lote.
+  // auth_uid SINTÉTICO (prefixo de import em massa) nunca vai casar com conta real
+  // no Identity Platform — filtrar ANTES de consultar evita chamada desperdiçada
+  // (e, em volume, uma fração grande do lote: a maioria dos importados é assim).
+  const uids = candidates
+    .map((r) => r.auth_uid)
+    .filter((u): u is string => !!u && !isFakeAuthUid(u));
+  const logins = await fetchLastLogins(uids, fetchFromIdentityPlatform);
+  const now = Date.now();
+  const rows = candidates.filter(
+    (r) => !isRecentLogin(r.auth_uid, logins, LIVENESS_WINDOW_DAYS, now),
+  );
+  const protegidos = candidates.length - rows.length;
+  console.log(
+    `[bulk-archive] contas no Identity Platform: ${logins.size} de ${uids.length} uid(s) — ` +
+    `${protegidos} protegido(s) por login nos últimos ${LIVENESS_WINDOW_DAYS} dias`,
+  );
   console.log(`[bulk-archive] elegíveis: ${rows.length}`);
 
   const withoutPhone = rows.filter((r) => !r.has_phone).length;
