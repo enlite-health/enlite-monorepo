@@ -829,7 +829,7 @@ Emitir `WorkerDocumentUploadedEvent { workerId, documentType, filePath, uploaded
 
 **Como foi resolvido:**
 
-1. Migration `181_backfill_workers_timezone_by_country.sql` faz backfill dos workers existentes via `workers.country` (AR → America/Argentina/Buenos_Aires, BR → America/Sao_Paulo, outros → UTC). Idempotente (`WHERE timezone = 'UTC'`). `worker_availability.timezone` também é atualizado pra workers cujo timezone mudou.
+1. Migration `265_backfill_workers_timezone_by_country.sql` (renumerada de 181 no review — 181 já ocupada em main por `add_job_posting_id_to_whatsapp_bulk_dispatch_logs`) faz backfill dos workers existentes via `workers.country` (AR → America/Argentina/Buenos_Aires, BR → America/Sao_Paulo, outros → UTC). Idempotente (`WHERE timezone = 'UTC'`). `worker_availability.timezone` também é atualizado pra workers cujo timezone mudou. O `UPDATE workers` roda com o trigger `update_workers_updated_at` desabilitado (backfill de dado histórico, não deve colapsar o timestamp de ~7.466 linhas e quebrar o desempate "mais recente vence" em `WorkerPhoneMergeHelpers.ts`/`AccountLinkService.ts`). A mesma migration também seta `ALTER TABLE workers ALTER COLUMN timezone SET DEFAULT 'America/Argentina/Buenos_Aires'`, fechando o loop pros caminhos de INSERT que hoje omitem `timezone` (`ProcessTalentumPrescreening.ts`, `SyncTalentumWorkersUseCase.ts`).
 
 2. `WorkerRepository.create()` agora deriva `timezone` de `country` via `countryToTimezone()` (util do PR 1 do sprint MCP) quando o caller não passa explicitamente. Antes: `data.timezone || 'UTC'` → agora: `data.timezone || countryToTimezone(country)`.
 
