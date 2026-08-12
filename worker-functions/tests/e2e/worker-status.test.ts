@@ -7,7 +7,7 @@
  * Fluxo testado:
  *   1. Criar worker → status = INCOMPLETE_REGISTER
  *   2. PUT /api/workers/:id/status → REGISTERED em worker incompleto → deve manter INCOMPLETE_REGISTER
- *   3. Criar job application → stage INITIATED (via inserção direta no banco)
+ *   3. Criar job application → stage PRE_SCREENING (via inserção direta no banco)
  *   4. Atualizar stage → PLACED (via query direta no banco)
  *   5. PUT /api/workers/:id/status → DISABLED
  *   6. Guard: trigger bloqueia SET REGISTERED direto no banco em worker incompleto
@@ -154,10 +154,14 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
     });
   });
 
-  // ── Cenário 3: Criar job application com stage INITIATED ─────────────────────
+  // ── Cenário 3: Criar job application com stage PRE_SCREENING ─────────────────
+  // Migration 264 (#95) removeu 'INITIATED' do CHECK constraint — a aplicação já
+  // mapeava INITIATED→PRE_SCREENING antes de qualquer INSERT (migration 230).
+  // Este cenário testa a mesma invariante (persistência de um stage inicial via
+  // inserção direta) com o valor canônico atual.
 
-  describe('Cenário 3 — Criar job application com stage INITIATED', () => {
-    it('deve persistir application com application_funnel_stage = INITIATED', async () => {
+  describe('Cenário 3 — Criar job application com stage PRE_SCREENING', () => {
+    it('deve persistir application com application_funnel_stage = PRE_SCREENING', async () => {
       // Arrange — criar job posting de suporte
       const jpResult = await pool.query(
         `INSERT INTO job_postings (title, description, country, status)
@@ -171,7 +175,7 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
       // (workers de fixture podem estar INCOMPLETE_REGISTER em contexto de seed).
       const appResult = await pool.query(
         `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-         VALUES ($1, $2, 'INITIATED', 'import')
+         VALUES ($1, $2, 'PRE_SCREENING', 'import')
          RETURNING id, application_funnel_stage`,
         [workerId, jobPostingId],
       );
@@ -179,7 +183,7 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
       applicationId = appResult.rows[0].id as string;
 
       // Assert
-      expect(appResult.rows[0].application_funnel_stage).toBe('INITIATED');
+      expect(appResult.rows[0].application_funnel_stage).toBe('PRE_SCREENING');
     });
   });
 
