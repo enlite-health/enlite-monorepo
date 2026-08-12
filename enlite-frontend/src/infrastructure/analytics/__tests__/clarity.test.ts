@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { initClarity } from '../clarity';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { initClarity, identifyClarity } from '../clarity';
 
 const CLARITY_SRC_PREFIX = 'https://www.clarity.ms/tag/';
 
@@ -44,5 +44,55 @@ describe('initClarity', () => {
     initClarity('xftpznri3x');
 
     expect(findClarityScripts()).toHaveLength(1);
+  });
+});
+
+describe('identifyClarity', () => {
+  afterEach(() => {
+    delete window.clarity;
+  });
+
+  it('é no-op quando o Clarity não foi inicializado (window.clarity undefined)', () => {
+    expect(() => identifyClarity('uid-123')).not.toThrow();
+    expect(window.clarity).toBeUndefined();
+  });
+
+  it('é no-op quando o userId é vazio', () => {
+    const spy = vi.fn();
+    window.clarity = spy as unknown as typeof window.clarity;
+
+    identifyClarity('');
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('chama identify com o id opaco', () => {
+    const spy = vi.fn();
+    window.clarity = spy as unknown as typeof window.clarity;
+
+    identifyClarity('uid-123');
+
+    expect(spy).toHaveBeenCalledWith('identify', 'uid-123');
+  });
+
+  it('seta as tags customizadas informadas', () => {
+    const spy = vi.fn();
+    window.clarity = spy as unknown as typeof window.clarity;
+
+    identifyClarity('uid-123', { workerId: 'w-1', workerStatus: 'REGISTERED' });
+
+    expect(spy).toHaveBeenCalledWith('identify', 'uid-123');
+    expect(spy).toHaveBeenCalledWith('set', 'workerId', 'w-1');
+    expect(spy).toHaveBeenCalledWith('set', 'workerStatus', 'REGISTERED');
+  });
+
+  it('ignora tags com valor vazio (não vaza campo em branco)', () => {
+    const spy = vi.fn();
+    window.clarity = spy as unknown as typeof window.clarity;
+
+    identifyClarity('uid-123', { workerId: 'w-1', workerStatus: '' });
+
+    expect(spy).toHaveBeenCalledWith('set', 'workerId', 'w-1');
+    expect(spy).not.toHaveBeenCalledWith('set', 'workerStatus', '');
   });
 });

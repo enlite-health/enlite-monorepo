@@ -13,6 +13,7 @@ import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrat
 import { DocumentApiService } from '@infrastructure/http/DocumentApiService';
 import { validateRegistrationSteps } from '@presentation/utils/workerProgressValidation';
 import { areAllRequiredDocsComplete } from '@presentation/utils/workerDocumentRequirements';
+import { identifyClarity } from '@infrastructure/analytics/clarity';
 import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
 import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
 
@@ -45,6 +46,10 @@ export const WorkerHome = (): JSX.Element => {
         ]);
         setWorkerData({ ...data, availability: availability.length > 0 ? { slots: availability } : undefined });
         setDocumentsData(docs);
+        // Tag do Clarity com identificadores OPACOS (sem PII) para tornar a
+        // sessão do worker buscável no suporte — ex.: reproduzir "a app pede
+        // documento de novo". Só workerId (UUID) e status.
+        identifyClarity(data.authUid, { workerId: data.id, workerStatus: data.status ?? '' });
       } catch (error) {
         console.error('Failed to fetch worker data:', error);
         setWorkerData(null);

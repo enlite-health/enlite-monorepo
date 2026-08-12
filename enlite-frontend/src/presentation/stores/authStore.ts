@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { User } from '@domain/entities/User';
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
+import { identifyClarity } from '@infrastructure/analytics/clarity';
 
 interface AuthState {
   user: User | null;
@@ -71,6 +72,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const unsubscribe = authService.onAuthStateChanged((firebaseUser) => {
       setUser(firebaseUser);
       setLoading(false);
+      if (firebaseUser) {
+        // Amarra a sessão do Clarity ao uid opaco do Firebase (sem PII), para
+        // que uma sessão anônima vire buscável no suporte. O workerId é somado
+        // como tag depois, quando o perfil carrega (WorkerHome).
+        identifyClarity(firebaseUser.id);
+      }
     });
     
     return unsubscribe;
