@@ -1,25 +1,14 @@
 import { Request, Response } from 'express';
-import { z } from 'zod';
 import { ListActivePublicJobsUseCase } from '../../application/ListActivePublicJobsUseCase';
 import { JobPostingARRepository } from '../../infrastructure/JobPostingARRepository';
+import { PublicJobsFiltersSchema, type PublicJobsFilters } from '../../domain/PublicJobsFilters';
 
 // ── Query param schema ────────────────────────────────────────────────────────
+// TD-014: schema canônico vem do domain pra evitar drift.
 
-const PublicJobsQuerySchema = z.object({
-  country: z
-    .string()
-    .transform(s => s.toUpperCase())
-    .pipe(z.string().regex(/^[A-Z]{2}$/, 'country must be a 2-letter ISO code'))
-    .default('AR'),
-  state: z.string().trim().min(1).optional(),
-  city: z.string().trim().min(1).optional(),
-  pathology: z.string().trim().min(1).optional(),
-  worker_sex: z.enum(['FEMALE', 'MALE', 'BOTH']).optional(),
-  worker_type: z.string().trim().min(1).optional(),
-  q: z.string().trim().min(1).optional(),
-});
+const PublicJobsQuerySchema = PublicJobsFiltersSchema;
 
-type PublicJobsQuery = z.infer<typeof PublicJobsQuerySchema>;
+type PublicJobsQuery = PublicJobsFilters;
 
 // ── Controller ────────────────────────────────────────────────────────────────
 

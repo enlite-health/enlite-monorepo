@@ -1,6 +1,16 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema } from '../schemas/common';
 
+/**
+ * TD-014: Schema canônico de filtros vive em
+ * `modules/matching/domain/PublicJobsFilters.ts`. A registration aqui apenas
+ * adiciona metadata OpenAPI por campo — manter alinhado se o domain mudar.
+ *
+ * Mantemos `z.object()` aqui (não importamos o schema do domain) porque
+ * `.openapi()` exige Zod instance específica do `@asteasolutions/zod-to-openapi`
+ * e os tipos não se chain bem em schemas com `.pipe().default()`. Custo
+ * aceito: 2 lugares com lista de campos idêntica; review preventivo cobre.
+ */
 const PublicJobsV1QuerySchema = z.object({
   country: z.string().optional().openapi({
     description: 'Código ISO 3166-1 alpha-2 do país (default AR). Transformado para uppercase.',
