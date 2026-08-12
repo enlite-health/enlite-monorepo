@@ -183,3 +183,37 @@ describe('VacancyFunnelTable', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
+
+// Coluna "Origen" — o mesmo sinal do card do Kanban, aqui na vista que é o DEFAULT
+// do funil. Sem isto, quem nunca troca de vista não vê quem levantou a mão.
+describe('VacancyFunnelTable — coluna Origen (levantou a mão)', () => {
+  const props = { vacancyId: 'vac-123', isLoading: false, activeBucket: 'INVITED' as const };
+
+  it('mostra o selo quando o próprio prestador entrou pelo link', () => {
+    const rows: FunnelTableRow[] = [
+      { ...mockRows[0], selfAppliedAt: '2026-08-07T13:51:19.923Z' },
+    ];
+    renderTable({ ...props, rows });
+    expect(screen.getByTestId('funnel-self-applied-badge')).toHaveTextContent(
+      'admin.kanban.selfApplied',
+    );
+  });
+
+  it('sem carimbo mostra travessão, não o selo — ausência não é prova de desinteresse', () => {
+    const rows: FunnelTableRow[] = [{ ...mockRows[0], selfAppliedAt: null }];
+    renderTable({ ...props, rows });
+    expect(screen.queryByTestId('funnel-self-applied-badge')).toBeNull();
+  });
+
+  it('linha sem o campo (card antigo) também não mostra o selo', () => {
+    renderTable({ ...props, rows: [mockRows[0]] });
+    expect(screen.queryByTestId('funnel-self-applied-badge')).toBeNull();
+  });
+
+  it('a coluna existe no cabeçalho da lista', () => {
+    renderTable({ ...props, rows: mockRows });
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.headers.origin'),
+    ).toBeInTheDocument();
+  });
+});

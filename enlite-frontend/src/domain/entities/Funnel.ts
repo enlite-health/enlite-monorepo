@@ -29,6 +29,12 @@ export interface FunnelTableRow {
   interviewResponse: string | null;
   registrationComplete: boolean;
   contactNotesCount: number;
+  /**
+   * ISO de quando o PRÓPRIO prestador entrou nesta vaga pelo link público.
+   * null = não sabemos (autoria só é gravada desde 06/08) — ausência NÃO é
+   * prova de desinteresse.
+   */
+  selfAppliedAt?: string | null;
 }
 
 export interface FunnelTableCounts {
