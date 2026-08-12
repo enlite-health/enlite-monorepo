@@ -85,6 +85,42 @@ export class AvailabilityRepository implements IAvailabilityRepository {
     }
   }
 
+  async replaceByWorkerId(workerId: string, data: CreateAvailabilityDTO[]): Promise<Result<void>> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      await client.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [workerId]);
+
+      for (const slot of data) {
+        await client.query(
+          `
+          INSERT INTO worker_availability
+            (worker_id, day_of_week, start_time, end_time, timezone, crosses_midnight)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+          [
+            slot.workerId,
+            slot.dayOfWeek,
+            slot.startTime,
+            slot.endTime,
+            slot.timezone,
+            slot.crossesMidnight || false,
+          ],
+        );
+      }
+
+      await client.query('COMMIT');
+      return Result.ok<void>();
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      return Result.fail<void>(`Failed to replace availability: ${error.message}`);
+    } finally {
+      client.release();
+    }
+  }
+
   async findByWorkerId(workerId: string): Promise<Result<WorkerAvailability[]>> {
     try {
       const query = `

@@ -358,6 +358,9 @@ export class WorkerControllerV2 {
       });
 
       if (result.isFailure) {
+        // Sem isto o 400 é invisível nos logs — foi o que escondeu por semanas
+        // o save de disponibilidade falhando em série (03/08: 142 falhas/dia).
+        console.warn(`[WorkerControllerV2.saveAvailability] rejected | workerId: ${workerId} | reason: ${result.error}`);
         res.status(400).json({ success: false, error: result.error });
         return;
       }
