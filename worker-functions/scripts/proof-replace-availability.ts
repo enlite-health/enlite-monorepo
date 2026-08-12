@@ -13,14 +13,24 @@
  *   3. payload válido → substituição normal.
  *
  * Uso: DATABASE_URL=postgres://... npx ts-node scripts/proof-replace-availability.ts
+ *
+ * SEGURANÇA: este script NUNCA toca a tabela real `public.worker_availability`.
+ * A fixture vive num schema descartável próprio (`proof_availability_atomic`),
+ * criado e destruído aqui — é o único objeto que o script dropa. Além disso
+ * recusa rodar contra um banco que não pareça descartável (ver assertSafeTarget):
+ * com cloud-sql-proxy a produção aparece como localhost, então "é localhost" não
+ * é garantia de nada e o nome do banco é o que sobra pra decidir.
  */
 import { Pool } from 'pg';
 
+const SCRATCH_SCHEMA = 'proof_availability_atomic';
+const TABLE = `${SCRATCH_SCHEMA}.worker_availability`;
+
 const DDL = `
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  DROP TABLE IF EXISTS worker_availability;
-  CREATE TABLE worker_availability (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  DROP SCHEMA IF EXISTS ${SCRATCH_SCHEMA} CASCADE;
+  CREATE SCHEMA ${SCRATCH_SCHEMA};
+  CREATE TABLE ${TABLE} (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     worker_id uuid NOT NULL,
     day_of_week integer NOT NULL,
     start_time time NOT NULL,
@@ -35,6 +45,31 @@ const DDL = `
   );
 `;
 
+/**
+ * Recusa bancos que não pareçam descartáveis. Override consciente:
+ * PROOF_ALLOW_NON_TEST_DB=yes-i-am-sure
+ */
+function assertSafeTarget(connectionString: string): void {
+  let dbName = '';
+  try {
+    dbName = decodeURIComponent(new URL(connectionString).pathname).replace(/^\//, '');
+  } catch {
+    throw new Error('DATABASE_URL inválida — não consegui extrair o nome do banco.');
+  }
+
+  if (/(test|e2e|local|proof|dev)/i.test(dbName)) return;
+  if (process.env.PROOF_ALLOW_NON_TEST_DB === 'yes-i-am-sure') {
+    console.warn(`AVISO: rodando contra banco não-descartável "${dbName}" por override explícito.`);
+    return;
+  }
+
+  throw new Error(
+    `Recusando rodar: o banco "${dbName}" não parece descartável (esperado conter test/e2e/local/proof/dev).\n` +
+      'Este script cria e dropa o schema ' + SCRATCH_SCHEMA + '. Se é mesmo o que você quer,\n' +
+      'rode com PROOF_ALLOW_NON_TEST_DB=yes-i-am-sure.',
+  );
+}
+
 const WORKER = '26fd593d-85aa-4ad3-bfe8-000000000000';
 
 // Mesma lógica do AvailabilityRepository.replaceByWorkerId (copiada aqui porque o
@@ -47,10 +82,10 @@ async function replaceByWorkerId(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [workerId]);
+    await client.query(`DELETE FROM ${TABLE} WHERE worker_id = $1`, [workerId]);
     for (const slot of slots) {
       await client.query(
-        `INSERT INTO worker_availability (worker_id, day_of_week, start_time, end_time, timezone, crosses_midnight)
+        `INSERT INTO ${TABLE} (worker_id, day_of_week, start_time, end_time, timezone, crosses_midnight)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [workerId, slot.dayOfWeek, slot.startTime, slot.endTime, 'America/Argentina/Buenos_Aires', slot.crossesMidnight || false],
       );
@@ -66,12 +101,18 @@ async function replaceByWorkerId(
 }
 
 async function count(pool: Pool): Promise<number> {
-  const r = await pool.query(`SELECT count(*)::int AS n FROM worker_availability WHERE worker_id = $1`, [WORKER]);
+  const r = await pool.query(`SELECT count(*)::int AS n FROM ${TABLE} WHERE worker_id = $1`, [WORKER]);
   return r.rows[0].n;
 }
 
 async function main(): Promise<void> {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL não definida.');
+  }
+  assertSafeTarget(connectionString);
+
+  const pool = new Pool({ connectionString });
   await pool.query(DDL);
 
   let failed = 0;
@@ -107,16 +148,16 @@ async function main(): Promise<void> {
   check('payload válido substitui', ok.ok && (await count(pool)) === 1, `count=${await count(pool)}`);
 
   // 4. Contraste com o comportamento ANTIGO (2 transações): prova que o bug era esse
-  await pool.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [WORKER]);
+  await pool.query(`DELETE FROM ${TABLE} WHERE worker_id = $1`, [WORKER]);
   await pool.query(
-    `INSERT INTO worker_availability (worker_id, day_of_week, start_time, end_time, timezone) VALUES ($1, 1, '09:00', '17:00', 'X')`,
+    `INSERT INTO ${TABLE} (worker_id, day_of_week, start_time, end_time, timezone) VALUES ($1, 1, '09:00', '17:00', 'X')`,
     [WORKER],
   );
-  await pool.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [WORKER]); // transação 1 (autocommit)
+  await pool.query(`DELETE FROM ${TABLE} WHERE worker_id = $1`, [WORKER]); // transação 1 (autocommit)
   try {
     await pool.query('BEGIN');
     await pool.query(
-      `INSERT INTO worker_availability (worker_id, day_of_week, start_time, end_time, timezone) VALUES ($1, 4, '20:00', '08:00', 'X')`,
+      `INSERT INTO ${TABLE} (worker_id, day_of_week, start_time, end_time, timezone) VALUES ($1, 4, '20:00', '08:00', 'X')`,
       [WORKER],
     );
     await pool.query('COMMIT');
@@ -125,6 +166,8 @@ async function main(): Promise<void> {
   }
   check('comportamento ANTIGO destruía (contraste)', (await count(pool)) === 0, `count=${await count(pool)} (wipe reproduzido)`);
 
+  // Não deixa resíduo: o schema descartável morre junto com a prova.
+  await pool.query(`DROP SCHEMA IF EXISTS ${SCRATCH_SCHEMA} CASCADE`);
   await pool.end();
   if (failed > 0) {
     console.error(`\n${failed} verificação(ões) FALHARAM`);
