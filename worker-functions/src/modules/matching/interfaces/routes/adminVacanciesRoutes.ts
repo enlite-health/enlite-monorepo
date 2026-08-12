@@ -12,6 +12,7 @@ import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
 import { InterviewSlotsController } from '../controllers/InterviewSlotsController';
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
+import { WorkerVacancyDeliveryStatusController } from '../controllers/WorkerVacancyDeliveryStatusController';
 import { AuthMiddleware } from '@modules/identity';
 
 /**
@@ -213,6 +214,17 @@ export function createAdminVacanciesRoutes(
     '/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.delete(req, res),
+  );
+
+  // ── Delivery Status (WorkerVacancyDeliveryStatusController) ──────────────────
+  // READ-ONLY: wjaStage + status de entrega (messaging_outbox) do par
+  // (worker, vaga). Usado pelo E2E do funil de WhatsApp pra verificar
+  // entrega sem tocar no banco direto.
+  const deliveryStatusController = new WorkerVacancyDeliveryStatusController();
+  router.get(
+    '/vacancies/:vacancyId/workers/:workerId/delivery-status',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => deliveryStatusController.getDeliveryStatus(req, res),
   );
 
   return router;
