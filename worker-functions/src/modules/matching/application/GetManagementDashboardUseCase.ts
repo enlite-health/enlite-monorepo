@@ -329,7 +329,13 @@ export class GetManagementDashboardUseCase {
       prioridades: {
         // Pessoas distintas em vaga viva — fila de contato, não acervo de candidaturas.
         completosEsperandoAgendamiento: esperandoRow.rows[0]?.esperando ?? 0,
-        profesionalesBloqueados: worker.incompletos,
+        // registrosIncompletos: backlog de import (workers.status INCOMPLETE_REGISTER),
+        // deduplicado por pessoa — não é bloqueio de postulação.
+        registrosIncompletos: worker.incompletos,
+        // bloqueadosAlPostularse: pessoas distintas barradas pelo gate de cadastro
+        // incompleto ao tentar se candidatar, já recortado a vaga viva + não desativado
+        // (mesma fonte/filtro de funnel.bloqueados — ver query `blockedRow` acima).
+        bloqueadosAlPostularse: blocked,
       },
       funnelPorPrestador: {
         total: funnelPorPrestador.total,

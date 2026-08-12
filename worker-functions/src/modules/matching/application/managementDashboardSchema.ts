@@ -128,8 +128,14 @@ export const managementDashboardSchema = z.object({
   prioridades: z.object({
     /** worker_job_applications.application_funnel_stage = 'QUALIFIED'. */
     completosEsperandoAgendamiento: nonNegInt,
-    /** workers.status = 'INCOMPLETE_REGISTER' (deduped). */
-    profesionalesBloqueados: nonNegInt,
+    /** workers.status = 'INCOMPLETE_REGISTER' (deduped) — backlog de cadastro incompleto. */
+    registrosIncompletos: nonNegInt,
+    /**
+     * COUNT(DISTINCT worker_id) de worker_blocked_applications (registration_incomplete):
+     * pessoas que de fato tentaram se postular e foram barradas — 1 unidade por profissional,
+     * mesmo que bloqueado em várias vagas. É a lista acionável de contato.
+     */
+    bloqueadosAlPostularse: nonNegInt,
   }),
   /**
    * Funil contado por PRESTADOR (pedido do Diego, 30/07/2026) e recortado à

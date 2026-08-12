@@ -58,7 +58,7 @@ const PROD_PAYLOAD = {
     sobrepoe: true,
   },
   horas: { ativas: 987.5, ativasConSchedule: 38, ativasSinSchedule: 12, totais: 0, aPreencher: 0, coberturaConSchedule: 0, coberturaSinSchedule: 274 },
-  prioridades: { completosEsperandoAgendamiento: 2431, profesionalesBloqueados: 6735 },
+  prioridades: { completosEsperandoAgendamiento: 2431, registrosIncompletos: 6735, bloqueadosAlPostularse: 355 },
   funnelPorPrestador: {
     total: 2576,
     recorte: 'vagas-vivas',

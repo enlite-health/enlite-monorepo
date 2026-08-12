@@ -1006,8 +1006,10 @@
       "prioridades": {
         "esperandoAgendamiento": "Cadastros completos aguardando agenda",
         "esperandoAgendamientoSub": "Qualificados pela Talentum, sem encuadre agendado · pessoas distintas em vagas ativas",
-        "bloqueados": "Profissionais bloqueados",
-        "bloqueadosSub": "Cadastro incompleto"
+        "bloqueadosAlPostularse": "Bloqueados ao se candidatar",
+        "bloqueadosAlPostularseSub": "Tentaram se candidatar e foram bloqueados (pessoas únicas)",
+        "registrosIncompletos": "Cadastros incompletos",
+        "registrosIncompletosSub": "Base com cadastro não concluído"
       },
       "funnel": {
         "totalPrestadores": "Prestadores no funil",
