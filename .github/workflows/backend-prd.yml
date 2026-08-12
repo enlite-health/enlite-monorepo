@@ -99,19 +99,31 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
             EMAIL_FROM=enlite@enlite.health
-            N8N_WEBHOOK_URL=https://n8n.enlite.health/webhook/worker-events
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+            GEMINI_MODEL_FAST=gemini-2.5-flash
+            VERTEX_LOCATION=global
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
+            MATCHING_RESPECT_AVAILABILITY=true
+            ACCOUNT_LINK_ENABLED=true
+            PATIENT_CHAT_LOOKUP_ENABLED=true
+            ACCOUNT_LINK_PUBLIC_BASE_URL=https://api.enlite.health
+            ADMISSION_CALENDAR_ID_AR=c_2b45b5a65a8cc01085d06a6c7576067dc019716e4448d156482a9060bac97be4@group.calendar.google.com
+            ADMISSION_CALENDAR_ID_BR=c_4269afcf3b1a3e84facf0215e4cab5aa48d6286ade21c3aed5240262e418bad8@group.calendar.google.com
+            ADMISSION_IMPERSONATE_EMAIL=enlite@enlite.health
+            TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_ES=HX0ff7a2b0796720e820c4fc0c1f51de7a
+            TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_PT=HXbce81c8d53926d61493cb870cb3254b4
+            TWILIO_TEMPLATE_ADMISSION_REMINDER_ES=HX85f46263a1b26334b0f389716274d01c
+            TWILIO_TEMPLATE_ADMISSION_REMINDER_PT=HX48369d7544b03ed3759a3306b3432d35
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             SENDGRID_API_KEY=sendgrid-api-key:latest
+            ACCOUNT_LINK_TOKEN_SECRET=account-link-token-secret:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
@@ -135,3 +147,22 @@ jobs:
             exit 1
           fi
           echo "Health check passed ($STATUS)"
+
+      - name: 'Smoke test — Vertex AI reachable (gera IA)'
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(status.url)')
+          SECRET=$(gcloud secrets versions access latest \
+            --secret=internal-token-secret \
+            --project=${{ secrets.GCP_PROJECT_ID }})
+          STATUS=$(curl -s -o /tmp/vertex-health.json -w '%{http_code}' \
+            -H "x-internal-secret: $SECRET" \
+            "$SERVICE_URL/api/internal/vertex-health")
+          echo "Vertex health: $(cat /tmp/vertex-health.json)"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Vertex AI smoke FALHOU ($STATUS) — geração de IA não funcionaria. Cheque roles/aiplatform.user na enlite-functions-sa e disponibilidade do modelo/região."
+            exit 1
+          fi
+          echo "Vertex AI smoke passed ($STATUS)"

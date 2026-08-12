@@ -14,6 +14,10 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import type { TalentumProject, TalentumQuestionWithId, TalentumFaq } from '../domain/ITalentumApiClient';
+import {
+  JobPostingAuditRepository,
+} from '../../matching/infrastructure/JobPostingAuditRepository';
+import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -37,9 +41,11 @@ export interface SyncReport {
 
 export class SyncTalentumVacanciesUseCase {
   private db: Pool;
+  private auditRepo: JobPostingAuditRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.auditRepo = new JobPostingAuditRepository();
   }
 
   async execute(opts?: { force?: boolean }): Promise<SyncReport> {
@@ -136,6 +142,7 @@ export class SyncTalentumVacanciesUseCase {
 
     // 2d. Create or update (no LLM — just save Talentum data directly)
     let jobPostingId: string;
+    let wasCreated = false;
 
     if (existing) {
       jobPostingId = existing.id;
@@ -143,10 +150,11 @@ export class SyncTalentumVacanciesUseCase {
     } else {
       jobPostingId = await this.createFromSync(caseNumber);
       report.created++;
+      wasCreated = true;
     }
 
     // 2e. Save Talentum reference
-    await this.saveTalentumReference(jobPostingId, {
+    await this.saveTalentumReference(jobPostingId, wasCreated, {
       talentum_project_id: source.projectId,
       talentum_public_id: source.publicId,
       talentum_whatsapp_url: source.whatsappUrl,
@@ -172,10 +180,9 @@ export class SyncTalentumVacanciesUseCase {
   /**
    * Creates a new vacancy with basic data from Talentum title.
    * No LLM parsing — fields will be filled manually or via other flows.
+   * Audit CREATED inside the same transaction.
    */
-  private async createFromSync(
-    caseNumber: number | null,
-  ): Promise<string> {
+  private async createFromSync(caseNumber: number | null): Promise<string> {
     const vnResult = await this.db.query<{ vn: string }>(
       "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
     );
@@ -184,22 +191,44 @@ export class SyncTalentumVacanciesUseCase {
       ? `CASO ${caseNumber}-${vacancyNumber}`
       : `VACANTE ${vacancyNumber}`;
 
-    const result = await this.db.query(
-      `INSERT INTO job_postings (
-         vacancy_number, case_number, title, description, country, status
-       ) VALUES ($1, $2, $3, '', 'AR', 'SEARCHING')
-       RETURNING id`,
-      [vacancyNumber, caseNumber, title],
-    );
-
-    return result.rows[0].id;
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO job_postings (
+           vacancy_number, case_number, title, description, country, status
+         ) VALUES ($1, $2, $3, '', 'AR', 'SEARCHING')
+         RETURNING id`,
+        [vacancyNumber, caseNumber, title],
+      );
+      const jobPostingId = result.rows[0].id;
+      // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+      // leaving the surrounding transaction (and the job_posting INSERT above) intact.
+      await this.auditRepo.logEventSafe(client, {
+        jobPostingId,
+        eventType: 'CREATED',
+        changes: { before: null, after: { vacancyNumber, caseNumber, title, status: 'SEARCHING' } },
+        actorUserId: null,
+        actorType: 'WEBHOOK',
+        actorLabel: 'talentum_sync',
+      });
+      await client.query('COMMIT');
+      return jobPostingId;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
    * Persists Talentum reference columns on the job_posting.
+   * When wasCreated=false (update path), audits UPDATED best-effort.
    */
   private async saveTalentumReference(
     jobPostingId: string,
+    wasCreated: boolean,
     ref: {
       talentum_project_id: string;
       talentum_public_id: string;
@@ -209,26 +238,45 @@ export class SyncTalentumVacanciesUseCase {
       talentum_description: string;
     },
   ): Promise<void> {
-    await this.db.query(
-      `UPDATE job_postings
-       SET talentum_project_id   = $1,
-           talentum_public_id    = $2,
-           talentum_whatsapp_url = $3,
-           talentum_slug         = $4,
-           talentum_published_at = $5,
-           talentum_description  = $6,
-           updated_at            = NOW()
-       WHERE id = $7`,
-      [
-        ref.talentum_project_id,
-        ref.talentum_public_id,
-        ref.talentum_whatsapp_url,
-        ref.talentum_slug,
-        ref.talentum_published_at,
-        ref.talentum_description,
-        jobPostingId,
-      ],
-    );
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE job_postings
+         SET talentum_project_id   = $1,
+             talentum_public_id    = $2,
+             talentum_whatsapp_url = $3,
+             talentum_slug         = $4,
+             talentum_published_at = $5,
+             talentum_description  = $6,
+             updated_at            = NOW()
+         WHERE id = $7`,
+        [
+          ref.talentum_project_id, ref.talentum_public_id, ref.talentum_whatsapp_url,
+          ref.talentum_slug, ref.talentum_published_at, ref.talentum_description, jobPostingId,
+        ],
+      );
+      // Only audit on update path — CREATED path already audited in createFromSync.
+      // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+      // leaving the surrounding transaction (and the UPDATE above) intact.
+      if (!wasCreated) {
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId,
+          eventType: 'UPDATED',
+          fieldName: 'talentum_project_id',
+          changes: { before: null, after: ref.talentum_project_id },
+          actorUserId: null,
+          actorType: 'WEBHOOK',
+          actorLabel: 'talentum_sync',
+        });
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -255,7 +303,9 @@ export class SyncTalentumVacanciesUseCase {
           jobPostingId,
           i + 1,
           q.question,
-          q.responseType,
+          // Ticket 86ajfm80t: respeita o formato da Talentum; default seguro
+          // ['text','audio'] só quando ausente/vazio/inválido.
+          normalizePrescreeningResponseType(q.responseType),
           q.desiredResponse,
           q.weight,
           q.required,

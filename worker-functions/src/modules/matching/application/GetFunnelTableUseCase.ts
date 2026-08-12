@@ -18,13 +18,15 @@ import {
 /**
  * Classifies a row into one of the five named buckets.
  *
- * Withdrew takes precedence: interview_response='declined' OR stage='REPROGRAM'.
+ * Withdrew takes precedence: interview_response='declined'.
+ * Workers em CONFIRMED+awaiting_reschedule+meet_link=NULL pertencem a PRE_SELECTED (F7.b — ADR-003).
+ * REPROGRAM removido em F7.b — não existe mais como stage válido.
  */
 function classifyBucket(row: FunnelTableRow): Exclude<FunnelBucket, 'ALL'> {
   const stage = row.funnelStage ?? '';
   const ir = row.interviewResponse ?? '';
 
-  if (ir === 'declined' || stage === 'REPROGRAM') return 'WITHDREW';
+  if (ir === 'declined') return 'WITHDREW';
   if (REJECTION_STAGES_SET.has(stage)) return 'REJECTED';
   if (PRE_SELECTED_STAGES_SET.has(stage)) return 'PRE_SELECTED';
   if (POSTULATED_STAGES_SET.has(stage)) return 'POSTULATED';
@@ -125,6 +127,9 @@ export class GetFunnelTableUseCase {
       whatsappLastDispatchedAt: raw.wbdl_dispatched_at ?? null,
       accepted,
       interviewResponse: ir,
+      registrationComplete: raw.worker_status === 'REGISTERED',
+      contactNotesCount: Number(raw.contact_notes_count ?? 0),
+      selfAppliedAt: raw.self_applied_at ?? null,
     };
   }
 

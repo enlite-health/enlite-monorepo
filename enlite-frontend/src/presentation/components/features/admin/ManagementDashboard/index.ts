@@ -1,0 +1,8 @@
+export { BigNumbersSection } from './BigNumbersSection';
+export { EquipoArmadaSection } from './EquipoArmadaSection';
+export { PrioridadesSection } from './PrioridadesSection';
+export { FunnelTotalsSection } from './FunnelTotalsSection';
+export { CadastrosSection } from './CadastrosSection';
+export { PacientesSection } from './PacientesSection';
+export { ZoneAnalyticsSection } from './ZoneAnalyticsSection';
+export { SectionHeader } from './SectionHeader';

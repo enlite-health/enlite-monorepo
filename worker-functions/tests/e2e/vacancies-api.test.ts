@@ -130,6 +130,16 @@ describe('Vacancies API', () => {
       expect(res.data).toHaveProperty('offset');
     });
 
+    it('cada row expõe is_draft (usado pelo frontend para escolher fluxo de edição)', async () => {
+      const res = await api.get('/api/admin/vacancies?limit=5', authHeaders(adminToken));
+      expect(res.status).toBe(200);
+      if (res.data.data.length === 0) return;
+      for (const row of res.data.data) {
+        expect(row).toHaveProperty('is_draft');
+        expect(typeof row.is_draft).toBe('boolean');
+      }
+    });
+
     it('aceita paginação via limit e offset', async () => {
       const res = await api.get(
         '/api/admin/vacancies?limit=5&offset=0',
@@ -332,6 +342,61 @@ describe('Vacancies API', () => {
       );
       expect(res.status).toBe(401);
     });
+
+    // Após vaga sair do rascunho (status ≠ PENDING_ACTIVATION), só schedule e status
+    // podem ser editados. Outros campos devolvem 403.
+    describe('operational mode (status ≠ PENDING_ACTIVATION)', () => {
+      let opVacancyId: string;
+
+      beforeAll(async () => {
+        const created = await api.post(
+          '/api/admin/vacancies',
+          { patient_id: defaultPatientId, case_number: 99906, title: 'Caso E2E Operacional' },
+          authHeaders(adminToken),
+        );
+        opVacancyId = created.data.data?.id;
+        // Move pra fora do rascunho. Migration 168 decoupled draft state
+        // (is_draft) from operational state (status). The lock on wide edits
+        // is governed by is_draft — set both to mirror a published vacancy.
+        await pool.query(
+          `UPDATE job_postings SET status = 'SEARCHING', is_draft = false WHERE id = $1`,
+          [opVacancyId],
+        );
+      });
+
+      it('aceita update de schedule + status → 200', async () => {
+        if (!opVacancyId) return;
+        const schedule = [{ dayOfWeek: 1, startTime: '09:00', endTime: '13:00' }];
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { schedule, status: 'SUSPENDED' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(200);
+        expect(res.data.data.status).toBe('SUSPENDED');
+      });
+
+      it('rejeita edição de title em vaga operacional → 403', async () => {
+        if (!opVacancyId) return;
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { title: 'Tentativa Bloqueada' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(403);
+        expect(res.data.error).toContain('title');
+      });
+
+      it('rejeita edição de salary_text em vaga operacional → 403', async () => {
+        if (!opVacancyId) return;
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { salary_text: '9999' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(403);
+      });
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -431,10 +496,13 @@ describe('Vacancies API', () => {
     // Sintoma: Após criar uma vaga, o servidor caía — todas as requisições
     //          seguintes retornavam ECONNRESET.
     // Causa:   Erros síncronos lançados dentro do callback do setImmediate
-    //          (ex: GEMINI_API_KEY ausente ao instanciar serviço) se tornavam
+    //          (ex: falha ao instanciar/usar o serviço de IA) se tornavam
     //          exceções não-capturadas que derrubavam o processo Node.js.
     // Fix:     try-catch envolvendo todo o callback do setImmediate.
-    it('servidor permanece saudável após criar vaga sem GEMINI_API_KEY configurado', async () => {
+    // Nota:    pós-migração p/ Vertex (ADC), a falha de IA no e2e vem da
+    //          resolução de credenciais, não mais do constructor — o guard
+    //          de saúde do servidor continua válido como regressão.
+    it('servidor permanece saudável quando a geração de IA falha em background', async () => {
       // Cria a vaga — dispara o setImmediate com match em background
       const createRes = await api.post(
         '/api/admin/vacancies',

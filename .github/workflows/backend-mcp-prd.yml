@@ -58,14 +58,22 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
-            MCP_PRINCIPAL_NAMES=triage-service
+            MCP_PRINCIPAL_NAMES=triage-service,claude-code
+            MCP_DB_RO_USER=enlite_mcp_ro
+            MCP_OAUTH_ENABLED=true
+            MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
+            CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
+            FIREBASE_WEB_API_KEY=AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI
+            FIREBASE_WEB_AUTH_DOMAIN=enlite-prd.firebaseapp.com
             ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
+            MCP_OAUTH_SIGNING_KEY=mcp-oauth-signing-key:latest
+            MCP_DB_RO_PASSWORD=enlite-mcp-ro-db-password:latest
           flags: >-
-            --ingress=internal
-            --no-allow-unauthenticated
+            --ingress=all
+            --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
             --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
             --memory=1Gi

@@ -143,12 +143,12 @@ describe('HandleReminderResponseUseCase', () => {
     });
   });
 
-  // ─── reschedule_yes → REPROGRAM ───────────────────────────────
+  // ─── reschedule_yes → awaiting_reschedule (F7.b) ─────────────
 
   describe('reschedule_yes', () => {
     const AWAITING_APP = { ...CONFIRMED_APP, interview_response: 'awaiting_reschedule' };
 
-    it('marca REPROGRAM, libera slot, envia mensagem e NÃO mexe no Calendar', async () => {
+    it('seta awaiting_reschedule, libera slot, envia mensagem e NÃO mexe no Calendar (F7.b)', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [WORKER] })
         .mockResolvedValueOnce({ rows: [AWAITING_APP] })
@@ -161,10 +161,26 @@ describe('HandleReminderResponseUseCase', () => {
 
       expect(result.isSuccess).toBe(true);
       expect(mockQuery.mock.calls[2][0]).toContain('interview_slots');
-      expect(mockQuery.mock.calls[4][0]).toContain("'REPROGRAM'");
+      // F7.b: interview_response = awaiting_reschedule; NÃO existe mais 'REPROGRAM' no UPDATE
+      expect(mockQuery.mock.calls[4][0]).toContain("'awaiting_reschedule'");
+      expect(mockQuery.mock.calls[4][0]).not.toContain("'REPROGRAM'");
       expect(mockQuery.mock.calls[5][0]).toContain('qualified_reprogram_confirm');
       expect(mockCalendar.declineAttendee).not.toHaveBeenCalled();
       expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-reprogram' });
+    });
+
+    it('self-loop idempotente: reschedule_yes aceita estado awaiting_reschedule → awaiting_reschedule (F7.b)', async () => {
+      // Worker que clica reschedule_yes múltiplas vezes permanece no mesmo estado
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [AWAITING_APP] })
+        .mockResolvedValueOnce({ rows: [] })                           // release slot
+        .mockResolvedValueOnce({ rows: [{ case_number: 747 }] })      // vacancy lookup
+        .mockResolvedValueOnce({ rows: [] })                           // update WJA
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-r-idem' }] }); // insert outbox
+
+      const result = await useCase.execute('whatsapp:+5491112345678', 'reschedule_yes');
+      expect(result.isSuccess).toBe(true);
     });
 
     it('pula slot release se interview_slot_id null', async () => {
@@ -182,10 +198,14 @@ describe('HandleReminderResponseUseCase', () => {
       expect(mockQuery.mock.calls[2][0]).not.toContain('interview_slots');
     });
 
-    it('falha se transicao invalida (confirmed → pending)', async () => {
+    it('falha se transicao invalida (confirmed → awaiting_reschedule direto via reschedule_yes)', async () => {
+      // confirmed pode ir para awaiting_reschedule via confirm_no, mas reschedule_yes
+      // exige que o estado já seja awaiting_reschedule (self-loop) ou pending (bloqueado)
+      // Aqui testamos: pending não pode ir para awaiting_reschedule via reschedule_yes
+      // porque canTransition('pending', 'awaiting_reschedule') = false
       mockQuery
         .mockResolvedValueOnce({ rows: [WORKER] })
-        .mockResolvedValueOnce({ rows: [CONFIRMED_APP] });
+        .mockResolvedValueOnce({ rows: [{ ...CONFIRMED_APP, interview_response: 'pending' }] });
 
       const result = await useCase.execute('whatsapp:+5491112345678', 'reschedule_yes');
       expect(result.isFailure).toBe(true);
@@ -229,7 +249,7 @@ describe('HandleReminderResponseUseCase', () => {
   describe('executeTextResponse', () => {
     const REASON_APP = { ...CONFIRMED_APP, interview_response: 'awaiting_reason' };
 
-    it('captura motivo, marca RECHAZADO, decline no Calendar e envia agradecimento', async () => {
+    it('captura motivo, marca REJECTED, decline no Calendar e envia agradecimento', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [WORKER] })                        // find worker
         .mockResolvedValueOnce({ rows: [REASON_APP] })                    // find awaiting_reason app
@@ -240,7 +260,7 @@ describe('HandleReminderResponseUseCase', () => {
       const result = await useCase.executeTextResponse('whatsapp:+5491112345678', 'No tengo tiempo');
 
       expect(result.isSuccess).toBe(true);
-      expect(mockQuery.mock.calls[3][0]).toContain("'RECHAZADO'");
+      expect(mockQuery.mock.calls[3][0]).toContain("'REJECTED'");
       expect(mockQuery.mock.calls[3][0]).toContain('interview_decline_reason');
       expect(mockQuery.mock.calls[3][1]).toContain('No tengo tiempo');
       expect(mockCalendar.declineAttendee).toHaveBeenCalledWith(

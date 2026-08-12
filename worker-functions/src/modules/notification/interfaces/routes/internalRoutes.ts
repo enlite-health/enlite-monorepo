@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { internalAuthMiddleware } from '../middleware/InternalAuthMiddleware';
 import { InternalController } from '../controllers/InternalController';
+import { pingVertex } from '@modules/integration/infrastructure/vertex-health';
+import { ReconcileClickUpPatientsController } from '@modules/integration/interfaces/controllers/ReconcileClickUpPatientsController';
 
 /**
  * Routes for internal endpoints — Pub/Sub push, Cloud Tasks, Cloud Scheduler.
@@ -9,7 +11,25 @@ import { InternalController } from '../controllers/InternalController';
 export function createInternalRoutes(controller: InternalController): Router {
   const router = Router();
 
+  // Monta o use case só na primeira chamada (I/O contra o ClickUp) — ver controller.
+  const reconcileController = new ReconcileClickUpPatientsController();
+
   router.use(internalAuthMiddleware);
+
+  // Post-deploy smoke probe: verifies the running revision can reach Vertex AI
+  // via ADC (the path that broke when the API key was revoked). The deploy
+  // gate calls this and fails the rollout on non-200 — catching IAM drift,
+  // region/model unavailability or broken ADC before users hit it.
+  router.get('/vertex-health', async (_req: Request, res: Response) => {
+    try {
+      const result = await pingVertex();
+      res.status(200).json({ status: 'ok', ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[VertexHealth] probe failed:', message);
+      res.status(503).json({ status: 'error', error: message });
+    }
+  });
 
   // Pub/Sub push: domain events
   router.post('/events/process', (req: Request, res: Response) => {
@@ -36,6 +56,22 @@ export function createInternalRoutes(controller: InternalController): Router {
     controller.sweepEvents(req, res);
   });
 
+  // Cloud Scheduler / manual: safety net scoped to an explicit event allowlist
+  // (SWEEP_SAFE_EVENTS — never a generic "all pending" sweep)
+  router.post('/events/sweep-safe', (req: Request, res: Response) => {
+    controller.sweepSafeEvents(req, res);
+  });
+
+  // Read-only diagnostic: backlog + idade do outbox domain_events por tipo de evento
+  router.get('/events/health', (req: Request, res: Response) => {
+    controller.getEventsHealth(req, res);
+  });
+
+  // Cloud Scheduler safety net: lembretes pendentes + no-shows (a cada 5min)
+  router.post('/reminders/sweep', (req: Request, res: Response) => {
+    controller.sweepReminders(req, res);
+  });
+
   // Cloud Tasks: 24h reminder
   router.post('/reminders/qualified', (req: Request, res: Response) => {
     controller.processQualifiedReminder(req, res);
@@ -54,6 +90,14 @@ export function createInternalRoutes(controller: InternalController): Router {
   // Cloud Scheduler: daily Talentum incomplete reminder
   router.post('/bulk-dispatch/talentum-incomplete', (req: Request, res: Response) => {
     controller.processBulkDispatchTalentum(req, res);
+  });
+
+  // Cloud Scheduler (a cada 10 min): reconciliação ClickUp→pacientes.
+  // Rede de segurança do webhook: `incremental` pega eventos perdidos, `orphans`
+  // ressuscita casos travados por CASE_NUMBER_CONFLICT já resolvido no ClickUp
+  // (incidente do caso 601). Default `mode=cycle` = os dois.
+  router.post('/sync-clickup-patients', (req: Request, res: Response) => {
+    reconcileController.handle(req, res);
   });
 
   return router;

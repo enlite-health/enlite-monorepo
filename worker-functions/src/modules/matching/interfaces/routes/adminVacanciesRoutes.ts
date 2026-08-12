@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { VacanciesController } from '../controllers/VacanciesController';
+import { VacanciesAuxController } from '../controllers/VacanciesAuxController';
 import { VacancyTalentumController } from '../controllers/VacancyTalentumController';
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
 import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
-import { EncuadreFunnelController } from '../controllers/EncuadreFunnelController';
-import { EncuadreFunnelTableController } from '../controllers/EncuadreFunnelTableController';
+import { WJAFunnelController } from '../controllers/WJAFunnelController';
+import { WJAFunnelTableController } from '../controllers/WJAFunnelTableController';
+import { WJAContactNotesController } from '../controllers/WJAContactNotesController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
@@ -26,14 +28,17 @@ export function createAdminVacanciesRoutes(
   vacancyMatchController: VacancyMatchController,
   vacancyMeetLinksController: VacancyMeetLinksController,
   vacancySocialLinksController: VacancySocialLinksController,
-  funnelController: EncuadreFunnelController,
+  funnelController: WJAFunnelController,
   dashboardController: EncuadreDashboardController,
   interviewSlotsController: InterviewSlotsController,
   authMiddleware: AuthMiddleware,
   vacancyAddressReviewController?: VacancyAddressReviewController,
-  funnelTableController?: EncuadreFunnelTableController,
+  funnelTableController?: WJAFunnelTableController,
 ): Router {
   const router = Router();
+
+  // Auxiliary controller is instantiated internally — it has no injectable deps.
+  const auxController = new VacanciesAuxController();
 
   // ── Read (VacanciesController) ────────────────────────────────────────────────
   router.get('/vacancies', authMiddleware.requireStaff(), (req: Request, res: Response) =>
@@ -49,11 +54,18 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/cases-for-select', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.getCasesForSelect(req, res),
   );
+  // ── Auxiliary read (VacanciesAuxController) ───────────────────────────────────
+  router.get('/vacancies/filter-options', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    auxController.getFilterOptions(req, res),
+  );
   router.get('/vacancies/pending-address-review', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacanciesController.listPendingAddressReview(req, res),
+    auxController.listPendingAddressReview(req, res),
   );
   router.get('/vacancies/in-progress', authMiddleware.requireStaff(), (req: Request, res: Response) =>
-    vacanciesController.listInProgressForPatient(req, res),
+    auxController.listInProgressForPatient(req, res),
+  );
+  router.get('/vacancies/by-address', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    auxController.listByAddress(req, res),
   );
   router.get('/vacancies/:id', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacanciesController.getVacancyById(req, res),
@@ -96,6 +108,9 @@ export function createAdminVacanciesRoutes(
   router.post('/vacancies/:id/generate-talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateTalentumDescription(req, res),
   );
+  router.put('/vacancies/:id/talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.updateTalentumDescription(req, res),
+  );
   router.post('/vacancies/:id/generate-ai-content', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateAIContent(req, res),
   );
@@ -104,6 +119,9 @@ export function createAdminVacanciesRoutes(
   );
   router.get('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.getPrescreeningConfig(req, res),
+  );
+  router.get('/vacancies/:id/talentum-status', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.getTalentumStatus(req, res),
   );
   router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.savePrescreeningConfig(req, res),
@@ -127,15 +145,24 @@ export function createAdminVacanciesRoutes(
     vacancySocialLinksController.getSocialLinksStats(req, res),
   );
 
-  // ── Encuadre Funnel / Kanban (EncuadreFunnelController) ──────────────────────
+  // ── Encuadre Funnel / Kanban (WJAFunnelController) ───────────────────────────
   router.get('/vacancies/:id/funnel', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.getEncuadreFunnel(req, res),
   );
   router.put('/encuadres/:id/move', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.moveEncuadre(req, res),
   );
+  // "Rechazar" de um card BLOQUEADO (soft-dismiss): sai de BLOQUEADO, vai p/ RECHAZADOS
+  // como card de bloqueado. Segmento próprio (não colide com /vacancies/:id).
+  router.post('/vacancies/blocked-applications/:blockedId/reject', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    funnelController.rejectBlockedApplication(req, res),
+  );
+  // "Voltar a bloqueados": desfaz o rechazo (RECHAZADOS → BLOQUEADO).
+  router.post('/vacancies/blocked-applications/:blockedId/restore', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    funnelController.undismissBlockedApplication(req, res),
+  );
 
-  // ── Encuadre Funnel Table — audit table (EncuadreFunnelTableController) ───────
+  // ── Encuadre Funnel Table — audit table (WJAFunnelTableController) ───────────
   if (funnelTableController) {
     router.get('/vacancies/:id/funnel-table', authMiddleware.requireStaff(), (req: Request, res: Response) =>
       funnelTableController!.getEncuadreFunnelTable(req, res),
@@ -165,6 +192,27 @@ export function createAdminVacanciesRoutes(
   );
   router.delete('/interview-slots/:slotId', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     interviewSlotsController.cancelSlot(req, res),
+  );
+
+  // ── Worker Contact Notes (WJAContactNotesController) ─────────────────────────
+  // Chave: par estável (worker_id, job_posting_id) — migration 235. Sobrevive
+  // à promoção BLOQUEADO→INICIADO, então cards ainda bloqueados (sem WJA)
+  // também podem ter notas.
+  const contactNotesController = new WJAContactNotesController();
+  router.get(
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => contactNotesController.list(req, res),
+  );
+  router.post(
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => contactNotesController.create(req, res),
+  );
+  router.delete(
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => contactNotesController.delete(req, res),
   );
 
   return router;

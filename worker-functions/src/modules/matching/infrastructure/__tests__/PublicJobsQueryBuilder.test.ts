@@ -30,6 +30,14 @@ describe('buildPublicJobsWhere', () => {
     expect(whereClause).toContain('jp.deleted_at IS NULL');
     expect(whereClause).toContain('jp.is_draft = false');
     expect(whereClause).toContain("jp.social_short_links ? 'site'");
+    expect(whereClause).toContain('jp.is_test = false');
+  });
+
+  it('hides is_test (QA/monitor) vacancies from the public feed — non-negotiable guard', () => {
+    // Vaga de teste (job_postings.is_test=true) NUNCA pode aparecer no feed público, mesmo
+    // se postada como ACTIVE + is_draft=false + com short link 'site'. Ver follow-up #2.
+    const { whereClause } = buildPublicJobsWhere({ country: 'AR' });
+    expect(whereClause).toContain('jp.is_test = false');
   });
 
   it('hides drafts from the public listing (is_draft = false guard is non-negotiable)', () => {

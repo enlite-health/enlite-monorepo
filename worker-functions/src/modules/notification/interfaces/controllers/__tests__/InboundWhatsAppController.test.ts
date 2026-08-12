@@ -54,6 +54,53 @@ describe('InboundWhatsAppController', () => {
     jest.clearAllMocks();
     delete process.env.TWILIO_AUTH_TOKEN;
     delete process.env.TWILIO_INBOUND_WEBHOOK_URL;
+    delete process.env.CHATWOOT_INBOUND_MIRROR_ENABLED;
+  });
+
+  // ─── Espelho do inbound pro Chatwoot (faz a Luz ver e responder) ───
+  describe('mirror inbound → Chatwoot', () => {
+    it('texto livre não-roteável + flag ON → espelha como incoming', async () => {
+      const mirror = { mirrorIncomingMessage: jest.fn().mockResolvedValue(undefined) };
+      const c = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, undefined, mirror as any,
+      );
+      process.env.CHATWOOT_INBOUND_MIRROR_ENABLED = 'true';
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'hola, tengo una duda', MessageSid: 'SMabc' });
+
+      await c.handleInbound(req, mockRes());
+
+      expect(mirror.mirrorIncomingMessage).toHaveBeenCalledWith({
+        phone: '+5491112345678',
+        content: 'hola, tengo una duda',
+        externalId: 'SMabc',
+      });
+    });
+
+    it('flag OFF → NÃO espelha (deploy neutro)', async () => {
+      const mirror = { mirrorIncomingMessage: jest.fn() };
+      const c = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, undefined, mirror as any,
+      );
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'hola', MessageSid: 'SMx' });
+
+      await c.handleInbound(req, mockRes());
+
+      expect(mirror.mirrorIncomingMessage).not.toHaveBeenCalled();
+    });
+
+    it('opt-out ("baja") NÃO vira mirror (intercepta antes)', async () => {
+      const mirror = { mirrorIncomingMessage: jest.fn() };
+      const c = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, undefined, mirror as any,
+      );
+      process.env.CHATWOOT_INBOUND_MIRROR_ENABLED = 'true';
+      mockDbQuery.mockResolvedValue({ rows: [] }); // handleOptOut: worker lookup
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'baja', MessageSid: 'SMz' });
+
+      await c.handleInbound(req, mockRes());
+
+      expect(mirror.mirrorIncomingMessage).not.toHaveBeenCalled();
+    });
   });
 
   // ─── Signature validation ─────────────────────────────────────
@@ -362,6 +409,120 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  // ─── Handover Twilio → Periskope (texto livre não-roteável) ───
+
+  describe('handover trigger (PERISKOPE_HANDOVER_ENABLED)', () => {
+    let mockTriggerHandover: { execute: jest.Mock };
+
+    beforeEach(() => {
+      mockTriggerHandover = { execute: jest.fn().mockResolvedValue(Result.ok()) };
+    });
+
+    afterEach(() => {
+      delete process.env.PERISKOPE_HANDOVER_ENABLED;
+    });
+
+    it('flag OFF (default) → NÃO consulta worker nem dispara handover', async () => {
+      delete process.env.PERISKOPE_HANDOVER_ENABLED;
+      const withHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, mockTriggerHandover as any,
+      );
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withHandover.handleInbound(req, res);
+
+      expect(mockTriggerHandover.execute).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('flag ON, worker resolvido com messaging_channel=twilio → dispara handover', async () => {
+      process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
+      const withHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, mockTriggerHandover as any,
+      );
+      mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 'w-handover-1', messaging_channel: 'twilio' }] });
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withHandover.handleInbound(req, res);
+
+      expect(mockTriggerHandover.execute).toHaveBeenCalledWith('w-handover-1', '+5491112345678');
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('flag ON, worker já em periskope → NÃO dispara handover', async () => {
+      process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
+      const withHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, mockTriggerHandover as any,
+      );
+      mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 'w-handover-2', messaging_channel: 'periskope' }] });
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withHandover.handleInbound(req, res);
+
+      expect(mockTriggerHandover.execute).not.toHaveBeenCalled();
+    });
+
+    it('flag ON, worker não encontrado por telefone → NÃO dispara handover', async () => {
+      process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
+      const withHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, mockTriggerHandover as any,
+      );
+      mockDbQuery.mockResolvedValueOnce({ rows: [] });
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withHandover.handleInbound(req, res);
+
+      expect(mockTriggerHandover.execute).not.toHaveBeenCalled();
+    });
+
+    it('flag ON mas triggerHandoverUseCase não injetado → não quebra, responde 200', async () => {
+      process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
+      const withoutHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any,
+      );
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withoutHandover.handleInbound(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('handover.execute falha (Result.fail) → loga warning, ainda responde 200', async () => {
+      process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
+      mockTriggerHandover.execute.mockResolvedValue(Result.fail('boom'));
+      const withHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, mockTriggerHandover as any,
+      );
+      mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 'w-handover-3', messaging_channel: 'twilio' }] });
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withHandover.handleInbound(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('erro na consulta do worker (db.query lança) → capturado, ainda responde 200', async () => {
+      process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
+      const withHandover = new InboundWhatsAppController(
+        mockDb as any, mockBookSlot as any, mockHandleReminder as any, mockTriggerHandover as any,
+      );
+      mockDbQuery.mockRejectedValueOnce(new Error('DB down'));
+
+      const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
+      const res = mockRes();
+      await withHandover.handleInbound(req, res);
+
+      expect(mockTriggerHandover.execute).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
   });
 
   // ─── Mensagens sem ButtonPayload ───────────────────────────────

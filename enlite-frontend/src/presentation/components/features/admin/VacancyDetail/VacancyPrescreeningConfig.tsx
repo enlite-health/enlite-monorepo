@@ -84,7 +84,7 @@ function QuestionCard({ question, index, expanded, onToggleExpanded, onChange, o
         <div className="flex items-center gap-4">
           {(['text', 'audio'] as const).map(type => (
             <label key={type} className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
-              <input type="checkbox" checked={question.responseType.includes(type)} onChange={() => toggleResponseType(type)} className="rounded border-slate-300" />
+              <input type="checkbox" checked={(question.responseType ?? []).includes(type)} onChange={() => toggleResponseType(type)} className="rounded border-slate-300" />
               {type === 'text' ? t(`${ps}.text`) : t(`${ps}.audio`)}
             </label>
           ))}

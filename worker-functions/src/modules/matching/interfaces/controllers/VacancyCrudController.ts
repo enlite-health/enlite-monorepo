@@ -1,8 +1,23 @@
 import { Request, Response } from 'express';
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
+import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { buildInsertQuery, buildInsertParams } from './vacancyCrudHelpers';
+import {
+  authorizeVacancyUpdate,
+  buildInsertQuery,
+  buildInsertParams,
+  FULL_ALLOWED_UPDATE_FIELDS,
+  OPERATIONAL_EDITABLE_FIELDS,
+} from './vacancyCrudHelpers';
+import {
+  auditVacancyCreated,
+  auditVacancyUpdated,
+  auditVacancyDeleted,
+  createWithPatientUpdate,
+  type HumanActor,
+} from './vacancyCrudAuditHelpers';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
+import { PurgeVacancyShortLinksUseCase } from '../../application/PurgeVacancyShortLinksUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
 import { reportError, loggingAls } from '@shared/logging';
 
@@ -10,19 +25,49 @@ const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
 ]);
 
+// Inactive statuses whose short links should be purged from Short.io to free quota.
+const INACTIVE_STATUSES = new Set(['CLOSED', 'SUSPENDED']);
+
+// Guarda de vaga de teste/QA (migration 248). Opcional no body, default false
+// quando ausente/inválido — never blocks vacancy creation on a bad value.
+const CreateVacancyIsTestSchema = z.boolean().optional();
+
 async function tryEnsureShortLink(pool: Pool, vacancyId: string, status: string | null | undefined): Promise<void> {
   if (!status || !PUBLIC_STATUSES.has(status)) return;
   const svc = ShortLinkService.fromEnv();
   if (!svc) {
-    console.warn('[VacancyCrud] SHORT_IO not configured — skipping short-link generation');
     return;
   }
   try {
     const uc = new EnsureVacancyShortLinkUseCase(pool, svc);
     await uc.execute(vacancyId, 'site');
-  } catch (err: any) {
-    console.error(`[VacancyCrud] Short-link generation failed for ${vacancyId}: ${err.message}`);
+  } catch (err: unknown) {
+    reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink', vacancyId });
   }
+}
+
+// Frees Short.io quota when a vacancy goes inactive. Fire-and-forget; errors are reported, never thrown.
+async function tryPurgeShortLinks(pool: Pool, vacancyId: string): Promise<void> {
+  const svc = ShortLinkService.fromEnv();
+  if (!svc) return;
+  try {
+    const uc = new PurgeVacancyShortLinksUseCase(pool, svc);
+    await uc.execute(vacancyId);
+  } catch (err: unknown) {
+    reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryPurgeShortLinks', vacancyId });
+  }
+}
+
+/** Extracts the HumanActor from an authenticated admin request. */
+function extractHumanActor(req: Request): HumanActor {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const user = (req as any).user as { uid?: string } | undefined;
+  return {
+    actorUserId: user?.uid ?? null,
+    actorType: 'HUMAN',
+    actorLabel: 'admin_panel',
+    traceId: loggingAls.getStore()?.traceId ?? null,
+  };
 }
 
 /**
@@ -30,6 +75,7 @@ async function tryEnsureShortLink(pool: Pool, vacancyId: string, status: string 
  *
  * Write endpoints: create, update, delete vacancies.
  * Split from VacanciesController to respect the 400-line limit.
+ * Audit instrumentation delegated to vacancyCrudAuditHelpers.ts (Onda B).
  */
 export class VacancyCrudController {
   private db: Pool;
@@ -41,28 +87,24 @@ export class VacancyCrudController {
   async createVacancy(req: Request, res: Response): Promise<void> {
     try {
       const {
-        case_number,
-        title: _title,
-        patient_id,
-        required_professions,
-        required_sex,
-        age_range_min,
-        age_range_max,
-        worker_profile_sought,
-        required_experience,
-        worker_attributes,
-        schedule,
-        work_schedule,
-        providers_needed,
-        salary_text,
-        payment_day,
-        daily_obs,
-        patient_address_id,
-        status: bodyStatus,
-        published_at,
-        closes_at,
-        updatePatient,
+        case_number, patient_id, required_professions, required_sex,
+        age_range_min, age_range_max, worker_profile_sought, required_experience,
+        worker_attributes, schedule, work_schedule, providers_needed,
+        salary_text, payment_day, daily_obs, patient_address_id,
+        status: bodyStatus, published_at, closes_at, updatePatient,
+        is_test: bodyIsTest,
       } = req.body;
+
+      const isTestParse = CreateVacancyIsTestSchema.safeParse(bodyIsTest);
+      if (!isTestParse.success) {
+        res.status(400).json({
+          success: false,
+          error: 'is_test must be a boolean when provided',
+          details: isTestParse.error.flatten().formErrors,
+        });
+        return;
+      }
+      const isTest = isTestParse.data ?? false;
 
       if (!patient_id || typeof patient_id !== 'string') {
         res.status(400).json({
@@ -77,41 +119,28 @@ export class VacancyCrudController {
         [patient_id],
       );
       if (patientCheck.rows.length === 0) {
-        res.status(400).json({
-          success: false,
-          error: 'patient_id inválido — paciente não encontrado ou foi removido.',
-        });
+        res.status(400).json({ success: false, error: 'patient_id inválido — paciente não encontrado ou foi removido.' });
         return;
       }
 
-      // Validate patient_address_id belongs to the patient_id (if both provided)
       if (patient_address_id && patient_id) {
         const ownerCheck = await this.db.query(
-          `SELECT 1
-           FROM patient_addresses pa
-           WHERE pa.id = $1
-             AND pa.patient_id = $2`,
+          `SELECT 1 FROM patient_addresses pa
+           WHERE pa.id = $1 AND pa.patient_id = $2 AND pa.archived_at IS NULL`,
           [patient_address_id, patient_id],
         );
         if (ownerCheck.rows.length === 0) {
-          res.status(400).json({
-            success: false,
-            error: 'patient_address_id não pertence ao patient_id informado',
-          });
+          res.status(400).json({ success: false, error: 'patient_address_id não pertence ao patient_id informado ou foi arquivado' });
           return;
         }
       }
 
-      const vnResult = await this.db.query(
-        "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
-      );
+      const vnResult = await this.db.query("SELECT nextval('job_postings_vacancy_number_seq') AS vn");
       const vacancyNumber = parseInt(vnResult.rows[0].vn);
       const computedTitle = `CASO ${case_number}-${vacancyNumber}`;
 
       const hasUpdate =
-        updatePatient &&
-        typeof updatePatient === 'object' &&
-        Object.keys(updatePatient).length > 0;
+        updatePatient && typeof updatePatient === 'object' && Object.keys(updatePatient).length > 0;
 
       const insertArgs = {
         vacancyNumber, case_number, computedTitle, patient_id,
@@ -122,19 +151,30 @@ export class VacancyCrudController {
         status: bodyStatus || undefined,
         published_at: published_at ?? null,
         closes_at: closes_at ?? null,
+        is_test: isTest,
       };
 
-      let newVacancy: any;
+      const actor = extractHumanActor(req);
+      let newVacancy: Record<string, unknown>;
 
       if (hasUpdate) {
-        newVacancy = await this.createWithPatientUpdate(
-          case_number, updatePatient, insertArgs,
-        );
+        newVacancy = await createWithPatientUpdate(this.db, case_number, updatePatient, insertArgs, actor);
       } else {
-        const result = await this.db.query(
-          buildInsertQuery(), buildInsertParams(insertArgs),
-        );
-        newVacancy = result.rows[0];
+        // Non-transactional path: insert, then best-effort audit in separate transaction
+        const result = await this.db.query(buildInsertQuery(), buildInsertParams(insertArgs));
+        newVacancy = result.rows[0] as Record<string, unknown>;
+        // Best-effort audit: acquire a throwaway client, do the insert, release.
+        // Audit failure MUST NOT affect the 201 response already committed above.
+        const auditClient = await this.db.connect();
+        try {
+          await auditClient.query('BEGIN');
+          await auditVacancyCreated(auditClient, newVacancy.id as string, newVacancy, actor);
+          await auditClient.query('COMMIT');
+        } catch {
+          await auditClient.query('ROLLBACK').catch(() => {});
+        } finally {
+          auditClient.release();
+        }
       }
 
       setImmediate(() => {
@@ -147,144 +187,42 @@ export class VacancyCrudController {
           reportError(error, { source: 'VacancyCrudController:domainEvent', jobPostingId: newVacancy.id });
         });
 
-        tryEnsureShortLink(this.db, newVacancy.id, newVacancy.status)
+        tryEnsureShortLink(this.db, newVacancy.id as string, newVacancy.status as string | undefined)
           .catch((err: unknown) => {
-            const error = err instanceof Error ? err : new Error(String(err));
-            reportError(error, { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id });
+            reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id });
           });
       });
 
       res.status(201).json({ success: true, data: newVacancy });
-    } catch (error: any) {
-      console.error('[VacancyCrud] Error creating vacancy:', error);
-      res.status(500).json({ success: false, error: 'Failed to create vacancy', details: error.message });
-    }
-  }
-
-  /** Wraps insert + patient field update in a single transaction. */
-  private async createWithPatientUpdate(
-    case_number: any,
-    updatePatient: Record<string, any>,
-    insertArgs: any,
-  ): Promise<any> {
-    const client: PoolClient = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
-      const patientRow = await client.query<{
-        id: string; diagnosis: string | null; dependency_level: string | null;
-      }>(
-        `SELECT id, diagnosis, dependency_level FROM patients
-         WHERE id = (
-           SELECT patient_id FROM job_postings
-           WHERE case_number = $1 AND deleted_at IS NULL
-           ORDER BY created_at DESC LIMIT 1
-         ) FOR UPDATE`,
-        [case_number],
-      );
-
-      if (patientRow.rows.length > 0) {
-        const pat = patientRow.rows[0];
-        const setClauses: string[] = [];
-        const auditEntries: Array<{ field: string; old: string | null; new: string }> = [];
-
-        const updateParams: unknown[] = [pat.id];
-        if (updatePatient.pathology_types !== undefined) {
-          updateParams.push(String(updatePatient.pathology_types));
-          setClauses.push(`diagnosis = $${updateParams.length}`);
-          auditEntries.push({ field: 'diagnosis', old: pat.diagnosis, new: updatePatient.pathology_types });
-        }
-        if (updatePatient.dependency_level !== undefined) {
-          updateParams.push(String(updatePatient.dependency_level));
-          setClauses.push(`dependency_level = $${updateParams.length}`);
-          auditEntries.push({ field: 'dependency_level', old: pat.dependency_level, new: updatePatient.dependency_level });
-        }
-
-        if (setClauses.length > 0) {
-          await client.query(
-            `UPDATE patients SET ${setClauses.join(', ')}, updated_at = NOW() WHERE id = $1`,
-            updateParams,
-          );
-          for (const e of auditEntries) {
-            await client.query(
-              `INSERT INTO patient_field_overrides_audit
-                 (patient_id, field_name, old_value, new_value, source)
-               VALUES ($1, $2, $3, $4, 'vacancy_create_pdf')`,
-              [pat.id, e.field, e.old, e.new],
-            );
-          }
-        }
-      }
-
-      const result = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
-      await client.query('COMMIT');
-      return result.rows[0];
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyCrudController:createVacancy' });
+      res.status(500).json({ success: false, error: 'Failed to create vacancy', details: msg });
     }
   }
 
   async updateVacancy(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const updates = req.body;
+      const updates = req.body as Record<string, unknown>;
 
-      const CANONICAL_STATUSES = new Set([
-        'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
-        'PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED',
-      ]);
-      if (updates.status !== undefined && !CANONICAL_STATUSES.has(updates.status)) {
-        res.status(400).json({
-          success: false,
-          error: `Invalid status value "${updates.status}". Must be one of: ${[...CANONICAL_STATUSES].join(', ')}`,
-        });
+      const auth = await authorizeVacancyUpdate(this.db, id, updates);
+      if (auth.kind === 'error') {
+        res.status(auth.status).json({ success: false, error: auth.error });
         return;
       }
-
-      if ('patient_id' in req.body) {
-        const newPatientId = req.body.patient_id;
-        if (newPatientId === null || newPatientId === '' || typeof newPatientId !== 'string') {
-          res.status(400).json({
-            success: false,
-            error: 'patient_id não pode ser removido de uma vaga existente.',
-          });
-          return;
-        }
-        const patientCheck = await this.db.query<{ id: string }>(
-          'SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL',
-          [newPatientId],
-        );
-        if (patientCheck.rows.length === 0) {
-          res.status(400).json({
-            success: false,
-            error: 'patient_id inválido — paciente não encontrado ou foi removido.',
-          });
-          return;
-        }
-      }
-
-      const allowedFields = [
-        'title', 'case_number', 'patient_id', 'patient_address_id',
-        'required_professions', 'required_sex',
-        'age_range_min', 'age_range_max',
-        'worker_profile_sought', 'required_experience', 'worker_attributes',
-        'schedule', 'work_schedule',
-        'providers_needed', 'salary_text', 'payment_day',
-        'daily_obs', 'status',
-        'published_at', 'closes_at',
-      ];
+      const allowedFields = auth.isDraft
+        ? FULL_ALLOWED_UPDATE_FIELDS
+        : FULL_ALLOWED_UPDATE_FIELDS.filter(f => OPERATIONAL_EDITABLE_FIELDS.has(f));
 
       const jsonbFields = new Set(['schedule']);
       const setClause: string[] = [];
-      const values: any[] = [];
+      const values: unknown[] = [];
       let paramIndex = 1;
 
       Object.keys(updates).forEach(key => {
         if (allowedFields.includes(key)) {
-          let value = updates[key];
+          let value: unknown = updates[key];
           if (jsonbFields.has(key) && typeof value === 'object' && value !== null) {
             value = JSON.stringify(value);
           }
@@ -299,46 +237,122 @@ export class VacancyCrudController {
         return;
       }
 
-      values.push(id);
-      const result = await this.db.query(
-        `UPDATE job_postings SET ${setClause.join(', ')}, updated_at = NOW()
-         WHERE id = $${paramIndex} RETURNING *`,
-        values,
-      );
+      const actor = extractHumanActor(req);
 
-      if (result.rows.length === 0) {
-        res.status(404).json({ success: false, error: 'Vacancy not found' });
-        return;
+      // Wrap UPDATE + audit in a transaction to guarantee atomicity.
+      // If audit INSERT fails, ROLLBACK the UPDATE too (preserves consistency).
+      const client = await this.db.connect();
+      let updated: Record<string, unknown> | undefined;
+      try {
+        await client.query('BEGIN');
+
+        // Snapshot before
+        const beforeResult = await client.query<Record<string, unknown>>(
+          `SELECT * FROM job_postings WHERE id = $1`,
+          [id],
+        );
+        if (beforeResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ success: false, error: 'Vacancy not found' });
+          return;
+        }
+        const before = beforeResult.rows[0];
+
+        values.push(id);
+        const result = await client.query<Record<string, unknown>>(
+          `UPDATE job_postings SET ${setClause.join(', ')}, updated_at = NOW()
+           WHERE id = $${paramIndex} RETURNING *`,
+          values,
+        );
+        if (result.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ success: false, error: 'Vacancy not found' });
+          return;
+        }
+        updated = result.rows[0];
+
+        // auditVacancyUpdated uses logFieldChangesSafe (SAVEPOINT) — FK failure
+        // cannot abort this transaction; the UPDATE always commits.
+        await auditVacancyUpdated(client, id, before, updated, actor);
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
       }
 
-      const updated = result.rows[0];
-      setImmediate(() => {
-        tryEnsureShortLink(this.db, id, updated.status).catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:update', vacancyId: id }));
-      });
-
-      res.status(200).json({ success: true, data: updated });
-    } catch (error: any) {
-      console.error('[VacancyCrud] Error updating vacancy:', error);
-      res.status(500).json({ success: false, error: 'Failed to update vacancy', details: error.message });
+      if (updated) {
+        setImmediate(() => {
+          if (INACTIVE_STATUSES.has(updated!.status as string)) {
+            void tryPurgeShortLinks(this.db, id);
+          } else {
+            tryEnsureShortLink(this.db, id, updated!.status as string).catch((err: unknown) =>
+              reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:update', vacancyId: id }));
+          }
+        });
+        res.status(200).json({ success: true, data: updated });
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyCrudController:updateVacancy', vacancyId: req.params.id });
+      res.status(500).json({ success: false, error: 'Failed to update vacancy', details: msg });
     }
   }
 
   async deleteVacancy(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const result = await this.db.query(
-        `UPDATE job_postings SET status = 'CLOSED', updated_at = NOW() WHERE id = $1 RETURNING id`,
-        [id],
-      );
+      const actor = extractHumanActor(req);
 
-      if (result.rows.length === 0) {
-        res.status(404).json({ success: false, error: 'Vacancy not found' });
-        return;
+      const client = await this.db.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Snapshot before soft-delete
+        const beforeResult = await client.query<Record<string, unknown>>(
+          `SELECT * FROM job_postings WHERE id = $1 AND deleted_at IS NULL`,
+          [id],
+        );
+        if (beforeResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ success: false, error: 'Vacancy not found' });
+          return;
+        }
+        const before = beforeResult.rows[0];
+
+        const result = await client.query<{ id: string }>(
+          `UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW(), updated_at = NOW()
+           WHERE id = $1 RETURNING id`,
+          [id],
+        );
+        if (result.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ success: false, error: 'Vacancy not found' });
+          return;
+        }
+
+        // auditVacancyDeleted uses logEventSafe (SAVEPOINT) — FK failure cannot
+        // abort this transaction; the soft-delete always commits.
+        await auditVacancyDeleted(client, id, before, actor);
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
       }
+
+      // Free Short.io quota — the deleted vacancy's links will never be shared again.
+      setImmediate(() => { void tryPurgeShortLinks(this.db, id); });
+
       res.status(200).json({ success: true, message: 'Vacancy deleted successfully' });
-    } catch (error: any) {
-      console.error('[VacancyCrud] Error deleting vacancy:', error);
-      res.status(500).json({ success: false, error: 'Failed to delete vacancy', details: error.message });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyCrudController:deleteVacancy', vacancyId: req.params.id });
+      res.status(500).json({ success: false, error: 'Failed to delete vacancy', details: msg });
     }
   }
 }

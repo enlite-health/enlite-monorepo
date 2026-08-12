@@ -17,12 +17,19 @@
 // ── Mocks (antes dos imports) ────────────────────────────────────
 
 const mockQuery = jest.fn();
+const mockClientQuery = jest.fn();
+const mockClientRelease = jest.fn();
+const mockConnect = jest.fn().mockResolvedValue({
+  query: mockClientQuery,
+  release: mockClientRelease,
+});
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
       getPool: jest.fn().mockReturnValue({
         query: mockQuery,
+        connect: mockConnect,
       }),
     }),
   },
@@ -75,6 +82,9 @@ describe('SyncTalentumVacanciesUseCase', () => {
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
     mockQuery.mockResolvedValue({ rows: [] });
+    // Default: client queries (BEGIN, INSERT/UPDATE, audit SAVEPOINT, COMMIT) resolve safely.
+    mockClientQuery.mockResolvedValue({ rows: [] });
+    mockConnect.mockResolvedValue({ query: mockClientQuery, release: mockClientRelease });
     useCase = new SyncTalentumVacanciesUseCase();
   });
 
@@ -89,14 +99,15 @@ describe('SyncTalentumVacanciesUseCase', () => {
       const project = makeTalentumProject({ projectId: 'proj-exist', title: 'CASO 10 - AT' });
       mockListAllPrescreenings.mockResolvedValue([project]);
 
-      // SELECT talentum_project_id → found
+      // Pool: SELECT talentum_project_id (found) + syncQuestions + syncFaq pool queries
+      // saveTalentumReference UPDATE now runs on client
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'jp-existing-1', talentum_project_id: 'proj-exist' }] }) // lookup
-        .mockResolvedValueOnce({ rows: [] }) // saveTalentumReference
         .mockResolvedValueOnce({ rows: [] }) // DELETE questions
         .mockResolvedValueOnce({ rows: [] }) // INSERT question
         .mockResolvedValueOnce({ rows: [] }) // DELETE faq
         .mockResolvedValueOnce({ rows: [] }); // INSERT faq
+      // saveTalentumReference: BEGIN + UPDATE + logEventSafe (wasCreated=false audit) + COMMIT → all on client
 
       const report = await useCase.execute({ force: true });
 
@@ -129,16 +140,21 @@ describe('SyncTalentumVacanciesUseCase', () => {
       const project = makeTalentumProject({ projectId: 'proj-new', title: 'CASO 100' });
       mockListAllPrescreenings.mockResolvedValue([project]);
 
+      // Pool: SELECT talentum_project_id, SELECT case_number, SELECT nextval, syncQuestions/syncFaq
+      // INSERT is now on client (createFromSync), saveTalentumReference UPDATE also on client
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por case_number (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '42' }] })          // nextval
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-new-100' }] })  // INSERT RETURNING id
-        .mockResolvedValueOnce({ rows: [] })                       // saveTalentumReference
-        .mockResolvedValueOnce({ rows: [] })                       // DELETE questions
-        .mockResolvedValueOnce({ rows: [] })                       // INSERT question
-        .mockResolvedValueOnce({ rows: [] })                       // DELETE faq
-        .mockResolvedValueOnce({ rows: [] });                      // INSERT faq
+        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id (not found)
+        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '42' }] }) // nextval
+        .mockResolvedValueOnce({ rows: [] })    // DELETE questions (syncQuestions)
+        .mockResolvedValueOnce({ rows: [] })    // INSERT question (syncQuestions)
+        .mockResolvedValueOnce({ rows: [] })    // DELETE faq (syncFaq)
+        .mockResolvedValueOnce({ rows: [] });   // INSERT faq (syncFaq)
+      // client handles: BEGIN + INSERT RETURNING id + logEventSafe + COMMIT (createFromSync)
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN (createFromSync)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-new-100' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT + saveTalentumReference txn
 
       const report = await useCase.execute();
 
@@ -151,17 +167,23 @@ describe('SyncTalentumVacanciesUseCase', () => {
       mockListAllPrescreenings.mockResolvedValue([project]);
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '10' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-200' }] })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '10' }] }); // nextval
+      // INSERT now on client
+      mockClientQuery
+        .mockResolvedValueOnce({})                       // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-200' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
 
       await useCase.execute();
 
-      const insertCall = mockQuery.mock.calls[3];
-      const sql = insertCall[0] as string;
-      expect(sql).toContain('INSERT INTO job_postings');
+      // INSERT is on clientQuery (index 1 = after BEGIN)
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const sql = insertCall![0] as string;
       expect(sql).toContain("'AR'");
       expect(sql).toContain("'SEARCHING'");
     });
@@ -171,17 +193,24 @@ describe('SyncTalentumVacanciesUseCase', () => {
       mockListAllPrescreenings.mockResolvedValue([project]);
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '99' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-55' }] })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '99' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                       // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-55' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
 
       await useCase.execute();
 
-      const insertParams = mockQuery.mock.calls[3][1] as any[];
-      expect(insertParams[0]).toBe(99);  // vacancy_number
-      expect(insertParams[1]).toBe(55);  // case_number
+      // INSERT is on clientQuery
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const insertParams = insertCall![1] as unknown[];
+      expect(insertParams[0]).toBe(99);       // vacancy_number
+      expect(insertParams[1]).toBe(55);       // case_number
       expect(insertParams[2]).toBe('CASO 55-99'); // title
     });
   });
@@ -196,20 +225,27 @@ describe('SyncTalentumVacanciesUseCase', () => {
       });
       mockListAllPrescreenings.mockResolvedValue([project]);
 
+      // Sem case_number → só lookup talentum_project_id (sem lookup case_number)
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                      // lookup (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '5' }] })          // nextval
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-generic' }] }) // INSERT
-        .mockResolvedValueOnce({ rows: [] });                     // saveTalentumReference
+        .mockResolvedValueOnce({ rows: [] })          // lookup por talentum_project_id (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '5' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                       // BEGIN (createFromSync)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-generic' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
 
       const report = await useCase.execute();
 
       expect(report.created).toBe(1);
       expect(report.skipped).toBe(0);
 
-      // INSERT deve ter case_number=null e titulo "VACANTE {vn}"
-      const insertParams = mockQuery.mock.calls[2][1] as any[];
-      expect(insertParams[1]).toBeNull();  // case_number
+      // INSERT is on clientQuery — case_number=null e titulo "VACANTE {vn}"
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const insertParams = insertCall![1] as unknown[];
+      expect(insertParams[1]).toBeNull();        // case_number
       expect(insertParams[2]).toBe('VACANTE 5'); // title
     });
 
@@ -218,11 +254,13 @@ describe('SyncTalentumVacanciesUseCase', () => {
       mockListAllPrescreenings.mockResolvedValue([project]);
 
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '20' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-88' }] })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '20' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                       // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-88' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
 
       const report = await useCase.execute();
 
@@ -240,31 +278,21 @@ describe('SyncTalentumVacanciesUseCase', () => {
       ];
       mockListAllPrescreenings.mockResolvedValue(projects);
 
-      let callCount = 0;
-      mockQuery.mockImplementation((sql: string, params?: any[]) => {
-        // First project: lookup finds nothing, then creation fails
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id') && params?.[0] === 'proj-fail') {
-          return Promise.resolve({ rows: [] });
-        }
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id') && params?.[0] === 'proj-ok') {
-          return Promise.resolve({ rows: [] });
-        }
-        if (sql.includes('case_number') && sql.includes('SELECT')) {
-          callCount++;
-          if (callCount === 1) {
-            // First project case_number lookup succeeds, but nextval will fail
-            return Promise.resolve({ rows: [] });
-          }
-          return Promise.resolve({ rows: [] });
-        }
-        if (sql.includes('nextval')) {
-          callCount++;
-          if (callCount <= 3) return Promise.reject(new Error('DB connection lost'));
-          return Promise.resolve({ rows: [{ vn: '1' }] });
-        }
-        if (sql.includes('INSERT')) return Promise.resolve({ rows: [{ id: 'jp-new-2' }] });
-        return Promise.resolve({ rows: [] });
-      });
+      // proj-fail: lookup (not found) → case_number lookup (not found) → nextval fails
+      // proj-ok:   lookup (not found) → case_number lookup (not found) → nextval ok
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })              // proj-fail: SELECT talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })              // proj-fail: SELECT case_number
+        .mockRejectedValueOnce(new Error('DB connection lost')) // proj-fail: nextval → error
+        .mockResolvedValueOnce({ rows: [] })              // proj-ok:   SELECT talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })              // proj-ok:   SELECT case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '1' }] })  // proj-ok:   nextval
+        // proj-ok: syncQuestions/syncFaq (default mockResolvedValue handles these)
+        ;
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN (proj-ok createFromSync)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-new-2' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT + saveTalentumReference txn
 
       const report = await useCase.execute();
 
@@ -306,12 +334,24 @@ describe('SyncTalentumVacanciesUseCase', () => {
       ];
       mockListAllPrescreenings.mockResolvedValue(projects);
 
+      // Pool: each project: SELECT talentum_project_id, SELECT case_number, nextval
+      // INSERT is on client (createFromSync); syncQuestions/syncFaq use pool (default resolves)
       mockQuery.mockImplementation((sql: string) => {
         if (sql.includes('SELECT') && sql.includes('talentum_project_id')) {
           return Promise.resolve({ rows: [] });
         }
         if (sql.includes('nextval')) return Promise.resolve({ rows: [{ vn: '1' }] });
-        if (sql.includes('INSERT')) return Promise.resolve({ rows: [{ id: 'jp-auto' }] });
+        // SELECT case_number and any other pool queries
+        return Promise.resolve({ rows: [] });
+      });
+      // Use mockImplementation on client to return the correct RETURNING row for INSERT,
+      // and safe defaults for everything else (BEGIN, SAVEPOINT, audit, RELEASE, COMMIT, UPDATE).
+      let insertCounter = 0;
+      mockClientQuery.mockImplementation((sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
+          insertCounter++;
+          return Promise.resolve({ rows: [{ id: `jp-${insertCounter}` }] });
+        }
         return Promise.resolve({ rows: [] });
       });
 
@@ -349,20 +389,27 @@ describe('SyncTalentumVacanciesUseCase', () => {
       });
       mockListAllPrescreenings.mockResolvedValue([project]);
 
+      // Pool: lookup talentum_project_id (not found), lookup case_number (not found), nextval
+      // INSERT + saveTalentumReference UPDATE + audits are now all on client
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                    // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [] })                    // lookup por case_number (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '30' }] })       // nextval
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-60' }] })    // INSERT
-        .mockResolvedValueOnce({ rows: [] });                   // saveTalentumReference
+        .mockResolvedValueOnce({ rows: [] })              // lookup por talentum_project_id (not found)
+        .mockResolvedValueOnce({ rows: [] })              // lookup por case_number (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '30' }] }); // nextval
+      mockClientQuery.mockImplementation((sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
+          return Promise.resolve({ rows: [{ id: 'jp-60' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
 
       await useCase.execute();
 
-      const refCall = mockQuery.mock.calls.find(
-        (call: any[]) => (call[0] as string).includes('SET talentum_project_id'),
+      // saveTalentumReference UPDATE runs on client, not pool
+      const refCall = mockClientQuery.mock.calls.find(
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('SET talentum_project_id'),
       );
       expect(refCall).toBeDefined();
-      const refParams = refCall![1] as any[];
+      const refParams = refCall![1] as unknown[];
 
       expect(refParams[0]).toBe('proj-ref');
       expect(refParams[1]).toBe('pub-ref');
@@ -384,15 +431,23 @@ describe('SyncTalentumVacanciesUseCase', () => {
       ];
       mockListAllPrescreenings.mockResolvedValue(projects);
 
-      mockQuery.mockImplementation((sql: string, params?: any[]) => {
+      // Pool: p-skip lookup (found=skip), p-create lookup (not found), case_number lookup, nextval
+      // INSERT + saveTalentumReference are on client
+      mockQuery.mockImplementation((sql: string, params?: unknown[]) => {
         if (sql.includes('SELECT') && sql.includes('talentum_project_id') && params?.[0] === 'p-skip') {
           return Promise.resolve({ rows: [{ id: 'jp-1', talentum_project_id: 'p-skip' }] });
         }
         if (sql.includes('SELECT') && sql.includes('talentum_project_id')) {
-          return Promise.resolve({ rows: [] });
+          return Promise.resolve({ rows: [] }); // p-create: not found
         }
         if (sql.includes('nextval')) return Promise.resolve({ rows: [{ vn: '1' }] });
-        if (sql.includes('INSERT')) return Promise.resolve({ rows: [{ id: 'jp-new' }] });
+        return Promise.resolve({ rows: [] }); // SELECT case_number, syncQuestions/FAQ pool queries
+      });
+      // Client: any INSERT RETURNING returns jp-new; all other calls safe (BEGIN, SAVEPOINT, etc.)
+      mockClientQuery.mockImplementation((sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
+          return Promise.resolve({ rows: [{ id: 'jp-new' }] });
+        }
         return Promise.resolve({ rows: [] });
       });
 
@@ -411,15 +466,23 @@ describe('SyncTalentumVacanciesUseCase', () => {
       ];
       mockListAllPrescreenings.mockResolvedValue(projects);
 
-      mockQuery.mockImplementation((sql: string, params?: any[]) => {
+      // Pool: p-update lookup (found=update path), p-create lookup (not found), case_number, nextval
+      // All INSERT + UPDATE saveTalentumReference are on client
+      mockQuery.mockImplementation((sql: string, params?: unknown[]) => {
         if (sql.includes('SELECT') && sql.includes('talentum_project_id') && params?.[0] === 'p-update') {
           return Promise.resolve({ rows: [{ id: 'jp-1', talentum_project_id: 'p-update' }] });
         }
         if (sql.includes('SELECT') && sql.includes('talentum_project_id')) {
-          return Promise.resolve({ rows: [] });
+          return Promise.resolve({ rows: [] }); // p-create: not found
         }
         if (sql.includes('nextval')) return Promise.resolve({ rows: [{ vn: '1' }] });
-        if (sql.includes('INSERT')) return Promise.resolve({ rows: [{ id: 'jp-new' }] });
+        return Promise.resolve({ rows: [] }); // SELECT case_number, syncQuestions/FAQ pool queries
+      });
+      // Client: any INSERT RETURNING returns jp-new; all other calls safe
+      mockClientQuery.mockImplementation((sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
+          return Promise.resolve({ rows: [{ id: 'jp-new' }] });
+        }
         return Promise.resolve({ rows: [] });
       });
 
@@ -449,39 +512,44 @@ describe('SyncTalentumVacanciesUseCase', () => {
       });
       mockListAllPrescreenings.mockResolvedValue([project]);
 
+      // Pool: lookup talentum_project_id, lookup case_number, nextval
+      // + syncQuestions/FAQ (DELETE+INSERT) still use pool
+      // INSERT job_posting + saveTalentumReference UPDATE are on client
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })                       // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '1' }] })           // nextval
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-q' }] })        // INSERT
-        .mockResolvedValueOnce({ rows: [] })                       // saveTalentumReference
-        .mockResolvedValueOnce({ rows: [] })                       // DELETE questions
-        .mockResolvedValueOnce({ rows: [] })                       // INSERT question 1
-        .mockResolvedValueOnce({ rows: [] })                       // INSERT question 2
-        .mockResolvedValueOnce({ rows: [] })                       // DELETE faq
-        .mockResolvedValueOnce({ rows: [] });                      // INSERT faq 1
+        .mockResolvedValueOnce({ rows: [] })         // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })         // lookup por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '1' }] }) // nextval
+        .mockResolvedValueOnce({ rows: [] })         // DELETE questions (syncQuestions)
+        .mockResolvedValueOnce({ rows: [] })         // INSERT question 1 (syncQuestions)
+        .mockResolvedValueOnce({ rows: [] })         // INSERT question 2 (syncQuestions)
+        .mockResolvedValueOnce({ rows: [] })         // DELETE faq (syncFaq)
+        .mockResolvedValueOnce({ rows: [] });        // INSERT faq 1 (syncFaq)
+      mockClientQuery
+        .mockResolvedValueOnce({})                              // BEGIN (createFromSync)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-q' }] })     // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                       // audit + COMMIT + saveTalentumReference txn
 
       await useCase.execute();
 
-      // Verify DELETE + INSERT for questions
+      // syncQuestions/FAQ still use pool — assert via mockQuery
       const deleteQCall = mockQuery.mock.calls.find(
-        (call: any[]) => (call[0] as string).includes('DELETE FROM job_posting_prescreening_questions'),
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('DELETE FROM job_posting_prescreening_questions'),
       );
       expect(deleteQCall).toBeDefined();
 
       const insertQCalls = mockQuery.mock.calls.filter(
-        (call: any[]) => (call[0] as string).includes('INSERT INTO job_posting_prescreening_questions'),
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('INSERT INTO job_posting_prescreening_questions'),
       );
       expect(insertQCalls).toHaveLength(2);
 
       // Verify DELETE + INSERT for FAQ
       const deleteFaqCall = mockQuery.mock.calls.find(
-        (call: any[]) => (call[0] as string).includes('DELETE FROM job_posting_prescreening_faq'),
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('DELETE FROM job_posting_prescreening_faq'),
       );
       expect(deleteFaqCall).toBeDefined();
 
       const insertFaqCalls = mockQuery.mock.calls.filter(
-        (call: any[]) => (call[0] as string).includes('INSERT INTO job_posting_prescreening_faq'),
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('INSERT INTO job_posting_prescreening_faq'),
       );
       expect(insertFaqCalls).toHaveLength(1);
     });
@@ -495,17 +563,20 @@ describe('SyncTalentumVacanciesUseCase', () => {
       });
       mockListAllPrescreenings.mockResolvedValue([project]);
 
+      // Pool: lookup talentum_project_id, lookup case_number, nextval (no DELETE/INSERT since empty)
       mockQuery
-        .mockResolvedValueOnce({ rows: [] })                       // lookup
-        .mockResolvedValueOnce({ rows: [] })                       // lookup case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '2' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-no-q' }] })
-        .mockResolvedValueOnce({ rows: [] });                      // saveTalentumReference
+        .mockResolvedValueOnce({ rows: [] })          // lookup talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })          // lookup case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '2' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                              // BEGIN (createFromSync)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-no-q' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                       // audit + COMMIT + saveTalentumReference txn
 
       await useCase.execute();
 
       const deleteQCalls = mockQuery.mock.calls.filter(
-        (call: any[]) => (call[0] as string).includes('DELETE FROM job_posting_prescreening'),
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('DELETE FROM job_posting_prescreening'),
       );
       expect(deleteQCalls).toHaveLength(0);
     });

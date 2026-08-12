@@ -6,6 +6,8 @@ import { Pool } from 'pg';
 import { Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
 
 // ─── findByAuthUid ────────────────────────────────────────────────────────────
 
@@ -15,9 +17,10 @@ export async function findByAuthUid(
   authUid: string,
 ): Promise<Result<Worker | null>> {
   try {
-    const query = `
+    const buildQuery = (whereClause: string) => `
       SELECT
         w.id, w.auth_uid as "authUid", w.email, w.phone,
+        w.merged_into_id as "mergedIntoId",
         w.whatsapp_phone_encrypted as "whatsappPhoneEnc",
         w.lgpd_consent_at as "lgpdConsentAt",
         w.first_name_encrypted as "firstNameEnc",
@@ -46,17 +49,31 @@ export async function findByAuthUid(
         sa.neighborhood as "serviceNeighborhood"
       FROM workers w
       LEFT JOIN worker_service_areas sa ON sa.worker_id = w.id
-      WHERE w.auth_uid = $1
+      WHERE ${whereClause}
       GROUP BY w.id, sa.id
     `;
 
-    const result = await pool.query(query, [authUid]);
+    const result = await pool.query(buildQuery('w.auth_uid = $1'), [authUid]);
 
     if (result.rows.length === 0) {
       return Result.ok<Worker | null>(null);
     }
 
-    const row = result.rows[0];
+    let row = result.rows[0];
+
+    // Conta absorvida num merge: segue a corrente de merged_into_id e devolve a
+    // conta unificada — sem isto o login antigo cai num casco vazio (classe
+    // "worker no encontrado"). Corrente irresolvível (ciclo) → mantém o
+    // comportamento antigo (fail-open) com warn no resolver.
+    if (row.mergedIntoId != null) {
+      const canonicalId = await resolveCanonicalWorkerId(pool, row.id);
+      if (canonicalId != null && canonicalId !== row.id) {
+        const canonicalRes = await pool.query(buildQuery('w.id = $1::uuid'), [canonicalId]);
+        if (canonicalRes.rows.length > 0) {
+          row = canonicalRes.rows[0];
+        }
+      }
+    }
 
     // Descriptografar todos os campos PII/PHI em paralelo
     const [firstName, lastName, sex, gender, birthDateStr, documentNumber, profilePhotoUrl, languagesStr, whatsappPhone] =
@@ -127,7 +144,9 @@ export async function updateAuthUid(
     const params: unknown[] = [authUid];
 
     if (phone) {
-      params.push(phone);
+      // Normaliza phone na borda do update para manter unicidade semântica.
+      const normalizedPhone = normalizePhoneAR(phone) || phone;
+      params.push(normalizedPhone);
       setClauses.push(`phone = $${params.length}`);
     }
 

@@ -1,10 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
-import { SelectField, SelectOption } from '@presentation/components/molecules/SelectField';
+import { Select, SelectOption } from '@presentation/components/atoms/Select';
 
 interface PatientFiltersProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
+  codeValue: string;
+  onCodeChange: (value: string) => void;
   selectedAttention: string;
   onAttentionChange: (value: string) => void;
   selectedReason: string;
@@ -17,11 +19,17 @@ interface PatientFiltersProps {
   reasonOptions: SelectOption[];
   specialtyOptions: SelectOption[];
   dependencyOptions: SelectOption[];
+  /** Fase 4 — country scope (optional; omit to hide the country filter). */
+  selectedCountry?: string;
+  onCountryChange?: (value: string) => void;
+  countryOptions?: SelectOption[];
 }
 
 export function PatientFilters({
   searchValue,
   onSearchChange,
+  codeValue,
+  onCodeChange,
   selectedAttention,
   onAttentionChange,
   selectedReason,
@@ -34,19 +42,26 @@ export function PatientFilters({
   reasonOptions,
   specialtyOptions,
   dependencyOptions,
+  selectedCountry,
+  onCountryChange,
+  countryOptions,
 }: PatientFiltersProps): JSX.Element {
   const { t } = useTranslation();
 
+  const showCountryFilter = !!countryOptions && !!onCountryChange;
   const showReasonFilter = selectedAttention === 'needs_attention';
   const hasActiveFilters =
-    searchValue || selectedAttention || selectedSpecialty || selectedDependency;
+    searchValue || codeValue || selectedAttention || selectedSpecialty || selectedDependency
+    || selectedCountry;
 
   const handleClearAll = () => {
     onSearchChange('');
+    onCodeChange('');
     onAttentionChange('');
     onReasonChange('');
     onSpecialtyChange('');
     onDependencyChange('');
+    onCountryChange?.('');
   };
 
   return (
@@ -69,15 +84,30 @@ export function PatientFilters({
           </div>
         </div>
 
+        {/* Code / case number filter */}
+        <div className="w-[160px]" data-testid="filter-code">
+          <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
+            {t('admin.patients.codeLabel')}
+          </label>
+          <input
+            type="text"
+            value={codeValue}
+            onChange={(e) => onCodeChange(e.target.value)}
+            placeholder={t('admin.patients.codePlaceholder')}
+            className="w-full h-[42px] px-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] text-sm font-lexend text-[#374151] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#6B21A8]/20 focus:border-[#6B21A8] focus:bg-white transition-all"
+          />
+        </div>
+
         {/* Attention status filter */}
         <div className="w-[180px]" data-testid="filter-attention">
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.attentionLabel')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={attentionOptions}
             value={selectedAttention}
-            onChange={onAttentionChange}
+            onValueChange={onAttentionChange}
             placeholder={t('admin.patients.attentionOptions.all')}
           />
         </div>
@@ -88,10 +118,11 @@ export function PatientFilters({
             <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
               {t('admin.patients.reasonLabel')}
             </label>
-            <SelectField
+            <Select
+              inputSize="compact"
               options={reasonOptions}
               value={selectedReason}
-              onChange={onReasonChange}
+              onValueChange={onReasonChange}
               placeholder={t('admin.patients.reasonOptions.all')}
             />
           </div>
@@ -102,23 +133,42 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.specialtyLabel')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={specialtyOptions}
             value={selectedSpecialty}
-            onChange={onSpecialtyChange}
+            onValueChange={onSpecialtyChange}
             placeholder={t('admin.patients.specialtyOptions.all')}
           />
         </div>
+
+        {/* Country filter (Fase 4). 210px: cabe o rótulo mais longo ("Todos los
+            países") — select nativo trunca sem reticências quando não cabe. */}
+        {showCountryFilter && (
+          <div className="w-[210px]" data-testid="patient-country-filter">
+            <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
+              {t('admin.patients.countryLabel')}
+            </label>
+            <Select
+              inputSize="compact"
+              options={countryOptions!}
+              value={selectedCountry ?? ''}
+              onValueChange={onCountryChange!}
+              placeholder={t('admin.patients.countryOptions.all')}
+            />
+          </div>
+        )}
 
         {/* Dependency filter */}
         <div className="w-[180px]" data-testid="filter-dependency">
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.dependencyLabel')}
           </label>
-          <SelectField
+          <Select
+            inputSize="compact"
             options={dependencyOptions}
             value={selectedDependency}
-            onChange={onDependencyChange}
+            onValueChange={onDependencyChange}
             placeholder={t('admin.patients.dependencyOptions.all')}
           />
         </div>

@@ -1,7 +1,8 @@
 /**
- * VacanciesController.listInProgressForPatient.test.ts
+ * VacanciesAuxController.listInProgressForPatient.test.ts
  *
  * Unit tests for GET /api/admin/vacancies/in-progress?patient_id=:uuid
+ * (method lives in VacanciesAuxController after the 400-line split)
  *
  * Cenários:
  *   1. patient_id ausente → 400
@@ -24,7 +25,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
-import { VacanciesController } from '../VacanciesController';
+import { VacanciesAuxController } from '../VacanciesAuxController';
 import { Request, Response } from 'express';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -57,12 +58,12 @@ function makeDraftRow(overrides: Record<string, unknown> = {}) {
 
 // ─── tests ────────────────────────────────────────────────────────────────────
 
-describe('VacanciesController.listInProgressForPatient', () => {
-  let controller: VacanciesController;
+describe('VacanciesAuxController.listInProgressForPatient', () => {
+  let controller: VacanciesAuxController;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new VacanciesController();
+    controller = new VacanciesAuxController();
   });
 
   // ── cenário 1: patient_id ausente → 400 ───────────────────────────────────

@@ -1,0 +1,56 @@
+# Worker Job Applications (Funil de Candidatura)
+
+> **Status:** Feature fechada. Fonte canônica do funil de candidatura de prestadores (workers) a vagas (job postings) na Enlite.
+> **Última atualização:** 2026-05-25 (F8 concluída — todo o plano de 8 fases deployado em prod + auditoria empírica de 12.259 workers validou 100% de integridade em 3 camadas)
+> **Validação:** [09-auditoria-integridade.md](09-auditoria-integridade.md) — 12.259/12.259 workers OK em DB × API × DOM (0 stage_mismatch, 0 temporal_anomaly, 0 no_encuadre)
+> **Deploy:** todas as migrations 190-197 e código F2-F8 deployados em **2026-05-25** via Cloud Run revisão `worker-functions-00283-kxc`
+
+## Visão executiva
+
+Um **Worker Job Application (WJA)** representa a candidatura de UM prestador a UMA vaga. É a entidade canônica que vive do momento em que o prestador entra no funil (convite ou interesse) até um estado terminal (`CONFIRMED` ou `REJECTED`).
+
+Regras inegociáveis:
+
+- **Cardinalidade 1:1** — UNIQUE `(worker_id, job_posting_id)`. Nunca há duas WJAs para o mesmo par.
+- **Estado único e linear** — `application_funnel_stage` é o único SSOT do funil; transições respeitam precedência canônica (não regridem).
+- **Encuadre ≡ WJA** — `encuadres` é vocabulário operacional em espanhol para a mesma entidade. Historicamente existiu tabela `encuadres` separada (vinda de planilha legada), hoje em deprecação.
+
+## Índice
+
+1. [Conceito](01-conceito.md) — o que é WJA, por que existe, cardinalidade
+2. [Vocabulário](02-vocabulario.md) — WJA / Encuadre / Funil de Candidatura: 3 nomes, 1 entidade
+3. [SSOT por conceito](03-ssot-por-conceito.md) — qual tabela/coluna detém autoridade sobre cada dado
+4. [Estados do funil (Kanban)](04-estados-funil-kanban.md) — 7 colunas visíveis + stages internos + badges + regras de drag
+5. [Fluxo de transições (T1→T7)](05-fluxo-transicoes.md) — gatilho, ator, pré/pós, idempotência
+6. [Regra de cardinalidade e REPROGRAMAR](06-regra-cardinalidade.md) — 1:1 worker/vaga; REPROGRAMAR edita, não cria
+7. [Tabelas envolvidas](07-tabelas-envolvidas.md) — estado-alvo após deprecação progressiva
+8. [Pipelines de escrita](08-pipelines.md) — 7 ativos + 3 deprecados
+9. [Auditoria empírica de integridade](09-auditoria-integridade.md) — validação de 12.259 workers em prod (2026-05-25)
+
+## Plano de fases
+
+Esta tabela é a **fonte da verdade da numeração das fases**. Qualquer menção a "F2", "F4" etc. nos outros docs deve bater com esta lista.
+
+| Fase | Escopo | Status | Commit / Migration |
+|---|---|---|---|
+| **F1** | Doc canônico desta feature + cleanup de 48 docs com refs ambíguas a encuadre/WJA | ✅ Concluída 2026-05-23 | `5ce2cab`, `3904c3e`, `dc630b1` |
+| **F2** | Consolidar `RECHAZADO` → `REJECTED` no `application_funnel_stage` (CHECK + `funnel_stage_precedence`) | ✅ Concluída 2026-05-23 | `64d9af8` / migration 190 |
+| **F3** | Auto-rejeição `NOT_QUALIFIED` → `REJECTED` no use case + remover `NOT_QUALIFIED` do enum | ✅ Concluída 2026-05-23 | `b26e8e2` / migration 191 |
+| **F4** | Adicionar badges visuais (QUALIFIED/IN_DOUBT/COMPLETED puro) na coluna COMPLETADO; botão dedicado "Rejeitar" no card com modal de motivo; ajustar drag rules (não droppable: INITIATED, IN_PROGRESS, COMPLETADO — controle Talentum). Kanban mantém 7 colunas atuais (revisão 2026-05-24) | ✅ Concluída 2026-05-24 | `a26f0a2` |
+| **F5** | UNIQUE `(worker_id, job_posting_id)` em `encuadres` + consolidar ~20k duplicatas históricas (richness score + recência) + 6 call sites atualizados de `ON CONFLICT (dedup_hash)` para par composto + trigger 189 atualizado. REPROGRAMAR já edita WJA sem criar encuadre novo (descoberto no Explore — desnecessário mexer no use case) | ✅ Concluída 2026-05-24 | `2cc7d06` |
+| **F6** | Matar `EncuadreRepository.syncToWorkerJobApplications` como pipeline recorrente: chamada removida do script de import + função mantida com `@deprecated`. CLAUDE.md "Sequência obrigatória pós-import" → "Pipelines de import legados". SEM backfill das 19k inconsistências (user aceitou como histórico). SEM converter 1.450 órfãos ClickUp. Bloqueador residual: TD-047 (identificar quem ainda dispara o script) | ✅ Concluída 2026-05-24 | `616ff1c` |
+| **F7.a** | Limpeza enxuta (baixo risco): remover `ANALYZED` da função SQL `funnel_stage_precedence()` (mantém em `FunnelStage` TS como vocab protocolo Talentum); remover `PLACED` totalmente (CHECK + `FunnelStage` + `ApplicationFunnelStage` + arrays); renomear 3 classes (`EncuadreFunnelController` → `WJAFunnelController`, `EncuadreFunnelTableController` → `WJAFunnelTableController`, `useEncuadreFunnel` → `useWJAFunnel`); criar ADR-003 com regra de nomeio. **NÃO toca SELECTED/REPROGRAM/application_status** | ✅ Concluída 2026-05-25 | `a0a95e3` / migration 194 |
+| **F7.b** | Refatorou `HandleReminderResponseUseCase.handleRescheduleYes`: removeu writer de `REPROGRAM`; worker passa a ficar em `CONFIRMED` + `interview_response='awaiting_reschedule'` + `meet_link=NULL` (Opção C — ADR-003 ampliado). State machine ganhou self-transition `awaiting_reschedule → awaiting_reschedule`. Drop REPROGRAM do CHECK + `funnel_stage_precedence()` (migration 195). Consumers atualizados: `WJAFunnelController` (workers em CONFIRMED+awaiting_reschedule aparecem na coluna CONFIRMED), `KanbanCard` (badge "REMARCADO" derivado de `interview_response='awaiting_reschedule' && meet_link === null`), `GetFunnelTableUseCase` (worker pediu reschedule classifica como PRE_SELECTED, não WITHDREW). E2E `qualified-interview-flow` atualizado. 0 linhas backfill (Discovery DBA). | ✅ Concluída 2026-05-25 | `ce52db3` / migration 195 (deploy prod 2026-05-25) |
+| **F7.c** | Drop coluna `application_status` (legada, 100% redundante): atualizou 7 writers (MatchmakingService passou a escrever `source='system'`+`acquisition_channel='system'`, demais pararam de escrever); `alreadyApplied` no `/match-results` derivado de `source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'` (Opção 3 combinada); migration 196 dropa CONSTRAINT+INDEX+COLUMN. Também removeu `funnelStage` redundante do payload do Kanban (substituído integralmente por `internalStage`). 12.258 rows sem backfill (info redundante). ADR-004 criada (providers de prescreening plugáveis — Talentum é UM provider descartável). | ✅ Concluída 2026-05-25 | `411c540` / migration 196 (deploy prod 2026-05-25) |
+| **F8** | `encuadres.origen` → `import_source_audit` (auditoria de import histórico apenas, sem authority de classificação). Trigger 189 recriado pra usar nome novo. | ✅ Concluída 2026-05-25 | `f9db2f3` / migration 197 (deploy prod 2026-05-25) |
+
+## Referências cruzadas
+
+- ADR-001 (Accepted 2026-05-24): [`docs/adr/001-encuadres-unique-worker-job-posting-constraint.md`](../../adr/001-encuadres-unique-worker-job-posting-constraint.md) — UNIQUE composta em encuadres (parte da F5)
+- ADR-002 (Proposed 2026-05-23, refinado 2026-05-24): [`docs/adr/002-wja-canonico-encuadres-deprecada.md`](../../adr/002-wja-canonico-encuadres-deprecada.md) — promoção WJA a SSOT canônico + plano de 8 fases
+- ADR-003 (Accepted 2026-05-24, ampliado 2026-05-25 em F7.b): [`docs/adr/003-naming-wja-vs-encuadre.md`](../../adr/003-naming-wja-vs-encuadre.md) — convenção de naming WJA/Encuadre + destino canônico do reschedule (CONFIRMED + awaiting_reschedule)
+- ADR-004 (Accepted 2026-05-25, em F7.c): [`docs/adr/004-prescreening-providers-pluggable.md`](../../adr/004-prescreening-providers-pluggable.md) — providers de prescreening plugáveis; Talentum é UM deles, não o modelo
+- Decisão arquitetural: memória `~/.claude/projects/.../memory/project_wja_canonical_encuadres_deprecated.md`
+- Método de Discovery Profunda (aplicado em F7+): memória `feedback_discovery_profunda_metodo.md`
+- Histórico de bugs corrigidos: [POSTMORTEM_KANBAN_FUNNEL_BUGS.md](../../POSTMORTEM_KANBAN_FUNNEL_BUGS.md)
+- TDs ativos relevantes: TD-041 (drop `dedup_hash` UNIQUE após F5 estável 14d), TD-043 (cobertura visual E2E F4), TD-044 (hook `validate-migration.sh` opt-in), TD-045 (verificar `dedup_hash` antes deploy 193), TD-046 (`console.error` → `logger`), TD-047 (identificar disparador de `import-encuadres-from-clickup.ts`)

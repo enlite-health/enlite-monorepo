@@ -31,18 +31,24 @@ export interface WorkerJobApplication {
  * Funnel stage for the Talentum process, per vacancy.
  * Replaces the old ApplicationStatus (systemic) + ApplicationFunnelStage (UI) split.
  * Single source of truth: application_funnel_stage column in worker_job_applications.
+ *
+ * Migration 230 (2026-06-26): PRE_SCREENING adicionado; INVITED adicionado (existia no banco
+ * desde migration 131 mas estava ausente do tipo TypeScript).
+ * INITIATED removido do tipo canônico — banco ainda aceita (CHECK fase-1) mas backfill
+ * já migrou todos os valores para PRE_SCREENING.
  */
 export type ApplicationFunnelStage =
-  | 'INITIATED'      // iniciado na Talentum
-  | 'IN_PROGRESS'    // em progresso
+  | 'INVITED'        // clicou em postularse (pré-Talentum); source='manual' → coluna "INICIADO" no kanban
+  | 'PRE_SCREENING'  // entrou no formulário Talentum (antigo INITIATED — migration 230)
+  | 'IN_PROGRESS'    // em progresso no prescreening Talentum
   | 'COMPLETED'      // concluiu o processo Talentum
   | 'QUALIFIED'      // aprovado pela Talentum
   | 'IN_DOUBT'       // em dúvida
-  | 'NOT_QUALIFIED'  // não qualificado
   | 'CONFIRMED'      // worker confirmou slot de encuadre
   | 'SELECTED'       // selecionado no encuadre
-  | 'REJECTED'       // rejeitado no encuadre
-  | 'PLACED';        // worker está atualmente atuando nessa vaga
+  | 'REJECTED';      // rejeitado no encuadre (inclui auto-rejeição por NOT_QUALIFIED Talentum — migration 191)
+  // 'PLACED' removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
+  // 'INITIATED' removido do tipo em migration 230 — banco fase-1 ainda aceita transitoriamente
 
 export interface CreateWorkerJobApplicationDTO {
   workerId: string;

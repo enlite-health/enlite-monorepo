@@ -6,16 +6,17 @@ import { logger, reportError } from '@shared/logging';
 
 const TEMPLATE_SLUG = 'talentum_incomplete_reminder';
 
-// Intervalo entre envios para evitar bloqueio de número pelo WhatsApp/Twilio.
-// Padrão: 1500ms. Sobreposto pela variável de ambiente BULK_DISPATCH_DELAY_MS.
 const DEFAULT_DELAY_MS = 1500;
+
+const UNDELIVERED_THRESHOLD = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
- * Workers com application_funnel_stage INITIATED ou IN_PROGRESS — cadência:
+ * Workers com application_funnel_stage PRE_SCREENING ou IN_PROGRESS — cadência:
+ * (Migration 230: INITIATED renomeado para PRE_SCREENING)
  *
  *   1º envio: app parada há >=1 dia + nunca recebeu o reminder antes
  *   2º envio: app continua parada + último envio foi há >=3 dias + total enviados < 2
@@ -36,26 +37,33 @@ const TALENTUM_INCOMPLETE_QUERY = `
     FROM whatsapp_bulk_dispatch_logs
     WHERE template_slug = 'talentum_incomplete_reminder'
     GROUP BY worker_id
+  ),
+  undelivered_stats AS (
+    SELECT worker_id,
+           COUNT(*) AS undelivered_count
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE delivery_status = 'undelivered'
+      AND dispatched_at > NOW() - INTERVAL '30 days'
+    GROUP BY worker_id
   )
   SELECT DISTINCT
     w.id AS worker_id,
-    w.phone AS phone
+    w.phone AS phone,
+    w.messaging_channel AS messaging_channel
   FROM workers w
   INNER JOIN worker_job_applications wja
     ON wja.worker_id = w.id
-    AND wja.application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')
+    AND wja.application_funnel_stage IN ('PRE_SCREENING', 'IN_PROGRESS')
   LEFT JOIN talentum_send_stats tss ON tss.worker_id = w.id
+  LEFT JOIN undelivered_stats us ON us.worker_id = w.id
   WHERE
     w.status != 'DISABLED'
     AND w.phone IS NOT NULL
     AND w.phone <> ''
     AND w.email NOT LIKE '%@enlite.import'
     AND (
-      -- 1º envio: nunca enviou + app parada há >=1 dia
       (tss.send_count IS NULL AND wja.updated_at < NOW() - INTERVAL '1 day')
       OR
-      -- 2º envio: enviou 1x + foi há >=3 dias (app continua parada implicitamente
-      -- porque application_funnel_stage ainda é INITIATED/IN_PROGRESS)
       (tss.send_count = 1 AND tss.last_sent_at < NOW() - INTERVAL '3 days')
     )
     AND NOT EXISTS (
@@ -63,6 +71,13 @@ const TALENTUM_INCOMPLETE_QUERY = `
       WHERE wrs.worker_id = w.id
         AND wrs.template_slug = 'talentum_incomplete_reminder'
         AND wrs.sent_date = CURRENT_DATE
+    )
+    -- Excluir números com 3+ undelivered (bloqueado/inativo)
+    AND COALESCE(us.undelivered_count, 0) < ${UNDELIVERED_THRESHOLD}
+    -- Excluir opt-out
+    AND NOT EXISTS (
+      SELECT 1 FROM messaging_opt_out moo
+      WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL
     )
   ORDER BY w.id
 `;
@@ -86,7 +101,9 @@ export class BulkDispatchTalentumIncompleteUseCase {
 
     batchLogger.info({ msg: 'BulkDispatchTalentum iniciado' });
 
-    const rows = await this.db.query<{ worker_id: string; phone: string }>(TALENTUM_INCOMPLETE_QUERY);
+    const rows = await this.db.query<{ worker_id: string; phone: string; messaging_channel: string | null }>(
+      TALENTUM_INCOMPLETE_QUERY,
+    );
 
     batchLogger.info({ msg: 'Workers elegíveis para reminder Talentum', total: rows.rows.length });
 
@@ -118,13 +135,23 @@ export class BulkDispatchTalentumIncompleteUseCase {
           continue;
         }
 
-        // 2. Gerar token de nome e enviar WhatsApp
+        // 2. Gerar token de nome, resolver pro valor plaintext e enviar WhatsApp.
+        // O TokenService.generate registra o token em messaging_variable_tokens
+        // pra auditoria; resolveVariables troca o token pelo nome decifrado (KMS)
+        // antes de mandar ao Twilio. Pular o resolve fazia o worker receber
+        // literal 'Hola tk_xxx' em vez do nome.
         const workerNameToken = await tokenService.generate(row.worker_id, 'worker_name');
+        const resolvedVars = await tokenService.resolveVariables({
+          worker_name: workerNameToken,
+        });
 
+        // channel resolvido pelo messaging_channel do worker — zero query extra
+        // (já veio na eligibility query TALENTUM_INCOMPLETE_QUERY acima).
         const sendResult = await this.messaging.sendWhatsApp({
           to: row.phone,
           templateSlug: TEMPLATE_SLUG,
-          variables: { worker_name: workerNameToken },
+          variables: resolvedVars,
+          channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
         });
 
         const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';

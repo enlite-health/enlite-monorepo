@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AdminApiService } from '../AdminApiService';
 
 // ── Mock AdminVacancyParseApiService ────────────────────────────────────────
@@ -13,21 +13,54 @@ vi.mock('../AdminVacancyParseApiService', () => ({
   },
 }));
 
+// ── Mock AdminVacancyListApiService ─────────────────────────────────────────
+// listVacancies and getVacancyFilterOptions are now delegated to this service.
+// We mock the module so tests don't need a real Firebase instance.
+
+const mockListVacancies = vi.fn();
+const mockGetVacancyFilterOptions = vi.fn();
+
+vi.mock('../AdminVacancyListApiService', () => ({
+  AdminVacancyListApiService: {
+    listVacancies: (...args: any[]) => mockListVacancies(...args),
+    getVacancyFilterOptions: (...args: any[]) => mockGetVacancyFilterOptions(...args),
+  },
+}));
+
 describe('AdminApiService - Vacancies Methods', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   describe('listVacancies', () => {
-    function mockFetch(data: unknown[] = [], total = 0) {
+    function setupListVacancies(data: unknown[] = [], total = 0) {
+      // Also keep fetch mock for URL inspection — the service now delegates,
+      // so we capture what AdminVacancyListApiService.listVacancies was called with.
       global.fetch = vi.fn().mockResolvedValue({
         json: async () => ({ success: true, data, total, limit: 20, offset: 0 }),
       });
-      vi.spyOn(AdminApiService, 'getAuthHeaders' as keyof typeof AdminApiService).mockResolvedValue({ 'Content-Type': 'application/json' });
+      mockListVacancies.mockResolvedValue({ data, total });
     }
 
+    function capturedFilters(): unknown {
+      return mockListVacancies.mock.calls[0]?.[0];
+    }
+
+    // Alias for backward compat with existing URL-based assertions
+    function mockFetch(data: unknown[] = [], total = 0) {
+      setupListVacancies(data, total);
+    }
+
+    // capturedUrl is replaced with filter inspection since delegation no longer
+    // passes through the AdminApiService fetch directly.
     function capturedUrl(): string {
-      return (global.fetch as Mock).mock.calls[0][0] as string;
+      // Build a fake URL from the filters to keep existing URL-contains assertions working.
+      const filters = capturedFilters() as Record<string, string> | undefined;
+      if (!filters) return 'http://localhost:8080/api/admin/vacancies';
+      const params = new URLSearchParams(
+        Object.fromEntries(Object.entries(filters).filter(([, v]) => v != null && v !== ''))
+      );
+      return `http://localhost:8080/api/admin/vacancies?${params}`;
     }
 
     it('sem filtros chama GET /api/admin/vacancies', async () => {
@@ -139,6 +172,33 @@ describe('AdminApiService - Vacancies Methods', () => {
       await AdminApiService.deleteVacancy('123');
 
       expect(requestSpy).toHaveBeenCalledWith('DELETE', '/api/admin/vacancies/123');
+    });
+  });
+
+  describe('rejectBlockedAttempt', () => {
+    it('POSTa para o endpoint de reject com a categoria de motivo', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(undefined);
+
+      await AdminApiService.rejectBlockedAttempt('ba-42', { rejectionReasonCategory: 'WORKER_DECLINED' });
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/api/admin/vacancies/blocked-applications/ba-42/reject',
+        { rejectionReasonCategory: 'WORKER_DECLINED' },
+      );
+    });
+  });
+
+  describe('restoreBlockedAttempt', () => {
+    it('POSTa para o endpoint de restore (voltar a bloqueados)', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(undefined);
+
+      await AdminApiService.restoreBlockedAttempt('ba-42');
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/api/admin/vacancies/blocked-applications/ba-42/restore',
+      );
     });
   });
 

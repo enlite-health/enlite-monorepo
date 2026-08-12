@@ -4,6 +4,12 @@ import userEvent from '@testing-library/user-event';
 import WorkerDetailPage from '../WorkerDetailPage';
 import type { WorkerDetail } from '@domain/entities/Worker';
 
+// WorkerDetailContent calls useAdminAuth (Firebase). Non-admin profile → no edit
+// affordance, preserving the read-only behavior these tests assert.
+vi.mock('@presentation/hooks/useAdminAuth', () => ({
+  useAdminAuth: () => ({ adminProfile: null }),
+}));
+
 // ── react-i18next mock ────────────────────────────────────────────────────────
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -14,10 +20,12 @@ vi.mock('react-i18next', () => ({
 // ── react-router-dom mocks ────────────────────────────────────────────────────
 const mockNavigate = vi.fn();
 const mockUseParams = vi.fn(() => ({ id: 'worker-123' }));
+const mockUseLocation = vi.fn<[], { state: unknown }>(() => ({ state: null }));
 
 vi.mock('react-router-dom', () => ({
   useParams: () => mockUseParams(),
   useNavigate: () => mockNavigate,
+  useLocation: () => mockUseLocation(),
 }));
 
 // ── useWorkerDetail hook mock ─────────────────────────────────────────────────
@@ -88,6 +96,11 @@ vi.mock('@presentation/components/organisms/AdditionalDocumentsSection', () => (
   AdditionalDocumentsSection: () => <div data-testid="additional-documents-section" />,
 }));
 
+// Admin-only toggle calls useAdminAuth (Firebase) — out of scope here, tested separately.
+vi.mock('@presentation/components/features/admin/WorkerDetail/WorkerTestAccountToggle', () => ({
+  WorkerTestAccountToggle: () => <div data-testid="worker-test-account-toggle" />,
+}));
+
 // ── DetailSkeleton mock ───────────────────────────────────────────────────────
 vi.mock('@presentation/components/ui/skeletons', () => ({
   DetailSkeleton: () => <div data-testid="detail-skeleton" />,
@@ -139,6 +152,7 @@ const MOCK_WORKER: WorkerDetail = {
 
   isMatchable: true,
   isActive: true,
+  isTest: false,
 
   documents: null,
   serviceAreas: [],
@@ -152,6 +166,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockNavigate.mockReset();
   mockUseParams.mockReturnValue({ id: 'worker-123' });
+  mockUseLocation.mockReturnValue({ state: null });
 });
 
 // ── Loading state ─────────────────────────────────────────────────────────────
@@ -260,7 +275,7 @@ describe('WorkerDetailPage — success state', () => {
     expect(backButtons.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('navigates to /admin/workers when the back button is clicked', async () => {
+  it('navigates to /admin/workers when the back button is clicked (no origin state)', async () => {
     const user = userEvent.setup();
     render(<WorkerDetailPage />);
 
@@ -268,6 +283,17 @@ describe('WorkerDetailPage — success state', () => {
     await user.click(backButtons[0]);
 
     expect(mockNavigate).toHaveBeenCalledWith('/admin/workers');
+  });
+
+  it('navigates back to the origin path from location.state when present', async () => {
+    mockUseLocation.mockReturnValue({ state: { from: '/admin/vacancies/vac-123' } });
+    const user = userEvent.setup();
+    render(<WorkerDetailPage />);
+
+    const backButtons = screen.getAllByText('admin.workerDetail.back');
+    await user.click(backButtons[0]);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/vacancies/vac-123');
   });
 
   it('calls useWorkerDetail with the id from useParams', () => {

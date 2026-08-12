@@ -1,19 +1,27 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@presentation/hooks/useAuth';
-import { WorkerApiService, WorkerProgressResponse, AvailabilitySlotResponse } from '@infrastructure/http/WorkerApiService';
-import { DocumentApiService, WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
+import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
+import { ApiError } from '@infrastructure/http/ApiError';
 
 const SESSION_KEY_UTM = 'enlite_utm_source';
 const SESSION_KEY_RETURN_URL = 'enlite_vacancy_return_url';
 
-type PostularseState = 'idle' | 'loading' | 'unauthenticated' | 'incomplete' | 'ready' | 'not_available';
+type PostularseState =
+  | 'idle'
+  | 'loading'
+  | 'unauthenticated'
+  | 'incomplete'
+  | 'ready'
+  | 'not_available'
+  | 'error';
 
-/** Each key maps to a i18n label; value = true means completed */
-export interface MissingFields {
-  registration: Record<string, boolean>;
-  documents: Record<string, boolean>;
-}
+/**
+ * Missing fields as a plain string[] of snake_case tokens returned by the
+ * backend 403 WORKER_NOT_ELIGIBLE response. The backend is the sole source of
+ * truth — no client-side recalculation.
+ */
+export type MissingFields = string[];
 
 export interface UsePostularseActionResult {
   state: PostularseState;
@@ -21,41 +29,6 @@ export interface UsePostularseActionResult {
   postularse: () => Promise<void>;
   dismissModal: () => void;
   confirmRegister: () => void;
-}
-
-function detectRegistrationFields(
-  data: WorkerProgressResponse,
-  availabilitySlots: AvailabilitySlotResponse[],
-): Record<string, boolean> {
-  return {
-    firstName: !!data.firstName,
-    lastName: !!data.lastName,
-    birthDate: !!data.birthDate,
-    sex: !!data.sex,
-    gender: !!data.gender,
-    documentType: !!data.documentType,
-    documentNumber: !!data.documentNumber,
-    languages: !!(data.languages && data.languages.length > 0),
-    profession: !!data.profession,
-    knowledgeLevel: !!data.knowledgeLevel,
-    experienceTypes: !!(data.experienceTypes && data.experienceTypes.length > 0),
-    yearsExperience: !!data.yearsExperience,
-    preferredTypes: !!(data.preferredTypes && data.preferredTypes.length > 0),
-    preferredAgeRange: !!(data.preferredAgeRange && data.preferredAgeRange.length > 0),
-    serviceAddress: !!data.serviceAddress,
-    serviceRadiusKm: !!data.serviceRadiusKm,
-    availability: availabilitySlots.length > 0,
-  };
-}
-
-function detectDocumentFields(data: WorkerDocumentsResponse | null): Record<string, boolean> {
-  return {
-    resumeCv: !!data?.resumeCvUrl,
-    identityDocument: !!data?.identityDocumentUrl,
-    criminalRecord: !!data?.criminalRecordUrl,
-    professionalRegistration: !!data?.professionalRegistrationUrl,
-    liabilityInsurance: !!data?.liabilityInsuranceUrl,
-  };
 }
 
 export function usePostularseAction(
@@ -78,43 +51,42 @@ export function usePostularseAction(
       return;
     }
 
+    if (!jobPostingId) {
+      // No jobPostingId → backend cannot be consulted; conservative path.
+      setState('not_available');
+      return;
+    }
+
     setState('loading');
+
     try {
-      const [workerData, documentsData, availabilityData] = await Promise.all([
-        WorkerApiService.getProgress(),
-        DocumentApiService.getDocuments(),
-        WorkerApiService.getAvailability(),
-      ]);
-
-      const registration = detectRegistrationFields(workerData, availabilityData);
-      const documents = detectDocumentFields(documentsData);
-
-      const allRegistrationComplete = Object.values(registration).every(Boolean);
-      const allDocsComplete = Object.values(documents).every(Boolean);
-
-      if (!allRegistrationComplete || !allDocsComplete) {
-        setMissingFields({ registration, documents });
-        setState('incomplete');
-        return;
-      }
-
-      // Track acquisition channel (fire-and-forget — must not block postularse)
       const channel = sessionStorage.getItem(SESSION_KEY_UTM);
-      if (channel && jobPostingId) {
-        WorkerApiService.trackAcquisitionChannel(jobPostingId, channel)
-          .then(() => {
-            sessionStorage.removeItem(SESSION_KEY_UTM);
-          })
-          .catch((err) => {
-            console.warn('[usePostularseAction] trackAcquisitionChannel failed:', err);
-          });
+      try {
+        await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
+        // Backend confirmed eligibility — ONLY here do we open WhatsApp.
+        sessionStorage.removeItem(SESSION_KEY_UTM);
+        window.open(whatsappUrl, '_blank');
+        setState('idle');
+        return;
+      } catch (trackErr) {
+        // FAIL-CLOSED (ClickUp 86ajfkwf7): the pre-screening WhatsApp must never
+        // open unless the backend explicitly confirmed the worker is eligible.
+        // We never fall back to opening WhatsApp on error. UTM is preserved so a
+        // retry after completing registration keeps the acquisition attribution.
+        if (trackErr instanceof ApiError && trackErr.code === 'WORKER_NOT_ELIGIBLE') {
+          // Backend is the sole source of truth — use missingFields from the 403.
+          setMissingFields(trackErr.missingFields ?? []);
+          setState('incomplete');
+          return;
+        }
+        // Any other outcome (404 not found, 401, 500, network) → block, do NOT
+        // open WhatsApp. The worker is not verified as eligible.
+        setMissingFields(null);
+        setState('error');
       }
-
-      window.open(whatsappUrl, '_blank');
-      setState('idle');
     } catch {
       setMissingFields(null);
-      setState('incomplete');
+      setState('error');
     }
   }, [whatsappUrl, isAuthenticated, jobPostingId]);
 

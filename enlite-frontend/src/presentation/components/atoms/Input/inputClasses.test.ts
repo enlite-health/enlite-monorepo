@@ -15,10 +15,10 @@ describe('INPUT_SIZE_CONFIG', () => {
   });
 
   it('contém entrada compact com valores corretos', () => {
-    expect(INPUT_SIZE_CONFIG.compact.height).toBe('h-[42px]');
-    expect(INPUT_SIZE_CONFIG.compact.padding).toBe('px-3 py-2');
+    expect(INPUT_SIZE_CONFIG.compact.height).toBe('h-12');
+    expect(INPUT_SIZE_CONFIG.compact.padding).toBe('px-4 py-2');
     expect(INPUT_SIZE_CONFIG.compact.fontSize).toBe('text-sm');
-    expect(INPUT_SIZE_CONFIG.compact.borderRadius).toBe('rounded-lg');
+    expect(INPUT_SIZE_CONFIG.compact.borderRadius).toBe('rounded-[10px]');
   });
 });
 
@@ -89,15 +89,15 @@ describe('inputBaseClasses', () => {
     expect(cls).toContain('h-[60px]');
   });
 
-  it('inclui h-[42px] para size compact', () => {
+  it('inclui h-12 para size compact', () => {
     const cls = inputBaseClasses({ size: 'compact' });
-    expect(cls).toContain('h-[42px]');
+    expect(cls).toContain('h-12');
   });
 
   it('omite height quando omitHeight=true', () => {
     const cls = inputBaseClasses({ omitHeight: true });
     expect(cls).not.toContain('h-[60px]');
-    expect(cls).not.toContain('h-[42px]');
+    expect(cls).not.toContain('h-12');
   });
 
   it('usa border-2 para size default', () => {
@@ -105,9 +105,9 @@ describe('inputBaseClasses', () => {
     expect(cls).toContain('border-2');
   });
 
-  it('usa border (simples) para size compact', () => {
+  it('usa border-[1.5px] para size compact', () => {
     const cls = inputBaseClasses({ size: 'compact' });
-    expect(cls).toContain(' border ');
+    expect(cls).toContain('border-[1.5px]');
     expect(cls).not.toContain('border-2');
   });
 });
@@ -116,7 +116,7 @@ describe('textareaBaseClasses', () => {
   it('NAO inclui nenhuma classe de height', () => {
     const cls = textareaBaseClasses();
     expect(cls).not.toContain('h-[60px]');
-    expect(cls).not.toContain('h-[42px]');
+    expect(cls).not.toContain('h-12');
   });
 
   it('inclui border-red-500 quando error=true', () => {

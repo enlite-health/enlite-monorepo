@@ -1,4 +1,75 @@
 {
+  "admission": {
+    "title": "Solicitá tu admisión",
+    "subtitle": "Completá estos datos y coordinamos tu entrevista de admisión. No necesitás crear una cuenta.",
+    "services": {
+      "cuidadores": "Cuidadores",
+      "acompanantes_terapeuticos": "Acompañantes Terapéuticos",
+      "psicologos": "Psicólogos"
+    },
+    "form": {
+      "serviceType": {
+        "label": "¿Qué servicio necesitás?",
+        "placeholder": "Elegí un servicio",
+        "required": "Seleccioná el servicio que necesitás"
+      },
+      "requesterType": {
+        "label": "¿Es para vos o para otra persona?",
+        "patient": "Para mí",
+        "responsible": "Para otra persona",
+        "required": "Indicá para quién es"
+      },
+      "email": {
+        "label": "Email",
+        "placeholder": "tucorreo@ejemplo.com",
+        "required": "Ingresá tu email",
+        "invalid": "Ingresá un email válido"
+      },
+      "phone": {
+        "label": "Teléfono",
+        "placeholder": "+54 9 11 1234 5678",
+        "required": "Ingresá tu teléfono"
+      },
+      "consent": {
+        "label": "Acepto que EnLite me contacte por WhatsApp o email sobre mi solicitud de admisión.",
+        "required": "Necesitás aceptar para continuar"
+      },
+      "submit": "Enviar solicitud",
+      "submitError": "No pudimos enviar tu solicitud. Intentá de nuevo."
+    },
+    "scheduling": {
+      "title": "Coordiná tu entrevista",
+      "subtitle": "Elegí un horario disponible para tu entrevista de admisión.",
+      "iframeTitle": "Agenda de entrevista de admisión",
+      "configureWarning": "Agenda en configuración: falta la URL real de la cita. Se muestra un marcador de posición.",
+      "nativeNotImplemented": "La selección de horarios integrada estará disponible pronto."
+    },
+    "slots": {
+      "title": "Elegí un horario",
+      "subtitle": "Estos son los horarios disponibles para tu entrevista de admisión.",
+      "loading": "Buscando horarios disponibles…",
+      "empty": "No hay horarios disponibles por el momento. Te contactaremos para coordinar.",
+      "loadError": "No pudimos cargar los horarios. Intentá de nuevo.",
+      "retry": "Reintentar",
+      "slotTaken": "Ese horario acaba de ocuparse, elegí otro.",
+      "bookError": "No pudimos reservar el horario. Intentá de nuevo.",
+      "booking": "Reservando tu horario…"
+    },
+    "confirmation": {
+      "title": "¡Listo! Tu entrevista está reservada",
+      "hostLabel": "Con",
+      "datetimeLabel": "Fecha y hora",
+      "meetLabel": "Enlace de la videollamada",
+      "joinMeet": "Unirse a la videollamada",
+      "whatsapp": "Te enviamos un WhatsApp con la confirmación."
+    }
+  },
+  "app": {
+    "newVersion": {
+      "message": "Hay una nueva versión disponible. Recargá la página para aplicar las mejoras.",
+      "reload": "Recargar ahora"
+    }
+  },
   "common": {
     "home": "Inicio",
     "communication": "Comunicación",
@@ -27,7 +98,10 @@
     "noResults": "Sin resultados",
     "cancel": "Cancelar",
     "close": "Cerrar",
-    "logout": "Salir"
+    "logout": "Salir",
+    "multiSelect": {
+      "selectedCount": "{{count}} seleccionados"
+    }
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -91,6 +165,85 @@
     "lgpdLink": "Más información sobre nuestra política de privacidad",
     "phonePrefilledHint": "Tu número está precargado desde tu perfil"
   },
+  "claim": {
+    "otpModal": {
+      "title": "Detectamos tu ficha preexistente",
+      "subtitle": "Enviamos un código por SMS al número {{phoneMasked}}. Ingresá los 6 dígitos para confirmar y recuperar tu registro.",
+      "inputLabel": "Código de verificación",
+      "confirmButton": "Confirmar",
+      "cancelButton": "Cancelar",
+      "errorInvalid": "El código ingresado es incorrecto. Verificá e intentá de nuevo.",
+      "errorExpired": "El código expiró. Volvé a intentar el registro para recibir uno nuevo.",
+      "errorNotFound": "No pudimos encontrar tu ficha. Continuá con la creación de cuenta nueva."
+    }
+  },
+  "accountLink": {
+    "choice": {
+      "title": "Este número ya está asociado a otra cuenta",
+      "phoneEntered": "Número ingresado:",
+      "otherAccount": "Cuenta asociada:",
+      "explanation": "¿Es tu cuenta anterior? Podés vincularla y recuperar tus postulaciones y documentos. Te vamos a enviar un código al número para confirmar que es tuyo.",
+      "linkButton": "Sí, es mi cuenta — vincular",
+      "noAccessButton": "No tengo acceso a ese número",
+      "notMineLink": "No es mi cuenta — hablar con soporte"
+    },
+    "otp": {
+      "title": "Confirmá que el número es tuyo",
+      "subtitle": "Enviamos un código de 6 dígitos al {{phoneMasked}}.",
+      "inputLabel": "Código",
+      "confirmButton": "Confirmar",
+      "cancelButton": "Cancelar",
+      "errorInvalid": "Código incorrecto. Revisá e intentá de nuevo.",
+      "errorExpired": "El código expiró. Pedí uno nuevo.",
+      "resendButton": "Reenviar código",
+      "resent": "Código reenviado.",
+      "errorRateLimited": "Demasiados intentos. Esperá una hora y probá de nuevo.",
+      "errorStart": "No pudimos enviar el código. Probá de nuevo."
+    },
+    "conflicts": {
+      "title": "Elegí qué información mantener",
+      "subtitle": "Las dos cuentas tienen valores distintos en estos campos. Elegí cuál vale (pre-seleccionamos el más reciente).",
+      "confirmButton": "Vincular cuentas",
+      "currentAccount": "Tu cuenta actual",
+      "otherAccount": "Cuenta anterior"
+    },
+    "fields": {
+      "profession": "Profesión",
+      "knowledge_level": "Nivel de estudios",
+      "years_experience": "Años de experiencia"
+    },
+    "summary": {
+      "title": "¡Cuentas vinculadas!",
+      "recovered": "Recuperamos {{applications}} postulaciones y {{documents}} documentos de tu cuenta anterior. Tu teléfono ya quedó guardado.",
+      "closeButton": "Continuar",
+      "oneApplication": "tu postulación",
+      "manyApplications": "tus {{count}} postulaciones",
+      "recoveredBoth": "Recuperamos {{apps}} y tus documentos de tu cuenta anterior. Tu teléfono ya quedó guardado.",
+      "recoveredApplications": "Recuperamos {{apps}} de tu cuenta anterior. Tu teléfono ya quedó guardado.",
+      "recoveredDocuments": "Recuperamos tus documentos de tu cuenta anterior. Tu teléfono ya quedó guardado.",
+      "recoveredNone": "¡Listo! Tu cuenta anterior quedó vinculada y tu teléfono ya quedó guardado."
+    },
+    "review": {
+      "title": "Vamos a terminar el vínculo por vos",
+      "explanation": "Tu cuenta anterior tiene actividad importante, así que nuestro equipo va a completar el vínculo manualmente. Te avisamos apenas esté listo.",
+      "closeButton": "Entendido"
+    },
+    "noAccess": {
+      "title": "¿Sin acceso a ese número?",
+      "optionNewNumber": "Si tenés un número NUEVO que es tuyo y está activo, cerrá esta ventana y cargalo en el campo de teléfono — con eso ya podés completar tu registro.",
+      "optionSupport": "Si querés recuperar la cuenta anterior (postulaciones, documentos), hablá con soporte y el equipo termina el vínculo por vos.",
+      "closeButton": "Usar otro número",
+      "supportLink": "Hablar con soporte"
+    }
+  },
+  "completeWhatsapp": {
+    "title": "Completá tu WhatsApp",
+    "subtitle": "Necesitamos tu número de WhatsApp para vincularlo con tu ficha (si ya existe) y enviarte actualizaciones importantes.",
+    "continueButton": "Continuar",
+    "skipButton": "Saltar — completar después",
+    "noCandidateMessage": "¡Listo! Tu cuenta fue creada exitosamente.",
+    "startError": "Algo salió mal. Intentalo de nuevo."
+  },
   "auth": {
     "google": {
       "login": "Entrar con Google",
@@ -152,7 +305,7 @@
     "licenseRequired": "El registro profesional es obligatorio",
     "selectLanguage": "Seleccione al menos un idioma",
     "selectProfession": "Por favor, seleccione la profesión",
-    "selectKnowledgeLevel": "Por favor, seleccione el nivel de conocimiento",
+    "selectKnowledgeLevel": "Por favor, seleccione el nivel de estudios",
     "selectExperienceType": "Seleccione al menos un tipo de experiencia",
     "selectYearsExperience": "Por favor, seleccione los años de experiencia",
     "selectPreferredType": "Seleccione al menos un tipo preferido",
@@ -189,9 +342,11 @@
       "lastName": "Apellido",
       "lastNamePlaceholder": "Marquez",
       "sex": "Sexo",
+      "sexHint": "El sexo que figura en tu documento.",
       "male": "Masculino",
       "female": "Femenino",
       "gender": "Género",
+      "genderHint": "El género con el que te identificás.",
       "other": "Otro",
       "birthDate": "Fecha de nacimiento",
       "birthDatePlaceholder": "18/03/1960",
@@ -236,13 +391,14 @@
       "years3to5": "3-5 años",
       "years6to10": "6-10 años",
       "years10plus": "10 o más",
-      "preferredTypes": "¿Con que tipos de pacientes te gustaria acompañar?",
+      "preferredTypes": "¿Con qué tipos de pacientes te gustaría acompañar?",
       "preferredAgeRange": "Preferencia de rango etario de los pacientes",
       "ageRangeChildren": "Niños (0-12 años)",
       "ageRangeAdolescents": "Adolescentes (13-17 años)",
       "ageRangeAdults": "Adultos (18-59 años)",
       "ageRangeElderly": "Adultos mayores",
-      "saveError": "Error al guardar. Intente nuevamente."
+      "saveError": "Error al guardar. Intente nuevamente.",
+      "phoneNotAvailable": "El teléfono ingresado no puede ser utilizado."
     },
     "serviceAddress": {
       "city": "Ciudad",
@@ -312,6 +468,8 @@
   },
   "jobs": {
     "title": "Consultar Vacantes",
+    "completeToApplyBanner": "Completá tu registro para poder postularte a las vacantes.",
+    "completeNow": "Completar",
     "searchPlaceholder": "Buscar por nombre de vacante",
     "status": "Estado",
     "noResults": "No se encontraron vacantes con los filtros seleccionados",
@@ -415,11 +573,6 @@
       "registered": "Inscrito",
       "selected": "Seleccionado"
     },
-    "caseStatus": {
-      "search": "Búsqueda",
-      "replacements": "Reemplazos",
-      "replacement": "Reemplazo"
-    },
     "incompleteModal": {
       "title": "Complete su registro",
       "description": "Para postularse a esta vacante y acceder al WhatsApp y detalles completos, necesita completar su registro y subir los documentos necesarios.",
@@ -434,6 +587,19 @@
     "completionCard": {
       "title": "Complete su Perfil Profesional"
     },
+    "wizard": {
+      "back": "Atrás",
+      "next": "Siguiente",
+      "finish": "Finalizar"
+    },
+    "summary": {
+      "title": "Resumen de tu registro",
+      "pendingIntro": "Te falta completar:",
+      "keepEditing": "Seguir editando",
+      "allDone": "¡Tu registro está completo!",
+      "allDoneBody": "Ya podés postularte a las vacantes disponibles.",
+      "viewVacancies": "Ver vacantes"
+    },
     "tabs": {
       "general": "Información General",
       "address": "Dirección de Atención",
@@ -442,7 +608,7 @@
     },
     "progress": {
       "registration": "Registro Básico",
-      "documents": "Documentos Profesionales",
+      "documents": "Documentos obligatorios",
       "step1": "Información General",
       "step2": "Dirección de Atención",
       "step3": "Disponibilidad",
@@ -457,8 +623,11 @@
     "criminal_record": "Antecedentes penales",
     "professional_registration": "Registro profesional",
     "liability_insurance": "Seguro de responsabilidad",
-    "monotributo_certificate": "Certificado de Monotributo",
-    "at_certificate": "Certificado de Acompañante Terapéutico"
+    "monotributo_certificate": "Constancia de ARCA",
+    "at_certificate": "Certificado de Acompañante Terapéutico",
+    "apto_psicofisico": "Apto psicofísico",
+    "analitico_universitario": "Analítico universitario",
+    "carta_recomendacion": "Carta de recomendación"
   },
   "documents": {
     "title": "Documentos",
@@ -471,6 +640,9 @@
     "monotributo": "Certificado de Monotributo",
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",
+    "atRequiredPending": "Para postularte como Acompañante Terapéutico necesitás subir:",
+    "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
+    "requiredBadge": "Obligatorio",
     "additionalTitle": "Otros Documentos",
     "addDocument": "Agregar",
     "labelPlaceholder": "Nombre del documento (ej: Certificado Primeros Auxilios)",
@@ -482,18 +654,673 @@
     "noAdditional": "No hay documentos adicionales"
   },
   "admin": {
+    "managementDashboard": {
+      "help": {
+        "ariaLabel": "¿Qué es este número?",
+        "_sections": {
+          "que": "¿Qué significa?",
+          "origen": "¿De dónde sale?",
+          "cambia": "¿Con qué acciones cambia?",
+          "ojo": "A tener en cuenta"
+        },
+        "pctRespostaRapida": {
+          "title": "% de grupo de respuesta rápida armado",
+          "que": "De todos los casos que se pueden evaluar, qué porcentaje ya tiene el equipo de respuesta rápida completo (los suplentes que cubren urgencias). Al lado del porcentaje están las partes: cuántos casos lo cumplen, sobre cuántos medibles, y cuántos quedaron afuera por no poder medirse.",
+          "origen": "• El sistema clasifica cada caso vivo mirando las selecciones del Kanban y el rol de cada persona (titular o suplente).\n• Cuenta cuántos casos ya juntaron los suplentes de respuesta rápida requeridos.\n• Los casos sin rol definido o sin dotación configurada no entran en la cuenta — se informan como \"afuera\".",
+          "cambia": "• Definir el rol (titular/suplente) al mover una tarjeta a Seleccionados en el Kanban: vuelve el caso medible.\n• Completar los suplentes de un caso: sube.\n• Abrir un caso nuevo sin equipo: baja.",
+          "ojo": "Hoy casi ninguna selección tiene el rol cargado, por eso el porcentaje arranca bajo. No es que el trabajo no exista: el sistema no puede verlo hasta que el rol se cargue."
+        },
+        "pctCapacidadEncuadres": {
+          "title": "% de la agenda de encuadres usada",
+          "que": "Cuántas entrevistas (encuadres) están agendadas esta semana, comparado con la capacidad semanal contratada de la coordinación. 100% = semana llena.",
+          "origen": "• Numerador: encuadres con fecha dentro de la semana en curso (lunes a domingo, hora de Buenos Aires).\n• Denominador: la capacidad semanal contratada — es una configuración del sistema; si el contrato cambia, se actualiza sin tocar código.",
+          "cambia": "• Agendar una entrevista cargando la fecha al mover la tarjeta a Agendados: sube.\n• Cambio de semana: se reinicia el lunes.",
+          "ojo": "Si la fecha no se carga al agendar, la entrevista no cuenta acá. El contador \"sin fecha\" mide justamente eso: mientras sea alto, este porcentaje subestima."
+        },
+        "pacientesActivos": {
+          "title": "Pacientes activos",
+          "que": "Pacientes en atención hoy. Es un conteo directo de la ficha del paciente — no pasa por el Kanban ni por las vacantes.",
+          "origen": "• Cada paciente tiene un estado (activo, suspendido, de alta, discontinuado…).\n• Este número cuenta solamente los que están en estado ACTIVO, ignorando fichas borradas.",
+          "cambia": "• Marcar un paciente como activo: sube.\n• Alta, suspensión o discontinuación: baja.\n• El formulario público de admisión NO mueve este número: crea el paciente como solicitante; recién cuenta acá cuando alguien lo marca activo.",
+          "ojo": "No mira si el paciente tiene vacante abierta ni equipo completo: un paciente activo sin ningún prestador cuenta igual. Por eso puede aparecer también en \"En búsqueda\" — las tarjetas no se suman entre sí."
+        },
+        "ubicacionesActivas": {
+          "title": "Ubicaciones activas",
+          "que": "Cuántas direcciones distintas tienen los pacientes activos. Un paciente con dos domicilios cuenta dos ubicaciones — cada dirección exige sus propias vacantes y servicios.",
+          "origen": "• Toma los pacientes activos y cuenta sus direcciones distintas, ignorando direcciones vacías y repeticiones de importación.",
+          "cambia": "• Cargar o quitar una dirección de un paciente activo.\n• Un paciente pasa a activo (entran sus direcciones) o deja de serlo (salen)."
+        },
+        "horasActivas": {
+          "title": "Horas activas por semana",
+          "que": "Las horas semanales de cuidado de las vacantes que están en atención (estado ACTIVO). Es la operación andando, medida en horas.",
+          "origen": "• Cada vacante tiene su horario cargado (días y turnos).\n• El sistema suma la duración de cada turno de las vacantes activas.\n• Vacante activa sin horario estructurado suma cero — al lado se informa cuántas están así.",
+          "cambia": "• Cargar o editar el horario de una vacante activa.\n• Una vacante pasa a ACTIVO o sale de ese estado.",
+          "ojo": "Depende de que el equipo mantenga actualizado el estado de la vacante. Horario escrito en texto libre no se interpreta: cae en \"sin horario\" y suma cero."
+        },
+        "solicitudes": {
+          "title": "Solicitudes",
+          "que": "Pacientes que entraron (por el formulario del sitio o carga manual) y todavía no tienen entrevista de admisión agendada. Es la puerta de entrada.",
+          "origen": "• Cuenta pacientes en estado Solicitante sin turno de admisión futuro reservado.",
+          "cambia": "• Entra una solicitud nueva: sube.\n• Se agenda la entrevista de admisión: pasa a \"Entrevista agendada\"."
+        },
+        "entrevistaAgendada": {
+          "title": "Entrevista agendada",
+          "que": "Pacientes solicitantes con la entrevista de admisión ya reservada (por la agenda del app de pacientes) y aún por realizarse.",
+          "origen": "• Cuenta solicitantes con turno reservado y fecha futura.",
+          "cambia": "• Reservar un turno de admisión: sube.\n• Realizada la entrevista o admitido el paciente: sale de acá."
+        },
+        "enAdmision": {
+          "title": "En admisión",
+          "que": "Pacientes admitidos que todavía no tienen ninguna vacante viva generada. El próximo paso concreto es crear la vacante.",
+          "origen": "• Cuenta pacientes en estado de admisión sin ninguna vacante viva asociada.",
+          "cambia": "• Admitir un paciente: entra acá.\n• Crear la vacante del caso: pasa a \"En búsqueda\"."
+        },
+        "enBusca": {
+          "title": "En búsqueda",
+          "que": "Pacientes con al menos una vacante viva buscando prestador, hasta completar el equipo (incluido el grupo de respuesta rápida).",
+          "origen": "• Cuenta pacientes (no de alta ni desistidos) con al menos una vacante viva de un caso cuyo equipo todavía no está completo.",
+          "cambia": "• Crear una vacante para el caso: entra.\n• Completar el equipo o cerrar la vacante: sale.",
+          "ojo": "Se superpone a propósito con \"Pacientes activos\": el paciente en atención con un turno descubierto está en los dos. Nunca sumar las tarjetas entre sí."
+        },
+        "equiposArmados": {
+          "title": "Equipos armados",
+          "que": "Casos que ya tienen el equipo cerrado: todos los titulares que el caso pide más los suplentes de respuesta rápida.",
+          "origen": "• Al mover una tarjeta a Seleccionados en el Kanban, el sistema pregunta el rol: titular o suplente.\n• El caso cuenta como armado cuando junta titulares suficientes (lo que pide el campo \"prestadores necesarios\" de la vacante) y además los suplentes requeridos.\n• Si falta cualquiera de los dos, el caso queda en \"Equipos por armar\".",
+          "cambia": "• Seleccionar a una persona CON el rol cargado.\n• Cambiar cuántos prestadores pide la vacante.\n• Sacar a alguien de la selección.",
+          "ojo": "Si se selecciona gente sin definir el rol, el sistema no puede juzgar el caso y este número no se mueve — el caso cae en \"casos sin clasificación de rol\". Es la causa principal de que esté bajo aunque el trabajo se haga."
+        },
+        "equiposPorArmar": {
+          "title": "Equipos por armar",
+          "que": "Casos vivos que se pueden evaluar y todavía no tienen el equipo completo. Es la fila de trabajo del reclutamiento.",
+          "origen": "• Toma los casos vivos (vacante publicada, no borrada, no borrador, en búsqueda).\n• Descarta los que no se pueden juzgar (sin dotación configurada o con selecciones sin rol).\n• De los que quedan, cuenta los que aún no cerraron titulares + suplentes.",
+          "cambia": "• Abrir una vacante nueva: sube.\n• Completar el equipo de un caso: baja.\n• Cargar el rol de una selección: el caso sale de \"sin clasificación\" y entra acá.",
+          "ojo": "Subestima la fila real: los casos con selecciones sin rol también están por armar, pero se muestran aparte (en \"casos que no se pueden medir\") para no dar un número falso."
+        },
+        "vacantesAbiertas": {
+          "title": "Vacantes abiertas",
+          "que": "Puestos de trabajo que están buscando prestador ahora.",
+          "origen": "• Cuenta las vacantes en estado de búsqueda: búsqueda normal, búsqueda de reemplazo, respuesta rápida y pendiente de activación.\n• Descarta borradores y vacantes borradas.",
+          "cambia": "• Publicar una vacante nueva: sube.\n• Cerrar, suspender o borrar la vacante: baja.",
+          "ojo": "Mover tarjetas en el Kanban NO mueve este número: eso cambia el embudo de candidatos, no el estado de la vacante. Es el comportamiento correcto."
+        },
+        "vacantesPausadas": {
+          "title": "Vacantes pausadas",
+          "que": "Vacantes que existen pero están frenadas a propósito (suspendidas temporalmente).",
+          "origen": "• Cuenta las vacantes en estado Suspendida, sin borradores ni borradas.",
+          "cambia": "• Suspender una vacante: sube.\n• Reactivarla o cerrarla: baja.",
+          "ojo": "Vacante pausada es demanda represada: si este número crece, hay trabajo que no aparece en \"Vacantes abiertas\" ni en la fila del reclutamiento."
+        },
+        "horasTotais": {
+          "title": "Horas semanales totales",
+          "que": "Cuántas horas de cuidado por semana tiene la operación hoy, sumando todos los casos vivos.",
+          "origen": "• Cada vacante tiene su horario (días de la semana y turnos).\n• El sistema suma la duración de cada turno de cada vacante viva — incluso turnos que cruzan la medianoche.\n• Abajo aparece la cobertura: cuántos casos tienen horario cargado y cuántos no (esos suman cero).",
+          "cambia": "• Cargar o editar el horario de una vacante.\n• Abrir una vacante nueva con horario, o borrar una.",
+          "ojo": "Horario escrito en texto libre no se interpreta — el caso aparece en \"sin horario\" y no suma horas."
+        },
+        "horasAPreencher": {
+          "title": "Horas por cubrir",
+          "que": "De las horas semanales totales, cuántas todavía no tienen prestador asignado. Es la demanda descubierta.",
+          "origen": "• El sistema clasifica cada caso (armado, por armar, sin clasificación, sin configuración).\n• Suma las horas solamente de los casos \"por armar\".",
+          "cambia": "• Completar el equipo de un caso: sus horas salen de la cuenta.\n• Abrir un caso nuevo con horario: entran.\n• Editar horarios.",
+          "ojo": "Subestima: los casos con selecciones sin rol también están descubiertos, pero suman cero acá. La solución no es cambiar esta cuenta — es cargar el rol de las selecciones pendientes."
+        },
+        "casosSinMedir": {
+          "title": "Casos que todavía no se pueden medir",
+          "que": "Dos grupos de casos que el sistema no puede evaluar: los que tienen gente seleccionada pero nadie con rol definido (titular o suplente), y los que no tienen escrito cuántos prestadores pide la vacante.",
+          "origen": "• Sin clasificación de rol: alguien fue movido a Seleccionados pero no se eligió su rol.\n• Sin configuración de dotación: el campo \"prestadores necesarios\" de la vacante está vacío o no es un número.",
+          "cambia": "• Cargar el rol de al menos una selección del caso: sale del primer grupo.\n• Completar \"prestadores necesarios\" con un número: sale del segundo.",
+          "ojo": "Es el freno principal de la pantalla: mientras estos casos existan, \"Equipos armados\", \"Equipos por armar\" y \"Horas por cubrir\" cuentan de menos. Se resuelve cargando datos, no con código."
+        },
+        "esperandoAgendamiento": {
+          "title": "Registros completos esperando agenda",
+          "que": "Personas que ya pasaron la selección inicial (triage) y esperan que se les agende la entrevista (encuadre). Es la fila de \"llamar primero\".",
+          "origen": "• El prestador completa el formulario de triage (Talentum) y el sistema lo califica.\n• Mientras nadie agenda la entrevista, la persona aparece acá.\n• Cuenta personas (no candidaturas) en vacantes vivas.",
+          "cambia": "• El triage califica a alguien: sube.\n• Agendar la entrevista, mover la tarjeta o rechazar: baja."
+        },
+        "profesionalesBloqueados": {
+          "title": "Profesionales bloqueados",
+          "que": "Personas cuyo registro está incompleto — les falta algún dato o documento. Mientras estén así no pueden postularse a ninguna vacante.",
+          "origen": "• Cuenta todas las personas de la base con registro incompleto, sin límite de tiempo.",
+          "cambia": "• Registro nuevo sin completar: sube.\n• Importación de base: sube mucho de una vez.\n• La persona completa datos/documentos: baja y pasa a \"Completos\".",
+          "ojo": "El nombre engaña: no es una fila de trabajo para hoy. La gran mayoría son registros importados de planillas que nunca tuvieron los datos completos — no gente que abandonó el registro. Es el mismo número que \"Incompletos\" en Registros de prestadores. No confundir con \"Bloqueados\" del embudo, que son intentos de postulación frenados en vacantes vivas."
+        },
+        "leads": {
+          "title": "Leads",
+          "que": "Todas las personas que existen en la base de prestadores, en cualquier estado de registro. Es el tamaño total de la base.",
+          "origen": "• Cuenta todos los registros, descartando duplicados ya unificados.\n• La base viene de dos mundos: importaciones históricas (planillas, ClickUp, Talent Search, Ana Care) y el registro vivo en el app del prestador.",
+          "cambia": "• Registro nuevo en el app: sube.\n• Nueva importación: sube en bloque.\n• Unificación de duplicados: baja.",
+          "ojo": "Base grande no es base usable: la enorme mayoría está con registro incompleto. El stock utilizable es \"Completos\"."
+        },
+        "completosRegistros": {
+          "title": "Completos (registros)",
+          "que": "Prestadores con registro completo: datos y documentos en orden. Son los que se pueden ofrecer a una vacante.",
+          "origen": "• La persona completa el registro en el app y sube los documentos.\n• Cuando no falta nada, el registro pasa a completo y cuenta acá (sin duplicados).",
+          "cambia": "• Alguien termina su registro: sube.\n• Un documento vence o el registro vuelve a incompleto: baja.",
+          "ojo": "Registro completo no significa disponible: no dice si la persona está activa ni queriendo trabajar. La disponibilidad no se mide en este panel."
+        },
+        "alocados": {
+          "title": "Asignados",
+          "que": "Prestadores que están efectivamente en un caso, atendiendo pacientes: los activos con paciente y los que cubren guardias.",
+          "origen": "• Quién trabaja de verdad se registra en Ana Care (el sistema asistencial).\n• Ese dato se importó a esta base; el panel cuenta los marcados como activos o cubriendo guardias.",
+          "cambia": "• Solamente una nueva importación desde Ana Care. Nada lo actualiza automáticamente.",
+          "ojo": "Es una foto, no tiempo real: la integración con Ana Care es solo de ida. Y no sale del Kanban a propósito: \"seleccionado\" en el embudo no es \"trabajando\"."
+        },
+        "incompletos": {
+          "title": "Incompletos",
+          "que": "Personas de la base cuyo registro no está completo — falta algún dato o documento.",
+          "origen": "• La mayoría entró por importaciones históricas de planillas que nunca tuvieron datos completos.\n• El resto es el flujo vivo: gente que empezó el registro en el app y no lo terminó.",
+          "cambia": "• Nueva importación: sube en bloque.\n• Entrada por el app sin completar: sube.\n• La persona completa el registro: baja y pasa a \"Completos\".",
+          "ojo": "Son dos problemas distintos con el mismo rótulo: el stock importado (calidad de dato heredado) y el flujo vivo (mide si el registro es demasiado difícil). Aparece dos veces en la pantalla: acá y como \"Profesionales bloqueados\"."
+        },
+        "nuevosMes": {
+          "title": "Nuevos del mes",
+          "que": "Prestadores que completaron el registro en el mes en curso. Es el caudal de entrada de la base.",
+          "origen": "• Cuenta personas con registro completo creadas desde el día 1 del mes.\n• Se reinicia solo con el cambio de mes.",
+          "cambia": "• Un registro nuevo que se completa en el mismo mes: sube.\n• Cambio de mes: vuelve a cero.",
+          "ojo": "Filtra por fecha de CREACIÓN del registro, no por cuándo se completó: quien entró hace meses y terminó el registro hoy no cuenta acá."
+        },
+        "totalPrestadores": {
+          "title": "Prestadores en el embudo",
+          "que": "Cuántas PERSONAS hay en el embudo de reclutamiento — no cuántas tarjetas. Una persona postulada a 10 vacantes cuenta una sola vez.",
+          "origen": "• Toma las candidaturas de vacantes vivas (publicada, no borrada, no borrador, en búsqueda).\n• Descarta registros duplicados y las invitaciones de matching que nunca se enviaron.\n• Cuenta personas distintas.\n• Las dos vistas de abajo muestran lo mismo de dos maneras: \"dónde está cada persona\" (cada una en su etapa más avanzada; las columnas suman el total) y \"personas por etapa\" (una persona puede estar en varias columnas; no se suma).",
+          "cambia": "• Invitación o postulación nueva de una persona que no estaba: sube.\n• Mover tarjetas entre columnas: cambia la distribución, no el total.\n• Cerrar o borrar la vacante: sus candidaturas salen del recorte."
+        },
+        "bloqueadosFunil": {
+          "title": "Bloqueados (embudo)",
+          "que": "Personas que intentaron postularse a una vacante viva y fueron frenadas porque su registro estaba incompleto. La postulación no se crea; queda el intento registrado.",
+          "origen": "• Al postularse, el sistema verifica el registro. Si falta algo, registra el intento con el motivo y qué faltó.\n• En el Kanban de la vacante es la columna roja BLOQUEADO (la tarjeta no se puede arrastrar).",
+          "cambia": "• Alguien con registro incompleto intenta postularse: sube.\n• La persona completa el registro y el intento se promueve a postulación real: baja.\n• Rechazar el intento: sale.",
+          "ojo": "Queda afuera de las columnas del embudo a propósito (no hay candidatura real, y sumarlo rompería el total). Es la fila más accionable del panel: la persona ya mostró interés — falta un documento. No confundir con \"Profesionales bloqueados\"."
+        },
+        "agendadosSemana": {
+          "title": "Encuadres agendados esta semana",
+          "que": "Cuántas entrevistas (encuadres) están marcadas para la semana en curso.",
+          "origen": "• Al mover la tarjeta a Agendados en el Kanban, el sistema pregunta cuándo es la entrevista (se puede responder \"todavía no sé\").\n• El panel cuenta los encuadres con fecha entre lunes y domingo de esta semana (hora de Buenos Aires).",
+          "cambia": "• Agendar con fecha: sube.\n• Cambio de semana: se reinicia.",
+          "ojo": "La captura de la fecha es reciente: el contador \"sin fecha\" de al lado mide cuántos agendados no la tienen. Mientras sea alto, este número subestima — y eso queda a la vista en vez de ser un cero mudo."
+        },
+        "stage_INVITED": {
+          "title": "Invitados (columna)",
+          "que": "Prestadores invitados a una vacante que todavía no dieron ningún paso.",
+          "origen": "• El matching de la vacante elige candidatos y les envía la invitación por WhatsApp.\n• Solo cuentan los que recibieron el mensaje de verdad: el candidato elegido al que nunca se le envió nada NO aparece (misma regla que el Kanban).",
+          "cambia": "• Enviar invitaciones de una vacante: sube.\n• La persona responde y avanza: pasa a otra columna."
+        },
+        "stage_INICIADO": {
+          "title": "Iniciado (columna)",
+          "que": "Personas que se postularon por su propia cuenta (no fueron invitadas por el matching) y todavía están al comienzo del proceso.",
+          "origen": "• Una postulación espontánea crea la tarjeta en esta columna, separada de Invitados — igual que en el Kanban.",
+          "cambia": "• Postulación espontánea nueva: sube.\n• Avanzar en el proceso: pasa de columna."
+        },
+        "stage_PRE_SCREENING": {
+          "title": "Pre Screening (columna)",
+          "que": "Prestadores que entraron al formulario de selección (Talentum) y todavía no terminaron de responder.",
+          "origen": "• Al abrir el link del formulario, la candidatura pasa a esta etapa.\n• Cuando la persona termina y el sistema evalúa, sale de acá.",
+          "cambia": "• Alguien abre el formulario: sube.\n• Termina el triage: baja.",
+          "ojo": "Es la etapa de menor permanencia. Un número estancado acá es gente que abrió el formulario y abandonó a mitad de camino."
+        },
+        "stage_IN_PROGRESS": {
+          "title": "En progreso (columna)",
+          "que": "Candidaturas en conversación: la persona avanzó del primer contacto y todavía no completó el triage. Es la columna más grande del Kanban.",
+          "origen": "• La tarjeta llega acá al avanzar desde Invitados/Iniciado — por respuesta de la persona o movimiento de la reclutadora.",
+          "cambia": "• Avances de conversación: entra.\n• Completar el triage, agendar, seleccionar o rechazar: sale."
+        },
+        "stage_COMPLETED": {
+          "title": "Completos (columna)",
+          "que": "Prestadores que terminaron el triage y están listos para la próxima etapa. La columna agrupa tres situaciones internas: completo, calificado y en duda (por ejemplo, ausencia en la entrevista).",
+          "origen": "• Es la misma agrupación que la columna Completos del Kanban — panel y Kanban cuentan igual.",
+          "cambia": "• El triage califica a alguien: entra.\n• Agendar entrevista, seleccionar o rechazar: sale.\n• Una ausencia en la entrevista trae la tarjeta de vuelta acá (\"en duda\")."
+        },
+        "stage_CONFIRMED": {
+          "title": "Agendados (columna)",
+          "que": "Prestadores con entrevista (encuadre) marcada.",
+          "origen": "• La reclutadora arrastra la tarjeta a Agendados en el Kanban — y el sistema también pregunta cuándo es la entrevista.",
+          "cambia": "• Agendar: sube.\n• Seleccionar o rechazar: baja.\n• Ausencia en la entrevista: la tarjeta pasa a \"en duda\" (columna Completos)."
+        },
+        "stage_SELECTED": {
+          "title": "Seleccionados (columna)",
+          "que": "Prestadores elegidos para la vacante.",
+          "origen": "• La reclutadora arrastra la tarjeta a Seleccionados y elige el rol: titular o suplente.\n• La selección se graba también en el encuadre, que alimenta \"Equipos armados\".",
+          "cambia": "• Seleccionar: sube.\n• Mover a otra columna: baja.",
+          "ojo": "Cargar el rol acá es lo que permite medir \"Equipos armados\" — una selección sin rol deja el caso sin poder evaluarse."
+        },
+        "stage_REJECTED": {
+          "title": "Perdidos (columna)",
+          "que": "Candidaturas cerradas sin selección — antes esta columna se llamaba \"Rechazados\".",
+          "origen": "• Cuatro caminos: la reclutadora rechaza con motivo · el triage reprueba automáticamente · la persona declina por WhatsApp · se rechaza un intento bloqueado.",
+          "cambia": "• En la práctica solo sube: es acumulado, el rechazo no se deshace.",
+          "ojo": "Perdido en UNA vacante no es perdido como prestador: mucha gente rechazada en una vacante sigue activa en otras."
+        },
+        "zona": {
+          "title": "Analytics por zona",
+          "que": "Dónde están los pacientes y dónde están los prestadores, provincia por provincia. Muestra el descalce geográfico: zonas con mucha demanda y poca gente disponible.",
+          "origen": "• Pacientes: pacientes con vacante en la provincia (cada uno cuenta una vez).\n• Prestadores: quienes declararon atender en esa provincia.\n• Demanda: vacantes abiertas ahí.\n• Quien no tiene dirección identificada cae en \"No informado\", con aviso.",
+          "cambia": "• Crear/editar vacantes y direcciones de pacientes.\n• El prestador carga su zona de atención.\n• El filtro de profesión recorta todo el bloque.",
+          "ojo": "\"Disponibilidad\" mide zona declarada, no agenda libre. La granularidad es provincia a propósito: es el nivel en que el dato es confiable."
+        },
+        "pacTotal": {
+          "title": "Total de pacientes",
+          "que": "Todos los pacientes registrados en el sistema, en cualquier situación — incluidos los que ya salieron (alta, discontinuados). Responde \"cuántos pacientes pasaron por acá\", no \"cuántos atendemos hoy\".",
+          "origen": "• Cuenta todas las fichas de paciente no borradas.\n• No mira la situación: activo, suspendido, discontinuado, de alta y solicitante cuentan igual.\n• El filtro de país de la sección recorta la cuenta.",
+          "cambia": "• Entra un paciente nuevo (formulario del sitio, carga manual o importación): sube.\n• Borrar una ficha: baja.\n• Cambiar la situación (alta, baja) NO mueve este número.",
+          "ojo": "No confundir con \"Pacientes activos\": buena parte de esta base es histórica. Total = Completos + Precisa atención — los dos cards de al lado dividen esta misma base por calidad de la ficha."
+        },
+        "pacCompletos": {
+          "title": "Completos (fichas de pacientes)",
+          "que": "Pacientes cuya ficha está en orden: sin dato obligatorio faltante y sin conflicto de número de caso. Es el complemento exacto de \"Precisa atención\".",
+          "origen": "• Cada ficha lleva una marca de \"precisa atención\".\n• Este card cuenta las fichas SIN esa marca, en toda la base (cualquier situación del paciente).",
+          "cambia": "• Completar o corregir los datos de una ficha marcada: sube.\n• Entrar un paciente nuevo con ficha completa: sube.\n• Una ficha gana la marca: baja.",
+          "ojo": "\"Completo\" habla de la FICHA, no del paciente: un paciente discontinuado con registro en orden cuenta acá. Es calidad de dato, no pacientes listos para operar."
+        },
+        "pacAtencion": {
+          "title": "Precisa atención",
+          "que": "Fichas de paciente con pendiente marcada: falta un dato obligatorio, o el número de caso informado ya pertenecía a otro paciente, o alguien la marcó a mano.",
+          "origen": "• En la entrada (admisión pública, importación, carga), si falta un dato esencial el sistema guarda igual y marca para revisión — en vez de perder el lead.\n• Si el número de caso choca con el de otro paciente, guarda la ficha SIN el número y la marca — en vez de pisar el de alguien.\n• El card cuenta todas las fichas con la marca encendida.",
+          "cambia": "• Revisar la ficha en el panel y completar el dato / resolver el número de caso: baja.\n• Entrada nueva con pendiente: sube.",
+          "ojo": "Es una fila de trabajo real de calidad de dato: revisar estas fichas destrava la operación del caso."
+        },
+        "embudoSolicitantes": {
+          "title": "Solicitantes (embudo)",
+          "que": "Pacientes CREADOS en el período elegido (7/30/90 días), de cualquier origen y en cualquier situación actual. Es la entrada del embudo.",
+          "origen": "• Cuenta pacientes creados dentro de la ventana de tiempo, sin borrados.\n• No es \"quién está parado en la etapa Solicitante\" — es la cohorte de entrada del período.",
+          "cambia": "• Entrada nueva (formulario del sitio, carga manual, importación) dentro del período: sube.\n• Cambiar la ventana (7/30/90): recalcula."
+        },
+        "embudoAdmision": {
+          "title": "Admisión (embudo)",
+          "que": "De los pacientes creados en el período, cuántos LLEGARON a Admisión o más allá (incluye a los que ya están activos).",
+          "origen": "• Mira la situación actual Y el historial: quien avanzó y después salió también cuenta.\n• Suspendidos, discontinuados y de alta no cuentan como avance.",
+          "cambia": "• Pasar un paciente del período a admisión o a activo: sube."
+        },
+        "embudoAgendadas": {
+          "title": "Agendadas (embudo)",
+          "que": "Pacientes con entrevista de admisión agendada DENTRO del período.",
+          "origen": "• Cuenta por el momento en que el turno fue reservado (agenda del app de pacientes) — el paciente puede haber sido creado antes del período.",
+          "cambia": "• Reservar un turno de admisión: sube.",
+          "ojo": "Mide otra cohorte que las demás etapas (agendamientos del período, no pacientes creados en el período): puede quedar mayor o menor que el paso anterior sin significar embudo roto. Leer las conversiones como tendencia, no como aritmética exacta."
+        },
+        "embudoVacantes": {
+          "title": "Vacantes (embudo)",
+          "que": "De los pacientes creados en el período, cuántos ya tienen vacante publicada — el caso avanzó hasta generar búsqueda.",
+          "origen": "• Cuenta pacientes del período con al menos una vacante publicada. Borrador no cuenta; vacante cerrada sí.",
+          "cambia": "• Publicar la vacante del caso: sube."
+        }
+      },
+      "title": "Gestión a la Vista",
+      "errorLoading": "No se pudieron cargar las métricas",
+      "retry": "Reintentar",
+      "sections": {
+        "bigNumbers": "Números clave",
+        "bigNumbersHint": "El estado general de la operación de un vistazo",
+        "equipoArmada": "Equipo armado y horas",
+        "equipoArmadaHint": "Cuántas horas de cuidado hay y cuántas faltan cubrir",
+        "prioridades": "Prioridades de contacto",
+        "prioridadesHint": "A quién hay que llamar primero",
+        "funnel": "Totalización del embudo",
+        "funnelHint": "Cuántas PERSONAS hay en el proceso — vacantes activas, sin duplicar a quien está en varias",
+        "cadastros": "Registros de prestadores",
+        "cadastrosHint": "Cuántas personas se registraron y en qué estado están",
+        "zoneAnalytics": "Analytics por zona",
+        "zoneAnalyticsHint": "Pacientes, prestadores y demanda por zona geográfica",
+        "pacientes": "Pacientes",
+        "pacientesHint": "Estado de la base de pacientes y embudo de admisión"
+      },
+      "bigNumbers": {
+        "equiposArmados": "Equipos armados",
+        "equiposArmadosSub": "Casos con dotación completa (titulares + suplentes)",
+        "equiposPorArmar": "Equipos por armar",
+        "equiposPorArmarSub": "Casos clasificables aún sin dotación completa",
+        "pacientesActivos": "Pacientes activos",
+        "pacientesActivosSub": "Pacientes en atención hoy",
+        "vacantesAbiertas": "Vacantes abiertas",
+        "vacantesAbiertasSub": "Puestos buscando prestador",
+        "vacantesPausadas": "Vacantes pausadas",
+        "vacantesPausadasSub": "Puestos en pausa temporal",
+        "ubicaciones": "Ubicaciones",
+        "pctRespostaRapida": "% grupo de respuesta rápida armado",
+        "pctRespostaRapidaSub": "{{num}} de {{den}} casos medibles · {{excluidos}} sin clasificar quedan fuera",
+        "pctRespostaRapidaSinDen": "Sin casos medibles todavía — cargá el rol (titular/suplente) de las selecciones",
+        "pctCapacidadEncuadres": "% de la agenda de encuadres usada",
+        "pctCapacidadEncuadresSub": "{{agendados}} de {{capacidade}} reuniones contratadas esta semana",
+        "ubicacionesActivas": "Ubicaciones",
+        "ubicacionesActivasSub": "Direcciones distintas de pacientes activos — cada una exige sus vacantes",
+        "horasActivas": "Horas activas / semana",
+        "horasActivasSub": "En atención hoy · {{sinSchedule}} vacantes activas sin horario cargado",
+        "solicitudes": "Solicitudes",
+        "solicitudesSub": "Leads sin entrevista de admisión agendada",
+        "entrevistaAgendada": "Entrevista agendada",
+        "entrevistaAgendadaSub": "Esperando la entrevista de admisión",
+        "enAdmision": "En admisión",
+        "enAdmisionSub": "Admitidos que necesitan generar vacante",
+        "enBusca": "En búsqueda",
+        "enBuscaSub": "Vacante activa hasta completar el equipo · {{horas}} h/semana por activar",
+        "horas": "Horas totales / a cubrir"
+      },
+      "equipoArmada": {
+        "horasTotais": "Horas semanales totales",
+        "cobertura": "{{con}} casos con horario · {{sin}} sin horario",
+        "horasAPreencher": "Horas por cubrir",
+        "horasAPreencherSub": "Demanda de casos por armar",
+        "clasificacionTitulo": "Casos que todavía no se pueden medir",
+        "pendenteClasificacao": "{{count}} casos sin clasificación de rol",
+        "semConfig": "{{count}} casos sin configuración de dotación"
+      },
+      "prioridades": {
+        "esperandoAgendamiento": "Registros completos esperando agenda",
+        "esperandoAgendamientoSub": "Calificados por Talentum, sin encuadre agendado · personas distintas en vacantes activas",
+        "bloqueados": "Profesionales bloqueados",
+        "bloqueadosSub": "Registro incompleto"
+      },
+      "funnel": {
+        "totalPrestadores": "Prestadores en el embudo",
+        "totalPrestadoresSub": "Personas distintas en vacantes activas — no suma de tarjetas",
+        "agendadosSemana": "Encuadres agendados esta semana",
+        "agendadosSemanaSub": "Semana en curso (lunes a domingo, hora de Buenos Aires)",
+        "sumsToTotal": "Cada persona aparece una sola vez — las columnas suman {{total}}.",
+        "doesNotSum": "Una persona puede estar en más de una columna — las columnas NO suman {{total}}.",
+        "views": {
+          "consolidado": "Dónde está cada persona",
+          "consolidadoHint": "Columna más avanzada de cada prestador · responde \"cuántos faltan contactar\"",
+          "porEtapa": "Cuántas personas hay en cada etapa",
+          "porEtapaHint": "Prestadores distintos por columna · responde \"cuántos tengo para entrevistar\""
+        },
+        "stage": {
+          "INVITED": "Invitados",
+          "INICIADO": "Iniciado",
+          "PRE_SCREENING": "Pre Screening",
+          "IN_PROGRESS": "En progreso",
+          "COMPLETED": "Completos",
+          "CONFIRMED": "Agendados",
+          "SELECTED": "Seleccionados",
+          "REJECTED": "Perdidos"
+        },
+        "periodLabel": "Entrada al embudo:",
+        "periodAll": "Todo",
+        "periodDays": "Últimos {{count}} días",
+        "semData": "{{count}} agendados sin fecha registrada",
+        "semDataSub": "El número de arriba los deja de fuera. Al mover la tarjeta a \"Agendados\", cargá fecha y hora.",
+        "bloqueados": "Bloqueados",
+        "bloqueadosSub": "Intentaron postularse y el registro incompleto lo impidió — vacantes activas"
+      },
+      "cadastros": {
+        "leads": "Leads",
+        "leadsSub": "Registros iniciados",
+        "completos": "Completos",
+        "completosSub": "Registros listos para usar",
+        "alocados": "Asignados",
+        "alocadosSub": "{{activos}} activos · {{guardias}} cubriendo guardias",
+        "incompletos": "Incompletos",
+        "incompletosSub": "Faltan datos o documentos",
+        "nuevosMes": "Nuevos del mes",
+        "nuevosMesSub": "Registros completados este mes"
+      },
+      "gap": {
+        "pending": "Sin fuente de datos disponible todavía"
+      },
+      "zoneAnalytics": {
+        "filterLabel": "Profesión",
+        "filterAll": "Todas",
+        "table": {
+          "zone": "Zona",
+          "patients": "Pacientes",
+          "workersMale": "Prestadores ♂",
+          "workersFemale": "Prestadores ♀",
+          "demand": "Demanda (vacantes)",
+          "availability": "Disponibilidad (prestadores)"
+        },
+        "empty": "Todavía no hay datos de zona para mostrar",
+        "unresolvedNote_one": "{{count}} registro sin zona identificada — no se pierde, todavía no está geolocalizado",
+        "unresolvedNote_other": "{{count}} registros sin zona identificada — no se pierden, todavía no están geolocalizados"
+      }
+    },
     "errorBoundary": {
       "title": "Error al cargar la página de admin",
       "description": "Ocurrió un error inesperado. Detalles técnicos:",
       "reload": "Recargar página"
     },
     "nav": {
+      "dashboard": "Gestión a la Vista",
       "users": "Usuarios",
       "vacancies": "Vacantes",
       "workers": "Prestadores",
       "recruitment": "Reclutamiento",
+      "blockedAttempts": "Postulaciones bloqueadas",
       "patients": "Pacientes",
-      "apiDocs": "API Docs"
+      "apiDocs": "API Docs",
+      "tags": "Etiquetas",
+      "dedup": "Duplicados",
+      "adminSection": "Administración",
+      "patientChatRoles": "Roles de grupos"
+    },
+    "dedup": {
+      "title": "Centro de Duplicados",
+      "subtitle": "Revisá y unificá cuentas de workers con el mismo teléfono.",
+      "refresh": "Actualizar",
+      "loadError": "Error al cargar los duplicados",
+      "retry": "Reintentar",
+      "tabs": {
+        "queue": "Fila",
+        "imported": "Importados",
+        "comingSoon": "Próximamente",
+        "history": "Historial"
+      },
+      "tabDesc": {
+        "queue": "Cuentas que probablemente sean la misma persona porque comparten el mismo teléfono. Revisá cada grupo y unificá las cuentas duplicadas (o descartá si no lo son).",
+        "history": "Todas las unificaciones ya realizadas. Podés ver quién quedó, quién se absorbió y deshacer una unificación si algo salió mal.",
+        "imported": "Cuentas que coinciden por NOMBRE (no por teléfono) — en general fantasmas importados. Confianza menor: revisá bien que sean la misma persona antes de unificar."
+      },
+      "table": {
+        "selectAll": "Seleccionar todos",
+        "selectRow": "Seleccionar {{phone}}",
+        "phone": "Teléfono",
+        "account": "Prestador",
+        "noName": "Sin nombre",
+        "accountCount": "Cuentas",
+        "signal": "Cuentas reales",
+        "survivor": "Principal sugerido",
+        "createdAt": "Alta",
+        "actions": "Acciones",
+        "merge": "Unificar",
+        "mergeAriaLabel": "Unificar grupo {{phone}}",
+        "dismissAriaLabel": "Descartar grupo {{phone}}"
+      },
+      "queue": {
+        "empty": "Sin duplicados en la fila",
+        "emptyDesc": "No se encontraron grupos con el mismo teléfono."
+      },
+      "signal": {
+        "allReal": "{{count}} real",
+        "allReal_plural": "{{count}} reales",
+        "allTest": "{{count}} prueba",
+        "mixed": "{{real}} real · {{test}} prueba"
+      },
+      "tier": {
+        "REGISTERED": "Registrado",
+        "INCOMPLETE_REGISTER": "Incompleto",
+        "PRE_REGISTER": "Pre-registro",
+        "QUALIFIED": "Calificado",
+        "ACTIVE": "Activo",
+        "SELECTED": "Seleccionado",
+        "PENDING": "Pendiente",
+        "REJECTED": "Rechazado",
+        "DISABLED": "Deshabilitado"
+      },
+      "bulkBar": {
+        "selected": "{{count}} seleccionado",
+        "selected_plural": "{{count}} seleccionados",
+        "dismiss": "Descartar",
+        "dismissAriaLabel": "Descartar seleccionados",
+        "clearAriaLabel": "Limpiar selección"
+      },
+      "merge": {
+        "title": "Comparar y unificar",
+        "dialogLabel": "Comparar y unificar cuentas",
+        "phone": "Teléfono",
+        "close": "Cerrar",
+        "retry": "Reintentar",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar unificación",
+        "confirmAriaLabel": "Confirmar unificación",
+        "merging": "Unificando...",
+        "success": "Unificación realizada con éxito",
+        "survivor": "Principal",
+        "setSurvivor": "Elegir como principal",
+        "makePrimary": "Hacer principal",
+        "introTitle": "Estas cuentas parecen ser la misma persona.",
+        "introDesc": "Elegí cuál es la cuenta PRINCIPAL (la que se queda). Las demás se unen a ella — no se pierde nada.",
+        "introNameMatch": "Coincidencia por NOMBRE: revisá que sean realmente la misma persona antes de unificar.",
+        "noEmail": "Sin email",
+        "createdAt": "Alta",
+        "realLogin": "Login real",
+        "testLogin": "Sin login real",
+        "wjaCount": "Postulaciones",
+        "docsCount": "Documentos",
+        "encuadresCount": "Encuadres",
+        "reparentTitle": "Se van a reasignar al principal:",
+        "advanced": "Avanzado",
+        "conflicts": "conflicto",
+        "conflicts_plural": "conflictos",
+        "mismatchTitle": "{{count}} campo con conflicto",
+        "mismatchTitle_plural": "{{count}} campos con conflicto",
+        "mismatchDesc": "Expandí «Avanzado» para revisar y elegir qué valor conservar campo por campo.",
+        "encryptedField": "Campo cifrado",
+        "emptyValue": "vacío",
+        "conflictManualTitle": "Atención: son dos cuentas distintas con acceso real",
+        "conflictManualDesc": "Al unificar, una cuenta absorbe a la otra: una se queda y la otra se elimina. Confirmá solo si estás seguro de que son la misma persona.",
+        "conflictKeeps": "Se queda",
+        "conflictPrincipalLabel": "(principal)",
+        "conflictDeletes": "Se elimina",
+        "conflictDeletesHint": "Sus datos (postulaciones, documentos, entrevistas) pasan a la cuenta principal. Es reversible desde el Historial.",
+        "conflictChangePrincipalHint": "Usá «Hacer principal» en cada tarjeta para elegir cuál se queda.",
+        "conflictConfirmCheckbox": "Confirmo que son la misma persona"
+      },
+      "field": {
+        "email": "Email",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "documentNumber": "Número de documento",
+        "documentType": "Tipo de documento",
+        "phone": "Teléfono",
+        "birthDate": "Fecha de nacimiento",
+        "sex": "Sexo",
+        "profession": "Profesión",
+        "first_name_encrypted": "Nombre",
+        "last_name_encrypted": "Apellido",
+        "sex_encrypted": "Sexo",
+        "gender_encrypted": "Género",
+        "birth_date_encrypted": "Fecha de nacimiento",
+        "document_number_encrypted": "Número de documento",
+        "languages_encrypted": "Idiomas",
+        "knowledge_level": "Nivel de formación",
+        "years_experience": "Años de experiencia",
+        "status": "Estado",
+        "country": "País",
+        "data_sources": "Origen de datos"
+      },
+      "entity": {
+        "worker_job_applications": "Postulaciones",
+        "encuadres": "Entrevistas",
+        "worker_documents": "Documentos",
+        "worker_additional_documents": "Documentos adicionales",
+        "worker_availability": "Disponibilidad horaria",
+        "worker_service_areas": "Zonas de trabajo",
+        "worker_locations": "Ubicaciones",
+        "worker_employment_history": "Historial laboral",
+        "worker_payment_info": "Datos de pago",
+        "worker_quiz_responses": "Respuestas de formularios",
+        "worker_tags": "Etiquetas",
+        "talentum_prescreenings": "Pre-evaluaciones",
+        "blacklist": "Lista negra"
+      },
+      "entitySystemFootnote": "y otros datos del sistema",
+      "history": {
+        "loadError": "Error al cargar el historial",
+        "empty": "Sin unificaciones registradas",
+        "emptyDesc": "Todavía no se ejecutaron unificaciones desde este panel.",
+        "col": {
+          "phone": "Teléfono",
+          "survivor": "Cuenta principal",
+          "absorbed": "Cuenta absorbida",
+          "category": "Categoría",
+          "executedBy": "Hecho por",
+          "date": "Fecha",
+          "actions": "Acciones"
+        },
+        "systemActor": "Sistema (automático)",
+        "confirmedSamePersonBadge": "Confirmado manualmente",
+        "undoBtn": "Deshacer",
+        "undoAriaLabel": "Deshacer unificación del teléfono {{phone}}",
+        "category": {
+          "phone_duplicate": "Teléfono duplicado",
+          "manual": "Manual",
+          "auto": "Automático",
+          "firebase": "Cuenta con acceso",
+          "most_complete": "Datos más completos",
+          "ghost": "Sin actividad"
+        },
+        "undo": {
+          "dialogLabel": "Deshacer unificación",
+          "title": "Deshacer unificación",
+          "description": "Vas a reactivar la cuenta absorbida y revertir todos los cambios de la unificación. Los datos migrados se devolverán a la cuenta original.",
+          "warning": "Esta acción no se puede revertir nuevamente si se vuelven a unificar.",
+          "close": "Cerrar",
+          "cancel": "Cancelar",
+          "confirm": "Sí, deshacer",
+          "confirmAriaLabel": "Confirmar deshacer unificación",
+          "undoing": "Deshaciendo..."
+        }
+      },
+      "imported": {
+        "loadError": "Error al cargar los grupos importados",
+        "empty": "Sin grupos por nombre",
+        "emptyDesc": "No se encontraron cuentas importadas con nombre coincidente.",
+        "namematchWarningTitle": "Coincidencia por NOMBRE (no por teléfono) — revisá bien antes de unir",
+        "namematchWarningDesc": "Estos grupos se detectaron por similitud de nombre. Verificá que sean la misma persona antes de unificar.",
+        "onlyWithRealLabel": "Solo con cuenta real",
+        "onlyWithRealHint": "Mostrando grupos con al menos 1 cuenta real (142 prioritarios)",
+        "allGroupsHint": "Mostrando todos los grupos (incluye importado↔importado)",
+        "reasonConflict": "requiere revisión",
+        "reviewBtn": "Revisar",
+        "conflictTitle": "Revisión manual requerida",
+        "conflictDesc": "Hay {{count}} cuenta real en este grupo. Revisala en la pestaña Fila antes de unificar:",
+        "conflictDesc_plural": "Hay {{count}} cuentas reales en este grupo — pueden ser personas distintas. Revisá cada una en la pestaña Fila antes de unificar:",
+        "conflictAccountAriaLabel": "Ver a {{name}} en la Fila",
+        "reason": {
+          "real_account_absorbs_imported": "Real absorbe importado",
+          "conflict_multiple_real_accounts": "Conflicto: múltiples reales",
+          "most_complete": "Más completo"
+        },
+        "table": {
+          "accountCount": "Cuentas",
+          "signal": "Señal",
+          "survivor": "Principal sugerido",
+          "oldestAccount": "Alta",
+          "reason": "Razón",
+          "actions": "Acciones",
+          "mergeAriaLabel": "Unificar grupo con {{count}} cuentas"
+        }
+      },
+      "manualMerge": {
+        "button": "Unificar manualmente",
+        "buttonAriaLabel": "Unificar dos cuentas manualmente",
+        "title": "Unificar manualmente",
+        "dialogLabel": "Unificación manual de cuentas",
+        "compareDialogLabel": "Comparar y unificar cuentas",
+        "description": "Buscá dos cuentas por nombre o teléfono y compará para unificarlas, aunque no estén en la fila automática.",
+        "accountA": "Primera cuenta",
+        "accountB": "Segunda cuenta",
+        "searchPlaceholder": "Buscá por nombre o teléfono...",
+        "changeAccount": "Cambiar",
+        "changeHint": "Cambiá para elegir otra cuenta.",
+        "noResults": "Sin resultados para la búsqueda.",
+        "compare": "Comparar y unificar",
+        "compareAriaLabel": "Comparar y unificar las dos cuentas seleccionadas",
+        "comparing": "Cargando...",
+        "sameAccountError": "Las dos cuentas elegidas son la misma. Elegí cuentas distintas.",
+        "buildError": "Error al construir el grupo. Intentá de nuevo.",
+        "badge": {
+          "withAccess": "Con acceso",
+          "imported": "Importado"
+        }
+      }
     },
     "apiDocs": {
       "title": "Documentación de la API",
@@ -596,6 +1423,80 @@
         "viewAnalysis": "Ver análisis"
       }
     },
+    "blockedAttempts": {
+      "title": "Intentos de postulación bloqueados",
+      "subtitle": "Registros de workers que intentaron postularse y fueron bloqueados",
+      "refresh": "Actualizar",
+      "linkFromRecruitment": "Ver intentos bloqueados",
+      "loading": "Cargando intentos bloqueados...",
+      "loadError": "Error al cargar los intentos bloqueados",
+      "retry": "Reintentar",
+      "noAttempts": "No hay intentos de postulación bloqueados",
+      "noAttemptsDesc": "Cuando un worker intente postularse y sea bloqueado, aparecerá aquí.",
+      "aggregates": {
+        "totalBlocked": "Total de bloqueados",
+        "byReason": "Por motivo"
+      },
+      "filters": {
+        "vacancy": "Filtrar por vacante",
+        "vacancyPlaceholder": "ID de vacante (UUID)",
+        "reason": "Motivo",
+        "allReasons": "Todos los motivos"
+      },
+      "table": {
+        "worker": "Worker",
+        "vacancy": "Vacante",
+        "reason": "Motivo de bloqueo",
+        "missingFields": "Campos faltantes",
+        "attempts": "Intentos",
+        "lastAttempt": "Último intento",
+        "unknownWorker": "Worker desconocido",
+        "unknownVacancy": "Vacante desconocida",
+        "noName": "Sin nombre · {{id}}"
+      },
+      "reason": {
+        "registration_incomplete": "Registro incompleto",
+        "worker_disabled": "Worker desactivado",
+        "worker_not_found": "Worker no encontrado"
+      },
+      "missingField": {
+        "profession": "Profesión",
+        "worker_documents": "Documentos",
+        "phone": "Teléfono",
+        "worker_availability": "Disponibilidad",
+        "worker_service_areas": "Área de atención",
+        "worker_not_found": "Worker no encontrado",
+        "first_name": "Nombre",
+        "last_name": "Apellido",
+        "sex": "Sexo",
+        "gender": "Género",
+        "birth_date": "Fecha de nacimiento",
+        "document_number": "Número de documento",
+        "languages": "Idiomas",
+        "knowledge_level": "Nivel de conocimiento",
+        "title_certificate": "Título / Certificado",
+        "years_experience": "Años de experiencia",
+        "experience_types": "Tipos de experiencia",
+        "preferred_types": "Tipos de servicio preferidos",
+        "preferred_age_range": "Rango etario preferido",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "birthDate": "Fecha de nacimiento",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "serviceAddress": "Dirección",
+        "resumeCv": "CV",
+        "identityDocument": "Documento de identidad",
+        "criminalRecord": "Antecedentes penales",
+        "professionalRegistration": "Matrícula profesional",
+        "liabilityInsurance": "Seguro de responsabilidad"
+      },
+      "pagination": {
+        "previous": "Anterior",
+        "next": "Siguiente",
+        "page": "Página {{page}} de {{total}}"
+      }
+    },
     "recruitmentHealth": {
       "title": "Salud del reclutamiento",
       "refresh": "Actualizar",
@@ -625,12 +1526,14 @@
     "kanban": {
       "columns": {
         "INVITED": "Invitados",
-        "INITIATED": "Iniciado",
+        "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "En Progreso",
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",
         "SELECTED": "Seleccionados",
-        "REJECTED": "Rechazados"
+        "REJECTED": "Perdidos",
+        "INICIADO": "Iniciados",
+        "PRE_SCREENING": "Pre Screening"
       },
       "talentumStatus": {
         "INITIATED": "Talentum: Iniciado",
@@ -639,7 +1542,8 @@
         "PENDING": "Talentum: Analizando...",
         "QUALIFIED": "Talentum: Calificado",
         "IN_DOUBT": "Talentum: En duda",
-        "NOT_QUALIFIED": "Talentum: No calificado"
+        "NOT_QUALIFIED": "Talentum: No calificado",
+        "PRE_SCREENING": "Talentum: Pre Screening"
       },
       "rejectionLabels": {
         "DISTANCE": "Distancia",
@@ -653,12 +1557,71 @@
         "OTHER": "Otro"
       },
       "noName": "Sin nombre",
+      "selfApplied": "Se postuló sola",
+      "selfAppliedTitle": "La persona entró a esta vacante por el link, por su cuenta ({{date}})",
+      "blockedNoName": "Sin nombre registrado",
+      "orphanDragTooltip": "Pendiente de registro de encuadre — el arrastre estará disponible en breve",
       "acquisitionChannel": {
         "facebook": "Facebook",
         "instagram": "Instagram",
         "whatsapp": "WhatsApp",
         "linkedin": "LinkedIn",
         "site": "Portal"
+      },
+      "completadoBadge": {
+        "QUALIFIED": "Aprobado Talentum",
+        "IN_DOUBT": "En duda",
+        "COMPLETED": "En análisis"
+      },
+      "reprogramBadge": "🔄 Reprogramado",
+      "notesButton": "Comentarios",
+      "moveToButton": "Mover a…",
+      "collapseColumn": "Colapsar columna",
+      "expandColumn": "Expandir columna",
+      "rejectButton": "Rechazar",
+      "undismissButton": "Volver a bloqueados",
+      "rejectionModal": {
+        "title": "Motivo de rechazo",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar"
+      },
+      "roleModal": {
+        "title": "¿Titular o suplente?",
+        "subtitle": "Clasificá al seleccionado para el tablero de equipo armado.",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar",
+        "options": {
+          "TITULAR": "Titular",
+          "RAPID_RESPONSE": "Suplente"
+        },
+        "hints": {
+          "TITULAR": "Ocupa una posición de dotación del caso",
+          "RAPID_RESPONSE": "Backup / respuesta rápida"
+        }
+      },
+      "rejectionOptions": {
+        "DISTANCE": "Distancia al lugar",
+        "SCHEDULE_INCOMPATIBLE": "Horario incompatible",
+        "INSUFFICIENT_EXPERIENCE": "Experiencia insuficiente",
+        "SALARY_EXPECTATION": "Pretensiones salariales",
+        "WORKER_DECLINED": "AT no acepta",
+        "OVERQUALIFIED": "Sobrecualificado",
+        "DEPENDENCY_MISMATCH": "Nivel de dependencia",
+        "TALENTUM_NOT_QUALIFIED": "Talentum: No calificado",
+        "OTHER": "Otro motivo"
+      },
+      "blockedBadge": "BLOQUEADO",
+      "blockedAttemptCount_one": "Intentó {{count}} vez",
+      "blockedAttemptCount_other": "Intentó {{count}} veces",
+      "scheduleModal": {
+        "title": "¿Cuándo es la entrevista?",
+        "subtitle": "Con fecha y hora el sistema puede recordarle al prestador y avisar si no aparece.",
+        "dateLabel": "Fecha",
+        "timeLabel": "Hora",
+        "meetLabel": "Link de la videollamada (opcional)",
+        "confirm": "Agendar",
+        "cancel": "Cancelar",
+        "unknown": "Todavía no sé la fecha — mover igual"
       }
     },
     "workerDetail": {
@@ -721,6 +1684,9 @@
       "case": "Caso",
       "patient": "Paciente",
       "result": "Resultado",
+      "funnelStatus": "Estado",
+      "attemptCount_one": "{{count}} intento",
+      "attemptCount_other": "{{count}} intentos",
       "interview": "Entrevista",
       "recruiter": "Reclutador",
       "date": "Fecha",
@@ -737,6 +1703,30 @@
       "weight": "Peso",
       "height": "Altura",
       "edit": "Editar",
+      "professionValue": {
+        "AT": "Acompañante Terapéutico",
+        "CAREGIVER": "Cuidador/a",
+        "NURSE": "Enfermero/a",
+        "KINESIOLOGIST": "Kinesiólogo/a",
+        "PSYCHOLOGIST": "Psicólogo/a"
+      },
+      "linkedin": "LinkedIn",
+      "editModal": {
+        "title": "Editar prestador",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "email": "E-mail",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "professionalSection": "Datos profesionales",
+        "addressSection": "Dirección",
+        "unset": "—",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "invalidEmail": "E-mail inválido",
+        "selectAddress": "Seleccioná una dirección de la lista de sugerencias",
+        "saveError": "Error al guardar los cambios"
+      },
       "serviceRadius": "Radio de atención",
       "termsOfUse": "Términos de uso",
       "privacyPolicy": "Políticas de privacidad",
@@ -745,7 +1735,6 @@
       "statusIncomplete": "Registro incompleto",
       "statusDisabled": "Desactivado",
       "viewDocument": "Ver documento",
-      "linkedin": "LinkedIn",
       "noAvailability": "Sin disponibilidad registrada",
       "validateDoc": "Validar",
       "validatedBy": "Validado por",
@@ -760,6 +1749,55 @@
         "availability": "Disponibilidad",
         "financial": "Financiero",
         "history": "Historial"
+      },
+      "tags": {
+        "label": "Etiquetas",
+        "addTag": "+ Etiqueta",
+        "addTagPlaceholder": "Buscar etiqueta...",
+        "noTags": "Sin etiquetas asignadas",
+        "noOptions": "Sin etiquetas disponibles",
+        "removeTag": "Quitar etiqueta",
+        "assignError": "Error al asignar etiqueta",
+        "removeError": "Error al quitar etiqueta"
+      },
+      "testAccount": {
+        "label": "Cuenta de prueba",
+        "hint": "Marca este prestador como cuenta de prueba (QA, demos).",
+        "error": "Error al actualizar la cuenta de prueba"
+      },
+      "modal": {
+        "close": "Cerrar",
+        "title": "Perfil del prestador"
+      }
+    },
+    "tags": {
+      "title": "Etiquetas",
+      "newTag": "Nueva Etiqueta",
+      "editTag": "Editar Etiqueta",
+      "deleteTag": "Eliminar Etiqueta",
+      "deleteConfirm": "¿Estás seguro de que querés eliminar esta etiqueta? Se quitará de todos los prestadores que la tengan asignada.",
+      "name": "Nombre",
+      "namePlaceholder": "Ej: Prioritario",
+      "color": "Color",
+      "colorPlaceholder": "#4F46E5",
+      "colorInvalid": "El color debe ser un valor hexadecimal válido (#RRGGBB)",
+      "description": "Descripción",
+      "descriptionPlaceholder": "Descripción opcional de la etiqueta",
+      "preview": "Vista previa",
+      "previewPlaceholder": "Nombre de la etiqueta",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar",
+      "noTags": "No hay etiquetas creadas. Hacé clic en \"Nueva Etiqueta\" para comenzar.",
+      "loadError": "Error al cargar etiquetas",
+      "createError": "Error al crear etiqueta",
+      "updateError": "Error al actualizar etiqueta",
+      "deleteError": "Error al eliminar etiqueta",
+      "table": {
+        "name": "Nombre",
+        "color": "Color",
+        "description": "Descripción",
+        "actions": "Acciones"
       }
     },
     "vacancies": {
@@ -791,10 +1829,12 @@
         "daysOpen": "Días Abierto",
         "invited": "Invitados",
         "applicants": "Postulados",
+        "confirmed": "Confirmados",
         "selected": "Seleccionados",
         "missing": "Faltantes",
         "view": "Ver",
-        "edit": "Editar"
+        "edit": "Editar",
+        "draftBadge": "Borrador"
       },
       "statusOptions": {
         "all": "Todos",
@@ -813,15 +1853,45 @@
         "high": "Alta",
         "normal": "Normal",
         "low": "Baja"
+      },
+      "filters": {
+        "allOption": "Todos",
+        "clear": "Limpiar filtros",
+        "type": {
+          "label": "Tipo",
+          "at": "AT",
+          "caregiver": "Cuidador"
+        },
+        "province": {
+          "label": "Provincia"
+        },
+        "locality": {
+          "label": "Localidad"
+        },
+        "sex": {
+          "label": "Sexo",
+          "f": "Femenino",
+          "m": "Masculino",
+          "both": "Indistinto"
+        },
+        "days": {
+          "label": "Días"
+        },
+        "time": {
+          "label": "Horario",
+          "from": "Desde",
+          "to": "Hasta"
+        }
       }
     },
     "vacancyDetail": {
       "notFound": "Vacante no encontrada",
       "back": "Volver",
       "kanban": "Kanban",
-      "viewMatch": "Ver Match →",
       "case": "Caso",
       "vacancy": "Vacante",
+      "publishedRedirectBanner": "Esta vacante ya fue publicada. Editá horario con el lápiz al lado de \"Días y Horarios\" y el estado tocando el badge — no es necesario abrir el formulario completo.",
+      "dismissBanner": "Cerrar aviso",
       "statusCard": {
         "title": "Estado de la Vacante",
         "status": "Estado",
@@ -833,14 +1903,7 @@
       },
       "patientCard": {
         "title": "Paciente",
-        "name": "Nombre",
-        "nameLabel": "Nombre del paciente:",
-        "diagnosis": "Diagnóstico",
-        "dependencyLevel": "Nivel de dependencia",
-        "zone": "Zona / Barrio",
-        "insuranceVerified": "Plan verificado",
-        "yes": "Sí",
-        "no": "No"
+        "nameLabel": "Nombre del paciente:"
       },
       "requirementsCard": {
         "title": "Requisitos",
@@ -927,9 +1990,23 @@
           "kanban": "Kanban"
         },
         "dispatchInvitesButton": "Enviar invitaciones",
+        "dispatchInvitesButtonCount": "Enviar invitaciones ({{count}})",
+        "dispatchConfirm": {
+          "title": "Confirmar envío",
+          "body": "Se enviarán {{count}} mensajes de WhatsApp a candidatos invitados sin notificación previa.",
+          "confirm": "Enviar",
+          "cancel": "Cancelar"
+        },
         "kanban": {
           "totalEncuadres": "encuadres totales",
-          "refresh": "Actualizar"
+          "refresh": "Actualizar",
+          "moveErrorTitle": "No se pudo mover el encuadre",
+          "workerNotEligibleTitle": "Worker con registro incompleto",
+          "workerEligibilityReason": {
+            "registration_incomplete": "El worker todavía no completó su registro o no envió todos los documentos obligatorios. Solicítale completar el perfil antes de avanzar en el embudo.",
+            "worker_disabled": "El worker está desactivado en el sistema y no puede ser movido en el embudo.",
+            "worker_not_found": "El worker no fue encontrado o fue fusionado con otro registro."
+          }
         }
       },
       "funnelTabs": {
@@ -944,13 +2021,36 @@
         "headers": {
           "name": "NOMBRE",
           "phone": "TELÉFONO",
-          "inviteDate": "DATA DO CONVITE",
+          "inviteDate": "FECHA DE INVITACIÓN",
           "whatsapp": "WHATSAPP",
-          "accepted": "ACEITO"
+          "accepted": "ACEPTÓ",
+          "registration": "REGISTRO",
+          "notes": "NOTAS"
         },
         "acceptedYes": "Sí",
         "acceptedNo": "No",
-        "emptyState": "Sin candidatos en esta etapa todavía."
+        "emptyState": "Sin candidatos en esta etapa todavía.",
+        "registration": {
+          "complete": "Completo",
+          "incomplete": "Incompleto"
+        },
+        "contactNotes": {
+          "modalTitle": "Notas de contacto",
+          "modalTitleVacancy": "Comentarios de la vacante",
+          "emptyState": "Sin notas registradas.",
+          "textareaPlaceholder": "Escribí una nota sobre este candidato…",
+          "charCounter": "{{count}}/240",
+          "registerButton": "Registrar",
+          "registering": "Registrando…",
+          "loadError": "Error al cargar las notas.",
+          "createError": "Error al registrar la nota.",
+          "deleteAria": "Eliminar nota",
+          "deleteConfirm": "¿Eliminar esta nota?",
+          "deleteYes": "Eliminar",
+          "deleteCancel": "Cancelar",
+          "deleting": "Eliminando…",
+          "deleteError": "Error al eliminar la nota."
+        }
       },
       "whatsappStatus": {
         "notSent": "No enviado",
@@ -1128,6 +2228,7 @@
         "description": "Descripción generada",
         "regenerate": "Regenerar descripción",
         "generating": "Generando…",
+        "generatingHint": "Generando contenido con IA… puede tardar hasta 1 minuto. No cierres ni recargues la página.",
         "publishSwitch": "Publicar en Talentum",
         "noQuestions": "Configurá al menos 1 pregunta antes de publicar",
         "confirmPublish": "Esto creará un pre-screening en Talentum. ¿Continuar?",
@@ -1170,16 +2271,13 @@
         "publishedAt": "Fecha de publicación:",
         "closedAt": "Fecha de cierre:"
       },
-      "patientCard": {
-        "title": "Paciente",
-        "nameLabel": "Nombre del paciente:"
-      },
       "professionCard": {
         "title": "Acompañantes Terapéuticos",
         "titleCaregiver": "Cuidadores",
         "availableFor": "Disponible para:",
         "diagnosis": "Hipótesis Diagnóstica - CID:",
         "description": "Descripción del trabajo:",
+        "descriptionEmpty": "Sin descripción todavía. Hacé clic en el lápiz para agregarla.",
         "characteristics": "Características:",
         "ageRange": "Rango etario:",
         "ageRangeAny": "Indistinto",
@@ -1188,6 +2286,8 @@
         "serviceType": "Tipo de servicio:",
         "daysAndHours": "Días y Horarios:",
         "edit": "Editar",
+        "editSchedule": "Editar horarios",
+        "editDescription": "Editar descripción",
         "weekdays": {
           "sunday": "Domingo:",
           "monday": "Lunes:",
@@ -1200,6 +2300,28 @@
       },
       "meetLinksRow": {
         "title": "Fechas para entrevista:"
+      },
+      "statusEditor": {
+        "editLabel": "Editar estado de la vacante"
+      },
+      "scheduleEditor": {
+        "title": "Editar horarios",
+        "subtitle": "Definí los días y horarios en los que la vacante necesita cobertura.",
+        "save": "Guardar",
+        "saving": "Guardando...",
+        "cancel": "Cancelar",
+        "close": "Cerrar",
+        "errorEmpty": "Agregá al menos un horario válido (día + desde + hasta)."
+      },
+      "descriptionEditor": {
+        "title": "Editar descripción",
+        "subtitle": "Editá la descripción de la vacante. Si ya está publicada en Talentum, el cambio se refleja ahí automáticamente.",
+        "placeholder": "Escribí la descripción de la vacante...",
+        "save": "Guardar descripción",
+        "saving": "Guardando...",
+        "cancel": "Cancelar",
+        "close": "Cerrar",
+        "errorEmpty": "La descripción no puede quedar vacía."
       }
     },
     "vacancyModal": {
@@ -1374,7 +2496,11 @@
       "descriptionEditor": {
         "label": "Descripción del trabajo (generada por IA)",
         "placeholder": "Hacé clic en 'Generar con IA' para crear la descripción",
-        "helper": "Podés editar libremente el texto generado"
+        "helper": "Podés editar libremente el texto generado",
+        "saveButton": "Guardar descripción",
+        "saving": "Guardando...",
+        "saved": "Descripción guardada",
+        "savedAndPropagated": "Guardada y actualizada en Talentum"
       }
     },
     "createVacancyV2": {
@@ -1438,6 +2564,15 @@
         "resume": "Retomar",
         "createNew": "Crear nueva vacante",
         "cancel": "Cancelar"
+      },
+      "addressHasVacancyDialog": {
+        "titleSingular": "Este domicilio ya tiene una vacante",
+        "titlePlural": "Este domicilio ya tiene vacantes",
+        "description": "Encontramos {{count}} vacante(s) que ya apuntan a este mismo domicilio. Si necesitás actualizar el caso, editá la vacante existente o cerrala antes de crear una nueva.",
+        "draftBadge": "Borrador",
+        "editButton": "Editar la vacante",
+        "continueButton": "Crear nueva igual",
+        "cancelButton": "Elegir otro domicilio"
       },
       "form": {
         "patientLabel": "Paciente",
@@ -1506,13 +2641,61 @@
         "pendingValidation": "Falta validación"
       },
       "filters": {
-        "validation": "Validación"
+        "validation": "Validación",
+        "tags": "Etiquetas",
+        "tagsPlaceholder": "Filtrar por etiqueta...",
+        "tagsAll": "Todas",
+        "profile": {
+          "allOption": "Todos",
+          "clear": "Limpiar filtros",
+          "profession": {
+            "label": "Profesión",
+            "AT": "AT",
+            "CAREGIVER": "Cuidador",
+            "AMBOS": "Ambos"
+          },
+          "ageRange": {
+            "label": "Rango etario",
+            "children": "Niños",
+            "adults": "Adultos",
+            "elderly": "Adultos mayores"
+          },
+          "experienceType": {
+            "label": "Tipo experiencia"
+          },
+          "preferredType": {
+            "label": "Tipo preferido"
+          },
+          "language": {
+            "label": "Idioma",
+            "es": "Español",
+            "pt": "Portugués",
+            "en": "Inglés"
+          },
+          "sex": {
+            "label": "Sexo",
+            "male": "Masculino",
+            "female": "Femenino"
+          },
+          "province": {
+            "label": "Provincia"
+          },
+          "locality": {
+            "label": "Localidad"
+          },
+          "days": {
+            "label": "Días"
+          }
+        }
       },
       "docsStatus": {
         "complete": "Completo",
         "rejected": "Rechazado",
         "pending": "Pendiente",
-        "incomplete": "Incompleto"
+        "incomplete": "Incompleto",
+        "submitted": "Enviado",
+        "under_review": "En revisión",
+        "approved": "Aprobado"
       },
       "stats": {
         "today": "Registros Hoy",
@@ -1579,6 +2762,100 @@
     "patients": {
       "title": "Pacientes",
       "listTitle": "Lista de Pacientes",
+      "activate": {
+        "button": "Activar paciente",
+        "confirmTitle": "Activar paciente",
+        "confirmBody": "Se generará una vacante borrador por cada localización activa y el paciente pasará a Activo. ¿Confirmás?",
+        "confirm": "Activar",
+        "cancel": "Cancelar",
+        "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
+        "noAddress": "Agregá al menos una localización antes de activar.",
+        "error": "No se pudo activar el paciente"
+      },
+      "editDrawer": {
+        "generalTitle": "Editar información general",
+        "clinicalTitle": "Editar diagnóstico",
+        "supportTitle": "Editar familiares",
+        "serviceTitle": "Editar servicios contratados",
+        "save": "Guardar",
+        "close": "Cerrar",
+        "unset": "—",
+        "saveError": "Error al guardar",
+        "deviceType": "Dispositivo",
+        "hasConsent": "Consentimiento",
+        "responsible": "Familiar",
+        "addResponsible": "Agregar familiar",
+        "removeResponsible": "Quitar",
+        "isPrimary": "Contacto principal",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "relationship": "Parentesco",
+        "phone": "Teléfono",
+        "email": "E-mail"
+      },
+      "kanban": {
+        "title": "Pacientes — Kanban",
+        "toggleList": "Lista",
+        "toggleKanban": "Kanban",
+        "caseNumber": "Caso",
+        "noName": "Sin nombre",
+        "moveError": "No se pudo mover el paciente",
+        "columns": {
+          "SOLICITANTE": "Solicitante",
+          "ADMISSION": "Admisión",
+          "PENDING_ADMISSION": "Esperando Activación",
+          "ACTIVE": "Activo"
+        }
+      },
+      "countryLabel": "País",
+      "countryOptions": {
+        "all": "Todos los países",
+        "AR": "Argentina",
+        "BR": "Brasil"
+      },
+      "sla": {
+        "inStage": "detenido hace {{hours}}h",
+        "breached": "⚠ SLA · {{hours}}h"
+      },
+      "funnel": {
+        "title": "Embudo de pacientes",
+        "solicitantes": "Solicitantes",
+        "admision": "Admisión",
+        "agendadas": "Agendadas",
+        "vacantes": "Vacantes",
+        "conversion": "{{from}} → {{to}}: {{rate}}%",
+        "error": "No se pudieron cargar las métricas",
+        "period": {
+          "7": "Últimos 7 días",
+          "30": "Últimos 30 días",
+          "90": "Últimos 90 días"
+        },
+        "sub": {
+          "solicitantes": "Pacientes creados en el período (todos los orígenes)",
+          "admision": "De esos, los que llegaron a Admisión o más",
+          "agendadas": "Con entrevista de admisión agendada en el período",
+          "vacantes": "Con vacante publicada (no cuenta borradores)"
+        }
+      },
+      "create": {
+        "new": "Nuevo",
+        "title": "Nuevo paciente",
+        "save": "Guardar",
+        "close": "Cerrar",
+        "unset": "—",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "phoneWhatsapp": "WhatsApp",
+        "contactEmail": "Email de contacto",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "coverageSection": "Cobertura médica",
+        "healthInsuranceName": "Nombre de la cobertura",
+        "healthInsuranceMemberId": "Número de afiliado",
+        "serviceSection": "Servicio requerido",
+        "serviceType": "Tipo de servicio",
+        "saveError": "Error al crear el paciente"
+      },
       "errorLoading": "Error al cargar pacientes",
       "noPatients": "No se encontraron pacientes",
       "searchLabel": "Buscar",
@@ -1619,9 +2896,13 @@
       "pagination": "{{start}}–{{end}} de {{total}}",
       "previousPage": "Página anterior",
       "nextPage": "Próxima página",
+      "codeLabel": "Código",
+      "codePlaceholder": "Nº de caso",
+      "codeColumn": "Caso",
       "table": {
         "name": "Nombre",
         "document": "Documento",
+        "code": "Código",
         "dependency": "Dependencia",
         "specialty": "Especialidad",
         "service": "Servicio",
@@ -1635,7 +2916,10 @@
       "stats": {
         "total": "Total de pacientes",
         "complete": "Completos",
-        "needsAttention": "Precisa atención"
+        "needsAttention": "Precisa atención",
+        "totalSub": "Pacientes registrados (sin los eliminados)",
+        "completeSub": "Sin datos obligatorios faltantes",
+        "needsAttentionSub": "Con dato faltante o conflicto de nº de caso"
       },
       "detail": {
         "pageTitle": "Ficha del Paciente",
@@ -1648,6 +2932,7 @@
           "clinicalData": "Datos Clínicos",
           "supportNetwork": "Red de Apoyo",
           "contractedService": "Servicio Contratado",
+          "vacancies": "Vacantes",
           "financialData": "Datos Financieros",
           "matching": "Encuadre",
           "appointments": "Agendamientos",
@@ -1668,6 +2953,12 @@
           "EM_ATENDIMENTO": "En Atendimiento",
           "PACIENTE_COM_ALTA": "Dado de alta",
           "CANCELADO": "Cancelado"
+        },
+        "caseNumber": "Caso",
+        "vacanciesCard": {
+          "title": "Vacantes Generadas",
+          "empty": "Sin vacantes generadas",
+          "error": "Error al cargar vacantes"
         },
         "identityCard": {
           "admission": "Admisión",
@@ -1814,6 +3105,32 @@
             "inService": "En Atendimiento",
             "rejected": "Rechazado"
           }
+        },
+        "chatIdsCard": {
+          "title": "Chat IDs de WhatsApp (Periskope)",
+          "subtitle": "Los grupos del paciente, uno por rol. Por ellos la auditoría de informes cruza Periskope con nuestra base.",
+          "notLinked": "Sin vincular",
+          "link": "Vincular chats",
+          "drawerTitle": "Vincular chats del paciente",
+          "drawerHelp": "Buscá los grupos en Periskope y decí cuál corresponde a cada rol. El sistema ordena por parecido con el nombre del paciente, pero quien elige sos vos.",
+          "searchChats": "Buscar chats",
+          "candidatesTitle": "Grupos encontrados",
+          "noCandidates": "Ningún grupo parecido al nombre de este paciente.",
+          "choose": "Elegí un grupo",
+          "score": "Parecido",
+          "members": "miembros",
+          "alreadyLinked": "ya vinculado a otro paciente",
+          "searchError": "No se pudieron buscar los chats.",
+          "saveError": "No se pudieron guardar los chat IDs.",
+          "save": "Guardar",
+          "close": "Cerrar",
+          "listTruncated": "Atención: la lista de grupos de Periskope llegó incompleta. Si el grupo que buscás no aparece, puede haber quedado afuera — repetí la búsqueda o avisá al equipo técnico.",
+          "searchGroupPlaceholder": "Buscá el grupo por nombre (ej.: gestion, DAS)",
+          "searching": "Buscando…",
+          "noGroupsFound": "Ningún grupo con ese nombre. Ojo: solo vemos los grupos donde alguno de nuestros números está adentro — si el grupo existe pero no aparece, hay que agregar nuestro número a él.",
+          "groupsFound": "{{shown}} de {{total}} grupo(s)",
+          "usedByPatients": "{{count}} paciente(s) usan este grupo",
+          "clear": "Quitar"
         }
       }
     },
@@ -1866,6 +3183,11 @@
       "emptyBucket": "Sin candidatos en este rango.",
       "candidatesCount_one": "{{count}} candidato",
       "candidatesCount_other": "{{count}} candidatos",
+      "selectAllInGroup": "Seleccionar todos ({{group}})",
+      "totals": {
+        "available": "Disponibles",
+        "recruited": "Reclutados"
+      },
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_other": "{{count}} seleccionados",
       "inviteSelected": "Invitar seleccionados ({{count}})",
@@ -1875,6 +3197,23 @@
       "alreadyApplied": "Ya postuló",
       "notified": "Notificado {{date}}",
       "sendWhatsappTooltip": "Enviar WhatsApp",
+      "viewProfileTooltip": "Ver perfil",
+      "caseLabel": "Caso",
+      "backToVacancy": "Vacante",
+      "scheduleInterview": "Agendar entrevista",
+      "sendToSelected": "Enviar a {{count}} seleccionado(s)",
+      "processing": "Procesando…",
+      "runAgain": "Volver a correr",
+      "run": "Correr match",
+      "noResultsYet": "Sin match guardado todavía.",
+      "noResultsWithScore": "Sin candidatos con score ≥ {{score}}.",
+      "colName": "Nombre",
+      "colStatus": "Estado",
+      "colDocs": "Documentos",
+      "colOccupation": "Ocupación",
+      "colZone": "Zona / Dist",
+      "colCases": "Casos",
+      "colScore": "Score final",
       "missingMeetLinks": {
         "title": "Esta vacante aún no tiene enlaces de reunión",
         "instructionsBefore": "Para invitar candidatos, primero agregá al menos un link de reunión en la pestaña ",
@@ -1884,18 +3223,7 @@
       }
     },
     "messaging": {
-      "title": "Enviar WhatsApp",
-      "templateLabel": "Template",
-      "loadingTemplates": "Cargando templates…",
-      "defaultTemplateLabel": "vacancy_match (predeterminado)",
-      "previewLabel": "Vista previa",
-      "previewFor": " (para {{name}})",
-      "sendToOneBefore": "Enviar a ",
-      "sendToOneAfter": ".",
-      "selectedWorkers_one": "{{count}} worker seleccionado.",
-      "selectedWorkers_other": "{{count}} workers seleccionados.",
-      "alreadyNotified_one": "{{count}} ya notificado.",
-      "alreadyNotified_other": "{{count}} ya notificados.",
+      "title": "Enviar invitación",
       "alreadyReceivedMessage_one": "{{count}} worker ya recibió este mensaje.",
       "alreadyReceivedMessage_other": "{{count}} workers ya recibieron este mensaje.",
       "notYetReceived_one": "{{count}} todavía no la recibió.",
@@ -1903,7 +3231,6 @@
       "confirmResendQuestion": "¿Deseás reenviarla a todos de todos modos?",
       "newOnly": "Sólo nuevos ({{count}})",
       "resendAll": "Reenviar a todos",
-      "confirmSend": "Confirmar envío",
       "statusSent": "✓ enviado",
       "statusErrorPrefix": "✗ ",
       "statusErrorFallback": "error",
@@ -1914,7 +3241,23 @@
       "doneSent_one": "{{count}} enviado",
       "doneSent_other": "{{count}} enviados",
       "doneErrors_one": "{{count}} fallido",
-      "doneErrors_other": "{{count}} fallidos"
+      "doneErrors_other": "{{count}} fallidos",
+      "panel": {
+        "sending": "Enviando invitaciones… ({{done}}/{{total}})",
+        "done_one": "{{count}} invitación enviada",
+        "done_other": "{{count}} invitaciones enviadas",
+        "doneWithErrors": "{{sent}} enviadas, {{errors}} con error",
+        "doneCancelled": "{{sent}} enviadas, {{cancelled}} canceladas",
+        "expand": "Expandir",
+        "collapse": "Contraer"
+      },
+      "blocked": {
+        "OPTED_OUT": "El trabajador pidió no recibir más mensajes (baja).",
+        "COOLDOWN": "El trabajador ya recibió un mensaje en los últimos 3 días.",
+        "ALREADY_INVITED": "El trabajador ya fue invitado a esta vacante en los últimos 7 días.",
+        "UNANSWERED_THROTTLE": "El trabajador recibió varias invitaciones sin responder nunca. Envío en pausa hasta que interactúe.",
+        "WORKER_STATUS_INVALID": "El estado del trabajador no permite enviar la invitación de match."
+      }
     },
     "interviews": {
       "phaseTitle1": "Configurar slots de entrevista",
@@ -1938,6 +3281,52 @@
       "done": "Listo",
       "slotAvailability_one": "{{start}} - {{end}} ({{count}} cupo disponible)",
       "slotAvailability_other": "{{start}} - {{end}} ({{count}} cupos disponibles)"
+    },
+    "patientChatRoles": {
+      "title": "Roles de grupos de WhatsApp",
+      "subtitle": "El catálogo de roles de los grupos del paciente (familia, prestadores, obra social…). Se edita acá, sin deploy ni migración. Cambiar un rol cambia la política de unicidad de TODOS los pacientes.",
+      "newRole": "Nuevo rol",
+      "editRole": "Editar rol",
+      "deleteRole": "Eliminar rol",
+      "noRoles": "Todavía no hay roles en el catálogo.",
+      "code": "Código",
+      "codeHelp": "En INGLÉS MAYÚSCULA, sin espacios ni acentos. Ej.: HEALTH_PLAN.",
+      "codeImmutable": "El código no se puede cambiar: es la clave con la que la auditoría cruza los grupos.",
+      "codeInvalid": "Código inválido: solo A-Z, dígitos y guión bajo, empezando por una letra.",
+      "labelEs": "Etiqueta en español",
+      "labelPtBr": "Etiqueta en portugués",
+      "labelsHelp": "Las dos son obligatorias: el panel se usa en Argentina y en Brasil.",
+      "exclusive": "Exclusivo de un paciente",
+      "exclusiveHelp": "Marcado: un grupo de este rol pertenece como máximo a UN paciente — es la traba que evita que la auditoría cuente la misma conversación dos veces. Sin marcar: el grupo puede ser compartido entre pacientes (caso del grupo por pagador).",
+      "exclusiveWarning": "Este rol lo usan {{count}} paciente(s). Si ya hay un grupo compartido entre dos, el cambio va a ser rechazado con la cuenta exacta.",
+      "exclusiveYes": "Exclusivo",
+      "exclusiveNo": "Compartido",
+      "displayOrder": "Orden en pantalla",
+      "matchKeywords": "Palabras del nombre del grupo",
+      "matchKeywordsHelp": "Separadas por coma. Se usan SOLO para desempatar el orden de los candidatos (\"flia\" × \"equipo\"), nunca para elegir solo.",
+      "usageCount": "{{count}} paciente(s)",
+      "active": "Activo",
+      "inactive": "Inactivo",
+      "activate": "Activar",
+      "deactivate": "Desactivar",
+      "deleteConfirm": "¿Eliminar el rol {{code}}? Lo usan {{count}} paciente(s) — si es más de cero, el servidor lo va a rechazar.",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "saveError": "No se pudo guardar el rol.",
+      "table": {
+        "code": "Código",
+        "labels": "Etiquetas",
+        "exclusive": "Unicidad",
+        "usage": "En uso",
+        "status": "Estado",
+        "actions": "Acciones"
+      },
+      "errors": {
+        "CHAT_ROLE_IN_USE": "No se puede: este rol lo usan {{count}} paciente(s). Desvinculá esos pacientes primero — el sistema no elimina vínculos por vos.",
+        "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "No se puede hacerlo exclusivo: {{groupCount}} grupo(s) están compartidos hoy entre {{patientCount}} pacientes. Resolvé esos casos primero — el sistema no elige cuál paciente pierde el vínculo.",
+        "CHAT_ROLE_ALREADY_EXISTS": "Ya existe un rol con ese código.",
+        "CHAT_ROLE_NOT_FOUND": "Ese rol no existe (¿alguien lo eliminó mientras tanto?)."
+      }
     }
   },
   "publicVacancy": {
@@ -1956,9 +3345,19 @@
     "jobDescription": "Descripción del trabajo:",
     "characteristics": "Características:",
     "ageRange": "Rango Etario:",
+    "ageRangeUndefined": "Indistinta",
+    "ageRangeFrom": "Desde {{min}} años",
+    "ageRangeTo": "Hasta {{max}} años",
     "location": "Ubicación:",
     "profile": "Perfil:",
     "serviceType": "Tipo de servicio:",
+    "serviceTypeLabels": {
+      "AT": "Acompañante Terapéutico",
+      "CAREGIVER": "Cuidador",
+      "NURSE": "Enfermero/a",
+      "KINESIOLOGIST": "Kinesiólogo/a",
+      "PSYCHOLOGIST": "Psicólogo/a"
+    },
     "daysAndHours": "Días y Horarios:",
     "modal": {
       "title": "Registro requerido",
@@ -1991,18 +3390,53 @@
         "availability": "Disponibilidad horaria",
         "resumeCv": "Currículum vitae",
         "identityDocument": "Documento de identidad",
+        "identityDocumentBack": "DNI - Dorso",
         "criminalRecord": "Antecedentes penales",
+        "atCertificate": "Certificado de Acompañante Terapéutico",
+        "monotributoCertificate": "Constancia de ARCA",
+        "aptoPsicofisico": "Apto psicofísico",
+        "analiticoUniversitario": "Analítico universitario",
+        "cartaRecomendacion": "Carta de recomendación",
         "professionalRegistration": "Matrícula profesional",
-        "liabilityInsurance": "Seguro de responsabilidad civil"
+        "liabilityInsurance": "Seguro de responsabilidad civil",
+        "first_name": "Nombre",
+        "last_name": "Apellido",
+        "birth_date": "Fecha de nacimiento",
+        "document_number": "Número de documento",
+        "knowledge_level": "Nivel de conocimiento",
+        "title_certificate": "Título / Certificado",
+        "years_experience": "Años de experiencia",
+        "experience_types": "Tipos de experiencia",
+        "preferred_types": "Tipos de servicio preferidos",
+        "preferred_age_range": "Rango etario preferido",
+        "worker_service_areas": "Área de atención",
+        "worker_availability": "Disponibilidad horaria",
+        "phone": "Teléfono",
+        "doc_resume_cv": "Currículum vitae",
+        "doc_identity_document": "Documento de identidad",
+        "doc_criminal_record": "Antecedentes penales",
+        "doc_at_certificate": "Certificado de Acompañante Terapéutico"
       },
+      "bodyGeneric": "Su registro está incompleto. Lo redirigiremos a su perfil para completarlo.",
       "redirectNotice": "Lo redirigiremos a su perfil para que pueda completar los datos faltantes.",
       "confirm": "Completar registro",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "goToField": "Ir a {{field}}"
     },
     "notFound": {
       "title": "Vacante no encontrada",
       "body": "La vacante que busca no existe o ya no está disponible.",
       "backHome": "Volver al inicio"
+    },
+    "footer": {
+      "tagline": "Marco profesional de Acompañamiento Terapéutico"
+    },
+    "errorModal": {
+      "title": "No pudimos verificar tu registro",
+      "body": "No pudimos confirmar que tu registro esté completo. Por tu seguridad, no te enviamos al pre-screening de WhatsApp. Completá tu registro o intentá nuevamente.",
+      "retry": "Reintentar",
+      "complete": "Completar registro",
+      "cancel": "Cerrar"
     }
   },
   "countries": {
@@ -2016,5 +3450,13 @@
     "MX": "México",
     "PE": "Perú",
     "UY": "Uruguay"
+  },
+  "worker": {
+    "errorBoundary": {
+      "title": "Algo salió mal",
+      "description": "Ocurrió un error inesperado. Podés recargar la página o volver al inicio.",
+      "reload": "Recargar",
+      "home": "Ir al inicio"
+    }
   }
 }

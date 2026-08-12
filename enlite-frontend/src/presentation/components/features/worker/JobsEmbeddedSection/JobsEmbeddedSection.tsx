@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useMemo } from 'react';
-import { SelectField } from '@presentation/components/molecules/SelectField';
+import { Select } from '@presentation/components/atoms/Select';
 import { SearchInput } from '@presentation/components/molecules/SearchBar';
 import { PublicApiService } from '@infrastructure/http/PublicApiService';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
@@ -178,6 +178,28 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
 
   return (
     <div id="jobs-section" className="w-full bg-white rounded-[20px] border border-[#d9d9d9] border-b-2 border-l-2 border-r-2 overflow-hidden flex flex-col">
+      {/* Aviso antecipado do gate de postulación: o prestador vê desde já que
+          precisa completar o registro antes de poder postularse, em vez de só
+          descobrir ao clicar "Ver Detalles" (UX review P2). */}
+      {!isRegistrationComplete && (
+        <button
+          type="button"
+          onClick={() => navigate('/worker/profile')}
+          data-testid="complete-registration-banner"
+          className="flex w-full items-center gap-2 border-b border-amber-200 bg-amber-50 px-6 py-3 text-left hover:bg-amber-100 transition-colors"
+        >
+          <svg className="w-5 h-5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span className="flex-1 text-sm font-lexend font-medium text-amber-900">
+            {t('jobs.completeToApplyBanner', 'Completá tu registro para poder postularte a las vacantes.')}
+          </span>
+          <span className="text-sm font-lexend font-semibold text-amber-700 underline shrink-0">
+            {t('jobs.completeNow', 'Completar')}
+          </span>
+        </button>
+      )}
+
       {/* Header */}
       <div className="p-6">
         <h2 className="text-xl font-semibold text-[#180149] mb-4 font-lexend">
@@ -193,40 +215,40 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterType}
-            onChange={setFilterType}
+            onValueChange={setFilterType}
             options={workerTypeOptions}
             placeholder={t('jobs.filters.workerType')}
-            label={t('jobs.filters.workerType')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterProvince}
-            onChange={setFilterProvince}
+            onValueChange={setFilterProvince}
             options={provinceOptions}
             placeholder={t('jobs.filters.province')}
-            label={t('jobs.filters.province')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterLocality}
-            onChange={setFilterLocality}
+            onValueChange={setFilterLocality}
             options={localityOptions}
             placeholder={t('jobs.filters.locality')}
-            label={t('jobs.filters.locality')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterPathology}
-            onChange={setFilterPathology}
+            onValueChange={setFilterPathology}
             options={pathologyOptions}
             placeholder={t('jobs.filters.pathology')}
-            label={t('jobs.filters.pathology')}
           />
-          <SelectField
+          <Select
+            inputSize="compact"
             value={filterSex}
-            onChange={setFilterSex}
+            onValueChange={setFilterSex}
             options={sexOptions}
             placeholder={t('jobs.filters.sex')}
-            label={t('jobs.filters.sex')}
           />
         </div>
 

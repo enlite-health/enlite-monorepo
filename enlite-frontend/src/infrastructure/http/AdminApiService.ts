@@ -1,7 +1,7 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { AdminUser } from '@domain/entities/AdminUser';
 import { EnliteRole } from '@domain/entities/EnliteRole';
-import { WorkerDateStats, WorkerDetail, WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
+import { WorkerDateStats, WorkerDetail, WorkerDocument, DocumentValidations, WorkerProfileUpdatePayload, WorkerProfileUpdateResult, WorkerServiceAreaUpdatePayload } from '@domain/entities/Worker';
 import type { MatchResultsResponse } from '../../types/match';
 import type { InterviewSlot, CreateSlotsInput, BookSlotResult, InterviewSlotsSummary } from '@domain/entities/InterviewSlot';
 import {
@@ -20,7 +20,13 @@ import {
   type AIContentResult,
 } from './AdminTalentumApiService';
 import { AdminVacancyDraftsApiService } from './AdminVacancyDraftsApiService';
-import type { VacancyDraftSummary } from '@domain/entities/VacancyDraft';
+import { AdminContactNotesApiService } from './AdminContactNotesApiService';
+import {
+  AdminVacancyListApiService,
+  type VacancyListFilters,
+  type VacancyFilterOptions,
+} from './AdminVacancyListApiService';
+import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 import type {
   ParseVacancyFullResult,
   PatientAddressCreateInput,
@@ -32,19 +38,18 @@ export type { WorkerDateStats, AdminAdditionalDocument };
 export type { ParseVacancyFullResult, PatientAddressCreateInput, PatientAddressRow };
 export type { PendingAddressReviewItem, ResolveAddressBody };
 export type { AIContentResult };
-export type { VacancyDraftSummary };
+export type { VacancyDraftSummary, VacancyByAddressSummary };
 
-interface ApiSuccessResponse<T> {
-  success: true;
-  data: T;
-}
-
-interface ApiErrorResponse {
-  success: false;
-  error: string;
-}
-
-type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+import { AdminWorkerTagsApiService } from './AdminWorkerTagsApiService';
+import {
+  AdminWorkerListApiService,
+  type WorkerListFilters,
+  type WorkerFilterOptions,
+} from './AdminWorkerListApiService';
+export type { WorkerListFilters, WorkerFilterOptions };
+import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
+import { withTransientRetry } from './retryTransient';
+export { ApiError } from './ApiError';
 
 class AdminApiServiceClass {
   private readonly authService = new FirebaseAuthService();
@@ -74,7 +79,7 @@ class AdminApiServiceClass {
     const json: ApiResponse<T> = await response.json();
 
     if (!json.success) {
-      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+      throw new ApiError(json as ApiErrorResponse, response.status);
     }
     return (json as ApiSuccessResponse<T>).data;
   }
@@ -82,7 +87,7 @@ class AdminApiServiceClass {
   // ========== Auth / Profile ==========
 
   async getProfile(): Promise<AdminUser> {
-    return this.request<AdminUser>('GET', '/api/admin/auth/profile');
+    return withTransientRetry(() => this.request<AdminUser>('GET', '/api/admin/auth/profile'));
   }
 
   // ========== Admin Users ==========
@@ -133,18 +138,15 @@ class AdminApiServiceClass {
     return AdminVacancyParseApiService.createPatientAddress(patientId, data);
   }
 
-  // ========== Vacancies Methods ==========
-
-  async listVacancies(filters?: {
-    search?: string; client?: string; status?: string; priority?: string; limit?: string; offset?: string;
-  }): Promise<{ data: any[]; total: number }> {
-    const params = new URLSearchParams(filters as any);
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseURL}/api/admin/vacancies?${params}`, { method: 'GET', headers });
-    const json = await response.json();
-    if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
-    return { data: json.data, total: json.total };
+  // ========== Vacancies List — delegated to AdminVacancyListApiService ==========
+  listVacancies(f?: VacancyListFilters): Promise<{ data: unknown[]; total: number }> {
+    return AdminVacancyListApiService.listVacancies(f);
   }
+  getVacancyFilterOptions(): Promise<VacancyFilterOptions> {
+    return AdminVacancyListApiService.getVacancyFilterOptions();
+  }
+
+  // ========== Vacancies Methods ==========
 
   async getVacanciesStats(): Promise<any[]> {
     return this.request<any[]>('GET', '/api/admin/vacancies/stats');
@@ -222,45 +224,17 @@ class AdminApiServiceClass {
   }
 
   // ========== Messaging Methods — delegated to AdminMessagingApiService ==========
-  sendWhatsApp(...args: Parameters<typeof AdminMessagingApiService.sendWhatsApp>) {
-    return AdminMessagingApiService.sendWhatsApp(...args);
-  }
-  previewWhatsApp(...args: Parameters<typeof AdminMessagingApiService.previewWhatsApp>) {
-    return AdminMessagingApiService.previewWhatsApp(...args);
-  }
-  getMessageTemplates() {
-    return AdminMessagingApiService.getMessageTemplates();
+  sendVacancyMatchInvite(
+    ...args: Parameters<typeof AdminMessagingApiService.sendVacancyMatchInvite>
+  ) {
+    return AdminMessagingApiService.sendVacancyMatchInvite(...args);
   }
 
-  // ========== Workers Methods ==========
+  // ========== Workers Methods — listing delegated to AdminWorkerListApiService ==========
 
-  async listCaseOptions(): Promise<{ value: string; label: string }[]> {
-    return this.request<{ value: string; label: string }[]>('GET', '/api/admin/workers/case-options');
-  }
-
-  async listWorkers(filters?: {
-    platform?: string;
-    docs_complete?: string;
-    docs_validated?: 'all_validated' | 'pending_validation';
-    search?: string;
-    case_id?: string;
-    limit?: string;
-    offset?: string;
-  }): Promise<{ data: any[]; total: number }> {
-    const cleanFilters = Object.fromEntries(
-      Object.entries(filters ?? {}).filter(([, v]) => v !== undefined && v !== ''),
-    );
-    const params = new URLSearchParams(cleanFilters as Record<string, string>);
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseURL}/api/admin/workers?${params}`, { method: 'GET', headers });
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('application/json')) {
-      throw new Error(`Erro ao conectar ao servidor (HTTP ${response.status})`);
-    }
-    const json = await response.json();
-    if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
-    return { data: json.data ?? [], total: json.total ?? 0 };
-  }
+  listCaseOptions() { return AdminWorkerListApiService.listCaseOptions(); }
+  getWorkerFilterOptions() { return AdminWorkerListApiService.getWorkerFilterOptions(); }
+  listWorkers(f?: WorkerListFilters) { return AdminWorkerListApiService.listWorkers(f); }
 
   async getWorkerById(id: string): Promise<WorkerDetail> {
     return this.request<WorkerDetail>('GET', `/api/admin/workers/${id}`);
@@ -270,12 +244,41 @@ class AdminApiServiceClass {
     return this.request<WorkerDateStats>('GET', '/api/admin/workers/stats');
   }
 
+  /** Marca/desmarca um worker como conta de teste (admin-only no backend). */
+  async updateWorkerTestFlag(id: string, isTest: boolean): Promise<{ isTest: boolean }> {
+    return this.request<{ isTest: boolean }>('PATCH', `/api/admin/workers/${id}/test-flag`, { isTest });
+  }
+
+  /** Edita campos do perfil de um worker (admin-only no backend). */
+  async updateWorkerProfile(id: string, payload: WorkerProfileUpdatePayload): Promise<WorkerProfileUpdateResult> {
+    return this.request<WorkerProfileUpdateResult>('PATCH', `/api/admin/workers/${id}/profile`, payload);
+  }
+
+  /** Edita o endereço/área de serviço de um worker (admin-only no backend). */
+  async updateWorkerServiceArea(id: string, payload: WorkerServiceAreaUpdatePayload): Promise<void> {
+    await this.request<unknown>('PUT', `/api/admin/workers/${id}/service-area`, payload);
+  }
+
   // ========== Patients Methods — delegated to AdminPatientsApiService ==========
   listPatients(f?: Parameters<typeof AdminPatientsApiService.listPatients>[0]) { return AdminPatientsApiService.listPatients(f); }
   getPatientStats() { return AdminPatientsApiService.getPatientStats(); }
   getPatientById(id: string) { return AdminPatientsApiService.getPatientById(id); }
   searchPatients(search: string, limit = 10) { return AdminPatientsApiService.listPatients({ search, limit: String(limit) }); }
   getPatientByIdFull(id: string) { return AdminPatientsApiService.getPatientById(id); }
+  getPatientVacancies(patientId: string) { return AdminPatientsApiService.getPatientVacancies(patientId); }
+  createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
+  updatePatientSection(...args: Parameters<typeof AdminPatientsApiService.updatePatientSection>) { return AdminPatientsApiService.updatePatientSection(...args); }
+  updatePatientStatus(id: string, status: string) { return AdminPatientsApiService.updatePatientStatus(id, status); }
+  getPatientChatCandidates(id: string, limit?: number) { return AdminPatientsApiService.getPatientChatCandidates(id, limit); }
+  updatePatientChatIds(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatIds>) { return AdminPatientsApiService.updatePatientChatIds(...args); }
+  listChatGroups(...args: Parameters<typeof AdminPatientsApiService.listChatGroups>) { return AdminPatientsApiService.listChatGroups(...args); }
+  listPatientChatRoles(includeInactive?: boolean) { return AdminPatientsApiService.listPatientChatRoles(includeInactive); }
+  createPatientChatRole(...args: Parameters<typeof AdminPatientsApiService.createPatientChatRole>) { return AdminPatientsApiService.createPatientChatRole(...args); }
+  updatePatientChatRole(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatRole>) { return AdminPatientsApiService.updatePatientChatRole(...args); }
+  deletePatientChatRole(code: string) { return AdminPatientsApiService.deletePatientChatRole(code); }
+  activatePatient(id: string) { return AdminPatientsApiService.activatePatient(id); }
+  listPatientsForKanban(country?: string) { return AdminPatientsApiService.listPatientsForKanban(country); }
+  getPatientFunnel(p?: Parameters<typeof AdminPatientsApiService.getPatientFunnel>[0]) { return AdminPatientsApiService.getPatientFunnel(p); }
 
   // ========== Encuadres Methods ==========
 
@@ -292,9 +295,34 @@ class AdminApiServiceClass {
 
   async moveEncuadre(
     encuadreId: string,
-    data: { targetStage: string; rejectionReasonCategory?: string; rejectionReason?: string }
+    data: {
+      targetStage: string;
+      rejectionReasonCategory?: string;
+      rejectionReason?: string;
+      role?: 'TITULAR' | 'RAPID_RESPONSE';
+      /** Data (YYYY-MM-DD) e hora (HH:MM) locais da operação; o servidor converte o fuso. */
+      interviewDate?: string;
+      interviewTime?: string;
+      interviewMeetLink?: string;
+    }
   ): Promise<void> {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
+  }
+
+  /**
+   * "Rechazar" um card BLOQUEADO: promove a tentativa bloqueada daquela vaga para
+   * RECHAZADOS (com motivo). Escopo estrito à vaga — não afeta o cadastro nem outras vagas.
+   */
+  async rejectBlockedAttempt(
+    blockedId: string,
+    data: { rejectionReasonCategory: string; rejectionReason?: string },
+  ): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/reject`, data);
+  }
+
+  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
+  async restoreBlockedAttempt(blockedId: string): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/restore`);
   }
 
   async getVacancyFunnelTable(
@@ -306,6 +334,17 @@ class AdminApiServiceClass {
       'GET',
       `/api/admin/vacancies/${vacancyId}/funnel-table${qs}`,
     );
+  }
+
+  // ========== Contact Notes — delegated to AdminContactNotesApiService ==========
+  getContactNotes(...args: Parameters<typeof AdminContactNotesApiService.getContactNotes>) {
+    return AdminContactNotesApiService.getContactNotes(...args);
+  }
+  createContactNote(...args: Parameters<typeof AdminContactNotesApiService.createContactNote>) {
+    return AdminContactNotesApiService.createContactNote(...args);
+  }
+  deleteContactNote(...args: Parameters<typeof AdminContactNotesApiService.deleteContactNote>) {
+    return AdminContactNotesApiService.deleteContactNote(...args);
   }
 
   // ========== Interview Slots Methods ==========
@@ -347,6 +386,9 @@ class AdminApiServiceClass {
   publishToTalentum(vacancyId: string) { return AdminTalentumApiService.publishToTalentum(vacancyId); }
   unpublishFromTalentum(vacancyId: string) { return AdminTalentumApiService.unpublishFromTalentum(vacancyId); }
   generateAIContent(vacancyId: string) { return AdminTalentumApiService.generateAIContent(vacancyId); }
+  updateTalentumDescription(vacancyId: string, description: string) {
+    return AdminTalentumApiService.updateTalentumDescription(vacancyId, description);
+  }
   generateSocialLink(vacancyId: string, channel: 'facebook' | 'instagram' | 'whatsapp' | 'linkedin' | 'site') {
     return AdminTalentumApiService.generateSocialLink(vacancyId, channel);
   }
@@ -386,6 +428,14 @@ class AdminApiServiceClass {
 
   // ========== Vacancy Drafts — delegated to AdminVacancyDraftsApiService ==========
   listDraftsForPatient(patientId: string): Promise<VacancyDraftSummary[]> { return AdminVacancyDraftsApiService.listDraftsForPatient(patientId); }
-}
+  listVacanciesByAddress(patientAddressId: string): Promise<VacancyByAddressSummary[]> { return AdminVacancyDraftsApiService.listByAddress(patientAddressId); }
 
+  // ========== Worker Tags — delegated to AdminWorkerTagsApiService ==========
+  listWorkerTags() { return AdminWorkerTagsApiService.listWorkerTags(); }
+  createWorkerTag(...args: Parameters<typeof AdminWorkerTagsApiService.createWorkerTag>) { return AdminWorkerTagsApiService.createWorkerTag(...args); }
+  updateWorkerTag(...args: Parameters<typeof AdminWorkerTagsApiService.updateWorkerTag>) { return AdminWorkerTagsApiService.updateWorkerTag(...args); }
+  deleteWorkerTag(id: string) { return AdminWorkerTagsApiService.deleteWorkerTag(id); }
+  assignTagToWorker(workerId: string, tagId: string) { return AdminWorkerTagsApiService.assignTagToWorker(workerId, tagId); }
+  removeTagFromWorker(workerId: string, tagId: string) { return AdminWorkerTagsApiService.removeTagFromWorker(workerId, tagId); }
+}
 export const AdminApiService = new AdminApiServiceClass();

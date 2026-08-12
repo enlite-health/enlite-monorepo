@@ -25,8 +25,19 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { WorkerDetail, WorkerDocument } from '@domain/entities/Worker';
 
 vi.mock('@infrastructure/http/AdminApiService');
+// WorkerDetailContent calls useAdminAuth (Firebase). Non-admin profile → no edit
+// affordance, isolating this document-regression test from auth state.
+vi.mock('@presentation/hooks/useAdminAuth', () => ({
+  useAdminAuth: () => ({ adminProfile: null }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
+}));
+
+// Admin-only toggle calls useAdminAuth (Firebase) — out of scope for the
+// document-delete regression; tested separately in WorkerTestAccountToggle.test.tsx.
+vi.mock('@presentation/components/features/admin/WorkerDetail/WorkerTestAccountToggle', () => ({
+  WorkerTestAccountToggle: () => null,
 }));
 
 const WORKER_ID = 'worker-regression-delete';
@@ -35,12 +46,16 @@ const DOCS_ALL_UPLOADED: WorkerDocument = {
   id: 'doc-1',
   resumeCvUrl: 'workers/xxx/resume.pdf',
   identityDocumentUrl: 'workers/xxx/identity.pdf',
-  identityDocumentBackUrl: null,
+  identityDocumentBackUrl: 'workers/xxx/identity-back.pdf',
   criminalRecordUrl: 'workers/xxx/criminal.pdf',
+  // professional_registration oculto por política ABAC — URL ignorada na UI
   professionalRegistrationUrl: 'workers/xxx/registration.pdf',
   liabilityInsuranceUrl: 'workers/xxx/insurance.pdf',
   monotributoCertificateUrl: 'workers/xxx/mono.pdf',
   atCertificateUrl: 'workers/xxx/at.pdf',
+  aptoPsicofisicoUrl: 'workers/xxx/apto.pdf',
+  analiticoUniversitarioUrl: 'workers/xxx/analitico.pdf',
+  cartaRecomendacionUrl: null,
   additionalCertificatesUrls: [],
   documentsStatus: 'submitted',
   documentValidations: {},
@@ -73,7 +88,7 @@ const MOCK_WORKER: WorkerDetail = {
   sexualOrientation: null, race: null, religion: null,
   weightKg: null, heightCm: null, hobbies: [],
   diagnosticPreferences: [], linkedinUrl: null,
-  isMatchable: true, isActive: true,
+  isMatchable: true, isActive: true, isTest: false,
   documents: DOCS_ALL_UPLOADED,
   serviceAreas: [], location: null, encuadres: [], availability: [],
 };
@@ -93,6 +108,7 @@ describe('WorkerDetailPage — delete regression', () => {
     vi.clearAllMocks();
     vi.spyOn(AdminApiService, 'getWorkerById').mockResolvedValue(MOCK_WORKER);
     vi.spyOn(AdminApiService, 'getWorkerAdditionalDocs').mockResolvedValue([]);
+    vi.spyOn(AdminApiService, 'listWorkerTags').mockResolvedValue([]);
   });
 
   it('HAPPY PATH: delete com data no response zera APENAS o slot deletado', async () => {
@@ -101,13 +117,14 @@ describe('WorkerDetailPage — delete regression', () => {
 
     const { container } = renderPage();
 
+    // Com profession=AT: 9 slots visíveis (6 universais + 3 atOnly), todos com URL
+    // professional_registration está oculto por política ABAC
     await waitFor(() => {
-      expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(7);
+      expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(9);
     });
 
-    // Antes: 7 uploaded (back do DNI é null), 1 empty (identity back)
-    expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(7);
-    expect(container.querySelectorAll('[data-state="empty"]').length).toBe(1);
+    expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(9);
+    expect(container.querySelectorAll('[data-state="empty"]').length).toBe(0);
 
     // Clica no botão "Remover" do slot at_certificate
     const atSlot = container.querySelector('[data-testid="doc-slot-at_certificate"]');
@@ -120,11 +137,11 @@ describe('WorkerDetailPage — delete regression', () => {
     });
 
     await waitFor(() => {
-      // Depois: 6 uploaded (at_certificate foi zerado), 2 empty
-      expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(6);
+      // Depois: 8 uploaded (at_certificate foi zerado), 1 empty
+      expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(8);
     });
 
-    expect(container.querySelectorAll('[data-state="empty"]').length).toBe(2);
+    expect(container.querySelectorAll('[data-state="empty"]').length).toBe(1);
 
     // Os outros documentos continuam uploaded
     expect(container.querySelector('[data-testid="doc-slot-resume_cv"] [data-state="uploaded"]')).toBeTruthy();
@@ -143,7 +160,7 @@ describe('WorkerDetailPage — delete regression', () => {
     const { container } = renderPage();
 
     await waitFor(() => {
-      expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(7);
+      expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(9);
     });
 
     const atSlot = container.querySelector('[data-testid="doc-slot-at_certificate"]');
@@ -159,7 +176,7 @@ describe('WorkerDetailPage — delete regression', () => {
     // CRÍTICO: mesmo com data=undefined, os cards NÃO podem ter sido zerados.
     // Se a proteção defensiva (if docs) falhar, esse assert vai quebrar porque
     // todos os cards viram empty (worker.documents = undefined).
-    expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(7);
-    expect(container.querySelectorAll('[data-state="empty"]').length).toBe(1);
+    expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(9);
+    expect(container.querySelectorAll('[data-state="empty"]').length).toBe(0);
   });
 });

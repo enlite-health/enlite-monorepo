@@ -412,18 +412,7 @@ describe('N6 — FUNNEL_TO_STATUS mapping', () => {
     expect(result.rows[0].description).toContain('funnel');
   });
 
-  it('application_status tem COMMENT no banco', async () => {
-    const result = await pool.query<{ description: string }>(`
-      SELECT col_description(
-        'worker_job_applications'::regclass,
-        (SELECT ordinal_position FROM information_schema.columns
-         WHERE table_name = 'worker_job_applications'
-           AND column_name = 'application_status')::int
-      ) AS description
-    `);
-    expect(result.rows[0].description).toBeTruthy();
-    expect(result.rows[0].description).toContain('sistêmico');
-  });
+  // removido em F7.c — application_status não existe mais (migration 196)
 
   // FUNNEL_TO_STATUS mapping was not implemented — skipping
   it.skip('FUNNEL_TO_STATUS TypeScript mapping cobre todos os valores de funnel_stage', async () => {
@@ -462,18 +451,17 @@ describe('N6 — FUNNEL_TO_STATUS mapping', () => {
 
     // Test inserting with a valid funnel stage (actual values: INITIATED, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT, NOT_QUALIFIED, PLACED)
     await pool.query(
-      `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_status, application_funnel_stage)
-       VALUES ($1, $2, $3, 'applied', 'INITIATED')
+      `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $2, $3, 'INITIATED')
        ON CONFLICT DO NOTHING`,
       [WJA_IDS.a1, WORKER_IDS.w1, JOB_IDS.j1],
     );
 
-    const result = await pool.query<{ application_funnel_stage: string; application_status: string }>(
-      `SELECT application_funnel_stage, application_status FROM worker_job_applications WHERE id = $1`,
+    const result = await pool.query<{ application_funnel_stage: string }>(
+      `SELECT application_funnel_stage FROM worker_job_applications WHERE id = $1`,
       [WJA_IDS.a1],
     );
     expect(result.rows[0].application_funnel_stage).toBe('INITIATED');
-    expect(result.rows[0].application_status).toBe('applied');
 
     // Cleanup
     await pool.query(`DELETE FROM worker_job_applications WHERE id = $1`, [WJA_IDS.a1]);

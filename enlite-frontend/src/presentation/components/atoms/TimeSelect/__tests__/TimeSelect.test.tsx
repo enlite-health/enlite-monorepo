@@ -88,9 +88,19 @@ describe('TimeSelect', () => {
     expect(screen.getByRole('list')).toBeInTheDocument();
   });
 
-  it('renders 48 time options with step=30 (default)', async () => {
+  it('renders 288 time options with step=5 (default)', async () => {
     const user = userEvent.setup();
     render(<TimeSelect value="09:00" />);
+
+    await user.click(screen.getByRole('button'));
+
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(288);
+  });
+
+  it('renders 48 time options with step=30', async () => {
+    const user = userEvent.setup();
+    render(<TimeSelect value="09:00" step={30} />);
 
     await user.click(screen.getByRole('button'));
 

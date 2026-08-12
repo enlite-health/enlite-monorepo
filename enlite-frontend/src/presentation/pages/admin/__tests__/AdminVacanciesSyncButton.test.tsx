@@ -30,6 +30,7 @@ const mockRefetch = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     syncFromTalentum: (...args: unknown[]) => mockSyncFromTalentum(...args),
+    getVacancyFilterOptions: () => Promise.resolve({ states: [], cities: [] }),
   },
 }));
 
@@ -38,7 +39,7 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
     vacancies: [
       { id: '1', caso: 'Caso 100', status: 'Activo', priority: 'HIGH',
         diasAberto: '05', convidados: '10', postulados: '5',
-        selecionados: '3', faltantes: '2' },
+        confirmados: '4', selecionados: '3', faltantes: '2' },
     ],
     stats: [
       { label: '+7 días', value: '2', icon: 'clock' },

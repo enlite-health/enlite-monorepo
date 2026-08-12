@@ -8,7 +8,7 @@ Backend em Node.js/TypeScript seguindo Clean Architecture para Google Cloud Func
 src/
 ├── domain/         # Entidades e interfaces de repositório
 ├── application/    # Casos de uso (InitWorker, SaveStep)
-├── infrastructure/ # Implementações (PostgresRepository, n8nDispatcher)
+├── infrastructure/ # Implementações (PostgresRepository)
 └── interfaces/     # Cloud Functions Handlers (Express)
 ```
 
@@ -24,7 +24,7 @@ cp .env.example .env
 npm install
 ```
 
-3. Inicie o Docker (PostgreSQL + n8n):
+3. Inicie o Docker (PostgreSQL):
 ```bash
 cd ..
 docker-compose up -d

@@ -157,26 +157,45 @@ export class FirebaseAuthService {
 
   onAuthStateChanged(callback: (user: User | null) => void): () => void {
     const auth = getFirebaseAuth();
-    
-    // Always register the real Firebase listener first
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      callback(firebaseUser ? this.mapFirebaseUser(firebaseUser) : null);
-    });
 
-    // Check mock auth dynamically (for E2E tests)
-    if (typeof window !== 'undefined') {
+    /**
+     * Reads mock auth state from localStorage.
+     * Checks two sources:
+     * 1. `enlite_e2e_mock_auth` — stable E2E key that the Firebase SDK never removes.
+     * 2. `firebase:authUser:*` — standard Firebase persistence key (may be cleared by SDK).
+     * Returns null when absent or expired.
+     */
+    const readMockAuth = (): User | null => {
+      if (typeof window === 'undefined') return null;
+
+      // Priority 1: stable E2E key (Firebase SDK cannot clear this)
+      try {
+        const e2eRaw = localStorage.getItem('enlite_e2e_mock_auth');
+        if (e2eRaw) {
+          const parsed: MockAuthState = JSON.parse(e2eRaw);
+          if (parsed.uid && parsed.email) {
+            const expTime = parsed.stsTokenManager?.expirationTime;
+            if (!expTime || expTime > Date.now()) {
+              return this.mapMockAuthToUser(parsed);
+            }
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+
+      // Priority 2: standard Firebase persistence key
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key?.includes('firebase:authUser')) {
           try {
             const value = localStorage.getItem(key);
             if (value) {
-              const parsed = JSON.parse(value);
+              const parsed: MockAuthState = JSON.parse(value);
               if (parsed.uid && parsed.email) {
                 const expTime = parsed.stsTokenManager?.expirationTime;
                 if (!expTime || expTime > Date.now()) {
-                  console.log('[FirebaseAuthService] Mock auth detected for:', parsed.email);
-                  callback(this.mapMockAuthToUser(parsed));
+                  return this.mapMockAuthToUser(parsed);
                 }
               }
             }
@@ -185,7 +204,52 @@ export class FirebaseAuthService {
           }
         }
       }
+      return null;
+    };
+
+    /**
+     * True ONLY for genuine E2E sessions, identified by the E2E-exclusive
+     * `enlite_e2e_mock_auth` key. This key is never present in production, so
+     * real users are never treated as mock sessions for null-suppression.
+     */
+    const isE2eMockSession = (): boolean => {
+      if (typeof window === 'undefined') return false;
+      try {
+        return localStorage.getItem('enlite_e2e_mock_auth') != null;
+      } catch {
+        return false;
+      }
+    };
+
+    // If a persisted/mock session is present in localStorage, dispatch it
+    // synchronously so ProtectedRoute sees the user immediately on reload.
+    const mockUser = readMockAuth();
+    if (mockUser) {
+      console.log('[FirebaseAuthService] Mock auth detected for:', mockUser.email);
+      // Dispatch synchronously so ProtectedRoute sees the user immediately.
+      callback(mockUser);
+      // Register the real listener but ignore null callbacks while mock auth is active.
+      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        if (firebaseUser) {
+          callback(this.mapFirebaseUser(firebaseUser));
+        } else {
+          // Suppress the null ONLY for genuine E2E sessions (E2E-exclusive key).
+          // Real users MUST always receive null on sign-out / token revocation —
+          // otherwise the UI would keep showing a logged-out user as authenticated.
+          if (isE2eMockSession()) {
+            // Keep the E2E session alive — do not propagate the fake-token null.
+            return;
+          }
+          callback(null);
+        }
+      });
+      return unsubscribe;
     }
+
+    // Normal (non-mock) path — pass through all Firebase auth state changes.
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      callback(firebaseUser ? this.mapFirebaseUser(firebaseUser) : null);
+    });
 
     return unsubscribe;
   }

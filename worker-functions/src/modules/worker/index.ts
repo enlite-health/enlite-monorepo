@@ -6,6 +6,7 @@
  */
 
 // ── Domain (types only) ─────────────────────────────────────────────────────
+export type { WorkerTag, WorkerTagAssignment, WorkerTagSummary, CreateWorkerTagDTO, UpdateWorkerTagDTO } from './domain/WorkerTag';
 export type { Profession } from './domain/enums/Profession';
 export { PROFESSIONS, isProfession } from './domain/enums/Profession';
 export type { Worker, WorkerStatus, CreateWorkerDTO, SavePersonalInfoDTO, UpdateWorkerStepDTO, SaveQuizResponseDTO, SaveServiceAreaDTO, SaveAvailabilityDTO } from './domain/Worker';
@@ -16,6 +17,7 @@ export type { WorkerQuizResponse, CreateQuizResponseDTO } from './domain/WorkerQ
 export type { WorkerDocExpiry, UpdateDocExpiryDTO } from './domain/WorkerDocExpiry';
 
 // ── Ports (interfaces) ───────────────────────────────────────────────────────
+export type { IWorkerTagRepository } from './ports/IWorkerTagRepository';
 export type { IWorkerRepository } from './ports/IWorkerRepository';
 export type { IAvailabilityRepository } from './ports/IAvailabilityRepository';
 export type { IServiceAreaRepository } from './ports/IServiceAreaRepository';
@@ -30,6 +32,7 @@ export { AvailabilityRepository } from './infrastructure/AvailabilityRepository'
 export { ServiceAreaRepository } from './infrastructure/ServiceAreaRepository';
 export { QuizResponseRepository } from './infrastructure/QuizResponseRepository';
 export { GCSStorageService } from './infrastructure/GCSStorageService';
+export { WorkerTagRepository } from './infrastructure/WorkerTagRepository';
 
 // ── Application ──────────────────────────────────────────────────────────────
 export { GetWorkerProgressUseCase } from './application/GetWorkerProgressUseCase';
@@ -46,10 +49,21 @@ export { UploadWorkerDocumentsUseCase } from './application/UploadWorkerDocument
 export { ReviewWorkerDocumentsUseCase } from './application/ReviewWorkerDocumentsUseCase';
 export { ValidateWorkerDocumentUseCase } from './application/ValidateWorkerDocumentUseCase';
 export { ExportWorkersUseCase } from './application/ExportWorkersUseCase';
+export { ListTagCatalogUseCase } from './application/ListTagCatalogUseCase';
+export { CreateTagUseCase } from './application/CreateTagUseCase';
+export { UpdateTagUseCase } from './application/UpdateTagUseCase';
+export { DeleteTagUseCase } from './application/DeleteTagUseCase';
+export { AssignTagToWorkerUseCase } from './application/AssignTagToWorkerUseCase';
+export { RemoveTagFromWorkerUseCase } from './application/RemoveTagFromWorkerUseCase';
 
 // ── Interfaces ───────────────────────────────────────────────────────────────
 export { WorkerControllerV2 } from './interfaces/controllers/WorkerControllerV2';
 export { AdminWorkersController } from './interfaces/controllers/AdminWorkersController';
+export { AdminWorkerTestFlagController } from './interfaces/controllers/AdminWorkerTestFlagController';
+export { AdminWorkerProfileController } from './interfaces/controllers/AdminWorkerProfileController';
+export { AdminWorkerServiceAreaController } from './interfaces/controllers/AdminWorkerServiceAreaController';
+export { createAdminWorkerRoutes } from './interfaces/routes/adminWorkerRoutes';
+export type { AdminWorkerRouteControllers } from './interfaces/routes/adminWorkerRoutes';
 export { JobsController } from './interfaces/controllers/JobsController';
 export { WorkerDocumentsMeController } from './interfaces/controllers/WorkerDocumentsMeController';
 export { AdminWorkerDocumentsController } from './interfaces/controllers/AdminWorkerDocumentsController';
@@ -57,6 +71,7 @@ export { WorkerAdditionalDocsMeController } from './interfaces/controllers/Worke
 export { AdminAdditionalDocsController } from './interfaces/controllers/AdminAdditionalDocsController';
 export { createWorkerDocumentsRoutes } from './interfaces/routes/workerDocumentsRoutes';
 export { createAdminWorkerDocumentsRoutes } from './interfaces/routes/adminWorkerDocumentsRoutes';
+export { AdminTagCatalogController } from './interfaces/controllers/AdminTagCatalogController';
 
 // ── Helpers (used by admin panel) ────────────────────────────────────────────
 export { mapPlatformLabel, matchesSearch, normalizeSearch } from './interfaces/controllers/AdminWorkersControllerHelpers';

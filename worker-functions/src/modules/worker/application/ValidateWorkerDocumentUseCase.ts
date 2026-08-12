@@ -1,11 +1,13 @@
 import { IWorkerDocumentsRepository } from '../infrastructure/WorkerDocumentsRepository';
 import { ValidateDocumentDTO, WorkerDocuments } from '../domain/WorkerDocuments';
 import { DocumentType } from '../infrastructure/GCSStorageService';
+import { logger } from '@shared/logging';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
   'professional_registration', 'liability_insurance',
   'monotributo_certificate', 'at_certificate',
+  'apto_psicofisico', 'analitico_universitario', 'carta_recomendacion',
 ];
 
 const DOC_JS_FIELD: Record<DocumentType, keyof WorkerDocuments> = {
@@ -17,6 +19,9 @@ const DOC_JS_FIELD: Record<DocumentType, keyof WorkerDocuments> = {
   liability_insurance: 'liabilityInsuranceUrl',
   monotributo_certificate: 'monotributoCertificateUrl',
   at_certificate: 'atCertificateUrl',
+  apto_psicofisico: 'aptoPsicofisicoUrl',
+  analitico_universitario: 'analiticoUniversitarioUrl',
+  carta_recomendacion: 'cartaRecomendacionUrl',
 };
 
 /**
@@ -31,8 +36,8 @@ export class ValidateWorkerDocumentUseCase {
   constructor(private workerDocumentsRepository: IWorkerDocumentsRepository) {}
 
   async execute(dto: ValidateDocumentDTO): Promise<WorkerDocuments> {
-    console.log('[ValidateWorkerDocumentUseCase] START | workerId:', dto.workerId,
-      '| docType:', dto.docType, '| adminEmail:', dto.adminEmail);
+    const log = logger.child({ workerId: dto.workerId });
+    log.info({ msg: '[ValidateWorkerDocumentUseCase] START', docType: dto.docType, adminEmail: dto.adminEmail });
 
     if (!VALID_DOC_TYPES.includes(dto.docType as DocumentType)) {
       throw new Error(
@@ -59,7 +64,7 @@ export class ValidateWorkerDocumentUseCase {
       dto.adminEmail,
     );
 
-    console.log('[ValidateWorkerDocumentUseCase] DONE | workerId:', dto.workerId, '| docType:', dto.docType);
+    log.info({ msg: '[ValidateWorkerDocumentUseCase] DONE', docType: dto.docType });
     return result;
   }
 }

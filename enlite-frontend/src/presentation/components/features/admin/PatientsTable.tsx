@@ -16,6 +16,7 @@ export interface PatientRow {
   lastName: string;
   documentType: string | null;
   documentNumber: string | null;
+  caseNumber: number | null;
   dependencyLevel: string | null;
   clinicalSpecialty: string | null;
   serviceType: string[];
@@ -94,6 +95,7 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
           <TableHead className="w-10" />
           <TableHead className="whitespace-nowrap">{t('admin.patients.table.name')}</TableHead>
           <TableHead className="whitespace-nowrap">{t('admin.patients.table.document')}</TableHead>
+          <TableHead className="whitespace-nowrap">{t('admin.patients.table.code')}</TableHead>
           <TableHead className="whitespace-nowrap hidden md:table-cell">
             {t('admin.patients.table.dependency')}
           </TableHead>
@@ -108,7 +110,7 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
         <TableBody>
           {safePatients.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={7} className="h-[200px] bg-white text-center">
+              <TableCell unwrapped colSpan={8} className="h-[200px] bg-white text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.noPatients')}
                 </Text>
@@ -117,6 +119,9 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
           ) : (
             safePatients.map((row) => {
               const fullName = [row.lastName, row.firstName].filter(Boolean).join(', ') || '—';
+              const caseLabel = row.caseNumber != null
+                ? `${t('admin.patients.codeColumn')} #${row.caseNumber}`
+                : '—';
               return (
                 <TableRow
                   key={row.id}
@@ -129,6 +134,9 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                   <TableCell weight="medium">{fullName}</TableCell>
                   <TableCell weight="medium" className="whitespace-nowrap">
                     {formatDocument(row.documentType, row.documentNumber)}
+                  </TableCell>
+                  <TableCell weight="medium" className="whitespace-nowrap">
+                    {caseLabel}
                   </TableCell>
                   <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                     {formatDependency(t, row.dependencyLevel)}

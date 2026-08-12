@@ -16,6 +16,8 @@ import { DocExpiryRepository } from '@modules/audit';
 import { WorkerRepository, WorkerStatus } from '@modules/worker';
 import { WorkerOccupation } from '../../domain/WorkerOccupation';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
+import { staffActor } from '@shared/audit/actorSource';
 import { classifyWorkerCaseStatus, groupByResultado } from './EncuadreControllerHelpers';
 
 export class EncuadreController {
@@ -309,20 +311,20 @@ export class EncuadreController {
     }
   }
 
-  /** Executa um UPDATE em workers dentro de transação, configurando app.current_uid para o trigger de histórico. */
+  /**
+   * Executa um UPDATE em workers dentro de transação, carimbando o ator para o
+   * trigger de histórico.
+   *
+   * Passou a usar `withActorContext` (mesma técnica que já estava aqui à mão)
+   * para gravar a identidade no formato único da medição — `staff:<uid>` em vez
+   * do uid cru, que não dizia de que lado veio a ação.
+   */
   private async runWorkerUpdate(workerId: string, sql: string, value: string, changedByUid?: string): Promise<void> {
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-      if (changedByUid) await client.query("SELECT set_config('app.current_uid', $1, true)", [changedByUid]);
-      await client.query(sql, [workerId, value]);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    await withActorContext(
+      this.db,
+      (client) => client.query(sql, [workerId, value]),
+      staffActor(changedByUid),
+    );
   }
 
   // ================================================

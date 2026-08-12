@@ -9,6 +9,7 @@ import {
   getStep2Progress,
   getStep3Progress,
 } from '../utils/workerProgressValidation';
+import { getRequiredDocSlugs, getRequiredDocFields } from '../utils/workerDocumentRequirements';
 
 interface UseWorkerProfileProgressResult {
   progress: WorkerProfileProgress;
@@ -50,13 +51,16 @@ export function useWorkerProfileProgress(
     const registrationTotalFields =
       step1Progress.totalFields + step2Progress.totalFields + step3Progress.totalFields;
 
-    const documentsSteps = [
-      { id: 'doc1', label: t('documentTypes.resume_cv'), completed: !!documentsData?.resumeCvUrl },
-      { id: 'doc2', label: t('documentTypes.identity_document'), completed: !!documentsData?.identityDocumentUrl },
-      { id: 'doc3', label: t('documentTypes.criminal_record'), completed: !!documentsData?.criminalRecordUrl },
-      { id: 'doc4', label: t('documentTypes.professional_registration'), completed: !!documentsData?.professionalRegistrationUrl },
-      { id: 'doc5', label: t('documentTypes.liability_insurance'), completed: !!documentsData?.liabilityInsuranceUrl },
-    ];
+    // Documentos obrigatórios dependem da profissão — regra centralizada em
+    // workerDocumentRequirements (espelho frontend de workerDocumentPolicy no backend).
+    const requiredSlugs = getRequiredDocSlugs(workerData.profession);
+    const requiredFields = getRequiredDocFields(workerData.profession);
+
+    const documentsSteps = requiredSlugs.map((slug, index) => ({
+      id: `doc${index + 1}`,
+      label: t(`documentTypes.${slug}`),
+      completed: !!documentsData?.[requiredFields[index]],
+    }));
 
     const documentsCompleted = documentsSteps.filter((s) => s.completed).length;
     const documentsTotal = documentsSteps.length;

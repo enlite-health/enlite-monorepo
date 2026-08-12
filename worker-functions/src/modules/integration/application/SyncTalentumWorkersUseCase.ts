@@ -10,6 +10,13 @@
  *   2. If not found → create with INCOMPLETE_REGISTER status
  *   3. If found → fill NULL/empty fields (name, phone)
  *   4. Link to job_postings via case_number extracted from project titles
+ *
+ * application_funnel_stage is set to INVITED for new rows (worker detected in Talentum
+ * dashboard project, but no evidence of WhatsApp entry yet). The canonical upgrade to
+ * INITIATED+ is exclusive to the PRESCREENING_RESPONSE webhook.
+ * ON CONFLICT DO NOTHING: webhook-set stage is preserved for existing rows.
+ *
+ * TD-035 (simplified): StageDecider removed — see docs/FOLLOWUPS.md
  */
 
 import * as crypto from 'crypto';
@@ -19,6 +26,7 @@ import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
+import { logger } from '@shared/logging';
 import type { TalentumDashboardProfile } from '../domain/ITalentumApiClient';
 
 const TAG = '[SyncTalentumWorkers]';
@@ -33,6 +41,8 @@ export interface WorkerSyncReport {
   updated: number;
   skipped: number;
   linked: number;
+  /** Workers cujo linkToCases foi pulado porque status != REGISTERED (cadastro/docs incompletos) */
+  skippedIncompleteRegistration: number;
   errors: Array<{ profileId: string; name: string; error: string }>;
 }
 
@@ -53,28 +63,32 @@ export class SyncTalentumWorkersUseCase {
 
   async execute(): Promise<WorkerSyncReport> {
     const report: WorkerSyncReport = {
-      total: 0, created: 0, updated: 0, skipped: 0, linked: 0, errors: [],
+      total: 0, created: 0, updated: 0, skipped: 0, linked: 0,
+      skippedIncompleteRegistration: 0, errors: [],
     };
 
     const talentumClient = await TalentumApiClient.create();
     const profiles = await talentumClient.listAllDashboardProfiles();
     report.total = profiles.length;
-    console.log(`${TAG} Fetched ${profiles.length} profiles from Talentum dashboard`);
+    logger.info({ msg: `${TAG} Fetched ${profiles.length} profiles from Talentum dashboard` });
 
     for (const profile of profiles) {
       try {
         await this.processProfile(profile, report);
-      } catch (err: any) {
-        console.error(`${TAG} Error processing profile ${profile._id} (${profile.fullName}):`, err.message);
-        report.errors.push({ profileId: profile._id, name: profile.fullName, error: err.message });
+      } catch (err: unknown) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        logger.error({ msg: `${TAG} Error processing profile ${profile._id} (${profile.fullName})`, error: e.message });
+        report.errors.push({ profileId: profile._id, name: profile.fullName, error: e.message });
       }
     }
 
-    console.log(
-      `${TAG} Done: total=${report.total} created=${report.created} ` +
-      `updated=${report.updated} skipped=${report.skipped} linked=${report.linked} ` +
-      `errors=${report.errors.length}`,
-    );
+    logger.info({
+      msg: `${TAG} Done`,
+      total: report.total, created: report.created,
+      updated: report.updated, skipped: report.skipped, linked: report.linked,
+      skippedIncompleteRegistration: report.skippedIncompleteRegistration,
+      errors: report.errors.length,
+    });
     return report;
   }
 
@@ -102,7 +116,7 @@ export class SyncTalentumWorkersUseCase {
 
     const workerId = existingId ?? await this.findExistingWorker(email, phone, profile._id);
     if (workerId && profile.projects?.length) {
-      const linked = await this.linkToCases(workerId, profile);
+      const linked = await this.linkToCases(workerId, profile, report);
       report.linked += linked;
     }
   }
@@ -155,8 +169,9 @@ export class SyncTalentumWorkersUseCase {
         [authUid, email, phone, firstNameEnc, lastNameEnc, nameBidxLiteral],
       );
       return result.rows[0].id;
-    } catch (err: any) {
-      if (err.code === '23505') {
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      if ((e as NodeJS.ErrnoException & { code?: string }).code === '23505') {
         // Unique violation — race condition, worker was created concurrently
         const existing = await this.db.query(
           'SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1',
@@ -257,8 +272,36 @@ export class SyncTalentumWorkersUseCase {
 
   // ── Case linking ─────────────────────────────────────────────────
 
-  private async linkToCases(workerId: string, profile: TalentumDashboardProfile): Promise<number> {
+  /**
+   * Ensures WJA + encuadre bond for each (worker, project) pair.
+   *
+   * Sync sets application_funnel_stage = INVITED for new rows (worker detected in
+   * Talentum dashboard, no evidence of WhatsApp entry yet). The canonical upgrade to
+   * INITIATED+ is exclusive to the PRESCREENING_RESPONSE webhook.
+   *
+   * WJA INSERT uses ON CONFLICT DO NOTHING:
+   *   - New row → INVITED (explicit, no default dependency)
+   *   - Existing row → no mutation (webhook-set stage preserved)
+   *
+   * profile.status (global per-worker, not per-encuadre) is intentionally ignored.
+   */
+  private async linkToCases(
+    workerId: string, profile: TalentumDashboardProfile, report: WorkerSyncReport,
+  ): Promise<number> {
     let linked = 0;
+
+    // Worker precisa estar com cadastro + documentos completos (status='REGISTERED')
+    // pra ser linkado a casos. Sync de Talentum não cria application pra worker incompleto.
+    const statusRow = await this.db.query<{ status: string }>(
+      'SELECT status FROM workers WHERE id = $1',
+      [workerId],
+    );
+    const workerStatus = statusRow.rows[0]?.status ?? null;
+    if (workerStatus !== 'REGISTERED') {
+      report.skippedIncompleteRegistration++;
+      logger.warn({ msg: `${TAG} linkToCases: skipping worker`, workerId, workerStatus, reason: 'registration/documents incomplete' });
+      return 0;
+    }
 
     for (const project of profile.projects) {
       try {
@@ -270,13 +313,16 @@ export class SyncTalentumWorkersUseCase {
           [caseNumber],
         );
         if (!jp.rows[0]) continue;
-        const jobPostingId = jp.rows[0].id;
+        const jobPostingId: string = jp.rows[0].id;
 
-        // worker_job_application — INSERT only if not exists, let DB default (INITIATED)
-        // We don't set funnel stage because the dashboard status is per-profile, not per-case
+        // Ensure WJA exists. Sync detected this worker is enrolled in a project on the
+        // Talentum dashboard — apenas o vínculo, sem garantia de que entrou no WhatsApp.
+        // Stage = INVITED. ON CONFLICT DO NOTHING: webhook canônico (INITIATED+) preserva.
+        // F7.c (ADR-004): application_status removido.
         const wjaResult = await this.db.query(
-          `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-           VALUES ($1, $2, 'applied', 'talentum')
+          `INSERT INTO worker_job_applications
+             (worker_id, job_posting_id, application_funnel_stage, source)
+           VALUES ($1, $2, 'INVITED', 'talentum')
            ON CONFLICT (worker_id, job_posting_id) DO NOTHING
            RETURNING id`,
           [workerId, jobPostingId],
@@ -290,16 +336,19 @@ export class SyncTalentumWorkersUseCase {
           .digest('hex');
 
         await this.db.query(
-          `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+          `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
            VALUES ($1, $2, $3, $4, 'Talentum', $5)
-           ON CONFLICT (dedup_hash) DO UPDATE SET
+           ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
              worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
           [workerId, jobPostingId, workerName, rawPhone, dedupHash],
         );
 
+        logger.info({ msg: `${TAG} ensured WJA + encuadre bond`, workerId, jobPostingId, caseNumber });
+
         if (wjaResult.rowCount && wjaResult.rowCount > 0) linked++;
-      } catch (err: any) {
-        console.warn(`${TAG} linkToCases: failed for project "${project.title}":`, err.message);
+      } catch (err: unknown) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        logger.warn({ msg: `${TAG} linkToCases: failed for project`, title: project.title, error: e.message });
       }
     }
 

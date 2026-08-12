@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { WorkerDocumentsCard } from '../WorkerDocumentsCard';
 import type { WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
+import type { AdminDocumentType } from '@hooks/admin/useAdminWorkerDocuments';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -20,7 +21,7 @@ const defaultHandlers = {
   onView: noopView,
   onValidate: noopValidate,
   onInvalidate: noopInvalidate,
-  loadingTypes: new Set() as Set<any>,
+  loadingTypes: new Set<AdminDocumentType>(),
   errors: {},
 };
 
@@ -34,6 +35,7 @@ const fullDoc: WorkerDocument = {
   liabilityInsuranceUrl: null,
   monotributoCertificateUrl: null,
   atCertificateUrl: null,
+  cartaRecomendacionUrl: null,
   additionalCertificatesUrls: ['https://storage.example.com/cert1.pdf'],
   documentsStatus: 'approved',
   reviewNotes: 'Tudo verificado.',
@@ -61,42 +63,96 @@ describe('WorkerDocumentsCard', () => {
     expect(screen.getByText('documentTypes.identity_document')).toBeInTheDocument();
   });
 
-  it('renders document labels for all document types', () => {
+  it('renders universal document labels for non-AT profession', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
     expect(screen.getByText('documentTypes.resume_cv')).toBeInTheDocument();
     expect(screen.getByText('documentTypes.identity_document')).toBeInTheDocument();
     expect(screen.getByText('documentTypes.criminal_record')).toBeInTheDocument();
-    expect(screen.getByText('documentTypes.professional_registration')).toBeInTheDocument();
     expect(screen.getByText('documentTypes.liability_insurance')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.monotributo_certificate')).toBeInTheDocument();
   });
 
-  // ── Document card links ───────────────────────────────────────────────────
+  // ── ABAC: professional_registration oculto ────────────────────────────────
 
-  it('renders view buttons for documents with URLs', () => {
+  it('never renders professional_registration slot (ABAC policy: hidden for all profiles)', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    // cv + id + criminal = 3 documents with URLs → 3 view buttons
-    // (additionalCertificatesUrls moved to AdditionalDocumentsSection)
-    const viewButtons = screen.getAllByLabelText('Visualizar documento');
-    expect(viewButtons.length).toBe(3);
+    expect(screen.queryByText('documentTypes.professional_registration')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-testid="doc-slot-professional_registration"]')).toBeNull();
   });
 
-  it('renders uploaded state for documents with URLs', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    const uploadedCards = screen.getAllByRole('generic').filter(
-      el => el.getAttribute('data-state') === 'uploaded',
-    );
-    // resume, identity, criminal = 3 uploaded
-    // (additionalCertificatesUrls moved to AdditionalDocumentsSection)
-    expect(uploadedCards.length).toBe(3);
+  it('never renders professional_registration slot even for AT profession', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
+    expect(screen.queryByText('documentTypes.professional_registration')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-testid="doc-slot-professional_registration"]')).toBeNull();
   });
 
-  it('renders empty state for documents without URLs', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    const emptyCards = screen.getAllByRole('button').filter(
-      el => el.getAttribute('data-state') === 'empty',
-    );
-    // professionalReg + insurance + identityDocumentBack = 3 empty (profession is null, so AT docs hidden)
-    expect(emptyCards.length).toBe(3);
+  // ── ABAC: monotributo_certificate universal ───────────────────────────────
+
+  it('renders monotributo_certificate for non-AT (universal slot)', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
+    expect(screen.getByText('documentTypes.monotributo_certificate')).toBeInTheDocument();
+  });
+
+  it('renders monotributo_certificate for AT (universal slot)', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
+    expect(screen.getByText('documentTypes.monotributo_certificate')).toBeInTheDocument();
+  });
+
+  // ── ABAC: atOnly slots ────────────────────────────────────────────────────
+
+  it('shows AT-only slots (at_certificate, apto_psicofisico, analitico_universitario) when profession is AT', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
+    expect(screen.getByText('documentTypes.at_certificate')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.apto_psicofisico')).toBeInTheDocument();
+    expect(screen.getByText('documentTypes.analitico_universitario')).toBeInTheDocument();
+  });
+
+  it('hides AT-only slots when profession is null', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
+    expect(screen.queryByText('documentTypes.at_certificate')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.apto_psicofisico')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.analitico_universitario')).not.toBeInTheDocument();
+  });
+
+  it('hides AT-only slots when profession is CUIDADOR', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="CUIDADOR" />);
+    expect(screen.queryByText('documentTypes.at_certificate')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.apto_psicofisico')).not.toBeInTheDocument();
+    expect(screen.queryByText('documentTypes.analitico_universitario')).not.toBeInTheDocument();
+  });
+
+  // ── ABAC: cuidadorOnly slots ──────────────────────────────────────────────
+
+  it('shows carta_recomendacion for non-AT (Cuidador)', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="CUIDADOR" />);
+    expect(screen.getByText('documentTypes.carta_recomendacion')).toBeInTheDocument();
+  });
+
+  it('shows carta_recomendacion for null profession (treated as non-AT)', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
+    expect(screen.getByText('documentTypes.carta_recomendacion')).toBeInTheDocument();
+  });
+
+  it('hides carta_recomendacion for AT profession', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
+    expect(screen.queryByText('documentTypes.carta_recomendacion')).not.toBeInTheDocument();
+  });
+
+  // ── AT warning banner ─────────────────────────────────────────────────────
+
+  it('shows AT warning banner when profession is AT', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
+    expect(screen.getByText('documents.atRequiredWarning')).toBeInTheDocument();
+  });
+
+  it('hides AT warning banner when profession is not AT', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="CUIDADOR" />);
+    expect(screen.queryByText('documents.atRequiredWarning')).not.toBeInTheDocument();
+  });
+
+  it('hides AT warning banner when profession is null', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
+    expect(screen.queryByText('documents.atRequiredWarning')).not.toBeInTheDocument();
   });
 
   // ── Status badges ──────────────────────────────────────────────────────────
@@ -166,68 +222,13 @@ describe('WorkerDocumentsCard', () => {
     expect(screen.queryByText('admin.workerDetail.reviewNotes')).not.toBeInTheDocument();
   });
 
-  // Note: additional certificates are now handled by AdditionalDocumentsSection component
-  // and stored in worker_additional_documents table, not in the deprecated TEXT[] array
+  // ── Document card links ───────────────────────────────────────────────────
 
-  // ── AT profession — conditional docs ──────────────────────────────────────
-
-  it('shows monotributo and AT certificate slots when profession is AT', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
-    expect(screen.getByText('documentTypes.monotributo_certificate')).toBeInTheDocument();
-    expect(screen.getByText('documentTypes.at_certificate')).toBeInTheDocument();
-  });
-
-  it('hides monotributo and AT certificate slots when profession is null', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
-    expect(screen.queryByText('documentTypes.monotributo_certificate')).not.toBeInTheDocument();
-    expect(screen.queryByText('documentTypes.at_certificate')).not.toBeInTheDocument();
-  });
-
-  it('hides monotributo and AT certificate slots when profession is not AT', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="PSICO" />);
-    expect(screen.queryByText('documentTypes.monotributo_certificate')).not.toBeInTheDocument();
-    expect(screen.queryByText('documentTypes.at_certificate')).not.toBeInTheDocument();
-  });
-
-  it('shows AT warning banner when profession is AT', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
-    expect(screen.getByText('documents.atRequiredWarning')).toBeInTheDocument();
-  });
-
-  it('hides AT warning banner when profession is not AT', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="PSICO" />);
-    expect(screen.queryByText('documents.atRequiredWarning')).not.toBeInTheDocument();
-  });
-
-  // ── New document slots ────────────────────────────────────────────────────
-
-  it('shows identity document back slot label', () => {
+  it('renders view buttons for documents with URLs', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    expect(screen.getByText('documentTypes.identity_document_back')).toBeInTheDocument();
-  });
-
-  it('renders 8 document cards when profession is AT', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession="AT" />);
-    // 6 base slots + 2 AT-only slots = 8 cards
-    const allCards = screen.getAllByRole('generic').filter(
-      el => el.getAttribute('data-state') === 'uploaded' || el.getAttribute('data-state') === 'empty',
-    );
-    const allButtons = screen.getAllByRole('button').filter(
-      el => el.getAttribute('data-state') === 'empty',
-    );
-    expect(allCards.length + allButtons.length).toBe(8);
-  });
-
-  it('renders 6 document cards when profession is null', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} profession={null} />);
-    // 6 base slots only (AT-only slots hidden)
-    const uploadedCards = screen.getAllByRole('generic').filter(
-      el => el.getAttribute('data-state') === 'uploaded',
-    );
-    const emptyButtons = screen.getAllByRole('button').filter(
-      el => el.getAttribute('data-state') === 'empty',
-    );
-    expect(uploadedCards.length + emptyButtons.length).toBe(6);
+    // resume_cv + identity_document + criminal_record = 3 documents with URLs
+    const viewButtons = screen.getAllByLabelText('Visualizar documento');
+    expect(viewButtons.length).toBe(3);
   });
 
   // ── DNI pair logic ────────────────────────────────────────────────────────
@@ -236,20 +237,10 @@ describe('WorkerDocumentsCard', () => {
     const docWithBack = { ...fullDoc, identityDocumentBackUrl: 'https://storage.example.com/id-back.pdf' };
     render(<WorkerDocumentsCard documents={docWithBack} {...defaultHandlers} />);
     const uploadedCards = screen.getAllByRole('generic').filter(
-      el => el.getAttribute('data-state') === 'uploaded',
+      (el) => el.getAttribute('data-state') === 'uploaded',
     );
     // resume + identity + criminal + identityBack = 4 uploaded
     expect(uploadedCards.length).toBe(4);
-  });
-
-  it('shows empty state for identity back when URL is null', () => {
-    // fullDoc already has identityDocumentBackUrl: null
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    const emptyButtons = screen.getAllByRole('button').filter(
-      el => el.getAttribute('data-state') === 'empty',
-    );
-    // professionalReg + insurance + identityDocumentBack = 3 empty (profession is null)
-    expect(emptyButtons.length).toBe(3);
   });
 
   // ── Validation badges ────────────────────────────────────────────────────
@@ -260,13 +251,6 @@ describe('WorkerDocumentsCard', () => {
     const validateBtn = screen.getByTestId('validate-btn-resume_cv');
     expect(validateBtn).toBeInTheDocument();
     expect(validateBtn.textContent).toContain('admin.workerDetail.validateDoc');
-  });
-
-  it('does not render validate button for documents without URL', () => {
-    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
-    // professional_registration has no URL → no badge
-    expect(screen.queryByTestId('validate-btn-professional_registration')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('validation-badge-professional_registration')).not.toBeInTheDocument();
   });
 
   it('does not render any validation UI when documents is null', () => {
@@ -324,7 +308,7 @@ describe('WorkerDocumentsCard', () => {
   });
 
   it('disables validate button when docType is loading', () => {
-    const loadingTypes = new Set(['resume_cv']) as Set<any>;
+    const loadingTypes = new Set<AdminDocumentType>(['resume_cv']);
     render(
       <WorkerDocumentsCard
         documents={fullDoc}

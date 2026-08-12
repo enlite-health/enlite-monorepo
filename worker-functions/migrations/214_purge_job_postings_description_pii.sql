@@ -1,0 +1,24 @@
+-- Migration 214: PURGA da PII em job_postings.description.
+--
+-- INCIDENTE DE PRIVACIDADE (2026-06-18): a coluna `description` continha o dump
+-- bruto importado do ClickUp — nome do paciente, DNI, telefone, e-mail, data de
+-- nascimento, diagnóstico clínico, obra social, número de afiliado e endereço
+-- completo. Esse conteúdo era servido SEM criptografia pelo endpoint público
+-- GET /api/public/v1/jobs (consumido pelo site WordPress). 70 vagas ativas
+-- expunham PII de pacientes (incl. menores) no momento da detecção.
+--
+-- AÇÃO CRÍTICA DO INCIDENTE: apagar fisicamente o conteúdo PII de TODAS as linhas.
+-- O dado sensível deixa de existir no banco a partir desta migration. UPDATE ...
+-- SET NULL é a remoção imediata e irreversível do conteúdo.
+--
+-- A descrição canônica passa a ser EXCLUSIVAMENTE `talentum_description`
+-- (gerada por IA, sem PII), que já alimenta o endpoint de detalhe e — a partir
+-- do commit correspondente — a chave JSON `description` da lista pública.
+-- Nenhum código escreve ou lê mais a coluna `description` após este deploy.
+--
+-- FOLLOW-UP (migration separada): a coluna `description` (agora vazia) será
+-- renomeada para _deprecated_ e dropada fisicamente. O DROP é isolado porque
+-- exige atualizar ~29 fixtures de teste que ainda inserem a coluna — churn que
+-- não deve atrasar o estancamento do vazamento de PII feito aqui.
+
+UPDATE job_postings SET description = NULL WHERE description IS NOT NULL;

@@ -76,6 +76,43 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'put',
+  path: '/api/admin/vacancies/{id}/talentum-description',
+  tags: ['Admin · Talentum'],
+  summary: 'Edita a descrição da vaga (e propaga ao Talentum)',
+  description:
+    'Persiste uma descrição EDITADA MANUALMENTE em talentum_description. ' +
+    'Se a vaga já estiver publicada no Talentum, propaga a edição in-place ' +
+    '(preserva whatsappUrl/slug e as perguntas). Diferente de ' +
+    'generate-talentum-description, que regenera o texto via IA.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({ id: UuidParam }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            description: z.string().min(1).openapi({
+              description: 'Nova descrição da vaga (texto plano).',
+              example: 'Descripción de la Propuesta:\n...',
+            }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Descrição salva (e propagada se publicada).', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Descrição vazia/ausente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Vaga não encontrada.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'Projeto Talentum pertence a outra conta — não editável pelo painel.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    502: { description: 'Falha ao propagar ao Talentum.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/admin/vacancies/{id}/generate-ai-content',
   tags: ['Admin · Talentum'],

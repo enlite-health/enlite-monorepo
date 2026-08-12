@@ -372,7 +372,7 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 
 ### TD-011 — Cloud SQL prd com `authorized_networks: 0.0.0.0/0` (descoberto 2026-05-08)
 
-- **Status:** aberto, segurança
+- **Status:** ✅ **RESOLVIDO em 2026-08-11 (PR #202)** — ver "Desfecho" no fim desta entrada
 - **Descoberto em:** 2026-05-08 ao inspecionar config Cloud SQL para mirror stg
 - **Dono:** infra + sec
 - **Bloqueador?** Não — SSL é obrigatório (sslMode=TRUSTED_CLIENT_CERTIFICATE_REQUIRED), mas o IP público está aberto pra internet
@@ -384,6 +384,20 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 Stg foi configurado com a mesma rule por paridade. Idem `enlite-n8n-db-ar` (que tem `requireSsl=false` — pior ainda, mas o n8n acessa via Cloud SQL Proxy interno, não via IP público; a rule 0.0.0.0/0 não está nesse).
 
 **Plano:** restringir authorized_networks a IPs específicos (Cloud Run NAT, GitHub Actions runners, IPs do escritório) ou migrar pra Private IP exclusivamente. Cloud SQL Proxy via service account já cobre acesso via aplicação.
+
+**Desfecho (2026-08-11, PR #202):**
+
+A regra **já havia sido removida da instância viva** em algum momento entre maio e agosto — `gcloud sql instances describe enlite-ar-db` devolve `authorizedNetworks` vazio. Mas o HCL nunca foi atualizado, e a instância **estava** no state: o `terraform plan` pedia `update in-place` **re-adicionando** `0.0.0.0/0`. Ou seja, o conserto tinha sido feito à mão e o código estava pronto para desfazê-lo no próximo `apply` — feito para qualquer outra coisa.
+
+Removido o bloco do `cloud_sql.tf` (o módulo já tem `default = []`). Verificado que nada depende de acesso pelo IP público:
+- nenhuma referência a `34.176.140.205` em código, CI, scripts, docs ou `.env`;
+- todos os workflows de deploy usam socket Unix (`DB_HOST=/cloudsql/...` + `--add-cloudsql-instances`), que passa pelo agente do Cloud SQL e não pela rede autorizada;
+- acesso operacional é por `cloud-sql-proxy`, que autentica por credencial IAM;
+- empiricamente: a instância já roda sem redes autorizadas, e deploys, migrations, e2e e o espelho do Ana Care funcionam.
+
+**Lição registrada (D106):** conserto aplicado à mão por `gcloud`/Console **não fecha** enquanto não estiver no HCL — o comando é o remendo, o código é o conserto. Enquanto os dois discordam, a ferramenta correta vira arma.
+
+⚠️ **Ainda aberto:** `stg` recebeu a mesma rule "por paridade" e não foi tocado aqui. Conferir e, se confirmado, remover lá também.
 
 ---
 
@@ -507,6 +521,56 @@ Conversar com gestão pra alinhar:
 3. Como o prestador vê isso no Talentum (1 anúncio com horário "estranho" vs 2 anúncios consecutivos)?
 
 **Registro:** até a decisão sair, o form do refactor **suporta as duas modelagens** (permite N slots por dia mas não obriga). Os 4 casos atuais em ClickUp permanecem como 1 vaga cada. Decisão muda só o frontend (validação) — sem migration.
+
+---
+
+### DP-002 — Slot "Monotributo" escondido por `profession=NULL` → ATs sobem doc no campo "Registro Profesional"
+
+- **Status:** aberto
+- **Descoberto em:** 2026-06-15, report do Javier (recrutamento) + diagnóstico DBA em prod
+- **Dono provável:** Gabriel (eng) + Recrutamento (classificação) + Gestão (regra de visibilidade)
+- **Bloqueador?** Não — mas degrada qualidade de dados de documentos
+
+**Contexto (verificado):**
+
+Os slots de documento `monotributo_certificate` e `at_certificate` têm flag `atOnly: true` e só renderizam quando `profession === 'AT'` (string exata) — `WorkerDocumentsCard.tsx:57` (admin) e `DocumentsGrid.tsx:49` (worker). Em prod, **4.664 de 6.900 workers (67,6%) têm `profession=NULL`** (constraint CHECK garante que quem é AT é exatamente `'AT'`, sem variação de texto). Com profession NULL, o slot de Monotributo nunca aparece → ATs sobem o Monotributo no slot visível mais próximo (`professional_registration`). **47 workers** têm `professional_registration_url` preenchido com `profession != 'AT'`/NULL.
+
+**Não confundir com falta de edição:** a app **não permite edição de perfil pelo operador de propósito** — pra forçar o recrutamento a contatar o worker e completar o cadastro (profissão). Ver memória `project_no_worker_edit_intentional`. Logo, a resolução tem componente de **processo** (contato), não só de código.
+
+**Decisão pendente (precisa de Gestão/Recrutamento):**
+
+1. Regra de visibilidade do slot Monotributo: **sempre visível** (todo prestador) ou **gated** por classificação? (Monotributo é obrigatório só pra AT, mas esconder o campo gera o bug atual.)
+2. Como a `profession` é classificada em escala pros 4.664 NULL: backfill assistido + contato de recrutamento? Há sinal externo (ClickUp/Talentum) pra inferir?
+3. Edição de profissão, quando existir, fica em **nível alto (Super Admin)** — alinhar com a feature de permissões ABAC (`project_permissions_abac_feature`).
+
+**Plano de resolução + teste (não deixar só registrado — resolver ao construir):**
+
+- Ao implementar a classificação de `profession` (ou a feature de permissões), **resolver junto**: definir a regra de visibilidade e migrar os 47 docs subidos no campo errado se a decisão permitir.
+- **Teste de não-recorrência (obrigatório):** teste de componente + **visual (Playwright `toHaveScreenshot`)** garantindo que, para a regra escolhida, o slot de Monotributo aparece quando deve — incluindo o caso `profession=NULL` se a decisão for "sempre visível". Sem esse teste, o follow-up não fecha.
+
+**Relacionado:** `project_worker_profession_null_bug`, `project_no_worker_edit_intentional`, `project_workers_duplication_state` (qualidade de dados de workers).
+
+---
+
+### DP-003 — Estratégia de ABAC camada DATA (departamento, zona) para Cerbos principal.attr
+
+- **Status:** PLANEJADO (roadmap) — Fase 8 da feature permissões (`docs/features/permissions/00-master-plan.md §8`). NÃO é débito aberto: capacidade futura comprometida, gatilho = caso de uso real + sign-off D-P3.
+- **Descoberto em:** 2026-06-15, durante formulação do ADR-006 (Cerbos PDP — grupos dinâmicos via principal attributes)
+- **Aguardando:** Gabriel (sign-off sobre semântica de departamento, D-P3 em docs/features/permissions/01-requirements.md)
+- **Bloqueador?** Não — fora do escopo da feature atual por decisão (D-P5); roadmap Fase 8
+- **Origem:** [ADR-006](adr/006-cerbos-pdp-grupos-dinamicos-via-principal-attributes.md)
+
+**Pergunta a responder:**
+
+Quando o caso de uso de ABAC por dados surgir (ex: "coordenador do departamento X só vê workers da zona Y"), quais atributos entram em `principal.attr` além de `permissions[]`? Como `department[]` e `zone[]` são calculados e emitidos no JWT? A semântica de "departamento" no contexto Enlite ainda não está definida formalmente em 01-requirements.md (item D-P3 pendente de sign-off do Gabriel).
+
+**Opções em consideração:**
+
+- A: Adicionar `department[]` e `zone[]` como arrays no JWT custom claim, calculados via SQL junto com `permissions[]` no login/refresh — mesmo padrão de `permissions[]`
+- B: Manter ABAC de dados fora do JWT; resolver via resource-policy Cerbos com lookup dinâmico em tempo de avaliação (requer Cerbos storage driver configurado)
+- C: Adiar ABAC de dados até extração do permission-service (NestJS), onde o PDP terá contexto de request completo
+
+**Ver:** [ADR-006](adr/006-cerbos-pdp-grupos-dinamicos-via-principal-attributes.md).
 
 ---
 
@@ -757,28 +821,21 @@ Emitir `WorkerDocumentUploadedEvent { workerId, documentType, filePath, uploaded
 
 ---
 
-### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos
+### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos — resolvido 2026-05-20
 
-- **Status:** aberto
+- **Status:** resolvido
 - **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (Architect parecer)
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não — PR 1 evita usar `workers.timezone` e usa `job_postings.timezone`
+- **Resolvido em:** 2026-05-20, PR `chore/td-028-workers-timezone-backfill`
 
-**O que é:**
+**Como foi resolvido:**
 
-A coluna `workers.timezone VARCHAR(50)` foi criada em migration 003 com `DEFAULT 'UTC'`. Nenhum fluxo posterior populou o valor real — todos os ATs do banco têm `'UTC'` (semanticamente errado pra ATs operando em AR/BR).
+1. Migration `265_backfill_workers_timezone_by_country.sql` (renumerada de 181 no review — 181 já ocupada em main por `add_job_posting_id_to_whatsapp_bulk_dispatch_logs`) faz backfill dos workers existentes via `workers.country` (AR → America/Argentina/Buenos_Aires, BR → America/Sao_Paulo, outros → UTC). Idempotente (`WHERE timezone = 'UTC'`). `worker_availability.timezone` também é atualizado pra workers cujo timezone mudou. O `UPDATE workers` roda com o trigger `update_workers_updated_at` desabilitado (backfill de dado histórico, não deve colapsar o timestamp de ~7.466 linhas e quebrar o desempate "mais recente vence" em `WorkerPhoneMergeHelpers.ts`/`AccountLinkService.ts`). A mesma migration também seta `ALTER TABLE workers ALTER COLUMN timezone SET DEFAULT 'America/Argentina/Buenos_Aires'`, fechando o loop pros caminhos de INSERT que hoje omitem `timezone` (`ProcessTalentumPrescreening.ts`, `SyncTalentumWorkersUseCase.ts`).
 
-**Impacto:**
+2. `WorkerRepository.create()` agora deriva `timezone` de `country` via `countryToTimezone()` (util do PR 1 do sprint MCP) quando o caller não passa explicitamente. Antes: `data.timezone || 'UTC'` → agora: `data.timezone || countryToTimezone(country)`.
 
-- Qualquer use case futuro que tente derivar fuso horário do AT via `workers.timezone` retornará UTC errado
-- PR 1 contornou usando `job_postings.timezone` (timezone da vaga, não do worker), o que é semanticamente correto pra "current interview"
-- Cenários futuros (ex: notificação proativa "bom dia AT" no fuso local do AT) vão precisar do valor real
+3. 5 testes unit em `WorkerRepository.create.test.ts` cobrem todos os paths: AR sem timezone → BA, BR → SP, country não mapeado → UTC fallback, timezone explícito tem precedência, country ausente → default AR.
 
-**Proposta de solução:**
-
-1. Backfill: derivar de `workers.country` via `countryToTimezone()` (util criada em PR 1, em `src/shared/locale/CountryTimezone.ts`)
-2. Atualizar signup do worker pra capturar/derivar timezone explicitamente
-3. Considerar adicionar coluna `country` consistente com `job_postings.country` se ainda não houver
+`worker_availability.timezone` continua sendo seteado a partir de `workers.timezone` no flow normal — agora com valor correto.
 
 ---
 
@@ -984,3 +1041,776 @@ O `triage-service` foi extraído pra repo próprio em `enlite-health/triage-serv
 - Org: `enlite-health` no GitHub (criada 2026-05-20)
 - Naming: `<service-name>` sem prefixo `enlite-` (org já dá contexto)
 - Deploy: cada repo tem seus próprios workflows no `.github/workflows/`
+
+---
+
+### TD-035 — `SyncTalentumWorkersUseCase` cria WJA sem `application_funnel_stage` — **CONCLUÍDO 2026-05-22**
+
+- **Status:** concluído (com reescopo)
+- **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (ver [`POSTMORTEM_KANBAN_FUNNEL_BUGS.md`](POSTMORTEM_KANBAN_FUNNEL_BUGS.md) bug #3)
+- **Dono:** backend (worker-functions)
+
+> **Atualização 2026-05-23:** consolidado em [features/worker-job-applications/](features/worker-job-applications/README.md). Pipeline `EncuadreRepository.syncToWorkerJobApplications` será deprecado integralmente em F6 do plano.
+
+**Histórico de execução:**
+
+1. **Iteração 1 (Opção B)** — implementado decider que aplicava `profile.status` global do TalentumDashboardProfile quando o worker não tinha prescreening em vaga nenhuma. 35/35 testes passing.
+2. **Reescopo durante revisão arquitetural** — dono do produto esclareceu que webhook `PRESCREENING_RESPONSE` é a **única fonte canônica per-encuadre**. `profile.status` global não tem semântica per-(worker, vaga) — usá-lo como fonte do funil contamina dado clínico.
+3. **Iteração 2 (final)** — `TalentumSyncStageDecider` removido. `SyncTalentumWorkersUseCase` simplificado: nunca seta `application_funnel_stage`. Único caminho: `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source) VALUES (...) ON CONFLICT DO NOTHING`. Stage cai no default `INITIATED` até webhook canônico chegar.
+
+**O que ficou (mudanças em produção):**
+
+1. ✓ Migration 185 — função SQL `funnel_stage_precedence(text) RETURNS int IMMUTABLE` reutilizável
+2. ✓ Migration 183 — `enforce_worker_registered_for_application` adiciona `'talentum'` no bypass
+3. ✓ `FunnelStageMapper` interface + `TalentumFunnelStageMapper` (usados pelo webhook em `ProcessTalentumPrescreening`)
+4. ✓ Webhook usa `funnel_stage_precedence` no UPSERT (extraído do CASE inline anterior — bug #4 da Fase 5)
+5. ✓ Guard `source='talentum' immutable` removido em `EncuadreRepository.syncToWorkerJobApplications` — precedência canônica protege contra regressão sem acoplamento de fonte
+6. ✓ `SyncTalentumWorkersUseCase` simplificado: nunca seta `application_funnel_stage`
+7. ✓ Suite E2E 21/21 passing (8 transition + 4 regression + 6 edge-cases + 3 sync simplificado)
+
+**Impacto sobre os 1.332 presos:**
+
+- Não vão ser corrigidos por backfill — **estado é correto operacionalmente**. São candidatos cadastrados via dashboard que nunca tiveram webhook canônico per-encuadre (não entraram no WhatsApp daquela vaga específica ou abandonaram antes).
+- Sintoma operacional ("vaga com 20 em INITIATED parece estagnada") é endereçado pelo TD-040 (UI feedback), não por mudança no banco.
+
+---
+
+### TD-036 — Admin/canais alternativos criam WJA sem `encuadre`
+
+> **SUPERSEDED 2026-05-23:** invariante WJA-com-encuadre garantida pelo trigger 189 (commit `be5c06d`). Detalhes em [features/worker-job-applications/06-regra-cardinalidade.md](features/worker-job-applications/06-regra-cardinalidade.md).
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (bugs #1 e #2 do postmortem)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — afeta UX do Kanban mas não dado crítico
+
+**O que é:**
+
+215 WJAs em estados `POSTULATED` (INITIATED/IN_PROGRESS/COMPLETED) **não têm linha correspondente em `encuadres`**. Como o Kanban faz `FROM encuadres LEFT JOIN worker_job_applications`, esses 215 não aparecem no Kanban — mas aparecem na lista (que lê de `worker_job_applications` direto). Daí a queixa "20 na lista, 0 no Kanban".
+
+Quebra por origem:
+
+| source | qtd | encuadre criado por qual path? |
+|---|---|---|
+| manual | 183 | path admin não chama `ensureEncuadre` |
+| talentum | 30 | edge case no `ProcessTalentumPrescreening.ensureEncuadre` (provavelmente exception swallowed) |
+| candidatos | 1 | path desconhecido |
+| talent_search | 1 | path desconhecido |
+
+**Proposta de solução:**
+
+1. Identificar TODOS os pontos de inserção em `worker_job_applications` (grep `INSERT INTO worker_job_applications`)
+2. Para cada um que ainda não chama `ensureEncuadre`: ou chama, ou marca como exceção documentada com motivo
+3. Para os 30 do webhook Talentum: instrumentar `ensureEncuadre` com `reportError` para capturar a exceção real
+4. Backfill SQL pontual pros 215 órfãos (criar encuadre com `origen='backfill-TD-036'`) — pode ir junto com o RUNBOOK_BACKFILL ou separado
+
+**Cuidado:** atenção pra não criar encuadres duplicados em fluxos que já têm encuadre via outra rota. Sempre `ON CONFLICT (dedup_hash) DO NOTHING`.
+
+---
+
+### TD-037 — Funil interno abstrato + mappers por provider
+
+> **Atualização 2026-05-23:** mapper já implementado (TD-035 item 3). Sub-item 5 endereçado por [features/worker-job-applications/04-estados-funil-kanban.md](features/worker-job-applications/04-estados-funil-kanban.md) (Kanban com badges em COMPLETADO; layout de 7 colunas mantido — revisão 2026-05-24).
+
+- **Status:** decisão tomada 2026-05-22, implementação pendente
+- **Descoberto em:** 2026-05-22, durante investigação dos bugs do Kanban (seção 6 do postmortem)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — desacopla domínio do Talentum sem mudar comportamento atual
+
+**O que é:**
+
+`worker_job_applications.application_funnel_stage` foi criado copiando o vocabulário do Talentum 1:1 (`INITIATED`, `IN_PROGRESS`, `COMPLETED`, `QUALIFIED`, `NOT_QUALIFIED`). Hoje o webhook Talentum joga esses valores direto, sem tradução ([`ProcessTalentumPrescreening.deriveFunnelStage`](../worker-functions/src/modules/matching/application/ProcessTalentumPrescreening.ts) é identity). E há guards no código (`source='talentum' is immutable`) que codificam Talentum como autoridade exclusiva.
+
+A operação aprovou em 2026-05-22 (após o postmortem) que **o vocabulário Talentum vira referência canônica do funil interno Enlite**. Futuros providers de triagem (já decidido que virão) traduzem seus estados pra esse mesmo vocabulário via mapper próprio.
+
+**Implicações concretas a executar:**
+
+1. **Conceitual:** documentar em `docs/ARCHITECTURE.md` (ou criar `docs/DOMAIN_FUNNEL.md`) que `application_funnel_stage` é vocabulário Enlite, não Talentum, embora coincidam por origem histórica.
+2. **Interface:** criar `FunnelStageMapper` interface com método `mapToInternalStage(providerPayload): FunnelStage`. Implementações: `TalentumFunnelStageMapper` (identity), futuros providers vão herdar.
+3. **Refactor:** `ProcessTalentumPrescreening.deriveFunnelStage` vira chamada ao `TalentumFunnelStageMapper.mapToInternalStage(payload)`.
+4. **Guards removidas:** o CASE `source='talentum' immutable` em `EncuadreRepository.syncToWorkerJobApplications` sai (alinhado com TD-035). Proteção contra regressão fica APENAS no CASE de precedência canônica.
+5. **API:** `EncuadreFunnelController` linha 51-53 deve parar de derivar `talentum_status` do `application_funnel_stage` — passar a ler direto de `talentum_prescreenings.status`. Quando outro provider entrar, ele terá sua própria tabela e a API retornará `provider_status: { provider: 'talentum', status: 'ANALYZED' }` ou similar.
+6. **Memory atualizada:** `feedback_qualified_only_talentum.md` precisa virar `feedback_qualified_only_via_certified_provider.md` quando o 2º provider chegar.
+
+**Referência da decisão:** `memory/project_funnel_internal_abstract.md`.
+
+Esse TD é **arquitetural** — não precisa ser executado de uma vez. Pode ir junto com o TD-035 (que já faz o passo 4 e parte do passo 2).
+
+---
+
+### TD-038 — `DraggableCard` e `KanbanCard` compartilham mesmo `data-testid`
+
+- **Status:** aberto, low prio
+- **Descoberto em:** 2026-05-22, durante criação dos testes E2E visuais do Kanban
+- **Dono provável:** frontend (enlite-frontend)
+- **Bloqueador?** Não — testes lidam com a duplicação via seletor `[data-stage]`
+
+**O que é:**
+
+[`DraggableCard.tsx:14`](../enlite-frontend/src/presentation/components/features/admin/Kanban/DraggableCard.tsx#L14) atribui `data-testid="kanban-card-${id}"` no wrapper. [`KanbanCard.tsx:76`](../enlite-frontend/src/presentation/components/features/admin/Kanban/KanbanCard.tsx#L76) atribui o **mesmo `data-testid`** no inner. Resultado: o DOM tem 2 elementos com o mesmo testid pra cada card, e `page.locator('[data-testid="kanban-card-xxx"]')` retorna o primeiro (wrapper, que não tem `data-stage`).
+
+Workaround atual nos testes: usar seletor `[data-testid="kanban-card-${id}"][data-stage]` pra filtrar só o inner. Funciona, mas é frágil — se alguém adicionar `data-stage` no wrapper, quebra.
+
+**Proposta de solução:**
+
+Opção A (simples): renomear testid do wrapper pra `kanban-card-${id}-draggable` ou remover (se não houver teste usando).
+Opção B (semântica): mover `data-stage` pro wrapper junto com `data-testid` — wrapper passa a representar a "posição do card no kanban", inner passa a ser estritamente conteúdo.
+
+Verificar antes: quais testes usam `kanban-card-{id}` hoje (grep em `e2e/`). Se nenhum precisa do wrapper, opção A é trivial.
+
+---
+
+### TD-039 — Suite E2E integration do frontend não roda em CI
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-22, durante validação visual do funil Kanban
+- **Dono provável:** DevOps / frontend
+- **Bloqueador?** Não — testes rodam localmente, snapshots commitados
+
+**O que é:**
+
+`worker-functions/.github/workflows/e2e.yml` roda os testes E2E do backend em todo PR. O frontend tem `pnpm test:e2e` em CI **apenas para os projetos chromium/firefox/webkit** (mockados). A suite `integration` (full-stack: backend Docker + frontend dev server + DB real) — incluindo os 7 cenários visuais do Kanban Talentum criados em 2026-05-22 — **não roda em CI**.
+
+**Proposta:**
+
+1. Adicionar job em `enlite-frontend/.github/workflows/e2e-integration.yml` que:
+   - Sobe `worker-functions` Docker stack
+   - Sobe Vite dev server do `enlite-frontend`
+   - Roda `pnpm test:e2e:integration`
+   - Sobe artefatos de screenshot diff em falha
+2. Definir trigger — provavelmente só em PRs com label `integration` ou em push pra `main` (custo de CI alto pra Docker stack)
+3. Manter snapshots em git (já estão) — CI vira validação contra eles
+
+**Risco de flake:** screenshots têm `maxDiffPixelRatio: 0.05`. Avaliar se aumenta em CI (fontes podem renderizar diferente em Linux vs Mac, onde os baselines foram gerados — `vacancy-kanban-*-integration-darwin.png`). Pode precisar de baseline `-linux.png` separado.
+
+---
+
+### TD-040 — UI feedback "candidato cadastrado sem retorno do worker"
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-22, durante reescopo do TD-035 (ver [`POSTMORTEM_KANBAN_FUNNEL_BUGS.md`](POSTMORTEM_KANBAN_FUNNEL_BUGS.md) §5)
+- **Dono provável:** frontend (enlite-frontend) + design
+- **Bloqueador?** Não — operacional, não técnico
+
+**O que é:**
+
+Após simplificação do TD-035, ficou claro que workers em `application_funnel_stage='INITIATED'` com `source='talentum'` e sem registro em `talentum_prescreenings` são **estado correto** do modelo — não bug. Representam candidatos cadastrados via dashboard Talentum cujos webhooks `PRESCREENING_RESPONSE` nunca chegaram (provavelmente o worker não entrou no WhatsApp daquela vaga ou abandonou antes da 1ª pergunta).
+
+Hoje, no Kanban, esses cards ficam indistinguíveis de "worker que acabou de iniciar triagem agora" — daí a queixa operacional "vaga com 20 em INITIATED parece estagnada".
+
+**Proposta de solução (mínima):**
+
+1. No card do Kanban (KanbanCard.tsx), quando o card está em `INITIATED` há mais de 7 dias **e** o worker não tem `talentum_prescreenings.status` registrada pra essa vaga, exibir badge/ícone "sem retorno do worker" (texto em es-AR: *"Sin respuesta del prestador"*).
+2. Tooltip explicando: "Candidato cadastrado via Talentum há X dias mas não iniciou o prescreening desta vaga."
+3. Opcional fase 2: filtro no Kanban "ocultar candidatos sem retorno" pra reduzir poluição visual.
+
+**API necessária:**
+
+O endpoint `GET /api/admin/vacancies/:id/funnel` (no [`EncuadreFunnelController.ts`](../worker-functions/src/modules/matching/interfaces/controllers/EncuadreFunnelController.ts)) já retorna `talentumStatus` per card — basta o frontend usar:
+
+```ts
+const isStale =
+  card.funnelStage === 'INITIATED'
+  && card.talentumStatus === null
+  && daysSince(card.updatedAt) > 7;
+```
+
+Sem mudança de backend necessária.
+
+**Cobertura de teste:**
+
+- Unit test no KanbanCard que valida renderização do badge condicional
+- E2E visual integration adicionando 1 cenário ao [`vacancy-kanban-talentum-webhook.integration.e2e.ts`](../enlite-frontend/e2e/integration/vacancy-kanban-talentum-webhook.integration.e2e.ts): worker com WJA criada há 10 dias, sem prescreening — assert badge visível + screenshot.
+
+**Métrica de sucesso:** operação consegue, sem perguntar pra eng, distinguir "vaga com 20 candidatos triando" de "vaga com 20 cadastros frios sem retorno".
+
+---
+
+### TD-041 — Remover `dedup_hash` como constraint primária de unicidade após F5 estável
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante refinamento de F5 do plano WJA
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — depende de F5 em produção estável por ≥ 14 dias
+- **Origem:** [ADR-001](adr/001-encuadres-unique-worker-job-posting-constraint.md)
+
+**O que é:**
+
+Após a F5 (UNIQUE `(worker_id, job_posting_id)` em `encuadres` + consolidação de duplicatas) estar em produção por ≥ 14 dias sem incidentes, avaliar se `encuadres.dedup_hash` pode ser rebaixado de `UNIQUE` para campo de auditoria simples — ou migrado para `import_source_audit` em F8.
+
+O ADR-001 mantém `dedup_hash` como `NOT NULL` por enquanto para preservar rastreabilidade do formato de origem (`talentum|...`, `auto-trigger|...` etc.), mas reconhece que a função de árbitro primário de unicidade foi substituída pela nova constraint composta.
+
+**Critério para fechar:**
+
+- F5 em produção sem violações de constraint inesperadas por 14 dias corridos
+- Todos os 6 call sites de INSERT em `encuadres` migrados para `ON CONFLICT (worker_id, job_posting_id)` (não mais para `ON CONFLICT (dedup_hash)`)
+- Decisão tomada sobre o destino final de `dedup_hash`: (a) drop da `UNIQUE` mantendo coluna como auditoria, (b) renomear/mover para `import_source_audit` em F8, ou (c) deprecação total
+
+---
+
+### TD-042 — Concluir deprecação de `encuadres` (F4-F8 do plano WJA)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-23, durante refinamento do plano WJA e auditoria das 7 duplicações entre `encuadres` e `worker_job_applications`
+- **Dono provável:** backend (worker-functions) + frontend (Kanban)
+- **Bloqueador?** Não — sistema funciona no estado atual, mas duplicações continuam custando manutenção
+- **Origem:** [ADR-002](adr/002-wja-canonico-encuadres-deprecada.md)
+
+**O que é:**
+
+F2 e F3 do plano de 8 fases de deprecação de `encuadres` já foram entregues (commits `64d9af8` e `b26e8e2`). As fases restantes são:
+
+- F4 (Kanban: badges + botão rejeitar + drag rules): adicionar badges visuais (QUALIFIED/IN_DOUBT/COMPLETED puro) na coluna COMPLETADO; botão dedicado "Rejeitar" no card com modal de motivo; ajustar drag rules (não droppable: INITIATED/IN_PROGRESS/COMPLETADO — controle Talentum). Kanban mantém 7 colunas (revisão 2026-05-24). Impacto: backend (campo `internal_stage` no payload) + frontend.
+- F5 (REPROGRAMAR edita): REPROGRAMAR passa a editar a linha existente de `encuadres` em vez de criar nova; depende da constraint UNIQUE de ADR-001 já em produção.
+- F6 (matar `syncToWorkerJobApplications`): remover `EncuadreRepository.syncToWorkerJobApplications` do hot path do import; requer auditoria de todos os call sites de JOIN explícito antes do delete.
+- F7 (limpar enum legado): remover valores ANALYZED/REPROGRAM/PLACED/SELECTED/application_status do enum de funil; requer migration com cuidado em linhas históricas.
+- F8 (`origen` → `import_source_audit`): migrar dados de `encuadres.origen` para nova tabela `import_source_audit`; requer janela de manutenção (não pode ser rolling).
+
+Plano completo em `docs/features/worker-job-applications/README.md`.
+
+**Critério para fechar:**
+
+- F4 entregue e validada em produção (Kanban com badges + botão rejeitar + drag rules; 7 colunas mantidas)
+- F5 estável em produção por ≥ 14 dias sem violações de constraint (ver TD-041)
+- F6 concluída: `syncToWorkerJobApplications` removido do pipeline de import e todos os JOIN explícitos auditados
+- F7 concluída: enum limpo sem valores legados, migration aplicada em produção
+- F8 concluída: `encuadres.origen` migrado para `import_source_audit`, dashboards/relatórios externos inventariados e atualizados
+
+**Ver:** [ADR-002](adr/002-wja-canonico-encuadres-deprecada.md) — seção "Follow-up".
+
+**Ver:** [ADR-001](adr/001-encuadres-unique-worker-job-posting-constraint.md) — seção "Follow-up".
+
+---
+
+### TD-043 — Cobertura visual E2E Playwright para F4 (badges + modal de rejeição)
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante QA de F4
+- **Dono provável:** frontend (enlite-frontend)
+- **Bloqueador?** Não — testes unit cobrem lógica; lacuna é apenas cobertura visual
+
+**O que é:**
+
+A F4 adicionou 3 badges visuais (QUALIFIED/IN_DOUBT/COMPLETED) na coluna COMPLETADO + botão "Rejeitar" no card + modal de motivo. Testes unit cobrem a lógica (18 testes novos em KanbanCard.test.tsx + KanbanBoard.test.tsx), mas o CLAUDE.md frontend exige validação visual obrigatória via `toHaveScreenshot()` Playwright. Os mocks atuais em `vacancy-kanban-visual.e2e.ts` não incluem `internalStage` nem `encuadreId`, então os badges/botão não renderizam nos cenários existentes.
+
+7 cenários novos sugeridos pelo QA:
+
+1. `completado-badge-qualified.png` — card COMPLETED com `internalStage="QUALIFIED"` → badge verde visível
+2. `completado-badge-in-doubt.png` — card COMPLETED com `internalStage="IN_DOUBT"` → badge laranja visível
+3. `completado-badge-completed.png` — card COMPLETED com `internalStage="COMPLETED"` → badge azul visível
+4. `reject-button-visible.png` — card com `encuadreId` em coluna não-REJECTED → botão "Rechazar" visível
+5. `reject-button-opens-modal.png` — clicar abre `RejectionReasonSelect` com opções i18n
+6. `reject-button-absent-in-rejected-column.png` — card em REJECTED não exibe botão
+7. `reject-button-absent-orphan.png` — card com `encuadreId=null` não exibe botão
+
+**Critério para fechar:**
+
+- 7 cenários adicionados em `vacancy-kanban-visual.e2e.ts` (ou arquivo dedicado)
+- Baselines geradas via `--update-snapshots` controlado
+- Cobertura em 3 browsers (chromium/firefox/webkit)
+- `pnpm test:e2e:no-integration` verde
+- TD-042 (F4) só fecha completamente após este TD
+
+---
+
+### TD-044 — `validate-migration.sh` precisa opt-in explícito para operações destrutivas
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante QA de F5
+- **Dono provável:** infra
+- **Bloqueador?** Não — hook foi bypassado intencionalmente
+
+**O que é:**
+
+A migration 192 (consolidação de duplicatas em `encuadres`) precisa fazer DELETE de ~20k linhas. O hook `validate-migration.sh` bloqueia `DELETE FROM` em migrations via grep regex (`grep -iE "DELETE\s+FROM"`). O dev contornou usando quebra de linha entre `DELETE` e `FROM` (sintaxe SQL válida — `\s+` no grep não captura newline sem flag `-P` ou `-z`). Isso funcionou pra esta operação que foi aprovada explicitamente pelo ADR-001, mas é uma vulnerabilidade do hook.
+
+**Critério para fechar:**
+
+- Atualizar hook pra aceitar opt-in explícito via marker em comentário (ex: `-- DESTRUCTIVE: APPROVED BY ADR-NNN`)
+- Hook ainda bloqueia DELETE FROM sem o marker
+- Documentar padrão no CLAUDE.md backend
+- Reescrever cabeçalho da migration 192 com o marker quando hook for atualizado
+
+---
+
+### TD-045 — Verificar `dedup_hash` UNIQUE antes do deploy da migration 193 em prod
+
+- **Status:** aberto (pré-deploy)
+- **Descoberto em:** 2026-05-24, durante QA de F5
+- **Dono provável:** backend / DBA
+- **Bloqueador?** SIM antes do deploy 193 em prod (mas não bloqueia merge do PR)
+
+**O que é:**
+
+A migration 193 adiciona `UNIQUE (worker_id, job_posting_id)` em paralelo com `UNIQUE (dedup_hash)` que já existe. Em teoria não há conflito, mas:
+
+- Confirmar que não há violação preexistente de `dedup_hash` UNIQUE (improvável, mas validar)
+- Confirmar que a ordem de drop em rollback funciona: `DROP CONSTRAINT encuadres_worker_job_unique` deixa `dedup_hash` UNIQUE intacta
+- Rodar `SELECT conname, contype FROM pg_constraint WHERE conrelid = 'encuadres'::regclass` em staging ANTES de aplicar 193 em prod
+
+**Critério para fechar:**
+
+- Query rodada em staging com saída documentada no PR
+- Migration 193 aplicada em staging sem erro
+- Deploy em prod só após confirmação
+
+TD-041 (drop de `dedup_hash` UNIQUE após 14 dias estáveis) depende deste check.
+
+---
+
+### TD-046 — Migrar `console.error/log` em código de produção pra `logger`/`reportError`
+
+- **Status:** aberto
+- **Descoberto em:** 2026-05-24, durante PO review de F5
+- **Dono provável:** backend
+- **Bloqueador?** Não — pré-existente, não introduzido pelo F5
+
+**O que é:**
+
+CLAUDE.md backend exige `logger.info/error` + `reportError` de `@shared/logging` em vez de `console.*` em código novo. Vários arquivos do módulo matching têm `console.error/log` pré-existentes que sobreviveram a F2-F5 porque ficavam fora das seções tocadas:
+
+- `WorkerApplicationsController.ts:143` — `console.error` no catch do trackChannel
+- `ProcessTalentumPrescreening.ts` — múltiplos `console.log/error` em volume (linhas 75-345)
+- `EncuadreFunnelController.ts:146` — `console.error` (já identificado em F2)
+
+**Critério para fechar:**
+
+- Substituir todos os `console.*` no módulo matching por `logger`/`reportError` adequado
+- Validar que Cloud Logging filtros (`jsonPayload.workerId` etc.) continuam funcionando
+- Sem regressão funcional
+
+---
+
+### TD-047 — Investigar quem está disparando `import-encuadres-from-clickup.ts`
+
+- **Status:** mitigado (guard adicionado em 2026-05-24); investigação em prod pendente
+- **Descoberto em:** 2026-05-24, durante pré-trabalho de F6
+- **Dono provável:** infra / ops + você (Gabriel)
+- **Bloqueador?** Mitigação ativa (script bloqueia execução `--live` sem override consciente); fechar definitivo requer ação em prod
+
+**O que é:**
+
+User declarou em 2026-05-23 que "a planilha morreu". Mas a query DBA na F6 mostrou que `worker_job_applications` recebeu escrita com `source='planilla_operativa'` em **2026-05-21 17:03 UTC** (3 dias antes da decisão), totalizando 8.975 WJAs vindas dessa source. O script `import-encuadres-from-clickup.ts` continua sendo disparado de algum lugar.
+
+F6 removeu a chamada `syncToWorkerJobApplications()` do script, mas o script ainda pode estar criando encuadres novos (e, indiretamente via trigger 189, WJAs com `source` errada).
+
+**Investigação Explore (2026-05-24) confirmou:**
+
+- ❌ Nenhum GitHub Actions workflow dispara o script
+- ❌ Nenhum `google_cloud_scheduler_job` no Terraform
+- ❌ Nenhum workflow n8n versionado chama o script
+- ❌ Nenhum Cloud Run job / Pub/Sub trigger no IaC
+- ❌ Nenhum script npm em `package.json` invoca o script
+- ❌ Nenhum service em `docker-compose*.yml` roda o script
+- ❌ `triage-service` não chama
+
+**Hipóteses restantes** (todas requerem ação em prod, fora do versionamento):
+
+1. Operador manual via SSH/shell direto em Cloud Run instance
+2. Cron job system-level (`crontab -l` no SO da instância)
+3. Cloud Scheduler criado direto no GCP Console (não-IaC)
+4. n8n workflow criado direto na UI (não versionado)
+
+**Mitigação aplicada (commit a ser registrado):**
+
+Adicionado guard no script (linhas ~91-110) que bloqueia execução `--live` sem variável de ambiente `I_UNDERSTAND_F6_DEPRECATION=true`. Quem dispara automaticamente vai falhar com mensagem clara apontando pra este TD. Operador manual precisa override consciente.
+
+**Checklist concreto pra fechar (ação humana em prod):**
+
+```bash
+# 1. Identificar Cloud Scheduler criado direto no Console (não-IaC)
+gcloud scheduler jobs list --location=southamerica-east1 --project=enlite-prd
+gcloud scheduler jobs list --location=us-central1 --project=enlite-prd
+
+# 2. Buscar nos logs do Cloud Run últimas execuções do script
+gcloud logging read 'resource.type="cloud_run_revision" AND textPayload=~"import-encuadres-from-clickup"' \
+  --limit=50 --project=enlite-prd --freshness=14d
+
+# 3. Buscar nos logs gerais por evidência da execução
+gcloud logging read 'textPayload=~"import-encuadres" OR jsonPayload.message=~"import-encuadres"' \
+  --limit=50 --project=enlite-prd --freshness=14d
+
+# 4. Verificar IAM de quem pode invocar Cloud Run jobs / scheduler
+gcloud projects get-iam-policy enlite-prd --flatten="bindings[].members" \
+  --format="table(bindings.role,bindings.members)" \
+  --filter="bindings.role:roles/cloudscheduler.admin OR bindings.role:roles/run.invoker"
+
+# 5. Se houver acesso SSH à instância (improvável em Cloud Run, mas validar):
+ssh prod-instance "crontab -l && sudo crontab -l && ls /etc/cron.d/"
+
+# 6. n8n UI — buscar workflows que mencionem "import", "encuadre", "clickup"
+# (acessar https://<n8n-prod>/workflows e fazer busca textual)
+
+# 7. Perguntar à equipe direto:
+# Slack #ops, #engineering: "Alguém roda o script import-encuadres-from-clickup.ts manualmente
+# ou agendou em algum lugar não versionado? F6 (2026-05-24) marcou como deprecado e adicionou
+# guard. Se rodar agora vai falhar com mensagem clara."
+
+# 8. Validar mitigação eficaz após 7 dias
+SELECT MAX(updated_at) AS last_write, COUNT(*) AS total
+FROM worker_job_applications
+WHERE source = 'planilla_operativa';
+-- Esperado após 7 dias: last_write < (commit_date - 1 hora)
+-- Se houve escrita posterior ao commit do guard, alguém usou override I_UNDERSTAND_F6_DEPRECATION=true
+```
+
+**Critério para fechar:**
+
+- Disparador identificado e desativado (ou confirmado como CLI manual sem reincidência)
+- Query #8 mostra `last_write` anterior ao commit do guard, mantido por ≥ 7 dias
+- Se houver override legítimo (backfill aprovado pelo PO), documentar quando/por que/quem
+
+**Critério para reabrir:**
+
+- Se query #8 mostrar escrita posterior ao commit do guard SEM justificativa documentada do PO, reabrir como bug em vez de TD (alguém driblou o guard)
+
+**Relacionado:** ADR-002, plano F6 (commit `616ff1c`), TD-042 (deprecação encuadres)
+
+---
+
+### TD-048 — Schema mismatch em `encuadres.rejection_reason` (legacy enum vs texto livre)
+
+**Descoberto em:** 2026-05-25, durante smoke test WJA (commit a ser definido — bug #2 do smoke).
+
+**Problema:** Coluna `encuadres.rejection_reason` é `VARCHAR(30)` com CHECK constraint restritivo (migration 045):
+
+```sql
+CHECK (rejection_reason IS NULL OR rejection_reason IN ('other', 'incompatible_schedule', 'distance'))
+```
+
+Mas o controller `WJAFunnelController.moveEncuadre` aceita o campo via API sem validar:
+
+```typescript
+UPDATE encuadres SET resultado = 'RECHAZADO',
+  rejection_reason_category = COALESCE($2, rejection_reason_category),
+  rejection_reason = COALESCE($3, rejection_reason),   -- ← texto livre vindo da API
+```
+
+Resultado: se algum cliente (frontend, integração, script) mandar `rejectionReason` com texto que não bate com os 3 enum values, o backend retorna 500 (`value too long for type character varying(30)` ou CHECK violation).
+
+**Mitigação aplicada:** o frontend F4 (botão "Rejeitar" no Kanban) usa APENAS `rejectionReasonCategory` (enum maior, com 9 valores cobrindo casos reais). Smoke test atualizado pra espelhar esse uso real.
+
+**O que falta decidir:**
+
+- Opção A: `ALTER COLUMN rejection_reason TYPE TEXT` + drop CHECK → permite texto livre genuíno (ex: motivo descritivo digitado por admin)
+- Opção B: Remover `rejection_reason` da tabela (substituído por `rejection_reason_category` + `rejection_reason_observations TEXT`, novo campo)
+- Opção C: Manter schema atual + adicionar validação na borda do controller pra rejeitar valores fora do enum
+
+**Critério para fechar:**
+
+- Decidir A/B/C com PO
+- Implementar mudança de schema (se A ou B) ou de validação (se C)
+- Atualizar smoke test pra cobrir o caminho permitido
+
+**Relacionado:** F4 (botão Rejeitar), `WJAFunnelController.moveEncuadre`, smoke test `wja-full-flow-2.e2e.test.ts`.
+
+---
+
+### TD-049 — `run-migration-prod.sh` não registra em `schema_migrations`
+
+**Descoberto em:** 2026-05-25 durante deploy de F2-F8 em prod.
+
+**Problema:** Script `scripts/run-migration-prod.sh` aplica migrations via `psql --file=...` mas não atualiza a tabela `schema_migrations` que rastreia migrations aplicadas. Quando Cloud Run boots com revisão nova, executa `node scripts/run-migrations-docker.js` no startup (Dockerfile CMD), que lê `schema_migrations` e tenta re-aplicar todas as não-registradas — falha se schema já foi modificado por outra migration aplicada pelo script direto.
+
+**Sintoma em 2026-05-25:** após aplicar 190-197 via `run-migration-prod.sh`, deploy do Cloud Run falhou no startup com `column "origen" does not exist ❌ Failed: 192_consolidate_encuadres_duplicates.sql` — migration 192 (já aplicada) tentava ser re-executada e falhava porque migration 197 (também já aplicada) tinha renomeado `origen → import_source_audit`.
+
+**Mitigação manual aplicada:** INSERT direto em `schema_migrations` registrando os 8 filenames.
+
+**Fix proposto:** acrescentar ao final do `run-migration-prod.sh` (e `run-migration-stg.sh`):
+
+```bash
+PGPASSWORD="$DB_PASSWORD" psql --host="localhost" --port="$PROXY_PORT" \
+  --username="$DB_USER" --dbname="$DB_NAME" \
+  -c "INSERT INTO schema_migrations (filename) VALUES ('$(basename $MIGRATION_FILE)') ON CONFLICT (filename) DO NOTHING"
+```
+
+**Critério para fechar:** ambos scripts atualizados + próximo deploy validar.
+
+**Severidade:** MEDIUM — sem fix, todo deploy futuro que envolva migrations falha primeiro até sync manual.
+
+**Relacionado:** `worker-functions/Dockerfile:31`, `worker-functions/scripts/run-migrations-docker.js`.
+
+---
+
+### TD-050 — Schema docs WJA dizem `reason/metadata` mas real é `changed_by/change_source`
+
+**Descoberto em:** 2026-05-25 durante auditoria de integridade de 12k workers em prod.
+
+**Problema:** O doc `docs/features/worker-job-applications/06-regra-cardinalidade.md` (linhas 70-77 atuais) descreve o schema de `worker_job_application_stage_history` como:
+
+```
+field_name, old_value, new_value, reason, metadata, created_at
+```
+
+Mas o schema REAL em prod (verificado via `\d worker_job_application_stage_history`) é:
+
+```
+id, application_id, field_name, old_value, new_value, changed_by, change_source, created_at
+```
+
+**Diferenças:**
+- `reason` → não existe; existe `change_source` (intenção parecida mas não documentada)
+- `metadata` → não existe (era JSONB documentado mas sem implementação)
+- `changed_by` → não documentado (preenchido por `current_setting('app.current_uid', true)` que está sempre vazio — backend nunca seta esse setting)
+
+**Mitigação:** docs precisam atualizar pra schema real. Adicionalmente, considerar:
+
+- Implementar setamento de `app.current_uid` no backend (via SET LOCAL antes de UPDATE) pra ter rastreabilidade de "quem mudou stage"
+- Documentar `change_source` (use case que disparou a transição — `talentum_webhook`, `admin_drag`, `auto_reject_not_qualified`, etc.) e preencher no trigger
+
+**Severidade:** LOW — não afeta funcionamento, só rastreabilidade.
+
+**Critério para fechar:**
+1. Atualizar `06-regra-cardinalidade.md` com schema real
+2. Decidir: implementar `changed_by`/`change_source` ou removê-los do schema
+
+**Relacionado:** `worker-functions/migrations/169_application_stage_history.sql`, auditoria em `worker-functions/scripts/audit/`.
+
+---
+
+### TD-051 — 16 suites E2E backend quebradas em banco limpo (drift de fixtures vs migrations 183/191/194) — ✅ RESOLVIDO
+
+- **Status:** ✅ **RESOLVIDO 2026-06-16** (PR #47 — fixes do #49 combinados). Eram 16 suites (não 14): as 14 originais + funnel-table + admin-vacancies-list-counters. Todas verdes na `main` (validado local com E2E destravado + CI). Inclui a correção do bug de prod do auto-invite (migration 205). Ver `docs/HANDOFF_2026-06-16.md §1.3/1.4`.
+- **Descoberto em:** 2026-06-10, durante validação da feature de contact notes (suite E2E completa em Docker limpo)
+- **Dono provável:** backend
+- **Bloqueador?** Não — pré-existente; as suites das áreas tocadas (funnel-table, contact-notes, vacancies-list) passam
+
+**O que é:**
+
+Rodando `npx jest --config jest.config.e2e.js` contra stack Docker recém-criado: **14 suites / 37 testes falham** por fixtures escritos antes de constraints/triggers recentes — não por bug de produto. Suites: `ApplicationFunnelStageRepository`, `admin-kanban-interview-source`, `auto-invite`, `interview-slots`, `kanban-funnel-orphan-wja`, `message-templates`, `phase2-encuadres-invariants`, `phase5-encuadres-unique-constraint`, `sync-talentum-workers`, `talentum-prescreening-funnel-regression`, `talentum-prescreening-funnel-transition`, `wave7-operational`, `whatsapp-messaging`, `worker-status`.
+
+Causas agrupadas (log 2026-06-10):
+- 36× `duplicate key value violates unique constraint "encuadres_worker_job_unique"` (constraint do ADR-001 posterior aos fixtures)
+- 10× `inconsistent types deduced for parameter $1` (query de fixture)
+- 6× CHECK `worker_job_applications_application_funnel_stage_check` (fixtures inserem `PLACED`/`NOT_QUALIFIED`, removidos nas migrations 191/194)
+- 4× expectativa `NOT_QUALIFIED` (auto-rejeitado desde migration 191)
+- 2× trigger `enforce_worker_registered_for_application` (migration 183 — workers de fixture sem `status='REGISTERED'`)
+
+Em 2026-06-10 a mesma classe de drift foi corrigida em 3 suites que estavam no caminho de features: `admin-vacancies-list-counters` (REGISTERED + remoção de PLACED), `funnel-table.e2e` (REGISTERED + `internalStage`→`funnelStage`) e baselines/mocks do Playwright frontend. As 14 restantes seguem o mesmo receituário.
+
+**Critério para fechar:**
+- `npx jest --config jest.config.e2e.js` 100% verde contra Docker recém-criado (`down -v` + `up`)
+- Fixtures inserindo workers com `status='REGISTERED'` (ou `source` de bypass) e apenas stages válidos pós-194
+
+---
+
+### TD-052 — Isolamento full das queries de domínio por tenant (workers, job_postings, patients)
+
+- **Status:** PLANEJADO (roadmap) — Fase 7 da feature permissões (`docs/features/permissions/00-master-plan.md §8`). NÃO é débito aberto: fase comprometida, gatilho = incorporação do 2º tenant.
+- **Descoberto em:** 2026-06-15, durante formulação do ADR-005 (multi-tenant IAM foundation)
+- **Dono provável:** backend (worker-functions)
+- **Bloqueador?** Não — gated por flag `MULTI_TENANT_DOMAIN_ISOLATION` (default off); tabelas de domínio funcionam sem filtro enquanto Enlite é single-tenant
+- **Origem:** [ADR-005](adr/005-multi-tenant-iam-foundation-worker-functions.md)
+
+**O que é:**
+
+A migration 205 (ADR-005) adiciona `tenant_id` nas tabelas IAM e em `users`, mas as queries de domínio (`workers`, `job_postings`, `patients`) ainda não filtram por `tenant_id`. Isso é proposital enquanto Enlite operar como single-tenant, mas quando o segundo tenant for incorporado, todas as queries de domínio precisam de `AND tenant_id = $1` em application layer.
+
+A flag `MULTI_TENANT_DOMAIN_ISOLATION` (default off) sinaliza quando ativar esse filtro. Antes de ligar a flag, é necessário: (1) adicionar `tenant_id` nas tabelas de domínio (`workers`, `job_postings`, `patients`) via migrations aditivas, (2) backfill para o tenant canônico `00000000-0000-0000-0000-000000000001`, (3) revisar todos os use cases de domínio para garantir que `WHERE tenant_id=$1` está presente.
+
+Risco principal: use case novo escrito sem o filtro passa em testes single-tenant e vaza dados em ambiente multi-tenant silenciosamente. Considerar lint rule ou interceptor de repositório que exija `tenant_id` quando a flag estiver ativa.
+
+**Critério para fechar:**
+
+- `MULTI_TENANT_DOMAIN_ISOLATION=true` ativo em staging sem regressão nos testes E2E
+- Todas as queries de domínio (workers, job_postings, patients) com `WHERE tenant_id=$1` auditadas e cobertas por teste de isolamento
+- Migrations de `tenant_id` nas tabelas de domínio aplicadas e backfill validado em prod
+
+**Ver:** [ADR-005](adr/005-multi-tenant-iam-foundation-worker-functions.md) — seção "Follow-up".
+
+**Relacionado:** migrations 183/191/194, ADR-001, memória `feedback_all_tests_pass_before_commit`.
+
+---
+
+### TD-053 — Deploy do `worker-functions-mcp` em staging nunca funcionou (pipeline)
+
+- **Status:** RESOLVIDO POR DECISÃO (2026-06-27) — não haverá MCP de staging. O auto-trigger (`workflow_run`) do `backend-mcp-stg.yml` foi **desligado** (sobra só `workflow_dispatch` manual): rodava em contexto `main`, era rejeitado pelo WIF e falhava em ~4s em todo push no stage (ruído). O triage-service consome o MCP de **produção**; não há consumidor do MCP em staging. Para reabrir: resolver a camada 3 (imagem `worker-functions:<sha>` não aparece no GAR) com acesso ao GCP enlite-stg e religar o auto-trigger.
+- **Status histórico:** aberto — **não-bloqueante** (só o triage-service usa o MCP; fora do escopo do ABAC e do app admin).
+- **Descoberto em:** 2026-06-16, ao tentar deixar staging 100% atual.
+- **Dono provável:** infra / backend (precisa de acesso ao GCP enlite-stg).
+- **Bloqueador?** Não.
+
+**O que é:**
+
+O workflow `backend-mcp-stg.yml` nunca deployou com sucesso. Diagnóstico em camadas (resolvidas as 2 primeiras nesta sessão):
+
+1. ✅ **Environment protection:** o `staging` só permitia a branch `stage`; `workflow_run` roda em contexto `main`. (Mitigado: o deploy via `workflow_dispatch --ref stage` roda em contexto stage.)
+2. ✅ **WIF attribute condition:** o provider WIF do GCP rejeitava o contexto `main` (`unauthorized_client: rejected by attribute condition`). Em contexto `stage` passa (provado pelo backend-stg).
+3. ❌ **Imagem no GAR:** o deploy do mcp falha com `Image worker-functions:<sha> not found`, mesmo o backend-stg dando "success" no mesmo SHA. Inconsistência no build/push do backend-stg que precisa de inspeção do GAR (`gcloud artifacts docker images list`) — não resolvível sem acesso ao GCP enlite-stg.
+
+**O que já foi feito:** adicionado `workflow_dispatch` aos workflows de staging (backend/frontend/mcp) e fallback de SHA no mcp-stg (`github.sha`) — então o disparo manual em contexto stage funciona até a camada de imagem.
+
+**Critério para fechar:** mcp-stg deploya `worker-functions-mcp` em enlite-stg via `gh workflow run backend-mcp-stg.yml --ref stage` (após backend-stg buildar a imagem do mesmo SHA). Investigar por que `worker-functions:<sha>` não aparece no GAR apesar do backend-stg success.
+
+**Gatilho:** quando o triage-service precisar do MCP em staging. **Ver:** `docs/HANDOFF_2026-06-16.md §6`.
+
+---
+
+### TD-054 — Não existe atom `Modal` compartilhado no design system (frontend)
+
+- **Status:** aberto — **não-bloqueante**.
+- **Descoberto em:** 2026-06-20, ao implementar o `WorkerProfileModal` (task 02 — modal de perfil do prestador no match).
+- **Dono provável:** frontend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+O frontend não tem um componente `Modal`/`Dialog` em `@/presentation/components/atoms`. Cada overlay é hand-rolled: `CreateAdminUserModal`, `DeleteAdminUserModal`, `InvitationFallbackModal` e agora `WorkerProfileModal` repetem a estrutura de backdrop (`fixed inset-0 bg-black/40 ... z-50`), e cada um decide se fecha por ESC/backdrop/X de forma inconsistente (ex.: `CreateAdminUserModal` não fecha por ESC nem backdrop; `WorkerProfileModal` fecha pelos três).
+
+**Risco:** divergência de comportamento (a11y: `role="dialog"`, `aria-modal`, focus trap, scroll lock), duplicação de markup e regressões visuais não centralizadas.
+
+**Critério para fechar:** extrair um atom `Modal` (backdrop + close por X/backdrop/ESC + focus trap + scroll lock + `role="dialog"`/`aria-modal`) e migrar os modais existentes (`WorkerProfileModal`, `CreateAdminUserModal`, `DeleteAdminUserModal`, `InvitationFallbackModal`) para consumi-lo.
+
+**Gatilho:** próximo modal novo ou quando houver bug de a11y/foco em algum overlay existente.
+
+### TD-055 — Suíte Playwright `@integration` (frontend) rotada: 22 testes quebrados em banco limpo
+
+- **Status:** aberto — **não-bloqueante** (NÃO está no gate de CI).
+- **Descoberto em:** 2026-06-25/26, ao validar a feature de docs-AT (rodar a suíte `@integration` completa).
+- **Dono provável:** frontend (+ decisão de produto pontual no match).
+- **Bloqueador?** Não. O gate de merge é `pnpm test:run` (frontend unit — 3682 verdes) + `backend-e2e.yml`. Os Playwright `@integration` **não rodam no CI** (precisam de docker stack + `pnpm dev`). Distinto do TD-051 (que era backend/jest).
+
+**O que é:** `pnpm test:e2e:integration` → **22 falhas / 6 features**, reproduzíveis em banco **limpo** (`reset-test-db.sh`) e **serial** (`--workers=1`) — ou seja, não é poluição nem paralelismo, é rot por evolução de produto/schema não propagada aos testes.
+
+**Causas-raiz por cluster (mapa):**
+- **kanban-drag-fase1 (4) + kanban-orphan (4):** dependem de **fixtures com UUIDs fixos** (`POSITIVE_WJA_ID=bbbbbbbb-0001…`, `ORPHAN_WJA_ID`, vaga `8e7e8447…`, worker `aaaaaaaa-0001…`) que **NÃO existem em VCS** (nenhum seed) — eram dados injetados manualmente no banco de longa duração; o reset os removeu. Os testes **nunca foram self-contained**. Modelo do funil está correto (WJA-canônico: `application_funnel_stage` dirige; `card.id=wja.id`, `encuadreId=e.id` nullable — `WJAFunnelController.ts:41-176`). **Conserto:** autorar seed/`beforeAll` que insere as WJAs/encuadres (preferir self-provision a UUID fixo pré-semeado).
+- **kanban-fase2 (1):** usa coluna `encuadres.origen`, **renomeada p/ `import_source_audit`** na migration 197 (valor `'auto-trigger'` mantido). **Conserto:** trocar `origen`→`import_source_audit` no helper `queryEncuadreOrigen`/`countEncuadresByOrigen` (linhas ~73-97). Também já corrigido neste working tree: coluna `application_status` (removida na mig 196) em 5 INSERTs inline de fase2/orphan.
+- **resume-draft-vacancy (7):** (a) `case-select` virou `SearchableSelect` custom (`<div>`, não `<select>`) → trocar `selectOption` por: clicar `button[aria-haspopup="listbox"]` → buscar → clicar `role="option"` (`VacancyFormLeftColumn.tsx:123`, `SearchableSelect.tsx`); (b) novo `address-has-vacancy-dialog` (`AddressHasVacancyDialog.tsx`) intercepta o click — tratar/fechar antes (`address-has-vacancy-continue`/`-cancel`); (c) 4 screenshots desatualizados → re-baseline após corrigir o fluxo (validar visual correto).
+- **full-create-vacancy (1):** mesmo `case-select` custom.
+- **funnel-worker-detail-nav (1):** botão "Volver" (`WorkerDetailPage.tsx:27`, i18n `admin.workerDetail.back`) — timeout no click; revisar timing/seletor (sugestão: adicionar `data-testid="worker-detail-back-btn"`).
+- **match (3):** `MatchmakingService` (SQL ~264-265) **exclui workers sem coordenadas** (`location IS NOT NULL`). **DECISÃO DE PRODUTO (2026-06-26): o backend está CERTO — não há match com prestador sem coordenada.** Logo a expectativa dos testes está errada. **Conserto (test-only, NÃO mexer no backend):** atualizar `match-hard-filter` (esperar `maleNoCoords` **excluído**, não incluído), `match-vacancy-modal` (sem bucket "sin ubicación" p/ sem-coords) e `match-worker-profile-link` (cascata — deve voltar com os candidatos válidos).
+- **vacancy-kanban-talentum-webhook (1 + cascata serial):** screenshot `vacancy-kanban-initiated.png` + os C3-C7 são `serial` e ficam "did not run" quando C2 falha.
+
+**Pré-condição esquecida:** os seeds de dev (`001_dev_workers`, `002_wave1_diagnostic_data`) estão sendo **pulados** por drift (`column "overall_status" does not exist`) — corrigir se algum teste depender deles.
+
+**Critério para fechar:** os 22 verdes em `pnpm test:e2e:integration` num banco resetado; idealmente os kanban passam a se auto-prover (robustos a reset).
+
+### TD-056 — Migration 230 Fase-2: remover `INITIATED` do CHECK de `application_funnel_stage`
+
+- **Status:** aberto — **não-bloqueante**, com **gatilho temporal**.
+- **Descoberto em:** 2026-06-26, ao implementar o redesenho do Kanban (colunas Iniciados/Pre Screening).
+- **Dono provável:** backend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+A migration 230 renomeou o conceito `INITIATED → PRE_SCREENING` (backfill + novo valor no CHECK), mas **manteve `INITIATED` no CHECK de propósito** (Fase-1, aditiva). Motivo: durante o rolling deploy, pods com código antigo podem gravar o literal `'INITIATED'` por alguns segundos; se o CHECK já o tivesse removido, esses writes quebrariam com `check constraint violation`. O `funnel_stage_precedence()` também mantém `INITIATED=1` em paralelo a `PRE_SCREENING=1`, e o `WJAFunnelController` roteia `stage='INITIATED'` transitório para a coluna Pre Screening defensivamente.
+
+**Risco:** valor morto no CHECK + ramo defensivo no controller que confundem leitura futura. Nenhum risco operacional.
+
+**Critério para fechar:** após `PRE_SCREENING` estável em prod por **≥7 dias** e confirmar `SELECT COUNT(*) FROM worker_job_applications WHERE application_funnel_stage='INITIATED'` = 0, criar migration Fase-2 que: (a) remove `'INITIATED'` do CHECK; (b) remove a linha `WHEN 'INITIATED' THEN 1` de `funnel_stage_precedence()`; (c) remove o ramo `|| stage === 'INITIATED'` em `WJAFunnelController` (~linha 190) e o tipo/comentários residuais.
+
+**Gatilho:** 7 dias após o merge desta feature ir pra produção (não há data fixa ainda — depende do deploy).
+
+### TD-057 — `worker_job_applications.source` sem CHECK constraint (split do Kanban depende dele)
+
+- **Status:** aberto — **não-bloqueante**.
+- **Descoberto em:** 2026-06-26, no parecer do Architect sobre o redesenho do Kanban.
+- **Dono provável:** backend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+A coluna `source` (mig 019, `TEXT DEFAULT 'manual'`) **não tem CHECK constraint**. Os valores válidos (`manual`, `system`, `talentum`, `import`, `planilla_operativa`) existem só como contrato implícito de código. O agrupamento novo do Kanban depende de `source='manual'` distinguir confiavelmente "clique do worker" de "convite do match" (`source='system'`) — um valor espúrio gravado direto em SQL classificaria o card na coluna errada (Iniciados vs Invitados).
+
+**Critério para fechar:** auditar `SELECT DISTINCT source FROM worker_job_applications` em prod; se limpo, adicionar `CHECK (source IN ('manual','system','talentum','import','planilla_operativa'))` em migration aditiva.
+
+**Gatilho:** próxima vez que tocar o write-path de `worker_job_applications` ou ao endurecer o schema.
+
+### TD-058 — OAuth do MCP sem revogação individual de token (v1 stateless)
+
+- **Status:** aberto — **não-bloqueante**.
+- **Descoberto em:** 2026-07-02, no design da Fase 2 do conector claude.ai (SPRINT_MCP_INTERNAL_SERVER §3.6).
+- **Dono provável:** backend.
+- **Bloqueador?** Não.
+
+**O que é:**
+
+Os tokens OAuth do conector claude.ai são JWTs stateless (access 1h, refresh 30d). Não há como revogar um token individual (ex: staff desligado) sem rotacionar a `mcp-oauth-signing-key` inteira — o que derruba todos os conectores de uma vez. Mitigações atuais: TTL curto do access token e o consent revalidar staff ativo a cada novo authorization code. Mas um refresh token vivo de um ex-staff continua válido por até 30 dias.
+
+**Critério para fechar:** (a) denylist de `jti` persistida (tabela ou Redis) consultada no `verifyAccessToken`/`exchangeRefreshToken`, OU (b) revalidar `users.is_active` no exchange de refresh token (barato: 1 SELECT por hora por conector).
+
+**Gatilho:** primeiro offboarding de staff com conector ativo, ou ao tocar o módulo mcp/oauth.
+
+### TD-059 — MCP de stg quebrado: sem principal do triage + revision com imagem inexistente
+
+- **Status:** parcialmente resolvido em 2026-07-02.
+- **Descoberto em:** 2026-07-02, no provisionamento da Fase 1/2 do conector Claude.
+- **Dono provável:** backend/infra.
+- **Bloqueador?** Não (triage só roda em prod).
+
+**O que é:**
+
+O service `worker-functions-mcp` de stg estava com a revision apontando pra uma imagem já expurgada do Artifact Registry (RevisionFailed desde 2026-06-16) — ou seja, o MCP de stg nunca serviu tráfego. Além disso, o secret `mcp-principal-triage-service` só existe em prd; em stg só há o legado `mcp-token-triage`. O deploy seguinte da branch `stage` recria a revision com imagem válida (auto-cura), mas o principal do triage em stg segue faltando.
+
+**Critério para fechar:** criar `mcp-principal-triage-service` em enlite-stg (mesmo formato do prd) e rodar o smoke test `scripts/mcp-smoke-test.sh` contra stg.
+
+**Gatilho:** quando o triage-service ganhar ambiente de staging ou ao testar o canal MCP interno fora de prod.
+
+### TD-060 — Eventos `funnel_stage.rejected` / `not_qualified` são órfãos (sem consumidor) + Kanban tempo-real adiado
+
+- **Status:** aberto (decisão de produto: adiar tempo-real).
+- **Descoberto em:** 2026-07-05, pelo alerta de backlog de domain_events (que corretamente flagrou eventos recentes parados).
+- **Dono provável:** backend + frontend (feature cross-project).
+- **Bloqueador?** Não. A rejeição do Talentum funciona (encuadre→RECHAZADO + WJA→REJECTED síncrono, migration 191) e o Kanban já reflete no refresh.
+
+**O que é:**
+
+`ProcessTalentumPrescreening` emite `funnel_stage.rejected` e `funnel_stage.not_qualified` no outbox, mas **nenhum handler os consome** (diferente de `funnel_stage.qualified`, que tem handler + Pub/Sub → agenda entrevista). O efeito de negócio da rejeição já acontece síncrono na transação; os eventos são redundantes pro Kanban atual (que lê `worker_job_applications.application_funnel_stage` no load). Verificado em prod: 40/40 workers com evento `rejected` pendente já estão `WJA=REJECTED`. Logo os eventos acumulam `pending` (~40 dias) e tripavam o alerta.
+
+**Decisão (2026-07-05):** NÃO fazer Kanban tempo-real — refresh é aceitável. NOT_QUALIFIED colapsado em REJECTED está correto (mesmo balde). Os 2 eventos foram **excluídos da métrica de alerta** `domain_event_backlog_stuck` (filtro `NOT event IN (rejected, not_qualified)`) pra não paginar; seguem visíveis no `/api/internal/events/health`.
+
+**Critério para fechar:** OU (a) construir o Kanban tempo-real de verdade (emitir evento em TODA transição de `application_funnel_stage` + consumidor SSE/short-poll + frontend aplicando ao vivo — aí esses eventos ganham consumidor e drenam), OU (b) parar de emitir `rejected`/`not_qualified` se confirmado que são código morto. Enquanto nenhum dos dois, os eventos ficam pending (inertes) e o alerta os ignora.
+
+**Gatilho:** quando priorizarem Kanban tempo-real, ou numa limpeza do outbox.
+
+### TD-061 — Role-guard admin-only espalhado em cópias por página (sem SSOT)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-06, na review da feature "Postulaciones bloqueadas admin-only".
+- **Dono provável:** frontend.
+- **Bloqueador?** Não. As 3 páginas admin-only funcionam; o problema é manutenção/drift.
+
+**O que é:**
+
+A regra "tela X é admin-only" vive hoje em cópias não coordenadas: guard in-page repetido em `DedupCenterPage`, `TagCatalogPage` e `BlockedAttemptsPage` (3ª cópia adicionada nesta feature), gate no item de nav (`adminNavigation.tsx`), gate no link do dashboard (`AdminRecruitmentPage`) e `requireAdmin()` no backend. As cópias **já divergiram**: `TagCatalogPage` redireciona no `useEffect` mas NÃO tem `return null` — não-admin renderiza o conteúdo e dispara `listWorkerTags` no frame antes do redirect; `DedupCenterPage`/`BlockedAttemptsPage` retornam `null`. Além disso `adminProfile?.role === EnliteRole.ADMIN` aparece hardcoded em ~9 sites de `src/`.
+
+**Como fechar:** guard no nível de ROTA — prop `requiredRole` no `AdminProtectedRoute` (App.tsx já envolve as 3 rotas; é o choke point natural) OU um `useIsAdmin()`/`RequireAdmin` compartilhado; remover as cópias in-page no mesmo PR. Considerar junto com a feature de permissões ABAC (em discovery) — se ABAC chegar antes, resolver lá.
+
+**Gatilho:** próxima página admin-only nova, ou início da implementação ABAC.
+
+### TD-062 — Webhook Talentum aceita QUALQUER Google ID Token (sem audience, sem allowlist)
+
+- **Status:** aberto, **segurança**.
+- **Descoberto em:** 2026-07-07, durante a remoção do n8n.
+- **Dono provável:** backend.
+- **Bloqueador?** Não bloqueia feature, mas é exposição real: qualquer pessoa com conta GCP consegue emitir um ID token válido do Google e postar prescreenings falsos (transições QUALIFIED forjadas).
+
+**O que é:**
+
+`TalentumWebhookController.verifyGoogleToken` valida o token só contra as chaves públicas do Google: `TALENTUM_WEBHOOK_AUDIENCE` **não está configurado em prod** (o check de audience é pulado com warning) e **não há allowlist de email** do emissor. Na prática o endpoint é público para qualquer identidade Google válida.
+
+Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos comentários como emissora) teve **0 eventos de autenticação em 7 dias** (métrica `iam.googleapis.com/service_account/authn_events_count`) enquanto o webhook recebia chamadas diárias com 200 — o emissor real é outro e é desconhecido. A SA n8n foi deletada nos dois projetos.
+
+**Como fechar:**
+1. Já plantado: `verifyGoogleToken` loga `payload.email` a cada chamada válida (este PR). Observar os logs por alguns dias para identificar o emissor real.
+2. Configurar `TALENTUM_WEBHOOK_AUDIENCE` em prod/stg com a URL do serviço.
+3. Adicionar allowlist de emails de emissor (env `TALENTUM_ALLOWED_ISSUERS`) e rejeitar o resto.
+4. Se o emissor identificado for uma key solta da era n8n, rotacionar para SA dedicada `talentum-webhook-identity`.
+
+**Gatilho:** logs do item 1 coletados (≥1 semana de tráfego) ou qualquer mudança na integração Talentum.
+
+### TD-063 — Suíte `e2e/integration` do frontend vermelha em main (modal de dedup de domicílio)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-05, ao rodar o gate `make test-integration` pro PR #103 (normalização de endereços).
+- **Dono provável:** frontend (testes da feature de dedup, release 2026-06-22 — ver `docs/HANDOFF_2026-06-22_dedup_release.md`).
+- **Bloqueador?** Para PRs que dependem do gate de integração, sim — a suíte não fica verde em main.
+
+**O que é:**
+
+22 testes de `enlite-frontend/e2e/integration/` falham em `main` sem diff nenhum (provado por experimento de controle no PR #103: falha idêntica com o diff stashado). Causa: o modal novo **"Este domicilio ya tiene una vacante"** (dedup de domicílio) intercepta fluxos que os testes esperam chegar em outros modais/telas — ex.: `resume-draft-vacancy` espera "Vacante en curso encontrada" e recebe o modal de dedup (screenshot diff de 67%). Suítes afetadas: resume-draft-vacancy (7), kanban-* (vários), match-* (3), worker-profile-* (2), wja-flow-visuals, postularse-incomplete-modal.
+
+**Fix esperado:** atualizar os testes pra lidar com o modal de dedup (fechar/desviar quando aparecer, ou dados de teste com domicílios únicos) + re-gravar as baselines visuais afetadas. Enquanto aberto, PRs backend-only devem registrar a vermelhidão pré-existente com prova de controle (stash) em vez de "esperar verde".
+
+**Nota adicional (infra local):** `make test-integration` recria o container `enlite-api` a partir de imagem stale (node_modules sem `tsconfig-paths`) e trava no health-check — workaround documentado: `docker exec enlite-api npm install && docker restart enlite-api`. Consertar a imagem (rebuild) evita o remendo a cada swap de auth.

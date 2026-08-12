@@ -632,6 +632,7 @@ describe('Import Pipeline E2E', () => {
     });
   });
 
+  // > **2026-05-23:** importador de planilha operativa descontinuado. Cenários abaixo são históricos.
   describe('Planilha Operativa XLSX', () => {
     it('detecta tipo correto via canHandle() e salva encuadres', async () => {
       // Assert:

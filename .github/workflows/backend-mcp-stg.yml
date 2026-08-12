@@ -1,10 +1,13 @@
 name: Backend MCP — Staging
 
+# Auto-trigger (workflow_run após "Backend — Staging") DESLIGADO em 2026-06-27.
+# Decisão: não há ambiente MCP de staging em uso (só o triage-service consome o MCP,
+# e usa o de produção). O auto-trigger rodava em contexto `main`, era rejeitado pelo
+# WIF, e falhava em ~4s em TODO push no stage — ruído puro. Ver TD-053. O deploy manual
+# via `gh workflow run backend-mcp-stg.yml --ref stage` continua disponível se um dia
+# precisarmos de MCP staging.
 on:
-  workflow_run:
-    workflows: ["Backend — Staging"]
-    types: [completed]
-    branches: [stage]
+  workflow_dispatch:
 
 concurrency:
   group: backend-mcp-stg
@@ -19,8 +22,10 @@ env:
 
 jobs:
   deploy:
-    # Só roda quando o backend-stg concluir com sucesso (garante que o image foi publicado)
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Roda no workflow_run (após backend-stg success) OU via workflow_dispatch manual.
+    # workflow_dispatch DEVE ser feito com --ref stage (contexto stage passa o WIF/environment;
+    # workflow_run roda em contexto main e é rejeitado pelo attribute condition do WIF).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: staging
 
@@ -31,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - id: auth
         name: Authenticate to Google Cloud
@@ -50,7 +55,7 @@ jobs:
           region: ${{ env.REGION }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           # Reusa exatamente o mesmo image buildado pelo backend-stg.yml no mesmo SHA
-          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha }}"
+          image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha || github.sha }}"
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true
@@ -58,14 +63,22 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
-            MCP_PRINCIPAL_NAMES=triage-service
+            MCP_PRINCIPAL_NAMES=triage-service,claude-code
+            MCP_DB_RO_USER=enlite_mcp_ro
+            MCP_OAUTH_ENABLED=true
+            MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
+            CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
+            FIREBASE_WEB_API_KEY=AIzaSyCdOWe7NsS9vbQHx3PhWcVKUdr72k5UWVA
+            FIREBASE_WEB_AUTH_DOMAIN=enlite-stg.firebaseapp.com
             ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
+            MCP_OAUTH_SIGNING_KEY=mcp-oauth-signing-key:latest
+            MCP_DB_RO_PASSWORD=enlite-mcp-ro-db-password:latest
           flags: >-
-            --ingress=internal
-            --no-allow-unauthenticated
+            --ingress=all
+            --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
             --add-cloudsql-instances=${{ secrets.GCP_PROJECT_ID }}:${{ env.REGION }}:enlite-ar-db
             --memory=512Mi

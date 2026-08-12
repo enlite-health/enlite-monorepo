@@ -201,21 +201,41 @@ describe('ProcessTalentumPrescreening', () => {
     await useCase.execute(payload);
 
     // Verifica UPDATE encuadres com RECHAZADO + TALENTUM_NOT_QUALIFIED + WHERE resultado IS NULL
-    const updateCall = mockPoolClient.query.mock.calls.find(
+    const updateEncuadreCall = mockPoolClient.query.mock.calls.find(
       (call: any[]) => typeof call[0] === 'string' && call[0].includes('UPDATE encuadres'),
     );
-    expect(updateCall).toBeDefined();
-    expect(updateCall[0]).toContain('RECHAZADO');
-    expect(updateCall[0]).toContain('TALENTUM_NOT_QUALIFIED');
-    expect(updateCall[0]).toContain('resultado IS NULL');
-    expect(updateCall[1]).toEqual(['w-1', 'jp-1']);
+    expect(updateEncuadreCall).toBeDefined();
+    expect(updateEncuadreCall[0]).toContain('RECHAZADO');
+    expect(updateEncuadreCall[0]).toContain('TALENTUM_NOT_QUALIFIED');
+    expect(updateEncuadreCall[0]).toContain('resultado IS NULL');
+    expect(updateEncuadreCall[1]).toEqual(['w-1', 'jp-1']);
 
-    // Verifica INSERT em domain_events com funnel_stage.not_qualified
-    const domainEventCall = mockPoolClient.query.mock.calls.find(
-      (call: any[]) => typeof call[0] === 'string' && call[0].includes('domain_events'),
+    // Verifica INSERT em domain_events com funnel_stage.not_qualified (auditoria da classificação)
+    const notQualifiedEventCall = mockPoolClient.query.mock.calls.find(
+      (call: any[]) => typeof call[0] === 'string' && call[0].includes('funnel_stage.not_qualified'),
     );
-    expect(domainEventCall).toBeDefined();
-    expect(domainEventCall[0]).toContain('funnel_stage.not_qualified');
+    expect(notQualifiedEventCall).toBeDefined();
+
+    // Verifica UPDATE em worker_job_applications SET application_funnel_stage='REJECTED' (auto-reject)
+    const updateWjaCall = mockPoolClient.query.mock.calls.find(
+      (call: any[]) =>
+        typeof call[0] === 'string' &&
+        call[0].includes('UPDATE worker_job_applications') &&
+        call[0].includes("'REJECTED'"),
+    );
+    expect(updateWjaCall).toBeDefined();
+    expect(updateWjaCall[0]).toContain('application_funnel_stage');
+    expect(updateWjaCall[1]).toEqual(['w-1', 'jp-1']);
+
+    // Verifica INSERT em domain_events com funnel_stage.rejected (rastreabilidade do auto-reject)
+    const rejectedEventCall = mockPoolClient.query.mock.calls.find(
+      (call: any[]) => typeof call[0] === 'string' && call[0].includes('funnel_stage.rejected'),
+    );
+    expect(rejectedEventCall).toBeDefined();
+    const rejectedPayload = JSON.parse(rejectedEventCall[1][0]);
+    expect(rejectedPayload.source).toBe('auto_not_qualified');
+    expect(rejectedPayload.workerId).toBe('w-1');
+    expect(rejectedPayload.jobPostingId).toBe('jp-1');
 
     // Tudo na mesma transação
     expect(mockPoolClient.query).toHaveBeenCalledWith('BEGIN');
@@ -225,10 +245,10 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockPubsub.publish).not.toHaveBeenCalled();
   });
 
-  it('não re-executa auto-rejeição se previousStage já era NOT_QUALIFIED (deduplicação)', async () => {
+  it('não re-executa auto-rejeição se previousStage já era REJECTED (deduplicação — webhook duplicado)', async () => {
     const payload = buildPayload({ statusLabel: 'NOT_QUALIFIED' });
     mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
-      previousStage: 'NOT_QUALIFIED', // já era NOT_QUALIFIED — sem transição
+      previousStage: 'REJECTED', // já foi auto-rejeitado — não re-executa
     });
 
     await useCase.execute(payload);
@@ -705,7 +725,7 @@ describe('ProcessTalentumPrescreening', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('auto-criação de encuadre (Step 3.6)', () => {
-    it('cria encuadre com origen=Talentum e dedup_hash baseado no prescreeningId', async () => {
+    it('cria encuadre com import_source_audit=Talentum e dedup_hash baseado no prescreeningId', async () => {
       const payload = buildPayload({ status: 'IN_PROGRESS', prescreeningId: 'tp-abc' });
       (payload.data.response as any).statusLabel = undefined;
 
@@ -777,14 +797,16 @@ describe('ProcessTalentumPrescreening', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('progressão de application_funnel_stage', () => {
-    it('INITIATED → application_funnel_stage = INITIATED', async () => {
+    it('INITIATED (Talentum subtype) → application_funnel_stage = PRE_SCREENING (migration 230: conversão interna)', async () => {
+      // O Zod do webhook aceita 'INITIATED' como subtype — NÃO foi alterado.
+      // deriveFunnelStage() converte internamente para PRE_SCREENING antes de gravar na WJA.
       const payload = buildPayload({ status: 'INITIATED' });
       (payload.data.response as any).statusLabel = undefined;
 
       await useCase.execute(payload);
 
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalledWith(
-        expect.objectContaining({ applicationFunnelStage: 'INITIATED' }),
+        expect.objectContaining({ applicationFunnelStage: 'PRE_SCREENING' }),
         mockPoolClient,
       );
     });
@@ -824,15 +846,36 @@ describe('ProcessTalentumPrescreening', () => {
       );
     });
 
-    it('ANALYZED + NOT_QUALIFIED → application_funnel_stage = NOT_QUALIFIED', async () => {
+    it('ANALYZED + NOT_QUALIFIED → upsert WJA já com REJECTED (F3 pré-conversão) + auto-reject completa fluxo encuadre', async () => {
       const payload = buildPayload({ status: 'ANALYZED', statusLabel: 'NOT_QUALIFIED' });
+      mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
+        previousStage: null, // primeira vez → auto-reject ativo
+      });
 
       await useCase.execute(payload);
 
+      // F3 (migration 191): NOT_QUALIFIED foi removido do enum. ProcessTalentumPrescreening
+      // converte NOT_QUALIFIED → REJECTED ANTES do upsert (senão CHECK constraint quebra).
+      // handleNotQualifiedTransition continua rodando depois para encuadre RECHAZADO + domain events.
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalledWith(
-        expect.objectContaining({ applicationFunnelStage: 'NOT_QUALIFIED' }),
+        expect.objectContaining({ applicationFunnelStage: 'REJECTED' }),
         mockPoolClient,
       );
+
+      // Auto-reject: WJA imediatamente promovido para REJECTED na mesma transação
+      const updateWjaCall = mockPoolClient.query.mock.calls.find(
+        (call: any[]) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('UPDATE worker_job_applications') &&
+          call[0].includes("'REJECTED'"),
+      );
+      expect(updateWjaCall).toBeDefined();
+
+      // domain_event funnel_stage.rejected emitido
+      const rejectedEventCall = mockPoolClient.query.mock.calls.find(
+        (call: any[]) => typeof call[0] === 'string' && call[0].includes('funnel_stage.rejected'),
+      );
+      expect(rejectedEventCall).toBeDefined();
     });
 
     it('ANALYZED + IN_DOUBT → application_funnel_stage = IN_DOUBT', async () => {
@@ -866,13 +909,13 @@ describe('ProcessTalentumPrescreening', () => {
     });
 
     it('cada webhook atualiza o stage — simula fluxo completo INITIATED → QUALIFIED', async () => {
-      // Webhook 1: INITIATED
+      // Webhook 1: INITIATED (Talentum subtype) → PRE_SCREENING (canônico interno, migration 230)
       const p1 = buildPayload({ status: 'INITIATED' });
       (p1.data.response as any).statusLabel = undefined;
       await useCase.execute(p1);
 
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenLastCalledWith(
-        expect.objectContaining({ applicationFunnelStage: 'INITIATED' }),
+        expect.objectContaining({ applicationFunnelStage: 'PRE_SCREENING' }),
         mockPoolClient,
       );
 

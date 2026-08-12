@@ -302,7 +302,7 @@ describe('Mensagens de erro — Espanhol (ES)', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         const messages = result.error.errors.map((e) => e.message);
-        expect(messages).toContain('Por favor, seleccione el nivel de conocimiento');
+        expect(messages).toContain('Por favor, seleccione el nivel de estudios');
       }
     });
 
@@ -628,12 +628,12 @@ describe('Mensagens de erro — Português (PT-BR)', () => {
       }
     });
 
-    it('nível de conhecimento não selecionado → "Por favor, selecione o nível de conhecimento"', () => {
+    it('nível de conhecimento não selecionado → "Por favor, selecione o nível de estudos"', () => {
       const result = schema().safeParse({ ...VALID_GENERAL_INFO, knowledgeLevel: '' });
       expect(result.success).toBe(false);
       if (!result.success) {
         const messages = result.error.errors.map((e) => e.message);
-        expect(messages).toContain('Por favor, selecione o nível de conhecimento');
+        expect(messages).toContain('Por favor, selecione o nível de estudos');
       }
     });
 

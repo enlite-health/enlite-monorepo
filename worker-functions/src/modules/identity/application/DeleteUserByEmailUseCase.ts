@@ -1,5 +1,4 @@
 import { Result } from '@shared/utils/Result';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
 import { GoogleIdentityService } from '../infrastructure/GoogleIdentityService';
 import { UserRepository } from '../infrastructure/UserRepository';
 
@@ -21,8 +20,7 @@ export interface DeleteUserByEmailDTO {
 export class DeleteUserByEmailUseCase {
   constructor(
     private userRepository: UserRepository,
-    private googleIdentityService: GoogleIdentityService,
-    private eventDispatcher: EventDispatcher
+    private googleIdentityService: GoogleIdentityService
   ) {}
 
   async execute(data: DeleteUserByEmailDTO): Promise<Result<void>> {
@@ -57,12 +55,6 @@ export class DeleteUserByEmailUseCase {
         console.error('Failed to delete user record from database');
         return Result.fail<void>('Failed to delete user data');
       }
-
-      // Step 4: Notify about deletion
-      await this.eventDispatcher.notifyWorkerDeleted(firebaseUid, {
-        deletedAt: new Date().toISOString(),
-        email: data.email,
-      });
 
       return Result.ok<void>();
     } catch (error: unknown) {

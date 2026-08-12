@@ -29,6 +29,12 @@
  *  21. ?worker_sex=INVALID → 400
  *  22. ?country=ARGENTINA → 400 (not 2 chars)
  *  23. Response shape includes 19th field: country
+ *
+ * Scenarios (schedule_days_hours / worker_profile_sought fallback):
+ *  24. schedule_days_hours derived from jp.schedule (JSONB) when legacy column is NULL
+ *  25. schedule_days_hours keeps legacy column when present (no override from JSONB)
+ *  26. worker_profile_sought falls back to jp.worker_attributes when legacy column is NULL (SQL COALESCE)
+ *  27. worker_profile_sought keeps legacy column when present (no override from worker_attributes)
  */
 
 import { Pool } from 'pg';
@@ -68,6 +74,9 @@ const IDS = {
   // BR vacancies (new)
   searchingBR: `dd110001-0000-0000-0002-000000000011`,
   activeBR: `dd110001-0000-0000-0002-000000000012`,
+  // schedule_days_hours / worker_profile_sought fallback fixtures
+  scheduleFallback: `dd110001-0000-0000-0002-000000000013`,
+  profileFallback: `dd110001-0000-0000-0002-000000000014`,
 };
 
 const api = createApiClient();
@@ -128,6 +137,14 @@ interface InsertVacancyParams {
    *  the helper defaults to `false`. Override to `true` for draft fixtures
    *  that should be hidden from the public endpoint. */
   isDraft?: boolean;
+  /** Legacy ClickUp-import column — only present for old vacancies. */
+  scheduleDaysHours?: string | null;
+  /** Structured JSONB schedule — populated by Gemini/form admin for new vacancies. */
+  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }> | null;
+  /** Legacy ClickUp-import column — only present for old vacancies. */
+  workerProfileSought?: string | null;
+  /** Free-text "perfil buscado" filled by recruiters via the admin form — already public via PublicVacancyController. */
+  workerAttributes?: string | null;
 }
 
 let vacancyCounter = 9000;
@@ -138,12 +155,18 @@ async function insertVacancy(p: Pool, params: InsertVacancyParams): Promise<void
     ? JSON.stringify(params.socialShortLinks)
     : null;
 
+  const schedule = params.schedule !== undefined ? JSON.stringify(params.schedule) : null;
+
   await p.query(
+    // Public `description` is served from talentum_description (PII-free); the
+    // legacy raw `description` column was purged in migration 214 and is no
+    // longer read by the endpoint.
     `INSERT INTO job_postings (
-       id, case_number, vacancy_number, title, status, description,
+       id, case_number, vacancy_number, title, status, talentum_description,
        patient_id, patient_address_id, social_short_links,
-       country, required_sex, required_professions, is_draft
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
+       country, required_sex, required_professions, is_draft,
+       schedule_days_hours, schedule, worker_profile_sought, worker_attributes
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15::jsonb, $16, $17)
      ON CONFLICT (id) DO NOTHING`,
     [
       params.id,
@@ -159,6 +182,10 @@ async function insertVacancy(p: Pool, params: InsertVacancyParams): Promise<void
       params.requiredSex ?? null,
       params.requiredProfessions ? `{${params.requiredProfessions.join(',')}}` : null,
       params.isDraft ?? false,
+      params.scheduleDaysHours ?? null,
+      schedule,
+      params.workerProfileSought ?? null,
+      params.workerAttributes ?? null,
     ],
   );
 }
@@ -291,6 +318,33 @@ describe('GET /api/public/v1/jobs', () => {
       socialShortLinks: { site: 'https://srt.io/br-active' },
       description: 'Caso ativo no Brasil.',
     });
+
+    // ── schedule_days_hours fallback: vaga nova, sem coluna legada, com JSONB ──
+    await insertVacancy(pool, {
+      id: IDS.scheduleFallback,
+      caseNumber: 9023,
+      status: 'SEARCHING',
+      country: 'AR',
+      socialShortLinks: { site: 'https://srt.io/schedule-fallback' },
+      description: 'Vaga nueva sin columna legada de horarios.',
+      scheduleDaysHours: null,
+      schedule: [
+        { dayOfWeek: 1, startTime: '09:00', endTime: '12:00' },
+        { dayOfWeek: 3, startTime: '09:00', endTime: '14:00' },
+      ],
+    });
+
+    // ── worker_profile_sought fallback: vaga nova, sem coluna legada, com worker_attributes ──
+    await insertVacancy(pool, {
+      id: IDS.profileFallback,
+      caseNumber: 9024,
+      status: 'SEARCHING',
+      country: 'AR',
+      socialShortLinks: { site: 'https://srt.io/profile-fallback' },
+      description: 'Vaga nueva sin columna legada de perfil buscado.',
+      workerProfileSought: null,
+      workerAttributes: 'Experiencia previa con adultos mayores, paciencia y puntualidad.',
+    });
   });
 
   afterAll(async () => {
@@ -354,7 +408,7 @@ describe('GET /api/public/v1/jobs', () => {
     expect(ids).not.toContain(IDS.activeNoSite);
   });
 
-  it('returns correct 19-field shape (18 original + country)', async () => {
+  it('returns correct 20-field shape (18 original + country + schedule_week)', async () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
     expect(job).toBeDefined();
@@ -368,10 +422,36 @@ describe('GET /api/public/v1/jobs', () => {
       'worker_type', 'worker_sex', 'job_zone', 'neighborhood', 'state_city',
       // New country field
       'country',
+      // Single location label (barrio → localidad → provincia) for the WP accordion title
+      'location_label',
+      // Structured weekly schedule (feed B3 — powers the WordPress weekly table)
+      'schedule_week',
     ];
     for (const field of expectedFields) {
       expect(job).toHaveProperty(field);
     }
+  });
+
+  it('populates structured schedule_week from the schedule JSONB (real DB → HTTP)', async () => {
+    const res = await api.get('/api/public/v1/jobs');
+    const job = (res.data.data as Array<Record<string, unknown>>).find(
+      j => j.id === IDS.scheduleFallback,
+    );
+    expect(job).toBeDefined();
+
+    // Fixture schedule: Lun 09:00-12:00 (3h) + Mié 09:00-14:00 (5h) = 8h/semana, 1 turno/día → no coverage.
+    const week = job!.schedule_week as {
+      days: Record<string, Array<{ start: string; end: string }>>;
+      weekly_hours: number;
+      is_coverage: boolean;
+    };
+    expect(week).not.toBeNull();
+    expect(week.days.lunes).toEqual([{ start: '09:00', end: '12:00' }]);
+    expect(week.days.miercoles).toEqual([{ start: '09:00', end: '14:00' }]);
+    expect(week.days.martes).toEqual([]);
+    expect(week.days.domingo).toEqual([]);
+    expect(week.weekly_hours).toBe(8);
+    expect(week.is_coverage).toBe(false);
   });
 
   it('detail_link field matches social_short_links.site', async () => {
@@ -386,13 +466,13 @@ describe('GET /api/public/v1/jobs', () => {
     expect(job?.detail_link).toBe('https://srt.io/active');
   });
 
-  it('description is sanitized — generic text becomes empty string', async () => {
+  it('description is always a string (null talentum_description maps to empty string)', async () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.rapidResponse);
     expect(typeof job?.description).toBe('string');
   });
 
-  it('returns real description unchanged', async () => {
+  it('returns talentum_description as the public description', async () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
     expect(job?.description).toBe('AT con experiencia en TEA domicilio.');
@@ -422,6 +502,12 @@ describe('GET /api/public/v1/jobs', () => {
     expect(
       job!.state_city === null || (typeof job!.state_city === 'string' && job!.state_city.trim().length > 0),
     ).toBe(true);
+
+    // location_label = o mais específico disponível (barrio → localidad → provincia), trimado.
+    // Invariante relacional: robusto a qualquer valor de fixture.
+    const pick = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const expectedLabel = pick(job!.neighborhood) ?? pick(job!.city) ?? pick(job!.state);
+    expect(job!.location_label).toBe(expectedLabel);
   });
 
   it('does NOT return PENDING_ACTIVATION vacancies', async () => {
@@ -629,6 +715,43 @@ describe('GET /api/public/v1/jobs', () => {
       const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searchingBR);
       expect(job).toBeDefined();
       expect(job!.country).toBe('BR');
+    });
+  });
+
+  // ── schedule_days_hours / worker_profile_sought fallback ──────────────────
+
+  describe('schedule_days_hours fallback (derived from jp.schedule JSONB)', () => {
+    it('derives schedule_days_hours from jp.schedule when the legacy column is NULL', async () => {
+      const res = await api.get('/api/public/v1/jobs?country=AR');
+      const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.scheduleFallback);
+      expect(job).toBeDefined();
+      expect(job!.schedule_days_hours).toBe('Lunes 09:00-12:00, Miércoles 09:00-14:00');
+    });
+
+    it('keeps the legacy schedule_days_hours column when populated (ClickUp-imported vacancy)', async () => {
+      const res = await api.get('/api/public/v1/jobs?country=AR');
+      const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
+      expect(job).toBeDefined();
+      // fixture never set schedule_days_hours nor schedule → both null (legacy-shaped fixture)
+      expect(job!.schedule_days_hours).toBeNull();
+    });
+  });
+
+  describe('worker_profile_sought fallback (COALESCE with jp.worker_attributes)', () => {
+    it('falls back to worker_attributes when the legacy worker_profile_sought column is NULL', async () => {
+      const res = await api.get('/api/public/v1/jobs?country=AR');
+      const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.profileFallback);
+      expect(job).toBeDefined();
+      expect(job!.worker_profile_sought).toBe(
+        'Experiencia previa con adultos mayores, paciencia y puntualidad.',
+      );
+    });
+
+    it('returns null worker_profile_sought when both legacy column and worker_attributes are empty', async () => {
+      const res = await api.get('/api/public/v1/jobs?country=AR');
+      const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
+      expect(job).toBeDefined();
+      expect(job!.worker_profile_sought).toBeNull();
     });
   });
 });

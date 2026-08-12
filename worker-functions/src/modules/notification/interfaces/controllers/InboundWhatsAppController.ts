@@ -3,23 +3,18 @@ import { Pool } from 'pg';
 import twilio from 'twilio';
 import { BookSlotFromWhatsAppUseCase } from '../../application/BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
-
-/** Templates do fluxo qualified interview que este controller sabe rotear */
-const INTERVIEW_INVITE_SLUG = 'qualified_worker_request';
-const LEGACY_INVITE_SLUG = 'qualified_worker';
-const SLOT_CONFIRMED_SLUG = 'qualified_worker_response';
-const REMINDER_CONFIRM_SLUG = 'qualified_reminder_confirm';
-const REMINDER_RESCHEDULE_SLUG = 'qualified_reminder_reschedule';
-const REMINDER_REASON_SLUG = 'qualified_reminder_reason';
-
-const INTERVIEW_SLUGS = new Set([
+import { TriggerWorkerHandoverUseCase } from '../../application/TriggerWorkerHandoverUseCase';
+import { logger } from '@shared/logging';
+import {
   INTERVIEW_INVITE_SLUG,
   LEGACY_INVITE_SLUG,
-  SLOT_CONFIRMED_SLUG,
   REMINDER_CONFIRM_SLUG,
   REMINDER_RESCHEDULE_SLUG,
-  REMINDER_REASON_SLUG,
-]);
+  INTERVIEW_SLUGS,
+} from '../../domain/interviewFlowTemplateSlugs';
+import { matchesOptOut, OPT_OUT_BUTTON_PAYLOAD } from '../../domain/optOutMatch';
+import { RegisterOptOutUseCase } from '../../application/RegisterOptOutUseCase';
+import { ChatwootClient } from '../../infrastructure/ChatwootClient';
 
 /**
  * Controller para mensagens inbound do WhatsApp via Twilio.
@@ -42,6 +37,18 @@ export class InboundWhatsAppController {
     private readonly db: Pool,
     private readonly bookSlotUseCase: BookSlotFromWhatsAppUseCase,
     private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
+    /**
+     * Opcional: quando ausente OU PERISKOPE_HANDOVER_ENABLED != 'true', o
+     * comportamento de texto-livre não-roteável fica idêntico ao atual
+     * (apenas log "Message ignored") — flag default OFF, sem impacto em prod.
+     */
+    private readonly triggerHandoverUseCase?: TriggerWorkerHandoverUseCase,
+    /**
+     * Opcional: espelho do inbound pro Chatwoot (faz a Luz VER a resposta e
+     * responder). Só age quando CHATWOOT_INBOUND_MIRROR_ENABLED='true' E o client
+     * foi injetado — flag separada do espelho de outbound, então deploy é neutro.
+     */
+    private readonly chatwootMirror?: ChatwootClient,
   ) {}
 
   async handleInbound(req: Request, res: Response): Promise<void> {
@@ -56,12 +63,37 @@ export class InboundWhatsAppController {
     let buttonPayload = body['ButtonPayload'] ?? '';
     const originalMessageSid = body['OriginalRepliedMessageSid'] ?? '';
 
+    // Opt-out por TEXTO: interceptar intenção de baixa antes de qualquer roteamento.
+    // matchesOptOut cobre frase ("quiero darme de baja") e termos es-AR (baja, salir,
+    // no me escriban…), não só match exato de palavra única (fix incidente 2026-07-10).
+    const bodyTextRaw = (body['Body'] ?? '').trim();
+    if (bodyTextRaw && matchesOptOut(bodyTextRaw)) {
+      await this.handleOptOut(from, bodyTextRaw);
+      res.status(200).send();
+      return;
+    }
+
+    // Opt-out por BOTÃO: quando o template ganhar o quick-reply "No recibir más"
+    // (payload OPT_OUT_BUTTON_PAYLOAD), tratar como baixa independente do fluxo.
+    if (buttonPayload === OPT_OUT_BUTTON_PAYLOAD) {
+      await this.handleOptOut(from, `button:${buttonPayload}`);
+      res.status(200).send();
+      return;
+    }
+
     // Fallback: se ButtonPayload vazio, tentar inferir a partir do Body
     // usando o template original (via Twilio Content API) para mapear
     // título do botão → id do botão. Funciona para qualquer template.
     if (!buttonPayload) {
       const bodyText = (body['Body'] ?? '').trim();
       buttonPayload = await this.inferButtonPayloadFromBody(bodyText, originalMessageSid);
+
+      // O botão inferido também pode ser o de opt-out (título → payload 'optout').
+      if (buttonPayload === OPT_OUT_BUTTON_PAYLOAD) {
+        await this.handleOptOut(from, `button:${buttonPayload}`);
+        res.status(200).send();
+        return;
+      }
     }
 
     // Texto livre: se não tem ButtonPayload, checar se worker está em awaiting_reason
@@ -73,6 +105,13 @@ export class InboundWhatsAppController {
           res.status(200).send();
           return;
         }
+        // Texto livre não-roteável: gatilho de handover Twilio → Periskope
+        // (item de fundação do roteamento por worker). Flag default OFF.
+        await this.maybeTriggerHandover(from);
+        // Espelha a resposta livre pro Chatwoot como `incoming` → a Luz VÊ e responde
+        // (o elo que faltava; hoje esse texto morria aqui). Gated por
+        // CHATWOOT_INBOUND_MIRROR_ENABLED — deploy neutro até o go-live.
+        await this.maybeMirrorIncomingToChatwoot(from, bodyText, body);
       }
       console.info('[InboundWhatsApp] Message ignored (no ButtonPayload)', { from });
       res.status(200).send();
@@ -150,6 +189,33 @@ export class InboundWhatsAppController {
   }
 
   /**
+   * Registra opt-out do worker. Delega ao RegisterOptOutUseCase — a fonte única
+   * de escrita (mesma usada pela Luz via MCP e pelo Periskope). Normaliza phone
+   * e faz ON CONFLICT = re-opt-out lá dentro.
+   */
+  private async handleOptOut(from: string, keyword: string): Promise<void> {
+    const phone = from.replace('whatsapp:', '');
+    const log = logger.child({ phone, keyword, handler: 'OptOut' });
+
+    try {
+      const result = await new RegisterOptOutUseCase(this.db).execute({
+        phone: from,
+        source: 'whatsapp_inbound',
+      });
+
+      if (!result.ok) {
+        log.info('Opt-out request from unknown phone, ignoring');
+        return;
+      }
+
+      log.info({ workerId: result.workerId }, 'Worker opted out of WhatsApp messages');
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      log.error({ error: e.message }, 'Failed to process opt-out');
+    }
+  }
+
+  /**
    * Verifica se o worker está em estado awaiting_reason e processa texto livre.
    * Retorna true se o texto foi capturado como motivo de recusa.
    */
@@ -165,6 +231,63 @@ export class InboundWhatsAppController {
     } catch (err) {
       console.warn('[InboundWhatsApp] tryHandleTextResponse error:', err);
       return false;
+    }
+  }
+
+  /**
+   * Gatilho de handover Twilio → Periskope: quando o texto livre não foi
+   * capturado por nenhum fluxo conhecido (tryHandleTextResponse retornou
+   * false), este é o 1º texto livre não-roteável do worker no canal Twilio.
+   *
+   * No-op (sem query, sem side-effect) quando PERISKOPE_HANDOVER_ENABLED !=
+   * 'true' ou quando triggerHandoverUseCase não foi injetado — flag default
+   * OFF preserva o comportamento atual de produção sem as envs novas.
+   */
+  private async maybeTriggerHandover(from: string): Promise<void> {
+    if (process.env.PERISKOPE_HANDOVER_ENABLED !== 'true' || !this.triggerHandoverUseCase) {
+      return;
+    }
+
+    const phone = from.replace('whatsapp:', '');
+
+    try {
+      const workerRes = await this.db.query<{ id: string; messaging_channel: string }>(
+        `SELECT id, messaging_channel FROM workers WHERE phone = $1 LIMIT 1`,
+        [phone],
+      );
+      const worker = workerRes.rows[0];
+      if (!worker || worker.messaging_channel !== 'twilio') return;
+
+      const result = await this.triggerHandoverUseCase.execute(worker.id, phone);
+      if (result.isFailure) {
+        console.warn('[InboundWhatsApp] Handover failed:', result.error);
+      }
+    } catch (err) {
+      console.warn('[InboundWhatsApp] maybeTriggerHandover error:', err);
+    }
+  }
+
+  /**
+   * Espelha a resposta livre do worker pro Chatwoot como mensagem `incoming`, o que
+   * faz o Chatwoot disparar o webhook → a Luz (triage-service) processar e responder.
+   * É o elo que liga a resposta do convite (que hoje morre neste controller) ao motor
+   * reativo da Luz. Best-effort: nunca lança. Gated por CHATWOOT_INBOUND_MIRROR_ENABLED
+   * (flag separada do espelho de outbound) — deploy neutro até o go-live.
+   */
+  private async maybeMirrorIncomingToChatwoot(
+    from: string,
+    content: string,
+    body: Record<string, string>,
+  ): Promise<void> {
+    if (process.env.CHATWOOT_INBOUND_MIRROR_ENABLED !== 'true' || !this.chatwootMirror) return;
+    const phone = from.replace('whatsapp:', '');
+    // MessageSid do inbound = source_id do Chatwoot (dedup/idempotência).
+    const externalId = body['MessageSid'] || body['SmsSid'] || body['SmsMessageSid'] || '';
+    if (!externalId) return;
+    try {
+      await this.chatwootMirror.mirrorIncomingMessage({ phone, content, externalId });
+    } catch (err) {
+      console.warn('[InboundWhatsApp] maybeMirrorIncomingToChatwoot error:', err);
     }
   }
 

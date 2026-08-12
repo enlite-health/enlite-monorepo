@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
+import { loggingAls, reportError } from '@shared/logging';
+import { JobPostingAuditRepository } from '../../infrastructure/JobPostingAuditRepository';
 
 /**
  * VacancyAddressReviewController
@@ -31,10 +33,12 @@ const resolveAddressBodySchema = z.union([
 export class VacancyAddressReviewController {
   private readonly db: Pool;
   private readonly geocoder: GeocodingService;
+  private readonly auditRepo: JobPostingAuditRepository;
 
   constructor(geocoder?: GeocodingService) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.geocoder = geocoder ?? new GeocodingService();
+    this.auditRepo = new JobPostingAuditRepository();
   }
 
   /** POST /api/admin/vacancies/:id/resolve-address-review */
@@ -106,10 +110,15 @@ export class VacancyAddressReviewController {
         resolvedAddressId = bodyResult.data.patient_address_id as string;
       }
 
-      // 4. Validate the address belongs to the vacancy's patient
+      // 4. Validate the address belongs to the vacancy's patient AND is active
+      // (archived_at IS NULL). Archived addresses are kept around to preserve
+      // historic vacancies — they must not be selectable for new bindings.
       if (patientId) {
         const ownerCheck = await this.db.query<{ exists: boolean }>(
-          `SELECT 1 FROM patient_addresses WHERE id = $1 AND patient_id = $2`,
+          `SELECT 1 FROM patient_addresses
+            WHERE id = $1
+              AND patient_id = $2
+              AND archived_at IS NULL`,
           [resolvedAddressId, patientId],
         );
 
@@ -122,24 +131,50 @@ export class VacancyAddressReviewController {
         }
       }
 
-      // 5. Update job_posting with the resolved address id
-      await this.db.query(
-        `UPDATE job_postings SET patient_address_id = $1, updated_at = NOW() WHERE id = $2`,
-        [resolvedAddressId, id],
-      );
+      // 5. Update job_posting + audit UPDATED (patient_address_id) in one transaction
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const user = (req as any).user as { uid?: string } | undefined;
+      const actorUserId = user?.uid ?? null;
+      const traceId = loggingAls.getStore()?.traceId ?? null;
 
-      // 6. Audit table is historical — no deletion, just leave it as-is.
+      // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+      // leaving the surrounding transaction (and the UPDATE above) intact.
+      const updateClient = await this.db.connect();
+      try {
+        await updateClient.query('BEGIN');
+        await updateClient.query(
+          `UPDATE job_postings SET patient_address_id = $1, updated_at = NOW() WHERE id = $2`,
+          [resolvedAddressId, id],
+        );
+        await this.auditRepo.logEventSafe(updateClient, {
+          jobPostingId: id,
+          eventType: 'UPDATED',
+          fieldName: 'patient_address_id',
+          changes: { before: null, after: resolvedAddressId },
+          actorUserId,
+          actorType: 'HUMAN',
+          actorLabel: 'admin_panel',
+          traceId,
+        });
+        await updateClient.query('COMMIT');
+      } catch (err) {
+        await updateClient.query('ROLLBACK');
+        throw err;
+      } finally {
+        updateClient.release();
+      }
 
       res.status(200).json({
         success: true,
         data: { id, patient_address_id: resolvedAddressId },
       });
-    } catch (error: any) {
-      console.error('[VacancyAddressReviewController] resolveAddressReview error:', error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyAddressReviewController:resolveAddressReview' });
       res.status(500).json({
         success: false,
         error: 'Failed to resolve address review',
-        details: error.message,
+        details: msg,
       });
     }
   }

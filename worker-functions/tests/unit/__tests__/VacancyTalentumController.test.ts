@@ -48,6 +48,15 @@ jest.mock('@modules/integration', () => ({
   GeminiVacancyParserService: jest.fn().mockImplementation(() => ({
     generateFromVacancyData: mockGenerateFromVacancyData,
   })),
+  GeminiApiError: class GeminiApiError extends Error {
+    constructor(public status: number, public body: string) {
+      super(`Gemini API error ${status}: ${body}`);
+      this.name = 'GeminiApiError';
+    }
+    get isTransient(): boolean {
+      return this.status === 429 || (this.status >= 500 && this.status <= 599);
+    }
+  },
 }));
 
 import { VacancyTalentumController } from '../../../src/modules/matching/interfaces/controllers/VacancyTalentumController';
@@ -73,6 +82,9 @@ describe('VacancyTalentumController', () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockClientQuery.mockReset();
+    mockConnect.mockReset();
+    mockConnect.mockResolvedValue({ query: mockClientQuery, release: jest.fn() });
+    mockClientQuery.mockResolvedValue({ rows: [] });
     mockPublish.mockReset();
     mockUnpublish.mockReset();
     mockGenerateDescription.mockReset();
@@ -146,16 +158,19 @@ describe('VacancyTalentumController', () => {
 
       await controller.savePrescreeningConfig(req, res);
 
-      // Transaction: BEGIN, DELETE questions, DELETE faq, INSERT questions, INSERT faq, COMMIT
-      const calls = mockClientQuery.mock.calls.map((c: any) => c[0]);
+      // Transaction: BEGIN, DELETE questions, DELETE faq, INSERT questions (×2), INSERT faq (×1),
+      //   logEventSafe (SAVEPOINT + INSERT audit + RELEASE), COMMIT
+      const calls = mockClientQuery.mock.calls.map((c: unknown[]) => c[0] as string);
       expect(calls[0]).toBe('BEGIN');
       expect(calls[1]).toContain('DELETE FROM job_posting_prescreening_questions');
       expect(calls[2]).toContain('DELETE FROM job_posting_prescreening_faq');
-      // INSERTs for 2 questions + 1 FAQ = 3 more calls
+      // INSERTs for 2 questions + 1 FAQ
       expect(calls[3]).toContain('INSERT INTO job_posting_prescreening_questions');
       expect(calls[4]).toContain('INSERT INTO job_posting_prescreening_questions');
       expect(calls[5]).toContain('INSERT INTO job_posting_prescreening_faq');
-      expect(calls[6]).toBe('COMMIT');
+      // After audit SAVEPOINT queries, COMMIT must appear somewhere in the calls
+      const commitIdx = calls.lastIndexOf('COMMIT');
+      expect(commitIdx).toBeGreaterThan(5);
     });
 
     it('sets correct defaults for optional question fields', async () => {
@@ -245,7 +260,11 @@ describe('VacancyTalentumController', () => {
 
       await controller.publishToTalentum(req, res);
 
-      expect(mockPublish).toHaveBeenCalledWith({ jobPostingId: 'v-1' });
+      // Onda B: controller now passes actor as 2nd arg — verify jobPostingId still correct
+      expect(mockPublish).toHaveBeenCalledWith(
+        { jobPostingId: 'v-1' },
+        expect.objectContaining({ actorType: 'HUMAN', actorLabel: 'admin_panel' }),
+      );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         success: true,

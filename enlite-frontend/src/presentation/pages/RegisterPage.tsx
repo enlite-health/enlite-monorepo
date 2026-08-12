@@ -3,10 +3,9 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { FirebaseError } from 'firebase/app';
-import { GoogleLoginButton } from '@presentation/components/features/auth/GoogleLoginButton';
 import { useRegisterUser } from '@presentation/hooks/useRegisterUser';
 import { useWorkerEmailLookup } from '@presentation/hooks/useWorkerEmailLookup';
-import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
+import { WorkerApiService, InitWorkerResponse } from '@infrastructure/http/WorkerApiService';
 import { PhoneInputIntl } from '@presentation/components/shared/PhoneInputIntl';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -14,6 +13,8 @@ import { FormField, InputWithIcon, PasswordInput } from '@presentation/component
 import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox, Divider } from '@presentation/components/atoms';
 import { AuthNavbar } from '@presentation/components/organisms/AuthNavbar';
+import { GoogleLoginButton } from '@presentation/components/features/auth/GoogleLoginButton';
+import { ClaimOtpModal } from '@presentation/components/features/auth/ClaimOtpModal';
 import { getAuthErrorMessage } from '@presentation/utils/authErrorMapper';
 
 const registerSchema = z.object({
@@ -26,6 +27,18 @@ const registerSchema = z.object({
   message: 'register.passwordMismatch',
   path: ['confirmPassword'],
 });
+
+// ── ClaimPending state ─────────────────────────────────────────────────────
+
+interface ClaimPendingState {
+  candidateWorkerId: string;
+  phoneMasked: string;
+  verificationSid: string;
+  authUid: string;
+  email: string;
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export function RegisterPage() {
   const { t } = useTranslation();
@@ -44,6 +57,7 @@ export function RegisterPage() {
   const [lgpdOptIn, setLgpdOptIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lgpdError, setLgpdError] = useState<string | null>(null);
+  const [claimPending, setClaimPending] = useState<ClaimPendingState | null>(null);
 
   const phoneDisabled = workerFound === true && !!phoneMasked;
 
@@ -58,25 +72,56 @@ export function RegisterPage() {
   }, [resetLookup]);
 
   /**
+   * Centralised navigation after a successful worker init.
+   * Extracted so both the email/password flow and OTP-confirmed flow can reuse it.
+   */
+  const navigateAfterInit = useCallback(() => {
+    navigate(returnUrl ?? '/');
+  }, [navigate, returnUrl]);
+
+  /**
+   * Handles the InitWorkerResponse discriminated union.
+   * - 'ok' → navigate immediately
+   * - 'claim_pending' → open OTP modal
+   */
+  const handleInitResponse = useCallback(
+    (response: InitWorkerResponse, uid: string, userEmail: string) => {
+      if (response.status === 'ok') {
+        navigateAfterInit();
+        return;
+      }
+      // claim_pending
+      setClaimPending({
+        candidateWorkerId: response.candidateWorkerId,
+        phoneMasked: response.phoneMasked,
+        verificationSid: response.verificationSid,
+        authUid: uid,
+        email: userEmail,
+      });
+    },
+    [navigateAfterInit],
+  );
+
+  /**
    * Handles success for the email/password registration flow.
    * Receives the registered user explicitly so we never depend on stale React state.
-   * Google flow uses onSuccess={() => navigate('/')} directly — authStore already
-   * called initWorker before resolving.
    */
   const handleSuccess = async (registeredUser: { id: string; email: string }) => {
     try {
-      await WorkerApiService.initWorker({
+      const response = await WorkerApiService.initWorker({
         authUid: registeredUser.id,
         email: registeredUser.email,
+        phone: whatsapp || undefined,
         whatsappPhone: whatsapp || undefined,
         lgpdOptIn,
         country: 'AR',
       });
+      handleInitResponse(response, registeredUser.id, registeredUser.email);
     } catch (err) {
       console.error('[Register] Worker init failed:', err);
       // Non-blocking: worker init failing shouldn't prevent redirect
+      navigateAfterInit();
     }
-    navigate(returnUrl ?? '/');
   };
 
   const handleError = (err: Error) => {
@@ -106,7 +151,6 @@ export function RegisterPage() {
         setError(t(firstNonLgpd.message));
       }
       if (!firstNonLgpd && lgpdIssue) {
-        // Only lgpd error — don't show the top banner, just the checkbox error
         return;
       }
       return;
@@ -123,6 +167,14 @@ export function RegisterPage() {
     } catch (err) {
       handleError(err instanceof Error ? err : new Error('Registration failed'));
     }
+  };
+
+  /**
+   * Google login success → navigate to /complete-whatsapp so the user can
+   * provide their WhatsApp number for claim reconciliation.
+   */
+  const handleGoogleSuccess = () => {
+    navigate('/complete-whatsapp');
   };
 
   return (
@@ -308,9 +360,8 @@ export function RegisterPage() {
               <Divider text={t('register.orRegisterWith')} />
 
               <GoogleLoginButton
-                onSuccess={() => navigate(returnUrl ?? '/')}
-                onError={handleError}
                 variant="register"
+                onSuccess={handleGoogleSuccess}
               />
             </div>
           </form>
@@ -324,6 +375,20 @@ export function RegisterPage() {
           />
         </div>
       </div>
+
+      {/* OTP claim modal — shown when initWorker returns claim_pending */}
+      {claimPending && (
+        <ClaimOtpModal
+          open={true}
+          phoneMasked={claimPending.phoneMasked}
+          verificationSid={claimPending.verificationSid}
+          candidateWorkerId={claimPending.candidateWorkerId}
+          authUid={claimPending.authUid}
+          email={claimPending.email}
+          onConfirmed={() => navigateAfterInit()}
+          onClose={() => setClaimPending(null)}
+        />
+      )}
     </div>
   );
 }

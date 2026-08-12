@@ -16,6 +16,7 @@ import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 
+import { expectNoRawEnumLeaks } from '../../../../../test/rawEnumLeakGuard';
 import { VacancyCaseCard } from '../VacancyDetail/VacancyCaseCard';
 import { VacancyProfessionCard } from '../VacancyDetail/VacancyProfessionCard';
 import { MatchCriteriaChips } from '../VacancyMatch/MatchCriteriaChips';
@@ -79,8 +80,10 @@ describe('Sex BOTH → Indistinto (es)', () => {
   it('VacancyCaseCard: caseParts shows "Indistinto" instead of "BOTH"', () => {
     i18n.changeLanguage('es');
     render(<VacancyCaseCard {...caseProps} />);
-    // caseParts joins profession + sex + zone
-    expect(screen.getByText(/AT - Indistinto - Palermo/)).toBeInTheDocument();
+    // caseParts joins profession (translated) + sex + zone
+    expect(
+      screen.getByText(/Acompañante Terapéutico - Indistinto - Palermo/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/BOTH/)).not.toBeInTheDocument();
   });
 
@@ -95,9 +98,12 @@ describe('Sex BOTH → Indistinto (es)', () => {
 
   it('MatchCriteriaChips: Sexo chip shows "Indistinto"', () => {
     i18n.changeLanguage('es');
-    render(<MatchCriteriaChips vacancy={matchVacancy as never} />);
+    const { container } = render(
+      <MatchCriteriaChips vacancy={matchVacancy as never} />,
+    );
     expect(screen.getByText('Indistinto')).toBeInTheDocument();
     expect(screen.queryByText(/^BOTH$/)).not.toBeInTheDocument();
+    expectNoRawEnumLeaks(container);
   });
 });
 
@@ -105,7 +111,9 @@ describe('Sex BOTH → Indistinto (pt-BR)', () => {
   it('VacancyCaseCard pt-BR also renders "Indistinto"', () => {
     i18n.changeLanguage('pt-BR');
     render(<VacancyCaseCard {...caseProps} />);
-    expect(screen.getByText(/AT - Indistinto - Palermo/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Acompanhante Terapêutico - Indistinto - Palermo/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/BOTH/)).not.toBeInTheDocument();
   });
 

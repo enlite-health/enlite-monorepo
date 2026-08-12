@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { InternalController } from '../InternalController';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
+import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
+import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { OutboxProcessor } from '../../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../../infrastructure/BulkDispatchScheduler';
@@ -23,8 +25,8 @@ function mockRes() {
   } as unknown as Response;
 }
 
-function mockReq(body: Record<string, unknown> = {}): Request {
-  return { body } as unknown as Request;
+function mockReq(body: Record<string, unknown> = {}, query: Record<string, unknown> = {}): Request {
+  return { body, query } as unknown as Request;
 }
 
 /** Helper: build a Pub/Sub push body with base64-encoded data */
@@ -44,12 +46,16 @@ describe('InternalController', () => {
   let reminderScheduler: jest.Mocked<ReminderScheduler>;
   let bulkDispatchScheduler: jest.Mocked<BulkDispatchScheduler>;
   let bulkDispatchTalentumScheduler: jest.Mocked<BulkDispatchTalentumScheduler>;
+  let domainEventBacklogService: jest.Mocked<DomainEventBacklogService>;
+  let anaCareMirrorHealthService: jest.Mocked<AnaCareMirrorHealthService>;
   let controller: InternalController;
 
   beforeEach(() => {
     eventProcessor = {
       processEvent: jest.fn().mockResolvedValue({ status: 'processed', event: 'test' }),
       sweepPendingEvents: jest.fn().mockResolvedValue(3),
+      sweepPendingByEvent: jest.fn().mockResolvedValue({ processed: 2, total: 3 }),
+      deleteRedundantMirrorEvents: jest.fn().mockResolvedValue(1),
       registerHandler: jest.fn(),
     } as unknown as jest.Mocked<DomainEventProcessor>;
 
@@ -63,7 +69,7 @@ describe('InternalController', () => {
       process5MinReminder: jest.fn().mockResolvedValue(undefined),
       scheduleReminders: jest.fn().mockResolvedValue({ taskNames: [] }),
       cancelReminders: jest.fn().mockResolvedValue(undefined),
-      processBatch: jest.fn().mockResolvedValue(undefined),
+      processBatch: jest.fn().mockResolvedValue({ dayCount: 0, minCount: 0, noShows: 0 }),
     } as unknown as jest.Mocked<ReminderScheduler>;
 
     bulkDispatchScheduler = {
@@ -74,12 +80,27 @@ describe('InternalController', () => {
       run: jest.fn().mockResolvedValue({ batchId: 'batch-t-1', total: 5, sent: 4, errors: 1 }),
     } as unknown as jest.Mocked<BulkDispatchTalentumScheduler>;
 
+    domainEventBacklogService = {
+      getBacklogSummary: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<DomainEventBacklogService>;
+
+    anaCareMirrorHealthService = {
+      getMirrorHealth: jest.fn().mockResolvedValue({
+        stuckRecent: 0,
+        oldestStuckAgeHours: 0,
+        chronicTotal: 0,
+        stuck: false,
+      }),
+    } as unknown as jest.Mocked<AnaCareMirrorHealthService>;
+
     controller = new InternalController(
       eventProcessor,
       outboxProcessor,
       reminderScheduler,
       bulkDispatchScheduler,
       bulkDispatchTalentumScheduler,
+      domainEventBacklogService,
+      anaCareMirrorHealthService,
     );
   });
 
@@ -159,6 +180,28 @@ describe('InternalController', () => {
     });
   });
 
+  // ─── sweepReminders ───────────────────────────────────────────────
+
+  describe('sweepReminders', () => {
+    it('chama processBatch e retorna 200 com counts', async () => {
+      reminderScheduler.processBatch.mockResolvedValueOnce({ dayCount: 2, minCount: 1, noShows: 3 });
+      const res = mockRes();
+      await controller.sweepReminders(mockReq(), res);
+
+      expect(reminderScheduler.processBatch).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ status: 'ok', dayCount: 2, minCount: 1, noShows: 3 });
+    });
+
+    it('returns 500 on error', async () => {
+      reminderScheduler.processBatch.mockRejectedValue(new Error('sweep failed'));
+      const res = mockRes();
+      await controller.sweepReminders(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
   // ─── sweepOutbox ───────────────────────────────────────────────────
 
   describe('sweepOutbox', () => {
@@ -194,6 +237,258 @@ describe('InternalController', () => {
       eventProcessor.sweepPendingEvents.mockRejectedValue(new Error('fail'));
       const res = mockRes();
       await controller.sweepEvents(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── sweepSafeEvents ───────────────────────────────────────────────
+
+  describe('sweepSafeEvents', () => {
+    beforeEach(() => {
+      // Event-aware mock: returns a distinct {processed,total} per event name,
+      // so the test can prove BOTH allowlist entries were swept (not just one).
+      eventProcessor.sweepPendingByEvent.mockImplementation(async (eventName: string) => {
+        if (eventName === 'worker.mirror_requested') return { processed: 2, total: 3 };
+        if (eventName === 'worker.registration_completed') return { processed: 1, total: 1 };
+        if (eventName === 'vacancy.created') return { processed: 4, total: 5 };
+        throw new Error(`unexpected event in sweep-safe: ${eventName}`);
+      });
+    });
+
+    it('deletes redundant mirror events, then sweeps EACH allowlist event and sums the totals', async () => {
+      const req = mockReq({}, {});
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(req, res);
+
+      expect(eventProcessor.deleteRedundantMirrorEvents).toHaveBeenCalled();
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('worker.mirror_requested', 5, 100);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith(
+        'worker.registration_completed',
+        5,
+        100,
+      );
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('vacancy.created', 5, 100);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(3);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        deleted: 1,
+        processed: 7, // 2 + 1 + 4
+        total: 9, // 3 + 1 + 5
+        byEvent: {
+          'worker.mirror_requested': { processed: 2, total: 3 },
+          'worker.registration_completed': { processed: 1, total: 1 },
+          'vacancy.created': { processed: 4, total: 5 },
+        },
+      });
+    });
+
+    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. funnel_stage.qualified)', async () => {
+      const res = mockRes();
+      await controller.sweepSafeEvents(mockReq(), res);
+
+      const calledEvents = eventProcessor.sweepPendingByEvent.mock.calls.map(c => c[0]);
+      expect(calledEvents).not.toContain('funnel_stage.qualified');
+      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed', 'vacancy.created'].sort());
+    });
+
+    it('parses olderThanMinutes/limit from query and forwards to every allowlist event', async () => {
+      const req = mockReq({}, { olderThanMinutes: '10', limit: '25' });
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(req, res);
+
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('worker.mirror_requested', 10, 25);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('worker.registration_completed', 10, 25);
+    });
+
+    it('returns 400 for invalid query params', async () => {
+      const req = mockReq({}, { olderThanMinutes: 'not-a-number' });
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(eventProcessor.deleteRedundantMirrorEvents).not.toHaveBeenCalled();
+      expect(eventProcessor.sweepPendingByEvent).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      eventProcessor.deleteRedundantMirrorEvents.mockRejectedValue(new Error('db down'));
+      const res = mockRes();
+
+      await controller.sweepSafeEvents(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── getEventsHealth ───────────────────────────────────────────────
+
+  describe('getEventsHealth', () => {
+    it('returns summary + stuckCount + worstOldestRecentAgeMinutes with default params', async () => {
+      domainEventBacklogService.getBacklogSummary.mockResolvedValue([
+        {
+          event: 'worker.qualified',
+          pendingTotal: 2,
+          pendingRecent: 2,
+          oldestRecentAgeMinutes: 5,
+          failedTotal: 0,
+          stuck: false,
+        },
+      ]);
+      const req = mockReq({}, {});
+      const res = mockRes();
+
+      await controller.getEventsHealth(req, res);
+
+      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(6, 15);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        summary: [
+          {
+            event: 'worker.qualified',
+            pendingTotal: 2,
+            pendingRecent: 2,
+            oldestRecentAgeMinutes: 5,
+            failedTotal: 0,
+            stuck: false,
+          },
+        ],
+        stuckCount: 0,
+        worstOldestRecentAgeMinutes: 5,
+        anaCareMirror: {
+          stuckRecent: 0,
+          oldestStuckAgeHours: 0,
+          chronicTotal: 0,
+          stuck: false,
+        },
+      });
+    });
+
+    /**
+     * Regressão do incidente de 30/07/2026 (chave do Ana Care invalidada,
+     * 58 prestadores presos por 11 dias sem ninguém ver).
+     *
+     * O alerta antigo era de BORDA: contava falhas numa janela de 5min, zerava
+     * quando a rajada passava e mandava "[RESOLVED] Alert recovered" com o
+     * sistema quebrado. Os testes abaixo travam a propriedade que conserta
+     * isso: o WARN é função do ESTADO (existe alguém preso?), não de ter
+     * havido falha nova nesta janela — logo o cron o reemite a cada ciclo e a
+     * métrica não zera sozinha.
+     */
+    describe('espelho Ana Care (estado)', () => {
+      const { logger } = jest.requireMock('@shared/logging');
+
+      // o mock de módulo do logger é compartilhado entre os testes do arquivo
+      beforeEach(() => {
+        logger.warn.mockClear();
+        logger.info.mockClear();
+      });
+
+      it('emite o WARN de estado quando existe preso — sem nenhuma falha nova', async () => {
+        anaCareMirrorHealthService.getMirrorHealth.mockResolvedValue({
+          stuckRecent: 20,
+          oldestStuckAgeHours: 168.4,
+          chronicTotal: 39,
+          stuck: true,
+        });
+
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            msg: '[mirror/health] anacare mirror stuck',
+            stuckRecent: 20,
+            oldestStuckAgeHours: 168.4,
+            chronicTotal: 39,
+          }),
+        );
+      });
+
+      it('reemite o MESMO WARN a cada ciclo do cron enquanto o estado durar', async () => {
+        anaCareMirrorHealthService.getMirrorHealth.mockResolvedValue({
+          stuckRecent: 20,
+          oldestStuckAgeHours: 168.4,
+          chronicTotal: 39,
+          stuck: true,
+        });
+
+        // três ciclos consecutivos do scheduler de 5min
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+
+        const warns = logger.warn.mock.calls.filter(
+          (c: [{ msg: string }]) => c[0].msg === '[mirror/health] anacare mirror stuck',
+        );
+        expect(warns).toHaveLength(3);
+      });
+
+      it('cala só quando o backlog recente zera de verdade', async () => {
+        anaCareMirrorHealthService.getMirrorHealth.mockResolvedValue({
+          stuckRecent: 0,
+          oldestStuckAgeHours: 0,
+          chronicTotal: 39, // crônico continua, mas NÃO pagina
+          stuck: false,
+        });
+
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+
+        const warns = logger.warn.mock.calls.filter(
+          (c: [{ msg: string }]) => c[0].msg === '[mirror/health] anacare mirror stuck',
+        );
+        expect(warns).toHaveLength(0);
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({ msg: '[mirror/health] ok', chronicTotal: 39 }),
+        );
+      });
+
+      it('usa os defaults medidos (2h de limite, janela de recência de 7d)', async () => {
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+        expect(anaCareMirrorHealthService.getMirrorHealth).toHaveBeenCalledWith(2, 168);
+      });
+    });
+
+    it('parses recentWindowHours/stuckThresholdMinutes from query', async () => {
+      const req = mockReq({}, { recentWindowHours: '12', stuckThresholdMinutes: '30' });
+      const res = mockRes();
+
+      await controller.getEventsHealth(req, res);
+
+      expect(domainEventBacklogService.getBacklogSummary).toHaveBeenCalledWith(12, 30);
+    });
+
+    it('returns 400 for invalid query params', async () => {
+      const req = mockReq({}, { recentWindowHours: 'not-a-number' });
+      const res = mockRes();
+
+      await controller.getEventsHealth(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(domainEventBacklogService.getBacklogSummary).not.toHaveBeenCalled();
+    });
+
+    it('computes stuckCount from rows with stuck=true', async () => {
+      domainEventBacklogService.getBacklogSummary.mockResolvedValue([
+        { event: 'a', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 20, failedTotal: 0, stuck: true },
+        { event: 'b', pendingTotal: 1, pendingRecent: 1, oldestRecentAgeMinutes: 2, failedTotal: 0, stuck: false },
+      ]);
+      const res = mockRes();
+
+      await controller.getEventsHealth(mockReq(), res);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ stuckCount: 1, worstOldestRecentAgeMinutes: 20 }),
+      );
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      domainEventBacklogService.getBacklogSummary.mockRejectedValue(new Error('db down'));
+      const res = mockRes();
+
+      await controller.getEventsHealth(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });

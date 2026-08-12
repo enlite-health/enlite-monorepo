@@ -521,6 +521,13 @@ describe('D9 — retencao: indice + funcao de archiving', () => {
 
 describe('I3 — current_applicants removido, get_applicant_count()', () => {
   afterEach(async () => {
+    // Limpar encuadres criados pelo trigger trg_ensure_encuadre_on_wja_insert.
+    // Os encuadres usam dedup_hash determinístico (md5('auto-trigger|worker|job')),
+    // e ficam no banco com worker_id=NULL após o worker ser deletado (ON DELETE SET NULL).
+    // Sem este cleanup, o dedup_hash colide em testes subsequentes.
+    await pool.query(`DELETE FROM encuadres WHERE job_posting_id = ANY($1) OR job_posting_id IS NULL AND import_source_audit = 'auto-trigger'`, [
+      [IDS.job1, IDS.job2],
+    ]).catch(() => {});
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = ANY($1)`, [
       [IDS.job1, IDS.job2],
     ]).catch(() => {});
@@ -581,13 +588,13 @@ describe('I3 — current_applicants removido, get_applicant_count()', () => {
 
     // Inserir 3 candidatos
     await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id)
-       VALUES ($1, $3), ($2, $3)`,
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $3, 'INVITED'), ($2, $3, 'INVITED')`,
       [IDS.worker1, IDS.worker2, IDS.job1]
     );
     await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id)
-       VALUES ($1, $2)`,
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $2, 'INVITED')`,
       [IDS.worker3, IDS.job1]
     );
 
@@ -609,8 +616,8 @@ describe('I3 — current_applicants removido, get_applicant_count()', () => {
     );
 
     await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id)
-       VALUES ($1, $3), ($2, $3)`,
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $3, 'INVITED'), ($2, $3, 'INVITED')`,
       [IDS.worker1, IDS.worker2, IDS.job1]
     );
 

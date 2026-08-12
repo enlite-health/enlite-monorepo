@@ -14,6 +14,7 @@ module "sa_enlite_functions" {
   display_name = "Enlite Functions Service Account"
   project_roles = [
     google_project_iam_custom_role.api_keys_lookup.name,
+    "roles/aiplatform.user", # Vertex AI (geração de descrição + prescreening via ADC)
     "roles/cloudsql.client",
     "roles/cloudtasks.enqueuer",
     "roles/firebase.admin",
@@ -42,19 +43,6 @@ module "sa_github_deploy" {
     "roles/artifactregistry.writer",
     "roles/iam.serviceAccountUser",
     "roles/run.admin",
-  ]
-}
-
-module "sa_n8n_integration" {
-  source       = "../../modules/service-account"
-  project_id   = var.project_id
-  account_id   = "n8n-integration-identity"
-  display_name = "N8N Integration"
-  description  = "This account service is to n8n and APIs comunicate each other"
-  project_roles = [
-    "roles/iap.httpsResourceAccessor",
-    "roles/run.servicesInvoker",
-    "roles/serviceusage.apiKeysViewer",
   ]
 }
 

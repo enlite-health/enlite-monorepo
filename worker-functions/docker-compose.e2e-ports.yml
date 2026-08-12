@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Override de PORTAS para rodar os testes E2E LOCALMENTE.
+#
+# PRA QUE SERVE
+#   A stack de teste (docker-compose.yml + docker-compose.test.yml) expõe o
+#   Postgres na porta 5432 do host. O Docker Compose SOMA as listas de `ports`
+#   ao juntar arquivos, então ele tenta bindar 5432 E 5433. Se a 5432 já estiver
+#   ocupada por outro container da máquina (ex.: enlite-evolution-postgres, ou o
+#   finance-pg de outro projeto), o `up` falha com "port is already allocated".
+#
+#   A tag `!override` SUBSTITUI a lista de portas (em vez de somar), expondo o
+#   Postgres de teste SOMENTE na 5433 — sem conflitar com o que já roda na 5432.
+#
+# QUANDO USAR
+#   Só no ambiente LOCAL, quando o `up` da stack E2E falhar por porta ocupada.
+#   NÃO é necessário em CI nem em produção (lá não há esse conflito). Não altera
+#   o comportamento da aplicação — é puramente infra de teste local.
+#
+# COMO USAR
+#   cd worker-functions
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml \
+#     -f docker-compose.e2e-ports.yml up -d --build postgres api
+#   # rode os testes apontando a connection string do host pra 5433:
+#   API_URL=http://localhost:8080 \
+#   DATABASE_URL=postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e \
+#     npx jest --config jest.config.e2e.js <suite>
+#
+#   Obs.: `--build` é obrigatório em worktree novo (imagem cacheada pode não ter
+#   o `dist` buildado → a api crasha com "Cannot find module '/app/dist/index.js'").
+#   Se a 8080 também estiver ocupada na sua máquina, adicione aqui um override
+#   análogo para `api` (ex.: "8081:8080") e ajuste API_URL.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  postgres:
+    ports: !override
+      - "5433:5432"

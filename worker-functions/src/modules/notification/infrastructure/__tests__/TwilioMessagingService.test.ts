@@ -444,4 +444,147 @@ describe('TwilioMessagingService', () => {
       });
     });
   });
+
+  // ─── Espelho no Chatwoot (renderForChatwoot) ──────────────────
+  // Regressão: a migration 063 deixou o body de complete_register_ofc como
+  // '[Template aprovado Twilio — ...]' (placeholder), e esse placeholder era
+  // espelhado pro Chatwoot como mensagem outgoing. O triage-service (Luz) lia
+  // o placeholder como "o que ela disse" e respondia como se fosse o primeiro
+  // contato. O espelho TEM que postar o texto real renderizado do template.
+  describe('mirror no Chatwoot', () => {
+    function buildWithChatwoot() {
+      const mirrorOutgoingMessage = jest.fn().mockResolvedValue(undefined);
+      const chatwoot = { mirrorOutgoingMessage } as any;
+      const svc = new TwilioMessagingService(mockTemplateRepo as any, chatwoot);
+      return { svc, mirrorOutgoingMessage };
+    }
+
+    it('espelha o texto REAL do template (não um placeholder) pro Chatwoot', async () => {
+      const realBody =
+        'Hola, soy Luz de EnLite. Tu registro como profesional quedó incompleto. ' +
+        'Para activarlo, completá tu perfil en https://app.enlite.health.';
+      mockTemplateRepo.findBySlug.mockResolvedValueOnce({
+        slug: 'complete_register_ofc',
+        body: realBody,
+        contentSid: 'HXf7a25b327e14989f78e6d6d4572debc0',
+        isActive: true,
+      });
+      mockCreate.mockResolvedValueOnce({ sid: 'SMmirror', status: 'queued' });
+
+      const { svc, mirrorOutgoingMessage } = buildWithChatwoot();
+      const result = await svc.sendWhatsApp({
+        to: '+5491100001111',
+        templateSlug: 'complete_register_ofc',
+      });
+
+      expect(result.isSuccess).toBe(true);
+
+      // Envio inalterado: Content API com contentVariables vazio (template sem variáveis).
+      expect(mockCreate.mock.calls[0][0].contentSid).toBe(
+        'HXf7a25b327e14989f78e6d6d4572debc0',
+      );
+      expect(mockCreate.mock.calls[0][0].contentVariables).toBe('{}');
+
+      // Espelho recebe o texto real, com o SID do Twilio como source_id.
+      expect(mirrorOutgoingMessage).toHaveBeenCalledTimes(1);
+      const mirrored = mirrorOutgoingMessage.mock.calls[0][0];
+      expect(mirrored.content).toBe(realBody);
+      expect(mirrored.content).not.toMatch(/Template aprovado|Content API/);
+      expect(mirrored.twilioSid).toBe('SMmirror');
+      expect(mirrored.phone).toBe('+5491100001111');
+    });
+
+    it('interpola variáveis nomeadas no texto espelhado', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValueOnce({
+        slug: 'ar_vacancy_match_complete',
+        body: '¡Hola {{worker_name}}! Hay una oportunidad en {{patient_zone}}.',
+        contentSid: 'HXmatch',
+        isActive: true,
+      });
+      mockCreate.mockResolvedValueOnce({ sid: 'SMmatch', status: 'queued' });
+
+      const { svc, mirrorOutgoingMessage } = buildWithChatwoot();
+      await svc.sendWhatsApp({
+        to: '+5491100001111',
+        templateSlug: 'ar_vacancy_match_complete',
+        variables: { worker_name: 'Sabrina', patient_zone: 'Palermo' },
+      });
+
+      expect(mirrorOutgoingMessage.mock.calls[0][0].content).toBe(
+        '¡Hola Sabrina! Hay una oportunidad en Palermo.',
+      );
+    });
+  });
+
+  // ─── Guard de tokens PII não-resolvidos ───────────────────────
+  // Regressão de 2026-05-21: 167 workers receberam "Hola tk_<hash>" em vez do
+  // nome porque o caller esqueceu de chamar TokenService.resolveVariables.
+  describe('guardUnresolvedTokens', () => {
+    it('sendWhatsApp REJEITA envio quando variables contém tk_ não resolvido', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491176614743',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'tk_1becdd3bd1fea388' },
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toMatch(/Unresolved PII tokens/);
+      expect(result.error).toContain('worker_name=tk_1becdd3bd1fea388');
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('sendWhatsApp ACEITA envio quando variables tem só valores plaintext', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+      mockCreate.mockResolvedValue({ sid: 'SMok', status: 'queued' });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491176614743',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'João Silva' },
+      });
+
+      expect(result.isSuccess).toBe(true);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('sendWithContentSid REJEITA envio quando contentVariables contém tk_', async () => {
+      const result = await service.sendWithContentSid(
+        '+5491176614743',
+        'HXabc',
+        { '1': 'tk_abc123def456' },
+      );
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toMatch(/Unresolved PII tokens/);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('não bloqueia valores que apenas começam com letras parecidas (ex: "tkachenko")', async () => {
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+      mockCreate.mockResolvedValue({ sid: 'SMok', status: 'queued' });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491176614743',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'Tkachenko' },
+      });
+
+      expect(result.isSuccess).toBe(true);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -1,8 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { Check, Pencil } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 
 type WeekdayKey =
   | 'sunday'
@@ -125,7 +124,8 @@ interface VacancyProfessionCardProps {
   workerAttributes: string | null;
   serviceType: string[] | null;
   schedule: Record<string, TimeSlot[]> | null;
-  onEdit?: () => void;
+  onEditSchedule?: () => void;
+  onEditDescription?: () => void;
 }
 
 export function VacancyProfessionCard({
@@ -139,7 +139,8 @@ export function VacancyProfessionCard({
   workerAttributes,
   serviceType,
   schedule,
-  onEdit,
+  onEditSchedule,
+  onEditDescription,
 }: VacancyProfessionCardProps) {
   const { t } = useTranslation();
 
@@ -179,16 +180,6 @@ export function VacancyProfessionCard({
         <Heading level={1} color="primary" weight="semibold">
           {cardTitle}
         </Heading>
-        {onEdit && (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={onEdit}
-            className="rounded-full shrink-0"
-          >
-            {t('admin.vacancyDetail.professionCard.edit')}
-          </Button>
-        )}
       </div>
 
       <div className="flex items-baseline gap-2 flex-wrap">
@@ -214,13 +205,26 @@ export function VacancyProfessionCard({
         </Text>
       </div>
 
-      {talentumDescription && (
+      {(talentumDescription || onEditDescription) && (
         <div className="flex flex-col gap-2">
-          <Text size="base" color="primary" weight="medium">
-            {t('admin.vacancyDetail.professionCard.description')}
-          </Text>
-          <Text size="sm" color="secondary" className="leading-[1.5]">
-            {talentumDescription}
+          <div className="flex items-center justify-between gap-2">
+            <Text size="base" color="primary" weight="medium">
+              {t('admin.vacancyDetail.professionCard.description')}
+            </Text>
+            {onEditDescription && (
+              <button
+                type="button"
+                onClick={onEditDescription}
+                aria-label={t('admin.vacancyDetail.professionCard.editDescription')}
+                data-testid="vacancy-edit-description-trigger"
+                className="text-primary hover:text-primary/70 transition-colors p-1 rounded"
+              >
+                <Pencil className="w-4 h-4" strokeWidth={2} />
+              </button>
+            )}
+          </div>
+          <Text size="sm" color="secondary" className="leading-[1.5] whitespace-pre-line">
+            {talentumDescription || t('admin.vacancyDetail.professionCard.descriptionEmpty')}
           </Text>
         </div>
       )}
@@ -247,10 +251,23 @@ export function VacancyProfessionCard({
             label={t('admin.vacancyDetail.professionCard.serviceType')}
             value={serviceTypeLabel}
           />
-          <CharacteristicRow
-            label={t('admin.vacancyDetail.professionCard.daysAndHours')}
-            value={null}
-          />
+          <div className="flex items-center justify-between gap-2">
+            <CharacteristicRow
+              label={t('admin.vacancyDetail.professionCard.daysAndHours')}
+              value={null}
+            />
+            {onEditSchedule && (
+              <button
+                type="button"
+                onClick={onEditSchedule}
+                aria-label={t('admin.vacancyDetail.professionCard.editSchedule')}
+                data-testid="vacancy-edit-schedule-trigger"
+                className="text-primary hover:text-primary/70 transition-colors p-1 rounded"
+              >
+                <Pencil className="w-4 h-4" strokeWidth={2} />
+              </button>
+            )}
+          </div>
         </div>
 
         <ScheduleGrid schedule={schedule} />

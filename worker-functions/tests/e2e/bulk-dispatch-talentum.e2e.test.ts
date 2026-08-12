@@ -3,12 +3,13 @@
  *
  * Valida o Fluxo B (Fase 4) — Lembrete de prescreening Talentum incompleto:
  *   POST /api/internal/bulk-dispatch/talentum-incomplete
- *   → workers com application_funnel_stage IN ('INITIATED','IN_PROGRESS') há >5 dias
+ *   → workers com application_funnel_stage IN ('PRE_SCREENING','IN_PROGRESS') há >5 dias
+ *     (migration 230: INITIATED→PRE_SCREENING)
  *     sem reminder enviado nos últimos 7 dias recebem WhatsApp com
  *     template 'talentum_incomplete_reminder'
  *
  * Setup:
- *   - Cria worker + worker_job_application em INITIATED com updated_at forçado para >5 dias atrás
+ *   - Cria worker + worker_job_application em PRE_SCREENING com updated_at forçado para >5 dias atrás
  *
  * Asserts:
  *   - response 200 com success=true, total>=1, batchId UUID
@@ -53,11 +54,11 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
     );
     eligibleWorkerId = wRes.rows[0].id;
 
-    // application em INITIATED com updated_at = 10 dias atrás
+    // application em PRE_SCREENING com updated_at = 10 dias atrás (migration 230: INITIATED→PRE_SCREENING)
     await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage, updated_at)
-       SELECT $1, id, 'INITIATED', NOW() - INTERVAL '10 days'
+       SELECT $1, id, 'PRE_SCREENING', NOW() - INTERVAL '10 days'
        FROM job_postings LIMIT 1`,
       [eligibleWorkerId],
     );
@@ -75,7 +76,7 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
       await pool.query(
         `INSERT INTO worker_job_applications
            (worker_id, job_posting_id, application_funnel_stage, updated_at)
-         VALUES ($1, $2, 'INITIATED', NOW() - INTERVAL '10 days')`,
+         VALUES ($1, $2, 'PRE_SCREENING', NOW() - INTERVAL '10 days')`,
         [eligibleWorkerId, jpRes.rows[0].id],
       );
     }
@@ -90,7 +91,7 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
     );
     dedupWorkerId = wDedupRes.rows[0].id;
 
-    // application do worker dedup em INITIATED há >5 dias
+    // application do worker dedup em PRE_SCREENING há >5 dias (migration 230: INITIATED→PRE_SCREENING)
     const checkVacancyDedup = await pool.query<{ id: string }>(
       `SELECT id FROM job_postings LIMIT 1`,
     );
@@ -98,7 +99,7 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
       await pool.query(
         `INSERT INTO worker_job_applications
            (worker_id, job_posting_id, application_funnel_stage, updated_at)
-         VALUES ($1, $2, 'INITIATED', NOW() - INTERVAL '10 days')
+         VALUES ($1, $2, 'PRE_SCREENING', NOW() - INTERVAL '10 days')
          ON CONFLICT DO NOTHING`,
         [dedupWorkerId, checkVacancyDedup.rows[0].id],
       );
@@ -202,7 +203,7 @@ describe('Fluxo B — lembrete Talentum incompleto', () => {
        FROM workers w
        INNER JOIN worker_job_applications wja
          ON wja.worker_id = w.id
-         AND wja.application_funnel_stage IN ('INITIATED', 'IN_PROGRESS')
+         AND wja.application_funnel_stage IN ('PRE_SCREENING', 'IN_PROGRESS') -- migration 230
          AND wja.updated_at < NOW() - INTERVAL '5 days'
        WHERE w.id = $1
          AND w.status != 'DISABLED'

@@ -15,6 +15,7 @@ import { Pool } from 'pg';
 import * as XLSX from 'xlsx';
 import { Readable } from 'stream';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { WorkerExportColumnKey, COLUMN_LABELS_ES } from './export/workerExportColumns';
 import { csvRow } from './export/csvUtils';
@@ -179,9 +180,13 @@ function buildExportWhere(filters: ExportWorkersFilters): { clause: string; para
   let idx = 1;
   let clause = 'WHERE w.merged_into_id IS NULL';
 
+  // Mesma regra da lista: status explícito manda (inclusive DISABLED); sem
+  // filtro, quem deu baixa na conta não sai no export. Ver activeWorkerFilter.
   if (filters.status) {
     clause += ` AND w.status = $${idx++}`;
     params.push(filters.status);
+  } else {
+    clause += ` AND ${excludeDisabledWorkersSql('w')}`;
   }
 
   if (filters.platform) {

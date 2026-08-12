@@ -1,8 +1,13 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { reportError } from '@shared/logging';
 import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import {
+  excludeDisabledWorkersSql,
+  workerNotDisabledSql,
+} from '@shared/database/activeWorkerFilter';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
 
@@ -27,6 +32,15 @@ export class VacancyMatchController {
       const excludeWithActiveCases = req.query.exclude_active === 'true';
       const useScoring             = req.query.use_scoring === 'true';
 
+      const jobRes = await this.db.query<{ id: string }>(
+        `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
+        [id],
+      );
+      if (jobRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Job posting not found' });
+        return;
+      }
+
       const matchingService = new MatchmakingService();
       const result = await matchingService.matchWorkersForJob(id, {
         topN,
@@ -36,9 +50,10 @@ export class VacancyMatchController {
       });
 
       res.status(200).json({ success: true, data: result });
-    } catch (error: any) {
-      console.error('[VacancyMatch] Error triggering match:', error);
-      res.status(500).json({ success: false, error: 'Failed to run matchmaking', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'VacancyMatchController:triggerMatch' });
+      res.status(500).json({ success: false, error: 'Failed to run matchmaking', details: e.message });
     }
   }
 
@@ -51,24 +66,30 @@ export class VacancyMatchController {
       const metaResult = await this.db.query<{ total: string; last_match_at: Date | null }>(
         `SELECT COUNT(*)::text AS total, MAX(wja.updated_at) AS last_match_at
          FROM worker_job_applications wja
-         WHERE wja.job_posting_id = $1`,
+         WHERE wja.job_posting_id = $1
+           -- total tem que bater com a lista abaixo (que exclui baixados)
+           AND ${workerNotDisabledSql('wja.worker_id')}`,
         [id]
       );
       const totalCandidates = parseInt(metaResult.rows[0]?.total || '0');
       const lastMatchAt     = metaResult.rows[0]?.last_match_at ?? null;
 
+      // F7.c (ADR-004): application_status removido do SELECT; source + application_funnel_stage
+      // adicionados para derivar alreadyApplied sem depender do campo depreciado.
       const result = await this.db.query(
         `SELECT
            wja.worker_id,
            wja.match_score,
            wja.internal_notes,
-           wja.application_status,
+           wja.source,
+           wja.application_funnel_stage,
            wja.messaged_at,
            w.phone,
            w.first_name_encrypted,
            w.last_name_encrypted,
            w.occupation,
            w.status,
+           wd.documents_status,
            wsa.work_zone,
            CASE
              WHEN wsa.location IS NOT NULL AND pa.lat IS NOT NULL AND pa.lng IS NOT NULL
@@ -89,9 +110,12 @@ export class VacancyMatchController {
          FROM worker_job_applications wja
          JOIN workers w    ON w.id  = wja.worker_id
          JOIN job_postings jp ON jp.id = wja.job_posting_id
+         LEFT JOIN worker_documents wd ON wd.worker_id = w.id
          LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
          LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
          WHERE wja.job_posting_id = $1
+           -- worker que deu baixa na conta não é candidato contatável
+           AND ${excludeDisabledWorkersSql('w')}
          ORDER BY wja.match_score DESC NULLS LAST
          LIMIT $2 OFFSET $3`,
         [id, limit, offset]
@@ -115,10 +139,16 @@ export class VacancyMatchController {
             distanceKm:        row.distance_km,
             activeCasesCount:  row.active_cases_count ?? 0,
             workerStatus:      row.status,
+            documentStatus:    row.documents_status ?? null,
             matchScore:        row.match_score !== null ? parseFloat(row.match_score) : null,
             internalNotes:     row.internal_notes,
-            applicationStatus: row.application_status,
-            alreadyApplied:    row.application_status === 'applied',
+            // F7.c (ADR-004): applicationStatus REMOVIDO. alreadyApplied agora deriva da combinação
+            // source != 'system' OR messaged_at != null OR funnel_stage != 'INVITED'.
+            // Lógica: "worker chegou por canal ≠ match, OU já foi contatado, OU já avançou no funil".
+            alreadyApplied:
+              row.source !== 'system'
+              || row.messaged_at !== null
+              || row.application_funnel_stage !== 'INVITED',
             messagedAt:        row.messaged_at,
           };
         })
@@ -128,9 +158,10 @@ export class VacancyMatchController {
         success: true,
         data: { jobPostingId: id, lastMatchAt, totalCandidates, candidates },
       });
-    } catch (error: any) {
-      console.error('[VacancyMatch] Error fetching match results:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch match results', details: error.message });
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'VacancyMatchController:getMatchResults' });
+      res.status(500).json({ success: false, error: 'Failed to fetch match results', details: e.message });
     }
   }
 

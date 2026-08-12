@@ -44,6 +44,10 @@ export class TwilioContentClient {
     return all;
   }
 
+  async fetchContent(sid: string): Promise<TwilioContent> {
+    return this.get<TwilioContent>(`/v1/Content/${sid}`);
+  }
+
   async fetchWhatsAppApproval(sid: string): Promise<WhatsAppApproval | null> {
     try {
       const raw = await this.get<Record<string, unknown>>(`/v1/Content/${sid}/ApprovalRequests`);

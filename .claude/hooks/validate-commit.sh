@@ -2,6 +2,15 @@
 # PreToolUse hook: roda tsc --noEmit no projeto afetado antes de permitir git commit.
 # Só dispara para comandos "git commit". Outros comandos git passam direto.
 
+# Hook não herda PATH do shell interativo (NVM/pnpm não estão disponíveis).
+# Adicionamos a versão node mais recente do NVM e o pnpm via corepack.
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  NODE_BIN=$(ls -d "$HOME/.nvm/versions/node"/v*/bin 2>/dev/null | tail -1)
+  if [ -n "$NODE_BIN" ]; then
+    export PATH="$NODE_BIN:$PATH"
+  fi
+fi
+
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 

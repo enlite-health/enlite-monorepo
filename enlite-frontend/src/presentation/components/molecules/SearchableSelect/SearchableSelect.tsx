@@ -89,7 +89,7 @@ export function SearchableSelect({
           type="button"
           onClick={handleOpen}
           disabled={disabled}
-          className="w-full h-12 px-4 rounded-[10px] border-[1.5px] border-[#D9D9D9] bg-white font-lexend font-medium text-[#374151] text-sm flex items-center justify-between gap-2 focus:outline-none focus:border-[#6B21A8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full h-12 px-4 rounded-[10px] border-[1.5px] border-[#D9D9D9] bg-white font-lexend font-medium text-[#374151] text-sm flex items-center justify-between gap-2 focus:outline-none focus:border-[#180149] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           aria-haspopup="listbox"
           aria-expanded={isOpen}
         >

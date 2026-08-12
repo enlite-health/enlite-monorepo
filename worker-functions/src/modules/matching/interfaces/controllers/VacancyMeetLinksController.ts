@@ -3,6 +3,8 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { googleCalendarService } from '../../infrastructure/GoogleCalendarService';
+import { loggingAls, reportError } from '@shared/logging';
+import { JobPostingAuditRepository } from '../../infrastructure/JobPostingAuditRepository';
 
 /**
  * VacancyMeetLinksController
@@ -40,9 +42,11 @@ function normalizeMeetLink(input: string): string {
 
 export class VacancyMeetLinksController {
   private db: Pool;
+  private auditRepo: JobPostingAuditRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.auditRepo = new JobPostingAuditRepository();
   }
 
   /**
@@ -109,19 +113,49 @@ export class VacancyMeetLinksController {
         link3 !== null ? googleCalendarService.resolveDateTime(link3) : Promise.resolve(null),
       ]);
 
-      // Persiste os 6 campos na vaga
-      await this.db.query(
-        `UPDATE job_postings
-         SET meet_link_1     = $1,
-             meet_datetime_1 = $2,
-             meet_link_2     = $3,
-             meet_datetime_2 = $4,
-             meet_link_3     = $5,
-             meet_datetime_3 = $6,
-             updated_at      = NOW()
-         WHERE id = $7`,
-        [link1, datetime1, link2, datetime2, link3, datetime3, id]
-      );
+      // Persiste os 6 campos + audit UPDATED — tudo na mesma transação
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const user = (req as any).user as { uid?: string } | undefined;
+      const actorUserId = user?.uid ?? null;
+      const traceId = loggingAls.getStore()?.traceId ?? null;
+
+      const client = await this.db.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `UPDATE job_postings
+           SET meet_link_1     = $1,
+               meet_datetime_1 = $2,
+               meet_link_2     = $3,
+               meet_datetime_2 = $4,
+               meet_link_3     = $5,
+               meet_datetime_3 = $6,
+               updated_at      = NOW()
+           WHERE id = $7`,
+          [link1, datetime1, link2, datetime2, link3, datetime3, id],
+        );
+        // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+        // leaving the surrounding transaction (and the UPDATE above) intact.
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId: id,
+          eventType: 'UPDATED',
+          fieldName: 'meet_links',
+          changes: {
+            before: null,
+            after: { meet_link_1: link1, meet_link_2: link2, meet_link_3: link3 },
+          },
+          actorUserId,
+          actorType: 'HUMAN',
+          actorLabel: 'admin_panel',
+          traceId,
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
 
       res.status(200).json({
         success: true,
@@ -136,7 +170,7 @@ export class VacancyMeetLinksController {
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[VacancyMeetLinksController] Error updating meet links:', message);
+      reportError(error instanceof Error ? error : new Error(message), { source: 'VacancyMeetLinksController:updateMeetLinks' });
       res.status(500).json({
         success: false,
         error: 'Failed to update meet links',

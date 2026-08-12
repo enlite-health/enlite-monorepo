@@ -52,7 +52,6 @@ const MOCK_FUNNEL = {
           workZone: 'Belgrano',
           redireccionamiento: null,
           acquisitionChannel: 'facebook',
-          funnelStage: 'INVITED',
         },
         {
           id: 'vis-inv-ig',
@@ -72,7 +71,6 @@ const MOCK_FUNNEL = {
           workZone: 'Palermo',
           redireccionamiento: null,
           acquisitionChannel: 'instagram',
-          funnelStage: 'INVITED',
         },
         {
           id: 'vis-inv-wa',
@@ -92,7 +90,6 @@ const MOCK_FUNNEL = {
           workZone: 'Recoleta',
           redireccionamiento: null,
           acquisitionChannel: 'whatsapp',
-          funnelStage: 'INVITED',
         },
         {
           id: 'vis-inv-li',
@@ -112,7 +109,6 @@ const MOCK_FUNNEL = {
           workZone: 'Caballito',
           redireccionamiento: null,
           acquisitionChannel: 'linkedin',
-          funnelStage: 'INVITED',
         },
         {
           id: 'vis-inv-site',
@@ -132,10 +128,10 @@ const MOCK_FUNNEL = {
           workZone: 'Flores',
           redireccionamiento: null,
           acquisitionChannel: 'site',
-          funnelStage: 'INVITED',
         },
       ],
-      INITIATED: [],
+      INICIADO: [],
+      PRE_SCREENING: [],
       IN_PROGRESS: [],
       COMPLETED: [
         {

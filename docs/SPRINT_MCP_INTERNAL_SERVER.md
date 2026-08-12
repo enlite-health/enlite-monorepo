@@ -277,6 +277,37 @@ Pra cada tool call:
    - Cada call gera log Pino com: `principal`, `onBehalfOfWorkerId`, `capability`, `argsRedacted`, `outcome`, `latencyMs`
    - Redaction de PII validada por unit test
 
+### 3.5 Principal `claude-code` — conector Claude (read-only)
+
+Adicionado em 2026-07-02. Permite usar o MCP como conector do Claude Code/API, além do canal triage.
+
+- **Secret:** `mcp-principal-claude-code` (stg e prd, tokens distintos por ambiente), mesmo formato do triage. IAM: `enlite-functions-sa` com `secretAccessor`.
+- **Capabilities (só leitura):** `worker.profile.get`, `worker.documents.list`, `worker.vacancies.list`, `worker.interview.get`, `worker.stats.get` (agregados: total/status/funil, zero PII) e `worker.search` (busca paginada, máx 50, mesma mecânica do painel admin incl. trigram blind index). As duas últimas adicionadas em 2026-07-02 após a primeira pergunta real do time ("quantos prestadores temos?").
+- **`db.query.readonly`** (2026-07-02): SQL ad-hoc de leitura pro Claude — single statement SELECT/WITH, máx 200 linhas, timeout 10s, transação READ ONLY, executado pela role `enlite_mcp_ro` (`pg_read_all_data` + `default_transaction_read_only=on`, senha em `enlite-mcp-ro-db-password`). PII encriptada sai como ciphertext opaco (decrypt KMS só nas capabilities worker.*). Registrada só quando `MCP_DB_RO_USER/MCP_DB_RO_PASSWORD` estão setados (services MCP).
+- **Registry escopado por principal:** `CapabilityRegistry.registerAll` só registra as tools do allowlist do principal da request (o `McpServer` é stateless, criado por request). Um principal read-only nem vê as tools de escrita no `tools/list`. Fail-closed: sem principal, nenhuma tool registrada. A validação em tempo de execução (`isCapabilityAllowed`) permanece como segunda camada.
+- **Conexão (Claude Code):**
+
+  ```bash
+  TOKEN=$(gcloud secrets versions access latest --secret=mcp-principal-claude-code --project=enlite-prd | jq -r '.tokens[0]')
+  claude mcp add --transport http enlite-workers \
+    "https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app/mcp/v1" \
+    --header "Authorization: Bearer $TOKEN"
+  ```
+
+- **Rotação:** mesma mecânica da seção 2.7 (2 versions ativas no array `tokens`).
+
+### 3.6 OAuth 2.1 — conector personalizado do claude.ai (Fase 2)
+
+Adicionado em 2026-07-02. O claude.ai web/desktop não aceita Bearer estático — exige OAuth 2.1 (authorization code + PKCE, RFC 8414/9728, DCR). Implementado em `src/modules/mcp/{application/oauth,interfaces/oauth,bootstrap/mountOAuthRoutes.ts}`, ativado por `MCP_OAUTH_ENABLED=true`.
+
+- **AS = o próprio service MCP**, via `mcpAuthRouter` do `@modelcontextprotocol/sdk` (endpoints `/authorize`, `/token`, `/register` + os dois `/.well-known/*`; PKCE S256 validado pelo SDK).
+- **Stateless de ponta a ponta:** authorization code (60s), access token (1h), refresh token (30d) e até o `client_id` do DCR são JWTs HS256 assinados com `MCP_OAUTH_SIGNING_KEY` (Secret Manager, `mcp-oauth-signing-key`). Sem tabela nova. Revogação v1 = rotacionar a key (TD-058).
+- **Identidade:** página de consent (`/authorize`) com Google sign-in do Firebase (mesma conta do painel). `POST /oauth/consent` verifica o idToken (`firebase-admin`) e autoriza somente **staff ativo** (`users.role IN (admin, recruiter, community_manager) AND is_active`, via `AdminRepository.findByEmail`). Requer o domínio do service MCP nos Authorized domains do Firebase Auth (feito em stg+prd via API do Identity Toolkit).
+- **Autorização:** o access token vira um `ServicePrincipal` sintético `claude-ai:<email>` com o mapa `worker:read` → 4 capabilities de leitura (`domain/OAuthScopes.ts`). O registry escopado por principal (§3.5) limita o `tools/list`; audit registra o email. Escrita nunca é exposta nesse canal.
+- **Descoberta:** 401 do `/mcp/v1` responde `WWW-Authenticate: Bearer resource_metadata=...` — é assim que o claude.ai acha o AS.
+- **Como conectar (qualquer staff):** claude.ai → Settings → Connectors → Add custom connector → colar `https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app/mcp/v1` → login Google. Sem client id/secret (DCR automático).
+- **Teste:** fluxo completo coberto por `src/modules/mcp/__tests__/oauthMcpFlow.e2e.test.ts` (descoberta → DCR → consent → token PKCE → client MCP oficial faz tools/list e vê só as 4 tools read-only).
+
 ---
 
 ## 4. Plano de 8 PRs
@@ -460,3 +491,5 @@ Nenhuma bloqueante no PR 1. Pra rodadas futuras:
 | Data | Autor | Mudança |
 |---|---|---|
 | 2026-05-20 | Gabriel + Claude | Versão inicial do sprint após refinamento PO + parecer Architect |
+| 2026-07-02 | Gabriel + Claude | §3.5: principal `claude-code` read-only + registry escopado por principal (conector Claude Code) |
+| 2026-07-02 | Gabriel + Claude | §3.6: OAuth 2.1 stateless (mcpAuthRouter + Firebase consent) pro conector claude.ai; TD-058/TD-059 |

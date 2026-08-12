@@ -49,15 +49,16 @@ export function AdditionalDocumentsSection({
   };
 
   return (
-    <div className="flex flex-col gap-4 mt-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 mt-6" data-testid="additional-documents-section">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Heading level={2} weight="semibold" color="secondary">
           {t('documents.additionalTitle', 'Otros Documentos')}
         </Heading>
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-primary text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
+          data-testid="additional-doc-add"
+          className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-primary text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
         >
           <Plus size={16} />
           {t('documents.addDocument', 'Agregar')}
@@ -74,8 +75,8 @@ export function AdditionalDocumentsSection({
             onChange={(e) => setLabel(e.target.value.slice(0, 255))}
             className="w-full px-3 py-2 rounded-input border border-gray-400 text-sm font-lexend focus:outline-none focus:border-primary"
           />
-          <div className="flex items-center gap-3">
-            <label className="flex-1 flex items-center gap-2 px-3 py-2 rounded-input border border-gray-400 cursor-pointer hover:border-primary transition-colors">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-input border border-gray-400 cursor-pointer hover:border-primary transition-colors">
               <FileText size={16} className="text-gray-500" />
               <span className="text-sm text-gray-600 font-lexend truncate">
                 {file ? file.name : t('documents.selectFile', 'Seleccionar archivo (PDF, JPG, PNG)')}
@@ -91,7 +92,7 @@ export function AdditionalDocumentsSection({
               type="button"
               disabled={!label.trim() || !file || submitting}
               onClick={handleSubmit}
-              className="px-4 py-2 rounded-input bg-primary text-white text-sm font-medium disabled:opacity-40 hover:bg-primary/90 transition-colors flex items-center gap-1.5"
+              className="w-full sm:w-auto justify-center shrink-0 px-4 py-2 rounded-input bg-primary text-white text-sm font-medium disabled:opacity-40 hover:bg-primary/90 transition-colors flex items-center gap-1.5"
             >
               {submitting && <Loader2 size={14} className="animate-spin" />}
               {t('documents.upload', 'Subir')}

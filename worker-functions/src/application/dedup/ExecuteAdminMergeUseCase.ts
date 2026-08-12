@@ -1,0 +1,239 @@
+/**
+ * ExecuteAdminMergeUseCase
+ *
+ * Executa 1 merge iniciado manualmente pelo admin via endpoint POST /api/admin/dedup/merge.
+ * Suporta fieldChoices para modo avançado (admin escolhe valor campo a campo).
+ * Captura snapshot pré-merge para permitir undo.
+ */
+
+import type { Pool } from 'pg';
+import { logger, reportError } from '@shared/logging';
+import { WorkerPhoneMergeService } from '../../infrastructure/services/WorkerPhoneMergeService';
+import { discoverWorkerFkTables } from '../../infrastructure/services/WorkerPhoneMergeFkDiscovery';
+import { FK_TABLES_TO_REPARENT } from '../../infrastructure/services/WorkerPhoneMergeTypes';
+import type {
+  AdminMergeResult,
+  AppliedOverride,
+  ExecuteMergeParams,
+  MergeAuditContext,
+} from './DedupTypes';
+import { resolveAdminEmail } from './resolveAdminEmail';
+
+const log = logger.child({ source: 'ExecuteAdminMergeUseCase' });
+
+export class ExecuteAdminMergeUseCase {
+  private readonly mergeService: WorkerPhoneMergeService;
+
+  constructor(private readonly pool: Pool) {
+    this.mergeService = new WorkerPhoneMergeService();
+  }
+
+  async execute(params: ExecuteMergeParams): Promise<AdminMergeResult> {
+    const { survivorId, absorbedIds, fieldChoices } = params;
+
+    // Monta o contexto de auditoria (QUEM/DE ONDE/COMO). executedBy pode vir no
+    // topo (legado) ou dentro de audit; resolvemos o email pra registro legível.
+    const executedBy = params.audit?.executedBy ?? params.executedBy;
+    const executedByEmail: string | undefined =
+      params.audit?.executedByEmail ?? (await resolveAdminEmail(this.pool, executedBy)) ?? undefined;
+    const baseAudit: MergeAuditContext = {
+      ...params.audit,
+      executedBy,
+      executedByEmail,
+    };
+
+    log.info({
+      msg: 'admin_merge_start',
+      survivorId,
+      absorbedIds,
+      executed_by: executedBy ?? 'system',
+      executed_by_email: executedByEmail,
+      merge_source: baseAudit.source ?? 'manual',
+      confirmed_same_person: baseAudit.confirmedSamePerson ?? false,
+      ip_address: baseAudit.ipAddress ?? null,
+      request_id: baseAudit.requestId ?? null,
+      has_field_choices: Boolean(fieldChoices && Object.keys(fieldChoices).length > 0),
+    });
+
+    // Valida que survivorId existe e não está mergeado
+    const survivorRes = await this.pool.query<{ id: string; phone_normalized: string; merged_into_id: string | null }>(
+      `SELECT id, phone_normalized, merged_into_id FROM workers WHERE id = $1::uuid`,
+      [survivorId],
+    );
+
+    if (survivorRes.rows.length === 0) {
+      throw new Error(`Survivor worker não encontrado: ${survivorId}`);
+    }
+
+    const survivor = survivorRes.rows[0];
+    if (survivor.merged_into_id != null) {
+      throw new Error(`Survivor ${survivorId} já foi mergeado (merged_into_id = ${survivor.merged_into_id})`);
+    }
+
+    const phoneNormalized = survivor.phone_normalized ?? '';
+
+    // Descobre FKs uma vez
+    const discoveredFks = await discoverWorkerFkTables(this.pool, {
+      knownTables: FK_TABLES_TO_REPARENT.map(t => t.table),
+    });
+
+    const auditIds: number[] = [];
+
+    for (const absorbedId of absorbedIds) {
+      // Valida absorvido
+      const absRes = await this.pool.query<{ merged_into_id: string | null }>(
+        `SELECT merged_into_id FROM workers WHERE id = $1::uuid`,
+        [absorbedId],
+      );
+
+      if (absRes.rows.length === 0) {
+        log.warn({ msg: 'admin_merge_absorbed_not_found', absorbedId });
+        continue;
+      }
+
+      if (absRes.rows[0].merged_into_id != null) {
+        log.info({ msg: 'admin_merge_absorbed_already_merged', absorbedId });
+        continue;
+      }
+
+      try {
+        // Se fieldChoices fornecido, aplica overrides antes do merge.
+        // appliedOverrides registra EXATAMENTE o que o admin sobrescreveu (de qual
+        // conta veio cada campo) — peça-chave da auditoria "como".
+        let appliedOverrides: AppliedOverride[] = [];
+        if (fieldChoices && Object.keys(fieldChoices).length > 0) {
+          appliedOverrides = await this.applyFieldChoices(survivorId, absorbedId, fieldChoices);
+        }
+
+        await this.mergeService.executeSingleMerge({
+          survivorId,
+          absorbedId,
+          phoneNormalized,
+          category: 'firebase', // categoria = regra de sobrevivente; o fluxo real vai em audit.source
+          legalFieldExceptions: [],
+          discoveredFks,
+          audit: { ...baseAudit, fieldChoices, appliedOverrides },
+        });
+
+        // Recupera o auditId do último merge inserido
+        const auditRes = await this.pool.query<{ id: number }>(
+          `SELECT id FROM worker_merge_audit
+           WHERE survivor_id = $1::uuid AND absorbed_id = $2::uuid
+           ORDER BY created_at DESC LIMIT 1`,
+          [survivorId, absorbedId],
+        );
+
+        if (auditRes.rows.length > 0) {
+          auditIds.push(Number(auditRes.rows[0].id));
+        }
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        reportError(e, { source: 'ExecuteAdminMergeUseCase', survivorId, absorbedId });
+        throw e;
+      }
+    }
+
+    log.info({
+      msg: 'admin_merge_done',
+      survivorId,
+      absorbed_count: absorbedIds.length,
+      audit_ids: auditIds,
+      executed_by: executedBy ?? 'system',
+      executed_by_email: executedByEmail,
+    });
+
+    return { audit_ids: auditIds, survivor_id: survivorId, absorbed_ids: absorbedIds };
+  }
+
+  /**
+   * Aplica field choices do modo avançado: quando o admin escolhe o valor da
+   * conta ABSORVIDA pra um campo, copia esse valor pro survivor antes do merge.
+   *
+   * Contrato do choice (`fieldChoices[campo]`), aceito em duas formas:
+   *   - account id cru (UUID)  → forma enviada pelo frontend (MergeAdvancedFields)
+   *   - 'absorbed:<id>' / 'survivor' → forma legada (API direta / testes)
+   * Só aplicamos quando o vencedor é a conta `absorbedId` corrente; se o
+   * vencedor é o survivor, não há nada a copiar.
+   *
+   * Campos ENCRIPTADOS (`*_encrypted`): copia o CIPHERTEXT da conta escolhida
+   * direto pro survivor — SEM decriptar/re-encriptar (a coluna já guarda o
+   * ciphertext base64 KMS; basta transferir os bytes).
+   */
+  private async applyFieldChoices(
+    survivorId: string,
+    absorbedId: string,
+    fieldChoices: Record<string, string>,
+  ): Promise<AppliedOverride[]> {
+    const overrideFields: string[] = [];
+    for (const [field, choice] of Object.entries(fieldChoices)) {
+      if (!OVERRIDABLE_FIELDS.has(field)) continue;
+      if (choiceWinsForAbsorbed(choice, absorbedId)) {
+        overrideFields.push(field);
+      }
+    }
+
+    if (overrideFields.length === 0) return [];
+
+    // Busca valores do absorvido para os campos escolhidos. Para campos
+    // encriptados isto retorna o ciphertext cru — que é exatamente o que
+    // copiamos (sem expor plaintext neste use case).
+    const absRes = await this.pool.query<Record<string, unknown>>(
+      `SELECT ${overrideFields.join(', ')} FROM workers WHERE id = $1::uuid`,
+      [absorbedId],
+    );
+
+    if (absRes.rows.length === 0) return [];
+
+    const absorbedRow = absRes.rows[0];
+    const setClauses = overrideFields.map((f, i) => `${f} = $${i + 1}`);
+    const values = [...overrideFields.map(f => absorbedRow[f]), survivorId];
+
+    await this.pool.query(
+      `UPDATE workers SET ${setClauses.join(', ')} WHERE id = $${overrideFields.length + 1}::uuid`,
+      values,
+    );
+
+    log.info({ msg: 'field_choices_applied', survivorId, absorbedId, fields: overrideFields });
+
+    // Rastro "como": cada campo sobrescrito + de qual conta veio o valor.
+    return overrideFields.map(field => ({ field, from_account_id: absorbedId }));
+  }
+}
+
+/**
+ * Colunas que o modo avançado pode sobrescrever via choice. Inclui campos
+ * públicos + as colunas `*_encrypted` que aparecem no comparativo do detalhe
+ * (GetDedupGroupDetailUseCase.ENCRYPTED_FIELDS). Para encriptados copiamos o
+ * ciphertext, nunca o plaintext.
+ */
+const OVERRIDABLE_FIELDS = new Set<string>([
+  // Públicos
+  'profession',
+  'knowledge_level',
+  'years_experience',
+  'status',
+  // Encriptados (ciphertext copiado direto)
+  'first_name_encrypted',
+  'last_name_encrypted',
+  'sex_encrypted',
+  'gender_encrypted',
+  'birth_date_encrypted',
+  'document_number_encrypted',
+  'languages_encrypted',
+  'profile_photo_url_encrypted',
+  'whatsapp_phone_encrypted',
+  'linkedin_url_encrypted',
+  'sexual_orientation_encrypted',
+  'race_encrypted',
+  'religion_encrypted',
+  'weight_kg_encrypted',
+  'height_cm_encrypted',
+]);
+
+/**
+ * True quando o choice indica que a conta ABSORVIDA corrente é a vencedora do
+ * campo. Tolera o id cru (frontend) e o prefixo 'absorbed:' (legado/testes).
+ */
+function choiceWinsForAbsorbed(choice: string, absorbedId: string): boolean {
+  return choice === absorbedId || choice === `absorbed:${absorbedId}`;
+}

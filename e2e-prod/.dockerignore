@@ -1,0 +1,17 @@
+# Nada de dependência do host — o `npm ci` reinstala no layer certo (arch da imagem).
+node_modules/
+
+# Artefatos de runs locais — não vão pra imagem.
+playwright-report/
+test-results/
+blob-report/
+.auth/
+
+# Segredos e config local — NUNCA na imagem (.env.example é doc, também fora).
+.env
+.env.*
+
+# Metadados de repo/ferramentas — irrelevantes pro build.
+.git/
+.gitignore
+.claude/

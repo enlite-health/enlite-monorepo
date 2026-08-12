@@ -1,5 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // App light-only: sem `.dark` no DOM, as variantes `dark:` ficam inertes.
+  // Evita que o modo escuro do SO (prefers-color-scheme) quebre o layout —
+  // o chrome do admin (PageContainer/Heading/Text) não tem tema escuro.
+  darkMode: 'class',
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',

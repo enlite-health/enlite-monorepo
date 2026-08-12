@@ -12,8 +12,10 @@ describe('VacanciesTable', () => {
       diasAberto: '05',
       convidados: '329',
       postulados: '115',
+      confirmados: '43',
       selecionados: '27',
       faltantes: '00',
+      isDraft: false,
     },
     {
       id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
@@ -23,12 +25,14 @@ describe('VacanciesTable', () => {
       diasAberto: '03',
       convidados: '164',
       postulados: '52',
+      confirmados: '09',
       selecionados: '06',
       faltantes: '00',
+      isDraft: false,
     },
   ];
 
-  it('should render table headers (case, status, priority, invited, applicants, selected, missing)', () => {
+  it('should render table headers (case, status, priority, invited, applicants, confirmed, selected, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
@@ -36,6 +40,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.table.priority')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.invited')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.applicants')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.table.confirmed')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.selected')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.missing')).toBeInTheDocument();
   });
@@ -73,9 +78,11 @@ describe('VacanciesTable', () => {
 
     expect(screen.getByText('329')).toBeInTheDocument();
     expect(screen.getByText('115')).toBeInTheDocument();
+    expect(screen.getByText('43')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
     expect(screen.getByText('164')).toBeInTheDocument();
     expect(screen.getByText('52')).toBeInTheDocument();
+    expect(screen.getByText('09')).toBeInTheDocument();
     expect(screen.getByText('06')).toBeInTheDocument();
   });
 
@@ -96,5 +103,19 @@ describe('VacanciesTable', () => {
     ];
     render(<VacanciesTable vacancies={noPriority} />);
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('shows the draft badge only on rows where isDraft is true', () => {
+    const mixed: VacancyRow[] = [
+      { ...realApiData[0], id: 'draft-1', isDraft: true },
+      { ...realApiData[1], id: 'published-1', isDraft: false },
+    ];
+    render(<VacanciesTable vacancies={mixed} />);
+
+    // t() returns the key in test env
+    const badges = screen.getAllByText('admin.vacancies.table.draftBadge');
+    expect(badges).toHaveLength(1);
+    expect(screen.getByTestId('vacancy-draft-badge-draft-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-draft-badge-published-1')).not.toBeInTheDocument();
   });
 });

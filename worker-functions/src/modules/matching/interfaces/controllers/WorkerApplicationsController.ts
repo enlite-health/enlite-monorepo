@@ -1,19 +1,28 @@
 import { Request, Response } from 'express';
-import crypto from 'crypto';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { logger } from '@shared/logging';
 import { GetWorkerProgressUseCase, WorkerRepository } from '@modules/worker';
+import { ApplyToVacancyUseCase } from '../../application/ApplyToVacancyUseCase';
 
-const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
+// 'luz_whatsapp' = postulação registrada pela Luz na conversa (≠ 'whatsapp',
+// que é clique humano em link de WhatsApp) — atribuição da conversão da IA.
+const VALID_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site', 'luz_whatsapp'] as const;
 
 const TrackChannelSchema = z.object({
   jobPostingId: z.string().min(1, 'jobPostingId is required'),
-  channel: z.enum(VALID_CHANNELS, {
-    errorMap: () => ({
-      message: `channel must be one of: ${VALID_CHANNELS.join(', ')}`,
-    }),
-  }),
+  // channel é opcional/nullable: a postulação é registrada em TODO clique (mesmo sem
+  // UTM). Quando presente, deve ser um canal válido; ausente/null → acquisition_channel
+  // fica NULL. Um valor de canal inválido continua sendo rejeitado (400).
+  channel: z
+    .enum(VALID_CHANNELS, {
+      errorMap: () => ({
+        message: `channel must be one of: ${VALID_CHANNELS.join(', ')}`,
+      }),
+    })
+    .nullable()
+    .default(null),
 });
 
 /**
@@ -28,10 +37,12 @@ const TrackChannelSchema = z.object({
 export class WorkerApplicationsController {
   private readonly db: Pool;
   private readonly getProgressUseCase: GetWorkerProgressUseCase;
+  private readonly applyToVacancyUseCase: ApplyToVacancyUseCase;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.getProgressUseCase = new GetWorkerProgressUseCase(new WorkerRepository());
+    this.applyToVacancyUseCase = new ApplyToVacancyUseCase();
   }
 
   private getAuthUid(req: Request): string | null {
@@ -85,41 +96,34 @@ export class WorkerApplicationsController {
         return;
       }
 
-      // Upsert WJA: worker self-applied via public link, lands in INITIATED column.
-      // ON CONFLICT: only sets acquisition_channel if currently NULL (first-touch wins).
-      await this.db.query(
-        `INSERT INTO worker_job_applications
-           (worker_id, job_posting_id, application_status, source, acquisition_channel, application_funnel_stage)
-         VALUES ($1, $2, 'applied', 'manual', $3, 'INITIATED')
-         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-           acquisition_channel = CASE
-             WHEN worker_job_applications.acquisition_channel IS NULL THEN EXCLUDED.acquisition_channel
-             ELSE worker_job_applications.acquisition_channel
-           END,
-           updated_at = NOW()`,
-        [worker.id, jobPostingId, channel],
-      );
+      // Worker self-applied via public link, lands in INVITED column.
+      // (Clicou no link, ainda não entrou no WhatsApp Talentum — INITIATED só via webhook.)
+      // Elegibilidade + instrumentação de bloqueio + criação vivem no
+      // ApplyToVacancyUseCase (fonte única — mesma composição da capability da Luz).
+      const applyResult = await this.applyToVacancyUseCase.execute(this.db, {
+        workerId: worker.id,
+        jobPostingId,
+        acquisitionChannel: channel,
+        workerName: worker.name,
+        workerPhone: worker.phone,
+      });
 
-      // Ensure encuadre exists so the worker appears in the Kanban INITIATED column.
-      // Uses decrypted worker name. Only creates if no encuadre exists (preserves Talentum encuadres).
-      const dedupHash = crypto.createHash('md5')
-        .update(`social-link|${worker.id}|${jobPostingId}`)
-        .digest('hex');
-
-      await this.db.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
-         SELECT $1, $2, $4, $5, $6, $3
-         WHERE NOT EXISTS (
-           SELECT 1 FROM encuadres e WHERE e.worker_id = $1 AND e.job_posting_id = $2
-         )
-         ON CONFLICT (dedup_hash) DO NOTHING`,
-        [worker.id, jobPostingId, dedupHash, worker.name, worker.phone, channel],
-      );
+      if (!applyResult.ok) {
+        res.status(applyResult.httpStatus).json({
+          success: false,
+          error: 'registration_incomplete',
+          code: applyResult.code,
+          reason: applyResult.reason,
+          workerStatus: applyResult.workerStatus,
+          missingFields: applyResult.missingFields,
+        });
+        return;
+      }
 
       res.status(200).json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[WorkerApplicationsController] trackChannel error:', message);
+      logger.error({ msg: '[WorkerApplicationsController] trackChannel error', error: message });
       res.status(500).json({ success: false, error: message });
     }
   }

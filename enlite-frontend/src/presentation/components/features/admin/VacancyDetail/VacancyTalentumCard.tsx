@@ -66,6 +66,18 @@ export function VacancyTalentumCard({
     };
   }, [vacancyId]);
 
+  // A geração leva ~40s; avisa antes de recarregar/fechar pra não perder o
+  // preview (que só persiste ao Guardar/Publicar) e não abortar o request.
+  useEffect(() => {
+    if (!isGenerating) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isGenerating]);
+
   const hasQuestions = questionsCount !== null && questionsCount > 0;
   const switchDisabled =
     isPublishing || isUnpublishing || (questionsCount !== null && !hasQuestions);
@@ -158,7 +170,7 @@ export function VacancyTalentumCard({
     : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
+    <div data-testid="talentum-card" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -247,7 +259,28 @@ export function VacancyTalentumCard({
           <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
             {t(`${tk}.description`)}
           </span>
-          {description ? (
+          {isGenerating ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="bg-slate-50 rounded-lg px-4 py-3 flex flex-col gap-3"
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{t(`${tk}.generating`)}</span>
+              </div>
+              <div className="flex flex-col gap-2 animate-pulse" aria-hidden="true">
+                <div className="h-3 rounded bg-slate-200 w-full" />
+                <div className="h-3 rounded bg-slate-200 w-11/12" />
+                <div className="h-3 rounded bg-slate-200 w-4/5" />
+                <div className="h-3 rounded bg-slate-200 w-2/3" />
+              </div>
+              <span className="flex items-start gap-1.5 text-xs text-amber-600">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                {t(`${tk}.generatingHint`)}
+              </span>
+            </div>
+          ) : description ? (
             <div className="bg-slate-50 rounded-lg px-4 py-3 text-sm text-slate-700 whitespace-pre-line max-h-48 overflow-y-auto">
               {description}
             </div>

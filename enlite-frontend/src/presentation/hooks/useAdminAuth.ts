@@ -2,14 +2,15 @@ import { useEffect } from 'react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { User } from '@domain/entities/User';
 import { AdminUser } from '@domain/entities/AdminUser';
+import { AuthTraceHandle } from '@infrastructure/observability/authTrace';
 
 interface UseAdminAuthReturn {
   user: User | null;
   adminProfile: AdminUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  login: (email: string, password: string, trace?: AuthTraceHandle) => Promise<void>;
+  loginWithGoogle: (trace?: AuthTraceHandle) => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
 }

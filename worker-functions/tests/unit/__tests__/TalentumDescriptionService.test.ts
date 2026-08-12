@@ -11,7 +11,12 @@
 // ── Mocks ────────────────────────────────────────────────────────────
 
 const mockQuery = jest.fn();
-const mockPool = { query: mockQuery };
+const mockClientQuery = jest.fn();
+const mockClientRelease = jest.fn();
+const mockPool = {
+  query: mockQuery,
+  connect: jest.fn().mockResolvedValue({ query: mockClientQuery, release: mockClientRelease }),
+};
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -19,6 +24,14 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
       getPool: () => mockPool,
     }),
   },
+}));
+
+// Vertex AI auth via ADC — mock GoogleAuth so tests don't hit the metadata server.
+jest.mock('google-auth-library', () => ({
+  GoogleAuth: jest.fn().mockImplementation(() => ({
+    getAccessToken: jest.fn().mockResolvedValue('test-access-token'),
+    getProjectId: jest.fn().mockResolvedValue('test-project'),
+  })),
 }));
 
 const originalFetch = global.fetch;
@@ -35,6 +48,11 @@ afterAll(() => {
 beforeEach(() => {
   mockFetch.mockReset();
   mockQuery.mockReset();
+  mockClientQuery.mockReset();
+  mockClientRelease.mockReset();
+  // Default: client queries (BEGIN, UPDATE talentum_description, audit SAVEPOINT, COMMIT) resolve safely.
+  mockClientQuery.mockResolvedValue({ rows: [] });
+  mockPool.connect.mockResolvedValue({ query: mockClientQuery, release: mockClientRelease });
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -136,20 +154,10 @@ describe('TalentumDescriptionService', () => {
 
   // ── Constructor ──────────────────────────────────────────────────
   describe('constructor', () => {
-    it('initializes with GEMINI_API_KEY from env', () => {
-      process.env.GEMINI_API_KEY = 'my-api-key';
+    it('initializes without requiring an API key (Vertex via ADC)', () => {
+      delete process.env.GEMINI_API_KEY;
       const service = createService();
       expect(service).toBeDefined();
-    });
-
-    it('throws when GEMINI_API_KEY is missing', () => {
-      delete process.env.GEMINI_API_KEY;
-      expect(() => createService()).toThrow('GEMINI_API_KEY');
-    });
-
-    it('throws when GEMINI_API_KEY is empty string', () => {
-      process.env.GEMINI_API_KEY = '';
-      expect(() => createService()).toThrow('GEMINI_API_KEY');
     });
 
     it('uses default model when GEMINI_MODEL not set', () => {
@@ -170,9 +178,8 @@ describe('TalentumDescriptionService', () => {
   describe('generateDescription()', () => {
     it('happy path: fetches vacancy, calls Gemini, appends Marco, saves to DB, returns result', async () => {
       const vacancyRow = makeVacancyRow();
-      mockQuery
-        .mockResolvedValueOnce({ rows: [vacancyRow] }) // SELECT vacancy
-        .mockResolvedValueOnce({ rows: [] }); // UPDATE talentum_description
+      // UPDATE now runs on clientQuery (Onda B transaction). Pool only used for SELECT.
+      mockQuery.mockResolvedValueOnce({ rows: [vacancyRow] }); // SELECT vacancy
 
       const llmOutput = 'Descripción de la Propuesta:\nSe busca...\n\nPerfil Profesional Sugerido:\nMujer...';
       mockFetch.mockResolvedValueOnce(mockGeminiResponse(llmOutput));
@@ -187,9 +194,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('always appends Marco text as section 3 (CA-3.2)', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] }); // SELECT only
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('Section 1\n\nSection 2'));
 
       const service = createService();
@@ -203,21 +208,26 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('saves description to job_postings.talentum_description (CA-3.6)', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+      // The UPDATE now runs inside a client transaction (Onda B audit-log).
+      // pool.query is only used for the SELECT (loadInput); UPDATE is on clientQuery.
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] }); // SELECT vacancy
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('Generated text'));
+      // clientQuery default (BEGIN, UPDATE, COMMIT) resolves via beforeEach.
 
       const service = createService();
       await service.generateDescription('job-save');
 
-      // Verify UPDATE query was called
-      expect(mockQuery).toHaveBeenCalledTimes(2);
-      const updateCall = mockQuery.mock.calls[1];
-      expect(updateCall[0]).toContain('UPDATE job_postings SET talentum_description');
-      expect(updateCall[1][0]).toContain('Generated text');
-      expect(updateCall[1][0]).toContain('El Marco de Acompañamiento:');
-      expect(updateCall[1][1]).toBe('job-save');
+      // Pool: only 1 query (SELECT)
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+
+      // UPDATE is on the transactional client
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET talentum_description'),
+      );
+      expect(updateCall).toBeDefined();
+      expect((updateCall![1] as unknown[])[0]).toContain('Generated text');
+      expect((updateCall![1] as unknown[])[0]).toContain('El Marco de Acompañamiento:');
+      expect((updateCall![1] as unknown[])[1]).toBe('job-save');
     });
 
     it('throws when job posting not found', async () => {
@@ -237,9 +247,7 @@ describe('TalentumDescriptionService', () => {
         dependency_level: null,
       });
 
-      mockQuery
-        .mockResolvedValueOnce({ rows: [rowNoPatient] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [rowNoPatient] }); // SELECT only
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('No patient data description'));
 
       const service = createService();
@@ -255,9 +263,7 @@ describe('TalentumDescriptionService', () => {
 
     it('uses title fallback when title is null', async () => {
       const rowNoTitle = makeVacancyRow({ title: null, case_number: 999 });
-      mockQuery
-        .mockResolvedValueOnce({ rows: [rowNoTitle] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [rowNoTitle] }); // SELECT only
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('Description'));
 
       const service = createService();
@@ -267,9 +273,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('handles profession as array (joins with comma)', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ required_professions: ['AT', 'Enfermera'] })] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ required_professions: ['AT', 'Enfermera'] })] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -281,9 +285,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('handles profession as non-array (shows No especificado)', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ required_professions: null })] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ required_professions: null })] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -298,9 +300,7 @@ describe('TalentumDescriptionService', () => {
   // ── callGemini ────────────────────────────────────────────────────
   describe('callGemini (Gemini API interaction)', () => {
     it('sends correct generationConfig (CA-3.5)', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -322,9 +322,7 @@ describe('TalentumDescriptionService', () => {
 
     it('sends custom model from GEMINI_MODEL env', async () => {
       process.env.GEMINI_MODEL = 'gemini-custom-model';
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -334,24 +332,22 @@ describe('TalentumDescriptionService', () => {
       expect(url).toContain('gemini-custom-model');
     });
 
-    it('puts API key in URL query string', async () => {
-      process.env.GEMINI_API_KEY = 'my-secret-key';
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+    it('calls the Vertex endpoint with an ADC bearer token (no API key in URL)', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
       await service.generateDescription('job-auth');
 
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain('key=my-secret-key');
+      const init = mockFetch.mock.calls[0][1];
+      expect(url).toContain('aiplatform.googleapis.com');
+      expect(url).not.toContain('key=');
+      expect(init.headers.Authorization).toBe('Bearer test-access-token');
     });
 
     it('sends inline system prompt with description-relevant rules', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -373,11 +369,9 @@ describe('TalentumDescriptionService', () => {
       // when PROMPT_DOC_ID_AT / PROMPT_DOC_ID_CUIDADOR are unset.
       delete process.env.PROMPT_DOC_ID_AT;
       delete process.env.PROMPT_DOC_ID_CUIDADOR;
-      mockQuery
-        .mockResolvedValueOnce({
-          rows: [makeVacancyRow({ required_professions: ['AT', 'CAREGIVER'] })],
-        })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeVacancyRow({ required_professions: ['AT', 'CAREGIVER'] })],
+      });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -404,13 +398,13 @@ describe('TalentumDescriptionService', () => {
 
     it('throws on Gemini HTTP error after exhausting retries', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
-      // 429 is transient — retried 3 times before bubbling up.
+      // 429 is transient — retried up to MAX_ATTEMPTS (5) before bubbling up.
       mockFetch.mockResolvedValue(mockGeminiError(429, 'Rate limit exceeded'));
 
       const service = createService();
       await expect(service.generateDescription('job-rate-limit'))
         .rejects.toThrow('Gemini API error 429');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('throws on empty Gemini response (no content)', async () => {
@@ -440,9 +434,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('trims propuesta/perfilProfesional from LLM JSON before assembling', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow()] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       mockFetch.mockResolvedValueOnce(
         mockGeminiResponse({
           propuesta: '  resumen del caso  \n\n',
@@ -458,9 +450,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('includes zone from city + state combined', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ city: 'Palermo', state: 'CABA' })] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ city: 'Palermo', state: 'CABA' })] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -472,9 +462,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('handles zone with only city (no state)', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ city: 'Belgrano', state: null })] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ city: 'Belgrano', state: null })] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -485,9 +473,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('handles zone with neither city nor state', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ city: null, state: null })] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ city: null, state: null })] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();
@@ -498,9 +484,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('includes pathology_types in prompt when provided', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [makeVacancyRow({ pathology_types: 'Alzheimer leve' })] })
-        .mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ pathology_types: 'Alzheimer leve' })] });
       mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
 
       const service = createService();

@@ -5,9 +5,11 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useVacancyMatch } from '@hooks/admin/useVacancyMatch';
-import { SendMessageModal } from './SendMessageModal';
+import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
+import { ResendConfirmDialog } from './ResendConfirmDialog';
 import { MatchCriteriaChips } from './MatchCriteriaChips';
 import { MatchBucketSection } from './MatchBucketSection';
+import { MatchTotalsMarker } from './MatchTotalsMarker';
 import { MatchMissingMeetLinksAlert } from './MatchMissingMeetLinksAlert';
 import {
   bucketize,
@@ -38,8 +40,11 @@ export function MatchVacancyModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const enqueueInvites = useInviteProgressStore((s) => s.enqueue);
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [pendingInvites, setPendingInvites] = useState<SavedCandidate[] | null>(
+  // Candidatos aguardando decisão de re-envio (alguns já foram notificados).
+  const [confirmTarget, setConfirmTarget] = useState<SavedCandidate[] | null>(
     null,
   );
 
@@ -53,6 +58,12 @@ export function MatchVacancyModal({
   const totalCandidates = useMemo(
     () => buckets.reduce((sum, b) => sum + b.candidates.length, 0),
     [buckets],
+  );
+
+  // AC3 (86ajb48v1): recrutados = candidatos com convite já enviado (messagedAt).
+  const recruitedCount = useMemo(
+    () => (results?.candidates ?? []).filter((c) => c.messagedAt != null).length,
+    [results],
   );
 
   const selectedCandidates = useMemo(() => {
@@ -69,20 +80,45 @@ export function MatchVacancyModal({
     });
   }
 
+  // AC1 (86ajb48v1): "Seleccionar todos" por agrupamento de Km — marca/desmarca
+  // todos os candidatos de um bucket de uma vez.
+  function toggleSelectBucket(candidates: SavedCandidate[], select: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const c of candidates) {
+        if (select) next.add(c.workerId);
+        else next.delete(c.workerId);
+      }
+      return next;
+    });
+  }
+
+  // Dispara o envio em background. Se algum candidato já foi notificado, abre a
+  // confirmação de re-envio antes; senão, enfileira direto no painel flutuante.
+  function startInvite(candidates: SavedCandidate[]) {
+    if (!meetLinksOk || candidates.length === 0) return;
+    const anyAlreadyNotified = candidates.some((c) => c.messagedAt != null);
+    if (anyAlreadyNotified) {
+      setConfirmTarget(candidates);
+      return;
+    }
+    enqueueInvites(vacancyId, candidates, markMessaged);
+  }
+
   function handleInviteOne(candidate: SavedCandidate) {
-    if (!meetLinksOk) return;
-    setPendingInvites([candidate]);
+    startInvite([candidate]);
   }
 
   function handleInviteSelected() {
-    if (!meetLinksOk) return;
-    if (selectedCandidates.length === 0) return;
-    setPendingInvites(selectedCandidates);
+    startInvite(selectedCandidates);
   }
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-card shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div
+        data-testid="match-modal"
+        className="bg-white rounded-card shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-400">
           <Heading level={2} weight="semibold" color="primary">
@@ -133,12 +169,17 @@ export function MatchVacancyModal({
 
           {results && totalCandidates > 0 && (
             <div className="flex flex-col gap-4">
+              <MatchTotalsMarker
+                availableCount={totalCandidates}
+                recruitedCount={recruitedCount}
+              />
               {buckets.map((bucket) => (
                 <MatchBucketSection
                   key={bucket.label}
                   bucket={bucket}
                   selectedIds={selectedIds}
                   onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectBucket}
                   onInviteOne={handleInviteOne}
                 />
               ))}
@@ -167,14 +208,23 @@ export function MatchVacancyModal({
         </div>
       </div>
 
-      {pendingInvites && (
-        <SendMessageModal
-          candidates={pendingInvites}
-          vacancyId={vacancyId}
-          onClose={() => setPendingInvites(null)}
-          onMessaged={(workerId, messagedAt) => {
-            markMessaged(workerId, messagedAt);
+      {confirmTarget && (
+        <ResendConfirmDialog
+          alreadyCount={confirmTarget.filter((c) => c.messagedAt != null).length}
+          newCount={confirmTarget.filter((c) => c.messagedAt == null).length}
+          onResendAll={() => {
+            enqueueInvites(vacancyId, confirmTarget, markMessaged);
+            setConfirmTarget(null);
           }}
+          onNewOnly={() => {
+            enqueueInvites(
+              vacancyId,
+              confirmTarget.filter((c) => c.messagedAt == null),
+              markMessaged,
+            );
+            setConfirmTarget(null);
+          }}
+          onCancel={() => setConfirmTarget(null)}
         />
       )}
     </div>

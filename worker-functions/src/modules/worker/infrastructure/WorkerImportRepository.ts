@@ -14,6 +14,7 @@ import { Worker, WorkerStatus } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 
 export async function findByCuit(pool: Pool, cuit: string): Promise<Result<Worker | null>> {
   try {
@@ -140,6 +141,19 @@ export async function updateFromImport(
     }
   }
 
+  // Blind index: sex_bidx — generate when sex is present in import data.
+  // normalizeSexValue MUST match what WorkerPersonalInfoRepository uses (write-path parity).
+  if (data.sex !== undefined && data.sex !== null && data.sex !== '') {
+    const canonicalSex = normalizeSexValue(data.sex);
+    if (canonicalSex !== null) {
+      const sexBidxBuffer = await blindIndexService.generateValueBidx(canonicalSex);
+      if (sexBidxBuffer !== null) {
+        sets.push(`sex_bidx = $${idx++}`);
+        values.push(sexBidxBuffer);
+      }
+    }
+  }
+
   // Blind index: recalculate name_trgm_bidx if firstName or lastName changed.
   // When only one arrives, fetch the current value to compose the full name.
   const nameChanged = data.firstName !== undefined || data.lastName !== undefined;
@@ -211,12 +225,14 @@ export async function recalculateStatus(
          EXISTS (
            SELECT 1 FROM worker_documents wd
            WHERE wd.worker_id = w.id
-             AND wd.resume_cv_url              IS NOT NULL
-             AND wd.identity_document_url       IS NOT NULL
-             AND wd.criminal_record_url         IS NOT NULL
-             AND wd.professional_registration_url IS NOT NULL
-             AND wd.liability_insurance_url     IS NOT NULL
+             AND wd.identity_document_url IS NOT NULL
+             AND wd.criminal_record_url   IS NOT NULL
+             AND (
+               w.profession != 'AT'
+               OR (wd.resume_cv_url IS NOT NULL AND wd.at_certificate_url IS NOT NULL)
+             )
          )
+         -- identity_document_back_url: OPCIONAL desde migration 212
        ) AS is_complete
      FROM workers w
      WHERE w.id = $1`,

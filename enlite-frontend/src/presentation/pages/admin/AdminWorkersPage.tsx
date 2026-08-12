@@ -6,7 +6,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { SelectField } from '@presentation/components/molecules/SelectField';
+import { Select } from '@presentation/components/atoms/Select';
 import { WorkerFilters } from '@presentation/components/features/admin/WorkerFilters';
 import { WorkerStatsCards } from '@presentation/components/features/admin/WorkerStatsCards';
 import { WorkersTable } from '@presentation/components/features/admin/WorkersTable';
@@ -16,6 +16,12 @@ import { useCaseOptions } from '@hooks/admin/useCaseOptions';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
+import type { WorkerTag } from '@domain/entities/WorkerTag';
+import type { SelectOption } from '@presentation/components/atoms/Select';
+import {
+  INITIAL_PROFILE_FILTERS,
+  type WorkerProfileFilters,
+} from '@presentation/components/features/admin/workerProfileFiltersConfig';
 import { getDocsStatusOptions, getValidationStatusOptions } from './workersData';
 
 export function AdminWorkersPage(): JSX.Element {
@@ -32,12 +38,47 @@ export function AdminWorkersPage(): JSX.Element {
   const [selectedDocsStatus, setSelectedDocsStatus] = useState('');
   const [selectedValidationStatus, setSelectedValidationStatus] = useState('');
   const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagOptions, setTagOptions] = useState<WorkerTag[]>([]);
+  const [isTagsLoading, setIsTagsLoading] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
+  // Profile filters state
+  const [profileFilters, setProfileFilters] = useState<WorkerProfileFilters>(INITIAL_PROFILE_FILTERS);
+
+  // Filter-options for dropdowns populated from the API
+  const [stateOptions, setStateOptions] = useState<SelectOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<SelectOption[]>([]);
+  const [experienceTypeOptions, setExperienceTypeOptions] = useState<SelectOption[]>([]);
+  const [preferredTypeOptions, setPreferredTypeOptions] = useState<SelectOption[]>([]);
+
   const { options: caseOptions, isLoading: isCaseOptionsLoading } = useCaseOptions();
+
+  // Load tags once
+  useEffect(() => {
+    setIsTagsLoading(true);
+    AdminApiService.listWorkerTags()
+      .then(setTagOptions)
+      .catch(() => {/* silently fail — filter shows empty */})
+      .finally(() => setIsTagsLoading(false));
+  }, []);
+
+  // Load worker filter-options once
+  useEffect(() => {
+    AdminApiService.getWorkerFilterOptions()
+      .then(({ states, cities, experienceTypes, preferredTypes }) => {
+        setStateOptions(states.map((s) => ({ value: s, label: s })));
+        setCityOptions(cities.map((c) => ({ value: c, label: c })));
+        setExperienceTypeOptions(experienceTypes.map((e) => ({ value: e, label: e })));
+        setPreferredTypeOptions(preferredTypes.map((p) => ({ value: p, label: p })));
+      })
+      .catch(() => {
+        // silent — dropdowns stay empty
+      });
+  }, []);
 
   const handleSearchChange = (v: string) => {
     setSearchInput(v);
@@ -50,6 +91,11 @@ export function AdminWorkersPage(): JSX.Element {
   const handleValidationStatusChange = (v: string) => { setSelectedValidationStatus(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
   const handleCaseChange = (v: string) => { setSelectedCaseId(v); setCurrentPage(1); };
+  const handleTagIdsChange = (ids: string[]) => { setSelectedTagIds(ids); setCurrentPage(1); };
+  const handleProfileFiltersChange = useCallback((updates: Partial<WorkerProfileFilters>) => {
+    setProfileFilters((prev) => ({ ...prev, ...updates }));
+    setCurrentPage(1);
+  }, []);
 
   const filters = useMemo(
     () => ({
@@ -57,10 +103,25 @@ export function AdminWorkersPage(): JSX.Element {
       docs_complete: selectedDocsStatus || undefined,
       docs_validated: selectedValidationStatus as 'all_validated' | 'pending_validation' | undefined || undefined,
       case_id: selectedCaseId || undefined,
+      tag_ids: selectedTagIds.length > 0 ? selectedTagIds.join(',') : undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
+      // profile filters — omit when empty
+      profession: profileFilters.profession || undefined,
+      preferred_age_range: profileFilters.preferredAgeRange || undefined,
+      experience_type: profileFilters.experienceType || undefined,
+      preferred_type: profileFilters.preferredType || undefined,
+      language: profileFilters.language || undefined,
+      sex: profileFilters.sex || undefined,
+      state: profileFilters.state || undefined,
+      city: profileFilters.city || undefined,
+      days: profileFilters.days.length > 0 ? profileFilters.days.join(',') : undefined,
     }),
-    [debouncedSearch, selectedDocsStatus, selectedValidationStatus, selectedCaseId, itemsPerPage, currentPage],
+    [
+      debouncedSearch, selectedDocsStatus, selectedValidationStatus,
+      selectedCaseId, selectedTagIds, itemsPerPage, currentPage,
+      profileFilters,
+    ],
   );
 
   const { workers: rawWorkers, total, stats, isLoading, error, refetch } = useWorkersData(filters);
@@ -84,8 +145,9 @@ export function AdminWorkersPage(): JSX.Element {
         text: parts.length > 0 ? `${report.total} perfiles: ${parts.join(', ')}` : 'Sin cambios',
       });
       refetch();
-    } catch (err: any) {
-      setSyncMessage({ type: 'error', text: err.message || 'Error al sincronizar' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al sincronizar';
+      setSyncMessage({ type: 'error', text: msg });
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncMessage(null), 10000);
@@ -94,16 +156,19 @@ export function AdminWorkersPage(): JSX.Element {
 
   const workers = useMemo(
     () =>
-      (rawWorkers ?? []).map((w: any) => ({
-        id: w.id,
-        name: w.name ?? w.email ?? '—',
-        email: w.email ?? '',
-        casesCount: w.casesCount ?? 0,
-        documentsComplete: w.documentsComplete ?? false,
-        documentsStatus: w.documentsStatus ?? 'pending',
-        platform: w.platform ?? '',
-        createdAt: w.createdAt ?? '',
-      })),
+      (rawWorkers ?? []).map((w) => {
+        const row = w as Record<string, unknown>;
+        return {
+          id: row.id as string,
+          name: (row.name ?? row.email ?? '—') as string,
+          email: (row.email ?? '') as string,
+          casesCount: (row.casesCount ?? 0) as number,
+          documentsComplete: (row.documentsComplete ?? false) as boolean,
+          documentsStatus: (row.documentsStatus ?? 'pending') as string,
+          platform: (row.platform ?? '') as string,
+          createdAt: (row.createdAt ?? '') as string,
+        };
+      }),
     [rawWorkers],
   );
 
@@ -184,6 +249,16 @@ export function AdminWorkersPage(): JSX.Element {
           selectedCaseId={selectedCaseId}
           onCaseChange={handleCaseChange}
           isCaseOptionsLoading={isCaseOptionsLoading}
+          tagOptions={tagOptions}
+          selectedTagIds={selectedTagIds}
+          onTagIdsChange={handleTagIdsChange}
+          isTagsLoading={isTagsLoading}
+          profileFilters={profileFilters}
+          onProfileFiltersChange={handleProfileFiltersChange}
+          stateOptions={stateOptions}
+          cityOptions={cityOptions}
+          experienceTypeOptions={experienceTypeOptions}
+          preferredTypeOptions={preferredTypeOptions}
         />
 
         {error ? (
@@ -223,15 +298,15 @@ export function AdminWorkersPage(): JSX.Element {
         {/* Pagination */}
         <div className="flex flex-wrap items-center justify-end gap-4 mt-6">
           <div className="w-full sm:w-[164px]">
-            <SelectField
+            <Select
+              inputSize="compact"
               options={[
                 { value: '10', label: '10' },
                 { value: '20', label: '20' },
                 { value: '50', label: '50' },
               ]}
               value={itemsPerPage}
-              onChange={handleItemsPerPageChange}
-              placeholder="20"
+              onValueChange={handleItemsPerPageChange}
             />
           </div>
           <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">

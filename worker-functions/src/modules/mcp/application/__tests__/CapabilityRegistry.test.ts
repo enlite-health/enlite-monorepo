@@ -4,7 +4,26 @@ import { WorkerDocumentsListCapability } from '../capabilities/WorkerDocumentsLi
 import { WorkerVacanciesListCapability } from '../capabilities/WorkerVacanciesListCapability';
 import { WorkerInterviewGetCapability } from '../capabilities/WorkerInterviewGetCapability';
 import { WorkerProfileUpdateCapability } from '../capabilities/WorkerProfileUpdateCapability';
+import { WorkerProfileProposeUpdateCapability } from '../capabilities/WorkerProfileProposeUpdateCapability';
+import { WorkerProfileConfirmUpdateCapability } from '../capabilities/WorkerProfileConfirmUpdateCapability';
 import { WorkerDocumentsUploadCapability } from '../capabilities/WorkerDocumentsUploadCapability';
+import { WorkerStatsGetCapability } from '../capabilities/WorkerStatsGetCapability';
+import { WorkerProfileEditsStatsCapability } from '../capabilities/WorkerProfileEditsStatsCapability';
+import { FunnelActivityStatsCapability } from '../capabilities/FunnelActivityStatsCapability';
+import { WorkerSearchCapability } from '../capabilities/WorkerSearchCapability';
+import { WorkerCaseMemoryGetCapability } from '../capabilities/WorkerCaseMemoryGetCapability';
+import { WorkerCaseMemoryPutCapability } from '../capabilities/WorkerCaseMemoryPutCapability';
+import { WorkerOptOutRegisterCapability } from '../capabilities/WorkerOptOutRegisterCapability';
+import { WorkerAccountDeactivateCapability } from '../capabilities/WorkerAccountDeactivateCapability';
+import { WorkerAvailabilitySetCapability } from '../capabilities/WorkerAvailabilitySetCapability';
+import { WorkerVacanciesNearbyCapability } from '../capabilities/WorkerVacanciesNearbyCapability';
+import { WorkerAvailabilityGetCapability } from '../capabilities/WorkerAvailabilityGetCapability';
+import { WorkerApplicationRegisterCapability } from '../capabilities/WorkerApplicationRegisterCapability';
+import { WorkerInterviewSlotsListCapability } from '../capabilities/WorkerInterviewSlotsListCapability';
+import { WorkerInterviewBookCapability } from '../capabilities/WorkerInterviewBookCapability';
+import { HandoverNotifyCapability } from '../capabilities/HandoverNotifyCapability';
+import { PatientChatMapCapability } from '../capabilities/PatientChatMapCapability';
+import { WorkerApplicationsListCapability } from '../capabilities/WorkerApplicationsListCapability';
 import { WriteRateLimiter } from '../WriteRateLimiter';
 import { ServicePrincipal } from '../../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../../domain/McpErrors';
@@ -15,12 +34,20 @@ import { createHash } from 'node:crypto';
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const WORKER_ID = '123e4567-e89b-12d3-a456-426614174000';
 
-const ALL_CAPS = [
+const READ_CAPS = [
   'worker.profile.get',
   'worker.documents.list',
   'worker.vacancies.list',
   'worker.interview.get',
+  'worker.stats.get',
+  'worker.search',
+];
+
+const ALL_CAPS = [
+  ...READ_CAPS,
   'worker.profile.update',
+  'worker.profile.proposeUpdate',
+  'worker.profile.confirmUpdate',
   'worker.documents.upload',
 ];
 
@@ -56,6 +83,20 @@ function makeCapabilities() {
   const profileUpdate = new WorkerProfileUpdateCapability({
     execute: jest.fn().mockResolvedValue({ workerId: WORKER_ID, fieldsUpdated: ['firstName'] }),
   } as never);
+  const profilePropose = new WorkerProfileProposeUpdateCapability({
+    execute: jest.fn().mockResolvedValue({
+      handle: '223e4567-e89b-12d3-a456-426614174999',
+      expiresAt: '2026-06-01T00:05:00.000Z',
+      summary: [{ field: 'firstName', newValue: 'João' }],
+    }),
+  } as never);
+  const profileConfirm = new WorkerProfileConfirmUpdateCapability({
+    execute: jest.fn().mockResolvedValue({
+      applied: true,
+      workerId: WORKER_ID,
+      fieldsUpdated: ['firstName'],
+    }),
+  } as never);
   const documentsUpload = new WorkerDocumentsUploadCapability({
     execute: jest.fn().mockResolvedValue({
       filePath: `workers/${WORKER_ID}/ingested/resume_cv/123`,
@@ -63,7 +104,87 @@ function makeCapabilities() {
       workerId: WORKER_ID,
     }),
   } as never);
-  return { profileGet, documentsList, vacanciesList, interviewGet, profileUpdate, documentsUpload };
+  const statsGet = new WorkerStatsGetCapability({
+    execute: jest.fn().mockResolvedValue({ totalWorkers: 0, byStatus: {} }),
+  } as never);
+  const profileEditsStats = new WorkerProfileEditsStatsCapability({
+    execute: jest.fn().mockResolvedValue({ sinceDays: 30, totalEdits: 0, bySource: [] }),
+  } as never);
+  const funnelActivityStats = new FunnelActivityStatsCapability({
+    execute: jest.fn().mockResolvedValue({ sinceDays: 30, totalActions: 0, byActor: [] }),
+  } as never);
+  const workerSearch = new WorkerSearchCapability({
+    execute: jest.fn().mockResolvedValue({ workers: [], total: 0, limit: 20, offset: 0 }),
+  } as never);
+  const caseMemoryGet = new WorkerCaseMemoryGetCapability({
+    get: jest.fn().mockResolvedValue(null),
+  } as never);
+  const caseMemoryPut = new WorkerCaseMemoryPutCapability({
+    put: jest.fn().mockResolvedValue({ caseMemory: {}, updatedAt: '2026-07-08T00:00:00.000Z' }),
+  } as never);
+  const optOutRegister = new WorkerOptOutRegisterCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, workerId: 'w1' }),
+  } as never);
+  const accountDeactivate = new WorkerAccountDeactivateCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, alreadyDisabled: false }),
+  } as never);
+  const availabilitySet = new WorkerAvailabilitySetCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, slots: 1 }),
+  } as never);
+  const vacanciesNearby = new WorkerVacanciesNearbyCapability({
+    execute: jest.fn().mockResolvedValue({ vacancies: [] }),
+  } as never);
+  const availabilityGet = new WorkerAvailabilityGetCapability({
+    findByWorkerId: jest.fn().mockResolvedValue({ isSuccess: true, getValue: () => [] }),
+  } as never);
+  const applicationRegister = new WorkerApplicationRegisterCapability(
+    { execute: jest.fn().mockResolvedValue({ ok: true, wjaId: 'wja-1' }) } as never,
+    {} as never,
+    { execute: jest.fn().mockResolvedValue({ worker: { firstName: 'Ana', lastName: 'Test', phone: '+54911', email: 'a@t.com' } }) } as never,
+  );
+  const interviewSlotsList = new WorkerInterviewSlotsListCapability({
+    execute: jest.fn().mockResolvedValue({ ok: true, caseNumber: 795, slots: [] }),
+  } as never);
+  const applicationsList = new WorkerApplicationsListCapability({
+    execute: jest.fn().mockResolvedValue({ applications: [] }),
+  } as never);
+  const patientChatMap = new PatientChatMapCapability({
+    execute: jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 500, offset: 0, hasMore: false }),
+  } as never);
+  const handoverNotify = new HandoverNotifyCapability({
+    execute: jest.fn().mockResolvedValue({ skipped: false, groupNotified: true, ticketCreated: false }),
+  } as never);
+  const interviewBook = new WorkerInterviewBookCapability(
+    { execute: jest.fn().mockResolvedValue({ ok: true, confirmedDate: '10/04', confirmedTime: '14:00', meetDatetime: '2027-04-10T14:00:00.000Z', usedSlotIndex: 1, calendarInvite: 'sent' }) } as never,
+    { execute: jest.fn().mockResolvedValue({ worker: { email: 'a@t.com' } }) } as never,
+  );
+  return {
+    profileGet,
+    documentsList,
+    vacanciesList,
+    interviewGet,
+    profileUpdate,
+    profilePropose,
+    profileConfirm,
+    documentsUpload,
+    statsGet,
+    profileEditsStats,
+    funnelActivityStats,
+    workerSearch,
+    caseMemoryGet,
+    caseMemoryPut,
+    optOutRegister,
+    accountDeactivate,
+    availabilitySet,
+    availabilityGet,
+    vacanciesNearby,
+    applicationRegister,
+    interviewSlotsList,
+    interviewBook,
+    handoverNotify,
+    applicationsList,
+    patientChatMap,
+  };
 }
 
 /** Makes a WriteRateLimiter that always allows. */
@@ -112,14 +233,14 @@ function getHandler(
 describe('CapabilityRegistry', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  // 1. registerAll registers exactly 6 tools
-  it('registerAll registers exactly 6 tools on the server', () => {
+  // 1. registerAll registers exactly 10 tools
+  it('registerAll registers exactly 10 tools on the server', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => makePrincipal());
 
-    expect(server.registerTool).toHaveBeenCalledTimes(6);
+    expect(server.registerTool).toHaveBeenCalledTimes(10);
   });
 
   // 2. registerAll uses correct NAMEs
@@ -127,7 +248,7 @@ describe('CapabilityRegistry', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
-    registry.registerAll(server as never, () => undefined);
+    registry.registerAll(server as never, () => makePrincipal());
 
     const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
       ([name]) => name,
@@ -137,12 +258,77 @@ describe('CapabilityRegistry', () => {
     }
   });
 
-  // 3. Wrapper: principal not set → throws
-  it('wrapper throws when principal is not resolved', async () => {
+  // 2b. Registro escopado: principal read-only só vê tools de leitura
+  it('registers only allowed capabilities for a read-only principal', () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    const readOnly = READ_CAPS;
+    registry.registerAll(server as never, () => makePrincipal(readOnly));
+
+    const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
+      ([name]) => name,
+    );
+    expect(registeredNames.sort()).toEqual([...readOnly].sort());
+    expect(registeredNames).not.toContain('worker.profile.update');
+    expect(registeredNames).not.toContain('worker.documents.upload');
+  });
+
+  // 2b-bis. Principal OAuth (sanitizedToolNames) vê nomes claude-safe, mas
+  // allowlist e audit continuam no nome canônico com pontos
+  it('sanitizedToolNames: registra worker_profile_get mas audita worker.profile.get', async () => {
+    const { registry, auditor } = makeRegistry();
+    const server = makeMcpServer();
+    const oauthPrincipal = new ServicePrincipal({
+      name: 'claude-ai:ana@enlite.health',
+      allowedCapabilities: READ_CAPS,
+      tokenHashes: ['oauth'],
+      sanitizedToolNames: true,
+    });
+
+    registry.registerAll(server as never, () => oauthPrincipal);
+
+    const registeredNames = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(
+      ([name]) => name,
+    );
+    expect(registeredNames.sort()).toEqual([
+      'worker_documents_list',
+      'worker_interview_get',
+      'worker_profile_get',
+      'worker_search',
+      'worker_stats_get',
+      'worker_vacancies_list',
+    ]);
+    // pattern do claude.ai
+    for (const name of registeredNames) {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    }
+
+    const handler = getHandler(server, 'worker_profile_get');
+    await handler({ workerId: WORKER_ID });
+    expect(auditor.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'success', capability: 'worker.profile.get' }),
+    );
+  });
+
+  // 2c. Fail-closed: sem principal resolvido, nada é registrado
+  it('registers no tools when principal is not resolved (fail-closed)', () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => undefined);
+
+    expect(server.registerTool).not.toHaveBeenCalled();
+  });
+
+  // 3. Wrapper: principal not set at execution time → throws
+  it('wrapper throws when principal is not resolved at execution time', async () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    let principal: ServicePrincipal | undefined = makePrincipal();
+    registry.registerAll(server as never, () => principal);
+    principal = undefined;
 
     const handler = getHandler(server, 'worker.profile.get');
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(
@@ -150,13 +336,14 @@ describe('CapabilityRegistry', () => {
     );
   });
 
-  // 4. Wrapper: principal without permission → throws
-  it('wrapper throws when capability is not allowed for principal', async () => {
+  // 4. Wrapper: principal without permission at execution time → throws
+  it('wrapper throws when capability is not allowed for principal at execution time', async () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
-    const restrictedPrincipal = makePrincipal([]);
-    registry.registerAll(server as never, () => restrictedPrincipal);
+    let principal = makePrincipal();
+    registry.registerAll(server as never, () => principal);
+    principal = makePrincipal([]);
 
     const handler = getHandler(server, 'worker.profile.get');
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow(/not allowed for/);
@@ -306,5 +493,71 @@ describe('CapabilityRegistry', () => {
     expect(auditor.emit).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'success', capability: 'worker.documents.upload' }),
     );
+  });
+});
+
+// ── Capabilities da conversão da Luz (change luz-conversao-entrevista) ────────
+
+describe('CapabilityRegistry — conversão da Luz', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const LUZ_CAPS = [
+    'worker.application.register',
+    'worker.interview.slots.list',
+    'worker.interview.book',
+  ];
+
+  it('registra as 3 capabilities quando o principal permite e devolve o resultado do use case', async () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
+
+    expect(server.registerTool).toHaveBeenCalledTimes(3);
+    const handler = getHandler(server, 'worker.interview.book');
+    const res = await handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID, slotIndex: 1 });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({
+      ok: true,
+      confirmedDate: '10/04',
+      confirmedTime: '14:00',
+      calendarInvite: 'sent',
+    });
+  });
+
+  it('application.register e interview.book são WRITE: rate limiter negando → RateLimitExceededError', async () => {
+    const { registry } = makeRegistry({ writeRateLimiter: makeDenyingRateLimiter() });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
+
+    for (const cap of ['worker.application.register', 'worker.interview.book']) {
+      const handler = getHandler(server, cap);
+      await expect(
+        handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID, slotIndex: 1 }),
+      ).rejects.toThrow(RateLimitExceededError);
+    }
+  });
+
+  it('interview.slots.list é leitura: passa mesmo com rate limiter negando', async () => {
+    const { registry } = makeRegistry({ writeRateLimiter: makeDenyingRateLimiter() });
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
+
+    const handler = getHandler(server, 'worker.interview.slots.list');
+    const res = await handler({ jobPostingId: WORKER_ID });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ ok: true, caseNumber: 795 });
+  });
+
+  it('principal SEM as caps novas não as vê (allowlist manda)', () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+
+    registry.registerAll(server as never, () => makePrincipal(READ_CAPS));
+
+    const names = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(([n]) => n);
+    for (const cap of LUZ_CAPS) {
+      expect(names).not.toContain(cap);
+    }
   });
 });

@@ -105,11 +105,20 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
           <Heading level={1} as="h3" weight="semibold" color="primary" className="truncate">
             {fullName}
           </Heading>
-          <span className={`inline-flex px-2.5 py-0.5 rounded-full mt-1 ${statusColor}`}>
-            <Text as="span" size="xs" weight="medium" color="inherit">
-              {statusLabel}
-            </Text>
-          </span>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`}>
+              <Text as="span" size="xs" weight="medium" color="inherit">
+                {statusLabel}
+              </Text>
+            </span>
+            {patient.lastCaseNumber != null && (
+              <span className="inline-flex px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                <Text as="span" size="xs" weight="semibold" color="inherit">
+                  {t('admin.patients.detail.caseNumber')} #{patient.lastCaseNumber}
+                </Text>
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

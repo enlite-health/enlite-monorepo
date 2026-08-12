@@ -55,17 +55,21 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
 
     // Cenário moderno: WhatsApp gravou em worker_job_applications,
     // encuadres ficou sem data/meet_link (fonte legada vazia).
+    // source='talentum' bypasses the INCOMPLETE_REGISTER trigger guard.
     await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage,
-          interview_datetime, interview_meet_link, interview_response)
-       VALUES ($1, $2, 'CONFIRMED', '2026-06-01 14:30:00+00', 'https://meet.google.com/abc-defg-hij', 'confirmed')`,
+          interview_datetime, interview_meet_link, interview_response, source)
+       VALUES ($1, $2, 'CONFIRMED', '2026-06-01 14:30:00+00', 'https://meet.google.com/abc-defg-hij', 'confirmed', 'talentum')`,
       [workerId, vacancyId],
     );
 
+    // O trigger trg_ensure_encuadre_on_wja_insert já criou um encuadre ao inserir a WJA.
+    // Fazemos upsert para obter o id do encuadre existente (ou criar se ainda não existe).
     const enc = await pool.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name)
        VALUES ($1, $2, 'Worker Kanban E2E')
+       ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET worker_raw_name = EXCLUDED.worker_raw_name
        RETURNING id`,
       [workerId, vacancyId],
     );
@@ -90,13 +94,19 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
     );
     expect(res.status).toBe(200);
     const confirmed = res.data.data.stages.CONFIRMED as Array<Record<string, unknown>>;
-    const card = confirmed.find((c) => c.id === encuadreId);
+
+    // Phase 1 fix: card.id is now wja.id; card.encuadreId holds the encuadre id.
+    // Match by encuadreId (the encuadre created in beforeAll).
+    const card = confirmed.find((c) => c.encuadreId === encuadreId);
     expect(card).toBeDefined();
 
     const interviewDate = card!.interviewDate as string;
     expect(interviewDate.startsWith('2026-06-01')).toBe(true);
 
-    expect(card!.interviewTime).toBe('14:30:00');
+    // 14:30Z exibido no fuso da OPERAÇÃO (America/Argentina/Buenos_Aires, UTC-3) = 11:30.
+    // Desde 30/07 o Kanban resolve data/hora via INTERVIEW_*_RESOLVED_SQL (fuso BsAs) —
+    // exibir em UTC era o comportamento antigo: entrevista de 21h local caía no dia seguinte.
+    expect(card!.interviewTime).toBe('11:30:00');
     expect(card!.meetLink).toBe('https://meet.google.com/abc-defg-hij');
   });
 });

@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@presentation/hooks/useAuth';
 import {
   useWorkerRegistrationStore,
@@ -10,19 +11,32 @@ import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { AppLayout } from '@presentation/components/templates/DashboardLayout';
 import { useWorkerNavItems } from '@presentation/config/workerNavigation';
 import { GeneralInfoTab } from './tabs/GeneralInfoTab';
-import { ServiceAddressTab } from './tabs/ServiceAddressTab';
+import { ServiceAddressTab, type BeforeNextGuard } from './tabs/ServiceAddressTab';
 import { AvailabilityTab } from './tabs/AvailabilityTab';
 import { DocumentsTab } from './tabs/DocumentsTab';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { ProfileWizardFooter } from '@presentation/components/molecules/ProfileWizardFooter';
+import { ProfileCompletionSummary } from '@presentation/components/organisms/ProfileCompletionSummary';
+import type { TabId } from '@presentation/utils/incompleteFieldDestinations';
 
-type TabId = 'general' | 'address' | 'availability' | 'documents';
+const VALID_TABS: TabId[] = ['general', 'address', 'availability', 'documents'];
+
+/** Classe de highlight transitório aplicado ao alvo do focus */
+const HIGHLIGHT_CLASS = 'ring-2 ring-primary ring-offset-2 rounded';
+/** Duração do highlight em ms */
+const HIGHLIGHT_DURATION_MS = 2000;
+
+function isValidTab(value: string | null): value is TabId {
+  return VALID_TABS.includes(value as TabId);
+}
 
 export function WorkerProfilePage(): JSX.Element {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navItems = useWorkerNavItems();
   const { getProgress, initWorker } = useWorkerApi();
+  const [searchParams] = useSearchParams();
 
   // Use individual selectors to prevent re-renders
   const setMode = useWorkerRegistrationStore((state) => state.setMode);
@@ -31,9 +45,15 @@ export function WorkerProfilePage(): JSX.Element {
   const hydrateFromServer = useWorkerRegistrationStore((state) => state.hydrateFromServer);
   const profilePhoto = useWorkerRegistrationStore((state) => state.data.generalInfo.profilePhoto);
 
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+  const tabParam = searchParams.get('tab');
+  const focusParam = searchParams.get('focus');
+
+  const [activeTab, setActiveTab] = useState<TabId>(
+    isValidTab(tabParam) ? tabParam : 'general',
+  );
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
 
   const didRekey = useRef(false);
   useEffect(() => {
@@ -65,8 +85,11 @@ export function WorkerProfilePage(): JSX.Element {
         }
       } catch {
         try {
-          const newWorker = await initWorker({});
-          if (!cancelled) {
+          const initResponse = await initWorker({});
+          // Onda 2: initWorker returns { status: 'ok', worker } or { status: 'claim_pending', ... }
+          // WorkerProfilePage only proceeds if status is 'ok'.
+          const newWorker = initResponse.status === 'ok' ? initResponse.worker : null;
+          if (!cancelled && newWorker) {
             hydrateFromServer(newWorker);
             updateGeneralInfo({
               email: user.email,
@@ -91,6 +114,43 @@ export function WorkerProfilePage(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Sync tab from searchParams when they change (e.g., deep link from modal)
+  useEffect(() => {
+    if (isValidTab(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  // Scroll and highlight the focus target after tab renders
+  useEffect(() => {
+    if (isInitializing || !focusParam) return;
+
+    // Small delay to let the tab content render
+    const timer = setTimeout(() => {
+      let target: Element | null = null;
+
+      if (activeTab === 'documents') {
+        target = document.querySelector(`[data-testid="doc-slot-${focusParam}"]`);
+      } else {
+        target = document.getElementById(focusParam);
+      }
+
+      if (!target) return;
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Apply transitional highlight
+      target.classList.add(...HIGHLIGHT_CLASS.split(' '));
+      const removeHighlight = setTimeout(() => {
+        target?.classList.remove(...HIGHLIGHT_CLASS.split(' '));
+      }, HIGHLIGHT_DURATION_MS);
+
+      return () => clearTimeout(removeHighlight);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [activeTab, focusParam, isInitializing]);
+
   const tabs: { id: TabId; label: string }[] = [
     { id: 'general', label: t('profile.tabs.general', 'Informações Gerais') },
     { id: 'address', label: t('profile.tabs.address', 'Endereço de Atendimento') },
@@ -100,12 +160,40 @@ export function WorkerProfilePage(): JSX.Element {
 
   const currentTabIndex = tabs.findIndex((tab) => tab.id === activeTab);
 
+  // Gate opcional registrado pela aba ativa: se devolver false, o Siguiente
+  // (footer e carousel mobile) não avança. Hoje só a aba de endereço registra
+  // — sem dirección o prestador pulava a etapa e nunca voltava a preenchê-la.
+  const beforeNextGuardRef = useRef<BeforeNextGuard | null>(null);
+
+  const registerBeforeNextGuard = useCallback((guard: BeforeNextGuard | null): void => {
+    beforeNextGuardRef.current = guard;
+  }, []);
+
   const goToPrevTab = (): void => {
-    if (currentTabIndex > 0) setActiveTab(tabs[currentTabIndex - 1].id);
+    if (currentTabIndex > 0) {
+      setActiveTab(tabs[currentTabIndex - 1].id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const goToNextTab = (): void => {
-    if (currentTabIndex < tabs.length - 1) setActiveTab(tabs[currentTabIndex + 1].id);
+    void (async () => {
+      if (beforeNextGuardRef.current && !(await beforeNextGuardRef.current())) return;
+      if (currentTabIndex < tabs.length - 1) {
+        setActiveTab(tabs[currentTabIndex + 1].id);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    })();
+  };
+
+  const handleFinish = (): void => {
+    setShowSummary(true);
+  };
+
+  const handleGoToTab = (tab: TabId): void => {
+    setShowSummary(false);
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const renderTabContent = () => {
@@ -113,7 +201,7 @@ export function WorkerProfilePage(): JSX.Element {
       case 'general':
         return <GeneralInfoTab />;
       case 'address':
-        return <ServiceAddressTab />;
+        return <ServiceAddressTab registerBeforeNextGuard={registerBeforeNextGuard} />;
       case 'availability':
         return <AvailabilityTab />;
       case 'documents':
@@ -217,13 +305,31 @@ export function WorkerProfilePage(): JSX.Element {
               </nav>
             </div>
 
-            {/* Tab Content */}
+            {/* Tab Content + rodapé de navegação no mesmo container.
+                O autosave de cada aba persiste em cada blur (toast confirma);
+                não há mais botão "Guardar" — o rodapé conduz o fluxo entre
+                etapas (Atrás/Siguiente) e Finalizar na última aba. */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               {renderTabContent()}
+
+              <ProfileWizardFooter
+                isFirst={currentTabIndex === 0}
+                isLast={currentTabIndex === tabs.length - 1}
+                onPrev={goToPrevTab}
+                onNext={goToNextTab}
+                onFinish={handleFinish}
+              />
             </div>
           </>
         )}
       </div>
+
+      {showSummary && (
+        <ProfileCompletionSummary
+          onClose={() => setShowSummary(false)}
+          onGoToTab={handleGoToTab}
+        />
+      )}
     </AppLayout>
   );
 }

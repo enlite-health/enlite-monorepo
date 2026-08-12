@@ -2,7 +2,8 @@
  * BulkDispatchTalentumIncompleteUseCase.test.ts
  *
  * Testa o use case de lembrete para workers com prescreening Talentum
- * em INITIATED/IN_PROGRESS há >5 dias.
+ * em PRE_SCREENING/IN_PROGRESS há >5 dias.
+ * (Migration 230: INITIATED renomeado para PRE_SCREENING)
  *
  * Cenários:
  * 1. 0 workers retornados → resultado com total=0, sent=0, errors=0
@@ -32,10 +33,18 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-// Mock do TokenService para não precisar de KMS/banco real
+// Mock do TokenService para não precisar de KMS/banco real.
+// resolveVariables simula a tradução tk_xxx → valor plaintext.
 jest.mock('../../infrastructure/TokenService', () => ({
   TokenService: jest.fn().mockImplementation(() => ({
     generate: jest.fn().mockResolvedValue('tk_abc123def456'),
+    resolveVariables: jest.fn().mockImplementation(async (vars: Record<string, string>) => {
+      const resolved: Record<string, string> = {};
+      for (const [k, v] of Object.entries(vars)) {
+        resolved[k] = v?.startsWith('tk_') ? 'João Silva' : v;
+      }
+      return resolved;
+    }),
   })),
 }));
 
@@ -124,7 +133,8 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
         to: worker.phone,
         templateSlug: 'talentum_incomplete_reminder',
-        variables: { worker_name: 'tk_abc123def456' },
+        variables: { worker_name: 'João Silva' },
+        channel: 'twilio',
       });
 
       const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
@@ -237,6 +247,59 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
     });
   });
 
+  describe('execute — roteamento por canal (messaging_channel)', () => {
+    it('SELECT inclui w.messaging_channel', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, makeMessaging());
+      await useCase.execute('scheduler');
+
+      const mainQuery = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(mainQuery).toContain('w.messaging_channel');
+    });
+
+    it('worker com messaging_channel=periskope → sendWhatsApp recebe channel=periskope', async () => {
+      const worker = { worker_id: 'w-periskope-t1', phone: '+5511999990098', messaging_channel: 'periskope' };
+      const db = makeDbSequence([
+        { rows: [worker] },
+        { rows: [{ worker_id: worker.worker_id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true, 'SM_periskope_t');
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await useCase.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
+        to: worker.phone,
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'João Silva' },
+        channel: 'periskope',
+      });
+    });
+
+    it('worker sem messaging_channel na row (default) → sendWhatsApp recebe channel=twilio', async () => {
+      const worker = { worker_id: 'w-default-t1', phone: '+5511999990097' };
+      const db = makeDbSequence([
+        { rows: [worker] },
+        { rows: [{ worker_id: worker.worker_id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true, 'SM_default_t');
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await useCase.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
+        to: worker.phone,
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: 'João Silva' },
+        channel: 'twilio',
+      });
+    });
+  });
+
   describe('execute — batchId é UUID v4 único', () => {
     it('cada execução gera batchId diferente', async () => {
       const db1 = makeDbSequence([{ rows: [] }]);
@@ -250,6 +313,23 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       const r2 = await useCase2.execute('scheduler');
 
       expect(r1.batchId).not.toBe(r2.batchId);
+    });
+  });
+
+  describe('execute — query usa PRE_SCREENING (migration 230)', () => {
+    it('SQL inclui PRE_SCREENING e NÃO inclui INITIATED como filtro de stage', async () => {
+      // migration 230: INITIATED renomeado para PRE_SCREENING no critério de elegibilidade
+      const db = makeDbSequence([{ rows: [] }]);
+      const messaging = makeMessaging();
+
+      const useCase = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await useCase.execute('scheduler');
+
+      const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
+      const mainQuery = calls[0][0] as string;
+
+      expect(mainQuery).toContain('PRE_SCREENING');
+      expect(mainQuery).not.toContain("'INITIATED'");
     });
   });
 });

@@ -25,7 +25,7 @@
 
 Backend de recrutamento de profissionais de saúde (Acompanhantes Terapêuticos). Gerencia o ciclo completo: importação de dados externos → seleção → matching → operação diária.
 
-Fontes de dados: **Talentum**, **ClickUp**, **Planilla Operativa**, **Ana Care** — via CLI ou endpoint HTTP.
+Fontes de dados: **Talentum**, **ClickUp**, ~~**Planilla Operativa**~~ (DESCONTINUADA em 2026-05-23), **Ana Care** — via CLI ou endpoint HTTP.
 
 ---
 
@@ -276,5 +276,5 @@ Cada ambiente GCP (`enlite-prd`, `enlite-stg`, futuros) **precisa** ter os secre
 1. Criar todos os secrets da tabela acima
 2. IAM binding `secretAccessor` pra `enlite-functions-sa` em cada secret
 3. Rodar `npx ts-node scripts/backfill-name-trgm-bidx.ts` se já houver workers com `first_name_encrypted` populado
-4. Rodar `npx ts-node scripts/backfill-worker-names-from-encuadres.ts` se houver workers sem nome encriptado (usa `encuadres.worker_raw_name` + Firebase `displayName`)
+4. Rodar `npx ts-node scripts/backfill-worker-names-from-encuadres.ts` (one-shot; planilha não recebe novos dados) se houver workers sem nome encriptado (usa `encuadres.worker_raw_name` + Firebase `displayName`)
 5. Validar visualmente no painel admin que a busca por nome retorna resultados

@@ -89,7 +89,8 @@ Quando o formato de um campo muda (ex: telefone agora vem com DDI):
 ### Sequência pós-import
 - [ ] `encuadreRepo.linkWorkersByPhone()` é chamado após upsert em lote
 - [ ] `blacklistRepo.linkWorkersByPhone()` é chamado após upsert em lote
-- [ ] `encuadreRepo.syncToWorkerJobApplications()` é chamado por último
+- [ ] `encuadreRepo.syncToWorkerJobApplications()` **NÃO** é chamado — deprecada F6 (2026-05-24)
+  > **F6 (2026-05-24):** `syncToWorkerJobApplications` foi removida da sequência. Imports não devem mais chamar essa função.
 
 ### LLM (se aplicável)
 - [ ] LLM não é chamado dentro do `for` de linhas — sempre em background após o import

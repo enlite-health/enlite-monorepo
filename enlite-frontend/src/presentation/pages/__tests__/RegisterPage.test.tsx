@@ -30,14 +30,37 @@ vi.mock('@presentation/hooks/useRegisterUser', () => ({
   }),
 }));
 
+vi.mock('@presentation/hooks/useWorkerEmailLookup', () => ({
+  useWorkerEmailLookup: () => ({
+    lookup: vi.fn(),
+    reset: vi.fn(),
+    isLoading: false,
+    found: null,
+    phoneMasked: undefined,
+  }),
+}));
+
 vi.mock('@infrastructure/http/WorkerApiService', () => ({
   WorkerApiService: {
     initWorker: (...args: any[]) => mockInitWorker(...args),
+    lookupByEmail: () => Promise.resolve({ found: false }),
   },
 }));
 
 vi.mock('@presentation/components/features/auth/GoogleLoginButton', () => ({
-  GoogleLoginButton: () => <button data-testid="google-btn">Google</button>,
+  GoogleLoginButton: ({ onSuccess }: any) => (
+    <button data-testid="google-btn" onClick={onSuccess}>Google</button>
+  ),
+}));
+
+vi.mock('@presentation/components/features/auth/ClaimOtpModal', () => ({
+  ClaimOtpModal: ({ open, onConfirmed, onClose }: any) =>
+    open ? (
+      <div data-testid="claim-otp-modal">
+        <button data-testid="modal-confirmed" onClick={() => onConfirmed({ id: 'w1' })}>confirm</button>
+        <button data-testid="modal-close" onClick={onClose}>close</button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('@presentation/components/shared/PhoneInputIntl', () => ({
@@ -123,7 +146,8 @@ describe('RegisterPage', () => {
     mockLocationState = null;
     sessionStorage.clear();
     mockRegister.mockResolvedValue({ id: 'uid-123', email: 'test@example.com' });
-    mockInitWorker.mockResolvedValue({});
+    // Default: status 'ok' so existing tests keep working
+    mockInitWorker.mockResolvedValue({ status: 'ok', worker: {} });
   });
 
   afterEach(() => {
@@ -243,6 +267,39 @@ describe('RegisterPage', () => {
       });
     });
 
+    it('initWorker recebe phone E whatsappPhone com o mesmo numero quando whatsapp preenchido', async () => {
+      render(<RegisterPage />);
+      fillForm();
+      // Preenche o campo WhatsApp (mockado como data-testid="phone-input")
+      fireEvent.change(screen.getByTestId('phone-input'), { target: { value: '+5491112345678' } });
+      submitForm();
+
+      await waitFor(() => {
+        expect(mockInitWorker).toHaveBeenCalledWith(
+          expect.objectContaining({
+            phone: '+5491112345678',
+            whatsappPhone: '+5491112345678',
+          })
+        );
+      });
+    });
+
+    it('initWorker recebe phone=undefined E whatsappPhone=undefined quando whatsapp nao preenchido', async () => {
+      render(<RegisterPage />);
+      fillForm();
+      // Nao preenche o WhatsApp — fica string vazia, deve virar undefined
+      submitForm();
+
+      await waitFor(() => {
+        expect(mockInitWorker).toHaveBeenCalledWith(
+          expect.objectContaining({
+            phone: undefined,
+            whatsappPhone: undefined,
+          })
+        );
+      });
+    });
+
     it('navega para / apos registro com sucesso', async () => {
       render(<RegisterPage />);
       fillForm();
@@ -262,6 +319,74 @@ describe('RegisterPage', () => {
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/');
       });
+    });
+
+    it('renderiza o botao Google em /register (Onda 2 reabilitou)', () => {
+      render(<RegisterPage />);
+      expect(screen.getByTestId('google-btn')).toBeTruthy();
+    });
+
+    it('clicar no Google navega para /complete-whatsapp', () => {
+      render(<RegisterPage />);
+      fireEvent.click(screen.getByTestId('google-btn'));
+      expect(mockNavigate).toHaveBeenCalledWith('/complete-whatsapp');
+    });
+  });
+
+  // ─── Fluxo claim_pending ─────────────────────────────────────────────────
+
+  describe('fluxo claim_pending (Onda 2)', () => {
+    it('abre ClaimOtpModal quando initWorker retorna claim_pending', async () => {
+      mockInitWorker.mockResolvedValue({
+        status: 'claim_pending',
+        candidateWorkerId: 'cand-001',
+        phoneMasked: '+54 11 **** 5678',
+        verificationSid: 'VS_abc',
+      });
+      render(<RegisterPage />);
+      fillForm();
+      submitForm();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('claim-otp-modal')).toBeTruthy();
+      });
+    });
+
+    it('navega para / quando OTP confirmado no modal', async () => {
+      mockInitWorker.mockResolvedValue({
+        status: 'claim_pending',
+        candidateWorkerId: 'cand-001',
+        phoneMasked: '+54 11 **** 5678',
+        verificationSid: 'VS_abc',
+      });
+      render(<RegisterPage />);
+      fillForm();
+      submitForm();
+
+      await waitFor(() => screen.getByTestId('claim-otp-modal'));
+      fireEvent.click(screen.getByTestId('modal-confirmed'));
+
+      expect(mockNavigate).toHaveBeenCalledWith('/');
+    });
+
+    it('fecha modal sem navegar ao clicar em cancelar', async () => {
+      mockInitWorker.mockResolvedValue({
+        status: 'claim_pending',
+        candidateWorkerId: 'cand-001',
+        phoneMasked: '+54 11 **** 5678',
+        verificationSid: 'VS_abc',
+      });
+      render(<RegisterPage />);
+      fillForm();
+      submitForm();
+
+      await waitFor(() => screen.getByTestId('claim-otp-modal'));
+      fireEvent.click(screen.getByTestId('modal-close'));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('claim-otp-modal')).toBeNull();
+      });
+      expect(mockNavigate).not.toHaveBeenCalledWith('/');
     });
   });
 

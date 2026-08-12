@@ -14,6 +14,25 @@ const PublicJobsV1QuerySchema = z.object({
   q: z.string().optional().openapi({ description: 'Busca textual livre no título e descrição.', example: 'acompanhante' }),
 });
 
+const ScheduleWeekDaySlotSchema = z.object({
+  start: z.string().openapi({ example: '09:00' }),
+  end: z.string().openapi({ example: '12:00' }),
+});
+
+const ScheduleWeekSchema = z.object({
+  days: z.object({
+    lunes: z.array(ScheduleWeekDaySlotSchema),
+    martes: z.array(ScheduleWeekDaySlotSchema),
+    miercoles: z.array(ScheduleWeekDaySlotSchema),
+    jueves: z.array(ScheduleWeekDaySlotSchema),
+    viernes: z.array(ScheduleWeekDaySlotSchema),
+    sabado: z.array(ScheduleWeekDaySlotSchema),
+    domingo: z.array(ScheduleWeekDaySlotSchema),
+  }).openapi({ description: 'Turnos por dia da semana (lunes→domingo, sempre as 7 chaves presentes; dia de folga = []).' }),
+  weekly_hours: z.number().openapi({ example: 20, description: 'Total de horas/semana, arredondado a 2 casas.' }),
+  is_coverage: z.boolean().openapi({ description: 'true quando o horário NÃO é a jornada de 1 pessoa — cobertura por turnos (≥3 turnos no mesmo dia) ou día completo/cama adentro (start===end). Nesse caso o card não exibe weekly_hours como "X h por semana".' }),
+}).openapi({ description: 'Tabela semanal estruturada derivada do JSONB `job_postings.schedule`.' });
+
 const PublicJobV1ItemSchema = registry.register(
   'PublicJobV1Item',
   z.object({
@@ -22,10 +41,17 @@ const PublicJobV1ItemSchema = registry.register(
     country: z.string().openapi({ example: 'AR' }),
     state: z.string().nullable().openapi({ example: 'Buenos Aires' }),
     city: z.string().nullable().openapi({ example: 'Palermo' }),
+    location_label: z.string().nullable().openapi({
+      example: 'Palermo',
+      description: 'Rótulo único de localização (o mais específico: barrio → localidad → provincia). Pronto pro portal exibir no título do accordion sem escolher entre campos.',
+    }),
     pathology: z.string().nullable().openapi({ example: 'TEA' }),
     worker_sex: z.string().nullable().openapi({ example: 'FEMALE' }),
     worker_type: z.string().nullable().openapi({ example: 'AT' }),
     short_url: z.string().nullable().openapi({ example: 'https://enl.it/abc123' }),
+    schedule_week: ScheduleWeekSchema.nullable().openapi({
+      description: 'null quando o schedule não é estruturável — o WordPress cai no fallback de texto livre (schedule_days_hours).',
+    }),
   }).openapi({ description: 'Vaga pública para listagem externa (embedded widget, portal).' }),
 );
 

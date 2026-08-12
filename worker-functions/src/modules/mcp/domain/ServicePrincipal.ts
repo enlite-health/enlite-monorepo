@@ -6,6 +6,12 @@ export interface ServicePrincipalProps {
   name: string;                   // ex: "triage-service"
   allowedCapabilities: string[];  // ex: ["worker.profile.get", "worker.documents.upload"]
   tokenHashes: string[];          // sha256 hex dos tokens ativos (multi-version)
+  /**
+   * Expõe as tools com nomes claude-safe (pontos → underscores).
+   * O claude.ai valida nomes com ^[a-zA-Z0-9_-]{1,64}$ e rejeita pontos;
+   * consumidores internos (triage) continuam vendo os nomes canônicos.
+   */
+  sanitizedToolNames?: boolean;
 }
 
 export class ServicePrincipal {
@@ -25,6 +31,10 @@ export class ServicePrincipal {
 
   get allowedCapabilities(): readonly string[] {
     return this.props.allowedCapabilities;
+  }
+
+  get sanitizedToolNames(): boolean {
+    return this.props.sanitizedToolNames ?? false;
   }
 
   isCapabilityAllowed(capability: string): boolean {

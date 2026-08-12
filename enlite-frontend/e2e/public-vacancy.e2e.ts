@@ -12,11 +12,10 @@
  *   6. Worker com cadastro completo clica "Postularse" → abre WhatsApp
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Route } from '@playwright/test';
 
-const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
-const FIREBASE_API_KEY = 'test-api-key';
-const FRONTEND_API_KEY = process.env.VITE_FIREBASE_API_KEY || 'TODO_FIREBASE_API_KEY';
+// Real Firebase API key used by the frontend (matches VITE_FIREBASE_API_KEY in .env)
+const FRONTEND_API_KEY = 'AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI';
 
 // ── Fixtures de dados mockados ────────────────────────────────────────────────
 
@@ -25,6 +24,7 @@ const MOCK_VACANCY_ID = 'bbbbbbbb-0001-0001-0001-bbbbbbbbbbbb';
 const MOCK_VACANCY = {
   id: MOCK_VACANCY_ID,
   case_number: 226,
+  vacancy_number: 2208,
   title: 'CASO 226 Acompañante Terapéutico',
   status: 'BUSQUEDA',
   dependency_level: 'Grau de Dependência',
@@ -135,66 +135,176 @@ async function mockVacancyNotFound(page: Page): Promise<void> {
 }
 
 /**
- * Creates a worker in the Firebase emulator and injects auth state into the
- * browser via addInitScript so that the Firebase SDK sees a logged-in session.
+ * Mocks POST /api/worker-applications/track-channel.
+ * Pass status=403 + code='WORKER_NOT_ELIGIBLE' para simular worker inelegível;
+ * omita (padrão 200) para simular worker elegível.
+ */
+async function mockTrackChannel(
+  page: Page,
+  opts: { status?: number; code?: string } = {},
+): Promise<void> {
+  const { status = 200, code } = opts;
+  await page.route('**/api/worker-applications/track-channel', (route) => {
+    if (status === 200) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: null }),
+      });
+    }
+    return route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: false, error: 'Worker not eligible', code }),
+    });
+  });
+}
+
+// ── Fake worker auth (no Firebase Emulator) ───────────────────────────────────
+
+const MOCK_WORKER_UID = 'fake-worker-uid-e2e-public';
+const MOCK_WORKER_EMAIL = 'fake.worker@e2e.public.test';
+
+const FAKE_WORKER_ID_TOKEN =
+  'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
+  Buffer.from(
+    JSON.stringify({
+      sub: MOCK_WORKER_UID,
+      email: MOCK_WORKER_EMAIL,
+      iss: 'https://securetoken.google.com/enlite-prd',
+      aud: 'enlite-prd',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }),
+  ).toString('base64url') +
+  '.';
+
+/**
+ * Faz login de worker via UI (/login) com fake Firebase auth (sem emulator).
+ * Após o login, o Firebase SDK reconhece o usuário como autenticado via
+ * onAuthStateChanged. Inclui mock de /api/admin/auth/profile para evitar
+ * redirect de admin.
  */
 async function createWorkerAndLogin(page: Page): Promise<void> {
-  const email = `e2e.public.vacancy.${Date.now()}@test.com`;
-  const password = 'TestWorker123!';
-
-  const signUpRes = await fetch(
-    `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
-  );
-  const signUpData = (await signUpRes.json()) as {
-    localId?: string;
-    idToken?: string;
-    refreshToken?: string;
-  };
-
-  const { localId: uid, idToken, refreshToken } = signUpData;
-  if (!uid || !idToken || !refreshToken) {
-    throw new Error(`Firebase sign-up failed: ${JSON.stringify(signUpData)}`);
-  }
-
-  // Inject Firebase auth state into localStorage before first navigation so
-  // the Firebase SDK picks it up as an authenticated session.
-  await page.addInitScript(
-    ({ uid: u, email: e, idToken: t, refreshToken: r, apiKey }) => {
-      const authKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
-      const authValue = JSON.stringify({
-        uid: u,
-        email: e,
-        emailVerified: false,
-        isAnonymous: false,
-        providerData: [
-          {
-            providerId: 'password',
-            uid: e,
-            displayName: null,
-            email: e,
-            phoneNumber: null,
-            photoURL: null,
-          },
-        ],
-        stsTokenManager: {
-          refreshToken: r,
-          accessToken: t,
-          expirationTime: Date.now() + 3_600_000,
-        },
-        createdAt: String(Date.now()),
-        lastLoginAt: String(Date.now()),
-        apiKey,
-        appName: '[DEFAULT]',
+  // Intercept Firebase Identity Toolkit calls
+  await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
+    const url = route.request().url();
+    if (url.includes('signInWithPassword') || url.includes('signUp')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          localId: MOCK_WORKER_UID,
+          email: MOCK_WORKER_EMAIL,
+          idToken: FAKE_WORKER_ID_TOKEN,
+          refreshToken: 'fake-worker-refresh-token',
+          expiresIn: '3600',
+          registered: true,
+        }),
       });
-      localStorage.setItem(authKey, authValue);
-    },
-    { uid, email, idToken, refreshToken, apiKey: FRONTEND_API_KEY },
+      return;
+    }
+    if (url.includes('token') || url.includes('securetoken')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id_token: FAKE_WORKER_ID_TOKEN,
+          access_token: FAKE_WORKER_ID_TOKEN,
+          expires_in: '3600',
+          token_type: 'Bearer',
+          refresh_token: 'fake-worker-refresh-token',
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        users: [{ localId: MOCK_WORKER_UID, email: MOCK_WORKER_EMAIL, emailVerified: true }],
+      }),
+    });
+  });
+
+  await page.route('**/securetoken.googleapis.com/**', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id_token: FAKE_WORKER_ID_TOKEN,
+        expires_in: '3600',
+        token_type: 'Bearer',
+        refresh_token: 'fake-worker-refresh-token',
+      }),
+    });
+  });
+
+  // Admin profile deve retornar 401 para não redirecionar como admin
+  await page.route('**/api/admin/auth/profile', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: false, error: 'Unauthorized' }),
+    }),
   );
+
+  // Mock initWorker — chamado após login para vincular worker
+  await page.route('**/api/workers/init', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { id: MOCK_WORKER_UID } }),
+    }),
+  );
+
+  // Mock worker APIs called by WorkerHome after login
+  // Mock APIs chamadas pelo WorkerHome após login
+  await page.route('**/api/workers/me', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    if (route.request().url().includes('/documents') || route.request().url().includes('/availability')) {
+      return route.continue();
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          id: MOCK_WORKER_UID, email: MOCK_WORKER_EMAIL,
+          firstName: null, lastName: null, birthDate: null,
+          sex: null, gender: null, documentType: null, documentNumber: null,
+          languages: [], profession: null, knowledgeLevel: null,
+          experienceTypes: [], yearsExperience: null, preferredTypes: [],
+          preferredAgeRange: [], serviceAddress: null, serviceRadiusKm: null,
+          currentStep: 1, registrationCompleted: false,
+        },
+      }),
+    });
+  });
+  await page.route('**/api/workers/me/availability', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: [] }),
+    }),
+  );
+  await page.route('**/api/workers/me/documents', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: null }),
+    }),
+  );
+
+  // Login via UI no /login (worker login page)
+  await page.goto('/login');
+  await page.locator('input[type="email"]').fill(MOCK_WORKER_EMAIL);
+  await page.locator('input[type="password"]').fill('TestWorker123!');
+  await page.locator('button[type="submit"]').click();
+
+  // Aguardar redirecionamento após login (sai de /login)
+  await expect(page).not.toHaveURL(/.*\/login/, { timeout: 20000 });
 }
 
 // ── Testes ────────────────────────────────────────────────────────────────────
@@ -212,8 +322,8 @@ test.describe('PublicVacancyPage', () => {
     // Case number visível
     await expect(page.locator('text=CASO 226').first()).toBeVisible({ timeout: 15000 });
 
-    // Status badge visível
-    await expect(page.locator('text=Activo').first()).toBeVisible({ timeout: 5000 });
+    // Status badge visível (BUSQUEDA é alias legado de SEARCHING → "En búsqueda")
+    await expect(page.locator('text=En búsqueda').first()).toBeVisible({ timeout: 5000 });
 
     // Título do card de detalhes com ocupação
     await expect(
@@ -309,21 +419,21 @@ test.describe('PublicVacancyPage', () => {
     await expect(page).toHaveURL(/\/register/, { timeout: 10000 });
   });
 
-  // ── Cenário 5: Worker com cadastro incompleto → navega para /worker/profile ─
+  // ── Cenário 5: Worker com cadastro incompleto → modal + confirmar → /worker/profile
 
-  test('worker com cadastro incompleto clica "Postularse" → navega para /worker/profile', async ({
+  test('worker com cadastro incompleto clica "Postularse" → modal incompleto → confirmar navega para /worker/profile', async ({
     page,
   }) => {
-    // Injetar auth antes da navegação
+    // Login como worker via UI com fake Firebase
     await createWorkerAndLogin(page);
     await mockVacancySuccess(page);
 
+    // track-channel: backend rejeita worker inelegível → hook exibe IncompleteRegistrationModal
+    await mockTrackChannel(page, { status: 403, code: 'WORKER_NOT_ELIGIBLE' });
+
     // Mock /api/workers/me com registrationCompleted: false
     await page.route('**/api/workers/me', (route) => {
-      // Ignorar chamadas de documento que passam por esta rota
-      if (route.request().url().includes('/documents')) {
-        return route.continue();
-      }
+      if (route.request().url().includes('/documents')) return route.continue();
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -340,18 +450,21 @@ test.describe('PublicVacancyPage', () => {
       }),
     );
 
-    // Mock profile para evitar redirect de admin auth
-    await page.route('**/api/admin/auth/profile', (route) =>
-      route.fulfill({ status: 401, body: JSON.stringify({ success: false, error: 'Unauthorized' }) }),
-    );
-
     await page.goto(`/vacantes/${MOCK_VACANCY_ID}`);
     await expect(page.getByRole('button', { name: /Postularse/i })).toBeVisible({
       timeout: 15000,
     });
 
-    // Clicar Postularse — deve redirecionar para /worker/profile
+    // Clicar Postularse → deve abrir IncompleteRegistrationModal
     await page.getByRole('button', { name: /Postularse/i }).click();
+
+    // Modal de cadastro incompleto deve aparecer (título "Registro incompleto")
+    await expect(
+      page.locator('text=/Registro incompleto/i').first(),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Clicar o botão "Completar registro" no modal → navega para /worker/profile
+    await page.getByRole('button', { name: /Completar registro/i }).click();
 
     await expect(page).toHaveURL(/\/worker\/profile/, { timeout: 10000 });
   });
@@ -362,6 +475,9 @@ test.describe('PublicVacancyPage', () => {
     // Injetar auth antes da navegação
     await createWorkerAndLogin(page);
     await mockVacancySuccess(page);
+
+    // track-channel: backend confirma elegibilidade → hook abre WhatsApp
+    await mockTrackChannel(page);
 
     // Mock /api/workers/me com registrationCompleted: true
     await page.route('**/api/workers/me', (route) => {
@@ -382,11 +498,6 @@ test.describe('PublicVacancyPage', () => {
         contentType: 'application/json',
         body: JSON.stringify({ success: true, data: MOCK_DOCS_COMPLETE }),
       }),
-    );
-
-    // Mock profile para evitar redirect de admin auth
-    await page.route('**/api/admin/auth/profile', (route) =>
-      route.fulfill({ status: 401, body: JSON.stringify({ success: false, error: 'Unauthorized' }) }),
     );
 
     // Interceptar window.open para capturar a URL sem abrir nova aba
@@ -421,5 +532,67 @@ test.describe('PublicVacancyPage', () => {
     // Verificar que window.open foi chamado com a URL do WhatsApp
     const openedUrls = await page.evaluate<string[]>(() => (window as any).__openedUrls ?? []);
     expect(openedUrls).toContain(MOCK_VACANCY.talentum_whatsapp_url);
+  });
+
+  // ── Cenário 7: FAIL-CLOSED — erro não-elegível NÃO abre WhatsApp ───────────
+  // Regressão ClickUp 86ajfkwf7: quando a checagem de elegibilidade falha com
+  // qualquer resposta que não seja o 200 (elegível) nem o 403 WORKER_NOT_ELIGIBLE,
+  // o sistema NUNCA pode mandar o prestador ao pré-screening do WhatsApp.
+
+  test('worker cuja checagem de elegibilidade falha (sem WORKER_NOT_ELIGIBLE) → NÃO abre WhatsApp, mostra erro', async ({
+    page,
+  }) => {
+    await createWorkerAndLogin(page);
+    await mockVacancySuccess(page);
+
+    // track-channel falha com 500 (sem o código WORKER_NOT_ELIGIBLE) → fail-closed.
+    // Reproduz também o caso do worker mínimo (404 "Worker not found").
+    await mockTrackChannel(page, { status: 500 });
+
+    await page.route('**/api/workers/me', (route) => {
+      if (route.request().url().includes('/documents')) return route.continue();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_WORKER_INCOMPLETE }),
+      });
+    });
+    await page.route('**/api/workers/me/documents', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: MOCK_DOCS_INCOMPLETE }),
+      }),
+    );
+
+    await page.goto(`/vacantes/${MOCK_VACANCY_ID}`);
+    await expect(page.getByRole('button', { name: /Postularse/i })).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Interceptar window.open para provar que o WhatsApp NÃO abre
+    await page.evaluate(() => {
+      (window as any).__openedUrls = [];
+      window.open = (url?: string | URL) => {
+        (window as any).__openedUrls.push(String(url));
+        return null;
+      };
+    });
+
+    await page.getByRole('button', { name: /Postularse/i }).click();
+
+    // Modal de erro (fail-closed) deve aparecer
+    await expect(
+      page.locator('text=/No pudimos verificar tu registro/i').first(),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Prova dura: WhatsApp NÃO foi aberto
+    await page.waitForTimeout(500);
+    const openedUrls = await page.evaluate<string[]>(() => (window as any).__openedUrls ?? []);
+    expect(openedUrls).not.toContain(MOCK_VACANCY.talentum_whatsapp_url);
+    expect(openedUrls).toHaveLength(0);
+
+    // Screenshot: modal de erro fail-closed
+    await expect(page).toHaveScreenshot('public-vacancy-postularse-error-failclosed.png');
   });
 });

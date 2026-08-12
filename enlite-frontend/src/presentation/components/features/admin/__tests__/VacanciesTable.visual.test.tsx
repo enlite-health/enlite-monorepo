@@ -21,8 +21,10 @@ const MOCK_VACANCIES: VacancyRow[] = [
     diasAberto: '05',
     convidados: '10',
     postulados: '5',
+    confirmados: '4',
     selecionados: '3',
     faltantes: '2',
+    isDraft: false,
   },
 ];
 
@@ -55,15 +57,15 @@ describe('VacanciesTable — Eye icon', () => {
 // ── GARANTIA 2: Colunas responsivas (hidden md:table-cell) ────────────────
 
 describe('VacanciesTable — responsive columns', () => {
-  it('CRITICAL: numeric columns (invited, applicants, selected, missing) have hidden md:table-cell', () => {
+  it('CRITICAL: numeric columns (invited, applicants, confirmed, selected, missing) have hidden md:table-cell', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
 
     const row = container.querySelector('[class*="h-[72px]"]');
     expect(row).toBeTruthy();
 
     const cells = row!.querySelectorAll('td');
-    // Cells: eye(0), caso(1), status(2), priority(3), convidados(4), postulados(5), selecionados(6), faltantes(7)
-    for (let i = 4; i <= 7; i++) {
+    // Cells: eye(0), caso(1), status(2), priority(3), convidados(4), postulados(5), confirmados(6), selecionados(7), faltantes(8)
+    for (let i = 4; i <= 8; i++) {
       expect(cells[i].className).toContain('hidden');
       expect(cells[i].className).toContain('md:table-cell');
     }
@@ -84,8 +86,8 @@ describe('VacanciesTable — responsive columns', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
 
     const headerCells = container.querySelectorAll('thead th');
-    // Headers: empty(0), case(1), status(2), priority(3), invited(4), applicants(5), selected(6), missing(7)
-    for (let i = 4; i <= 7; i++) {
+    // Headers: empty(0), case(1), status(2), priority(3), invited(4), applicants(5), confirmed(6), selected(7), missing(8)
+    for (let i = 4; i <= 8; i++) {
       expect(headerCells[i].className).toContain('hidden');
       expect(headerCells[i].className).toContain('md:table-cell');
     }
@@ -115,7 +117,7 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // 7 data columns + 1 eye column = 8
-    expect(colspan).toBe(8);
+    // 8 data columns + 1 eye column = 9
+    expect(colspan).toBe(9);
   });
 });

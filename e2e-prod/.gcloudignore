@@ -1,0 +1,24 @@
+# .gcloudignore — o que NÃO sobe pro Cloud Build (upload do contexto de build).
+# Explícito e determinístico (não depende da auto-geração a partir do .gitignore).
+# SEGURANÇA: garante que segredos (.env.local) e lixo pesado (node_modules) NUNCA
+# são enviados ao Cloud Build / bucket de staging. Espelha o .dockerignore.
+
+# Dependências — o `npm ci` reinstala no layer certo (arch da imagem).
+node_modules/
+
+# SEGREDOS E CONFIG LOCAL — NUNCA sobem. (.env.example é doc, mas também fica fora do build.)
+.env
+.env.*
+
+# Credenciais de sessão do Playwright (storageState com token de login).
+.auth/
+
+# Artefatos de runs locais.
+playwright-report/
+test-results/
+blob-report/
+
+# Metadados de repo/ferramentas.
+.git/
+.gitignore
+.claude/

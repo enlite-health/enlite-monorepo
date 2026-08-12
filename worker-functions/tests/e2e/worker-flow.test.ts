@@ -70,11 +70,11 @@ describe('Worker E2E Flow', () => {
 
       expect(response.status).toBe(201);
       expect(response.data.success).toBe(true);
-      expect(response.data.data).toHaveProperty('id');
-      expect(response.data.data.email).toBe(testEmail);
+      expect(response.data.data.worker).toHaveProperty('id');
+      expect(response.data.data.worker.email).toBe(testEmail);
       // current_step and status removed from init response (migration 028)
 
-      workerId = response.data.data.id;
+      workerId = response.data.data.worker.id;
       console.log(`✅ Worker created: ${workerId}`);
     });
 
@@ -86,7 +86,7 @@ describe('Worker E2E Flow', () => {
       });
 
       expect(response.status).toBe(200);
-      expect(response.data.data.id).toBe(workerId);
+      expect(response.data.data.worker.id).toBe(workerId);
     });
   });
 

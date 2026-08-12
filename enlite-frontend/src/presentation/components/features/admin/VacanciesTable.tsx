@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Eye, Pencil } from 'lucide-react';
+import { Eye, Pencil, FileText } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import {
   Table,
@@ -20,14 +20,16 @@ export interface VacancyRow {
   diasAberto: string;
   convidados: string;
   postulados: string;
+  confirmados: string;
   selecionados: string;
   faltantes: string;
+  isDraft: boolean;
 }
 
 interface VacanciesTableProps {
   vacancies: VacancyRow[];
   onRowClick?: (id: string) => void;
-  onEditClick?: (id: string) => void;
+  onEditClick?: (id: string, isDraft: boolean) => void;
 }
 
 const COLUMNS = [
@@ -36,6 +38,7 @@ const COLUMNS = [
   { key: 'priority', hiddenClass: '' },
   { key: 'invited', hiddenClass: 'hidden md:table-cell' },
   { key: 'applicants', hiddenClass: 'hidden md:table-cell' },
+  { key: 'confirmed', hiddenClass: 'hidden md:table-cell' },
   { key: 'selected', hiddenClass: 'hidden md:table-cell' },
   { key: 'missing', hiddenClass: 'hidden md:table-cell' },
 ] as const;
@@ -100,7 +103,7 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                     {onEditClick && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onEditClick(row.id); }}
+                        onClick={(e) => { e.stopPropagation(); onEditClick(row.id, row.isDraft); }}
                         className="p-0.5 hover:text-primary transition-colors"
                         aria-label={t('admin.vacancies.table.edit')}
                         data-testid={`edit-vacancy-${row.id}`}
@@ -111,7 +114,23 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                   </div>
                 </TableCell>
                 <TableCell weight="medium">{row.caso}</TableCell>
-                <TableCell weight="medium" className="whitespace-nowrap">{row.status}</TableCell>
+                <TableCell unwrapped className="whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <Text as="span" size="sm" weight="medium">{row.status}</Text>
+                    {row.isDraft && (
+                      <span
+                        className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"
+                        title={t('admin.vacancies.table.draftBadge')}
+                        data-testid={`vacancy-draft-badge-${row.id}`}
+                      >
+                        <FileText className="w-3 h-3" aria-hidden="true" />
+                        <Text as="span" size="xs" weight="medium" color="inherit">
+                          {t('admin.vacancies.table.draftBadge')}
+                        </Text>
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
                   <PriorityCell priority={row.priority} />
                 </TableCell>
@@ -120,6 +139,9 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.postulados}
+                </TableCell>
+                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
+                  {row.confirmados}
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.selecionados}

@@ -41,7 +41,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
       email: testEmail,
       country: 'AR',
     });
-    workerId = res.data.data.id;
+    workerId = res.data.data.worker.id;
 
     // Gerar token mock para requests autenticados
     const tokenRes = await api.post('/api/test/auth/token', {
@@ -117,9 +117,11 @@ describe('Profile Tabs — Endpoints por aba', () => {
       expect(res.rows[0].years_experience).toBe('3_5');
     });
 
-    it('deve ter salvo phone na coluna plaintext', async () => {
+    it('deve ter salvo phone normalizado (canônico 549...) na coluna plaintext', async () => {
+      // O phone é normalizado na escrita (normalizePhoneAR) para evitar colisões
+      // com a constraint idx_workers_phone_unique. '+5491199999999' → '5491199999999'.
       const res = await db.query('SELECT phone FROM workers WHERE id = $1', [workerId]);
-      expect(res.rows[0].phone).toBe('+5491199999999');
+      expect(res.rows[0].phone).toBe('5491199999999');
     });
 
     it('deve ter salvo dados criptografados (first_name_encrypted não nulo)', async () => {
@@ -165,7 +167,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
 
     it('deve retornar os dados atualizados via GET /api/workers/me', async () => {
       const res = await api.get('/api/workers/me', authHeaders());
-      expect(res.data.data.phone).toBe('+5491199999999');
+      expect(res.data.data.phone).toBe('5491199999999');
       expect(res.data.data.profession).toBe('CAREGIVER');
     });
   });

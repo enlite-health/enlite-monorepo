@@ -50,6 +50,28 @@ Cloud Logging filtra por `jsonPayload.traceId`, `jsonPayload.workerId`, `jsonPay
 
 ---
 
+## PII encriptada + busca/filtro (Blind Index) — LEIA antes de filtrar qualquer campo de worker
+
+PII de worker é encriptada em repouso via **KMS** (`KMSEncryptionService`). Há ~20 colunas `*_encrypted` na tabela `workers` (nome, sexo, idiomas, data nascimento, documento, telefone, raça, religião, etc. — ver `migrations/023_encrypt_all_pii.sql` e waves seguintes). **Coluna encriptada NÃO é filtrável em SQL** (o ciphertext é opaco; decriptar a tabela inteira por request é inviável e fere LGPD).
+
+### Como filtrar/buscar sobre PII encriptada: Blind Index (HMAC determinístico)
+
+Padrão CipherSweet, já implementado em `src/shared/security/BlindIndexService.ts`. Para um campo encriptado que precise ser **filtrado/buscado/matched**, cria-se uma coluna paralela `<campo>_bidx` com `HMAC-SHA256(chave, valor_normalizado)`. A chave HMAC vive no **Secret Manager** (`worker-trgm-hmac-key`), nunca no banco — então um dump vazado é irreversível. O filtro calcula o mesmo HMAC e dá match na coluna `_bidx`. Exemplos vivos: `name_trgm_bidx` (busca por nome, trigram, mig 167), `sex_bidx` + `languages_bidx` (filtros de listagem, mig 218; helper `AdminWorkersListHelpers.ts`).
+
+### REGRA: blind index é POR CAMPO QUE SE FILTRA, não por campo encriptado
+
+NÃO crie `_bidx` pra toda coluna encriptada. Crie **apenas** quando o campo vira filtrável/buscável. Campo que só é **exibido** (decripta 1 registro na ficha) não precisa de bidx. Por isso só 3 de ~20 colunas encriptadas têm bidx hoje. Custo evitado: storage + cálculo no write + leak de frequência (determinístico revela igualdade).
+
+### Checklist ao tornar um campo PII filtrável
+
+1. **Migration aditiva** `<campo>_bidx` (`BYTEA` p/ valor único, `BYTEA[]` p/ multi-valor) + índice (`btree` p/ equality, `GIN` p/ array `@>`), com `WHERE merged_into_id IS NULL` (espelhar mig 167/218).
+2. **`BlindIndexService`**: usar `generateValueBidx` / `generateValuesBidx` (valor inteiro) ou `generate*TrigramBidx` (substring). Reusa a mesma chave/`loadKey`.
+3. **Normalização SSOT idêntica em write + filtro + backfill** — divergência (ex: `'Masculino'` no write vs `'male'` no filtro) faz o índice nunca bater. Ex: `src/shared/utils/normalizeSexValue.ts`.
+4. **Write-path**: todo lugar que grava o campo encriptado passa a gerar o bidx junto (ex: `WorkerPersonalInfoRepository`, `WorkerImportRepository`).
+5. **Backfill** dos registros antigos (coluna nasce NULL; só novos writes preenchem): copiar `scripts/backfill-name-trgm-bidx.ts` — decripta KMS → normaliza → gera HMAC → UPDATE. Roda 1x após a migration; sem ele os workers existentes não aparecem no filtro.
+
+---
+
 ## Testes E2E — obrigatório
 
 Toda vez que um controller, route, use case ou converter for criado ou modificado: criar/atualizar o teste E2E antes de considerar a tarefa concluída.
@@ -68,13 +90,13 @@ Toda vez que um controller, route, use case ou converter for criado ou modificad
 
 ---
 
-## Sequência obrigatória pós-import
+## Pipelines de import legados
 
-```typescript
-await encuadreRepo.linkWorkersByPhone();
-await blacklistRepo.linkWorkersByPhone();
-await encuadreRepo.syncToWorkerJobApplications();
-```
+**ATENÇÃO:** scripts em `scripts/import-encuadres-from-clickup.ts` (e similares de planilha operativa) são **legados e em deprecação**. Não devem ser executados regularmente.
+
+A função `EncuadreRepository.syncToWorkerJobApplications` foi deprecada em F6 (2026-05-24) — pipeline reverso `encuadres → WJA` está morto. WJAs são populadas exclusivamente via webhook Talentum, matchmaking automático, self-service de link público, ou drag manual no Kanban. Ver `docs/features/worker-job-applications/README.md`.
+
+Se precisar rodar import histórico (backfill manual), executar com cuidado e confirmar com PO antes.
 
 ---
 

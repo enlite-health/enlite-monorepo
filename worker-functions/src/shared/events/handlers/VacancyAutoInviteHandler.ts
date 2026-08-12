@@ -3,10 +3,11 @@ import { CloudTasksClient } from '../CloudTasksClient';
 import { MatchmakingService } from '../../../modules/matching/infrastructure/MatchmakingService';
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
 import { logger, reportError, loggingAls } from '../../logging';
+import { getRequiredColumns } from '../../../modules/worker/application/workerDocumentPolicy';
+import { assertVacancyInviteAllowed } from '../../../modules/notification/application/VacancyInviteGuard';
 
 const TEMPLATE_SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const TEMPLATE_SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
-const IDEMPOTENCY_DAYS = 7;
 
 // Queue dedicada com rate limit 0.5 msg/sec (config GCP) — paced pra
 // evitar burst que Meta classificaria como spam. Veja:
@@ -19,14 +20,17 @@ interface VacancyCreatedPayload {
 
 interface PatientZoneRow {
   patient_zone: string | null;
+  is_test: boolean;
 }
 
 interface WorkerDocumentsRow {
-  resume_cv_url:                string | null;
-  identity_document_url:        string | null;
-  criminal_record_url:          string | null;
-  professional_registration_url: string | null;
-  liability_insurance_url:       string | null;
+  profession:                    string | null;
+  has_documents:                 boolean;
+  identity_document_url:         string | null;
+  identity_document_back_url:    string | null;
+  criminal_record_url:           string | null;
+  resume_cv_url:                 string | null;
+  at_certificate_url:            string | null;
 }
 
 /**
@@ -69,7 +73,7 @@ export function createVacancyAutoInviteHandler(
 
     // 1. Buscar zona do paciente via JOIN (fix TD-019: não usa workZone do AT)
     const zoneRes = await db.query<PatientZoneRow>(
-      `SELECT p.zone_neighborhood AS patient_zone
+      `SELECT p.zone_neighborhood AS patient_zone, jp.is_test
        FROM job_postings jp
        LEFT JOIN patients p ON p.id = jp.patient_id
        WHERE jp.id = $1
@@ -80,7 +84,25 @@ export function createVacancyAutoInviteHandler(
       log.warn('Job posting not found, skipping');
       return;
     }
-    const patientZone = zoneRes.rows[0].patient_zone ?? 'tu zona';
+
+    const row = zoneRes.rows[0];
+
+    // Guarda de vaga de teste/QA (migration 248, vacancyCrudHelpers.ts is_test):
+    // early-return ANTES de rodar matchmaking. Cobre matchmaking + WJA + outbox +
+    // WhatsApp de uma vez só, por ser o único ponto de entrada do handler.
+    //
+    // IMPLICAÇÃO (PR #128): o futuro teste do funil WhatsApp (tier-3) NÃO poderá
+    // usar o auto-invite pra disparar WhatsApp de vaga is_test — vai precisar
+    // disparar explicitamente via endpoint dedicado ou fluxo manual. Isso é
+    // diferente do isolamento de realm em SameRealmSpecification (que só filtra
+    // worker↔vaga por DataRealm dentro do matchmaking): aqui é bloqueio total,
+    // mesmo que exista worker is_test elegível na mesma zona.
+    if (row.is_test === true) {
+      log.info('is_test vacancy — skipping auto-invite');
+      return;
+    }
+
+    const patientZone = row.patient_zone ?? 'tu zona';
 
     // 2. Rodar matchmaking — includeIncompleteRegister=true: workers com cadastro
     //    pendente também recebem convite (template ar_vacancy_match_incomplete
@@ -102,7 +124,7 @@ export function createVacancyAutoInviteHandler(
     // 4. TokenService para PII (worker_name)
     const tokenService = new TokenService(db);
 
-    const vacancyUrl = `https://app.enlite.health/vacancies/${jobPostingId}`;
+    const vacancyUrl = `https://app.enlite.health/vacantes/${jobPostingId}`;
 
     let enqueued = 0;
     let skipped = 0;
@@ -120,20 +142,13 @@ export function createVacancyAutoInviteHandler(
         const isComplete     = workerStatus === 'REGISTERED';
         const templateSlug   = isComplete ? TEMPLATE_SLUG_COMPLETE : TEMPLATE_SLUG_INCOMPLETE;
 
-        // Idempotência: já enfileirado nos últimos 7 dias para qualquer template ar_vacancy_match_*?
-        const existsRes = await db.query<{ exists: boolean }>(
-          `SELECT EXISTS(
-            SELECT 1 FROM messaging_outbox
-            WHERE worker_id = $1
-              AND job_posting_id = $2
-              AND template_slug IN ($3, $4)
-              AND created_at > NOW() - INTERVAL '${IDEMPOTENCY_DAYS} days'
-              AND status IN ('pending', 'sent')
-          ) AS exists`,
-          [candidate.workerId, jobPostingId, TEMPLATE_SLUG_COMPLETE, TEMPLATE_SLUG_INCOMPLETE],
-        );
-        if (existsRes.rows[0]?.exists) {
+        // Guard compartilhado (mesmas travas do disparo manual): opt-out,
+        // cooldown 3d, idempotência 7d (outbox + bulk logs) e throttle de
+        // não-resposta. Fonte única de verdade — auto e manual não divergem.
+        const guard = await assertVacancyInviteAllowed(db, candidate.workerId, jobPostingId);
+        if (!guard.allowed) {
           skipped++;
+          log.info({ workerId: candidate.workerId, code: guard.code }, 'Convite bloqueado pelo guard');
           continue;
         }
 
@@ -199,47 +214,77 @@ export function createVacancyAutoInviteHandler(
   };
 }
 
+/** Maps required SQL column names to their Spanish labels used in WhatsApp messages. */
+const COLUMN_TO_LABEL: Record<string, string> = {
+  identity_document_url:      'tu DNI',
+  identity_document_back_url: 'el dorso de tu DNI',
+  criminal_record_url:        'tus antecedentes penales',
+  resume_cv_url:              'tu CV',
+  at_certificate_url:         'tu certificado de AT',
+};
+
 /**
  * Monta a string de documentos pendentes para o template ar_vacancy_match_incomplete.
  *
- * Consulta worker_documents e lista campos NULL como itens separados por " y ".
+ * Faz JOIN com workers para obter a profissão do worker e determina quais colunas
+ * são obrigatórias conforme workerDocumentPolicy.getRequiredColumns(profession).
+ * Lista apenas as obrigatórias que estiverem NULL.
+ *
  * Se TUDO está preenchido (caso raro com status='INCOMPLETE_REGISTER'), retorna
  * o fallback "completar tu perfil".
  */
 export async function formatPendingDocuments(db: Pool, workerId: string): Promise<string> {
   const res = await db.query<WorkerDocumentsRow>(
-    `SELECT resume_cv_url,
-            identity_document_url,
-            criminal_record_url,
-            professional_registration_url,
-            liability_insurance_url
-     FROM worker_documents
-     WHERE worker_id = $1
+    `SELECT w.profession,
+            (wd.worker_id IS NOT NULL) AS has_documents,
+            wd.identity_document_url,
+            wd.identity_document_back_url,
+            wd.criminal_record_url,
+            wd.resume_cv_url,
+            wd.at_certificate_url
+     FROM workers w
+     LEFT JOIN worker_documents wd ON wd.worker_id = w.id
+     WHERE w.id = $1
      LIMIT 1`,
     [workerId],
   );
 
-  const pending: string[] = [];
+  const requiredColumns = getRequiredColumns(res.rows[0]?.profession ?? null);
 
-  if (res.rows.length === 0) {
-    // Sem linha em worker_documents — todos os documentos estão faltando
-    return 'tu CV, tu DNI, tus antecedentes penales, tu matrícula profesional y tu seguro de responsabilidad civil';
+  if (res.rows.length === 0 || !res.rows[0].has_documents) {
+    // Worker não encontrado ou sem linha em worker_documents — todos obrigatórios faltando
+    const allLabels = requiredColumns.map(col => COLUMN_TO_LABEL[col]).filter(Boolean);
+    return joinWithY(allLabels) || 'completar tu perfil';
   }
 
   const row = res.rows[0];
-  if (!row.resume_cv_url)                pending.push('tu CV');
-  if (!row.identity_document_url)        pending.push('tu DNI');
-  if (!row.criminal_record_url)          pending.push('tus antecedentes penales');
-  if (!row.professional_registration_url) pending.push('tu matrícula profesional');
-  if (!row.liability_insurance_url)      pending.push('tu seguro de responsabilidad civil');
+  const pending: string[] = [];
+
+  for (const col of requiredColumns) {
+    const value = row[col as keyof WorkerDocumentsRow];
+    if (!value) {
+      const label = COLUMN_TO_LABEL[col];
+      if (label) pending.push(label);
+    }
+  }
 
   if (pending.length === 0) {
-    // Caso raro: status=INCOMPLETE_REGISTER mas todos os docs preenchidos
+    // Caso raro: status=INCOMPLETE_REGISTER mas todos os docs obrigatórios preenchidos
     return 'completar tu perfil';
   }
 
-  // Concatena com " y " entre os últimos dois e ", " entre os demais
-  if (pending.length === 1) return pending[0];
-  const last = pending.pop()!;
-  return `${pending.join(', ')} y ${last}`;
+  return joinWithY(pending);
+}
+
+/**
+ * Concatena itens com ", " entre os primeiros e " y " antes do último.
+ * Ex: ['a', 'b', 'c'] → 'a, b y c'
+ *     ['a']           → 'a'
+ */
+function joinWithY(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  const last = items[items.length - 1];
+  const rest = items.slice(0, -1);
+  return `${rest.join(', ')} y ${last}`;
 }

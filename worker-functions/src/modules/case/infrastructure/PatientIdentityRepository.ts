@@ -49,6 +49,25 @@ export interface PatientIdentityUpsertInput {
   status?: PatientStatus | null;
 }
 
+/** Where a native patient was created (never 'clickup' — that's the sync path). Migration 251. */
+export type NativePatientOrigin = 'web_form' | 'admin_manual';
+
+/**
+ * Input for a NATIVE patient insert (migration 251) — a patient born inside
+ * Enlite, not synced from ClickUp. Sibling of PatientIdentityUpsertInput but:
+ *   - no clickupTaskId (persisted as NULL)
+ *   - carries `origin` (web_form | admin_manual) + a required `status`
+ *   - carries `contactEmailEncrypted` (KMS ciphertext, encrypted upstream in
+ *     PatientService using the SAME KMSEncryptionService as the responsibles)
+ */
+export interface PatientIdentityNativeInsertInput
+  extends Omit<PatientIdentityUpsertInput, 'clickupTaskId' | 'status'> {
+  origin: NativePatientOrigin;
+  status: PatientStatus;
+  /** KMS ciphertext (base64) of the contact email. Encrypted by the caller. */
+  contactEmailEncrypted?: string | null;
+}
+
 /**
  * PatientIdentityRepository — persists non-clinical patient fields.
  * Backed by Postgres (always). Future: remains in case-service MS.
@@ -137,6 +156,71 @@ export class PatientIdentityRepository {
     return { id: row.id, created: row.xmax === '0' };
   }
 
+  /**
+   * Inserts a NATIVE patient (migration 251) — clickup_task_id NULL, explicit
+   * `origin` + `status`, optional KMS-encrypted contact email. Sibling of
+   * `upsert` but with NO `ON CONFLICT`: native creation is always a fresh row
+   * (there is no ClickUp task to reconcile against), so it always returns
+   * `{ created: true }`.
+   *
+   * Caller (PatientService.createNativePatient) runs this inside the same
+   * transaction that writes clinical/responsibles/addresses/professionals.
+   */
+  async insertNative(
+    input: PatientIdentityNativeInsertInput,
+    client?: PoolClient,
+  ): Promise<{ id: string; created: true }> {
+    const executor = client ?? this.pool;
+    const country = input.country ?? 'AR';
+
+    const result = await executor.query<{ id: string }>(
+      `INSERT INTO patients (
+        clickup_task_id,
+        origin, contact_email_encrypted,
+        first_name, last_name, birth_date,
+        document_type, document_number, affiliate_id,
+        sex, phone_whatsapp,
+        insurance_informed, insurance_verified,
+        city_locality, province, zone_neighborhood,
+        country,
+        needs_attention, attention_reasons,
+        health_insurance_name, health_insurance_member_id,
+        case_number,
+        status
+      ) VALUES (
+        NULL,
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+      )
+      RETURNING id`,
+      [
+        input.origin,
+        input.contactEmailEncrypted ?? null,
+        input.firstName        ?? null,
+        input.lastName         ?? null,
+        input.birthDate        ?? null,
+        input.documentType     ?? null,
+        input.documentNumber   ?? null,
+        input.affiliateId      ?? null,
+        input.sex              ?? null,
+        input.phoneWhatsapp    ?? null,
+        input.insuranceInformed ?? null,
+        input.insuranceVerified ?? null,
+        input.cityLocality      ?? null,
+        input.province          ?? null,
+        input.zoneNeighborhood  ?? null,
+        country,
+        input.needsAttention   ?? false,
+        input.attentionReasons ? [...input.attentionReasons] : [],
+        input.healthInsuranceName      ?? null,
+        input.healthInsuranceMemberId  ?? null,
+        input.caseNumber       ?? null,
+        input.status,
+      ],
+    );
+
+    return { id: result.rows[0].id, created: true };
+  }
+
   async findById(id: string): Promise<PatientIdentity | null> {
     const result = await this.pool.query<PatientIdentity>(
       `SELECT
@@ -150,10 +234,13 @@ export class PatientIdentityRepository {
         city_locality AS "cityLocality", province,
         zone_neighborhood AS "zoneNeighborhood",
         country,
+        COALESCE((SELECT jsonb_object_agg(c.role, c.chat_id)
+                    FROM patient_chat_ids c
+                   WHERE c.patient_id = p.id), '{}'::jsonb) AS "chatIds",
         needs_attention AS "needsAttention",
         attention_reasons AS "attentionReasons",
         created_at AS "createdAt", updated_at AS "updatedAt"
-       FROM patients WHERE id = $1`,
+       FROM patients p WHERE p.id = $1`,
       [id],
     );
     return result.rows[0] ?? null;

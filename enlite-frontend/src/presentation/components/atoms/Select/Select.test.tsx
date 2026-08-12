@@ -101,10 +101,10 @@ describe('Select', () => {
     expect(wrapper.className).toContain('h-[60px]');
   });
 
-  it('wrapper aplica h-[42px] quando inputSize=compact', () => {
+  it('wrapper aplica h-12 quando inputSize=compact', () => {
     const { container } = render(<Select options={OPTIONS} inputSize="compact" />);
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.className).toContain('h-[42px]');
+    expect(wrapper.className).toContain('h-12');
   });
 
   // ─── Callbacks ────────────────────────────────────────────────────────────

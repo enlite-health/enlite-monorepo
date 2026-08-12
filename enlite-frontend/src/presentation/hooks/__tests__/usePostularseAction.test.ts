@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import React from 'react';
 import { usePostularseAction } from '../usePostularseAction';
+import { ApiError } from '@infrastructure/http/ApiError';
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -20,16 +21,11 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 vi.mock('@presentation/hooks/useAuth');
 vi.mock('@infrastructure/http/WorkerApiService');
-vi.mock('@infrastructure/http/DocumentApiService');
 
 import { useAuth } from '@presentation/hooks/useAuth';
 import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
-import { DocumentApiService } from '@infrastructure/http/DocumentApiService';
 
 const mockUseAuth = vi.mocked(useAuth);
-const mockGetProgress = vi.mocked(WorkerApiService.getProgress);
-const mockGetAvailability = vi.mocked(WorkerApiService.getAvailability);
-const mockGetDocuments = vi.mocked(DocumentApiService.getDocuments);
 const mockTrackAcquisitionChannel = vi.mocked(WorkerApiService.trackAcquisitionChannel);
 
 // ---------------------------------------------------------------------------
@@ -37,55 +33,25 @@ const mockTrackAcquisitionChannel = vi.mocked(WorkerApiService.trackAcquisitionC
 // ---------------------------------------------------------------------------
 
 const WHATSAPP_URL = 'https://wa.me/5511999999999';
+const JOB_POSTING_ID = 'vacancy-123';
 
-const COMPLETE_DOCS = {
-  id: 'doc-1',
-  workerId: 'w-1',
-  resumeCvUrl: 'https://example.com/cv.pdf',
-  identityDocumentUrl: 'https://example.com/id.pdf',
-  identityDocumentBackUrl: null,
-  criminalRecordUrl: 'https://example.com/cr.pdf',
-  professionalRegistrationUrl: 'https://example.com/pr.pdf',
-  liabilityInsuranceUrl: 'https://example.com/li.pdf',
-  monotributoCertificateUrl: null,
-  atCertificateUrl: null,
-  documentsStatus: 'approved',
-  submittedAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-};
-
-const COMPLETE_AVAILABILITY = [
-  { id: 'a-1', workerId: 'w-1', dayOfWeek: 1, startTime: '09:00', endTime: '17:00', timezone: 'America/Argentina/Buenos_Aires', crossesMidnight: false },
-];
-
-const COMPLETE_WORKER = {
-  id: 'w-1',
-  authUid: 'uid-1',
-  email: 'at@test.com',
-  status: 'active',
-  country: 'AR',
-  timezone: 'America/Argentina/Buenos_Aires',
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-  // Step 1 fields (isStep1Complete)
-  firstName: 'Ana',
-  lastName: 'García',
-  birthDate: '1990-05-15',
-  sex: 'female',
-  gender: 'female',
-  documentType: 'CUIL_CUIT',
-  documentNumber: '27123456789',
-  languages: ['es'],
-  profession: 'caregiver',
-  knowledgeLevel: 'technical',
-  experienceTypes: ['adhd'],
-  yearsExperience: '3_5',
-  preferredTypes: ['adhd'],
-  preferredAgeRange: ['adolescents'],
-  // Step 2 fields (isStep2Complete)
-  serviceAddress: 'Av. Corrientes 1234, Buenos Aires',
-  serviceRadiusKm: 10,
-};
+/**
+ * Creates a WORKER_NOT_ELIGIBLE ApiError with the given missingFields.
+ * Mirrors the 403 contract from the backend.
+ */
+function makeIneligibleError(missingFields: string[] = []): ApiError {
+  return new ApiError(
+    {
+      success: false,
+      error: 'registration_incomplete',
+      code: 'WORKER_NOT_ELIGIBLE',
+      reason: 'Worker is missing required fields',
+      workerStatus: 'INCOMPLETE',
+      missingFields,
+    },
+    403,
+  );
+}
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return React.createElement(MemoryRouter, null, children);
@@ -101,7 +67,6 @@ describe('usePostularseAction', () => {
     vi.stubGlobal('open', vi.fn());
     sessionStorage.clear();
 
-    // Default: authenticated worker with complete registration and docs
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -112,9 +77,6 @@ describe('usePostularseAction', () => {
       logout: vi.fn(),
     });
 
-    mockGetProgress.mockResolvedValue(COMPLETE_WORKER);
-    mockGetAvailability.mockResolvedValue(COMPLETE_AVAILABILITY);
-    mockGetDocuments.mockResolvedValue(COMPLETE_DOCS);
     mockTrackAcquisitionChannel.mockResolvedValue(undefined);
   });
 
@@ -139,7 +101,35 @@ describe('usePostularseAction', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2. Not authenticated
+  // 2. No jobPostingId → not_available (backend cannot be consulted)
+  // -------------------------------------------------------------------------
+
+  it('sets state to not_available when jobPostingId is null', async () => {
+    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL, null), { wrapper });
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(result.current.state).toBe('not_available');
+    expect(mockTrackAcquisitionChannel).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('sets state to not_available when jobPostingId is omitted (default)', async () => {
+    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(result.current.state).toBe('not_available');
+    expect(mockTrackAcquisitionChannel).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. Not authenticated
   // -------------------------------------------------------------------------
 
   describe('when worker is NOT authenticated', () => {
@@ -156,20 +146,26 @@ describe('usePostularseAction', () => {
     });
 
     it('sets state to unauthenticated', async () => {
-      const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+      const { result } = renderHook(
+        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        { wrapper },
+      );
 
       await act(async () => {
         await result.current.postularse();
       });
 
       expect(result.current.state).toBe('unauthenticated');
-      expect(mockGetProgress).not.toHaveBeenCalled();
+      expect(mockTrackAcquisitionChannel).not.toHaveBeenCalled();
       expect(window.open).not.toHaveBeenCalled();
     });
 
     it('confirmRegister navigates to /register with returnUrl state', async () => {
       sessionStorage.setItem('enlite_vacancy_return_url', '/vacantes/caso1-2');
-      const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+      const { result } = renderHook(
+        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        { wrapper },
+      );
 
       await act(async () => {
         await result.current.postularse();
@@ -185,7 +181,10 @@ describe('usePostularseAction', () => {
     });
 
     it('confirmRegister passes null returnUrl when sessionStorage is empty', async () => {
-      const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+      const { result } = renderHook(
+        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        { wrapper },
+      );
 
       await act(async () => {
         await result.current.postularse();
@@ -201,7 +200,10 @@ describe('usePostularseAction', () => {
     });
 
     it('dismissModal resets state to idle', async () => {
-      const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+      const { result } = renderHook(
+        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        { wrapper },
+      );
 
       await act(async () => {
         await result.current.postularse();
@@ -218,18 +220,250 @@ describe('usePostularseAction', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 3. Authenticated + registrationCompleted = false
+  // 4. Backend 403 WORKER_NOT_ELIGIBLE → modal with backend missingFields
   // -------------------------------------------------------------------------
 
-  it('sets state to incomplete with missingFields when registration is incomplete', async () => {
-    mockGetProgress.mockResolvedValue({
-      ...COMPLETE_WORKER,
-      // Remove step 1 required fields to simulate incomplete registration
-      firstName: undefined,
-      lastName: undefined,
+  it('sets state to incomplete with string[] missingFields from backend 403', async () => {
+    const fields = ['first_name', 'last_name', 'doc_resume_cv'];
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError(fields));
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
     });
 
-    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+    expect(result.current.state).toBe('incomplete');
+    expect(result.current.missingFields).toEqual(fields);
+    expect(window.open).not.toHaveBeenCalled();
+    expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, null);
+  });
+
+  it('sets missingFields to [] when backend returns empty missingFields array', async () => {
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError([]));
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(result.current.state).toBe('incomplete');
+    expect(result.current.missingFields).toEqual([]);
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('falls back to [] when backend WORKER_NOT_ELIGIBLE has no missingFields property', async () => {
+    // Older backend that may omit missingFields
+    const err = new ApiError(
+      { success: false, error: 'registration_incomplete', code: 'WORKER_NOT_ELIGIBLE' },
+      403,
+    );
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(result.current.state).toBe('incomplete');
+    expect(result.current.missingFields).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. Eligible worker → WhatsApp opens after successful track
+  // -------------------------------------------------------------------------
+
+  it('opens WhatsApp when trackAcquisitionChannel succeeds', async () => {
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+    expect(result.current.state).toBe('idle');
+    expect(result.current.missingFields).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. Fail-closed: any non-success outcome must NOT open WhatsApp
+  //    (critical business rule — an unverified worker can never reach the
+  //    Talentum pre-screening WhatsApp. See ClickUp 86ajfkwf7.)
+  // -------------------------------------------------------------------------
+
+  it('does NOT open WhatsApp when track throws a network error (fail-closed)', async () => {
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('error');
+  });
+
+  it('does NOT open WhatsApp when backend returns 404 Worker not found (no code)', async () => {
+    // A minimal account (email/password only) whose worker row is not yet
+    // REGISTERED / not found. Backend replies 404 without WORKER_NOT_ELIGIBLE.
+    const err = new ApiError({ success: false, error: 'Worker not found' }, 404);
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('error');
+  });
+
+  it('does NOT open WhatsApp on unexpected 500 (fail-closed)', async () => {
+    const err = new ApiError({ success: false, error: 'Internal error' }, 500);
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(window.open).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('error');
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. UTM sessionStorage handling
+  // -------------------------------------------------------------------------
+
+  it('calls trackAcquisitionChannel with null channel when no UTM in sessionStorage', async () => {
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, null);
+    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+  });
+
+  it('calls trackAcquisitionChannel with UTM channel when present in sessionStorage', async () => {
+    sessionStorage.setItem('enlite_utm_source', 'instagram');
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'instagram');
+    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+  });
+
+  it('clears enlite_utm_source from sessionStorage after successful track', async () => {
+    sessionStorage.setItem('enlite_utm_source', 'facebook');
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(sessionStorage.getItem('enlite_utm_source')).toBeNull();
+  });
+
+  it('does NOT clear sessionStorage when WORKER_NOT_ELIGIBLE (block path)', async () => {
+    sessionStorage.setItem('enlite_utm_source', 'whatsapp');
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(
+      makeIneligibleError(['first_name']),
+    );
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    // UTM should be preserved so we can retry after the worker completes registration
+    expect(sessionStorage.getItem('enlite_utm_source')).toBe('whatsapp');
+  });
+
+  it('preserves sessionStorage UTM on network failure (fail-closed, retry after fixing)', async () => {
+    sessionStorage.setItem('enlite_utm_source', 'linkedin');
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // WhatsApp must NOT open, and UTM is preserved so the attribution survives a retry.
+    expect(window.open).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('enlite_utm_source')).toBe('linkedin');
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. dismissModal resets state and missingFields
+  // -------------------------------------------------------------------------
+
+  it('dismissModal resets state to idle and clears missingFields', async () => {
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(
+      makeIneligibleError(['first_name', 'doc_resume_cv']),
+    );
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
 
     await act(async () => {
       await result.current.postularse();
@@ -237,199 +471,40 @@ describe('usePostularseAction', () => {
 
     expect(result.current.state).toBe('incomplete');
     expect(result.current.missingFields).not.toBeNull();
-    expect(result.current.missingFields!.registration.firstName).toBe(false);
-    expect(result.current.missingFields!.registration.lastName).toBe(false);
-    expect(result.current.missingFields!.registration.profession).toBe(true);
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(window.open).not.toHaveBeenCalled();
-  });
 
-  // -------------------------------------------------------------------------
-  // 4. Authenticated + registrationCompleted = true + docs incompletos
-  // -------------------------------------------------------------------------
-
-  it.each([
-    ['resumeCvUrl', 'resumeCv', { resumeCvUrl: null }],
-    ['identityDocumentUrl', 'identityDocument', { identityDocumentUrl: null }],
-    ['criminalRecordUrl', 'criminalRecord', { criminalRecordUrl: null }],
-    ['professionalRegistrationUrl', 'professionalRegistration', { professionalRegistrationUrl: null }],
-    ['liabilityInsuranceUrl', 'liabilityInsurance', { liabilityInsuranceUrl: null }],
-  ])(
-    'sets state to incomplete when %s is missing',
-    async (_fieldName, docKey, missingField) => {
-      mockGetDocuments.mockResolvedValue({ ...COMPLETE_DOCS, ...missingField });
-
-      const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      expect(result.current.state).toBe('incomplete');
-      expect(result.current.missingFields!.documents[docKey]).toBe(false);
-      expect(mockNavigate).not.toHaveBeenCalled();
-      expect(window.open).not.toHaveBeenCalled();
-    },
-  );
-
-  // -------------------------------------------------------------------------
-  // 5. Authenticated + registrationCompleted = true + todos os 5 docs
-  // -------------------------------------------------------------------------
-
-  it('opens whatsapp URL when worker is complete with all 5 documents', async () => {
-    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
-
-    await act(async () => {
-      await result.current.postularse();
+    act(() => {
+      result.current.dismissModal();
     });
 
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-    expect(mockNavigate).not.toHaveBeenCalled();
     expect(result.current.state).toBe('idle');
+    expect(result.current.missingFields).toBeNull();
   });
 
   // -------------------------------------------------------------------------
-  // 6. getProgress throws → fallback to /worker/profile
+  // 9. All 21 backend tokens can be present in missingFields (shape check)
   // -------------------------------------------------------------------------
 
-  it('sets state to incomplete when getProgress throws an error', async () => {
-    mockGetProgress.mockRejectedValue(new Error('Network error'));
+  it('accepts all 21 backend token types in missingFields', async () => {
+    const allTokens = [
+      'first_name', 'last_name', 'sex', 'gender', 'birth_date', 'document_number',
+      'languages', 'phone', 'profession', 'knowledge_level', 'title_certificate',
+      'years_experience', 'experience_types', 'preferred_types', 'preferred_age_range',
+      'worker_service_areas', 'worker_availability',
+      'doc_resume_cv', 'doc_identity_document', 'doc_criminal_record', 'doc_at_certificate',
+    ];
+    mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError(allTokens));
 
-    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
 
     await act(async () => {
       await result.current.postularse();
     });
 
     expect(result.current.state).toBe('incomplete');
-    expect(result.current.missingFields).toBeNull();
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(window.open).not.toHaveBeenCalled();
-  });
-
-  it('sets state to incomplete when getDocuments throws an error', async () => {
-    mockGetDocuments.mockRejectedValue(new Error('Documents fetch failed'));
-
-    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
-
-    await act(async () => {
-      await result.current.postularse();
-    });
-
-    expect(result.current.state).toBe('incomplete');
-    expect(result.current.missingFields).toBeNull();
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(window.open).not.toHaveBeenCalled();
-  });
-
-  // -------------------------------------------------------------------------
-  // 7. Acquisition channel tracking
-  // -------------------------------------------------------------------------
-
-  describe('acquisition channel tracking', () => {
-    const JOB_POSTING_ID = 'vacancy-123';
-
-    it('calls trackAcquisitionChannel when utm_source is in sessionStorage', async () => {
-      sessionStorage.setItem('enlite_utm_source', 'facebook');
-      const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
-        { wrapper },
-      );
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'facebook');
-      expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-    });
-
-    it('does NOT call trackAcquisitionChannel when sessionStorage is empty', async () => {
-      const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
-        { wrapper },
-      );
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      expect(mockTrackAcquisitionChannel).not.toHaveBeenCalled();
-      expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-    });
-
-    it('does NOT call trackAcquisitionChannel when jobPostingId is null', async () => {
-      sessionStorage.setItem('enlite_utm_source', 'instagram');
-      const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, null),
-        { wrapper },
-      );
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      expect(mockTrackAcquisitionChannel).not.toHaveBeenCalled();
-      expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-    });
-
-    it('still opens WhatsApp even if trackAcquisitionChannel fails', async () => {
-      sessionStorage.setItem('enlite_utm_source', 'linkedin');
-      mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
-
-      const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
-        { wrapper },
-      );
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
-      expect(result.current.state).toBe('idle');
-    });
-
-    it('clears enlite_utm_source from sessionStorage after successful track', async () => {
-      sessionStorage.setItem('enlite_utm_source', 'instagram');
-
-      const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
-        { wrapper },
-      );
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      // The .then() callback runs asynchronously; flush microtasks before asserting
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'instagram');
-      expect(sessionStorage.getItem('enlite_utm_source')).toBeNull();
-    });
-
-    it('does NOT clear sessionStorage when trackAcquisitionChannel fails', async () => {
-      sessionStorage.setItem('enlite_utm_source', 'whatsapp');
-      mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
-
-      const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
-        { wrapper },
-      );
-
-      await act(async () => {
-        await result.current.postularse();
-      });
-
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      // sessionStorage should remain intact on failure
-      expect(sessionStorage.getItem('enlite_utm_source')).toBe('whatsapp');
-    });
+    expect(result.current.missingFields).toEqual(allTokens);
+    expect(result.current.missingFields).toHaveLength(21);
   });
 });

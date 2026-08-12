@@ -10,9 +10,9 @@ export interface SavedCandidate {
   distanceKm: number | null;
   activeCasesCount: number;
   overallStatus: string | null;
+  documentStatus: string | null;  // worker_documents.documents_status ('pending'|'incomplete'|'submitted'|'under_review'|'approved'|'rejected') ou null
   matchScore: number | null;
   internalNotes: string | null;    // llmReasoning salvo em worker_job_applications.internal_notes
-  applicationStatus: string;       // applied | under_review | shortlisted | etc.
   alreadyApplied: boolean;         // true = candidatou-se diretamente (não via match)
   messagedAt: string | null;       // ISO 8601 ou null se nunca notificado
 }
@@ -22,19 +22,4 @@ export interface MatchResultsResponse {
   lastMatchAt: string | null;
   totalCandidates: number;
   candidates: SavedCandidate[];
-}
-
-
-export interface MessageTemplate {
-  slug: string;
-  name: string;
-  body: string;
-  category: string | null;
-  isActive: boolean;
-}
-
-export interface WhatsAppSentResult {
-  externalId: string;
-  status: string;
-  to: string;
 }

@@ -14,6 +14,15 @@ vi.mock('@hooks/admin/useVacancyFunnelTable', () => ({
     mockUseVacancyFunnelTable(...args),
 }));
 
+vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
+  useInvitedPendingCandidates: () => ({
+    candidates: [],
+    pendingCount: 0,
+    isLoading: false,
+    refetch: vi.fn(),
+  }),
+}));
+
 vi.mock('./VacancyFunnelKanban', () => ({
   VacancyFunnelKanban: ({ vacancyId }: { vacancyId: string }) => (
     <div data-testid="kanban-board">{vacancyId}</div>
@@ -68,6 +77,9 @@ const mockData: FunnelTableData = {
 };
 
 beforeEach(() => {
+  // Reset calls entre tests pra evitar flakiness — sem isso, mock.calls acumula
+  // chamadas dos testes anteriores e lastCall pode pegar invocação de outro test.
+  mockUseVacancyFunnelTable.mockClear();
   mockUseVacancyFunnelTable.mockReturnValue({
     data: mockData,
     isLoading: false,

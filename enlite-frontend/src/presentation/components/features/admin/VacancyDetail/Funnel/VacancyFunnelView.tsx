@@ -1,15 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import type { FunnelBucket } from '@domain/entities/Funnel';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
+import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandidates';
+import type { InviteTarget } from '../../VacancyMatch/inviteTypes';
 import { VacancyFunnelToggle } from './VacancyFunnelToggle';
 import type { FunnelView } from './VacancyFunnelToggle';
 import { VacancyFunnelTabs } from './VacancyFunnelTabs';
 import { VacancyFunnelTable } from './VacancyFunnelTable';
 import { VacancyFunnelKanban } from './VacancyFunnelKanban';
+import { DispatchConfirmModal } from './DispatchConfirmModal';
 import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
+import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
 
 const DEFAULT_BUCKET: FunnelBucket = 'INVITED';
@@ -50,6 +54,11 @@ export function VacancyFunnelView({
   const [activeBucket, setActiveBucket] =
     useState<FunnelBucket>(DEFAULT_BUCKET);
   const [showMatchModal, setShowMatchModal] = useState(false);
+  const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
+  const [dispatchSnapshot, setDispatchSnapshot] = useState<InviteTarget[]>([]);
+
+  const enqueueInvites = useInviteProgressStore((s) => s.enqueue);
+  const isSendingInvites = useInviteProgressStore((s) => s.isSending);
 
   const isListView = view === 'list';
 
@@ -58,6 +67,12 @@ export function VacancyFunnelView({
     activeBucket,
     isListView,
   );
+
+  const {
+    candidates: pendingCandidates,
+    pendingCount,
+    refetch: refetchPending,
+  } = useInvitedPendingCandidates(vacancyId);
 
   function handleViewChange(newView: FunnelView) {
     setView(newView);
@@ -69,9 +84,27 @@ export function VacancyFunnelView({
   }
 
   function handleDispatchInvites() {
-    // TODO TD-XXX: Implement dispatch invites flow — see docs/FOLLOWUPS.md
-    console.log('[FunnelView] dispatch invites clicked');
+    if (pendingCount === 0) return;
+    setDispatchSnapshot(pendingCandidates);
+    setShowDispatchConfirm(true);
   }
+
+  function handleConfirmDispatch() {
+    setShowDispatchConfirm(false);
+    // Envio em background — o painel flutuante mostra o progresso e o operador
+    // segue trabalhando (não trava mais a tela).
+    enqueueInvites(vacancyId, dispatchSnapshot);
+  }
+
+  // Ao concluir um lote de envio (isSending true → false), recarrega a lista de
+  // pendentes pra refletir os que saíram (equivale ao antigo refetch-on-close).
+  const wasSending = useRef(false);
+  useEffect(() => {
+    if (wasSending.current && !isSendingInvites) {
+      refetchPending();
+    }
+    wasSending.current = isSendingInvites;
+  }, [isSendingInvites, refetchPending]);
 
   // Reset bucket when switching back to list view
   useEffect(() => {
@@ -99,8 +132,11 @@ export function VacancyFunnelView({
               variant="primary"
               size="md"
               onClick={handleDispatchInvites}
+              disabled={pendingCount === 0}
             >
-              {t('admin.vacancyDetail.funnelView.dispatchInvitesButton')}
+              {t('admin.vacancyDetail.funnelView.dispatchInvitesButtonCount', {
+                count: pendingCount,
+              })}
             </Button>
           </div>
         )}
@@ -120,6 +156,7 @@ export function VacancyFunnelView({
             aria-labelledby={`funnel-tab-${activeBucket}`}
           >
             <VacancyFunnelTable
+              vacancyId={vacancyId}
               rows={data?.rows ?? []}
               isLoading={isLoading}
               activeBucket={activeBucket}
@@ -144,6 +181,14 @@ export function VacancyFunnelView({
           vacancyId={vacancyId}
           vacancy={vacancy}
           onClose={() => setShowMatchModal(false)}
+        />
+      )}
+
+      {showDispatchConfirm && (
+        <DispatchConfirmModal
+          pendingCount={dispatchSnapshot.length}
+          onConfirm={handleConfirmDispatch}
+          onCancel={() => setShowDispatchConfirm(false)}
         />
       )}
     </div>

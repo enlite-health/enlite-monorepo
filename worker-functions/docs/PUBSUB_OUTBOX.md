@@ -68,6 +68,8 @@ Use case → INSERT INTO messaging_outbox (status='pending')
 
 ### Templates de mensagem
 
+> **Vocabulário:** 'encuadre' nos nomes desses templates é o vocabulário operacional para WJA — ver [docs/features/worker-job-applications/02-vocabulario.md](../../docs/features/worker-job-applications/02-vocabulario.md). Templates permanecem com este nome por compatibilidade com WhatsApp HSM.
+
 | Template slug | Trigger | Destinatário | Descrição |
 |---|---|---|---|
 | `qualified_worker_request` | AT qualificado (Talentum) | AT | Convite com 3 slots de entrevista |

@@ -31,14 +31,19 @@ describe('QualifiedInterviewHandler', () => {
     jobPostingId: 'job-1',
   };
 
+  // Datas FUTURAS fixas (2027): o handler descarta slot no passado.
+  const DT_1 = '2027-04-07T10:00:00Z';
+  const DT_2 = '2027-04-08T15:00:00Z';
+  const DT_3 = '2027-04-09T09:00:00Z';
+
   const vacancyRow = {
     case_number: 42,
     meet_link_1: 'https://meet.google.com/abc-1',
-    meet_datetime_1: '2026-04-07T10:00:00Z',
+    meet_datetime_1: DT_1,
     meet_link_2: 'https://meet.google.com/abc-2',
-    meet_datetime_2: '2026-04-08T15:00:00Z',
+    meet_datetime_2: DT_2,
     meet_link_3: 'https://meet.google.com/abc-3',
-    meet_datetime_3: '2026-04-09T09:00:00Z',
+    meet_datetime_3: DT_3,
   };
 
   beforeEach(() => {
@@ -71,10 +76,11 @@ describe('QualifiedInterviewHandler', () => {
     // Verifica INSERT na outbox com template qualified_worker_request
     const insertCall = mockQuery.mock.calls[2];
     expect(insertCall[0]).toContain('qualified_worker_request');
-    const vars = JSON.parse(insertCall[1][1]);
-    expect(vars.slot_1).toBe('Mar 07/04 10:00');
-    expect(vars.slot_2).toBe('Mié 08/04 15:00');
-    expect(vars.slot_3).toBe('Jue 09/04 09:00');
+    expect(insertCall[1][1]).toBe('job-1'); // coluna job_posting_id preenchida
+    const vars = JSON.parse(insertCall[1][2]);
+    expect(vars.slot_1).toBe(formatSlotOption(DT_1));
+    expect(vars.slot_2).toBe(formatSlotOption(DT_2));
+    expect(vars.slot_3).toBe(formatSlotOption(DT_3));
     expect(vars.case_number).toBe('42');
     expect(vars.job_posting_id).toBe('job-1');
     // Links não são enviados — BookSlotFromWhatsAppUseCase busca do job_postings
@@ -132,7 +138,7 @@ describe('QualifiedInterviewHandler', () => {
     const datetimeSemLink = {
       case_number: 42,
       meet_link_1: null,
-      meet_datetime_1: '2026-04-07T10:00:00Z',
+      meet_datetime_1: DT_1,
       meet_link_2: null,
       meet_datetime_2: null,
       meet_link_3: null,
@@ -186,13 +192,13 @@ describe('QualifiedInterviewHandler', () => {
     expect(updateCall[1]).toEqual(['worker-1', 'job-1']);
   });
 
-  it('funciona com 2 meet links (slot 3 vazio)', async () => {
+  it('com 2 meet links, slot_3 repete o último horário válido (nunca vazio)', async () => {
     const twoLinksVacancy = {
       case_number: 42,
       meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: '2026-04-07T10:00:00Z',
+      meet_datetime_1: DT_1,
       meet_link_2: 'https://meet.google.com/abc-2',
-      meet_datetime_2: '2026-04-08T15:00:00Z',
+      meet_datetime_2: DT_2,
       meet_link_3: null,
       meet_datetime_3: null,
     };
@@ -206,17 +212,17 @@ describe('QualifiedInterviewHandler', () => {
     await handler(payload);
 
     const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][1]);
-    expect(vars.slot_1).toBe('Mar 07/04 10:00');
-    expect(vars.slot_2).toBe('Mié 08/04 15:00');
-    expect(vars.slot_3).toBe('');
+    const vars = JSON.parse(insertCall[1][2]);
+    expect(vars.slot_1).toBe(formatSlotOption(DT_1));
+    expect(vars.slot_2).toBe(formatSlotOption(DT_2));
+    expect(vars.slot_3).toBe(formatSlotOption(DT_2)); // repete, não vazio
   });
 
-  it('funciona com apenas 1 meet link (slots 2 e 3 vazios)', async () => {
+  it('com apenas 1 meet link, slots 2 e 3 repetem o horário 1 (nunca vazios)', async () => {
     const partialVacancy = {
       case_number: 42,
       meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: '2026-04-07T10:00:00Z',
+      meet_datetime_1: DT_1,
       meet_link_2: null,
       meet_datetime_2: null,
       meet_link_3: null,
@@ -232,13 +238,57 @@ describe('QualifiedInterviewHandler', () => {
     await handler(payload);
 
     const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][1]);
-    expect(vars.slot_1).toBe('Mar 07/04 10:00');
-    expect(vars.slot_2).toBe('');
-    expect(vars.slot_3).toBe('');
+    const vars = JSON.parse(insertCall[1][2]);
+    expect(vars.slot_1).toBe(formatSlotOption(DT_1));
+    expect(vars.slot_2).toBe(formatSlotOption(DT_1));
+    expect(vars.slot_3).toBe(formatSlotOption(DT_1));
   });
 
-  it('case_number null produz string vazia nas variáveis', async () => {
+  it('descarta slot no PASSADO: convite usa só os futuros', async () => {
+    const mixedVacancy = {
+      case_number: 42,
+      meet_link_1: 'https://meet.google.com/abc-1',
+      meet_datetime_1: '2026-06-08T11:30:00Z', // passado (bug real de prod: "Lun 08/06")
+      meet_link_2: 'https://meet.google.com/abc-2',
+      meet_datetime_2: DT_2,
+      meet_link_3: null,
+      meet_datetime_3: null,
+    };
+
+    mockQuery
+      .mockResolvedValueOnce({ rows: [mixedVacancy] })
+      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await handler(payload);
+
+    const insertCall = mockQuery.mock.calls[2];
+    const vars = JSON.parse(insertCall[1][2]);
+    expect(vars.slot_1).toBe(formatSlotOption(DT_2));
+    expect(vars.slot_2).toBe(formatSlotOption(DT_2));
+    expect(vars.slot_3).toBe(formatSlotOption(DT_2));
+  });
+
+  it('pula envio se TODOS os slots estão no passado', async () => {
+    const staleVacancy = {
+      case_number: 42,
+      meet_link_1: 'https://meet.google.com/abc-1',
+      meet_datetime_1: '2026-06-08T11:30:00Z',
+      meet_link_2: 'https://meet.google.com/abc-2',
+      meet_datetime_2: '2026-06-17T11:30:00Z',
+      meet_link_3: null,
+      meet_datetime_3: null,
+    };
+    mockQuery.mockResolvedValueOnce({ rows: [staleVacancy] });
+
+    await handler(payload);
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockPubsub.publish).not.toHaveBeenCalled();
+  });
+
+  it('case_number null produz "—" (variável vazia é rejeitada pela Meta)', async () => {
     const vacancyNullCase = {
       ...vacancyRow,
       case_number: null,
@@ -253,8 +303,8 @@ describe('QualifiedInterviewHandler', () => {
     await handler(payload);
 
     const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][1]);
-    expect(vars.case_number).toBe('');
+    const vars = JSON.parse(insertCall[1][2]);
+    expect(vars.case_number).toBe('—');
   });
 
   it('inclui job_posting_id nas variáveis da outbox', async () => {
@@ -267,7 +317,7 @@ describe('QualifiedInterviewHandler', () => {
     await handler(payload);
 
     const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][1]);
+    const vars = JSON.parse(insertCall[1][2]);
     expect(vars.job_posting_id).toBe('job-1');
   });
 
@@ -284,6 +334,7 @@ describe('QualifiedInterviewHandler', () => {
     expect(insertCall[0]).toContain("'pending'");
     expect(insertCall[0]).toContain('0');
     expect(insertCall[1][0]).toBe('worker-1');
+    expect(insertCall[1][1]).toBe('job-1');
   });
 
   describe('formatSlotOption', () => {

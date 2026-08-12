@@ -1,11 +1,14 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/features/auth/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RoleBasedHome } from './pages/home/RoleBasedHome';
 import { RegisterPage } from './pages/RegisterPage';
+import { CompleteWhatsappPage } from './pages/CompleteWhatsappPage';
 import { WorkerProfilePage } from './pages/WorkerProfilePage';
 import { AdminErrorBoundary } from './components/features/admin/AdminErrorBoundary';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
+import { CrashNow } from './components/RouteErrorBoundary/__CrashNow';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Import direto — páginas e layout carregam junto com o bundle admin
@@ -15,19 +18,40 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
+import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
 import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
-import VacancyMatchPage from './pages/admin/VacancyMatchPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
+import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
+import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
+import TagCatalogPage from './pages/admin/TagCatalogPage';
+import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
+import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
+import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
+import { Toaster } from './components/molecules/Toaster';
+import { InviteProgressPanel } from './components/features/admin/VacancyMatch/InviteProgressPanel';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
+// Public B2C patient intake (Task 2) — no auth, outside the admin shell.
+// Same page, parametrized by country; wrapped so each lazy module is a
+// zero-arg component (the prop is bound here) and keeps chunk-retry.
+const AdmisionArPage = lazyWithRetry(() =>
+  import('./pages/public/AdmisionPage').then((m) => ({
+    default: () => <m.default country="AR" />,
+  })),
+);
+const AdmisionBrPage = lazyWithRetry(() =>
+  import('./pages/public/AdmisionPage').then((m) => ({
+    default: () => <m.default country="BR" />,
+  })),
+);
 // Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
 // quando staff abre /admin/api-docs.
 const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
@@ -41,12 +65,32 @@ const AdminFallback = () => (
   </div>
 );
 
+/**
+ * Alias EN → ES para a rota pública de vaga.
+ * O link correto é /vacantes/:id (espanhol). Mensagens disparadas antes do fix
+ * no backend (VacancyAutoInviteHandler) saíram com /vacancies/:id em inglês e
+ * caíam em tela branca. Este redirect resgata esses links já enviados,
+ * preservando id e query string.
+ */
+export function VacancyEnAliasRedirect() {
+  const { id } = useParams();
+  const { search } = useLocation();
+  // Limpa ponto/espaço no fim — links pré-migration 178/210 saíram como
+  // /vacancies/<id>. (autolink do WhatsApp colava o ponto na URL).
+  const cleanId = (id ?? '').replace(/[.\s]+$/, '');
+  return <Navigate to={`/vacantes/${cleanId}${search}`} replace />;
+}
+
 export function App() {
   return (
     <BrowserRouter>
+      <NewVersionBanner />
+      <Toaster />
+      <InviteProgressPanel />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/complete-whatsapp" element={<CompleteWhatsappPage />} />
         <Route path="/auth/action" element={<AuthActionPage />} />
         <Route
           path="/vacantes/:id"
@@ -56,6 +100,33 @@ export function App() {
             </Suspense>
           }
         />
+        {/* Alias EN → ES: resgata links antigos enviados como /vacancies/:id */}
+        <Route path="/vacancies/:id" element={<VacancyEnAliasRedirect />} />
+        {/* Public patient intake (Task 2) — country-parametrized native scheduler.
+            AR → es, BR → pt-BR (page forces its own language). The WP
+            /registrar/admisión iframe points at the country-specific route. */}
+        <Route
+          path="/admission-ar"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionArPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/admission-br"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionBrPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
+        {/* Compat alias: the original /admision now points at AR. */}
+        <Route path="/admision" element={<Navigate to="/admission-ar" replace />} />
         <Route
           path="/worker-registration"
           element={<Navigate to="/worker/profile" replace />}
@@ -64,7 +135,9 @@ export function App() {
           path="/worker/profile"
           element={
             <ProtectedRoute redirectTo="/login?next=/worker/profile">
-              <WorkerProfilePage />
+              <RouteErrorBoundary>
+                <WorkerProfilePage />
+              </RouteErrorBoundary>
             </ProtectedRoute>
           }
         />
@@ -72,10 +145,23 @@ export function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <RoleBasedHome />
+              <RouteErrorBoundary>
+                <RoleBasedHome />
+              </RouteErrorBoundary>
             </ProtectedRoute>
           }
         />
+        {/* Rota de crash — só disponível em DEV para validação visual do ErrorBoundary */}
+        {import.meta.env.DEV && (
+          <Route
+            path="/__error-test"
+            element={
+              <RouteErrorBoundary>
+                <CrashNow />
+              </RouteErrorBoundary>
+            }
+          />
+        )}
 
         {/* Admin module — lazy-loaded, isolated from worker module */}
         <Route path="/admin/login" element={
@@ -107,13 +193,18 @@ export function App() {
           <Route path="vacancies/:id/edit" element={<CreateVacancyPage />} />
           <Route path="vacancies/:id/talentum" element={<TalentumConfigPage />} />
           <Route path="vacancies/:id" element={<VacancyDetailPage />} />
-          <Route path="vacancies/:id/match" element={<VacancyMatchPage />} />
+          <Route path="dashboard" element={<ManagementDashboardPage />} />
           <Route path="recruitment" element={<AdminRecruitmentPage />} />
           <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
+          <Route path="recruitment/blocked-attempts" element={<BlockedAttemptsPage />} />
           <Route path="workers" element={<AdminWorkersPage />} />
           <Route path="workers/:id" element={<WorkerDetailPage />} />
           <Route path="patients" element={<AdminPatientsPage />} />
+          <Route path="patients/kanban" element={<PatientKanbanPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
+          <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
+          <Route path="dedup" element={<DedupCenterPage />} />
           <Route
             path="api-docs"
             element={
@@ -123,6 +214,8 @@ export function App() {
             }
           />
         </Route>
+        {/* Catch-all: rota desconhecida redireciona para home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

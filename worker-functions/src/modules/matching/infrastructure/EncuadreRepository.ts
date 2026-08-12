@@ -38,7 +38,7 @@ export class EncuadreRepository {
     // ON CONFLICT rules:
     //   resultado / attended / accepts_case / rejection_reason → always overwrite
     //   obs_* → always overwrite
-    //   meet_link / origen / id_onboarding / worker_email_encrypted → COALESCE
+    //   meet_link / import_source_audit / id_onboarding / worker_email_encrypted → COALESCE
     //   llm_processed_at → nulled if obs changed (forces re-processing)
     const workerEmailEnc = await this.encryptionService.encrypt(dto.workerEmail ?? null);
 
@@ -53,13 +53,13 @@ export class EncuadreRepository {
         has_cv, has_dni, has_cert_at, has_afip, has_cbu, has_ap, has_seguros,
         worker_email_encrypted,
         obs_reclutamiento, obs_encuadre, obs_adicionales,
-        origen, id_onboarding,
+        import_source_audit, id_onboarding,
         dedup_hash
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
         $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
       )
-      ON CONFLICT (dedup_hash) DO UPDATE SET
+      ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
         resultado          = EXCLUDED.resultado,
         attended           = EXCLUDED.attended,
         accepts_case       = EXCLUDED.accepts_case,
@@ -77,9 +77,9 @@ export class EncuadreRepository {
         obs_reclutamiento  = EXCLUDED.obs_reclutamiento,
         obs_encuadre       = EXCLUDED.obs_encuadre,
         obs_adicionales    = EXCLUDED.obs_adicionales,
-        meet_link          = COALESCE(encuadres.meet_link,      EXCLUDED.meet_link),
-        origen             = COALESCE(encuadres.origen,         EXCLUDED.origen),
-        id_onboarding      = COALESCE(encuadres.id_onboarding,  EXCLUDED.id_onboarding),
+        meet_link            = COALESCE(encuadres.meet_link,             EXCLUDED.meet_link),
+        import_source_audit  = COALESCE(encuadres.import_source_audit,  EXCLUDED.import_source_audit),
+        id_onboarding        = COALESCE(encuadres.id_onboarding,        EXCLUDED.id_onboarding),
         worker_email_encrypted = COALESCE(encuadres.worker_email_encrypted, EXCLUDED.worker_email_encrypted),
         updated_at = NOW()
       RETURNING *, (xmax = 0) AS inserted
@@ -97,7 +97,7 @@ export class EncuadreRepository {
       dto.hasAfip ?? null, dto.hasCbu ?? null, dto.hasAp ?? null, dto.hasSeguros ?? null,
       workerEmailEnc,
       dto.obsReclutamiento ?? null, dto.obsEncuadre ?? null, dto.obsAdicionales ?? null,
-      dto.origen ?? null, dto.idOnboarding ?? null, dto.dedupHash,
+      dto.importSourceAudit ?? null, dto.idOnboarding ?? null, dto.dedupHash,
     ];
 
     const result = await this.pool.query(query, values);
@@ -123,7 +123,7 @@ export class EncuadreRepository {
         has_cv, has_dni, has_cert_at, has_afip, has_cbu, has_ap, has_seguros,
         worker_email_encrypted,
         obs_reclutamiento, obs_encuadre, obs_adicionales,
-        origen, id_onboarding, dedup_hash
+        import_source_audit, id_onboarding, dedup_hash
       )
       SELECT
         UNNEST($1::uuid[]),  UNNEST($2::uuid[]),
@@ -137,7 +137,7 @@ export class EncuadreRepository {
         UNNEST($26::text[]),
         UNNEST($27::text[]), UNNEST($28::text[]), UNNEST($29::text[]),
         UNNEST($30::text[]), UNNEST($31::text[]), UNNEST($32::text[])
-      ON CONFLICT (dedup_hash) DO UPDATE SET
+      ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
         resultado          = EXCLUDED.resultado,
         attended           = EXCLUDED.attended,
         accepts_case       = EXCLUDED.accepts_case,
@@ -151,9 +151,9 @@ export class EncuadreRepository {
         obs_reclutamiento  = EXCLUDED.obs_reclutamiento,
         obs_encuadre       = EXCLUDED.obs_encuadre,
         obs_adicionales    = EXCLUDED.obs_adicionales,
-        meet_link     = COALESCE(encuadres.meet_link,     EXCLUDED.meet_link),
-        origen        = COALESCE(encuadres.origen,        EXCLUDED.origen),
-        id_onboarding = COALESCE(encuadres.id_onboarding, EXCLUDED.id_onboarding),
+        meet_link           = COALESCE(encuadres.meet_link,            EXCLUDED.meet_link),
+        import_source_audit = COALESCE(encuadres.import_source_audit, EXCLUDED.import_source_audit),
+        id_onboarding       = COALESCE(encuadres.id_onboarding,       EXCLUDED.id_onboarding),
         worker_email_encrypted = COALESCE(encuadres.worker_email_encrypted, EXCLUDED.worker_email_encrypted),
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted
@@ -174,7 +174,7 @@ export class EncuadreRepository {
       dtos.map(d => d.hasCbu ?? null),         dtos.map(d => d.hasAp ?? null),
       dtos.map(d => d.hasSeguros ?? null),     encryptedEmails,
       dtos.map(d => d.obsReclutamiento ?? null),dtos.map(d => d.obsEncuadre ?? null),
-      dtos.map(d => d.obsAdicionales ?? null), dtos.map(d => d.origen ?? null),
+      dtos.map(d => d.obsAdicionales ?? null), dtos.map(d => d.importSourceAudit ?? null),
       dtos.map(d => d.idOnboarding ?? null),   dtos.map(d => d.dedupHash),
     ]);
 
@@ -182,28 +182,30 @@ export class EncuadreRepository {
     return { created, updated: result.rows.length - created };
   }
 
+  /**
+   * @deprecated F6 (2026-05-24): pipeline reverso encuadres → WJA está deprecado.
+   * WJA é SSOT do funil, populada via webhook Talentum / matchmaking / self-service.
+   * Mantido apenas como referência histórica + backfill one-shot manual se necessário.
+   * Ver docs/features/worker-job-applications/README.md e ADR-002.
+   *
+   * NÃO chamar em código novo. NÃO chamar em pipelines recorrentes.
+   */
   async syncToWorkerJobApplications(): Promise<number> {
+    // F7.c (ADR-004): application_status removido do INSERT e DO UPDATE SET (dead code cleanup).
     const result = await this.pool.query(`
       INSERT INTO worker_job_applications (
         worker_id, job_posting_id,
-        application_status, application_funnel_stage,
+        application_funnel_stage,
         applied_at, rejection_reason, source
       )
       SELECT
         e.worker_id, e.job_posting_id,
         CASE
-          WHEN e.resultado IN ('SELECCIONADO', 'REEMPLAZO') THEN 'approved'
-          WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'rejected'
-          WHEN e.resultado = 'REPROGRAMAR' THEN 'interview_scheduled'
-          WHEN e.resultado IS NOT NULL OR e.attended = true THEN 'under_review'
-          ELSE 'applied'
-        END,
-        CASE
           WHEN e.resultado IN ('SELECCIONADO', 'REEMPLAZO') THEN 'QUALIFIED'
-          WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'NOT_QUALIFIED'
+          WHEN e.resultado IN ('RECHAZADO', 'AT_NO_ACEPTA', 'BLACKLIST') THEN 'REJECTED'
           WHEN e.attended = true THEN 'IN_PROGRESS'
           WHEN e.interview_date IS NOT NULL OR e.resultado = 'REPROGRAMAR' THEN 'IN_PROGRESS'
-          ELSE 'INITIATED'
+          ELSE 'PRE_SCREENING' -- migration 230: INITIATED→PRE_SCREENING (função @deprecated)
         END,
         COALESCE(e.recruitment_date::timestamptz, e.created_at),
         e.rejection_reason,
@@ -223,12 +225,12 @@ export class EncuadreRepository {
           COALESCE(recruitment_date, created_at::date) DESC NULLS LAST
       ) e
       ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-        application_status       = CASE
-          WHEN worker_job_applications.source = 'talentum' THEN worker_job_applications.application_status
-          ELSE EXCLUDED.application_status END,
         application_funnel_stage = CASE
-          WHEN worker_job_applications.source = 'talentum' THEN worker_job_applications.application_funnel_stage
-          ELSE EXCLUDED.application_funnel_stage END,
+          WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
+               >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)
+          THEN EXCLUDED.application_funnel_stage
+          ELSE worker_job_applications.application_funnel_stage
+        END,
         rejection_reason = COALESCE(EXCLUDED.rejection_reason, worker_job_applications.rejection_reason),
         updated_at = NOW()
     `);

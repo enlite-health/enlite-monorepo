@@ -105,6 +105,60 @@ export class BlindIndexService {
     return `{${elements.join(',')}}`;
   }
 
+  /**
+   * Generates a single HMAC blind index for an exact value (not trigrams).
+   *
+   * Usage: sex_bidx — HMAC of the canonical value ('male' | 'female').
+   * The caller MUST normalise the value BEFORE calling this method so that
+   * write-path, filter and backfill all produce identical HMACs.
+   *
+   * Returns null for null / undefined / empty-string inputs.
+   */
+  async generateValueBidx(
+    value: string | null | undefined,
+  ): Promise<Buffer | null> {
+    const normalized = value ? normalizeSearch(value).trim() : '';
+    if (normalized.length === 0) return null;
+
+    const key = await this.loadKey();
+    const hmac = crypto
+      .createHmac('sha256', key)
+      .update(normalized, 'utf8')
+      .digest()
+      .subarray(0, 8);
+    return Buffer.from(hmac);
+  }
+
+  /**
+   * Generates HMAC blind indexes for an array of values (not trigrams).
+   *
+   * Usage: languages_bidx — one HMAC per language code.
+   * Deduplicates and sorts for deterministic output.
+   *
+   * Returns [] for null / undefined / empty arrays.
+   */
+  async generateValuesBidx(
+    values: string[] | null | undefined,
+  ): Promise<Buffer[]> {
+    if (!values || values.length === 0) return [];
+
+    const key = await this.loadKey();
+    const hmacs: Buffer[] = [];
+
+    for (const value of values) {
+      const normalized = normalizeSearch(value).trim();
+      if (normalized.length === 0) continue;
+      const hmac = crypto
+        .createHmac('sha256', key)
+        .update(normalized, 'utf8')
+        .digest()
+        .subarray(0, 8);
+      hmacs.push(Buffer.from(hmac));
+    }
+
+    return this.dedupAndSort(hmacs);
+  }
+
   // ── Private helpers ───────────────────────────────────────────────
 
   /**

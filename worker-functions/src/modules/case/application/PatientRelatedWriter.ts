@@ -18,18 +18,44 @@ export async function replacePatientAddresses(
   client: import('pg').PoolClient,
   geocoder: GeocodingService,
 ): Promise<void> {
-  // Merge by (patient_id, display_order) instead of DELETE+INSERT so that
-  // existing IDs survive the upsert. job_postings.patient_address_id has
-  // ON DELETE RESTRICT, so dropping a referenced address aborts the whole
-  // sync transaction.
+  // Versioning strategy (introduced 2026-05-26, migration 198):
+  //
+  // We merge by (patient_id, display_order) for ACTIVE rows
+  // (archived_at IS NULL). When the operator updates the address in ClickUp,
+  // the new `address_formatted` may differ from the existing one. We then:
+  //
+  //   1. If the existing row has the SAME `address_formatted` as the incoming
+  //      data — UPDATE in-place. This covers refreshes (geocoding,
+  //      neighborhood/city/state correction) that do NOT change the street
+  //      address. Vacancies that point to this row are unaffected.
+  //
+  //   2. If the existing row has a DIFFERENT `address_formatted` — VERSION it:
+  //      mark the existing row `archived_at = NOW()` and INSERT a new row with
+  //      the same `display_order` carrying the new content. Vacancies pointing
+  //      to the archived row are intentionally PRESERVED — they continue
+  //      showing the address that was chosen at vacancy-creation time. The new
+  //      vacancy form will pick up the new row (filtered by archived_at IS
+  //      NULL).
+  //
+  //   3. If the existing row's `display_order` is no longer present in the
+  //      ClickUp payload — archive it (don't delete) when it's referenced by
+  //      any job_posting, otherwise hard-delete. This protects against the
+  //      ON DELETE RESTRICT trap.
   const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
 
-  const { rows: existing } = await client.query<{ id: string; display_order: number }>(
-    'SELECT id, display_order FROM patient_addresses WHERE patient_id = $1',
+  const { rows: existing } = await client.query<{
+    id: string;
+    display_order: number;
+    address_formatted: string | null;
+  }>(
+    `SELECT id, display_order, address_formatted
+       FROM patient_addresses
+      WHERE patient_id = $1
+        AND archived_at IS NULL`,
     [patientId],
   );
-  const existingByOrder = new Map<number, string>(
-    existing.map(r => [r.display_order, r.id]),
+  const existingByOrder = new Map<number, { id: string; address_formatted: string | null }>(
+    existing.map(r => [r.display_order, { id: r.id, address_formatted: r.address_formatted }]),
   );
 
   if (valid.length === 0) return;
@@ -43,9 +69,32 @@ export async function replacePatientAddresses(
 
   for (const g of geocoded) {
     const a = g.address;
-    const existingId = existingByOrder.get(a.displayOrder);
+    const existingForSlot = existingByOrder.get(a.displayOrder);
 
-    if (existingId) {
+    const incomingFormatted = a.addressFormatted ?? null;
+    const currentFormatted  = existingForSlot?.address_formatted ?? null;
+    const formattedChanged  = existingForSlot !== undefined && incomingFormatted !== currentFormatted;
+
+    // Force versioning when a PUBLISHED (is_draft=false) vacancy depends on
+    // this row, even if address_formatted is unchanged. This preserves the
+    // address snapshot for published vacancies — the operator who created and
+    // published the vacancy keeps seeing exactly the address that was active
+    // at publish time. Drafts still pick up the refresh (see remap below).
+    let publishedReference = false;
+    if (existingForSlot) {
+      const { rows } = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM job_postings
+          WHERE patient_address_id = $1
+            AND is_draft = false
+            AND deleted_at IS NULL`,
+        [existingForSlot.id],
+      );
+      publishedReference = parseInt(rows[0].count, 10) > 0;
+    }
+
+    if (existingForSlot && !formattedChanged && !publishedReference) {
+      // Path 1: UPDATE in-place (no street change, no published vacancy
+      // depends on this row). Cheapest path — geocoding refresh.
       await client.query(
         `UPDATE patient_addresses SET
            address_type      = $2,
@@ -58,7 +107,7 @@ export async function replacePatientAddresses(
            lng               = $9
          WHERE id = $1`,
         [
-          existingId,
+          existingForSlot.id,
           a.addressType,
           a.addressFormatted ?? null,
           a.addressRaw ?? null,
@@ -69,41 +118,83 @@ export async function replacePatientAddresses(
           g.lng,
         ],
       );
-    } else {
+      continue;
+    }
+
+    if (existingForSlot && (formattedChanged || publishedReference)) {
+      // Path 2: VERSION — archive the old, insert the new. Triggered by
+      // street change OR by snapshot protection for published vacancies.
       await client.query(
-        `INSERT INTO patient_addresses
-           (patient_id, address_type, address_formatted, address_raw, display_order, state, city, neighborhood, lat, lng)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          patientId,
-          a.addressType,
-          a.addressFormatted ?? null,
-          a.addressRaw ?? null,
-          a.displayOrder,
-          a.state ?? null,
-          a.city ?? null,
-          a.neighborhood ?? null,
-          g.lat,
-          g.lng,
-        ],
+        `UPDATE patient_addresses SET archived_at = NOW() WHERE id = $1`,
+        [existingForSlot.id],
+      );
+    }
+
+    // Path 2 (continued) or Path 3 (no existing row in this slot): INSERT new
+    const insertRes = await client.query<{ id: string }>(
+      `INSERT INTO patient_addresses
+         (patient_id, address_type, address_formatted, address_raw,
+          display_order, state, city, neighborhood, lat, lng)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id`,
+      [
+        patientId,
+        a.addressType,
+        a.addressFormatted ?? null,
+        a.addressRaw ?? null,
+        a.displayOrder,
+        a.state ?? null,
+        a.city ?? null,
+        a.neighborhood ?? null,
+        g.lat,
+        g.lng,
+      ],
+    );
+    const newAddressId = insertRes.rows[0].id;
+
+    // Remap DRAFT vacancies that pointed to the archived row → new row.
+    // Drafts haven't been published yet, so they should reflect the latest
+    // address. Published vacancies keep pointing to the archived row.
+    if (existingForSlot) {
+      await client.query(
+        `UPDATE job_postings
+            SET patient_address_id = $1
+          WHERE patient_address_id = $2
+            AND is_draft = true
+            AND deleted_at IS NULL`,
+        [newAddressId, existingForSlot.id],
       );
     }
   }
 
+  // Slots that disappeared from the ClickUp payload:
+  //   - archive if referenced by any job_posting (preserve history)
+  //   - delete if orphan
   const newOrders = new Set(geocoded.map(g => g.address.displayOrder));
-  const obsoleteIds = existing
+  const goneIds = existing
     .filter(r => !newOrders.has(r.display_order))
     .map(r => r.id);
 
-  if (obsoleteIds.length > 0) {
+  if (goneIds.length > 0) {
+    await client.query(
+      `UPDATE patient_addresses
+          SET archived_at = NOW()
+        WHERE id = ANY($1::uuid[])
+          AND archived_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM job_postings jp
+            WHERE jp.patient_address_id = patient_addresses.id
+          )`,
+      [goneIds],
+    );
     await client.query(
       `DELETE FROM patient_addresses
-       WHERE id = ANY($1::uuid[])
-         AND NOT EXISTS (
-           SELECT 1 FROM job_postings jp
-           WHERE jp.patient_address_id = patient_addresses.id
-         )`,
-      [obsoleteIds],
+        WHERE id = ANY($1::uuid[])
+          AND NOT EXISTS (
+            SELECT 1 FROM job_postings jp
+            WHERE jp.patient_address_id = patient_addresses.id
+          )`,
+      [goneIds],
     );
   }
 }

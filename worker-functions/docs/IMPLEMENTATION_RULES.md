@@ -36,7 +36,7 @@ O sistema recebe arquivos de 4 fontes distintas — **Talentum**, **ClickUp**, *
 src/infrastructure/converters/
   TalentumConverter.ts          ← lê CANDIDATOS.xlsx / Talentum CSV
   ClickUpConverter.ts           ← lê ClickUp Export (auto-detecta header)
-  PlanilhaOperativaConverter.ts ← lê abas da Planilla Operativa Encuadre.xlsx
+  PlanilhaOperativaConverter.ts ← lê abas da Planilla Operativa Encuadre.xlsx (**REMOVIDO 2026-05-23** — planilha operativa descontinuada)
   AnaCareConverter.ts           ← lê Ana Care Control.xlsx
   index.ts                      ← barrel + registry de detecção de tipo
 ```
@@ -80,7 +80,7 @@ export interface IFileConverter<TRow> {
   parse(buffer: Buffer): Promise<TRow[]>;
 }
 
-export type ImportFileType = 'talentum' | 'clickup' | 'planilla_operativa' | 'ana_care';
+export type ImportFileType = 'talentum' | 'clickup' | 'ana_care'; // planilla_operativa removido em 2026-05-23
 ```
 
 **Registro de detecção (substituir `detectType()` inline):**
@@ -297,6 +297,8 @@ Nunca faça o HTTP aguardar o processamento completo antes de responder.
 
 ## 4. Repositórios
 
+> ⚠️ **Estes exemplos refletem o padrão pré-2026-05-23.** Em código novo, escrever apenas em `worker_job_applications`. Trigger 189 garante encuadre mínimo automaticamente. Ver [docs/features/worker-job-applications/08-pipelines.md](../../docs/features/worker-job-applications/08-pipelines.md).
+
 ---
 
 ### REPO-001 — Um arquivo por repositório [AUSENTE]
@@ -366,12 +368,14 @@ async upsert(dto: CreateEncuadreDTO): Promise<{ entity: Encuadre; created: boole
 
 **Regra:** `linkWorkersByPhone()` e `syncToWorkerJobApplications()` são operações do repositório, não do importer. O importer apenas as chama após o upsert em lote.
 
-Sequência obrigatória pós-import:
+Sequência pós-import:
 ```typescript
 await encuadreRepo.linkWorkersByPhone();     // 1. Liga encuadres a workers
 await blacklistRepo.linkWorkersByPhone();    // 2. Liga blacklist a workers
-await encuadreRepo.syncToWorkerJobApplications(); // 3. Sincroniza tabela canônica
+// encuadreRepo.syncToWorkerJobApplications() — DEPRECADO F6 (2026-05-24): não chamar
 ```
+
+> **F6 entregue 2026-05-24:** call site recorrente em `import-encuadres-from-clickup.ts` removido. Função mantida com `@deprecated` para backfill manual se necessário. Ver README do plano WJA.
 
 ---
 
@@ -572,7 +576,7 @@ tests/
   fixtures/
     talentum-sample.csv              ← anonimizado, mas estrutura real
     clickup-export-sample.xlsx
-    planilla-operativa-sample.xlsx
+    planilla-operativa-sample.xlsx  // histórico — importador descontinuado em 2026-05-23
     ana-care-sample.xlsx
   unit/
     converters/

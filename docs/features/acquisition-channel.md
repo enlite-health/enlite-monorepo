@@ -2,7 +2,7 @@
 
 ## O que e
 
-Rastreamento do canal social (Facebook, Instagram, WhatsApp, LinkedIn, Site) por onde um worker chegou a uma vaga. A informacao e capturada no momento da postulacao e exibida como badge colorido no kanban de encuadres.
+Rastreamento do canal social (Facebook, Instagram, WhatsApp, LinkedIn, Site) por onde um worker chegou a uma vaga. A informacao e capturada no momento da postulacao e exibida como badge colorido no Kanban de candidaturas (WJA).
 
 ## Por que existe
 
@@ -37,7 +37,7 @@ A Enlite gera short links (via Short.io) com UTM params para cada canal de divul
    First-touch wins: se ja tem canal, nao sobrescreve
      |
 6. Kanban exibe badge colorido no card do worker
-   GET /api/admin/vacancies/:id/funnel -> acquisitionChannel por encuadre
+   GET /api/admin/vacancies/:id/funnel -> acquisitionChannel por candidatura (WJA)
 ```
 
 ### Persistencia via sessionStorage
@@ -71,7 +71,7 @@ O `sessionStorage` preserva o canal durante navegacoes na mesma aba:
 **Endpoint existente modificado**:
 | Metodo | Rota | Mudanca |
 |--------|------|---------|
-| GET | `/api/admin/vacancies/:id/funnel` | Retorna `acquisitionChannel` por encuadre |
+| GET | `/api/admin/vacancies/:id/funnel` | Retorna `acquisitionChannel` por candidatura (WJA) |
 
 ## Componentes
 
@@ -81,7 +81,7 @@ O `sessionStorage` preserva o canal durante navegacoes na mesma aba:
 |---------|-----------------|
 | `src/interfaces/controllers/WorkerApplicationsController.ts` | Controller do track-channel |
 | `src/interfaces/routes/workerApplicationsRoutes.ts` | Rota do endpoint |
-| `src/interfaces/controllers/EncuadreFunnelController.ts` | Retorna acquisitionChannel no funnel |
+| `src/interfaces/controllers/EncuadreFunnelController.ts` | Retorna acquisitionChannel no funnel <!-- nome legado; será renomeado na F7 do plano. Ver [features/worker-job-applications/02-vocabulario.md](worker-job-applications/02-vocabulario.md) --> |
 | `migrations/130_add_acquisition_channel.sql` | Coluna acquisition_channel |
 
 ### Frontend
@@ -94,7 +94,7 @@ O `sessionStorage` preserva o canal durante navegacoes na mesma aba:
 | `src/infrastructure/http/WorkerApiService.ts` | Metodo trackAcquisitionChannel |
 | `src/presentation/components/features/admin/Kanban/KanbanCard.tsx` | Badge de canal |
 | `src/presentation/components/features/admin/Kanban/KanbanBoard.tsx` | Passa acquisitionChannel aos cards |
-| `src/hooks/admin/useEncuadreFunnel.ts` | Campo acquisitionChannel na interface |
+| `src/hooks/admin/useEncuadreFunnel.ts` | Campo acquisitionChannel na interface <!-- nome legado; será renomeado na F7 do plano. Ver [features/worker-job-applications/02-vocabulario.md](worker-job-applications/02-vocabulario.md) --> |
 
 ## Schema
 

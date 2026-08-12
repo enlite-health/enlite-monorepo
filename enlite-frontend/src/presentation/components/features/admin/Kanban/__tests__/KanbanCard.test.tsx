@@ -9,9 +9,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// ── Typography mock ──────────────────────────────────────────────────────────
-vi.mock('@presentation/components/atoms/Typography', () => ({
-  Typography: ({ children, ...props }: { children: React.ReactNode; [k: string]: unknown }) => (
+// ── Text atom mock ───────────────────────────────────────────────────────────
+vi.mock('@presentation/components/atoms/Text', () => ({
+  Text: ({ children, ...props }: { children: React.ReactNode; [k: string]: unknown }) => (
     <span {...props}>{children}</span>
   ),
 }));
@@ -20,8 +20,10 @@ vi.mock('@presentation/components/atoms/Typography', () => ({
 vi.mock('lucide-react', () => ({
   CalendarClock: (props: Record<string, unknown>) => <svg data-testid="icon-calendar-clock" {...props} />,
   MapPin: (props: Record<string, unknown>) => <svg data-testid="icon-map-pin" {...props} />,
+  MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
+  Hand: (props: Record<string, unknown>) => <svg data-testid="icon-hand" {...props} />,
 }));
 
 // ── Default props ────────────────────────────────────────────────────────────
@@ -39,7 +41,6 @@ const defaultProps = {
   interviewDate: null as string | null,
   interviewTime: null as string | null,
   stage: 'COMPLETED',
-  funnelStage: null as string | null,
 };
 
 // ── Visual Rendering ─────────────────────────────────────────────────────────
@@ -218,7 +219,6 @@ describe('KanbanCard — combined scenarios', () => {
         interviewDate={null}
         interviewTime={null}
         stage="INVITED"
-        funnelStage={null}
       />,
     );
     // Should still render with fallback name
@@ -229,6 +229,168 @@ describe('KanbanCard — combined scenarios', () => {
     expect(screen.queryByTestId('icon-star')).not.toBeInTheDocument();
     expect(screen.queryByTestId('talentum-badge')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rejection-badge')).not.toBeInTheDocument();
+  });
+});
+
+// ── Blocked Badge (INICIADO column) ──────────────────────────────────────────
+
+describe('KanbanCard — blocked badge', () => {
+  it('renders blocked section when isBlocked is true', () => {
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="INICIADO"
+        isBlocked={true}
+        blockedReason="registration_incomplete"
+        missingFields={['phone', 'profession']}
+        attemptCount={2}
+      />,
+    );
+    expect(screen.getByTestId('blocked-section')).toBeInTheDocument();
+  });
+
+  it('renders BLOQUEADO badge with correct i18n key', () => {
+    render(
+      <KanbanCard {...defaultProps} stage="INICIADO" isBlocked={true} />,
+    );
+    const badge = screen.getByTestId('blocked-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.blockedBadge');
+  });
+
+  it('does NOT render blocked section when isBlocked is false', () => {
+    render(
+      <KanbanCard {...defaultProps} stage="INICIADO" isBlocked={false} />,
+    );
+    expect(screen.queryByTestId('blocked-section')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render blocked section when isBlocked is undefined', () => {
+    render(<KanbanCard {...defaultProps} stage="INICIADO" />);
+    expect(screen.queryByTestId('blocked-section')).not.toBeInTheDocument();
+  });
+
+  it('renders blockedReason via i18n key from admin.blockedAttempts.reason', () => {
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="INICIADO"
+        isBlocked={true}
+        blockedReason="registration_incomplete"
+      />,
+    );
+    const reason = screen.getByTestId('blocked-reason');
+    expect(reason).toHaveTextContent('admin.blockedAttempts.reason.registration_incomplete');
+  });
+
+  it.each([
+    'worker_not_found',
+    'registration_incomplete',
+    'worker_disabled',
+  ])('renders i18n key for blockedReason=%s', (reason) => {
+    render(
+      <KanbanCard {...defaultProps} stage="INICIADO" isBlocked={true} blockedReason={reason} />,
+    );
+    expect(screen.getByTestId('blocked-reason')).toHaveTextContent(
+      `admin.blockedAttempts.reason.${reason}`,
+    );
+  });
+
+  it('renders missingFields as individual badges', () => {
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="INICIADO"
+        isBlocked={true}
+        missingFields={['phone', 'profession']}
+      />,
+    );
+    const container = screen.getByTestId('blocked-missing-fields');
+    expect(container).toBeInTheDocument();
+    // Each field should be rendered as a badge using admin.blockedAttempts.missingField.*
+    expect(container).toHaveTextContent('admin.blockedAttempts.missingField.phone');
+    expect(container).toHaveTextContent('admin.blockedAttempts.missingField.profession');
+  });
+
+  it('does NOT render missingFields section when array is empty', () => {
+    render(
+      <KanbanCard {...defaultProps} stage="INICIADO" isBlocked={true} missingFields={[]} />,
+    );
+    expect(screen.queryByTestId('blocked-missing-fields')).not.toBeInTheDocument();
+  });
+
+  it('renders attemptCount with correct i18n key', () => {
+    render(
+      <KanbanCard {...defaultProps} stage="INICIADO" isBlocked={true} attemptCount={3} />,
+    );
+    expect(screen.getByTestId('blocked-attempt-count')).toBeInTheDocument();
+  });
+
+  it('does NOT render attemptCount when zero', () => {
+    render(
+      <KanbanCard {...defaultProps} stage="INICIADO" isBlocked={true} attemptCount={0} />,
+    );
+    expect(screen.queryByTestId('blocked-attempt-count')).not.toBeInTheDocument();
+  });
+
+  it('applies red-100 background to blocked badge', () => {
+    render(<KanbanCard {...defaultProps} stage="INICIADO" isBlocked={true} />);
+    const badge = screen.getByTestId('blocked-badge');
+    expect(badge.className).toContain('bg-red-100');
+    expect(badge.className).toContain('text-red-700');
+  });
+
+  it('renders the blocked-specific "no name" i18n key when isBlocked and workerName is null (worker_not_found)', () => {
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        workerName={null}
+        isBlocked={true}
+        blockedReason="worker_not_found"
+      />,
+    );
+    expect(screen.getByText('admin.kanban.blockedNoName')).toBeInTheDocument();
+    expect(screen.queryByText('admin.kanban.noName')).not.toBeInTheDocument();
+  });
+
+  it('still renders the generic "no name" i18n key when NOT blocked and workerName is null', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" workerName={null} isBlocked={false} />);
+    expect(screen.getByText('admin.kanban.noName')).toBeInTheDocument();
+  });
+
+  it('renders the worker name as a clickable link even when isBlocked, when workerId + onWorkerClick are present', () => {
+    const onClick = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        isBlocked={true}
+        workerId="worker-blocked-1"
+        workerName="Lucía Fernández"
+        onWorkerClick={onClick}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Lucía Fernández' });
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledWith('worker-blocked-1');
+  });
+
+  it('renders the notes button in a blocked card when onOpenNotes is provided (contact notes are keyed by worker, not WJA)', () => {
+    const onOpenNotes = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        isBlocked={true}
+        workerId="worker-blocked-1"
+        onOpenNotes={onOpenNotes}
+        contactNotesCount={2}
+      />,
+    );
+    expect(screen.getByTestId('notes-button')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(onOpenNotes).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -359,6 +521,130 @@ describe('KanbanCard — acquisition channel badge', () => {
   });
 });
 
+// ── Completado Badge (COMPLETED stage internalStage) ────────────────────────
+
+describe('KanbanCard — completado badge', () => {
+  it('renders completado badge when stage is COMPLETED and internalStage is QUALIFIED', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="QUALIFIED" />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.completadoBadge.QUALIFIED');
+    expect(badge.className).toContain('bg-green-50');
+    expect(badge.className).toContain('text-green-700');
+  });
+
+  it('renders completado badge when stage is COMPLETED and internalStage is IN_DOUBT', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="IN_DOUBT" />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.completadoBadge.IN_DOUBT');
+    expect(badge.className).toContain('bg-orange-50');
+    expect(badge.className).toContain('text-orange-700');
+  });
+
+  it('renders completado badge when stage is COMPLETED and internalStage is COMPLETED', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="COMPLETED" />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('admin.kanban.completadoBadge.COMPLETED');
+    expect(badge.className).toContain('bg-blue-50');
+    expect(badge.className).toContain('text-blue-700');
+  });
+
+  it('does NOT render completado badge when stage is COMPLETED but internalStage is null', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage={null} />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render completado badge when stage is not COMPLETED', () => {
+    render(<KanbanCard {...defaultProps} stage="CONFIRMED" internalStage="QUALIFIED" />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render completado badge for unknown internalStage value', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" internalStage="UNKNOWN" />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+});
+
+// ── Reject Button ────────────────────────────────────────────────────────────
+
+describe('KanbanCard — reject button', () => {
+  it('renders reject button when onReject is provided and stage is not REJECTED', () => {
+    const onReject = vi.fn();
+    render(<KanbanCard {...defaultProps} stage="INVITED" onReject={onReject} />);
+    expect(screen.getByTestId('reject-button')).toBeInTheDocument();
+    expect(screen.getByTestId('reject-button')).toHaveTextContent('admin.kanban.rejectButton');
+  });
+
+  it('does NOT render reject button when stage is REJECTED', () => {
+    const onReject = vi.fn();
+    render(<KanbanCard {...defaultProps} stage="REJECTED" onReject={onReject} />);
+    expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render reject button when onReject is undefined', () => {
+    render(<KanbanCard {...defaultProps} stage="INVITED" />);
+    expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
+  });
+
+  it('calls onReject when reject button is clicked', () => {
+    const onReject = vi.fn();
+    render(<KanbanCard {...defaultProps} stage="CONFIRMED" onReject={onReject} />);
+    fireEvent.click(screen.getByTestId('reject-button'));
+    expect(onReject).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED'])(
+    'renders reject button in %s stage when onReject is provided',
+    (stage) => {
+      const onReject = vi.fn();
+      render(<KanbanCard {...defaultProps} stage={stage} onReject={onReject} />);
+      expect(screen.getByTestId('reject-button')).toBeInTheDocument();
+    },
+  );
+});
+
+// ── Notes Button (contact notes / comentários) ──────────────────────────────
+
+describe('KanbanCard — notes button', () => {
+  it('renders notes button when onOpenNotes is provided', () => {
+    const onOpenNotes = vi.fn();
+    render(<KanbanCard {...defaultProps} onOpenNotes={onOpenNotes} />);
+    expect(screen.getByTestId('notes-button')).toBeInTheDocument();
+    expect(screen.getByTestId('notes-button')).toHaveTextContent('admin.kanban.notesButton');
+  });
+
+  it('does NOT render notes button when onOpenNotes is undefined', () => {
+    render(<KanbanCard {...defaultProps} />);
+    expect(screen.queryByTestId('notes-button')).not.toBeInTheDocument();
+  });
+
+  it('calls onOpenNotes when notes button is clicked', () => {
+    const onOpenNotes = vi.fn();
+    render(<KanbanCard {...defaultProps} onOpenNotes={onOpenNotes} />);
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(onOpenNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the count badge with contactNotesCount when > 0', () => {
+    render(<KanbanCard {...defaultProps} onOpenNotes={vi.fn()} contactNotesCount={3} />);
+    const badge = screen.getByTestId('notes-count-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('3');
+  });
+
+  it('does NOT show the count badge when contactNotesCount is 0', () => {
+    render(<KanbanCard {...defaultProps} onOpenNotes={vi.fn()} contactNotesCount={0} />);
+    expect(screen.queryByTestId('notes-count-badge')).not.toBeInTheDocument();
+  });
+
+  it('does NOT show the count badge when contactNotesCount is undefined', () => {
+    render(<KanbanCard {...defaultProps} onOpenNotes={vi.fn()} />);
+    expect(screen.queryByTestId('notes-count-badge')).not.toBeInTheDocument();
+  });
+});
+
 // ── Interview Schedule Tag (CONFIRMED stage) ────────────────────────────────
 
 describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
@@ -414,7 +700,7 @@ describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
     expect(screen.queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
   });
 
-  it.each(['INVITED', 'INITIATED', 'IN_PROGRESS', 'SELECTED', 'REJECTED'])(
+  it.each(['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'SELECTED', 'REJECTED'])(
     'does NOT show interview tag when stage is %s',
     (stage) => {
       render(
@@ -467,5 +753,25 @@ describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
     );
     // Full date format should appear
     expect(screen.getByText(/15\/3\/2026.*10:30/)).toBeInTheDocument();
+  });
+});
+
+// ── "Levantou a mão" (lead que se postulou sozinho) ─────────────────────────
+describe('KanbanCard — selo de auto-postulação', () => {
+  it('mostra o selo quando o próprio prestador entrou na vaga', () => {
+    render(<KanbanCard {...defaultProps} selfAppliedAt="2026-08-07T13:51:19.923Z" />);
+    expect(screen.getByTestId('self-applied-badge')).toHaveTextContent(
+      'admin.kanban.selfApplied',
+    );
+  });
+
+  it('sem carimbo NÃO mostra o selo — ausência não é prova de desinteresse', () => {
+    render(<KanbanCard {...defaultProps} selfAppliedAt={null} />);
+    expect(screen.queryByTestId('self-applied-badge')).toBeNull();
+  });
+
+  it('prop ausente (card antigo, anterior à autoria) também não mostra', () => {
+    render(<KanbanCard {...defaultProps} />);
+    expect(screen.queryByTestId('self-applied-badge')).toBeNull();
   });
 });

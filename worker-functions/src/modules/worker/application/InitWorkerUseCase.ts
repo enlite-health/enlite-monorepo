@@ -1,51 +1,66 @@
 import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { CreateWorkerDTO, Worker } from '../domain/Worker';
+import { InitWorkerOutput } from '../domain/InitWorkerOutput';
 import { Result } from '@shared/utils/Result';
-import { EventDispatcher } from '@shared/services/EventDispatcher';
+import { logger } from '@shared/logging';
+import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { maskPhone } from '@shared/utils/phoneMask';
+import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
 /**
- * Detects if a worker was imported from spreadsheet (has fake authUid)
- * Imported workers have authUid patterns like:
- * - anacareimport_<phone>
- * - candidatoimport_<phone>
- * - pretalnimport_<phone>
+ * Detecta se um worker foi importado de planilha ou script (authUid fake).
+ * Imported workers têm authUid com os prefixes abaixo:
+ *   - anacareimport_       — Anacare import
+ *   - candidatoimport_     — importação genérica de candidatos
+ *   - pretalnimport_       — Pretaln import
+ *   - base1import_         — Planilla Operativa importer
+ *   - clickup_encuadre_    — scripts/import-encuadres-from-clickup.ts
  */
 function isImportedWorker(authUid: string | null | undefined): boolean {
   if (!authUid) return false;
-  const importPrefixes = ['anacareimport_', 'candidatoimport_', 'pretalnimport_'];
+  const importPrefixes = [
+    'anacareimport_',
+    'candidatoimport_',
+    'pretalnimport_',
+    'base1import_',
+    'clickup_encuadre_',
+  ];
   return importPrefixes.some(prefix => authUid.startsWith(prefix));
 }
 
 export class InitWorkerUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
-    private eventDispatcher: EventDispatcher
+    private twilioVerify?: ITwilioVerifyService,
   ) {}
 
-  async execute(data: CreateWorkerDTO): Promise<Result<Worker>> {
+  async execute(data: CreateWorkerDTO): Promise<Result<InitWorkerOutput>> {
     const consentAt = data.lgpdOptIn ? new Date() : undefined;
 
     const existingWorkerResult = await this.workerRepository.findByAuthUid(data.authUid);
-    
+
     if (existingWorkerResult.isFailure) {
-      return Result.fail<Worker>(existingWorkerResult.error!);
+      return Result.fail<InitWorkerOutput>(existingWorkerResult.error!);
     }
 
     if (existingWorkerResult.getValue() !== null) {
-      return Result.ok<Worker>(existingWorkerResult.getValue()!);
+      return Result.ok<InitWorkerOutput>({
+        status: 'ok',
+        worker: existingWorkerResult.getValue()!,
+      });
     }
 
     const emailCheckResult = await this.workerRepository.findByEmail(data.email);
-    
+
     if (emailCheckResult.isFailure) {
-      return Result.fail<Worker>(emailCheckResult.error!);
+      return Result.fail<InitWorkerOutput>(emailCheckResult.error!);
     }
 
     const existingByEmail = emailCheckResult.getValue();
     if (existingByEmail !== null) {
-      // Reconcile: update auth_uid for existing worker with matching email.
-      // This handles cases where user recreated their Firebase account (new authUid).
-      // Also fill phone when the existing worker has none but the payload provides it.
+      // Reconecta: atualiza auth_uid para worker existente com email coincidente.
+      // Cobre o caso em que o usuário recriou a conta Firebase (novo authUid).
+      // Também preenche phone quando o worker existente não tem mas o payload tem.
       if (!existingByEmail.authUid || existingByEmail.authUid !== data.authUid) {
         const phoneToSet = !existingByEmail.phone && data.phone ? data.phone : undefined;
         const updateResult = await this.workerRepository.updateAuthUid(
@@ -56,38 +71,70 @@ export class InitWorkerUseCase {
         );
 
         if (updateResult.isFailure) {
-          return Result.fail<Worker>(updateResult.error!);
+          return Result.fail<InitWorkerOutput>(updateResult.error!);
         }
 
-        return Result.ok<Worker>(updateResult.getValue());
+        return Result.ok<InitWorkerOutput>({ status: 'ok', worker: updateResult.getValue() });
       }
 
-      return Result.ok<Worker>(existingByEmail);
+      return Result.ok<InitWorkerOutput>({ status: 'ok', worker: existingByEmail });
     }
 
-    // Check for imported workers by phone
-    // This handles the case where a worker was imported via spreadsheet
-    // with a fake authUid and email, and now is creating a real account
-    if (data.phone) {
-      const phoneCheckResult = await this.workerRepository.findByPhone(data.phone);
-      
+    // Verifica workers importados por telefone (ou whatsappPhone como fallback).
+    // Substitui o auto-link silencioso por claim via OTP WhatsApp (anti-hijack).
+    // Quem confirmar posse do número recebe a ficha.
+    const phoneInput = data.phone || data.whatsappPhone;
+    if (phoneInput && normalizePhoneAR(phoneInput).length >= 10) {
+      const candidates = generatePhoneCandidates(phoneInput);
+      const phoneCheckResult = await this.workerRepository.findByPhoneCandidates(candidates);
+
       if (phoneCheckResult.isSuccess && phoneCheckResult.getValue() !== null) {
         const existingByPhone = phoneCheckResult.getValue()!;
-        
-        // Only reconcile if this is an imported worker (has fake authUid)
+
         if (isImportedWorker(existingByPhone.authUid)) {
-          console.log(`[InitWorker] Migrating imported worker ${existingByPhone.id} from fake authUid "${existingByPhone.authUid}" to real authUid "${data.authUid}"`);
-          
-          const updateResult = await this.workerRepository.updateImportedWorkerData(
-            existingByPhone.id,
-            { authUid: data.authUid, email: data.email, consentAt }
-          );
-          
-          if (updateResult.isFailure) {
-            return Result.fail<Worker>(updateResult.error!);
+          const log = logger.child({
+            source: 'InitWorkerUseCase:execute',
+            workerId: existingByPhone.id,
+          });
+
+          // Usa o phone DA FICHA (não o do payload) para disparar o OTP — anti-hijack.
+          const phoneForOtp = existingByPhone.phone ?? phoneInput;
+          const phoneE164 = phoneForOtp.startsWith('+')
+            ? phoneForOtp
+            : `+${normalizePhoneAR(phoneForOtp)}`;
+
+          log.info({
+            msg: 'worker_claim_otp_triggered',
+            candidateWorkerId: existingByPhone.id,
+            fromAuthUid: existingByPhone.authUid,
+            phoneE164,
+          });
+
+          if (!this.twilioVerify) {
+            // Fallback em ambientes sem Twilio configurado (testes de integração E2E
+            // que não passam twilioVerify): retorna claim_pending com sid sintético.
+            return Result.ok<InitWorkerOutput>({
+              status: 'claim_pending',
+              candidateWorkerId: existingByPhone.id,
+              phoneMasked: maskPhone(phoneE164),
+              verificationSid: 'TWILIO_NOT_CONFIGURED',
+            });
           }
-          
-          return Result.ok<Worker>(updateResult.getValue());
+
+          try {
+            const { verificationSid } =
+              await this.twilioVerify.startVerification(phoneE164);
+
+            return Result.ok<InitWorkerOutput>({
+              status: 'claim_pending',
+              candidateWorkerId: existingByPhone.id,
+              phoneMasked: maskPhone(phoneE164),
+              verificationSid,
+            });
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return Result.fail<InitWorkerOutput>(`TWILIO_ERROR:${msg}`);
+          }
         }
       }
     }
@@ -100,17 +147,13 @@ export class InitWorkerUseCase {
       lgpdOptIn: data.lgpdOptIn,
       country: data.country,
     });
-    
+
     if (createResult.isFailure) {
-      return createResult;
+      return Result.fail<InitWorkerOutput>(createResult.error!);
     }
 
-    const worker = createResult.getValue();
+    const worker: Worker = createResult.getValue();
 
-    await this.eventDispatcher.notifyWorkerCreated(worker.id, {
-      email: worker.email,
-    });
-
-    return Result.ok<Worker>(worker);
+    return Result.ok<InitWorkerOutput>({ status: 'ok', worker });
   }
 }

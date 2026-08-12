@@ -1,49 +1,70 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
+import { CadencePolicy } from '../domain/CadencePolicy';
 import { Result } from '@shared/utils/Result';
 import { logger, reportError } from '@shared/logging';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
-// Intervalo entre envios para evitar bloqueio de número pelo WhatsApp/Twilio.
-// Padrão: 1500ms. Sobreposto pela variável de ambiente BULK_DISPATCH_DELAY_MS.
 const DEFAULT_DELAY_MS = 1500;
+
+// Cadência combinada: envio inicial, +3 dias o 2º, +7 dias o 3º, e para (cap 3).
+// Meta penaliza números que enviam repetidamente para quem não responde — a
+// ausência dessa cadência (reenvio em dias consecutivos) causou o flag de spam.
+// Ver docs/INCIDENT_WHATSAPP_SPAM.md no triage-service.
+const CADENCE = new CadencePolicy([3, 7]);
+
+// Workers com 3+ mensagens undelivered recentes são excluídos —
+// indicam número bloqueado/inativo, continuar piora a reputação.
+const UNDELIVERED_THRESHOLD = 3;
+
+// FREEZE do incidente de spam: workers já contatados com este template ANTES
+// desta data (encerramento do incidente) NÃO são recontatados — eram a coorte
+// que recebeu a mensagem repetidamente. Workers novos seguem a CADENCE acima.
+const INCIDENT_FREEZE_CUTOFF = '2026-06-02T00:00:00Z';
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Workers com encuadre que ainda têm documentos ou perfil incompletos
-// Dedup via NOT EXISTS em worker_reminder_state (slot por dia).
 const INCOMPLETE_WORKERS_QUERY = `
+  WITH send_stats AS (
+    SELECT worker_id,
+           COUNT(*) FILTER (WHERE status = 'sent') AS total_sent,
+           MAX(dispatched_at) FILTER (WHERE status = 'sent') AS last_sent_at
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE template_slug = '${TEMPLATE_SLUG}'
+    GROUP BY worker_id
+  ),
+  undelivered_stats AS (
+    SELECT worker_id,
+           COUNT(*) AS undelivered_count
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE delivery_status = 'undelivered'
+      AND dispatched_at > NOW() - INTERVAL '30 days'
+    GROUP BY worker_id
+  )
   SELECT DISTINCT
     w.id,
     w.phone,
-    w.status,
-    w.profession,
-    w.preferred_age_range,
-    w.preferred_types,
-    w.experience_types,
-    wd.documents_status,
-    CASE WHEN wd.resume_cv_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_curriculo,
-    CASE WHEN wd.identity_document_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_rg_cpf,
-    CASE WHEN wd.criminal_record_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_antecedentes,
-    CASE WHEN wd.professional_registration_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_registro_prof,
-    CASE WHEN wd.liability_insurance_url IS NULL THEN 'SIM' ELSE 'não' END AS falta_seguro,
-    CASE WHEN w.sex_encrypted IS NULL THEN 'SIM' ELSE 'não' END AS falta_sexo,
-    CASE WHEN w.first_name_encrypted IS NULL THEN 'SIM' ELSE 'não' END AS falta_nome,
-    CASE WHEN w.profession IS NULL OR w.profession = '' THEN 'SIM' ELSE 'não' END AS falta_profissao,
-    CASE WHEN w.preferred_age_range IS NULL OR w.preferred_age_range = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_age_range,
-    CASE WHEN w.preferred_types IS NULL OR w.preferred_types = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_preferred_types,
-    CASE WHEN w.experience_types IS NULL OR w.experience_types = '{}'::text[] THEN 'SIM' ELSE 'não' END AS falta_experience_types
+    w.messaging_channel
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
   LEFT JOIN worker_documents wd ON wd.worker_id = w.id
+  LEFT JOIN send_stats ss ON ss.worker_id = w.id
+  LEFT JOIN undelivered_stats us ON us.worker_id = w.id
   WHERE
     w.email NOT LIKE '%@enlite.import'
     AND w.phone IS NOT NULL
     AND w.phone <> ''
+    -- Reforço explícito (belt-and-suspenders): o NOT EXISTS de messaging_opt_out
+    -- abaixo já cobre quem foi desativado via DeactivateWorkerAccountUseCase ou
+    -- pelo arquivamento em massa (D103), mas a baixa manual via
+    -- PUT /workers/:id/status não grava opt-out — sem este filtro, esse worker
+    -- continuaria elegível ao disparo em massa.
+    AND ${excludeDisabledWorkersSql('w')}
     AND (
       wd.documents_status IS NULL
       OR wd.documents_status NOT IN ('submitted', 'under_review', 'approved')
@@ -54,11 +75,29 @@ const INCOMPLETE_WORKERS_QUERY = `
       OR w.preferred_types IS NULL OR w.preferred_types = '{}'::text[]
       OR w.experience_types IS NULL OR w.experience_types = '{}'::text[]
     )
+    -- Dedup: não enviar se já recebeu hoje
     AND NOT EXISTS (
       SELECT 1 FROM worker_reminder_state wrs
       WHERE wrs.worker_id = w.id
-        AND wrs.template_slug = 'complete_register_ofc'
+        AND wrs.template_slug = '${TEMPLATE_SLUG}'
         AND wrs.sent_date = CURRENT_DATE
+    )
+    -- Cadência (1º envio → +3d → +7d → para; cap ${CADENCE.maxSends}). Sem reenvio em dias consecutivos.
+    AND ${CADENCE.toSqlEligibility('COALESCE(ss.total_sent, 0)', 'ss.last_sent_at')}
+    -- Excluir números com 3+ undelivered (bloqueado/inativo)
+    AND COALESCE(us.undelivered_count, 0) < ${UNDELIVERED_THRESHOLD}
+    -- Excluir opt-out
+    AND NOT EXISTS (
+      SELECT 1 FROM messaging_opt_out moo
+      WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL
+    )
+    -- FREEZE do incidente de spam: não recontatar quem já recebeu este template
+    -- antes do encerramento do incidente (ver INCIDENT_FREEZE_CUTOFF).
+    AND NOT EXISTS (
+      SELECT 1 FROM whatsapp_bulk_dispatch_logs frz
+      WHERE frz.worker_id = w.id
+        AND frz.template_slug = '${TEMPLATE_SLUG}'
+        AND frz.dispatched_at < '${INCIDENT_FREEZE_CUTOFF}'
     )
   ORDER BY w.id
 `;
@@ -101,9 +140,9 @@ export class BulkDispatchIncompleteWorkersUseCase {
     batchLogger.info('BulkDispatch iniciado');
 
     // 1. Busca workers com cadastro incompleto (já exclui quem recebeu hoje via NOT EXISTS)
-    let rows: Array<{ id: string; phone: string }>;
+    let rows: Array<{ id: string; phone: string; messaging_channel: string | null }>;
     try {
-      const queryResult = await this.db.query<{ id: string; phone: string }>(
+      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null }>(
         INCOMPLETE_WORKERS_QUERY,
       );
       rows = queryResult.rows;
@@ -173,10 +212,12 @@ export class BulkDispatchIncompleteWorkersUseCase {
         continue;
       }
 
-      // 2b. Enviar WhatsApp
+      // 2b. Enviar WhatsApp — channel resolvido pelo messaging_channel do worker
+      // (zero query extra: já veio na eligibility query acima).
       const sendResult = await this.messaging.sendWhatsApp({
         to: row.phone,
         templateSlug: TEMPLATE_SLUG,
+        channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
       });
 
       const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';

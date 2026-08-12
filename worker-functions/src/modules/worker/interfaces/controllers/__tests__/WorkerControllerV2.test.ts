@@ -51,16 +51,6 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
   })),
 }));
 
-// EventDispatcher faz chamadas HTTP externas — mockamos para isolar o controller
-jest.mock('@shared/services/EventDispatcher', () => ({
-  EventDispatcher: jest.fn().mockImplementation(() => ({
-    notifyWorkerCreated: jest.fn().mockResolvedValue(undefined),
-    notifyStepCompleted: jest.fn().mockResolvedValue(undefined),
-    notifyStatusChanged: jest.fn().mockResolvedValue(undefined),
-    notifyWorkerUpdated: jest.fn().mockResolvedValue(undefined),
-  })),
-}));
-
 import { WorkerControllerV2 } from '../WorkerControllerV2';
 import { Request, Response } from 'express';
 import { Result } from '@shared/utils/Result';
@@ -167,7 +157,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: expect.objectContaining({ status: 'ok', worker: mockWorker }),
         })
       );
       expect(initSpy).not.toHaveBeenCalled();
@@ -178,7 +168,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValue(Result.fail('Worker not found'));
 
       jest.spyOn(controller['initWorkerUseCase'], 'execute')
-        .mockResolvedValue(Result.ok(mockWorker));
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
 
       const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL });
 
@@ -188,7 +178,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: expect.objectContaining({ status: 'ok', worker: mockWorker }),
         })
       );
     });
@@ -198,7 +188,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValue(Result.fail('Worker not found'));
 
       const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute')
-        .mockResolvedValue(Result.ok(mockWorker));
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
 
       const [req, res] = mockReqRes({
         authUid: AUTH_UID,
@@ -349,7 +339,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValueOnce(Result.ok({ ...mockWorker, authUid: AUTH_UID_ROUND_TRIP })); // chamada direta de getProgress
 
       jest.spyOn(controller['initWorkerUseCase'], 'execute')
-        .mockResolvedValue(Result.ok({ ...mockWorker, authUid: AUTH_UID_ROUND_TRIP }));
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: { ...mockWorker, authUid: AUTH_UID_ROUND_TRIP } }));
 
       // 1. Chama initWorker
       const [initReq, initRes] = mockReqRes({ authUid: AUTH_UID_ROUND_TRIP, email: WORKER_EMAIL });

@@ -56,7 +56,7 @@ jest.mock('../../../application/BuildVacancyMatchVariablesUseCase', () => ({
     execute: jest.fn().mockResolvedValue({
       worker_name: 'João',
       patient_zone: 'Palermo',
-      vacancy_url: 'https://app.enlite.health/vacancies/job-1',
+      vacancy_url: 'https://app.enlite.health/vacantes/job-1',
     }),
   })),
 }));
@@ -72,6 +72,20 @@ function mockRes() {
 
 function makeReq(body: Record<string, unknown>): Request {
   return { body } as unknown as Request;
+}
+
+/**
+ * Enfileira as 5 respostas do assertVacancyInviteAllowed no cenário "tudo
+ * liberado" (opt-out=false, cooldown=false, idempotência=false, unanswered=0,
+ * hasEngaged=false), na ordem em que o guard as consulta. Deve ser chamado
+ * logo APÓS o mock do SELECT do worker e ANTES dos mocks de UPDATE/INSERT.
+ */
+function queueGuardClear(q: jest.Mock): void {
+  q.mockResolvedValueOnce({ rows: [{ exists: false }] }) // opt-out
+    .mockResolvedValueOnce({ rows: [{ exists: false }] }) // cooldown
+    .mockResolvedValueOnce({ rows: [{ exists: false }] }) // idempotência
+    .mockResolvedValueOnce({ rows: [{ n: 0 }] }) // unanswered count
+    .mockResolvedValueOnce({ rows: [{ exists: false }] }); // hasEngaged
 }
 
 // ── sendVacancyMatch tests ────────────────────────────────────────────────────
@@ -114,9 +128,10 @@ describe('MessagingController.sendVacancyMatch', () => {
   });
 
   it('REGISTERED worker → envia ar_vacancy_match_complete, retorna 200 com templateSlug', async () => {
+    // SELECT status + phone
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] });
+    queueGuardClear(mockQuery);
     mockQuery
-      // SELECT status + phone
-      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })
       // UPDATE messaged_at
       .mockResolvedValueOnce({ rows: [] })
       // INSERT log
@@ -138,8 +153,9 @@ describe('MessagingController.sendVacancyMatch', () => {
   });
 
   it('INCOMPLETE_REGISTER worker → envia ar_vacancy_match_incomplete, retorna 200 com templateSlug', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'INCOMPLETE_REGISTER', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] });
+    queueGuardClear(mockQuery);
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ status: 'INCOMPLETE_REGISTER', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })
       .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
       .mockResolvedValueOnce({ rows: [] }); // INSERT log
 
@@ -187,6 +203,7 @@ describe('MessagingController.sendVacancyMatch', () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: null }],
     });
+    queueGuardClear(mockQuery); // guard passa; a barreira aqui é a falta de telefone
 
     // Decrypt returns null for encrypted phone (simulate no whatsapp_phone_encrypted either)
     const { KMSEncryptionService } = jest.requireMock('@shared/security/KMSEncryptionService');
@@ -206,8 +223,9 @@ describe('MessagingController.sendVacancyMatch', () => {
   });
 
   it('messaged_at atualizado em worker_job_applications após envio com sucesso', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] });
+    queueGuardClear(mockQuery);
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })
       .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
       .mockResolvedValueOnce({ rows: [] }); // INSERT log
 
@@ -218,15 +236,36 @@ describe('MessagingController.sendVacancyMatch', () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
 
-    const updateCall = mockQuery.mock.calls[1];
+    // SELECT(0) + guard(1..5) + UPDATE(6) + INSERT(7)
+    const updateCall = mockQuery.mock.calls[6];
     expect(updateCall[0]).toContain('worker_job_applications');
     expect(updateCall[0]).toContain('messaged_at');
     expect(updateCall[1]).toEqual(['w-1', 'job-1']);
   });
 
-  it('log inserido em whatsapp_bulk_dispatch_logs com source=individual', async () => {
+  it('worker com messaging_channel=periskope → sendWhatsApp recebe channel=periskope', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321', messaging_channel: 'periskope' }],
+    });
+    queueGuardClear(mockQuery);
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] })
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
+      .mockResolvedValueOnce({ rows: [] }); // INSERT log
+
+    const req = makeReq({ workerId: 'w-periskope', jobPostingId: 'job-1' });
+    const res = mockRes();
+
+    await controller.sendVacancyMatch(req, res);
+
+    expect(mockMessaging.sendWhatsApp).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'periskope' }),
+    );
+  });
+
+  it('worker sem messaging_channel na row (default) → sendWhatsApp recebe channel=twilio', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] });
+    queueGuardClear(mockQuery);
+    mockQuery
       .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
       .mockResolvedValueOnce({ rows: [] }); // INSERT log
 
@@ -235,7 +274,40 @@ describe('MessagingController.sendVacancyMatch', () => {
 
     await controller.sendVacancyMatch(req, res);
 
-    const insertCall = mockQuery.mock.calls[2];
+    expect(mockMessaging.sendWhatsApp).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'twilio' }),
+    );
+  });
+
+  it('SELECT de sendVacancyMatch inclui messaging_channel', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] });
+    queueGuardClear(mockQuery);
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const req = makeReq({ workerId: 'w-1', jobPostingId: 'job-1' });
+    const res = mockRes();
+    await controller.sendVacancyMatch(req, res);
+
+    const selectSql = mockQuery.mock.calls[0][0] as string;
+    expect(selectSql).toContain('messaging_channel');
+  });
+
+  it('log inserido em whatsapp_bulk_dispatch_logs com source=individual', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }] });
+    queueGuardClear(mockQuery);
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE messaged_at
+      .mockResolvedValueOnce({ rows: [] }); // INSERT log
+
+    const req = makeReq({ workerId: 'w-1', jobPostingId: 'job-1' });
+    const res = mockRes();
+
+    await controller.sendVacancyMatch(req, res);
+
+    // SELECT(0) + guard(1..5) + UPDATE(6) + INSERT(7)
+    const insertCall = mockQuery.mock.calls[7];
     expect(insertCall[0]).toContain('whatsapp_bulk_dispatch_logs');
     expect(insertCall[0]).toContain("'individual'");
     expect(insertCall[1][0]).toBe('w-1');                 // worker_id
@@ -255,6 +327,7 @@ describe('MessagingController.sendVacancyMatch', () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321' }],
     });
+    queueGuardClear(mockQuery); // guard passa; a falha aqui é do Twilio
 
     const req = makeReq({ workerId: 'w-1', jobPostingId: 'job-1' });
     const res = mockRes();
@@ -262,8 +335,8 @@ describe('MessagingController.sendVacancyMatch', () => {
     await controller.sendVacancyMatch(req, res);
 
     expect(res.status).toHaveBeenCalledWith(502);
-    // Somente 1 query (worker lookup), sem UPDATE nem INSERT
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    // SELECT(1) + guard(5) = 6 queries; sem UPDATE nem INSERT após falha do Twilio
+    expect(mockQuery).toHaveBeenCalledTimes(6);
   });
 
   it('body incompleto (sem jobPostingId) → 400', async () => {

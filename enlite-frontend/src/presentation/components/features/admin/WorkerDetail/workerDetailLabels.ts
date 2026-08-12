@@ -9,10 +9,29 @@ const DOCUMENT_TYPE_KEYS: Record<string, string> = {
   CNH: `${GI}.cnh`,
 };
 
+/**
+ * Mapa canônico de sexo/gênero — cobre TODOS os valores que chegam de prod:
+ *   EN uppercase canonical (MALE/FEMALE/OTHER) — futuro/backfill
+ *   EN lowercase (male/female/other) — legado EN
+ *   ES variantes reais em prod (mujer, Mujer, hombre, Hombre, Varón, varón,
+ *   Femenino, femenino, Masculino, masculino, Otro, otro)
+ *
+ * O lookup sempre recebe o valor já `.toLowerCase()` (ver renderFieldValue),
+ * portanto só precisamos de entradas minúsculas aqui.
+ */
 const SEX_GENDER_KEYS: Record<string, string> = {
+  // EN canonical (backfill/futuro)
   male: `${GI}.male`,
   female: `${GI}.female`,
   other: `${GI}.other`,
+  // Aliases ES → mesma key i18n (valores reais mistos em prod)
+  mujer: `${GI}.female`,      // "mujer"
+  hombre: `${GI}.male`,       // "Hombre" → lowercase
+  varón: `${GI}.male`,        // "Varón" → lowercase
+  varon: `${GI}.male`,        // sem acento
+  femenino: `${GI}.female`,   // "Femenino" → lowercase
+  masculino: `${GI}.male`,    // "Masculino" → lowercase
+  otro: `${GI}.other`,        // "Otro" → lowercase
 };
 
 const LANGUAGE_KEYS: Record<string, string> = {

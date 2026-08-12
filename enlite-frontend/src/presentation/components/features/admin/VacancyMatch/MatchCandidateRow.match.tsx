@@ -36,9 +36,19 @@ export function MatchCandidateRow({
         size={40}
       />
       <div className="flex flex-col min-w-0 flex-1">
-        <Text as="span" size="sm" weight="medium" color="secondary" className="truncate">
-          {candidate.workerName}
-        </Text>
+        <a
+          href={`/admin/workers/${candidate.workerId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="match-modal-worker-link"
+          title={candidate.workerName ?? undefined}
+          onClick={(e) => e.stopPropagation()}
+          className="min-w-0 truncate rounded-sm hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Text as="span" size="sm" weight="medium" color="secondary" className="truncate">
+            {candidate.workerName}
+          </Text>
+        </a>
         <Text as="span" size="xs" color="muted" className="truncate">
           {candidate.occupation ?? '—'}
         </Text>

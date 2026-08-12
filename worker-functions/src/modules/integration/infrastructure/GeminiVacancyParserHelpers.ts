@@ -10,12 +10,11 @@ import {
   TALENTUM_VACANCY_RESPONSE_SCHEMA,
 } from './gemini-vacancy-constants';
 import type { ParsedVacancyResult } from './GeminiVacancyParserService';
-import { fetchGeminiWithRetry } from './gemini-fetch';
+import { generateContentVertex } from './vertex-gemini';
 
 // ── parseFromTalentumDescription ─────────────────────────────────────────────
 
 export async function parseFromTalentumDescriptionHelper(
-  apiKey: string,
   model: string,
   description: string,
   title: string,
@@ -24,24 +23,17 @@ export async function parseFromTalentumDescriptionHelper(
     `[GeminiParser] Parsing Talentum description, title="${title}", len=${description.length}`,
   );
 
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const response = await fetchGeminiWithRetry(
-    url,
+  const response = await generateContentVertex(
+    model,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: TALENTUM_VACANCY_ONLY_INSTRUCTIONS }] },
-        contents: [{ role: 'user', parts: [{ text: `Título del proyecto: ${title}\n\n${description}` }] }],
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: 4096,
-          responseMimeType: 'application/json',
-          responseSchema: TALENTUM_VACANCY_RESPONSE_SCHEMA,
-        },
-      }),
+      systemInstruction: { parts: [{ text: TALENTUM_VACANCY_ONLY_INSTRUCTIONS }] },
+      contents: [{ role: 'user', parts: [{ text: `Título del proyecto: ${title}\n\n${description}` }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 4096,
+        responseMimeType: 'application/json',
+        responseSchema: TALENTUM_VACANCY_RESPONSE_SCHEMA,
+      },
     },
     'GeminiParser',
   );
@@ -119,7 +111,6 @@ export function detectMissingFields(
 // ── retryMissingFields ────────────────────────────────────────────────────────
 
 export async function retryMissingFields(
-  apiKey: string,
   model: string,
   vacancy: ParsedVacancyResult['vacancy'],
   originalText: string,
@@ -133,27 +124,21 @@ export async function retryMissingFields(
     `Si realmente no hay información para un campo, omitilo del JSON.\n\n` +
     `Texto original:\n${originalText}`;
 
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    // generateContentVertex throws on non-ok / exhausted retries; the outer
+    // catch turns that into "keep original", matching the previous behavior.
+    const response = await generateContentVertex(
+      model,
+      {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0,
           maxOutputTokens: 2048,
           responseMimeType: 'application/json',
         },
-      }),
-    });
-
-    if (!response.ok) {
-      console.warn(`[GeminiParser] Retry call failed HTTP ${response.status}, keeping original`);
-      return vacancy;
-    }
+      },
+      'GeminiParser',
+    );
 
     const data = (await response.json()) as {
       candidates: Array<{ content: { parts: Array<{ text: string }> } }>;

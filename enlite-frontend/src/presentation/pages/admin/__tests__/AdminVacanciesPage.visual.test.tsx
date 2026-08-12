@@ -27,6 +27,7 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
         diasAberto: '05',
         convidados: '10',
         postulados: '5',
+        confirmados: '4',
         selecionados: '3',
         faltantes: '2',
       },
@@ -38,6 +39,7 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
         diasAberto: '12',
         convidados: '20',
         postulados: '8',
+        confirmados: '2',
         selecionados: '1',
         faltantes: '0',
       },
@@ -52,10 +54,6 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
     error: null,
     refetch: vi.fn(),
   }),
-}));
-
-vi.mock('@presentation/components/features/admin/VacancyFormModal', () => ({
-  VacancyFormModal: () => null,
 }));
 
 vi.mock('@presentation/components/features/admin/VacancyModal/VacancyModal', () => ({

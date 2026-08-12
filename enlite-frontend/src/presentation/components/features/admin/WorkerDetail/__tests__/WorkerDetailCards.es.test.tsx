@@ -109,7 +109,10 @@ const encuadresFixture: WorkerEncuadre[] = [
     id: 'enc-1',
     jobPostingId: 'jp-200',
     caseNumber: 100,
+    vacancyNumber: 1,
     patientName: 'María López',
+    kanbanStage: 'IN_PROGRESS',
+    vacancyStatus: 'ACTIVE',
     resultado: 'PENDIENTE',
     interviewDate: '2026-04-01',
     interviewTime: '14:30',
@@ -118,6 +121,10 @@ const encuadresFixture: WorkerEncuadre[] = [
     rejectionReason: null,
     rejectionReasonCategory: null,
     attended: null,
+    isBlocked: false,
+    blockedReason: null,
+    missingFields: [],
+    attemptCount: null,
     createdAt: '2026-03-20T00:00:00Z',
   },
 ];
@@ -363,7 +370,8 @@ describe('WorkerDocumentsCard — es labels', () => {
     expect(screen.getByText('Currículum')).toBeInTheDocument();
     expect(screen.getByText('DNI - Frente')).toBeInTheDocument();
     expect(screen.getByText('Antecedentes penales')).toBeInTheDocument();
-    expect(screen.getByText('Registro profesional')).toBeInTheDocument();
+    // professional_registration oculto por política ABAC — não deve aparecer
+    expect(screen.queryByText('Registro profesional')).not.toBeInTheDocument();
     expect(screen.getByText('Seguro de responsabilidad')).toBeInTheDocument();
   });
 
@@ -382,9 +390,9 @@ describe('WorkerDocumentsCard — es labels', () => {
     expect(screen.getByText('Antecedentes penales')).toBeInTheDocument();
   });
 
-  it('renders document type "Registro profesional"', () => {
+  it('does not render "Registro profesional" (oculto por política ABAC)', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...docHandlers} />);
-    expect(screen.getByText('Registro profesional')).toBeInTheDocument();
+    expect(screen.queryByText('Registro profesional')).not.toBeInTheDocument();
   });
 
   it('renders document type "Seguro de responsabilidad"', () => {
@@ -435,9 +443,9 @@ describe('WorkerEncuadresCard — es labels', () => {
     expect(screen.getByText('Paciente')).toBeInTheDocument();
   });
 
-  it('renders column header "Resultado"', () => {
+  it('renders column header "Estado"', () => {
     render(<WorkerEncuadresCard encuadres={encuadresFixture} />);
-    expect(screen.getByText('Resultado')).toBeInTheDocument();
+    expect(screen.getByText('Estado')).toBeInTheDocument();
   });
 
   it('renders column header "Entrevista"', () => {
@@ -459,7 +467,8 @@ describe('WorkerEncuadresCard — es labels', () => {
     render(<WorkerEncuadresCard encuadres={encuadresFixture} />);
     expect(screen.getByText('100')).toBeInTheDocument();
     expect(screen.getByText('María López')).toBeInTheDocument();
-    expect(screen.getByText('Pendiente')).toBeInTheDocument();
+    // status column now shows the Kanban column label, not the encuadre resultado
+    expect(screen.getByText('En Progreso')).toBeInTheDocument();
     expect(screen.getByText('Pedro')).toBeInTheDocument();
   });
 });

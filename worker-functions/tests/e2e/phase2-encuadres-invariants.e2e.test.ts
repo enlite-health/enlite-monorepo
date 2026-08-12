@@ -48,7 +48,7 @@ const TASK_REIMPORT    = 'ph2-task-reimport-001';
 const CASE_SINGLE      = 9101;
 const CASE_MULTI_A     = 9201;
 const CASE_MULTI_B     = 9202;
-const CASE_REIMPORT_1  = 9301;
+const CASE_REIMPORT_1  = 9401; // 9301 já usado por I11 (CASE_MULTI_A+100)
 
 let pool: Pool;
 
@@ -134,13 +134,19 @@ async function simulateEncuadreImport(
 
   const rawName = opts.rawName ?? `ph2-test-${opts.caseNumber}`;
 
+  // Quando job_posting_id é não-nulo: conflito primário é (worker_id, job_posting_id) — ADR-001.
+  // Quando job_posting_id é null (ambíguo): não há UNIQUE (worker_id, null) em Postgres,
+  // então usamos ON CONFLICT (dedup_hash) para idempotência.
+  const conflictClause =
+    opts.jobPostingId !== null
+      ? 'ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET resultado = EXCLUDED.resultado, updated_at = NOW()'
+      : 'ON CONFLICT (dedup_hash) DO UPDATE SET resultado = EXCLUDED.resultado, updated_at = NOW()';
+
   const res = await p.query<{ id: string; inserted: boolean }>(
     `INSERT INTO encuadres (
-       worker_id, job_posting_id, worker_raw_name, resultado, origen, dedup_hash
+       worker_id, job_posting_id, worker_raw_name, resultado, import_source_audit, dedup_hash
      ) VALUES ($1, $2, $3, $4, 'ClickUp', $5)
-     ON CONFLICT (dedup_hash) DO UPDATE SET
-       resultado  = EXCLUDED.resultado,
-       updated_at = NOW()
+     ${conflictClause}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       opts.workerId,
@@ -294,14 +300,14 @@ describe('I9: role sempre NULL no import', () => {
 
     // Insert a "fresh import" encuadre (no role set, linked to a job_posting so I10 invariant holds)
     await pool.query(
-      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, origen, dedup_hash)
+      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, import_source_audit, dedup_hash)
        VALUES ($1, $2, 'ph2-test-i9', 'ClickUp', $3)
        ON CONFLICT (dedup_hash) DO NOTHING`,
       [P.w2, jpId, dedupHash],
     );
 
     const res = await pool.query<{ role: string | null }>(
-      `SELECT role FROM encuadres WHERE worker_id = $1 AND origen = 'ClickUp' AND worker_raw_name = 'ph2-test-i9'`,
+      `SELECT role FROM encuadres WHERE worker_id = $1 AND import_source_audit = 'ClickUp' AND worker_raw_name = 'ph2-test-i9'`,
       [P.w2],
     );
     expect(res.rows.length).toBeGreaterThanOrEqual(1);
@@ -313,18 +319,18 @@ describe('I9: role sempre NULL no import', () => {
 
 // =============================================================================
 // I10: Invariante — não existe encuadre com job_posting_id=NULL sem entry em ambiguity_queue
-//      (scope: origen='ClickUp' apenas, para não afetar encuadres legados)
+//      (scope: import_source_audit='ClickUp' apenas, para não afetar encuadres legados)
 // =============================================================================
 
 describe('I10: encuadre job_posting_id=NULL ↔ entry em ambiguity_queue', () => {
   it('não existe encuadre ClickUp com job_posting_id=NULL sem entry correspondente na queue', async () => {
     // This query must return 0 rows for the invariant to hold.
-    // It checks that any encuadre with origen='ClickUp' and job_posting_id=NULL
+    // It checks that any encuadre with import_source_audit='ClickUp' and job_posting_id=NULL
     // has a matching entry in encuadre_ambiguity_queue.
     const res = await pool.query<{ id: string }>(
       `SELECT e.id
        FROM encuadres e
-       WHERE e.origen = 'ClickUp'
+       WHERE e.import_source_audit = 'ClickUp'
          AND e.job_posting_id IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM encuadre_ambiguity_queue q

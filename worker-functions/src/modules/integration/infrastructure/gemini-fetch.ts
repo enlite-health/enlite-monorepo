@@ -3,8 +3,16 @@
  *
  * Shared helper for calling the Gemini REST API with bounded retry on
  * transient errors (HTTP 429 + 5xx). Gemini frequently returns 503
- * "model overloaded" during demand spikes — retrying with exponential
- * backoff turns those into successful calls.
+ * "model overloaded" during demand spikes — and the Vertex `global`
+ * endpoint runs gemini-2.5 under Dynamic Shared Quota (DSQ), which 429s
+ * with a bare "Resource has been exhausted" whenever the shared pool is
+ * momentarily congested (no fixed project quota to raise). Both are
+ * transient: retrying with exponential backoff + jitter rides them out.
+ *
+ * Backoff is capped and jittered so a saturation window of tens of
+ * seconds is absorbed without all callers retrying in lockstep, while
+ * staying within the ~60s Firebase Hosting rewrite timeout that fronts
+ * the synchronous generate-ai-content path (see FOLLOWUPS TD-035).
  *
  * Non-transient errors (4xx other than 429) fail immediately.
  * Network errors (fetch throws) are also treated as transient.
@@ -13,9 +21,33 @@
  * keeping unit tests fast.
  */
 
-const MAX_ATTEMPTS = 3;
-const BASE_DELAY_MS = 500;
-const BACKOFF_FACTOR = 3;
+const MAX_ATTEMPTS = 5;
+const BASE_DELAY_MS = 700;
+const BACKOFF_FACTOR = 2.5;
+const MAX_DELAY_MS = 8000;
+// Up to ±25% randomization so parallel callers don't retry in lockstep.
+const JITTER_RATIO = 0.25;
+
+/**
+ * Error thrown when a Gemini/Vertex call fails with an HTTP status.
+ * Carries the status so callers can map quota/overload (429) to a
+ * friendly, retryable response instead of leaking the raw API body.
+ * Message keeps the legacy `Gemini API error ${status}: ${body}` format.
+ */
+export class GeminiApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`Gemini API error ${status}: ${body}`);
+    this.name = 'GeminiApiError';
+  }
+
+  /** 429 (quota/DSQ) or 5xx (overload) — safe for the user to retry. */
+  get isTransient(): boolean {
+    return isTransientStatus(this.status);
+  }
+}
 
 function isTransientStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
@@ -23,7 +55,10 @@ function isTransientStatus(status: number): boolean {
 
 function delayMs(attempt: number): number {
   if (process.env.NODE_ENV === 'test') return 0;
-  return BASE_DELAY_MS * Math.pow(BACKOFF_FACTOR, attempt);
+  const raw = BASE_DELAY_MS * Math.pow(BACKOFF_FACTOR, attempt);
+  const capped = Math.min(raw, MAX_DELAY_MS);
+  const jitter = capped * JITTER_RATIO * (Math.random() * 2 - 1);
+  return Math.round(capped + jitter);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -38,10 +73,11 @@ function sleep(ms: number): Promise<void> {
  * @param logTag   Short tag prefixed to log lines (e.g. 'GeminiParser')
  * @returns        The successful Response. Caller is responsible for
  *                 reading `.json()` / `.text()`.
- * @throws         On non-transient HTTP errors (immediate) or after
- *                 exhausting retries on transient ones. Error message
- *                 keeps the existing `Gemini API error ${status}: ${body}`
- *                 format so callers/tests don't change.
+ * @throws         `GeminiApiError` on HTTP errors (immediate for
+ *                 non-transient, after exhausting retries for transient
+ *                 ones), or the raw network error if `fetch` keeps
+ *                 throwing. Message keeps the existing
+ *                 `Gemini API error ${status}: ${body}` format.
  */
 export async function fetchGeminiWithRetry(
   url: string,
@@ -57,31 +93,33 @@ export async function fetchGeminiWithRetry(
     } catch (err) {
       lastError = err;
       const isLast = attempt === MAX_ATTEMPTS - 1;
+      const wait = delayMs(attempt);
       console.warn(
         `[${logTag}] Network error on attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${err instanceof Error ? err.message : String(err)}` +
-          (isLast ? ' — giving up' : ` — retrying in ${delayMs(attempt)}ms`),
+          (isLast ? ' — giving up' : ` — retrying in ${wait}ms`),
       );
       if (isLast) throw err;
-      await sleep(delayMs(attempt));
+      await sleep(wait);
       continue;
     }
 
     if (response.ok) return response;
 
+    const errBody = await response.text();
+
     if (!isTransientStatus(response.status)) {
-      const errBody = await response.text();
       console.error(
         `[${logTag}] Gemini API error HTTP ${response.status}: ${errBody}`,
       );
-      throw new Error(`Gemini API error ${response.status}: ${errBody}`);
+      throw new GeminiApiError(response.status, errBody);
     }
 
-    const errBody = await response.text();
-    lastError = new Error(`Gemini API error ${response.status}: ${errBody}`);
+    lastError = new GeminiApiError(response.status, errBody);
     const isLast = attempt === MAX_ATTEMPTS - 1;
+    const wait = delayMs(attempt);
     console.warn(
       `[${logTag}] Transient HTTP ${response.status} on attempt ${attempt + 1}/${MAX_ATTEMPTS}` +
-        (isLast ? ' — giving up' : ` — retrying in ${delayMs(attempt)}ms`),
+        (isLast ? ' — giving up' : ` — retrying in ${wait}ms`),
     );
     if (isLast) {
       console.error(
@@ -89,7 +127,7 @@ export async function fetchGeminiWithRetry(
       );
       throw lastError;
     }
-    await sleep(delayMs(attempt));
+    await sleep(wait);
   }
 
   // Unreachable — loop either returns or throws.

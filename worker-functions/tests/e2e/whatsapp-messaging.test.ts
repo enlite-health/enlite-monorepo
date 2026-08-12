@@ -268,10 +268,36 @@ describe('POST /api/admin/messaging/whatsapp/direct — HTTP layer', () => {
 describe('GET /api/admin/messaging/templates — lista templates', () => {
   let api: AxiosInstance;
   let adminToken: string;
+  let seedPool: Pool;
 
   beforeAll(async () => {
     api = axios.create({ baseURL: API_URL, validateStatus: () => true });
     adminToken = await getToken(api, 'admin-tpl-list-uid', 'admin-tpl-list@e2e.test', 'admin');
+
+    // O setup.ts trunca message_templates antes de cada suite. Precisamos re-inserir
+    // os templates de seed com content_sid para que findAll() (que filtra IS NOT NULL) os retorne.
+    seedPool = new Pool({ connectionString: DATABASE_URL });
+    await seedPool.query(`
+      INSERT INTO message_templates (slug, name, body, is_active, content_sid)
+      VALUES
+        ('talent_search_welcome', 'Bienvenida Búsqueda de Talentos', 'Hola {{workerName}}! Te invitamos a conocer la vacante.', true, 'HXe2e_test_talent_search_welcome'),
+        ('vacancy_match', 'Match de Vacante', 'Hola {{workerName}}, tenemos una vacante para vos.', true, 'HXe2e_test_vacancy_match')
+      ON CONFLICT (slug) DO UPDATE
+        SET content_sid = EXCLUDED.content_sid,
+            is_active = true
+    `);
+  });
+
+  afterAll(async () => {
+    if (seedPool) {
+      // Limpa content_sid de teste para não poluir outros testes
+      await seedPool.query(`
+        UPDATE message_templates
+        SET content_sid = NULL
+        WHERE content_sid LIKE 'HXe2e_test_%'
+      `).catch(() => {});
+      await seedPool.end();
+    }
   });
 
   it('retorna 401 sem Authorization header', async () => {
@@ -518,8 +544,9 @@ describe('vacancy-match — messaged_at atualizado após envio bem-sucedido', ()
     vacancyId = r2.rows[0].id;
 
     await pool.query(
-      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status)
-       VALUES ($1, $2, 'under_review')
+      `INSERT INTO worker_job_applications
+         (worker_id, job_posting_id, application_funnel_stage)
+       VALUES ($1, $2, 'INVITED')
        ON CONFLICT DO NOTHING`,
       [workerId, vacancyId],
     );

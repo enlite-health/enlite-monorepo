@@ -42,6 +42,7 @@ export class PatientAddressRepository {
         `SELECT id
          FROM patient_addresses
          WHERE patient_id = $1
+           AND archived_at IS NULL
            AND TRIM(LOWER(address_formatted)) = TRIM(LOWER($2))
          LIMIT 1`,
         [patientId, addressFormatted],
@@ -58,7 +59,7 @@ export class PatientAddressRepository {
         `INSERT INTO patient_addresses
            (patient_id, address_type, address_formatted, address_raw, display_order, source, lat, lng)
          VALUES ($1, 'service', $2, $3,
-           (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1),
+           (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL),
            'clickup_sync', $4, $5)
          RETURNING id`,
         [patientId, addressFormatted, addressRaw ?? null, lat, lng],
@@ -72,6 +73,7 @@ export class PatientAddressRepository {
       `SELECT id
        FROM patient_addresses
        WHERE patient_id = $1
+         AND archived_at IS NULL
          AND TRIM(LOWER(address_raw)) = TRIM(LOWER($2))
        LIMIT 1`,
       [patientId, addressRaw],

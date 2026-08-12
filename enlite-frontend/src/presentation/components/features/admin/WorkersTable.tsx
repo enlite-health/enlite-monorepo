@@ -10,6 +10,7 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
+import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge';
 
 export interface WorkerRow {
   id: string;
@@ -43,29 +44,6 @@ function formatDate(iso: string, locale: string): string {
     month: '2-digit',
     year: 'numeric',
   });
-}
-
-function DocsStatusBadge({ complete, status }: { complete: boolean; status: string }) {
-  const { t } = useTranslation();
-  if (complete) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-green-100 text-green-700">
-        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-        <Text as="span" size="xs" weight="medium" color="inherit">
-          {t('admin.workers.docsStatus.complete')}
-        </Text>
-      </span>
-    );
-  }
-  const statusKey = status === 'rejected' ? 'rejected' : status === 'pending' ? 'pending' : 'incomplete';
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-      <Text as="span" size="xs" weight="medium" color="inherit">
-        {t(`admin.workers.docsStatus.${statusKey}`)}
-      </Text>
-    </span>
-  );
 }
 
 export function WorkersTable({ workers, onRowClick }: WorkersTableProps): JSX.Element {

@@ -43,7 +43,7 @@
 - Telefone (10 ou 13 dígitos)
 - Email
 - CUIT/CUIL (identidade fiscal argentina = sensível, equivalente a CPF)
-- `data_sources` (origem: Ana Care, Talentum, Planilla Operativa, Talent Search CSV)
+- `data_sources` (origem: Ana Care, Talentum, ~~Planilla Operativa~~ (FONTE DESCONTINUADA em 2026-05-23), Talent Search CSV)
 - Motivo da detecção SQL (fuzzy match)
 
 **Sanitização pré-prompt:** Nenhuma.
@@ -240,7 +240,7 @@
 
 | ID | Caso de uso | Status doc interno | Provider preferido |
 |---|---|---|---|
-| AI-P-001 | Análise de `Obs. ENCUADRE` (9.031 registros) | `ANALISE_PLANILLA_OPERATIVA.md` | A definir |
+| AI-P-001 | Análise de `Obs. ENCUADRE` (9.031 registros) — **SOURCE DEAD** (Planilla Operativa). Pipeline LLM pode reaproveitar `encuadres.obs_*` histórico (~9k linhas congeladas). | `ANALISE_PLANILLA_OPERATIVA.md` | A definir |
 | AI-P-002 | Mineração LLM Wave 5 — qualidade de matching | `ROADMAP_RECRUITMENT_SYSTEM.md` | A definir |
 | AI-P-003 | Triagem clínica inicial assistida | (não documentado) | Vertex AI / MedLM |
 | AI-P-004 | Documentação assistida para AT (relatório diário) | (não documentado) | Vertex AI |

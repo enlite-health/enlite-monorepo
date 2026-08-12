@@ -32,3 +32,11 @@ services:
       PROMPT_DOC_ID_AT: ${PROMPT_DOC_ID_AT}
       PROMPT_DOC_ID_CUIDADOR: ${PROMPT_DOC_ID_CUIDADOR}
       GOOGLE_APPLICATION_CREDENTIALS: /app/.keys/enlite-prd-e7b9624315e8.json
+      # Twilio (Verify Service + Messaging) — populado via --env-file ../.env
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID:-}
+      # E2E OTP bypass — APENAS dev local. Guard K_SERVICE bloqueia em Cloud Run.
+      E2E_OTP_BYPASS: ${E2E_OTP_BYPASS:-false}
+      E2E_OTP_CODE: ${E2E_OTP_CODE:-123456}

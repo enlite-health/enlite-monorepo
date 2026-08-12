@@ -297,32 +297,34 @@ describe('Talentum Workers Sync API', () => {
       await pool.query('DELETE FROM job_postings WHERE id = $1', [jobPostingId]).catch(() => {});
     });
 
-    it('creates worker_job_application with DB default funnel stage (INITIATED)', async () => {
-      // Sync only sets worker_id, job_posting_id, status, source — no funnel stage
+    it('creates worker_job_application with funnel stage INVITED (sync sets INVITED explicitly)', async () => {
+      // After migration 187: sync sets application_funnel_stage = 'INVITED' explicitly.
+      // INVITED = worker detected in Talentum dashboard, no evidence of WhatsApp entry.
       await pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-         VALUES ($1, $2, 'applied', 'talentum')
+        `INSERT INTO worker_job_applications
+           (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'talentum')
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [workerId, jobPostingId],
       );
 
       const { rows } = await pool.query(
-        `SELECT application_funnel_stage, application_status, source
+        `SELECT application_funnel_stage, source
          FROM worker_job_applications
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [workerId, jobPostingId],
       );
 
-      expect(rows[0].application_funnel_stage).toBe('INITIATED'); // DB default
-      expect(rows[0].application_status).toBe('applied');
+      expect(rows[0].application_funnel_stage).toBe('INVITED');
       expect(rows[0].source).toBe('talentum');
     });
 
     it('ON CONFLICT DO NOTHING preserves existing record', async () => {
       // Try to insert again — should not create duplicate
       await pool.query(
-        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_status, source)
-         VALUES ($1, $2, 'applied', 'talentum')
+        `INSERT INTO worker_job_applications
+           (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'talentum')
          ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
         [workerId, jobPostingId],
       );
@@ -333,48 +335,57 @@ describe('Talentum Workers Sync API', () => {
         [workerId, jobPostingId],
       );
 
-      expect(rows[0].application_funnel_stage).toBe('INITIATED'); // preserved
+      expect(rows[0].application_funnel_stage).toBe('INVITED'); // preserved
     });
 
-    it('creates encuadre with Talentum origen and dedup_hash', async () => {
+    it('creates encuadre with Talentum import_source_audit and dedup_hash', async () => {
       const dedupHash = 'e2e-sync-test-hash';
 
+      // O trigger trg_ensure_encuadre_on_wja_insert já criou um encuadre ao inserir a WJA.
+      // Usar ON CONFLICT (worker_id, job_posting_id) para atualizar o encuadre existente
+      // com os dados do Talentum (import_source_audit, dedup_hash, worker_raw_name).
       await pool.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          VALUES ($1, $2, $3, $4, 'Talentum', $5)
-         ON CONFLICT (dedup_hash) DO UPDATE SET
-           worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
+         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+           worker_raw_name     = EXCLUDED.worker_raw_name,
+           worker_raw_phone    = EXCLUDED.worker_raw_phone,
+           import_source_audit = EXCLUDED.import_source_audit,
+           dedup_hash          = EXCLUDED.dedup_hash,
+           updated_at          = NOW()`,
         [workerId, jobPostingId, 'María González', '+5491100000000', dedupHash],
       );
 
       const { rows } = await pool.query(
-        `SELECT worker_id, job_posting_id, worker_raw_name, origen, dedup_hash
-         FROM encuadres WHERE dedup_hash = $1`,
-        [dedupHash],
+        `SELECT worker_id, job_posting_id, worker_raw_name, import_source_audit, dedup_hash
+         FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2`,
+        [workerId, jobPostingId],
       );
 
       expect(rows).toHaveLength(1);
       expect(rows[0].worker_id).toBe(workerId);
       expect(rows[0].job_posting_id).toBe(jobPostingId);
       expect(rows[0].worker_raw_name).toBe('María González');
-      expect(rows[0].origen).toBe('Talentum');
+      expect(rows[0].import_source_audit).toBe('Talentum');
     });
 
-    it('encuadre upsert is idempotent via dedup_hash', async () => {
+    it('encuadre upsert is idempotent via (worker_id, job_posting_id)', async () => {
       const dedupHash = 'e2e-sync-test-hash';
 
-      // Insert again — should update, not create duplicate
+      // Insert again — should update, not create duplicate.
+      // Usa ON CONFLICT (worker_id, job_posting_id) pois a ADR-001 garante unique nesse par.
       await pool.query(
-        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, origen, dedup_hash)
+        `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
          VALUES ($1, $2, $3, $4, 'Talentum', $5)
-         ON CONFLICT (dedup_hash) DO UPDATE SET
-           worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
+         ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
+           worker_raw_name = EXCLUDED.worker_raw_name,
+           updated_at      = NOW()`,
         [workerId, jobPostingId, 'María González Updated', '+5491100000000', dedupHash],
       );
 
       const { rows } = await pool.query(
-        `SELECT COUNT(*)::int as cnt FROM encuadres WHERE dedup_hash = $1`,
-        [dedupHash],
+        `SELECT COUNT(*)::int as cnt FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2`,
+        [workerId, jobPostingId],
       );
 
       expect(rows[0].cnt).toBe(1); // no duplicate

@@ -2,7 +2,10 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { requireServicePrincipal } from '../middleware/requireServicePrincipal';
+import {
+  requireServicePrincipal,
+  type OAuthAccessTokenVerifier,
+} from '../middleware/requireServicePrincipal';
 import type { ServicePrincipalSecretManagerRepo } from '../../infrastructure/ServicePrincipalSecretManagerRepo';
 import type { McpAuditLogger } from '../../infrastructure/McpAuditLogger';
 import type { CapabilityRegistry } from '../../application/CapabilityRegistry';
@@ -13,6 +16,8 @@ interface Deps {
   registry: CapabilityRegistry;
   serverName: string;
   serverVersion: string;
+  oauthVerifier?: OAuthAccessTokenVerifier;
+  resourceMetadataUrl?: string;
 }
 
 export function createMcpRoutes(deps: Deps): Router {
@@ -20,7 +25,14 @@ export function createMcpRoutes(deps: Deps): Router {
 
   router.post(
     '/v1',
-    requireServicePrincipal({ repo: deps.principalRepo, auditor: deps.auditor }),
+    requireServicePrincipal({
+      repo: deps.principalRepo,
+      auditor: deps.auditor,
+      ...(deps.oauthVerifier !== undefined ? { oauthVerifier: deps.oauthVerifier } : {}),
+      ...(deps.resourceMetadataUrl !== undefined
+        ? { resourceMetadataUrl: deps.resourceMetadataUrl }
+        : {}),
+    }),
     async (req: Request, res: Response): Promise<void> => {
       // Stateless: new Server + Transport instance per request
       const server = new McpServer({

@@ -6,6 +6,7 @@ import type {
   PatientAddressDetail,
   PatientProfessionalDetail,
 } from './PatientQueryRepository';
+import { legacyChatIdAliases } from '../domain/PatientChatId';
 import {
   computeAddressAvailability,
   type AddressAvailability,
@@ -40,11 +41,22 @@ const PATIENT_DETAIL_SQL = `
     province,
     zone_neighborhood        AS "zoneNeighborhood",
     country,
+    -- Grupos de WhatsApp por PAPEL (migration 261). Agregados aqui em vez de
+    -- lidos das colunas fixas da 260, que ficaram sem uso até o contract.
+    COALESCE((SELECT jsonb_object_agg(c.role, c.chat_id)
+                FROM patient_chat_ids c
+               WHERE c.patient_id = p.id), '{}'::jsonb) AS "chatIds",
     status,
     needs_attention          AS "needsAttention",
     attention_reasons        AS "attentionReasons",
-    (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
-                             AS "lastCaseNumber",
+    -- Mesma fonte da lista (PatientQueryRepository): usa patients.case_number
+    -- e cai no MAX das vagas quando o paciente foi importado sem esse campo.
+    -- Sem o COALESCE, um paciente com case_number mas sem vagas não mostrava
+    -- o "Caso #N" na ficha (inconsistente com a lista).
+    COALESCE(
+      p.case_number,
+      (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
+    )                        AS "lastCaseNumber",
     p.created_at               AS "createdAt",
     p.updated_at               AS "updatedAt"
   FROM patients p
@@ -65,9 +77,14 @@ async function fetchRelated(pool: Pool, patientId: string) {
       [patientId],
     ),
     pool.query(
+      // archived_at IS NULL: patient detail shows only active addresses to the
+      // operator. Archived rows still exist in the table to preserve historic
+      // vacancies that point to them — see migration 198 and
+      // docs/features/vacancy-creation/06-endereco-servico.md.
       `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng
          FROM patient_addresses
         WHERE patient_id = $1
+          AND archived_at IS NULL
         ORDER BY display_order ASC`,
       [patientId],
     ),
@@ -213,6 +230,8 @@ export async function fetchPatientDetail(
     province: p.province,
     zoneNeighborhood: p.zoneNeighborhood,
     country: p.country,
+    chatIds: p.chatIds ?? {},
+    ...legacyChatIdAliases(p.chatIds ?? {}),
     status: p.status,
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],

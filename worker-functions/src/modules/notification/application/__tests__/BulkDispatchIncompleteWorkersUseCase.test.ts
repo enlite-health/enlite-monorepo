@@ -120,6 +120,7 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
       expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
         to: WORKER_A.phone,
         templateSlug: 'complete_register_ofc',
+        channel: 'twilio',
       });
 
       const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
@@ -250,6 +251,80 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
       const val = result.getValue()!;
       expect(val.total).toBe(1);
       expect(messaging.sendWhatsApp).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('query de elegibilidade — cadência e freeze', () => {
+    it('inclui a cadência 3d/7d e o cap 3, sem dias consecutivos', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, makeMessaging());
+      await uc.execute('scheduler');
+
+      const selectSql = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(selectSql).toContain("INTERVAL '3 days'");
+      expect(selectSql).toContain("INTERVAL '7 days'");
+      expect(selectSql).toContain('COALESCE(ss.total_sent, 0) < 3');
+      expect(selectSql).not.toContain("INTERVAL '1 days'");
+    });
+
+    it('inclui o freeze da coorte do incidente (não recontatar quem já recebeu)', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, makeMessaging());
+      await uc.execute('scheduler');
+
+      const selectSql = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(selectSql).toContain('2026-06-02T00:00:00Z');
+      expect(selectSql).toMatch(/NOT EXISTS[\s\S]*whatsapp_bulk_dispatch_logs frz/);
+    });
+  });
+
+  describe('roteamento por canal (messaging_channel)', () => {
+    it('SELECT inclui w.messaging_channel', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, makeMessaging());
+      await uc.execute('scheduler');
+
+      const selectSql = (db.query as jest.Mock).mock.calls[0][0] as string;
+      expect(selectSql).toContain('w.messaging_channel');
+    });
+
+    it('worker com messaging_channel=periskope → sendWhatsApp recebe channel=periskope', async () => {
+      const workerPeriskope = { id: 'w-periskope-1', phone: '+5511999990099', messaging_channel: 'periskope' };
+      const db = makeDbSequence([
+        { rows: [workerPeriskope] },
+        { rows: [{ worker_id: workerPeriskope.id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true, 'SM_periskope');
+
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, messaging);
+      await uc.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
+        to: workerPeriskope.phone,
+        templateSlug: 'complete_register_ofc',
+        channel: 'periskope',
+      });
+    });
+
+    it('worker sem messaging_channel na row (default) → sendWhatsApp recebe channel=twilio', async () => {
+      const db = makeDbSequence([
+        { rows: [WORKER_A] },
+        { rows: [{ worker_id: WORKER_A.id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true, 'SM_default');
+
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, messaging);
+      await uc.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).toHaveBeenCalledWith({
+        to: WORKER_A.phone,
+        templateSlug: 'complete_register_ofc',
+        channel: 'twilio',
+      });
     });
   });
 

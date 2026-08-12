@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
@@ -23,7 +23,10 @@ import { VacancyMeetLinksRow } from '@presentation/components/features/admin/Vac
 import { VacancyFunnelView } from '@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView';
 import { VacancyMeetLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard';
 import { VacancySocialLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard';
-import { VacancyFormModal } from '@presentation/components/features/admin/VacancyFormModal';
+import { VacancyScheduleEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal';
+import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
+import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
+import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
 import { VacancyDetailTabs, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
@@ -31,10 +34,40 @@ import { VacancyDetailTabs, type VacancyTab } from '@presentation/components/fea
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { vacancy, isLoading, error, refetch } = useVacancyDetail(id);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showDescriptionModal, setShowDescriptionModal] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
+  const [showPublishedRedirectBanner, setShowPublishedRedirectBanner] = useState(false);
+
+  // Operador foi redirecionado pra cá pelo VacancyFormSection após receber 403 do PUT
+  // (vaga já publicada). Mostra banner amigável + limpa o state pra não persistir num refresh.
+  useEffect(() => {
+    const state = location.state as { publishedVacancyRedirect?: boolean } | null;
+    if (state?.publishedVacancyRedirect) {
+      setShowPublishedRedirectBanner(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
+
+  const handleStatusChange = async (next: EditableVacancyStatus): Promise<void> => {
+    if (!id) return;
+    setStatusError(null);
+    setStatusSaving(true);
+    try {
+      await AdminApiService.updateVacancy(id, { status: next });
+      await refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusError(msg);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
 
   if (isLoading) return <DetailSkeleton />;
 
@@ -70,6 +103,29 @@ export default function VacancyDetailPage() {
 
   return (
     <PageContainer>
+      {/* Banner: operador foi redirecionado do form de edição completa porque a vaga
+          já saiu do rascunho. Edição localizada (lápis em "Días y Horarios" + dropdown
+          do status badge) é o caminho correto a partir daqui. */}
+      {showPublishedRedirectBanner && (
+        <div
+          className="mb-6 bg-amber-50 border border-amber-300 rounded-xl px-5 py-4 flex items-start justify-between gap-4"
+          data-testid="published-redirect-banner"
+        >
+          <Text size="sm" color="inherit" className="text-amber-900">
+            {t('admin.vacancyDetail.publishedRedirectBanner')}
+          </Text>
+          <button
+            type="button"
+            onClick={() => setShowPublishedRedirectBanner(false)}
+            className="text-amber-700 hover:text-amber-900 transition-colors shrink-0"
+            aria-label={t('admin.vacancyDetail.dismissBanner')}
+            data-testid="published-redirect-banner-dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
@@ -86,16 +142,6 @@ export default function VacancyDetailPage() {
           <Heading level={1} weight="semibold" color="secondary">
             {pageTitle}
           </Heading>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => navigate(`/admin/vacancies/${id}/match`)}
-            className="flex items-center gap-2 px-5"
-          >
-            {t('admin.vacancyDetail.viewMatch')}
-          </Button>
         </div>
       </div>
 
@@ -121,7 +167,16 @@ export default function VacancyDetailPage() {
             providersNeeded={vacancy.providers_needed ?? null}
             publishedAt={vacancy.created_at ?? null}
             closedAt={vacancy.closed_at ?? null}
+            onStatusChange={handleStatusChange}
+            isStatusSaving={statusSaving}
           />
+          {statusError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+              <Text size="sm" color="inherit" className="text-red-600">
+                {statusError}
+              </Text>
+            </div>
+          )}
           <VacancyPatientCard
             firstName={vacancy.patient_first_name ?? null}
             lastName={vacancy.patient_last_name ?? null}
@@ -146,7 +201,8 @@ export default function VacancyDetailPage() {
           workerAttributes={vacancy.worker_attributes ?? null}
           serviceType={vacancy.service_type ?? null}
           schedule={vacancy.schedule ?? null}
-          onEdit={() => setShowEditModal(true)}
+          onEditSchedule={() => setShowScheduleModal(true)}
+          onEditDescription={() => setShowDescriptionModal(true)}
         />
       </div>
 
@@ -253,15 +309,29 @@ export default function VacancyDetailPage() {
         </>
       )}
 
-      {vacancy && (
-        <VacancyFormModal
-          isOpen={showEditModal}
-          onClose={() => setShowEditModal(false)}
+      {vacancy && id && (
+        <VacancyScheduleEditModal
+          isOpen={showScheduleModal}
+          vacancyId={id}
+          vacancy={vacancy}
+          onClose={() => setShowScheduleModal(false)}
           onSuccess={() => {
-            setShowEditModal(false);
+            setShowScheduleModal(false);
             refetch();
           }}
-          vacancy={vacancy}
+        />
+      )}
+
+      {vacancy && id && (
+        <VacancyDescriptionEditModal
+          isOpen={showDescriptionModal}
+          vacancyId={id}
+          currentDescription={vacancy.talentum_description ?? null}
+          onClose={() => setShowDescriptionModal(false)}
+          onSuccess={() => {
+            setShowDescriptionModal(false);
+            refetch();
+          }}
         />
       )}
     </PageContainer>

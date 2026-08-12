@@ -12,9 +12,16 @@
  *  - If talentum_project_id already exists → skip silently (anti-loop)
  *  - Unique constraint violation (23505) on talentum_project_id → treat as skip (race condition)
  *  - environment parameter is used only for logging, not persisted on job_postings
+ *
+ * Onda B: CREATED and link-existing mutations are audited as WEBHOOK/talentum_webhook.
+ * Audit is inserted INSIDE the same pool.query — for the INSERT path we open a
+ * short-lived transaction to keep audit atomic with the INSERT.
  */
 
 import { Pool } from 'pg';
+import {
+  JobPostingAuditRepository,
+} from '../../matching/infrastructure/JobPostingAuditRepository';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -39,7 +46,11 @@ export interface CreateJobPostingFromTalentumResult {
 // ─────────────────────────────────────────────────────────────────
 
 export class CreateJobPostingFromTalentumUseCase {
-  constructor(private readonly pool: Pool) {}
+  private readonly auditRepo: JobPostingAuditRepository;
+
+  constructor(private readonly pool: Pool) {
+    this.auditRepo = new JobPostingAuditRepository();
+  }
 
   async execute(
     data: CreateJobPostingFromTalentumInput,
@@ -61,24 +72,15 @@ export class CreateJobPostingFromTalentumUseCase {
       console.log(
         `[CreateJobPostingFromTalentum] Skip — talentum_project_id=${data._id} already linked to job_posting=${jobPostingId}`,
       );
-      return {
-        created: false,
-        skipped: true,
-        jobPostingId,
-        reason: 'already_exists',
-      };
+      return { created: false, skipped: true, jobPostingId, reason: 'already_exists' };
     }
 
     // ── 2. Extrair case_number e vacancy_number do título Talentum ───
-    //   "CASO 230"    → case_number=230, vacante nova (gerar vacancy_number)
-    //   "CASO 230-42" → case_number=230, vacante 42 já existe (vincular ao Talentum)
     const caseMatch = data.name.match(/CASO\s+(\d+)(?:-(\d+))?/i);
     const caseNumber: number | null = caseMatch ? parseInt(caseMatch[1], 10) : null;
     const parsedVacancyNumber: number | null = caseMatch?.[2] ? parseInt(caseMatch[2], 10) : null;
 
     // ── 3. Buscar vacante existente ────────────────────────────────
-    //   "CASO 230-42" → busca por vacancy_number=42 (match exato)
-    //   "CASO 230"    → busca por case_number=230 (pega a mais recente sem talentum vinculado)
     let existingVacancy: { id: string; vacancy_number: number } | null = null;
 
     if (parsedVacancyNumber != null) {
@@ -99,27 +101,41 @@ export class CreateJobPostingFromTalentumUseCase {
 
     if (existingVacancy) {
       const jobPostingId = existingVacancy.id;
-      await this.pool.query(
-        `UPDATE job_postings SET talentum_project_id = $1, talentum_published_at = NOW() WHERE id = $2`,
-        [data._id, jobPostingId],
-      );
+      // Link existing: best-effort audit — UPDATE + audit in same transaction
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `UPDATE job_postings SET talentum_project_id = $1, talentum_published_at = NOW() WHERE id = $2`,
+          [data._id, jobPostingId],
+        );
+        // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+        // leaving the surrounding transaction (and the UPDATE above) intact.
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId,
+          eventType: 'UPDATED',
+          fieldName: 'talentum_project_id',
+          changes: { before: null, after: data._id },
+          actorUserId: null,
+          actorType: 'WEBHOOK',
+          actorLabel: 'talentum_webhook',
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
 
       console.log(
         `[CreateJobPostingFromTalentum] Linked existing vacancy_number=${existingVacancy.vacancy_number} ` +
         `(job_posting=${jobPostingId}) to talentum_project_id=${data._id}`,
       );
-
-      return {
-        created: false,
-        skipped: false,
-        jobPostingId,
-        caseNumber,
-        vacancyNumber: existingVacancy.vacancy_number,
-        reason: 'linked_existing',
-      };
+      return { created: false, skipped: false, jobPostingId, caseNumber, vacancyNumber: existingVacancy.vacancy_number, reason: 'linked_existing' };
     }
 
-    // ── 4. Gerar vacancy_number via SEQUENCE (vacante nova — nenhuma existente encontrada) ──
+    // ── 4. Gerar vacancy_number via SEQUENCE ──────────────────────
     const vnResult = await this.pool.query<{ vn: string }>(
       "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
     );
@@ -128,23 +144,48 @@ export class CreateJobPostingFromTalentumUseCase {
       ? `CASO ${caseNumber}-${vacancyNumber}`
       : `VACANTE ${vacancyNumber}`;
 
-    // ── 5. Inserir job_posting ──────────────────────────────────────
+    // ── 5. Inserir job_posting + audit CREATED na mesma transação ──
     try {
-      const insertResult = await this.pool.query<{ id: string }>(
-        `INSERT INTO job_postings (
-           vacancy_number, case_number, title, description,
-           status, country,
-           talentum_project_id, talentum_published_at
-         ) VALUES (
-           $1, $2, $3, '',
-           'SEARCHING', 'AR',
-           $4, NOW()
-         )
-         RETURNING id`,
-        [vacancyNumber, caseNumber, title, data._id],
-      );
+      const client = await this.pool.connect();
+      let jobPostingId: string;
+      try {
+        await client.query('BEGIN');
+        const insertResult = await client.query<{ id: string }>(
+          `INSERT INTO job_postings (
+             vacancy_number, case_number, title,
+             status, country,
+             talentum_project_id, talentum_published_at
+           ) VALUES (
+             $1, $2, $3,
+             'SEARCHING', 'AR',
+             $4, NOW()
+           )
+           RETURNING id`,
+          [vacancyNumber, caseNumber, title, data._id],
+        );
+        jobPostingId = insertResult.rows[0].id;
 
-      const jobPostingId = insertResult.rows[0].id;
+        // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
+        // leaving the surrounding transaction (and the job_posting INSERT above) intact.
+        await this.auditRepo.logEventSafe(client, {
+          jobPostingId,
+          eventType: 'CREATED',
+          changes: {
+            before: null,
+            after: { vacancyNumber, caseNumber, title, status: 'SEARCHING', talentum_project_id: data._id },
+          },
+          actorUserId: null,
+          actorType: 'WEBHOOK',
+          actorLabel: 'talentum_webhook',
+        });
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
 
       console.log(
         `[CreateJobPostingFromTalentum] Created job_posting=${jobPostingId} ` +
@@ -152,35 +193,22 @@ export class CreateJobPostingFromTalentumUseCase {
         `title="${title}" talentum_project_id=${data._id}`,
       );
 
-      return {
-        created: true,
-        skipped: false,
-        jobPostingId,
-        caseNumber,
-        vacancyNumber,
-      };
-    } catch (err: any) {
-      // ── 4. Race condition: unique_violation em talentum_project_id ──
-      if (err.code === '23505') {
+      return { created: true, skipped: false, jobPostingId, caseNumber, vacancyNumber };
+    } catch (err: unknown) {
+      // ── Race condition: unique_violation em talentum_project_id ──
+      const pgErr = err as { code?: string };
+      if (pgErr.code === '23505') {
         const raceExisting = await this.pool.query<{ id: string }>(
           'SELECT id FROM job_postings WHERE talentum_project_id = $1',
           [data._id],
         );
         const jobPostingId = raceExisting.rows[0]?.id;
-
         console.log(
           `[CreateJobPostingFromTalentum] Race condition — talentum_project_id=${data._id} ` +
           `already inserted concurrently, job_posting=${jobPostingId ?? 'unknown'}`,
         );
-
-        return {
-          created: false,
-          skipped: true,
-          jobPostingId,
-          reason: 'race_condition',
-        };
+        return { created: false, skipped: true, jobPostingId, reason: 'race_condition' };
       }
-
       throw err;
     }
   }

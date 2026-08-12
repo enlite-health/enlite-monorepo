@@ -11,14 +11,25 @@
  *  4. Titulo sem case_number → case_number null
  *  5. Erro de API Gemini
  *  6. Resposta vazia do Gemini
- *  7. GEMINI_API_KEY ausente
- *  8. parseFromText com prompt file
+ *  7. parseFromText com prompt file
+ *
+ * Auth: as chamadas usam Vertex AI via ADC (google-auth-library), não API
+ * key. O GoogleAuth é mockado para devolver token/projeto fixos; o fetch
+ * subjacente continua mockado normalmente.
  */
 
 // ── Mock do fetch global ─────────────────────────────────────────
 
 const mockFetch = jest.fn();
 (global as any).fetch = mockFetch;
+
+// Mock do GoogleAuth (ADC) para não bater no metadata server nos testes
+jest.mock('google-auth-library', () => ({
+  GoogleAuth: jest.fn().mockImplementation(() => ({
+    getAccessToken: jest.fn().mockResolvedValue('test-access-token'),
+    getProjectId: jest.fn().mockResolvedValue('test-project'),
+  })),
+}));
 
 // Mock do GoogleDocsPromptProvider para evitar chamadas ao Google Drive
 jest.mock('../GoogleDocsPromptProvider', () => ({
@@ -128,7 +139,7 @@ describe('GeminiVacancyParserService', () => {
     jest.spyOn(console, 'warn').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
 
-    process.env = { ...originalEnv, GEMINI_API_KEY: 'test-key-123', GEMINI_MODEL: 'gemini-test' };
+    process.env = { ...originalEnv, GEMINI_MODEL: 'gemini-test' };
     service = new GeminiVacancyParserService();
   });
 
@@ -259,17 +270,8 @@ describe('GeminiVacancyParserService', () => {
   // ── Erros ────────────────────────────────────────────────────
 
   describe('tratamento de erros', () => {
-    it('deve lancar erro quando GEMINI_API_KEY ausente', async () => {
-      process.env.GEMINI_API_KEY = '';
-      const svc = new GeminiVacancyParserService();
-
-      await expect(
-        svc.parseFromTalentumDescription('desc', 'CASO 1'),
-      ).rejects.toThrow('GEMINI_API_KEY');
-    });
-
     it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
-      // 429 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      // 429 is transient — fetchGeminiWithRetry retries up to MAX_ATTEMPTS (5) then throws.
       mockFetch.mockResolvedValue({
         ok: false,
         status: 429,
@@ -279,7 +281,7 @@ describe('GeminiVacancyParserService', () => {
       await expect(
         service.parseFromTalentumDescription('desc', 'CASO 1'),
       ).rejects.toThrow('Gemini API error 429');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('deve lancar erro quando Gemini retorna resposta vazia', async () => {
@@ -403,21 +405,17 @@ describe('GeminiVacancyParserService', () => {
       expect(fetchBody.generationConfig.maxOutputTokens).toBe(8192);
     });
 
-    it('deve lancar erro quando GEMINI_API_KEY ausente', async () => {
-      process.env.GEMINI_API_KEY = '';
-      const svc = new GeminiVacancyParserService();
-
-      await expect(svc.parseFromPdf('dGVzdA==', 'AT')).rejects.toThrow('GEMINI_API_KEY');
-    });
-
-    it('deve chamar URL correta com API key e modelo', async () => {
+    it('deve chamar endpoint Vertex (ADC) com modelo correto', async () => {
       mockFetch.mockResolvedValueOnce(makeGeminiResponse(makeFullParseOutput()));
 
       await service.parseFromPdf('dGVzdA==', 'AT');
 
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain('key=test-key-123');
+      const init = mockFetch.mock.calls[0][1];
+      expect(url).toContain('aiplatform.googleapis.com');
       expect(url).toContain('models/gemini-test');
+      expect(url).not.toContain('key=');
+      expect(init.headers.Authorization).toBe('Bearer test-access-token');
     });
 
     it('deve incluir system prompt com instrucoes JSON', async () => {
@@ -432,7 +430,7 @@ describe('GeminiVacancyParserService', () => {
     });
 
     it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
-      // 500 is transient — fetchGeminiWithRetry retries 3 times then throws.
+      // 500 is transient — fetchGeminiWithRetry retries up to MAX_ATTEMPTS (5) then throws.
       mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
@@ -440,7 +438,7 @@ describe('GeminiVacancyParserService', () => {
       });
 
       await expect(service.parseFromPdf('dGVzdA==', 'AT')).rejects.toThrow('Gemini API error 500');
-      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
     it('deve lancar erro quando Gemini retorna resposta vazia', async () => {
@@ -529,21 +527,17 @@ describe('GeminiVacancyParserService', () => {
       expect(fetchBody.generationConfig.maxOutputTokens).toBe(8192);
     });
 
-    it('deve lancar erro quando GEMINI_API_KEY ausente', async () => {
-      process.env.GEMINI_API_KEY = '';
-      const svc = new GeminiVacancyParserService();
-
-      await expect(svc.parseFromText('texto', 'AT')).rejects.toThrow('GEMINI_API_KEY');
-    });
-
-    it('deve chamar URL correta com API key e modelo', async () => {
+    it('deve chamar endpoint Vertex (ADC) com modelo correto', async () => {
       mockFetch.mockResolvedValueOnce(makeGeminiResponse(makeFullParseOutput()));
 
       await service.parseFromText('texto', 'AT');
 
       const url = mockFetch.mock.calls[0][0] as string;
-      expect(url).toContain('key=test-key-123');
+      const init = mockFetch.mock.calls[0][1];
+      expect(url).toContain('aiplatform.googleapis.com');
       expect(url).toContain('models/gemini-test');
+      expect(url).not.toContain('key=');
+      expect(init.headers.Authorization).toBe('Bearer test-access-token');
     });
   });
 
@@ -593,6 +587,18 @@ describe('GeminiVacancyParserService', () => {
 
       const url = mockFetch.mock.calls[0][0] as string;
       expect(url).toContain('gemini-test');
+    });
+
+    it('override do constructor precede o GEMINI_MODEL do env (modelo rápido)', async () => {
+      mockFetch.mockResolvedValueOnce(makeGeminiResponse(makeTalentumVacancyOutput()));
+
+      // process.env.GEMINI_MODEL = 'gemini-test', mas o override deve vencer.
+      const svc = new GeminiVacancyParserService('gemini-2.5-flash');
+      await svc.parseFromTalentumDescription('desc', 'CASO 1');
+
+      const url = mockFetch.mock.calls[0][0] as string;
+      expect(url).toContain('models/gemini-2.5-flash');
+      expect(url).not.toContain('gemini-test');
     });
   });
 });
