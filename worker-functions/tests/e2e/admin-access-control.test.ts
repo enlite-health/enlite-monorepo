@@ -261,6 +261,63 @@ describe('Admin Access Control E2E', () => {
     });
   });
 
+  describe('workerEncuadreRoutes é staff-only (abac-pais-fase1 task 1.5)', () => {
+    // Dashboards de operação, escrita de funil e leituras cross-worker por :id.
+    // Antes usavam requireAuth() genérico — qualquer worker autenticado alcançava.
+    const encuadreRoutes: Array<{ method: 'get' | 'put'; path: string }> = [
+      { method: 'get', path: '/api/workers/status-dashboard' },
+      { method: 'get', path: '/api/workers/by-status/REGISTERED' },
+      { method: 'put', path: '/api/workers/00000000-0000-0000-0000-000000000001/status' },
+      { method: 'put', path: '/api/workers/00000000-0000-0000-0000-000000000001/occupation' },
+      { method: 'get', path: '/api/workers/docs-expiring' },
+      { method: 'put', path: '/api/workers/00000000-0000-0000-0000-000000000001/doc-expiry' },
+      { method: 'get', path: '/api/workers/00000000-0000-0000-0000-000000000001/encuadres' },
+      { method: 'get', path: '/api/workers/00000000-0000-0000-0000-000000000001/cases' },
+      { method: 'get', path: '/api/cases/1234/encuadres' },
+      { method: 'get', path: '/api/cases/1234/workers' },
+    ];
+
+    it.each(encuadreRoutes)('worker recebe 403 em $method $path', async ({ method, path }) => {
+      const response = await api.request({
+        method,
+        url: path,
+        headers: { Authorization: `Bearer ${workerToken}` },
+        data: method === 'put' ? {} : undefined,
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.data).toEqual({ success: false, error: 'Staff access required' });
+    });
+
+    it.each(encuadreRoutes)('admin passa do guard em $method $path (nunca 401/403)', async ({ method, path }) => {
+      const response = await api.request({
+        method,
+        url: path,
+        headers: { Authorization: `Bearer ${adminToken}` },
+        data: method === 'put' ? {} : undefined,
+      });
+
+      // Não afirmamos 200: com IDs sintéticos o handler pode devolver 400/404.
+      // O que este teste prova é que o GUARD deixa staff passar.
+      expect(response.status).not.toBe(401);
+      expect(response.status).not.toBe(403);
+    });
+  });
+
+  describe('POST /api/admin/setup exige opt-in por env (abac-pais-fase1 task 1.6)', () => {
+    it('retorna 403 Setup disabled quando ADMIN_SETUP_ENABLED não está ligada', async () => {
+      // O ambiente e2e não seta ADMIN_SETUP_ENABLED — o gate deve barrar ANTES
+      // do guard de countAdmins() (que sob RLS mal configurada poderia ler 0).
+      const response = await api.post('/api/admin/setup', {
+        email: 'bootstrap@e2e.local',
+        displayName: 'Bootstrap Attempt',
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.data).toEqual({ success: false, error: 'Setup disabled' });
+    });
+  });
+
   describe('Validação de role no token Firebase', () => {
     it('deve bloquear usuário com role vazia', async () => {
       const emptyRoleToken = await api.post('/api/test/auth/token', {
