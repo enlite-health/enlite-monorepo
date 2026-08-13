@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Profession } from '../../../worker/domain/enums/Profession';
+import { ADMISSION_COUNTRY_CODES } from '../../../matching/domain/admissionCountries';
 
 /**
  * publicLeadSchema — validates the body of POST /api/public/v1/leads.
@@ -51,8 +52,10 @@ export const publicLeadSchema = z
     name: z.string().trim().min(1).optional(),
     /** Country the lead belongs to (drives admission scheduling AND the legal
      * regime — LGPD vs Ley 25.326). REQUIRED with no default: a lead silently
-     * classified under the wrong jurisdiction is a compliance bug (D108/F0). */
-    country: z.enum(['AR', 'BR']),
+     * classified under the wrong jurisdiction is a compliance bug (D108/F0).
+     * This schema is the enforcement point of that rule — internal layers
+     * (CreateNativePatientInput, insertNative) point here. */
+    country: z.enum(ADMISSION_COUNTRY_CODES),
     /** Explicit consent to be contacted (WhatsApp/email), persisted as
      * patients.has_consent (Ley 25.326 / LGPD). MUST be true — the form enforces
      * it client-side, but this is a public unauthenticated endpoint, so the

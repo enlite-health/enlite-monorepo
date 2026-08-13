@@ -56,7 +56,7 @@ export class PatientClinicalRepository {
         additional_comments     = $7,
         has_judicial_protection = $8,
         has_cud                 = $9,
-        has_consent             = $10,
+        has_consent             = COALESCE($10, has_consent),
         clinical_specialty      = $11,
         updated_at              = NOW()
        WHERE id = $1`,
@@ -70,6 +70,9 @@ export class PatientClinicalRepository {
         input.additionalComments     ?? null,
         input.hasJudicialProtection  ?? null,
         input.hasCud                 ?? null,
+        // has_consent is a LEGAL record (Ley 25.326/LGPD): omitted in a partial
+        // PATCH ⇒ preserved (COALESCE above). Explicit false still writes false;
+        // clearing consent is the opt-out flow's job, never an omission's (D108).
         input.hasConsent             ?? null,
         input.clinicalSpecialty      ?? null,
       ],

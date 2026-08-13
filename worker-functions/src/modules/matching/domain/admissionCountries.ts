@@ -23,7 +23,12 @@ import { AR_HOLIDAYS_2026 } from '../infrastructure/AdmissionCalendarService';
  * env (`ADMISSION_TEAM_NAME_AR` / `_BR`) without a redeploy.
  */
 
-export type AdmissionCountry = 'AR' | 'BR';
+/** Canonical country codes tuple — single source for zod enums (D108).
+ * Keep in sync with the `AdmissionCountry` union below and the DB CHECK
+ * `valid_patient_country` (migrations 069/252). */
+export const ADMISSION_COUNTRY_CODES = ['AR', 'BR'] as const;
+
+export type AdmissionCountry = (typeof ADMISSION_COUNTRY_CODES)[number];
 
 export interface BusinessHours {
   /** First slot starts at this hour (local time). */
