@@ -72,11 +72,7 @@ describe('PatientChatIdsService', () => {
     const out = await service(repo).update(PATIENT, { FAMILY, PROVIDERS, HEALTH_PLAN: PLAN });
 
     expect(out).toEqual({ FAMILY, PROVIDERS, HEALTH_PLAN: PLAN });
-    expect(repo.applyChatIds).toHaveBeenCalledWith(
-      PATIENT,
-      { FAMILY, PROVIDERS, HEALTH_PLAN: PLAN },
-      expect.any(Map),
-    );
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY, PROVIDERS, HEALTH_PLAN: PLAN }, expect.any(Map), undefined);
   });
 
   it('null desvincula, e nem consulta conflito (não há o que colidir)', async () => {
@@ -84,18 +80,14 @@ describe('PatientChatIdsService', () => {
     await service(repo).update(PATIENT, { FAMILY: null, PROVIDERS: null });
 
     expect(repo.findLinkedElsewhere).not.toHaveBeenCalled();
-    expect(repo.applyChatIds).toHaveBeenCalledWith(
-      PATIENT,
-      { FAMILY: null, PROVIDERS: null },
-      expect.any(Map),
-    );
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY: null, PROVIDERS: null }, expect.any(Map), undefined);
   });
 
   it('papel ausente do mapa não é enviado ao repositório', async () => {
     const repo = repoMock();
     await service(repo).update(PATIENT, { FAMILY });
 
-    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY }, expect.any(Map));
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY }, expect.any(Map), undefined);
   });
 
   it('paciente inexistente → PatientChatIdsNotFoundError, sem escrever', async () => {
@@ -224,11 +216,7 @@ describe('PatientChatIdsService', () => {
     await expect(
       service(repo).update(PATIENT, { FAMILY: null, HEALTH_PLAN: PROVIDERS }),
     ).resolves.toBeDefined();
-    expect(repo.applyChatIds).toHaveBeenCalledWith(
-      PATIENT,
-      { FAMILY: null, HEALTH_PLAN: PROVIDERS },
-      expect.any(Map),
-    );
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY: null, HEALTH_PLAN: PROVIDERS }, expect.any(Map), undefined);
   });
 
   it('re-salvar o MESMO chat_id no MESMO papel não é conflito (no-op)', async () => {
@@ -356,7 +344,7 @@ describe('PatientChatIdsService.syncFromClickUp', () => {
 
     expect(out).toEqual({ applied: ['PROVIDERS'], unchanged: ['FAMILY'], skipped: [] });
     expect(repo.applyChatIds).toHaveBeenCalledTimes(1);
-    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { PROVIDERS }, expect.any(Map));
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { PROVIDERS }, expect.any(Map), expect.anything());
   });
 
   it('conflito num papel não derruba o outro: salva papel a papel e reporta o perdedor', async () => {
@@ -374,7 +362,7 @@ describe('PatientChatIdsService.syncFromClickUp', () => {
       { role: 'PROVIDERS', chatId: PROVIDERS, reason: 'ChatIdAlreadyLinkedError' },
     ]);
     expect(repo.applyChatIds).toHaveBeenCalledTimes(1);
-    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY }, expect.any(Map));
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY }, expect.any(Map), expect.anything());
   });
 
   it('erro de infraestrutura NÃO vira skipped: sobe para o chamador', async () => {
@@ -433,11 +421,7 @@ describe('PatientChatIdsService.syncFromClickUp', () => {
     const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY });
 
     expect(out.applied).toEqual(['FAMILY']);
-    expect(repo.applyChatIds).toHaveBeenCalledWith(
-      PATIENT,
-      { FAMILY, PROVIDERS: null },
-      expect.any(Map),
-    );
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY, PROVIDERS: null }, expect.any(Map), expect.anything());
   });
 
   it('paciente soft-deleted entre a leitura e a escrita: patient_not_found, sem erro', async () => {

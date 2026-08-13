@@ -211,34 +211,37 @@ describe('Patient chat IDs (Periskope) — E2E', () => {
       });
     });
 
-    it('9. as colunas ANTIGAS continuam no banco (expand/contract: nada foi derrubado)', async () => {
-      const r = await pool.query(
+    it('9. as colunas ANTIGAS foram derrubadas (CONTRACT 266) e a trilha 267 existe', async () => {
+      // O expand/contract FECHOU em 13/08: migration 266 dropou
+      // family_chat_id/providers_chat_id (dado vivo 100% em patient_chat_ids).
+      const dropped = await pool.query(
         `SELECT column_name FROM information_schema.columns
           WHERE table_name = 'patients'
-            AND column_name IN ('family_chat_id','providers_chat_id')
-          ORDER BY column_name`,
+            AND column_name IN ('family_chat_id','providers_chat_id')`,
       );
-      expect(r.rows.map(x => x.column_name)).toEqual(['family_chat_id', 'providers_chat_id']);
+      expect(dropped.rows).toEqual([]);
+
+      const audit = await pool.query(
+        `SELECT 1 FROM information_schema.tables WHERE table_name = 'patient_chat_id_changes'`,
+      );
+      expect(audit.rows).toHaveLength(1);
     });
 
-    it('10. a migration de dados é IDEMPOTENTE — re-rodar não duplica nem estoura', async () => {
-      await pool.query('UPDATE patients SET family_chat_id = $2 WHERE id = $1', [patientA, GROUP_FAMILY]);
-      try {
-        const copy = `INSERT INTO patient_chat_ids (patient_id, role, chat_id, is_exclusive)
-                      SELECT id, 'FAMILY', family_chat_id, TRUE FROM patients
-                       WHERE family_chat_id IS NOT NULL AND deleted_at IS NULL
-                      ON CONFLICT DO NOTHING`;
-        await pool.query(copy);
-        await pool.query(copy); // segunda vez: sem erro, sem linha nova
-        const n = await pool.query<{ n: string }>(
-          'SELECT COUNT(*)::text AS n FROM patient_chat_ids WHERE patient_id = $1',
-          [patientA],
-        );
-        expect(Number(n.rows[0].n)).toBe(1);
-        expect(await readChatIds(patientA)).toEqual({ FAMILY: GROUP_FAMILY });
-      } finally {
-        await pool.query('UPDATE patients SET family_chat_id = NULL WHERE id = $1', [patientA]);
-      }
+    it('10. cópia de estado é IDEMPOTENTE — ON CONFLICT DO NOTHING não duplica nem estoura', async () => {
+      // Era o teste da migration de dados da 261 (lia as colunas antigas,
+      // dropadas pela 266). O invariante que sobrevive é o contrato do
+      // ON CONFLICT: re-rodar uma cópia de estado não duplica.
+      const copy = `INSERT INTO patient_chat_ids (patient_id, role, chat_id, is_exclusive)
+                    VALUES ($1, 'FAMILY', $2, TRUE)
+                    ON CONFLICT DO NOTHING`;
+      await pool.query(copy, [patientA, GROUP_FAMILY]);
+      await pool.query(copy, [patientA, GROUP_FAMILY]); // segunda vez: sem erro, sem linha nova
+      const n = await pool.query<{ n: string }>(
+        'SELECT COUNT(*)::text AS n FROM patient_chat_ids WHERE patient_id = $1',
+        [patientA],
+      );
+      expect(Number(n.rows[0].n)).toBe(1);
+      expect(await readChatIds(patientA)).toEqual({ FAMILY: GROUP_FAMILY });
     });
 
     it('11. apagar o paciente leva os vínculos junto (CASCADE) — grupo não fica preso', async () => {
