@@ -202,6 +202,7 @@ describe('OAuth 2.1 + MCP — fluxo conector claude.ai (e2e in-process)', () => 
     const names = tools.tools.map((t) => t.name).sort();
     // Principal OAuth vê nomes claude-safe (claude.ai rejeita "." em tool name)
     expect(names).toEqual([
+      'patient_chat_map',
       'worker_documents_list',
       'worker_interview_get',
       'worker_profile_get',
