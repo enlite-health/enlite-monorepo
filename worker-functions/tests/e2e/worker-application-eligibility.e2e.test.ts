@@ -277,7 +277,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       try {
         await pool.query(
           `INSERT INTO worker_job_applications (worker_id, job_posting_id, source, application_funnel_stage)
-           VALUES ($1, $2, 'manual', 'INITIATED')`,
+           VALUES ($1, $2, 'manual', 'PRE_SCREENING')`,
           [workerId, vacancyId],
         );
 
@@ -302,7 +302,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       // Cria WJA via bypass histórico
       await pool.query(
         `INSERT INTO worker_job_applications (worker_id, job_posting_id, source, application_funnel_stage)
-         VALUES ($1, $2, 'planilla_operativa', 'INITIATED')`,
+         VALUES ($1, $2, 'planilla_operativa', 'PRE_SCREENING')`,
         [W.INC, vacancyId],
       );
 

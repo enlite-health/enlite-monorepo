@@ -449,10 +449,10 @@ describe('N6 — FUNNEL_TO_STATUS mapping', () => {
       [JOB_IDS.j1],
     );
 
-    // Test inserting with a valid funnel stage (actual values: INITIATED, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT, NOT_QUALIFIED, PLACED)
+    // Test inserting with a valid funnel stage (INITIATED removido na migration 264; canônico: PRE_SCREENING)
     await pool.query(
       `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage)
-       VALUES ($1, $2, $3, 'INITIATED')
+       VALUES ($1, $2, $3, 'PRE_SCREENING')
        ON CONFLICT DO NOTHING`,
       [WJA_IDS.a1, WORKER_IDS.w1, JOB_IDS.j1],
     );
@@ -461,7 +461,7 @@ describe('N6 — FUNNEL_TO_STATUS mapping', () => {
       `SELECT application_funnel_stage FROM worker_job_applications WHERE id = $1`,
       [WJA_IDS.a1],
     );
-    expect(result.rows[0].application_funnel_stage).toBe('INITIATED');
+    expect(result.rows[0].application_funnel_stage).toBe('PRE_SCREENING');
 
     // Cleanup
     await pool.query(`DELETE FROM worker_job_applications WHERE id = $1`, [WJA_IDS.a1]);
