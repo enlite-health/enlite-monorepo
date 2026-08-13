@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
+import type { ActorContext } from '@shared/audit/actorSource';
 import type { PatientChatIdMap, PatientChatIdWriteMap } from '../domain/PatientChatId';
 import { isExclusiveChatRole, type PatientChatRoleCatalog } from '../domain/PatientChatRole';
 
@@ -212,11 +214,14 @@ export class PatientChatIdsRepository {
     patientId: string,
     changes: PatientChatIdWriteMap,
     catalog: PatientChatRoleCatalog,
+    actor?: ActorContext | null,
   ): Promise<PatientChatIdMap> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
+    // withActorContext (D95): BEGIN/COMMIT + carimbo de `app.current_uid` na
+    // MESMA transação — a trigger da migration 267 grava a trilha
+    // `patient_chat_id_changes` lendo esse setting. Ator omitido cai no da
+    // request (ALS: `staff:<uid>` do painel); sem nenhum, a escrita roda igual
+    // e a trilha registra changed_by NULL (= nao_instrumentado na leitura).
+    return withActorContext(this.pool, async (client) => {
       // ORDEM IMPORTA: todos os DELETEs antes de qualquer INSERT.
       //
       // `Object.entries` segue a ordem do body, então um upsert podia rodar antes
@@ -275,14 +280,8 @@ export class PatientChatIdsRepository {
         [patientId],
       );
 
-      await client.query('COMMIT');
       return Object.fromEntries(final.rows.map(r => [r.role, r.chatId]));
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    }, actor);
   }
 }
 

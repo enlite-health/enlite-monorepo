@@ -1,6 +1,8 @@
 import { PatientChatIdsRepository, type ChatIdConflict } from '../infrastructure/PatientChatIdsRepository';
 import { PatientChatRolesRepository } from '../infrastructure/PatientChatRolesRepository';
 import type { PatientChatIdMap, PatientChatIdWriteMap } from '../domain/PatientChatId';
+import { syncActor } from '@shared/audit/actorSource';
+import type { ActorContext } from '@shared/audit/actorSource';
 import { isExclusiveChatRole, toRoleCatalog } from '../domain/PatientChatRole';
 
 /** O paciente pedido não existe (ou está soft-deleted). */
@@ -90,7 +92,11 @@ export class PatientChatIdsService {
     this.rolesRepo = rolesRepo ?? new PatientChatRolesRepository();
   }
 
-  async update(patientId: string, changes: PatientChatIdWriteMap): Promise<PatientChatIdMap> {
+  async update(
+    patientId: string,
+    changes: PatientChatIdWriteMap,
+    actor?: ActorContext | null,
+  ): Promise<PatientChatIdMap> {
     const patient = await this.repo.findById(patientId);
     if (!patient) throw new PatientChatIdsNotFoundError(patientId);
 
@@ -141,7 +147,8 @@ export class PatientChatIdsService {
       if (conflicts.length > 0) throw new ChatIdAlreadyLinkedError(conflicts);
     }
 
-    return this.repo.applyChatIds(patientId, changes, catalog);
+    // Ator omitido: o repositório usa o da request (ALS) — `staff:<uid>` na tela.
+    return this.repo.applyChatIds(patientId, changes, catalog, actor);
   }
 
   /**
@@ -198,7 +205,7 @@ export class PatientChatIdsService {
       Object.keys(map).filter(role => map[role] !== null);
 
     try {
-      await this.update(patientId, diff);
+      await this.update(patientId, diff, CLICKUP_SYNC_ACTOR);
       return { applied: appliedRolesOf(diff), unchanged, skipped: [] };
     } catch (err) {
       if (err instanceof PatientChatIdsNotFoundError) return allSkipped('patient_not_found');
@@ -221,7 +228,7 @@ export class PatientChatIdsService {
     for (const role of appliedRolesOf(diff)) {
       const chatId = diff[role] as string;
       try {
-        await this.update(patientId, { [role]: chatId });
+        await this.update(patientId, { [role]: chatId }, CLICKUP_SYNC_ACTOR);
         applied.push(role);
       } catch (err) {
         if (err instanceof PatientChatIdsNotFoundError) {
@@ -235,6 +242,12 @@ export class PatientChatIdsService {
     return { applied, unchanged, skipped };
   }
 }
+
+/**
+ * Ator carimbado na trilha (`patient_chat_id_changes`, migration 267) quando
+ * quem escreve é o espelho do ClickUp — `changed_by = 'sync:clickup-patients'`.
+ */
+const CLICKUP_SYNC_ACTOR = syncActor('clickup-patients');
 
 /** Um papel que o sync NÃO gravou, e por quê. */
 export interface SkippedChatId {
