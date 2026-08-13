@@ -113,10 +113,11 @@ describe('ProcessTalentumPrescreening', () => {
     mockPool = {
       connect: jest.fn().mockResolvedValue(mockPoolClient),
       query: jest.fn().mockImplementation((sql: string, params?: unknown[]) => {
-        // Cadeia de merge: por padrão o worker está vivo → resolve para ele mesmo.
+        // Cadeia de merge (resolveCanonicalWorkerId): por padrão o worker está
+        // vivo → linha mais profunda é ele mesmo, com merged_into_id null.
         // Os testes de merge sobrescrevem este mock.
         if (sql.includes('WITH RECURSIVE chain')) {
-          return Promise.resolve({ rows: [{ id: params?.[0] }] });
+          return Promise.resolve({ rows: [{ id: params?.[0], depth: 0, merged_into_id: null }] });
         }
         if (sql.includes('INSERT INTO workers')) {
           return Promise.resolve({ rows: [{ id: 'w-auto' }] });
@@ -1065,13 +1066,24 @@ describe('ProcessTalentumPrescreening', () => {
   // job_posting_id) não pega, porque os IDs são diferentes.
 
   describe('resolução ciente de merge', () => {
-    /** Faz a cadeia `from` → `to` (1 salto) na query recursiva. */
+    /**
+     * Faz a cadeia `from` → `to` (1 salto) na query recursiva, no shape que
+     * `resolveCanonicalWorkerId` lê: a linha mais profunda da corrente.
+     * `to = null` = corrente que não termina em worker vivo (ciclo) — a linha
+     * mais profunda ainda tem `merged_into_id` preenchido.
+     */
     function mockMergeChain(from: string, to: string | null) {
       mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
         if (sql.includes('WITH RECURSIVE chain')) {
           const id = params?.[0];
-          if (id === from) return Promise.resolve({ rows: to ? [{ id: to }] : [] });
-          return Promise.resolve({ rows: [{ id }] });
+          if (id === from) {
+            return Promise.resolve({
+              rows: to
+                ? [{ id: to, depth: 1, merged_into_id: null }]
+                : [{ id: from, depth: 10, merged_into_id: 'w-loop' }],
+            });
+          }
+          return Promise.resolve({ rows: [{ id, depth: 0, merged_into_id: null }] });
         }
         if (sql.includes('INSERT INTO workers')) return Promise.resolve({ rows: [{ id: 'w-auto' }] });
         if (sql.includes('SELECT id FROM workers')) return Promise.resolve({ rows: [{ id: 'w-dead' }] });

@@ -4,7 +4,7 @@ import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescr
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
-import { resolveCanonicalWorkerId, MAX_MERGE_CHAIN_DEPTH } from '@shared/database/canonicalWorker';
+import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
 import { reportError } from '@shared/logging';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 
@@ -103,11 +103,14 @@ export class ProcessTalentumPrescreening {
    * inclusive uma que já foi fundida em outra (`merged_into_id`). Escrever nela
    * fura a trava `UNIQUE (worker_id, job_posting_id)` — os dois IDs são da mesma
    * pessoa, mas a constraint só enxerga IDs — e o recrutamento vê a candidata
-   * duas vezes na mesma vaga. Ver `shared/database/canonicalWorker.ts`.
+   * duas vezes na mesma vaga.
    *
-   * Se a cadeia não resolver (ciclo), mantemos o ID que o lookup achou: é o
-   * comportamento de hoje. Devolver `null` seria pior que o bug, porque o
-   * chamador auto-criaria um cadastro novo — mais uma duplicata da mesma pessoa.
+   * Divergência deliberada do contrato de `resolveCanonicalWorkerId`, que
+   * devolve `null` quando a cadeia não resolve (ciclo/corrupção) esperando que o
+   * chamador se recuse a escrever: aqui `null` faria o fluxo cair no
+   * `autoCreateWorker` e abrir um cadastro NOVO — mais uma duplicata da mesma
+   * pessoa, pior que o bug que estamos consertando. Numa cadeia quebrada
+   * mantemos o ID cru (o comportamento de hoje, que não regride) e alertamos.
    */
   private async toCanonical(workerId: string): Promise<string> {
     const canonical = await resolveCanonicalWorkerId(this.pool, workerId);
@@ -115,7 +118,7 @@ export class ProcessTalentumPrescreening {
     if (!canonical) {
       console.error(
         `${TAG} ALERT: cadeia de merge não resolveu para worker=${workerId} ` +
-          `(ciclo ou > ${MAX_MERGE_CHAIN_DEPTH} saltos). Seguindo com o ID cru.`,
+          `(ciclo ou > ${MAX_MERGE_DEPTH} saltos). Seguindo com o ID cru.`,
       );
       return workerId;
     }

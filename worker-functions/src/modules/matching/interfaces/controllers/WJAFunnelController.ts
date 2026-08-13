@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
-import { excludeMergedWorkersSql } from '@shared/database/canonicalWorker';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
@@ -142,11 +141,6 @@ export class WJAFunnelController {
              -- worker que deu baixa na conta não pode aparecer no kanban da vaga
              -- (mesmo recorte de FunnelTableRepository/VacancyMatchController)
              AND ${excludeDisabledWorkersSql('w')}
-             -- registro já fundido em outro não é uma pessoa: apareceria como um
-             -- segundo card da MESMA candidata nesta vaga, e mover um não move o
-             -- outro (são linhas independentes). Defesa em profundidade — a causa
-             -- é resolvida na escrita, em ProcessTalentumPrescreening.
-             AND ${excludeMergedWorkersSql('w')}
            ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
           [id],
         ),
