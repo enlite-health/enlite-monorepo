@@ -4,6 +4,7 @@ import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescr
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { resolveCanonicalWorkerId, MAX_MERGE_CHAIN_DEPTH } from '@shared/database/canonicalWorker';
 import { reportError } from '@shared/logging';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 
@@ -95,18 +96,49 @@ export class ProcessTalentumPrescreening {
     return created;
   }
 
+  /**
+   * Resolve o registro vivo da pessoa antes de escrever.
+   *
+   * Os lookups por e-mail/telefone/CUIL devolvem a linha crua de `workers`,
+   * inclusive uma que já foi fundida em outra (`merged_into_id`). Escrever nela
+   * fura a trava `UNIQUE (worker_id, job_posting_id)` — os dois IDs são da mesma
+   * pessoa, mas a constraint só enxerga IDs — e o recrutamento vê a candidata
+   * duas vezes na mesma vaga. Ver `shared/database/canonicalWorker.ts`.
+   *
+   * Se a cadeia não resolver (ciclo), mantemos o ID que o lookup achou: é o
+   * comportamento de hoje. Devolver `null` seria pior que o bug, porque o
+   * chamador auto-criaria um cadastro novo — mais uma duplicata da mesma pessoa.
+   */
+  private async toCanonical(workerId: string): Promise<string> {
+    const canonical = await resolveCanonicalWorkerId(this.pool, workerId);
+
+    if (!canonical) {
+      console.error(
+        `${TAG} ALERT: cadeia de merge não resolveu para worker=${workerId} ` +
+          `(ciclo ou > ${MAX_MERGE_CHAIN_DEPTH} saltos). Seguindo com o ID cru.`,
+      );
+      return workerId;
+    }
+
+    if (canonical !== workerId) {
+      console.log(`${TAG} resolveWorker → ${workerId} está mergeado, usando canônico ${canonical}`);
+    }
+
+    return canonical;
+  }
+
   private async resolveWorkerId(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
     const { email, phoneNumber, cuil } = payload.data.profile;
 
     const byEmail = this.extractId(await this.workerLookup.findByEmail(email));
-    if (byEmail) return byEmail;
+    if (byEmail) return this.toCanonical(byEmail);
 
     const byPhone = this.extractId(await this.workerLookup.findByPhone(phoneNumber));
-    if (byPhone) return byPhone;
+    if (byPhone) return this.toCanonical(byPhone);
 
     if (cuil) {
       const byCuil = this.extractId(await this.workerLookup.findByCuit(cuil));
-      if (byCuil) return byCuil;
+      if (byCuil) return this.toCanonical(byCuil);
     }
 
     return null;
@@ -127,11 +159,15 @@ export class ProcessTalentumPrescreening {
     } catch (err: unknown) {
       const pgErr = err as { code?: string; message?: string };
       if (pgErr.code === '23505') {
+        // Colisão: o cadastro já existe. Pode ser um registro já fundido em
+        // outro — resolver o canônico antes de devolver, mesma razão do
+        // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
         const existing = await this.pool.query(
           `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
           [authUid, payload.data.profile.email],
         );
-        return existing.rows[0]?.id ?? null;
+        const existingId = existing.rows[0]?.id ?? null;
+        return existingId ? await this.toCanonical(existingId) : null;
       }
       console.error(`${TAG} autoCreateWorker failed:`, pgErr.message);
       return null;
