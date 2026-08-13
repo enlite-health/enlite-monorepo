@@ -1,8 +1,15 @@
 import { Pool, PoolClient } from 'pg';
+import { createRlsAwarePool } from './rlsAwarePool';
 
 export class DatabaseConnection {
   private static instance: DatabaseConnection;
   private pool: Pool;
+  /**
+   * O que os 115 consumidores recebem: o mesmo pool, ciente do contexto de país
+   * da request (ver `rlsAwarePool.ts`). Com `COUNTRY_RLS_ENABLED` != 'true' é
+   * passagem direta — comportamento idêntico ao de antes da change.
+   */
+  private rlsAwarePool: Pool;
 
   private constructor() {
     const isCloudRun = process.env.K_SERVICE !== undefined;
@@ -36,6 +43,8 @@ export class DatabaseConnection {
     this.pool.on('error', (err) => {
       console.error('[DatabaseConnection] Idle client error (non-fatal):', err.message);
     });
+
+    this.rlsAwarePool = createRlsAwarePool(this.pool);
   }
 
   public static getInstance(): DatabaseConnection {
@@ -46,6 +55,15 @@ export class DatabaseConnection {
   }
 
   public getPool(): Pool {
+    return this.rlsAwarePool;
+  }
+
+  /**
+   * Pool CRU, sem o roteamento por contexto de request. Só para quem gerencia a
+   * conexão em si (encerramento, health check de infra) — código de negócio usa
+   * `getPool()`, senão a leitura escapa da RLS de país.
+   */
+  public getRawPool(): Pool {
     return this.pool;
   }
 

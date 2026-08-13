@@ -12,6 +12,8 @@ declare global {
         role?: string;
         roles?: string[];
         type?: string;
+        /** Jurisdição do operador (claim `country`) — ABAC país Fase 1. */
+        country?: string;
       };
       servicePrincipal?: ServicePrincipal;
       onBehalfOfWorkerId?: string;

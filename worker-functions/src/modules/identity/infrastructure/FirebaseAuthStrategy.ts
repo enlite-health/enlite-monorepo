@@ -40,6 +40,7 @@ export class FirebaseAuthStrategy {
           user_id?: string;
           sub?: string;
           role?: string;
+          country?: string;
         };
         logger.info({ userId: payload.user_id ?? payload.sub }, '[AUTH] Emulator JWT decoded');
 
@@ -48,6 +49,7 @@ export class FirebaseAuthStrategy {
           id: payload.user_id ?? payload.sub ?? 'emulator-user',
           type: PrincipalType.USER,
           roles,
+          ...(payload.country ? { country: payload.country } : {}),
         };
         return this.buildContext(principal, credentials, metadata);
       } catch (decodeError) {
@@ -65,10 +67,16 @@ export class FirebaseAuthStrategy {
     const decodedToken = await admin.auth().verifyIdToken(credentials.token);
     const claimRole = decodedToken.role as string | undefined;
     const role = claimRole ?? await this.getRoleFromDB(decodedToken.uid, decodedToken.email);
+    // `country` é claim-only, sem fallback de banco (design, decisão 4): o claim
+    // muda raro e tolera a propagação de 1h; grant de grupo é que precisa de
+    // revogação imediata, e esse a policy resolve por query. Claim ausente
+    // segue ausente — quem trata é o AuthMiddleware, fail-closed (lex C3).
+    const claimCountry = decodedToken.country as string | undefined;
     const principal: Principal = {
       id: decodedToken.uid,
       type: PrincipalType.USER,
       roles: role ? [role] : [],
+      ...(claimCountry ? { country: claimCountry } : {}),
     };
     return this.buildContext(principal, credentials, metadata);
   }

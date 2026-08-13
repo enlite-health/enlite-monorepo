@@ -62,6 +62,9 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
       uid: userData.uid,
       email: userData.email,
       role: userData.role || 'worker',
+      // Jurisdição do staff no e2e — espelha o custom claim `country` do
+      // Identity Platform. Ausente segue ausente (fail-closed, sem default).
+      country: userData.country,
     };
 
     next();

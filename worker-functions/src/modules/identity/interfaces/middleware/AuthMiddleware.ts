@@ -4,8 +4,9 @@ import { IAuthorizationEngine } from '../../ports/IAuthorizationEngine';
 import { AuthContext, Credentials, CredentialType, PrincipalType, RequestMetadata } from '../../domain/Auth';
 import { isStaffRole } from '../../domain/EnliteRole';
 import { MultiAuthService } from '../../infrastructure/MultiAuthService';
-import { loggingAls } from '@shared/logging';
+import { loggingAls, logger } from '@shared/logging';
 import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
+import { isCountryCode, isCountryRlsEnabled, setDbContext } from '@shared/database/requestDbSession';
 
 /**
  * Guarda quem autenticou no contexto da request (ALS), para que as escritas
@@ -24,12 +25,47 @@ function rememberActorInAls(
   uid?: string | null,
   email?: string | null,
   roles?: readonly string[] | null,
+  country?: unknown,
 ): void {
-  const store = loggingAls.getStore();
+  // `?.` de propósito (mesmo padrão de withActorContext): em teste com
+  // `@shared/logging` mockado o ALS pode nem existir, e auditoria/contexto nunca
+  // pode derrubar a autenticação.
+  const store = loggingAls?.getStore?.();
   if (!store) return;
   const isStaff = (roles ?? []).some((role) => isStaffRole(role as never));
   const actor = isStaff ? staffActor(uid, email) : workerSelfActor(uid);
   if (actor) store.actor = actor;
+  declareDbContext(isStaff, uid, country);
+}
+
+/**
+ * Declara a jurisdição da request para a RLS de país (ABAC Fase 1, task 3.1).
+ *
+ * ⚠️ [lex C3] Claim `country` ausente NÃO vira 'AR'. Um default aqui seria pior
+ * do que não ter isolamento: daria a qualquer operador sem claim a jurisdição
+ * argentina inteira, calado. Sem claim, o contexto vai sem país — a policy não
+ * casa nada e a consulta devolve ZERO linha (fail-closed, spec country-isolation)
+ * — e o erro sai no log com o uid para o runbook de atribuição (task 3.2).
+ */
+function declareDbContext(isStaff: boolean, uid?: string | null, country?: unknown): void {
+  if (!isStaff) {
+    setDbContext({ kind: 'worker_self', uid: uid ?? undefined });
+    return;
+  }
+
+  if (!isCountryCode(country)) {
+    // Severidade acompanha o estrago real: antes da virada é só um staff a
+    // instrumentar (warn); com a RLS valendo, é gente sem enxergar nada (error).
+    const line = { uid, claimCountry: typeof country === 'string' ? country : null };
+    const message =
+      '[abac] staff sem claim de país válido — consultas protegidas retornam zero linhas (sem fallback)';
+    if (isCountryRlsEnabled()) logger.error(line, message);
+    else logger.warn(line, message);
+    setDbContext({ kind: 'staff', uid: uid ?? undefined });
+    return;
+  }
+
+  setDbContext({ kind: 'staff', uid: uid ?? undefined, country });
 }
 
 /**
@@ -101,7 +137,7 @@ export class AuthMiddleware {
           };
           (req as any).authContext = authContext;
           (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles };
-          rememberActorInAls(mockUser.uid, mockUser.email, roles);
+          rememberActorInAls(mockUser.uid, mockUser.email, roles, mockUser.country);
           return next();
         }
 
@@ -144,7 +180,12 @@ export class AuthMiddleware {
           roles: authContext.principal.roles,
         };
 
-        rememberActorInAls(authContext.principal.id, null, authContext.principal.roles);
+        rememberActorInAls(
+          authContext.principal.id,
+          null,
+          authContext.principal.roles,
+          authContext.principal.country,
+        );
 
         // Log successful authentication (without PII)
         this.logAuthAttempt(authContext, metadata, true);
@@ -300,6 +341,7 @@ export class AuthMiddleware {
           res.status(401).end();
           return;
         }
+        rememberActorInAls(mockUser.uid, mockUser.email, [mockUser.role ?? ''], mockUser.country);
         return next();
       }
 
@@ -315,6 +357,9 @@ export class AuthMiddleware {
         const apiKeyContext = this.multiAuthService.tryAuthenticateAsApiKey(token);
         if (apiKeyContext) {
           req.authContext = apiKeyContext;
+          // Chave de API é serviço (`service:<nome>`), não pessoa: contexto de
+          // SISTEMA declarado (design, decisão 2) — não herda país de ninguém.
+          setDbContext({ kind: 'system', systemContext: `api-key:${apiKeyContext.principal.id}` });
           return next();
         }
       }
@@ -338,6 +383,12 @@ export class AuthMiddleware {
                 uid: firebaseContext.principal.id,
                 roles,
               };
+              rememberActorInAls(
+                firebaseContext.principal.id,
+                null,
+                roles,
+                firebaseContext.principal.country,
+              );
               return next();
             }
           }

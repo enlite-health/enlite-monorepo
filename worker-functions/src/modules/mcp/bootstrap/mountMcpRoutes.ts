@@ -67,6 +67,7 @@ import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
 import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
 import { logger } from '@shared/logging/Logger';
+import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
 
 /**
  * Mounts the MCP server at /mcp on the Express app.
@@ -209,6 +210,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
 
   app.use(
     '/mcp',
+    // Capability MCP (Luz, conector claude.ai) é contexto de SISTEMA declarado:
+    // o isolamento dela é por worker_id/allowlist, não por país (ABAC task 3.3).
+    systemContextMiddleware('mcp:enlite-worker-mcp'),
     createMcpRoutes({
       principalRepo,
       auditor,

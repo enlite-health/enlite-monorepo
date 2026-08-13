@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import type { ActorContext } from '@shared/audit/actorSource';
+import type { DbSession } from '@shared/database/requestDbSession';
 
 export interface LogContext {
   traceId: string;
@@ -13,6 +14,13 @@ export interface LogContext {
    * parâmetro em cada camada.
    */
   actor?: ActorContext;
+  /**
+   * Sessão de banco da request (contexto de país + client fixado). Criada pelo
+   * `dbSessionMiddleware` e preenchida pela borda que autentica. `import type`
+   * de propósito: o tipo mora em `@shared/database` e um import de valor faria
+   * ciclo com este módulo.
+   */
+  dbSession?: DbSession;
 }
 
 export const loggingAls = new AsyncLocalStorage<LogContext>();

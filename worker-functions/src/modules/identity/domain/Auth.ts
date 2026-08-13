@@ -18,6 +18,12 @@ export interface Principal {
   type: PrincipalType;
   roles?: string[];
   tenantId?: string;
+  /**
+   * Jurisdição do operador (`AR`|`BR`), vinda do custom claim `country` do
+   * Identity Platform — a fonte do `app.user_country` que a RLS de país lê
+   * (ABAC Fase 1). Ausente é ausente: NUNCA preencher com default (lex C3).
+   */
+  country?: string;
 }
 
 export enum PrincipalType {
