@@ -33,6 +33,7 @@ registry.registerPath({
   responses: {
     200: { description: 'Dashboard de status dos workers.', content: { 'application/json': { schema: OkMessage } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -60,6 +61,7 @@ registry.registerPath({
     200: { description: 'Lista de workers pelo status.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Status inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -81,6 +83,7 @@ registry.registerPath({
     200: { description: 'Status atualizado.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Status inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -102,6 +105,7 @@ registry.registerPath({
     200: { description: 'Ocupação atualizada.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Ocupação inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -118,6 +122,7 @@ registry.registerPath({
   responses: {
     200: { description: 'Lista de workers com docs a vencer.', content: { 'application/json': { schema: OkMessage } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -138,6 +143,7 @@ registry.registerPath({
   responses: {
     200: { description: 'Datas de vencimento atualizadas.', content: { 'application/json': { schema: OkMessage } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -155,6 +161,7 @@ registry.registerPath({
   responses: {
     200: { description: 'Histórico de encuadres.', content: { 'application/json': { schema: OkMessage } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -172,6 +179,7 @@ registry.registerPath({
   responses: {
     200: { description: 'Lista de casos do worker.', content: { 'application/json': { schema: OkMessage } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
@@ -194,6 +202,7 @@ registry.registerPath({
     200: { description: 'Encuadres do caso.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'caseNumber inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Caso não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
@@ -217,6 +226,7 @@ registry.registerPath({
     200: { description: 'Workers do caso.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'caseNumber inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Requer papel de staff (admin | recruiter | community_manager).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Caso não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },

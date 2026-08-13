@@ -48,7 +48,9 @@ AdminApiService.getProfile()
 Painel Admin (se autorizado)
 ```
 
-**Bootstrap**: Primeiro admin criado via `POST /api/admin/setup` (auto-desabilita apos primeiro uso).
+**Bootstrap**: Primeiro admin criado via `POST /api/admin/setup`. Exige `ADMIN_SETUP_ENABLED=true`
+no env (default off — ligar só durante o bootstrap de um ambiente novo e desligar em seguida) e
+auto-desabilita apos primeiro uso (`countAdmins() > 0` → 403).
 
 **Restricao Google OAuth**: Frontend valida que email termina em `@enlite.health` antes de permitir login admin via Google.
 
@@ -64,7 +66,7 @@ Painel Admin (se autorizado)
 
 | Metodo | Rota | Funcao | Auth |
 |--------|------|--------|------|
-| POST | `/api/admin/setup` | Bootstrap primeiro admin | Publico (auto-desabilita) |
+| POST | `/api/admin/setup` | Bootstrap primeiro admin | Publico, gated por `ADMIN_SETUP_ENABLED` (auto-desabilita) |
 | POST | `/api/admin/users` | Criar admin | Admin |
 | GET | `/api/admin/users` | Listar admins | Admin |
 | DELETE | `/api/admin/users/:id` | Deletar admin | Admin |

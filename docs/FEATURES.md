@@ -30,7 +30,7 @@
 ### AUTH
 | Método | Rota | Função |
 |--------|------|--------|
-| POST | `/api/admin/setup` | Bootstrap primeiro admin |
+| POST | `/api/admin/setup` | Bootstrap primeiro admin (exige `ADMIN_SETUP_ENABLED=true`) |
 | POST | `/api/admin/auth/change-password` | Trocar senha admin |
 | GET | `/api/admin/auth/profile` | Perfil admin autenticado |
 

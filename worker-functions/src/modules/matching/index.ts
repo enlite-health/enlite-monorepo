@@ -13,7 +13,6 @@ export { EncuadreQueryRepository } from './infrastructure/EncuadreQueryRepositor
 export * from './infrastructure/EncuadreMappers';
 export { TalentumPrescreeningRepository } from './infrastructure/TalentumPrescreeningRepository';
 export { WorkerApplicationRepository } from './infrastructure/WorkerApplicationRepository';
-export { WorkerLocationRepository } from './infrastructure/WorkerLocationRepository';
 export { JobPostingARRepository } from './infrastructure/JobPostingARRepository';
 export { MatchmakingService } from './infrastructure/MatchmakingService';
 export { GoogleCalendarService, googleCalendarService } from './infrastructure/GoogleCalendarService';

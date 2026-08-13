@@ -328,7 +328,14 @@ app.post('/api/jobs/refresh', authMiddleware.requireAuth(), (req: Request, res: 
 
 
 // ========== Admin Module ==========
+// Bootstrap sem auth por definição (cria o 1º admin). Além do guard interno
+// (countAdmins() > 0 → 403), exige opt-in por env: o guard de count lê o banco,
+// e uma role de runtime sob RLS que enxergasse 0 admins re-armaria a rota.
 app.post('/api/admin/setup', (req: Request, res: Response) => {
+  if (process.env.ADMIN_SETUP_ENABLED !== 'true') {
+    res.status(403).json({ success: false, error: 'Setup disabled' });
+    return;
+  }
   adminController.setup(req, res);
 });
 app.post('/api/admin/users', authMiddleware.requireAdmin(), (req: Request, res: Response) => {
