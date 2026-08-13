@@ -30,6 +30,8 @@ import {
   reconcileRow,
   rollbackRow,
   bypassRegisteredGuard,
+  ReconcileRowError,
+  ReconcileEffects,
 } from '../../src/modules/matching/application/ReconcileMergedWorkerApplications';
 
 const DATABASE_URL =
@@ -55,6 +57,12 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
   let survivingWjaId: string;
   let ghostWjaId: string;
   let orphanWjaId: string;
+
+  /** Filhos movidos em cada reconciliação — o rollback precisa deles. */
+  let ghostEffects: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [] };
+  let orphanEffects: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [] };
+  /** Linha inteira da fantasma, como o snapshot do CLI guarda. */
+  let ghostSnapshot: Record<string, unknown> = {};
 
   async function insertWorker(suffix: string): Promise<string> {
     const res = await pool.query(
@@ -166,6 +174,8 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     expect(dup?.duplicate).toBe(true);
     expect(dup?.canonicalWorkerId).toBe(survivorId);
     expect(orphan?.duplicate).toBe(false);
+
+    ghostSnapshot = dup!.snapshot; // o CLI guarda isto para o rollback
   });
 
   // ── O conserto ──────────────────────────────────────────────────────────────
@@ -183,7 +193,9 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
       await client.query('BEGIN');
       await bypassRegisteredGuard(client);
       for (const row of orphans.filter((o) => o.kind === 'application')) {
-        await reconcileRow(client, row);
+        const eff = await reconcileRow(client, row);
+        if (row.jobPostingId === dupVacancyId) ghostEffects = eff;
+        if (row.jobPostingId === orphanVacancyId) orphanEffects = eff;
       }
       await client.query('COMMIT');
     } finally {
@@ -242,7 +254,7 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     expect(card.contactNotesCount).toBe(1);
   });
 
-  it('rollback devolve a órfã ao cadastro de origem', async () => {
+  it('rollback devolve a órfã — e as notas junto com ela', async () => {
     const orphanRow = {
       kind: 'application' as const,
       rowId: orphanWjaId,
@@ -260,7 +272,7 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     try {
       await client.query('BEGIN');
       await bypassRegisteredGuard(client);
-      const reverted = await rollbackRow(client, orphanRow);
+      const reverted = await rollbackRow(client, orphanRow, orphanEffects);
       expect(reverted).toBe(true);
       await client.query('COMMIT');
     } finally {
@@ -271,5 +283,86 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
       orphanWjaId,
     ]);
     expect(after.rows[0].worker_id).toBe(mergedId);
+  });
+
+  it('rollback da duplicada recria a linha E devolve trilha e notas', async () => {
+    const ghostRow = {
+      kind: 'application' as const,
+      rowId: ghostWjaId,
+      deadWorkerId: mergedId,
+      canonicalWorkerId: survivorId,
+      jobPostingId: dupVacancyId,
+      vacancyTitle: null,
+      stage: null,
+      matchScore: null,
+      duplicate: true,
+      snapshot: ghostSnapshot,
+    };
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await bypassRegisteredGuard(client);
+      expect(await rollbackRow(client, ghostRow, ghostEffects)).toBe(true);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    // A linha voltou com o mesmo id...
+    const back = await pool.query(
+      `SELECT worker_id FROM worker_job_applications WHERE id = $1`,
+      [ghostWjaId],
+    );
+    expect(back.rows[0].worker_id).toBe(mergedId);
+
+    // ...e a trilha e a nota voltaram com ela, em vez de ficarem no candidato
+    // errado (o que deixaria o estado PIOR que antes do backfill).
+    const history = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM worker_job_application_stage_history WHERE application_id = $1`,
+      [ghostWjaId],
+    );
+    expect(history.rows[0].n).toBeGreaterThan(0);
+
+    const note = await pool.query(
+      `SELECT worker_id, worker_job_application_id FROM wja_contact_notes
+        WHERE job_posting_id = $1`,
+      [dupVacancyId],
+    );
+    expect(note.rows[0].worker_id).toBe(mergedId);
+    expect(note.rows[0].worker_job_application_id).toBe(ghostWjaId);
+  });
+
+  it('marcada como duplicada sem canônico na vaga → falha, não apaga', async () => {
+    // Estado impossível de propósito: simula CSV antigo ou merge concorrente.
+    // O perigo é o DELETE cascatear a ÚNICA postulação da pessoa.
+    const bogus = {
+      kind: 'application' as const,
+      rowId: orphanWjaId,
+      deadWorkerId: mergedId,
+      canonicalWorkerId: survivorId,
+      jobPostingId: orphanVacancyId, // canônico NÃO tem linha aqui
+      vacancyTitle: null,
+      stage: null,
+      matchScore: null,
+      duplicate: true,
+      snapshot: {},
+    };
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await bypassRegisteredGuard(client);
+      await expect(reconcileRow(client, bogus)).rejects.toThrow(ReconcileRowError);
+      await client.query('ROLLBACK');
+    } finally {
+      client.release();
+    }
+
+    const still = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM worker_job_applications WHERE id = $1`,
+      [orphanWjaId],
+    );
+    expect(still.rows[0].n).toBe(1);
   });
 });
