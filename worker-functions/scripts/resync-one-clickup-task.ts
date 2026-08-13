@@ -11,6 +11,9 @@
  * card que mudou. Este script força esse reprocesso, com raio de ação de 1 linha.
  *
  * Pré-requisitos: CLICKUP_API_TOKEN e DATABASE_URL no ambiente.
+ * Para espelhar também os chat IDs de WhatsApp (Chat ID Familia/Equipo →
+ * patient_chat_ids), exportar PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED=true —
+ * sem a flag esse passo é um no-op silencioso.
  *
  * Uso:
  *   npx ts-node -r tsconfig-paths/register scripts/resync-one-clickup-task.ts <taskId> [--live]

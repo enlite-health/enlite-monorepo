@@ -321,10 +321,15 @@ describe('PatientChatIdsRepository', () => {
 
       await new PatientChatIdsRepository(pool).applyChatIds(PATIENT, { FAMILY: '1@g.us' }, CATALOG);
 
-      const touched = clientQuery.mock.calls
-        .filter(([sql]) => String(sql).includes('patient_chat_ids') && !String(sql).startsWith('SELECT role'))
-        .map(([, params]) => (params as string[])[1]);
-      expect(touched).toEqual(['FAMILY']);
+      // A invariante é sobre PAPÉIS: só o papel presente no body é tocado
+      // (o mesmo papel pode gerar mais de um statement — o DELETE condicional
+      // de reescrita + o INSERT — e isso não fere a garantia).
+      const touchedRoles = new Set(
+        clientQuery.mock.calls
+          .filter(([sql]) => String(sql).includes('patient_chat_ids') && !String(sql).startsWith('SELECT role'))
+          .map(([, params]) => (params as string[])[1]),
+      );
+      expect([...touchedRoles]).toEqual(['FAMILY']);
     });
 
     it('toca updated_at do paciente e devolve o estado FINAL lido do banco', async () => {

@@ -625,4 +625,218 @@ describe('POST /api/webhooks/clickup/patient (E2E with real DB)', () => {
       expect(rows).toHaveLength(0);
     });
   });
+
+// ──────────────────────────────────────────────────────────────────
+// Espelho dos chat IDs (ClickUp → patient_chat_ids, task 86ak04ygu)
+//
+// Roda contra o Postgres REAL: exercita o CHECK de formato, o índice
+// único parcial de exclusividade e o ON CONFLICT do applyChatIds —
+// invariantes que mock não enxerga.
+// ──────────────────────────────────────────────────────────────────
+
+describe('Espelho dos chat IDs no webhook (E2E with real DB)', () => {
+  const FAM_JID   = '120363900000000001@g.us';
+  const EQ_JID    = '120363900000000002@g.us';
+  const FLAG      = 'PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED';
+  let   flagBefore: string | undefined;
+
+  beforeAll(() => {
+    flagBefore = process.env[FLAG];
+    process.env[FLAG] = 'true';
+  });
+
+  afterAll(() => {
+    if (flagBefore === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = flagBefore;
+  });
+
+  function withChatIds(
+    task: ReturnType<typeof makeClickUpTask>,
+    chat: { familia?: string; equipo?: string },
+  ) {
+    task.custom_fields.push(
+      { id: 'cf-chat-fam', name: 'Chat ID Familia', type: 'short_text', value: chat.familia ?? null },
+      { id: 'cf-chat-eq',  name: 'Chat ID Equipo',  type: 'short_text', value: chat.equipo ?? null },
+    );
+    return task;
+  }
+
+  async function postWebhook(taskId: string): Promise<supertest.Response> {
+    const { bodyJson, signature } = makeSignedWebhookBody({
+      event:      'taskUpdated',
+      webhook_id: 'wh-test',
+      task_id:    taskId,
+      list_id:    PATIENT_LIST_ID,
+    });
+    return supertest(app)
+      .post('/api/webhooks/clickup/patient')
+      .set('Content-Type', 'application/json')
+      .set('X-Signature', signature)
+      .send(bodyJson);
+  }
+
+  async function chatRowsFor(taskId: string): Promise<{ role: string; chat_id: string; updated_at: Date }[]> {
+    const { rows } = await pool.query(
+      `SELECT c.role, c.chat_id, c.updated_at
+         FROM patient_chat_ids c
+         JOIN patients p ON p.id = c.patient_id
+        WHERE p.clickup_task_id = $1
+        ORDER BY c.role`,
+      [taskId],
+    );
+    return rows;
+  }
+
+  it('C1. webhook com os 2 campos → 2 linhas em patient_chat_ids, papéis certos', async () => {
+    const taskId = `${TASK_PREFIX}chat-basic`;
+    const task   = withChatIds(makeClickUpTask(taskId, { caseNumber: 9101 }), {
+      familia: FAM_JID,
+      equipo:  EQ_JID,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+
+    const res = await postWebhook(taskId);
+    expect(res.status).toBe(200);
+    expect(res.body.result.kind).toBe('CREATED');
+
+    const rows = await chatRowsFor(taskId);
+    expect(rows.map(r => ({ role: r.role, chat_id: r.chat_id }))).toEqual([
+      { role: 'FAMILY',    chat_id: FAM_JID },
+      { role: 'PROVIDERS', chat_id: EQ_JID },
+    ]);
+  });
+
+  it('C2. re-disparo idêntico → idempotente: updated_at NÃO muda (sem churn no reconcile de 10min)', async () => {
+    const taskId = `${TASK_PREFIX}chat-idem`;
+    const task   = withChatIds(makeClickUpTask(taskId, { caseNumber: 9102 }), { familia: FAM_JID });
+
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+    await postWebhook(taskId);
+    const before = await chatRowsFor(taskId);
+    expect(before).toHaveLength(1);
+
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+    await postWebhook(taskId);
+    const after = await chatRowsFor(taskId);
+
+    expect(after).toHaveLength(1);
+    expect(after[0].updated_at).toEqual(before[0].updated_at);
+  });
+
+  it('C3. correção no ClickUp propaga: valor novo substitui o antigo no mesmo papel', async () => {
+    const taskId = `${TASK_PREFIX}chat-fix`;
+    const v1 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9103 }), { familia: FAM_JID });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v1 });
+    await postWebhook(taskId);
+
+    const CORRECTED = '120363900000000003@g.us';
+    const v2 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9103 }), { familia: CORRECTED });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v2 });
+    await postWebhook(taskId);
+
+    const rows = await chatRowsFor(taskId);
+    expect(rows).toEqual([expect.objectContaining({ role: 'FAMILY', chat_id: CORRECTED })]);
+  });
+
+  it('C4. grupo já preso a OUTRO paciente (papel exclusivo): sync responde 200, dono original mantém o grupo', async () => {
+    const taskA = `${TASK_PREFIX}chat-owner`;
+    const a = withChatIds(makeClickUpTask(taskA, { caseNumber: 9104 }), { familia: FAM_JID });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => a });
+    await postWebhook(taskA);
+
+    // Outro paciente tenta o MESMO grupo da família + um grupo livre de equipo.
+    const taskB = `${TASK_PREFIX}chat-thief`;
+    const b = withChatIds(makeClickUpTask(taskB, { caseNumber: 9105 }), {
+      familia: FAM_JID,
+      equipo:  EQ_JID,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => b });
+    const res = await postWebhook(taskB);
+
+    // A ficha do paciente B sincroniza mesmo assim (conflito não derruba o sync)…
+    expect(res.status).toBe(200);
+    expect(res.body.result.kind).toBe('CREATED');
+
+    // …o grupo disputado fica com o dono original…
+    expect(await chatRowsFor(taskA)).toEqual([
+      expect.objectContaining({ role: 'FAMILY', chat_id: FAM_JID }),
+    ]);
+    // …e o paciente B fica só com o papel que não conflitou.
+    expect(await chatRowsFor(taskB)).toEqual([
+      expect.objectContaining({ role: 'PROVIDERS', chat_id: EQ_JID }),
+    ]);
+  });
+
+  it('C5. valor inválido no ClickUp (@c.us) não grava nada e não derruba o sync do paciente', async () => {
+    const taskId = `${TASK_PREFIX}chat-bad`;
+    const task   = withChatIds(makeClickUpTask(taskId, { caseNumber: 9106 }), {
+      familia: '5491122334455@c.us',
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+
+    const res = await postWebhook(taskId);
+    expect(res.status).toBe(200);
+    expect(res.body.result.kind).toBe('CREATED');
+    expect(await chatRowsFor(taskId)).toHaveLength(0);
+  });
+
+  it('C7. SWAP de papéis no ClickUp (família↔equipo trocados) aplica atômico, sem erro', async () => {
+    const taskId = `${TASK_PREFIX}chat-swap`;
+    const v1 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9108 }), {
+      familia: FAM_JID,
+      equipo:  EQ_JID,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v1 });
+    await postWebhook(taskId);
+
+    // Operador troca os valores de campo no ClickUp.
+    const v2 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9108 }), {
+      familia: EQ_JID,
+      equipo:  FAM_JID,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v2 });
+    const res = await postWebhook(taskId);
+    expect(res.status).toBe(200);
+
+    const rows = await chatRowsFor(taskId);
+    expect(rows.map(r => ({ role: r.role, chat_id: r.chat_id }))).toEqual([
+      { role: 'FAMILY',    chat_id: EQ_JID },
+      { role: 'PROVIDERS', chat_id: FAM_JID },
+    ]);
+  });
+
+  it('C8. grupo movido de campo (equipo→familia, equipo esvaziado) migra de papel', async () => {
+    const taskId = `${TASK_PREFIX}chat-move`;
+    const v1 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9109 }), { equipo: FAM_JID });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v1 });
+    await postWebhook(taskId);
+    expect(await chatRowsFor(taskId)).toEqual([
+      expect.objectContaining({ role: 'PROVIDERS', chat_id: FAM_JID }),
+    ]);
+
+    const v2 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9109 }), { familia: FAM_JID });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v2 });
+    await postWebhook(taskId);
+
+    expect(await chatRowsFor(taskId)).toEqual([
+      expect.objectContaining({ role: 'FAMILY', chat_id: FAM_JID }),
+    ]);
+  });
+
+  it('C6. flag desligada → paciente sincroniza, chat ids NÃO', async () => {
+    process.env[FLAG] = 'false';
+    try {
+      const taskId = `${TASK_PREFIX}chat-off`;
+      const task   = withChatIds(makeClickUpTask(taskId, { caseNumber: 9107 }), { familia: FAM_JID });
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+
+      const res = await postWebhook(taskId);
+      expect(res.status).toBe(200);
+      expect(res.body.result.kind).toBe('CREATED');
+      expect(await chatRowsFor(taskId)).toHaveLength(0);
+    } finally {
+      process.env[FLAG] = 'true';
+    }
+  });
+});
 });
