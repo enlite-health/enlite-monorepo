@@ -6,21 +6,8 @@
  */
 
 // Domain types
-export type { Blacklist, CreateBlacklistDTO } from './domain/Blacklist';
 export type { Publication, CreatePublicationDTO } from './domain/Publication';
 
 // Infrastructure — repositories (named exports)
-export {
-  PlacementAuditRepository,
-  CoordinatorScheduleRepository,
-  DocExpiryRepository,
-} from './infrastructure/AuditRepositories';
-
-export { BlacklistRepository } from './infrastructure/BlacklistRepository';
+export { DocExpiryRepository } from './infrastructure/AuditRepositories';
 export { PublicationRepository } from './infrastructure/PublicationRepository';
-
-// DTOs exported by AuditRepositories
-export type {
-  CreatePlacementAuditDTO,
-  CreateCoordinatorScheduleDTO,
-} from './infrastructure/AuditRepositories';

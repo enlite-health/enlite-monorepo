@@ -4,14 +4,18 @@ import { AuthMiddleware } from '@modules/identity';
 
 /**
  * Worker status & encuadre routes — /api/workers/* and /api/cases/*
- * All endpoints require authentication.
+ *
+ * Staff-only: são dashboards de operação, escrita de status de funil e leituras
+ * cross-worker por :id — nada aqui é "o worker sobre si mesmo" (isso vive em
+ * /api/workers/me/*). Com requireAuth() genérico, qualquer worker autenticado
+ * alcançava tecnicamente escrita de funil de terceiros.
  */
 export function createWorkerEncuadreRoutes(
   encuadreController: EncuadreController,
   authMiddleware: AuthMiddleware,
 ): Router {
   const router = Router();
-  const auth = authMiddleware.requireAuth();
+  const auth = authMiddleware.requireStaff();
 
   router.get('/workers/status-dashboard', auth, (req: Request, res: Response) =>
     encuadreController.getStatusDashboard(req, res),

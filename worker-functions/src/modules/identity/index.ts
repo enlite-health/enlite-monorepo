@@ -60,10 +60,6 @@ export { DeleteUserUseCase } from './application/DeleteUserUseCase';
 export type { DeleteUserDTO } from './application/DeleteUserUseCase';
 export { DeleteUserByEmailUseCase } from './application/DeleteUserByEmailUseCase';
 export type { DeleteUserByEmailDTO } from './application/DeleteUserByEmailUseCase';
-export { CreateUserWithRoleUseCase } from './application/CreateUserWithRoleUseCase';
-export type { CreateUserInput } from './application/CreateUserWithRoleUseCase';
-export { GetUserCompleteUseCase } from './application/GetUserCompleteUseCase';
-export type { UserComplete } from './application/GetUserCompleteUseCase';
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 export { AdminController } from './interfaces/controllers/AdminController';
