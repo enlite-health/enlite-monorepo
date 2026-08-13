@@ -11,7 +11,9 @@
 import * as functions from 'firebase-functions';
 import type { ClickUpTask } from '../infrastructure/clickup/ClickUpTask';
 import type { ClickUpPatientMapper } from '../infrastructure/clickup/ClickUpPatientMapper';
+import { extractPatientChatIds } from '../infrastructure/clickup/ClickUpPatientMapper';
 import type { PatientService } from '../../case/application/PatientService';
+import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
 
 // ── Result types ──────────────────────────────────────────────────────────────
 
@@ -27,6 +29,13 @@ export type SyncPatientResult =
 export interface SyncPatientDeps {
   mapper: ClickUpPatientMapper;
   patientService: PatientService;
+  /**
+   * Espelha os campos "Chat ID Familia"/"Chat ID Equipo" do ClickUp em
+   * `patient_chat_ids` (task 86ak04ygu). Opcional só para injeção em teste —
+   * quando ausente, o use case constrói o real. O passo inteiro fica atrás de
+   * PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED.
+   */
+  chatIdsService?: PatientChatIdsService;
 }
 
 export interface SyncPatientOptions {
@@ -150,6 +159,8 @@ export class SyncPatientFromClickUpTaskUseCase {
 
       const kind: 'CREATED' | 'UPDATED' = result.created ? 'CREATED' : 'UPDATED';
 
+      await this.syncChatIds(task, result.id, cid);
+
       // PII: não logar patientName aqui — vai pro Cloud Logging.
       // patientName fica apenas no SyncPatientResult retornado pro CLI script.
       functions.logger.info('clickup_patient_sync.completed', {
@@ -172,6 +183,56 @@ export class SyncPatientFromClickUpTaskUseCase {
         correlationId: cid,
       });
       return { kind: 'ERROR', taskId, error };
+    }
+  }
+
+  /**
+   * Espelha os grupos de WhatsApp do ClickUp em `patient_chat_ids`.
+   *
+   * Best-effort DEPOIS do upsert do paciente: um grupo em disputa (409) ou um
+   * valor torto no ClickUp não pode derrubar a sincronização da ficha — por
+   * isso os conflitos viram log estruturado, não exceção. Vazio no ClickUp
+   * nunca desvincula (ver PatientChatIdsService.syncFromClickUp).
+   */
+  private async syncChatIds(task: ClickUpTask, patientId: string, cid: string): Promise<void> {
+    if (process.env.PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED !== 'true') return;
+
+    const { chatIds, invalid } = extractPatientChatIds(task);
+
+    for (const bad of invalid) {
+      functions.logger.warn('clickup_patient_sync.chat_id_invalid', {
+        taskId: task.id,
+        role:   bad.role,
+        value:  bad.value,
+        correlationId: cid,
+      });
+    }
+    if (Object.keys(chatIds).length === 0) return;
+
+    try {
+      const service = this.deps.chatIdsService ?? new PatientChatIdsService();
+      const outcome = await service.syncFromClickUp(patientId, chatIds);
+
+      if (outcome.applied.length > 0 || outcome.skipped.length > 0) {
+        functions.logger.info('clickup_patient_sync.chat_ids', {
+          taskId: task.id,
+          patientId,
+          applied:   outcome.applied,
+          unchanged: outcome.unchanged,
+          skipped:   outcome.skipped,
+          correlationId: cid,
+        });
+      }
+    } catch (err) {
+      // Falha de infraestrutura no passo de chat ids (banco fora etc.): loga e
+      // segue — a ficha do paciente já foi gravada e o reconcile de 10min
+      // reaplica os grupos no próximo ciclo.
+      functions.logger.error('clickup_patient_sync.chat_ids_failed', {
+        taskId: task.id,
+        patientId,
+        error: err instanceof Error ? err.message : String(err),
+        correlationId: cid,
+      });
     }
   }
 }

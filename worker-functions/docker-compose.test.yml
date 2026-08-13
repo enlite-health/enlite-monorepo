@@ -69,6 +69,7 @@ services:
       # construído; se algo tentar sair daqui, vai para o stub, que responde 405
       # a tudo que não seja GET /chats.
       PATIENT_CHAT_LOOKUP_ENABLED: ${PATIENT_CHAT_LOOKUP_ENABLED:-true}
+      PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED: ${PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED:-true}
       PERISKOPE_API_KEY: ${PERISKOPE_API_KEY:-stub-key-e2e-only}
       PERISKOPE_PHONE: ${PERISKOPE_PHONE:-5491100000000}
       PERISKOPE_BASE_URL: ${PERISKOPE_BASE_URL:-http://host.docker.internal:9911/v1}

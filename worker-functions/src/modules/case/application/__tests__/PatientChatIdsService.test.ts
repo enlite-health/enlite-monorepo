@@ -312,3 +312,78 @@ describe('PatientChatIdsService', () => {
     expect(new UnknownChatRoleError(['NEIGHBOURS']).message).toContain('NEIGHBOURS');
   });
 });
+
+describe('PatientChatIdsService.syncFromClickUp', () => {
+  it('paciente inexistente (ou soft-deleted): tudo skipped, nada gravado', async () => {
+    const repo = repoMock({ findById: jest.fn().mockResolvedValue(null) } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY, PROVIDERS });
+
+    expect(out).toEqual({
+      applied: [],
+      unchanged: [],
+      skipped: [
+        { role: 'FAMILY', chatId: FAMILY, reason: 'patient_not_found' },
+        { role: 'PROVIDERS', chatId: PROVIDERS, reason: 'patient_not_found' },
+      ],
+    });
+    expect(repo.applyChatIds).not.toHaveBeenCalled();
+  });
+
+  it('valor já igual ao atual: unchanged, sem NENHUMA escrita (o reconcile roda a cada 10min)', async () => {
+    const repo = repoMock({
+      findById: jest.fn().mockResolvedValue({
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez',
+        chatIds: { FAMILY, PROVIDERS },
+      }),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY, PROVIDERS });
+
+    expect(out).toEqual({ applied: [], unchanged: ['FAMILY', 'PROVIDERS'], skipped: [] });
+    expect(repo.applyChatIds).not.toHaveBeenCalled();
+  });
+
+  it('grava só o diff: papel novo aplica, papel igual fica unchanged', async () => {
+    const repo = repoMock({
+      findById: jest.fn().mockResolvedValue({
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez',
+        chatIds: { FAMILY },
+      }),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY, PROVIDERS });
+
+    expect(out).toEqual({ applied: ['PROVIDERS'], unchanged: ['FAMILY'], skipped: [] });
+    expect(repo.applyChatIds).toHaveBeenCalledTimes(1);
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { PROVIDERS }, expect.any(Map));
+  });
+
+  it('conflito num papel não derruba o outro: salva papel a papel e reporta o perdedor', async () => {
+    // PROVIDERS já é de OUTRO paciente (exclusivo); FAMILY está livre.
+    const repo = repoMock({
+      findLinkedElsewhere: jest.fn().mockResolvedValue([
+        { chatId: PROVIDERS, patientId: OTHER, role: 'PROVIDERS', exclusive: true },
+      ]),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY, PROVIDERS });
+
+    expect(out.applied).toEqual(['FAMILY']);
+    expect(out.skipped).toEqual([
+      { role: 'PROVIDERS', chatId: PROVIDERS, reason: 'ChatIdAlreadyLinkedError' },
+    ]);
+    expect(repo.applyChatIds).toHaveBeenCalledTimes(1);
+    expect(repo.applyChatIds).toHaveBeenCalledWith(PATIENT, { FAMILY }, expect.any(Map));
+  });
+
+  it('erro de infraestrutura NÃO vira skipped: sobe para o chamador', async () => {
+    const repo = repoMock({
+      applyChatIds: jest.fn().mockRejectedValue(new Error('connection refused')),
+    } as never);
+
+    await expect(service(repo).syncFromClickUp(PATIENT, { FAMILY })).rejects.toThrow(
+      'connection refused',
+    );
+  });
+});

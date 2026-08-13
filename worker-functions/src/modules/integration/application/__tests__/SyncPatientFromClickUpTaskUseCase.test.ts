@@ -428,3 +428,138 @@ describe('formatPatientName', () => {
     expect(formatPatientName('', '')).toBe('');
   });
 });
+
+// ── Chat IDs (ClickUp → patient_chat_ids, task 86ak04ygu) ─────────────────────
+
+describe('SyncPatientFromClickUpTaskUseCase — espelho dos chat IDs', () => {
+  const FAM_JID = '120363428306019892@g.us';
+  const EQ_JID  = '120363408030915489@g.us';
+
+  function chatIdsServiceMock(result?: {
+    applied: string[]; unchanged: string[]; skipped: { role: string; chatId: string; reason: string }[];
+  }) {
+    return {
+      syncFromClickUp: jest.fn().mockResolvedValue(
+        result ?? { applied: ['FAMILY'], unchanged: [], skipped: [] },
+      ),
+    };
+  }
+
+  function taskWithChatIds(extra: ClickUpTaskCustomField[] = []): ClickUpTask {
+    return makeTask({
+      custom_fields: [
+        makeCf('Nombre de Paciente',    'Ana'),
+        makeCf('Apellido del Paciente', 'García'),
+        makeCf('Chat ID Familia',       FAM_JID),
+        makeCf('Chat ID Equipo',        EQ_JID),
+        ...extra,
+      ],
+    });
+  }
+
+  const FLAG = 'PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED';
+  let flagBefore: string | undefined;
+
+  beforeEach(() => {
+    flagBefore = process.env[FLAG];
+    process.env[FLAG] = 'true';
+  });
+
+  afterEach(() => {
+    if (flagBefore === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = flagBefore;
+  });
+
+  it('com a flag ligada, espelha os grupos DEPOIS do upsert, no paciente certo', async () => {
+    const chatIds = chatIdsServiceMock();
+    const deps = makeDeps({ mapResult: makeUpsertInput(), upsertResult: { id: 'patient-001', created: false, flagged: false } });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    const result = await useCase.execute(taskWithChatIds());
+
+    expect(result.kind).toBe('UPDATED');
+    expect(chatIds.syncFromClickUp).toHaveBeenCalledWith('patient-001', {
+      FAMILY:    FAM_JID,
+      PROVIDERS: EQ_JID,
+    });
+  });
+
+  it('flag desligada: nem toca no serviço de chat ids', async () => {
+    process.env[FLAG] = 'false';
+    const chatIds = chatIdsServiceMock();
+    const deps = makeDeps({ mapResult: makeUpsertInput() });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    const result = await useCase.execute(taskWithChatIds());
+
+    expect(result.kind).toBe('CREATED');
+    expect(chatIds.syncFromClickUp).not.toHaveBeenCalled();
+  });
+
+  it('task sem campo de chat id: não chama o serviço (nada a espelhar)', async () => {
+    const chatIds = chatIdsServiceMock();
+    const deps = makeDeps({ mapResult: makeUpsertInput() });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    await useCase.execute(makeTask());
+
+    expect(chatIds.syncFromClickUp).not.toHaveBeenCalled();
+  });
+
+  it('valor inválido no ClickUp vira warn e NÃO chega ao serviço; o válido segue', async () => {
+    const chatIds = chatIdsServiceMock();
+    const deps = makeDeps({ mapResult: makeUpsertInput() });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    await useCase.execute(makeTask({
+      custom_fields: [
+        makeCf('Nombre de Paciente',    'Ana'),
+        makeCf('Apellido del Paciente', 'García'),
+        makeCf('Chat ID Familia',       '5491122334455@c.us'), // 1-1, inválido
+        makeCf('Chat ID Equipo',        EQ_JID),
+      ],
+    }));
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      'clickup_patient_sync.chat_id_invalid',
+      expect.objectContaining({ role: 'FAMILY', value: '5491122334455@c.us' }),
+    );
+    expect(chatIds.syncFromClickUp).toHaveBeenCalledWith('patient-001', { PROVIDERS: EQ_JID });
+  });
+
+  it('conflito reportado pelo serviço vira log estruturado e o sync do paciente NÃO falha', async () => {
+    const chatIds = chatIdsServiceMock({
+      applied: [],
+      unchanged: [],
+      skipped: [{ role: 'FAMILY', chatId: FAM_JID, reason: 'ChatIdAlreadyLinkedError' }],
+    });
+    const deps = makeDeps({ mapResult: makeUpsertInput() });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    const result = await useCase.execute(taskWithChatIds());
+
+    expect(result.kind).toBe('CREATED');
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      'clickup_patient_sync.chat_ids',
+      expect.objectContaining({
+        skipped: [{ role: 'FAMILY', chatId: FAM_JID, reason: 'ChatIdAlreadyLinkedError' }],
+      }),
+    );
+  });
+
+  it('erro de infraestrutura no passo de chat ids: loga error e o resultado do sync fica de pé', async () => {
+    const chatIds = {
+      syncFromClickUp: jest.fn().mockRejectedValue(new Error('pool exhausted')),
+    };
+    const deps = makeDeps({ mapResult: makeUpsertInput() });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    const result = await useCase.execute(taskWithChatIds());
+
+    expect(result.kind).toBe('CREATED');
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'clickup_patient_sync.chat_ids_failed',
+      expect.objectContaining({ error: 'pool exhausted' }),
+    );
+  });
+});

@@ -34,7 +34,7 @@
  *       → slot uses fresh location values (NOT stale legacy)
  */
 
-import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { ClickUpPatientMapper, extractCaseNumber, extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
 // ── Mock ClickUpFieldResolver ─────────────────────────────────────────────────
@@ -1080,5 +1080,83 @@ describe('extractCaseNumber', () => {
 
   it('extracts first digit sequence from "abc12def"', () => {
     expect(extractCaseNumber(taskWithCf('abc12def'))).toBe(12);
+  });
+});
+
+// ── extractPatientChatIds unit tests ──────────────────────────────────────────
+
+describe('extractPatientChatIds', () => {
+  const FAM_JID  = '120363428306019892@g.us';
+  const EQ_JID   = '13512345678901-1600000000@g.us'; // formato legado criador-timestamp
+  const DM_JID   = '5491122334455@c.us';             // conversa 1-1, NUNCA entra
+
+  function chatTask(fields: CfEntry[]): ClickUpTask {
+    return makeTask('task-chat', 'Pérez, Juan', 'Activo', fields);
+  }
+
+  it('extrai os dois campos válidos, mapeados para os papéis do catálogo', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: FAM_JID },
+      { name: 'Chat ID Equipo',  value: EQ_JID },
+    ]));
+    expect(out.chatIds).toEqual({ FAMILY: FAM_JID, PROVIDERS: EQ_JID });
+    expect(out.invalid).toEqual([]);
+  });
+
+  it('campo ausente ou vazio fica FORA do mapa (nunca vira null — vazio não desvincula)', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: FAM_JID },
+      { name: 'Chat ID Equipo',  value: '   ' },
+    ]));
+    expect(out.chatIds).toEqual({ FAMILY: FAM_JID });
+    expect(out.invalid).toEqual([]);
+  });
+
+  it('valor com espaços nas pontas é aparado antes de validar', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: `  ${FAM_JID}  ` },
+    ]));
+    expect(out.chatIds).toEqual({ FAMILY: FAM_JID });
+  });
+
+  it('conversa 1-1 (@c.us) é inválida — mesma trava do CHECK da migration 261', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: DM_JID },
+    ]));
+    expect(out.chatIds).toEqual({});
+    expect(out.invalid).toEqual([{ role: 'FAMILY', value: DM_JID }]);
+  });
+
+  it('texto torto e valor gigante são inválidos, sem contaminar o campo bom', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: 'ver con Marcel' },
+      { name: 'Chat ID Equipo',  value: EQ_JID },
+    ]));
+    expect(out.chatIds).toEqual({ PROVIDERS: EQ_JID });
+    expect(out.invalid).toEqual([{ role: 'FAMILY', value: 'ver con Marcel' }]);
+
+    const tooLong = `${'9'.repeat(70)}@g.us`;
+    const out2 = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Equipo', value: tooLong },
+    ]));
+    expect(out2.chatIds).toEqual({});
+    expect(out2.invalid).toEqual([{ role: 'PROVIDERS', value: tooLong }]);
+  });
+
+  it('valor não-string (null, número, objeto) é ignorado em silêncio', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: null },
+      { name: 'Chat ID Equipo',  value: 12345 },
+    ]));
+    expect(out.chatIds).toEqual({});
+    expect(out.invalid).toEqual([]);
+  });
+
+  it('task sem os campos devolve mapa vazio', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Nombre de Paciente', value: 'Juan' },
+    ]));
+    expect(out.chatIds).toEqual({});
+    expect(out.invalid).toEqual([]);
   });
 });

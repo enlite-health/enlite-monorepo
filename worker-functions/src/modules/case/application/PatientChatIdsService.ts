@@ -143,4 +143,84 @@ export class PatientChatIdsService {
 
     return this.repo.applyChatIds(patientId, changes, catalog);
   }
+
+  /**
+   * Espelha no Postgres os grupos que o ClickUp traz para este paciente.
+   *
+   * Semântica própria de SYNC, diferente do `update` da tela:
+   *   - Só recebe papéis PREENCHIDOS no ClickUp — campo vazio lá NUNCA
+   *     desvincula aqui (a plataforma pode ter vinculado pela tela um papel que
+   *     o ClickUp nem conhece, e o sync não pode apagar o que não é dele).
+   *   - Papel cujo valor já é o atual vira `unchanged` SEM tocar o banco: o
+   *     reconcile roda a cada 10min sobre a base inteira, e regravar 242
+   *     vínculos por ciclo destruiria o significado de `updated_at`.
+   *   - Conflito NÃO estoura: o chamador é o sync do paciente, e um grupo em
+   *     disputa não pode derrubar a atualização do resto da ficha. A gravação
+   *     tenta primeiro o mapa inteiro (mantém o caso "swap de papéis" atômico);
+   *     se falhar por conflito, tenta papel a papel para salvar os que não
+   *     conflitam, e devolve os perdedores em `skipped` com o motivo.
+   */
+  async syncFromClickUp(
+    patientId: string,
+    wanted: Record<string, string>,
+  ): Promise<{
+    applied: string[];
+    unchanged: string[];
+    skipped: { role: string; chatId: string; reason: string }[];
+  }> {
+    const patient = await this.repo.findById(patientId);
+    if (!patient) {
+      return {
+        applied: [],
+        unchanged: [],
+        skipped: Object.entries(wanted).map(([role, chatId]) => ({
+          role,
+          chatId,
+          reason: 'patient_not_found',
+        })),
+      };
+    }
+
+    const unchanged = Object.keys(wanted).filter(role => patient.chatIds[role] === wanted[role]);
+    const diff = Object.fromEntries(
+      Object.entries(wanted).filter(([role]) => !unchanged.includes(role)),
+    );
+    if (Object.keys(diff).length === 0) {
+      return { applied: [], unchanged, skipped: [] };
+    }
+
+    try {
+      await this.update(patientId, diff);
+      return { applied: Object.keys(diff), unchanged, skipped: [] };
+    } catch (err) {
+      if (!isChatIdSyncConflict(err)) throw err;
+    }
+
+    // O mapa inteiro conflitou. Papel a papel: salva os que passam sozinhos.
+    const applied: string[] = [];
+    const skipped: { role: string; chatId: string; reason: string }[] = [];
+    for (const [role, chatId] of Object.entries(diff)) {
+      try {
+        await this.update(patientId, { [role]: chatId });
+        applied.push(role);
+      } catch (err) {
+        if (!isChatIdSyncConflict(err)) throw err;
+        skipped.push({ role, chatId, reason: (err as Error).name });
+      }
+    }
+    return { applied, unchanged, skipped };
+  }
+}
+
+/**
+ * Conflitos ESPERADOS no sync (grupo em disputa, papel fora do catálogo) —
+ * viram `skipped` com motivo. Qualquer outro erro (banco fora, bug) sobe:
+ * engoli-lo transformaria falha de infraestrutura em "sincronizado".
+ */
+function isChatIdSyncConflict(err: unknown): boolean {
+  return (
+    err instanceof ChatIdAlreadyLinkedError ||
+    err instanceof ChatIdOwnedBySamePatientRoleError ||
+    err instanceof UnknownChatRoleError
+  );
 }
