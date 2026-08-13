@@ -6,14 +6,18 @@
 --
 -- Particionada por mês desde o dia 1 (HIPAA pede 6 anos de retenção; particionar
 -- depois é caro). Partição DEFAULT como rede: INSERT de audit NUNCA pode falhar por
--- partição faltante — quando a janela pré-criada esgotar, os dados caem na DEFAULT e
--- um ciclo de manutenção recria janelas (runbook task 5.2).
+-- partição faltante. ⚠️ Runbook (task 5.2), duas regras da manutenção de janela:
+--   1. ANTES de criar partição de um mês que já tenha linhas na DEFAULT, drenar a
+--      DEFAULT (senão o CREATE PARTITION falha por conflito de constraint);
+--   2. TODA partição nova criada fora desta migration precisa repetir o REVOKE
+--      abaixo — os default privileges da 269 re-concedem DML a cada tabela nova.
 --
 -- lex C2: a trilha É dado pessoal (liga operador a paciente). Append-only para as
--- roles do app (INSERT, sem UPDATE/DELETE/TRUNCATE) e SELECT NEGADO a app_runtime/
--- app_system — leitura só pelo owner (admin/auditoria, vista da task 5.3). NUNCA
--- expor à Luz nem ao conector claude.ai sem capability nova explicitamente aprovada.
--- Zero PII clínica nas linhas: só ids/tipos/ação/origem.
+-- roles do app (INSERT via tabela-mãe, sem UPDATE/DELETE/TRUNCATE) e SELECT NEGADO —
+-- leitura só pelo owner (admin/auditoria, vista da task 5.3). O REVOKE cobre a mãe
+-- E cada partição: o ACL checado é o da relação NOMEADA na query, então partição
+-- esquecida = trilha legível/apagável por nome direto. NUNCA expor à Luz nem ao
+-- conector claude.ai sem capability nova explicitamente aprovada. Zero PII clínica.
 
 CREATE TABLE IF NOT EXISTS resource_access_log (
   id BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -32,10 +36,11 @@ COMMENT ON TABLE resource_access_log IS
 COMMENT ON COLUMN resource_access_log.origin IS
   'Como o operador alcançou o recurso: same_country | group_grant (via group_country_scopes) | system.';
 
--- Janela inicial: 2026-08 até 2027-12 (17 meses) + DEFAULT como rede de segurança.
+-- Janela inicial: 2026-01 até 2027-12 (24 meses — os 7 meses retroativos são colchão
+-- para occurred_at atrasado/backfill não envenenar a DEFAULT) + DEFAULT como rede.
 DO $$
 DECLARE
-  m DATE := DATE '2026-08-01';
+  m DATE := DATE '2026-01-01';
   part_name TEXT;
 BEGIN
   WHILE m < DATE '2028-01-01' LOOP
@@ -58,7 +63,23 @@ CREATE INDEX IF NOT EXISTS idx_resource_access_log_resource
 CREATE INDEX IF NOT EXISTS idx_resource_access_log_operator
   ON resource_access_log (operator_uid, occurred_at);
 
--- Append-only para as roles do app: desfaz o grant amplo da 269 e deixa só INSERT.
--- (O acesso via tabela-mãe é governado pela ACL da mãe; as partições ficam com o owner.)
+-- Append-only de verdade: revoga na MÃE e em CADA partição (as partições nasceram
+-- depois da 269, então cada uma carrega grant próprio dos default privileges — o
+-- REVOKE só na mãe deixaria `SELECT ... FROM resource_access_log_2026_08` aberto).
 REVOKE ALL ON resource_access_log FROM app_runtime, app_system;
 GRANT INSERT ON resource_access_log TO app_runtime, app_system;
+
+DO $$
+DECLARE
+  part RECORD;
+BEGIN
+  FOR part IN
+    SELECT c.relname
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    WHERE i.inhparent = 'resource_access_log'::regclass
+  LOOP
+    EXECUTE format('REVOKE ALL ON %I FROM app_runtime, app_system', part.relname);
+  END LOOP;
+END
+$$;
