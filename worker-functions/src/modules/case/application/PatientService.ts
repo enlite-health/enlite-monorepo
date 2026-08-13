@@ -101,8 +101,13 @@ export type PatientRelatedInput = Pick<
  * Input for native patient creation (migration 251). Same shape as the ClickUp
  * upsert input but WITHOUT clickupTaskId (native rows have none) — origin,
  * status and contactEmail are supplied via the `opts` arg, not here.
+ * `country` is REQUIRED: on the native path the jurisdiction (Ley 25.326 vs
+ * LGPD) must be decided by the caller, never defaulted downstream (D108).
  */
-export type CreateNativePatientInput = Omit<PatientServiceUpsertInput, 'clickupTaskId'>;
+export type CreateNativePatientInput = Omit<
+  PatientServiceUpsertInput,
+  'clickupTaskId' | 'country'
+> & { country: string };
 
 export interface CreateNativePatientOptions {
   origin: NativePatientOrigin;         // 'web_form' | 'admin_manual'

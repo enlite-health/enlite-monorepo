@@ -61,9 +61,15 @@ export type NativePatientOrigin = 'web_form' | 'admin_manual';
  *     PatientService using the SAME KMSEncryptionService as the responsibles)
  */
 export interface PatientIdentityNativeInsertInput
-  extends Omit<PatientIdentityUpsertInput, 'clickupTaskId' | 'status'> {
+  extends Omit<PatientIdentityUpsertInput, 'clickupTaskId' | 'status' | 'country'> {
   origin: NativePatientOrigin;
   status: PatientStatus;
+  /** Jurisdiction of the patient (AR|BR). REQUIRED on the native path: the
+   * country decides the applicable law (Ley 25.326 vs LGPD), so it must be an
+   * explicit decision of the caller, never a silent repository default (D108).
+   * The ClickUp upsert path keeps its 'AR' default — that list IS the AR
+   * operation. */
+  country: string;
   /** KMS ciphertext (base64) of the contact email. Encrypted by the caller. */
   contactEmailEncrypted?: string | null;
 }
@@ -171,7 +177,7 @@ export class PatientIdentityRepository {
     client?: PoolClient,
   ): Promise<{ id: string; created: true }> {
     const executor = client ?? this.pool;
-    const country = input.country ?? 'AR';
+    const country = input.country;
 
     const result = await executor.query<{ id: string }>(
       `INSERT INTO patients (

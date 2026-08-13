@@ -71,7 +71,8 @@ export class CreateLeadUseCase {
         serviceType: [profession],
         // Country drives admission scheduling (timezone/holidays/calendar).
         country: input.country,
-        // Explicit consent to be contacted (Ley 25.326 / LGPD) — the form requires it.
+        // Explicit consent to be contacted (Ley 25.326 / LGPD) — guaranteed
+        // true by publicLeadSchema (z.literal), enforced server-side.
         hasConsent: input.consent,
         responsibles,
       },

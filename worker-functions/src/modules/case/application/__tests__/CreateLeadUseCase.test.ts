@@ -114,6 +114,8 @@ describe('publicLeadSchema', () => {
     requesterType: 'patient',
     email: 'Person@Example.com',
     phone: '+5491133334444',
+    country: 'AR',
+    consent: true,
   };
 
   it('rejects an invalid email', () => {
@@ -136,6 +138,39 @@ describe('publicLeadSchema', () => {
 
   it('rejects an unknown requesterType', () => {
     const parsed = publicLeadSchema.safeParse({ ...base, requesterType: 'agency' });
+    expect(parsed.success).toBe(false);
+  });
+
+  // ── D108/F0: jurisdiction and consent are server-enforced on this public,
+  //    unauthenticated endpoint — the client-side form is NOT the gate. ──────
+
+  it('rejects a body WITHOUT country (no silent AR default)', () => {
+    const { country: _country, ...withoutCountry } = base;
+    const parsed = publicLeadSchema.safeParse(withoutCountry);
+    expect(parsed.success).toBe(false);
+  });
+
+  it('accepts country BR and preserves it', () => {
+    const parsed = publicLeadSchema.safeParse({ ...base, country: 'BR' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.country).toBe('BR');
+    }
+  });
+
+  it('rejects a country outside AR|BR', () => {
+    const parsed = publicLeadSchema.safeParse({ ...base, country: 'US' });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects a body WITHOUT consent (direct POST bypassing the form)', () => {
+    const { consent: _consent, ...withoutConsent } = base;
+    const parsed = publicLeadSchema.safeParse(withoutConsent);
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects consent=false — a non-consenting lead must never be stored', () => {
+    const parsed = publicLeadSchema.safeParse({ ...base, consent: false });
     expect(parsed.success).toBe(false);
   });
 });

@@ -59,6 +59,10 @@ export class CreatePatientUseCase {
     const nativeInput: CreateNativePatientInput = {
       firstName: input.firstName,
       lastName: input.lastName,
+      // The admin panel is the AR operation today and has no country selector
+      // (task 86ajy085e). Deliberate edge default — when the panel serves BR,
+      // this must become a required field of CreatePatientInput.
+      country: 'AR',
       phoneWhatsapp: input.phoneWhatsapp ?? null,
       documentType: input.documentType ?? null,
       documentNumber: input.documentNumber ?? null,
