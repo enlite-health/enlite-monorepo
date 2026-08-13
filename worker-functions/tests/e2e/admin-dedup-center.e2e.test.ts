@@ -290,7 +290,7 @@ beforeAll(async () => {
   // FORA da lista do trigger (worker_id, job_posting_id, application_funnel_stage).
   await pool.query(
     `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-     VALUES ($1::uuid, $2::uuid, 'INITIATED', 'talentum')`,
+     VALUES ($1::uuid, $2::uuid, 'PRE_SCREENING', 'talentum')`,
     [guardGroup.absorbedId, guardGroup.jobPostingId],
   );
   await pool.query(
@@ -723,7 +723,7 @@ describe('POST /api/admin/dedup/merge — guard não bloqueia merge com WJA manu
     await expect(
       pool.query(
         `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-         VALUES ($1::uuid, $2::uuid, 'INITIATED', 'manual')`,
+         VALUES ($1::uuid, $2::uuid, 'PRE_SCREENING', 'manual')`,
         [guardGroup.survivorId, guardGroup.jobPostingId],
       ),
     ).rejects.toThrow(/must be REGISTERED/);

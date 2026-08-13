@@ -238,7 +238,7 @@ describe('Fase 2 — invariante estrutural WJA→encuadre (TD-036)', () => {
     // Inserir WJA para wF (nova WJA sem encuadre pré-existente)
     await pool.query(
       `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-       VALUES ($1, $2, 'INITIATED', 'invariant-test')
+       VALUES ($1, $2, 'PRE_SCREENING', 'invariant-test')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
       [IDS.wF, IDS.vacancy],
     );
@@ -429,7 +429,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // wB: WJA with pre-existing Talentum encuadre
   await pool.query(
     `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-     VALUES ($1, $2, 'INITIATED', 'kf2-seed')
+     VALUES ($1, $2, 'PRE_SCREENING', 'kf2-seed')
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.wB, IDS.vacancy],
   );
