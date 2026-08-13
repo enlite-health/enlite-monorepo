@@ -71,8 +71,19 @@ module "cloud_run_worker_functions_mcp" {
   max_scale             = 3
   min_scale             = 0
 
-  # Ingress restrito: só tráfego VPC interno + serviços GCP do mesmo projeto
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  # Ingress público POR DECISÃO, não por descuido (commit 039b44d4, 21/05/2026):
+  # `internal` entre Cloud Run do MESMO projeto não funciona sem VPC Direct
+  # Egress + Private Google Access (o `*.run.app` não resolve pela VPC), e o
+  # setup não pagava o ROI. A restrição foi movida para a camada da aplicação e
+  # validada E2E: bearer token de 64 chars com hash SHA256 e comparação em tempo
+  # constante contra `mcp-principal-<name>` no Secret Manager · allowlist de
+  # capability por principal (o triage só alcança o que precisa) · audit log de
+  # toda chamada, com sucesso ou falha.
+  #
+  # Este HCL tinha ficado com a intenção ANTERIOR à decisão — o workflow
+  # (`backend-mcp-stg.yml`, e o de prd) já deploya com `--ingress=all
+  # --allow-unauthenticated` desde então. Alinhado em 13/08/2026.
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   cloud_sql_instances = [local.cloud_sql_ar]
 
