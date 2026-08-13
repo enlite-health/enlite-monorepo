@@ -173,28 +173,39 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Applications antes de encuadres: mover a trilha de etapas depende da WJA
-    // canônica, e o encuadre não participa dessa relação.
+    // A query já devolve reparents antes de descartes; aqui só garantimos
+    // applications antes de encuadres dentro de cada grupo, porque mover a
+    // trilha de etapas depende da WJA canônica.
     const ordered = [...rows].sort((a, b) => {
+      if (a.duplicate !== b.duplicate) return a.duplicate ? 1 : -1;
       if (a.kind === b.kind) return 0;
       return a.kind === 'application' ? -1 : 1;
     });
 
+    // O plano vai para o disco ANTES de qualquer escrita: se o processo morrer
+    // no meio, existe um arquivo para reconstruir o que estava sendo feito. O
+    // snapshot é reescrito no fim com os filhos movidos, que só se sabem depois.
     const file = snapshotPath();
+    const entries: SnapshotEntry[] = ordered.map((row) => ({
+      row,
+      effects: { movedHistoryIds: [], movedNoteIds: [] },
+    }));
+    writeSnapshot(file, entries);
+    console.log(`Plano salvo em ${file}`);
+
     const applied: SnapshotEntry[] = [];
-    const { ok, failures } = await runPerRow(
-      pool,
-      ordered.map((row) => ({ row, effects: { movedHistoryIds: [], movedNoteIds: [] } })),
-      async (client, entry) => {
+    let result: { ok: number; failures: string[] };
+    try {
+      result = await runPerRow(pool, entries, async (client, entry) => {
         entry.effects = await reconcileRow(client, entry.row);
-        // Registrado só depois de aplicar: o snapshot descreve o que de fato
-        // mudou, e é isso que o rollback consegue desfazer.
         applied.push(entry);
         return true;
-      },
-    );
-
-    writeSnapshot(file, applied);
+      });
+    } finally {
+      // Mesmo num erro no meio do lote, grava o que chegou a ser aplicado.
+      writeSnapshot(file, applied);
+    }
+    const { ok, failures } = result;
     console.log(`\nAplicadas: ${ok}/${ordered.length}`);
     if (failures.length) console.log(`Falhas (revisar à mão):\n  ${failures.join('\n  ')}`);
     console.log(`Snapshot: ${file}`);

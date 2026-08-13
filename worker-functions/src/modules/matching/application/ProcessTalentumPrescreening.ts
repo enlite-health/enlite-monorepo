@@ -116,9 +116,15 @@ export class ProcessTalentumPrescreening {
     const canonical = await resolveCanonicalWorkerId(this.pool, workerId);
 
     if (!canonical) {
-      console.error(
-        `${TAG} ALERT: cadeia de merge não resolveu para worker=${workerId} ` +
-          `(ciclo ou > ${MAX_MERGE_DEPTH} saltos). Seguindo com o ID cru.`,
+      // reportError, não console.error: escrever deliberadamente num cadastro
+      // possivelmente morto é a exceção que precisa de alarme de verdade — um
+      // log solto ninguém lê.
+      reportError(
+        new Error(
+          `cadeia de merge não resolveu para worker=${workerId} ` +
+            `(ciclo ou > ${MAX_MERGE_DEPTH} saltos); seguindo com o ID cru`,
+        ),
+        { source: 'ProcessTalentumPrescreening:toCanonical', workerId },
       );
       return workerId;
     }

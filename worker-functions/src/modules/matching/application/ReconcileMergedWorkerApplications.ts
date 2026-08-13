@@ -149,7 +149,10 @@ export async function findMergedOrphans(db: {
                PARTITION BY kind, canonical_id, job_posting_id ORDER BY created_at, row_id
              ) > 1) AS duplicate
        FROM raw
-      ORDER BY kind, vacancy_title`,
+      -- Reparent (duplicate=false) antes de descarte: quando o ROW_NUMBER elege
+      -- uma linha morta como a que fica, o descarte da irmã depende dela já
+      -- estar no canônico. row_id desempata para a ordem ser determinística.
+      ORDER BY duplicate, kind, vacancy_title, row_id`,
     [MAX_CHAIN_DEPTH],
   );
 
@@ -244,6 +247,20 @@ async function moveApplicationChildren(
 /** Colunas que identificam a linha ou são mantidas pelo banco — nunca copiadas. */
 const ENCUADRE_KEY_COLUMNS = ['id', 'worker_id', 'job_posting_id', 'created_at', 'updated_at'];
 
+/** Move para a linha que fica o que aponta para o encuadre a ser descartado. */
+async function moveEncuadreChildren(
+  client: PoolClient,
+  row: MergedOrphanRow,
+  survivingEncuadreId: string,
+): Promise<void> {
+  // FK ON DELETE CASCADE (migration 142): resoluções manuais pendentes sumiriam
+  // com o DELETE, e o rollback não teria como recriá-las.
+  await client.query(`UPDATE encuadre_ambiguity_queue SET encuadre_id = $1 WHERE encuadre_id = $2`, [
+    survivingEncuadreId,
+    row.rowId,
+  ]);
+}
+
 /**
  * Copia para o encuadre que fica TODO campo que ele não tem.
  *
@@ -253,13 +270,28 @@ const ENCUADRE_KEY_COLUMNS = ['id', 'worker_id', 'job_posting_id', 'created_at',
  * migration 192 consolidou encuadres duplicados pelo mesmo princípio, elegendo
  * o sobrevivente por quantidade de campos preenchidos.
  */
-async function mergeEncuadreFields(client: PoolClient, row: MergedOrphanRow): Promise<void> {
+async function mergeEncuadreFields(
+  client: PoolClient,
+  row: MergedOrphanRow,
+  survivingEncuadreId: string,
+): Promise<void> {
   const { rows: cols } = await client.query(
-    `SELECT column_name FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = 'encuadres'
-        AND is_generated = 'NEVER' AND identity_generation IS NULL
-        AND column_name <> ALL($1::text[])
-      ORDER BY ordinal_position`,
+    `SELECT c.column_name FROM information_schema.columns c
+      WHERE c.table_schema = 'public' AND c.table_name = 'encuadres'
+        AND c.is_generated = 'NEVER' AND c.identity_generation IS NULL
+        AND c.column_name <> ALL($1::text[])
+        -- Coluna sob índice UNIQUE não pode ser copiada: a linha de origem ainda
+        -- existe neste ponto (o DELETE vem depois), então copiar o dedup_hash
+        -- dela estoura 23505 no próprio UPDATE — e o valor duplicado ainda
+        -- bloquearia o re-INSERT do rollback. Em prod os 30 encuadres têm
+        -- dedup_hash preenchido, ou seja, seria falha garantida.
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_index i
+            JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+           WHERE i.indrelid = 'encuadres'::regclass AND i.indisunique
+             AND a.attname = c.column_name
+        )
+      ORDER BY c.ordinal_position`,
     [ENCUADRE_KEY_COLUMNS],
   );
 
@@ -272,8 +304,8 @@ async function mergeEncuadreFields(client: PoolClient, row: MergedOrphanRow): Pr
   await client.query(
     `UPDATE encuadres dst SET ${assignments}
        FROM encuadres src
-      WHERE src.id = $1 AND dst.worker_id = $2 AND dst.job_posting_id = $3`,
-    [row.rowId, row.canonicalWorkerId, row.jobPostingId],
+      WHERE src.id = $1 AND dst.id = $2`,
+    [row.rowId, survivingEncuadreId],
   );
 }
 
@@ -307,9 +339,28 @@ export async function reconcileRow(
     return { movedHistoryIds: [], movedNoteIds: notes.rows.map((r) => r.id as string) };
   }
 
-  const effects =
-    row.kind === 'application' ? await moveApplicationChildren(client, row) : none;
-  if (row.kind === 'encuadre') await mergeEncuadreFields(client, row);
+  let effects = none;
+
+  if (row.kind === 'application') {
+    effects = await moveApplicationChildren(client, row);
+  } else {
+    // Mesmo fail-closed do lado da postulação: sem a linha que fica, o DELETE
+    // destruiria o único encuadre da pessoa nesta vaga (e, por CASCADE, a fila
+    // de ambiguidade). Nunca apagar sem ter para onde mover.
+    const { rows } = await client.query(
+      `SELECT id FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2`,
+      [row.canonicalWorkerId, row.jobPostingId],
+    );
+    const survivingEncuadreId = rows[0]?.id as string | undefined;
+    if (!survivingEncuadreId) {
+      throw new ReconcileRowError(
+        `marcado como duplicado, mas o canônico ${row.canonicalWorkerId} não tem ` +
+          `encuadre na vaga ${row.jobPostingId} — nada foi apagado`,
+      );
+    }
+    await mergeEncuadreFields(client, row, survivingEncuadreId);
+    await moveEncuadreChildren(client, row, survivingEncuadreId);
+  }
 
   await client.query(`DELETE FROM ${table} WHERE id = $1`, [row.rowId]);
   return effects;

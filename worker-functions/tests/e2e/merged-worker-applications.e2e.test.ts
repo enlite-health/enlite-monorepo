@@ -333,6 +333,59 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     expect(note.rows[0].worker_job_application_id).toBe(ghostWjaId);
   });
 
+  it('encuadre duplicado: funde os campos, preserva o dedup_hash de quem fica e some', async () => {
+    // Os encuadres nascem do trigger trg_ensure_encuadre_on_wja_insert. Aqui a
+    // reconciliação das WJAs já rodou, então recriamos o par para exercitar
+    // especificamente o caminho do encuadre — que tem UNIQUE (worker,vaga) E
+    // UNIQUE (dedup_hash), a combinação que fazia o UPDATE estourar 23505.
+    const ghost = await pool.query(
+      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, recruiter_name, dedup_hash)
+       VALUES ($1, $2, 'Fantasma E2E', 'reclutadora X', $3)
+       ON CONFLICT (worker_id, job_posting_id) DO UPDATE
+         SET recruiter_name = EXCLUDED.recruiter_name
+       RETURNING id`,
+      [mergedId, dupVacancyId, `dedup-${STAMP}-ghost`],
+    );
+    const ghostEncuadreId = ghost.rows[0].id as string;
+
+    const survivor = await pool.query(
+      `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, dedup_hash)
+       VALUES ($1, $2, 'Sobrevivente E2E', $3)
+       ON CONFLICT (worker_id, job_posting_id) DO UPDATE
+         SET worker_raw_name = EXCLUDED.worker_raw_name
+       RETURNING id, dedup_hash`,
+      [survivorId, dupVacancyId, `dedup-${STAMP}-survivor`],
+    );
+    const survivorEncuadreId = survivor.rows[0].id as string;
+    const survivorHash = survivor.rows[0].dedup_hash as string;
+
+    const row = (await findMergedOrphans(pool)).find(
+      (o) => o.kind === 'encuadre' && o.rowId === ghostEncuadreId,
+    );
+    expect(row?.duplicate).toBe(true);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await bypassRegisteredGuard(client);
+      await reconcileRow(client, row!);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const after = await pool.query(
+      `SELECT id, recruiter_name, dedup_hash FROM encuadres WHERE job_posting_id = $1`,
+      [dupVacancyId],
+    );
+    expect(after.rows).toHaveLength(1);
+    expect(after.rows[0].id).toBe(survivorEncuadreId);
+    // campo que só a fantasma tinha foi preservado...
+    expect(after.rows[0].recruiter_name).toBe('reclutadora X');
+    // ...e o dedup_hash NÃO foi copiado (é UNIQUE — copiar estoura 23505).
+    expect(after.rows[0].dedup_hash).toBe(survivorHash);
+  });
+
   it('marcada como duplicada sem canônico na vaga → falha, não apaga', async () => {
     // Estado impossível de propósito: simula CSV antigo ou merge concorrente.
     // O perigo é o DELETE cascatear a ÚNICA postulação da pessoa.

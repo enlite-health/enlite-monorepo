@@ -12,6 +12,12 @@
 import { ProcessTalentumPrescreening, IWorkerLookup, IJobPostingLookup } from '../ProcessTalentumPrescreening';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { TalentumPrescreeningStatus } from '../../domain/TalentumPrescreening';
+import { reportError } from '@shared/logging';
+
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  reportError: jest.fn(),
+}));
 
 function buildPayload(overrides: {
   prescreeningId?: string;
@@ -1117,7 +1123,6 @@ describe('ProcessTalentumPrescreening', () => {
       // duplicata da mesma pessoa, pior que o bug original.
       mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
       mockMergeChain('w-dead', null);
-      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
       await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
 
@@ -1126,8 +1131,12 @@ describe('ProcessTalentumPrescreening', () => {
       expect(
         mockPool.query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO workers')),
       ).toBe(false);
-      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('cadeia de merge não resolveu'));
-      consoleError.mockRestore();
+      // Escrever num cadastro possivelmente morto é exceção: precisa de alarme
+      // de verdade (reportError → Cloud Error Reporting), não console.error.
+      expect(reportError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('cadeia de merge não resolveu') }),
+        expect.objectContaining({ source: 'ProcessTalentumPrescreening:toCanonical' }),
+      );
     });
   });
 });
