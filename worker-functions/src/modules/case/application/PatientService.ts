@@ -21,6 +21,7 @@ import type { ClinicalSpecialty } from '../domain/enums/ClinicalSpecialty';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { Profession } from '../../worker/domain/enums/Profession';
 import { isPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
+import type { AdmissionCountry } from '../../matching/domain/admissionCountries';
 
 /** Strategy for handling missing contact channel during upsert. */
 export type MissingContactStrategy = 'error' | 'flag';
@@ -101,8 +102,11 @@ export type PatientRelatedInput = Pick<
  * Input for native patient creation (migration 251). Same shape as the ClickUp
  * upsert input but WITHOUT clickupTaskId (native rows have none) — origin,
  * status and contactEmail are supplied via the `opts` arg, not here.
+ * `country` required & narrowed — see publicLeadSchema (D108).
  */
-export type CreateNativePatientInput = Omit<PatientServiceUpsertInput, 'clickupTaskId'>;
+export type CreateNativePatientInput = Omit<PatientServiceUpsertInput, 'clickupTaskId'> & {
+  country: AdmissionCountry;
+};
 
 export interface CreateNativePatientOptions {
   origin: NativePatientOrigin;         // 'web_form' | 'admin_manual'

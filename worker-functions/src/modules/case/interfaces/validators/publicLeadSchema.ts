@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Profession } from '../../../worker/domain/enums/Profession';
+import { ADMISSION_COUNTRY_CODES } from '../../../matching/domain/admissionCountries';
 
 /**
  * publicLeadSchema — validates the body of POST /api/public/v1/leads.
@@ -49,11 +50,20 @@ export const publicLeadSchema = z
     email: z.string().trim().toLowerCase().email(),
     phone: z.string().trim().min(1, { message: 'phone is required' }),
     name: z.string().trim().min(1).optional(),
-    /** Country the lead belongs to (drives admission scheduling). Defaults to AR. */
-    country: z.enum(['AR', 'BR']).default('AR'),
-    /** Explicit consent to be contacted (WhatsApp/email). The form requires true;
-     * persisted as patients.has_consent (Ley 25.326 / LGPD). Defaults false. */
-    consent: z.boolean().optional().default(false),
+    /** Country the lead belongs to (drives admission scheduling AND the legal
+     * regime — LGPD vs Ley 25.326). REQUIRED with no default: a lead silently
+     * classified under the wrong jurisdiction is a compliance bug (D108/F0).
+     * This schema is the enforcement point of that rule — internal layers
+     * (CreateNativePatientInput, insertNative) point here. */
+    country: z.enum(ADMISSION_COUNTRY_CODES),
+    /** Explicit consent to be contacted (WhatsApp/email), persisted as
+     * patients.has_consent (Ley 25.326 / LGPD). MUST be true — the form enforces
+     * it client-side, but this is a public unauthenticated endpoint, so the
+     * server is the real gate: a direct POST without consent must 400, never
+     * store a contactable lead (D108/F0). */
+    consent: z.literal(true, {
+      errorMap: () => ({ message: 'explicit consent is required' }),
+    }),
   })
   .strict();
 

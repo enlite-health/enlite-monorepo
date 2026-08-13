@@ -59,6 +59,11 @@ export class CreatePatientUseCase {
     const nativeInput: CreateNativePatientInput = {
       firstName: input.firstName,
       lastName: input.lastName,
+      // Deliberate edge default: the create modal has no country selector yet
+      // (task 86ajy085e) even though the panel FILTERS by AR|BR — a BR patient
+      // created here lands as AR and vanishes from BR-filtered views. When the
+      // selector ships, this must become a required field. See publicLeadSchema (D108).
+      country: 'AR',
       phoneWhatsapp: input.phoneWhatsapp ?? null,
       documentType: input.documentType ?? null,
       documentNumber: input.documentNumber ?? null,

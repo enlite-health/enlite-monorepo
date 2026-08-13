@@ -5,6 +5,10 @@ import type { Sex } from '../domain/enums/Sex';
 import type { DocumentType } from '../domain/enums/DocumentType';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
+import {
+  isAdmissionCountry,
+  type AdmissionCountry,
+} from '../../matching/domain/admissionCountries';
 
 export interface PatientIdentityUpsertInput {
   clickupTaskId: string;
@@ -61,9 +65,12 @@ export type NativePatientOrigin = 'web_form' | 'admin_manual';
  *     PatientService using the SAME KMSEncryptionService as the responsibles)
  */
 export interface PatientIdentityNativeInsertInput
-  extends Omit<PatientIdentityUpsertInput, 'clickupTaskId' | 'status'> {
+  extends Omit<PatientIdentityUpsertInput, 'clickupTaskId' | 'status' | 'country'> {
   origin: NativePatientOrigin;
   status: PatientStatus;
+  /** Required & narrowed on the native path — see publicLeadSchema (D108).
+   * The ClickUp upsert path keeps its 'AR' default: that list IS the AR operation. */
+  country: AdmissionCountry;
   /** KMS ciphertext (base64) of the contact email. Encrypted by the caller. */
   contactEmailEncrypted?: string | null;
 }
@@ -171,7 +178,11 @@ export class PatientIdentityRepository {
     client?: PoolClient,
   ): Promise<{ id: string; created: true }> {
     const executor = client ?? this.pool;
-    const country = input.country ?? 'AR';
+    // Runtime backstop for casted/JS callers the compiler can't see: without it
+    // an invalid country surfaces as an opaque 23502/23514 mid-transaction.
+    if (!isAdmissionCountry(input.country)) {
+      throw new Error(`insertNative: invalid country ${JSON.stringify(input.country)} — must be AR|BR (D108)`);
+    }
 
     const result = await executor.query<{ id: string }>(
       `INSERT INTO patients (
@@ -208,7 +219,7 @@ export class PatientIdentityRepository {
         input.cityLocality      ?? null,
         input.province          ?? null,
         input.zoneNeighborhood  ?? null,
-        country,
+        input.country,
         input.needsAttention   ?? false,
         input.attentionReasons ? [...input.attentionReasons] : [],
         input.healthInsuranceName      ?? null,

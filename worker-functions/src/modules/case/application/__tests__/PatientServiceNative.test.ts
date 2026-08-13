@@ -117,13 +117,17 @@ describe('PatientService — native write path (migration 251)', () => {
     mockReplaceAll = respInstance.replaceAll;
   });
 
+  // No `as` cast: the compiler must enforce the required `country` here the
+  // same way it does for production callers (D108 — the old cast let the whole
+  // suite run with country undefined).
   function makeNativeInput(overrides: Partial<CreateNativePatientInput> = {}): CreateNativePatientInput {
     return {
       firstName:     'Lucía',
       lastName:      'Fernández',
       phoneWhatsapp: '+5491100000000',
+      country:       'AR',
       ...overrides,
-    } as CreateNativePatientInput;
+    };
   }
 
   // ── a. createNativePatient ────────────────────────────────────────────────
@@ -137,6 +141,8 @@ describe('PatientService — native write path (migration 251)', () => {
     });
 
     expect(result).toEqual({ id: 'nat-001', created: true });
+    // The jurisdiction must reach the INSERT verbatim (D108).
+    expect(mockInsertNative.mock.calls[0][0].country).toBe('AR');
 
     // native path only — the ClickUp ON CONFLICT upsert is never called
     expect(mockInsertNative).toHaveBeenCalledTimes(1);

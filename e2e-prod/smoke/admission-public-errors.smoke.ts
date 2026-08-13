@@ -43,9 +43,21 @@ async function anotar(res: { status: () => number; json: () => Promise<unknown> 
 
 // ── API pública: intake de lead ───────────────────────────────────────────────
 
+// Payload VÁLIDO exceto pelo campo que cada teste quebra de propósito (D108:
+// country e consent viraram obrigatórios; sem eles no base, todo body 400aria
+// pelo motivo errado e nenhum teste provaria a regra que dá nome a ele).
+const LEAD_VALIDO = {
+  serviceType: 'cuidadores',
+  requesterType: 'patient',
+  email: 'gabriel+e2e-invalid@gmail.com',
+  phone: '+54 9 11 5555 0000',
+  country: 'AR',
+  consent: true,
+} as const;
+
 test('[@route:POST /api/public/v1/leads @depth:error] email inválido → 400', async () => {
   const res = await api.post('/api/public/v1/leads', {
-    data: { serviceType: 'cuidadores', requesterType: 'patient', email: 'nao-e-email', phone: '+54 9 11 5555 0000' },
+    data: { ...LEAD_VALIDO, email: 'nao-e-email' },
   });
   const { status } = await anotar(res, 400);
   expect(status).toBe(400);
@@ -53,7 +65,7 @@ test('[@route:POST /api/public/v1/leads @depth:error] email inválido → 400', 
 
 test('[@route:POST /api/public/v1/leads @depth:error] telefone vazio → 400', async () => {
   const res = await api.post('/api/public/v1/leads', {
-    data: { serviceType: 'cuidadores', requesterType: 'patient', email: 'gabriel+e2e-invalid@gmail.com', phone: '' },
+    data: { ...LEAD_VALIDO, phone: '' },
   });
   const { status } = await anotar(res, 400);
   expect(status).toBe(400);
@@ -61,7 +73,7 @@ test('[@route:POST /api/public/v1/leads @depth:error] telefone vazio → 400', a
 
 test('[@route:POST /api/public/v1/leads @depth:error] serviceType fora do vocabulário → 400', async () => {
   const res = await api.post('/api/public/v1/leads', {
-    data: { serviceType: 'astronautas', requesterType: 'patient', email: 'gabriel+e2e-invalid@gmail.com', phone: '+54 9 11 5555 0000' },
+    data: { ...LEAD_VALIDO, serviceType: 'astronautas' },
   });
   const { status } = await anotar(res, 400);
   expect(status).toBe(400);
@@ -70,10 +82,7 @@ test('[@route:POST /api/public/v1/leads @depth:error] serviceType fora do vocabu
 test('[@route:POST /api/public/v1/leads @depth:error] campo extra é rejeitado (schema strict) → 400', async () => {
   const res = await api.post('/api/public/v1/leads', {
     data: {
-      serviceType: 'cuidadores',
-      requesterType: 'patient',
-      email: 'gabriel+e2e-invalid@gmail.com',
-      phone: '+54 9 11 5555 0000',
+      ...LEAD_VALIDO,
       // superfície pública: nada além do contrato entra
       isTest: true,
       status: 'ACTIVE',
@@ -85,7 +94,29 @@ test('[@route:POST /api/public/v1/leads @depth:error] campo extra é rejeitado (
 
 test('[@route:POST /api/public/v1/leads @depth:error] país fora de AR|BR → 400', async () => {
   const res = await api.post('/api/public/v1/leads', {
-    data: { serviceType: 'cuidadores', requesterType: 'patient', email: 'gabriel+e2e-invalid@gmail.com', phone: '+54 9 11 5555 0000', country: 'US' },
+    data: { ...LEAD_VALIDO, country: 'US' },
+  });
+  const { status } = await anotar(res, 400);
+  expect(status).toBe(400);
+});
+
+test('[@route:POST /api/public/v1/leads @depth:error] sem país → 400 (nunca default AR silencioso, D108)', async () => {
+  const { country: _pais, ...semPais } = LEAD_VALIDO;
+  const res = await api.post('/api/public/v1/leads', { data: semPais });
+  const { status } = await anotar(res, 400);
+  expect(status, 'lead sem país não pode nascer AR por default').toBe(400);
+});
+
+test('[@route:POST /api/public/v1/leads @depth:error] sem consentimento → 400 (gate é o servidor, D108)', async () => {
+  const { consent: _consent, ...semConsent } = LEAD_VALIDO;
+  const res = await api.post('/api/public/v1/leads', { data: semConsent });
+  const { status } = await anotar(res, 400);
+  expect(status, 'POST direto sem consent não pode gravar lead contatável').toBe(400);
+});
+
+test('[@route:POST /api/public/v1/leads @depth:error] consent=false → 400 (recusa nunca vira cadastro)', async () => {
+  const res = await api.post('/api/public/v1/leads', {
+    data: { ...LEAD_VALIDO, consent: false },
   });
   const { status } = await anotar(res, 400);
   expect(status).toBe(400);
