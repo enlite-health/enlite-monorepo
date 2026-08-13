@@ -151,76 +151,127 @@ export class PatientChatIdsService {
    *   - Só recebe papéis PREENCHIDOS no ClickUp — campo vazio lá NUNCA
    *     desvincula aqui (a plataforma pode ter vinculado pela tela um papel que
    *     o ClickUp nem conhece, e o sync não pode apagar o que não é dele).
+   *     Exceção deliberada: quando um grupo pedido já é DESTE paciente sob
+   *     OUTRO papel que o ClickUp não está pedindo, isso é o operador MOVENDO
+   *     o grupo de campo — o sync emite o `null` explícito do papel antigo
+   *     (a forma de "mover" que o `update` exige), senão o movimento ficaria
+   *     preso em ChatIdOwnedBySamePatientRoleError para sempre.
    *   - Papel cujo valor já é o atual vira `unchanged` SEM tocar o banco: o
-   *     reconcile roda a cada 10min sobre a base inteira, e regravar 242
-   *     vínculos por ciclo destruiria o significado de `updated_at`.
+   *     reconcile varre a base inteira, e regravar centenas de vínculos por
+   *     ciclo destruiria o significado de `updated_at`.
    *   - Conflito NÃO estoura: o chamador é o sync do paciente, e um grupo em
    *     disputa não pode derrubar a atualização do resto da ficha. A gravação
-   *     tenta primeiro o mapa inteiro (mantém o caso "swap de papéis" atômico);
-   *     se falhar por conflito, tenta papel a papel para salvar os que não
-   *     conflitam, e devolve os perdedores em `skipped` com o motivo.
+   *     tenta primeiro o mapa inteiro (swap de papéis é atômico — o
+   *     `applyChatIds` solta a linha reescrita antes de inserir); se falhar por
+   *     conflito com mais de um papel em jogo, tenta papel a papel para salvar
+   *     os que não conflitam, e devolve os perdedores em `skipped` com motivo.
    */
-  async syncFromClickUp(
-    patientId: string,
-    wanted: Record<string, string>,
-  ): Promise<{
-    applied: string[];
-    unchanged: string[];
-    skipped: { role: string; chatId: string; reason: string }[];
-  }> {
-    const patient = await this.repo.findById(patientId);
-    if (!patient) {
-      return {
-        applied: [],
-        unchanged: [],
-        skipped: Object.entries(wanted).map(([role, chatId]) => ({
-          role,
-          chatId,
-          reason: 'patient_not_found',
-        })),
-      };
-    }
+  async syncFromClickUp(patientId: string, wanted: PatientChatIdMap): Promise<ChatIdSyncOutcome> {
+    const allSkipped = (reason: string): ChatIdSyncOutcome => ({
+      applied: [],
+      unchanged: [],
+      skipped: Object.entries(wanted).map(([role, chatId]) => ({ role, chatId, reason })),
+    });
 
-    const unchanged = Object.keys(wanted).filter(role => patient.chatIds[role] === wanted[role]);
-    const diff = Object.fromEntries(
-      Object.entries(wanted).filter(([role]) => !unchanged.includes(role)),
-    );
+    const patient = await this.repo.findById(patientId);
+    if (!patient) return allSkipped('patient_not_found');
+
+    const unchanged: string[] = [];
+    const diff: PatientChatIdWriteMap = {};
+    for (const [role, chatId] of Object.entries(wanted)) {
+      if (patient.chatIds[role] === chatId) {
+        unchanged.push(role);
+        continue;
+      }
+      diff[role] = chatId;
+      // Grupo mudando de campo no ClickUp → move explícito (ver docblock).
+      const currentRole = Object.entries(patient.chatIds).find(
+        ([r, c]) => c === chatId && r !== role,
+      )?.[0];
+      if (currentRole && !(currentRole in wanted)) diff[currentRole] = null;
+    }
     if (Object.keys(diff).length === 0) {
       return { applied: [], unchanged, skipped: [] };
     }
 
+    const appliedRolesOf = (map: PatientChatIdWriteMap): string[] =>
+      Object.keys(map).filter(role => map[role] !== null);
+
     try {
       await this.update(patientId, diff);
-      return { applied: Object.keys(diff), unchanged, skipped: [] };
+      return { applied: appliedRolesOf(diff), unchanged, skipped: [] };
     } catch (err) {
+      if (err instanceof PatientChatIdsNotFoundError) return allSkipped('patient_not_found');
       if (!isChatIdSyncConflict(err)) throw err;
+      // Um papel só: papel-a-papel repetiria a MESMA chamada que acabou de
+      // falhar — registra o perdedor e sai.
+      if (appliedRolesOf(diff).length === 1) {
+        const [role] = appliedRolesOf(diff);
+        return {
+          applied: [],
+          unchanged,
+          skipped: [{ role, chatId: diff[role] as string, reason: syncConflictReason(err) }],
+        };
+      }
     }
 
     // O mapa inteiro conflitou. Papel a papel: salva os que passam sozinhos.
     const applied: string[] = [];
-    const skipped: { role: string; chatId: string; reason: string }[] = [];
-    for (const [role, chatId] of Object.entries(diff)) {
+    const skipped: SkippedChatId[] = [];
+    for (const role of appliedRolesOf(diff)) {
+      const chatId = diff[role] as string;
       try {
         await this.update(patientId, { [role]: chatId });
         applied.push(role);
       } catch (err) {
+        if (err instanceof PatientChatIdsNotFoundError) {
+          skipped.push({ role, chatId, reason: 'patient_not_found' });
+          continue;
+        }
         if (!isChatIdSyncConflict(err)) throw err;
-        skipped.push({ role, chatId, reason: (err as Error).name });
+        skipped.push({ role, chatId, reason: syncConflictReason(err) });
       }
     }
     return { applied, unchanged, skipped };
   }
 }
 
+/** Um papel que o sync NÃO gravou, e por quê. */
+export interface SkippedChatId {
+  role: string;
+  chatId: string;
+  reason: string;
+}
+
+/** O que aconteceu com cada papel pedido num `syncFromClickUp`. */
+export interface ChatIdSyncOutcome {
+  applied: string[];
+  unchanged: string[];
+  skipped: SkippedChatId[];
+}
+
 /**
- * Conflitos ESPERADOS no sync (grupo em disputa, papel fora do catálogo) —
- * viram `skipped` com motivo. Qualquer outro erro (banco fora, bug) sobe:
- * engoli-lo transformaria falha de infraestrutura em "sincronizado".
+ * Conflitos ESPERADOS no sync — viram `skipped` com motivo. Entram aqui os
+ * três erros tipados do serviço E o 23505 cru do Postgres: as travas de
+ * unicidade do banco são a instância que REALMENTE arbitra (mesma leitura que
+ * o AdminPatientChatIdsController faz para devolver 409), e um paciente com
+ * dado em disputa não pode virar "falha de infraestrutura" em loop no
+ * reconcile. Qualquer outro erro (banco fora, bug) sobe: engoli-lo
+ * transformaria falha real em "sincronizado".
  */
 function isChatIdSyncConflict(err: unknown): boolean {
   return (
     err instanceof ChatIdAlreadyLinkedError ||
     err instanceof ChatIdOwnedBySamePatientRoleError ||
-    err instanceof UnknownChatRoleError
+    err instanceof UnknownChatRoleError ||
+    isUniqueViolation(err)
   );
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+}
+
+function syncConflictReason(err: unknown): string {
+  return isUniqueViolation(err) ? 'unique_violation' : (err as Error).name;
 }

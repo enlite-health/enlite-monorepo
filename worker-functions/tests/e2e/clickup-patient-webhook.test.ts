@@ -780,6 +780,49 @@ describe('Espelho dos chat IDs no webhook (E2E with real DB)', () => {
     expect(await chatRowsFor(taskId)).toHaveLength(0);
   });
 
+  it('C7. SWAP de papéis no ClickUp (família↔equipo trocados) aplica atômico, sem erro', async () => {
+    const taskId = `${TASK_PREFIX}chat-swap`;
+    const v1 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9108 }), {
+      familia: FAM_JID,
+      equipo:  EQ_JID,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v1 });
+    await postWebhook(taskId);
+
+    // Operador troca os valores de campo no ClickUp.
+    const v2 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9108 }), {
+      familia: EQ_JID,
+      equipo:  FAM_JID,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v2 });
+    const res = await postWebhook(taskId);
+    expect(res.status).toBe(200);
+
+    const rows = await chatRowsFor(taskId);
+    expect(rows.map(r => ({ role: r.role, chat_id: r.chat_id }))).toEqual([
+      { role: 'FAMILY',    chat_id: EQ_JID },
+      { role: 'PROVIDERS', chat_id: FAM_JID },
+    ]);
+  });
+
+  it('C8. grupo movido de campo (equipo→familia, equipo esvaziado) migra de papel', async () => {
+    const taskId = `${TASK_PREFIX}chat-move`;
+    const v1 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9109 }), { equipo: FAM_JID });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v1 });
+    await postWebhook(taskId);
+    expect(await chatRowsFor(taskId)).toEqual([
+      expect.objectContaining({ role: 'PROVIDERS', chat_id: FAM_JID }),
+    ]);
+
+    const v2 = withChatIds(makeClickUpTask(taskId, { caseNumber: 9109 }), { familia: FAM_JID });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => v2 });
+    await postWebhook(taskId);
+
+    expect(await chatRowsFor(taskId)).toEqual([
+      expect.objectContaining({ role: 'FAMILY', chat_id: FAM_JID }),
+    ]);
+  });
+
   it('C6. flag desligada → paciente sincroniza, chat ids NÃO', async () => {
     process.env[FLAG] = 'false';
     try {

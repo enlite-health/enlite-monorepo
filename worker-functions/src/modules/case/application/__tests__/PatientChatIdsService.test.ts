@@ -386,4 +386,74 @@ describe('PatientChatIdsService.syncFromClickUp', () => {
       'connection refused',
     );
   });
+
+  it('23505 cru do banco é CONFLITO (skipped), não falha de infraestrutura', async () => {
+    // A trava de unicidade do banco é quem arbitra de verdade; um dado em
+    // disputa não pode virar loop de erro no reconcile.
+    const repo = repoMock({
+      applyChatIds: jest.fn().mockRejectedValue(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      ),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY });
+
+    expect(out).toEqual({
+      applied: [],
+      unchanged: [],
+      skipped: [{ role: 'FAMILY', chatId: FAMILY, reason: 'unique_violation' }],
+    });
+  });
+
+  it('conflito com UM papel só não repete a mesma chamada (sem retry condenado)', async () => {
+    const repo = repoMock({
+      findLinkedElsewhere: jest.fn().mockResolvedValue([
+        { chatId: FAMILY, patientId: OTHER, role: 'FAMILY', exclusive: true },
+      ]),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY });
+
+    expect(out.skipped).toEqual([
+      { role: 'FAMILY', chatId: FAMILY, reason: 'ChatIdAlreadyLinkedError' },
+    ]);
+    // Uma única passada de validação — papel-a-papel repetiria a chamada idêntica.
+    expect(repo.findLinkedElsewhere).toHaveBeenCalledTimes(1);
+  });
+
+  it('grupo que MUDOU de campo no ClickUp vira move explícito (papel antigo desvincula)', async () => {
+    // ClickUp: era "Chat ID Equipo", operador moveu para "Chat ID Familia".
+    const repo = repoMock({
+      findById: jest.fn().mockResolvedValue({
+        id: PATIENT, firstName: 'Maria', lastName: 'Perez',
+        chatIds: { PROVIDERS: FAMILY },
+      }),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY });
+
+    expect(out.applied).toEqual(['FAMILY']);
+    expect(repo.applyChatIds).toHaveBeenCalledWith(
+      PATIENT,
+      { FAMILY, PROVIDERS: null },
+      expect.any(Map),
+    );
+  });
+
+  it('paciente soft-deleted entre a leitura e a escrita: patient_not_found, sem erro', async () => {
+    const repo = repoMock({
+      findById: jest
+        .fn()
+        .mockResolvedValueOnce({ id: PATIENT, firstName: 'M', lastName: 'P', chatIds: {} })
+        .mockResolvedValueOnce(null),
+    } as never);
+
+    const out = await service(repo).syncFromClickUp(PATIENT, { FAMILY });
+
+    expect(out).toEqual({
+      applied: [],
+      unchanged: [],
+      skipped: [{ role: 'FAMILY', chatId: FAMILY, reason: 'patient_not_found' }],
+    });
+  });
 });

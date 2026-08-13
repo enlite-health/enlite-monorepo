@@ -29,6 +29,12 @@ jest.mock('firebase-functions', () => ({
   },
 }));
 
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  reportError: (...args: unknown[]) => mockReportError(...args),
+}));
+
 // ── Imports ───────────────────────────────────────────────────────────────────
 
 import {
@@ -520,10 +526,16 @@ describe('SyncPatientFromClickUpTaskUseCase — espelho dos chat IDs', () => {
       ],
     }));
 
+    // O VALOR nunca vai pro log: um @c.us é literalmente um telefone (Ley
+    // 25.326). Vai a categoria + tamanho, suficientes pra achar o campo torto.
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       'clickup_patient_sync.chat_id_invalid',
-      expect.objectContaining({ role: 'FAMILY', value: '5491122334455@c.us' }),
+      expect.objectContaining({ role: 'FAMILY', kind: 'direct_chat', valueLength: 18 }),
     );
+    const warnPayload = mockLoggerWarn.mock.calls.find(
+      c => c[0] === 'clickup_patient_sync.chat_id_invalid',
+    )?.[1] as Record<string, unknown>;
+    expect(warnPayload).not.toHaveProperty('value');
     expect(chatIds.syncFromClickUp).toHaveBeenCalledWith('patient-001', { PROVIDERS: EQ_JID });
   });
 
@@ -557,9 +569,26 @@ describe('SyncPatientFromClickUpTaskUseCase — espelho dos chat IDs', () => {
     const result = await useCase.execute(taskWithChatIds());
 
     expect(result.kind).toBe('CREATED');
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      'clickup_patient_sync.chat_ids_failed',
-      expect.objectContaining({ error: 'pool exhausted' }),
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'pool exhausted' }),
+      expect.objectContaining({ source: 'clickup_patient_sync.chat_ids' }),
     );
+  });
+
+  it('CASE_NUMBER_CONFLICT: a ficha existe, então os grupos espelham MESMO ASSIM', async () => {
+    const chatIds = chatIdsServiceMock();
+    const deps = makeDeps({
+      mapResult: makeUpsertInput(),
+      upsertResult: { id: 'patient-009', created: false, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' },
+    });
+    const useCase = new SyncPatientFromClickUpTaskUseCase({ ...deps, chatIdsService: chatIds as never });
+
+    const result = await useCase.execute(taskWithChatIds());
+
+    expect(result.kind).toBe('CASE_NUMBER_CONFLICT');
+    expect(chatIds.syncFromClickUp).toHaveBeenCalledWith('patient-009', {
+      FAMILY:    FAM_JID,
+      PROVIDERS: EQ_JID,
+    });
   });
 });

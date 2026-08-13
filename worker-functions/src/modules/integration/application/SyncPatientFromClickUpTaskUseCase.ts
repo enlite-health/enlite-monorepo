@@ -9,9 +9,10 @@
  */
 
 import * as functions from 'firebase-functions';
+import { reportError } from '@shared/logging';
 import type { ClickUpTask } from '../infrastructure/clickup/ClickUpTask';
 import type { ClickUpPatientMapper } from '../infrastructure/clickup/ClickUpPatientMapper';
-import { extractPatientChatIds } from '../infrastructure/clickup/ClickUpPatientMapper';
+import { extractPatientChatIds } from '../infrastructure/clickup/extractPatientChatIds';
 import type { PatientService } from '../../case/application/PatientService';
 import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
 
@@ -139,6 +140,12 @@ export class SyncPatientFromClickUpTaskUseCase {
 
       const patientName = formatPatientName(input.firstName, input.lastName);
 
+      // O conflito de case_number NÃO impede a ficha de existir (o upsert
+      // retenta sem o número e devolve um id real) — então os grupos espelham
+      // ANTES do early-return, senão exatamente os pacientes conflitados
+      // divergiriam do ClickUp para sempre.
+      await this.syncChatIds(task, result.id, cid);
+
       if (result.conflict === 'CASE_NUMBER_CONFLICT') {
         functions.logger.warn('clickup_patient_sync.case_number_conflict', {
           taskId,
@@ -158,8 +165,6 @@ export class SyncPatientFromClickUpTaskUseCase {
       }
 
       const kind: 'CREATED' | 'UPDATED' = result.created ? 'CREATED' : 'UPDATED';
-
-      await this.syncChatIds(task, result.id, cid);
 
       // PII: não logar patientName aqui — vai pro Cloud Logging.
       // patientName fica apenas no SyncPatientResult retornado pro CLI script.
@@ -200,18 +205,21 @@ export class SyncPatientFromClickUpTaskUseCase {
     const { chatIds, invalid } = extractPatientChatIds(task);
 
     for (const bad of invalid) {
+      // PII: nunca logar `bad.value` — um `@c.us` é literalmente um telefone,
+      // e texto livre pode carregar nome (Ley 25.326). `kind` + tamanho bastam
+      // para o operador achar o campo torto pela task.
       functions.logger.warn('clickup_patient_sync.chat_id_invalid', {
         taskId: task.id,
         role:   bad.role,
-        value:  bad.value,
+        kind:   bad.kind,
+        valueLength: bad.value.length,
         correlationId: cid,
       });
     }
     if (Object.keys(chatIds).length === 0) return;
 
     try {
-      const service = this.deps.chatIdsService ?? new PatientChatIdsService();
-      const outcome = await service.syncFromClickUp(patientId, chatIds);
+      const outcome = await this.chatIdsService().syncFromClickUp(patientId, chatIds);
 
       if (outcome.applied.length > 0 || outcome.skipped.length > 0) {
         functions.logger.info('clickup_patient_sync.chat_ids', {
@@ -224,15 +232,29 @@ export class SyncPatientFromClickUpTaskUseCase {
         });
       }
     } catch (err) {
-      // Falha de infraestrutura no passo de chat ids (banco fora etc.): loga e
-      // segue — a ficha do paciente já foi gravada e o reconcile de 10min
-      // reaplica os grupos no próximo ciclo.
-      functions.logger.error('clickup_patient_sync.chat_ids_failed', {
+      // Falha de infraestrutura no passo de chat ids (banco fora etc.): reporta
+      // e segue — a ficha do paciente já foi gravada. ⚠️ NÃO há retry
+      // automático garantido: o reconcile `cycle` só revisita tasks alteradas
+      // nos últimos 30min; a cura para falha antiga é o card mudar de novo ou
+      // um `mode=full` manual.
+      reportError(err instanceof Error ? err : new Error(String(err)), {
+        source: 'clickup_patient_sync.chat_ids',
         taskId: task.id,
         patientId,
-        error: err instanceof Error ? err.message : String(err),
         correlationId: cid,
       });
     }
   }
+
+  /**
+   * Resolvido sob demanda (não no construtor) de propósito: o repositório real
+   * abre pool ao ser construído, e o use case também vive em testes/CLIs que
+   * nunca chegam neste passo. Memoizado — uma instância por use case.
+   */
+  private chatIdsService(): PatientChatIdsService {
+    this.chatIdsServiceInstance ??= this.deps.chatIdsService ?? new PatientChatIdsService();
+    return this.chatIdsServiceInstance;
+  }
+
+  private chatIdsServiceInstance?: PatientChatIdsService;
 }

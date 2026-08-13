@@ -1,6 +1,5 @@
 import type { PatientServiceUpsertInput } from '@modules/case';
 import type { PatientResponsibleInput } from '@modules/case';
-import { isGroupChatId } from '@modules/case';
 import type { PatientAddress, PatientProfessional } from '../../../../infrastructure/repositories/PatientRepository';
 import { ClickUpFieldResolver } from './ClickUpFieldResolver';
 import type { ClickUpTask, ClickUpTaskCustomField } from './ClickUpTask';
@@ -359,50 +358,6 @@ export class ClickUpPatientMapper {
     const loc = location as Record<string, unknown>;
     return typeof loc['formatted_address'] === 'string' ? loc['formatted_address'] : null;
   }
-}
-
-/**
- * Os campos de grupo de WhatsApp da lista "Estado de Pacientes" e o papel do
- * catálogo (`patient_chat_roles`) que cada um alimenta. "Chat ID Equipo" é o
- * grupo do equipo tratante = prestadores. Não existe campo de obra social no
- * ClickUp (o papel HEALTH_PLAN só é alimentável pela plataforma).
- */
-const CHAT_ID_FIELD_TO_ROLE: Record<string, string> = {
-  'Chat ID Familia': 'FAMILY',
-  'Chat ID Equipo':  'PROVIDERS',
-};
-
-export interface PatientChatIdsExtraction {
-  /** Papel -> chat_id válido (`@g.us`). Papel sem valor no ClickUp fica FORA. */
-  chatIds: Record<string, string>;
-  /** Valores presentes mas fora do formato de grupo — para o chamador logar. */
-  invalid: { role: string; value: string }[];
-}
-
-/**
- * Extracts the WhatsApp group chat ids from the ClickUp task, keyed by
- * platform role. Values that are present but not a valid Periskope GROUP id
- * (`@g.us`, see PatientChatId.isGroupChatId) are returned in `invalid` instead
- * — border-of-import validation, so a typo in ClickUp can never reach the
- * write path and take down the whole patient sync.
- */
-export function extractPatientChatIds(task: ClickUpTask): PatientChatIdsExtraction {
-  const chatIds: Record<string, string> = {};
-  const invalid: { role: string; value: string }[] = [];
-
-  for (const [fieldName, role] of Object.entries(CHAT_ID_FIELD_TO_ROLE)) {
-    const raw = task.custom_fields.find(f => f.name === fieldName)?.value;
-    if (typeof raw !== 'string') continue;
-    const value = raw.trim();
-    if (!value) continue;
-    if (isGroupChatId(value)) {
-      chatIds[role] = value;
-    } else {
-      invalid.push({ role, value });
-    }
-  }
-
-  return { chatIds, invalid };
 }
 
 /**

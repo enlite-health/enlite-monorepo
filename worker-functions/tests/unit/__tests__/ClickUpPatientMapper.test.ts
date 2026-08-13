@@ -34,7 +34,8 @@
  *       → slot uses fresh location values (NOT stale legacy)
  */
 
-import { ClickUpPatientMapper, extractCaseNumber, extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/extractPatientChatIds';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
 // ── Mock ClickUpFieldResolver ─────────────────────────────────────────────────
@@ -1124,7 +1125,7 @@ describe('extractPatientChatIds', () => {
       { name: 'Chat ID Familia', value: DM_JID },
     ]));
     expect(out.chatIds).toEqual({});
-    expect(out.invalid).toEqual([{ role: 'FAMILY', value: DM_JID }]);
+    expect(out.invalid).toEqual([{ role: 'FAMILY', value: DM_JID, kind: 'direct_chat' }]);
   });
 
   it('texto torto e valor gigante são inválidos, sem contaminar o campo bom', () => {
@@ -1133,14 +1134,14 @@ describe('extractPatientChatIds', () => {
       { name: 'Chat ID Equipo',  value: EQ_JID },
     ]));
     expect(out.chatIds).toEqual({ PROVIDERS: EQ_JID });
-    expect(out.invalid).toEqual([{ role: 'FAMILY', value: 'ver con Marcel' }]);
+    expect(out.invalid).toEqual([{ role: 'FAMILY', value: 'ver con Marcel', kind: 'malformed' }]);
 
     const tooLong = `${'9'.repeat(70)}@g.us`;
     const out2 = extractPatientChatIds(chatTask([
       { name: 'Chat ID Equipo', value: tooLong },
     ]));
     expect(out2.chatIds).toEqual({});
-    expect(out2.invalid).toEqual([{ role: 'PROVIDERS', value: tooLong }]);
+    expect(out2.invalid).toEqual([{ role: 'PROVIDERS', value: tooLong, kind: 'malformed' }]);
   });
 
   it('valor não-string (null, número, objeto) é ignorado em silêncio', () => {

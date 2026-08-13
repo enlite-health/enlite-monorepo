@@ -236,6 +236,21 @@ export class PatientChatIdsRepository {
         ]);
       }
 
+      // Linha que vai ser REESCRITA com outro grupo sai antes dos INSERTs, pela
+      // mesma razão da ordem acima: num SWAP ({FAMILY:B, PROVIDERS:A} quando o
+      // banco tem FAMILY:A, PROVIDERS:B), o upsert de FAMILY→B bateria em
+      // `patient_chat_ids_one_role_per_chat` (UNIQUE patient_id+chat_id, não
+      // deferrable) enquanto a linha antiga de PROVIDERS ainda segura o B →
+      // 23505 → rollback, e a troca ficava impossível numa gravação só. O
+      // `chat_id <> $3` preserva a linha (e o created_at) de quem não mudou.
+      for (const [role, chatId] of entries) {
+        if (chatId === null) continue;
+        await client.query(
+          'DELETE FROM patient_chat_ids WHERE patient_id = $1 AND role = $2 AND chat_id <> $3',
+          [patientId, role, chatId],
+        );
+      }
+
       for (const [role, chatId] of entries) {
         if (chatId === null) continue;
 
