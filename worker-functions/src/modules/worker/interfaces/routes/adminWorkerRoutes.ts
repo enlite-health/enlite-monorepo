@@ -7,6 +7,7 @@ import { AdminWorkerProfileController } from '../controllers/AdminWorkerProfileC
 import { AdminWorkerServiceAreaController } from '../controllers/AdminWorkerServiceAreaController';
 import { AdminTagCatalogController } from '../controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from '../controllers/WorkerTimelineController';
+import { logResourceAccess } from '@shared/audit/resourceAccessLog';
 
 export interface AdminWorkerRouteControllers {
   workers: AdminWorkersController;
@@ -45,7 +46,7 @@ export function createAdminWorkerRoutes(
   router.get('/workers/export', adminOnly, (req: Request, res: Response) => c.workers.exportWorkers(req, res));
   // timeline MUST be registered before /:id to avoid param capture
   router.get('/workers/:id/timeline', staffOnly, (req: Request, res: Response) => c.timeline.getTimeline(req, res));
-  router.get('/workers/:id', staffOnly, (req: Request, res: Response) => c.workers.getWorkerById(req, res));
+  router.get('/workers/:id', staffOnly, logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
   // test-flag e profile são admin-only (mais estrito que staff)
   router.patch('/workers/:id/test-flag', adminOnly, (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
   // edição de perfil do worker — apenas role ADMIN

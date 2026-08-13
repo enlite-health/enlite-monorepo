@@ -193,8 +193,11 @@ export async function withSystemDbContext<T>(label: string, fn: () => Promise<T>
   }
   const context: DbSessionContext = { kind: 'system', systemContext: label };
 
+  // Sessão JÁ ENCERRADA não serve (é o caso da trilha de leitura, que grava
+  // depois do `finish` da resposta mas ainda dentro do ALS daquela request):
+  // reusá-la mandaria a query pro pool cru, sem contexto — zero linha sob RLS.
   const existing = currentDbSession();
-  if (existing) {
+  if (existing && !existing.released) {
     existing.context = context;
     return fn();
   }
