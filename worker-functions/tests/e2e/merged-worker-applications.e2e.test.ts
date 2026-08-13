@@ -59,8 +59,8 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
   let orphanWjaId: string;
 
   /** Filhos movidos em cada reconciliação — o rollback precisa deles. */
-  let ghostEffects: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [] };
-  let orphanEffects: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [] };
+  let ghostEffects: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [], movedAmbiguityIds: [] };
+  let orphanEffects: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [], movedAmbiguityIds: [] };
   /** Linha inteira da fantasma, como o snapshot do CLI guarda. */
   let ghostSnapshot: Record<string, unknown> = {};
 
@@ -331,6 +331,73 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     );
     expect(note.rows[0].worker_id).toBe(mergedId);
     expect(note.rows[0].worker_job_application_id).toBe(ghostWjaId);
+  });
+
+  it('canônica em etapa de ENTRADA adota a etapa da fantasma (não regride)', async () => {
+    // O caso majoritário em prod (13/08): 20 das 23 duplicatas têm a fantasma
+    // À FRENTE — QUALIFIED (triagem do Talentum) contra INVITED (o convite).
+    // Manter a etapa da canônica jogaria fora o resultado da triagem.
+    const vacancyId = await insertVacancy(99985);
+    const canonical = await insertApplication(survivorId, vacancyId, 'INVITED', null);
+    const ghost = await insertApplication(mergedId, vacancyId, 'QUALIFIED', 7.5);
+
+    const row = (await findMergedOrphans(pool)).find(
+      (o) => o.kind === 'application' && o.rowId === ghost,
+    );
+    expect(row?.duplicate).toBe(true);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await bypassRegisteredGuard(client);
+      await reconcileRow(client, row!);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const after = await pool.query(
+      `SELECT application_funnel_stage AS stage, match_score FROM worker_job_applications WHERE id = $1`,
+      [canonical],
+    );
+    expect(after.rows[0].stage).toBe('QUALIFIED');
+    expect(Number(after.rows[0].match_score)).toBe(7.5);
+
+    await pool.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [vacancyId]);
+    await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [vacancyId]);
+    await pool.query(`DELETE FROM job_postings WHERE id = $1`, [vacancyId]);
+  });
+
+  it('canônica JÁ DECIDIDA não é sobrescrita pela triagem da fantasma', async () => {
+    // O inverso: CONFIRMED/SELECTED/REJECTED é decisão humana e vence a triagem
+    // automática. Foi o caso da própria Norma (CONFIRMED × QUALIFIED).
+    const vacancyId = await insertVacancy(99986);
+    const canonical = await insertApplication(survivorId, vacancyId, 'CONFIRMED', null);
+    const ghost = await insertApplication(mergedId, vacancyId, 'QUALIFIED', 6.6);
+
+    const row = (await findMergedOrphans(pool)).find(
+      (o) => o.kind === 'application' && o.rowId === ghost,
+    );
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await bypassRegisteredGuard(client);
+      await reconcileRow(client, row!);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const after = await pool.query(
+      `SELECT application_funnel_stage AS stage FROM worker_job_applications WHERE id = $1`,
+      [canonical],
+    );
+    expect(after.rows[0].stage).toBe('CONFIRMED');
+
+    await pool.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [vacancyId]);
+    await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [vacancyId]);
+    await pool.query(`DELETE FROM job_postings WHERE id = $1`, [vacancyId]);
   });
 
   it('encuadre duplicado: funde os campos, preserva o dedup_hash de quem fica e some', async () => {

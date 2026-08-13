@@ -188,7 +188,7 @@ async function main(): Promise<void> {
     const file = snapshotPath();
     const entries: SnapshotEntry[] = ordered.map((row) => ({
       row,
-      effects: { movedHistoryIds: [], movedNoteIds: [] },
+      effects: { movedHistoryIds: [], movedNoteIds: [], movedAmbiguityIds: [] },
     }));
     writeSnapshot(file, entries);
     console.log(`Plano salvo em ${file}`);

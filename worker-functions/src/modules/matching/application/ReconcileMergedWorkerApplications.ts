@@ -16,11 +16,11 @@
  *   DUPLICADO — o canônico já tem linha nesta vaga. A do registro morto é o card
  *     fantasma. Descartada, que é a mesma semântica do próprio merge
  *     (`WorkerDeduplicationService.mergeWorkers`: `ON CONFLICT DO NOTHING` +
- *     `DELETE`). Antes de descartar, o que a fantasma tem de único é movido para
- *     a linha canônica: trilha de etapas, notas de contato e campos de entrevista
- *     ainda vazios. A ETAPA do funil nunca é sobrescrita — a canônica costuma
- *     estar mais adiantada (CONFIRMED) que a fantasma (QUALIFIED), e regredir
- *     apagaria trabalho do time.
+ *     `DELETE`). Antes de descartar, tudo que a fantasma tem e a linha que fica
+ *     não tem é movido: trilha de etapas, notas de contato, triagem do Talentum,
+ *     fila de ambiguidade e todo campo ainda vazio (cópia dinâmica, exceto
+ *     chaves e colunas sob índice UNIQUE). A ETAPA do funil tem regra própria —
+ *     ver `ENTRY_STAGES`.
  *
  *   ÓRFÃO — o canônico não tem linha nesta vaga. Não há duplicata: é uma
  *     postulação real presa no cadastro errado. Reparentada. Descartá-la
@@ -57,6 +57,8 @@ export interface MergedOrphanRow {
 export interface ReconcileEffects {
   movedHistoryIds: string[];
   movedNoteIds: string[];
+  /** Linhas de `encuadre_ambiguity_queue` re-apontadas (lado do encuadre). */
+  movedAmbiguityIds: string[];
 }
 
 /** Alcance da corrente de merge — mesmo teto de `resolveCanonicalWorkerId`. */
@@ -228,37 +230,95 @@ async function moveApplicationChildren(
     [row.canonicalWorkerId, survivingWjaId, row.rowId, row.deadWorkerId, row.jobPostingId],
   );
 
-  // Score do Talentum só preenche buraco — nunca sobrescreve.
-  if (row.matchScore !== null) {
-    await client.query(
-      `UPDATE worker_job_applications
-          SET match_score = $1, updated_at = NOW()
-        WHERE id = $2 AND match_score IS NULL`,
-      [row.matchScore, survivingWjaId],
-    );
-  }
+  // A triagem do Talentum aponta para a linha do cadastro morto (o Kanban lê
+  // talentum_status por worker+vaga); sem isto, um card com triagem PENDING
+  // deixa de mostrar PENDING. O merge de contas já reparenta esta tabela.
+  await client.query(
+    `UPDATE talentum_prescreenings SET worker_id = $1
+      WHERE worker_id = $2 AND job_posting_id = $3`,
+    [row.canonicalWorkerId, row.deadWorkerId, row.jobPostingId],
+  );
+
+  // Todo campo que a fantasma tem e a canônica não — mesmo tratamento dinâmico
+  // do encuadre. Uma lista fixa (só match_score, como estava) apagava em
+  // silêncio interview_datetime, meet_link, messaged_at, acquisition_channel…
+  await mergeEmptyColumns(client, {
+    table: 'worker_job_applications',
+    keyColumns: APPLICATION_KEY_COLUMNS,
+    srcId: row.rowId,
+    dstId: survivingWjaId,
+  });
+
+  // A etapa não é campo vazio: tem regra própria. Ver ENTRY_STAGES.
+  await client.query(
+    `UPDATE worker_job_applications dst
+        SET application_funnel_stage = src.application_funnel_stage, updated_at = NOW()
+       FROM worker_job_applications src
+      WHERE src.id = $1 AND dst.id = $2
+        AND dst.application_funnel_stage = ANY($3::text[])
+        AND src.application_funnel_stage <> ALL($3::text[])`,
+    [row.rowId, survivingWjaId, ENTRY_STAGES],
+  );
 
   return {
     movedHistoryIds: history.rows.map((r) => r.id as string),
     movedNoteIds: notes.rows.map((r) => r.id as string),
+    movedAmbiguityIds: [],
   };
 }
 
 /** Colunas que identificam a linha ou são mantidas pelo banco — nunca copiadas. */
 const ENCUADRE_KEY_COLUMNS = ['id', 'worker_id', 'job_posting_id', 'created_at', 'updated_at'];
 
+/**
+ * Colunas da postulação que não entram no merge de campos vazios.
+ *
+ * `application_funnel_stage` sai porque não é "campo vazio": é a posição da
+ * pessoa no funil, e tem regra própria (ver {@link ENTRY_STAGES}).
+ */
+const APPLICATION_KEY_COLUMNS = [
+  'id',
+  'worker_id',
+  'job_posting_id',
+  'created_at',
+  'updated_at',
+  'application_funnel_stage',
+];
+
+/**
+ * Etapas de ENTRADA: a pessoa está na vaga, ninguém decidiu nada sobre ela.
+ *
+ * Regra do descarte, ancorada no dado real (13/08): em 20 das 23 duplicatas a
+ * linha do cadastro morto está À FRENTE da canônica — tipicamente QUALIFIED
+ * (resultado da triagem do Talentum) contra INVITED (o convite). Manter
+ * cegamente a etapa da canônica regrediria essas 20 pessoas para INVITED e
+ * jogaria fora o resultado da triagem.
+ *
+ * Então: se a canônica está numa etapa de entrada, ela ADOTA a etapa da
+ * fantasma. Se já tem decisão (CONFIRMED, SELECTED, REJECTED…), a decisão fica
+ * — é humana e mais autoritativa que a triagem automática. Não existe ordem
+ * total confiável entre as etapas (`funnel_stage_precedence` empata REJECTED
+ * com SELECTED), por isso a regra é esta, e não "a maior vence".
+ */
+const ENTRY_STAGES = ['INVITED', 'PRE_SCREENING', 'INICIADO'];
+
 /** Move para a linha que fica o que aponta para o encuadre a ser descartado. */
 async function moveEncuadreChildren(
   client: PoolClient,
   row: MergedOrphanRow,
   survivingEncuadreId: string,
-): Promise<void> {
+): Promise<ReconcileEffects> {
   // FK ON DELETE CASCADE (migration 142): resoluções manuais pendentes sumiriam
   // com o DELETE, e o rollback não teria como recriá-las.
-  await client.query(`UPDATE encuadre_ambiguity_queue SET encuadre_id = $1 WHERE encuadre_id = $2`, [
-    survivingEncuadreId,
-    row.rowId,
-  ]);
+  const queue = await client.query(
+    `UPDATE encuadre_ambiguity_queue SET encuadre_id = $1 WHERE encuadre_id = $2 RETURNING id`,
+    [survivingEncuadreId, row.rowId],
+  );
+  return {
+    movedHistoryIds: [],
+    movedNoteIds: [],
+    movedAmbiguityIds: queue.rows.map((r) => r.id as string),
+  };
 }
 
 /**
@@ -270,16 +330,15 @@ async function moveEncuadreChildren(
  * migration 192 consolidou encuadres duplicados pelo mesmo princípio, elegendo
  * o sobrevivente por quantidade de campos preenchidos.
  */
-async function mergeEncuadreFields(
+async function mergeEmptyColumns(
   client: PoolClient,
-  row: MergedOrphanRow,
-  survivingEncuadreId: string,
+  opts: { table: string; keyColumns: string[]; srcId: string; dstId: string },
 ): Promise<void> {
   const { rows: cols } = await client.query(
     `SELECT c.column_name FROM information_schema.columns c
-      WHERE c.table_schema = 'public' AND c.table_name = 'encuadres'
+      WHERE c.table_schema = 'public' AND c.table_name = $1
         AND c.is_generated = 'NEVER' AND c.identity_generation IS NULL
-        AND c.column_name <> ALL($1::text[])
+        AND c.column_name <> ALL($2::text[])
         -- Coluna sob índice UNIQUE não pode ser copiada: a linha de origem ainda
         -- existe neste ponto (o DELETE vem depois), então copiar o dedup_hash
         -- dela estoura 23505 no próprio UPDATE — e o valor duplicado ainda
@@ -288,11 +347,11 @@ async function mergeEncuadreFields(
         AND NOT EXISTS (
           SELECT 1 FROM pg_index i
             JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-           WHERE i.indrelid = 'encuadres'::regclass AND i.indisunique
+           WHERE i.indrelid = $1::regclass AND i.indisunique
              AND a.attname = c.column_name
         )
       ORDER BY c.ordinal_position`,
-    [ENCUADRE_KEY_COLUMNS],
+    [opts.table, opts.keyColumns],
   );
 
   if (cols.length === 0) return;
@@ -302,10 +361,10 @@ async function mergeEncuadreFields(
     .join(', ');
 
   await client.query(
-    `UPDATE encuadres dst SET ${assignments}
-       FROM encuadres src
+    `UPDATE ${opts.table} dst SET ${assignments}
+       FROM ${opts.table} src
       WHERE src.id = $1 AND dst.id = $2`,
-    [row.rowId, survivingEncuadreId],
+    [opts.srcId, opts.dstId],
   );
 }
 
@@ -319,7 +378,7 @@ export async function reconcileRow(
   row: MergedOrphanRow,
 ): Promise<ReconcileEffects> {
   const table = row.kind === 'application' ? 'worker_job_applications' : 'encuadres';
-  const none: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [] };
+  const none: ReconcileEffects = { movedHistoryIds: [], movedNoteIds: [], movedAmbiguityIds: [] };
 
   if (!row.duplicate) {
     await client.query(`UPDATE ${table} SET worker_id = $1 WHERE id = $2`, [
@@ -336,7 +395,11 @@ export async function reconcileRow(
         RETURNING id`,
       [row.canonicalWorkerId, row.deadWorkerId, row.jobPostingId],
     );
-    return { movedHistoryIds: [], movedNoteIds: notes.rows.map((r) => r.id as string) };
+    return {
+      movedHistoryIds: [],
+      movedNoteIds: notes.rows.map((r) => r.id as string),
+      movedAmbiguityIds: [],
+    };
   }
 
   let effects = none;
@@ -358,8 +421,13 @@ export async function reconcileRow(
           `encuadre na vaga ${row.jobPostingId} — nada foi apagado`,
       );
     }
-    await mergeEncuadreFields(client, row, survivingEncuadreId);
-    await moveEncuadreChildren(client, row, survivingEncuadreId);
+    await mergeEmptyColumns(client, {
+      table: 'encuadres',
+      keyColumns: ENCUADRE_KEY_COLUMNS,
+      srcId: row.rowId,
+      dstId: survivingEncuadreId,
+    });
+    effects = await moveEncuadreChildren(client, row, survivingEncuadreId);
   }
 
   await client.query(`DELETE FROM ${table} WHERE id = $1`, [row.rowId]);
@@ -427,6 +495,12 @@ export async function rollbackRow(
       `UPDATE wja_contact_notes SET worker_id = $1, worker_job_application_id = $2
         WHERE id = ANY($3::uuid[])`,
       [row.deadWorkerId, row.rowId, effects.movedNoteIds],
+    );
+  }
+  if (effects?.movedAmbiguityIds.length) {
+    await client.query(
+      `UPDATE encuadre_ambiguity_queue SET encuadre_id = $1 WHERE id = ANY($2::uuid[])`,
+      [row.rowId, effects.movedAmbiguityIds],
     );
   }
   return true;
