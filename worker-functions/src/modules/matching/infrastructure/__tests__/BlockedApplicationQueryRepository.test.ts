@@ -129,13 +129,26 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(dataQueryCall).toContain('WHERE');
   });
 
-  it('sem filtros: WHERE clause ausente e LIMIT/OFFSET usam índices $1/$2', async () => {
+  it('list() — recomputa missing_fields ao vivo via fn_worker_missing_fields (mesmo fix do listByVacancy)', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await repo.list({ limit: 10, offset: 0 });
+
+    const dataQueryCall = mockQuery.mock.calls[0][0] as string;
+    expect(dataQueryCall).toContain('fn_worker_missing_fields(wba.worker_id)');
+    expect(dataQueryCall).toContain("wba.blocked_reason = 'registration_incomplete'");
+  });
+
+  it('sem filtros: filtra apenas ativos (dismissed_at IS NULL) e LIMIT/OFFSET usam índices $1/$2', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
     await repo.list({ limit: 50, offset: 0 });
 
     const dataQueryCall = mockQuery.mock.calls[0][0] as string;
-    expect(dataQueryCall).not.toContain('WHERE');
+    // Migration 250: os "rechazados" (soft-dismiss) saem do painel — sempre há um WHERE base.
+    expect(dataQueryCall).toContain('WHERE');
+    expect(dataQueryCall).toContain('wba.dismissed_at IS NULL');
+    // A condição base não consome placeholder → LIMIT/OFFSET seguem $1/$2.
     expect(dataQueryCall).toContain('LIMIT $1 OFFSET $2');
   });
 
@@ -182,6 +195,7 @@ describe('BlockedApplicationQueryRepository', () => {
         attempt_count: 3,
         acquisition_channel: 'facebook',
         last_attempted_at: NOW_DATE,
+        contact_notes_count: 2,
       }],
     });
 
@@ -196,6 +210,37 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(item.attemptCount).toBe(3);
     expect(item.acquisitionChannel).toBe('facebook');
     expect(item.lastAttemptedAt).toBe(NOW_DATE.toISOString());
+    expect(item.contactNotesCount).toBe(2);
+  });
+
+  it('listByVacancy() — contactNotesCount default 0 quando ausente/undefined (branch defensivo)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: 'ba-1b',
+        worker_id: WORKER_ID,
+        blocked_reason: 'registration_incomplete',
+        missing_fields: [],
+        attempt_count: 1,
+        acquisition_channel: null,
+        last_attempted_at: NOW_DATE,
+        // contact_notes_count ausente
+      }],
+    });
+
+    const result = await repo.listByVacancy(JOB_ID);
+    expect(result[0].contactNotesCount).toBe(0);
+  });
+
+  it('listByVacancy() — SQL soma contact_notes_count filtrando pelo par (worker_id, job_posting_id)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await repo.listByVacancy(JOB_ID);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('wja_contact_notes cn');
+    expect(sql).toContain('cn.worker_id = wba.worker_id');
+    expect(sql).toContain('cn.job_posting_id = wba.job_posting_id');
+    expect(sql).toContain('contact_notes_count');
   });
 
   it('listByVacancy() inclui NOT EXISTS para dedup (query SQL deve ter NOT EXISTS)', async () => {
@@ -249,5 +294,25 @@ describe('BlockedApplicationQueryRepository', () => {
 
     const result = await repo.listByVacancy(JOB_ID);
     expect(result).toHaveLength(0);
+  });
+
+  // ── Regressão: staleness de missing_fields ───────────────────────
+  // Bug: ao editar o perfil do worker (grava first_name/last_name), o nome do
+  // card atualizava (decrypt on-read) mas as tags de campos faltantes NÃO,
+  // porque vinham do snapshot materializado worker_blocked_applications.missing_fields.
+  // Fix: recomputar missing_fields ON-READ via fn_worker_missing_fields para
+  // registration_incomplete (worker existe), preservando o snapshot p/ os demais reasons.
+
+  it('listByVacancy() — recomputa missing_fields ao vivo via fn_worker_missing_fields p/ registration_incomplete', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await repo.listByVacancy(JOB_ID);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('fn_worker_missing_fields(wba.worker_id)');
+    // Só recomputa quando o worker existe e o motivo é registro incompleto;
+    // demais reasons (worker_not_found / worker_disabled) mantêm o snapshot.
+    expect(sql).toContain("wba.blocked_reason = 'registration_incomplete'");
+    expect(sql).toContain('wba.worker_id IS NOT NULL');
   });
 });

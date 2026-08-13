@@ -12,6 +12,7 @@ import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
 import { InterviewSlotsController } from '../controllers/InterviewSlotsController';
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
+import { WorkerVacancyDeliveryStatusController } from '../controllers/WorkerVacancyDeliveryStatusController';
 import { AuthMiddleware } from '@modules/identity';
 
 /**
@@ -108,6 +109,9 @@ export function createAdminVacanciesRoutes(
   router.post('/vacancies/:id/generate-talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateTalentumDescription(req, res),
   );
+  router.put('/vacancies/:id/talentum-description', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.updateTalentumDescription(req, res),
+  );
   router.post('/vacancies/:id/generate-ai-content', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.generateAIContent(req, res),
   );
@@ -116,6 +120,9 @@ export function createAdminVacanciesRoutes(
   );
   router.get('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.getPrescreeningConfig(req, res),
+  );
+  router.get('/vacancies/:id/talentum-status', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    vacancyTalentumController.getTalentumStatus(req, res),
   );
   router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     vacancyTalentumController.savePrescreeningConfig(req, res),
@@ -145,6 +152,15 @@ export function createAdminVacanciesRoutes(
   );
   router.put('/encuadres/:id/move', authMiddleware.requireStaff(), (req: Request, res: Response) =>
     funnelController.moveEncuadre(req, res),
+  );
+  // "Rechazar" de um card BLOQUEADO (soft-dismiss): sai de BLOQUEADO, vai p/ RECHAZADOS
+  // como card de bloqueado. Segmento próprio (não colide com /vacancies/:id).
+  router.post('/vacancies/blocked-applications/:blockedId/reject', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    funnelController.rejectBlockedApplication(req, res),
+  );
+  // "Voltar a bloqueados": desfaz o rechazo (RECHAZADOS → BLOQUEADO).
+  router.post('/vacancies/blocked-applications/:blockedId/restore', authMiddleware.requireStaff(), (req: Request, res: Response) =>
+    funnelController.undismissBlockedApplication(req, res),
   );
 
   // ── Encuadre Funnel Table — audit table (WJAFunnelTableController) ───────────
@@ -179,22 +195,36 @@ export function createAdminVacanciesRoutes(
     interviewSlotsController.cancelSlot(req, res),
   );
 
-  // ── WJA Contact Notes (WJAContactNotesController) ────────────────────────────
+  // ── Worker Contact Notes (WJAContactNotesController) ─────────────────────────
+  // Chave: par estável (worker_id, job_posting_id) — migration 235. Sobrevive
+  // à promoção BLOQUEADO→INICIADO, então cards ainda bloqueados (sem WJA)
+  // também podem ter notas.
   const contactNotesController = new WJAContactNotesController();
   router.get(
-    '/vacancies/:vacancyId/applications/:wjaId/contact-notes',
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.list(req, res),
   );
   router.post(
-    '/vacancies/:vacancyId/applications/:wjaId/contact-notes',
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.create(req, res),
   );
   router.delete(
-    '/vacancies/:vacancyId/applications/:wjaId/contact-notes/:noteId',
+    '/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId',
     authMiddleware.requireStaff(),
     (req: Request, res: Response) => contactNotesController.delete(req, res),
+  );
+
+  // ── Delivery Status (WorkerVacancyDeliveryStatusController) ──────────────────
+  // READ-ONLY: wjaStage + status de entrega (messaging_outbox) do par
+  // (worker, vaga). Usado pelo E2E do funil de WhatsApp pra verificar
+  // entrega sem tocar no banco direto.
+  const deliveryStatusController = new WorkerVacancyDeliveryStatusController();
+  router.get(
+    '/vacancies/:vacancyId/workers/:workerId/delivery-status',
+    authMiddleware.requireStaff(),
+    (req: Request, res: Response) => deliveryStatusController.getDeliveryStatus(req, res),
   );
 
   return router;

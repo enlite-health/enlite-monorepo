@@ -4,6 +4,33 @@ import { IAuthorizationEngine } from '../../ports/IAuthorizationEngine';
 import { AuthContext, Credentials, CredentialType, PrincipalType, RequestMetadata } from '../../domain/Auth';
 import { isStaffRole } from '../../domain/EnliteRole';
 import { MultiAuthService } from '../../infrastructure/MultiAuthService';
+import { loggingAls } from '@shared/logging';
+import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
+
+/**
+ * Guarda quem autenticou no contexto da request (ALS), para que as escritas
+ * carimbem `changed_by`/`change_source` nas trilhas de histórico sem precisar
+ * receber o ator por parâmetro em cada camada. Ver `withActorContext`.
+ *
+ * O store do ALS já existe (correlationMiddleware roda antes, com o traceId);
+ * aqui só somamos o ator. Sem store (job fora de request) é no-op.
+ *
+ * ⚠️ `requireAuth` protege TANTO o painel QUANTO as rotas do próprio prestador
+ * (`/api/workers/me/*`). Sem o recorte por papel, uma edição que o candidato faz
+ * no app entraria na medição como trabalho do time — por isso o ator sai de
+ * `isStaffRole`, não do simples fato de estar autenticado.
+ */
+function rememberActorInAls(
+  uid?: string | null,
+  email?: string | null,
+  roles?: readonly string[] | null,
+): void {
+  const store = loggingAls.getStore();
+  if (!store) return;
+  const isStaff = (roles ?? []).some((role) => isStaffRole(role as never));
+  const actor = isStaff ? staffActor(uid, email) : workerSelfActor(uid);
+  if (actor) store.actor = actor;
+}
 
 /**
  * Express Middleware for Authentication & Authorization
@@ -74,6 +101,7 @@ export class AuthMiddleware {
           };
           (req as any).authContext = authContext;
           (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles };
+          rememberActorInAls(mockUser.uid, mockUser.email, roles);
           return next();
         }
 
@@ -115,6 +143,8 @@ export class AuthMiddleware {
           type: authContext.principal.type,
           roles: authContext.principal.roles,
         };
+
+        rememberActorInAls(authContext.principal.id, null, authContext.principal.roles);
 
         // Log successful authentication (without PII)
         this.logAuthAttempt(authContext, metadata, true);

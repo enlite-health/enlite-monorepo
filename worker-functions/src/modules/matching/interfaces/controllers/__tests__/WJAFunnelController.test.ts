@@ -17,6 +17,8 @@
 const mockQuery = jest.fn();
 const mockKmsDecrypt = jest.fn();
 const mockListByVacancy = jest.fn();
+const mockDismiss = jest.fn();
+const mockUndismiss = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -37,6 +39,13 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 jest.mock('../../../infrastructure/BlockedApplicationQueryRepository', () => ({
   BlockedApplicationQueryRepository: jest.fn().mockImplementation(() => ({
     listByVacancy: mockListByVacancy,
+  })),
+}));
+
+jest.mock('../../../infrastructure/BlockedApplicationRepository', () => ({
+  BlockedApplicationRepository: jest.fn().mockImplementation(() => ({
+    dismiss: mockDismiss,
+    undismiss: mockUndismiss,
   })),
 }));
 
@@ -87,6 +96,9 @@ describe('WJAFunnelController', () => {
     jest.clearAllMocks();
     // Default: no blocked attempts (most tests don't test that path)
     mockListByVacancy.mockResolvedValue([]);
+    // Default: dismiss/undismiss succeed (row found)
+    mockDismiss.mockResolvedValue(true);
+    mockUndismiss.mockResolvedValue(true);
     // Default KMS mock: decrypta prefixo 'encrypted:' → resto. Permite asserts diretos.
     mockKmsDecrypt.mockImplementation((value: string) => {
       if (typeof value === 'string' && value.startsWith('encrypted:')) {
@@ -113,7 +125,8 @@ describe('WJAFunnelController', () => {
       mockQuery.mockResolvedValueOnce({
         rows: [
           makeRow({ id: 'e1', funnel_stage: null }),
-          makeRow({ id: 'e2', funnel_stage: 'INVITED', source: 'system' }),
+          // system+INVITED counts only when actually messaged (real invite) — AC2 86ajb48v1
+          makeRow({ id: 'e2', funnel_stage: 'INVITED', source: 'system', messaged_at: '2026-07-09T10:00:00Z' }),
           makeRow({ id: 'e-manual', funnel_stage: 'INVITED', source: 'manual' }),
           makeRow({ id: 'e3', funnel_stage: 'PRE_SCREENING', talentum_status: 'PRE_SCREENING' }),
           makeRow({ id: 'e4', funnel_stage: 'IN_PROGRESS', talentum_status: 'IN_PROGRESS' }),
@@ -177,7 +190,34 @@ describe('WJAFunnelController', () => {
       expect(stages.REJECTED[0].id).toBe('e10');
     });
 
-    it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true', async () => {
+    it('AC2 (86ajb48v1): system match never messaged NÃO conta em Invitados (métrica falsa)', async () => {
+      // Rodar o match persiste TODOS os top-N como INVITED/system. Só um envio
+      // real (messaged_at) vira convite. Aqui: 3 matches system, só 1 enviado.
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          makeRow({ id: 'm1', funnel_stage: 'INVITED', source: 'system', messaged_at: null }),
+          makeRow({ id: 'm2', funnel_stage: 'INVITED', source: 'system', messaged_at: null }),
+          makeRow({ id: 'sent', funnel_stage: 'INVITED', source: 'system', messaged_at: '2026-07-09T10:00:00Z' }),
+          makeRow({ id: 'manual', funnel_stage: 'INVITED', source: 'manual', messaged_at: null }),
+        ],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-002' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { data } = (res.json as jest.Mock).mock.calls[0][0];
+      const invitedIds = (data.stages.INVITED as Array<{ id: string }>).map(e => e.id);
+
+      // Só o realmente enviado aparece em Invitados — não os 2 match candidates.
+      expect(data.stages.INVITED).toHaveLength(1);
+      expect(invitedIds).toEqual(['sent']);
+      // manual continua indo pra INICIADO (não é system, não é filtrado)
+      expect((data.stages.INICIADO as unknown[]).length).toBe(1);
+      // totalEncuadres reflete só os cards visíveis (exclui os 2 match candidates)
+      expect(data.totalEncuadres).toBe(2);
+    });
+
+    it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true, workerPhone e contactNotesCount (migration 235)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -188,11 +228,12 @@ describe('WJAFunnelController', () => {
           attemptCount: 3,
           acquisitionChannel: 'facebook',
           lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+          contactNotesCount: 2,
         },
       ]);
-      // blocked repo busca nome do worker
+      // blocked repo busca nome + phone (plaintext) do worker
       mockQuery.mockResolvedValue({
-        rows: [{ first_name_encrypted: 'encrypted:Ana', last_name_encrypted: 'encrypted:Blocked' }],
+        rows: [{ first_name_encrypted: 'encrypted:Ana', last_name_encrypted: 'encrypted:Blocked', phone: '+5491100000' }],
       });
 
       const [req, res] = mockReqRes({ id: 'jp-001' });
@@ -211,6 +252,10 @@ describe('WJAFunnelController', () => {
       expect(card.acquisitionChannel).toBe('facebook');
       expect(card.encuadreId).toBeNull();
       expect(card.workerName).toBe('Ana Blocked');
+      // migration 235: contactNotesCount vem do blockedRepo (não mais hardcoded 0)
+      expect(card.contactNotesCount).toBe(2);
+      // workerPhone passa a ser preenchido (plaintext — workers.phone, sem KMS)
+      expect(card.workerPhone).toBe('+5491100000');
     });
 
     it('card bloqueado com worker_not_found → workerName null, sem crash (coluna BLOQUEADO)', async () => {
@@ -224,6 +269,7 @@ describe('WJAFunnelController', () => {
           attemptCount: 1,
           acquisitionChannel: null,
           lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+          contactNotesCount: 0,
         },
       ]);
 
@@ -233,7 +279,43 @@ describe('WJAFunnelController', () => {
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect(stages.BLOQUEADO).toHaveLength(1);
       expect(stages.BLOQUEADO[0].workerName).toBeNull();
+      expect(stages.BLOQUEADO[0].workerPhone).toBeNull();
       expect(stages.BLOQUEADO[0].isBlocked).toBe(true);
+    });
+
+    it('bloqueado RECHAZADO (dismissedAt setado) vai para REJECTED como card de bloqueado, com motivo e isDismissed', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockListByVacancy.mockResolvedValue([
+        {
+          id: 'ba-dismissed',
+          workerId: 'w-x',
+          blockedReason: 'registration_incomplete',
+          missingFields: ['profession'],
+          attemptCount: 2,
+          acquisitionChannel: null,
+          lastAttemptedAt: '2026-06-26T10:00:00.000Z',
+          contactNotesCount: 0,
+          dismissedAt: '2026-07-22T10:00:00.000Z',
+          dismissedReason: 'WORKER_DECLINED',
+        },
+      ]);
+      mockQuery.mockResolvedValue({
+        rows: [{ first_name_encrypted: 'encrypted:Ana', last_name_encrypted: 'encrypted:X', phone: '+549110' }],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      // Sai de BLOQUEADO, aparece em REJECTED
+      expect(stages.BLOQUEADO).toHaveLength(0);
+      expect(stages.REJECTED).toHaveLength(1);
+      const card = stages.REJECTED[0] as Record<string, unknown>;
+      expect(card.id).toBe('ba-dismissed');
+      expect(card.isBlocked).toBe(true);
+      expect(card.isDismissed).toBe(true);
+      expect(card.encuadreId).toBeNull(); // não-arrastável
+      expect(card.rejectionReasonCategory).toBe('WORKER_DECLINED'); // badge de motivo
     });
 
     it('dedup: bloqueado promovido some de BLOQUEADO e aparece como WJA real em INICIADO (NOT EXISTS no SQL)', async () => {
@@ -434,6 +516,97 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // rejectBlockedApplication — "Rechazar" (soft-dismiss) de um card BLOQUEADO
+  // Marca dismissed_at+motivo → card vai p/ RECHAZADOS (não cria WJA).
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('rejectBlockedApplication', () => {
+    const VALID_UUID = 'aaaaaaaa-1111-2222-3333-444455556666';
+
+    it('200 + chama dismiss(blockedId, motivo) quando a entrada é válida', async () => {
+      const [req, res] = mockReqRes({ blockedId: VALID_UUID }, { rejectionReasonCategory: 'WORKER_DECLINED' });
+      await controller.rejectBlockedApplication(req, res);
+
+      expect(mockDismiss).toHaveBeenCalledWith(VALID_UUID, 'WORKER_DECLINED');
+      const response = (res.json as jest.Mock).mock.calls[0][0];
+      expect(response.success).toBe(true);
+      expect(response.data.blockedId).toBe(VALID_UUID);
+      expect(response.data.dismissedReason).toBe('WORKER_DECLINED');
+    });
+
+    it('404 quando a tentativa não existe (dismiss retorna false)', async () => {
+      mockDismiss.mockResolvedValue(false);
+
+      const [req, res] = mockReqRes({ blockedId: VALID_UUID }, { rejectionReasonCategory: 'OTHER' });
+      await controller.rejectBlockedApplication(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('400 quando o blockedId não é um UUID (sem tocar o repo)', async () => {
+      const [req, res] = mockReqRes({ blockedId: 'not-a-uuid' }, { rejectionReasonCategory: 'OTHER' });
+      await controller.rejectBlockedApplication(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockDismiss).not.toHaveBeenCalled();
+    });
+
+    it('400 quando o motivo é inválido/ausente (sem tocar o repo)', async () => {
+      const [req, res] = mockReqRes({ blockedId: VALID_UUID }, { rejectionReasonCategory: 'NOPE' });
+      await controller.rejectBlockedApplication(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockDismiss).not.toHaveBeenCalled();
+
+      const [req2, res2] = mockReqRes({ blockedId: VALID_UUID }, {});
+      await controller.rejectBlockedApplication(req2, res2);
+      expect(res2.status).toHaveBeenCalledWith(400);
+    });
+
+    it('500 quando o repo lança', async () => {
+      mockDismiss.mockRejectedValue(new Error('DB down'));
+
+      const [req, res] = mockReqRes({ blockedId: VALID_UUID }, { rejectionReasonCategory: 'OTHER' });
+      await controller.rejectBlockedApplication(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // undismissBlockedApplication — "Voltar a bloqueados"
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('undismissBlockedApplication', () => {
+    const VALID_UUID = 'bbbbbbbb-1111-2222-3333-444455556666';
+
+    it('200 + chama undismiss(blockedId)', async () => {
+      const [req, res] = mockReqRes({ blockedId: VALID_UUID });
+      await controller.undismissBlockedApplication(req, res);
+
+      expect(mockUndismiss).toHaveBeenCalledWith(VALID_UUID);
+      expect((res.json as jest.Mock).mock.calls[0][0].success).toBe(true);
+    });
+
+    it('404 quando não existe (undismiss retorna false)', async () => {
+      mockUndismiss.mockResolvedValue(false);
+
+      const [req, res] = mockReqRes({ blockedId: VALID_UUID });
+      await controller.undismissBlockedApplication(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('400 quando o blockedId não é um UUID', async () => {
+      const [req, res] = mockReqRes({ blockedId: 'nope' });
+      await controller.undismissBlockedApplication(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockUndismiss).not.toHaveBeenCalled();
     });
   });
 

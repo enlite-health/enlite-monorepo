@@ -4,6 +4,10 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
 import { MatchmakingService } from '../../infrastructure/MatchmakingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import {
+  excludeDisabledWorkersSql,
+  workerNotDisabledSql,
+} from '@shared/database/activeWorkerFilter';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
 
@@ -27,6 +31,15 @@ export class VacancyMatchController {
       const radiusKm               = req.query.radius_km ? parseInt(req.query.radius_km as string) : undefined;
       const excludeWithActiveCases = req.query.exclude_active === 'true';
       const useScoring             = req.query.use_scoring === 'true';
+
+      const jobRes = await this.db.query<{ id: string }>(
+        `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
+        [id],
+      );
+      if (jobRes.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Job posting not found' });
+        return;
+      }
 
       const matchingService = new MatchmakingService();
       const result = await matchingService.matchWorkersForJob(id, {
@@ -53,7 +66,9 @@ export class VacancyMatchController {
       const metaResult = await this.db.query<{ total: string; last_match_at: Date | null }>(
         `SELECT COUNT(*)::text AS total, MAX(wja.updated_at) AS last_match_at
          FROM worker_job_applications wja
-         WHERE wja.job_posting_id = $1`,
+         WHERE wja.job_posting_id = $1
+           -- total tem que bater com a lista abaixo (que exclui baixados)
+           AND ${workerNotDisabledSql('wja.worker_id')}`,
         [id]
       );
       const totalCandidates = parseInt(metaResult.rows[0]?.total || '0');
@@ -99,6 +114,8 @@ export class VacancyMatchController {
          LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
          LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
          WHERE wja.job_posting_id = $1
+           -- worker que deu baixa na conta não é candidato contatável
+           AND ${excludeDisabledWorkersSql('w')}
          ORDER BY wja.match_score DESC NULLS LAST
          LIMIT $2 OFFSET $3`,
         [id, limit, offset]

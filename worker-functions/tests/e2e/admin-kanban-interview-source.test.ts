@@ -103,7 +103,10 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
     const interviewDate = card!.interviewDate as string;
     expect(interviewDate.startsWith('2026-06-01')).toBe(true);
 
-    expect(card!.interviewTime).toBe('14:30:00');
+    // 14:30Z exibido no fuso da OPERAÇÃO (America/Argentina/Buenos_Aires, UTC-3) = 11:30.
+    // Desde 30/07 o Kanban resolve data/hora via INTERVIEW_*_RESOLVED_SQL (fuso BsAs) —
+    // exibir em UTC era o comportamento antigo: entrevista de 21h local caía no dia seguinte.
+    expect(card!.interviewTime).toBe('11:30:00');
     expect(card!.meetLink).toBe('https://meet.google.com/abc-defg-hij');
   });
 });

@@ -345,6 +345,11 @@ export async function coalesceWorkerFields(
        name_trgm_bidx            = COALESCE(survivor.name_trgm_bidx,        absorbed.name_trgm_bidx),
        sex_bidx                  = COALESCE(survivor.sex_bidx,              absorbed.sex_bidx),
        languages_bidx            = COALESCE(survivor.languages_bidx,        absorbed.languages_bidx),
+       -- Consentimento viaja em trio (mesmo contrato de updateAuthUid): herdar só
+       -- lgpd_consent_at deixaria terms/privacy órfãos no casco (caso Edith, 04/08).
+       lgpd_consent_at           = COALESCE(survivor.lgpd_consent_at,       absorbed.lgpd_consent_at),
+       terms_accepted_at         = COALESCE(survivor.terms_accepted_at,     absorbed.terms_accepted_at),
+       privacy_accepted_at       = COALESCE(survivor.privacy_accepted_at,   absorbed.privacy_accepted_at),
        data_sources = ARRAY(
          SELECT DISTINCT unnest(
            array_cat(
@@ -375,4 +380,73 @@ export async function coalesceWorkerFields(
   );
 
   return { fieldsFilled: result.rows[0]?.fields_filled ?? [] };
+}
+
+// ─── MOVE de campos de identidade únicos ──────────────────────────────────
+
+interface IdentityFieldsRow {
+  id: string;
+  phone: string | null;
+  phone_encrypted: string | null;
+  whatsapp_phone_encrypted: string | null;
+  ana_care_id: string | null;
+}
+
+/**
+ * MOVE (não copia) phone + ciphertext, whatsapp e ana_care_id do absorvido
+ * para o sobrevivente quando o sobrevivente não os tem.
+ *
+ * idx_workers_phone_unique e idx_workers_ana_care_id_unique NÃO filtram
+ * merged_into_id — o casco mergeado continua ocupando o slot. A ordem é
+ * obrigatória: limpar o absorvido ANTES de gravar no sobrevivente, na MESMA
+ * transação (a constraint é checada por statement). Provado no caso Edith.
+ */
+export async function moveUniqueIdentityFields(
+  client: PoolClient,
+  survivorId: string,
+  absorbedId: string,
+): Promise<{ fieldsMoved: string[] }> {
+  const res = await client.query<IdentityFieldsRow>(
+    `SELECT id, phone, phone_encrypted, whatsapp_phone_encrypted, ana_care_id
+     FROM workers
+     WHERE id = ANY(ARRAY[$1, $2]::uuid[])
+     FOR UPDATE`,
+    [survivorId, absorbedId],
+  );
+  const survivor = res.rows.find(r => r.id === survivorId);
+  const absorbed = res.rows.find(r => r.id === absorbedId);
+  if (!survivor || !absorbed) return { fieldsMoved: [] };
+
+  // phone e phone_encrypted viajam como unidade (gate no phone público)
+  const moves: Array<{ col: keyof IdentityFieldsRow }> = [];
+  if (absorbed.phone != null && survivor.phone == null) {
+    moves.push({ col: 'phone' }, { col: 'phone_encrypted' });
+  }
+  if (absorbed.whatsapp_phone_encrypted != null && survivor.whatsapp_phone_encrypted == null) {
+    moves.push({ col: 'whatsapp_phone_encrypted' });
+  }
+  if (absorbed.ana_care_id != null && survivor.ana_care_id == null) {
+    moves.push({ col: 'ana_care_id' });
+  }
+  if (moves.length === 0) return { fieldsMoved: [] };
+
+  const cols = moves.map(m => m.col);
+
+  // 1) Limpa o casco — libera os índices únicos
+  await client.query(
+    `UPDATE workers
+     SET ${cols.map(c => `${c} = NULL`).join(', ')}, updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [absorbedId],
+  );
+
+  // 2) Grava no sobrevivente
+  await client.query(
+    `UPDATE workers
+     SET ${cols.map((c, i) => `${c} = $${i + 1}`).join(', ')}, updated_at = NOW()
+     WHERE id = $${cols.length + 1}::uuid`,
+    [...cols.map(c => absorbed[c]), survivorId],
+  );
+
+  return { fieldsMoved: cols };
 }

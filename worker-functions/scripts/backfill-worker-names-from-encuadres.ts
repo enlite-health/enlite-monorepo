@@ -28,6 +28,7 @@ import { Pool } from 'pg';
 import { writeFileSync } from 'node:fs';
 import { KMSEncryptionService } from '../src/shared/security/KMSEncryptionService';
 import { BlindIndexService } from '../src/shared/security/BlindIndexService';
+import { isFakeAuthUid } from './shared/fakeAuthUid';
 
 // ── CLI parsing ────────────────────────────────────────────────────────────────
 
@@ -93,18 +94,6 @@ interface UnresolvedEntry {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-const IMPORT_PREFIXES = [
-  'anacareimport_',
-  'candidatoimport_',
-  'pretalnimport_',
-  'talentum_',
-];
-
-function isFakeAuthUid(authUid: string | null): boolean {
-  if (!authUid) return true;
-  return IMPORT_PREFIXES.some((p) => authUid.startsWith(p));
-}
 
 function splitName(raw: string | null): { firstName: string | null; lastName: string | null } {
   if (!raw) return { firstName: null, lastName: null };

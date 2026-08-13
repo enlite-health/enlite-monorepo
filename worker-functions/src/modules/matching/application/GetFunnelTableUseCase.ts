@@ -129,6 +129,7 @@ export class GetFunnelTableUseCase {
       interviewResponse: ir,
       registrationComplete: raw.worker_status === 'REGISTERED',
       contactNotesCount: Number(raw.contact_notes_count ?? 0),
+      selfAppliedAt: raw.self_applied_at ?? null,
     };
   }
 

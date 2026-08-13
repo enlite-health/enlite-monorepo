@@ -18,6 +18,7 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
+import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
@@ -25,10 +26,12 @@ import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
+import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
@@ -36,6 +39,19 @@ import { InviteProgressPanel } from './components/features/admin/VacancyMatch/In
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
+// Public B2C patient intake (Task 2) — no auth, outside the admin shell.
+// Same page, parametrized by country; wrapped so each lazy module is a
+// zero-arg component (the prop is bound here) and keeps chunk-retry.
+const AdmisionArPage = lazyWithRetry(() =>
+  import('./pages/public/AdmisionPage').then((m) => ({
+    default: () => <m.default country="AR" />,
+  })),
+);
+const AdmisionBrPage = lazyWithRetry(() =>
+  import('./pages/public/AdmisionPage').then((m) => ({
+    default: () => <m.default country="BR" />,
+  })),
+);
 // Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
 // quando staff abre /admin/api-docs.
 const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
@@ -86,6 +102,31 @@ export function App() {
         />
         {/* Alias EN → ES: resgata links antigos enviados como /vacancies/:id */}
         <Route path="/vacancies/:id" element={<VacancyEnAliasRedirect />} />
+        {/* Public patient intake (Task 2) — country-parametrized native scheduler.
+            AR → es, BR → pt-BR (page forces its own language). The WP
+            /registrar/admisión iframe points at the country-specific route. */}
+        <Route
+          path="/admission-ar"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionArPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/admission-br"
+          element={
+            <Suspense fallback={<AdminFallback />}>
+              <RouteErrorBoundary>
+                <AdmisionBrPage />
+              </RouteErrorBoundary>
+            </Suspense>
+          }
+        />
+        {/* Compat alias: the original /admision now points at AR. */}
+        <Route path="/admision" element={<Navigate to="/admission-ar" replace />} />
         <Route
           path="/worker-registration"
           element={<Navigate to="/worker/profile" replace />}
@@ -152,14 +193,17 @@ export function App() {
           <Route path="vacancies/:id/edit" element={<CreateVacancyPage />} />
           <Route path="vacancies/:id/talentum" element={<TalentumConfigPage />} />
           <Route path="vacancies/:id" element={<VacancyDetailPage />} />
+          <Route path="dashboard" element={<ManagementDashboardPage />} />
           <Route path="recruitment" element={<AdminRecruitmentPage />} />
           <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
           <Route path="recruitment/blocked-attempts" element={<BlockedAttemptsPage />} />
           <Route path="workers" element={<AdminWorkersPage />} />
           <Route path="workers/:id" element={<WorkerDetailPage />} />
           <Route path="patients" element={<AdminPatientsPage />} />
+          <Route path="patients/kanban" element={<PatientKanbanPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
           <Route
             path="api-docs"

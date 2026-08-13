@@ -43,6 +43,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useAuthStore } from '@presentation/stores/authStore';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
+import { ApiError } from '@infrastructure/http/ApiError';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -665,6 +666,52 @@ describe('adminAuthStore', () => {
       });
 
       expect(useAdminAuthStore.getState().adminProfile).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Rastreabilidade — o store alimenta o AuthTraceHandle passado pela page
+  // -------------------------------------------------------------------------
+  describe('rastreabilidade do login (trace)', () => {
+    const makeTrace = () => ({
+      id: 'login-test',
+      step: vi.fn(),
+      fail: vi.fn(),
+      end: vi.fn(),
+    });
+
+    it('loginWithGoogle registra as etapas até o backend-profile:ok', async () => {
+      const mockUser = createMockUser({ email: 'admin@enlite.health' });
+      const mockProfile = createMockAdminUser();
+      vi.mocked(adminAuthServiceInstance.signInWithGoogle).mockResolvedValue({ user: mockUser, idToken: 'google-token' });
+      vi.mocked(AdminApiService.getProfile).mockResolvedValue(mockProfile);
+      const trace = makeTrace();
+
+      await act(async () => {
+        await useAdminAuthStore.getState().loginWithGoogle(trace);
+      });
+
+      const steps = trace.step.mock.calls.map((c) => c[0]);
+      expect(steps).toEqual(expect.arrayContaining([
+        'firebase-signin:ok', 'domain-check:ok', 'backend-profile:start', 'backend-profile:ok', 'token-refresh:ok',
+      ]));
+      expect(trace.fail).not.toHaveBeenCalled();
+    });
+
+    it('login captura o 404 (não-admin) via trace.fail com o status HTTP', async () => {
+      const mockUser = createMockUser({ email: 'javiertest2027@gmail.com' });
+      vi.mocked(adminAuthServiceInstance.signInWithEmail).mockResolvedValue({ user: mockUser, idToken: 'tok' });
+      vi.mocked(AdminApiService.getProfile).mockRejectedValue(
+        new ApiError({ success: false, error: 'Admin user not found' }, 404),
+      );
+      const trace = makeTrace();
+
+      await act(async () => {
+        await useAdminAuthStore.getState().login('javiertest2027@gmail.com', 'pw', trace);
+      });
+
+      expect(useAdminAuthStore.getState().adminProfile).toBeNull();
+      expect(trace.fail).toHaveBeenCalledWith('backend-profile', expect.objectContaining({ status: 404 }));
     });
   });
 });

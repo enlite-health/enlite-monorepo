@@ -56,17 +56,14 @@ export class SearchWorkersUseCase {
   async execute(params: SearchWorkersParams): Promise<SearchWorkersResult> {
     const { limit, offset } = params;
 
+    // O builder resolve o status: filtro explícito manda; sem filtro, exclui
+    // quem deu baixa na conta (activeWorkerFilter).
     let { whereClause, params: sqlParams, paramIndex } = buildWorkerListWhereClause({
       ...(params.profession !== undefined ? { profession: params.profession } : {}),
+      ...(params.status !== undefined ? { status: params.status } : {}),
       limit: String(limit),
       offset: String(offset),
     });
-
-    if (params.status) {
-      whereClause += ` AND w.status = $${paramIndex}`;
-      sqlParams.push(params.status);
-      paramIndex++;
-    }
 
     ({ whereClause, params: sqlParams, paramIndex } = await appendSexFilter(
       this.blindIndex, whereClause, sqlParams, paramIndex, params.sex,

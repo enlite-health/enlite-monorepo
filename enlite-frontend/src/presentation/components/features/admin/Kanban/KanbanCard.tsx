@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
+import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
+import { MoveToMenu } from './MoveToMenu';
 
 interface KanbanCardProps {
   id: string;
@@ -31,12 +32,25 @@ interface KanbanCardProps {
   missingFields?: string[];
   /** How many times this worker attempted to apply */
   attemptCount?: number;
+  /** Blocked card "rechazado" (soft-dismiss) — aparece em RECHAZADOS com botão de voltar. */
+  isDismissed?: boolean;
   onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
-  /** Opens the contact-notes modal for this WJA. Only wired for real applications (not blocked attempts). */
+  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (só para isDismissed). */
+  onUndismiss?: () => void;
+  /** Move o card para outro stage via menu de clique (alternativa ao arrasto).
+   *  Só é passado para cards movíveis (com encuadre) — orphans/BLOQUEADO ficam sem. */
+  onMoveTo?: (targetStage: string) => void;
+  /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
-  /** Number of contact notes registered for this WJA — shown as a count badge on the notes button. */
+  /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
+  /**
+   * ISO de quando o PRÓPRIO prestador entrou nesta vaga pelo link público —
+   * levantou a mão sozinho, é lead quente. null/undefined = não sabemos
+   * (a autoria só é gravada desde 06/08): ausência NÃO significa desinteresse.
+   */
+  selfAppliedAt?: string | null;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -89,14 +103,23 @@ export function KanbanCard({
   blockedReason,
   missingFields,
   attemptCount,
+  isDismissed,
   onWorkerClick,
   onReject,
+  onUndismiss,
+  onMoveTo,
   onOpenNotes,
   contactNotesCount = 0,
+  selfAppliedAt,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
   const formattedPhone = formatPhoneDisplay(workerPhone);
+  // BLOQUEADO (worker_not_found): o nome não pôde ser decriptado — usar um
+  // label curto e específico em vez do fallback genérico "Sin nombre".
+  const nameLabel =
+    workerName ??
+    (isBlocked ? t('admin.kanban.blockedNoName') : t('admin.kanban.noName'));
 
   const handleNameClick = (e: React.MouseEvent) => {
     if (workerId && onWorkerClick) {
@@ -123,12 +146,12 @@ export function KanbanCard({
             onClick={handleNameClick}
           >
             <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
-              {workerName ?? t('admin.kanban.noName')}
+              {nameLabel}
             </Text>
           </button>
         ) : (
           <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate">
-            {workerName ?? t('admin.kanban.noName')}
+            {nameLabel}
           </Text>
         )}
         {matchScore !== null && (
@@ -142,6 +165,22 @@ export function KanbanCard({
       {occupation && (
         <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
           {occupation}
+        </span>
+      )}
+
+      {/* "Se postuló sola": a pessoa clicou no link da vaga por conta própria.
+          Sem este selo o card é idêntico a um convite frio que ninguém pediu —
+          foi assim que a Carina ficou 3 semanas esperando em 14 vagas. */}
+      {selfAppliedAt && (
+        <span
+          data-testid="self-applied-badge"
+          title={t('admin.kanban.selfAppliedTitle', {
+            date: new Date(selfAppliedAt).toLocaleDateString('es-AR'),
+          })}
+          className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
+        >
+          <Hand className="w-3 h-3" />
+          {t('admin.kanban.selfApplied')}
         </span>
       )}
 
@@ -262,6 +301,8 @@ export function KanbanCard({
         </button>
       )}
 
+      {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}
+
       {onReject && stage !== 'REJECTED' && (
         <button
           data-testid="reject-button"
@@ -273,6 +314,20 @@ export function KanbanCard({
           className="mt-2 w-full text-left px-2 py-1 rounded-lg text-[10px] font-medium text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors border border-transparent hover:border-red-100"
         >
           {t('admin.kanban.rejectButton')}
+        </button>
+      )}
+
+      {isDismissed && onUndismiss && (
+        <button
+          data-testid="undismiss-button"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUndismiss();
+          }}
+          className="mt-2 w-full text-left px-2 py-1 rounded-lg text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-primary transition-colors border border-transparent hover:border-slate-200"
+        >
+          {t('admin.kanban.undismissButton')}
         </button>
       )}
     </div>

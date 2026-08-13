@@ -5,8 +5,16 @@ export interface PublicJobRow {
   title: string;
   status: string;
   description: string | null;   // sourced from jp.talentum_description (PII-free); legacy `description` column dropped in migration 214
-  schedule_days_hours: string | null;
-  worker_profile_sought: string | null;
+  schedule_days_hours: string | null;   // legacy column (ClickUp import) — null for vagas novas, see PublicJobMapper fallback
+  worker_profile_sought: string | null; // SQL COALESCE(worker_profile_sought, worker_attributes) — see JobPostingARRepository.findActivePublic
+  /**
+   * `jp.schedule` (JSONB) — fonte estruturada usada como fallback pra derivar
+   * `schedule_days_hours` quando a coluna legada está NULL (vagas novas).
+   * Forma pode ser array `[{dayOfWeek,startTime,endTime}]` (Gemini/form admin)
+   * ou objeto legado `{ <dia>: [{start,end}] }` — ver `scheduleNormalizer.ts`.
+   * `unknown` de propósito: normalizado só dentro de `formatScheduleToText`.
+   */
+  schedule: unknown;
   service: string | null;
   pathologies: string | null;
   state: string | null;
@@ -22,6 +30,25 @@ export interface PublicJobRow {
   age_range_min: number | null;      // jp.age_range_min — AT professional age range
   age_range_max: number | null;      // jp.age_range_max — AT professional age range
   whatsapp_url: string | null;       // jp.talentum_whatsapp_url
+}
+
+/**
+ * Tabela semanal estruturada derivada do JSONB `job_postings.schedule` — ver
+ * `buildScheduleWeek.ts`. Usada pelo plugin WordPress pra renderizar a grade
+ * de horários sem re-parsear `schedule_days_hours` (texto livre).
+ */
+export interface ScheduleWeekDto {
+  days: {
+    lunes: { start: string; end: string }[];
+    martes: { start: string; end: string }[];
+    miercoles: { start: string; end: string }[];
+    jueves: { start: string; end: string }[];
+    viernes: { start: string; end: string }[];
+    sabado: { start: string; end: string }[];
+    domingo: { start: string; end: string }[];
+  };
+  weekly_hours: number;
+  is_coverage: boolean;
 }
 
 export interface PublicJobDto {
@@ -44,8 +71,15 @@ export interface PublicJobDto {
   job_zone: string | null;
   neighborhood: string | null;
   state_city: string | null;
+  /**
+   * Rótulo único de localização (mais específico disponível: barrio → localidad →
+   * provincia). Derivado no mapper — ver `resolveLocationLabel`. Consumido pelo
+   * portal WordPress pra compor o título do accordion sem escolher entre 3 campos.
+   */
+  location_label: string | null;
   country: string | null;
   age_range_min: number | null;
   age_range_max: number | null;
   whatsapp_url: string | null;
+  schedule_week: ScheduleWeekDto | null;
 }

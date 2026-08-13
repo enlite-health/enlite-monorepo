@@ -372,7 +372,7 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 
 ### TD-011 — Cloud SQL prd com `authorized_networks: 0.0.0.0/0` (descoberto 2026-05-08)
 
-- **Status:** aberto, segurança
+- **Status:** ✅ **RESOLVIDO em 2026-08-11 (PR #202)** — ver "Desfecho" no fim desta entrada
 - **Descoberto em:** 2026-05-08 ao inspecionar config Cloud SQL para mirror stg
 - **Dono:** infra + sec
 - **Bloqueador?** Não — SSL é obrigatório (sslMode=TRUSTED_CLIENT_CERTIFICATE_REQUIRED), mas o IP público está aberto pra internet
@@ -384,6 +384,20 @@ Os 3 services Cloud Run em `enlite-prd` (enlite-frontend, worker-functions, enli
 Stg foi configurado com a mesma rule por paridade. Idem `enlite-n8n-db-ar` (que tem `requireSsl=false` — pior ainda, mas o n8n acessa via Cloud SQL Proxy interno, não via IP público; a rule 0.0.0.0/0 não está nesse).
 
 **Plano:** restringir authorized_networks a IPs específicos (Cloud Run NAT, GitHub Actions runners, IPs do escritório) ou migrar pra Private IP exclusivamente. Cloud SQL Proxy via service account já cobre acesso via aplicação.
+
+**Desfecho (2026-08-11, PR #202):**
+
+A regra **já havia sido removida da instância viva** em algum momento entre maio e agosto — `gcloud sql instances describe enlite-ar-db` devolve `authorizedNetworks` vazio. Mas o HCL nunca foi atualizado, e a instância **estava** no state: o `terraform plan` pedia `update in-place` **re-adicionando** `0.0.0.0/0`. Ou seja, o conserto tinha sido feito à mão e o código estava pronto para desfazê-lo no próximo `apply` — feito para qualquer outra coisa.
+
+Removido o bloco do `cloud_sql.tf` (o módulo já tem `default = []`). Verificado que nada depende de acesso pelo IP público:
+- nenhuma referência a `34.176.140.205` em código, CI, scripts, docs ou `.env`;
+- todos os workflows de deploy usam socket Unix (`DB_HOST=/cloudsql/...` + `--add-cloudsql-instances`), que passa pelo agente do Cloud SQL e não pela rede autorizada;
+- acesso operacional é por `cloud-sql-proxy`, que autentica por credencial IAM;
+- empiricamente: a instância já roda sem redes autorizadas, e deploys, migrations, e2e e o espelho do Ana Care funcionam.
+
+**Lição registrada (D106):** conserto aplicado à mão por `gcloud`/Console **não fecha** enquanto não estiver no HCL — o comando é o remendo, o código é o conserto. Enquanto os dois discordam, a ferramenta correta vira arma.
+
+⚠️ **Ainda aberto:** `stg` recebeu a mesma rule "por paridade" e não foi tocado aqui. Conferir e, se confirmado, remover lá também.
 
 ---
 
@@ -404,71 +418,66 @@ A decisão da sessão de setup foi que stg deveria receber dump anonimizado de p
 
 ---
 
-### TD-013 — `PublicApiService.getPublicJobs()` ignora `country` no painel do worker (descoberto 2026-05-11)
+### TD-013 — `PublicApiService.getPublicJobs()` ignora `country` no painel do worker — resolvido parcialmente 2026-05-20
 
-- **Status:** aberto
-- **Descoberto em:** 2026-05-11, revisão final da PR de filtros públicos em `/api/public/v1/jobs`
-- **Dono provável:** frontend (enlite-frontend)
-- **Bloqueador?** Não — hoje só existem vagas AR no banco
-
-**O que é:**
-
-`PublicApiService.getPublicJobs()` em `enlite-frontend/src/infrastructure/http/PublicApiService.ts` chama `GET /api/public/v1/jobs` **sem nenhum query param**. Como o endpoint agora aplica `country='AR'` por default, o consumo atual continua funcionando.
-
-**Quando vira problema:**
-
-Quando entrarem vagas BR/US no banco, a tela do worker AR vai continuar vendo só AR (correto pra perfil AR), mas uma AT brasileira logada também só vai ver AR (errado).
-
-**Proposta:**
-
-`PublicApiService.getPublicJobs()` deve passar `?country={X}` baseado no perfil da AT logada. Campo de origem ainda a definir — possíveis fontes: `workers.country`, primeira letra de `workers.service_area`, ou perfil explícito no signup.
-
-**Pré-requisito:** primeira vaga não-AR entrar no banco (sync ClickUp / form manual) — antes disso, é só armadilha latente.
-
----
-
-### TD-014 — `PublicJobsFilters` interface e schema Zod do controller podem driftar (descoberto 2026-05-11)
-
-- **Status:** aberto
+- **Status:** resolvido (service); aberto pra integração no consumer (`JobsEmbeddedSection`)
 - **Descoberto em:** 2026-05-11, revisão final da PR de filtros públicos
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não
+- **Resolvido em:** 2026-05-20 (parcial), PR `chore/td-013-014-public-jobs-filters`
 
-**O que é:**
+**Como foi resolvido:**
 
-`PublicJobsFilters` (em `domain/`) e `PublicJobsQuerySchema` (em `interfaces/controllers/PublicJobsController.ts`) são tipos estruturalmente idênticos hoje, mantidos separados. Qualquer adição de filtro num lado sem atualizar o outro vai gerar drift silencioso que o tsc não pega — o controller faz cast implícito via `z.infer<typeof PublicJobsQuerySchema>` que é parametricamente compatível.
+`PublicApiService.getPublicJobs(filters?)` agora aceita filtros opcionais — `country`, `state`, `city`, `pathology`, `worker_sex`, `worker_type`, `q`. Os parâmetros são serializados via `URLSearchParams` (encoding automático). Sem filters, comportamento atual mantido (backend usa default 'AR').
 
-**Proposta:**
+Interface `PublicJobsFilters` exportada do service, alinhada com `PublicJobsFiltersSchema` do worker-functions (single source of truth no backend).
 
-Duas opções:
-1. **Source of truth = Zod**: exportar `type PublicJobsFilters = z.infer<typeof PublicJobsQuerySchema>` e deletar a interface separada (mais simples, mas acopla domain a Zod)
-2. **Source of truth = domain**: adicionar teste `expectTypeOf<z.infer<typeof PublicJobsQuerySchema>>().toEqualTypeOf<PublicJobsFilters>()` que falha em compile-time se driftarem
+7 tests vitest novos cobrem: sem filters → URL limpa, com country → query string, múltiplos filters, valores undefined/vazio ignorados, encoding de caracteres especiais.
 
-Decidir junto com Architect quando houver demanda real de adicionar/remover filtro.
+**Aberto: integração no `JobsEmbeddedSection`**
+
+O consumer atual (`JobsEmbeddedSection.tsx`) ainda chama `getPublicJobs()` sem args. Decidir UX: passar `country` do worker logado (auto-filtra) ou deixar usuário selecionar na UI (filter explícito).
+
+Quando aparecer worker BR ou de outro país no signup, este sub-TD vira urgente. Por enquanto (só workers AR no banco), comportamento atual continua correto.
 
 ---
 
-### TD-015 — Documentação pública do endpoint `/api/public/v1/jobs` ausente (descoberto 2026-05-11)
+### TD-014 — `PublicJobsFilters` interface e schema Zod do controller podem driftar — resolvido 2026-05-20
 
-- **Status:** aberto
-- **Descoberto em:** 2026-05-11, durante entrega dos filtros públicos para o time WordPress
-- **Dono provável:** produto/comms (com input técnico do backend)
-- **Bloqueador?** Não — spec pode ser passada de outras formas inicialmente
+- **Status:** resolvido
+- **Descoberto em:** 2026-05-11, revisão final da PR de filtros públicos
+- **Resolvido em:** 2026-05-20, PR `chore/td-013-014-public-jobs-filters`
 
-**O que é:**
+**Como foi resolvido:**
 
-Não existe `docs/api-public-jobs.md` ou equivalente. O time WordPress vai precisar de:
-- URL canônica do endpoint (hoje `https://worker-functions-byh3gvl5yq-tl.a.run.app/api/public/v1/jobs` — bruto do Cloud Run; falta custom domain tipo `api.enlite.health`)
-- Tabela de query params com exemplos por país
-- Schema JSON da resposta (19 campos)
-- Política de rate-limit e cache
-- Comportamento de erros (400 em params inválidos)
+Schema Zod canônico movido pra `domain/PublicJobsFilters.ts` como `PublicJobsFiltersSchema`. Type derivado: `export type PublicJobsFilters = z.infer<typeof PublicJobsFiltersSchema>` (não há mais interface separada).
 
-**Proposta:**
+Controller (`PublicJobsController.ts`) importa o schema do domain — eliminou declaração local que era source of drift.
 
-1. Criar `docs/api-public-jobs.md` com OpenAPI-lite (markdown estruturado) + exemplos `curl`
-2. Avaliar custom domain `api.enlite.health` no Cloud Run prd (decisão de infra/DNS)
-3. Quando custom domain estiver no ar, atualizar o doc + comunicar ao WP
+OpenAPI registration (`shared/openapi/registrations/publicJobs.ts`) ainda redeclara o schema com `.openapi()` por campo (necessário pelo extension method da lib `zod-to-openapi`). Comentário explícito no arquivo sinaliza: "manter alinhado se o domain mudar". Reduz drift de 3 lugares → 2 lugares com revisão preventiva.
+
+Solução adotada foi a Opção 1 (Source of truth = Zod) — mais simples, acopla domain a Zod mas Zod é parser puro (não framework HTTP).
+
+---
+
+### TD-015 — Documentação pública do endpoint `/api/public/v1/jobs` — resolvido 2026-05-20
+
+- **Status:** resolvido (OpenAPI ja existia, descoberto durante TD-014)
+- **Descoberto em:** 2026-05-11
+- **Resolvido em:** 2026-05-20, confirmado durante PR `chore/td-013-014-public-jobs-filters`
+
+**Como foi resolvido:**
+
+A documentação OpenAPI **já existia** em `worker-functions/src/shared/openapi/registrations/publicJobs.ts` desde algum PR posterior à criação do TD em 2026-05-11. Define:
+- Path `/api/public/v1/jobs` com tag `Public · Jobs`
+- Summary + description (rate limit + cache política mencionados)
+- Schema completo dos query params com descrições e exemplos
+- Schema da resposta `PublicJobV1Item` registrado no componente reutilizável
+- Respostas 200, 400, 429, 500 documentadas
+
+O TD foi marcado como resolvido sem que ninguém atualizasse o status. Durante o TD-014, foi descoberto durante o refactor.
+
+**Pendente (não bloqueante, fora deste TD):**
+- Custom domain `api.enlite.health` no Cloud Run prd — decisão de infra/DNS, não de doc
+- Doc markdown adicional pra WordPress se eles preferirem MD vs OpenAPI
 
 ---
 
@@ -807,28 +816,21 @@ Emitir `WorkerDocumentUploadedEvent { workerId, documentType, filePath, uploaded
 
 ---
 
-### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos
+### TD-028 — `workers.timezone` populado com `'UTC'` em 100% dos casos — resolvido 2026-05-20
 
-- **Status:** aberto
+- **Status:** resolvido
 - **Descoberto em:** 2026-05-20, durante PR 1 do Sprint MCP Internal Server (Architect parecer)
-- **Dono provável:** backend (worker-functions)
-- **Bloqueador?** Não — PR 1 evita usar `workers.timezone` e usa `job_postings.timezone`
+- **Resolvido em:** 2026-05-20, PR `chore/td-028-workers-timezone-backfill`
 
-**O que é:**
+**Como foi resolvido:**
 
-A coluna `workers.timezone VARCHAR(50)` foi criada em migration 003 com `DEFAULT 'UTC'`. Nenhum fluxo posterior populou o valor real — todos os ATs do banco têm `'UTC'` (semanticamente errado pra ATs operando em AR/BR).
+1. Migration `265_backfill_workers_timezone_by_country.sql` (renumerada de 181 no review — 181 já ocupada em main por `add_job_posting_id_to_whatsapp_bulk_dispatch_logs`) faz backfill dos workers existentes via `workers.country` (AR → America/Argentina/Buenos_Aires, BR → America/Sao_Paulo, outros → UTC). Idempotente (`WHERE timezone = 'UTC'`). `worker_availability.timezone` também é atualizado pra workers cujo timezone mudou. O `UPDATE workers` roda com o trigger `update_workers_updated_at` desabilitado (backfill de dado histórico, não deve colapsar o timestamp de ~7.466 linhas e quebrar o desempate "mais recente vence" em `WorkerPhoneMergeHelpers.ts`/`AccountLinkService.ts`). A mesma migration também seta `ALTER TABLE workers ALTER COLUMN timezone SET DEFAULT 'America/Argentina/Buenos_Aires'`, fechando o loop pros caminhos de INSERT que hoje omitem `timezone` (`ProcessTalentumPrescreening.ts`, `SyncTalentumWorkersUseCase.ts`).
 
-**Impacto:**
+2. `WorkerRepository.create()` agora deriva `timezone` de `country` via `countryToTimezone()` (util do PR 1 do sprint MCP) quando o caller não passa explicitamente. Antes: `data.timezone || 'UTC'` → agora: `data.timezone || countryToTimezone(country)`.
 
-- Qualquer use case futuro que tente derivar fuso horário do AT via `workers.timezone` retornará UTC errado
-- PR 1 contornou usando `job_postings.timezone` (timezone da vaga, não do worker), o que é semanticamente correto pra "current interview"
-- Cenários futuros (ex: notificação proativa "bom dia AT" no fuso local do AT) vão precisar do valor real
+3. 5 testes unit em `WorkerRepository.create.test.ts` cobrem todos os paths: AR sem timezone → BA, BR → SP, country não mapeado → UTC fallback, timezone explícito tem precedência, country ausente → default AR.
 
-**Proposta de solução:**
-
-1. Backfill: derivar de `workers.country` via `countryToTimezone()` (util criada em PR 1, em `src/shared/locale/CountryTimezone.ts`)
-2. Atualizar signup do worker pra capturar/derivar timezone explicitamente
-3. Considerar adicionar coluna `country` consistente com `job_postings.country` se ainda não houver
+`worker_availability.timezone` continua sendo seteado a partir de `workers.timezone` no flow normal — agora com valor correto.
 
 ---
 
@@ -1680,20 +1682,23 @@ O frontend não tem um componente `Modal`/`Dialog` em `@/presentation/components
 
 ### TD-056 — Migration 230 Fase-2: remover `INITIATED` do CHECK de `application_funnel_stage`
 
-- **Status:** aberto — **não-bloqueante**, com **gatilho temporal**.
+- **Status:** ✅ resolvido em 2026-07-04 (PR #95 — migration 264 + limpeza de código).
 - **Descoberto em:** 2026-06-26, ao implementar o redesenho do Kanban (colunas Iniciados/Pre Screening).
 - **Dono provável:** backend.
 - **Bloqueador?** Não.
 
-**O que é:**
+**O que foi feito (migration 264, 2026-07-04):**
 
-A migration 230 renomeou o conceito `INITIATED → PRE_SCREENING` (backfill + novo valor no CHECK), mas **manteve `INITIATED` no CHECK de propósito** (Fase-1, aditiva). Motivo: durante o rolling deploy, pods com código antigo podem gravar o literal `'INITIATED'` por alguns segundos; se o CHECK já o tivesse removido, esses writes quebrariam com `check constraint violation`. O `funnel_stage_precedence()` também mantém `INITIATED=1` em paralelo a `PRE_SCREENING=1`, e o `WJAFunnelController` roteia `stage='INITIATED'` transitório para a coluna Pre Screening defensivamente.
+- `INITIATED` removido do CHECK constraint de `application_funnel_stage` (rename → add sem INITIATED → drop deprecated `wja_funnel_stage_chk_deprecated_20260704`).
+- `funnel_stage_precedence()`: linha `WHEN 'INITIATED' THEN 1` removida.
+- `deriveKanbanColumn` (`domain/kanbanColumn.ts`, SSOT pós-refactor de main): ramo defensivo `stage === 'INITIATED'` removido.
+- `WorkerJobApplication.ts`: comentários de "banco fase-1 ainda aceita transitoriamente" atualizados.
 
-**Risco:** valor morto no CHECK + ramo defensivo no controller que confundem leitura futura. Nenhum risco operacional.
-
-**Critério para fechar:** após `PRE_SCREENING` estável em prod por **≥7 dias** e confirmar `SELECT COUNT(*) FROM worker_job_applications WHERE application_funnel_stage='INITIATED'` = 0, criar migration Fase-2 que: (a) remove `'INITIATED'` do CHECK; (b) remove a linha `WHEN 'INITIATED' THEN 1` de `funnel_stage_precedence()`; (c) remove o ramo `|| stage === 'INITIATED'` em `WJAFunnelController` (~linha 190) e o tipo/comentários residuais.
-
-**Gatilho:** 7 dias após o merge desta feature ir pra produção (não há data fixa ainda — depende do deploy).
+**Gate de merge (PRÉ-CONDIÇÃO):** confirmar em prod antes de mergear:
+```sql
+SELECT COUNT(*) FROM worker_job_applications WHERE application_funnel_stage='INITIATED';
+-- deve retornar 0
+```
 
 ### TD-057 — `worker_job_applications.source` sem CHECK constraint (split do Kanban depende dele)
 
@@ -1792,3 +1797,18 @@ Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos co
 4. Se o emissor identificado for uma key solta da era n8n, rotacionar para SA dedicada `talentum-webhook-identity`.
 
 **Gatilho:** logs do item 1 coletados (≥1 semana de tráfego) ou qualquer mudança na integração Talentum.
+
+### TD-063 — Suíte `e2e/integration` do frontend vermelha em main (modal de dedup de domicílio)
+
+- **Status:** aberto.
+- **Descoberto em:** 2026-07-05, ao rodar o gate `make test-integration` pro PR #103 (normalização de endereços).
+- **Dono provável:** frontend (testes da feature de dedup, release 2026-06-22 — ver `docs/HANDOFF_2026-06-22_dedup_release.md`).
+- **Bloqueador?** Para PRs que dependem do gate de integração, sim — a suíte não fica verde em main.
+
+**O que é:**
+
+22 testes de `enlite-frontend/e2e/integration/` falham em `main` sem diff nenhum (provado por experimento de controle no PR #103: falha idêntica com o diff stashado). Causa: o modal novo **"Este domicilio ya tiene una vacante"** (dedup de domicílio) intercepta fluxos que os testes esperam chegar em outros modais/telas — ex.: `resume-draft-vacancy` espera "Vacante en curso encontrada" e recebe o modal de dedup (screenshot diff de 67%). Suítes afetadas: resume-draft-vacancy (7), kanban-* (vários), match-* (3), worker-profile-* (2), wja-flow-visuals, postularse-incomplete-modal.
+
+**Fix esperado:** atualizar os testes pra lidar com o modal de dedup (fechar/desviar quando aparecer, ou dados de teste com domicílios únicos) + re-gravar as baselines visuais afetadas. Enquanto aberto, PRs backend-only devem registrar a vermelhidão pré-existente com prova de controle (stash) em vez de "esperar verde".
+
+**Nota adicional (infra local):** `make test-integration` recria o container `enlite-api` a partir de imagem stale (node_modules sem `tsconfig-paths`) e trava no health-check — workaround documentado: `docker exec enlite-api npm install && docker restart enlite-api`. Consertar a imagem (rebuild) evita o remendo a cada swap de auth.

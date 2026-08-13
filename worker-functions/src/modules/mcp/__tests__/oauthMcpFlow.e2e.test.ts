@@ -24,6 +24,21 @@ import { WorkerProfileConfirmUpdateCapability } from '../application/capabilitie
 import { WorkerDocumentsUploadCapability } from '../application/capabilities/WorkerDocumentsUploadCapability';
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
+import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
+import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
+import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
+import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
+import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
+import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
+import { WorkerAvailabilityGetCapability } from '../application/capabilities/WorkerAvailabilityGetCapability';
+import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
+import { WorkerInterviewSlotsListCapability } from '../application/capabilities/WorkerInterviewSlotsListCapability';
+import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
+import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
+import { WorkerApplicationsListCapability } from '../application/capabilities/WorkerApplicationsListCapability';
+import { PatientChatMapCapability } from '../application/capabilities/PatientChatMapCapability';
+import { WorkerProfileEditsStatsCapability } from '../application/capabilities/WorkerProfileEditsStatsCapability';
+import { FunnelActivityStatsCapability } from '../application/capabilities/FunnelActivityStatsCapability';
 
 const SIGNING_KEY = 's'.repeat(64);
 const STAFF = { email: 'ana@enlite.health', role: 'recruiter' };
@@ -42,7 +57,22 @@ function makeRegistry(): CapabilityRegistry {
     profileConfirm: new WorkerProfileConfirmUpdateCapability(stub),
     documentsUpload: new WorkerDocumentsUploadCapability(stub),
     statsGet: new WorkerStatsGetCapability(stub),
+    profileEditsStats: new WorkerProfileEditsStatsCapability(stub),
+    funnelActivityStats: new FunnelActivityStatsCapability(stub),
     workerSearch: new WorkerSearchCapability(stub),
+    caseMemoryGet: new WorkerCaseMemoryGetCapability(stub),
+    caseMemoryPut: new WorkerCaseMemoryPutCapability(stub),
+    optOutRegister: new WorkerOptOutRegisterCapability(stub),
+    accountDeactivate: new WorkerAccountDeactivateCapability(stub),
+    availabilitySet: new WorkerAvailabilitySetCapability(stub),
+    availabilityGet: new WorkerAvailabilityGetCapability(stub),
+    vacanciesNearby: new WorkerVacanciesNearbyCapability(stub),
+    applicationRegister: new WorkerApplicationRegisterCapability(stub, {} as never, stub),
+    interviewSlotsList: new WorkerInterviewSlotsListCapability(stub),
+    interviewBook: new WorkerInterviewBookCapability(stub, stub),
+    handoverNotify: new HandoverNotifyCapability(stub),
+    applicationsList: new WorkerApplicationsListCapability(stub),
+    patientChatMap: new PatientChatMapCapability(stub),
     auditor: { emit: jest.fn() },
   });
 }
@@ -172,6 +202,7 @@ describe('OAuth 2.1 + MCP — fluxo conector claude.ai (e2e in-process)', () => 
     const names = tools.tools.map((t) => t.name).sort();
     // Principal OAuth vê nomes claude-safe (claude.ai rejeita "." em tool name)
     expect(names).toEqual([
+      'patient_chat_map',
       'worker_documents_list',
       'worker_interview_get',
       'worker_profile_get',

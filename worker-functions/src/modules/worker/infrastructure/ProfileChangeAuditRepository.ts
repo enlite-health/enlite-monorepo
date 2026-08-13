@@ -6,7 +6,7 @@
  * profileChangeRedaction) — este repo nunca recebe PII em claro.
  */
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 export interface ProfileChangeAuditEntry {
   workerId: string;
@@ -20,7 +20,8 @@ export interface ProfileChangeAuditEntry {
 }
 
 export class ProfileChangeAuditRepository {
-  constructor(private readonly pool: Pool) {}
+  /** Aceita PoolClient pra gravar dentro da transação da edição (mesma atomicidade). */
+  constructor(private readonly pool: Pool | PoolClient) {}
 
   async recordBatch(entries: ProfileChangeAuditEntry[]): Promise<void> {
     if (entries.length === 0) return;

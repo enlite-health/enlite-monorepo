@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { MessageSquare } from 'lucide-react';
+import { Hand, MessageSquare } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { WorkerAvatar } from '@presentation/components/atoms/WorkerAvatar';
 import { WhatsappStatusBadge } from '@presentation/components/atoms/WhatsappStatusBadge';
@@ -14,7 +14,8 @@ import type { FunnelTableRow } from '@domain/entities/Funnel';
 interface VacancyFunnelTableRowProps {
   row: FunnelTableRow;
   isLast: boolean;
-  onOpenNotes: (wjaId: string) => void;
+  /** Abre o modal de comentários pelo par worker×vaga (não pelo wjaId). */
+  onOpenNotes: (workerId: string) => void;
 }
 
 export function VacancyFunnelTableRow({
@@ -50,7 +51,7 @@ export function VacancyFunnelTableRow({
 
   function handleNotesClick(e: React.MouseEvent) {
     e.stopPropagation();
-    onOpenNotes(row.id);
+    onOpenNotes(row.workerId);
   }
 
   return (
@@ -103,6 +104,28 @@ export function VacancyFunnelTableRow({
             </Text>
           </div>
         </div>
+      </TableCell>
+
+      {/* Origen — "levantou a mão" (mesmo sinal do card do Kanban, aqui na vista
+          que é o DEFAULT do funil). Célula vazia = não sabemos: a autoria só é
+          gravada desde 06/08 e ausência não prova desinteresse. */}
+      <TableCell className="px-6 whitespace-nowrap">
+        {row.selfAppliedAt ? (
+          <span
+            data-testid="funnel-self-applied-badge"
+            title={t('admin.kanban.selfAppliedTitle', {
+              date: new Date(row.selfAppliedAt).toLocaleDateString('es-AR'),
+            })}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
+          >
+            <Hand className="w-3 h-3" />
+            {t('admin.kanban.selfApplied')}
+          </span>
+        ) : (
+          <Text as="span" size="xs" color="muted">
+            —
+          </Text>
+        )}
       </TableCell>
 
       {/* Phone */}

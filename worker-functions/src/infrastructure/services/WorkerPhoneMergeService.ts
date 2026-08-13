@@ -47,10 +47,12 @@ import {
   buildGroupPlans,
   resolveGhosts,
   coalesceWorkerFields,
+  moveUniqueIdentityFields,
   buildReparentQueries,
   discoverWorkerFkTables,
   type FkTableInfo,
 } from './WorkerPhoneMergeHelpers';
+import { recalculateWorkerStatus } from '../../modules/worker/infrastructure/WorkerStatusRepository';
 import { captureSnapshot } from './WorkerMergeSnapshotService';
 import { insertMergeAuditRow, type MergeAuditInput } from './WorkerMergeAuditWriter';
 import { undoMergeTx } from './WorkerMergeUndoService';
@@ -222,7 +224,12 @@ export class WorkerPhoneMergeService {
     discoveredFks?: FkTableInfo[];
     /** Contexto de auditoria (QUEM/DE ONDE/COMO). Ausente = merge automático em lote. */
     audit?: MergeAuditInput;
-  }): Promise<void> {
+  }): Promise<{
+    auditId: bigint | number;
+    fieldsFilled: string[];
+    fieldsMoved: string[];
+    rowsReparented: Record<string, number>;
+  } | void> {
     const { survivorId, absorbedId, phoneNormalized, category, legalFieldExceptions } = params;
     const audit = params.audit ?? {};
 
@@ -272,17 +279,38 @@ export class WorkerPhoneMergeService {
       // 4. COALESCE: preenche campos nulos do sobrevivente com valores do absorvido
       const { fieldsFilled } = await coalesceWorkerFields(client, survivorId, absorbedId);
 
-      // Atualiza fields_filled no audit agora que temos o valor real
+      // 4b. MOVE de campos de identidade únicos (phone/whatsapp/ana_care_id):
+      //     os índices únicos não filtram merged_into_id, então o casco é limpo
+      //     ANTES de gravar no sobrevivente, nesta mesma transação.
+      const { fieldsMoved } = await moveUniqueIdentityFields(client, survivorId, absorbedId);
+
+      // Atualiza fields_filled/fields_moved no audit agora que temos os valores reais
       await client.query(
-        `UPDATE worker_merge_audit SET fields_filled = $1::jsonb WHERE id = $2`,
-        [JSON.stringify(fieldsFilled), auditId],
+        `UPDATE worker_merge_audit
+         SET fields_filled = $1::jsonb, fields_moved = $2::jsonb
+         WHERE id = $3`,
+        [JSON.stringify(fieldsFilled), JSON.stringify(fieldsMoved), auditId],
       );
 
-      // 5. Reparent de todas as tabelas FK
+      // 5. Reparent de todas as tabelas FK, contando linhas movidas por tabela
+      //    (só statements que levam linhas AO sobrevivente — alimenta o resumo
+      //    "recuperamos N postulações" do vínculo self-service).
+      const MOVE_KINDS = ['reparent:update:', 'reparent:1to1_move_if_empty:', 'reparent:Nto1_update:'];
+      const rowsReparented: Record<string, number> = {};
       const reparentQueries = buildReparentQueries(survivorId, absorbedId, fks);
       for (const q of reparentQueries) {
-        await client.query(q.sql, q.params);
+        const r = await client.query(q.sql, q.params);
+        if (MOVE_KINDS.some(k => q.description.startsWith(k))) {
+          const table = q.description.split(':')[2];
+          if (table && (r.rowCount ?? 0) > 0) {
+            rowsReparented[table] = (rowsReparented[table] ?? 0) + (r.rowCount ?? 0);
+          }
+        }
       }
+      await client.query(
+        `UPDATE worker_merge_audit SET rows_reparented = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(rowsReparented), auditId],
+      );
 
       // 6. Soft-delete do absorvido
       await client.query(
@@ -300,6 +328,8 @@ export class WorkerPhoneMergeService {
         absorbedId,
         category,
         fields_filled: fieldsFilled.length,
+        fields_moved:  fieldsMoved,
+        rows_reparented: rowsReparented,
         fk_tables_reparented: fks.length,
         executed_by:  audit.executedBy ?? 'system',
         executed_by_email: audit.executedByEmail ?? null,
@@ -309,6 +339,18 @@ export class WorkerPhoneMergeService {
         request_id:   audit.requestId ?? null,
         applied_overrides: audit.appliedOverrides ?? [],
       });
+
+      // 7. Recalcula o status do sobrevivente FORA da transação de merge: com o
+      //    telefone entrando via move, ele pode virar REGISTERED sem ação do
+      //    usuário. Falha aqui não desfaz o merge (já commitado) — só loga.
+      try {
+        await recalculateWorkerStatus(this.pool, survivorId, null);
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        log.warn({ msg: 'merge_status_recalc_failed', survivorId, reason: e.message });
+      }
+
+      return { auditId, fieldsFilled, fieldsMoved, rowsReparented };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

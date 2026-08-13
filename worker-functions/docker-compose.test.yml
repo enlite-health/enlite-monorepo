@@ -55,6 +55,36 @@ services:
       OPENAPI_PUBLIC: "true"
       # Habilita a rota condicional de webhook ClickUp pro teste de cobertura
       CLICKUP_WEBHOOK_SECRET: "test-secret-clickup-e2e-only"
+      # Chat IDs do paciente (migration 260): busca de grupos no Periskope.
+      #
+      # LIGADO por default NESTE arquivo, que é só de teste. A versão anterior
+      # vinha desligada e exigia que a pessoa exportasse 4 variáveis à mão antes
+      # de rodar — o e2e passava na máquina de quem sabia disso e falhava no CI,
+      # que não sabia. Teste que depende de alguém lembrar não é gate, é
+      # armadilha. Em produção o default do código continua OFF.
+      #
+      # PERISKOPE_BASE_URL aponta para o STUB local (porta 9911), nunca para a
+      # API de verdade: o e2e não fala com serviço externo vivo. A chave e o
+      # telefone são falsos de propósito — existem só para o cliente HTTP ser
+      # construído; se algo tentar sair daqui, vai para o stub, que responde 405
+      # a tudo que não seja GET /chats.
+      PATIENT_CHAT_LOOKUP_ENABLED: ${PATIENT_CHAT_LOOKUP_ENABLED:-true}
+      PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED: ${PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED:-true}
+      PERISKOPE_API_KEY: ${PERISKOPE_API_KEY:-stub-key-e2e-only}
+      PERISKOPE_PHONE: ${PERISKOPE_PHONE:-5491100000000}
+      PERISKOPE_BASE_URL: ${PERISKOPE_BASE_URL:-http://host.docker.internal:9911/v1}
+      # Cache DESLIGADO no e2e, de propósito. O cache é bom em produção (um
+      # backfill de ~350 pacientes viraria ~350 varreduras da mesma lista), mas
+      # no e2e ele torna o teste dependente de ORDEM: um caso popula o cache e o
+      # seguinte, que afirma "chegou 1 requisição no Periskope", vê zero.
+      # O comportamento do cache é provado por unit (TTL, forceRefresh,
+      # clearCache, truncada-não-cacheia). Aqui queremos determinismo.
+      PERISKOPE_CHATS_CACHE_TTL_MS: ${PERISKOPE_CHATS_CACHE_TTL_MS:-0}
+    # host.docker.internal existe sozinho no Docker Desktop (macOS), mas NÃO no
+    # Linux do runner do CI — sem isto o container não acha o stub e os testes de
+    # candidatos falham só no CI.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   firebase_emulator_data:

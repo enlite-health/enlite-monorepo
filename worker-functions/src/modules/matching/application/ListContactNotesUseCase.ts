@@ -6,7 +6,7 @@ import {
 
 export interface ListContactNotesParams {
   vacancyId: string;
-  wjaId: string;
+  workerId: string;
   /** Operador que está pedindo a lista — define `canDelete` por nota. */
   requesterAdminId: string;
 }
@@ -21,8 +21,9 @@ export type ListContactNotesResult =
 /**
  * ListContactNotesUseCase
  *
- * Lista as notas de contato de uma WJA, validando pertencimento à vacante.
- * Retorna not_found se o wjaId não pertencer à vacante informada.
+ * Lista as notas de contato do par (worker_id, job_posting_id) — migration 235,
+ * validando pertencimento à vacante (WJA real ou tentativa bloqueada).
+ * Retorna not_found se o par não pertencer à vacante informada.
  * Ordem: created_at DESC (mais recente primeiro).
  */
 export class ListContactNotesUseCase {
@@ -33,18 +34,18 @@ export class ListContactNotesUseCase {
   }
 
   async execute(params: ListContactNotesParams): Promise<ListContactNotesResult> {
-    const belongs = await this.repo.wjaBelongsToVacancy(params.wjaId, params.vacancyId);
+    const belongs = await this.repo.validateCandidateVacancyPair(params.workerId, params.vacancyId);
     if (!belongs) {
       return {
         ok: false,
         error: {
           kind: 'not_found',
-          message: `WJA ${params.wjaId} não pertence à vacante ${params.vacancyId}`,
+          message: `Worker ${params.workerId} não pertence à vacante ${params.vacancyId}`,
         },
       };
     }
 
-    const notes = await this.repo.findByWJA(params.wjaId);
+    const notes = await this.repo.findByWorkerAndVacancy(params.workerId, params.vacancyId);
     const now = Date.now();
     const view: ContactNoteView[] = notes.map((note) => ({
       ...note,

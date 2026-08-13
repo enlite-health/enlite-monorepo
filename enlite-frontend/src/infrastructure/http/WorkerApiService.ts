@@ -1,5 +1,6 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { ApiError } from '@infrastructure/http/ApiError';
+import type { DedupFieldComparison } from '@domain/entities/DedupGroup';
 
 /**
  * Discriminated union returned by POST /api/workers/init (Onda 2).
@@ -103,6 +104,33 @@ export interface WorkerLookupResponse {
   phoneMasked?: string;
 }
 
+// ── Account link (vínculo self-service por colisão de telefone) ─────────────
+// Contrato v2: lookup SEM SMS e só mascarados; OTP dispara no start (intenção
+// explícita); valores de conflito só DEPOIS da posse provada (confirm).
+
+/** POST /api/workers/me/account-link/lookup */
+export interface AccountLinkLookupResponse {
+  otherEmailMasked: string;
+  phoneMasked: string;
+}
+
+/** POST /api/workers/me/account-link/start */
+export interface AccountLinkStartResponse {
+  verificationSid: string;
+  phoneMasked: string;
+}
+
+/** Conflito com sugestão do servidor (conta com updated_at mais recente). */
+export interface AccountLinkConflict extends DedupFieldComparison {
+  suggested: string;
+}
+
+/** POST /api/workers/me/account-link/confirm | finalize */
+export type AccountLinkConfirmResponse =
+  | { status: 'merged'; recovered: Record<string, number>; workerStatus: string | null }
+  | { status: 'conflicts'; conflicts: AccountLinkConflict[]; linkToken: string; accounts: { current: string; other: string } }
+  | { status: 'REQUIRES_REVIEW' };
+
 class WorkerApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -193,6 +221,47 @@ class WorkerApiServiceClass {
    */
   async saveGeneralInfo(data: Record<string, any>): Promise<void> {
     await this.request<unknown>('PUT', '/api/workers/me/general-info', data);
+  }
+
+  /**
+   * POST /api/workers/me/account-link/lookup — SEM SMS, só mascarados. Abre a
+   * modal no 409. Com ACCOUNT_LINK_ENABLED=false o endpoint não existe (404) —
+   * o caller trata como fallback pro comportamento atual (toast).
+   */
+  async lookupAccountLink(phone: string): Promise<AccountLinkLookupResponse> {
+    return this.request<AccountLinkLookupResponse>('POST', '/api/workers/me/account-link/lookup', { phone });
+  }
+
+  /**
+   * POST /api/workers/me/account-link/start — dispara o OTP pro número DA
+   * CONTA ANTIGA (anti-hijack), SÓ no clique em "vincular". Reenvio = chamar
+   * de novo (rate-limit 3/h por conta).
+   */
+  async startAccountLink(phone: string): Promise<AccountLinkStartResponse> {
+    return this.request<AccountLinkStartResponse>('POST', '/api/workers/me/account-link/start', { phone });
+  }
+
+  /**
+   * POST /api/workers/me/account-link/confirm — valida o OTP. Sem conflito →
+   * merge direto; com conflito → valores + linkToken pro finalize.
+   */
+  async confirmAccountLink(payload: {
+    phone: string;
+    verificationSid: string;
+    otp: string;
+  }): Promise<AccountLinkConfirmResponse> {
+    return this.request<AccountLinkConfirmResponse>('POST', '/api/workers/me/account-link/confirm', payload);
+  }
+
+  /**
+   * POST /api/workers/me/account-link/finalize — executa o merge com as
+   * escolhas de campo (linkToken emitido no confirm).
+   */
+  async finalizeAccountLink(payload: {
+    linkToken: string;
+    fieldChoices?: Record<string, string>;
+  }): Promise<AccountLinkConfirmResponse> {
+    return this.request<AccountLinkConfirmResponse>('POST', '/api/workers/me/account-link/finalize', payload);
   }
 
   /**

@@ -18,6 +18,7 @@ import {
   JSON_OUTPUT_INSTRUCTIONS,
 } from './gemini-vacancy-constants';
 import { GoogleDocsPromptProvider } from './GoogleDocsPromptProvider';
+import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import {
   parseFromTalentumDescriptionHelper,
   detectMissingFields,
@@ -239,6 +240,14 @@ export class GeminiVacancyParserService {
       parsed.vacancy.required_professions?.length > 0
         ? parsed.vacancy.required_professions
         : [workerType === 'AT' ? 'AT' : 'CAREGIVER'];
+
+    // Ticket 86ajfm80t: a IA às vezes gera responseType=['text'] só (perguntas
+    // sensíveis). Forçamos áudio já na origem (forceAudio) para a prévia nascer
+    // com "escrito e por áudio" como default — a recrutadora pode restringir a
+    // só-texto depois pela UI, e essa escolha é respeitada no save.
+    for (const q of parsed.prescreening?.questions ?? []) {
+      q.responseType = normalizePrescreeningResponseType(q.responseType, { forceAudio: true });
+    }
 
     // Retry missing critical fields with a focused second call
     const originalText = userParts

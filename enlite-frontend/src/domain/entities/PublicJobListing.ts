@@ -17,6 +17,7 @@ export interface PublicJobListing {
   job_zone: string | null;
   neighborhood: string | null;
   state_city: string | null;
+  location_label: string | null;
   country: string | null;
   age_range_min: number | null;
   age_range_max: number | null;

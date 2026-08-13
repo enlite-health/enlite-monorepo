@@ -9,9 +9,12 @@
  */
 
 import * as functions from 'firebase-functions';
+import { reportError } from '@shared/logging';
 import type { ClickUpTask } from '../infrastructure/clickup/ClickUpTask';
 import type { ClickUpPatientMapper } from '../infrastructure/clickup/ClickUpPatientMapper';
+import { extractPatientChatIds } from '../infrastructure/clickup/extractPatientChatIds';
 import type { PatientService } from '../../case/application/PatientService';
+import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
 
 // ── Result types ──────────────────────────────────────────────────────────────
 
@@ -27,6 +30,13 @@ export type SyncPatientResult =
 export interface SyncPatientDeps {
   mapper: ClickUpPatientMapper;
   patientService: PatientService;
+  /**
+   * Espelha os campos "Chat ID Familia"/"Chat ID Equipo" do ClickUp em
+   * `patient_chat_ids` (task 86ak04ygu). Opcional só para injeção em teste —
+   * quando ausente, o use case constrói o real. O passo inteiro fica atrás de
+   * PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED.
+   */
+  chatIdsService?: PatientChatIdsService;
 }
 
 export interface SyncPatientOptions {
@@ -130,6 +140,12 @@ export class SyncPatientFromClickUpTaskUseCase {
 
       const patientName = formatPatientName(input.firstName, input.lastName);
 
+      // O conflito de case_number NÃO impede a ficha de existir (o upsert
+      // retenta sem o número e devolve um id real) — então os grupos espelham
+      // ANTES do early-return, senão exatamente os pacientes conflitados
+      // divergiriam do ClickUp para sempre.
+      await this.syncChatIds(task, result.id, cid);
+
       if (result.conflict === 'CASE_NUMBER_CONFLICT') {
         functions.logger.warn('clickup_patient_sync.case_number_conflict', {
           taskId,
@@ -174,4 +190,71 @@ export class SyncPatientFromClickUpTaskUseCase {
       return { kind: 'ERROR', taskId, error };
     }
   }
+
+  /**
+   * Espelha os grupos de WhatsApp do ClickUp em `patient_chat_ids`.
+   *
+   * Best-effort DEPOIS do upsert do paciente: um grupo em disputa (409) ou um
+   * valor torto no ClickUp não pode derrubar a sincronização da ficha — por
+   * isso os conflitos viram log estruturado, não exceção. Vazio no ClickUp
+   * nunca desvincula (ver PatientChatIdsService.syncFromClickUp).
+   */
+  private async syncChatIds(task: ClickUpTask, patientId: string, cid: string): Promise<void> {
+    if (process.env.PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED !== 'true') return;
+
+    const { chatIds, invalid } = extractPatientChatIds(task);
+
+    for (const bad of invalid) {
+      // PII: nunca logar `bad.value` — um `@c.us` é literalmente um telefone,
+      // e texto livre pode carregar nome (Ley 25.326). `kind` + tamanho bastam
+      // para o operador achar o campo torto pela task.
+      functions.logger.warn('clickup_patient_sync.chat_id_invalid', {
+        taskId: task.id,
+        role:   bad.role,
+        kind:   bad.kind,
+        valueLength: bad.value.length,
+        correlationId: cid,
+      });
+    }
+    if (Object.keys(chatIds).length === 0) return;
+
+    try {
+      const outcome = await this.chatIdsService().syncFromClickUp(patientId, chatIds);
+
+      if (outcome.applied.length > 0 || outcome.skipped.length > 0) {
+        functions.logger.info('clickup_patient_sync.chat_ids', {
+          taskId: task.id,
+          patientId,
+          applied:   outcome.applied,
+          unchanged: outcome.unchanged,
+          skipped:   outcome.skipped,
+          correlationId: cid,
+        });
+      }
+    } catch (err) {
+      // Falha de infraestrutura no passo de chat ids (banco fora etc.): reporta
+      // e segue — a ficha do paciente já foi gravada. ⚠️ NÃO há retry
+      // automático garantido: o reconcile `cycle` só revisita tasks alteradas
+      // nos últimos 30min; a cura para falha antiga é o card mudar de novo ou
+      // um `mode=full` manual.
+      reportError(err instanceof Error ? err : new Error(String(err)), {
+        source: 'clickup_patient_sync.chat_ids',
+        taskId: task.id,
+        patientId,
+        correlationId: cid,
+      });
+    }
+  }
+
+  /**
+   * Resolvido sob demanda (não no construtor) de propósito: o repositório real
+   * abre pool ao ser construído, e o use case também vive em testes/CLIs que
+   * nunca chegam neste passo. Memoizado — uma instância por use case.
+   */
+  private chatIdsService(): PatientChatIdsService {
+    this.chatIdsServiceInstance ??= this.deps.chatIdsService ?? new PatientChatIdsService();
+    return this.chatIdsServiceInstance;
+  }
+
+  private chatIdsServiceInstance?: PatientChatIdsService;
 }

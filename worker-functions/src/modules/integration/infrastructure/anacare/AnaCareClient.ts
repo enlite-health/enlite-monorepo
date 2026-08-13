@@ -25,6 +25,23 @@ const DEFAULT_BASE_URL = 'https://admin.ana.care';
 const SECRET_NAME = 'anacare-api-key';
 const TAG = '[AnaCareClient]';
 
+/**
+ * Erro tipado de resposta HTTP não-ok da API AnaCare.
+ * Carrega status + corpo cru para permitir tratamento estrutural (ex: detectar
+ * conflito de unicidade em telefone/email) sem parsear a mensagem de texto.
+ */
+export class AnaCareApiError extends Error {
+  readonly status: number;
+  readonly body: string;
+
+  constructor(method: string, path: string, status: number, body: string) {
+    super(`${TAG} ${method} ${path} — HTTP ${status}: ${body}`);
+    this.name = 'AnaCareApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export class AnaCareClient implements IAnaCareApiClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
@@ -107,9 +124,7 @@ export class AnaCareClient implements IAnaCareApiClient {
 
     if (!res.ok) {
       const errorBody = await res.text();
-      throw new Error(
-        `${TAG} ${method} ${path} — HTTP ${res.status}: ${errorBody}`,
-      );
+      throw new AnaCareApiError(method, path, res.status, errorBody);
     }
 
     // 204 No Content ou body vazio

@@ -3,6 +3,7 @@ import { User } from '@domain/entities/User';
 import { AdminUser } from '@domain/entities/AdminUser';
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { AuthTraceHandle } from '@infrastructure/observability/authTrace';
 
 interface AdminAuthState {
   user: User | null;
@@ -12,8 +13,8 @@ interface AdminAuthState {
 
   setUser: (user: User | null) => void;
   setLoading: (isLoading: boolean) => void;
-  login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  login: (email: string, password: string, trace?: AuthTraceHandle) => Promise<void>;
+  loginWithGoogle: (trace?: AuthTraceHandle) => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   initialize: () => () => void;
@@ -31,36 +32,48 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
 
   setLoading: (isLoading: boolean): void => set({ isLoading }),
 
-  login: async (email: string, password: string): Promise<void> => {
+  login: async (email: string, password: string, trace?: AuthTraceHandle): Promise<void> => {
     const { user } = await authService.signInWithEmail(email, password);
+    trace?.step('firebase-signin:ok', { uid: user.id, email: user.email, provider: 'password' });
     set({ user, isAuthenticated: true });
 
     try {
+      trace?.step('backend-profile:start');
       const profile = await AdminApiService.getProfile();
+      trace?.step('backend-profile:ok', { role: profile.role });
       set({ adminProfile: profile });
-    } catch {
-      // If profile fetch fails, user might not be admin
+    } catch (err) {
+      // If profile fetch fails, user might not be admin — mas o trace distingue
+      // 404 (realmente não-admin) de 5xx/rede (hiccup transitório).
+      trace?.fail('backend-profile', err);
       set({ adminProfile: null });
     }
   },
 
-  loginWithGoogle: async (): Promise<void> => {
+  loginWithGoogle: async (trace?: AuthTraceHandle): Promise<void> => {
     const { user } = await authService.signInWithGoogle();
+    trace?.step('firebase-signin:ok', { uid: user.id, email: user.email, provider: 'google' });
 
     if (!user.email?.endsWith('@enlite.health')) {
+      trace?.step('domain-check:rejected', { email: user.email });
       await authService.logout();
       throw new Error('admin.login.unauthorizedDomain');
     }
+    trace?.step('domain-check:ok');
 
     set({ user, isAuthenticated: true });
 
     try {
+      trace?.step('backend-profile:start');
       const profile = await AdminApiService.getProfile();
+      trace?.step('backend-profile:ok', { role: profile.role });
       set({ adminProfile: profile });
 
       // Force refresh token to pick up custom claims set by backend auto-provisioning
       await authService.forceRefreshToken();
-    } catch {
+      trace?.step('token-refresh:ok');
+    } catch (err) {
+      trace?.fail('backend-profile-or-refresh', err);
       set({ adminProfile: null });
     }
   },

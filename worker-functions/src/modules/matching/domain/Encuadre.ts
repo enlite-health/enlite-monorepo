@@ -9,6 +9,22 @@ export type RejectionReasonCategory =
   | 'TALENTUM_NOT_QUALIFIED'
   | 'OTHER';
 
+/**
+ * Valores válidos de rejection_reason_category em runtime — espelha o CHECK de
+ * encuadres (migrations 094 + 117). SSOT para validar entradas de API.
+ */
+export const REJECTION_REASON_CATEGORIES = [
+  'DISTANCE',
+  'SCHEDULE_INCOMPATIBLE',
+  'INSUFFICIENT_EXPERIENCE',
+  'SALARY_EXPECTATION',
+  'WORKER_DECLINED',
+  'OVERQUALIFIED',
+  'DEPENDENCY_MISMATCH',
+  'TALENTUM_NOT_QUALIFIED',
+  'OTHER',
+] as const satisfies readonly RejectionReasonCategory[];
+
 export type EncuadreResultado =
   | 'SELECCIONADO'
   | 'RECHAZADO'
@@ -17,6 +33,13 @@ export type EncuadreResultado =
   | 'REEMPLAZO'
   | 'BLACKLIST'
   | 'PENDIENTE';
+
+/**
+ * Papel do encuadre selecionado (migration 142, CHECK 'TITULAR'|'RAPID_RESPONSE').
+ * TITULAR = titular do caso; RAPID_RESPONSE = substituto/backup. Base da métrica
+ * "Equipe Armada" — ver domain/armedCases.ts.
+ */
+export type EncuadreRole = 'TITULAR' | 'RAPID_RESPONSE';
 
 export interface Encuadre {
   id: string;
@@ -37,6 +60,7 @@ export interface Encuadre {
   rejectionReason: string | null;
   rejectionReasonCategory: RejectionReasonCategory | null;
   resultado: EncuadreResultado | null;
+  role: EncuadreRole | null;
   redireccionamiento: string | null;
   hasCv: boolean | null;
   hasDni: boolean | null;
@@ -76,6 +100,7 @@ export interface CreateEncuadreDTO {
   rejectionReason?: string | null;
   rejectionReasonCategory?: RejectionReasonCategory | null;
   resultado?: EncuadreResultado | null;
+  role?: EncuadreRole | null;
   redireccionamiento?: string | null;
   hasCv?: boolean | null;
   hasDni?: boolean | null;
@@ -100,6 +125,7 @@ export interface SupplementEncuadreDTO {
   importSourceAudit?: string | null;
   idOnboarding?: string | null;
   resultado?: EncuadreResultado | null;
+  role?: EncuadreRole | null;
   hasCv?: boolean | null;
   hasDni?: boolean | null;
   hasCertAt?: boolean | null;

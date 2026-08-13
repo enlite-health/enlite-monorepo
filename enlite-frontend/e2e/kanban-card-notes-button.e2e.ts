@@ -6,12 +6,14 @@
  * VALIDAÇÃO VISUAL com AUTH FIREBASE REAL: o card do Kanban ganhou um botão
  * "Comentarios" que reaproveita 100% a feature de Contact Notes já existente na
  * listagem/funil (ContactNotesModal + useContactNotes) — comentário/nota do
- * operador sobre o candidato, escopado ao par candidato×vaga (WJA). NÃO é
- * envio de WhatsApp.
+ * operador sobre o candidato, escopado ao par worker×vaga. NÃO é envio de
+ * WhatsApp.
  *
- * O card do Kanban já carrega o wja.id no prop `id`, então clicar abre o MESMO
- * modal usado na tabela, apontando pra:
- *   GET/POST /api/admin/vacancies/:id/applications/:wjaId/contact-notes
+ * O histórico de comentários é chaveado por workerId (não por wja.id) para
+ * ser o MESMO em qualquer coluna do Kanban — inclusive BLOQUEADO, ver
+ * `kanban-card-blocked-notes-button.e2e.ts` — e não zerar quando o card é
+ * promovido (ex.: BLOQUEADO → INICIADO):
+ *   GET/POST /api/admin/vacancies/:id/workers/:workerId/contact-notes
  *
  * Login: Firebase Auth REAL (enlite-prd) via UI — mesma conta do auth.setup.
  * Backend mockado via page.route (padrão do projeto chromium-admin): nenhuma
@@ -21,26 +23,22 @@
  */
 
 import { test, expect, type Page, type Route } from '@playwright/test';
+import {
+  E2E_EMAIL,
+  VACANCY_ID,
+  emptyStages,
+  loginAsAdmin,
+  mockAdminBaseRoutes,
+  ok,
+  type ContactNote,
+} from './helpers/kanban-notes-e2e-helper';
 
-const E2E_EMAIL =
-  process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_TEST_EMAIL ?? 'gabriel.g.stein@gmail.com';
-const E2E_PASSWORD =
-  process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_TEST_PASSWORD ?? 'Teste@123';
-
-const VACANCY_ID = 'aaaa1111-2222-3333-4444-555566667777';
 const WJA_ID = 'wja-notes-btn-1';
 const WORKER_ID = 'worker-notes-btn-1';
 const WORKER_NAME = 'Marcia Costa';
 const WORKER_PHONE = '+5491158631297';
 
 // ── Mock data ────────────────────────────────────────────────────────────────
-
-function emptyStages() {
-  return {
-    INVITED: [], BLOQUEADO: [], INICIADO: [], PRE_SCREENING: [],
-    IN_PROGRESS: [], COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
-  } as Record<string, unknown[]>;
-}
 
 const funnelCard = {
   id: WJA_ID,
@@ -67,60 +65,6 @@ const funnelCard = {
   contactNotesCount: 2,
 };
 
-const mockVacancy = {
-  id: VACANCY_ID,
-  case_number: 55501,
-  vacancy_number: 1,
-  title: 'Caso 55501 — Vacante Comentarios',
-  status: 'SEARCHING',
-  country: 'Argentina',
-  providers_needed: 1,
-  worker_profile_sought: 'AT',
-  schedule: null,
-  schedule_days_hours: null,
-  patient_id: 'patient-55501',
-  patient_first_name: 'Paciente',
-  patient_last_name: 'Comentarios',
-  patient_zone: 'Palermo',
-  patient_city: 'CABA',
-  patient_neighborhood: 'Palermo',
-  insurance_verified: true,
-  required_professions: ['AT'],
-  required_sex: 'F',
-  pathology_types: 'TEA',
-  encuadres: [],
-  publications: [],
-  meet_link_1: null,
-  meet_datetime_1: null,
-  meet_link_2: null,
-  meet_datetime_2: null,
-  meet_link_3: null,
-  meet_datetime_3: null,
-};
-
-interface ContactNote {
-  id: string;
-  workerJobApplicationId: string;
-  noteText: string;
-  createdByAdminId: string;
-  createdByAdminName: string | null;
-  createdByAdminEmail: string | null;
-  createdAt: string;
-  canDelete: boolean;
-}
-
-function ok(body: unknown) {
-  return {
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ success: true, data: body }),
-  };
-}
-
-/**
- * Login Firebase REAL + mock de TODO o backend admin, incluindo o endpoint de
- * contact-notes com estado (POST anexa; GET devolve a lista — igual o backend).
- */
 /** Histórico pré-existente de notas — de operadores diferentes, em datas diferentes. */
 const seedNotes: ContactNote[] = [
   {
@@ -145,29 +89,14 @@ const seedNotes: ContactNote[] = [
   },
 ];
 
+/**
+ * Mocka o funil (1 card COMPLETED) + contact-notes stateful (chaveado por
+ * workerId) e faz o login Firebase REAL.
+ */
 async function loginAndMockBackend(page: Page): Promise<{ notes: ContactNote[] }> {
   const store = { notes: [...seedNotes] as ContactNote[] };
 
-  // Catch-all admin PRIMEIRO — rotas específicas abaixo têm precedência
-  // (Playwright: última rota registrada vence). Evita 401/crash.
-  await page.route('**/api/admin/**', (route: Route) => route.fulfill(ok(null)));
-
-  // Perfil admin (mockado — não dependemos do uid estar linkado no banco).
-  await page.route('**/api/admin/auth/profile', (route: Route) =>
-    route.fulfill(ok({
-      id: 'e2e-admin',
-      email: E2E_EMAIL,
-      role: 'superadmin',
-      firstName: 'Admin',
-      lastName: 'E2E',
-      isActive: true,
-      mustChangePassword: false,
-    })),
-  );
-
-  await page.route(`**/api/admin/vacancies/${VACANCY_ID}`, (route: Route) =>
-    route.fulfill(ok(mockVacancy)),
-  );
+  await mockAdminBaseRoutes(page);
 
   // Funil (Kanban) — 1 card cujo id === WJA_ID → o modal de comentários abre pra ele.
   await page.route(`**/api/admin/vacancies/${VACANCY_ID}/funnel`, (route: Route) => {
@@ -176,13 +105,9 @@ async function loginAndMockBackend(page: Page): Promise<{ notes: ContactNote[] }
     return route.fulfill(ok({ stages, totalEncuadres: 1 }));
   });
 
-  await page.route(`**/api/admin/vacancies/${VACANCY_ID}/funnel-table**`, (route: Route) =>
-    route.fulfill(ok({ rows: [], counts: {}, total: 0 })),
-  );
-
-  // Contact notes — stateful. GET devolve a lista; POST anexa uma nota e devolve.
+  // Contact notes — stateful, chaveado por workerId. GET devolve a lista; POST anexa uma nota e devolve.
   await page.route(
-    `**/api/admin/vacancies/${VACANCY_ID}/applications/${WJA_ID}/contact-notes`,
+    `**/api/admin/vacancies/${VACANCY_ID}/workers/${WORKER_ID}/contact-notes`,
     (route: Route) => {
       const method = route.request().method();
       if (method === 'POST') {
@@ -204,12 +129,7 @@ async function loginAndMockBackend(page: Page): Promise<{ notes: ContactNote[] }
     },
   );
 
-  // Login REAL no Firebase (sem interceptar identitytoolkit).
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(E2E_EMAIL);
-  await page.locator('input[type="password"]').fill(E2E_PASSWORD);
-  await page.locator('button[type="submit"]').first().click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 25_000 });
+  await loginAsAdmin(page);
 
   return store;
 }

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
+import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   authorizeVacancyUpdate,
@@ -26,6 +27,10 @@ const PUBLIC_STATUSES = new Set([
 
 // Inactive statuses whose short links should be purged from Short.io to free quota.
 const INACTIVE_STATUSES = new Set(['CLOSED', 'SUSPENDED']);
+
+// Guarda de vaga de teste/QA (migration 248). Opcional no body, default false
+// quando ausente/inválido — never blocks vacancy creation on a bad value.
+const CreateVacancyIsTestSchema = z.boolean().optional();
 
 async function tryEnsureShortLink(pool: Pool, vacancyId: string, status: string | null | undefined): Promise<void> {
   if (!status || !PUBLIC_STATUSES.has(status)) return;
@@ -87,7 +92,19 @@ export class VacancyCrudController {
         worker_attributes, schedule, work_schedule, providers_needed,
         salary_text, payment_day, daily_obs, patient_address_id,
         status: bodyStatus, published_at, closes_at, updatePatient,
+        is_test: bodyIsTest,
       } = req.body;
+
+      const isTestParse = CreateVacancyIsTestSchema.safeParse(bodyIsTest);
+      if (!isTestParse.success) {
+        res.status(400).json({
+          success: false,
+          error: 'is_test must be a boolean when provided',
+          details: isTestParse.error.flatten().formErrors,
+        });
+        return;
+      }
+      const isTest = isTestParse.data ?? false;
 
       if (!patient_id || typeof patient_id !== 'string') {
         res.status(400).json({
@@ -134,6 +151,7 @@ export class VacancyCrudController {
         status: bodyStatus || undefined,
         published_at: published_at ?? null,
         closes_at: closes_at ?? null,
+        is_test: isTest,
       };
 
       const actor = extractHumanActor(req);

@@ -3,6 +3,8 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { logger } from '@shared/logging';
 import { ApplicationFunnelStage } from '../domain/WorkerJobApplication';
+import { WorkerEngagement } from '../domain/WorkerEngagement';
+import { deriveKanbanColumn } from '../domain/kanbanColumn';
 
 // =====================================================
 // WorkerApplicationRepository
@@ -205,6 +207,79 @@ export class WorkerApplicationRepository {
       city: (r.city as string | null) ?? undefined,
       startDate: (r.start_date as string | null) ?? undefined,
       funnelStage: r.funnel_stage as string,
+    }));
+  }
+
+  /**
+   * Lista TODAS as WJA de um worker (sem filtro de rejeição — a aba de encuadre do
+   * worker-detail deve mostrar a realidade, inclusive REJECTED), enriquecidas com o
+   * encuadre mais recente do par (worker, vaga) e mapeadas para WorkerEngagement.
+   *
+   * kanbanStage é derivado por deriveKanbanColumn (SSOT compartilhada com o Kanban da
+   * vaga), então a coluna exibida na ficha do prestador bate 1:1 com o board.
+   * Blocked attempts NÃO entram aqui — o builder concatena BlockedApplicationQueryRepository.listByWorker.
+   */
+  async listEngagementsByWorker(workerId: string): Promise<WorkerEngagement[]> {
+    const result = await this.pool.query(
+      `SELECT
+         wja.id,
+         wja.job_posting_id,
+         wja.application_funnel_stage AS funnel_stage,
+         wja.source,
+         jp.case_number,
+         jp.vacancy_number,
+         jp.status AS vacancy_status,
+         p.first_name AS patient_first_name,
+         p.last_name  AS patient_last_name,
+         e.resultado,
+         e.interview_date,
+         e.interview_time,
+         e.recruiter_name,
+         e.coordinator_name,
+         e.rejection_reason,
+         e.rejection_reason_category,
+         e.attended,
+         COALESCE(e.created_at, wja.created_at) AS created_at
+       FROM worker_job_applications wja
+       LEFT JOIN job_postings jp ON jp.id = wja.job_posting_id
+       LEFT JOIN patients p ON jp.patient_id = p.id
+       LEFT JOIN LATERAL (
+         SELECT id, resultado, interview_date, interview_time, recruiter_name,
+                coordinator_name, rejection_reason, rejection_reason_category, attended, created_at
+         FROM encuadres
+         WHERE worker_id = wja.worker_id AND job_posting_id = wja.job_posting_id
+         ORDER BY created_at DESC
+         LIMIT 1
+       ) e ON true
+       WHERE wja.worker_id = $1
+       ORDER BY COALESCE(e.created_at, wja.created_at) DESC`,
+      [workerId],
+    );
+
+    return result.rows.map((r): WorkerEngagement => ({
+      id: r.id as string,
+      jobPostingId: (r.job_posting_id as string | null) ?? null,
+      caseNumber: (r.case_number as number | null) ?? null,
+      vacancyNumber: (r.vacancy_number as number | null) ?? null,
+      patientName: [r.patient_first_name, r.patient_last_name].filter(Boolean).join(' ') || null,
+      vacancyStatus: (r.vacancy_status as string | null) ?? null,
+      kanbanStage: deriveKanbanColumn(
+        (r.funnel_stage as string | null) ?? null,
+        (r.source as string | null) ?? null,
+      ),
+      resultado: (r.resultado as string | null) ?? null,
+      interviewDate: (r.interview_date as string | null) ?? null,
+      interviewTime: (r.interview_time as string | null) ?? null,
+      recruiterName: (r.recruiter_name as string | null) ?? null,
+      coordinatorName: (r.coordinator_name as string | null) ?? null,
+      rejectionReason: (r.rejection_reason as string | null) ?? null,
+      rejectionReasonCategory: (r.rejection_reason_category as string | null) ?? null,
+      attended: (r.attended as boolean | null) ?? null,
+      isBlocked: false,
+      blockedReason: null,
+      missingFields: [],
+      attemptCount: null,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     }));
   }
 }

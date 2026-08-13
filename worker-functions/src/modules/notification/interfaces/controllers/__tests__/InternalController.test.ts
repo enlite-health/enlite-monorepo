@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { InternalController } from '../InternalController';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
+import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { OutboxProcessor } from '../../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../../infrastructure/BulkDispatchScheduler';
@@ -46,6 +47,7 @@ describe('InternalController', () => {
   let bulkDispatchScheduler: jest.Mocked<BulkDispatchScheduler>;
   let bulkDispatchTalentumScheduler: jest.Mocked<BulkDispatchTalentumScheduler>;
   let domainEventBacklogService: jest.Mocked<DomainEventBacklogService>;
+  let anaCareMirrorHealthService: jest.Mocked<AnaCareMirrorHealthService>;
   let controller: InternalController;
 
   beforeEach(() => {
@@ -82,6 +84,15 @@ describe('InternalController', () => {
       getBacklogSummary: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<DomainEventBacklogService>;
 
+    anaCareMirrorHealthService = {
+      getMirrorHealth: jest.fn().mockResolvedValue({
+        stuckRecent: 0,
+        oldestStuckAgeHours: 0,
+        chronicTotal: 0,
+        stuck: false,
+      }),
+    } as unknown as jest.Mocked<AnaCareMirrorHealthService>;
+
     controller = new InternalController(
       eventProcessor,
       outboxProcessor,
@@ -89,6 +100,7 @@ describe('InternalController', () => {
       bulkDispatchScheduler,
       bulkDispatchTalentumScheduler,
       domainEventBacklogService,
+      anaCareMirrorHealthService,
     );
   });
 
@@ -239,6 +251,7 @@ describe('InternalController', () => {
       eventProcessor.sweepPendingByEvent.mockImplementation(async (eventName: string) => {
         if (eventName === 'worker.mirror_requested') return { processed: 2, total: 3 };
         if (eventName === 'worker.registration_completed') return { processed: 1, total: 1 };
+        if (eventName === 'vacancy.created') return { processed: 4, total: 5 };
         throw new Error(`unexpected event in sweep-safe: ${eventName}`);
       });
     });
@@ -256,26 +269,28 @@ describe('InternalController', () => {
         5,
         100,
       );
-      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(2);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledWith('vacancy.created', 5, 100);
+      expect(eventProcessor.sweepPendingByEvent).toHaveBeenCalledTimes(3);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         deleted: 1,
-        processed: 3, // 2 + 1
-        total: 4, // 3 + 1
+        processed: 7, // 2 + 1 + 4
+        total: 9, // 3 + 1 + 5
         byEvent: {
           'worker.mirror_requested': { processed: 2, total: 3 },
           'worker.registration_completed': { processed: 1, total: 1 },
+          'vacancy.created': { processed: 4, total: 5 },
         },
       });
     });
 
-    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. vacancy.created)', async () => {
+    it('never calls sweepPendingByEvent for an event outside the allowlist (e.g. funnel_stage.qualified)', async () => {
       const res = mockRes();
       await controller.sweepSafeEvents(mockReq(), res);
 
       const calledEvents = eventProcessor.sweepPendingByEvent.mock.calls.map(c => c[0]);
-      expect(calledEvents).not.toContain('vacancy.created');
-      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed'].sort());
+      expect(calledEvents).not.toContain('funnel_stage.qualified');
+      expect(calledEvents.sort()).toEqual(['worker.mirror_requested', 'worker.registration_completed', 'vacancy.created'].sort());
     });
 
     it('parses olderThanMinutes/limit from query and forwards to every allowlist event', async () => {
@@ -343,6 +358,96 @@ describe('InternalController', () => {
         ],
         stuckCount: 0,
         worstOldestRecentAgeMinutes: 5,
+        anaCareMirror: {
+          stuckRecent: 0,
+          oldestStuckAgeHours: 0,
+          chronicTotal: 0,
+          stuck: false,
+        },
+      });
+    });
+
+    /**
+     * Regressão do incidente de 30/07/2026 (chave do Ana Care invalidada,
+     * 58 prestadores presos por 11 dias sem ninguém ver).
+     *
+     * O alerta antigo era de BORDA: contava falhas numa janela de 5min, zerava
+     * quando a rajada passava e mandava "[RESOLVED] Alert recovered" com o
+     * sistema quebrado. Os testes abaixo travam a propriedade que conserta
+     * isso: o WARN é função do ESTADO (existe alguém preso?), não de ter
+     * havido falha nova nesta janela — logo o cron o reemite a cada ciclo e a
+     * métrica não zera sozinha.
+     */
+    describe('espelho Ana Care (estado)', () => {
+      const { logger } = jest.requireMock('@shared/logging');
+
+      // o mock de módulo do logger é compartilhado entre os testes do arquivo
+      beforeEach(() => {
+        logger.warn.mockClear();
+        logger.info.mockClear();
+      });
+
+      it('emite o WARN de estado quando existe preso — sem nenhuma falha nova', async () => {
+        anaCareMirrorHealthService.getMirrorHealth.mockResolvedValue({
+          stuckRecent: 20,
+          oldestStuckAgeHours: 168.4,
+          chronicTotal: 39,
+          stuck: true,
+        });
+
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            msg: '[mirror/health] anacare mirror stuck',
+            stuckRecent: 20,
+            oldestStuckAgeHours: 168.4,
+            chronicTotal: 39,
+          }),
+        );
+      });
+
+      it('reemite o MESMO WARN a cada ciclo do cron enquanto o estado durar', async () => {
+        anaCareMirrorHealthService.getMirrorHealth.mockResolvedValue({
+          stuckRecent: 20,
+          oldestStuckAgeHours: 168.4,
+          chronicTotal: 39,
+          stuck: true,
+        });
+
+        // três ciclos consecutivos do scheduler de 5min
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+
+        const warns = logger.warn.mock.calls.filter(
+          (c: [{ msg: string }]) => c[0].msg === '[mirror/health] anacare mirror stuck',
+        );
+        expect(warns).toHaveLength(3);
+      });
+
+      it('cala só quando o backlog recente zera de verdade', async () => {
+        anaCareMirrorHealthService.getMirrorHealth.mockResolvedValue({
+          stuckRecent: 0,
+          oldestStuckAgeHours: 0,
+          chronicTotal: 39, // crônico continua, mas NÃO pagina
+          stuck: false,
+        });
+
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+
+        const warns = logger.warn.mock.calls.filter(
+          (c: [{ msg: string }]) => c[0].msg === '[mirror/health] anacare mirror stuck',
+        );
+        expect(warns).toHaveLength(0);
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({ msg: '[mirror/health] ok', chronicTotal: 39 }),
+        );
+      });
+
+      it('usa os defaults medidos (2h de limite, janela de recência de 7d)', async () => {
+        await controller.getEventsHealth(mockReq({}, {}), mockRes());
+        expect(anaCareMirrorHealthService.getMirrorHealth).toHaveBeenCalledWith(2, 168);
       });
     });
 

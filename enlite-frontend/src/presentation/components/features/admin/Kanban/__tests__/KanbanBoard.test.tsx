@@ -64,12 +64,16 @@ vi.mock('lucide-react', () => ({
   MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
+  ArrowRightLeft: (props: Record<string, unknown>) => <svg data-testid="icon-move" {...props} />,
+  ChevronDown: (props: Record<string, unknown>) => <svg data-testid="icon-chevron" {...props} />,
+  ChevronsLeft: (props: Record<string, unknown>) => <svg data-testid="icon-collapse" {...props} />,
+  ChevronsRight: (props: Record<string, unknown>) => <svg data-testid="icon-expand" {...props} />,
 }));
 
 // ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({
-  ContactNotesModal: ({ vacancyId, wjaId, workerName }: { vacancyId: string; wjaId: string; workerName: string | null }) => (
-    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-wja-id={wjaId} data-worker-name={workerName ?? ''} />
+  ContactNotesModal: ({ vacancyId, workerId, workerName }: { vacancyId: string; workerId: string; workerName: string | null }) => (
+    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-worker-id={workerId} data-worker-name={workerName ?? ''} />
   ),
 }));
 
@@ -126,7 +130,7 @@ beforeEach(() => {
 
 describe('KanbanBoard — column rendering', () => {
   it('renders all 9 columns', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const expectedColumns = [
       'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
@@ -139,7 +143,7 @@ describe('KanbanBoard — column rendering', () => {
   });
 
   it('renders columns in correct order (INVITED → BLOQUEADO → INICIADO → PRE_SCREENING → IN_PROGRESS → ...)', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
@@ -151,7 +155,7 @@ describe('KanbanBoard — column rendering', () => {
   });
 
   it('displays internationalized column titles via i18n keys', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.BLOQUEADO')).toBeInTheDocument();
@@ -169,7 +173,7 @@ describe('KanbanBoard — column rendering', () => {
     stages.INICIADO = [makeEncuadre(), makeEncuadre()];
     stages.COMPLETED = [makeEncuadre()];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const iniciadoCol = screen.getByTestId('kanban-column-INICIADO');
     expect(within(iniciadoCol).getByText('2')).toBeInTheDocument();
@@ -185,7 +189,7 @@ describe('KanbanBoard — column rendering', () => {
     const stages = emptyStages();
     stages.IN_PROGRESS = [makeEncuadre({ id: 'enc-1', workerName: 'Carlos López' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const inProgressCol = screen.getByTestId('kanban-column-IN_PROGRESS');
     expect(within(inProgressCol).getByTestId('kanban-card-enc-1')).toBeInTheDocument();
@@ -197,7 +201,7 @@ describe('KanbanBoard — column rendering', () => {
 
 describe('KanbanBoard — drag & drop rules', () => {
   it('disables droppable on Talentum-driven columns (INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED)', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const nonDroppable = droppableIds.filter((d) =>
       ['INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED'].includes(d.id),
@@ -210,7 +214,7 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 
   it('disables droppable on BLOQUEADO column (cards have no encuadreId, never a drop target)', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const bloqueado = droppableIds.find((d) => d.id === 'BLOQUEADO');
     expect(bloqueado, 'BLOQUEADO column must be registered in useDroppable').toBeTruthy();
@@ -218,7 +222,7 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 
   it('keeps droppable enabled on INVITED, CONFIRMED, SELECTED, and REJECTED columns', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const droppableColumns = droppableIds.filter((d) =>
       ['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED'].includes(d.id),
@@ -231,7 +235,7 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 
   it('INVITED column is droppable (F4 change)', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const invitedDroppable = droppableIds.find((d) => d.id === 'INVITED');
     expect(invitedDroppable).toBeTruthy();
@@ -242,7 +246,7 @@ describe('KanbanBoard — drag & drop rules', () => {
     const stages = emptyStages();
     stages.INICIADO = [makeEncuadre({ id: 'enc-drag' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const card = screen.getByTestId('kanban-card-enc-drag');
     expect(card).toBeInTheDocument();
@@ -253,7 +257,7 @@ describe('KanbanBoard — drag & drop rules', () => {
     const stages = emptyStages();
     stages.PRE_SCREENING = [makeEncuadre({ id: 'enc-pre-drag' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const card = screen.getByTestId('kanban-card-enc-pre-drag');
     expect(card).toBeInTheDocument();
@@ -265,7 +269,7 @@ describe('KanbanBoard — drag & drop rules', () => {
 
 describe('KanbanBoard — edge cases', () => {
   it('renders gracefully with all stages empty', () => {
-    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     expect(columns).toHaveLength(9);
@@ -278,7 +282,7 @@ describe('KanbanBoard — edge cases', () => {
     stages.IN_PROGRESS = [makeEncuadre({ id: 'b' }), makeEncuadre({ id: 'c' })];
     stages.COMPLETED = [makeEncuadre({ id: 'd' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     expect(screen.getByTestId('kanban-card-a')).toBeInTheDocument();
     expect(screen.getByTestId('kanban-card-b')).toBeInTheDocument();
@@ -295,7 +299,7 @@ describe('KanbanBoard — worker name navigation', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nav', workerId: 'worker-99', workerName: 'Carlos Test' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const button = screen.getByRole('button', { name: 'Carlos Test' });
     fireEvent.click(button);
@@ -308,7 +312,7 @@ describe('KanbanBoard — worker name navigation', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nolink', workerId: null, workerName: 'No Link' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     expect(screen.queryByRole('button', { name: 'No Link' })).not.toBeInTheDocument();
     // Name should still render as plain text
@@ -321,7 +325,7 @@ describe('KanbanBoard — worker name navigation', () => {
     stages.CONFIRMED = [makeEncuadre({ id: 'w2', workerId: 'wk-2', workerName: 'Worker B' })];
     stages.SELECTED = [makeEncuadre({ id: 'w3', workerId: 'wk-3', workerName: 'Worker C' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     // All should have clickable names
     expect(screen.getByRole('button', { name: 'Worker A' })).toBeInTheDocument();
@@ -341,7 +345,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'orphan-wja', encuadreId: null })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const orphanDraggable = draggableIds.find((d) => d.id === 'orphan-wja');
     expect(orphanDraggable, 'Orphan card must be registered in useDraggable').toBeTruthy();
@@ -352,7 +356,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.INICIADO = [makeEncuadre({ id: 'enc-with-id', encuadreId: 'real-enc-uuid' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const cardDraggable = draggableIds.find((d) => d.id === 'enc-with-id');
     expect(cardDraggable, 'Card with encuadreId must be registered in useDraggable').toBeTruthy();
@@ -363,7 +367,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'orphan-vis', encuadreId: null })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const wrapper = screen.getByTestId('kanban-draggable-orphan-vis');
     expect(wrapper.getAttribute('data-drag-disabled')).toBe('true');
@@ -373,7 +377,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
     const stages = emptyStages();
     stages.CONFIRMED = [makeEncuadre({ id: 'active-enc', encuadreId: 'uuid-abc' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const wrapper = screen.getByTestId('kanban-draggable-active-enc');
     expect(wrapper.getAttribute('data-drag-disabled')).not.toBe('true');
@@ -386,7 +390,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
       makeEncuadre({ id: 'non-orphan-1', encuadreId: 'enc-uuid-1' }),
     ];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const orphan = draggableIds.find((d) => d.id === 'orphan-1');
     const nonOrphan = draggableIds.find((d) => d.id === 'non-orphan-1');
@@ -407,7 +411,7 @@ describe('KanbanBoard — interview tag in CONFIRMED column', () => {
       interviewTime: '10:30',
     })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const confirmedCol = screen.getByTestId('kanban-column-CONFIRMED');
     // CalendarClock icon should be inside the CONFIRMED column
@@ -422,7 +426,7 @@ describe('KanbanBoard — interview tag in CONFIRMED column', () => {
       interviewTime: '10:30',
     })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const completedCol = screen.getByTestId('kanban-column-COMPLETED');
     expect(within(completedCol).queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
@@ -443,7 +447,7 @@ describe('KanbanBoard — BLOQUEADO column', () => {
       attemptCount: 2,
     })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const bloqueadoCol = screen.getByTestId('kanban-column-BLOQUEADO');
     const card = within(bloqueadoCol).getByTestId('kanban-card-enc-blocked');
@@ -458,7 +462,7 @@ describe('KanbanBoard — BLOQUEADO column', () => {
     const stages = emptyStages();
     stages.BLOQUEADO = [makeEncuadre({ id: 'enc-blocked-drag', encuadreId: null, isBlocked: true })];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const wrapper = screen.getByTestId('kanban-draggable-enc-blocked-drag');
     expect(wrapper.getAttribute('data-drag-disabled')).toBe('true');
@@ -471,7 +475,7 @@ describe('KanbanBoard — BLOQUEADO column', () => {
       makeEncuadre({ id: 'b2', encuadreId: null, isBlocked: true }),
     ];
 
-    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     const bloqueadoCol = screen.getByTestId('kanban-column-BLOQUEADO');
     expect(within(bloqueadoCol).getByText('2')).toBeInTheDocument();
@@ -485,30 +489,45 @@ describe('KanbanBoard — botão de comentários abre o ContactNotesModal', () =
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', workerName: 'Marcia Costa' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     expect(screen.queryByTestId('contact-notes-modal')).not.toBeInTheDocument();
   });
 
-  it('abre o modal com o wjaId (card.id) e o vacancyId do board ao clicar', () => {
+  it('abre o modal com o workerId (par worker×vaga, não o wjaId) e o vacancyId do board ao clicar', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', workerName: 'Marcia Costa' })];
 
-    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     fireEvent.click(screen.getByTestId('notes-button'));
 
     const modal = screen.getByTestId('contact-notes-modal');
     expect(modal).toHaveAttribute('data-vacancy-id', 'vac-77');
-    expect(modal).toHaveAttribute('data-wja-id', 'wja-1');
+    expect(modal).toHaveAttribute('data-worker-id', 'wk-1');
     expect(modal).toHaveAttribute('data-worker-name', 'Marcia Costa');
   });
 
-  it('não renderiza botão de comentários em cards bloqueados (não são WJA)', () => {
+  it('renderiza o botão de comentários em cards BLOQUEADO quando workerId está presente — histórico é o mesmo do worker×vaga em qualquer coluna', () => {
+    const stages = emptyStages();
+    stages.BLOQUEADO = [
+      makeEncuadre({ id: 'b1', encuadreId: null, workerId: 'wk-blocked', isBlocked: true, contactNotesCount: 3 }),
+    ];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    expect(screen.getByTestId('notes-button')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('notes-button'));
+    const modal = screen.getByTestId('contact-notes-modal');
+    expect(modal).toHaveAttribute('data-worker-id', 'wk-blocked');
+  });
+
+  it('não renderiza botão de comentários quando workerId é null (defensivo — não deve ocorrer em bloqueado real)', () => {
     const stages = emptyStages();
     stages.BLOQUEADO = [makeEncuadre({ id: 'b1', encuadreId: null, workerId: null, isBlocked: true })];
 
-    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     expect(screen.queryByTestId('notes-button')).not.toBeInTheDocument();
   });
@@ -517,8 +536,166 @@ describe('KanbanBoard — botão de comentários abre o ContactNotesModal', () =
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-1', workerId: 'wk-1', contactNotesCount: 4 })];
 
-    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} />);
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
     expect(screen.getByTestId('notes-count-badge')).toHaveTextContent('4');
+  });
+});
+
+// ── Menu "Mover a…" (alternativa de clique ao arrasto) ───────────────────────
+
+describe('KanbanBoard — menu "Mover a…"', () => {
+  it('card movível (com encuadre) mostra o botão "Mover a…"', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-mv', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    expect(screen.getByTestId('move-to-button')).toBeInTheDocument();
+  });
+
+  it('card órfão (encuadreId=null) NÃO mostra o botão "Mover a…"', () => {
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'orphan', encuadreId: null })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    expect(screen.queryByTestId('move-to-button')).not.toBeInTheDocument();
+  });
+
+  it('escolher um destino sem pergunta extra chama onMove(encuadreId, targetStage)', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-INVITED'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED');
+  });
+
+  /**
+   * O menu não pode ser a porta dos fundos: se só o arrasto pedisse a data, mover pelo
+   * menu gravaria card agendado sem QUANDO — que é o problema que a captura conserta.
+   */
+  it('mover para CONFIRMED pelo menu abre o modal de data antes de chamar onMove', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+
+    expect(screen.getByTestId('interview-schedule-modal')).toBeInTheDocument();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('"ainda não sei" no modal move para CONFIRMED sem data', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    fireEvent.click(screen.getByTestId('interview-schedule-unknown'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, undefined);
+  });
+
+  it('confirmar data no modal repassa o agendamento para onMove', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    fireEvent.change(screen.getByTestId('interview-date-input'), { target: { value: '2026-08-05' } });
+    fireEvent.change(screen.getByTestId('interview-time-input'), { target: { value: '14:30' } });
+    fireEvent.click(screen.getByTestId('interview-schedule-confirm'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, {
+      interviewDate: '2026-08-05',
+      interviewTime: '14:30',
+      interviewMeetLink: undefined,
+    });
+  });
+
+  it('mover para SELECTED abre o modal de papel antes de chamar onMove', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-sel', encuadreId: 'enc-99', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-SELECTED'));
+
+    // Ainda não moveu — pede o papel primeiro.
+    expect(onMove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('role-modal')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByTestId('role-option-rapid-response')).getByRole('radio'));
+    fireEvent.click(screen.getByTestId('role-confirm'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-99', 'SELECTED', undefined, 'RAPID_RESPONSE');
+  });
+
+  it('"Rechazar" num card BLOQUEADO abre o MESMO modal de motivo e chama onRejectBlocked com id + categoria', () => {
+    const onRejectBlocked = vi.fn(async () => null);
+    const stages = emptyStages();
+    // Card bloqueado: sem encuadreId, isBlocked=true (id = worker_blocked_applications.id)
+    stages.BLOQUEADO = [
+      makeEncuadre({ id: 'ba-42', encuadreId: null, isBlocked: true, workerName: 'Diego Trevisan' }),
+    ];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={noop} onRejectBlocked={onRejectBlocked} onUnrejectBlocked={noop} />);
+
+    // Clica em "Rechazar" — abre o dropdown de motivo (mesmo do rejeitado normal), ainda não rejeita.
+    fireEvent.click(screen.getByTestId('reject-button'));
+    expect(onRejectBlocked).not.toHaveBeenCalled();
+    expect(screen.getByTestId('rejection-modal')).toBeInTheDocument();
+
+    // Escolhe um motivo e confirma → rejeita com id do card + a categoria escolhida.
+    fireEvent.click(within(screen.getByTestId('rejection-option-worker-declined')).getByRole('radio'));
+    fireEvent.click(screen.getByTestId('rejection-confirm'));
+    expect(onRejectBlocked).toHaveBeenCalledWith('ba-42', 'WORKER_DECLINED');
+  });
+
+  it('cancelar o modal de motivo de um bloqueado não chama onRejectBlocked', () => {
+    const onRejectBlocked = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.BLOQUEADO = [makeEncuadre({ id: 'ba-7', encuadreId: null, isBlocked: true })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={noop} onRejectBlocked={onRejectBlocked} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('reject-button'));
+    fireEvent.click(screen.getByTestId('rejection-cancel'));
+
+    expect(onRejectBlocked).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('rejection-modal')).not.toBeInTheDocument();
+  });
+
+  it('card bloqueado RECHAZADO (isDismissed) em REJECTED mostra "Voltar" e chama onUnrejectBlocked', () => {
+    const onUnrejectBlocked = vi.fn(async () => null);
+    const stages = emptyStages();
+    // Card de bloqueado rechazado: isBlocked + isDismissed, na coluna RECHAZADOS.
+    stages.REJECTED = [
+      makeEncuadre({ id: 'ba-99', encuadreId: null, isBlocked: true, isDismissed: true, rejectionReasonCategory: 'WORKER_DECLINED' }),
+    ];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={onUnrejectBlocked} />);
+
+    // Não mostra "Rechazar" (já está rechazado); mostra "Voltar a bloqueados".
+    expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('undismiss-button'));
+    expect(onUnrejectBlocked).toHaveBeenCalledWith('ba-99');
   });
 });

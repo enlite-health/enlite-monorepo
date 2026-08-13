@@ -12,7 +12,7 @@
  * Address fields are updated in worker_service_areas (upsert the primary row).
  */
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
@@ -21,6 +21,16 @@ import type { EntityFieldDiff } from '@shared/audit/types';
 import { captureWorkerBefore } from './workerAuditDiff';
 import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
 import type { PubSubClient } from '@shared/events/PubSubClient';
+import {
+  ProfileChangeAuditRepository,
+  ProfileChangeAuditEntry,
+} from '../infrastructure/ProfileChangeAuditRepository';
+import { redactProfileValue } from './profileChangeRedaction';
+import {
+  DEFAULT_CHANNEL_BY_SOURCE,
+  logProfileEdit,
+  type ProfileEditAttribution,
+} from '../domain/profileEditSource';
 
 const TAG = '[UpdateWorkerProfileFieldsUseCase]';
 const MIRROR_EVENT = 'worker.mirror_requested';
@@ -103,7 +113,10 @@ export class UpdateWorkerProfileFieldsUseCase {
     this.pubsub = pubsub ?? null;
   }
 
-  async execute(patch: WorkerProfilePatch): Promise<UpdateWorkerProfileFieldsResult> {
+  async execute(
+    patch: WorkerProfilePatch,
+    attribution: ProfileEditAttribution,
+  ): Promise<UpdateWorkerProfileFieldsResult> {
     const { workerId, address, ...scalarFields } = patch;
     const log = logger.child({ workerId, useCase: 'UpdateWorkerProfileFieldsUseCase' });
 
@@ -121,13 +134,37 @@ export class UpdateWorkerProfileFieldsUseCase {
 
     const fieldsUpdated: string[] = [];
 
-    // 2. Update scalar fields on workers table
-    await this.updateScalarFields(workerId, scalarFields, fieldsUpdated);
+    // 2-3. Escrita + trilha de fonte numa transação única, com o carimbo
+    // app.current_uid setado ANTES dos updates (triggers de histórico o leem).
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.current_uid', $1, true)", [
+        attribution.actorUid,
+      ]);
 
-    // 3. Update address in worker_service_areas if provided
-    if (address && Object.values(address).some((v) => v !== undefined)) {
-      await this.updateAddress(workerId, address);
-      fieldsUpdated.push('address');
+      await this.updateScalarFields(client, workerId, scalarFields, fieldsUpdated);
+
+      if (address && Object.values(address).some((v) => v !== undefined)) {
+        await this.updateAddress(client, workerId, address);
+        fieldsUpdated.push('address');
+      }
+
+      // Trilha de fonte (worker_profile_changes_audit) na MESMA transação:
+      // ou a edição e a atribuição entram juntas, ou nenhuma entra.
+      const auditEntries = this.buildEditTrail(patch, fieldsUpdated, before, attribution);
+      await new ProfileChangeAuditRepository(client).recordBatch(auditEntries);
+
+      await client.query('COMMIT');
+
+      for (const entry of auditEntries) {
+        logProfileEdit(workerId, entry.fieldName, attribution.source);
+      }
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
     }
 
     const afterMap = scalarFields as Record<string, unknown>;
@@ -171,7 +208,57 @@ export class UpdateWorkerProfileFieldsUseCase {
     }
   }
 
+  /**
+   * Monta a trilha de fonte (uma linha por campo escrito, valores REDIGIDOS).
+   * `address` vira uma linha por subcampo (`address.street`, …), como no confirm.
+   */
+  private buildEditTrail(
+    patch: WorkerProfilePatch,
+    fieldsUpdated: string[],
+    before: Record<string, unknown>,
+    attribution: ProfileEditAttribution,
+  ): ProfileChangeAuditEntry[] {
+    const channel = attribution.channel ?? DEFAULT_CHANNEL_BY_SOURCE[attribution.source];
+    const base = {
+      workerId: patch.workerId,
+      pendingChangeId: attribution.pendingChangeId ?? null,
+      changedBy: attribution.source,
+      source: channel,
+      conversationRef: attribution.conversationRef ?? null,
+    };
+
+    const entries: ProfileChangeAuditEntry[] = [];
+    for (const field of fieldsUpdated) {
+      if (field === 'address') {
+        for (const [k, v] of Object.entries(patch.address ?? {})) {
+          if (v === undefined || v === null || v === '') continue;
+          entries.push({
+            ...base,
+            fieldName: `address.${k}`,
+            oldValueRedacted: null,
+            newValueRedacted: redactProfileValue(`address.${k}`, String(v)),
+          });
+        }
+        continue;
+      }
+      const newValue = (patch as unknown as Record<string, unknown>)[field];
+      if (newValue === undefined) continue;
+      const oldValue = before[field];
+      entries.push({
+        ...base,
+        fieldName: field,
+        oldValueRedacted:
+          oldValue === undefined || oldValue === null || oldValue === ''
+            ? null
+            : redactProfileValue(field, stringifyFieldValue(oldValue)),
+        newValueRedacted: redactProfileValue(field, stringifyFieldValue(newValue)),
+      });
+    }
+    return entries;
+  }
+
   private async updateScalarFields(
+    client: PoolClient,
     workerId: string,
     fields: Omit<WorkerProfilePatch, 'workerId' | 'address'>,
     fieldsUpdated: string[],
@@ -313,7 +400,7 @@ export class UpdateWorkerProfileFieldsUseCase {
     // Blind index for name search — regenerate if firstName or lastName changed
     const nameChanged = fields.firstName !== undefined || fields.lastName !== undefined;
     if (nameChanged) {
-      const currentRow = await this.pool.query<{
+      const currentRow = await client.query<{
         first_name_encrypted: string | null;
         last_name_encrypted: string | null;
       }>(
@@ -334,13 +421,14 @@ export class UpdateWorkerProfileFieldsUseCase {
 
     if (sets.length === 0) return;
 
-    await this.pool.query(
+    await client.query(
       `UPDATE workers SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1`,
       values,
     );
   }
 
   private async updateAddress(
+    client: PoolClient,
     workerId: string,
     address: NonNullable<WorkerProfilePatch['address']>,
   ): Promise<void> {
@@ -381,7 +469,7 @@ export class UpdateWorkerProfileFieldsUseCase {
 
     // Update the oldest service area row for this worker (primary residence).
     // If none exists, skip — cannot create without required lat/lng/radius fields.
-    const existing = await this.pool.query<{ id: string }>(
+    const existing = await client.query<{ id: string }>(
       'SELECT id FROM worker_service_areas WHERE worker_id = $1 ORDER BY created_at ASC LIMIT 1',
       [workerId],
     );
@@ -392,9 +480,16 @@ export class UpdateWorkerProfileFieldsUseCase {
     }
 
     const saId = existing.rows[0].id;
-    await this.pool.query(
+    await client.query(
       `UPDATE worker_service_areas SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${idx}`,
       [...values, saId],
     );
   }
+}
+
+/** Valor de campo → string pro redator (arrays viram lista legível, objetos JSON). */
+function stringifyFieldValue(value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object' && value !== null) return JSON.stringify(value);
+  return String(value);
 }

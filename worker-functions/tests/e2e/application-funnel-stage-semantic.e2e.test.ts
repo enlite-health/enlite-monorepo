@@ -3,18 +3,24 @@
  *
  * Valida a semântica correta pós-migration 187:
  *
- *   INVITED  = worker clicou no link público OU foi detectado via sync Talentum
- *              (sem evidência de entrada no WhatsApp Talentum)
- *   INITIATED = ÚNICA fonte: worker entrou no WhatsApp Talentum
- *               (webhook PRESCREENING_RESPONSE subtype=INITIATED ou drag manual no Kanban)
+ *   INVITED       = worker clicou no link público OU foi detectado via sync Talentum
+ *                   (sem evidência de entrada no WhatsApp Talentum)
+ *   PRE_SCREENING = ÚNICA fonte: worker entrou no WhatsApp Talentum
+ *                   (webhook PRESCREENING_RESPONSE subtype=INITIATED ou drag manual no Kanban)
  *
  *   Migration 187: removeu DEFAULT 'INITIATED' + forçou NOT NULL.
  *   INSERT sem application_funnel_stage agora falha com not_null_violation (23502).
  *
+ *   Migration 230 (2026-06-26): renomeou o stage canônico interno INITIATED→PRE_SCREENING
+ *   (o subtype do webhook Talentum continua se chamando 'INITIATED' — é mapeado ANTES do
+ *   INSERT, ver TalentumFunnelStageMapper). Migration 264/#95 (Fase-2) removeu 'INITIATED'
+ *   do CHECK constraint definitivamente — por isso os testes abaixo usam PRE_SCREENING
+ *   como o stage "já avançado" que o sync não deve regredir.
+ *
  * Tests:
- *   S1 — trackChannel cria WJA com stage INVITED (não INITIATED)
+ *   S1 — trackChannel cria WJA com stage INVITED (não PRE_SCREENING)
  *   S2 — SyncTalentumWorkersUseCase cria WJA com stage INVITED
- *   S3 — Sync NÃO regride WJA já em INITIATED+ (ON CONFLICT DO NOTHING preserva)
+ *   S3 — Sync NÃO regride WJA já em PRE_SCREENING+ (ON CONFLICT DO NOTHING preserva)
  *   S4 — INSERT sem stage falha com NOT NULL constraint (schema test — migration 187)
  */
 
@@ -71,7 +77,7 @@ describe('application_funnel_stage semântica (migration 187)', () => {
   // Worker clicou no link público → stage = INVITED, não INITIATED.
   // ═══════════════════════════════════════════════════════════════
 
-  it('[S1] trackChannel: INSERT com stage=INVITED (worker clicou no link público)', async () => {
+  it('[S1] trackChannel: INSERT com stage=INVITED (worker clicou no link público, não PRE_SCREENING)', async () => {
     await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, source, acquisition_channel, application_funnel_stage)
@@ -130,22 +136,23 @@ describe('application_funnel_stage semântica (migration 187)', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // S3 — Sync NÃO regride WJA já em INITIATED+ (ON CONFLICT DO NOTHING preserva)
+  // S3 — Sync NÃO regride WJA já em PRE_SCREENING+ (ON CONFLICT DO NOTHING preserva)
   //
-  // Cenário: WJA já existe em INITIATED (veio do webhook PRESCREENING_RESPONSE).
-  // O sync roda de novo. ON CONFLICT DO NOTHING preserva INITIATED.
+  // Cenário: WJA já existe em PRE_SCREENING (veio do webhook PRESCREENING_RESPONSE,
+  // que hoje mapeia subtype='INITIATED'→'PRE_SCREENING' — migration 230/#95).
+  // O sync roda de novo. ON CONFLICT DO NOTHING preserva PRE_SCREENING.
   // ═══════════════════════════════════════════════════════════════
 
-  it('[S3] sync não regride stage INITIATED para INVITED — ON CONFLICT DO NOTHING preserva', async () => {
-    // Pré-popula WJA em INITIATED (veio do webhook)
+  it('[S3] sync não regride stage PRE_SCREENING para INVITED — ON CONFLICT DO NOTHING preserva', async () => {
+    // Pré-popula WJA em PRE_SCREENING (veio do webhook)
     await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage, source)
-       VALUES ($1, $2, 'INITIATED', 'talentum')`,
+       VALUES ($1, $2, 'PRE_SCREENING', 'talentum')`,
       [workerId, jobPostingId],
     );
 
-    // Re-sync tenta inserir INVITED — conflito ignora, INITIATED preservado
+    // Re-sync tenta inserir INVITED — conflito ignora, PRE_SCREENING preservado
     const result = await pool.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage, source)
@@ -165,8 +172,8 @@ describe('application_funnel_stage semântica (migration 187)', () => {
     );
 
     expect(rows).toHaveLength(1);
-    // Stage permanece INITIATED — sync não regrediu
-    expect(rows[0].application_funnel_stage).toBe('INITIATED');
+    // Stage permanece PRE_SCREENING — sync não regrediu
+    expect(rows[0].application_funnel_stage).toBe('PRE_SCREENING');
   });
 
   // ═══════════════════════════════════════════════════════════════

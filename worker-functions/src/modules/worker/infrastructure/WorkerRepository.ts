@@ -7,6 +7,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import type { PubSubClient } from '@shared/events/PubSubClient';
+import { countryToTimezone } from '@shared/locale/CountryTimezone';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
 import {
   findByCuit as _findByCuit,
@@ -76,6 +77,10 @@ export class WorkerRepository implements IWorkerRepository {
                   updated_at as "updatedAt"
       `;
 
+      const country = data.country || 'AR';
+      // TD-028: derivar timezone do country quando ausente (default 'UTC' antigo
+      // resultava em 100% dos workers com timezone errado pra AR/BR).
+      const timezone = data.timezone || countryToTimezone(country);
       const values = [
         data.authUid,
         data.email,
@@ -84,8 +89,8 @@ export class WorkerRepository implements IWorkerRepository {
         consentAt,
         consentAt,
         consentAt,
-        data.country || 'AR',
-        data.timezone || 'UTC',
+        country,
+        timezone,
       ];
       const result = await this.pool.query(query, values);
       const row = result.rows[0];
@@ -260,12 +265,16 @@ export class WorkerRepository implements IWorkerRepository {
   async findByPhoneCandidates(candidates: string[]): Promise<Result<Worker | null>> {
     try {
       if (candidates.length === 0) return Result.ok<Worker | null>(null);
-      // Só considera workers ATIVOS (não-merged) — espelha idx_workers_phone_normalized (mig 219).
+      // Só considera workers ATIVOS: não-merged (espelha idx_workers_phone_normalized,
+      // mig 219) e não soft-deletados — conta com deleted_at não pode bloquear o
+      // número de quem está se cadastrando (caso Edith, diagnóstico 03/08).
       const result = await this.pool.query(
         `SELECT id, auth_uid as "authUid", email, phone, country,
                 created_at as "createdAt", updated_at as "updatedAt"
          FROM workers
-         WHERE phone = ANY($1::text[]) AND merged_into_id IS NULL
+         WHERE phone = ANY($1::text[])
+           AND merged_into_id IS NULL
+           AND deleted_at IS NULL
          LIMIT 1`,
         [candidates],
       );

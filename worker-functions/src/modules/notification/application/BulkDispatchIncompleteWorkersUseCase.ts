@@ -4,6 +4,7 @@ import { IMessagingService } from '../domain/IMessagingService';
 import { CadencePolicy } from '../domain/CadencePolicy';
 import { Result } from '@shared/utils/Result';
 import { logger, reportError } from '@shared/logging';
+import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
@@ -47,7 +48,8 @@ const INCOMPLETE_WORKERS_QUERY = `
   )
   SELECT DISTINCT
     w.id,
-    w.phone
+    w.phone,
+    w.messaging_channel
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
   LEFT JOIN worker_documents wd ON wd.worker_id = w.id
@@ -57,6 +59,12 @@ const INCOMPLETE_WORKERS_QUERY = `
     w.email NOT LIKE '%@enlite.import'
     AND w.phone IS NOT NULL
     AND w.phone <> ''
+    -- Reforço explícito (belt-and-suspenders): o NOT EXISTS de messaging_opt_out
+    -- abaixo já cobre quem foi desativado via DeactivateWorkerAccountUseCase ou
+    -- pelo arquivamento em massa (D103), mas a baixa manual via
+    -- PUT /workers/:id/status não grava opt-out — sem este filtro, esse worker
+    -- continuaria elegível ao disparo em massa.
+    AND ${excludeDisabledWorkersSql('w')}
     AND (
       wd.documents_status IS NULL
       OR wd.documents_status NOT IN ('submitted', 'under_review', 'approved')
@@ -132,9 +140,9 @@ export class BulkDispatchIncompleteWorkersUseCase {
     batchLogger.info('BulkDispatch iniciado');
 
     // 1. Busca workers com cadastro incompleto (já exclui quem recebeu hoje via NOT EXISTS)
-    let rows: Array<{ id: string; phone: string }>;
+    let rows: Array<{ id: string; phone: string; messaging_channel: string | null }>;
     try {
-      const queryResult = await this.db.query<{ id: string; phone: string }>(
+      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null }>(
         INCOMPLETE_WORKERS_QUERY,
       );
       rows = queryResult.rows;
@@ -204,10 +212,12 @@ export class BulkDispatchIncompleteWorkersUseCase {
         continue;
       }
 
-      // 2b. Enviar WhatsApp
+      // 2b. Enviar WhatsApp — channel resolvido pelo messaging_channel do worker
+      // (zero query extra: já veio na eligibility query acima).
       const sendResult = await this.messaging.sendWhatsApp({
         to: row.phone,
         templateSlug: TEMPLATE_SLUG,
+        channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
       });
 
       const finalStatus = sendResult.isSuccess ? 'sent' : 'failed';

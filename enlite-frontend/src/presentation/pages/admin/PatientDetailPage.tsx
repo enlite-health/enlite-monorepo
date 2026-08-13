@@ -22,6 +22,8 @@ import { LocalizacoesCard } from '@presentation/components/features/admin/Patien
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { EnquadreTerapeuticoCard } from '@presentation/components/features/admin/PatientDetail/EnquadreTerapeuticoCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
+import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
+import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 
 const COUNTRY_FLAG: Record<string, string> = {
   AR: '🇦🇷',
@@ -33,8 +35,8 @@ export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { patient, isLoading, error } = usePatientDetail(id);
-  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError } = usePatientVacancies(id);
+  const { patient, isLoading, error, refetch } = usePatientDetail(id);
+  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
   const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
 
   if (isLoading) return <DetailSkeleton />;
@@ -75,7 +77,12 @@ export default function PatientDetailPage() {
             {t('admin.patients.detail.pageTitle')}
           </Heading>
         </div>
-        <div className="flex items-center gap-2 shrink-0 ml-4">
+        <div className="flex items-center gap-3 shrink-0 ml-4">
+          <ActivatePatientButton
+            patientId={patient.id}
+            status={patient.status}
+            onActivated={() => { refetch(); refetchVacancies(); }}
+          />
           <span className="text-2xl" role="img" aria-label={countryLabel}>{countryFlag}</span>
           <Text as="span" size="sm" weight="medium" color="secondary" className="hidden sm:block">
             {countryLabel}
@@ -86,7 +93,7 @@ export default function PatientDetailPage() {
       {/* Row 1: Identity + General Info (2 columns) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <PatientIdentityCard patient={patient} />
-        <PatientGeneralInfoCard patient={patient} />
+        <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
       </div>
 
       {/* Tab Navigation */}
@@ -98,7 +105,7 @@ export default function PatientDetailPage() {
       <div className="mb-6 flex flex-col gap-6">
         {activeTab === 'clinicalData' && (
           <>
-            <DiagnosticoCard patient={patient} />
+            <DiagnosticoCard patient={patient} onSaved={refetch} />
             <ProjetoTerapeuticoCard />
             <EquipeTratanteCard professionals={patient.professionals ?? []} />
             <SupervisaoCard />
@@ -106,13 +113,19 @@ export default function PatientDetailPage() {
           </>
         )}
         {activeTab === 'supportNetwork' && (
-          <FamiliaresCard responsibles={patient.responsibles ?? []} />
+          <>
+            <FamiliaresCard responsibles={patient.responsibles ?? []} patientId={patient.id} onSaved={refetch} />
+            {/* Chat IDs dos grupos do Periskope — a chave de join da auditoria
+                de informes (Candela). Fica na rede de apoio porque é onde a
+                família e a equipe de prestadores já são tratadas. */}
+            <PatientChatIdsCard patient={patient} onSaved={refetch} />
+          </>
         )}
         {activeTab === 'contractedService' && (
           <>
             <CoberturaMedicaCard patient={patient} />
             <LocalizacoesCard addresses={patient.addresses ?? []} />
-            <ServicosContratadosCard patient={patient} />
+            <ServicosContratadosCard patient={patient} onSaved={refetch} />
           </>
         )}
         {activeTab === 'vacancies' && (

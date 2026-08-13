@@ -21,14 +21,46 @@ import { UpdateWorkerProfileFieldsUseCase } from '../../worker/application/Updat
 import { ProposeWorkerProfileUpdateUseCase } from '../../worker/application/ProposeWorkerProfileUpdateUseCase';
 import { ConfirmWorkerProfileUpdateUseCase } from '../../worker/application/ConfirmWorkerProfileUpdateUseCase';
 import { PendingProfileChangeRepository } from '../../worker/infrastructure/PendingProfileChangeRepository';
-import { ProfileChangeAuditRepository } from '../../worker/infrastructure/ProfileChangeAuditRepository';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { IngestDocumentFromUrlUseCase } from '../../worker/application/IngestDocumentFromUrlUseCase';
 import { GetWorkerStatsUseCase } from '../../worker/application/GetWorkerStatsUseCase';
+import { GetProfileEditsStatsUseCase } from '../../worker/application/GetProfileEditsStatsUseCase';
+import { WorkerProfileEditsStatsCapability } from '../application/capabilities/WorkerProfileEditsStatsCapability';
+import { GetFunnelActivityStatsUseCase } from '../../matching/application/GetFunnelActivityStatsUseCase';
+import { FunnelActivityStatsCapability } from '../application/capabilities/FunnelActivityStatsCapability';
 import { SearchWorkersUseCase } from '../../worker/application/SearchWorkersUseCase';
 import { WorkerStatsGetCapability } from '../application/capabilities/WorkerStatsGetCapability';
 import { WorkerSearchCapability } from '../application/capabilities/WorkerSearchCapability';
 import { DbQueryReadonlyCapability } from '../application/capabilities/DbQueryReadonlyCapability';
+import { PatientChatMapCapability } from '../application/capabilities/PatientChatMapCapability';
+import { GetPatientChatMapUseCase } from '@modules/case';
+import { WorkerCaseMemoryGetCapability } from '../application/capabilities/WorkerCaseMemoryGetCapability';
+import { WorkerCaseMemoryPutCapability } from '../application/capabilities/WorkerCaseMemoryPutCapability';
+import { WorkerOptOutRegisterCapability } from '../application/capabilities/WorkerOptOutRegisterCapability';
+import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
+import { WorkerApplicationsListCapability } from '../application/capabilities/WorkerApplicationsListCapability';
+import { ListWorkerApplicationsUseCase } from '../../matching/application/ListWorkerApplicationsUseCase';
+import { NotifyHandoverUseCase } from '../../notification/application/NotifyHandoverUseCase';
+import { PeriskopeGroupNotifyService } from '../../notification/infrastructure/PeriskopeGroupNotifyService';
+import { PeriskopeTicketService } from '../../notification/infrastructure/PeriskopeTicketService';
+import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
+import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
+import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
+import { WorkerAvailabilityGetCapability } from '../application/capabilities/WorkerAvailabilityGetCapability';
+import { FindNearbyVacanciesForWorkerUseCase } from '../../matching/application/FindNearbyVacanciesForWorkerUseCase';
+import { AvailabilityRepository } from '../../worker/infrastructure/AvailabilityRepository';
+import { RegisterOptOutUseCase } from '../../notification/application/RegisterOptOutUseCase';
+import { DeactivateWorkerAccountUseCase } from '../../worker/application/DeactivateWorkerAccountUseCase';
+import { SetWorkerAvailabilityUseCase } from '../../worker/application/SetWorkerAvailabilityUseCase';
+import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
+import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
+import { WorkerInterviewSlotsListCapability } from '../application/capabilities/WorkerInterviewSlotsListCapability';
+import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
+import { ApplyToVacancyUseCase } from '../../matching/application/ApplyToVacancyUseCase';
+import { ListInterviewSlotsForVacancyUseCase } from '../../matching/application/ListInterviewSlotsForVacancyUseCase';
+import { BookInterviewSlotUseCase } from '../../notification/application/BookInterviewSlotUseCase';
+import { GoogleCalendarService } from '../../matching/infrastructure/GoogleCalendarService';
+import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -86,7 +118,20 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   // Shared deps for the propose/confirm profile-update flow (Luz).
   const kms = new KMSEncryptionService();
   const pendingProfileRepo = new PendingProfileChangeRepository(dbPool);
-  const profileAuditRepo = new ProfileChangeAuditRepository(dbPool);
+
+  // Camada A: dossiê da Luz (worker_case_memory).
+  const caseMemoryRepo = new CaseMemoryRepository(dbPool);
+
+  // Conversão convite→postulação→entrevista pela Luz (change luz-conversao-entrevista):
+  // Calendar (DWD; mock via USE_MOCK_GOOGLE_CALENDAR) + Cloud Tasks (lembretes) que
+  // antes só o webhook de botão injetava.
+  const getWorkerById = new GetWorkerByIdUseCase(new WorkerRepository(pubsub));
+  const bookInterviewSlotUseCase = new BookInterviewSlotUseCase(
+    dbPool,
+    pubsub,
+    new CloudTasksClient(),
+    new GoogleCalendarService(),
+  );
 
   const registry = new CapabilityRegistry({
     profileGet: new WorkerProfileGetCapability(
@@ -110,7 +155,6 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     profileConfirm: new WorkerProfileConfirmUpdateCapability(
       new ConfirmWorkerProfileUpdateUseCase(
         pendingProfileRepo,
-        profileAuditRepo,
         kms,
         new UpdateWorkerProfileFieldsUseCase(pubsub),
       ),
@@ -119,7 +163,46 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       new IngestDocumentFromUrlUseCase(),
     ),
     statsGet: new WorkerStatsGetCapability(new GetWorkerStatsUseCase(dbPool)),
+    profileEditsStats: new WorkerProfileEditsStatsCapability(
+      new GetProfileEditsStatsUseCase(dbPool),
+    ),
+    funnelActivityStats: new FunnelActivityStatsCapability(
+      new GetFunnelActivityStatsUseCase(dbPool),
+    ),
     workerSearch: new WorkerSearchCapability(new SearchWorkersUseCase(dbPool)),
+    caseMemoryGet: new WorkerCaseMemoryGetCapability(caseMemoryRepo),
+    caseMemoryPut: new WorkerCaseMemoryPutCapability(caseMemoryRepo),
+    optOutRegister: new WorkerOptOutRegisterCapability(
+      new RegisterOptOutUseCase(dbPool),
+    ),
+    accountDeactivate: new WorkerAccountDeactivateCapability(
+      new DeactivateWorkerAccountUseCase(dbPool, new RegisterOptOutUseCase(dbPool)),
+    ),
+    availabilitySet: new WorkerAvailabilitySetCapability(
+      new SetWorkerAvailabilityUseCase(dbPool),
+    ),
+    availabilityGet: new WorkerAvailabilityGetCapability(
+      new AvailabilityRepository(),
+    ),
+    vacanciesNearby: new WorkerVacanciesNearbyCapability(
+      new FindNearbyVacanciesForWorkerUseCase(dbPool),
+    ),
+    applicationRegister: new WorkerApplicationRegisterCapability(
+      new ApplyToVacancyUseCase(),
+      dbPool,
+      getWorkerById,
+    ),
+    interviewSlotsList: new WorkerInterviewSlotsListCapability(
+      new ListInterviewSlotsForVacancyUseCase(dbPool),
+    ),
+    interviewBook: new WorkerInterviewBookCapability(bookInterviewSlotUseCase, getWorkerById),
+    handoverNotify: new HandoverNotifyCapability(
+      new NotifyHandoverUseCase(new PeriskopeGroupNotifyService(), new PeriskopeTicketService()),
+    ),
+    patientChatMap: new PatientChatMapCapability(new GetPatientChatMapUseCase()),
+    applicationsList: new WorkerApplicationsListCapability(
+      new ListWorkerApplicationsUseCase(dbPool),
+    ),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });

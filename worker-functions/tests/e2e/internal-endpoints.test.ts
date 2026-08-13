@@ -158,7 +158,7 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
       }
     });
 
-    it('processes BOTH allowlist events (mirror + registration_completed) and leaves vacancy.created untouched', async () => {
+    it('processes ALL allowlist events (mirror + registration_completed + vacancy.created) and leaves non-allowlist events untouched', async () => {
       const suffix = Date.now();
       const workerId = '00000000-0000-0000-0000-000000000099';
 
@@ -174,14 +174,19 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
 
       const mirrorEventId = await insertPending('worker.mirror_requested');
       const registrationEventId = await insertPending('worker.registration_completed');
-      const vacancyEventId = await insertPending(`vacancy.created.e2e-guard.${suffix}`); // never real vacancy.created in this test to avoid side effects
+      // Name that RESEMBLES an allowlist entry but isn't one — proves the
+      // allowlist matches exactly (no prefix luck) and skips everything else.
+      const vacancyEventId = await insertPending(`vacancy.created.e2e-guard.${suffix}`);
 
-      // Also cover the REAL vacancy.created name explicitly, to prove the allowlist
-      // (not just event-name-prefix luck) is what protects it.
+      // Real vacancy.created IS in the allowlist (go-live do auto-invite).
+      // jobPostingId aleatório inexistente: o handler loga "not found" e
+      // retorna limpo → 'processed', sem matchmaking nem outbox (zero side
+      // effects neste sandbox).
       const { rows: realVacancyRows } = await pool.query(
         `INSERT INTO domain_events (event, payload, status, created_at)
-         VALUES ('vacancy.created', '{}'::jsonb, 'pending', NOW() - INTERVAL '10 minutes')
+         VALUES ('vacancy.created', $1::jsonb, 'pending', NOW() - INTERVAL '10 minutes')
          RETURNING id`,
+        [JSON.stringify({ jobPostingId: '00000000-0000-4000-8000-0000000000e2' })],
       );
       const realVacancyEventId = realVacancyRows[0].id as string;
 
@@ -196,6 +201,10 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
         expect(res.data.byEvent['worker.registration_completed'].total).toBeGreaterThanOrEqual(1);
         // registration_completed has no external dependency — proves real success.
         expect(res.data.byEvent['worker.registration_completed'].processed).toBeGreaterThanOrEqual(1);
+        // vacancy.created agora está no allowlist e o evento com posting
+        // inexistente processa limpo (skip interno do handler).
+        expect(res.data.byEvent['vacancy.created'].total).toBeGreaterThanOrEqual(1);
+        expect(res.data.byEvent['vacancy.created'].processed).toBeGreaterThanOrEqual(1);
 
         const { rows: statuses } = await pool.query(
           `SELECT id, status FROM domain_events WHERE id = ANY($1::uuid[])`,
@@ -211,7 +220,8 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
         expect(byId.get(registrationEventId)).toBe('processed');
         // Outside the allowlist — untouched regardless of naming resemblance.
         expect(byId.get(vacancyEventId)).toBe('pending');
-        expect(byId.get(realVacancyEventId)).toBe('pending');
+        // In the allowlist — swept and processed (posting inexistente = skip limpo).
+        expect(byId.get(realVacancyEventId)).toBe('processed');
       } finally {
         await pool.query('DELETE FROM domain_events WHERE id = ANY($1::uuid[])', [
           [mirrorEventId, registrationEventId, vacancyEventId, realVacancyEventId],

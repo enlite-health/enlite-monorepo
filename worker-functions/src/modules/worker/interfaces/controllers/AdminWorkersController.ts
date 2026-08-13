@@ -6,7 +6,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { generatePhoneCandidates } from '@shared/utils/phoneNormalization';
-import { mapPlatformLabel, matchesSearch, WorkerListItem } from './AdminWorkersControllerHelpers';
+import { mapPlatformLabel, matchesSearch, WorkerListItem, WORKER_DETAIL_COLS } from './AdminWorkersControllerHelpers';
 import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
 import { ExportWorkersUseCase } from '../../application/ExportWorkersUseCase';
 import { WORKER_EXPORT_COLUMN_KEYS, WorkerExportColumnKey } from '../../application/export/workerExportColumns';
@@ -18,21 +18,6 @@ import {
 } from './AdminWorkersListHelpers';
 import { logger, reportError } from '@shared/logging';
 
-// Campos selecionados para detalhe de worker — compartilhado por getWorkerById e getWorkerByPhone
-const WORKER_DETAIL_COLS = [
-  'w.id, w.email, w.phone, w.country, w.timezone, w.status, w.is_test',
-  'w.data_sources, w.created_at, w.updated_at, w.deleted_at',
-  'w.document_type, w.profession, w.occupation, w.knowledge_level',
-  'w.title_certificate, w.experience_types, w.years_experience',
-  'w.preferred_types, w.preferred_age_range, w.hobbies, w.diagnostic_preferences',
-  'w.first_name_encrypted, w.last_name_encrypted, w.birth_date_encrypted',
-  'w.sex_encrypted, w.gender_encrypted, w.document_number_encrypted',
-  'w.profile_photo_url_encrypted, w.languages_encrypted',
-  'w.whatsapp_phone_encrypted, w.linkedin_url_encrypted',
-  'w.sexual_orientation_encrypted, w.race_encrypted, w.religion_encrypted',
-  'w.weight_kg_encrypted, w.height_cm_encrypted',
-].join(', ');
-
 // ── Shared docs_validated enum ────────────────────────────────────────────────
 
 const DocsValidatedEnum = z.enum(['all_validated', 'pending_validation']);
@@ -41,6 +26,15 @@ type DocsValidated = z.infer<typeof DocsValidatedEnum>;
 // ── List query params schema ──────────────────────────────────────────────────
 
 const ListWorkersQuerySchema = z.object({
+  /**
+   * Status exato do worker. Ausente = a lista exclui os DISABLED (baixa de
+   * conta) — ver activeWorkerFilter. Passar `DISABLED` é como o admin acha
+   * quem deu baixa para eventualmente reverter.
+   *
+   * Faltava no schema: `?status=` era aceito pela rota e descartado em silêncio
+   * pelo strip do zod, então o filtro nunca teve efeito (achado por e2e, 05/08).
+   */
+  status: z.enum(['REGISTERED', 'INCOMPLETE_REGISTER', 'DISABLED']).optional(),
   platform: z.string().optional(),
   docs_complete: z.string().optional(),
   docs_validated: DocsValidatedEnum.optional(),

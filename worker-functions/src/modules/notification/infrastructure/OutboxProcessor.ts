@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TokenService } from './TokenService';
+import { PERISKOPE_PAUSED_ERROR } from './RoutingMessagingService';
 import { loggingAls, logger, reportError } from '@shared/logging';
 
 const MAX_ATTEMPTS = 3;
@@ -124,9 +125,31 @@ export class OutboxProcessor {
   }
 
   private async processOne(row: OutboxRow): Promise<void> {
-    // Busca telefone do worker (prefere whatsapp_phone_encrypted, fallback para phone)
-    const workerResult = await this.db.query<{ whatsapp_phone_encrypted: string | null; phone: string | null }>(
-      `SELECT whatsapp_phone_encrypted, phone FROM workers WHERE id = $1 LIMIT 1`,
+    // Busca telefone do worker (prefere whatsapp_phone_encrypted, fallback para phone) +
+    // messaging_channel do worker CANÔNICO: se este worker foi mesclado
+    // (merged_into_id aponta pra outro), o canal que vale é o do worker
+    // sobrevivente (w2), nunca o do registro mesclado (w1) — gap apontado
+    // pelo Architect: sem o COALESCE, um worker mesclado sempre resolveria
+    // como 'twilio' (default da coluna), mesmo que o canônico já tenha
+    // passado pelo handover.
+    // Busca telefone/canal + flag de opt-out numa query só (evita round-trip extra
+    // por mensagem). opted_out = existe supressão ATIVA (opted_in_at IS NULL) pro worker.
+    const workerResult = await this.db.query<{
+      whatsapp_phone_encrypted: string | null;
+      phone: string | null;
+      messaging_channel: string | null;
+      opted_out: boolean;
+    }>(
+      `SELECT w1.whatsapp_phone_encrypted, w1.phone,
+              COALESCE(w2.messaging_channel, w1.messaging_channel) AS messaging_channel,
+              EXISTS(
+                SELECT 1 FROM messaging_opt_out moo
+                WHERE moo.worker_id = w1.id AND moo.opted_in_at IS NULL
+              ) AS opted_out
+       FROM workers w1
+       LEFT JOIN workers w2 ON w2.id = w1.merged_into_id
+       WHERE w1.id = $1
+       LIMIT 1`,
       [row.worker_id],
     );
 
@@ -135,7 +158,29 @@ export class OutboxProcessor {
       return;
     }
 
-    const { whatsapp_phone_encrypted, phone } = workerResult.rows[0];
+    const { whatsapp_phone_encrypted, phone, messaging_channel, opted_out } = workerResult.rows[0];
+
+    // --- Guard de opt-out (ponto ÚNICO de defesa antes de QUALQUER envio) ---
+    // Fecha o furo do incidente 2026-07-10: a seleção de algumas campanhas checava
+    // opt-out, mas o envio final (comum a TODAS — convite de vaga, lembrete de
+    // entrevista, bulk) NÃO checava. Marca 'suppressed' (não 'failed') pra não
+    // poluir métrica de falha de entrega nem consumir tentativa de retry.
+    if (opted_out) {
+      logger.info(
+        { outboxId: row.id, workerId: row.worker_id },
+        'OutboxProcessor: worker em opt-out, envio bloqueado (suppressed)',
+      );
+      await this.db.query(
+        `UPDATE messaging_outbox
+         SET status = 'suppressed',
+             error = 'suppressed: worker opted out',
+             processed_at = NOW()
+         WHERE id = $1`,
+        [row.id],
+      );
+      return;
+    }
+
     const whatsappPhone = whatsapp_phone_encrypted
       ? await this.encryptionService.decrypt(whatsapp_phone_encrypted)
       : null;
@@ -146,6 +191,18 @@ export class OutboxProcessor {
       return;
     }
 
+    const channel: 'twilio' | 'periskope' = messaging_channel === 'periskope' ? 'periskope' : 'twilio';
+
+    // Guardrail de pacing: teto diário de envios Periskope (parte b/c do parecer).
+    // Só consultado quando o canal é periskope — canal twilio nunca paga esse custo extra.
+    if (channel === 'periskope' && (await this.isPeriskopeDailyCapReached())) {
+      logger.warn(
+        { outboxId: row.id, workerId: row.worker_id },
+        'OutboxProcessor: teto diário Periskope atingido, mensagem fica pending (retry futuro)',
+      );
+      return;
+    }
+
     // Resolve tokens PII (tk_*) para valores reais antes do envio
     const resolvedVariables = await this.tokenService.resolveVariables(row.variables ?? {});
 
@@ -153,9 +210,20 @@ export class OutboxProcessor {
       to,
       templateSlug: row.template_slug,
       variables: resolvedVariables,
+      channel,
     });
 
     if (result.isFailure) {
+      // Canal pausado no kill-switch: falha reprocessável, NÃO consome tentativa
+      // nem marca failed — o outbox trata como retry futuro (parecer do Architect).
+      if (result.error === PERISKOPE_PAUSED_ERROR) {
+        logger.info(
+          { outboxId: row.id, workerId: row.worker_id },
+          'OutboxProcessor: canal periskope pausado, mensagem fica pending (retry futuro)',
+        );
+        return;
+      }
+
       const newAttempts = row.attempts + 1;
       const isFinal = newAttempts >= MAX_ATTEMPTS;
       await this.db.query(
@@ -191,9 +259,10 @@ export class OutboxProcessor {
            attempts = $1,
            processed_at = NOW(),
            error = NULL,
-           twilio_sid = $2
+           twilio_sid = $2,
+           channel = $4
        WHERE id = $3`,
-      [row.attempts + 1, externalId, row.id],
+      [row.attempts + 1, externalId, row.id, channel],
     );
 
     // Log successful dispatch in audit table — best-effort
@@ -219,5 +288,30 @@ export class OutboxProcessor {
        WHERE id = $3`,
       [attempts + 1, error, id],
     );
+  }
+
+  /**
+   * Guardrail de pacing (parte b/c do parecer do Architect): teto diário de
+   * envios via Periskope. env PERISKOPE_DAILY_CAP ausente ou 0/inválido =
+   * sem teto (comportamento hoje, feature opt-in). Quando setado, consulta
+   * quantas mensagens já foram enviadas HOJE por este canal — usa a coluna
+   * messaging_outbox.channel (não workers.messaging_channel) porque o canal
+   * do worker é mutável; o histórico do dia precisa refletir o canal
+   * efetivamente usado em cada envio passado, não o canal atual do worker.
+   */
+  private async isPeriskopeDailyCapReached(): Promise<boolean> {
+    const capRaw = parseInt(process.env.PERISKOPE_DAILY_CAP ?? '', 10);
+    const cap = Number.isFinite(capRaw) && capRaw > 0 ? capRaw : 0;
+    if (cap === 0) return false;
+
+    const result = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*) AS count
+       FROM messaging_outbox
+       WHERE status = 'sent'
+         AND channel = 'periskope'
+         AND processed_at::date = CURRENT_DATE`,
+    );
+    const count = parseInt(result.rows[0]?.count ?? '0', 10);
+    return count >= cap;
   }
 }

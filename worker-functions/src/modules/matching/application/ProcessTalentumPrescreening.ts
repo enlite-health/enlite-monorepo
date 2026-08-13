@@ -300,8 +300,13 @@ export class ProcessTalentumPrescreening {
        WHERE worker_id = $1 AND job_posting_id = $2 AND resultado IS NULL`,
       [workerId, jobPostingId],
     );
+    // Evento AUDIT-ONLY: o efeito (encuadre RECHAZADO + WJA REJECTED) é síncrono
+    // aqui; este domain_event é só rastreabilidade da classificação e NÃO tem
+    // consumidor (diferente de funnel_stage.qualified, que agenda entrevista).
+    // Nasce `processed` para não virar órfão pending (que empilhava e falseava o
+    // health check + exigia exclusão de métrica no terraform).
     await client.query(
-      `INSERT INTO domain_events (event, payload) VALUES ('funnel_stage.not_qualified', $1::jsonb)`,
+      `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.not_qualified', $1::jsonb, 'processed', NOW())`,
       [JSON.stringify({ workerId, jobPostingId })],
     );
 
@@ -312,8 +317,9 @@ export class ProcessTalentumPrescreening {
        WHERE worker_id = $1 AND job_posting_id = $2`,
       [workerId, jobPostingId],
     );
+    // Idem: audit-only, sem consumidor → nasce `processed`.
     await client.query(
-      `INSERT INTO domain_events (event, payload) VALUES ('funnel_stage.rejected', $1::jsonb)`,
+      `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.rejected', $1::jsonb, 'processed', NOW())`,
       [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, source: 'auto_not_qualified' })],
     );
     console.log(`${TAG} NOT_QUALIFIED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);

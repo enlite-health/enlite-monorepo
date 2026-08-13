@@ -60,7 +60,7 @@ const sampleNotes: ContactNote[] = [
 
 const defaultProps = {
   vacancyId: 'vac-1',
-  wjaId: 'wja-1',
+  workerId: 'worker-1',
   workerName: 'Juan Pérez',
   onClose: vi.fn(),
 };

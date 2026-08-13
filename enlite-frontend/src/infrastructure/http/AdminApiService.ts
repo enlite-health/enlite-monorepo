@@ -48,6 +48,7 @@ import {
 } from './AdminWorkerListApiService';
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
+import { withTransientRetry } from './retryTransient';
 export { ApiError } from './ApiError';
 
 class AdminApiServiceClass {
@@ -86,7 +87,7 @@ class AdminApiServiceClass {
   // ========== Auth / Profile ==========
 
   async getProfile(): Promise<AdminUser> {
-    return this.request<AdminUser>('GET', '/api/admin/auth/profile');
+    return withTransientRetry(() => this.request<AdminUser>('GET', '/api/admin/auth/profile'));
   }
 
   // ========== Admin Users ==========
@@ -265,6 +266,19 @@ class AdminApiServiceClass {
   searchPatients(search: string, limit = 10) { return AdminPatientsApiService.listPatients({ search, limit: String(limit) }); }
   getPatientByIdFull(id: string) { return AdminPatientsApiService.getPatientById(id); }
   getPatientVacancies(patientId: string) { return AdminPatientsApiService.getPatientVacancies(patientId); }
+  createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
+  updatePatientSection(...args: Parameters<typeof AdminPatientsApiService.updatePatientSection>) { return AdminPatientsApiService.updatePatientSection(...args); }
+  updatePatientStatus(id: string, status: string) { return AdminPatientsApiService.updatePatientStatus(id, status); }
+  getPatientChatCandidates(id: string, limit?: number) { return AdminPatientsApiService.getPatientChatCandidates(id, limit); }
+  updatePatientChatIds(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatIds>) { return AdminPatientsApiService.updatePatientChatIds(...args); }
+  listChatGroups(...args: Parameters<typeof AdminPatientsApiService.listChatGroups>) { return AdminPatientsApiService.listChatGroups(...args); }
+  listPatientChatRoles(includeInactive?: boolean) { return AdminPatientsApiService.listPatientChatRoles(includeInactive); }
+  createPatientChatRole(...args: Parameters<typeof AdminPatientsApiService.createPatientChatRole>) { return AdminPatientsApiService.createPatientChatRole(...args); }
+  updatePatientChatRole(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatRole>) { return AdminPatientsApiService.updatePatientChatRole(...args); }
+  deletePatientChatRole(code: string) { return AdminPatientsApiService.deletePatientChatRole(code); }
+  activatePatient(id: string) { return AdminPatientsApiService.activatePatient(id); }
+  listPatientsForKanban(country?: string) { return AdminPatientsApiService.listPatientsForKanban(country); }
+  getPatientFunnel(p?: Parameters<typeof AdminPatientsApiService.getPatientFunnel>[0]) { return AdminPatientsApiService.getPatientFunnel(p); }
 
   // ========== Encuadres Methods ==========
 
@@ -281,9 +295,34 @@ class AdminApiServiceClass {
 
   async moveEncuadre(
     encuadreId: string,
-    data: { targetStage: string; rejectionReasonCategory?: string; rejectionReason?: string }
+    data: {
+      targetStage: string;
+      rejectionReasonCategory?: string;
+      rejectionReason?: string;
+      role?: 'TITULAR' | 'RAPID_RESPONSE';
+      /** Data (YYYY-MM-DD) e hora (HH:MM) locais da operação; o servidor converte o fuso. */
+      interviewDate?: string;
+      interviewTime?: string;
+      interviewMeetLink?: string;
+    }
   ): Promise<void> {
     await this.request<unknown>('PUT', `/api/admin/encuadres/${encuadreId}/move`, data);
+  }
+
+  /**
+   * "Rechazar" um card BLOQUEADO: promove a tentativa bloqueada daquela vaga para
+   * RECHAZADOS (com motivo). Escopo estrito à vaga — não afeta o cadastro nem outras vagas.
+   */
+  async rejectBlockedAttempt(
+    blockedId: string,
+    data: { rejectionReasonCategory: string; rejectionReason?: string },
+  ): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/reject`, data);
+  }
+
+  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
+  async restoreBlockedAttempt(blockedId: string): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/restore`);
   }
 
   async getVacancyFunnelTable(
@@ -347,6 +386,9 @@ class AdminApiServiceClass {
   publishToTalentum(vacancyId: string) { return AdminTalentumApiService.publishToTalentum(vacancyId); }
   unpublishFromTalentum(vacancyId: string) { return AdminTalentumApiService.unpublishFromTalentum(vacancyId); }
   generateAIContent(vacancyId: string) { return AdminTalentumApiService.generateAIContent(vacancyId); }
+  updateTalentumDescription(vacancyId: string, description: string) {
+    return AdminTalentumApiService.updateTalentumDescription(vacancyId, description);
+  }
   generateSocialLink(vacancyId: string, channel: 'facebook' | 'instagram' | 'whatsapp' | 'linkedin' | 'site') {
     return AdminTalentumApiService.generateSocialLink(vacancyId, channel);
   }

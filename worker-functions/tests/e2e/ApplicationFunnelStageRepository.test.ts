@@ -7,7 +7,7 @@
  * Cada teste insere dados reais no banco de teste e valida o que foi persistido.
  *
  * Cenários cobertos:
- *   AF1  - INSERT com application_funnel_stage = 'INITIATED'
+ *   AF1  - INSERT com application_funnel_stage = 'PRE_SCREENING' (INITIATED removido na migration 264)
  *   AF2  - UPDATE para cada um dos 7 stages válidos
  *   AF3  - Constraint violation — stage antigo 'APPLIED' deve ser rejeitado
  *   AF4  - Constraint violation — stage antigo 'PRE_SCREENING' deve ser rejeitado
@@ -97,33 +97,44 @@ afterAll(async () => {
   await pool.end();
 });
 
-// ── AF1: INSERT com INITIATED ─────────────────────────────────────────────────
+// ── AF1: INSERT com PRE_SCREENING ─────────────────────────────────────────────────
 
-describe('AF1 — INSERT com application_funnel_stage = INITIATED', () => {
-  it('deve persistir stage = INITIATED corretamente', async () => {
+describe('AF1 — INSERT com application_funnel_stage = PRE_SCREENING', () => {
+  it('deve persistir stage = PRE_SCREENING corretamente', async () => {
     // Arrange
     const s = makeSuffix();
     const workerId = await insertTestWorker(s);
     const jobId = await insertTestJobPosting(s);
 
     // Act
-    const appId = await insertApplication(workerId, jobId, 'INITIATED');
+    const appId = await insertApplication(workerId, jobId, 'PRE_SCREENING');
 
     // Assert
     const stage = await getApplicationStage(appId);
-    expect(stage).toBe('INITIATED');
+    expect(stage).toBe('PRE_SCREENING');
+  });
+});
+
+// ── AF1b: INITIATED foi REMOVIDO do CHECK (migration 264, fase-2) ─────────────
+
+describe('AF1b — INITIATED rejeitado pós-migration 264', () => {
+  it('INSERT com stage = INITIATED deve violar o CHECK (removido na fase-2 do Kanban)', async () => {
+    const s = makeSuffix();
+    const workerId = await insertTestWorker(s);
+    const jobId = await insertTestJobPosting(s);
+
+    await expect(insertApplication(workerId, jobId, 'INITIATED')).rejects.toThrow();
   });
 });
 
 // ── AF2: UPDATE para cada um dos 7 stages válidos ─────────────────────────────
 
 describe('AF2 — UPDATE para cada um dos stages válidos', () => {
-  // Stages válidos pós-migration 230: PRE_SCREENING adicionado (renomeação canônica de INITIATED).
-  // INITIATED permanece no CHECK (fase-1 rolling deploy) mas deriveFunnelStage nunca o grava.
-  // Stages atuais: INVITED, INITIATED, PRE_SCREENING, IN_PROGRESS, COMPLETED, QUALIFIED,
+  // Stages válidos pós-migration 264 (fase-2): INITIATED saiu do CHECK definitivamente
+  // (230 fez o backfill INITIATED→PRE_SCREENING; 264 removeu do CHECK e da precedence).
+  // Stages atuais: INVITED, PRE_SCREENING, IN_PROGRESS, COMPLETED, QUALIFIED,
   //                IN_DOUBT, CONFIRMED, SELECTED, REJECTED
   const VALID_STAGES = [
-    'INITIATED',
     'PRE_SCREENING',
     'IN_PROGRESS',
     'COMPLETED',
@@ -141,7 +152,7 @@ describe('AF2 — UPDATE para cada um dos stages válidos', () => {
       const s = makeSuffix();
       const workerId = await insertTestWorker(s);
       const jobId = await insertTestJobPosting(s);
-      const appId = await insertApplication(workerId, jobId, 'INITIATED');
+      const appId = await insertApplication(workerId, jobId, 'PRE_SCREENING');
 
       // Act
       await pool.query(
@@ -243,7 +254,7 @@ describe('AF8 — REJECTED é um stage válido (migration 123 adicionou ao CHECK
     const s = makeSuffix();
     const workerId = await insertTestWorker(s);
     const jobId = await insertTestJobPosting(s);
-    const appId = await insertApplication(workerId, jobId, 'INITIATED');
+    const appId = await insertApplication(workerId, jobId, 'PRE_SCREENING');
 
     // Deve atualizar sem erros
     await expect(
@@ -267,7 +278,7 @@ describe('AF9 — Listar applications por stage', () => {
     const jobId2 = await insertTestJobPosting(`${s}-job2`);
     const jobId3 = await insertTestJobPosting(`${s}-job3`);
 
-    await insertApplication(workerId, jobId1, 'INITIATED');
+    await insertApplication(workerId, jobId1, 'PRE_SCREENING');
     await insertApplication(workerId, jobId2, 'QUALIFIED');
     // NOT_QUALIFIED foi removido do CHECK pós-migration 191/194; usar IN_DOUBT (válido)
     await insertApplication(workerId, jobId3, 'IN_DOUBT');
@@ -288,7 +299,7 @@ describe('AF9 — Listar applications por stage', () => {
     const s = makeSuffix();
     const workerId = await insertTestWorker(s);
     const jobId = await insertTestJobPosting(s);
-    await insertApplication(workerId, jobId, 'INITIATED');
+    await insertApplication(workerId, jobId, 'PRE_SCREENING');
 
     // Act
     const result = await pool.query(

@@ -43,6 +43,11 @@ class MockGeminiApiError extends Error {
   }
 }
 
+const mockGetVacancyTalentumStatus = jest.fn();
+jest.mock('../vacancyTalentumStatusHelper', () => ({
+  getVacancyTalentumStatus: (...args: unknown[]) => mockGetVacancyTalentumStatus(...args),
+}));
+
 jest.mock('@modules/integration', () => ({
   SyncTalentumVacanciesUseCase: jest.fn().mockImplementation(() => ({
     execute: mockExecute,
@@ -330,5 +335,84 @@ describe('VacancyTalentumController — generateAIContent', () => {
     expect(getStatus()).toBe(500);
     expect(getBody().error).toBe('Failed to generate AI content');
     expect(getBody().details).toBe('boom interno');
+  });
+});
+
+// ── getTalentumStatus — GET /api/admin/vacancies/:id/talentum-status ──────
+describe('VacancyTalentumController — getTalentumStatus', () => {
+  let controller: VacancyTalentumController;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'error').mockImplementation();
+    controller = new VacancyTalentumController();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('vaga não encontrada → 404', async () => {
+    mockGetVacancyTalentumStatus.mockResolvedValueOnce({ kind: 'not_found' });
+
+    const req = { ...makeMockReq(), params: { id: 'missing' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.getTalentumStatus(req as Request, res as Response);
+
+    expect(getStatus()).toBe(404);
+    expect(getBody().success).toBe(false);
+  });
+
+  it('não publicada (talentum_project_id NULL) → 200 { published:false, exists:false }', async () => {
+    mockGetVacancyTalentumStatus.mockResolvedValueOnce({ kind: 'ok', published: false, exists: false });
+
+    const req = { ...makeMockReq(), params: { id: 'vac-1' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.getTalentumStatus(req as Request, res as Response);
+
+    expect(getStatus()).toBe(200);
+    expect(getBody().data).toEqual({ published: false, exists: false });
+  });
+
+  it('publicada e existente no Talentum → 200 { published:true, exists:true, whatsappUrl }', async () => {
+    mockGetVacancyTalentumStatus.mockResolvedValueOnce({
+      kind: 'ok', published: true, exists: true, whatsappUrl: 'https://wa.me/xyz',
+    });
+
+    const req = { ...makeMockReq(), params: { id: 'vac-1' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.getTalentumStatus(req as Request, res as Response);
+
+    expect(getStatus()).toBe(200);
+    expect(getBody().data).toEqual({ published: true, exists: true, whatsappUrl: 'https://wa.me/xyz' });
+  });
+
+  it('publicada mas 404 no Talentum (deletada manualmente) → 200 { published:true, exists:false }', async () => {
+    mockGetVacancyTalentumStatus.mockResolvedValueOnce({ kind: 'ok', published: true, exists: false });
+
+    const req = { ...makeMockReq(), params: { id: 'vac-1' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.getTalentumStatus(req as Request, res as Response);
+
+    expect(getStatus()).toBe(200);
+    expect(getBody().data).toEqual({ published: true, exists: false });
+    expect(getBody().data.whatsappUrl).toBeUndefined();
+  });
+
+  it('erro não-404 do Talentum → 502', async () => {
+    mockGetVacancyTalentumStatus.mockResolvedValueOnce({ kind: 'error', message: 'HTTP 500: boom' });
+
+    const req = { ...makeMockReq(), params: { id: 'vac-1' } };
+    const { res, getStatus, getBody } = makeMockRes();
+
+    await controller.getTalentumStatus(req as Request, res as Response);
+
+    expect(getStatus()).toBe(502);
+    expect(getBody().success).toBe(false);
+    expect(getBody().details).toBe('HTTP 500: boom');
   });
 });

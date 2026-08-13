@@ -175,6 +175,33 @@ describe('AdminApiService - Vacancies Methods', () => {
     });
   });
 
+  describe('rejectBlockedAttempt', () => {
+    it('POSTa para o endpoint de reject com a categoria de motivo', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(undefined);
+
+      await AdminApiService.rejectBlockedAttempt('ba-42', { rejectionReasonCategory: 'WORKER_DECLINED' });
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/api/admin/vacancies/blocked-applications/ba-42/reject',
+        { rejectionReasonCategory: 'WORKER_DECLINED' },
+      );
+    });
+  });
+
+  describe('restoreBlockedAttempt', () => {
+    it('POSTa para o endpoint de restore (voltar a bloqueados)', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(undefined);
+
+      await AdminApiService.restoreBlockedAttempt('ba-42');
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/api/admin/vacancies/blocked-applications/ba-42/restore',
+      );
+    });
+  });
+
   // ── Delegated methods ──────────────────────────────────────────────────────
   // AdminApiService delegates createPatientAddress to AdminVacancyParseApiService.
 

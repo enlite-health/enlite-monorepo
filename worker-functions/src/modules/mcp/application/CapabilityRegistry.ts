@@ -8,11 +8,26 @@ import type { WorkerProfileProposeUpdateCapability } from './capabilities/Worker
 import type { WorkerProfileConfirmUpdateCapability } from './capabilities/WorkerProfileConfirmUpdateCapability';
 import type { WorkerDocumentsUploadCapability } from './capabilities/WorkerDocumentsUploadCapability';
 import type { WorkerStatsGetCapability } from './capabilities/WorkerStatsGetCapability';
+import type { WorkerProfileEditsStatsCapability } from './capabilities/WorkerProfileEditsStatsCapability';
+import type { FunnelActivityStatsCapability } from './capabilities/FunnelActivityStatsCapability';
 import type { WorkerSearchCapability } from './capabilities/WorkerSearchCapability';
 import type { DbQueryReadonlyCapability } from './capabilities/DbQueryReadonlyCapability';
+import type { WorkerCaseMemoryGetCapability } from './capabilities/WorkerCaseMemoryGetCapability';
+import type { WorkerCaseMemoryPutCapability } from './capabilities/WorkerCaseMemoryPutCapability';
+import type { WorkerOptOutRegisterCapability } from './capabilities/WorkerOptOutRegisterCapability';
+import type { WorkerAccountDeactivateCapability } from './capabilities/WorkerAccountDeactivateCapability';
+import type { WorkerAvailabilitySetCapability } from './capabilities/WorkerAvailabilitySetCapability';
+import type { WorkerVacanciesNearbyCapability } from './capabilities/WorkerVacanciesNearbyCapability';
+import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvailabilityGetCapability';
+import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerApplicationRegisterCapability';
+import type { WorkerInterviewSlotsListCapability } from './capabilities/WorkerInterviewSlotsListCapability';
+import type { WorkerInterviewBookCapability } from './capabilities/WorkerInterviewBookCapability';
+import type { HandoverNotifyCapability } from './capabilities/HandoverNotifyCapability';
+import type { WorkerApplicationsListCapability } from './capabilities/WorkerApplicationsListCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
+import { PatientChatMapCapability } from './capabilities/PatientChatMapCapability';
 import { WriteRateLimiter } from './WriteRateLimiter';
 
 interface IAuditEmitter {
@@ -36,7 +51,24 @@ interface RegistryDeps {
   profileConfirm: WorkerProfileConfirmUpdateCapability;
   documentsUpload: WorkerDocumentsUploadCapability;
   statsGet: WorkerStatsGetCapability;
+  profileEditsStats: WorkerProfileEditsStatsCapability;
+  /** Medição Luz × time humano (change rastreabilidade-ator-recrutamento). */
+  funnelActivityStats: FunnelActivityStatsCapability;
   workerSearch: WorkerSearchCapability;
+  caseMemoryGet: WorkerCaseMemoryGetCapability;
+  caseMemoryPut: WorkerCaseMemoryPutCapability;
+  optOutRegister: WorkerOptOutRegisterCapability;
+  accountDeactivate: WorkerAccountDeactivateCapability;
+  availabilitySet: WorkerAvailabilitySetCapability;
+  availabilityGet: WorkerAvailabilityGetCapability;
+  vacanciesNearby: WorkerVacanciesNearbyCapability;
+  applicationRegister: WorkerApplicationRegisterCapability;
+  interviewSlotsList: WorkerInterviewSlotsListCapability;
+  interviewBook: WorkerInterviewBookCapability;
+  handoverNotify: HandoverNotifyCapability;
+  applicationsList: WorkerApplicationsListCapability;
+  /** Mapa paciente <-> ClickUp <-> Periskope em massa (tasks 86ajy0859/86ajy085a). */
+  patientChatMap: PatientChatMapCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -49,6 +81,13 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.profile.proposeUpdate',
   'worker.profile.confirmUpdate',
   'worker.documents.upload',
+  'worker.caseMemory.put',
+  'worker.optOut.register',
+  'worker.account.deactivate',
+  'worker.availability.set',
+  'worker.application.register',
+  'worker.interview.book',
+  'handover.notify',
 ]);
 
 export class CapabilityRegistry {
@@ -92,7 +131,22 @@ export class CapabilityRegistry {
       profileConfirm,
       documentsUpload,
       statsGet,
+      profileEditsStats,
+      funnelActivityStats,
       workerSearch,
+      caseMemoryGet,
+      caseMemoryPut,
+      optOutRegister,
+      accountDeactivate,
+      availabilitySet,
+      availabilityGet,
+      vacanciesNearby,
+      applicationRegister,
+      interviewSlotsList,
+      interviewBook,
+      handoverNotify,
+      applicationsList,
+      patientChatMap,
       dbQuery,
     } = this.deps;
 
@@ -193,6 +247,29 @@ export class CapabilityRegistry {
         execute: (args) => statsGet.execute(args),
       },
       {
+        name:
+          (profileEditsStats.constructor as { NAME?: string }).NAME ??
+          'worker.profile.edits.stats',
+        description:
+          (profileEditsStats.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Profile edits distribution by source.',
+        inputShape:
+          (profileEditsStats.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => profileEditsStats.execute(args),
+      },
+      {
+        name:
+          (funnelActivityStats.constructor as { NAME?: string }).NAME ?? 'funnel.activity.stats',
+        description:
+          (funnelActivityStats.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Recruitment activity by actor.',
+        inputShape:
+          (funnelActivityStats.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => funnelActivityStats.execute(args),
+      },
+      {
         name: (workerSearch.constructor as { NAME?: string }).NAME ?? 'worker.search',
         description:
           (workerSearch.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
@@ -201,6 +278,158 @@ export class CapabilityRegistry {
           (workerSearch.constructor as { INPUT_SHAPE?: Record<string, unknown> }).INPUT_SHAPE ??
           {},
         execute: (args) => workerSearch.execute(args),
+      },
+      {
+        name:
+          (caseMemoryGet.constructor as { NAME?: string }).NAME ??
+          'worker.caseMemory.get',
+        description:
+          (caseMemoryGet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Get worker case memory.',
+        inputShape:
+          (caseMemoryGet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => caseMemoryGet.execute(args),
+      },
+      {
+        name:
+          (caseMemoryPut.constructor as { NAME?: string }).NAME ??
+          'worker.caseMemory.put',
+        description:
+          (caseMemoryPut.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Merge-update worker case memory.',
+        inputShape:
+          (caseMemoryPut.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => caseMemoryPut.execute(args),
+      },
+      {
+        name:
+          (optOutRegister.constructor as { NAME?: string }).NAME ??
+          'worker.optOut.register',
+        description:
+          (optOutRegister.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Register a messaging opt-out for a worker.',
+        inputShape:
+          (optOutRegister.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => optOutRegister.execute(args),
+      },
+      {
+        name:
+          (accountDeactivate.constructor as { NAME?: string }).NAME ??
+          'worker.account.deactivate',
+        description:
+          (accountDeactivate.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Deactivate a worker account at the worker request.',
+        inputShape:
+          (accountDeactivate.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => accountDeactivate.execute(args),
+      },
+      {
+        name:
+          (availabilitySet.constructor as { NAME?: string }).NAME ??
+          'worker.availability.set',
+        description:
+          (availabilitySet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Replace worker structured availability.',
+        inputShape:
+          (availabilitySet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => availabilitySet.execute(args),
+      },
+      {
+        name:
+          (availabilityGet.constructor as { NAME?: string }).NAME ??
+          'worker.availability.get',
+        description:
+          (availabilityGet.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Get worker structured availability.',
+        inputShape:
+          (availabilityGet.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => availabilityGet.execute(args),
+      },
+      {
+        name:
+          (vacanciesNearby.constructor as { NAME?: string }).NAME ??
+          'worker.vacancies.nearby',
+        description:
+          (vacanciesNearby.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'List vacancies the worker nearly matches.',
+        inputShape:
+          (vacanciesNearby.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => vacanciesNearby.execute(args),
+      },
+      {
+        name:
+          (applicationRegister.constructor as { NAME?: string }).NAME ??
+          'worker.application.register',
+        description:
+          (applicationRegister.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Register a job application for a worker on a vacancy.',
+        inputShape:
+          (applicationRegister.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => applicationRegister.execute(args),
+      },
+      {
+        name:
+          (interviewSlotsList.constructor as { NAME?: string }).NAME ??
+          'worker.interview.slots.list',
+        description:
+          (interviewSlotsList.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'List future interview slots of a vacancy.',
+        inputShape:
+          (interviewSlotsList.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => interviewSlotsList.execute(args),
+      },
+      {
+        name:
+          (interviewBook.constructor as { NAME?: string }).NAME ?? 'worker.interview.book',
+        description:
+          (interviewBook.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Book an interview slot for a qualified worker.',
+        inputShape:
+          (interviewBook.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => interviewBook.execute(args),
+      },
+      {
+        name:
+          (handoverNotify.constructor as { NAME?: string }).NAME ?? 'handover.notify',
+        description:
+          (handoverNotify.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Notify the human team on Periskope that Luz handed a conversation over.',
+        inputShape:
+          (handoverNotify.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => handoverNotify.execute(args),
+      },
+      {
+        name:
+          (applicationsList.constructor as { NAME?: string }).NAME ??
+          'worker.applications.list',
+        description:
+          (applicationsList.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          "List a worker's own job applications.",
+        inputShape:
+          (applicationsList.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => applicationsList.execute(args),
+      },
+      {
+        name: (patientChatMap.constructor as { NAME?: string }).NAME ?? 'patient.chat.map',
+        description:
+          (patientChatMap.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
+          'Map patients to their WhatsApp group chat IDs and ClickUp task id.',
+        inputShape:
+          (patientChatMap.constructor as { INPUT_SHAPE?: Record<string, unknown> })
+            .INPUT_SHAPE ?? {},
+        execute: (args) => patientChatMap.execute(args),
       },
       ...(dbQuery !== undefined
         ? [

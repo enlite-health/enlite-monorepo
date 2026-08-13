@@ -34,6 +34,13 @@ export type { ClickUpTask, ClickUpTaskCustomField } from './infrastructure/click
 export { ClickUpPatientMapper } from './infrastructure/clickup/ClickUpPatientMapper';
 export { ClickUpEncuadreMapper, parseCaseNumbersFromName } from './infrastructure/clickup/ClickUpEncuadreMapper';
 export type { EncuadreMapperEntry, EncuadreWorkerData, EncuadreData } from './infrastructure/clickup/ClickUpEncuadreMapper';
+// Location extraction — reused by the Fase 1 patient-address backfill script
+// (case module) so backfilled rows and newly-synced ClickUp rows never diverge.
+export {
+  extractStateFromLocationStrict,
+  extractCityFromLocationStrict,
+  extractNeighborhoodFromLocation,
+} from './infrastructure/clickup/helpers/locationHelpers';
 
 // Infrastructure — AnaCare
 export { AnaCareClient } from './infrastructure/anacare/AnaCareClient';
@@ -47,6 +54,7 @@ export { PublishVacancyToTalentumUseCase, PublishError } from './application/Pub
 export type { AuditActor } from './application/PublishVacancyToTalentumUseCase';
 export { SyncTalentumVacanciesUseCase } from './application/SyncTalentumVacanciesUseCase';
 export type { SyncReport } from './application/SyncTalentumVacanciesUseCase';
+export { UpdateTalentumDescriptionUseCase, UpdateDescriptionError } from './application/UpdateTalentumDescriptionUseCase';
 export { SyncTalentumWorkersUseCase } from './application/SyncTalentumWorkersUseCase';
 export type { WorkerSyncReport } from './application/SyncTalentumWorkersUseCase';
 export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPostingFromTalentumUseCase';

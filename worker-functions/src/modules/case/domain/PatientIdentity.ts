@@ -20,6 +20,11 @@ export interface PatientIdentity {
   province: string | null;
   zoneNeighborhood: string | null;
   country: string;
+  /**
+   * Grupos de WhatsApp do Periskope por PAPEL (migration 261): papel -> chat_id
+   * (@g.us). Papel ausente = não vinculado. Catálogo em `PatientChatRole.ts`.
+   */
+  chatIds: Record<string, string>;
   createdAt: Date;
   updatedAt: Date;
 }

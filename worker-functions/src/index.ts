@@ -20,9 +20,9 @@ import express, { Request, Response } from 'express';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
-import { AdminPatientsController, createAdminPatientsRoutes } from '@modules/case';
+import { AdminPatientsController, createAdminPatientsRoutes, PublicLeadsController } from '@modules/case';
 import { UserController } from '@modules/identity';
-import { AdminController } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes } from '@modules/identity';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -31,7 +31,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
@@ -45,6 +45,7 @@ import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastruct
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
+import { noStoreMiddleware } from './shared/http/noStoreMiddleware';
 import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
@@ -53,6 +54,7 @@ import { ReminderScheduler } from '@modules/notification/infrastructure/Reminder
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
+import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
@@ -62,18 +64,27 @@ import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
+import { internalAuthMiddleware } from '@modules/notification';
+import { AdmissionSchedulingService } from '@modules/matching/application/AdmissionSchedulingService';
+import { AdmissionReminderService } from '@modules/matching/application/AdmissionReminderService';
+import { AdmissionReminderController } from '@modules/matching/interfaces/controllers/AdmissionReminderController';
+import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
 import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
 import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
-import { AdminDedupController } from './interfaces/controllers/dedup/AdminDedupController';
-import { createDedupRoutes } from './interfaces/routes/dedupRoutes';
+import { AccountLinkController } from '@modules/account-link/AccountLinkController';
+import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
+import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
 
 const app = express();
 
 // CORS — origens default + CORS_ALLOWED_ORIGINS (CSV). Ver shared/http/corsConfig.
 app.use(corsMiddleware());
+
+// Cache-Control: no-store por default (rotas cacheáveis sobrescrevem). Ver shared/http/noStoreMiddleware.
+app.use(noStoreMiddleware);
 
 app.use(express.json({
   limit: '60mb',
@@ -152,12 +163,12 @@ const publicJobsController = new PublicJobsController();
 const workerContextController = new WorkerContextController();
 
 const claimController = createClaimController();
-const adminDedupController = new AdminDedupController();
 
 // Messaging: shared instance with OutboxProcessor
 const templateRepo = new MessageTemplateRepository();
 const chatwootClient = buildChatwootClient();
-const messagingService = buildMessagingService(templateRepo, chatwootClient);
+const { messagingService, twilioMessagingService, periskopeMessagingService } =
+  buildMessagingService(templateRepo, chatwootClient);
 const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection.getInstance().getPool());
 
 // ========== Public Routes ==========
@@ -180,6 +191,12 @@ app.post('/api/workers/init', (req: Request, res: Response) => {
 });
 
 app.use('/api', createClaimRoutes(claimController));
+
+// Vínculo self-service de contas por colisão de telefone (ACCOUNT_LINK_ENABLED
+// gate por request → OFF = 404 em tudo, prod neutro). openspec:
+// vinculo-contas-colisao-telefone.
+const accountLinkController = new AccountLinkController(DatabaseConnection.getInstance().getPool());
+app.use('/api', createAccountLinkRoutes(accountLinkController, authMiddleware));
 
 const workerLookupRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -211,6 +228,55 @@ const publicJobsRateLimit = rateLimit({
 
 app.get('/api/public/v1/jobs', publicJobsRateLimit, (req: Request, res: Response) => {
   publicJobsController.listActiveJobs(req, res);
+});
+
+// Public B2C patient intake (Task 1) — no staff auth, rate-limited like public jobs.
+// CORS is handled by the global corsMiddleware (our own /admision page origin is allowed).
+const publicLeadsController = new PublicLeadsController();
+const publicLeadsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10, // write endpoint — tighter than the read-only jobs list
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.post('/api/public/v1/leads', publicLeadsRateLimit, (req: Request, res: Response) => {
+  publicLeadsController.createLead(req, res);
+});
+
+// Public B2C admission scheduling (multi-country AR + BR) — no staff auth, rate-limited.
+// Real notifier: immediate WhatsApp confirmation to the patient (direct Content
+// API, no outbox — the patient is not a worker) + a 30-min-before reminder via
+// Cloud Task. Injected in place of the default LoggingAdmissionNotifier.
+const admissionNotifier = new RealAdmissionNotifier(
+  twilioMessagingService,
+  new CloudTasksClient(),
+  DatabaseConnection.getInstance().getPool(),
+);
+const admissionSchedulingController = new AdmissionSchedulingController(
+  new AdmissionSchedulingService(undefined, admissionNotifier),
+);
+const admissionSlotsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30, // read endpoint
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+const admissionBookRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10, // write endpoint — tighter
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, (req: Request, res: Response) => {
+  admissionSchedulingController.getSlots(req, res);
+});
+app.post('/api/public/v1/admission/book', admissionBookRateLimit, (req: Request, res: Response) => {
+  admissionSchedulingController.book(req, res);
 });
 
 // ========== Protected Worker Routes ==========
@@ -287,6 +353,8 @@ app.delete('/api/admin/users/by-email', authMiddleware.requireAdmin(), (req: Req
 app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);
 });
+// Telemetria do login admin (frontend → servidor); rota modularizada.
+app.use('/api', createAuthTelemetryRoutes(authMiddleware));
 
 // ========== Worker Status & Encuadres ==========
 app.use('/api', createWorkerEncuadreRoutes(encuadreController, authMiddleware));
@@ -308,8 +376,8 @@ app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsContr
 // ========== Admin Patients ==========
 app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
 
-// ========== Admin Dedup (Centro de Duplicados) ==========
-app.use('/api/admin/dedup', createDedupRoutes(adminDedupController, authMiddleware));
+// ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
+registerAdminMaintenanceRoutes(app, authMiddleware);
 
 // ========== Admin Integrations (AnaCare mirror etc.) ==========
 app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware));
@@ -374,8 +442,19 @@ const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
 const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService);
+const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService);
 app.use('/api/internal', createInternalRoutes(internalController));
+
+// Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
+// Kept on the app (not the notification router) to avoid a notification→matching
+// import; guarded by the same internalAuthMiddleware (X-Internal-Secret).
+const admissionReminderController = new AdmissionReminderController(
+  new AdmissionReminderService(twilioMessagingService, dbPool),
+);
+app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, (req: Request, res: Response) =>
+  admissionReminderController.handle(req, res),
+);
 
 // ========== Recruitment Health Dashboard ==========
 app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response) =>
@@ -390,6 +469,6 @@ if (process.env.MCP_ENABLED === 'true') {
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).
-startServer(app, useCerbos);
+startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService });
 
 export { app };

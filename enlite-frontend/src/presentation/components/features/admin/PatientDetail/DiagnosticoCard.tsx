@@ -1,11 +1,15 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
 
 interface DiagnosticoCardProps {
   patient: PatientDetail;
+  /** Called after a successful edit so the page can refetch the detail. */
+  onSaved?: () => void;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -23,8 +27,9 @@ function BoolField({ label, value }: { label: string; value: boolean | null }) {
   return <Field label={label} value={display} />;
 }
 
-export function DiagnosticoCard({ patient }: DiagnosticoCardProps) {
+export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
 
   const specialtyLabel = patient.clinicalSpecialty
     ? t(`admin.patients.specialtyOptions.${patient.clinicalSpecialty}`, patient.clinicalSpecialty)
@@ -36,10 +41,18 @@ export function DiagnosticoCard({ patient }: DiagnosticoCardProps) {
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.diagnosisCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled onClick={() => {}} className="w-28">
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-clinical-btn">
           {t('admin.patients.detail.edit')}
         </Button>
       </div>
+
+      {editing && (
+        <PatientClinicalEditDrawer
+          patient={patient}
+          onClose={() => setEditing(false)}
+          onSaved={() => onSaved?.()}
+        />
+      )}
 
       <div className="flex flex-col gap-2.5">
         <Field label={`${t('admin.patients.detail.diagnosisCard.cid')}:`} value={patient.diagnosis} />

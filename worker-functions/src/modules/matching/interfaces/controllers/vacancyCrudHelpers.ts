@@ -34,6 +34,12 @@ export interface VacancyInsertParams {
   published_at?: string | null;
   /** ISO date (YYYY-MM-DD) or full timestamp. Optional — left NULL when not provided. */
   closes_at?: string | null;
+  /**
+   * Guarda de vaga de teste/QA (migration 248). Quando true, o
+   * VacancyAutoInviteHandler pula matchmaking/WJA/outbox por completo ao
+   * processar o domain event `vacancy.created`. Default: false.
+   */
+  is_test?: boolean;
 }
 
 export const CANONICAL_STATUSES = new Set([
@@ -177,7 +183,8 @@ export function buildInsertQuery(): string {
       patient_address_id,
       status,
       published_at, closes_at,
-      country
+      country,
+      is_test
     ) VALUES (
       $1, $2, $3, $4,
       $5, $6,
@@ -189,7 +196,8 @@ export function buildInsertQuery(): string {
       $18,
       $19,
       COALESCE($20::timestamptz, NOW()), $21::timestamptz,
-      'AR'
+      'AR',
+      $22
     )
     RETURNING *
   `;
@@ -251,5 +259,6 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     status,
     p.published_at ?? null,
     p.closes_at ?? null,
+    p.is_test === true,
   ];
 }

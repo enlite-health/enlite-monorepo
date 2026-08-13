@@ -9,6 +9,7 @@
  *   GET /analytics/dashboard/cases/:caseNumber?startDate=&endDate=
  *   GET /analytics/dashboard/zones?country=AR
  *   GET /analytics/dashboard/reemplazos?country=AR
+ *   GET /analytics/dashboard/zone-analytics?profession=
  */
 
 import { Request, Response } from 'express';
@@ -19,6 +20,9 @@ import { ClickUpCaseRepository } from '../../../../infrastructure/repositories/C
 import { EncuadreRepository } from '../../infrastructure/EncuadreRepository';
 import { WorkerApplicationRepository } from '../../infrastructure/WorkerApplicationRepository';
 import { JobPostingARRepository } from '../../infrastructure/JobPostingARRepository';
+import { GetManagementDashboardUseCase } from '../../application/GetManagementDashboardUseCase';
+import { GetZoneAnalyticsUseCase } from '../../application/GetZoneAnalyticsUseCase';
+import { zoneAnalyticsQuerySchema } from '../../application/zoneAnalyticsSchema';
 
 export class AnalyticsDashboardController {
   protected db: Pool;
@@ -81,6 +85,59 @@ export class AnalyticsDashboardController {
           cantidadEncuadres:          encuadresCount,
         },
       });
+    } catch (err) {
+      res.status(500).json({ success: false, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * GET /analytics/dashboard/management?funnelPeriodDays=7|30|90
+   * "Dashboard para Gestão à Vista" (ClickUp 86ajb4qnw): big numbers operacionais,
+   * prioridades de contato, totalização do funil e cadastros. Read-only, sem PII.
+   * `funnelPeriodDays` (opcional) filtra o funil por prestador pela ENTRADA da
+   * candidatura (call 22/07); ausente = tudo. Valor fora do conjunto é 400.
+   */
+  async getManagementMetrics(req: Request, res: Response): Promise<void> {
+    try {
+      const rawPeriod = req.query.funnelPeriodDays;
+      let funnelPeriodDays: number | undefined;
+      if (rawPeriod !== undefined) {
+        if (typeof rawPeriod !== 'string' || !['7', '30', '90'].includes(rawPeriod)) {
+          res.status(400).json({
+            success: false,
+            error: 'funnelPeriodDays deve ser 7, 30 ou 90 (ou ausente para todo o período)',
+          });
+          return;
+        }
+        funnelPeriodDays = Number(rawPeriod);
+      }
+
+      const useCase = new GetManagementDashboardUseCase(this.db);
+      const data = await useCase.execute({ funnelPeriodDays });
+      res.json({ success: true, data });
+    } catch (err) {
+      res.status(500).json({ success: false, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * GET /analytics/dashboard/zone-analytics?profession=
+   * Bloco "Analytics por Zona" do Dashboard para Gestão à Vista (ClickUp
+   * 86ajb4qnw): pacientes/prestadores por zona×sexo + demanda/disponibilidade.
+   * ?profession= é opcional — valores aceitos vêm do SSOT PROFESSIONS
+   * (@modules/worker/domain/enums/Profession: AT|CAREGIVER|NURSE|KINESIOLOGIST|
+   * PSYCHOLOGIST). Valor fora do enum é 400.
+   */
+  async getZoneAnalytics(req: Request, res: Response): Promise<void> {
+    try {
+      const parsedQuery = zoneAnalyticsQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        res.status(400).json({ success: false, error: 'Parâmetro profession inválido' });
+        return;
+      }
+      const useCase = new GetZoneAnalyticsUseCase(this.db);
+      const data = await useCase.execute({ profession: parsedQuery.data.profession ?? null });
+      res.json({ success: true, data });
     } catch (err) {
       res.status(500).json({ success: false, error: (err as Error).message });
     }

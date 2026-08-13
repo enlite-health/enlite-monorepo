@@ -79,16 +79,30 @@ Todos opcionais.
       "city": "Provincia de Buenos Aires",
       "neighborhood": "Temperley",
       "state_city": "Provincia de Buenos Aires / Provincia de Buenos Aires",
+      "location_label": "Temperley",
       "worker_type": ["AT"],
       "worker_sex": "BOTH",
       "job_zone": null,
-      "detail_link": "https://go.enlite.health/flZvbo"
+      "detail_link": "https://go.enlite.health/flZvbo",
+      "schedule_week": {
+        "days": {
+          "lunes": [{ "start": "09:00", "end": "13:00" }],
+          "martes": [{ "start": "09:00", "end": "13:00" }],
+          "miercoles": [{ "start": "09:00", "end": "13:00" }],
+          "jueves": [{ "start": "09:00", "end": "13:00" }],
+          "viernes": [{ "start": "09:00", "end": "13:00" }],
+          "sabado": [],
+          "domingo": []
+        },
+        "weekly_hours": 20,
+        "is_coverage": false
+      }
     }
   ]
 }
 ```
 
-### Campos (19 no total)
+### Campos (20 no total)
 
 | Campo | Tipo | Descrição |
 |---|---|---|
@@ -98,8 +112,8 @@ Todos opcionais.
 | `title` | `string` | Título da vaga, padrão `"CASO {case_number}-{vacancy_number}"` |
 | `status` | `string` | Um de `ACTIVE`, `SEARCHING`, `SEARCHING_REPLACEMENT`, `RAPID_RESPONSE` |
 | `description` | `string` | Descrição da vaga. Texto genérico ("Caso operacional importado…") é sanitizado para `""` |
-| `schedule_days_hours` | `string \| null` | Dias e horários em texto livre (ex: `"Lunes a Viernes 08-14"`) |
-| `worker_profile_sought` | `string \| null` | Perfil de profissional desejado em texto livre |
+| `schedule_days_hours` | `string \| null` | Dias e horários em texto livre (ex: `"Lunes a Viernes 08-14"`). Vagas antigas (import ClickUp): coluna legada `schedule_days_hours`. Vagas novas: derivado automaticamente do schedule estruturado (`job_postings.schedule`, JSONB) quando a coluna legada está vazia — formato `"Lunes 09:00-12:00, Martes 09:00-12:00, ..."` |
+| `worker_profile_sought` | `string \| null` | Perfil de profissional desejado em texto livre. Vagas antigas (import ClickUp): coluna legada `worker_profile_sought`. Vagas novas: cai para `worker_attributes` (campo "Perfil buscado" do formulário admin, já público na página da vaga) quando a coluna legada está vazia |
 | `service` | `string[] \| null` | Serviços do paciente (ex: `["AT"]`, `["CUIDADOR"]`) |
 | `pathologies` | `string \| null` | Diagnóstico/patologia do paciente |
 | `country` | `string \| null` | País ISO-2 (`AR`, `BR`, `US`…). Hoje só há `AR` em produção |
@@ -107,10 +121,20 @@ Todos opcionais.
 | `city` | `string \| null` | Cidade do endereço |
 | `neighborhood` | `string \| null` | Bairro do endereço |
 | `state_city` | `string \| null` | Concatenação `"{state} / {city}"` (`null` se ambos vazios) |
+| `location_label` | `string \| null` | Rótulo único de localização, o **mais específico** disponível: `neighborhood` → `city` → `state` (barrio → localidad → provincia). Derivado no request (sem coluna nova). Pronto pro portal exibir no título do accordion sem escolher entre campos; `null` se os três vazios |
 | `worker_type` | `string[] \| null` | Tipos de profissional aceitos (ex: `["AT"]`, `["AT", "CUIDADOR"]`) |
 | `worker_sex` | `string \| null` | Sexo requerido (`FEMALE`, `MALE`, `BOTH`) |
 | `job_zone` | `string \| null` | Zona inferida (uso interno, pode estar vazio) |
 | `detail_link` | `string` | URL pública pra ver detalhes da vaga / candidatar-se |
+| `schedule_week` | `object \| null` | Horário **estruturado** (dia → turnos) pro card renderizar a tabela semanal sem re-parsear texto. `null` quando o schedule não é estruturável (texto livre tipo `"168 horas"`) — nesse caso, cair no `schedule_days_hours`. Campo aditivo; consumidores antigos ignoram. Ver estrutura abaixo. |
+
+#### Estrutura de `schedule_week`
+
+| Subcampo | Tipo | Descrição |
+|---|---|---|
+| `days` | `object` | As **7 chaves sempre presentes** na ordem `lunes`→`domingo`; cada uma é um array de turnos `{ start: "HH:MM", end: "HH:MM" }`. Dia de folga = `[]` (não precisa checar existência no cliente). Turno que cruza a meia-noite tem `end <= start` (ex: `{ "start": "20:00", "end": "08:00" }`). |
+| `weekly_hours` | `number` | Total de horas/semana somando todos os turnos (trata virada de meia-noite). Arredondado a 2 casas. |
+| `is_coverage` | `boolean` | `true` quando o horário **não é a jornada de uma única pessoa** — cobertura por turnos (≥3 turnos no mesmo dia, ex: `08–14/14–20/20–08`) ou "día completo/cama adentro" (`start === end`). Regra pro card: quando `true`, **NÃO** exibir `weekly_hours` como "X h por semana" (assusta/confunde — 168h é a cobertura do caso, não do candidato); exibir framing de cobertura (`Cobertura 24h`) + a tira de turnos. Calibrado contra dados reais de prod (≥3-turnos = ~2.7% das vagas). |
 
 ---
 

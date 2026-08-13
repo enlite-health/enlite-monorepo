@@ -10,6 +10,7 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     getVacancyById: vi.fn(),
     generateAIContent: vi.fn(),
+    updateTalentumDescription: vi.fn(),
     savePrescreeningConfig: vi.fn(),
     publishToTalentum: vi.fn(),
   },
@@ -19,6 +20,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 const mockGetVacancy = vi.mocked(AdminApiService.getVacancyById);
 const mockGenerateAI = vi.mocked(AdminApiService.generateAIContent);
+const mockUpdateDesc = vi.mocked(AdminApiService.updateTalentumDescription);
 const mockSavePresc = vi.mocked(AdminApiService.savePrescreeningConfig);
 const mockPublish = vi.mocked(AdminApiService.publishToTalentum);
 
@@ -82,6 +84,34 @@ describe('useTalentumConfig', () => {
       status: 'PENDING_ACTIVATION',
     });
     expect(mockGetVacancy).toHaveBeenCalledWith(VACANCY_ID);
+  });
+
+  it('seeds the textarea with the vacancy existing talentum_description', async () => {
+    mockGetVacancy.mockResolvedValueOnce({
+      ...MOCK_VACANCY,
+      talentum_description: 'Descripción ya publicada en Talentum',
+    } as any);
+    const { result } = renderHook(() => useTalentumConfig(VACANCY_ID));
+
+    await waitFor(() => expect(result.current.isLoadingVacancy).toBe(false));
+
+    expect(result.current.description).toBe('Descripción ya publicada en Talentum');
+    // marca como gerado → a página NÃO auto-gera via Gemini
+    expect(result.current.generateStatus).toBe('success');
+    expect(mockGenerateAI).not.toHaveBeenCalled();
+  });
+
+  it('preloaded description wins over the fetched talentum_description', async () => {
+    mockGetVacancy.mockResolvedValueOnce({
+      ...MOCK_VACANCY,
+      talentum_description: 'do banco',
+    } as any);
+    const { result } = renderHook(() =>
+      useTalentumConfig(VACANCY_ID, { description: 'do step 1' }),
+    );
+
+    await waitFor(() => expect(result.current.isLoadingVacancy).toBe(false));
+    expect(result.current.description).toBe('do step 1');
   });
 
   it('sets vacancyError on fetch failure', async () => {
@@ -159,6 +189,65 @@ describe('useTalentumConfig', () => {
 
     expect((thrownSave as Error)?.message).toBe('Save failed');
     expect(result.current.saveError).toBe('Save failed');
+  });
+
+  it('saveDescription persists edited text and flags propagated', async () => {
+    mockUpdateDesc.mockResolvedValueOnce({ description: 'Editada', propagated: true });
+    const { result } = renderHook(() => useTalentumConfig(VACANCY_ID, { description: 'Editada' }));
+
+    await waitFor(() => !result.current.isLoadingVacancy);
+
+    await act(async () => {
+      await result.current.saveDescription();
+    });
+
+    expect(mockUpdateDesc).toHaveBeenCalledWith(VACANCY_ID, 'Editada');
+    expect(result.current.descriptionSaved).toBe(true);
+    expect(result.current.descriptionPropagated).toBe(true);
+    expect(result.current.saveDescriptionError).toBeNull();
+  });
+
+  it('editing the description clears the saved flag', async () => {
+    mockUpdateDesc.mockResolvedValueOnce({ description: 'Editada', propagated: false });
+    const { result } = renderHook(() => useTalentumConfig(VACANCY_ID, { description: 'Editada' }));
+
+    await waitFor(() => !result.current.isLoadingVacancy);
+
+    await act(async () => { await result.current.saveDescription(); });
+    expect(result.current.descriptionSaved).toBe(true);
+
+    act(() => { result.current.setDescription('novo texto'); });
+    expect(result.current.descriptionSaved).toBe(false);
+  });
+
+  it('saveDescription surfaces error and throws', async () => {
+    mockUpdateDesc.mockRejectedValueOnce(new Error('Talentum API error (update): boom'));
+    const { result } = renderHook(() => useTalentumConfig(VACANCY_ID, { description: 'Editada' }));
+
+    await waitFor(() => !result.current.isLoadingVacancy);
+
+    let thrown: unknown;
+    await act(async () => {
+      try { await result.current.saveDescription(); } catch (e) { thrown = e; }
+    });
+
+    expect((thrown as Error)?.message).toContain('boom');
+    expect(result.current.saveDescriptionError).toContain('boom');
+    expect(result.current.descriptionSaved).toBe(false);
+  });
+
+  it('publish persists the edited description before publishing', async () => {
+    mockUpdateDesc.mockResolvedValueOnce({ description: 'Editada', propagated: false });
+    mockSavePresc.mockResolvedValueOnce({ questions: [], faq: [] } as any);
+    mockPublish.mockResolvedValueOnce({ projectId: 'p1', publicId: 'pub1', whatsappUrl: 'wa.me/test' });
+    const { result } = renderHook(() => useTalentumConfig(VACANCY_ID, { description: 'Editada' }));
+
+    await waitFor(() => !result.current.isLoadingVacancy);
+
+    await act(async () => { await result.current.publish(); });
+
+    expect(mockUpdateDesc).toHaveBeenCalledWith(VACANCY_ID, 'Editada');
+    expect(mockPublish).toHaveBeenCalledWith(VACANCY_ID);
   });
 
   it('publish calls publishToTalentum and re-fetches vacancy', async () => {

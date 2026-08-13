@@ -35,6 +35,7 @@
  */
 
 import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/extractPatientChatIds';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
 // ── Mock ClickUpFieldResolver ─────────────────────────────────────────────────
@@ -140,7 +141,9 @@ describe('ClickUpPatientMapper', () => {
     // Address populated on primary slot — from location's address_components,
     // NOT from the stale patient-level legacy fields.
     expect(result!.addresses).toHaveLength(1);
-    expect(result!.addresses![0].state).toBe('Buenos Aires');
+    // Fase 1: state runs through argentinaLocationNormalizer — canonical
+    // "Provincia de Buenos Aires" label, not the raw Google long_name.
+    expect(result!.addresses![0].state).toBe('Provincia de Buenos Aires');
     expect(result!.addresses![0].city).toBe('Palermo');
     expect(result!.addresses![0].neighborhood).toBe('Palermo Soho');
   });
@@ -234,7 +237,9 @@ describe('ClickUpPatientMapper', () => {
     ]);
 
     const result = mapper.map(task);
-    expect(result!.addresses![0].state).toBe('Buenos Aires');
+    // Fase 1: first-segment fallback value "Buenos Aires" is normalized to the
+    // canonical province label.
+    expect(result!.addresses![0].state).toBe('Provincia de Buenos Aires');
     expect(result!.addresses![0].city).toBe('Olivos');
   });
 
@@ -371,12 +376,14 @@ describe('ClickUpPatientMapper', () => {
     const result = mapper.map(task);
     expect(result!.addresses).toHaveLength(2);
 
-    // Slot 1: legacy fallback applied (no components in own location)
-    expect(result!.addresses![0].state).toBe('Buenos Aires');
+    // Slot 1: legacy fallback applied (no components in own location).
+    // Fase 1: normalized to the canonical province label.
+    expect(result!.addresses![0].state).toBe('Provincia de Buenos Aires');
     expect(result!.addresses![0].neighborhood).toBe('San Telmo Habitual');
 
-    // Slot 2: own location's address_components prevail (no legacy fallback)
-    expect(result!.addresses![1].state).toBe('Ciudad Autónoma de Buenos Aires');
+    // Slot 2: own location's address_components prevail (no legacy fallback).
+    // Fase 1: "Ciudad Autónoma de Buenos Aires" normalizes to "CABA".
+    expect(result!.addresses![1].state).toBe('CABA');
     expect(result!.addresses![1].city).toBe('Buenos Aires');
     expect(result!.addresses![1].neighborhood).toBe('Belgrano');
   });
@@ -413,8 +420,9 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result!.addresses).toHaveLength(1);
-    // Fresh values from the location's components, NOT the stale legacy fields
-    expect(result!.addresses![0].state).toBe('Ciudad Autónoma de Buenos Aires');
+    // Fresh values from the location's components, NOT the stale legacy fields.
+    // Fase 1: "Ciudad Autónoma de Buenos Aires" normalizes to "CABA".
+    expect(result!.addresses![0].state).toBe('CABA');
     expect(result!.addresses![0].city).toBe('Buenos Aires');
     expect(result!.addresses![0].neighborhood).toBe('Constitución');
     expect(result!.addresses![0].neighborhood).not.toBe('Villa Ballester');
@@ -885,7 +893,8 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       addressFormatted: 'Av. Hipólito Yrigoyen 123, Temperley, Buenos Aires',
       addressRaw:       'Hipólito Yrigoyen 123, Temperley',
       displayOrder:     1,
-      state:            'Buenos Aires',
+      // Fase 1: state normalized to the canonical province label.
+      state:            'Provincia de Buenos Aires',
       city:             'Temperley',
       neighborhood:     'Temperley',
     });
@@ -1072,5 +1081,83 @@ describe('extractCaseNumber', () => {
 
   it('extracts first digit sequence from "abc12def"', () => {
     expect(extractCaseNumber(taskWithCf('abc12def'))).toBe(12);
+  });
+});
+
+// ── extractPatientChatIds unit tests ──────────────────────────────────────────
+
+describe('extractPatientChatIds', () => {
+  const FAM_JID  = '120363428306019892@g.us';
+  const EQ_JID   = '13512345678901-1600000000@g.us'; // formato legado criador-timestamp
+  const DM_JID   = '5491122334455@c.us';             // conversa 1-1, NUNCA entra
+
+  function chatTask(fields: CfEntry[]): ClickUpTask {
+    return makeTask('task-chat', 'Pérez, Juan', 'Activo', fields);
+  }
+
+  it('extrai os dois campos válidos, mapeados para os papéis do catálogo', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: FAM_JID },
+      { name: 'Chat ID Equipo',  value: EQ_JID },
+    ]));
+    expect(out.chatIds).toEqual({ FAMILY: FAM_JID, PROVIDERS: EQ_JID });
+    expect(out.invalid).toEqual([]);
+  });
+
+  it('campo ausente ou vazio fica FORA do mapa (nunca vira null — vazio não desvincula)', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: FAM_JID },
+      { name: 'Chat ID Equipo',  value: '   ' },
+    ]));
+    expect(out.chatIds).toEqual({ FAMILY: FAM_JID });
+    expect(out.invalid).toEqual([]);
+  });
+
+  it('valor com espaços nas pontas é aparado antes de validar', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: `  ${FAM_JID}  ` },
+    ]));
+    expect(out.chatIds).toEqual({ FAMILY: FAM_JID });
+  });
+
+  it('conversa 1-1 (@c.us) é inválida — mesma trava do CHECK da migration 261', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: DM_JID },
+    ]));
+    expect(out.chatIds).toEqual({});
+    expect(out.invalid).toEqual([{ role: 'FAMILY', value: DM_JID, kind: 'direct_chat' }]);
+  });
+
+  it('texto torto e valor gigante são inválidos, sem contaminar o campo bom', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: 'ver con Marcel' },
+      { name: 'Chat ID Equipo',  value: EQ_JID },
+    ]));
+    expect(out.chatIds).toEqual({ PROVIDERS: EQ_JID });
+    expect(out.invalid).toEqual([{ role: 'FAMILY', value: 'ver con Marcel', kind: 'malformed' }]);
+
+    const tooLong = `${'9'.repeat(70)}@g.us`;
+    const out2 = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Equipo', value: tooLong },
+    ]));
+    expect(out2.chatIds).toEqual({});
+    expect(out2.invalid).toEqual([{ role: 'PROVIDERS', value: tooLong, kind: 'malformed' }]);
+  });
+
+  it('valor não-string (null, número, objeto) é ignorado em silêncio', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Chat ID Familia', value: null },
+      { name: 'Chat ID Equipo',  value: 12345 },
+    ]));
+    expect(out.chatIds).toEqual({});
+    expect(out.invalid).toEqual([]);
+  });
+
+  it('task sem os campos devolve mapa vazio', () => {
+    const out = extractPatientChatIds(chatTask([
+      { name: 'Nombre de Paciente', value: 'Juan' },
+    ]));
+    expect(out.chatIds).toEqual({});
+    expect(out.invalid).toEqual([]);
   });
 });

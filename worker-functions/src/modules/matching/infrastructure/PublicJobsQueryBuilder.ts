@@ -32,6 +32,9 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
   conditions.push(`jp.deleted_at IS NULL`);
   conditions.push(`jp.is_draft = false`);
   conditions.push(`jp.social_short_links ? 'site'`);
+  // Vaga de teste/QA (job_postings.is_test) NUNCA vaza no feed público — mesmo se postada
+  // ACTIVE + is_draft=false + com short link 'site'. Guarda de segurança (follow-up #2).
+  conditions.push(`jp.is_test = false`);
 
   // ── country (always present — default 'AR') ──────────────────────────────────
   conditions.push(`jp.country = ${push(filters.country)}`);

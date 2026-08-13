@@ -3,7 +3,7 @@ import { CONTACT_NOTE_DELETE_WINDOW_MS } from '../domain/contactNoteDeletion';
 
 export interface DeleteContactNoteParams {
   vacancyId: string;
-  wjaId: string;
+  workerId: string;
   noteId: string;
   requesterAdminId: string;
 }
@@ -22,7 +22,9 @@ export type DeleteContactNoteResult =
  * Exclui uma nota de contato. Regras (autoritativas no servidor):
  *  - Só o AUTOR da nota pode excluí-la (created_by_admin_id === requesterAdminId).
  *  - Só dentro de 2h da criação. Depois disso, é permanente.
- *  - A nota precisa pertencer à WJA, e a WJA à vacante (guards de escopo).
+ *  - O par (worker_id, job_posting_id) precisa pertencer à vacante (WJA real
+ *    ou tentativa bloqueada), e a nota alvo precisa pertencer a esse mesmo
+ *    par (migration 235 — guards de escopo).
  */
 export class DeleteContactNoteUseCase {
   private repo: ContactNoteRepository;
@@ -32,19 +34,19 @@ export class DeleteContactNoteUseCase {
   }
 
   async execute(params: DeleteContactNoteParams): Promise<DeleteContactNoteResult> {
-    const belongs = await this.repo.wjaBelongsToVacancy(params.wjaId, params.vacancyId);
+    const belongs = await this.repo.validateCandidateVacancyPair(params.workerId, params.vacancyId);
     if (!belongs) {
       return {
         ok: false,
         error: {
           kind: 'not_found',
-          message: `WJA ${params.wjaId} não pertence à vacante ${params.vacancyId}`,
+          message: `Worker ${params.workerId} não pertence à vacante ${params.vacancyId}`,
         },
       };
     }
 
     const note = await this.repo.findOwnershipById(params.noteId);
-    if (!note || note.workerJobApplicationId !== params.wjaId) {
+    if (!note || note.workerId !== params.workerId || note.jobPostingId !== params.vacancyId) {
       return {
         ok: false,
         error: { kind: 'not_found', message: `Nota ${params.noteId} não encontrada` },

@@ -13,6 +13,7 @@ import type {
   UpdateWorkerProfileFieldsUseCase,
   WorkerProfilePatch,
 } from '../../../worker/application/UpdateWorkerProfileFieldsUseCase';
+import { PROFILE_EDIT_SOURCES } from '../../../worker/domain/profileEditSource';
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,8 @@ const FieldsSchema = z
 const ArgsSchema = z.object({
   workerId: z.string().uuid(),
   fields:   FieldsSchema,
+  /** Fonte da edição (rastreabilidade). Default: luz_conversation (canal MCP = Luz). */
+  source:   z.enum(PROFILE_EDIT_SOURCES).optional(),
 });
 
 export type WorkerProfileUpdateArgs = z.infer<typeof ArgsSchema>;
@@ -59,6 +62,7 @@ export class WorkerProfileUpdateCapability {
   static readonly INPUT_SHAPE = {
     workerId: z.string().uuid(),
     fields:   FieldsSchema,
+    source:   z.enum(PROFILE_EDIT_SOURCES).optional(),
   };
 
   constructor(
@@ -71,7 +75,7 @@ export class WorkerProfileUpdateCapability {
     fieldsUpdated: string[];
   }> {
     const parsed = ArgsSchema.parse(args);
-    const { workerId, fields } = parsed;
+    const { workerId, fields, source } = parsed;
 
     // Identify which keys were explicitly provided (not undefined)
     const sentKeys = Object.keys(fields).filter(
@@ -82,7 +86,10 @@ export class WorkerProfileUpdateCapability {
     }
 
     const patch: WorkerProfilePatch = { workerId, ...fields };
-    const result = await this.updateUseCase.execute(patch);
+    const result = await this.updateUseCase.execute(patch, {
+      source: source ?? 'luz_conversation',
+      actorUid: 'luz:profile-update',
+    });
 
     return { updated: true, workerId: result.workerId, fieldsUpdated: result.fieldsUpdated };
   }

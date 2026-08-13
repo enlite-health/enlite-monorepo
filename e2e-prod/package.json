@@ -1,0 +1,23 @@
+{
+  "name": "e2e-prod",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synthetic monitoring — testes Playwright E2E reais contra produção (enlite-prd). Ver CLAUDE.md.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --project=smoke",
+    "test:regression": "playwright test --project=regression --workers=1",
+    "sweep": "tsx src/sweeper/cleanup.ts",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "coverage:flows": "playwright test --project=coverage-gate"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@sendgrid/mail": "^8.1.6",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

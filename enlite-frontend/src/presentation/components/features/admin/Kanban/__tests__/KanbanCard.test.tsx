@@ -23,6 +23,7 @@ vi.mock('lucide-react', () => ({
   MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
+  Hand: (props: Record<string, unknown>) => <svg data-testid="icon-hand" {...props} />,
 }));
 
 // ── Default props ────────────────────────────────────────────────────────────
@@ -337,6 +338,59 @@ describe('KanbanCard — blocked badge', () => {
     const badge = screen.getByTestId('blocked-badge');
     expect(badge.className).toContain('bg-red-100');
     expect(badge.className).toContain('text-red-700');
+  });
+
+  it('renders the blocked-specific "no name" i18n key when isBlocked and workerName is null (worker_not_found)', () => {
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        workerName={null}
+        isBlocked={true}
+        blockedReason="worker_not_found"
+      />,
+    );
+    expect(screen.getByText('admin.kanban.blockedNoName')).toBeInTheDocument();
+    expect(screen.queryByText('admin.kanban.noName')).not.toBeInTheDocument();
+  });
+
+  it('still renders the generic "no name" i18n key when NOT blocked and workerName is null', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" workerName={null} isBlocked={false} />);
+    expect(screen.getByText('admin.kanban.noName')).toBeInTheDocument();
+  });
+
+  it('renders the worker name as a clickable link even when isBlocked, when workerId + onWorkerClick are present', () => {
+    const onClick = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        isBlocked={true}
+        workerId="worker-blocked-1"
+        workerName="Lucía Fernández"
+        onWorkerClick={onClick}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Lucía Fernández' });
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledWith('worker-blocked-1');
+  });
+
+  it('renders the notes button in a blocked card when onOpenNotes is provided (contact notes are keyed by worker, not WJA)', () => {
+    const onOpenNotes = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        stage="BLOQUEADO"
+        isBlocked={true}
+        workerId="worker-blocked-1"
+        onOpenNotes={onOpenNotes}
+        contactNotesCount={2}
+      />,
+    );
+    expect(screen.getByTestId('notes-button')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(onOpenNotes).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -699,5 +753,25 @@ describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
     );
     // Full date format should appear
     expect(screen.getByText(/15\/3\/2026.*10:30/)).toBeInTheDocument();
+  });
+});
+
+// ── "Levantou a mão" (lead que se postulou sozinho) ─────────────────────────
+describe('KanbanCard — selo de auto-postulação', () => {
+  it('mostra o selo quando o próprio prestador entrou na vaga', () => {
+    render(<KanbanCard {...defaultProps} selfAppliedAt="2026-08-07T13:51:19.923Z" />);
+    expect(screen.getByTestId('self-applied-badge')).toHaveTextContent(
+      'admin.kanban.selfApplied',
+    );
+  });
+
+  it('sem carimbo NÃO mostra o selo — ausência não é prova de desinteresse', () => {
+    render(<KanbanCard {...defaultProps} selfAppliedAt={null} />);
+    expect(screen.queryByTestId('self-applied-badge')).toBeNull();
+  });
+
+  it('prop ausente (card antigo, anterior à autoria) também não mostra', () => {
+    render(<KanbanCard {...defaultProps} />);
+    expect(screen.queryByTestId('self-applied-badge')).toBeNull();
   });
 });

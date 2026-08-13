@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { InviteBlockedError } from '@infrastructure/http/AdminMessagingApiService';
 import type { InviteTarget } from '@presentation/components/features/admin/VacancyMatch/inviteTypes';
 
 /** Intervalo entre envios — respeita o rate limit do Twilio. */
@@ -20,6 +21,9 @@ export interface SendItem {
   workerName: string;
   status: SendItemStatus;
   error?: string;
+  /** Convite recusado (422): o componente resolve a mensagem localizada. */
+  errorCode?: string;
+  errorDetail?: string;
 }
 
 export type MessagedCallback = (workerId: string, messagedAt: string) => void;
@@ -91,8 +95,14 @@ export const useInviteProgressStore = create<InviteProgressState>((set, get) => 
       messagedCallbacks.get(item.vacancyId)?.(item.workerId, messagedAt);
       patchItem(item.workerId, { status: 'sent' });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Falha no envio';
-      patchItem(item.workerId, { status: 'error', error: message });
+      if (err instanceof InviteBlockedError) {
+        // Guarda code+detail; a mensagem localizada é resolvida no componente
+        // (que tem o `t`), não aqui — o store não deve depender de i18n.
+        patchItem(item.workerId, { status: 'error', errorCode: err.code, errorDetail: err.detail });
+      } else {
+        const message = err instanceof Error ? err.message : 'Falha no envio';
+        patchItem(item.workerId, { status: 'error', error: message });
+      }
     }
   }
 

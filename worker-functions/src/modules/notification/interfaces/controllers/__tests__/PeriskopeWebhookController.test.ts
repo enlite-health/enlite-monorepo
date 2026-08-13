@@ -6,12 +6,17 @@
  * 2. assinatura — 403 se header ausente com secret configurado
  * 3. assinatura — aceita HMAC-SHA256 válido do raw body
  * 4. assinatura — pula validação se PERISKOPE_WEBHOOK_SECRET ausente
- * 5. eventos ≠ message.created são ignorados com 200
- * 6. from_me=true é ignorado com 200
- * 7. chat de grupo (@g.us) é ignorado
- * 8. opt-out — keyword PARAR registra em messaging_opt_out
- * 9. texto livre — captura motivo quando worker em awaiting_reason
- * 10. texto livre — ignora quando não há estado especial
+ * 5. from_me=true é ignorado com 200
+ * 6. chat de grupo (@g.us) é ignorado
+ * 7. opt-out — keyword PARAR registra em messaging_opt_out (precedência sobre roteamento numerado)
+ * 8. resposta numerada — roteia via PeriskopeInboundRouter quando handled=true (não cai em awaiting_reason)
+ * 9. resposta numerada — cai no fluxo awaiting_reason quando router retorna false
+ * 10. texto livre — captura motivo quando worker em awaiting_reason
+ * 11. texto livre — ignora quando não há estado especial
+ * 12. message.ack.updated — atualiza delivery_status em messaging_outbox e whatsapp_bulk_dispatch_logs
+ * 13. message.ack.updated — ack desconhecido não atualiza nada
+ * 14. eventos desconhecidos (≠ message.created / message.ack.updated) são ignorados com 200
+ * 15. envelope malformado (Zod) não derruba a rota — responde 200
  */
 
 import { Request, Response } from 'express';
@@ -51,6 +56,7 @@ describe('PeriskopeWebhookController', () => {
   let mockDbQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
   let mockHandleReminder: { executeTextResponse: jest.Mock };
+  let mockInboundRouter: { routeNumberedReply: jest.Mock };
   let controller: PeriskopeWebhookController;
 
   beforeEach(() => {
@@ -60,7 +66,10 @@ describe('PeriskopeWebhookController', () => {
     mockHandleReminder = {
       executeTextResponse: jest.fn().mockResolvedValue(Result.fail('No application awaiting reason')),
     };
-    controller = new PeriskopeWebhookController(mockDb as any, mockHandleReminder as any);
+    mockInboundRouter = {
+      routeNumberedReply: jest.fn().mockResolvedValue(false),
+    };
+    controller = new PeriskopeWebhookController(mockDb as any, mockHandleReminder as any, mockInboundRouter as any);
   });
 
   afterEach(() => {
@@ -100,6 +109,7 @@ describe('PeriskopeWebhookController', () => {
     await controller.handleWebhook(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockInboundRouter.routeNumberedReply).toHaveBeenCalledWith('+5491112345678', 'hola');
     expect(mockHandleReminder.executeTextResponse).toHaveBeenCalledWith('+5491112345678', 'hola');
   });
 
@@ -116,8 +126,8 @@ describe('PeriskopeWebhookController', () => {
 
   // ─── Filtros de evento ────────────────────────────────────────
 
-  it('ignora eventos que não são message.created', async () => {
-    const body = envelope({ chat_id: '5491112345678@c.us' }, 'message.ack.updated');
+  it('ignora eventos que não são message.created nem message.ack.updated', async () => {
+    const body = envelope({ chat_id: '5491112345678@c.us' }, 'ticket.updated');
     const raw = JSON.stringify(body);
     const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
     const res = mockRes();
@@ -170,9 +180,43 @@ describe('PeriskopeWebhookController', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockDbQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO messaging_opt_out'),
-      ['worker-1', '+5491112345678'],
+      ['worker-1', '+5491112345678', 'user_request', 'whatsapp_inbound'],
     );
     expect(mockHandleReminder.executeTextResponse).not.toHaveBeenCalled();
+    expect(mockInboundRouter.routeNumberedReply).not.toHaveBeenCalled();
+  });
+
+  // ─── Resposta numerada (item 2.3) ──────────────────────────────
+
+  it('roteia resposta numerada via PeriskopeInboundRouter e não cai em awaiting_reason quando handled=true', async () => {
+    mockInboundRouter.routeNumberedReply.mockResolvedValue(true);
+
+    const body = envelope({ chat_id: '5491112345678@c.us', body: '1', from_me: false });
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockInboundRouter.routeNumberedReply).toHaveBeenCalledWith('+5491112345678', '1');
+    expect(mockHandleReminder.executeTextResponse).not.toHaveBeenCalled();
+  });
+
+  it('cai no fluxo awaiting_reason quando PeriskopeInboundRouter não encontra correlação (handled=false)', async () => {
+    mockInboundRouter.routeNumberedReply.mockResolvedValue(false);
+    mockHandleReminder.executeTextResponse.mockResolvedValue(Result.ok());
+
+    const body = envelope({ chat_id: '5491112345678@c.us', body: '1', from_me: false });
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockInboundRouter.routeNumberedReply).toHaveBeenCalledWith('+5491112345678', '1');
+    expect(mockHandleReminder.executeTextResponse).toHaveBeenCalledWith('+5491112345678', '1');
   });
 
   // ─── Texto livre ──────────────────────────────────────────────
@@ -200,5 +244,99 @@ describe('PeriskopeWebhookController', () => {
     await controller.handleWebhook(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  // ─── Delivery tracking (message.ack.updated) ───────────────────
+
+  // Semântica oficial (docs.periskope.app/api-reference/delivery-status.md):
+  // 2 = delivered to WhatsApp SERVERS (⇒ 'sent'), 3 = delivered to recipients
+  // (⇒ 'delivered'), 4/5 = read/played (⇒ 'read').
+  it('atualiza delivery_status em messaging_outbox e whatsapp_bulk_dispatch_logs para ack=3 (delivered)', async () => {
+    mockDbQuery
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE messaging_outbox
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE whatsapp_bulk_dispatch_logs
+
+    const body = envelope({ message_id: 'uid-123', chat_id: '5491112345678@c.us', ack: 3 }, 'message.ack.updated');
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockDbQuery).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('UPDATE messaging_outbox'),
+      ['delivered', 'uid-123'],
+    );
+    expect(mockDbQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('UPDATE whatsapp_bulk_dispatch_logs'),
+      ['delivered', 'uid-123'],
+    );
+  });
+
+  it('mapeia ack=2 (servidor, não destinatário) para "sent"', async () => {
+    mockDbQuery.mockResolvedValue({ rows: [] });
+
+    const body = envelope({ message_id: 'uid-455', ack: 2 }, 'message.ack.updated');
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(mockDbQuery).toHaveBeenCalledWith(expect.any(String), ['sent', 'uid-455']);
+  });
+
+  it('mapeia ack=4 para "read"', async () => {
+    mockDbQuery.mockResolvedValue({ rows: [] });
+
+    const body = envelope({ message_id: 'uid-456', ack: 4 }, 'message.ack.updated');
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(mockDbQuery).toHaveBeenCalledWith(expect.any(String), ['read', 'uid-456']);
+  });
+
+  it('não atualiza nada se ack é desconhecido (defensivo)', async () => {
+    const body = envelope({ message_id: 'uid-789', ack: 99 }, 'message.ack.updated');
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockDbQuery).not.toHaveBeenCalled();
+  });
+
+  it('não atualiza nada se message_id ausente no payload de ack', async () => {
+    const body = envelope({ ack: 2 }, 'message.ack.updated');
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockDbQuery).not.toHaveBeenCalled();
+  });
+
+  // ─── Envelope malformado ────────────────────────────────────────
+
+  it('responde 200 mesmo com envelope sem campo "event" (falha no Zod)', async () => {
+    const body = { data: { chat_id: '5491112345678@c.us' } };
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockDbQuery).not.toHaveBeenCalled();
   });
 });

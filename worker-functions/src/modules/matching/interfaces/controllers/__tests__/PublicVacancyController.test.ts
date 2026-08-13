@@ -46,6 +46,7 @@ function makeVacancyRow(overrides: Record<string, unknown> = {}) {
     status: 'SEARCHING',
     dependency_level: 'MODERADA',
     pathologies: ['TEA'],
+    service_type: ['AT'],
     required_professions: ['psicopedagogo'],
     required_sex: null,
     age_range_min: 5,
@@ -156,6 +157,7 @@ describe('PublicVacancyController.getById', () => {
       'jp.status',
       'p.dependency_level',
       'p.diagnosis AS pathologies',
+      'p.service_type AS service_type',
       'jp.required_professions',
       'jp.required_sex',
       'jp.age_range_min',
@@ -218,6 +220,17 @@ describe('PublicVacancyController.getById', () => {
 
     const data = (res.json as jest.Mock).mock.calls[0][0].data;
     expect(data.schedule).toBeNull();
+  });
+
+  it('returns service_type (patient device/service array) in the response', async () => {
+    const row = makeVacancyRow({ service_type: ['CAREGIVER'] });
+    mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+    const [req, res] = mockReqRes({ id: VACANCY_ID });
+    await controller.getById(req, res);
+
+    const data = (res.json as jest.Mock).mock.calls[0][0].data;
+    expect(data.service_type).toEqual(['CAREGIVER']);
   });
 
   it('does not expose sensitive patient fields', async () => {

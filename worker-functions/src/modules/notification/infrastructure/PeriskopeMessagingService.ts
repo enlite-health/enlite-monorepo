@@ -1,7 +1,9 @@
-import axios, { AxiosInstance } from 'axios';
+import { AxiosInstance } from 'axios';
+import { createPeriskopeHttpClient } from './periskopeHttpClient';
 import { IMessagingService, MessageSentResult, SendWhatsAppOptions } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
-import { MessageTemplate, TemplateButton } from '../domain/MessageTemplate';
+import { MessageTemplate } from '../domain/MessageTemplate';
+import { renderNumberedOptions } from '../domain/numberedButtonOptions';
 import { MessageTemplateRepository } from './MessageTemplateRepository';
 
 /**
@@ -27,24 +29,10 @@ export class PeriskopeMessagingService implements IMessagingService {
   constructor(templateRepo: MessageTemplateRepository) {
     this.templateRepo = templateRepo;
 
-    const apiKey = process.env.PERISKOPE_API_KEY;
-    // Número conectado no Periskope: DDI + número, só dígitos (ex: 5491122334455)
-    const phone = process.env.PERISKOPE_PHONE;
+    this.http = createPeriskopeHttpClient();
+    this.isConfigured = this.http !== null;
 
-    this.isConfigured = !!(apiKey && phone);
-
-    if (this.isConfigured) {
-      this.http = axios.create({
-        baseURL: 'https://api.periskope.app/v1',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'x-phone': phone!,
-          'Content-Type': 'application/json',
-        },
-        timeout: 15000,
-      });
-    } else {
-      this.http = null;
+    if (!this.isConfigured) {
       console.warn('[Periskope] Service not configured - messaging features will be disabled');
     }
   }
@@ -118,10 +106,9 @@ export class PeriskopeMessagingService implements IMessagingService {
     const buttons = template.buttons;
     if (!buttons || buttons.length === 0) return body;
 
-    const options = buttons
-      .map((b: TemplateButton, i: number) => `*${i + 1}.* ${b.label}`)
-      .join('\n');
-    return `${body}\n\n${options}\n\n_Respondé con el número de la opción._`;
+    // SSOT: mesma numeração que PeriskopeInboundRouter usa para parsear a
+    // resposta do worker (numberedButtonOptions.ts) — nunca renderizar inline.
+    return `${body}\n\n${renderNumberedOptions(buttons)}`;
   }
 
   /** Periskope identifica chats 1-1 como <DDI+numero>@c.us (sem '+'). */

@@ -12,20 +12,27 @@
  */
 
 import { MarkNoShowUseCase } from '../MarkNoShowUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('MarkNoShowUseCase', () => {
   let mockQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
   let useCase: MarkNoShowUseCase;
+  const envOriginal = process.env.NO_SHOW_AUTO_ENABLED;
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     useCase = new MarkNoShowUseCase(mockDb as any);
+    // Estes casos descrevem o comportamento HABILITADO. O default (desligado)
+    // é coberto no bloco "flag NO_SHOW_AUTO_ENABLED" no fim do arquivo.
+    process.env.NO_SHOW_AUTO_ENABLED = 'true';
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+    if (envOriginal === undefined) delete process.env.NO_SHOW_AUTO_ENABLED;
+    else process.env.NO_SHOW_AUTO_ENABLED = envOriginal;
   });
 
   it('retorna { marked: 0, stageMovedToInDoubt: 0 } quando não há no-shows', async () => {
@@ -129,5 +136,62 @@ describe('MarkNoShowUseCase', () => {
 
     expect(result).toEqual({ marked: 3, stageMovedToInDoubt: 2 });
     expect(mockQuery).toHaveBeenCalledTimes(4); // 1 SELECT + 3 UPDATEs
+  });
+
+  /**
+   * A automação só pode mover card por decisão explícita (D3 de captura-data-entrevista).
+   * Sem a flag, o primeiro lote depois que a captura da data entrar em produção acharia de
+   * uma vez as 74 candidaturas paradas em 'pending' e as moveria — card saindo de "Agendados"
+   * sem ninguém tocar.
+   */
+  describe('flag NO_SHOW_AUTO_ENABLED (default: desligado)', () => {
+    beforeEach(() => {
+      delete process.env.NO_SHOW_AUTO_ENABLED;
+    });
+
+    const vencidas = [
+      { worker_id: 'w1', job_posting_id: 'j1', application_funnel_stage: 'CONFIRMED' },
+      { worker_id: 'w2', job_posting_id: 'j2', application_funnel_stage: 'CONFIRMED' },
+      { worker_id: 'w3', job_posting_id: 'j3', application_funnel_stage: 'IN_PROGRESS' },
+    ];
+
+    it('não move NENHUM card quando a flag está ausente', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: vencidas });
+
+      const result = await useCase.execute();
+
+      expect(result.marked).toBe(0);
+      expect(result.stageMovedToInDoubt).toBe(0);
+      // Só o SELECT rodou — nenhum UPDATE foi emitido.
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('reporta quantos SERIAM marcados, para a decisão de ligar ser informada', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: vencidas });
+
+      const result = await useCase.execute();
+
+      expect(result.wouldMark).toBe(3);
+    });
+
+    it('permanece desligado com valor diferente de "true"', async () => {
+      process.env.NO_SHOW_AUTO_ENABLED = 'false';
+      mockQuery.mockResolvedValueOnce({ rows: vencidas });
+
+      const result = await useCase.execute();
+
+      expect(result.marked).toBe(0);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('reporta wouldMark: 0 quando não há vencidas (distingue "nada a marcar" de "flag ligada")', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const result = await useCase.execute();
+
+      // wouldMark presente MESMO vazio: quem monitora a virada da flag precisa saber que o
+      // modo-observação está ativo. `wouldMark` ausente passa a significar "flag já ligada".
+      expect(result).toEqual({ marked: 0, stageMovedToInDoubt: 0, wouldMark: 0 });
+    });
   });
 });

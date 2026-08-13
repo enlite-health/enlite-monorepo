@@ -42,6 +42,7 @@ export class PublicVacancyController {
           jp.status,
           p.dependency_level,
           p.diagnosis AS pathologies,
+          p.service_type AS service_type,
           jp.required_professions,
           jp.required_sex,
           jp.age_range_min,

@@ -86,8 +86,8 @@ describe('OutboxProcessor', () => {
       mockQuery
         // SELECT outbox row
         .mockResolvedValueOnce({ rows: [outboxRow] })
-        // SELECT worker phone
-        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null }] })
+        // SELECT worker phone + messaging_channel canônico
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null, messaging_channel: 'twilio' }] })
         // UPDATE outbox status = 'sent'
         .mockResolvedValueOnce({ rows: [] })
         // INSERT whatsapp_bulk_dispatch_logs (source='outbox')
@@ -99,12 +99,14 @@ describe('OutboxProcessor', () => {
         to: '+5491100001111',
         templateSlug: 'welcome',
         variables: { name: 'Juan' },
+        channel: 'twilio',
       });
 
       // Verifica UPDATE para 'sent'
       const updateCall = mockQuery.mock.calls[2];
       expect(updateCall[0]).toContain("status = 'sent'");
       expect(updateCall[1]).toContain('ob-1');
+      expect(updateCall[1]).toContain('twilio');
 
       // Verifica INSERT de log com source='outbox'
       const logCall = mockQuery.mock.calls[3];
@@ -336,6 +338,34 @@ describe('OutboxProcessor', () => {
       expect(failCall[0]).toContain("status = 'failed'");
       expect(failCall[1][1]).toBe('Worker sem telefone cadastrado');
     });
+
+    it('worker em opt-out → NÃO envia e marca suppressed (guard do incidente 2026-07-10)', async () => {
+      const outboxRow = {
+        id: 'ob-optout',
+        worker_id: 'w-optout',
+        template_slug: 'ar_vacancy_match_complete',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        // Worker COM telefone válido, mas opted_out=true
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100002222', messaging_channel: 'twilio', opted_out: true }],
+        })
+        // UPDATE status='suppressed'
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-optout');
+
+      // O ponto central: mesmo com telefone válido, NÃO envia.
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      const call = mockQuery.mock.calls[2];
+      expect(call[0]).toContain("status = 'suppressed'");
+      expect(call[1]).toContain('ob-optout');
+    });
   });
 
   // ─── Verifica que não existem mais start/stop/timer ───────────────
@@ -345,6 +375,128 @@ describe('OutboxProcessor', () => {
       expect((processor as any).start).toBeUndefined();
       expect((processor as any).stop).toBeUndefined();
       expect((processor as any).timer).toBeUndefined();
+    });
+  });
+
+  // ─── Roteamento por canal (fundação messaging_channel) ────────────
+
+  describe('canal por worker (roteamento)', () => {
+    const baseRow = {
+      id: 'ob-ch-1',
+      worker_id: 'w-ch-1',
+      template_slug: 'tpl',
+      variables: {},
+      attempts: 0,
+      trace_id: null,
+    };
+
+    afterEach(() => {
+      delete process.env.PERISKOPE_DAILY_CAP;
+    });
+
+    it('resolve messaging_channel canônico via LEFT JOIN merged_into_id (SQL)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-ch-1');
+
+      const workerSelectCall = mockQuery.mock.calls[1];
+      expect(workerSelectCall[0]).toContain('LEFT JOIN workers w2');
+      expect(workerSelectCall[0]).toContain('w2.id = w1.merged_into_id');
+      expect(workerSelectCall[0]).toContain('COALESCE(w2.messaging_channel, w1.messaging_channel)');
+    });
+
+    it('worker canônico está em periskope (via merge) → sendWhatsApp recebe channel=periskope', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'periskope' }] })
+        // COUNT do teto diário (canal periskope)
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-ch-1');
+
+      expect(mockMessaging.sendWhatsApp).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: 'periskope' }),
+      );
+    });
+
+    it('grava channel resolvido na UPDATE de sucesso', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-ch-1');
+
+      const updateCall = mockQuery.mock.calls[2];
+      expect(updateCall[0]).toContain('channel');
+      expect(updateCall[1]).toContain('twilio');
+    });
+
+    it('teto diário Periskope atingido → NÃO envia, NÃO incrementa attempts (fica pending)', async () => {
+      process.env.PERISKOPE_DAILY_CAP = '5';
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'periskope' }] })
+        // COUNT >= cap
+        .mockResolvedValueOnce({ rows: [{ count: '5' }] });
+
+      await processor.processById('ob-ch-1');
+
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      // Nenhuma UPDATE em messaging_outbox foi feita (row continua pending, reprocessável)
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+    });
+
+    it('teto diário ausente (env não setada) → NÃO verifica cap, envia normalmente', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'periskope' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE sent
+        .mockResolvedValueOnce({ rows: [] }); // INSERT log
+
+      await processor.processById('ob-ch-1');
+
+      expect(mockMessaging.sendWhatsApp).toHaveBeenCalledTimes(1);
+      // 4 queries: outbox select, worker select, UPDATE sent, INSERT log — sem COUNT de cap
+      expect(mockQuery).toHaveBeenCalledTimes(4);
+    });
+
+    it('canal twilio nunca consulta o teto diário do Periskope', async () => {
+      process.env.PERISKOPE_DAILY_CAP = '5';
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-ch-1');
+
+      expect(mockQuery).toHaveBeenCalledTimes(4);
+    });
+
+    it('canal periskope pausado (Result.fail reprocessável) → NÃO incrementa attempts nem marca failed', async () => {
+      process.env.PERISKOPE_DAILY_CAP = '5';
+      mockQuery
+        .mockResolvedValueOnce({ rows: [baseRow] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+5491100005555', messaging_channel: 'periskope' }] })
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+      mockMessaging.sendWhatsApp.mockResolvedValueOnce({
+        isFailure: true,
+        error: 'periskope channel paused',
+      });
+
+      await processor.processById('ob-ch-1');
+
+      // 3 queries apenas: outbox select, worker select, COUNT cap — nenhuma UPDATE/INSERT
+      expect(mockQuery).toHaveBeenCalledTimes(3);
     });
   });
 });

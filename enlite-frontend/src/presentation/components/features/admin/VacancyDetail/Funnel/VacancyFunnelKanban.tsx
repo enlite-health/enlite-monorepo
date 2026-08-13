@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
+import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
 interface VacancyFunnelKanbanProps {
   vacancyId: string;
@@ -14,17 +15,47 @@ export function VacancyFunnelKanban({
   vacancyId,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, moveEncuadre } =
+  const { data, isLoading, error, refetch, moveEncuadre, rejectBlocked, unrejectBlocked } =
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
+  /**
+   * ⚠️ Repassar TODOS os argumentos. Função com menos parâmetros é atribuível a um tipo
+   * com mais em TypeScript, então esquecer um argumento aqui não gera erro de compilação —
+   * ele simplesmente some no caminho. Foi o que aconteceu com o agendamento: o modal
+   * coletava data e hora, e o PUT saía sem elas. Só o e2e no navegador pegou.
+   */
   const handleMove = useCallback(
-    async (encuadreId: string, targetStage: string, rejectionReasonCategory?: string) => {
-      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory);
+    async (
+      encuadreId: string,
+      targetStage: string,
+      rejectionReasonCategory?: string,
+      role?: EncuadreRole,
+      schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
+    ) => {
+      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory, role, schedule);
       setMoveError(err);
       return err;
     },
     [moveEncuadre],
+  );
+
+  const handleRejectBlocked = useCallback(
+    async (blockedId: string, rejectionReasonCategory: string) => {
+      const err = await rejectBlocked(blockedId, rejectionReasonCategory);
+      setMoveError(err);
+      return err;
+    },
+    [rejectBlocked],
+  );
+
+  const handleUnrejectBlocked = useCallback(
+    async (blockedId: string) => {
+      const err = await unrejectBlocked(blockedId);
+      setMoveError(err);
+      return err;
+    },
+    [unrejectBlocked],
   );
 
   return (
@@ -107,7 +138,7 @@ export function VacancyFunnelKanban({
 
       {/* Board */}
       {data?.stages && (
-        <KanbanBoard stages={data.stages} vacancyId={vacancyId} onMove={handleMove} />
+        <KanbanBoard stages={data.stages} vacancyId={vacancyId} onMove={handleMove} onRejectBlocked={handleRejectBlocked} onUnrejectBlocked={handleUnrejectBlocked} />
       )}
     </div>
   );

@@ -326,6 +326,21 @@ export function resolveWorkerIdByAuthUid(authUid: string): string | null {
   return extractUUID(runSQL(`SELECT id FROM workers WHERE auth_uid = '${authUid}'`));
 }
 
+/**
+ * Forces a worker's status. Used by the WhatsApp-gate integration tests to
+ * exercise DISABLED (blocked) and REGISTERED (eligible) branches of the real
+ * backend eligibility gate. Note: setting REGISTERED only sticks if
+ * fn_guard_registered_status is satisfied (all required fields present);
+ * assert with getWorkerStatusByAuthUid afterwards.
+ */
+export function setWorkerStatus(
+  workerId: string,
+  status: 'REGISTERED' | 'INCOMPLETE_REGISTER' | 'DISABLED',
+): void {
+  if (!workerId) return;
+  runSQL(`UPDATE workers SET status = '${status}', updated_at = NOW() WHERE id = '${workerId}'`);
+}
+
 /** Reads a worker's status by auth_uid (e.g. to assert REGISTERED after a real journey). */
 export function getWorkerStatusByAuthUid(authUid: string): string | null {
   if (!authUid) return null;

@@ -10,6 +10,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 
 // ─── Tipos de retorno ──────────────────────────────────────────────────────
 
@@ -252,6 +253,7 @@ export class AnalyticsRepository {
          wro.documents_status
        FROM v_worker_registration_overview wro
        WHERE wro.documents_status NOT IN ('submitted', 'verified')
+         AND ${workerNotDisabledSql('wro.worker_id')}
          AND wro.worker_id IN (
            SELECT worker_id FROM worker_job_applications WHERE job_posting_id = $1 AND worker_id IS NOT NULL
            UNION
@@ -345,6 +347,7 @@ export class AnalyticsRepository {
   } = {}): Promise<WorkerMissingDocs[]> {
     const conditions = [
       `documents_status NOT IN ('submitted', 'verified')`,
+      workerNotDisabledSql('worker_id'),
     ];
     const values: unknown[] = [];
     let idx = 1;

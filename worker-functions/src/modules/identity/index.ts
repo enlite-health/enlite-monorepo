@@ -67,5 +67,7 @@ export type { UserComplete } from './application/GetUserCompleteUseCase';
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 export { AdminController } from './interfaces/controllers/AdminController';
+export { AuthTelemetryController } from './interfaces/controllers/AuthTelemetryController';
 export { UserController } from './interfaces/controllers/UserController';
 export { AuthMiddleware } from './interfaces/middleware/AuthMiddleware';
+export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';

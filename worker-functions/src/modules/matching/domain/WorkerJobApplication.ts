@@ -33,9 +33,8 @@ export interface WorkerJobApplication {
  * Single source of truth: application_funnel_stage column in worker_job_applications.
  *
  * Migration 230 (2026-06-26): PRE_SCREENING adicionado; INVITED adicionado (existia no banco
- * desde migration 131 mas estava ausente do tipo TypeScript).
- * INITIATED removido do tipo canônico — banco ainda aceita (CHECK fase-1) mas backfill
- * já migrou todos os valores para PRE_SCREENING.
+ * desde migration 131 mas estava ausente do tipo TypeScript). INITIATED removido do tipo.
+ * Migration 264 (2026-07-04): INITIATED removido do CHECK do banco (Fase-2 completa).
  */
 export type ApplicationFunnelStage =
   | 'INVITED'        // clicou em postularse (pré-Talentum); source='manual' → coluna "INICIADO" no kanban
@@ -48,7 +47,7 @@ export type ApplicationFunnelStage =
   | 'SELECTED'       // selecionado no encuadre
   | 'REJECTED';      // rejeitado no encuadre (inclui auto-rejeição por NOT_QUALIFIED Talentum — migration 191)
   // 'PLACED' removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
-  // 'INITIATED' removido do tipo em migration 230 — banco fase-1 ainda aceita transitoriamente
+  // 'INITIATED' removido do tipo em migration 230; removido do banco em migration 264
 
 export interface CreateWorkerJobApplicationDTO {
   workerId: string;

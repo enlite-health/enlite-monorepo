@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BulkDispatchIncompleteWorkersUseCase } from '../../application/BulkDispatchIncompleteWorkersUseCase';
 import { BuildVacancyMatchVariablesUseCase } from '../../application/BuildVacancyMatchVariablesUseCase';
+import { assertVacancyInviteAllowed } from '../../application/VacancyInviteGuard';
 import { AuthMiddleware } from '@modules/identity';
 import { logger, reportError } from '@shared/logging';
 
@@ -47,8 +48,9 @@ export class MessagingController {
       status: string | null;
       whatsapp_phone_encrypted: string | null;
       phone: string | null;
+      messaging_channel: string | null;
     }>(
-      `SELECT status, whatsapp_phone_encrypted, phone
+      `SELECT status, whatsapp_phone_encrypted, phone, messaging_channel
        FROM workers
        WHERE id = $1
        LIMIT 1`,
@@ -60,7 +62,7 @@ export class MessagingController {
       return;
     }
 
-    const { status, whatsapp_phone_encrypted, phone } = workerResult.rows[0];
+    const { status, whatsapp_phone_encrypted, phone, messaging_channel } = workerResult.rows[0];
 
     let slug: string;
     if (status === 'REGISTERED') {
@@ -77,6 +79,16 @@ export class MessagingController {
       return;
     }
 
+    // Travas anti-spam (espelham o VacancyAutoInviteHandler + throttle de
+    // não-resposta). Rodam ANTES de resolver telefone/variáveis pra não gerar
+    // token PII num envio que será bloqueado.
+    const guard = await assertVacancyInviteAllowed(this.db, String(workerId), String(jobPostingId));
+    if (!guard.allowed) {
+      logger.info({ workerId, jobPostingId, code: guard.code }, 'Convite de vaga bloqueado pelo guard');
+      res.status(422).json({ error: guard.code, detail: guard.detail });
+      return;
+    }
+
     const whatsappPhone = whatsapp_phone_encrypted
       ? await this.encryptionService.decrypt(whatsapp_phone_encrypted)
       : null;
@@ -90,7 +102,13 @@ export class MessagingController {
     const builder = new BuildVacancyMatchVariablesUseCase(this.db, this.encryptionService);
     const variables = await builder.execute(String(workerId), String(jobPostingId), slug);
 
-    const result = await this.messaging.sendWhatsApp({ to, templateSlug: slug, variables: variables as unknown as Record<string, string> });
+    const channel: 'twilio' | 'periskope' = messaging_channel === 'periskope' ? 'periskope' : 'twilio';
+    const result = await this.messaging.sendWhatsApp({
+      to,
+      templateSlug: slug,
+      variables: variables as unknown as Record<string, string>,
+      channel,
+    });
 
     if (result.isFailure) {
       res.status(502).json({ error: result.error });
@@ -138,6 +156,15 @@ export class MessagingController {
    *   to: string  — número em formato E.164 ou local
    *   templateSlug: string
    *   variables?: Record<string, string>
+   *
+   * DECISÃO (roteamento por canal): este endpoint é @deprecated (rota de teste
+   * admin, sem workerId no body — só `to` cru) e continua SEM resolver
+   * channel, caindo no default do RoutingMessagingService (twilio, salvo
+   * MESSAGING_PROVIDER=periskope). Resolver o worker canônico a partir de `to`
+   * exigiria normalizar o telefone e fazer lookup extra só para uma rota
+   * deprecated de teste pontual — não vale o custo. Se este endpoint sair de
+   * deprecação, revisitar (resolver channel via lookup por phone, como
+   * sendVacancyMatch faz por workerId).
    */
   async sendDirect(req: Request, res: Response): Promise<void> {
     const { to, templateSlug, variables } = req.body;

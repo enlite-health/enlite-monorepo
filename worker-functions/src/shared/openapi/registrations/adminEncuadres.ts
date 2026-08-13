@@ -13,9 +13,40 @@ const EncuadreResultBody = z.object({
 });
 
 const EncuadreMoveBody = z.object({
-  jobPostingId: z.string().uuid().openapi({
-    description: 'UUID da vaga de destino para transferir o encuadre.',
-    example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91',
+  targetStage: z
+    .enum([
+      'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED',
+      'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED',
+    ])
+    .openapi({
+      description: 'Etapa de destino no funil (coluna do Kanban).',
+      example: 'CONFIRMED',
+    }),
+  role: z.enum(['TITULAR', 'RAPID_RESPONSE']).optional().openapi({
+    description: 'Papel do prestador. Só aceito ao mover para SELECTED.',
+    example: 'TITULAR',
+  }),
+  rejectionReasonCategory: z.string().optional().openapi({
+    description: 'Categoria do motivo. Usado ao mover para REJECTED.',
+  }),
+  rejectionReason: z.string().optional().openapi({
+    description: 'Motivo livre da rejeição.',
+  }),
+  interviewDate: z.string().optional().openapi({
+    description:
+      'Data da entrevista (YYYY-MM-DD), no fuso da operação (Buenos Aires). ' +
+      'Opcional — mover sem data é válido ("ainda não sei"). Exige interviewTime junto.',
+    example: '2026-08-05',
+  }),
+  interviewTime: z.string().optional().openapi({
+    description:
+      'Hora da entrevista (HH:MM, 24h), no fuso da operação. Exige interviewDate junto. ' +
+      'Convertida para timestamptz pelo servidor — o fuso do navegador nunca é usado.',
+    example: '14:30',
+  }),
+  interviewMeetLink: z.string().url().optional().openapi({
+    description: 'Link da videochamada da entrevista.',
+    example: 'https://meet.google.com/abc-defg-hij',
   }),
 });
 
@@ -45,10 +76,14 @@ registry.registerPath({
   method: 'put',
   path: '/api/admin/encuadres/{id}/move',
   tags: ['Admin · Encuadres'],
-  summary: 'Move encuadre para outra vaga',
+  summary: 'Move o card do encuadre no funil (Kanban)',
   description:
-    'Transfere um encuadre de uma vaga para outra. ' +
-    'Usado quando o worker é redirecionado para um caso diferente.',
+    'Move a candidatura para outra etapa do funil, gravando `application_funnel_stage` e ' +
+    'sincronizando `encuadres.resultado` nos estados terminais (SELECTED/REJECTED). ' +
+    'Ao mover para CONFIRMED, aceita data e hora da entrevista — é o único ponto em que o ' +
+    'sistema registra QUANDO a entrevista acontece, o que alimenta lembretes e marcação de falta. ' +
+    'A descrição anterior ("transfere um encuadre de uma vaga para outra", body `jobPostingId`) ' +
+    'nunca correspondeu ao comportamento real desta rota.',
   security: [{ firebaseAuth: [] }],
   request: {
     params: z.object({ id: UuidParam }),

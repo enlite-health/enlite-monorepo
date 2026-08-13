@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 
 /**
  * Cliente da API do Chatwoot.
@@ -34,6 +35,17 @@ export interface MirrorOutgoingOptions {
   twilioSid: string;
 }
 
+export interface MirrorIncomingOptions {
+  /** Telefone E.164 (+5511...) do worker que respondeu. */
+  phone: string;
+  /** Nome do worker, pra popular o contato se ele ainda não existir. */
+  name?: string;
+  /** Texto que o worker enviou. */
+  content: string;
+  /** ID único do inbound (Twilio MessageSid) — source_id pra dedup/idempotência. */
+  externalId: string;
+}
+
 interface ContactInbox {
   source_id: string;
   inbox: { id: number };
@@ -41,6 +53,8 @@ interface ContactInbox {
 
 interface ContactPayload {
   id: number;
+  /** E.164 como o Chatwoot guarda (com ou sem o 9 de móvel argentino). */
+  phone_number?: string | null;
   contact_inboxes?: ContactInbox[];
 }
 
@@ -74,6 +88,19 @@ export class ChatwootClient {
   }
 
   /**
+   * Espelha a resposta INBOUND do worker (que chegou pelo Twilio no worker-functions)
+   * como mensagem `incoming` no Chatwoot. Isso faz o Chatwoot disparar o webhook
+   * `message_created` → a Luz (triage-service) processa e responde. É o elo que
+   * liga a resposta do convite (que hoje morre no InboundWhatsAppController) ao motor
+   * da Luz, reusando 100% do pipeline reativo. Idempotente por `externalId` (source_id).
+   */
+  async mirrorIncomingMessage(opts: MirrorIncomingOptions): Promise<void> {
+    const { contactId, sourceId } = await this.findOrCreateContact(opts);
+    const conversationId = await this.findOrCreateConversation(contactId, sourceId);
+    await this.createIncomingMessage(conversationId, opts.content, opts.externalId);
+  }
+
+  /**
    * Adiciona uma label ao contato (multi-add). No Chatwoot, labels de contato
    * são distintas de labels de conversa. Idempotente: o Chatwoot deduplica.
    */
@@ -84,7 +111,7 @@ export class ChatwootClient {
   // ─── Privados ───────────────────────────────────────────────────────────────
 
   private async findOrCreateContact(
-    opts: MirrorOutgoingOptions,
+    opts: { phone: string; name?: string; email?: string },
   ): Promise<{ contactId: number; sourceId: string }> {
     const found = await this.searchContactByPhone(opts.phone);
     if (found) {
@@ -111,16 +138,33 @@ export class ChatwootClient {
   }
 
   private async searchContactByPhone(phone: string): Promise<ContactPayload | null> {
-    // Chatwoot search aceita query parcial; passamos E.164 sem o '+' pra evitar URL-encode.
-    const q = phone.startsWith('+') ? phone.slice(1) : phone;
+    // Chatwoot faz busca por SUBSTRING. Procurar por '541171148942' não acha
+    // '5491171148942' (o 9 no meio quebra a substring), mas os últimos 10
+    // dígitos — o número local — são comuns às duas variantes. É por aí que a
+    // gente reencontra o contato que o inbound do WhatsApp criou.
+    const digits = phone.replace(/\D/g, '');
+    const q = digits.length > 10 ? digits.slice(-10) : digits;
     const res = await this.http.get<{ payload: ContactPayload[] }>('/contacts/search', {
       params: { q, include: 'contact_inboxes' },
     });
     const candidates = res.data.payload ?? [];
-    // Match exato pelo phone — o search retorna parciais.
-    return candidates.find((c: any) => normalizePhone(c.phone_number) === normalizePhone(phone))
-      ?? candidates[0]
-      ?? null;
+    const wanted = phoneMatchKey(phone);
+    const matches = candidates.filter(
+      (c: ContactPayload) => phoneMatchKey(c.phone_number) === wanted,
+    );
+    if (matches.length > 0) {
+      // Onde JÁ existe o par duplicado (as duas variantes viraram dois
+      // contatos), fica com o que tem thread neste inbox — é a conversa que a
+      // pessoa enxerga. Sem isso o espelho continuaria alimentando o contato
+      // órfão e a divisão se perpetuaria.
+      return (
+        matches.find((c) => this.extractSourceIdForInbox(c, this.inboxId)) ?? matches[0]
+      );
+    }
+    // Sem match canônico: só aceita o palpite quando a busca devolveu UM
+    // candidato. Com vários, escolher o primeiro é apostar em qual pessoa
+    // recebe a mensagem — melhor criar contato novo do que mandar pra outra.
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   private extractSourceIdForInbox(contact: ContactPayload, inboxId: number): string | null {
@@ -168,9 +212,37 @@ export class ChatwootClient {
       source_id: twilioSid,
     });
   }
+
+  private async createIncomingMessage(
+    conversationId: number,
+    content: string,
+    externalId: string,
+  ): Promise<void> {
+    await this.http.post(`/conversations/${conversationId}/messages`, {
+      content,
+      message_type: 'incoming',
+      private: false,
+      source_id: externalId,
+    });
+  }
 }
 
-function normalizePhone(raw: string | null | undefined): string {
+/**
+ * Chave de comparação de telefone entre o que ESTÁ no Chatwoot e o que a gente
+ * manda.
+ *
+ * Só tirar não-dígitos não bastava: a mesma pessoa entra pelo WhatsApp como
+ * `+54 9 11 7114-8942` (13 dígitos, com o 9 de móvel que a operadora exige) e
+ * sai da nossa base como `+54 11 7114-8942` (12, o formato que veio da
+ * planilha). Digits-only faz `5491171148942 !== 541171148942`, então o espelho
+ * não achava o contato do inbound e criava um SEGUNDO contato — histórico
+ * partido em duas threads (caso Carina: convs 1112/1114 num contato,
+ * 1148/1149 no outro; a operadora responde uma e não vê a outra).
+ *
+ * `normalizePhoneAR` resolve as duas variantes no mesmo canônico 549… e deixa
+ * número não-AR (BR, 55…) intacto.
+ */
+export function phoneMatchKey(raw: string | null | undefined): string {
   if (!raw) return '';
-  return raw.replace(/[^\d]/g, '');
+  return normalizePhoneAR(raw.replace(/[^\d]/g, ''));
 }

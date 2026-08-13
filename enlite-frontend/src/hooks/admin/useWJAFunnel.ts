@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
+import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
 export interface MoveEncuadreError {
   message: string;
@@ -44,6 +45,10 @@ interface FunnelEncuadre {
   attemptCount?: number;
   /** Number of contact notes (comentários) registered for this WJA. 0 for blocked cards. */
   contactNotesCount?: number;
+  /** ISO de quando o próprio prestador entrou na vaga pelo link (null = desconhecido). */
+  selfAppliedAt?: string | null;
+  /** Blocked card que foi "rechazado" (soft-dismiss): aparece em RECHAZADOS, com botão de voltar. */
+  isDismissed?: boolean;
 }
 
 export interface FunnelStages {
@@ -100,11 +105,16 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     encuadreId: string,
     targetStage: string,
     rejectionReasonCategory?: string,
+    role?: EncuadreRole,
+    /** Data/hora da entrevista ao agendar. Ausente = "ainda não sei" (válido). */
+    schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
   ): Promise<MoveEncuadreError | null> => {
     try {
       await AdminApiService.moveEncuadre(encuadreId, {
         targetStage,
         rejectionReasonCategory,
+        role,
+        ...schedule,
       });
       await fetchFunnel();
       return null;
@@ -124,5 +134,44 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     }
   }, [fetchFunnel]);
 
-  return { data, isLoading, error, refetch: fetchFunnel, moveEncuadre };
+  /**
+   * "Rechazar" um card BLOQUEADO: promove a tentativa bloqueada para RECHAZADOS com o
+   * motivo escolhido. Escopo estrito à vaga — não toca no cadastro nem em outras vagas.
+   * Após rejeitar, refaz o fetch (o card sai de BLOQUEADO e aparece em RECHAZADOS).
+   */
+  const rejectBlocked = useCallback(async (
+    blockedId: string,
+    rejectionReasonCategory: string,
+  ): Promise<MoveEncuadreError | null> => {
+    try {
+      await AdminApiService.rejectBlockedAttempt(blockedId, { rejectionReasonCategory });
+      await fetchFunnel();
+      return null;
+    } catch (err) {
+      console.error('Failed to reject blocked application:', err);
+      if (err instanceof ApiError) {
+        return { message: err.message, code: err.code, reason: err.reason, workerStatus: err.workerStatus };
+      }
+      return { message: err instanceof Error ? err.message : 'Erro desconhecido' };
+    }
+  }, [fetchFunnel]);
+
+  /**
+   * "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO).
+   */
+  const unrejectBlocked = useCallback(async (blockedId: string): Promise<MoveEncuadreError | null> => {
+    try {
+      await AdminApiService.restoreBlockedAttempt(blockedId);
+      await fetchFunnel();
+      return null;
+    } catch (err) {
+      console.error('Failed to restore blocked application:', err);
+      if (err instanceof ApiError) {
+        return { message: err.message, code: err.code, reason: err.reason, workerStatus: err.workerStatus };
+      }
+      return { message: err instanceof Error ? err.message : 'Erro desconhecido' };
+    }
+  }, [fetchFunnel]);
+
+  return { data, isLoading, error, refetch: fetchFunnel, moveEncuadre, rejectBlocked, unrejectBlocked };
 }

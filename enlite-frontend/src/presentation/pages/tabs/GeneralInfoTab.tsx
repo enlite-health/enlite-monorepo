@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, useRef, memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,8 @@ import { formatDateFromISO, parseDateToISO } from '@presentation/hooks/useMask';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useToast } from '@presentation/hooks/useToast';
 import { GeneralInfoFormFields } from './GeneralInfoFormFields';
+import { PhoneConflictModal } from '@presentation/components/shared/PhoneConflictModal/PhoneConflictModal';
+import { WorkerApiService, AccountLinkLookupResponse } from '@infrastructure/http/WorkerApiService';
 
 export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const { t } = useTranslation();
@@ -19,8 +21,16 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
   const updateGeneralInfo = useWorkerRegistrationStore((state) => state.updateGeneralInfo);
+  const hydrateFromServer = useWorkerRegistrationStore((state) => state.hydrateFromServer);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
   const showToast = useToast();
+
+  // Vínculo self-service por colisão de telefone (409 PHONE_NOT_AVAILABLE).
+  // Enquanto a modal está aberta, TODO toast do autosave é suprimido — no caso
+  // Edith os toasts de sucesso dos outros campos abafavam o erro do telefone.
+  const [phoneConflict, setPhoneConflict] = useState<{ phoneEntered: string; lookupData: AccountLinkLookupResponse } | null>(null);
+  const phoneConflictOpenRef = useRef(false);
+  phoneConflictOpenRef.current = phoneConflict !== null;
 
   const form = useForm<GeneralInfoFormData>({
     resolver: zodResolver(generalInfoSchema) as import('react-hook-form').Resolver<GeneralInfoFormData>,
@@ -120,6 +130,22 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     return error instanceof Error ? error.message : t('workerRegistration.generalInfo.saveError');
   };
 
+  // 409 no telefone → tenta abrir o fluxo de vínculo self-service via LOOKUP
+  // (contrato v2: SEM SMS — o OTP só dispara no clique em "vincular"). Lookup
+  // só sucede quando a dona é conta REAL e ACCOUNT_LINK_ENABLED está ligada;
+  // 404 (flag OFF), USE_CLAIM ou erro → fallback pro comportamento atual (toast).
+  const tryOpenPhoneConflict = async (): Promise<boolean> => {
+    const phoneEntered = getValues().phone || '';
+    if (!phoneEntered) return false;
+    try {
+      const lookupData = await WorkerApiService.lookupAccountLink(phoneEntered);
+      setPhoneConflict({ phoneEntered, lookupData });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const triggerSave = useAutoSave(
     async () => {
       const values = getValues();
@@ -140,10 +166,24 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       // zerava os campos). Sem isso, um telefone editado uma vez seguiria
       // "dirty" e seria reenviado a cada blur subsequente.
       form.reset(values, { keepValues: true });
-      showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
+      // Modal de vínculo aberta → suprime o toast de sucesso (não abafar o fluxo).
+      if (!phoneConflictOpenRef.current) {
+        showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
+      }
     },
     500,
     (error) => {
+      if (phoneConflictOpenRef.current) return; // modal aberta → sem toasts
+      if (error instanceof ApiError && error.code === 'PHONE_NOT_AVAILABLE') {
+        // Caminho novo: oferecer o vínculo. Só cai no toast se o start falhar
+        // (flag OFF/404, dono importado, erro de rede).
+        void tryOpenPhoneConflict().then((opened) => {
+          if (!opened && !phoneConflictOpenRef.current) {
+            showToast(resolveSaveErrorMessage(error), 'error', 'profile-save');
+          }
+        });
+        return;
+      }
       showToast(resolveSaveErrorMessage(error), 'error', 'profile-save');
     },
   );
@@ -190,13 +230,31 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   );
 
   return (
-    <form onSubmit={(e) => e.preventDefault()} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
-      <GeneralInfoFormFields
-        form={form}
-        isFieldReadonly={isFieldReadonly}
-        triggerSave={triggerSave}
-        profilePhotoElement={profilePhotoElement}
-      />
-    </form>
+    <>
+      <form onSubmit={(e) => e.preventDefault()} onBlur={triggerSave} className="flex flex-col gap-6 w-full">
+        <GeneralInfoFormFields
+          form={form}
+          isFieldReadonly={isFieldReadonly}
+          triggerSave={triggerSave}
+          profilePhotoElement={profilePhotoElement}
+        />
+      </form>
+
+      {phoneConflict && (
+        <PhoneConflictModal
+          open
+          phoneEntered={phoneConflict.phoneEntered}
+          lookupData={phoneConflict.lookupData}
+          onClose={() => setPhoneConflict(null)}
+          onLinked={() => {
+            // Merge concluído: o telefone agora vive na conta logada e o status
+            // pode ter mudado (REGISTERED). Re-hydrata do servidor — fonte única.
+            void WorkerApiService.getProgress()
+              .then((progress) => hydrateFromServer(progress))
+              .catch(() => { /* resumo já informa o resultado; hydrate é best-effort */ });
+          }}
+        />
+      )}
+    </>
   );
 });

@@ -18,6 +18,7 @@
  */
 
 import { ReminderScheduler } from '../ReminderScheduler';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('ReminderScheduler', () => {
   let mockQuery: jest.Mock;
@@ -27,7 +28,7 @@ describe('ReminderScheduler', () => {
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     mockCloudTasks = {
       schedule: jest.fn().mockResolvedValue('task-name-123'),
       deleteTask: jest.fn().mockResolvedValue(undefined),
@@ -373,6 +374,18 @@ describe('ReminderScheduler', () => {
   // ─── processBatch (safety net WJA) ───────────────────────────────
 
   describe('processBatch', () => {
+    // O no-show automático é desligado por padrão (NO_SHOW_AUTO_ENABLED, D3 de
+    // captura-data-entrevista). Os casos abaixo descrevem o comportamento HABILITADO;
+    // o default está coberto em MarkNoShowUseCase.test.ts.
+    const envOriginal = process.env.NO_SHOW_AUTO_ENABLED;
+    beforeEach(() => {
+      process.env.NO_SHOW_AUTO_ENABLED = 'true';
+    });
+    afterEach(() => {
+      if (envOriginal === undefined) delete process.env.NO_SHOW_AUTO_ENABLED;
+      else process.env.NO_SHOW_AUTO_ENABLED = envOriginal;
+    });
+
     it('retorna { dayCount:0, minCount:0, noShows:0 } quando não há pendentes', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [] })  // sendDayBeforeRemindersWJA SELECT

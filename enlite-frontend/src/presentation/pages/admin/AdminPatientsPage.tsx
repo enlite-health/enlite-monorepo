@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, LayoutGrid, Globe } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
+import { Button } from '@presentation/components/atoms/Button';
+import { PatientCreateModal } from '@presentation/components/features/admin/PatientCreateModal';
 import { PatientFilters } from '@presentation/components/features/admin/PatientFilters';
-import { PatientStatsCards } from '@presentation/components/features/admin/PatientStatsCards';
 import { PatientsTable } from '@presentation/components/features/admin/PatientsTable';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { usePatientsData } from '@hooks/admin/usePatientsData';
@@ -15,6 +16,7 @@ import {
   getReasonOptions,
   getSpecialtyOptions,
   getDependencyOptions,
+  getCountryOptions,
   attentionToApiParam,
 } from './patientsData';
 
@@ -26,6 +28,7 @@ export function AdminPatientsPage(): JSX.Element {
   const reasonOptions = getReasonOptions(t);
   const specialtyOptions = getSpecialtyOptions(t);
   const dependencyOptions = getDependencyOptions(t);
+  const countryOptions = getCountryOptions(t);
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -35,8 +38,10 @@ export function AdminPatientsPage(): JSX.Element {
   const [selectedReason, setSelectedReason] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedDependency, setSelectedDependency] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const codeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -63,6 +68,7 @@ export function AdminPatientsPage(): JSX.Element {
   const handleReasonChange = (v: string) => { setSelectedReason(v); setCurrentPage(1); };
   const handleSpecialtyChange = (v: string) => { setSelectedSpecialty(v); setCurrentPage(1); };
   const handleDependencyChange = (v: string) => { setSelectedDependency(v); setCurrentPage(1); };
+  const handleCountryChange = (v: string) => { setSelectedCountry(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
 
   const filters = useMemo(() => {
@@ -75,6 +81,7 @@ export function AdminPatientsPage(): JSX.Element {
       clinical_specialty: selectedSpecialty || undefined,
       dependency_level: selectedDependency || undefined,
       case_number: debouncedCode || undefined,
+      country: selectedCountry || undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
@@ -85,11 +92,12 @@ export function AdminPatientsPage(): JSX.Element {
     selectedReason,
     selectedSpecialty,
     selectedDependency,
+    selectedCountry,
     itemsPerPage,
     currentPage,
   ]);
 
-  const { patients: rawPatients, total, stats, isLoading, error } = usePatientsData(filters);
+  const { patients: rawPatients, total, isLoading, error, refetch } = usePatientsData(filters);
 
   const patients = useMemo(
     () =>
@@ -117,18 +125,19 @@ export function AdminPatientsPage(): JSX.Element {
           {t('admin.patients.title')}
         </Typography>
         <div className="flex items-center gap-2">
-          <img
-            className="w-7 h-5"
-            alt="Argentina"
-            src="https://c.animaapp.com/UVSSEdVv/img/group-237688.svg"
-          />
+          {/* Era um <img> do CDN do Anima (c.animaapp.com) que responde 403 —
+              renderizava ícone de imagem quebrada em todo carregamento. */}
+          <Globe className="w-5 h-5 text-[#737373]" strokeWidth={1.5} aria-hidden="true" />
           <Typography variant="body" weight="medium" className="text-[#737373]">
             {t('common.country')}
           </Typography>
         </div>
       </div>
 
-      <PatientStatsCards stats={stats} />
+      {/*
+        Os big numbers (estado dos pacientes + embudo) vivem em "Gestión a la
+        vista" (/admin/dashboard) — esta tela é operação: lista, filtros, kanban.
+      */}
 
       {/* Table section */}
       <div className="flex flex-col">
@@ -137,6 +146,34 @@ export function AdminPatientsPage(): JSX.Element {
           <Typography variant="h1" weight="semibold" className="text-[#737373] font-poppins text-2xl">
             {t('admin.patients.listTitle')}
           </Typography>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="md"
+              className="h-10 flex items-center justify-center gap-2"
+              onClick={() => navigate('/admin/patients/kanban')}
+              data-testid="patients-kanban-link"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <Typography variant="h3" weight="semibold" className="font-poppins text-base">
+                {t('admin.patients.kanban.toggleKanban')}
+              </Typography>
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              className="h-10 px-5 border-primary text-primary flex items-center justify-center gap-2"
+              onClick={() => setIsCreateOpen(true)}
+              data-testid="new-patient-btn"
+            >
+              {/* rótulo curto de propósito: com "Crear nuevo" a largura fixa
+                  quebrava em duas linhas dentro do botão */}
+              <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base whitespace-nowrap">
+                {t('admin.patients.create.new')}
+              </Typography>
+              <Plus className="w-3.5 h-3.5 text-primary" />
+            </Button>
+          </div>
         </div>
 
         <PatientFilters
@@ -156,6 +193,9 @@ export function AdminPatientsPage(): JSX.Element {
           reasonOptions={reasonOptions}
           specialtyOptions={specialtyOptions}
           dependencyOptions={dependencyOptions}
+          selectedCountry={selectedCountry}
+          onCountryChange={handleCountryChange}
+          countryOptions={countryOptions}
         />
 
         {error ? (
@@ -216,6 +256,16 @@ export function AdminPatientsPage(): JSX.Element {
           </div>
         </div>
       </div>
+
+      {isCreateOpen && (
+        <PatientCreateModal
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={() => {
+            setCurrentPage(1);
+            refetch();
+          }}
+        />
+      )}
     </PageContainer>
   );
 }

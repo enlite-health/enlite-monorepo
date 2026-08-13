@@ -57,9 +57,23 @@ export function createQualifiedInterviewHandler(
     }
 
     const vacancy = vacancyResult.rows[0];
-    if (!vacancy.meet_link_1 || !vacancy.meet_datetime_1) {
+
+    // Só slots CONFIGURADOS (link + datetime) e FUTUROS entram no convite.
+    // Slot no passado é pior que não enviar: oferece horário que não existe
+    // (aconteceu em prod — convites de 31/07 oferecendo "Lun 08/06").
+    const now = Date.now();
+    const futureSlots: Array<{ label: string }> = [];
+    for (const n of [1, 2, 3] as const) {
+      const link = vacancy[`meet_link_${n}`];
+      const dt = vacancy[`meet_datetime_${n}`];
+      if (link && dt && new Date(dt).getTime() > now) {
+        futureSlots.push({ label: formatSlotOption(dt) });
+      }
+    }
+
+    if (futureSlots.length === 0) {
       console.warn(
-        `[QualifiedInterviewHandler] No meet links configured for job posting ${jobPostingId}`,
+        `[QualifiedInterviewHandler] No FUTURE meet slots configured for job posting ${jobPostingId} — invite skipped`,
       );
       return;
     }
@@ -78,19 +92,29 @@ export function createQualifiedInterviewHandler(
     // 3. Formatar opções de horário (ex: "Lun 07/04 10:00")
     // Variáveis mapeadas para posições do template Twilio qualified_worker:
     //   {{1}}=slot_1 {{2}}=slot_2 {{3}}=slot_3 {{4}}=case_number
+    // O template aprovado na Meta tem 3 opções FIXAS no corpo e variável
+    // vazia é rejeitado pelo WhatsApp (Twilio 'Content Variables parameter is
+    // invalid' — causa de 100% de falha quando a vaga tinha <3 slots).
+    // Com menos de 3 slots futuros, repete o último válido: o worker vê o
+    // mesmo horário 2x/3x e qualquer botão agenda um slot real
+    // (BookSlotFromWhatsAppUseCase cai no primeiro slot futuro).
     // meet_links não são enviados no template — o BookSlotFromWhatsAppUseCase
     // busca o link correto do job_postings quando o worker escolhe o slot.
+    const lastSlot = futureSlots[futureSlots.length - 1];
     const outboxResult = await db.query(
-      `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
-       VALUES ($1, 'qualified_worker_request', $2::jsonb, 'pending', 0)
+      `INSERT INTO messaging_outbox (worker_id, job_posting_id, template_slug, variables, status, attempts)
+       VALUES ($1, $2, 'qualified_worker_request', $3::jsonb, 'pending', 0)
        RETURNING id`,
       [
         workerId,
+        jobPostingId,
         JSON.stringify({
-          slot_1: vacancy.meet_datetime_1 ? formatSlotOption(vacancy.meet_datetime_1) : '',
-          slot_2: vacancy.meet_datetime_2 ? formatSlotOption(vacancy.meet_datetime_2) : '',
-          slot_3: vacancy.meet_datetime_3 ? formatSlotOption(vacancy.meet_datetime_3) : '',
-          case_number: String(vacancy.case_number ?? ''),
+          slot_1: futureSlots[0].label,
+          slot_2: (futureSlots[1] ?? lastSlot).label,
+          slot_3: (futureSlots[2] ?? lastSlot).label,
+          // Variável vazia = rejeição Meta/Twilio; '—' nunca acontece na
+          // prática (case_number é obrigatório na vaga) mas mantém o envio vivo.
+          case_number: String(vacancy.case_number ?? '—'),
           job_posting_id: jobPostingId,
         }),
       ],

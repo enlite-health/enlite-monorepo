@@ -92,9 +92,11 @@ describe('GET /api/admin/workers/:id/timeline', () => {
     const jobPostingId = jobRes.rows[0].id as string;
 
     // 4. Create job application (trigger fires AFTER INSERT, inserts initial stage row)
+    // PRE_SCREENING é o stage inicial canônico desde migration 230/264 (substituiu
+    // INITIATED, removido do CHECK constraint em migration 264 / #95).
     const appRes = await pool.query(
       `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
-       VALUES ($1, $2, 'INITIATED')
+       VALUES ($1, $2, 'PRE_SCREENING')
        RETURNING id`,
       [workerId, jobPostingId],
     );

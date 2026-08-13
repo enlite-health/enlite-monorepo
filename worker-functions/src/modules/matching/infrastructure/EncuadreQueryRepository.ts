@@ -7,6 +7,7 @@ import {
   SupplementEncuadreDTO,
 } from '../domain/Encuadre';
 import { mapEncuadreRow, buildEncuadreWhereClause } from './EncuadreMappers';
+import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 
 /**
  * EncuadreQueryRepository
@@ -163,6 +164,7 @@ export class EncuadreQueryRepository {
     const conditions: string[] = [
       'job_posting_id = $1',
       "resultado NOT IN ('RECHAZADO', 'BLACKLIST') OR resultado IS NULL",
+      workerNotDisabledSql('worker_id'),
     ];
     const values: unknown[] = [jobPostingId];
     let idx = 2;
@@ -178,7 +180,7 @@ export class EncuadreQueryRepository {
   }
 
   async countInvitedAndAttended(jobPostingId: string, filters: { startDate?: string; endDate?: string } = {}): Promise<{ invitados: number; asistentes: number }> {
-    const conditions: string[] = ['job_posting_id = $1'];
+    const conditions: string[] = ['job_posting_id = $1', workerNotDisabledSql('worker_id')];
     const values: unknown[] = [jobPostingId];
     let idx = 2;
 
@@ -197,7 +199,7 @@ export class EncuadreQueryRepository {
   }
 
   async countByResultado(jobPostingId: string, filters: { startDate?: string; endDate?: string } = {}): Promise<Array<{ resultado: string; count: number }>> {
-    const conditions: string[] = ['job_posting_id = $1', 'resultado IS NOT NULL'];
+    const conditions: string[] = ['job_posting_id = $1', 'resultado IS NOT NULL', workerNotDisabledSql('worker_id')];
     const values: unknown[] = [jobPostingId];
     let idx = 2;
 
@@ -220,6 +222,7 @@ export class EncuadreQueryRepository {
        JOIN job_postings jp ON e.job_posting_id = jp.id
        WHERE jp.country = $1 AND jp.deleted_at IS NULL
          AND e.resultado IN ('SELECCIONADO', 'REEMPLAZO')
+         AND ${workerNotDisabledSql('e.worker_id')}
        GROUP BY jp.case_number`,
       [country],
     );

@@ -14,6 +14,10 @@ export const OAUTH_SCOPE_CAPABILITIES: Readonly<Record<string, readonly string[]
     'worker.stats.get',
     'worker.search',
     'db.query.readonly',
+    // O mapa de três pontas paciente↔ClickUp↔grupo (auditoria de informes da
+    // Candela). Leitura pura e PII-safe POR CONSTRUÇÃO (lista de colunas
+    // fechada no repositório — só ids), então cabe no contrato deste escopo.
+    'patient.chat.map',
   ],
 };
 

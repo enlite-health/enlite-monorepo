@@ -99,7 +99,7 @@ export interface ExecuteMergeParams {
  *   manual     = "Unificar manualmente"
  *   auto_batch = limpeza automática em lote (sem admin)
  */
-export type MergeSource = 'fila' | 'imported' | 'manual' | 'auto_batch';
+export type MergeSource = 'fila' | 'imported' | 'manual' | 'auto_batch' | 'self_service_link';
 
 /** Contexto de auditoria capturado na borda (controller) e propagado até o INSERT. */
 export interface MergeAuditContext {

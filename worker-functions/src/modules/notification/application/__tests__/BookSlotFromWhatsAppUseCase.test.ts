@@ -1,4 +1,5 @@
 import { BookSlotFromWhatsAppUseCase } from '../BookSlotFromWhatsAppUseCase';
+import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
 describe('BookSlotFromWhatsAppUseCase', () => {
   let mockQuery: jest.Mock;
@@ -12,16 +13,16 @@ describe('BookSlotFromWhatsAppUseCase', () => {
   const APPLICATION = { id: 'app-1', job_posting_id: 'jp-1' };
   const VACANCY = {
     meet_link_1: 'https://meet.google.com/abc-defg-hij',
-    meet_datetime_1: '2026-04-10T14:00:00.000Z',
+    meet_datetime_1: '2027-04-10T14:00:00.000Z',
     meet_link_2: 'https://meet.google.com/klm-nopq-rst',
-    meet_datetime_2: '2026-04-11T10:00:00.000Z',
+    meet_datetime_2: '2027-04-11T10:00:00.000Z',
     meet_link_3: null,
     meet_datetime_3: null,
   };
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
+    mockDb = poolMockWithConnect(mockQuery) as never;
     mockPubsub = { publish: jest.fn().mockResolvedValue('msg-1') };
     mockCloudTasks = { schedule: jest.fn().mockResolvedValue('task-123') };
     mockCalendar = { addGuestToMeeting: jest.fn().mockResolvedValue({ success: true }) };
@@ -36,11 +37,15 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  // Guard de pré-condição do BookInterviewSlotUseCase (miolo extraído)
+  const QUALIFIED_PENDING = { application_funnel_stage: 'QUALIFIED', interview_response: 'pending' };
+
   /** Happy path com OriginalRepliedMessageSid (correlação exata via outbox) */
   function setupHappyPathWithSid() {
     mockQuery
       .mockResolvedValueOnce({ rows: [WORKER] })                              // find worker
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })          // outbox lookup by twilio_sid
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })                   // guard: WJA state
       .mockResolvedValueOnce({ rows: [VACANCY] })                             // find vacancy
       .mockResolvedValueOnce({ rows: [] })                                    // update WJA
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })                 // insert outbox
@@ -52,6 +57,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [WORKER] })                              // find worker
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })          // fallback WJA pending
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })                   // guard: WJA state
       .mockResolvedValueOnce({ rows: [VACANCY] })                             // find vacancy
       .mockResolvedValueOnce({ rows: [] })                                    // update WJA
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })                 // insert outbox
@@ -86,7 +92,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
     expect(result.isSuccess).toBe(true);
-    const updateCall = mockQuery.mock.calls[3];
+    const updateCall = mockQuery.mock.calls[4];
     expect(updateCall[1][0]).toBe(VACANCY.meet_link_1);
     expect(updateCall[1][1]).toBe(VACANCY.meet_datetime_1);
   });
@@ -97,7 +103,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     const result = await useCase.execute('whatsapp:+5491112345678', 'slot_2', 'SM-abc123');
 
     expect(result.isSuccess).toBe(true);
-    const updateCall = mockQuery.mock.calls[3];
+    const updateCall = mockQuery.mock.calls[4];
     expect(updateCall[1][0]).toBe(VACANCY.meet_link_2);
   });
 
@@ -139,7 +145,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
     // INSERT outbox
-    const insertCall = mockQuery.mock.calls[4];
+    const insertCall = mockQuery.mock.calls[5];
     expect(insertCall[0]).toContain('qualified_worker_response');
     expect(insertCall[1][0]).toBe('w-1');
 
@@ -190,6 +196,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
       .mockResolvedValueOnce({ rows: [WORKER] })                              // find worker
       .mockResolvedValueOnce({ rows: [] })                                    // outbox lookup: NOT FOUND
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })          // fallback WJA
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })                   // guard: WJA state
       .mockResolvedValueOnce({ rows: [VACANCY] })                             // find vacancy
       .mockResolvedValueOnce({ rows: [] })                                    // update WJA
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });                // insert outbox
@@ -235,13 +242,37 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     expect(result.error).toBe('Invalid slot index');
   });
 
-  it('retorna fail se meet_link_N é null', async () => {
+  it('slot escolhido sem link (slot_3) cai no primeiro slot futuro configurado e AGENDA', async () => {
+    // O convite repete o último horário válido nos botões vazios (variável
+    // vazia é rejeitada pela Meta) — logo o botão 3 pode chegar mesmo sem
+    // meet_link_3. O worker viu um horário real: agenda no primeiro futuro.
+    setupHappyPathWithSid();
+
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_3', 'SM-abc123');
+
+    expect(result.isSuccess).toBe(true);
+    const updateCall = mockQuery.mock.calls[4];
+    expect(updateCall[0]).toContain('interview_meet_link');
+    expect(updateCall[1][0]).toBe(VACANCY.meet_link_1);
+    expect(updateCall[1][1]).toBe(VACANCY.meet_datetime_1);
+  });
+
+  it('retorna fail se NENHUM slot é agendável (todos passados/sem link)', async () => {
+    const staleVacancy = {
+      meet_link_1: 'https://meet.google.com/abc-defg-hij',
+      meet_datetime_1: '2026-04-10T14:00:00.000Z', // passado
+      meet_link_2: null,
+      meet_datetime_2: null,
+      meet_link_3: null,
+      meet_datetime_3: null,
+    };
     mockQuery
       .mockResolvedValueOnce({ rows: [WORKER] })
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })
-      .mockResolvedValueOnce({ rows: [VACANCY] });
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })                   // guard: WJA state
+      .mockResolvedValueOnce({ rows: [staleVacancy] });
 
-    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_3', 'SM-abc123');
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe('Invalid slot');
@@ -251,6 +282,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [WORKER] })
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })                   // guard: WJA state
       .mockResolvedValueOnce({ rows: [] });
 
     const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
@@ -266,7 +298,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
     await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
-    const insertCall = mockQuery.mock.calls[4];
+    const insertCall = mockQuery.mock.calls[5];
     const vars = JSON.parse(insertCall[1][1]);
     expect(vars.date).toBeDefined();
     expect(vars.time).toBeDefined();
@@ -281,9 +313,9 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
     await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
-    const insertCall = mockQuery.mock.calls[4];
+    const insertCall = mockQuery.mock.calls[5];
     const vars = JSON.parse(insertCall[1][1]);
-    // meet_datetime_1 = '2026-04-10T14:00:00.000Z'
+    // meet_datetime_1 = '2027-04-10T14:00:00.000Z'
     expect(vars.date).toBe('10/04');
     expect(vars.time).toBe('14:00');
   });
@@ -295,7 +327,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
     await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
-    const updateCall = mockQuery.mock.calls[3];
+    const updateCall = mockQuery.mock.calls[4];
     expect(updateCall[0]).toContain("interview_response        = 'confirmed'");
     expect(updateCall[0]).toContain("application_funnel_stage  = 'CONFIRMED'");
     expect(updateCall[1][0]).toBe(VACANCY.meet_link_1);
@@ -337,6 +369,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [workerNoEmail] })
       .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })                   // guard: WJA state
       .mockResolvedValueOnce({ rows: [VACANCY] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });
@@ -350,5 +383,46 @@ describe('BookSlotFromWhatsAppUseCase', () => {
       expect.stringContaining('has no email — skipped calendar invite'),
     );
     consoleSpy.mockRestore();
+  });
+
+  // ─── Guard de pré-condição (miolo extraído — BookInterviewSlotUseCase) ──
+
+  it('toque repetido (interview_response=confirmed) → ok idempotente, sem UPDATE nem outbox', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [WORKER] })                              // find worker
+      .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })          // outbox lookup by twilio_sid
+      .mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', interview_response: 'confirmed' }] });
+
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
+
+    expect(result.isSuccess).toBe(true);
+    expect(mockQuery).toHaveBeenCalledTimes(3);          // parou no guard
+    expect(mockCalendar.addGuestToMeeting).not.toHaveBeenCalled();
+    expect(mockCloudTasks.schedule).not.toHaveBeenCalled();
+  });
+
+  it('candidatura fora de estado (INVITED) → fail No pending interview', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [WORKER] })
+      .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })
+      .mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', interview_response: 'pending' }] });
+
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
+
+    expect(result.isFailure).toBe(true);
+    expect(result.error).toBe('No pending interview');
+    expect(mockCalendar.addGuestToMeeting).not.toHaveBeenCalled();
+  });
+
+  it('candidatura inexistente para o par worker×vaga → fail No pending interview', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [WORKER] })
+      .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1' }] })
+      .mockResolvedValueOnce({ rows: [] });               // guard: sem WJA
+
+    const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
+
+    expect(result.isFailure).toBe(true);
+    expect(result.error).toBe('No pending interview');
   });
 });
