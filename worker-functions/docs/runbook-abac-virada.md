@@ -40,11 +40,17 @@ segurança** (lex C5): registrar quem/quando/por quê no diário + log estrutura
 
 ### 1.0 Pré-requisito: o gap "1 processo, 2 identidades"
 O `worker-functions` atende staff + cron + webhook no MESMO processo, com UM `DB_USER`.
-> **[DECISÃO DO MECANISMO — preenchida após a pesquisa de mercado]**
-> Opção A: um login user membro das 2 roles + `SET ROLE` por classe de request no client
-> fixado (padrão PostgREST/authenticator). Opção B: dois pools no processo (runtime/system),
-> a borda escolhe. O serviço `worker-functions-mcp` é 100% sistema → ele simplesmente vira
-> `DB_USER=enlite_system`, sem mecanismo nenhum.
+> **DECIDIDO (D112, 14/08): DOIS POOLS no processo — não SET ROLE.** Um login user
+> membro das duas roles permitiria escalação via SQL injection (`RESET ROLE; SET ROLE
+> app_system`) — classe de vulnerabilidade documentada em postgres-hackers e SEM
+> mitigação no core. Com pools separados por credencial (padrão node-postgres #1659), a
+> fronteira fica no Postgres: pior caso de injeção no caminho de staff é ficar preso ao
+> que `app_runtime` já pode. Envs novas: `DB_SYSTEM_USER`/`DB_SYSTEM_PASSWORD` (ausentes
+> = pool único, comportamento de hoje). ⚠️ Dimensionar MEDINDO `max_connections` na
+> instância (`SELECT setting FROM pg_settings WHERE name='max_connections'`) — stg
+> db-f1-micro ≈ 25! — e multiplicar pools × instâncias Cloud Run (max 3 stg / 10 prd).
+> O serviço `worker-functions-mcp` é 100% sistema → só vira `DB_USER=enlite_system`,
+> sem mecanismo nenhum.
 Gate: e2e novo cobrindo **conexão única** (o e2e de 13/08 usou dois pools separados e não
 cobre este caso) + prova de que staff não escala para sistema.
 
