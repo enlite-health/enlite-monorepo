@@ -3,6 +3,8 @@ import { AdminPatientsController } from '../controllers/AdminPatientsController'
 import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatIdsController';
 import { AdminPatientChatRolesController } from '../controllers/AdminPatientChatRolesController';
 import { AuthMiddleware } from '@modules/identity';
+import { logResourceAccess } from '@shared/audit/resourceAccessLog';
+import { requireCountryScope } from '@shared/database/countryScopeGuard';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -19,6 +21,9 @@ export function createAdminPatientsRoutes(
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
+  // Cortesia de UX sobre a RLS: `?country=` de outro país sem grant explica em
+  // vez de devolver contadores zerados (task 3.5). Inerte com a flag off.
+  const countryScope = requireCountryScope();
   // test-flag e purge são admin-only (mais estrito que staff) — mesmo critério
   // do equivalente em workers. São ferramentas do synthetic monitoring.
   const adminOnly = authMiddleware.requireAdmin();
@@ -55,12 +60,12 @@ export function createAdminPatientsRoutes(
   );
 
   // Static routes first (guard against future /:id capture)
-  router.get('/patients/stats', staffOnly, (req: Request, res: Response) =>
+  router.get('/patients/stats', staffOnly, countryScope, (req: Request, res: Response) =>
     controller.getPatientStats(req, res),
   );
 
   // Funnel de conversão (Fase 4) — static, ANTES de /patients/:id.
-  router.get('/patients/funnel', staffOnly, (req: Request, res: Response) =>
+  router.get('/patients/funnel', staffOnly, countryScope, (req: Request, res: Response) =>
     controller.getPatientFunnel(req, res),
   );
 
@@ -71,18 +76,25 @@ export function createAdminPatientsRoutes(
     chatIdsController.getChatMap(req, res),
   );
 
-  router.get('/patients', staffOnly, (req: Request, res: Response) =>
+  router.get('/patients', staffOnly, countryScope, (req: Request, res: Response) =>
     controller.listPatients(req, res),
   );
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.
-  router.post('/patients', staffOnly, (req: Request, res: Response) =>
-    controller.createPatient(req, res),
+  //
+  // O país vem do BODY aqui (não da query): criar paciente para outro país é o
+  // mesmo pedido cross-país do `?country=`, e sem o guard viraria um INSERT que
+  // a policy recusa com erro cru de RLS em vez de explicar.
+  router.post(
+    '/patients',
+    staffOnly,
+    requireCountryScope((req) => req.body?.country),
+    (req: Request, res: Response) => controller.createPatient(req, res),
   );
 
   // Dynamic route last — Express would capture /stats as /:id otherwise.
-  router.get('/patients/:id', staffOnly, (req: Request, res: Response) =>
+  router.get('/patients/:id', staffOnly, logResourceAccess('patient'), (req: Request, res: Response) =>
     controller.getPatientById(req, res),
   );
 

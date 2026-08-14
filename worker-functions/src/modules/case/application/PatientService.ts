@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import {
   PatientIdentityRepository,
@@ -14,6 +15,7 @@ import {
   PatientResponsibleInput,
   validateContactChannel,
 } from '../domain/PatientResponsible';
+import type { PoolClient } from 'pg';
 import { PatientAddress, PatientProfessional } from '../../../infrastructure/repositories/PatientRepository';
 import { replacePatientAddresses, replacePatientProfessionals } from './PatientRelatedWriter';
 import type { DependencyLevel } from '../domain/enums/DependencyLevel';
@@ -30,6 +32,36 @@ function isCaseNumberConflict(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false;
   const e = err as { code?: string; constraint?: string };
   return e.code === '23505' && e.constraint === 'patients_case_number_active_unique';
+}
+
+/**
+ * Sinaliza PARA FORA da transação que o retry sem `case_number` deve rodar.
+ *
+ * O retry precisa de uma transação NOVA (a que bateu na constraint está abortada
+ * no Postgres), e quem controla transação aqui é `withActorContext` — então o
+ * caminho de conflito sai por exceção e o retry é disparado fora dela. Só o erro
+ * vindo do upsert de IDENTIDADE vira este sinal: um 23505 do bloco clínico/
+ * responsáveis continua sendo erro de verdade.
+ */
+class CaseNumberConflictRetry extends Error {
+  constructor(readonly original: unknown) {
+    super('patients_case_number_active_unique');
+    this.name = 'CaseNumberConflictRetry';
+  }
+}
+
+/**
+ * Toda escrita de paciente roda aqui (ABAC país, BLOCKER-5).
+ *
+ * `DatabaseConnection.getClient()` entrega o pool CRU: sem o roteamento por
+ * identidade (runtime × sistema) e sem o contexto de país da request — sob RLS,
+ * uma escrita por ali sai como a role errada ou sem `app.user_country`.
+ * `withActorContext` abre a transação no client certo (reusando o client já
+ * fixado na request, quando há), carimba ator + contexto e faz
+ * BEGIN/COMMIT/ROLLBACK — por isso não há mais controle de transação à mão.
+ */
+function inPatientTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  return withActorContext(DatabaseConnection.getInstance().getPool(), fn);
 }
 
 export interface UpsertFromClickUpOptions {
@@ -246,43 +278,33 @@ export class PatientService {
     flagged: boolean,
     cid: string | undefined,
   ): Promise<{ id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' }> {
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
     try {
-      await client.query('BEGIN');
+      return await inPatientTransaction(async (client) => {
+        let patientId: string;
+        let created: boolean;
 
-      let patientId: string;
-      let created: boolean;
-      let conflict: 'CASE_NUMBER_CONFLICT' | undefined;
-
-      try {
-        ({ id: patientId, created } = await this.identityRepo.upsert(identityInput, client));
-      } catch (err) {
-        if (isCaseNumberConflict(err)) {
-          // Constraint blocks the write — rollback this attempt and retry without case_number.
-          await client.query('ROLLBACK');
-          client.release();
-          functions.logger.warn('patient_service.case_number_conflict_retry', {
-            clickupTaskId:       input.clickupTaskId,
-            rejectedCaseNumber:  input.caseNumber ?? null,
-            correlationId:       cid,
-          });
-          return this.retryWithoutCaseNumber(identityInput, input);
+        try {
+          ({ id: patientId, created } = await this.identityRepo.upsert(identityInput, client));
+        } catch (err) {
+          // Constraint blocks the write — abort this transaction and retry
+          // without case_number (the retry needs a fresh transaction).
+          if (isCaseNumberConflict(err)) throw new CaseNumberConflictRetry(err);
+          throw err;
         }
-        throw err;
-      }
 
-      await this.upsertRelated(patientId, input, client);
-
-      await client.query('COMMIT');
-      return { id: patientId, created, flagged, conflict };
+        await this.upsertRelated(patientId, input, client);
+        return { id: patientId, created, flagged };
+      });
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (err instanceof CaseNumberConflictRetry) {
+        functions.logger.warn('patient_service.case_number_conflict_retry', {
+          clickupTaskId:       input.clickupTaskId,
+          rejectedCaseNumber:  input.caseNumber ?? null,
+          correlationId:       cid,
+        });
+        return this.retryWithoutCaseNumber(identityInput, input);
+      }
       throw err;
-    } finally {
-      // Only release if client hasn't been released already (conflict path releases early).
-      try { client.release(); } catch { /* already released */ }
     }
   }
 
@@ -300,21 +322,11 @@ export class PatientService {
       attentionReasons: Array.from(attentionReasons),
     };
 
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
-    try {
-      await client.query('BEGIN');
+    return inPatientTransaction(async (client) => {
       const { id: patientId, created } = await this.identityRepo.upsert(safeIdentityInput, client);
       await this.upsertRelated(patientId, input, client);
-      await client.query('COMMIT');
-      return { id: patientId, created, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return { id: patientId, created, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' as const };
+    });
   }
 
   private async upsertRelated(
@@ -416,39 +428,30 @@ export class PatientService {
     nativeInput: PatientIdentityNativeInsertInput,
     related: PatientRelatedInput,
   ): Promise<{ id: string; created: true }> {
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
     try {
-      await client.query('BEGIN');
-
-      let patientId: string;
-      try {
-        ({ id: patientId } = await this.identityRepo.insertNative(nativeInput, client));
-      } catch (err) {
-        if (isCaseNumberConflict(err)) {
-          // Same conflict handling as the ClickUp path: rollback and retry
-          // without case_number, flagging the row for operational review.
-          await client.query('ROLLBACK');
-          client.release();
-          functions.logger.warn('patient_service.native_case_number_conflict_retry', {
-            origin:             nativeInput.origin,
-            rejectedCaseNumber: nativeInput.caseNumber ?? null,
-          });
-          return this.retryNativeWithoutCaseNumber(nativeInput, related);
+      return await inPatientTransaction(async (client) => {
+        let patientId: string;
+        try {
+          ({ id: patientId } = await this.identityRepo.insertNative(nativeInput, client));
+        } catch (err) {
+          // Same conflict handling as the ClickUp path: abort and retry without
+          // case_number, flagging the row for operational review.
+          if (isCaseNumberConflict(err)) throw new CaseNumberConflictRetry(err);
+          throw err;
         }
-        throw err;
-      }
 
-      await this.upsertRelated(patientId, related, client);
-
-      await client.query('COMMIT');
-      return { id: patientId, created: true };
+        await this.upsertRelated(patientId, related, client);
+        return { id: patientId, created: true as const };
+      });
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (err instanceof CaseNumberConflictRetry) {
+        functions.logger.warn('patient_service.native_case_number_conflict_retry', {
+          origin:             nativeInput.origin,
+          rejectedCaseNumber: nativeInput.caseNumber ?? null,
+        });
+        return this.retryNativeWithoutCaseNumber(nativeInput, related);
+      }
       throw err;
-    } finally {
-      try { client.release(); } catch { /* already released on conflict path */ }
     }
   }
 
@@ -466,21 +469,11 @@ export class PatientService {
       attentionReasons: Array.from(attentionReasons),
     };
 
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
-    try {
-      await client.query('BEGIN');
+    return inPatientTransaction(async (client) => {
       const { id: patientId } = await this.identityRepo.insertNative(safeInput, client);
       await this.upsertRelated(patientId, related, client);
-      await client.query('COMMIT');
-      return { id: patientId, created: true };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return { id: patientId, created: true as const };
+    });
   }
 
   /**
@@ -497,12 +490,7 @@ export class PatientService {
     section: PatientSection,
     data: PatientGeneralSectionData | PatientRelatedInput,
   ): Promise<{ id: string; updated: true }> {
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
-    try {
-      await client.query('BEGIN');
-
+    return inPatientTransaction(async (client) => {
       switch (section) {
         case 'general':
           await this.updateGeneralSection(patientId, data as PatientGeneralSectionData, client);
@@ -548,14 +536,8 @@ export class PatientService {
         }
       }
 
-      await client.query('COMMIT');
-      return { id: patientId, updated: true };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return { id: patientId, updated: true as const };
+    });
   }
 
   private async updateGeneralSection(
@@ -615,11 +597,7 @@ export class PatientService {
       throw new Error(`Invalid patient status: ${String(status)}`);
     }
 
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
-    try {
-      await client.query('BEGIN');
+    return inPatientTransaction(async (client) => {
       const res = await client.query<{ id: string }>(
         'UPDATE patients SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING id',
         [patientId, status],
@@ -627,13 +605,7 @@ export class PatientService {
       if ((res.rowCount ?? 0) === 0) {
         throw new Error(`Patient not found: ${patientId}`);
       }
-      await client.query('COMMIT');
       return { id: patientId, status };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 }

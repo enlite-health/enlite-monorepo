@@ -182,6 +182,9 @@ async function createPatient(): Promise<string> {
       firstName: PATIENT_FIRST,
       lastName: PATIENT_LAST,
       phoneWhatsapp: '+5491100000777',
+      // Obrigatório desde o ABAC de país (fase 1): o país do paciente é
+      // declarado por quem cria, não inferido por default.
+      country: 'AR',
     }),
   });
   const json = await res.json();

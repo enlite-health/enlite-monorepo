@@ -51,11 +51,17 @@ resource "google_cloud_run_v2_service" "this" {
   # Env vars e imagem ficam fora do TF — gerenciadas por gcloud run deploy
   # ou pelo workflow CI/CD. Isso evita drift contínuo entre o que o pipeline
   # escreve e o que está no HCL.
+  #
+  # `template[0].labels` entrou em 13/08/2026 pelo mesmo motivo: o CI carimba
+  # `commit-sha` e `managed-by=github-actions` em cada deploy, e sem ignorá-los
+  # o terraform pedia para APAGAR os dois — jogando fora a única marca de qual
+  # commit está no ar naquele serviço. Rastreabilidade > simetria de HCL.
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
       template[0].containers[0].env,
       template[0].annotations,
+      template[0].labels,
       client,
       client_version,
     ]

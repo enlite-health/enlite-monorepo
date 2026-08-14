@@ -112,12 +112,16 @@ export interface PatientDetail {
 
 /**
  * Body for POST /api/admin/patients — manual creation of a native patient by
- * the admission team (Fase 1 Task 2). Only firstName is required; the rest is
- * filled by the team over time. Must mirror the backend zod validator
+ * the admission team (Fase 1 Task 2). firstName and country are required; the
+ * rest is filled by the team over time. Must mirror the backend zod validator
  * (createPatientSchema) and the CreatePatientUseCase input.
  */
 export interface CreatePatientPayload {
   firstName: string;
+  /** Required — the backend rejects a body without it (400). Drives admission
+   * scheduling AND the legal regime (Ley 25.326 vs LGPD); there is deliberately
+   * no default, so a BR patient is never filed as AR (abac-pais-fase1 5.1). */
+  country: 'AR' | 'BR';
   lastName?: string;
   phoneWhatsapp?: string;
   contactEmail?: string;

@@ -25,10 +25,11 @@ const mockClient = {
 
 const mockGetClient = jest.fn().mockResolvedValue(mockClient);
 
+// Ver PatientService.test.ts: a transação sai de `getPool().connect()` agora.
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn(() => ({
-      getPool:   jest.fn(() => ({})),
+      getPool:   jest.fn(() => ({ connect: mockGetClient })),
       getClient: mockGetClient,
     })),
   },
@@ -261,5 +262,81 @@ describe('PatientService — native write path (migration 251)', () => {
 
     expect(mockReplaceAll).toHaveBeenCalledTimes(1);
     expect(mockReplaceAll.mock.calls[0][0]).toBe('nat-007');
+  });
+
+  // ── f. retry de case_number no caminho NATIVO ─────────────────────────────
+  //
+  // A sentinela `CaseNumberConflictRetry` atravessa a fronteira da transação
+  // (a que bateu na constraint está abortada no Postgres) e o retry abre uma
+  // transação NOVA. O modo de falha disso é silencioso e tem forma de dado —
+  // paciente sem criar, criado 2x, ou sem o CASE_NUMBER_CONFLICT que a operação
+  // usa para filtrar — por isso cada perna tem teste (achado do gate 14/08).
+
+  const CASE_NUMBER_CONFLICT_ERR = Object.assign(new Error('duplicate key'), {
+    code: '23505',
+    constraint: 'patients_case_number_active_unique',
+  });
+
+  it('f1. conflito de case_number → retry em transação NOVA, sem case_number e sinalizado', async () => {
+    mockInsertNative
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR)
+      .mockResolvedValueOnce({ id: 'nat-retry-1', created: true });
+
+    const result = await service.createNativePatient(makeNativeInput({ caseNumber: 4711 }), {
+      origin: 'admin_manual',
+      status: 'ADMISSION',
+    });
+
+    expect(result).toEqual({ id: 'nat-retry-1', created: true });
+    expect(mockInsertNative).toHaveBeenCalledTimes(2);
+
+    // 1ª tentativa levou o case_number pedido; a transação dela deu ROLLBACK.
+    expect((mockInsertNative.mock.calls[0][0] as PatientIdentityNativeInsertInput).caseNumber).toBe(4711);
+    const sqls = mockClient.query.mock.calls.map((c) => String(c[0]));
+    expect(sqls).toContain('ROLLBACK');
+
+    // Retry: SEM case_number, marcado para revisão operacional, e em transação
+    // NOVA (segundo connect no pool — a abortada não serve para mais nada).
+    const retryArg = mockInsertNative.mock.calls[1][0] as PatientIdentityNativeInsertInput;
+    expect(retryArg.caseNumber).toBeNull();
+    expect(retryArg.needsAttention).toBe(true);
+    expect(retryArg.attentionReasons).toContain('CASE_NUMBER_CONFLICT');
+    expect(mockGetClient).toHaveBeenCalledTimes(2);
+    expect(sqls.filter((s) => s === 'COMMIT')).toHaveLength(1);
+  });
+
+  it('f2. erro que NÃO é o conflito de case_number propaga sem retry', async () => {
+    // Mesmo 23505, mas de OUTRA constraint (bloco clínico) — não é o sinal.
+    const otherUnique = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'patient_clinical_pkey',
+    });
+    mockInsertNative.mockRejectedValueOnce(otherUnique);
+
+    await expect(
+      service.createNativePatient(makeNativeInput({ caseNumber: 4711 }), {
+        origin: 'admin_manual',
+        status: 'ADMISSION',
+      }),
+    ).rejects.toBe(otherUnique);
+
+    expect(mockInsertNative).toHaveBeenCalledTimes(1);
+    expect(mockGetClient).toHaveBeenCalledTimes(1); // nenhuma transação extra
+  });
+
+  it('f3. conflito TAMBÉM no retry propaga cru — uma tentativa só, nunca loop', async () => {
+    mockInsertNative
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR)
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR);
+
+    await expect(
+      service.createNativePatient(makeNativeInput({ caseNumber: 4711 }), {
+        origin: 'admin_manual',
+        status: 'ADMISSION',
+      }),
+    ).rejects.toBe(CASE_NUMBER_CONFLICT_ERR);
+
+    // Exatamente 2 tentativas (original + retry) — o retry não re-arma o retry.
+    expect(mockInsertNative).toHaveBeenCalledTimes(2);
   });
 });

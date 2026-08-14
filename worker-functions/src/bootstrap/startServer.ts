@@ -22,6 +22,8 @@ import { buildChatwootClient } from './buildChatwootClient';
 import { PeriskopeNoteService } from '@modules/notification/infrastructure/PeriskopeNoteService';
 import { ChatwootMirrorController } from '@modules/notification/interfaces/controllers/ChatwootMirrorController';
 import { GoogleCalendarService } from '@modules/matching';
+import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
+import { assertDbRoleMembership } from '@shared/database/assertDbRoleMembership';
 
 /** Concretos de mensageria (não o RoutingMessagingService) — TriggerWorkerHandoverUseCase
  *  precisa garantir que AMBOS os canais recebam o envio correspondente, independente
@@ -36,6 +38,15 @@ export async function startServer(
   useCerbos: boolean,
   messagingDeps: StartServerMessagingDeps,
 ): Promise<void> {
+  // ── Gate de boot da RLS de país ──────────────────────────────────────────
+  // Com COUNTRY_RLS_ENABLED=true, sem a membership de app_runtime/app_system o
+  // processo NÃO sobe: melhor a revisão falhar no deploy do que servir tela
+  // vazia. Flag off = nenhuma query (ver assertDbRoleMembership).
+  await assertDbRoleMembership(
+    DatabaseConnection.getInstance().getRawPool(),
+    DatabaseConnection.getInstance().getSystemPool(),
+  );
+
   // ── Partner Auth (sync) ──────────────────────────────────────────────────
   const googleValidator = new GoogleApiKeyValidator();
   const webhookPartnerRepo = new WebhookPartnerRepository();
@@ -108,14 +119,16 @@ export async function startServer(
     console.warn('[startup] CLICKUP_WEBHOOK_SECRET not set — ClickUp webhook route will be unavailable');
   }
 
-  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
-  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
+  // Contexto de SISTEMA declarado (ABAC país, task 3.3): webhook não é staff e
+  // não herda país de ninguém — ele processa os dois países por definição.
+  app.use('/api/webhooks', systemContextMiddleware('webhook:partners'), createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
+  app.use('/api/webhooks-test', systemContextMiddleware('webhook:partners-test'), createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
 
   // Espelho da conversa da Luz (Chatwoot) → NOTA no Periskope, pro time ver e assumir.
   // Configurar um 2º webhook message_created no Chatwoot apontando pra cá (go-live).
   // Gated por PERISKOPE_NOTE_MIRROR_ENABLED — neutro até virar a flag.
   const chatwootMirrorController = new ChatwootMirrorController(new PeriskopeNoteService());
-  app.post('/api/webhooks/chatwoot/mirror', (req, res) => chatwootMirrorController.handle(req, res));
+  app.post('/api/webhooks/chatwoot/mirror', systemContextMiddleware('webhook:chatwoot-mirror'), (req, res) => chatwootMirrorController.handle(req, res));
 
   // ── Start Server ──────────────────────────────────────────────────────────
   const PORT = process.env.PORT || 8080;

@@ -45,6 +45,8 @@ import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastruct
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
+import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
+import { publicContextMiddleware, systemContextMiddleware } from './shared/database/systemContextMiddleware';
 import { noStoreMiddleware } from './shared/http/noStoreMiddleware';
 import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
@@ -104,6 +106,10 @@ app.use(express.urlencoded({ limit: '60mb', extended: true }));
 // Correlation ID: extracts X-Cloud-Trace-Context or generates UUID.
 // Must run before any auth/business middleware.
 app.use(correlationMiddleware);
+
+// Sessão de banco da request (contexto de país da RLS + devolução do client).
+// Depois do correlation (que cria o store do ALS) e antes de qualquer rota.
+app.use(dbSessionMiddleware);
 
 app.use(mockAuthMiddleware);
 
@@ -186,10 +192,15 @@ app.use(
 
 createMockAuthEndpoints(app);
 
-app.post('/api/workers/init', (req: Request, res: Response) => {
+app.post('/api/workers/init', publicContextMiddleware('public:/api/workers/init'), (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
 
+// Contexto público declarado por PREFIXO (não no `use('/api', ...)`, que rodaria
+// para toda request /api/* antes de qualquer auth e mascararia caminho não
+// classificado). Reivindicação de conta é pré-auth: o token vem no body.
+app.use('/api/auth/claim', publicContextMiddleware('public:/api/auth/claim'));
+app.use('/api/account-link/undo', publicContextMiddleware('public:/api/account-link/undo'));
 app.use('/api', createClaimRoutes(claimController));
 
 // Vínculo self-service de contas por colisão de telefone (ACCOUNT_LINK_ENABLED
@@ -206,15 +217,15 @@ const workerLookupRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/workers/lookup', workerLookupRateLimit, (req: Request, res: Response) => {
+app.get('/api/workers/lookup', workerLookupRateLimit, publicContextMiddleware('public:/api/workers/lookup'), (req: Request, res: Response) => {
   workerController.lookupByEmail(req, res);
 });
 
-app.get('/api/vacancies/:id', (req: Request, res: Response) => {
+app.get('/api/vacancies/:id', publicContextMiddleware('public:/api/vacancies/:id'), (req: Request, res: Response) => {
   publicVacancyController.getById(req, res);
 });
 
-app.get('/api/jobs', (req: Request, res: Response) => {
+app.get('/api/jobs', publicContextMiddleware('public:/api/jobs'), (req: Request, res: Response) => {
   jobsController.getJobs(req, res);
 });
 
@@ -226,7 +237,7 @@ const publicJobsRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/public/v1/jobs', publicJobsRateLimit, (req: Request, res: Response) => {
+app.get('/api/public/v1/jobs', publicJobsRateLimit, publicContextMiddleware('public:/api/public/v1/jobs'), (req: Request, res: Response) => {
   publicJobsController.listActiveJobs(req, res);
 });
 
@@ -241,7 +252,7 @@ const publicLeadsRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.post('/api/public/v1/leads', publicLeadsRateLimit, (req: Request, res: Response) => {
+app.post('/api/public/v1/leads', publicLeadsRateLimit, publicContextMiddleware('public:/api/public/v1/leads'), (req: Request, res: Response) => {
   publicLeadsController.createLead(req, res);
 });
 
@@ -272,10 +283,10 @@ const admissionBookRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, (req: Request, res: Response) => {
+app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, publicContextMiddleware('public:/api/public/v1/admission/slots'), (req: Request, res: Response) => {
   admissionSchedulingController.getSlots(req, res);
 });
-app.post('/api/public/v1/admission/book', admissionBookRateLimit, (req: Request, res: Response) => {
+app.post('/api/public/v1/admission/book', admissionBookRateLimit, publicContextMiddleware('public:/api/public/v1/admission/book'), (req: Request, res: Response) => {
   admissionSchedulingController.book(req, res);
 });
 
@@ -308,7 +319,7 @@ app.delete('/api/users/:userId', authMiddleware.requireAuth(), authMiddleware.re
 });
 
 // ========== Service-to-Service Routes ==========
-app.post('/api/internal/workers/webhook', authMiddleware.requireApiKey(), (req: Request, res: Response) => {
+app.post('/api/internal/workers/webhook', authMiddleware.requireApiKey(), systemContextMiddleware('job:workers-webhook'), (req: Request, res: Response) => {
   res.status(200).json({ success: true, message: 'Webhook received' });
 });
 
@@ -331,7 +342,10 @@ app.post('/api/jobs/refresh', authMiddleware.requireAuth(), (req: Request, res: 
 // Bootstrap sem auth por definição (cria o 1º admin). Além do guard interno
 // (countAdmins() > 0 → 403), exige opt-in por env: o guard de count lê o banco,
 // e uma role de runtime sob RLS que enxergasse 0 admins re-armaria a rota.
-app.post('/api/admin/setup', (req: Request, res: Response) => {
+// Bootstrap sem auth: precisa CONTAR admins para se recusar (task 1.6). Sob RLS,
+// sem contexto a contagem viria 0 e o bootstrap se RE-ARMARIA — por isso vai
+// como sistema declarado, além do gate ADMIN_SETUP_ENABLED.
+app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), (req: Request, res: Response) => {
   if (process.env.ADMIN_SETUP_ENABLED !== 'true') {
     res.status(403).json({ success: false, error: 'Setup disabled' });
     return;
@@ -451,7 +465,7 @@ const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService);
-app.use('/api/internal', createInternalRoutes(internalController));
+app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
 // Kept on the app (not the notification router) to avoid a notification→matching
@@ -459,7 +473,7 @@ app.use('/api/internal', createInternalRoutes(internalController));
 const admissionReminderController = new AdmissionReminderController(
   new AdmissionReminderService(twilioMessagingService, dbPool),
 );
-app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, (req: Request, res: Response) =>
+app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),
 );
 
@@ -476,6 +490,13 @@ if (process.env.MCP_ENABLED === 'true') {
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).
-startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService });
+// `.catch` explícito: o boot valida a membership de app_runtime/app_system
+// quando COUNTRY_RLS_ENABLED=true (ver assertDbRoleMembership). Falhou, o
+// processo MORRE — servir com RLS sem grant é servir tela vazia calada, e a
+// revisão anterior do Cloud Run continua atendendo enquanto esta não sobe.
+startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService }).catch((err) => {
+  console.error('[startup] falha fatal ao subir o servidor:', err);
+  process.exit(1);
+});
 
 export { app };

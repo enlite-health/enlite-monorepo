@@ -88,7 +88,7 @@ jobs:
             --min-instances=0
             --max-instances=3
 
-      - name: Verify deploy (health check via gcloud — ingress=internal, sem curl direto)
+      - name: Verify deploy (health check via gcloud; ingress=all + auth app-level desde 039b44d4)
         run: |
           STATUS=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \

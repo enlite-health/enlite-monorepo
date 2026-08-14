@@ -67,6 +67,7 @@ import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
 import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
 import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
 import { logger } from '@shared/logging/Logger';
+import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
 
 /**
  * Mounts the MCP server at /mcp on the Express app.
@@ -112,6 +113,18 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       password: roPassword,
       max: 3,
     });
+    // Erro de client idle não derruba o processo (mesmo padrão do
+    // DatabaseConnection): sem este handler, o `error` sem listener no pg-pool
+    // vira exceção não tratada e mata o servidor INTEIRO quando o Cloud SQL
+    // encerra uma conexão ociosa — e este pool fica ocioso quase sempre.
+    roPool.on('error', (err) => {
+      logger.error({ err: err.message }, 'mcp: erro em client idle do pool read-only (não fatal)');
+    });
+    // FORA do roteamento por contexto de request, por DESIGN: este pool tem
+    // identidade própria (`MCP_DB_RO_USER`, read-only), que é justamente a
+    // defesa em profundidade da capability de SQL ad-hoc. Passá-lo pelo
+    // `createRlsAwarePool` o faria emprestar o client — e a identidade — da
+    // request, jogando fora a garantia de "sem escrita".
     readonlyDbCapability = new DbQueryReadonlyCapability(new ReadonlyDbQueryService(roPool));
   }
 
@@ -209,6 +222,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
 
   app.use(
     '/mcp',
+    // Capability MCP (Luz, conector claude.ai) é contexto de SISTEMA declarado:
+    // o isolamento dela é por worker_id/allowlist, não por país (ABAC task 3.3).
+    systemContextMiddleware('mcp:enlite-worker-mcp'),
     createMcpRoutes({
       principalRepo,
       auditor,
