@@ -45,6 +45,12 @@ export function resolveActor(override?: ActorContext | null): ActorContext | nul
  * cru — não é o client fixado da request, então ele chega sem contexto e não
  * pode levar contexto embora ao ser devolvido.
  *
+ * A IDENTIDADE da conexão vem do `connect()` do pool recebido: quem passa o pool
+ * de `getPool()` (todos os call sites de produção) recebe, sob contexto
+ * `system`/`public`, um client do pool de sistema — sem isso a transação sairia
+ * como `app_runtime` e o `app.system_context` não valeria nada. Ver
+ * `rlsAwarePool.ts`.
+ *
  * Sem contexto declarado (job legado ainda não classificado) a transação roda
  * como sempre: sob RLS isso é fail-closed (zero linhas), nunca permissivo.
  */

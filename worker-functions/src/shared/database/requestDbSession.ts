@@ -13,11 +13,19 @@
  * eliminar (basta esquecer um). Então o contexto vive no ALS da request e o pool
  * devolvido por `getPool()` o aplica sozinho (ver `rlsAwarePool.ts`).
  *
- * O client é FIXADO na primeira query da request (`session.client`) porque os
+ * O client é FIXADO na primeira query da request (um slot por pool) porque os
  * GUCs valem por CONEXÃO: sem fixar, a segunda query poderia sair por outro
  * client do pool, sem contexto. Ao fim da request o middleware limpa os GUCs e
  * devolve o client; se a limpeza falhar, o client é DESTRUÍDO em vez de voltar
  * ao pool — nunca devolver conexão que ainda carrega o país de alguém.
+ *
+ * DUAS IDENTIDADES (task 3.2): a classe da request escolhe de QUAL pool o client
+ * sai — `staff`/`worker_self` do pool de runtime (`app_runtime`, confinado ao
+ * país), `system`/`public` do pool de sistema (`app_system`, o atalho declarado).
+ * A sessão guarda um slot POR POOL, então uma request que troca de contexto no
+ * meio (webhook que chama `withSystemDbContext`) não reaproveita o client errado
+ * nem devolve conexão para o pool errado. Quando os dois pools são o MESMO
+ * objeto (envs de sistema ausentes = configuração de hoje), há um slot só.
  *
  * Nada disso muda comportamento enquanto `COUNTRY_RLS_ENABLED` != 'true': o pool
  * segue passando as queries direto (a virada é a task 4.x).
@@ -43,6 +51,21 @@ export function isCountryCode(value: unknown): value is CountryCode {
  */
 export type DbSessionKind = 'staff' | 'worker_self' | 'system' | 'public';
 
+/** Identidade de banco usada pela request. */
+export type DbPoolRole = 'runtime' | 'system';
+
+/**
+ * Classe da request → identidade de banco.
+ *
+ * `worker_self` fica no pool de RUNTIME de propósito (decisão de design v1): o
+ * prestador não é membro de `app_system`, então sob RLS ele é fail-closed nas
+ * tabelas protegidas. Dar-lhe o atalho de sistema resolveria a tela às custas de
+ * abrir os dois países para o público — o oposto do que a change existe pra fazer.
+ */
+export function dbPoolRoleFor(kind: DbSessionKind | undefined): DbPoolRole {
+  return kind === 'system' || kind === 'public' ? 'system' : 'runtime';
+}
+
 export interface DbSessionContext {
   kind: DbSessionKind;
   /** `firebase_uid` — casa com `user_groups.user_id` na policy de grant. */
@@ -53,12 +76,21 @@ export interface DbSessionContext {
   systemContext?: string;
 }
 
-/** Estado vivo da sessão de banco da request (o client fixado mora aqui). */
-export interface DbSession {
-  context?: DbSessionContext;
+/** Client fixado de UM pool (a sessão pode ter um por identidade). */
+export interface DbSessionSlot {
   client?: PoolClient;
   /** Aquisição em voo — memoizada para queries concorrentes não pegarem 2 clients. */
   acquiring?: Promise<PoolClient>;
+}
+
+/** Estado vivo da sessão de banco da request (os clients fixados moram aqui). */
+export interface DbSession {
+  context?: DbSessionContext;
+  /**
+   * Um slot por POOL (não por classe): pools idênticos — a configuração de hoje,
+   * sem envs de sistema — compartilham o mesmo slot e a mesma conexão.
+   */
+  slots?: Map<Pool, DbSessionSlot>;
   released: boolean;
   /** Já avisamos que esta request consultou o banco sem classificação? (1 log por request) */
   warnedUnclassified?: boolean;
@@ -106,15 +138,32 @@ export function setDbContext(context: DbSessionContext): void {
   session.context = context;
 }
 
+function slotFor(session: DbSession, pool: Pool): DbSessionSlot {
+  if (!session.slots) session.slots = new Map();
+  let slot = session.slots.get(pool);
+  if (!slot) {
+    slot = {};
+    session.slots.set(pool, slot);
+  }
+  return slot;
+}
+
+/** Client já fixado para este pool nesta sessão (introspecção e testes). */
+export function sessionClientFor(session: DbSession, pool: Pool): PoolClient | undefined {
+  return session.slots?.get(pool)?.client;
+}
+
 /**
- * Aplica o contexto no client e o fixa na sessão. Concorrência: a promessa de
- * aquisição é memoizada, então `Promise.all` de queries usa UM client só.
+ * Aplica o contexto no client e o fixa na sessão, no slot DESTE pool.
+ * Concorrência: a promessa de aquisição é memoizada por slot, então
+ * `Promise.all` de queries da mesma identidade usa UM client só.
  */
 export async function acquireSessionClient(pool: Pool, session: DbSession): Promise<PoolClient> {
-  if (session.client) return session.client;
-  if (session.acquiring) return session.acquiring;
+  const slot = slotFor(session, pool);
+  if (slot.client) return slot.client;
+  if (slot.acquiring) return slot.acquiring;
 
-  session.acquiring = (async () => {
+  slot.acquiring = (async () => {
     const client = await pool.connect();
     try {
       const ctx = session.context;
@@ -129,36 +178,43 @@ export async function acquireSessionClient(pool: Pool, session: DbSession): Prom
     } catch (err) {
       // Client sem contexto aplicado não volta pro pool: destrói.
       client.release(true);
-      session.acquiring = undefined;
+      slot.acquiring = undefined;
       throw err;
     }
-    session.client = client;
-    session.acquiring = undefined;
+    slot.client = client;
+    slot.acquiring = undefined;
     return client;
   })();
 
-  return session.acquiring;
+  return slot.acquiring;
 }
 
 /**
- * Fim da request: limpa os GUCs e devolve o client. Falhou a limpeza? o client é
- * DESTRUÍDO (`release(true)`) — devolver ao pool uma conexão que ainda carrega
- * país seria vazamento entre requests, a falha que esta change existe pra evitar.
+ * Fim da request: limpa os GUCs e devolve CADA client fixado ao SEU pool.
+ * Falhou a limpeza? o client é DESTRUÍDO (`release(true)`) — devolver ao pool
+ * uma conexão que ainda carrega país seria vazamento entre requests, a falha que
+ * esta change existe pra evitar.
  */
 export async function releaseDbSession(session: DbSession): Promise<void> {
   if (session.released) return;
   session.released = true;
 
-  if (session.acquiring) {
+  const slots = session.slots ? [...session.slots.values()] : [];
+  session.slots = undefined;
+  await Promise.all(slots.map((slot) => releaseSlot(session, slot)));
+}
+
+async function releaseSlot(session: DbSession, slot: DbSessionSlot): Promise<void> {
+  if (slot.acquiring) {
     try {
-      await session.acquiring;
+      await slot.acquiring;
     } catch {
       /* a aquisição já destruiu o client dela */
     }
   }
 
-  const client = session.client;
-  session.client = undefined;
+  const client = slot.client;
+  slot.client = undefined;
   if (!client) return;
 
   try {
@@ -186,6 +242,11 @@ export async function releaseDbSession(session: DbSession): Promise<void> {
  * client no fim. `label` vai inteiro para `app.system_context` e aparece no
  * `resource_access_log` — usar `job:<nome>` / `webhook:<parceiro>` /
  * `public:<rota>`, nunca vazio (a policy exige valor não-vazio).
+ *
+ * O contexto anterior é RESTAURADO ao sair. Com dois pools isso deixou de ser
+ * cosmético: sem restaurar, uma request de staff que gravasse a trilha de acesso
+ * no meio do caminho passaria a rotear TODAS as queries seguintes pelo pool de
+ * sistema — staff lendo os dois países por efeito colateral de auditoria.
  */
 export async function withSystemDbContext<T>(label: string, fn: () => Promise<T>): Promise<T> {
   if (!label.trim()) {
@@ -198,8 +259,13 @@ export async function withSystemDbContext<T>(label: string, fn: () => Promise<T>
   // reusá-la mandaria a query pro pool cru, sem contexto — zero linha sob RLS.
   const existing = currentDbSession();
   if (existing && !existing.released) {
+    const previous = existing.context;
     existing.context = context;
-    return fn();
+    try {
+      return await fn();
+    } finally {
+      existing.context = previous;
+    }
   }
 
   const session: DbSession = { context, released: false };
