@@ -68,6 +68,7 @@ describe('AdminPatientsController.createPatient', () => {
 
       const body = {
         firstName: 'Juan',
+        country: 'AR',
         lastName: 'Pérez',
         phoneWhatsapp: '+5491100000000',
         contactEmail: 'juan@example.com',
@@ -85,15 +86,28 @@ describe('AdminPatientsController.createPatient', () => {
       expect(execute).toHaveBeenCalledWith(expect.objectContaining(body));
     });
 
-    it('deve aceitar apenas firstName (demais campos opcionais)', async () => {
+    it('deve aceitar apenas firstName + country (demais campos opcionais)', async () => {
       const execute = jest.fn().mockResolvedValue({ id: 'pat-002' });
       const controller = makeController(execute);
 
-      const [req, res] = mockReqRes({ firstName: 'Ana' });
+      const [req, res] = mockReqRes({ firstName: 'Ana', country: 'AR' });
       await controller.createPatient(req, res);
 
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ firstName: 'Ana' }));
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({ firstName: 'Ana', country: 'AR' }),
+      );
+    });
+
+    it('deve repassar country=BR ao use-case sem trocar por AR', async () => {
+      const execute = jest.fn().mockResolvedValue({ id: 'pat-003' });
+      const controller = makeController(execute);
+
+      const [req, res] = mockReqRes({ firstName: 'João', country: 'BR' });
+      await controller.createPatient(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ country: 'BR' }));
     });
   });
 
@@ -102,7 +116,7 @@ describe('AdminPatientsController.createPatient', () => {
       const execute = jest.fn();
       const controller = makeController(execute);
 
-      const [req, res] = mockReqRes({ lastName: 'Pérez' });
+      const [req, res] = mockReqRes({ lastName: 'Pérez', country: 'AR' });
       await controller.createPatient(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
@@ -114,12 +128,48 @@ describe('AdminPatientsController.createPatient', () => {
     });
   });
 
+  // abac-pais-fase1 task 5.1 — the admin create path used to hardcode 'AR' at
+  // the use-case edge. A body with no country must now 400 visibly instead of
+  // silently persisting a possibly-BR patient as AR (spec country-isolation).
+  describe('Cenário 2b — country ausente ou inválido', () => {
+    it('deve retornar 400 Invalid body quando country falta, e NÃO chamar o use-case', async () => {
+      const execute = jest.fn();
+      const controller = makeController(execute);
+
+      const [req, res] = mockReqRes({ firstName: 'Juan' });
+      await controller.createPatient(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = (res as any).json.mock.calls[0][0];
+      expect(payload).toMatchObject({ success: false, error: 'Invalid body' });
+      expect(payload.details.fieldErrors.country).toEqual([
+        'country is required and must be one of AR, BR',
+      ]);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('deve retornar 400 para um country fora de AR|BR', async () => {
+      const execute = jest.fn();
+      const controller = makeController(execute);
+
+      const [req, res] = mockReqRes({ firstName: 'Juan', country: 'UY' });
+      await controller.createPatient(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Cenário 3 — contactEmail inválido', () => {
     it('deve retornar 400 quando contactEmail não é email', async () => {
       const execute = jest.fn();
       const controller = makeController(execute);
 
-      const [req, res] = mockReqRes({ firstName: 'Juan', contactEmail: 'not-an-email' });
+      const [req, res] = mockReqRes({
+        firstName: 'Juan',
+        country: 'AR',
+        contactEmail: 'not-an-email',
+      });
       await controller.createPatient(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
@@ -130,7 +180,11 @@ describe('AdminPatientsController.createPatient', () => {
       const execute = jest.fn();
       const controller = makeController(execute);
 
-      const [req, res] = mockReqRes({ firstName: 'Juan', serviceType: ['NOT_A_ROLE'] });
+      const [req, res] = mockReqRes({
+        firstName: 'Juan',
+        country: 'AR',
+        serviceType: ['NOT_A_ROLE'],
+      });
       await controller.createPatient(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
@@ -145,7 +199,7 @@ describe('AdminPatientsController.createPatient', () => {
         .mockRejectedValue(new PatientContactValidationError('Validação de contato: falta canal'));
       const controller = makeController(execute);
 
-      const [req, res] = mockReqRes({ firstName: 'Juan' });
+      const [req, res] = mockReqRes({ firstName: 'Juan', country: 'AR' });
       await controller.createPatient(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
@@ -161,7 +215,7 @@ describe('AdminPatientsController.createPatient', () => {
       const execute = jest.fn().mockRejectedValue(new Error('DB down'));
       const controller = makeController(execute);
 
-      const [req, res] = mockReqRes({ firstName: 'Juan' });
+      const [req, res] = mockReqRes({ firstName: 'Juan', country: 'AR' });
       await controller.createPatient(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);

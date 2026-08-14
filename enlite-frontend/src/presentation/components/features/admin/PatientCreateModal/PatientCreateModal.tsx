@@ -13,6 +13,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 
 interface PatientCreateModalProps {
   onClose: () => void;
@@ -24,10 +25,16 @@ const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
 const SERVICE_TYPES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 const CLOSE_MS = 300;
 
-// Mirrors the backend zod validator (createPatientSchema). Only firstName is
-// required; empty optional strings are coerced to undefined so we never send "".
+// Mirrors the backend zod validator (createPatientSchema). firstName and
+// country are required; empty optional strings are coerced to undefined so we
+// never send "". `country` has no default on purpose — it drives the legal
+// regime (Ley 25.326 vs LGPD) and the panel's country filter, so the operator
+// must choose it rather than have a BR patient silently filed as AR
+// (abac-pais-fase1 5.1). The empty placeholder fails the enum, showing the
+// inline error instead of posting a body the backend would 400 anyway.
 const createSchema = z.object({
   firstName: z.string().trim().min(1),
+  country: z.enum(['AR', 'BR']),
   lastName: z.string().trim().optional(),
   phoneWhatsapp: z.string().trim().optional(),
   contactEmail: z.union([z.literal(''), z.string().trim().email()]).optional(),
@@ -64,6 +71,9 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     resolver: zodResolver(createSchema),
     defaultValues: {
       firstName: '',
+      // No preselected country on purpose — the operator must pick one, so a BR
+      // patient is never filed as AR by inertia (abac-pais-fase1 5.1).
+      country: undefined,
       lastName: '',
       phoneWhatsapp: '',
       contactEmail: '',
@@ -100,6 +110,9 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     value: s,
     label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
   }));
+  // Same AR|BR source the panel's country FILTER uses, so the values a patient
+  // can be created with always match the values it can be filtered by.
+  const countryOptions: SelectOption[] = getCountryOptions(t);
 
   const onSubmit = async (values: CreateFormValues): Promise<void> => {
     setSubmitError(null);
@@ -111,6 +124,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     };
     const payload: CreatePatientPayload = {
       firstName: values.firstName.trim(),
+      country: values.country,
       lastName: clean(values.lastName),
       phoneWhatsapp: clean(values.phoneWhatsapp),
       contactEmail: clean(values.contactEmail),
@@ -187,6 +201,28 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             </FormField>
             <FormField label={tc('lastName')} htmlFor="pc-lastName" optional>
               <InputWithIcon id="pc-lastName" inputSize="compact" data-testid="pc-lastName" {...register('lastName')} />
+            </FormField>
+            {/* Required, no preselection — drives the legal regime (Ley 25.326 vs
+                LGPD) and the panel's country filter (abac-pais-fase1 5.1). */}
+            {/* The message is rendered by SelectField (which also reddens the
+                border); passing it to FormField too would print it twice. */}
+            <FormField label={tc('country')} htmlFor="pc-country" required>
+              <Controller
+                control={control}
+                name="country"
+                render={({ field }) => (
+                  <SelectField
+                    id="pc-country"
+                    inputSize="compact"
+                    options={countryOptions}
+                    placeholder={tc('countryPlaceholder')}
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    error={errors.country ? tc('countryRequired') : undefined}
+                    data-testid="pc-country"
+                  />
+                )}
+              />
             </FormField>
             <FormField label={tc('phoneWhatsapp')} htmlFor="pc-phone" optional>
               <InputWithIcon id="pc-phone" inputSize="compact" data-testid="pc-phone" {...register('phoneWhatsapp')} />
