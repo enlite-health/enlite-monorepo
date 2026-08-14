@@ -62,7 +62,12 @@ jobs:
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
-            DB_USER=enlite_app
+            # ── ABAC país (4.1): o MCP é 100% sistema (D112) — identidade única
+            # enlite_system; o assert de boot espera app_system aqui.
+            DB_USER=enlite_system
+            COUNTRY_RLS_ENABLED=true
+            ABAC_MAIN_POOL_ROLE=app_system
+            DB_POOL_MAX=2
             MCP_PRINCIPAL_NAMES=triage-service,claude-code
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
@@ -72,7 +77,7 @@ jobs:
             FIREBASE_WEB_AUTH_DOMAIN=enlite-stg.firebaseapp.com
             ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
           secrets: |
-            DB_PASSWORD=enlite-ar-db-password:latest
+            DB_PASSWORD=enlite-system-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             MCP_OAUTH_SIGNING_KEY=mcp-oauth-signing-key:latest
             MCP_DB_RO_PASSWORD=enlite-mcp-ro-db-password:latest
