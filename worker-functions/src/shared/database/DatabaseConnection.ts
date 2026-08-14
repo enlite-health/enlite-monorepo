@@ -6,7 +6,12 @@ const DEFAULT_POOL_MAX = 20;
 /** `DB_SYSTEM_POOL_MAX` — cron/webhook/público são poucos e curtos. */
 const DEFAULT_SYSTEM_POOL_MAX = 5;
 
-function poolMax(envVar: string, fallback: number): number {
+/**
+ * Tamanho de pool vindo de env, com fallback seguro (valor não-numérico ou ≤0
+ * cai no default — dimensionamento errado não pode derrubar o boot). Exportado
+ * para os pools fora desta classe (ex.: o RO do MCP) usarem a MESMA regra.
+ */
+export function poolMax(envVar: string, fallback: number): number {
   const raw = process.env[envVar];
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
