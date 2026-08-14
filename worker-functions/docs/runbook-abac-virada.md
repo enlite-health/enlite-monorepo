@@ -126,9 +126,34 @@ itens da lista de MEDIUMs abertos do review — eles afetam o INSTRUMENTO da vir
 - NO-GO em qualquer linha → rollback 1.R e diagnosticar. O item 9 tem fallback
   pré-aprovado no design.md (policy sargável por `app.allowed_countries`).
 
-### 1.R Rollback QA
-Reverter o commit do YAML na `stage` (volta `enlite_app` + flag off) → push → deploy.
+### 1.R Rollback QA — **ENSAIADO em 14/08, com 3 aprendizados que mudam o procedimento**
+
+O ensaio real (flip → rollback → roll-forward, revisões 00053→00056→00057) provou que o
+procedimento ingênuo ("reverter o commit e push") **NÃO funciona**, por três razões:
+
+1. **`git revert` sozinho não desliga nada.** O `deploy-cloudrun` fazia MERGE de
+   `env_vars`: chave removida do YAML **persistia** da revisão anterior. O revert criou uma
+   revisão híbrida (`enlite_app` + flag e `DB_SYSTEM_USER` herdadas) que o assert de boot
+   recusou — o tráfego nunca saiu da revisão boa (fail-closed protegendo), mas o rollback
+   não rolava. **Consertado na raiz**: os workflows de stg têm
+   `env_vars_update_strategy: overwrite` + `secrets_update_strategy: overwrite` — o YAML é
+   o conjunto COMPLETO. (⚠️ prd ainda NÃO tem overwrite — adicionar na fase 4, no mesmo
+   commit do flip de prd.)
+2. **Rollback é commit de VALORES EXPLÍCITOS, não revert cego.** Revert de cadeia dá
+   conflito com commits vizinhos; o que funciona é editar o YAML para o estado-alvo
+   (`DB_USER=enlite_app`, `DB_PASSWORD=enlite-ar-db-password:latest`, remover
+   `DB_SYSTEM_*`/`COUNTRY_RLS_ENABLED`/`*_POOL_MAX`/`ABAC_MAIN_POOL_ROLE`) e commitar.
+3. **O commit de rollback DEVE tocar `worker-functions/**`** (ex.: nota neste runbook):
+   o workflow tem `paths: worker-functions/**` e o job de deploy tem
+   `if: github.event_name == 'push'` — commit só de YAML não dispara, e
+   `workflow_dispatch` pula o deploy.
+
+Passos provados: editar YAMLs para os valores pré-flip + tocar `worker-functions/**` →
+push na `stage` → aguardar deploy → conferir `DB_USER=enlite_app` e ZERO env de
+RLS/system na revisão nova + health 200. O MCP tem rollback PRÓPRIO (mesmos valores no
+`backend-mcp-stg.yml`) e deploy por `gh workflow run backend-mcp-stg.yml --ref stage`.
 Nada no banco precisa mudar (ENABLE sem FORCE é inerte para o owner).
+Em PRD, executar isto é **evento de segurança** (lex C5) — registro obrigatório.
 
 ## FASE 2 — promover as migrations 268-273 para o `main`
 Só depois do gate 1.4 inteiro verde + janela de observação em QA (mínimo 48h úteis).
