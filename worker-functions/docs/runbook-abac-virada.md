@@ -117,6 +117,13 @@ Editar `.github/workflows/backend-stg.yml` (e `backend-mcp-stg.yml`):
 | 9 | **EXPLAIN ANALYZE das listagens quentes vs `baseline-1.4.md`** | **p95 +≤5%** |
 | 10 | logs 24-48h: `request consultou o banco sem contexto declarado` | investigar CADA um |
 
+Achado do smoke ampliado (14/08, NÃO-RLS): `GET /api/admin/workers` dava 500 em QA por
+`PERMISSION_DENIED` no KMS — o keyring `enlite-keyring` **não existe** em enlite-stg e os
+11 workers do QA são seeds em formato passthrough (base64 puro, sem PII). Config correta
+do ambiente: `USE_KMS_ENCRYPTION=false` no `backend-stg.yml` (KMS real fica para prod,
+onde a chave e o dado existem). Nada a ver com a RLS — a SA e o caminho KMS não mudaram
+no flip.
+
 ⚠️ **Silêncio no item 10 NÃO é prova de limpo** (achado do gate 14/08): o detector é cego a
 tudo fora de request — handlers de outbox/domain-events abrem ALS próprio sem `dbSession` e
 **não aparecem** neste log; e o `sanitizeRoute` colapsa segmento legítimo ≥20 chars em `:id`
