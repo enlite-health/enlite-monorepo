@@ -187,3 +187,4 @@ no banco (inertes de novo) — não dropar nada no rollback.
 - [ ] rollback ensaiado em QA pelo menos 1 vez (1.R executado de verdade)
 - [ ] lex re-rodado sobre o estado final (task 6.1)
 — ROLLBACK DRILL 1.R executado em 14/08/2026 (ver runbook-abac-virada §1.R)
+— ROLL-FORWARD do drill executado em 14/08/2026: flip restaurado
