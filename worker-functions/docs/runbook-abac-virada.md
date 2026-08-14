@@ -148,6 +148,19 @@ procedimento ingênuo ("reverter o commit e push") **NÃO funciona**, por três 
    `if: github.event_name == 'push'` — commit só de YAML não dispara, e
    `workflow_dispatch` pula o deploy.
 
+4. **(gate 1.4, 14/08) Valor de env com VÍRGULA não sobrevive ao action.** O
+   deploy-cloudrun separa `env_vars` por vírgula sem escapar valores:
+   `MCP_PRINCIPAL_NAMES=triage-service,claude-code` virou `…=triage-service` + env
+   fantasma `claude-code=` (por isso o bearer do claude-code dava 401 no MCP stg).
+   O MESMO estrago está vivo em `ALLOWED_MEDIA_HOSTS` (stg e prd) — hoje só
+   `api.twilio.com` vale, `*.twilio.com`/`chatwoot.enlite.health` viraram envs
+   fantasmas. Corrigir junto com a fase 4. Regra: valor de env em workflow NUNCA
+   leva vírgula.
+5. **(gate 1.4, 14/08) O deploy do MCP stg REUSA a imagem do `backend-stg.yml` no
+   MESMO SHA.** Commit que não toca `worker-functions/**` não builda imagem → o
+   `gh workflow run backend-mcp-stg.yml` falha com `Image not found`. Ordem: commit
+   tocando `worker-functions/**` → esperar o build do backend-stg → dispatch do MCP.
+
 Passos provados: editar YAMLs para os valores pré-flip + tocar `worker-functions/**` →
 push na `stage` → aguardar deploy → conferir `DB_USER=enlite_app` e ZERO env de
 RLS/system na revisão nova + health 200. O MCP tem rollback PRÓPRIO (mesmos valores no
