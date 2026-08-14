@@ -64,6 +64,11 @@ jobs:
           # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
           # tirou a flag do YAML, a revisão nasceu com enlite_app + flag herdada e o
           # assert de boot recusou). Rollback só funciona com overwrite.
+          # ⚠️ Valor de env com VÍRGULA não sobrevive ao parseKVString do action:
+          # "MCP_PRINCIPAL_NAMES=triage-service,claude-code" virou
+          # MCP_PRINCIPAL_NAMES=triage-service + env fantasma "claude-code=" (visto
+          # no gcloud do run 31821260708, 14/08). Por isso o valor abaixo é single —
+          # e triage-service nem tem secret mcp-principal-* no stg (só ruído de log).
           env_vars_update_strategy: overwrite
           secrets_update_strategy: overwrite
           env_vars: |
@@ -77,7 +82,7 @@ jobs:
             ABAC_MAIN_POOL_ROLE=app_system
             DB_POOL_MAX=2
             MCP_DB_RO_POOL_MAX=1
-            MCP_PRINCIPAL_NAMES=triage-service,claude-code
+            MCP_PRINCIPAL_NAMES=claude-code
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
