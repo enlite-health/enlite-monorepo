@@ -25,7 +25,8 @@
 import type { Pool, PoolClient } from 'pg';
 import { loggingAls } from '@shared/logging';
 import type { ActorContext } from '@shared/audit/actorSource';
-import { currentDbContext } from './requestDbSession';
+import { currentDbContext, currentDbSession, sessionClientFor } from './requestDbSession';
+import { routedPoolFor } from './rlsAwarePool';
 
 /**
  * Ator do contexto atual: o explícito ganha do que veio da request (ALS).
@@ -41,9 +42,11 @@ export function resolveActor(override?: ActorContext | null): ActorContext | nul
 /**
  * Carimba o contexto de PAÍS na transação (ABAC Fase 1, task 3.1).
  *
- * `SET LOCAL` (`set_config(..., true)`) porque o client da transação vem do pool
- * cru — não é o client fixado da request, então ele chega sem contexto e não
- * pode levar contexto embora ao ser devolvido.
+ * `SET LOCAL` (`set_config(..., true)`) porque o client da transação pode vir do
+ * pool cru — aí ele chega sem contexto e não pode levar contexto embora ao ser
+ * devolvido. Quando o client É o fixado da request (que já tem os GUCs no escopo
+ * de sessão), reaplicar LOCAL é idempotente: mesmos valores, revertidos ao valor
+ * de sessão no COMMIT.
  *
  * A IDENTIDADE da conexão vem do `connect()` do pool recebido: quem passa o pool
  * de `getPool()` (todos os call sites de produção) recebe, sob contexto
@@ -66,8 +69,36 @@ async function applyCountryContext(client: PoolClient): Promise<void> {
 }
 
 /**
+ * Client que a request JÁ tem fixado no pool para onde este contexto roteia —
+ * ou `undefined` (sem sessão viva, sem client fixado, flag off).
+ *
+ * ⚠️ BLOCKER-3 (deadlock de pool): a request de leitura FIXA um client até o
+ * `finish` da resposta. Se a escrita no meio dela pedisse um SEGUNDO client
+ * (`pool.connect()`), cada request em voo consumiria duas conexões — com
+ * `DB_POOL_MAX=20` e concorrência maior que 10, as escritas passariam a morrer
+ * em `connectionTimeoutMillis` sem que nada no código parecesse errado.
+ */
+function pinnedClientFor(pool: Pool): PoolClient | undefined {
+  const session = currentDbSession();
+  if (!session || session.released) return undefined;
+  return sessionClientFor(session, routedPoolFor(pool));
+}
+
+/**
  * Abre transação, carimba o ator e roda `fn`. Commit no sucesso, rollback em
  * qualquer erro (o erro é repropagado — quem chama decide o que fazer).
+ *
+ * Se a request já tem um client fixado no pool roteado, a transação roda NELE e
+ * o client NÃO é devolvido aqui (ele pertence à sessão; quem devolve é o
+ * `dbSessionMiddleware` no fim da request).
+ *
+ * TRADE-OFF ACEITO ao reusar o client fixado: as leituras soltas da mesma
+ * request passam a rodar DENTRO desta transação (o `pg` serializa por conexão),
+ * então um erro delas aborta a transação da escrita. É aceitável porque o
+ * handler Express é sequencial por padrão — a leitura concorrente com a escrita
+ * na mesma request é a exceção, não a regra — e porque a alternativa (segunda
+ * conexão por request) é o esgotamento de pool descrito acima. A medição de
+ * concorrência real é gate da task 4.1 (staging).
  *
  * @param actor ator explícito; omitido, usa o da request (ALS).
  */
@@ -77,7 +108,8 @@ export async function withActorContext<T>(
   actor?: ActorContext | null,
 ): Promise<T> {
   const resolved = resolveActor(actor);
-  const client = await pool.connect();
+  const pinned = pinnedClientFor(pool);
+  const client = pinned ?? (await pool.connect());
   try {
     await client.query('BEGIN');
     if (resolved) {
@@ -96,6 +128,7 @@ export async function withActorContext<T>(
     }
     throw err;
   } finally {
-    client.release();
+    // Client da sessão não se devolve aqui: ele é da request, não da transação.
+    if (!pinned) client.release();
   }
 }

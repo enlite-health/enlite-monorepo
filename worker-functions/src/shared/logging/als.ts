@@ -21,6 +21,18 @@ export interface LogContext {
    * ciclo com este módulo.
    */
   dbSession?: DbSession;
+  /**
+   * Método HTTP e rota SANITIZADA da request (`GET /api/admin/patients/:id`),
+   * preenchidos pelo `dbSessionMiddleware`. Existem para o aviso de request sem
+   * contexto declarado dizer QUAL endpoint precisa ser classificado antes da
+   * virada da RLS — sem eles, o log da task 4.2 é uma pilha de avisos idênticos.
+   *
+   * A rota é sanitizada na origem (ids, telefones e afins viram `:id`): o que
+   * interessa aqui é o endpoint, e um `/dedup/groups/<telefone>` no log seria
+   * PII em texto claro.
+   */
+  requestMethod?: string;
+  requestRoute?: string;
 }
 
 export const loggingAls = new AsyncLocalStorage<LogContext>();

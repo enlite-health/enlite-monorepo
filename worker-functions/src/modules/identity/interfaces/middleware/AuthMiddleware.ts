@@ -403,6 +403,13 @@ export class AuthMiddleware {
 
   /**
    * Require API Key authentication (for service-to-service)
+   *
+   * A classificação de banco é de SISTEMA, igual à do `requireStaffOrApiKey`
+   * (design, decisão 2): chave de API é serviço, não pessoa — não tem
+   * jurisdição própria e não pode herdar a de ninguém. Sem este carimbo o
+   * `requireAuth` abaixo classificaria a request como `worker_self` (o principal
+   * de serviço não tem papel de staff), que sob RLS é fail-closed: o parceiro
+   * passaria a ler zero linha sem nenhum erro visível.
    */
   requireApiKey() {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -416,8 +423,13 @@ export class AuthMiddleware {
         return;
       }
 
-      // Continue with normal auth flow
-      return this.requireAuth()(req, res, next);
+      // Continue with normal auth flow — o contexto é reescrito DEPOIS que a
+      // autenticação passa (o requireAuth carimba worker_self/staff no caminho).
+      return this.requireAuth()(req, res, () => {
+        const principalId = (req as Request).authContext?.principal?.id ?? 'unknown';
+        setDbContext({ kind: 'system', systemContext: `api-key:${principalId}` });
+        next();
+      });
     };
   }
 

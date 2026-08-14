@@ -13,12 +13,32 @@ import type { Request, Response, NextFunction } from 'express';
 import { loggingAls, logger } from '@shared/logging';
 import { releaseDbSession, type DbSession } from './requestDbSession';
 
-export function dbSessionMiddleware(_req: Request, res: Response, next: NextFunction): void {
+/** Segmento que identifica UMA pessoa/registro (uuid, número, telefone, token). */
+const IDENTIFIER_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[+%\d][\d+%._-]*|[0-9a-zA-Z_-]{20,})$/i;
+
+/**
+ * Rota sem identificadores: `/api/admin/patients/<uuid>` → `/api/admin/patients/:id`.
+ *
+ * O aviso de request não classificada (rlsAwarePool) precisa dizer QUAL endpoint
+ * é — mas o path cru carrega id de paciente e até telefone (`/dedup/groups/
+ * <telefone>`), que não pode ir para o Cloud Logging. Sanitizar na origem é o
+ * único ponto em que dá para garantir isso uma vez só.
+ */
+export function sanitizeRoute(path: string): string {
+  return path
+    .split('/')
+    .map((segment) => (IDENTIFIER_SEGMENT.test(segment) ? ':id' : segment))
+    .join('/');
+}
+
+export function dbSessionMiddleware(req: Request, res: Response, next: NextFunction): void {
   const store = loggingAls.getStore();
   if (!store) return next();
 
   const session: DbSession = { released: false };
   store.dbSession = session;
+  store.requestMethod = req.method;
+  store.requestRoute = sanitizeRoute(req.path);
 
   const release = (): void => {
     void releaseDbSession(session).catch((err) => {

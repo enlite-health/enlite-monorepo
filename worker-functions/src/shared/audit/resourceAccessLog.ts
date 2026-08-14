@@ -17,6 +17,7 @@
  *    RLS um paciente de outro país É 404. Tentativa frustrada não é acesso.
  */
 
+import { createHash } from 'crypto';
 import type { Request, RequestHandler, Response } from 'express';
 import { logger } from '@shared/logging';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -25,11 +26,27 @@ import { currentDbContext, withSystemDbContext, type DbSessionContext } from '@s
 export type ResourceType = 'patient' | 'worker';
 export type AccessOrigin = 'same_country' | 'group_grant' | 'system';
 
+/** Rótulo único de contexto de sistema desta trilha (um por ciclo de gravação). */
+const SYSTEM_LABEL = 'job:resource-access-log';
+
 /** De onde sai o país do recurso, para classificar a origem do acesso. */
 const COUNTRY_SOURCE: Record<ResourceType, string> = {
   patient: 'SELECT country FROM patients WHERE id = $1',
   worker: 'SELECT country FROM workers WHERE id = $1',
 };
+
+/**
+ * Identificador do recurso para LOG — nunca o id cru.
+ *
+ * [lex C2] O log de erro da trilha carrega o uid do operador; somar a ele o id
+ * do paciente publicaria no Cloud Logging exatamente o vínculo
+ * operador↔paciente que a trilha existe para guardar em tabela auditada e de
+ * acesso restrito. O hash curto ainda permite correlacionar duas linhas do log
+ * entre si (mesmo recurso) sem revelar de quem se trata.
+ */
+function resourceIdHash(resourceId: string): string {
+  return createHash('sha256').update(resourceId).digest('hex').slice(0, 12);
+}
 
 export interface ResourceAccessEntry {
   operatorUid: string;
@@ -40,30 +57,56 @@ export interface ResourceAccessEntry {
   origin: AccessOrigin;
 }
 
+/** INSERT puro — pressupõe contexto de sistema JÁ declarado por quem chama. */
+async function insertAccessRow(entry: ResourceAccessEntry): Promise<void> {
+  const pool = DatabaseConnection.getInstance().getPool();
+  await pool.query(
+    `INSERT INTO resource_access_log
+       (operator_uid, operator_role, resource_type, resource_id, action, origin)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      entry.operatorUid,
+      entry.operatorRole,
+      entry.resourceType,
+      entry.resourceId,
+      entry.action,
+      entry.origin,
+    ],
+  );
+}
+
 /**
- * Grava a linha. Nunca lança: erro vira log com os campos, para reprocessamento
- * manual (a tabela é append-only e particionada — ver migration 270).
+ * Log de falha da trilha. Campos suficientes para reprocessar (a tabela é
+ * append-only e particionada — migration 270) e NENHUM identificador direto de
+ * paciente/prestador: o id vai hasheado (ver `resourceIdHash`).
+ */
+function logAccessFailure(err: unknown, entry: ResourceAccessEntry): void {
+  logger.error(
+    {
+      err,
+      operatorUid: entry.operatorUid,
+      operatorRole: entry.operatorRole,
+      resourceType: entry.resourceType,
+      resourceIdHash: resourceIdHash(entry.resourceId),
+      action: entry.action,
+      origin: entry.origin,
+    },
+    '[abac] falha ao gravar resource_access_log — acesso NÃO registrado',
+  );
+}
+
+/**
+ * Grava a linha. Nunca lança: erro vira log, para reprocessamento manual.
+ *
+ * Declara o contexto de sistema por conta própria — é o caminho para quem chama
+ * a gravação isolada. O middleware abaixo usa um contexto só para leitura do
+ * país + INSERT (um ciclo de sessão, não dois).
  */
 export async function recordResourceAccess(entry: ResourceAccessEntry): Promise<void> {
   try {
-    const pool = DatabaseConnection.getInstance().getPool();
-    await withSystemDbContext('job:resource-access-log', () =>
-      pool.query(
-        `INSERT INTO resource_access_log
-           (operator_uid, operator_role, resource_type, resource_id, action, origin)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          entry.operatorUid,
-          entry.operatorRole,
-          entry.resourceType,
-          entry.resourceId,
-          entry.action,
-          entry.origin,
-        ],
-      ),
-    );
+    await withSystemDbContext(SYSTEM_LABEL, () => insertAccessRow(entry));
   } catch (err) {
-    logger.error({ err, ...entry }, '[abac] falha ao gravar resource_access_log — acesso NÃO registrado');
+    logAccessFailure(err, entry);
   }
 }
 
@@ -86,24 +129,38 @@ export async function resolveAccessOrigin(
   resourceId: string,
 ): Promise<AccessOrigin> {
   if (!context || context.kind !== 'staff') return 'system';
+  return withSystemDbContext(SYSTEM_LABEL, () =>
+    resolveAccessOriginUnderSystemContext(context, resourceType, resourceId),
+  );
+}
+
+/** Mesma classificação, pressupondo contexto de sistema já declarado. */
+async function resolveAccessOriginUnderSystemContext(
+  context: DbSessionContext,
+  resourceType: ResourceType,
+  resourceId: string,
+): Promise<AccessOrigin> {
   if (!context.country) return 'group_grant';
 
   try {
     const pool = DatabaseConnection.getInstance().getPool();
-    const result = await withSystemDbContext('job:resource-access-log', () =>
-      pool.query<{ country: string | null }>(COUNTRY_SOURCE[resourceType], [resourceId]),
-    );
+    const result = await pool.query<{ country: string | null }>(COUNTRY_SOURCE[resourceType], [
+      resourceId,
+    ]);
     const country = result.rows[0]?.country;
     if (!country) {
       logger.warn(
-        { resourceType, resourceId },
+        { resourceType, resourceIdHash: resourceIdHash(resourceId) },
         '[abac] país do recurso indeterminado na trilha de leitura — classificado como cross-país',
       );
       return 'group_grant';
     }
     return country === context.country ? 'same_country' : 'group_grant';
   } catch (err) {
-    logger.warn({ err, resourceType, resourceId }, '[abac] falha ao classificar origem do acesso');
+    logger.warn(
+      { err, resourceType, resourceIdHash: resourceIdHash(resourceId) },
+      '[abac] falha ao classificar origem do acesso',
+    );
     return 'group_grant';
   }
 }
@@ -133,17 +190,17 @@ export function logResourceAccess(
 
     res.once('finish', () => {
       if (!isSuccessful(res)) return;
-      void (async () => {
-        const origin = await resolveAccessOrigin(context, resourceType, resourceId);
-        await recordResourceAccess({
-          operatorUid: user.uid,
-          operatorRole,
-          resourceType,
-          resourceId,
-          action,
-          origin,
-        });
-      })();
+      // UM ciclo de contexto de sistema para a leitura do país E o INSERT: são
+      // duas queries da mesma trilha, e abrir duas sessões (dois clients, dois
+      // pares de set_config) dobraria o custo de cada abertura de dossiê.
+      const entryBase = { operatorUid: user.uid, operatorRole, resourceType, resourceId, action };
+      void withSystemDbContext(SYSTEM_LABEL, async () => {
+        const origin =
+          !context || context.kind !== 'staff'
+            ? ('system' as const)
+            : await resolveAccessOriginUnderSystemContext(context, resourceType, resourceId);
+        await insertAccessRow({ ...entryBase, origin });
+      }).catch((err) => logAccessFailure(err, { ...entryBase, origin: 'system' }));
     });
 
     next();

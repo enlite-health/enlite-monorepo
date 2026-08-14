@@ -490,6 +490,13 @@ if (process.env.MCP_ENABLED === 'true') {
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========
 // Logic extracted to src/bootstrap/startServer.ts (line-limit compliance).
-startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService });
+// `.catch` explícito: o boot valida a membership de app_runtime/app_system
+// quando COUNTRY_RLS_ENABLED=true (ver assertDbRoleMembership). Falhou, o
+// processo MORRE — servir com RLS sem grant é servir tela vazia calada, e a
+// revisão anterior do Cloud Run continua atendendo enquanto esta não sobe.
+startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService }).catch((err) => {
+  console.error('[startup] falha fatal ao subir o servidor:', err);
+  process.exit(1);
+});
 
 export { app };

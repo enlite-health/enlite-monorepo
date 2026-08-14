@@ -33,14 +33,16 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { loggingAls, logger } from '@shared/logging';
+import { COUNTRY_CODES, isCountryCode, type CountryCode } from '@shared/domain/countryCodes';
 
-/** Jurisdições suportadas — espelha o CHECK das migrations (patients/workers). */
-export const COUNTRY_CODES = ['AR', 'BR'] as const;
-export type CountryCode = (typeof COUNTRY_CODES)[number];
-
-export function isCountryCode(value: unknown): value is CountryCode {
-  return typeof value === 'string' && (COUNTRY_CODES as readonly string[]).includes(value);
-}
+/**
+ * Jurisdições suportadas — FONTE ÚNICA em `@shared/domain/countryCodes` (D108).
+ * Re-exportadas aqui porque os call sites do ABAC importam daqui desde a task
+ * 3.1; a lista em si não mora mais neste arquivo (era literal duplicada de
+ * `ADMISSION_COUNTRY_CODES`).
+ */
+export { COUNTRY_CODES, isCountryCode };
+export type { CountryCode };
 
 /**
  * Quem está falando com o banco nesta request.
@@ -81,6 +83,15 @@ export interface DbSessionSlot {
   client?: PoolClient;
   /** Aquisição em voo — memoizada para queries concorrentes não pegarem 2 clients. */
   acquiring?: Promise<PoolClient>;
+  /**
+   * Assinatura do contexto JÁ APLICADO neste client (uid+país+system_context).
+   * Sem ela, uma request que troca de contexto no meio e volta a cair no MESMO
+   * slot (configuração de pool único: staff → `withSystemDbContext` → staff)
+   * reusaria o client com os GUCs do contexto ANTERIOR — a query de sistema
+   * rodaria carimbada com o país do staff, e a de staff depois dela com o
+   * `system_context` do job. Divergiu, reaplica antes de devolver o client.
+   */
+  appliedContext?: string;
 }
 
 /** Estado vivo da sessão de banco da request (os clients fixados moram aqui). */
@@ -154,27 +165,59 @@ export function sessionClientFor(session: DbSession, pool: Pool): PoolClient | u
 }
 
 /**
+ * Assinatura do contexto — o que precisa estar setado na conexão.
+ * `JSON.stringify` e não concatenação: uid e rótulo de sistema são strings
+ * livres, e um separador escolhido a dedo abriria a chance de dois contextos
+ * diferentes gerarem a mesma assinatura (e a reaplicação ser pulada).
+ */
+function contextFingerprint(context: DbSessionContext | undefined): string {
+  return JSON.stringify([context?.uid ?? '', context?.country ?? '', context?.systemContext ?? '']);
+}
+
+/** Escreve os três GUCs no client (escopo de SESSÃO — `set_config(..., false)`). */
+async function applyContext(client: PoolClient, context: DbSessionContext | undefined): Promise<void> {
+  await client.query(APPLY_CONTEXT_SQL, [
+    GUC_UID,
+    context?.uid ?? '',
+    GUC_COUNTRY,
+    context?.country ?? '',
+    GUC_SYSTEM,
+    context?.systemContext ?? '',
+  ]);
+}
+
+/**
+ * Devolve o client do slot, REAPLICANDO os GUCs se o contexto da sessão mudou
+ * desde a última aplicação. O custo (um round-trip) só aparece quando a request
+ * de fato trocou de contexto; no caso comum a assinatura bate e não há query.
+ */
+async function withCurrentContext(
+  slot: DbSessionSlot,
+  client: PoolClient,
+  session: DbSession,
+): Promise<PoolClient> {
+  const wanted = contextFingerprint(session.context);
+  if (slot.appliedContext === wanted) return client;
+  await applyContext(client, session.context);
+  slot.appliedContext = wanted;
+  return client;
+}
+
+/**
  * Aplica o contexto no client e o fixa na sessão, no slot DESTE pool.
  * Concorrência: a promessa de aquisição é memoizada por slot, então
  * `Promise.all` de queries da mesma identidade usa UM client só.
  */
 export async function acquireSessionClient(pool: Pool, session: DbSession): Promise<PoolClient> {
   const slot = slotFor(session, pool);
-  if (slot.client) return slot.client;
-  if (slot.acquiring) return slot.acquiring;
+  if (slot.client) return withCurrentContext(slot, slot.client, session);
+  if (slot.acquiring) return slot.acquiring.then((client) => withCurrentContext(slot, client, session));
 
+  const wanted = contextFingerprint(session.context);
   slot.acquiring = (async () => {
     const client = await pool.connect();
     try {
-      const ctx = session.context;
-      await client.query(APPLY_CONTEXT_SQL, [
-        GUC_UID,
-        ctx?.uid ?? '',
-        GUC_COUNTRY,
-        ctx?.country ?? '',
-        GUC_SYSTEM,
-        ctx?.systemContext ?? '',
-      ]);
+      await applyContext(client, session.context);
     } catch (err) {
       // Client sem contexto aplicado não volta pro pool: destrói.
       client.release(true);
@@ -182,6 +225,7 @@ export async function acquireSessionClient(pool: Pool, session: DbSession): Prom
       throw err;
     }
     slot.client = client;
+    slot.appliedContext = wanted;
     slot.acquiring = undefined;
     return client;
   })();

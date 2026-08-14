@@ -7,7 +7,7 @@
 import type { Request, Response } from 'express';
 import { loggingAls } from '@shared/logging';
 import { DatabaseConnection } from '../DatabaseConnection';
-import { requireCountryScope } from '../countryScopeGuard';
+import { hasLiveCountryGrant, requireCountryScope } from '../countryScopeGuard';
 import type { DbSession } from '../requestDbSession';
 
 jest.mock('../DatabaseConnection');
@@ -99,5 +99,64 @@ describe('requireCountryScope', () => {
     const { next, res } = await run('BR', { kind: 'staff', uid: 'u1', country: 'AR' });
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('`?country=` vazio é o mesmo que não pedir país', async () => {
+    const { next, res } = await run('', { kind: 'staff', uid: 'u1', country: 'AR' });
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('request sem contexto declarado nenhum → o guard não opina', async () => {
+    const { next } = await run('BR', undefined);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('staff SEM uid não consulta grant (não há a quem perguntar) → 403', async () => {
+    const { next, res } = await run('BR', { kind: 'staff', country: 'AR' });
+    expect(query).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('lê o país de onde a rota mandar (body, não só query)', async () => {
+    const req = { query: {}, body: { country: 'BR' } } as unknown as Request;
+    const res = makeRes();
+    const next = jest.fn();
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await loggingAls.run({ traceId: 't', dbSession: session }, () =>
+      (requireCountryScope((r) => (r as Request & { body: { country: string } }).body.country) as (
+        r: Request,
+        s: Response,
+        n: () => void,
+      ) => Promise<void>)(req, res, next),
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe('hasLiveCountryGrant', () => {
+  it('usa o pool recebido quando há um (sem tocar no singleton)', async () => {
+    const pool = { query: jest.fn().mockResolvedValue({ rows: [{}], rowCount: 1 }) };
+
+    await expect(hasLiveCountryGrant('u1', 'BR', pool as never)).resolves.toBe(true);
+
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('group_country_scopes'), ['u1', 'BR']);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('sem pool explícito cai no pool da aplicação', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await expect(hasLiveCountryGrant('u1', 'BR')).resolves.toBe(false);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rowCount ausente é tratado como ZERO grant (fail-closed)', async () => {
+    const pool = { query: jest.fn().mockResolvedValue({ rows: [], rowCount: null }) };
+    await expect(hasLiveCountryGrant('u1', 'BR', pool as never)).resolves.toBe(false);
   });
 });

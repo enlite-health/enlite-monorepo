@@ -1,4 +1,5 @@
 import { countryToTimezone } from '@shared/locale/CountryTimezone';
+import { COUNTRY_CODES, isCountryCode, type CountryCode } from '@shared/domain/countryCodes';
 import { AR_HOLIDAYS_2026 } from '../infrastructure/AdmissionCalendarService';
 
 /**
@@ -23,12 +24,16 @@ import { AR_HOLIDAYS_2026 } from '../infrastructure/AdmissionCalendarService';
  * env (`ADMISSION_TEAM_NAME_AR` / `_BR`) without a redeploy.
  */
 
-/** Canonical country codes tuple — single source for zod enums (D108).
- * Keep in sync with the `AdmissionCountry` union below and the DB CHECK
- * `valid_patient_country` (migrations 069/252). */
-export const ADMISSION_COUNTRY_CODES = ['AR', 'BR'] as const;
+/**
+ * Country codes for admission — DERIVED from the single source
+ * `@shared/domain/countryCodes` (D108). The tuple used to be declared literally
+ * here AND in `shared/database/requestDbSession.ts`; two identical literals type-
+ * check happily until a third jurisdiction lands in one of them only. The public
+ * names below are kept verbatim so no caller changes.
+ */
+export const ADMISSION_COUNTRY_CODES = COUNTRY_CODES;
 
-export type AdmissionCountry = (typeof ADMISSION_COUNTRY_CODES)[number];
+export type AdmissionCountry = CountryCode;
 
 export interface BusinessHours {
   /** First slot starts at this hour (local time). */
@@ -104,9 +109,9 @@ export function resolveTeamDisplayName(country: AdmissionCountry): string {
   return override && override.trim() ? override.trim() : cfg.teamDisplayName;
 }
 
-/** Type guard for the public `country` query/body param. */
+/** Type guard for the public `country` query/body param (single source, D108). */
 export function isAdmissionCountry(v: unknown): v is AdmissionCountry {
-  return v === 'AR' || v === 'BR';
+  return isCountryCode(v);
 }
 
 export function getAdmissionCountryConfig(country: AdmissionCountry): AdmissionCountryConfig {

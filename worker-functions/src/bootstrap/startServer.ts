@@ -23,6 +23,7 @@ import { PeriskopeNoteService } from '@modules/notification/infrastructure/Peris
 import { ChatwootMirrorController } from '@modules/notification/interfaces/controllers/ChatwootMirrorController';
 import { GoogleCalendarService } from '@modules/matching';
 import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
+import { assertDbRoleMembership } from '@shared/database/assertDbRoleMembership';
 
 /** Concretos de mensageria (não o RoutingMessagingService) — TriggerWorkerHandoverUseCase
  *  precisa garantir que AMBOS os canais recebam o envio correspondente, independente
@@ -37,6 +38,15 @@ export async function startServer(
   useCerbos: boolean,
   messagingDeps: StartServerMessagingDeps,
 ): Promise<void> {
+  // ── Gate de boot da RLS de país ──────────────────────────────────────────
+  // Com COUNTRY_RLS_ENABLED=true, sem a membership de app_runtime/app_system o
+  // processo NÃO sobe: melhor a revisão falhar no deploy do que servir tela
+  // vazia. Flag off = nenhuma query (ver assertDbRoleMembership).
+  await assertDbRoleMembership(
+    DatabaseConnection.getInstance().getRawPool(),
+    DatabaseConnection.getInstance().getSystemPool(),
+  );
+
   // ── Partner Auth (sync) ──────────────────────────────────────────────────
   const googleValidator = new GoogleApiKeyValidator();
   const webhookPartnerRepo = new WebhookPartnerRepository();

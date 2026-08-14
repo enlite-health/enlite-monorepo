@@ -10,7 +10,7 @@
  */
 
 import { loggingAls } from '@shared/logging';
-import { createRlsAwarePool } from '../rlsAwarePool';
+import { createRlsAwarePool, routedPoolFor } from '../rlsAwarePool';
 import {
   acquireSessionClient,
   dbPoolRoleFor,
@@ -31,6 +31,7 @@ function makePool() {
   const pool = {
     query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
     connect: jest.fn().mockResolvedValue(client),
+    end: jest.fn().mockResolvedValue(undefined),
     totalCount: 7,
   };
   return { pool: pool as never, rawPool: pool, client };
@@ -131,6 +132,18 @@ describe('rlsAwarePool', () => {
     void rlsPool.connect();
     expect(rawPool.connect).toHaveBeenCalled();
   });
+
+  it('método não interceptado (ex.: end) vai LIGADO ao pool real, sem recursão', async () => {
+    const { pool, rawPool } = makePool();
+    const rlsPool = createRlsAwarePool(pool);
+
+    await rlsPool.end();
+
+    expect(rawPool.end).toHaveBeenCalledTimes(1);
+    // `this` do método é o pool REAL — é o que evita a query interna do pg
+    // voltar pelo proxy e recursar.
+    expect(rawPool.end.mock.instances[0]).toBe(rawPool);
+  });
 });
 
 describe('contexto sem país (lex C3)', () => {
@@ -192,6 +205,21 @@ describe('releaseDbSession', () => {
     await releaseDbSession(session);
 
     expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('aquisição EM VOO que falha não derruba o encerramento da sessão', async () => {
+    const { pool, client } = makePool();
+    client.query.mockRejectedValueOnce(new Error('set_config falhou'));
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    // Não esperamos a aquisição: o `finish` da resposta chega antes dela terminar.
+    const acquiring = acquireSessionClient(pool, session).catch(() => undefined);
+    await expect(releaseDbSession(session)).resolves.toBeUndefined();
+    await acquiring;
+
+    // A própria aquisição destruiu o client; o release não tenta de novo.
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
   });
 
   it('client que não recebeu o contexto não volta pro pool', async () => {
@@ -378,6 +406,116 @@ describe('roteamento por identidade (dual-pool)', () => {
       expect(String(sql)).toContain('set_config');
       expect(params).toEqual(['app.user_uid', 'app.user_country', 'app.system_context']);
     }
+  });
+
+  /**
+   * BLOCKER-4: o client é POR POOL, e no pool único a mesma conexão atende
+   * staff e sistema. Sem reaplicar os GUCs na troca, a query de sistema sairia
+   * carimbada com o país do staff (e a de staff depois dela, com o rótulo do
+   * job) — a policy leria contexto de outra pessoa.
+   */
+  it('pool único: trocar de contexto REAPLICA os GUCs no mesmo client', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, rawPool, client } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, async () => {
+      await appPool.query('SELECT staff');
+      await withSystemDbContext('job:trilha', () => appPool.query('SELECT sistema'));
+      await appPool.query('SELECT staff de novo');
+    });
+
+    // Uma conexão só (o ganho do slot) …
+    expect(rawPool.connect).toHaveBeenCalledTimes(1);
+    // … e TRÊS aplicações de contexto: staff → sistema → staff.
+    const applied = client.query.mock.calls
+      .filter((c: unknown[]) => String(c[0]).includes('set_config'))
+      .map((c: unknown[]) => c[1]);
+    expect(applied).toEqual([
+      ['app.user_uid', 'u1', 'app.user_country', 'AR', 'app.system_context', ''],
+      ['app.user_uid', '', 'app.user_country', '', 'app.system_context', 'job:trilha'],
+      ['app.user_uid', 'u1', 'app.user_country', 'AR', 'app.system_context', ''],
+    ]);
+    // A ordem importa: cada query rodou DEPOIS do seu próprio set_config.
+    expect(client.query.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      expect.stringContaining('set_config'),
+      'SELECT staff',
+      expect.stringContaining('set_config'),
+      'SELECT sistema',
+      expect.stringContaining('set_config'),
+      'SELECT staff de novo',
+    ]);
+  });
+
+  it('contexto INALTERADO não paga round-trip: aplica uma vez só', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, client } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, async () => {
+      await appPool.query('SELECT a');
+      await appPool.query('SELECT b');
+      await appPool.query('SELECT c');
+    });
+
+    const applied = client.query.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('set_config'),
+    );
+    expect(applied).toHaveLength(1);
+  });
+
+  it('contexto que muda com a aquisição EM VOO também é reaplicado', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, rawPool, client } = makePool();
+    let releaseConnect: (c: unknown) => void = () => undefined;
+    rawPool.connect.mockReturnValueOnce(new Promise((resolve) => { releaseConnect = resolve; }));
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, async () => {
+      const inFlight = acquireSessionClient(pool, session);
+      // A borda muda o contexto enquanto o connect ainda não voltou.
+      session.context = { kind: 'system', systemContext: 'job:trilha' };
+      releaseConnect(client);
+      await inFlight;
+      // A segunda aquisição vê a divergência e reaplica.
+      await acquireSessionClient(pool, session);
+    });
+
+    const applied = client.query.mock.calls
+      .filter((c: unknown[]) => String(c[0]).includes('set_config'))
+      .map((c: unknown[]) => (c[1] as string[])[5]);
+    expect(applied[applied.length - 1]).toBe('job:trilha');
+    expect(rawPool.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('routedPoolFor: pool CRU (sem proxy) roteia para ele mesmo', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool } = makePool();
+    const session: DbSession = { context: { kind: 'system', systemContext: 'job:x' }, released: false };
+
+    // Sem o proxy não há dupla runtime/sistema para escolher — é o caso dos
+    // pools próprios (MCP read-only, scripts) e dos testes com pool mockado.
+    await inRequest(session, async () => {
+      expect(routedPoolFor(pool)).toBe(pool);
+    });
+  });
+
+  it('routedPoolFor: pelo proxy, o contexto escolhe a identidade', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const runtime = makePool();
+    const system = makePool();
+    const appPool = createRlsAwarePool(runtime.pool, system.pool);
+
+    await inRequest({ context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false }, async () => {
+      expect(routedPoolFor(appPool)).toBe(runtime.pool);
+    });
+    await inRequest({ context: { kind: 'system', systemContext: 'job:x' }, released: false }, async () => {
+      expect(routedPoolFor(appPool)).toBe(system.pool);
+    });
+    // Fora de request (job legado) fica no pool principal.
+    expect(routedPoolFor(appPool)).toBe(runtime.pool);
   });
 
   it('withSystemDbContext RESTAURA o contexto — staff não fica falando pelo pool de sistema', async () => {

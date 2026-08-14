@@ -29,7 +29,7 @@
  */
 
 import type { Pool, PoolClient, QueryResult } from 'pg';
-import { logger } from '@shared/logging';
+import { logger, loggingAls } from '@shared/logging';
 import {
   acquireSessionClient,
   currentDbSession,
@@ -39,6 +39,19 @@ import {
 } from './requestDbSession';
 
 type QueryArgs = Parameters<Pool['query']>;
+
+/**
+ * Par (runtime, sistema) que este proxy roteia. Chave de SÍMBOLO para não
+ * colidir com nada do `pg` nem aparecer em enumeração: quem tem o proxy na mão
+ * (`withActorContext`) precisa descobrir de QUAL pool real o client da request
+ * saiu, e o proxy é a única coisa que conhece os dois.
+ */
+const RLS_POOL_PAIR = Symbol.for('enlite.rlsAwarePool.pair');
+
+interface RlsPoolPair {
+  runtime: Pool;
+  system: Pool;
+}
 
 /**
  * Envolve o pool. `systemPool` omitido = o próprio pool (configuração de hoje,
@@ -51,6 +64,7 @@ export function createRlsAwarePool(pool: Pool, systemPool?: Pool): Pool {
 
   return new Proxy(pool, {
     get(target, prop, receiver) {
+      if (prop === RLS_POOL_PAIR) return { runtime: target, system } satisfies RlsPoolPair;
       if (prop === 'query') {
         return (...args: QueryArgs): Promise<QueryResult> => rlsAwareQuery(target, system, args);
       }
@@ -64,6 +78,20 @@ export function createRlsAwarePool(pool: Pool, systemPool?: Pool): Pool {
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+}
+
+/**
+ * Pool REAL para onde o contexto atual roteia — dado o pool que o consumidor
+ * tem na mão (o proxy de `getPool()`, ou um pool cru, que é ele mesmo).
+ *
+ * Existe para `withActorContext` poder perguntar "a request já tem client
+ * fixado NESTE pool?" sem conhecer a dupla runtime/sistema (ver BLOCKER-3: abrir
+ * uma segunda conexão enquanto a request segura a primeira esgota o pool).
+ */
+export function routedPoolFor(pool: Pool): Pool {
+  const pair = (pool as unknown as Record<symbol, RlsPoolPair | undefined>)[RLS_POOL_PAIR];
+  if (!pair) return pool;
+  return poolForCurrentContext(pair.runtime, pair.system);
 }
 
 /**
@@ -94,12 +122,18 @@ function rlsAwareQuery(pool: Pool, systemPool: Pool, args: QueryArgs): Promise<Q
  * Request que consulta o banco sem classificação nenhuma — é exatamente a lista
  * que o MODO RELATÓRIO (task 4.2) precisa antes da virada: cada linha destas é
  * uma tela ou job que apagaria sob RLS. Um aviso por request, não por query.
+ *
+ * Vai com método + rota SANITIZADA (`dbSessionMiddleware.sanitizeRoute`): sem
+ * saber o endpoint, a lista de pendências da 4.2 é um monte de avisos idênticos
+ * e nenhum caminho para consertar. Fora de request esses campos não existem — e
+ * a linha sai igual, só sem eles.
  */
 function warnIfUnclassified(session: DbSession | undefined): void {
   if (!session || session.context || session.released || session.warnedUnclassified) return;
   session.warnedUnclassified = true;
+  const store = loggingAls?.getStore?.();
   logger.warn(
-    {},
+    { method: store?.requestMethod, path: store?.requestRoute },
     '[abac] request consultou o banco sem contexto declarado — sob RLS devolveria zero linhas',
   );
 }

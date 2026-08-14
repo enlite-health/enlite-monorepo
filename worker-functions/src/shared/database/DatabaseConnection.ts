@@ -14,6 +14,28 @@ function poolMax(envVar: string, fallback: number): number {
 }
 
 /**
+ * Config de sistema PELA METADE não degrada calada.
+ *
+ * `DB_SYSTEM_USER` sem `DB_SYSTEM_PASSWORD` (ou o contrário) cairia no `else` e
+ * o processo subiria com pool ÚNICO — isto é, cron/webhook/rota pública falando
+ * como `app_runtime`, sem o atalho de sistema, devolvendo zero linha sob RLS.
+ * Um deploy com a env faltando pareceria saudável (health 200) e quebraria só
+ * onde ninguém olha. Os dois ausentes seguem sendo configuração válida (pool
+ * único, o estado de hoje).
+ */
+export function assertSystemCredentialsAreComplete(): void {
+  const user = process.env.DB_SYSTEM_USER;
+  const password = process.env.DB_SYSTEM_PASSWORD;
+  if (Boolean(user) === Boolean(password)) return;
+  const missing = user ? 'DB_SYSTEM_PASSWORD' : 'DB_SYSTEM_USER';
+  throw new Error(
+    `[DatabaseConnection] configuração de identidade de sistema incompleta: falta ${missing}. ` +
+      'Defina AMBAS (DB_SYSTEM_USER e DB_SYSTEM_PASSWORD) ou NENHUMA — meia configuração faria ' +
+      'cron/webhook rodarem como app_runtime, sem o atalho de sistema.',
+  );
+}
+
+/**
  * UM PROCESSO, DUAS IDENTIDADES DE BANCO (ABAC país, task 3.2).
  *
  * A RLS de país tem dois lados: `app_runtime` (staff, confinada ao país da
@@ -50,6 +72,7 @@ export class DatabaseConnection {
   private rlsAwarePool: Pool;
 
   private constructor() {
+    assertSystemCredentialsAreComplete();
     const isCloudRun = process.env.K_SERVICE !== undefined;
     const max = poolMax('DB_POOL_MAX', DEFAULT_POOL_MAX);
     // Dimensionamento: o stg (db-f1-micro) tem ~25 `max_connections` no total —
@@ -145,8 +168,29 @@ export class DatabaseConnection {
     return this.systemPool;
   }
 
+  /**
+   * @deprecated Use `withActorContext(getPool(), fn)` para escrever.
+   *
+   * Este método entrega uma conexão do pool CRU de runtime: **fura o roteamento
+   * por identidade** (contexto de sistema sairia como `app_runtime`) e **não
+   * recebe o contexto de país da request** (sob RLS, zero linha ou escrita sem
+   * jurisdição). Também não reusa o client já fixado pela request, então cada
+   * chamada consome uma segunda conexão do pool enquanto a request segura a
+   * primeira. Continua existindo porque scripts operacionais (`scripts/**`)
+   * podem depender dele fora do ciclo de request; em código de produção, não.
+   *
+   * Mitigação parcial aplicada aqui: a conexão sai pelo pool CIENTE do contexto
+   * (`rlsAwarePool.connect()`), então ao menos a IDENTIDADE está certa — o que
+   * segue faltando é o `SET` de país, que só `withActorContext` faz. Com a flag
+   * desligada isto é byte por byte o comportamento anterior.
+   */
   public async getClient(): Promise<PoolClient> {
-    return await this.pool.connect();
+    if (process.env.COUNTRY_RLS_ENABLED === 'true') {
+      console.warn(
+        '[DatabaseConnection] getClient() chamado com COUNTRY_RLS_ENABLED=true — conexão SEM contexto de país aplicado. Use withActorContext(getPool(), fn).',
+      );
+    }
+    return await this.rlsAwarePool.connect();
   }
 
   public async close(): Promise<void> {
