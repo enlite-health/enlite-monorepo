@@ -85,6 +85,13 @@ jobs:
           region: ${{ env.REGION }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          # ── ABAC país (4.1): DB_USER=enlite_runtime é a VIRADA (enlite_app é owner
+          # e ignora as policies). Pools por MEDIÇÃO: max_connections=25 no stg
+          # (db-f1-micro), menos superuser_reserved(3) = 22 úteis. Pior caso:
+          # main 3x(3+1)=12 + MCP 3x2=6 + MCP-RO 3x1=3 = 21 <= 22. NÃO copiar pra
+          # prd sem medir lá (runbook F4). NUNCA comentar DENTRO de env_vars: o
+          # parseKVString do deploy-cloudrun não suporta '#' (linha com '=' vira
+          # env de nome inválido e o deploy falha).
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
@@ -92,7 +99,11 @@ jobs:
             CORS_ALLOWED_ORIGINS=https://qas.enlite.health
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
-            DB_USER=enlite_app
+            DB_USER=enlite_runtime
+            DB_SYSTEM_USER=enlite_system
+            COUNTRY_RLS_ENABLED=true
+            DB_POOL_MAX=3
+            DB_SYSTEM_POOL_MAX=1
             TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
             TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
             TWILIO_STATUS_CALLBACK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/status
@@ -110,7 +121,8 @@ jobs:
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
           secrets: |
-            DB_PASSWORD=enlite-ar-db-password:latest
+            DB_PASSWORD=enlite-runtime-db-password:latest
+            DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
