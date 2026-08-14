@@ -59,6 +59,13 @@ jobs:
           # ── ABAC país (4.1): MCP é 100% sistema (D112) → enlite_system; o assert
           # de boot espera app_system (ABAC_MAIN_POOL_ROLE). Conta de conexões no
           # backend-stg.yml. Nunca comentar DENTRO de env_vars (parseKVString).
+          # Declarativo: o YAML é o conjunto COMPLETO de env/secrets. Sem isto o
+          # deploy-cloudrun faz MERGE e chave removida PERSISTE da revisão anterior —
+          # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
+          # tirou a flag do YAML, a revisão nasceu com enlite_app + flag herdada e o
+          # assert de boot recusou). Rollback só funciona com overwrite.
+          env_vars_update_strategy: overwrite
+          secrets_update_strategy: overwrite
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true

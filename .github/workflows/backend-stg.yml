@@ -92,6 +92,13 @@ jobs:
           # prd sem medir lá (runbook F4). NUNCA comentar DENTRO de env_vars: o
           # parseKVString do deploy-cloudrun não suporta '#' (linha com '=' vira
           # env de nome inválido e o deploy falha).
+          # Declarativo: o YAML é o conjunto COMPLETO de env/secrets. Sem isto o
+          # deploy-cloudrun faz MERGE e chave removida PERSISTE da revisão anterior —
+          # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
+          # tirou a flag do YAML, a revisão nasceu com enlite_app + flag herdada e o
+          # assert de boot recusou). Rollback só funciona com overwrite.
+          env_vars_update_strategy: overwrite
+          secrets_update_strategy: overwrite
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
