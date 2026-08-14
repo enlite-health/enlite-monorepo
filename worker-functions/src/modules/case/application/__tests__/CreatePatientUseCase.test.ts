@@ -6,6 +6,7 @@
  *  b. Passes only firstName through when the rest is omitted.
  *  c. Translates the contact-channel Error into PatientContactValidationError.
  *  d. Re-throws any other error unchanged.
+ *  e. country comes from the caller — no 'AR' edge default (abac-pais-fase1 5.1).
  */
 
 import {
@@ -25,6 +26,7 @@ describe('CreatePatientUseCase', () => {
 
     const result = await useCase.execute({
       firstName: 'Juan',
+      country: 'AR',
       lastName: 'Pérez',
       phoneWhatsapp: '+5491100000000',
       contactEmail: 'juan@example.com',
@@ -48,6 +50,7 @@ describe('CreatePatientUseCase', () => {
     expect(nativeInput).not.toHaveProperty('contactEmail');
     expect(nativeInput).toMatchObject({
       firstName: 'Juan',
+      country: 'AR',
       lastName: 'Pérez',
       phoneWhatsapp: '+5491100000000',
       documentType: 'DNI',
@@ -62,7 +65,7 @@ describe('CreatePatientUseCase', () => {
     const createNativePatient = jest.fn().mockResolvedValue({ id: 'pat-002', created: true });
     const useCase = new CreatePatientUseCase(makeService(createNativePatient));
 
-    await useCase.execute({ firstName: 'Ana' });
+    await useCase.execute({ firstName: 'Ana', country: 'AR' });
 
     const [nativeInput, opts] = createNativePatient.mock.calls[0];
     expect(nativeInput.firstName).toBe('Ana');
@@ -77,15 +80,39 @@ describe('CreatePatientUseCase', () => {
       .mockRejectedValue(new Error('Validação de contato: paciente ou responsável...'));
     const useCase = new CreatePatientUseCase(makeService(createNativePatient));
 
-    await expect(useCase.execute({ firstName: 'Sin Contacto' })).rejects.toBeInstanceOf(
-      PatientContactValidationError,
-    );
+    await expect(
+      useCase.execute({ firstName: 'Sin Contacto', country: 'AR' }),
+    ).rejects.toBeInstanceOf(PatientContactValidationError);
   });
 
   it('d. re-throws any other error unchanged', async () => {
     const createNativePatient = jest.fn().mockRejectedValue(new Error('DB down'));
     const useCase = new CreatePatientUseCase(makeService(createNativePatient));
 
-    await expect(useCase.execute({ firstName: 'Juan' })).rejects.toThrow('DB down');
+    await expect(useCase.execute({ firstName: 'Juan', country: 'AR' })).rejects.toThrow('DB down');
+  });
+
+  // ── e. No 'AR' edge default (abac-pais-fase1 5.1) ──────────────────────────
+  // This is the regression guard for the bug the task exists to kill: the use
+  // case used to hardcode country:'AR', so a BR patient created from the admin
+  // modal was persisted as AR — invisible in BR-filtered views and filed under
+  // the wrong legal regime (Ley 25.326 vs LGPD).
+  it("e. forwards country='BR' verbatim — never overrides it with the old 'AR' default", async () => {
+    const createNativePatient = jest.fn().mockResolvedValue({ id: 'pat-003', created: true });
+    const useCase = new CreatePatientUseCase(makeService(createNativePatient));
+
+    await useCase.execute({ firstName: 'João', country: 'BR' });
+
+    const [nativeInput] = createNativePatient.mock.calls[0];
+    expect(nativeInput.country).toBe('BR');
+  });
+
+  it('e2. forwards country=AR when the caller explicitly chose AR', async () => {
+    const createNativePatient = jest.fn().mockResolvedValue({ id: 'pat-004', created: true });
+    const useCase = new CreatePatientUseCase(makeService(createNativePatient));
+
+    await useCase.execute({ firstName: 'Ana', country: 'AR' });
+
+    expect(createNativePatient.mock.calls[0][0].country).toBe('AR');
   });
 });
