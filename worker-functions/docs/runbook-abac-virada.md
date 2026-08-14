@@ -116,6 +116,13 @@ Editar `.github/workflows/backend-stg.yml` (e `backend-mcp-stg.yml`):
 | 8 | suíte e2e completa contra QA | verde |
 | 9 | **EXPLAIN ANALYZE das listagens quentes vs `baseline-1.4.md`** | **p95 +≤5%** |
 | 10 | logs 24-48h: `request consultou o banco sem contexto declarado` | investigar CADA um |
+
+⚠️ **Silêncio no item 10 NÃO é prova de limpo** (achado do gate 14/08): o detector é cego a
+tudo fora de request — handlers de outbox/domain-events abrem ALS próprio sem `dbSession` e
+**não aparecem** neste log; e o `sanitizeRoute` colapsa segmento legítimo ≥20 chars em `:id`
+(`sync-clickup-patients` etc.), degradando o diagnóstico. Antes do flip: conferir outbox e
+processadores de evento À MÃO (rodar um ciclo de cada e olhar o efeito), e tratar esses dois
+itens da lista de MEDIUMs abertos do review — eles afetam o INSTRUMENTO da virada.
 - NO-GO em qualquer linha → rollback 1.R e diagnosticar. O item 9 tem fallback
   pré-aprovado no design.md (policy sargável por `app.allowed_countries`).
 
