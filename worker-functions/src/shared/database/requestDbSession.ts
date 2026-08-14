@@ -165,6 +165,21 @@ export function sessionClientFor(session: DbSession, pool: Pool): PoolClient | u
 }
 
 /**
+ * Client fixado OU a aquisição EM VOO deste pool (MEDIUM do review 14/08):
+ * `withActorContext` disparado em `Promise.all` com a primeira leitura da
+ * request via `pinnedClientFor` só enxergava `slot.client` — a aquisição ainda
+ * pendente era invisível e ele abria uma SEGUNDA conexão (o esgotamento de pool
+ * que o BLOCKER-3 existe pra impedir). Quem chamar decide aguardar a promessa.
+ */
+export function sessionClientOrPending(
+  session: DbSession,
+  pool: Pool,
+): PoolClient | Promise<PoolClient> | undefined {
+  const slot = session.slots?.get(pool);
+  return slot?.client ?? slot?.acquiring;
+}
+
+/**
  * Assinatura do contexto — o que precisa estar setado na conexão.
  * `JSON.stringify` e não concatenação: uid e rótulo de sistema são strings
  * livres, e um separador escolhido a dedo abriria a chance de dois contextos

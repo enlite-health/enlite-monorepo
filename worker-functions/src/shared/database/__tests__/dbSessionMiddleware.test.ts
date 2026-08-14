@@ -114,6 +114,13 @@ describe('sanitizeRoute', () => {
     ['/api/workers/12345/documents', '/api/workers/:id/documents'],
     ['/api/admin/patients', '/api/admin/patients'],
     ['/health', '/health'],
+    // MEDIUM 14/08: nome legítimo de rota ≥20 chars NÃO pode colapsar —
+    // era exatamente o diagnóstico que o modo relatório perdia.
+    ['/api/internal/sync-clickup-patients', '/api/internal/sync-clickup-patients'],
+    ['/api/internal/bulk-dispatch-incomplete-workers', '/api/internal/bulk-dispatch-incomplete-workers'],
+    // Token opaco ≥20 (dígito ou case misto) segue colapsando: não vaza pro log.
+    ['/api/account-link/tok_9f8e7d6c5b4a39281706', '/api/account-link/:id'],
+    ['/api/account-link/eyJhbGciOiJIUzI1NiJ9abc', '/api/account-link/:id'],
   ])('%s → %s', (path, expected) => {
     expect(sanitizeRoute(path)).toBe(expected);
   });

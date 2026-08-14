@@ -119,23 +119,81 @@ function rlsAwareQuery(pool: Pool, systemPool: Pool, args: QueryArgs): Promise<Q
 }
 
 /**
- * Request que consulta o banco sem classificação nenhuma — é exatamente a lista
- * que o MODO RELATÓRIO (task 4.2) precisa antes da virada: cada linha destas é
- * uma tela ou job que apagaria sob RLS. Um aviso por request, não por query.
+ * Query que chega ao banco sem classificação — é exatamente a lista que o MODO
+ * RELATÓRIO (task 4.2) precisa antes da virada: cada linha destas é uma tela ou
+ * job que apagaria sob RLS. Três formas (MEDIUM do review de 14/08 — as duas
+ * últimas eram CEGAS antes disto):
  *
- * Vai com método + rota SANITIZADA (`dbSessionMiddleware.sanitizeRoute`): sem
- * saber o endpoint, a lista de pendências da 4.2 é um monte de avisos idênticos
- * e nenhum caminho para consertar. Fora de request esses campos não existem — e
- * a linha sai igual, só sem eles.
+ *  1. Request viva sem contexto → um aviso por request, com método + rota
+ *     SANITIZADA (`dbSessionMiddleware.sanitizeRoute` — o path cru carrega id e
+ *     telefone, que não podem ir pro Cloud Logging).
+ *  2. Query DEPOIS da request encerrada (`setImmediate`/`.then` solto que
+ *     sobrevive ao `finish`) → o client fixado já voltou; a query sai crua.
+ *  3. Query FORA de qualquer request/escopo (`session` nem existe — job legado
+ *     sem `withSystemDbContext`).
+ *
+ * Nas formas 2 e 3 não há request para deduplicar nem rota para logar — a
+ * identidade vira o CALL SITE (primeiro frame fora deste diretório), com dedup
+ * por site e teto, senão um job em loop inunda o Cloud Logging.
  */
 function warnIfUnclassified(session: DbSession | undefined): void {
-  if (!session || session.context || session.released || session.warnedUnclassified) return;
+  if (!session) {
+    warnUnscopedQuery('[abac] query fora de request e sem escopo de sistema declarado — sob RLS devolveria zero linhas');
+    return;
+  }
+  if (session.released) {
+    warnUnscopedQuery('[abac] query após o fim da request (contexto já liberado) — sob RLS devolveria zero linhas');
+    return;
+  }
+  if (session.context || session.warnedUnclassified) return;
   session.warnedUnclassified = true;
   const store = loggingAls?.getStore?.();
   logger.warn(
     { method: store?.requestMethod, path: store?.requestRoute },
     '[abac] request consultou o banco sem contexto declarado — sob RLS devolveria zero linhas',
   );
+}
+
+/** Dedup por call site com teto — o Set nunca cresce sem limite. */
+const warnedCallSites = new Set<string>();
+const WARNED_CALL_SITES_MAX = 300;
+
+/**
+ * Registra a chave e diz se este aviso é inédito. Exportada para o teto ser
+ * testável com um Set pequeno — em produção sempre roda com o Set do módulo.
+ */
+export function shouldWarnOnce(
+  key: string,
+  registry: Set<string> = warnedCallSites,
+  max: number = WARNED_CALL_SITES_MAX,
+): boolean {
+  if (registry.has(key) || registry.size >= max) return false;
+  registry.add(key);
+  return true;
+}
+
+function warnUnscopedQuery(message: string): void {
+  const site = callerOutsideThisDir() ?? 'site-desconhecido';
+  if (!shouldWarnOnce(`${site}|${message}`)) return;
+  logger.warn({ callSite: site }, message);
+}
+
+/**
+ * Primeiro frame do stack COM CAMINHO DE ARQUIVO que não é deste diretório nem
+ * do node_modules — o código de PRODUTO que fez a query. É o "method + path"
+ * das formas 2 e 3. Frames internos (`node:internal`, `<anonymous>` sem
+ * caminho) não identificam ninguém e são pulados.
+ */
+function callerOutsideThisDir(): string | undefined {
+  const stack = new Error().stack?.split('\n') ?? [];
+  for (const line of stack.slice(1)) {
+    if (!line.includes('at ') || !line.includes('/')) continue;
+    // Pula a própria fiação (mas NÃO os testes dela, que moram em __tests__).
+    if (line.includes('shared/database/') && !line.includes('__tests__')) continue;
+    if (line.includes('node_modules') || line.includes('node:internal')) continue;
+    return line.trim();
+  }
+  return undefined;
 }
 
 function runOnSessionClient(pool: Pool, session: DbSession, args: QueryArgs): Promise<QueryResult> {

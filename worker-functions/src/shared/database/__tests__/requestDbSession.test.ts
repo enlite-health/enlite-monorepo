@@ -9,8 +9,8 @@
  *    pool (senão o país de um operador vaza para a request seguinte).
  */
 
-import { loggingAls } from '@shared/logging';
-import { createRlsAwarePool, routedPoolFor } from '../rlsAwarePool';
+import { loggingAls, logger } from '@shared/logging';
+import { createRlsAwarePool, routedPoolFor, shouldWarnOnce } from '../rlsAwarePool';
 import {
   acquireSessionClient,
   dbPoolRoleFor,
@@ -532,5 +532,118 @@ describe('roteamento por identidade (dual-pool)', () => {
 
     expect(runtime.client.query).toHaveBeenCalledWith('SELECT depois');
     expect(system.client.query).not.toHaveBeenCalledWith('SELECT depois');
+  });
+});
+
+describe('detector do modo relatório — formas cegas antes do MEDIUM 14/08', () => {
+  const ORIGINAL = process.env.COUNTRY_RLS_ENABLED;
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.COUNTRY_RLS_ENABLED;
+    else process.env.COUNTRY_RLS_ENABLED = ORIGINAL;
+    jest.restoreAllMocks();
+  });
+
+  it('query FORA de request (sem ALS) avisa UMA vez por call site', async () => {
+    delete process.env.COUNTRY_RLS_ENABLED;
+    const { pool, rawPool } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    const fazQueryForaDeRequest = () => appPool.query('SELECT 1');
+    await fazQueryForaDeRequest();
+    await fazQueryForaDeRequest(); // mesmo call site → dedup
+
+    expect(rawPool.query).toHaveBeenCalledTimes(2); // a query em si sempre passa
+    const foraDeRequest = warn.mock.calls.filter((c) => String(c[1]).includes('fora de request'));
+    expect(foraDeRequest).toHaveLength(1);
+    expect((foraDeRequest[0][0] as { callSite?: string }).callSite).toBeTruthy();
+  });
+
+  it('query APÓS o fim da request avisa (o client fixado já voltou)', async () => {
+    delete process.env.COUNTRY_RLS_ENABLED;
+    const { pool, rawPool } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, async () => {
+      await releaseDbSession(session); // o finish da resposta
+      await appPool.query('SELECT tarde demais');
+    });
+
+    expect(rawPool.query).toHaveBeenCalledWith('SELECT tarde demais');
+    const aposFim = warn.mock.calls.filter((c) => String(c[1]).includes('após o fim da request'));
+    expect(aposFim).toHaveLength(1);
+  });
+
+  it('shouldWarnOnce: dedup por chave e teto duro (o Set nunca cresce sem limite)', () => {
+    const registry = new Set<string>();
+    expect(shouldWarnOnce('a', registry, 2)).toBe(true);
+    expect(shouldWarnOnce('a', registry, 2)).toBe(false); // dedup
+    expect(shouldWarnOnce('b', registry, 2)).toBe(true);
+    expect(shouldWarnOnce('c', registry, 2)).toBe(false); // teto: registry cheio
+    expect(registry.size).toBe(2);
+  });
+
+  it('frames sem caminho, da fiação, de node_modules e node:internal são pulados até achar código de produto', async () => {
+    delete process.env.COUNTRY_RLS_ENABLED;
+    const { pool } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const original = Error.prepareStackTrace;
+    // Stack sintética com um frame de cada classe que o filtro deve pular.
+    Error.prepareStackTrace = () =>
+      [
+        'Error',
+        '    sem-marcador-at',
+        '    at semCaminhoDeArquivo',
+        '    at fiacao (/app/src/shared/database/rlsAwarePool.ts:1:1)',
+        '    at dep (/app/node_modules/pg/lib/index.js:1:1)',
+        '    at interno (node:internal/process/task_queues:104:5)',
+        '    at produto (/app/src/modules/x/UseCase.ts:42:7)',
+      ].join('\n');
+    try {
+      await appPool.query('SELECT frames');
+    } finally {
+      Error.prepareStackTrace = original;
+    }
+    const doProduto = warn.mock.calls.filter((c) =>
+      String((c[0] as { callSite?: string }).callSite).includes('UseCase.ts:42'),
+    );
+    expect(doProduto).toHaveLength(1);
+  });
+
+  it('stack indisponível (prepareStackTrace devolve undefined) → site-desconhecido, aviso sai igual', async () => {
+    delete process.env.COUNTRY_RLS_ENABLED;
+    const { pool } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const original = Error.prepareStackTrace;
+    Error.prepareStackTrace = () => undefined as never;
+    try {
+      const session: DbSession = { released: false };
+      await inRequest(session, async () => {
+        await releaseDbSession(session);
+        await appPool.query('SELECT sem stack nenhum');
+      });
+    } finally {
+      Error.prepareStackTrace = original;
+    }
+    const semStack = warn.mock.calls.filter(
+      (c) => (c[0] as { callSite?: string }).callSite === 'site-desconhecido',
+    );
+    expect(semStack.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('request viva COM contexto e flag off segue em silêncio (operação normal de prod)', async () => {
+    delete process.env.COUNTRY_RLS_ENABLED;
+    const { pool } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, () => appPool.query('SELECT 1'));
+
+    expect(warn.mock.calls.filter((c) => String(c[1]).includes('[abac]'))).toHaveLength(0);
   });
 });

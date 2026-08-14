@@ -28,7 +28,6 @@ import './internalReminders';
 import './internalWebhooks';
 import './publicJobs';
 import './publicVacancies';
-import './recruitmentTest';
 import './user';
 import './webhooksClickup';
 import './webhooksTalentum';

@@ -394,6 +394,25 @@ describe('VacancyCrudController', () => {
       expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
     });
 
+    it('falha no INSERT de domain_events (pós-commit) não derruba o 201 nem vira unhandled rejection', async () => {
+      mockCreateSuccess();
+      const req = mockReq(FULL_BODY);
+      const res = mockRes();
+
+      await controller.createVacancy(req as never, res as never);
+      expect(res.status).toHaveBeenCalledWith(201);
+
+      // O INSERT de domain_events roda no setImmediate (job:vacancy-postcreate).
+      // Rejeitar a PRÓXIMA query exercita o catch do pós-commit — a resposta já
+      // foi, então o único efeito aceitável é o reportError (nunca um throw).
+      mockQuery.mockRejectedValueOnce(new Error('domain_events indisponível'));
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      const domainEventCall = mockQuery.mock.calls.find((c) => String(c[0]).includes('domain_events'));
+      expect(domainEventCall).toBeTruthy();
+    });
+
     it('returns 500 on database error', async () => {
       mockQuery.mockRejectedValueOnce(new Error('column "description" violates not-null'));
       const req = mockReq(FULL_BODY);
