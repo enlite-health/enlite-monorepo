@@ -62,23 +62,37 @@ Os containers `enlite-runtime-db-password` e `enlite-system-db-password` já exi
 HCL (`cloud_sql_abac_users.tf`) — se ainda não foram aplicados, criar antes com
 `gcloud secrets create` **e importar**, na mesma disciplina.
 
-### 3. Conceder a membership (migration 273)
-
-Ela roda sozinha no boot do deploy seguinte, e é idempotente. Para não esperar o deploy:
+### 3. Conceder a membership — **passo AUTORITATIVO deste runbook**
 
 ```bash
-psql -f migrations/273_grant_app_roles_to_login_users.sql
-psql -c "SELECT r.rolname, g.rolname AS grupo
-         FROM pg_auth_members m
-         JOIN pg_roles r ON r.oid = m.member
-         JOIN pg_roles g ON g.oid = m.roleid
-         WHERE r.rolname IN ('enlite_runtime','enlite_system');"
-# espera: enlite_runtime→app_runtime e enlite_system→app_system
+psql -f scripts/assert-abac-membership.sql
 ```
 
-⚠️ Se rodar à mão, **registrar na `schema_migrations`** — senão o boot re-executa
-(ver memória `migration-manual-precisa-registrar`; aqui o re-run é inofensivo, mas a
-regra vale).
+O script CONCEDE (idempotente), VERIFICA em `pg_auth_members` e **falha com exceção** se a
+membership não estiver de pé. Re-executável à vontade. Saída esperada, no fim:
+
+```
+NOTICE:  [abac] membership verificada em pg_auth_members — enlite_runtime→app_runtime e enlite_system→app_system OK
+
+  login_user    | group_role  | rolcanlogin | rolbypassrls
+----------------+-------------+-------------+--------------
+ enlite_runtime | app_runtime | t           | f
+ enlite_system  | app_system  | t           | f
+```
+
+⚠️ **Não é a migration 273 que garante isto neste ambiente.** A 273 só concede a quem já
+existe no momento em que ela roda — e aqui os usuários nasceram no passo 2, DEPOIS do
+deploy. Nesse caminho ela passa sem conceder (com `WARNING: [abac] CONCESSÃO PENDENTE` no
+log de deploy), o runner a registra em `schema_migrations` por não ter havido erro, e ela
+**não volta a rodar sozinha**. Por isso o passo autoritativo é este script.
+
+⚠️ **NÃO inserir nada em `schema_migrations` à mão.** O runner já gravou a linha da 273 —
+um INSERT manual dá conflito de chave primária, e ainda mentiria (o arquivo da migration
+continua não tendo concedido nada). O script acima de propósito não toca nessa tabela.
+
+⚠️ Com `COUNTRY_RLS_ENABLED=true` a aplicação **recusa subir** sem esta membership (assert
+de boot): o serviço entra em crash-loop reclamando dela em vez de servir requests com o
+isolamento desligado. Rodar este passo **antes** da virada da conexão (1.3 / 4.3).
 
 ### 4. Importar para o terraform (D106 — no MESMO bloco de trabalho)
 

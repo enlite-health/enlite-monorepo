@@ -23,6 +23,12 @@
 # Runbook com os comandos exatos (criar → publicar → importar → verificar):
 #   worker-functions/docs/runbook-abac-login-users.md
 #
+# ESTADO (13/08/2026): Import EXECUTADO em stg e prd — o state de ambos já
+# contém estes recursos (plan = No changes); um apply aqui NÃO cria usuários.
+# Se este arquivo for copiado para um ambiente NOVO, importar ANTES do primeiro
+# apply (runbook-abac-login-users.md), senão o apply cria o usuário com a
+# senha-placeholder do HCL em vez de adotar o que já existe.
+#
 # ⚠️ PRD: este arquivo NÃO deve ser aplicado junto com a virada. A ordem é a da
 # D104/D106 — desarmar → importar → alinhar → plan limpo — e aqui ela vira:
 # criar os usuários por fora, publicar as senhas, IMPORTAR, e só então rodar

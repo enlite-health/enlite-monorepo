@@ -23,6 +23,12 @@
 # Runbook com os comandos exatos (criar → publicar → importar → verificar):
 #   worker-functions/docs/runbook-abac-login-users.md
 #
+# ESTADO (13/08/2026): Import EXECUTADO em stg e prd — o state de ambos já
+# contém estes recursos (plan = No changes); um apply aqui NÃO cria usuários.
+# Se este arquivo for copiado para um ambiente NOVO, importar ANTES do primeiro
+# apply (runbook-abac-login-users.md), senão o apply cria o usuário com a
+# senha-placeholder do HCL em vez de adotar o que já existe.
+#
 # Alvo de longo prazo, fora desta change: autenticação IAM do Cloud SQL
 # (`type = "CLOUD_IAM_SERVICE_ACCOUNT"`), que elimina a senha inteira. Exige
 # flag na instância, provider 6.x e a aplicação trocando a senha por um token

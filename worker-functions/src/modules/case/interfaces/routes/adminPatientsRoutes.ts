@@ -76,14 +76,21 @@ export function createAdminPatientsRoutes(
     chatIdsController.getChatMap(req, res),
   );
 
-  router.get('/patients', staffOnly, (req: Request, res: Response) =>
+  router.get('/patients', staffOnly, countryScope, (req: Request, res: Response) =>
     controller.listPatients(req, res),
   );
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.
-  router.post('/patients', staffOnly, (req: Request, res: Response) =>
-    controller.createPatient(req, res),
+  //
+  // O país vem do BODY aqui (não da query): criar paciente para outro país é o
+  // mesmo pedido cross-país do `?country=`, e sem o guard viraria um INSERT que
+  // a policy recusa com erro cru de RLS em vez de explicar.
+  router.post(
+    '/patients',
+    staffOnly,
+    requireCountryScope((req) => req.body?.country),
+    (req: Request, res: Response) => controller.createPatient(req, res),
   );
 
   // Dynamic route last — Express would capture /stats as /:id otherwise.

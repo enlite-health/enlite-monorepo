@@ -27,7 +27,12 @@ segurança** (lex C5): registrar quem/quando/por quê no diário + log estrutura
 
 - [x] Migrations 268-272 (grupos, roles, audit log, RLS ENABLE sem FORCE, índices) — **QA
       only** (branch `stage`, rev stg 00051). Prod está na 267.
-- [x] Migration 273 (GRANT membership) — aplicada + registrada em `schema_migrations` no stg.
+- [x] Migration 273 (GRANT membership) — registrada em `schema_migrations` no stg. ⚠️ Estar
+      registrada **não prova concedido**: a 273 só concede a quem existia quando ela rodou,
+      e o runner registra qualquer execução sem erro. A prova é
+      `psql -f scripts/assert-abac-membership.sql` (concede + verifica `pg_auth_members` +
+      falha se faltar) — **passo autoritativo, e nunca um INSERT manual em
+      `schema_migrations`**, que daria conflito de PK.
 - [x] Código do grupo 3 (contexto por request, claim, trilha de leitura, guard UX) — na
       branch `feat/abac-pais-migrations`, **inerte** com `COUNTRY_RLS_ENABLED` ausente.
 - [x] Usuários `enlite_runtime`/`enlite_system` criados em **stg e prd**, senhas em
@@ -53,6 +58,24 @@ O `worker-functions` atende staff + cron + webhook no MESMO processo, com UM `DB
 > sem mecanismo nenhum.
 Gate: e2e novo cobrindo **conexão única** (o e2e de 13/08 usou dois pools separados e não
 cobre este caso) + prova de que staff não escala para sistema.
+
+### 1.0b Pré-requisito de banco: membership CONCEDIDA (não só "273 aplicada")
+Antes de trocar a identidade da conexão em 1.3, rodar no banco do ambiente:
+```bash
+psql -f scripts/assert-abac-membership.sql   # concede + verifica pg_auth_members + falha se faltar
+```
+Este é o **passo autoritativo** em qualquer ambiente onde `enlite_runtime`/`enlite_system`
+nasceram DEPOIS do deploy (stg e prd, pelo runbook) — que é o caso normal. A migration 273
+só concede a quem já existia quando ela rodou; nesse caminho ela emite
+`WARNING: [abac] CONCESSÃO PENDENTE`, o runner a registra em `schema_migrations` por não ter
+havido erro, e ela não volta a rodar. **Linha em `schema_migrations` ≠ GRANT feito.**
+
+⚠️ **Nunca "consertar" com INSERT manual em `schema_migrations`**: conflito de chave
+primária com a linha que o runner já gravou, e o GRANT continuaria sem existir.
+
+⚠️ Com `COUNTRY_RLS_ENABLED=true` a aplicação **recusa subir** sem a membership (assert de
+boot) — o serviço vai a crash-loop em vez de servir sem isolamento. Ordem obrigatória:
+assert de membership **antes** do push de 1.3.
 
 ### 1.1 Merge do PR na `stage` (= deploy automático de QA)
 - PR `feat/abac-pais-migrations` → `stage`. Merge é **ação isolada com confirmação na
@@ -107,8 +130,17 @@ Só depois do gate 1.4 inteiro verde + janela de observação em QA (mínimo 48h
   conseguir rodá-las: conferir ANTES, no banco de prd, `rolcreaterole` (269 cria roles) e
   ownership (271 faz ALTER TABLE — precisa ser owner: é).
 - Pós-deploy prd: health 200 · `schema_migrations` com 268-273 · **comportamento
-  inalterado** (app segue `enlite_app`, owner, sem FORCE — as policies existem e não
-  valem) · rodar a migration 273 concede membership aos usuários que já existem.
+  inalterado** (app segue `enlite_app`, owner, sem FORCE — as policies existem e não valem).
+- ⚠️ **A membership em prd NÃO sai deste deploy.** Os usuários `enlite_runtime`/
+  `enlite_system` de prd foram criados em 13/08, depois do boot que registrar a 273 — a
+  migration vai emitir `WARNING: [abac] CONCESSÃO PENDENTE` e seguir. Conceder de verdade é
+  passo próprio, autoritativo, executado no banco de prd:
+  ```bash
+  psql -f scripts/assert-abac-membership.sql
+  ```
+  Exigência de saída: `membership verificada em pg_auth_members … OK`. Sem isso, a fase 4
+  não pode nem começar — o app com `COUNTRY_RLS_ENABLED=true` recusa subir. **Não registrar
+  nada à mão em `schema_migrations`** (conflito de PK; a linha já existe).
 - Smoke de não-regressão: kanban, lista de workers, dossiê, 1 cron.
 
 ## FASE 3 — PRD em modo relatório (task 4.2, 1 semana)
