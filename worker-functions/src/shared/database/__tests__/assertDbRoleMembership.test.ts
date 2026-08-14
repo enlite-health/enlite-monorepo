@@ -98,31 +98,4 @@ describe('assertDbRoleMembership', () => {
 
     await expect(assertDbRoleMembership(runtime, runtime)).rejects.toThrow(/timeout cru/);
   });
-
-  // ── ABAC_MAIN_POOL_ROLE: o serviço MCP roda o MESMO index.ts como enlite_system ──
-
-  it('ABAC_MAIN_POOL_ROLE=app_system: exige app_system no pool principal (o caso do MCP)', async () => {
-    process.env.COUNTRY_RLS_ENABLED = 'true';
-    process.env.ABAC_MAIN_POOL_ROLE = 'app_system';
-    try {
-      const query = jest.fn().mockResolvedValue({ rows: [{ member: true, who: 'enlite_system' }] });
-      const pool = { query } as never;
-
-      await expect(assertDbRoleMembership(pool, pool)).resolves.toBeUndefined();
-      expect(query.mock.calls[0][1]).toEqual(['app_system']);
-    } finally {
-      delete process.env.ABAC_MAIN_POOL_ROLE;
-    }
-  });
-
-  it('ABAC_MAIN_POOL_ROLE inválido LANÇA — config errada não vira assert frouxo', async () => {
-    process.env.COUNTRY_RLS_ENABLED = 'true';
-    process.env.ABAC_MAIN_POOL_ROLE = 'app_admin';
-    try {
-      const pool = { query: jest.fn() } as never;
-      await expect(assertDbRoleMembership(pool, pool)).rejects.toThrow(/ABAC_MAIN_POOL_ROLE inválido/);
-    } finally {
-      delete process.env.ABAC_MAIN_POOL_ROLE;
-    }
-  });
 });

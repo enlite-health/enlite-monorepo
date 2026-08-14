@@ -72,19 +72,3 @@ module "secret_enlite_system_db_password" {
   secret_id             = "enlite-system-db-password"
   replication_locations = ["southamerica-west1"]
 }
-
-# A SA do serviço lê as senhas em runtime (deploy-cloudrun `secrets:`). Concedido
-# via gcloud e IMPORTADO no mesmo bloco (D106) — flip de QA, 14/08/2026.
-resource "google_secret_manager_secret_iam_member" "functions_sa_runtime_db_password" {
-  project   = var.project_id
-  secret_id = module.secret_enlite_runtime_db_password.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:enlite-functions-sa@${var.project_id}.iam.gserviceaccount.com"
-}
-
-resource "google_secret_manager_secret_iam_member" "functions_sa_system_db_password" {
-  project   = var.project_id
-  secret_id = module.secret_enlite_system_db_password.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:enlite-functions-sa@${var.project_id}.iam.gserviceaccount.com"
-}

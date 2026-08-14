@@ -24,26 +24,6 @@ import { isCountryRlsEnabled } from './requestDbSession';
 const RUNTIME_ROLE = 'app_runtime';
 const SYSTEM_ROLE = 'app_system';
 
-/**
- * Qual role o POOL PRINCIPAL deste serviço precisa ter.
- *
- * O `worker-functions-mcp` roda o MESMO `index.ts` (imagem única, MCP_ENABLED)
- * mas conecta como `enlite_system` — 100% das requests dele são de sistema
- * (achado da preparação do flip de QA, 14/08). Sem isto, o assert exigiria
- * `app_runtime` de um serviço que por design não a tem, e o flip derrubaria o
- * MCP em crash-loop. Valores válidos: `app_runtime` (default) | `app_system`.
- * Valor inválido LANÇA — configuração errada não pode virar assert frouxo.
- */
-function mainPoolRole(): string {
-  const raw = process.env.ABAC_MAIN_POOL_ROLE ?? RUNTIME_ROLE;
-  if (raw !== RUNTIME_ROLE && raw !== SYSTEM_ROLE) {
-    throw new Error(
-      `[abac] ABAC_MAIN_POOL_ROLE inválido: "${raw}" (use ${RUNTIME_ROLE} ou ${SYSTEM_ROLE})`,
-    );
-  }
-  return raw;
-}
-
 interface MembershipRow {
   member: boolean | null;
   who: string;
@@ -88,7 +68,7 @@ async function assertMembership(pool: Pool, role: string, label: string): Promis
 export async function assertDbRoleMembership(runtimePool: Pool, systemPool: Pool): Promise<void> {
   if (!isCountryRlsEnabled()) return;
 
-  await assertMembership(runtimePool, mainPoolRole(), 'principal');
+  await assertMembership(runtimePool, RUNTIME_ROLE, 'runtime');
   if (systemPool !== runtimePool) {
     await assertMembership(systemPool, SYSTEM_ROLE, 'sistema');
   }

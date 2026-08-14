@@ -1,7 +1,6 @@
 import type { Application } from 'express';
 import type { Pool as PgPool } from 'pg';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { poolMax } from '@shared/database/DatabaseConnection';
 import { ServicePrincipalSecretManagerRepo } from '../infrastructure/ServicePrincipalSecretManagerRepo';
 import { McpAuditLogger } from '../infrastructure/McpAuditLogger';
 import { CapabilityRegistry } from '../application/CapabilityRegistry';
@@ -112,9 +111,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
       database: process.env.DB_NAME,
       user: roUser,
       password: roPassword,
-      // Conta no orçamento de max_connections da instância (o gate do flip de
-      // QA pegou este pool fora da conta: 3 instâncias × 3 = +9 num teto de 25).
-      max: poolMax('MCP_DB_RO_POOL_MAX', 3),
+      max: 3,
     });
     // Erro de client idle não derruba o processo (mesmo padrão do
     // DatabaseConnection): sem este handler, o `error` sem listener no pg-pool
