@@ -84,6 +84,12 @@ jobs:
           region: ${{ env.REGION }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          # ⚠️ SEM `env_vars_update_strategy: overwrite` aqui DE PROPÓSITO (16/08): o YAML de
+          # prd NÃO é o conjunto completo — a revisão viva tem envs/secrets aplicados por
+          # gcloud fora do YAML (medido no gate do PR #222: 11 envs + 7 secrets a mais no
+          # worker-functions; 4 + 1 no MCP). Com overwrite, o 1º deploy os APAGARIA. Antes
+          # de ligar overwrite em prd: reconciliar YAML × `gcloud run services describe`
+          # (e migrar os plaintext p/ secrets) em PR próprio. Listas de env: usar ';'.
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}

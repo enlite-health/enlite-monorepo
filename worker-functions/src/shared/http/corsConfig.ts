@@ -1,4 +1,5 @@
 import cors, { CorsOptions } from 'cors';
+import { parseEnvList } from '@shared/utils/envList';
 
 /**
  * Origens permitidas de CORS = defaults + CORS_ALLOWED_ORIGINS (CSV por ambiente).
@@ -17,10 +18,7 @@ const defaultAllowedOrigins = [
 ];
 
 export function getAllowedOrigins(): string[] {
-  const fromEnv = (process.env.CORS_ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
+  const fromEnv = parseEnvList(process.env.CORS_ALLOWED_ORIGINS);
   return [...defaultAllowedOrigins, ...fromEnv];
 }
 

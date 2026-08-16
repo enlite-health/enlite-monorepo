@@ -67,8 +67,9 @@ jobs:
           # ⚠️ Valor de env com VÍRGULA não sobrevive ao parseKVString do action:
           # "MCP_PRINCIPAL_NAMES=triage-service,claude-code" virou
           # MCP_PRINCIPAL_NAMES=triage-service + env fantasma "claude-code=" (visto
-          # no gcloud do run 31821260708, 14/08). Por isso o valor abaixo é single —
-          # e triage-service nem tem secret mcp-principal-* no stg (só ruído de log).
+          # no gcloud do run 31821260708, 14/08). Listas usam ';' (parseEnvList aceita
+          # ',' ';' e espaço). Aqui MCP_PRINCIPAL_NAMES é single porque triage-service
+          # nem tem secret mcp-principal-* no stg (só gerava NOT_FOUND no log).
           env_vars_update_strategy: overwrite
           secrets_update_strategy: overwrite
           env_vars: |
@@ -89,7 +90,7 @@ jobs:
             CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
             FIREBASE_WEB_API_KEY=AIzaSyCdOWe7NsS9vbQHx3PhWcVKUdr72k5UWVA
             FIREBASE_WEB_AUTH_DOMAIN=enlite-stg.firebaseapp.com
-            ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
+            ALLOWED_MEDIA_HOSTS=api.twilio.com;*.twilio.com;chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-system-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
