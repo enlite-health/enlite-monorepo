@@ -248,8 +248,8 @@ describe('GetManagementDashboardUseCase', () => {
       encuadres: {
         agendadosEstaSemana: 8,
         semDataRegistrada: 0,
-        // Capacidade default 80 (env ausente): 8/80 = 10%.
-        pctCapacidadeSemana: { agendados: 8, capacidade: 80, pct: 10 },
+        // Capacidade default 30 (env ausente, call 12/08): 8/30 = 26,7%.
+        pctCapacidadeSemana: { agendados: 8, capacidade: 30, pct: 26.7 },
       },
       cadastros: {
         leads: 6882,

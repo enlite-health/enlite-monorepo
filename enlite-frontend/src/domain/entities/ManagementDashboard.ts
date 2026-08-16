@@ -120,7 +120,7 @@ export interface ManagementDashboardData {
     /** Cards em "Agendados" sem data registrada — medida de adoção da captura. */
     semDataRegistrada: number;
     /**
-     * % da capacidade semanal contratada (config ENCUADRE_WEEKLY_CAPACITY; 80).
+     * % da capacidade semanal contratada (config ENCUADRE_WEEKLY_CAPACITY; 30).
      * AUSENTE quando a config está zerada — nunca 0% fabricado. pct pode passar de 100.
      */
     pctCapacidadeSemana?: { agendados: number; capacidade: number; pct: number };

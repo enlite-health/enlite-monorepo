@@ -30,11 +30,13 @@ export interface ManagementDashboardOptions {
 /**
  * Capacidade semanal contratada de encuadres (reuniões de coordenação).
  * Origem: call 22/07 (Marcel, 01:53 — "80 reuniões = 40h × 2/h, contratadas"),
- * confirmada em 30/07 com pedido explícito de ser CONFIGURÁVEL. Zero/inválida →
+ * confirmada em 30/07 com pedido explícito de ser CONFIGURÁVEL.
+ * REVISADA para 30 na call de produto de 12/08 (Diego/Marcel, task 86ak04ygv):
+ * o denominador passa a refletir a capacidade real da coordenação. Zero/inválida →
  * o percentual é OMITIDO do payload (nunca divisão por zero, nunca 0% falso).
  */
 function readEncuadreWeeklyCapacity(): number | null {
-  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '80';
+  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '30';
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
