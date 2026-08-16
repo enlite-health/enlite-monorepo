@@ -24,6 +24,7 @@
  */
 
 import { Pool } from 'pg';
+import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
 
 const COUNTRIES = ['AR', 'BR'] as const;
 type Country = (typeof COUNTRIES)[number];
@@ -113,11 +114,9 @@ async function main(): Promise<void> {
       console.log(`  [${isDryRun ? 'DRY' : 'SET'}] ${row.email ?? row.firebase_uid} (${row.role}): ${action}`);
 
       if (!isDryRun) {
-        // Preserva os claims existentes (`role` é claim também) — setCustomUserClaims SUBSTITUI o objeto inteiro.
-        await admin.auth().setCustomUserClaims(row.firebase_uid, {
-          ...(user.customClaims ?? {}),
-          country,
-        });
+        // Mesmo helper que o backend usa para escrever `role` — preserva os
+        // demais claims (setCustomUserClaims SUBSTITUI o objeto inteiro).
+        await mergeCustomClaims(row.firebase_uid, { country });
         assigned += 1;
       }
     }

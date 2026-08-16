@@ -1,7 +1,7 @@
 import { Result } from '@shared/utils/Result';
 import { AdminRepository, AdminRecord } from '../infrastructure/AdminRepository';
 import { isStaffRole } from '../domain/EnliteRole';
-import * as admin from 'firebase-admin';
+import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
 
 export interface UpdateAdminRoleInput {
   firebaseUid: string;
@@ -35,7 +35,7 @@ export class UpdateAdminRoleUseCase {
       // Propagate new role to Firebase custom claims.
       // Skip in test environments (no Firebase project credentials available).
       if (process.env.NODE_ENV !== 'test') {
-        await admin.auth().setCustomUserClaims(firebaseUid, { role: newRole });
+        await mergeCustomClaims(firebaseUid, { role: newRole });
       }
 
       // Return refreshed record

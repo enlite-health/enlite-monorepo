@@ -4,6 +4,7 @@ import { AdminRepository } from '../infrastructure/AdminRepository';
 import { EmailService } from '../infrastructure/EmailService';
 import { EnliteRole, StaffRole, isStaffRole } from '../domain/EnliteRole';
 import * as admin from 'firebase-admin';
+import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
 import { reportError } from '@shared/logging';
 
 export interface CreateAdminInput {
@@ -37,7 +38,7 @@ export class CreateAdminUserUseCase {
       });
 
       // 2. Set custom claims
-      await admin.auth().setCustomUserClaims(firebaseUser.uid, { role });
+      await mergeCustomClaims(firebaseUser.uid, { role });
 
       // 3. Persist in DB inside a transaction
       await client.query('BEGIN');

@@ -185,6 +185,20 @@ describe('GetAdminProfileUseCase', () => {
       expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter' });
     });
 
+    it('auto-provision PRESERVA o claim country da ABAC (bug de QA 16/08: setCustomUserClaims apagava)', async () => {
+      mockFindByFirebaseUid
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockAdminRecord);
+      // O usuário de gate já tinha country=AR gravado pelo script da 3.2 e
+      // NENHUMA linha em `users` — exatamente o cenário que apagou o claim.
+      mockGetUser.mockResolvedValue({ ...makeFirebaseUser(), customClaims: { role: 'admin', country: 'AR' } });
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter', country: 'AR' });
+    });
+
     it('deve executar create_user_with_role com os dados corretos do Firebase user', async () => {
       const firebaseUser = makeFirebaseUser({
         email: 'joao.silva@enlite.health',
