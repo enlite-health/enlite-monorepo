@@ -17,6 +17,14 @@ const MODULES = [
   { name: 'integration',  barrel: '@modules/integration',     pathBase: 'modules' },
   { name: 'worker',       barrel: '@modules/worker',          pathBase: 'modules' },
   { name: 'matching',     barrel: '@modules/matching',        pathBase: 'modules',  subdirs: ['domain', 'infrastructure', 'application', 'interfaces'] },
+  // Submódulo de identity com fronteira PRÓPRIA (D115 §7: extraível para
+  // permission-service). Fica listado à parte porque o override de `identity`
+  // desliga a regra dentro de `src/modules/identity/**` — sem esta entrada,
+  // qualquer arquivo poderia importar `.../permissions/application/...` direto e
+  // a extração deixaria de ser mecânica. O caminho relativo (`*/`) cobre quem
+  // importa de dentro de identity; o alias cobre o resto do repo.
+  { name: 'identity/permissions', barrel: '@modules/identity/permissions', pathBase: 'modules',
+    subdirs: ['domain', 'application', 'infrastructure', 'interface'] },
   { name: 'ops',          barrel: '@modules/ops',             pathBase: 'modules',  scaffold: true },
   { name: 'consent',      barrel: '@modules/consent',         pathBase: 'modules',  scaffold: true },
 ];

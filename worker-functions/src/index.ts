@@ -49,6 +49,7 @@ import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
 import { publicContextMiddleware, systemContextMiddleware } from './shared/database/systemContextMiddleware';
 import { noStoreMiddleware } from './shared/http/noStoreMiddleware';
 import { startServer } from './bootstrap/startServer';
+import { runPermissionsBootTasks, wirePermissionsModule } from './bootstrap/wirePermissionsModule';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
@@ -482,6 +483,18 @@ app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response
   recruitmentHealthController.getHealth(req, res),
 );
 
+// ========== Permissões (painel de grupos, grupo 2) ==========
+// Neutro por padrão: registra os handlers de invalidação de cache, publica o
+// catálogo em /.well-known (guard interno) e mede staff sem grupo. Os syncs que
+// ESCREVEM no banco são gated (ver wirePermissionsModule).
+const permissionsModule = wirePermissionsModule({
+  app,
+  pool: dbPool,
+  systemPool: DatabaseConnection.getInstance().getSystemPool(),
+  events: domainEventProcessor,
+  internalGuard: internalAuthMiddleware,
+});
+
 // ========== MCP Server (feature-gated via MCP_ENABLED=true) ==========
 if (process.env.MCP_ENABLED === 'true') {
   const { mountMcpRoutes } = require('@modules/mcp/bootstrap/mountMcpRoutes') as typeof import('@modules/mcp/bootstrap/mountMcpRoutes');
@@ -494,9 +507,18 @@ if (process.env.MCP_ENABLED === 'true') {
 // quando COUNTRY_RLS_ENABLED=true (ver assertDbRoleMembership). Falhou, o
 // processo MORRE — servir com RLS sem grant é servir tela vazia calada, e a
 // revisão anterior do Cloud Run continua atendendo enquanto esta não sobe.
-startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService }).catch((err) => {
-  console.error('[startup] falha fatal ao subir o servidor:', err);
-  process.exit(1);
-});
+startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService })
+  .then(() =>
+    // Depois do listen e com TODAS as rotas montadas (a varredura do catálogo
+    // precisa do router pronto). `.catch` próprio: nenhuma dessas tarefas tem
+    // direito de derrubar o processo (lex C2).
+    runPermissionsBootTasks(app, permissionsModule).catch((err: unknown) =>
+      console.error('[perm] falha nas tarefas de boot de permissões — seguindo:', err),
+    ),
+  )
+  .catch((err) => {
+    console.error('[startup] falha fatal ao subir o servidor:', err);
+    process.exit(1);
+  });
 
 export { app };
