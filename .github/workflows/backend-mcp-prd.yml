@@ -51,6 +51,13 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           # Reusa exatamente o mesmo image buildado pelo backend-prd.yml no mesmo SHA
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha }}"
+          # Declarativo: o YAML é o conjunto COMPLETO de env/secrets (mesmo motivo do stg,
+          # ensaio de rollback 1.R de 14/08 — com MERGE, chave removida do YAML persistia
+          # da revisão anterior e o rollback não rolava). ⚠️ Valor de env com VÍRGULA é
+          # splitado pelo action (achado 16/08 em prd: MCP_PRINCIPAL_NAMES e
+          # ALLOWED_MEDIA_HOSTS mutilados + 3 envs fantasmas) — listas usam ';'.
+          env_vars_update_strategy: overwrite
+          secrets_update_strategy: overwrite
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true
@@ -58,14 +65,14 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
-            MCP_PRINCIPAL_NAMES=triage-service,claude-code
+            MCP_PRINCIPAL_NAMES=triage-service;claude-code
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             FIREBASE_WEB_API_KEY=AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI
             FIREBASE_WEB_AUTH_DOMAIN=enlite-prd.firebaseapp.com
-            ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
+            ALLOWED_MEDIA_HOSTS=api.twilio.com;*.twilio.com;chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest

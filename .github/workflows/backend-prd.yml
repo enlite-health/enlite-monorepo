@@ -84,6 +84,13 @@ jobs:
           region: ${{ env.REGION }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          # Declarativo: o YAML é o conjunto COMPLETO de env/secrets (mesmo motivo do stg,
+          # ensaio de rollback 1.R de 14/08 — com MERGE, chave removida do YAML persistia
+          # da revisão anterior e o rollback não rolava). ⚠️ Valor de env com VÍRGULA é
+          # splitado pelo action (achado 16/08 em prd: MCP_PRINCIPAL_NAMES e
+          # ALLOWED_MEDIA_HOSTS mutilados + 3 envs fantasmas) — listas usam ';'.
+          env_vars_update_strategy: overwrite
+          secrets_update_strategy: overwrite
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
