@@ -33,6 +33,38 @@
 -- claim) — testada no e2e (1.9). Executar reversão em prod = evento de segurança
 -- (lex C5 do ABAC): registrar quem/quando/por quê.
 
+-- PRÉ-CONDIÇÃO fail-closed (a causa exata que tirou esta policy da cadeia): quem
+-- aplica PRECISA ter visto quantos staff ACTIVE ficam sem país efetivo e confirmar o
+-- número. O modelo D114 ACEITA staff sem grupo (cai na tela de boas-vindas) — então
+-- "zero sem país" não é a regra; a regra é "ninguém que tinha acesso perde sem que o
+-- operador saiba". Uso:
+--   psql -v ack=<N> -f scripts/rollout/278_rls_country_grant_only.sql
+-- onde <N> = saída de:
+--   SELECT count(*) FROM users u WHERE u.status='ACTIVE'
+--     AND u.role IN ('admin','recruiter','community_manager')
+--     AND cardinality(iam.effective_countries(u.firebase_uid, iam.current_tenant_id()))=0;
+-- Se o número não bater (ex.: "esqueci a 5.1" = dezenas), PARA. Sem -v ack, PARA.
+-- (No e2e, o harness passa o ack pelo GUC app.rollout_278_ack.)
+DO $$
+DECLARE
+  v_sem INT;
+  v_ack TEXT := NULLIF(current_setting('app.rollout_278_ack', true), '');
+BEGIN
+  SELECT count(*) INTO v_sem
+  FROM users u
+  WHERE u.status = 'ACTIVE'
+    AND u.role IN ('admin', 'recruiter', 'community_manager')
+    AND cardinality(iam.effective_countries(u.firebase_uid, iam.current_tenant_id())) = 0;
+  IF v_ack IS NULL OR v_ack <> v_sem::text THEN
+    RAISE EXCEPTION USING ERRCODE = '23514',
+      MESSAGE = format('[278] %s staff ACTIVE sem país efetivo. Confirme com o número exato: '
+                       'psql -c "SET app.rollout_278_ack=''%s''" (ou -v) — e só depois de a migração '
+                       'de dados (task 5.1) ter rodado. ack recebido: %s', v_sem, v_sem, COALESCE(v_ack, '(nenhum)'));
+  END IF;
+  RAISE NOTICE '[278] confirmado: % staff ACTIVE sem país efetivo (esperado pelo operador)', v_sem;
+END
+$$;
+
 DROP POLICY IF EXISTS patients_country_isolation ON patients;
 CREATE POLICY patients_country_isolation ON patients
   FOR ALL

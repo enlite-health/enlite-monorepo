@@ -138,6 +138,28 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     }
   }
 
+  /**
+   * Aplica a 278 do jeito que o operador aplica: lê quantos staff ACTIVE ficam sem
+   * país efetivo e passa o número como ack (pré-condição fail-closed do script). No
+   * harness há staff de teste sem grupo por desenho (bob) — o ack é o retrato disso.
+   */
+  async function applyRollout278(): Promise<void> {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const sql = fs.readFileSync(path.resolve(__dirname, '../../scripts/rollout/278_rls_country_grant_only.sql'), 'utf8');
+    const c = await pool.connect();
+    try {
+      const n = await c.query(`SELECT count(*)::int n FROM users u WHERE u.status='ACTIVE'
+        AND u.role IN ('admin','recruiter','community_manager')
+        AND cardinality(iam.effective_countries(u.firebase_uid, iam.current_tenant_id()))=0`);
+      await c.query(`SELECT set_config('app.rollout_278_ack', $1, false)`, [String(n.rows[0].n)]);
+      await c.query(sql);
+    } finally {
+      await c.query(`SELECT set_config('app.rollout_278_ack', '', false)`).catch(() => {});
+      c.release();
+    }
+  }
+
   const eff = (uid: string) =>
     pool.query(`SELECT iam.effective_permissions($1, $2) AS p, iam.effective_countries($1, $2) AS c`, [uid, TENANT])
       .then((r) => r.rows[0] as { p: string[]; c: string[] });
@@ -229,9 +251,7 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     // comportamento das outras suítes que rodam no mesmo banco (as do ABAC 271/274
     // provam o modelo ATUAL, com o ramo do claim).
     beforeAll(async () => {
-      const fs = await import('node:fs');
-      const path = await import('node:path');
-      await pool.query(fs.readFileSync(path.resolve(__dirname, '../../scripts/rollout/278_rls_country_grant_only.sql'), 'utf8'));
+      await applyRollout278();
     });
     afterAll(async () => {
       const fs = await import('node:fs');
@@ -352,8 +372,18 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       expect((await eff(U.ana)).c).not.toContain('BR');
     });
 
-    it('sync do manifest: só em contexto de sistema; NÃO sobrescreve override do painel', async () => {
+    it('sync do manifest: gate por ACL — app_runtime NÃO chama nem forjando o GUC (BLOCKER (a) do gate #223)', async () => {
+      // Sem GUC: 42501 (permission denied for function — ACL)
       await expect(asRole('app_runtime', { uid: U.gestor }, (c) =>
+        c.query(`SELECT iam.sync_country_feature_default('BR', 'screen:iam-e2e', false, NULL)`)))
+        .rejects.toMatchObject({ code: '42501' });
+      // COM app.system_context forjado por app_runtime: continua 42501 — dentro de SECURITY
+      // DEFINER `current_user` é o dono, então o gate de role tem que ser ACL, não pg_has_role.
+      await expect(asRole('app_runtime', { uid: U.gestor, systemContext: 'job:forjado' }, (c) =>
+        c.query(`SELECT iam.sync_country_feature_default('BR', 'screen:iam-e2e', false, NULL)`)))
+        .rejects.toMatchObject({ code: '42501' });
+      // app_system SEM o GUC: 42501 (o GUC segue obrigatório)
+      await expect(asRole('app_system', {}, (c) =>
         c.query(`SELECT iam.sync_country_feature_default('BR', 'screen:iam-e2e', false, NULL)`)))
         .rejects.toMatchObject({ code: '42501' });
       await asRoleCommit('app_runtime', { uid: U.gestor }, (c) =>
@@ -397,6 +427,26 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       expect(bad).toEqual([]);
       const mother = await pool.query(`SELECT has_table_privilege('app_runtime','iam.permission_audit_log','SELECT') sel`);
       expect(mother.rows[0].sel).toBe(false);
+      // BLOCKER (e) do gate #223: a VIEW de compatibilidade também não pode ter SELECT —
+      // a 274 re-rodada depois da 280 não pode reabrir por aqui.
+      const view = await pool.query(`SELECT has_table_privilege('app_runtime','public.permission_audit_log','SELECT') sel`);
+      expect(view.rows[0].sel).toBe(false);
+      await expect(asRole('app_runtime', {}, (c) => c.query(`SELECT count(*) FROM public.permission_audit_log`)))
+        .rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('re-rodar 274 e 279 DEPOIS da 280 mantém o audit INSERT-only (mãe, partições e view)', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      await pool.query(fs.readFileSync(path.resolve(__dirname, '../../migrations/274_iam_schema.sql'), 'utf8'));
+      await pool.query(fs.readFileSync(path.resolve(__dirname, '../../migrations/279_iam_writer_functions.sql'), 'utf8'));
+      const r = await pool.query(`
+        SELECT has_table_privilege('app_runtime','iam.permission_audit_log','SELECT') mother,
+               has_table_privilege('app_runtime','public.permission_audit_log','SELECT') view,
+               (SELECT bool_or(has_table_privilege('app_runtime', c.oid, 'SELECT'))
+                  FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+                 WHERE i.inhparent = 'iam.permission_audit_log'::regclass) any_part`);
+      expect(r.rows[0]).toEqual({ mother: false, view: false, any_part: false });
     });
 
     it('app_runtime consegue INSERT (trilha) mas SELECT direto é negado', async () => {
@@ -426,7 +476,14 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       const down = fs.readFileSync(path.resolve(__dirname, '../../scripts/rollback/278_down.sql'), 'utf8');
       const list = `SELECT country FROM patients WHERE id = ANY($1) ORDER BY 1`;
       const q = () => asRole('app_runtime', { uid: U.bob, country: 'BR' }, (c) => c.query(list, [[IDS.patientAR, IDS.patientBR]]));
-      await pool.query(up);
+      // Pré-condição fail-closed: sem ack → PARA; ack errado → PARA (o "esqueci a 5.1")
+      await expect(pool.query(up)).rejects.toMatchObject({ code: '23514' });
+      const c = await pool.connect();
+      try {
+        await c.query(`SELECT set_config('app.rollout_278_ack', '999', false)`);
+        await expect(c.query(up)).rejects.toMatchObject({ code: '23514' });
+      } finally { c.release(); }
+      await applyRollout278();
       expect((await q()).rowCount).toBe(0);           // grant-only: claim não concede
       await pool.query(down);
       expect((await q()).rows.map((x) => x.country)).toEqual(['BR']);   // claim de volta

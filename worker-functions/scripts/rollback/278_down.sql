@@ -3,11 +3,9 @@
 -- Fora de migrations/ de propósito: o runner NÃO aplica isto. Uso manual:
 --   psql "$DATABASE_URL" -f scripts/rollback/278_down.sql
 -- Em PROD é EVENTO DE SEGURANÇA (lex C5 do ABAC): registrar quem/quando/por quê no diário
--- + log estruturado, e reabrir a change. Depois de rodar, para o runner não re-aplicar a
--- 278 no próximo boot, remover a linha em schema_migrations:
---   DELETE FROM schema_migrations WHERE filename = '278_rls_country_grant_only.sql';
--- (é o único caso em que mexer em schema_migrations à mão é legítimo — e só junto com
--- este script, testado no e2e da 1.9).
+-- + log estruturado, e reabrir a change. A 278 vive em scripts/rollout/ (NÃO em
+-- migrations/), então nunca há linha em schema_migrations para ela — nada a limpar; o
+-- estado observável é o COMMENT ON POLICY.
 
 DROP POLICY IF EXISTS patients_country_isolation ON patients;
 CREATE POLICY patients_country_isolation ON patients

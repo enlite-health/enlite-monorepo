@@ -33,14 +33,18 @@ AS $$
   SELECT NULLIF(current_setting('app.user_uid', true), '');
 $$;
 
--- Sistema declarado (cron/boot) — usado só onde faz sentido (sync do manifest).
+-- Contexto de sistema DECLARADO (GUC). ⚠️ NÃO checa role: dentro de uma função
+-- SECURITY DEFINER `current_user` é o DONO da função, não o chamador — um
+-- `pg_has_role(current_user, 'app_system')` ali não testa nada (pego pelo gate do
+-- PR #223: app_runtime forjando o GUC gravava country_features). O gate por ROLE
+-- é feito por ACL — `GRANT EXECUTE ... TO app_system` SÓ (abaixo) — que o Postgres
+-- checa contra o CHAMADOR. Esta função só exige o GUC declarado.
 CREATE OR REPLACE FUNCTION iam._is_system_context()
 RETURNS BOOLEAN
 LANGUAGE sql STABLE
 SET search_path = pg_catalog, iam, public
 AS $$
-  SELECT NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
-     AND pg_has_role(current_user, 'app_system', 'MEMBER');
+  SELECT NULLIF(current_setting('app.system_context', true), '') IS NOT NULL;
 $$;
 
 CREATE OR REPLACE FUNCTION iam._require_manager(p_tenant_id UUID)
@@ -73,6 +77,10 @@ AS $$
 DECLARE
   v_n INT;
 BEGIN
+  -- Serializa mutações que podem tirar gestor (TOCTOU sob READ COMMITTED: dois
+  -- remove_member simultâneos de gestores distintos veriam um ao outro vivos e
+  -- ambos commitariam → 0 gestores). Lock por tenant, até o fim da transação.
+  PERFORM pg_advisory_xact_lock(hashtext('iam:managers:' || p_tenant_id::text));
   SELECT count(DISTINCT u.firebase_uid) INTO v_n
   FROM users u
   WHERE u.status = 'ACTIVE'
@@ -321,8 +329,9 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, iam, public
 AS $$
 BEGIN
+  -- Role: garantida por ACL (só app_system tem EXECUTE nesta função). Aqui só o GUC.
   IF NOT iam._is_system_context() THEN
-    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = '[iam] sync do manifest só em contexto de sistema declarado';
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = '[iam] sync do manifest exige app.system_context declarado';
   END IF;
   INSERT INTO iam.country_features (country, feature_key, enabled, config, source, updated_by, updated_at)
   VALUES (p_country, p_feature_key, p_enabled, p_config, 'default', 'system:manifest', now())
@@ -379,7 +388,14 @@ BEGIN
   ] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
-      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO app_runtime, app_system', f);
+      IF f LIKE 'iam.sync_country_feature_default(%' THEN
+        -- Gate por ROLE = ACL (checada contra o CHAMADOR, mesmo em SECURITY DEFINER):
+        -- só o pool de SISTEMA sincroniza o manifest; app_runtime nem consegue chamar.
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM app_runtime', f);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO app_system', f);
+      ELSE
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO app_runtime, app_system', f);
+      END IF;
     END IF;
   END LOOP;
 END

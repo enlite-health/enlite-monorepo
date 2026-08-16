@@ -69,16 +69,18 @@ async function run() {
       )
     `);
 
-    // Advisory lock prevents race condition when Cloud Run starts multiple instances
+    // Advisory lock serializa instâncias concorrentes (Cloud Run sobe N; worker-functions
+    // e MCP compartilham a imagem). BLOQUEANTE de propósito (achado do gate #223): com
+    // try_lock a instância perdedora pulava e subia o app com o schema a meio (ex.:
+    // iam.effective_countries ainda inexistente). Agora ela ESPERA o vencedor terminar e
+    // relê schema_migrations — sobe só com o schema completo.
     const LOCK_ID = 20241201; // arbitrary fixed int
-    const lockResult = await pool.query('SELECT pg_try_advisory_lock($1) AS acquired', [LOCK_ID]);
-    if (!lockResult.rows[0].acquired) {
-      console.log('⏳ Another instance is running migrations — skipping.');
-      return;
-    }
+    const lockClient = await pool.connect();
+    await lockClient.query('SELECT pg_advisory_lock($1)', [LOCK_ID]);
+    console.log('🔒 Migration lock acquired');
 
     try {
-      // Load already-applied migrations
+      // Load already-applied migrations (APÓS o lock: o vencedor pode ter aplicado tudo)
       const { rows } = await pool.query('SELECT filename FROM schema_migrations');
       const applied = new Set(rows.map((r) => r.filename));
 
@@ -122,7 +124,8 @@ async function run() {
 
       console.log(`\n🎉 Migrations complete — ${ran} applied, ${skipped} skipped.`);
     } finally {
-      await pool.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]);
+      await lockClient.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]).catch(() => {});
+      lockClient.release();
     }
   } finally {
     await pool.end();

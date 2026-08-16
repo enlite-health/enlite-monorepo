@@ -156,9 +156,11 @@ BEGIN
 
     -- Views de compatibilidade: SELECT explícito nas 8 (NUNCA "ALL TABLES IN SCHEMA
     -- public" — a 270 revogou SELECT em resource_access_log de propósito).
+    -- 7 views (SEM public.permission_audit_log: a ACL dessa view é da 280 — INSERT-only,
+    -- sem SELECT; re-rodar a 274 depois da 280 NÃO pode reabrir; achado do gate #223).
     GRANT SELECT ON public.tenants, public.permissions, public.permission_groups,
       public.group_permissions, public.user_groups, public.user_departments,
-      public.permission_audit_log, public.group_country_scopes
+      public.group_country_scopes
       TO app_runtime, app_system;
     -- ⚠️ E REVOGAR ESCRITA NAS VIEWS: view simples é AUTO-ATUALIZÁVEL e o Postgres
     -- checa INSERT/UPDATE/DELETE via view contra os privilégios do DONO DA VIEW (o
