@@ -72,8 +72,18 @@ export interface DbSessionContext {
   kind: DbSessionKind;
   /** `firebase_uid` — casa com `user_groups.user_id` na policy de grant. */
   uid?: string;
-  /** Só staff. Ausente ⇒ zero linhas (fail-closed) — NUNCA um default 'AR'. */
+  /**
+   * Só staff — o claim `country` do IdP: ONDE o staff está (default de formulário,
+   * trilha, origem no resource_access_log). Ausente ⇒ zero linhas sob a policy 271/274.
+   * A partir da 278 (grant-only, D114) NÃO concede acesso por si: é atributo.
+   */
   country?: CountryCode;
+  /**
+   * Só staff — países CONCEDIDOS pelos grupos vivos (`iam.effective_countries`),
+   * resolvidos por request (D115). Uso: guard de UX e origem da trilha. A RLS NÃO lê
+   * isto (lex C3): ela chama a função no banco — o app nunca afirma os próprios países.
+   */
+  countries?: CountryCode[];
   /** Só system/public: `job:<nome>`, `webhook:<parceiro>`, `public:<rota>`. */
   systemContext?: string;
 }
