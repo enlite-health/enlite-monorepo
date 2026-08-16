@@ -14,11 +14,25 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 function createPool() {
   // Cloud Run: DB_HOST is a unix socket path like /cloudsql/project:region:instance
   if (process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql/')) {
+    // Migrations precisam do OWNER das tabelas (ALTER TABLE, DROP POLICY, SET SCHEMA,
+    // CREATE FUNCTION SECURITY DEFINER, INSERT em schema_migrations — todos exigem
+    // ownership). Desde a virada do ABAC (D112) o serviço conecta como enlite_runtime
+    // (confinado, não-owner) — se o runner usasse essa credencial, a 1ª migration
+    // com DDL de owner quebraria o boot (achado 16/08, PR #223). Por isso o runner
+    // usa DB_MIGRATION_USER/DB_MIGRATION_PASSWORD (= enlite_app) quando existirem, e
+    // cai em DB_USER/DB_PASSWORD onde ainda não há separação (prod hoje, local).
+    const user = process.env.DB_MIGRATION_USER || process.env.DB_USER;
+    const password = process.env.DB_MIGRATION_PASSWORD || process.env.DB_PASSWORD;
+    if (process.env.DB_MIGRATION_USER) {
+      console.log(`[migrations] conectando como ${user} (DB_MIGRATION_USER, credencial de owner)`);
+    } else {
+      console.log(`[migrations] conectando como ${user} (DB_USER — sem DB_MIGRATION_USER definido)`);
+    }
     return new Pool({
       host: process.env.DB_HOST,
       database: process.env.DB_NAME,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
+      user,
+      password,
     });
   }
   // Docker/local: DATABASE_URL connection string
