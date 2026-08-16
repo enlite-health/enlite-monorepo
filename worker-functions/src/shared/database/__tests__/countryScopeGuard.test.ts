@@ -17,7 +17,7 @@ const ORIGINAL_FLAG = process.env.COUNTRY_RLS_ENABLED;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  query.mockResolvedValue({ rows: [], rowCount: 0 });
+  query.mockResolvedValue({ rows: [{ granted: false }], rowCount: 1 });
   (DatabaseConnection.getInstance as jest.Mock).mockReturnValue({ getPool: () => ({ query }) });
   process.env.COUNTRY_RLS_ENABLED = 'true';
 });
@@ -65,7 +65,7 @@ describe('requireCountryScope', () => {
   });
 
   it('cross-país COM grant vivo → passa', async () => {
-    query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }], rowCount: 1 });
+    query.mockResolvedValueOnce({ rows: [{ granted: true }], rowCount: 1 });
     const { next, res } = await run('BR', { kind: 'staff', uid: 'u1', country: 'AR' });
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
@@ -140,23 +140,27 @@ describe('requireCountryScope', () => {
 });
 
 describe('hasLiveCountryGrant', () => {
-  it('usa o pool recebido quando há um (sem tocar no singleton)', async () => {
-    const pool = { query: jest.fn().mockResolvedValue({ rows: [{}], rowCount: 1 }) };
+  it('usa o pool recebido quando há um (sem tocar no singleton) e pergunta à MESMA função da RLS', async () => {
+    const pool = { query: jest.fn().mockResolvedValue({ rows: [{ granted: true }], rowCount: 1 }) };
 
     await expect(hasLiveCountryGrant('u1', 'BR', pool as never)).resolves.toBe(true);
 
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('group_country_scopes'), ['u1', 'BR']);
+    // Fonte única com a policy 278 (lex C3/D115): iam.effective_countries, nunca uma
+    // segunda escrita do predicado de user_groups/group_country_scopes.
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('iam.effective_countries'), ['u1', 'BR']);
     expect(query).not.toHaveBeenCalled();
   });
 
   it('sem pool explícito cai no pool da aplicação', async () => {
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    query.mockResolvedValueOnce({ rows: [{ granted: false }], rowCount: 1 });
     await expect(hasLiveCountryGrant('u1', 'BR')).resolves.toBe(false);
     expect(query).toHaveBeenCalledTimes(1);
   });
 
-  it('rowCount ausente é tratado como ZERO grant (fail-closed)', async () => {
+  it('resposta vazia/nula é tratada como ZERO grant (fail-closed)', async () => {
     const pool = { query: jest.fn().mockResolvedValue({ rows: [], rowCount: null }) };
     await expect(hasLiveCountryGrant('u1', 'BR', pool as never)).resolves.toBe(false);
+    const pool2 = { query: jest.fn().mockResolvedValue({ rows: [{ granted: null }], rowCount: 1 }) };
+    await expect(hasLiveCountryGrant('u1', 'BR', pool2 as never)).resolves.toBe(false);
   });
 });

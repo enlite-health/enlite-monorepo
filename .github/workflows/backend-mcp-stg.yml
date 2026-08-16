@@ -79,6 +79,7 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_system
+            DB_MIGRATION_USER=enlite_app
             COUNTRY_RLS_ENABLED=true
             ABAC_MAIN_POOL_ROLE=app_system
             DB_POOL_MAX=2
@@ -93,6 +94,7 @@ jobs:
             ALLOWED_MEDIA_HOSTS=api.twilio.com;*.twilio.com;chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-system-db-password:latest
+            DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             MCP_OAUTH_SIGNING_KEY=mcp-oauth-signing-key:latest
             MCP_DB_RO_PASSWORD=enlite-mcp-ro-db-password:latest

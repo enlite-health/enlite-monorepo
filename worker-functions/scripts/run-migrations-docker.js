@@ -14,11 +14,25 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 function createPool() {
   // Cloud Run: DB_HOST is a unix socket path like /cloudsql/project:region:instance
   if (process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql/')) {
+    // Migrations precisam do OWNER das tabelas (ALTER TABLE, DROP POLICY, SET SCHEMA,
+    // CREATE FUNCTION SECURITY DEFINER, INSERT em schema_migrations — todos exigem
+    // ownership). Desde a virada do ABAC (D112) o serviço conecta como enlite_runtime
+    // (confinado, não-owner) — se o runner usasse essa credencial, a 1ª migration
+    // com DDL de owner quebraria o boot (achado 16/08, PR #223). Por isso o runner
+    // usa DB_MIGRATION_USER/DB_MIGRATION_PASSWORD (= enlite_app) quando existirem, e
+    // cai em DB_USER/DB_PASSWORD onde ainda não há separação (prod hoje, local).
+    const user = process.env.DB_MIGRATION_USER || process.env.DB_USER;
+    const password = process.env.DB_MIGRATION_PASSWORD || process.env.DB_PASSWORD;
+    if (process.env.DB_MIGRATION_USER) {
+      console.log(`[migrations] conectando como ${user} (DB_MIGRATION_USER, credencial de owner)`);
+    } else {
+      console.log(`[migrations] conectando como ${user} (DB_USER — sem DB_MIGRATION_USER definido)`);
+    }
     return new Pool({
       host: process.env.DB_HOST,
       database: process.env.DB_NAME,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
+      user,
+      password,
     });
   }
   // Docker/local: DATABASE_URL connection string
@@ -55,16 +69,18 @@ async function run() {
       )
     `);
 
-    // Advisory lock prevents race condition when Cloud Run starts multiple instances
+    // Advisory lock serializa instâncias concorrentes (Cloud Run sobe N; worker-functions
+    // e MCP compartilham a imagem). BLOQUEANTE de propósito (achado do gate #223): com
+    // try_lock a instância perdedora pulava e subia o app com o schema a meio (ex.:
+    // iam.effective_countries ainda inexistente). Agora ela ESPERA o vencedor terminar e
+    // relê schema_migrations — sobe só com o schema completo.
     const LOCK_ID = 20241201; // arbitrary fixed int
-    const lockResult = await pool.query('SELECT pg_try_advisory_lock($1) AS acquired', [LOCK_ID]);
-    if (!lockResult.rows[0].acquired) {
-      console.log('⏳ Another instance is running migrations — skipping.');
-      return;
-    }
+    const lockClient = await pool.connect();
+    await lockClient.query('SELECT pg_advisory_lock($1)', [LOCK_ID]);
+    console.log('🔒 Migration lock acquired');
 
     try {
-      // Load already-applied migrations
+      // Load already-applied migrations (APÓS o lock: o vencedor pode ter aplicado tudo)
       const { rows } = await pool.query('SELECT filename FROM schema_migrations');
       const applied = new Set(rows.map((r) => r.filename));
 
@@ -108,7 +124,8 @@ async function run() {
 
       console.log(`\n🎉 Migrations complete — ${ran} applied, ${skipped} skipped.`);
     } finally {
-      await pool.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]);
+      await lockClient.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]).catch(() => {});
+      lockClient.release();
     }
   } finally {
     await pool.end();

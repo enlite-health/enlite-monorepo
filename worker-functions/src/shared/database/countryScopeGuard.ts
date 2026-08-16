@@ -27,28 +27,19 @@ import { DatabaseConnection } from './DatabaseConnection';
 import { currentDbContext, isCountryCode, isCountryRlsEnabled } from './requestDbSession';
 
 /**
- * Mesmo predicado da policy da migration 271 (grant vivo + usuário ativo). São
- * duas escritas da mesma regra de propósito: a do banco é a que vale; esta só
- * antecipa a resposta para explicar. Se divergirem, a policy ganha — o guard
- * afrouxado não abre nada, e o guard apertado vira 403 antes do zero-linhas.
+ * Mesma FONTE da policy RLS de país (migrations 276/278): `iam.effective_countries`
+ * — países dos grupos VIVOS do staff (ACTIVE, grupo não-arquivado, vínculo
+ * não-removido, escopo não-revogado), resolvidos NO banco. Guard e policy não podem
+ * divergir porque chamam a mesma função (lex C3; D115). O guard só antecipa a
+ * resposta para explicar: se a policy negar, é a policy que vale.
  */
 const LIVE_GRANT_SQL = `
-  SELECT 1
-  FROM user_groups ug
-  JOIN users u
-    ON u.firebase_uid = ug.user_id
-   AND u.is_active IS TRUE
-  JOIN group_country_scopes gcs
-    ON gcs.group_id = ug.group_id
-   AND gcs.revoked_at IS NULL
-  WHERE ug.user_id = $1
-    AND gcs.country = $2
-  LIMIT 1`;
+  SELECT $2 = ANY (iam.effective_countries($1, iam.current_tenant_id())) AS granted`;
 
 export async function hasLiveCountryGrant(uid: string, country: string, pool?: Pool): Promise<boolean> {
   const db = pool ?? DatabaseConnection.getInstance().getPool();
-  const result = await db.query(LIVE_GRANT_SQL, [uid, country]);
-  return (result.rowCount ?? 0) > 0;
+  const result = await db.query<{ granted: boolean | null }>(LIVE_GRANT_SQL, [uid, country]);
+  return result.rows[0]?.granted === true;
 }
 
 /**
@@ -82,6 +73,11 @@ export function requireCountryScope(
       return;
     }
 
+    // País do próprio operador (claim): hoje a policy (271/274) ainda tem o ramo
+    // `country = claim`, então o guard acompanha. Quando a 278 (grant-only, D114) for
+    // aplicada no ambiente (task 5.4), este atalho SAI: o claim vira atributo e só o
+    // grant do grupo concede — o país "próprio" passa a ser mais uma linha em
+    // effective_countries.
     if (requested === context.country) return next();
 
     try {

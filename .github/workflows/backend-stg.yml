@@ -86,7 +86,9 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           # ── ABAC país (4.1): DB_USER=enlite_runtime é a VIRADA (enlite_app é owner
-          # e ignora as policies). Pools por MEDIÇÃO: max_connections=25 no stg
+          # e ignora as policies). ⚠️ MIGRATIONS precisam do OWNER: o runner do boot
+          # usa DB_MIGRATION_USER/PASSWORD (=enlite_app) — sem isso a 1ª migration
+          # com DDL de owner (274+) quebra o boot (achado 16/08, PR #223). Pools por MEDIÇÃO: max_connections=25 no stg
           # (db-f1-micro), menos superuser_reserved(3) = 22 úteis. Pior caso:
           # main 3x(3+1)=12 + MCP 3x2=6 + MCP-RO 3x1=3 = 21 <= 22. NÃO copiar pra
           # prd sem medir lá (runbook F4). NUNCA comentar DENTRO de env_vars: o
@@ -108,6 +110,7 @@ jobs:
             DB_NAME=enlite_ar
             DB_USER=enlite_runtime
             DB_SYSTEM_USER=enlite_system
+            DB_MIGRATION_USER=enlite_app
             COUNTRY_RLS_ENABLED=true
             DB_POOL_MAX=3
             DB_SYSTEM_POOL_MAX=1
@@ -131,6 +134,7 @@ jobs:
           secrets: |
             DB_PASSWORD=enlite-runtime-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
+            DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
