@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { loggingAls, logger, reportError } from '@shared/logging';
@@ -43,7 +44,7 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
         user.emailVerified
       ]);
 
-      await admin.auth().setCustomUserClaims(user.uid, { role: defaultRole });
+      await mergeCustomClaims(user.uid, { role: defaultRole });
 
       await client.query('COMMIT');
 

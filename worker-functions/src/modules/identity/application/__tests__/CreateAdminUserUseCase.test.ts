@@ -17,6 +17,8 @@
 const mockCreateUser = jest.fn();
 const mockDeleteUser = jest.fn();
 const mockSetCustomUserClaims = jest.fn();
+// mergeCustomClaims lê os claims atuais antes de gravar (usuário recém-criado: nenhum)
+const mockGetUser = jest.fn();
 const mockGeneratePasswordResetLink = jest.fn();
 const mockSendInvitationEmail = jest.fn();
 
@@ -26,6 +28,7 @@ jest.mock('firebase-admin', () => ({
     createUser: mockCreateUser,
     deleteUser: mockDeleteUser,
     setCustomUserClaims: mockSetCustomUserClaims,
+    getUser: mockGetUser,
     generatePasswordResetLink: mockGeneratePasswordResetLink,
   }),
 }));
@@ -69,6 +72,7 @@ describe('CreateAdminUserUseCase', () => {
     // Default happy-path wiring
     mockDeleteUser.mockResolvedValue(undefined);
     mockSetCustomUserClaims.mockResolvedValue(undefined);
+    mockGetUser.mockResolvedValue({ customClaims: undefined });
     mockSendInvitationEmail.mockResolvedValue(undefined);
     mockQuery.mockResolvedValue({ rows: [] });
     mockConnect.mockResolvedValue({ query: mockQuery, release: mockRelease });

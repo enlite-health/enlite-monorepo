@@ -223,6 +223,11 @@ no diário (quem/quando/por quê), log estruturado, e re-abrir a change. As poli
 no banco (inertes de novo) — não dropar nada no rollback.
 
 ## Checklist de "não errar em PRD" (colar no PR da fase 4)
+- [ ] **PR #221 (mergeCustomClaims) já em PROD antes de atribuir claims** — achado de QA
+      16/08: os 4 escritores de `role` do backend faziam `setCustomUserClaims({role})` e
+      APAGAVAM `country`; uma troca de papel pelo painel entre a atribuição e a virada
+      deixaria o staff sem país (fail-closed). Depois do deploy do #221 em prd, rodar
+      `claims:country:dry` de novo e conferir que ninguém perdeu o claim.
 - [ ] FASE 1 inteira verde em QA, com evidência linkada
 - [ ] FASE 3: 7 dias de relatório sem caminho novo
 - [ ] claims atribuídos em prd ANTES do merge da virada
