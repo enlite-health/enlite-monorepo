@@ -25,7 +25,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { loggingAls } from '@shared/logging';
 import type { ActorContext } from '@shared/audit/actorSource';
-import { currentDbContext, currentDbSession, sessionClientFor } from './requestDbSession';
+import { currentDbContext, currentDbSession, sessionClientOrPending } from './requestDbSession';
 import { routedPoolFor } from './rlsAwarePool';
 
 /**
@@ -78,10 +78,21 @@ async function applyCountryContext(client: PoolClient): Promise<void> {
  * `DB_POOL_MAX=20` e concorrência maior que 10, as escritas passariam a morrer
  * em `connectionTimeoutMillis` sem que nada no código parecesse errado.
  */
-function pinnedClientFor(pool: Pool): PoolClient | undefined {
+async function pinnedClientFor(pool: Pool): Promise<PoolClient | undefined> {
   const session = currentDbSession();
   if (!session || session.released) return undefined;
-  return sessionClientFor(session, routedPoolFor(pool));
+  // Inclui aquisição EM VOO (MEDIUM 14/08): `Promise.all(leitura, escrita)` na
+  // primeira operação da request deixava `slot.client` ainda vazio e esta função
+  // devolvia undefined — a escrita abria a SEGUNDA conexão da request, o mesmo
+  // esgotamento do BLOCKER-3. Se a aquisição em voo falhar, cai para `undefined`
+  // e o caller abre conexão própria (a falha dela já destruiu o client).
+  const pinned = sessionClientOrPending(session, routedPoolFor(pool));
+  if (!pinned) return undefined;
+  try {
+    return await pinned;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -108,7 +119,7 @@ export async function withActorContext<T>(
   actor?: ActorContext | null,
 ): Promise<T> {
   const resolved = resolveActor(actor);
-  const pinned = pinnedClientFor(pool);
+  const pinned = await pinnedClientFor(pool);
   const client = pinned ?? (await pool.connect());
   try {
     await client.query('BEGIN');

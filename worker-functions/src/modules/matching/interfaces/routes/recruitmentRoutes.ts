@@ -8,7 +8,12 @@ import { AuthMiddleware } from '@modules/identity';
  * Recruitment routes.
  *
  * /api/admin/recruitment/* — requer autenticação de staff.
- * /api/test/recruitment/*  — sem auth (temporário, remover em produção).
+ *
+ * As rotas /api/test/recruitment/* (duplicatas SEM AUTH, "temporário" desde a
+ * criação) foram removidas em 14/08/2026 (MEDIUM do review ABAC): expunham dado
+ * de recrutamento sem login e, sob RLS, seriam caminho não-classificado.
+ * Evidência da remoção segura: zero hits em 30d de logs de prod, zero uso no
+ * frontend; os espelhos autenticados abaixo servem os mesmos dados.
  */
 export function createRecruitmentRoutes(
   recruitmentController: RecruitmentController,
@@ -17,27 +22,6 @@ export function createRecruitmentRoutes(
   const router = Router();
   const analyticsController = new RecruitmentAnalyticsController();
   const blockedController = new RecruitmentBlockedController();
-
-  // ── Temporary test routes (No Auth) ──────────────────────────────────────────
-  // TODO: Remove in production
-  router.get('/test/recruitment/clickup-cases', (req: Request, res: Response) =>
-    recruitmentController.getClickUpCases(req, res),
-  );
-  router.get('/test/recruitment/talentum-workers', (req: Request, res: Response) =>
-    recruitmentController.getTalentumWorkers(req, res),
-  );
-  router.get('/test/recruitment/progreso', (req: Request, res: Response) =>
-    recruitmentController.getProgresoWorkers(req, res),
-  );
-  router.get('/test/recruitment/publications', (req: Request, res: Response) =>
-    recruitmentController.getPublications(req, res),
-  );
-  router.get('/test/recruitment/encuadres', (req: Request, res: Response) =>
-    recruitmentController.getEncuadres(req, res),
-  );
-  router.get('/test/recruitment/global-metrics', (req: Request, res: Response) =>
-    analyticsController.getGlobalMetrics(req, res),
-  );
 
   // ── Admin recruitment routes ──────────────────────────────────────────────────
   router.get('/admin/recruitment/clickup-cases', authMiddleware.requireStaff(), (req: Request, res: Response) =>

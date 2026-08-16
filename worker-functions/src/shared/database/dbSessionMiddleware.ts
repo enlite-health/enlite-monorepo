@@ -13,8 +13,24 @@ import type { Request, Response, NextFunction } from 'express';
 import { loggingAls, logger } from '@shared/logging';
 import { releaseDbSession, type DbSession } from './requestDbSession';
 
-/** Segmento que identifica UMA pessoa/registro (uuid, número, telefone, token). */
-const IDENTIFIER_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[+%\d][\d+%._-]*|[0-9a-zA-Z_-]{20,})$/i;
+/** Segmento que identifica UMA pessoa/registro (uuid, número, telefone). */
+const IDENTIFIER_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[+%\d][\d+%._-]*)$/i;
+
+/**
+ * Token opaco ≥20 chars. A versão anterior colapsava QUALQUER segmento ≥20 —
+ * e apagava nome legítimo de rota (`sync-clickup-patients`,
+ * `bulk-dispatch-incomplete-workers`…), degradando o diagnóstico do modo
+ * relatório (MEDIUM do review de 14/08). Rota legítima aqui é kebab-case sem
+ * dígito; token real (JWT, base64url, hex) praticamente sempre carrega dígito
+ * ou mistura maiúscula+minúscula — é isso que o colapso passa a exigir.
+ */
+const LONG_SEGMENT = /^[0-9a-zA-Z_-]{20,}$/;
+function looksLikeOpaqueToken(segment: string): boolean {
+  return (
+    LONG_SEGMENT.test(segment) &&
+    (/\d/.test(segment) || (/[a-z]/.test(segment) && /[A-Z]/.test(segment)))
+  );
+}
 
 /**
  * Rota sem identificadores: `/api/admin/patients/<uuid>` → `/api/admin/patients/:id`.
@@ -27,7 +43,7 @@ const IDENTIFIER_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 export function sanitizeRoute(path: string): string {
   return path
     .split('/')
-    .map((segment) => (IDENTIFIER_SEGMENT.test(segment) ? ':id' : segment))
+    .map((segment) => (IDENTIFIER_SEGMENT.test(segment) || looksLikeOpaqueToken(segment) ? ':id' : segment))
     .join('/');
 }
 

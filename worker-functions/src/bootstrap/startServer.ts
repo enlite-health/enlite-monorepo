@@ -143,4 +143,30 @@ export async function startServer(
   server.timeout = 300000; // 5 minutos
   server.keepAliveTimeout = 310000;
   server.headersTimeout = 320000;
+
+  // ── Graceful shutdown (MEDIUM do review ABAC 14/08) ────────────────────────
+  // O Cloud Run manda SIGTERM e dá ~10s antes do SIGKILL. Sem handler, o
+  // processo morre no meio: requests em voo cortadas e — pior sob RLS — clients
+  // fixados com GUC de país nunca passam pelo release. A ordem é: parar de
+  // aceitar → esperar as requests em voo (teto de 8s, o SIGKILL vem antes do
+  // server.timeout de 5min) → drenar os pools. `process.once`: o segundo SIGTERM
+  // mata na hora, como antes.
+  process.once('SIGTERM', () => {
+    console.log('[shutdown] SIGTERM — parando de aceitar conexões e drenando pools');
+    const forceExit = setTimeout(() => {
+      console.error('[shutdown] teto de 8s estourado — saindo com requests em voo');
+      process.exit(1);
+    }, 8000);
+    forceExit.unref();
+
+    server.close(() => {
+      void DatabaseConnection.getInstance()
+        .close()
+        .catch((err: unknown) => console.error('[shutdown] falha ao drenar pools:', err))
+        .finally(() => {
+          console.log('[shutdown] pools drenados — fim limpo');
+          process.exit(0);
+        });
+    });
+  });
 }

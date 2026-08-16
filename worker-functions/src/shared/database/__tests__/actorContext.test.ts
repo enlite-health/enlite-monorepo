@@ -133,6 +133,54 @@ describe('withActorContext — client fixado da request', () => {
     expect(sqls[sqls.length - 1]).toBe('COMMIT');
   });
 
+  it('aquisição EM VOO conta como fixado: Promise.all(leitura, escrita) usa UM client (MEDIUM 14/08)', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, rawPool, client } = makePool();
+    // connect lento: a leitura dispara a aquisição e a escrita chega ANTES dela terminar
+    let releaseConnect!: () => void;
+    (rawPool.connect as jest.Mock).mockImplementation(
+      () => new Promise((resolve) => { releaseConnect = () => resolve(client); }),
+    );
+    const appPool = createRlsAwarePool(pool);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, async () => {
+      const leitura = acquireSessionClient(pool, session);
+      const escrita = withActorContext(appPool, async () => 'ok', staffActor('uid-flor'));
+      // dá um tick para os dois entrarem na disputa antes do connect resolver
+      await new Promise((r) => setImmediate(r));
+      releaseConnect();
+      await Promise.all([leitura, escrita]);
+    });
+
+    // ANTES do conserto: withActorContext não via slot.acquiring e abria a 2ª conexão.
+    expect(rawPool.connect).toHaveBeenCalledTimes(1);
+    expect(client.release).not.toHaveBeenCalled();
+    const sqls = client.query.mock.calls.map((c) => String(c[0]));
+    expect(sqls).toContain('BEGIN');
+    expect(sqls[sqls.length - 1]).toBe('COMMIT');
+  });
+
+  it('aquisição em voo que FALHA não trava a escrita: cai para conexão própria', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, rawPool, client } = makePool();
+    (rawPool.connect as jest.Mock)
+      .mockRejectedValueOnce(new Error('pool esgotado'))
+      .mockResolvedValueOnce(client);
+    const appPool = createRlsAwarePool(pool);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'AR' }, released: false };
+
+    await inRequest(session, async () => {
+      const leitura = acquireSessionClient(pool, session).catch(() => undefined);
+      const escrita = withActorContext(appPool, async () => 'ok', staffActor('uid-flor'));
+      await Promise.all([leitura, escrita]);
+    });
+
+    // A escrita seguiu com conexão própria — e, por não ser da sessão, foi devolvida.
+    expect(rawPool.connect).toHaveBeenCalledTimes(2);
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
   it('erro na transação faz ROLLBACK e ainda assim não devolve o client da sessão', async () => {
     process.env.COUNTRY_RLS_ENABLED = 'true';
     const { pool, client } = makePool();
