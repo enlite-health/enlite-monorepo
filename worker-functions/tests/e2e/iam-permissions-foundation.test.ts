@@ -138,6 +138,17 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     }
   }
 
+  /** O arquivo tem meta-comandos psql (\set, :'ack'); para o protocolo pg, tira essas 2 linhas. */
+  function rollout278SqlForPg(): string {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const path = require('node:path') as typeof import('node:path');
+    return fs
+      .readFileSync(path.resolve(__dirname, '../../scripts/rollout/278_rls_country_grant_only.sql'), 'utf8')
+      .split('\n')
+      .filter((l) => !l.startsWith('\\set') && !l.includes(":'ack'"))
+      .join('\n');
+  }
+
   /**
    * Aplica a 278 do jeito que o operador aplica: lê quantos staff ACTIVE ficam sem
    * país efetivo e passa o número como ack (pré-condição fail-closed do script). No
@@ -146,7 +157,7 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
   async function applyRollout278(): Promise<void> {
     const fs = await import('node:fs');
     const path = await import('node:path');
-    const sql = fs.readFileSync(path.resolve(__dirname, '../../scripts/rollout/278_rls_country_grant_only.sql'), 'utf8');
+    const sql = rollout278SqlForPg();
     const c = await pool.connect();
     try {
       const n = await c.query(`SELECT count(*)::int n FROM users u WHERE u.status='ACTIVE'
@@ -472,12 +483,32 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     it('278 tira o ramo do claim; 278_down devolve; estado final = policy da 274 (a das outras suítes)', async () => {
       const fs = await import('node:fs');
       const path = await import('node:path');
-      const up = fs.readFileSync(path.resolve(__dirname, '../../scripts/rollout/278_rls_country_grant_only.sql'), 'utf8');
+      const up = rollout278SqlForPg();
       const down = fs.readFileSync(path.resolve(__dirname, '../../scripts/rollback/278_down.sql'), 'utf8');
       const list = `SELECT country FROM patients WHERE id = ANY($1) ORDER BY 1`;
       const q = () => asRole('app_runtime', { uid: U.bob, country: 'BR' }, (c) => c.query(list, [[IDS.patientAR, IDS.patientBR]]));
       // Pré-condição fail-closed: sem ack → PARA; ack errado → PARA (o "esqueci a 5.1")
       await expect(pool.query(up)).rejects.toMatchObject({ code: '23514' });
+      // …e via psql REAL (o caminho do operador): sem -v ack o psql para no :'ack'
+      // (ON_ERROR_STOP) e a policy fica INTACTA — BLOCKER do gate #223: antes, sem
+      // ON_ERROR_STOP o RAISE era ignorado e o DDL rodava mesmo assim.
+      const { execSync } = await import('node:child_process');
+      const before = await pool.query(`SELECT obj_description(oid, 'pg_policy') d FROM pg_policy WHERE polname='patients_country_isolation'`);
+      let psqlFailed = false;
+      try {
+        execSync(`psql "${DATABASE_URL}" -q -f scripts/rollout/278_rls_country_grant_only.sql`, { stdio: 'pipe' });
+      } catch { psqlFailed = true; }
+      expect(psqlFailed).toBe(true);
+      const after = await pool.query(`SELECT obj_description(oid, 'pg_policy') d FROM pg_policy WHERE polname='patients_country_isolation'`);
+      expect(after.rows[0].d).toBe(before.rows[0].d);   // policy não mudou
+      // ack errado via psql real: também para, policy intacta
+      let psqlFailed2 = false;
+      try {
+        execSync(`psql "${DATABASE_URL}" -q -v ack=999 -f scripts/rollout/278_rls_country_grant_only.sql`, { stdio: 'pipe' });
+      } catch { psqlFailed2 = true; }
+      expect(psqlFailed2).toBe(true);
+      const after2 = await pool.query(`SELECT obj_description(oid, 'pg_policy') d FROM pg_policy WHERE polname='patients_country_isolation'`);
+      expect(after2.rows[0].d).toBe(before.rows[0].d);
       const c = await pool.connect();
       try {
         await c.query(`SELECT set_config('app.rollout_278_ack', '999', false)`);

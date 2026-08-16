@@ -2,7 +2,7 @@
 --
 -- ⚠️⚠️ FORA DE migrations/ DE PROPÓSITO (scripts/rollout/): o runner NÃO aplica isto no
 -- boot. Aplicação é MANUAL, gated, na task 5.4 do runbook, por ambiente:
---   psql "$DATABASE_URL" -f scripts/rollout/278_rls_country_grant_only.sql
+--   psql "$DATABASE_URL" -v ack=<N> -f scripts/rollout/278_rls_country_grant_only.sql
 -- Motivo (provado 16/08 na suíte e2e): na cadeia automática esta policy chegaria ao QA
 -- — que está com COUNTRY_RLS_ENABLED=true — ANTES da migração de dados (5.1: todo
 -- staff ACTIVE em grupo com o país dele) e o painel inteiro viraria "zero linhas"
@@ -37,14 +37,20 @@
 -- aplica PRECISA ter visto quantos staff ACTIVE ficam sem país efetivo e confirmar o
 -- número. O modelo D114 ACEITA staff sem grupo (cai na tela de boas-vindas) — então
 -- "zero sem país" não é a regra; a regra é "ninguém que tinha acesso perde sem que o
--- operador saiba". Uso:
---   psql -v ack=<N> -f scripts/rollout/278_rls_country_grant_only.sql
+-- operador saiba". Uso (a variável psql é OBRIGATÓRIA):
+--   psql "$DATABASE_URL" -v ack=<N> -f scripts/rollout/278_rls_country_grant_only.sql
 -- onde <N> = saída de:
 --   SELECT count(*) FROM users u WHERE u.status='ACTIVE'
 --     AND u.role IN ('admin','recruiter','community_manager')
 --     AND cardinality(iam.effective_countries(u.firebase_uid, iam.current_tenant_id()))=0;
--- Se o número não bater (ex.: "esqueci a 5.1" = dezenas), PARA. Sem -v ack, PARA.
--- (No e2e, o harness passa o ack pelo GUC app.rollout_278_ack.)
+-- Se o número não bater (ex.: "esqueci a 5.1" = dezenas), PARA. Sem -v ack, PARA
+-- (erro de sintaxe no :'ack' + ON_ERROR_STOP). Fail-CLOSED de verdade (achado do
+-- gate #223): a checagem e o DDL estão no MESMO bloco atômico — psql sem
+-- ON_ERROR_STOP não consegue "pular o erro e aplicar a policy mesmo assim".
+-- (Harness/e2e: pode setar o GUC app.rollout_278_ack em vez da variável psql.)
+\set ON_ERROR_STOP on
+SELECT set_config('app.rollout_278_ack', :'ack', false);
+
 DO $$
 DECLARE
   v_sem INT;
@@ -58,30 +64,34 @@ BEGIN
   IF v_ack IS NULL OR v_ack <> v_sem::text THEN
     RAISE EXCEPTION USING ERRCODE = '23514',
       MESSAGE = format('[278] %s staff ACTIVE sem país efetivo. Confirme com o número exato: '
-                       'psql -c "SET app.rollout_278_ack=''%s''" (ou -v) — e só depois de a migração '
-                       'de dados (task 5.1) ter rodado. ack recebido: %s', v_sem, v_sem, COALESCE(v_ack, '(nenhum)'));
+                       'psql -v ack=%s -f … — e só depois de a migração de dados (task 5.1) '
+                       'ter rodado. ack recebido: %s', v_sem, v_sem, COALESCE(v_ack, '(nenhum)'));
   END IF;
   RAISE NOTICE '[278] confirmado: % staff ACTIVE sem país efetivo (esperado pelo operador)', v_sem;
+
+  -- DDL no MESMO bloco: só executa se a checagem acima passou.
+  EXECUTE 'DROP POLICY IF EXISTS patients_country_isolation ON patients';
+  EXECUTE $p$
+    CREATE POLICY patients_country_isolation ON patients
+      FOR ALL
+      USING (
+        (
+          NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
+          AND pg_has_role(current_user, 'app_system', 'MEMBER')
+        )
+        OR country = ANY (
+          iam.effective_countries(
+            current_setting('app.user_uid', true),
+            iam.current_tenant_id()
+          )
+        )
+      )
+  $p$;
+  EXECUTE $c$
+    COMMENT ON POLICY patients_country_isolation ON patients IS
+      'Grant-only (rollout 278): staff vê só os países dos seus grupos VIVOS, resolvidos NO banco '
+      '(iam.effective_countries). O claim country do IdP é atributo, não permissão. Sistema '
+      'declarado (app.system_context + membro de app_system) vê tudo. Sem GUC → zero linhas.'
+  $c$;
 END
 $$;
-
-DROP POLICY IF EXISTS patients_country_isolation ON patients;
-CREATE POLICY patients_country_isolation ON patients
-  FOR ALL
-  USING (
-    (
-      NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
-      AND pg_has_role(current_user, 'app_system', 'MEMBER')
-    )
-    OR country = ANY (
-      iam.effective_countries(
-        current_setting('app.user_uid', true),
-        iam.current_tenant_id()
-      )
-    )
-  );
-
-COMMENT ON POLICY patients_country_isolation ON patients IS
-  'Grant-only (mig 278): staff vê só os países dos seus grupos VIVOS, resolvidos NO banco '
-  '(iam.effective_countries). O claim country do IdP é atributo, não permissão. Sistema '
-  'declarado (app.system_context + membro de app_system) vê tudo. Sem GUC → zero linhas.';
