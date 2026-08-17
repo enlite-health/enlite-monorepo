@@ -14,6 +14,12 @@
  * inventado provaria só que a tela renderiza; número real prova que ela aguenta o que vai
  * receber.
  *
+ * ⚠️ ÚNICA EXCEÇÃO ao "literal de 30/07": o bloco `encuadres` foi reconciliado em 17/08/2026,
+ * quando a capacidade semanal passou a 30. O valor capturado em 30/07 era `agendados: 7` com
+ * `agendadosEstaSemana: 0` — combinação que o backend NÃO consegue emitir (os dois campos
+ * recebem a mesma variável), ou seja, nunca foi literal de fato. Reconciliado com a invariante
+ * real e com a config vigente. Todo o resto do payload segue intocado, literal de 30/07.
+ *
  * Auth: Firebase Identity Toolkit interceptado localmente (mesma técnica de
  * management-dashboard-visual.e2e.ts) — sem emulador, sem conta real.
  *
@@ -42,7 +48,8 @@ const FAKE_ID_TOKEN =
   ).toString('base64url') +
   '.';
 
-/** Saída literal do caso de uso contra o banco de produção (30/07/2026). */
+/** Saída literal do caso de uso contra o banco de produção (30/07/2026), com o bloco
+ *  `encuadres` reconciliado em 17/08 — ver a ressalva no cabeçalho do arquivo. */
 const PROD_PAYLOAD = {
   bigNumbers: {
     equiposArmados: 0,

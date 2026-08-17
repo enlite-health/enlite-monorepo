@@ -12,7 +12,7 @@
  * INVARIANTES: migrations 107 (schedule JSONB), 142 (encuadres.role),
  * 209 (worker_blocked_applications), 230 (funnel stages).
  *
- * EXECUTADO em 16/08/2026 contra o Postgres docker (4/4 verdes). O banco é compartilhado
+ * EXECUTADO em 17/08/2026 contra o Postgres docker (4/4 verdes). O banco é compartilhado
  * com outras suítes, então rodar isolado:
  *   npm run test:e2e:docker -- management-dashboard.integration
  * Por ser compartilhado, as asserções afirmam PISO (>=) sobre as linhas semeadas, nunca
