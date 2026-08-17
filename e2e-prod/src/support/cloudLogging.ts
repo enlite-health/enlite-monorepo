@@ -15,8 +15,14 @@
  */
 import { accessToken } from './gcp';
 
-const PROJECT_ID = process.env.GCP_PROJECT_ID ?? 'enlite-prd';
-const SERVICE_NAME = process.env.LOG_SERVICE_NAME ?? 'worker-functions';
+/**
+ * Lidos POR CHAMADA, não no load do módulo. Em produção dá no mesmo (o Job injeta
+ * as vars antes de qualquer consulta), mas um `const` de módulo captura o valor no
+ * import — e aí o ramo do default e o ramo da var setada nunca coexistem no mesmo
+ * processo, o que deixa o helper impossível de cobrir por inteiro.
+ */
+const projectId = (): string => process.env.GCP_PROJECT_ID ?? 'enlite-prd';
+const serviceName = (): string => process.env.LOG_SERVICE_NAME ?? 'worker-functions';
 
 export interface LogEntry {
   timestamp: string;
@@ -39,7 +45,7 @@ function buildFilter({ message, withinMinutes, match }: QueryLogsParams): string
   const since = new Date(Date.now() - withinMinutes * 60_000).toISOString();
   const parts = [
     `resource.type="cloud_run_revision"`,
-    `resource.labels.service_name="${SERVICE_NAME}"`,
+    `resource.labels.service_name="${serviceName()}"`,
     `jsonPayload.message="${message}"`,
     `timestamp>="${since}"`,
   ];
@@ -63,7 +69,10 @@ function buildFilter({ message, withinMinutes, match }: QueryLogsParams): string
  */
 const RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
-/** 1 tentativa + 3 repetições. Pior caso ~2,8s de espera — cabe no timeout do teste. */
+/**
+ * 1 tentativa + 3 repetições. Espera acumulada de 2,8s a 4,0s com o jitter
+ * (400-800 + 800-1200 + 1600-2000) — folgado dentro do `timeout: 60_000` do teste.
+ */
 const MAX_ATTEMPTS = 4;
 const BASE_DELAY_MS = 400;
 
@@ -78,7 +87,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
   const token = await accessToken();
   const body = JSON.stringify({
-    resourceNames: [`projects/${PROJECT_ID}`],
+    resourceNames: [`projects/${projectId()}`],
     filter: buildFilter(params),
     orderBy: 'timestamp desc',
     pageSize: params.limit ?? 20,
@@ -146,7 +155,7 @@ export async function waitForLog(
     const entries = await queryLogs({ ...params, limit: 1 });
     if (entries.length > 0) return entries[0] ?? null;
     if (Date.now() >= deadline) return null;
-    await new Promise((r) => setTimeout(r, intervalMs));
+    await sleep(intervalMs);
   }
 }
 

@@ -42,9 +42,17 @@ Pessoas: Gabriel (dono do produto, GCP-native, aprendendo E2E/monitoring junto) 
 
 ## Regras técnicas específicas desta suíte (o "nunca sair da linha" do E2E)
 
-1. **Zero mock na suíte de prod.** `page.route()` é BANIDO aqui. Erro de negócio (400/403/404/
-   WORKER_NOT_ELIGIBLE) se testa REAL (prod rejeita input ruim de verdade, sem efeito colateral).
-   Erro de infra (500/timeout) NÃO se testa — se MONITORA (assere que prod NÃO retorna 500).
+1. **Zero mock na suíte de prod.** `page.route()` é BANIDO nos projetos que SÃO o monitor
+   (`smoke`/`regression`/`admin`). Erro de negócio (400/403/404/WORKER_NOT_ELIGIBLE) se testa REAL
+   (prod rejeita input ruim de verdade, sem efeito colateral). Erro de infra (500/timeout) de PROD
+   NÃO se testa — se MONITORA (assere que prod NÃO retorna 500).
+   · **Exceção única, projeto `unit`** (`src/support/*.spec.ts`, desde 17/08): o helper que decide
+   pass/fail pode stubar `fetch` para encenar a falha de um TERCEIRO. Nasceu de incidente real — o
+   monitor caiu 2× num 500 transitório do Cloud Logging (6 de 15 chamadas), e a política de retry
+   tem uma metade que só se prova assim: **esgotar tentativas tem de LANÇAR, nunca devolver `[]`**,
+   senão "zero falhas" passa por ausência de prova. Não se encomenda 500 do Google em prod.
+   Limite duro: stub só em `src/support/*.spec.ts`; em `smoke/`, `regression/` e `admin/`
+   continua BANIDO.
 2. **Teardown garantido.** Tudo que a suíte cria leva marca inequívoca (email `gabriel+e2e-<data>@`,
    prefixo `[E2E]`). Cleanup em 2 níveis: afterEach/afterAll (normal) + **sweeper idempotente**
    que roda ANTES da suíte e limpa órfãos por marca (rede de segurança se um teste morre no meio).

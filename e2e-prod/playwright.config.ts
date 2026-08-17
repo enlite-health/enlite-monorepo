@@ -41,8 +41,12 @@ loadEnvLocal();
  *  - Timeouts TOLERANTES a cold start do Cloud Run (serviço ocioso às 3h da manhã).
  *  - trace on-first-retry = "time-travel debugging" do run que falhou (Fowler/Checkly).
  *  - retries: 1 no smoke = warm-up (1 retry distingue blip de outage; só alerta em falha consecutiva).
- *  - PROIBIDO page.route()/mock nesta suíte (é monitor real). Erro de negócio se testa real;
- *    erro de infra se monitora. (Enforcement por lint virá em .claude/rules.)
+ *  - PROIBIDO page.route()/mock nos projetos que SÃO o monitor (smoke/regression/admin):
+ *    lá mockar destruiria a única coisa que eles provam — que produção responde. Erro de
+ *    negócio se testa real; erro de infra se monitora. (Enforcement por lint virá em .claude/rules.)
+ *    ÚNICA exceção, no projeto `unit`: os helpers de `src/support` que JULGAM pass/fail podem
+ *    stubar `fetch`, porque o que precisa ser encenado ali é a falha do TERCEIRO (o 500 do
+ *    Google), que não se encomenda em prod. Ver o bloco do projeto `unit` mais abaixo.
  */
 
 const BASE_URL = process.env.PROD_BASE_URL; // ex.: https://<hash>.a.run.app (front prod) — recon confirma
