@@ -78,6 +78,22 @@ describe('UndeclaredRouteRegistry', () => {
     expect(registry.unexpectedlyUndeclared()).toEqual([]);
   });
 
+  it('declaresCell diz o que o novo modelo governa — e nada antes do boot publicar', () => {
+    const vazio = new UndeclaredRouteRegistry();
+    expect(vazio.declaresCell('user_management', 'read')).toBe(false);
+
+    const registry = registryCom([declarada, nova]);
+    expect(registry.declaresCell('user_management', 'read')).toBe(true);
+    expect(registry.declaresCell('user_management', 'delete')).toBe(false);
+    expect(registry.declaresCell('user', 'admin_delete')).toBe(false);
+  });
+
+  it('caixa diferente no caminho NÃO escapa do guard (o Express despacha igual)', () => {
+    const registry = registryCom([nova]);
+    expect(registry.statusOf('POST', '/API/ADMIN/coisa-nova')).toBe('undeclared');
+    expect(isGovernedPath('/API/Admin/qualquer')).toBe(true);
+  });
+
   it('unexpectedlyUndeclared lista só a dívida NOVA', () => {
     const registry = registryCom([declarada, isenta, nova, foraDoDominio]);
     expect(registry.unexpectedlyUndeclared()).toEqual([nova]);

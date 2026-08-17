@@ -65,6 +65,23 @@ describe('buildRouteIndex', () => {
     expect(index.find('GET', '/api/documentos')).toBeUndefined();
   });
 
+  it('casa sem sensibilidade a CAIXA — o Express despacha assim por default', () => {
+    expect(index.find('GET', '/API/ADMIN/USERS')?.path).toBe('/api/admin/users');
+    expect(index.find('DELETE', '/Api/Admin/Users/By-Email')?.path).toBe('/api/admin/users/by-email');
+  });
+
+  it('USE montado na RAIZ de uma família com célula silenciaria a família inteira', () => {
+    // Invariante travado de propósito: ninguém usa `app.use('/api/admin', guard)`
+    // hoje, e este teste é o que denuncia se alguém passar a usar — a camada
+    // entraria no índice como `USE /api/admin` COM célula e devolveria
+    // `declared` para todo `/api/admin/*`, calando o deny-when-undeclared.
+    const perigoso = buildRouteIndex([
+      { method: 'USE', path: '/api/admin', cell },
+      { method: 'POST', path: '/api/admin/rota-sem-celula' },
+    ]);
+    expect(perigoso.find('POST', '/api/admin/rota-sem-celula')?.cell).toEqual(cell);
+  });
+
   it('caminho que não casa com nada volta undefined (não inventa decisão)', () => {
     expect(index.find('GET', '/api/admin/inexistente')).toBeUndefined();
   });

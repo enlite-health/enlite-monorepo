@@ -220,6 +220,52 @@ describe('PermissionMiddleware.family().require()', () => {
     expect(gravadas[0]).toMatchObject({ decision: 'ALLOW', action: 'delete' });
   });
 
+  it('o log do ensaio usa o caminho COMPLETO, não o relativo ao router', async () => {
+    const middleware = new PermissionMiddleware({
+      client: clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) }),
+      audit: { record: jest.fn() },
+      env: { ...LIGADO, PERMISSION_REPORT_ONLY: 'true' },
+    });
+    const router = express.Router();
+    router.get('/users/:id', middleware.family('admin.users').require('user_management', 'read'), (_req, res) =>
+      res.json({ ok: true }),
+    );
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as express.Request).authContext = { principal: { id: UID } } as never;
+      next();
+    });
+    // Montado em prefixo: dentro do router, `req.path` seria só `/users/abc`.
+    app.use('/api/admin', router);
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
+
+    await request(app).get('/api/admin/users/abc?q=1').expect(200);
+
+    expect(logger.warn.mock.calls[0][0]).toMatchObject({ path: '/api/admin/users/abc' });
+  });
+
+  it('sem originalUrl (chamada fora do Express), cai no path — nunca fica sem caminho', async () => {
+    const gravadas: PermissionDecision[] = [];
+    const middleware = new PermissionMiddleware({
+      client: clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) }),
+      audit: { record: (entry) => gravadas.push(entry) },
+      env: { ...LIGADO, PERMISSION_REPORT_ONLY: 'true' },
+    });
+    const guard = middleware.family('admin.users').require('user_management', 'read');
+    const req = {
+      path: '/api/admin/users',
+      params: {},
+      authContext: { principal: { id: UID } },
+    } as unknown as express.Request;
+    const next = jest.fn();
+
+    await guard(req, {} as express.Response, next);
+
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
+    expect(logger.warn.mock.calls[0][0]).toMatchObject({ path: '/api/admin/users' });
+    expect(next).toHaveBeenCalled();
+  });
+
   it('declara a célula no handler — é o que o scanner do catálogo lê', () => {
     const middleware = new PermissionMiddleware({ client: clientStub(), audit: { record: jest.fn() }, env: {} });
     const guard = middleware.family('admin.users').require('user_management', 'read', 'Ver usuários');

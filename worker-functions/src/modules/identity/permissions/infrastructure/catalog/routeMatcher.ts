@@ -20,9 +20,16 @@
 
 import type { ScannedRoute } from './scanExpressRouter';
 
-/** Segmentos não-vazios do caminho (`/api/admin/users/` → ['api','admin','users']). */
+/**
+ * Segmentos não-vazios do caminho (`/api/admin/users/` → ['api','admin','users']).
+ *
+ * Em MINÚSCULAS: o Express despacha sem sensibilidade a caixa (`case sensitive
+ * routing` off por default), então casar sensível a caixa faria
+ * `/API/admin/rota` não encontrar a rota que o Express vai atender — e o guard
+ * que depende deste casamento deixaria a request passar sem opinar.
+ */
 function segmentsOf(path: string): string[] {
-  return path.split('/').filter((segment) => segment.length > 0);
+  return path.toLowerCase().split('/').filter((segment) => segment.length > 0);
 }
 
 /**

@@ -148,6 +148,35 @@ describe('wirePermissionsModule', () => {
       expect(sync).toHaveBeenCalled();
     });
 
+    // Os dois casos que a revisão do grupo 3 separou: "marcador AUSENTE" derruba,
+    // "não consegui LER o marcador" não. Sem essa distinção, uma oscilação de
+    // conexão no boot tirava do ar app do prestador, leads e webhooks.
+    it('falha ao LER iam.rollout_state não derruba o boot', async () => {
+      process.env.PERMISSION_ENGINE_ENABLED = 'true';
+      const { app, boundary } = setup();
+      jest
+        .spyOn(boundary.permissions.assertStaffHasGroup, 'execute')
+        .mockRejectedValue(new Error('connection terminated unexpectedly'));
+      const alerta = jest.spyOn(boundary.permissions.assertStaffHasGroup, 'alertOnBoot').mockResolvedValue();
+
+      await expect(runPermissionsBootTasks(app, boundary)).resolves.toBeUndefined();
+      expect(alerta).toHaveBeenCalled();
+    });
+
+    it('qualquer outra falha do boot é logada e o processo segue', async () => {
+      process.env.PERMISSION_ENGINE_ENABLED = 'true';
+      process.env.COUNTRY_FEATURES_SYNC_ENABLED = 'true';
+      const { app, boundary } = setup();
+      comMigracaoMarcada(boundary);
+      jest
+        .spyOn(boundary.permissions.features.sync, 'execute')
+        .mockRejectedValue(new Error('banco fora'));
+
+      await expect(runPermissionsBootTasks(app, boundary)).resolves.toBeUndefined();
+      const { logger } = jest.requireMock('@shared/logging') as { logger: { error: jest.Mock } };
+      expect(logger.error.mock.calls.some((c) => String(c[1]).includes('seguindo sem elas'))).toBe(true);
+    });
+
     it('staff sem grupo é ALERTA, nunca falha de boot (lex C2)', async () => {
       process.env.PERMISSION_ENGINE_ENABLED = 'true';
       const { app, boundary } = setup();

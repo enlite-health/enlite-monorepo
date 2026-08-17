@@ -60,6 +60,34 @@ describe('GroupPermissionEngine', () => {
     expect(permissivo.checkPermission).toHaveBeenCalled();
   });
 
+  it('célula NÃO declarada por rota nenhuma cai no motor anterior — mesmo para staff', async () => {
+    // O caso real: `/api/users/:userId` chama requirePermission('user','admin_delete')
+    // desde antes desta change, e `user:admin_delete` nem existe no catálogo —
+    // grupo nenhum poderia concedê-la. Sem este desvio, ligar a flag global
+    // trancaria a rota para sempre (spec: "rota ainda não virada se comporta
+    // como hoje").
+    const client = clientStub();
+    const engine = new GroupPermissionEngine(client, permissivo, {
+      governsCell: (resource, action) => `${resource}:${action}` === 'user_management:read',
+    });
+
+    const decision = await engine.checkPermission(contexto(['admin']), { type: 'user' }, 'admin_delete');
+
+    expect(decision.allowed).toBe(true);
+    expect(client.resolve).not.toHaveBeenCalled();
+  });
+
+  it('célula DECLARADA por rota é decidida pelo novo modelo', async () => {
+    const engine = new GroupPermissionEngine(clientStub(authz({ permissions: [] })), permissivo, {
+      governsCell: (resource, action) => `${resource}:${action}` === 'user_management:read',
+    });
+
+    const decision = await engine.checkPermission(contexto(['admin']), { type: 'user_management' }, 'read');
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain('user_management:read');
+  });
+
   it('staff com a célula → permitido', async () => {
     const engine = new GroupPermissionEngine(clientStub(), permissivo);
     const decision = await engine.checkPermission(contexto(['recruiter']), { type: 'worker' }, 'read');

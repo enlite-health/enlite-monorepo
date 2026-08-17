@@ -29,6 +29,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { logger } from '@shared/logging';
 import { parseEnvList } from '@shared/utils/envList';
+import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import {
   cellKey,
@@ -68,10 +69,6 @@ function isSensitive(resource: string, action: string): boolean {
   return SENSITIVE_RESOURCES.has(resource) || SENSITIVE_ACTIONS.has(action);
 }
 
-function flagOn(env: NodeJS.ProcessEnv, name: string): boolean {
-  return env[name] === 'true';
-}
-
 export class PermissionMiddleware {
   private readonly client: PermissionClient;
   private readonly audit: PermissionAuditSink;
@@ -109,7 +106,7 @@ export class PermissionMiddleware {
    */
   requireCountryFeature(featureKey: string): RequestHandler {
     return async (req, res, next) => {
-      if (!flagOn(this.env, 'PERMISSION_ENGINE_ENABLED')) return next();
+      if (!isEnvFlagOn('PERMISSION_ENGINE_ENABLED', this.env)) return next();
       const context = currentDbContext();
       if (context?.kind !== 'staff' || !context.country) return next();
 
@@ -119,7 +116,7 @@ export class PermissionMiddleware {
         logger.error({ err, featureKey }, '[perm] falha ao ler disponibilidade da feature — tratando como indisponível');
       }
       logger.info(
-        { featureKey, country: context.country, path: req.path },
+        { featureKey, country: context.country, path: pathOf(req) },
         '[perm] feature indisponível no país da request',
       );
       res.status(404).json({ success: false, error: 'Not found' });
@@ -130,7 +127,7 @@ export class PermissionMiddleware {
 
   private buildGuard(family: string, resource: string, action: string, description?: string): RequestHandler {
     const guard: RequestHandler = async (req, res, next) => {
-      if (!flagOn(this.env, 'PERMISSION_ENGINE_ENABLED')) return next();
+      if (!isEnvFlagOn('PERMISSION_ENGINE_ENABLED', this.env)) return next();
       if (!this.isFamilyEnforced(family)) {
         this.logPendingFamily(family, resource, action);
         return next();
@@ -192,19 +189,24 @@ export class PermissionMiddleware {
     entry: { uid: string | null; resource: string; action: string; code: DenialCode },
   ): void {
     const { uid, resource, action, code } = entry;
+    // (lex C16) Só o uid vai para a trilha; sem uid não há a quem atribuir e a
+    // linha viraria ruído anônimo. A spec diz "toda negativa é registrada" — a
+    // exceção é esta, e ela é a ausência de sujeito, não uma dispensa.
     if (uid) this.record(uid, resource, action, 'DENY', req, code);
 
-    if (flagOn(this.env, 'PERMISSION_REPORT_ONLY')) {
-      logger.warn(
-        { uid, cell: cellKey(resource, action), code, path: req.path },
-        '[perm] REPORT_ONLY — negaria, mas seguiu',
-      );
-      next();
+    // ANTES do REPORT_ONLY de propósito: o modo de ensaio existe para medir
+    // negativa de PERMISSÃO, não para relaxar autenticação.
+    if (code === 'unauthenticated') {
+      res.status(401).json({ success: false, error: 'Authentication required' });
       return;
     }
 
-    if (code === 'unauthenticated') {
-      res.status(401).json({ success: false, error: 'Authentication required' });
+    if (isEnvFlagOn('PERMISSION_REPORT_ONLY', this.env)) {
+      logger.warn(
+        { uid, cell: cellKey(resource, action), code, path: pathOf(req) },
+        '[perm] REPORT_ONLY — negaria, mas seguiu',
+      );
+      next();
       return;
     }
     res.status(403).json({
@@ -239,6 +241,16 @@ export class PermissionMiddleware {
 export interface PermissionFamily {
   /** Guard que exige `recurso:ação` e declara a célula para o catálogo. */
   require(resource: string, action: string, description?: string): RequestHandler;
+}
+
+/**
+ * Caminho COMPLETO da request. `req.path` dentro de um router montado é
+ * relativo ao ponto de montagem (`/users/abc`, não `/api/admin/users/abc`) — e
+ * é justamente este campo que o relatório do `PERMISSION_REPORT_ONLY` usa para
+ * decidir se uma família pode virar. Sem a query string (pode carregar dado).
+ */
+function pathOf(req: Request): string {
+  return (req.originalUrl || req.path).split('?')[0];
 }
 
 /** uid do principal autenticado (`requireAuth`/`requireStaff` já rodaram). */

@@ -151,8 +151,14 @@ const baseAuthzEngine = useCerbos && process.env.CERBOS_ENDPOINT
 // Com o engine ligado, staff decide por CÉLULA; quem não é staff (app do
 // prestador, serviço) continua no motor anterior — o enforcement por célula é
 // do painel administrativo (spec permission-enforcement).
+// ⚠️ `governsCell` é o que impede a flag global de virar a decisão de rotas que
+// NENHUMA família ligou: `requirePermission` legado (`/api/users/:userId` etc.)
+// usa células que nem existem no catálogo, e sem este recorte ninguém poderia
+// concedê-las. Rota não virada continua se comportando como hoje (design 6).
 const authzEngine = process.env.PERMISSION_ENGINE_ENABLED === 'true'
-  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, baseAuthzEngine)
+  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, baseAuthzEngine, {
+      governsCell: (resource, action) => permissionsBoundary.registry.declaresCell(resource, action),
+    })
   : baseAuthzEngine;
 
 const authMiddleware = new AuthMiddleware(authService, authzEngine, permissionsBoundary.permissions.client);
@@ -517,10 +523,12 @@ if (process.env.MCP_ENABLED === 'true') {
 // revisão anterior do Cloud Run continua atendendo enquanto esta não sobe.
 startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService }, {
   // ANTES do listen e com TODAS as rotas montadas: varre o router, publica o
-  // índice do guard e sincroniza o catálogo. Lança só nos dois casos do gate
-  // (migração de dados não marcada / sync do catálogo falhou) — aí o processo
-  // MORRE e a revisão anterior do Cloud Run segue servindo, que é o desfecho
-  // seguro. "Staff sem grupo" continua sendo alerta (lex C2).
+  // índice do guard e sincroniza o catálogo. Lança em UM caso só — engine
+  // ligado com a migração de dados não marcada em `iam.rollout_state` —, e aí o
+  // processo MORRE de propósito e a revisão anterior do Cloud Run segue
+  // servindo. Qualquer outra falha aqui é logada e o boot segue: derrubar
+  // worker-functions por causa do painel tiraria do ar app do prestador, leads
+  // e webhooks (lex C2).
   beforeListen: () => runPermissionsBootTasks(app, permissionsBoundary),
 })
   .catch((err) => {

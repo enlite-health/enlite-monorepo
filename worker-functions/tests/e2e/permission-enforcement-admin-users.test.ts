@@ -16,7 +16,7 @@ import { Pool } from 'pg';
  * membros e células são criados pelas funções `SECURITY DEFINER` da mig 279, que é
  * como o painel vai criá-los.
  *
- * ⚠️ `jest.mock` é PROIBIDO neste arquivo: mockar qualquer peça apagaria
+ * ⚠️ Mock do jest é PROIBIDO neste arquivo: mockar qualquer peça apagaria
  * justamente a camada sob teste. A ÚNICA substituição é o `AdminController`
  * (precisa de Firebase Admin, e não é o objeto do teste): os handlers devolvem
  * 200 com um marcador, então "passou" e "não passou" são inequívocos.

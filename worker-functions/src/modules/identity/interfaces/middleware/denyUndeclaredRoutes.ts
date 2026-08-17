@@ -28,14 +28,23 @@
 
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { logger } from '@shared/logging';
+import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { buildRouteIndex, type RouteIndex, type ScannedRoute } from '@modules/identity/permissions';
 import { EXEMPT_ROUTES, PENDING_DECLARATIONS, routeKey } from './undeclaredRouteLists';
 
 /** Domínio governado por célula de staff (design 1b). */
 export const GOVERNED_PREFIXES = ['/api/admin/', '/analytics/'] as const;
 
+/**
+ * ⚠️ Comparação em MINÚSCULAS porque o Express roda com `case sensitive routing`
+ * DESLIGADO (o default): `/API/ADMIN/foo` é despachado para o mesmo handler que
+ * `/api/admin/foo`. Comparar com `startsWith` sensível a caixa deixava a rede de
+ * deny-by-default com um furo de uma linha — bastava a caixa diferente para a
+ * rota virar `not_governed` e passar. Achado em revisão, provado com repro.
+ */
 export function isGovernedPath(path: string): boolean {
-  return GOVERNED_PREFIXES.some((prefix) => path === prefix.slice(0, -1) || path.startsWith(prefix));
+  const lower = path.toLowerCase();
+  return GOVERNED_PREFIXES.some((prefix) => lower === prefix.slice(0, -1) || lower.startsWith(prefix));
 }
 
 export function isGovernedRoute(route: ScannedRoute): boolean {
@@ -79,6 +88,19 @@ export class UndeclaredRouteRegistry {
     return this.index?.all() ?? [];
   }
 
+  /**
+   * A célula é DECLARADA por alguma rota? É o que separa "o novo modelo governa
+   * isto" de "isto é chamada legada, que segue como sempre foi" — o
+   * `GroupPermissionEngine` usa para não decidir sobre células que nenhuma rota
+   * declarou (e que, por não estarem no catálogo, grupo nenhum poderia conceder).
+   * Antes do boot publicar responde `false` para tudo: nada é governado.
+   */
+  declaresCell(resource: string, action: string): boolean {
+    return this.all().some(
+      (route) => route.cell?.resource === resource && route.cell?.action === action,
+    );
+  }
+
   /** Rotas governadas sem declaração e fora das duas listas — a dívida NOVA. */
   unexpectedlyUndeclared(): ScannedRoute[] {
     return this.all().filter((route) => this.statusOfRoute(route) === 'undeclared');
@@ -113,14 +135,14 @@ export function denyUndeclaredRoutes(
   const env = options.env ?? process.env;
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (env.PERMISSION_ENGINE_ENABLED !== 'true') return next();
+    if (!isEnvFlagOn('PERMISSION_ENGINE_ENABLED', env)) return next();
     if (registry.statusOf(req.method, req.path) !== 'undeclared') return next();
 
     logger.error(
-      { method: req.method, path: req.path },
+      { method: req.method, path: req.originalUrl.split('?')[0] },
       '[perm] rota administrativa sem permissão declarada — negada',
     );
-    if (env.PERMISSION_REPORT_ONLY === 'true') return next();
+    if (isEnvFlagOn('PERMISSION_REPORT_ONLY', env)) return next();
     res.status(403).json({
       success: false,
       error: 'Access denied',

@@ -7,13 +7,22 @@
  *
  * Três decisões que valem explicação:
  *
- * 1. **Não-staff cai no motor anterior, sempre.** As rotas do próprio prestador
+ * 1. **Só decide o que o novo modelo DECLARA — e só para staff.** Dois desvios,
+ *    por dois motivos diferentes, e os dois vieram de bug achado em revisão:
+ *
+ *    (a) *não-staff* cai no motor anterior. As rotas do próprio prestador
  *    (`/api/workers/me/*`, `/api/users/me`) chamam `requirePermission('worker',
- *    'update')` desde antes desta change. Trocar o motor sem este desvio
- *    passaria a exigir uma célula de STAFF de quem nunca vai ter grupo — o app
- *    do candidato inteiro cairia em 403 no dia da virada. A spec é explícita:
- *    o enforcement por célula é do painel administrativo (requirement "Escopo
- *    do enforcement é o painel administrativo").
+ *    'update')` desde antes desta change; sem o desvio, o app do candidato
+ *    inteiro cairia em 403 no dia da virada.
+ *
+ *    (b) *célula NÃO declarada por nenhuma rota* também cai no motor anterior.
+ *    Sem isso, ligar `PERMISSION_ENGINE_ENABLED` viraria a decisão de rotas que
+ *    NENHUMA família ligou em `PERMISSION_ENFORCED_ROUTES` — e pior, com células
+ *    que não existem no catálogo (`user:admin_delete`, `worker:update`), que
+ *    grupo nenhum poderia conceder. Isso contraria o cenário "rota ainda não
+ *    virada se comporta como hoje" da spec e a decisão 6 do design. O conjunto
+ *    de células declaradas vem da MESMA varredura que alimenta o catálogo, e
+ *    nasce vazio: antes do boot publicar, este motor delega tudo.
  *
  * 2. **Falha ao resolver = negar** (spec: "Falha ao resolver permissões nega").
  *    Um `catch` que deixasse passar transformaria indisponibilidade de banco em
@@ -51,21 +60,37 @@ function deny(reason: string): AccessDecision {
   return { allowed: false, reason, policies: ['group_permissions'], auditLogId: decisionId() };
 }
 
+export interface GroupPermissionEngineOptions {
+  /**
+   * A célula é governada pelo novo modelo? Recebe o conjunto DECLARADO pelas
+   * rotas (via `UndeclaredRouteRegistry`). Omitido = governa tudo, forma que só
+   * o teste usa — o wiring de produção sempre passa o conjunto real.
+   */
+  governsCell?: (resource: string, action: string) => boolean;
+  tenantId?: string;
+}
+
 export class GroupPermissionEngine implements IAuthorizationEngine {
+  private readonly governsCell: (resource: string, action: string) => boolean;
+  private readonly tenantId: string;
+
   constructor(
     private readonly client: PermissionClient,
-    /** Motor de quem não é staff (hoje o `SimplifiedAuthorizationEngine`). */
-    private readonly nonStaffEngine: IAuthorizationEngine,
-    private readonly tenantId: string = ENLITE_TENANT_ID,
-  ) {}
+    /** Motor de quem este não decide (hoje o `SimplifiedAuthorizationEngine`). */
+    private readonly fallbackEngine: IAuthorizationEngine,
+    options: GroupPermissionEngineOptions = {},
+  ) {
+    this.governsCell = options.governsCell ?? (() => true);
+    this.tenantId = options.tenantId ?? ENLITE_TENANT_ID;
+  }
 
   async checkPermission(
     context: AuthContext,
     resource: Resource,
     action: string,
   ): Promise<AccessDecision> {
-    if (!isStaffPrincipal(context)) {
-      return this.nonStaffEngine.checkPermission(context, resource, action);
+    if (!isStaffPrincipal(context) || !this.governsCell(resource.type, action)) {
+      return this.fallbackEngine.checkPermission(context, resource, action);
     }
 
     const uid = context.principal.id;
