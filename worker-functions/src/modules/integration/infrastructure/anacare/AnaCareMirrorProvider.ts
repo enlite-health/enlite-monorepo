@@ -181,11 +181,17 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
         const conflicting = conflictingUniqueFields(err.body);
         if (conflicting.length === 0) throw err;
 
-        const retryPayload: AnaCareNursePayload = { ...payload };
+        // Partial<>: `email` é obrigatório em AnaCareNursePayload e pode ser um dos
+        // campos removidos aqui. (O `tsc` não acusa: `delete obj[k]` com `k` de tipo
+        // união não dispara TS2790 como `delete obj.email` dispararia — o tipo certo
+        // é escolha nossa, não imposição do compilador.)
+        const retryPayload: Partial<AnaCareNursePayload> = { ...payload };
         for (const field of conflicting) delete retryPayload[field];
 
+        // PII-SAFETY: só NOMES de campo e ids — nunca o telefone/email em conflito.
         logger.warn({
           msg: `${TAG} PATCH com conflito de unicidade — reenviando SEM os campos em conflito`,
+          workerId: record.workerId,
           anaCareId: id,
           conflictingFields: conflicting,
         });
@@ -193,6 +199,7 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
         const updated = await this.client.updateNurse(id, retryPayload);
         logger.info({
           msg: `${TAG} updated nurse (campos em conflito preservados no AnaCare)`,
+          workerId: record.workerId,
           anaCareId: updated.id,
           skippedFields: conflicting,
         });

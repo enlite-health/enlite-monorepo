@@ -521,6 +521,19 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
     expect(client.updateNurse).toHaveBeenCalledTimes(1);
   });
 
+  it('400 com corpo NÃO-JSON (HTML de proxy) → não retenta, propaga', async () => {
+    const client = makeClient();
+    (client.updateNurse as jest.Mock).mockRejectedValue(
+      new AnaCareApiError(
+        'PATCH', '/api/v2/agencies/nurses/42/', 400,
+        '<html><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1></body></html>',
+      ),
+    );
+
+    await expect(new AnaCareMirrorProvider(client).upsert(makeRecord(), '42')).rejects.toThrow(/HTTP 400/);
+    expect(client.updateNurse).toHaveBeenCalledTimes(1);
+  });
+
   it('se o retry TAMBÉM falhar, o erro propaga (não mascara falha real)', async () => {
     const client = makeClient();
     (client.updateNurse as jest.Mock)
