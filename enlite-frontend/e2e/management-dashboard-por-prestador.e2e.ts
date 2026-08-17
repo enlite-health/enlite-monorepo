@@ -14,6 +14,12 @@
  * inventado provaria só que a tela renderiza; número real prova que ela aguenta o que vai
  * receber.
  *
+ * ⚠️ ÚNICA EXCEÇÃO ao "literal de 30/07": o bloco `encuadres` foi reconciliado em 17/08/2026,
+ * quando a capacidade semanal passou a 30. O valor capturado em 30/07 era `agendados: 7` com
+ * `agendadosEstaSemana: 0` — combinação que o backend NÃO consegue emitir (os dois campos
+ * recebem a mesma variável), ou seja, nunca foi literal de fato. Reconciliado com a invariante
+ * real e com a config vigente. Todo o resto do payload segue intocado, literal de 30/07.
+ *
  * Auth: Firebase Identity Toolkit interceptado localmente (mesma técnica de
  * management-dashboard-visual.e2e.ts) — sem emulador, sem conta real.
  *
@@ -42,7 +48,8 @@ const FAKE_ID_TOKEN =
   ).toString('base64url') +
   '.';
 
-/** Saída literal do caso de uso contra o banco de produção (30/07/2026). */
+/** Saída literal do caso de uso contra o banco de produção (30/07/2026), com o bloco
+ *  `encuadres` reconciliado em 17/08 — ver a ressalva no cabeçalho do arquivo. */
 const PROD_PAYLOAD = {
   bigNumbers: {
     equiposArmados: 0,
@@ -83,7 +90,11 @@ const PROD_PAYLOAD = {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
     agendados: 37, seleccionados: 10, rechazados: 2557,
   },
-  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
+  // INVARIANTE do backend: no bloco `encuadres` do payload, `pctCapacidadeSemana.agendados` e
+  // `agendadosEstaSemana` recebem a MESMA variável `encuadre` (GetManagementDashboardUseCase,
+  // montagem de `encuadres`) — produção nunca emite os dois diferentes. Semana zerada: 0/30 = 0%.
+  // (Citação por símbolo, não por linha: este próprio PR já deslocou os números uma vez.)
+  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 0, capacidade: 30, pct: 0 } },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
     alocadosCubriendoGuardias: 12, incompletos: 6735, nuevosCompletosMes: 41,
@@ -107,7 +118,8 @@ const PROD_PAYLOAD_DEPOIS = {
       colunas: { ...PROD_PAYLOAD.funnelPorPrestador.consolidado.colunas, IN_PROGRESS: 1172, CONFIRMED: 28 },
     },
   },
-  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
+  // A entrevista marcada nesta semana move os DOIS campos juntos (ver invariante acima): 1/30 = 3,3%.
+  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 1, capacidade: 30, pct: 3.3 } },
 };
 
 const MOCK_ZONE_ANALYTICS = { zones: [], unresolvedCount: 0 };

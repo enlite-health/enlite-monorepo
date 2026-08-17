@@ -104,7 +104,7 @@ const MOCK_DASHBOARD = {
     seleccionados: 2,
     rechazados: 2498,
   },
-  encuadres: { agendadosEstaSemana: 7, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 80, pct: 8.8 } },
+  encuadres: { agendadosEstaSemana: 7, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 30, pct: 23.3 } },
   cadastros: {
     leads: 6882,
     completos: 250,
