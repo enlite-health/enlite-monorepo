@@ -170,12 +170,16 @@ async function attemptOnce(token: string, body: string): Promise<Attempt> {
    * para impedir. Por isso validamos o continente E o conteúdo: sem a segunda
    * checagem, `queryLogs` ainda devolveria string/número tipado como `LogEntry[]`.
    *
-   * ⚠️ O que estas guardas NÃO resolvem: um objeto SEM `entries` é indistinguível
-   * do vazio legítimo, e o Google documenta um caso em que isso mente — `entries`
-   * vazio COM `nextPageToken` significa "não terminei de varrer a janela", não
-   * "não achei nada". Este helper não pagina (nunca lê `nextPageToken`), então
-   * ainda pode ler busca-incompleta como zero. Fica como change própria; fechar
-   * por allowlist de chaves do topo seria pior (quebraria a cada campo novo).
+   * O caso irmão — `entries` vazio COM `nextPageToken`, que pelo contrato do
+   * Google significa "não terminei de varrer" e não "não achei" — NÃO se resolve
+   * aqui: uma página não tem como saber. Quem resolve é o laço de páginas do
+   * `queryLogs` (ver `MAX_PAGES`), que só aceita `[]` como resposta quando o
+   * Google para de mandar token.
+   *
+   * O que segue fora de alcance, de propósito: um objeto sem `entries` e sem
+   * `nextPageToken` é indistinguível do vazio legítimo — e deve ser, porque pelo
+   * mesmo contrato isso É "varredura concluída, nenhum match". Fechar por
+   * allowlist de chaves do topo quebraria a cada campo novo do Google.
    */
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return fail('corpo inesperado', `corpo 200 não é objeto JSON (${jsonKind(parsed)})`, true);
