@@ -5,11 +5,13 @@
  *   1. Payload válido → instancia provider e chama mirrorOne
  *   2. Payload inválido (workerId ausente) → throw
  *   3. Erro do service → propaga (DomainEventProcessor marca 'failed')
+ *   4. Fábrica de PRODUÇÃO injeta o guard real no provider (fiação, não intenção)
  */
 
 // ── Mocks (antes dos imports) ─────────────────────────────────────
 
 const mockMirrorOne = jest.fn();
+const mockIsAnaCareIdClaimed = jest.fn();
 
 // MirrorWorkerService é instanciado com o provider injetado pelo factory;
 // mockamos o mirrorOne via prototype para interceptar qualquer instância.
@@ -17,6 +19,17 @@ jest.mock('../MirrorWorkerService', () => ({
   MirrorWorkerService: jest.fn().mockImplementation(() => ({
     mirrorOne: mockMirrorOne,
   })),
+  isAnaCareIdClaimed: (externalId: string) => mockIsAnaCareIdClaimed(externalId),
+}));
+
+// Captura os argumentos do construtor do provider para provar a FIAÇÃO da
+// fábrica de produção — sem isso, "esqueci de injetar o guard" passa silencioso.
+const providerCtorArgs: unknown[][] = [];
+jest.mock('../../infrastructure/anacare/AnaCareMirrorProvider', () => ({
+  AnaCareMirrorProvider: jest.fn().mockImplementation((...args: unknown[]) => {
+    providerCtorArgs.push(args);
+    return { name: 'anacare' };
+  }),
 }));
 
 jest.mock('@shared/logging', () => ({
@@ -129,5 +142,30 @@ describe('createAnaCareMirrorHandler', () => {
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
     await expect(handler({ workerId: WORKER_ID })).rejects.toThrow('HTTP 503: AnaCare unavailable');
+  });
+
+  // ─────────────────────────────────────────────
+  // 4. Fiação de PRODUÇÃO (sem providerFactory injetado)
+  // ─────────────────────────────────────────────
+
+  it('a fábrica padrão injeta isExternalIdClaimed no provider — guard fail-closed nunca sai vazio', async () => {
+    providerCtorArgs.length = 0;
+    process.env.ANACARE_API_KEY = 'ana_care.test.handler'; // AnaCareClient.create() → fromEnv (sem Secret Manager)
+    mockMirrorOne.mockResolvedValue('created');
+
+    // SEM providerFactory → cai no defaultProviderFactory, o caminho de produção
+    const handler = createAnaCareMirrorHandler();
+    await handler({ workerId: WORKER_ID });
+
+    expect(providerCtorArgs).toHaveLength(1);
+    const [, deps] = providerCtorArgs[0] as [unknown, { isExternalIdClaimed?: (id: string) => Promise<boolean> }];
+    expect(typeof deps?.isExternalIdClaimed).toBe('function');
+
+    // e é o guard de verdade, não um stub qualquer
+    mockIsAnaCareIdClaimed.mockResolvedValue(true);
+    await expect(deps.isExternalIdClaimed!('4242')).resolves.toBe(true);
+    expect(mockIsAnaCareIdClaimed).toHaveBeenCalledWith('4242');
+
+    delete process.env.ANACARE_API_KEY;
   });
 });

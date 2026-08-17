@@ -10,7 +10,7 @@
  * chamar Secret Manager em testes unitários.
  */
 
-import { MirrorWorkerService } from './MirrorWorkerService';
+import { MirrorWorkerService, isAnaCareIdClaimed } from './MirrorWorkerService';
 import { AnaCareMirrorProvider } from '../infrastructure/anacare/AnaCareMirrorProvider';
 import { AnaCareClient } from '../infrastructure/anacare/AnaCareClient';
 import { logger } from '@shared/logging';
@@ -59,5 +59,5 @@ export function createAnaCareMirrorHandler(
  */
 async function defaultProviderFactory(): Promise<AnaCareMirrorProvider> {
   const client = await AnaCareClient.create();
-  return new AnaCareMirrorProvider(client);
+  return new AnaCareMirrorProvider(client, { isExternalIdClaimed: isAnaCareIdClaimed });
 }
