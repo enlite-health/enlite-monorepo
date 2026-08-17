@@ -6,6 +6,22 @@
  * O que se prova aqui é exatamente esse contrato — e o simétrico, que sem hook
  * nada muda. Todo o resto do arquivo (webhooks, Pub/Sub, Cloud Tasks) é
  * substituído: é wiring de terceiros e não é o objeto do teste.
+ *
+ * ⚠️ DUAS PRECAUÇÕES OBRIGATÓRIAS AO EXERCITAR O SIGTERM — a 1ª versão deste
+ * arquivo não tinha e **derrubou o CI inteiro**: o handler real agenda
+ * `setTimeout(() => process.exit(1), 8000)` e o `unref()` impede o timer de
+ * SEGURAR o processo, não de DISPARAR. O teste passava em 10ms, o worker do
+ * jest seguia rodando as outras suítes, e 8 segundos depois o timer acordava e
+ * matava a execução — 96 suítes verdes, zero falhas, e exit 1 sem resumo.
+ *
+ *   1. **Fake timers em tudo que dispara o handler.** Assim o `setTimeout` é do
+ *      jest, morre com `useRealTimers()` e não sobra bomba para as outras suítes.
+ *   2. **Remover os listeners de SIGTERM que o teste registrou.** Cada
+ *      `startServer` registra um `process.once`; sem limpeza eles se acumulam e
+ *      um único `emit` dispara todos os anteriores.
+ *
+ * A lição vale além deste arquivo: teste que mexe em SINAL ou em TIMER do
+ * processo tem efeito FORA do próprio arquivo, e a suíte inteira é o escopo.
  */
 
 const listenMock = jest.fn();
@@ -78,12 +94,34 @@ function fakeApp(): unknown {
 
 const messaging = { twilioMessagingService: {}, periskopeMessagingService: {} } as never;
 
+/**
+ * Timers do jest + faxina dos listeners de SIGTERM. `doNotFake` no `setImmediate`
+ * porque o drain dos pools é uma cadeia de promessas e o teste precisa de uma
+ * volta REAL de microtask para observá-la.
+ */
+let sigtermAntes: NodeJS.SignalsListener[] = [];
+function isolarProcesso(): void {
+  sigtermAntes = process.listeners('SIGTERM') as NodeJS.SignalsListener[];
+  jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+}
+function devolverProcesso(): void {
+  for (const listener of process.listeners('SIGTERM') as NodeJS.SignalsListener[]) {
+    if (!sigtermAntes.includes(listener)) process.removeListener('SIGTERM', listener);
+  }
+  jest.clearAllTimers();
+  jest.useRealTimers();
+}
+
 describe('startServer — hook beforeListen', () => {
   beforeEach(() => {
     listenMock.mockClear();
+    isolarProcesso();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
   });
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    devolverProcesso();
+    jest.restoreAllMocks();
+  });
 
   it('sem hook, o servidor sobe como sempre', async () => {
     await startServer(fakeApp() as never, false, messaging);
@@ -133,10 +171,12 @@ describe('startServer — ramos de wiring e desligamento', () => {
   const envAnterior = { ...process.env };
   beforeEach(() => {
     listenMock.mockClear();
+    isolarProcesso();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
   afterEach(() => {
+    devolverProcesso();
     process.env = { ...envAnterior };
     jest.restoreAllMocks();
   });
@@ -204,6 +244,7 @@ describe('startServer — ramos de wiring e desligamento', () => {
 
   it('SIGTERM para de aceitar conexões antes de drenar os pools', async () => {
     const close = jest.fn();
+    jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
     const app = {
       use: jest.fn(),
       get: jest.fn(),
@@ -264,18 +305,19 @@ describe('startServer — ramos de wiring e desligamento', () => {
   });
 
   it('teto de 8s: se as requests em voo não terminam, sai com 1', async () => {
-    jest.useFakeTimers();
     const exit = jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
     // `close` que NUNCA chama de volta = request em voo que não termina.
     const { app } = appComCloseControlado();
 
     await startServer(app as never, false, messaging);
     process.emit('SIGTERM');
+
+    // O timer do teto está sob controle do JEST, não solto no processo — é
+    // exatamente o que impede este arquivo de matar as outras suítes.
+    expect(jest.getTimerCount()).toBeGreaterThan(0);
     jest.advanceTimersByTime(8000);
 
     expect(exit).toHaveBeenCalledWith(1);
-    jest.useRealTimers();
   });
 
   it('terminado o close, drena os pools e sai com 0', async () => {
