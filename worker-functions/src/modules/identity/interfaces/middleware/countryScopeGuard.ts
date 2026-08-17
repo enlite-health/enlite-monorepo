@@ -1,5 +1,5 @@
 /**
- * src/shared/database/countryScopeGuard.ts
+ * src/modules/identity/interfaces/middleware/countryScopeGuard.ts
  *
  * Cortesia de UX por cima da RLS (ABAC país Fase 1, task 3.5) — **nunca**
  * substituto dela. A segurança é a policy do banco; isto só troca um resultado
@@ -15,6 +15,11 @@
  * Sob RLS e sem este guard, o pedido cross-país não erraria: voltaria com
  * contadores zerados, que o operador leria como "não há pacientes no Brasil".
  *
+ * Mora ao lado do `PermissionMiddleware` desde a change `painel-grupos-permissao`
+ * (task 3.3): país e célula são as duas metades da mesma decisão de acesso — o
+ * QUE o operador pode e ONDE. Antes vivia em `@shared/database` só porque
+ * consulta o banco.
+ *
  * Gated por `COUNTRY_RLS_ENABLED` de propósito: enquanto a virada não acontece,
  * ninguém tem claim de país, e enforcement aqui recusaria filtro que hoje
  * funciona. Prod neutro até a task 4.3.
@@ -23,8 +28,8 @@
 import type { Request, RequestHandler } from 'express';
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
-import { DatabaseConnection } from './DatabaseConnection';
-import { currentDbContext, isCountryCode, isCountryRlsEnabled } from './requestDbSession';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { currentDbContext, isCountryCode, isCountryRlsEnabled } from '@shared/database/requestDbSession';
 
 /**
  * Mesma FONTE da policy RLS de país (migrations 276/278): `iam.effective_countries`

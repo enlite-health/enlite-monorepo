@@ -33,10 +33,20 @@ export interface StartServerMessagingDeps {
   periskopeMessagingService: PeriskopeMessagingService;
 }
 
+export interface StartServerHooks {
+  /**
+   * Roda com TODAS as rotas montadas e ANTES do `listen`. Lançar aqui impede o
+   * servidor de aceitar tráfego — é o lugar de gate que precisa do router
+   * pronto (ex.: catálogo de permissões, task 3.7). Sem hook, nada muda.
+   */
+  beforeListen?: () => Promise<void>;
+}
+
 export async function startServer(
   app: Express,
   useCerbos: boolean,
   messagingDeps: StartServerMessagingDeps,
+  hooks: StartServerHooks = {},
 ): Promise<void> {
   // ── Gate de boot da RLS de país ──────────────────────────────────────────
   // Com COUNTRY_RLS_ENABLED=true, sem a membership de app_runtime/app_system o
@@ -129,6 +139,11 @@ export async function startServer(
   // Gated por PERISKOPE_NOTE_MIRROR_ENABLED — neutro até virar a flag.
   const chatwootMirrorController = new ChatwootMirrorController(new PeriskopeNoteService());
   app.post('/api/webhooks/chatwoot/mirror', systemContextMiddleware('webhook:chatwoot-mirror'), (req, res) => chatwootMirrorController.handle(req, res));
+
+  // ── Gates que precisam do router pronto ───────────────────────────────────
+  // Depois de TODAS as rotas (as de webhook são montadas acima) e antes do
+  // listen: quem lançar aqui não sobe, e o `.catch` do index.ts mata o processo.
+  if (hooks.beforeListen) await hooks.beforeListen();
 
   // ── Start Server ──────────────────────────────────────────────────────────
   const PORT = process.env.PORT || 8080;

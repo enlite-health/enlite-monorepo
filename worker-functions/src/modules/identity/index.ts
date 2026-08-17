@@ -40,6 +40,7 @@ export { UserRepository } from './infrastructure/UserRepository';
 export { MultiAuthService } from './infrastructure/MultiAuthService';
 export { SimplifiedAuthorizationEngine } from './infrastructure/SimplifiedAuthorizationEngine';
 export { CerbosAuthorizationAdapter } from './infrastructure/CerbosAuthorizationAdapter';
+export { GroupPermissionEngine, isStaffPrincipal } from './infrastructure/GroupPermissionEngine';
 export { GoogleIdentityService } from './infrastructure/GoogleIdentityService';
 export { EmailService } from './infrastructure/EmailService';
 export {
@@ -66,4 +67,27 @@ export { AdminController } from './interfaces/controllers/AdminController';
 export { AuthTelemetryController } from './interfaces/controllers/AuthTelemetryController';
 export { UserController } from './interfaces/controllers/UserController';
 export { AuthMiddleware } from './interfaces/middleware/AuthMiddleware';
+export { PermissionMiddleware } from './interfaces/middleware/PermissionMiddleware';
+export type {
+  DenialCode,
+  PermissionAuditSink,
+  PermissionFamily,
+  PermissionMiddlewareDeps,
+} from './interfaces/middleware/PermissionMiddleware';
+export {
+  denyUndeclaredRoutes,
+  isGovernedPath,
+  isGovernedRoute,
+  UndeclaredRouteRegistry,
+  GOVERNED_PREFIXES,
+} from './interfaces/middleware/denyUndeclaredRoutes';
+export type { RouteStatus } from './interfaces/middleware/denyUndeclaredRoutes';
+export {
+  EXEMPT_ROUTES,
+  PENDING_DECLARATIONS,
+  routeKey,
+} from './interfaces/middleware/undeclaredRouteLists';
+export { requireCountryScope, hasLiveCountryGrant } from './interfaces/middleware/countryScopeGuard';
 export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';
+export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
+export { createPermissionRoutesInventoryRouter } from './interfaces/routes/permissionRoutesInventoryRoute';

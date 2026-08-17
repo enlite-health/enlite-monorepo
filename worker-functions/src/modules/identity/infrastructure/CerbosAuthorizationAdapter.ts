@@ -5,6 +5,31 @@ import {
 } from '../domain/Auth';
 
 /**
+ * O principal como o Cerbos espera.
+ *
+ * `permissions`/`countries` vêm da resolução por request do `AuthMiddleware`
+ * (change `painel-grupos-permissao`). Sem eles o adapter mandava só `roles` e
+ * QUALQUER policy escrita sobre permissão negava — o buraco apontado no
+ * ADR-006. Listas VAZIAS quando o engine está desligado: é o estado real, não
+ * um default permissivo.
+ *
+ * Uma função só porque `check` e `plan` divergiam — o `plan` mandava apenas
+ * `tenantId`, então a mesma policy decidia diferente nos dois caminhos.
+ */
+function principalPayload(context: AuthContext): Record<string, unknown> {
+  return {
+    id: context.principal.id,
+    roles: context.principal.roles,
+    attr: {
+      tenantId: context.principal.tenantId,
+      permissions: context.principal.permissions ?? [],
+      countries: context.principal.countries ?? [],
+      country: context.principal.country,
+    },
+  };
+}
+
+/**
  * Cerbos Authorization Adapter
  * 
  * This adapter allows seamless migration to Cerbos (https://cerbos.dev)
@@ -56,14 +81,7 @@ export class CerbosAuthorizationAdapter implements IAuthorizationEngine {
         },
         body: JSON.stringify({
           requestId: context.metadata.requestId,
-          principal: {
-            id: context.principal.id,
-            roles: context.principal.roles,
-            attr: {
-              tenantId: context.principal.tenantId,
-              // Add other principal attributes
-            },
-          },
+          principal: principalPayload(context),
           resource: {
             kind: resource.type,
             id: resource.id,
@@ -140,13 +158,7 @@ export class CerbosAuthorizationAdapter implements IAuthorizationEngine {
         },
         body: JSON.stringify({
           requestId: context.metadata.requestId,
-          principal: {
-            id: context.principal.id,
-            roles: context.principal.roles,
-            attr: {
-              tenantId: context.principal.tenantId,
-            },
-          },
+          principal: principalPayload(context),
           resource: {
             kind: resourceType,
           },

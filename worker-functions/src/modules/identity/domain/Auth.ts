@@ -24,6 +24,18 @@ export interface Principal {
    * (ABAC Fase 1). Ausente é ausente: NUNCA preencher com default (lex C3).
    */
   country?: string;
+  /**
+   * Permissões efetivas (`recurso:ação`) e países concedidos pelos grupos —
+   * resolvidos por request pelo `AuthMiddleware` quando
+   * `PERMISSION_ENGINE_ENABLED=true` (change `painel-grupos-permissao`).
+   *
+   * Existem no principal, e não só no request, porque é daqui que o
+   * `CerbosAuthorizationAdapter` os manda como `principal.attr` — o buraco que o
+   * ADR-006 apontava (o adapter enviava só `roles`, e toda policy que olhasse
+   * permissão negava). Ausentes = engine desligado ou principal não-staff.
+   */
+  permissions?: string[];
+  countries?: string[];
 }
 
 export enum PrincipalType {

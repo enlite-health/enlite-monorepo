@@ -68,6 +68,8 @@ export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } fr
 export type { PermissionMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
+export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
+export type { RouteIndex } from './infrastructure/catalog/routeMatcher';
 export { CATALOG_OWNER_SERVICE } from './application/SyncPermissionCatalogUseCase';
 
 // ── Disponibilidade por país ─────────────────────────────────────────────────

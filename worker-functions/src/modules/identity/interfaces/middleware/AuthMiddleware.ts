@@ -7,6 +7,7 @@ import { MultiAuthService } from '../../infrastructure/MultiAuthService';
 import { loggingAls, logger } from '@shared/logging';
 import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
 import { isCountryCode, isCountryRlsEnabled, setDbContext } from '@shared/database/requestDbSession';
+import { ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
 
 /**
  * Guarda quem autenticou no contexto da request (ALS), para que as escritas
@@ -98,10 +99,44 @@ export class AuthMiddleware {
 
   constructor(
     private readonly authService: IAuthenticationService,
-    private readonly authzEngine: IAuthorizationEngine
+    private readonly authzEngine: IAuthorizationEngine,
+    /**
+     * Resolvedor de permissões efetivas (change `painel-grupos-permissao`,
+     * task 3.1). Opcional: sem ele o middleware se comporta exatamente como
+     * antes — é assim que os testes antigos seguem válidos e que um consumidor
+     * fora do painel não paga por um módulo que não usa.
+     */
+    private readonly permissions?: PermissionClient,
   ) {
     // Guarda referência tipada se o serviço for MultiAuthService
     this.multiAuthService = authService instanceof MultiAuthService ? authService : null;
+  }
+
+  /**
+   * Anexa `{permissions, countries}` ao principal quando o engine está ligado e
+   * quem chega é staff.
+   *
+   * NÃO nega aqui, de propósito. Conta em admissão / sem grupo tem que
+   * conseguir autenticar para cair na tela de boas-vindas e no
+   * `/api/admin/auth/profile` (auto-provisionamento do 1º login) — quem nega é
+   * o `PermissionMiddleware`, na rota que exige célula. Negar já na
+   * autenticação trancaria fora justamente quem o gestor precisa enxergar para
+   * dar o grupo.
+   *
+   * Falha de resolução não derruba a autenticação: o principal segue sem as
+   * listas, e o guard da rota resolve de novo e NEGA (fail-closed lá, onde a
+   * decisão é tomada).
+   */
+  private async attachEffectiveAuthz(principal: { id: string; roles?: string[] }): Promise<void> {
+    if (!this.permissions || process.env.PERMISSION_ENGINE_ENABLED !== 'true') return;
+    if (!(principal.roles ?? []).some((role) => isStaffRole(role))) return;
+    try {
+      const resolved = await this.permissions.resolve(principal.id, ENLITE_TENANT_ID);
+      (principal as { permissions?: string[]; countries?: string[] }).permissions = resolved.permissions;
+      (principal as { permissions?: string[]; countries?: string[] }).countries = resolved.countries;
+    } catch (err) {
+      logger.error({ err, uid: principal.id }, '[perm] falha ao resolver permissões na autenticação');
+    }
   }
 
   /**
@@ -138,6 +173,7 @@ export class AuthMiddleware {
           (req as any).authContext = authContext;
           (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles };
           rememberActorInAls(mockUser.uid, mockUser.email, roles, mockUser.country);
+          await this.attachEffectiveAuthz(authContext.principal);
           return next();
         }
 
@@ -186,6 +222,8 @@ export class AuthMiddleware {
           authContext.principal.roles,
           authContext.principal.country,
         );
+
+        await this.attachEffectiveAuthz(authContext.principal);
 
         // Log successful authentication (without PII)
         this.logAuthAttempt(authContext, metadata, true);
