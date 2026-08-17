@@ -22,12 +22,13 @@ import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
 import { AdminPatientsController, createAdminPatientsRoutes, PublicLeadsController } from '@modules/case';
 import { UserController } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes } from '@modules/identity';
 import {
   AuthMiddleware,
   MultiAuthService,
   SimplifiedAuthorizationEngine,
   CerbosAuthorizationAdapter,
+  GroupPermissionEngine,
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
@@ -49,7 +50,11 @@ import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
 import { publicContextMiddleware, systemContextMiddleware } from './shared/database/systemContextMiddleware';
 import { noStoreMiddleware } from './shared/http/noStoreMiddleware';
 import { startServer } from './bootstrap/startServer';
-import { runPermissionsBootTasks, wirePermissionsModule } from './bootstrap/wirePermissionsModule';
+import {
+  createPermissionsBoundary,
+  runPermissionsBootTasks,
+  wirePermissionsModule,
+} from './bootstrap/wirePermissionsModule';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
@@ -123,15 +128,34 @@ const authService = new MultiAuthService({
   internalTokenSecret: process.env.INTERNAL_TOKEN_SECRET,
 }, DatabaseConnection.getInstance().getPool());
 
+// ── Permissões (painel de grupos, grupo 3) ────────────────────────────────────
+// ANTES das rotas de propósito: o `PermissionMiddleware` é o que cada rota usa
+// para declarar e decidir a célula, e o guard de rota-sem-declaração precisa
+// estar montado antes delas para rodar. Neutro enquanto
+// PERMISSION_ENGINE_ENABLED estiver off. Ver bootstrap/wirePermissionsModule.
+const permissionsBoundary = createPermissionsBoundary({
+  app,
+  pool: DatabaseConnection.getInstance().getPool(),
+  systemPool: DatabaseConnection.getInstance().getSystemPool(),
+});
+const permissionMiddleware = permissionsBoundary.middleware;
+
 const useCerbos = process.env.USE_CERBOS === 'true';
-const authzEngine = useCerbos && process.env.CERBOS_ENDPOINT
+const baseAuthzEngine = useCerbos && process.env.CERBOS_ENDPOINT
   ? new CerbosAuthorizationAdapter({
       cerbosEndpoint: process.env.CERBOS_ENDPOINT,
       playgroundEnabled: process.env.NODE_ENV === 'development',
     })
   : new SimplifiedAuthorizationEngine();
 
-const authMiddleware = new AuthMiddleware(authService, authzEngine);
+// Com o engine ligado, staff decide por CÉLULA; quem não é staff (app do
+// prestador, serviço) continua no motor anterior — o enforcement por célula é
+// do painel administrativo (spec permission-enforcement).
+const authzEngine = process.env.PERMISSION_ENGINE_ENABLED === 'true'
+  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, baseAuthzEngine)
+  : baseAuthzEngine;
+
+const authMiddleware = new AuthMiddleware(authService, authzEngine, permissionsBoundary.permissions.client);
 
 // ── Controller instances ──────────────────────────────────────────────────────
 const workerController = new WorkerControllerV2();
@@ -353,24 +377,9 @@ app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), (
   }
   adminController.setup(req, res);
 });
-app.post('/api/admin/users', authMiddleware.requireAdmin(), (req: Request, res: Response) => {
-  adminController.createAdminUser(req, res);
-});
-app.get('/api/admin/users', authMiddleware.requireStaff(), (req: Request, res: Response) => {
-  adminController.listAdminUsers(req, res);
-});
-app.delete('/api/admin/users/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => {
-  adminController.deleteAdminUser(req, res);
-});
-app.post('/api/admin/users/:id/reset-password', authMiddleware.requireAdmin(), (req: Request, res: Response) => {
-  adminController.resetAdminPassword(req, res);
-});
-app.patch('/api/admin/users/:id/role', authMiddleware.requireAdmin(), (req: Request, res: Response) => {
-  adminController.updateAdminRole(req, res);
-});
-app.delete('/api/admin/users/by-email', authMiddleware.requireAdmin(), (req: Request, res: Response) => {
-  adminController.deleteUserByEmail(req, res);
-});
+// Família `admin.users` — extraída para router próprio na task 3.5 (primeira a
+// declarar célula). Ver modules/identity/interfaces/routes/adminUsersRoutes.ts.
+app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, permissionMiddleware));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
 app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);
@@ -487,10 +496,9 @@ app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response
 // Neutro por padrão: registra os handlers de invalidação de cache, publica o
 // catálogo em /.well-known (guard interno) e mede staff sem grupo. Os syncs que
 // ESCREVEM no banco são gated (ver wirePermissionsModule).
-const permissionsModule = wirePermissionsModule({
+wirePermissionsModule({
   app,
-  pool: dbPool,
-  systemPool: DatabaseConnection.getInstance().getSystemPool(),
+  boundary: permissionsBoundary,
   events: domainEventProcessor,
   internalGuard: internalAuthMiddleware,
 });
@@ -507,15 +515,14 @@ if (process.env.MCP_ENABLED === 'true') {
 // quando COUNTRY_RLS_ENABLED=true (ver assertDbRoleMembership). Falhou, o
 // processo MORRE — servir com RLS sem grant é servir tela vazia calada, e a
 // revisão anterior do Cloud Run continua atendendo enquanto esta não sobe.
-startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService })
-  .then(() =>
-    // Depois do listen e com TODAS as rotas montadas (a varredura do catálogo
-    // precisa do router pronto). `.catch` próprio: nenhuma dessas tarefas tem
-    // direito de derrubar o processo (lex C2).
-    runPermissionsBootTasks(app, permissionsModule).catch((err: unknown) =>
-      console.error('[perm] falha nas tarefas de boot de permissões — seguindo:', err),
-    ),
-  )
+startServer(app, useCerbos, { twilioMessagingService, periskopeMessagingService }, {
+  // ANTES do listen e com TODAS as rotas montadas: varre o router, publica o
+  // índice do guard e sincroniza o catálogo. Lança só nos dois casos do gate
+  // (migração de dados não marcada / sync do catálogo falhou) — aí o processo
+  // MORRE e a revisão anterior do Cloud Run segue servindo, que é o desfecho
+  // seguro. "Staff sem grupo" continua sendo alerta (lex C2).
+  beforeListen: () => runPermissionsBootTasks(app, permissionsBoundary),
+})
   .catch((err) => {
     console.error('[startup] falha fatal ao subir o servidor:', err);
     process.exit(1);

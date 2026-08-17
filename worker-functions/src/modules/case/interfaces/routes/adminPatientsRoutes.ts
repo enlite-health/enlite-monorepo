@@ -4,7 +4,7 @@ import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatId
 import { AdminPatientChatRolesController } from '../controllers/AdminPatientChatRolesController';
 import { AuthMiddleware } from '@modules/identity';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
-import { requireCountryScope } from '@shared/database/countryScopeGuard';
+import { requireCountryScope } from '@modules/identity/interfaces/middleware/countryScopeGuard';
 
 /**
  * Admin patients routes — mounted at /api/admin.

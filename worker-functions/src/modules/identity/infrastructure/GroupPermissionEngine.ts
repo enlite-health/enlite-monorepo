@@ -1,0 +1,122 @@
+/**
+ * src/modules/identity/infrastructure/GroupPermissionEngine.ts
+ *
+ * O motor REAL de autorização (change `painel-grupos-permissao`, task 3.2):
+ * decide por célula `recurso:ação` vinda dos grupos vigentes do staff, no lugar
+ * do `SimplifiedAuthorizationEngine`, que responde "sim" para todo autenticado.
+ *
+ * Três decisões que valem explicação:
+ *
+ * 1. **Não-staff cai no motor anterior, sempre.** As rotas do próprio prestador
+ *    (`/api/workers/me/*`, `/api/users/me`) chamam `requirePermission('worker',
+ *    'update')` desde antes desta change. Trocar o motor sem este desvio
+ *    passaria a exigir uma célula de STAFF de quem nunca vai ter grupo — o app
+ *    do candidato inteiro cairia em 403 no dia da virada. A spec é explícita:
+ *    o enforcement por célula é do painel administrativo (requirement "Escopo
+ *    do enforcement é o painel administrativo").
+ *
+ * 2. **Falha ao resolver = negar** (spec: "Falha ao resolver permissões nega").
+ *    Um `catch` que deixasse passar transformaria indisponibilidade de banco em
+ *    acesso irrestrito — o oposto de fail-closed.
+ *
+ * 3. **Status antes de grupo.** Conta em admissão/suspensa/desativada é negada
+ *    sem olhar células, para a tela poder dizer "conta em admissão" em vez de
+ *    "sem permissão" (spec: "Conta em admissão ou desativada é negada antes de
+ *    qualquer checagem").
+ *
+ * ⚠️ Este motor NÃO é o gate das rotas do painel — quem gateia é o
+ * `PermissionMiddleware` (mesma decisão, mesma fonte, com auditoria e rollout
+ * por família). Ele existe porque o `IAuthorizationEngine` é a porta que o
+ * `AuthMiddleware.requirePermission` legado e o adapter do Cerbos já consomem.
+ */
+
+import { logger } from '@shared/logging';
+import { cellKey, ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
+import { IAuthorizationEngine } from '../ports/IAuthorizationEngine';
+import { AccessDecision, AuthContext } from '../domain/Auth';
+import { isStaffRole } from '../domain/EnliteRole';
+
+type Resource = { type: string; id?: string; attrs?: Record<string, unknown> };
+
+/**
+ * `auditLogId` é obrigatório no contrato `AccessDecision`. Um id AQUI não
+ * promete trilha nenhuma (quem grava é o `PermissionMiddleware`, tabela
+ * `iam.permission_audit_log`) — é correlação de log, e o prefixo diz isso.
+ */
+function decisionId(): string {
+  return `authz_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+}
+
+function deny(reason: string): AccessDecision {
+  return { allowed: false, reason, policies: ['group_permissions'], auditLogId: decisionId() };
+}
+
+export class GroupPermissionEngine implements IAuthorizationEngine {
+  constructor(
+    private readonly client: PermissionClient,
+    /** Motor de quem não é staff (hoje o `SimplifiedAuthorizationEngine`). */
+    private readonly nonStaffEngine: IAuthorizationEngine,
+    private readonly tenantId: string = ENLITE_TENANT_ID,
+  ) {}
+
+  async checkPermission(
+    context: AuthContext,
+    resource: Resource,
+    action: string,
+  ): Promise<AccessDecision> {
+    if (!isStaffPrincipal(context)) {
+      return this.nonStaffEngine.checkPermission(context, resource, action);
+    }
+
+    const uid = context.principal.id;
+    if (!uid) return deny('Principal sem identidade');
+
+    try {
+      const resolved = await this.client.resolve(uid, this.tenantId);
+      if (resolved.status !== 'ACTIVE') {
+        return deny(`Conta com status ${resolved.status ?? 'desconhecido'}`);
+      }
+      const cell = cellKey(resource.type, action);
+      if (!resolved.permissions.includes(cell)) {
+        return deny(`Sem a permissão ${cell}`);
+      }
+      return {
+        allowed: true,
+        reason: `Concedida por grupo (${cell})`,
+        policies: ['group_permissions'],
+        auditLogId: decisionId(),
+      };
+    } catch (err) {
+      // Sem uid no log? Não: uid não é PII (é identificador de operador) e sem
+      // ele o runbook não sabe QUEM ficou preso quando o banco oscila.
+      logger.error({ err, uid, resource: resource.type, action }, '[perm] falha ao resolver permissões — negando');
+      return deny('Falha ao resolver permissões');
+    }
+  }
+
+  async checkPermissions(
+    context: AuthContext,
+    checks: Array<{ resource: Resource; action: string }>,
+  ): Promise<AccessDecision[]> {
+    return Promise.all(checks.map((check) => this.checkPermission(context, check.resource, check.action)));
+  }
+
+  /**
+   * Mesma forma do motor anterior: a lista de ids nunca foi implementada por
+   * nenhum dos dois (nenhum chamador usa), e inventar uma aqui seria pior que
+   * a lista vazia honesta. O que muda é a DECISÃO, que agora é real.
+   */
+  async listAccessibleResources(
+    context: AuthContext,
+    resourceType: string,
+    action: string,
+  ): Promise<{ resourceIds: string[]; decision: AccessDecision }> {
+    const decision = await this.checkPermission(context, { type: resourceType }, action);
+    return { resourceIds: [], decision };
+  }
+}
+
+/** Staff é quem tem papel de staff — não "quem está autenticado". */
+export function isStaffPrincipal(context: AuthContext): boolean {
+  return (context.principal.roles ?? []).some((role) => isStaffRole(role));
+}

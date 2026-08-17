@@ -6,11 +6,11 @@
 
 import type { Request, Response } from 'express';
 import { loggingAls } from '@shared/logging';
-import { DatabaseConnection } from '../DatabaseConnection';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { hasLiveCountryGrant, requireCountryScope } from '../countryScopeGuard';
-import type { DbSession } from '../requestDbSession';
+import type { DbSession } from '@shared/database/requestDbSession';
 
-jest.mock('../DatabaseConnection');
+jest.mock('@shared/database/DatabaseConnection');
 
 const query = jest.fn();
 const ORIGINAL_FLAG = process.env.COUNTRY_RLS_ENABLED;
