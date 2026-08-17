@@ -50,15 +50,28 @@ function normalizeNameForMatch(name: string): string {
     .replace(/\s+/g, ' ');
 }
 
-/** true se o corpo HTTP 400 indica conflito de unicidade em telefone e/ou email */
-function isUniqueFieldConflict(body: string): boolean {
+/** Campos de unicidade que o AnaCare recusa quando já pertencem a outro nurse. */
+const UNIQUE_FIELDS = ['telefono', 'email'] as const;
+type UniqueField = (typeof UNIQUE_FIELDS)[number];
+
+/**
+ * Quais campos de unicidade o corpo do HTTP 400 acusa. Lista vazia = o 400 é
+ * outra coisa (payload inválido, tipo inexistente...) e NÃO deve ser tratado
+ * como conflito.
+ */
+function conflictingUniqueFields(body: string): UniqueField[] {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(body) as Record<string, unknown>;
   } catch {
-    return false;
+    return [];
   }
-  return Array.isArray(parsed.telefono) || Array.isArray(parsed.email);
+  return UNIQUE_FIELDS.filter(f => Array.isArray(parsed[f]));
+}
+
+/** true se o corpo HTTP 400 indica conflito de unicidade em telefone e/ou email */
+function isUniqueFieldConflict(body: string): boolean {
+  return conflictingUniqueFields(body).length > 0;
 }
 
 export interface AnaCareMirrorProviderDeps {
@@ -142,11 +155,56 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
       }
 
       const payload = mapWorkerToAnaCarePayload(record, resolvedTypes);
-      // Para PATCH, email não é enviado se já existe (evitar conflito de unicidade)
-      // A API aceita PATCH com todos os campos — mantemos o payload completo.
-      const updated = await this.client.updateNurse(id, payload);
-      logger.info({ msg: `${TAG} updated nurse`, anaCareId: updated.id });
-      return { externalId: String(updated.id) };
+      // A API aceita PATCH com todos os campos — mandamos o payload completo.
+      try {
+        const updated = await this.client.updateNurse(id, payload);
+        logger.info({ msg: `${TAG} updated nurse`, anaCareId: updated.id });
+        return { externalId: String(updated.id) };
+      } catch (err) {
+        // CONFLITO DE UNICIDADE NO PATCH — worker JÁ LINKADO, então não há o que
+        // resolver por matching: o registro certo é este. O que colide é um campo
+        // (telefone e/ou email) que hoje pertence a OUTRO nurse.
+        //
+        // Isto passou a acontecer quando o espelho começou a mandar o telefone em
+        // formato NACIONAL (#196): o valor entrou no mesmo espaço dos 692 registros
+        // já nacionais do AnaCare, e a unicidade deles — que com `+549…` nunca
+        // disparava — passou a disparar. Medido em produção (11/08): 9 PATCH/24h
+        // falhando assim. Como o evento não tem retry, o worker parava de
+        // sincronizar de vez — regressão em quem antes funcionava.
+        //
+        // Decisão: o campo em conflito é DESCARTADO e o resto do cadastro segue
+        // sincronizando. Perder a atualização de um telefone que já está duplicado
+        // lá é muito menos grave do que congelar nome, endereço e tipo do worker.
+        // A duplicata do lado deles é problema de dado, e some do nosso caminho
+        // quando for resolvida — sem exigir deploy nosso.
+        if (!(err instanceof AnaCareApiError) || err.status !== 400) throw err;
+        const conflicting = conflictingUniqueFields(err.body);
+        if (conflicting.length === 0) throw err;
+
+        // Partial<>: `email` é obrigatório em AnaCareNursePayload e pode ser um dos
+        // campos removidos aqui. (O `tsc` não acusa: `delete obj[k]` com `k` de tipo
+        // união não dispara TS2790 como `delete obj.email` dispararia — o tipo certo
+        // é escolha nossa, não imposição do compilador.)
+        const retryPayload: Partial<AnaCareNursePayload> = { ...payload };
+        for (const field of conflicting) delete retryPayload[field];
+
+        // PII-SAFETY: só NOMES de campo e ids — nunca o telefone/email em conflito.
+        logger.warn({
+          msg: `${TAG} PATCH com conflito de unicidade — reenviando SEM os campos em conflito`,
+          workerId: record.workerId,
+          anaCareId: id,
+          conflictingFields: conflicting,
+        });
+
+        const updated = await this.client.updateNurse(id, retryPayload);
+        logger.info({
+          msg: `${TAG} updated nurse (campos em conflito preservados no AnaCare)`,
+          workerId: record.workerId,
+          anaCareId: updated.id,
+          skippedFields: conflicting,
+        });
+        return { externalId: String(updated.id) };
+      }
     }
 
     // POST — criar nova enfermera
