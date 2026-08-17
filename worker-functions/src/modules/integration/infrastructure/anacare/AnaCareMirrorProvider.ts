@@ -18,6 +18,12 @@
  *   AnaCare é gerado por eles, não é identificador confiável). Ambíguo ou
  *   sem match → propaga o erro original (mesmo comportamento de antes).
  *
+ *   Achado um match, o link só acontece se o ana_care_id estiver LIVRE do nosso
+ *   lado (`deps.isExternalIdClaimed`, obrigatória). Reivindicado — ou check
+ *   indisponível — não escreve no AnaCare e lança AnaCareLinkBlockedError, que
+ *   diz na mensagem qual dos dois casos ocorreu (a mensagem vira
+ *   `workers.ana_care_sync_error`, a coluna por onde a fila é triada).
+ *
  * deactivate: stub que faz PATCH com campo `status`.
  * TODO: confirmar campo e valor exato com AnaCare antes de usar em produção.
  *       Não é chamado no backfill v1.
@@ -62,11 +68,43 @@ export interface AnaCareMirrorProviderDeps {
    * — sem isso, um `d65e1378` que casa com a nurse do `81f4add0` (provável
    * duplicata de cadastro — mesmo telefone, mesma profissão) tentaria linkar e
    * bateria numa constraint de unicidade DEPOIS de já ter mandado o PATCH pro
-   * AnaCare (achado real em prod, 11/08). Se ausente (ex: testes), assume que
-   * nada está reivindicado — o provider não tem acesso à tabela `workers` por
-   * padrão, quem injeta é o factory de produção.
+   * AnaCare (achado real em prod, 11/08).
+   *
+   * OBRIGATÓRIA de propósito: este é um guard FAIL-CLOSED, e dependência
+   * opcional com default permissivo transforma "esqueci de injetar" em
+   * "silenciosamente inseguro" — sem erro de compilação, sem log, sem sintoma
+   * até o dado já estar escrito no parceiro externo. Quem não tem acesso à
+   * tabela `workers` (testes) passa um stub EXPLÍCITO.
    */
-  isExternalIdClaimed?: (externalId: string) => Promise<boolean>;
+  isExternalIdClaimed: (externalId: string) => Promise<boolean>;
+}
+
+/** Por que o link no AnaCare foi bloqueado (chega até `workers.ana_care_sync_error`). */
+export type AnaCareLinkBlockedReason = 'claimed' | 'checker_unavailable';
+
+/**
+ * Erro de BLOQUEIO do link — distinto do 400 de conflito que veio do AnaCare.
+ *
+ * Existe porque quem tria a fila lê `workers.ana_care_sync_error`: propagar o
+ * erro original faria a coluna dizer "telefone/email duplicado no AnaCare",
+ * escondendo a causa real (id já reivindicado do NOSSO lado, ou check
+ * indisponível). O erro original é preservado em `cause` E embutido na
+ * mensagem — a coluna guarda só `message`.
+ */
+export class AnaCareLinkBlockedError extends Error {
+  readonly reason: AnaCareLinkBlockedReason;
+  readonly anaCareId: string;
+
+  constructor(reason: AnaCareLinkBlockedReason, anaCareId: string, cause: Error) {
+    const causeMsg = cause.message;
+    const detail = reason === 'claimed'
+      ? `ana_care_id ${anaCareId} já pertence a OUTRO worker nosso (provável duplicata de cadastro — precisa de merge/revisão manual)`
+      : `não foi possível verificar se ana_care_id ${anaCareId} já pertence a outro worker nosso (checker indisponível — NÃO é duplicata confirmada)`;
+    super(`${TAG} link bloqueado: ${detail}. Conflito original do AnaCare: ${causeMsg}`, { cause });
+    this.name = 'AnaCareLinkBlockedError';
+    this.reason = reason;
+    this.anaCareId = anaCareId;
+  }
 }
 
 export class AnaCareMirrorProvider implements WorkerMirrorProvider {
@@ -74,9 +112,9 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
 
   private readonly client: IAnaCareApiClient;
   private readonly typeResolver: AnaCareTypeResolver;
-  private readonly isExternalIdClaimed?: (externalId: string) => Promise<boolean>;
+  private readonly isExternalIdClaimed: (externalId: string) => Promise<boolean>;
 
-  constructor(client: IAnaCareApiClient, deps: AnaCareMirrorProviderDeps = {}) {
+  constructor(client: IAnaCareApiClient, deps: AnaCareMirrorProviderDeps) {
     this.client = client;
     this.typeResolver = new AnaCareTypeResolver(client);
     this.isExternalIdClaimed = deps.isExternalIdClaimed;
@@ -134,27 +172,40 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
           // duplicata de cadastro (mesma pessoa, dois workerId). Nesse caso
           // não é um match errado, é um conflito que precisa de revisão
           // humana (merge de conta) — não linkamos no escuro.
-          const claimed = this.isExternalIdClaimed
-            ? await this.isExternalIdClaimed(String(match.id)).catch(() => true) // incerto → conservador
-            : false;
+          const externalIdCandidate = String(match.id);
+          let claimed: boolean;
+          try {
+            claimed = await this.isExternalIdClaimed(externalIdCandidate);
+          } catch (checkErr: unknown) {
+            // Fail-closed, mas com log HONESTO: aqui NÃO há duplicata provada —
+            // o que houve foi o check não responder. Dizer "já pertence a outro
+            // worker" mandaria o operador caçar uma duplicata inexistente.
+            logger.error({
+              msg: `${TAG} checker de ana_care_id INDISPONÍVEL — não linka (fail-closed). NÃO é duplicata confirmada: é a verificação que falhou`,
+              anaCareId: match.id,
+              error: checkErr instanceof Error ? checkErr.message : String(checkErr),
+            });
+            throw new AnaCareLinkBlockedError('checker_unavailable', externalIdCandidate, err);
+          }
 
           if (claimed) {
             logger.warn({
               msg: `${TAG} match por telefone+nome encontrado, mas ana_care_id já pertence a OUTRO worker nosso — provável duplicata de cadastro, não linka (revisão manual)`,
               anaCareId: match.id,
             });
-          } else {
-            // Não reenviamos email: o registro encontrado tem um email PRÓPRIO
-            // (gerado pelo AnaCare) que colidiu no POST — reenviar o nosso
-            // causaria o mesmo 400 de novo no PATCH.
-            const { email: _email, ...linkPayload } = payload;
-            const updated = await this.client.updateNurse(match.id, linkPayload);
-            logger.info({
-              msg: `${TAG} linked existing nurse via phone+name match (conflito de unicidade resolvido)`,
-              anaCareId: updated.id,
-            });
-            return { externalId: String(updated.id) };
+            throw new AnaCareLinkBlockedError('claimed', externalIdCandidate, err);
           }
+
+          // Não reenviamos email: o registro encontrado tem um email PRÓPRIO
+          // (gerado pelo AnaCare) que colidiu no POST — reenviar o nosso
+          // causaria o mesmo 400 de novo no PATCH.
+          const { email: _email, ...linkPayload } = payload;
+          const updated = await this.client.updateNurse(match.id, linkPayload);
+          logger.info({
+            msg: `${TAG} linked existing nurse via phone+name match (conflito de unicidade resolvido)`,
+            anaCareId: updated.id,
+          });
+          return { externalId: String(updated.id) };
         }
       }
       throw err;

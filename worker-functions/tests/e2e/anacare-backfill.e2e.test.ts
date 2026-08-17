@@ -20,7 +20,7 @@
 import http from 'http';
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
-import { AnaCareClient, AnaCareMirrorProvider } from '@modules/integration';
+import { AnaCareClient, AnaCareMirrorProvider, isAnaCareIdClaimed } from '@modules/integration';
 import type { WorkerMirrorRecord } from '@modules/integration';
 
 const DATABASE_URL =
@@ -402,8 +402,10 @@ describe('AnaCare Backfill API', () => {
     };
 
     beforeAll(() => {
-      // fromEnv lê ANACARE_API_KEY + ANACARE_BASE_URL (setados no beforeAll → mock)
-      provider = new AnaCareMirrorProvider(AnaCareClient.fromEnv());
+      // fromEnv lê ANACARE_API_KEY + ANACARE_BASE_URL (setados no beforeAll → mock).
+      // isExternalIdClaimed vai REAL (mesma fiação do AnaCareBackfillController):
+      // injetar um stub aqui deixaria o guard fora do caminho testado.
+      provider = new AnaCareMirrorProvider(AnaCareClient.fromEnv(), { isExternalIdClaimed: isAnaCareIdClaimed });
       mockState.createCalls = 0;
       mockState.updateCalls = 0;
     });
