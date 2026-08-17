@@ -31,6 +31,7 @@ import { logger } from '@shared/logging';
 import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { buildRouteIndex, type RouteIndex, type ScannedRoute } from '@modules/identity/permissions';
 import { EXEMPT_ROUTES, PENDING_DECLARATIONS, routeKey } from './undeclaredRouteLists';
+import { pathOf } from './PermissionMiddleware';
 
 /** Domínio governado por célula de staff (design 1b). */
 export const GOVERNED_PREFIXES = ['/api/admin/', '/analytics/'] as const;
@@ -139,7 +140,7 @@ export function denyUndeclaredRoutes(
     if (registry.statusOf(req.method, req.path) !== 'undeclared') return next();
 
     logger.error(
-      { method: req.method, path: req.originalUrl.split('?')[0] },
+      { method: req.method, path: pathOf(req) },
       '[perm] rota administrativa sem permissão declarada — negada',
     );
     if (isEnvFlagOn('PERMISSION_REPORT_ONLY', env)) return next();

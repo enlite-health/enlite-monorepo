@@ -249,7 +249,7 @@ export interface PermissionFamily {
  * é justamente este campo que o relatório do `PERMISSION_REPORT_ONLY` usa para
  * decidir se uma família pode virar. Sem a query string (pode carregar dado).
  */
-function pathOf(req: Request): string {
+export function pathOf(req: Request): string {
   return (req.originalUrl || req.path).split('?')[0];
 }
 

@@ -23,10 +23,25 @@ jest.mock('@shared/logging', () => ({
 
 const poolStub = { query: jest.fn().mockResolvedValue({ rows: [] }), connect: jest.fn() } as never;
 
-function setup(): { app: express.Express; registered: string[]; boundary: PermissionsBoundary } {
+/**
+ * Pool que falha SÓ na leitura do marcador — a falha parcial que o gate
+ * apontou: a conexão derruba um statement e os outros passam.
+ */
+function poolQueFalhaNoMarcador(): never {
+  return {
+    query: jest.fn().mockImplementation((sql: string) =>
+      String(sql).includes('rollout_state')
+        ? Promise.reject(Object.assign(new Error('connection terminated'), { code: '57P01' }))
+        : Promise.resolve({ rows: [] }),
+    ),
+    connect: jest.fn(),
+  } as never;
+}
+
+function setup(pool: never = poolStub): { app: express.Express; registered: string[]; boundary: PermissionsBoundary } {
   const app = express();
   const registered: string[] = [];
-  const boundary = createPermissionsBoundary({ app, pool: poolStub, systemPool: poolStub });
+  const boundary = createPermissionsBoundary({ app, pool, systemPool: pool });
   wirePermissionsModule({
     app,
     boundary,
@@ -151,16 +166,17 @@ describe('wirePermissionsModule', () => {
     // Os dois casos que a revisão do grupo 3 separou: "marcador AUSENTE" derruba,
     // "não consegui LER o marcador" não. Sem essa distinção, uma oscilação de
     // conexão no boot tirava do ar app do prestador, leads e webhooks.
-    it('falha ao LER iam.rollout_state não derruba o boot', async () => {
+    // ⚠️ Este caso NÃO mocka o use case, de propósito: a 1ª versão dele mockava
+    // `execute` para rejeitar — caminho que o wiring de produção não consegue
+    // produzir, porque o repositório engolia o erro e devolvia `null` (= "não
+    // marcado"), e o gate MATAVA o boot. O teste passava e a proteção não
+    // existia. Agora a falha entra pelo POOL e sobe a cadeia real
+    // repo → use case → gate.
+    it('falha ao LER iam.rollout_state não derruba o boot (cadeia real)', async () => {
       process.env.PERMISSION_ENGINE_ENABLED = 'true';
-      const { app, boundary } = setup();
-      jest
-        .spyOn(boundary.permissions.assertStaffHasGroup, 'execute')
-        .mockRejectedValue(new Error('connection terminated unexpectedly'));
-      const alerta = jest.spyOn(boundary.permissions.assertStaffHasGroup, 'alertOnBoot').mockResolvedValue();
+      const { app, boundary } = setup(poolQueFalhaNoMarcador());
 
       await expect(runPermissionsBootTasks(app, boundary)).resolves.toBeUndefined();
-      expect(alerta).toHaveBeenCalled();
     });
 
     it('qualquer outra falha do boot é logada e o processo segue', async () => {

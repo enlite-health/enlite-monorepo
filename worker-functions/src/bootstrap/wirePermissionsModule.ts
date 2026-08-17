@@ -139,7 +139,14 @@ export async function runPermissionsBootTasks(
     await bootTasks(app, boundary);
   } catch (err) {
     if (err instanceof RolloutNotMigratedError) throw err;
-    logger.error({ err }, '[perm] falha nas tarefas de boot de permissões — seguindo sem elas');
+    // `routesIndexed: 0` é o sinal OBSERVÁVEL do estrago: sem índice publicado,
+    // o guard responde `unknown` (não nega) e o engine delega tudo — as duas
+    // proteções degradam em silêncio, com o processo servindo normalmente. Um
+    // alerta sobre a ausência de log é frágil; sobre este campo, não.
+    logger.error(
+      { err, routesIndexed: boundary.registry.all().length },
+      '[perm] falha nas tarefas de boot de permissões — seguindo sem elas',
+    );
   }
 }
 
@@ -173,7 +180,7 @@ async function bootTasks(app: Express, boundary: PermissionsBoundary): Promise<v
       catalogSync: isEnvFlagOn('PERMISSION_CATALOG_SYNC_ENABLED'),
       featuresSync: isEnvFlagOn('COUNTRY_FEATURES_SYNC_ENABLED'),
       engine: engineEnabled,
-      routes: routes.length,
+      routesIndexed: routes.length,
       declared: declaredCells(routes).length,
       undeclared: undeclared.length,
     },
