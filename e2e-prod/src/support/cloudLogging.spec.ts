@@ -26,6 +26,7 @@ import { queryLogs, waitForLog, payloadString } from './cloudLogging';
 
 type Reply =
   | { status: number; body?: unknown }
+  | { status: number; raw: string } // corpo CRU: 200 devolvendo HTML, por exemplo
   | { networkError: string }
   | { thrown: unknown }; // erro que NÃO é Error — cobre o `String(err)`
 
@@ -69,6 +70,7 @@ function stubFetch(replies: Reply[]): Stub {
     if (!reply) throw new Error(`stub sem resposta programada para a chamada ${urls.length}`);
     if ('networkError' in reply) throw new Error(reply.networkError);
     if ('thrown' in reply) throw reply.thrown;
+    if ('raw' in reply) return new Response(reply.raw, { status: reply.status });
     return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status });
   }) as typeof fetch;
 
@@ -132,6 +134,41 @@ test('rede caída sempre: LANÇA depois de esgotar, também sem lista vazia', as
   );
 
   await expect(queryLogs(PARAMS)).rejects.toThrow(/falhou em 4 tentativas[\s\S]*ECONNRESET/);
+  expect(stub.calls()).toBe(4);
+});
+
+const HTML_DE_PROXY = '<html><body><h1>502 Bad Gateway</h1></body></html>';
+
+test('200 com corpo não-JSON é transitório: repete e recupera', async () => {
+  // Acontece de verdade: proxy/LB ou cold start devolvendo HTML com status 200.
+  // Antes isto subia como `SyntaxError` cru — sem repetir e sem dizer que era do
+  // Cloud Logging, escapando da política de retry por uma porta lateral.
+  const stub = stubFetch([
+    { status: 200, raw: HTML_DE_PROXY },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.timestamp).toBe(ENTRY.timestamp);
+  expect(stub.calls(), 'deveria ter repetido depois do corpo ilegível').toBe(2);
+});
+
+test('200 não-JSON sempre: LANÇA rotulado como Cloud Logging, nunca lista vazia', async () => {
+  const stub = stubFetch(
+    Array.from({ length: 8 }, () => ({ status: 200 as const, raw: HTML_DE_PROXY })),
+  );
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  // Rotulado (não `SyntaxError` pelado) e depois de esgotar as tentativas.
+  expect(erro, 'deveria ter lançado').not.toBeNull();
+  expect(erro!.message).toMatch(/^Cloud Logging falhou em 4 tentativas/);
+  expect(erro!.message, 'o motivo tem que aparecer no relatório').toContain('corpo não-JSON');
   expect(stub.calls()).toBe(4);
 });
 

@@ -83,6 +83,64 @@ function backoffDelay(attempt: number): number {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** `fetch` pode rejeitar com coisa que não é Error; sem isto o relatório sai "[object Object]". */
+const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * O que UMA tentativa produziu: os dados, ou o motivo de ter falhado já classificado.
+ *
+ * `kind` é curto e vai para o stdout a cada retry; `detail` é o texto cheio (pode
+ * embutir o corpo devolvido pelo Google) e só aparece na exceção final. Separados
+ * de propósito: o corpo de um 400 costuma ecoar o filtro, e filtro nosso carrega
+ * `patientId` — isso não tem por que ser repetido no log a cada tentativa.
+ */
+type Attempt =
+  | { ok: true; entries: LogEntry[] }
+  | { ok: false; kind: string; detail: string; retriable: boolean };
+
+/**
+ * Uma ida ao `entries:list`, com TODA falha possível já traduzida em `Attempt`.
+ *
+ * As três formas de falhar moram aqui juntas porque a decisão de repetir é uma só,
+ * lá no laço: rede caída, status ruim e **200 com corpo que não é JSON** (proxy ou
+ * cold start devolvendo HTML). Esse último escapava da política e subia como
+ * `SyntaxError` cru, sem repetir e sem dizer que era do Cloud Logging.
+ */
+async function attemptOnce(token: string, body: string): Promise<Attempt> {
+  let res: Response;
+  try {
+    res = await fetch('https://logging.googleapis.com/v2/entries:list', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body,
+    });
+  } catch (err) {
+    // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
+    return { ok: false, kind: 'rede', detail: `rede: ${errMessage(err)}`, retriable: true };
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      kind: String(res.status),
+      detail: `${res.status}: ${await res.text().catch(() => '')}`,
+      retriable: RETRIABLE_STATUS.has(res.status),
+    };
+  }
+
+  try {
+    const parsed = (await res.json()) as { entries?: LogEntry[] };
+    return { ok: true, entries: parsed.entries ?? [] };
+  } catch (err) {
+    return {
+      ok: false,
+      kind: 'corpo não-JSON',
+      detail: `corpo não-JSON: ${errMessage(err)}`,
+      retriable: true,
+    };
+  }
+}
+
 /** Lista entradas de log que casam com o filtro (mais novas primeiro). */
 export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
   const token = await accessToken();
@@ -96,37 +154,20 @@ export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
   let lastError = 'sem detalhe';
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    let res: Response;
-    try {
-      res = await fetch('https://logging.googleapis.com/v2/entries:list', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body,
-      });
-    } catch (err) {
-      // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
-      lastError = `rede: ${err instanceof Error ? err.message : String(err)}`;
-      if (attempt === MAX_ATTEMPTS) break;
-      await sleep(backoffDelay(attempt));
-      continue;
-    }
+    const result = await attemptOnce(token, body);
+    if (result.ok) return result.entries;
 
-    if (res.ok) {
-      const parsed = (await res.json()) as { entries?: LogEntry[] };
-      return parsed.entries ?? [];
-    }
-
-    lastError = `${res.status}: ${await res.text().catch(() => '')}`;
-    if (!RETRIABLE_STATUS.has(res.status)) {
-      throw new Error(`Cloud Logging ${lastError}`);
-    }
+    lastError = result.detail;
+    // Defeito NOSSO (filtro inválido, falta de `logging.viewer`): repetir não
+    // conserta e só atrasa o diagnóstico.
+    if (!result.retriable) throw new Error(`Cloud Logging ${lastError}`);
     if (attempt === MAX_ATTEMPTS) break;
 
     const delay = backoffDelay(attempt);
     // Ruído deliberado no stdout do run: um retry silencioso esconderia que o
     // Google andou instável. Evidência, não silêncio.
     console.warn(
-      `[cloudLogging] ${res.status} do Google na tentativa ${attempt}/${MAX_ATTEMPTS} — repetindo em ${delay}ms`,
+      `[cloudLogging] ${result.kind} na tentativa ${attempt}/${MAX_ATTEMPTS} — repetindo em ${delay}ms`,
     );
     await sleep(delay);
   }
