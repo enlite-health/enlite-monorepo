@@ -49,6 +49,12 @@ services:
     environment:
       NODE_ENV: test
       USE_MOCK_AUTH: "true"
+      # Canal de e-mail DECLARADAMENTE ausente. O guard do EmailService já
+      # recusa envio em NODE_ENV=test; isto é a segunda camada, para o dia em
+      # que alguém rodar a stack com outro NODE_ENV. Antes a proteção era só a
+      # ausência da chave — e o e2e chegou a bater em api.sendgrid.com de
+      # verdade (401), medido em revisão.
+      SENDGRID_API_KEY: ""
       USE_CERBOS: "false"
       INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
       # Libera /api/docs sem requerer staff (somente em test)

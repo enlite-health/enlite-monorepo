@@ -174,7 +174,11 @@ describe('fluxo completo: lookup → start → confirm → conflitos → finaliz
     for (const expected of ['lookup', 'started', 'confirmed', 'conflicts_shown', 'merged']) {
       expect(names).toContain(expected);
     }
-    // Sem SENDGRID_API_KEY no e2e → aviso não sai, mas o skip fica REGISTRADO
+    // O aviso não sai: o `EmailService` recusa enviar em `NODE_ENV=test` (guard
+    // de 17/08) e a stack ainda declara `SENDGRID_API_KEY: ""`. Antes o
+    // comentário aqui dizia "sem chave → não sai", o que era FALSO na forma
+    // medida: o SDK disparava a requisição para api.sendgrid.com assim mesmo e
+    // só levava 401. O que importa para o teste é que o skip fica REGISTRADO.
     expect(names).toContain('notice_email_skipped');
   });
 

@@ -16,6 +16,12 @@ on:
     paths:
       - 'worker-functions/**'
 
+# Um merge na `stage` dispara a suíte duas vezes (o PR e o push). São ~15 min de
+# runner cada; a corrida anterior é descartável.
+concurrency:
+  group: backend-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     runs-on: ubuntu-latest

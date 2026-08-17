@@ -158,11 +158,13 @@ export function declaredCells(routes: ScannedRoute[]): PermissionMetadata[] {
   return [...byKey.values()].sort((a, b) => {
     const left = `${a.resource}:${a.action}`;
     const right = `${b.resource}:${b.action}`;
-    /* istanbul ignore next — o ramo de EMPATE é inalcançável: o `byKey` acima
-       já deduplica por chave, então nunca há dois itens iguais para comparar.
-       Fica escrito assim mesmo porque comparador que não devolve 0 para iguais
-       é comparador errado, e quem mexer no dedup amanhã depende disso. */
-    return left < right ? -1 : left > right ? 1 : 0;
+    // O ignore vai NO ARM do empate, não antes do `return`: na linha de cima ele
+    // apagaria a statement inteira do relatório — inclusive os dois ramos REAIS
+    // (-1 e 1) —, e o arquivo marcaria 100% com o comparador fora do
+    // denominador. Empate é inalcançável porque o `byKey` acima já deduplica;
+    // fica escrito mesmo assim porque comparador que não devolve 0 para iguais
+    // é comparador errado, e quem mexer no dedup amanhã depende disso.
+    return left < right ? -1 : left > right ? 1 : /* istanbul ignore next */ 0;
   });
 }
 

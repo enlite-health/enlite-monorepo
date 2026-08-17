@@ -192,10 +192,10 @@ describe('ramos defensivos da varredura', () => {
     expect(mountPathOf({ regexp: /^\/(?=\/|$)/ } as never)).toBe('');
   });
 
-  it('declaredCells desempata células idênticas sem depender de locale', () => {
-    // O comparador tem o ramo `left > right ? 1 : 0`; o `0` (empate) só é
-    // alcançado por duas rotas declarando a MESMA célula — o caso comum de
-    // verdade (read e write da mesma família em rotas diferentes).
+  it('duas rotas com a MESMA célula colapsam em uma entrada', () => {
+    // E é por isso que o ramo de empate do comparador é inalcançável: o dedup
+    // por chave acontece ANTES do sort, então nunca há dois itens iguais para
+    // comparar — com uma entrada só, o comparador nem chega a ser chamado.
     const cell = { resource: 'worker', action: 'read' };
     const rotas = [
       { method: 'GET', path: '/a', cell },

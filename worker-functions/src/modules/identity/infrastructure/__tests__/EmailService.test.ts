@@ -13,6 +13,14 @@
  * 7. EMAIL_FROM falls back to enlite@enlite.health when unset
  * 8. SENDGRID_API_KEY is passed to sgMail.setApiKey on construction
  * 9. Propagates SendGrid errors (caller decides how to handle)
+ *
+ * ⚠️ GUARD DE ENVIO (17/08/2026): o serviço agora RECUSA enviar quando
+ * `NODE_ENV=test` ou quando falta `SENDGRID_API_KEY` — achado em revisão, com
+ * requisição real medida saindo do e2e para `api.sendgrid.com`. Como o jest
+ * roda com `NODE_ENV=test`, os casos que exercitam o ENVIO precisam declarar
+ * explicitamente que não estão em teste (`envDeProducao()`); os dois casos no
+ * fim do arquivo provam o guard em si. Sem essa distinção o arquivo estaria
+ * testando o guard sem querer, e ninguém veria o HTML de novo.
  */
 
 const mockSend = jest.fn();
@@ -26,7 +34,24 @@ jest.mock('@sendgrid/mail', () => ({
   },
 }));
 
-import { EmailService } from '../EmailService';
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  loggingAls: { getStore: () => undefined },
+}));
+
+import { EmailChannelUnavailableError, EmailService } from '../EmailService';
+
+const NODE_ENV_ORIGINAL = process.env.NODE_ENV;
+
+/**
+ * O jest roda com `NODE_ENV=test` e o guard recusa envio nesse ambiente. Quem
+ * quer exercitar o ENVIO precisa dizer que não é teste — e o par com chave
+ * presente é o estado de produção.
+ */
+function envDeProducao(): void {
+  process.env.NODE_ENV = 'production';
+  process.env.SENDGRID_API_KEY = 'SG.test-key';
+}
 
 describe('EmailService', () => {
   beforeEach(() => {
@@ -35,6 +60,11 @@ describe('EmailService', () => {
     mockSend.mockResolvedValue([{ statusCode: 202, headers: { 'x-message-id': 'msg-test' } }]);
     delete process.env.EMAIL_FROM;
     delete process.env.SENDGRID_API_KEY;
+    envDeProducao();
+  });
+
+  afterAll(() => {
+    process.env.NODE_ENV = NODE_ENV_ORIGINAL;
   });
 
   describe('construction', () => {
@@ -45,6 +75,7 @@ describe('EmailService', () => {
     });
 
     it('does NOT call sgMail.setApiKey when SENDGRID_API_KEY is unset', () => {
+      delete process.env.SENDGRID_API_KEY;
       delete process.env.SENDGRID_API_KEY;
       new EmailService();
       expect(mockSetApiKey).not.toHaveBeenCalled();
@@ -126,5 +157,46 @@ describe('EmailService', () => {
         service.sendInvitationEmail('x@test.com', 'Ana', 'https://link'),
       ).rejects.toThrow('401 Unauthorized');
     });
+  });
+});
+
+describe('EmailService — guard de envio (teste nunca toca canal real)', () => {
+  beforeEach(() => {
+    mockSend.mockReset();
+    mockSend.mockResolvedValue([{ statusCode: 202, headers: {} }]);
+  });
+  afterAll(() => {
+    process.env.NODE_ENV = NODE_ENV_ORIGINAL;
+  });
+
+  it('em NODE_ENV=test NÃO chama o SDK — nem com a chave presente', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.SENDGRID_API_KEY = 'SG.chave-de-verdade-exportada-no-shell';
+
+    await expect(
+      new EmailService().sendInvitationEmail('alguem@enlite.health', 'Ana', 'https://x/y'),
+    ).rejects.toThrow(EmailChannelUnavailableError);
+
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('sem SENDGRID_API_KEY NÃO chama o SDK (ele tentaria assim mesmo)', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.SENDGRID_API_KEY;
+
+    await expect(
+      new EmailService().sendAccountLinkedNotice('alguem@enlite.health', { undoUrl: 'https://x/undo' }),
+    ).rejects.toMatchObject({ motivo: 'sem SENDGRID_API_KEY' });
+
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  // A propriedade que importa para a TRILHA: quem chama distingue "não havia
+  // canal" de "o SendGrid recusou", e registra o skip nos dois casos.
+  it('o erro é TIPADO — a trilha não confunde canal ausente com falha do SendGrid', async () => {
+    process.env.NODE_ENV = 'test';
+    await expect(
+      new EmailService().sendAccountLinkedNotice('alguem@enlite.health', { undoUrl: 'https://x' }),
+    ).rejects.toBeInstanceOf(EmailChannelUnavailableError);
   });
 });
