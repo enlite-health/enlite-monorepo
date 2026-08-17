@@ -131,7 +131,8 @@ function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void
     // Middleware montado com célula (ex.: `app.use('/api/docs', requirePermission(...))`)
     // é endpoint para efeito de catálogo: sem isso a família some da matriz.
     const cell = readPermissionMetadata(layer.handle);
-    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)) || '/', cell });
+    // Sem `|| '/'`: `joinPaths` já devolve '/' quando o resultado seria vazio.
+    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)), cell });
   }
 }
 
@@ -157,7 +158,13 @@ export function declaredCells(routes: ScannedRoute[]): PermissionMetadata[] {
   return [...byKey.values()].sort((a, b) => {
     const left = `${a.resource}:${a.action}`;
     const right = `${b.resource}:${b.action}`;
-    return left < right ? -1 : left > right ? 1 : 0;
+    // O ignore vai NO ARM do empate, não antes do `return`: na linha de cima ele
+    // apagaria a statement inteira do relatório — inclusive os dois ramos REAIS
+    // (-1 e 1) —, e o arquivo marcaria 100% com o comparador fora do
+    // denominador. Empate é inalcançável porque o `byKey` acima já deduplica;
+    // fica escrito mesmo assim porque comparador que não devolve 0 para iguais
+    // é comparador errado, e quem mexer no dedup amanhã depende disso.
+    return left < right ? -1 : left > right ? 1 : /* istanbul ignore next */ 0;
   });
 }
 

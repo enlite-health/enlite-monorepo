@@ -9,6 +9,102 @@ module.exports = {
     '!src/index.ts',
   ],
   coverageDirectory: 'coverage',
+
+  /**
+   * PISO DE COBERTURA — a trava que faltava (17/08/2026).
+   *
+   * A regra "100% per-file nos arquivos tocados" existia só na skill `revisao-pr`,
+   * conferida a olho pelo revisor: nada falhava sozinho se a cobertura caísse.
+   * Isto passa a falhar.
+   *
+   * ⚠️ NÃO é piso global: a base tem dívida antiga e exigir 100% de tudo hoje
+   * quebraria o CI sem ninguém ter regredido nada. O piso vale só onde JÁ está
+   * em 100% (medido, não estimado), e a lista CRESCE conforme cada área é
+   * saneada — é anti-regressão, não meta.
+   *
+   * O barrel (`index.ts`) fica de fora de propósito: re-export conta como
+   * "função não coberta" e derrubaria o número por artefato de instrumentação,
+   * não por falta de teste (o módulo de permissões marca 86% de funcs COM o
+   * barrel e 100% sem ele).
+   *
+   * ⚠️ QUEM EXECUTA ISTO É O CI, com a SUÍTE INTEIRA:
+   * `.github/workflows/_backend-quality.yml` roda `npm test -- --coverage`.
+   * Sem `--coverage` o jest nem avalia o piso (medido: mesma suíte sai 0 sem a
+   * flag e 1 com ela). E `npx jest <um diretório> --coverage` reclama de
+   * "Coverage data ... was not found" para os globs que aquele subconjunto não
+   * exercita: é esperado, não é regressão — conferir cobertura é sempre
+   * `npx jest --coverage` inteiro e ler o per-file.
+   *
+   * Como ampliar: `npx jest --coverage --silent`, ler o per-file do arquivo
+   * candidato, confirmar 100 nos quatro eixos e só então acrescentar aqui.
+   *
+   * Por que quatro listas NOMINAIS e um glob de módulo: `permissions/**` está
+   * 100% inteiro, então protege por diretório e **cresce sozinho** com cada
+   * arquivo novo. Os outros diretórios têm vizinho com dívida antiga
+   * (`AuthMiddleware.ts` em 84,7% de branches; `authTelemetryRoutes.ts` em 0% de funcs), e um
+   * glob de diretório ali quebraria o CI sem ninguém ter regredido nada. A
+   * consequência a saber: arquivo NOVO nessas pastas nasce fora do piso — quem
+   * criar, acrescenta na lista.
+   */
+  coverageThreshold: {
+    // Módulo extraível de permissões (D115) — 100% desde o grupo 2.
+    'src/modules/identity/permissions/**/!(index).ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Peças do enforcement (grupo 3) — 100% nos quatro eixos, medido.
+    'src/modules/identity/interfaces/middleware/{PermissionMiddleware,denyUndeclaredRoutes,undeclaredRouteLists,countryScopeGuard}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/interfaces/routes/{adminUsersRoutes,permissionRoutesInventoryRoute}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/infrastructure/{GroupPermissionEngine,CerbosAuthorizationAdapter}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Boot: caminho crítico do processo INTEIRO, não só do painel.
+    'src/bootstrap/{wirePermissionsModule,startServer}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Peças pequenas e muito reusadas, cada uma nascida de um bug que chegou
+    // em produção: `parseEnvList` (#222, vírgula em env de PRD),
+    // `mergeCustomClaims` (#220, `role` apagava `country`), `EmailService`
+    // (guard de envio, 17/08). São exatamente as que não podem regredir calado.
+    'src/shared/utils/{envFlag,envList}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // O aviso do vínculo de contas: o que ele DEIXA REGISTRADO quando não
+    // consegue avisar é a única pista de que alguém não foi avisado.
+    'src/modules/account-link/accountLinkNotice.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/infrastructure/{mergeCustomClaims,EmailService}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+  },
   verbose: true,
   testTimeout: 10000,
   passWithNoTests: true,
