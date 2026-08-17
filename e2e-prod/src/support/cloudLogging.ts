@@ -121,11 +121,12 @@ function jsonKind(v: unknown): string {
 /**
  * Uma ida ao `entries:list`, com TODA falha possível já traduzida em `Attempt`.
  *
- * As QUATRO formas de falhar moram aqui juntas porque a decisão de repetir é uma
- * só, lá no laço: rede caída · status ruim · corpo que não é JSON (proxy ou cold
- * start devolvendo HTML) · e 200 com JSON de forma inesperada. Os dois últimos
- * escapavam da política — o primeiro subia como `SyntaxError` cru, o segundo era
- * pior e não fazia barulho nenhum (ver a guarda de shape abaixo).
+ * As CINCO formas de falhar moram aqui juntas porque a decisão de repetir é uma
+ * só, lá no laço — uma por valor de `kind`: `rede` · `<status>` · `corpo
+ * não-JSON` (proxy ou cold start devolvendo HTML) · `corpo inesperado` e
+ * `entries inesperado` (200 com JSON de forma errada). As três últimas escapavam
+ * da política: a primeira subia como `SyntaxError` cru, e as outras duas eram
+ * piores — não faziam barulho nenhum (ver a guarda abaixo).
  */
 async function attemptOnce(token: string, body: string): Promise<Attempt> {
   let res: Response;
@@ -156,18 +157,25 @@ async function attemptOnce(token: string, body: string): Promise<Attempt> {
   }
 
   /**
-   * `entries:list` sempre responde um OBJETO com `entries` array (ou ausente).
-   * Qualquer outra forma aqui é intermediário se metendo no caminho, e é mais
+   * `entries:list` sempre responde um OBJETO, com `entries` array ou ausente.
+   * Qualquer outra FORMA aqui é intermediário se metendo no caminho, e é mais
    * perigosa que corpo ilegível — porque não faz barulho:
    *
    *   JSON.parse('[]').entries   →  Array.prototype.entries, uma FUNÇÃO
-   *   (essa função).length       →  0   (aridade, não "zero resultados")
-   *   {"entries": ""}            →  ""  →  .length 0
+   *                    .length   →  0   (aridade, não "zero resultados")
+   *   {"entries": ""}            →  ""  →  .length também 0
    *
-   * Nos três casos o `expect(falhas.length).toBe(0)` do smoke PASSA por ausência
+   * Nos dois casos o `expect(falhas.length).toBe(0)` do smoke PASSA por ausência
    * de prova — verde falso silencioso, exatamente o que a política toda existe
    * para impedir. Por isso validamos o continente E o conteúdo: sem a segunda
    * checagem, `queryLogs` ainda devolveria string/número tipado como `LogEntry[]`.
+   *
+   * ⚠️ O que estas guardas NÃO resolvem: um objeto SEM `entries` é indistinguível
+   * do vazio legítimo, e o Google documenta um caso em que isso mente — `entries`
+   * vazio COM `nextPageToken` significa "não terminei de varrer a janela", não
+   * "não achei nada". Este helper não pagina (nunca lê `nextPageToken`), então
+   * ainda pode ler busca-incompleta como zero. Fica como change própria; fechar
+   * por allowlist de chaves do topo seria pior (quebraria a cada campo novo).
    */
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return fail('corpo inesperado', `corpo 200 não é objeto JSON (${jsonKind(parsed)})`, true);
