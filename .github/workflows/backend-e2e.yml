@@ -1,14 +1,23 @@
 name: E2E Tests — Worker Functions
 
+# Chamado pelo `pr-gate.yml` nos PRs (é lá que ele vira check exigível) e
+# disparado direto no `push` das branches protegidas, para carimbar o commit que
+# de fato ficou na branch.
+#
+# ⚠️ NÃO tem mais gatilho de `pull_request` próprio: com ele o PR rodaria a
+# suíte de ~15 min DUAS vezes (uma pelo gatilho, outra pelo agregador).
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "stage" ]
     paths:
       - 'worker-functions/**'
-  pull_request:
-    branches: [ "main" ]
-    paths:
-      - 'worker-functions/**'
+  workflow_call:
+
+# Cancela corrida superada da MESMA ref. Em `push` de branch protegida isso não
+# se aplica na prática (um commit por vez), e no PR quem cancela é o pr-gate.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   e2e:
