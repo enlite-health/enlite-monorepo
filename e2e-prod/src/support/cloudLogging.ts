@@ -83,50 +83,163 @@ function backoffDelay(attempt: number): number {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Lista entradas de log que casam com o filtro (mais novas primeiro). */
-export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
-  const token = await accessToken();
-  const body = JSON.stringify({
-    resourceNames: [`projects/${projectId()}`],
-    filter: buildFilter(params),
-    orderBy: 'timestamp desc',
-    pageSize: params.limit ?? 20,
-  });
+/** `fetch` pode rejeitar com coisa que não é Error; sem isto o relatório sai "[object Object]". */
+const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/**
+ * O que UMA tentativa produziu: os dados, ou o motivo de ter falhado já classificado.
+ *
+ * `kind` é curto e vai para o stdout a cada retry; `detail` é o texto cheio (pode
+ * embutir o corpo devolvido pelo Google) e só aparece na exceção final. Separados
+ * de propósito: o corpo de um 400 costuma ecoar o filtro, e filtro nosso carrega
+ * `patientId` — isso não tem por que ser repetido no log a cada tentativa.
+ */
+type Attempt =
+  | { ok: true; entries: LogEntry[]; nextPageToken?: string }
+  | { ok: false; kind: string; detail: string; retriable: boolean };
+
+/**
+ * Construtor de falha. `retriable` é OBRIGATÓRIO de propósito: um default
+ * `true` deixaria o esquecimento no lado perigoso — repetir 4× um 403 mascara
+ * falta de `roles/logging.viewer`, que é justamente o que `RETRIABLE_STATUS`
+ * existe para não deixar acontecer.
+ */
+const fail = (kind: string, detail: string, retriable: boolean): Attempt => ({
+  ok: false,
+  kind,
+  detail,
+  retriable,
+});
+
+/** Rótulo honesto do que veio no lugar do objeto esperado (`typeof null` é 'object'). */
+function jsonKind(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  return typeof v;
+}
+
+/**
+ * Uma ida ao `entries:list`, com TODA falha possível já traduzida em `Attempt`.
+ *
+ * As CINCO formas de falhar moram aqui juntas porque a decisão de repetir é uma
+ * só, lá no laço — uma por valor de `kind`: `rede` · `<status>` · `corpo
+ * não-JSON` (proxy ou cold start devolvendo HTML) · `corpo inesperado` e
+ * `entries inesperado` (200 com JSON de forma errada). As três últimas escapavam
+ * da política: a primeira subia como `SyntaxError` cru, e as outras duas eram
+ * piores — não faziam barulho nenhum (ver a guarda abaixo).
+ */
+async function attemptOnce(token: string, body: string): Promise<Attempt> {
+  let res: Response;
+  try {
+    res = await fetch('https://logging.googleapis.com/v2/entries:list', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body,
+    });
+  } catch (err) {
+    // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
+    return fail('rede', `rede: ${errMessage(err)}`, true);
+  }
+
+  if (!res.ok) {
+    return fail(
+      String(res.status),
+      `${res.status}: ${await res.text().catch(() => '')}`,
+      RETRIABLE_STATUS.has(res.status),
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch (err) {
+    return fail('corpo não-JSON', `corpo não-JSON: ${errMessage(err)}`, true);
+  }
+
+  /**
+   * `entries:list` sempre responde um OBJETO, com `entries` array ou ausente.
+   * Qualquer outra FORMA aqui é intermediário se metendo no caminho, e é mais
+   * perigosa que corpo ilegível — porque não faz barulho:
+   *
+   *   JSON.parse('[]').entries   →  Array.prototype.entries, uma FUNÇÃO
+   *                    .length   →  0   (aridade, não "zero resultados")
+   *   {"entries": ""}            →  ""  →  .length também 0
+   *
+   * Nos dois casos o `expect(falhas.length).toBe(0)` do smoke PASSA por ausência
+   * de prova — verde falso silencioso, exatamente o que a política toda existe
+   * para impedir. Por isso validamos o continente E o conteúdo: sem a segunda
+   * checagem, `queryLogs` ainda devolveria string/número tipado como `LogEntry[]`.
+   *
+   * O caso irmão — `entries` vazio COM `nextPageToken`, que pelo contrato do
+   * Google significa "não terminei de varrer" e não "não achei" — NÃO se resolve
+   * aqui: uma página não tem como saber. Quem resolve é o laço de páginas do
+   * `queryLogs` (ver `MAX_PAGES`), que só aceita `[]` como resposta quando o
+   * Google para de mandar token.
+   *
+   * O que segue fora de alcance, de propósito: um objeto sem `entries` e sem
+   * `nextPageToken` é indistinguível do vazio legítimo — e deve ser, porque pelo
+   * mesmo contrato isso É "varredura concluída, nenhum match". Fechar por
+   * allowlist de chaves do topo quebraria a cada campo novo do Google.
+   */
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return fail('corpo inesperado', `corpo 200 não é objeto JSON (${jsonKind(parsed)})`, true);
+  }
+
+  // `null`/ausente é vazio legítimo (o Google omite `entries` quando não há match).
+  const entries = (parsed as { entries?: unknown }).entries ?? [];
+  if (!Array.isArray(entries)) {
+    return fail(
+      'entries inesperado',
+      `200 com entries que não é array (${jsonKind(entries)})`,
+      true,
+    );
+  }
+
+  // Mesmo rigor do `entries`: token de forma errada não passa em silêncio, senão
+  // uma varredura incompleta viraria "zero" (é exatamente o risco de baixo).
+  const token_ = (parsed as { nextPageToken?: unknown }).nextPageToken;
+  if (token_ !== undefined && token_ !== null && typeof token_ !== 'string') {
+    return fail(
+      'nextPageToken inesperado',
+      `200 com nextPageToken que não é string (${jsonKind(token_)})`,
+      true,
+    );
+  }
+
+  return {
+    ok: true,
+    entries: entries as LogEntry[],
+    ...(typeof token_ === 'string' && token_.length > 0 ? { nextPageToken: token_ } : {}),
+  };
+}
+
+/** Uma PÁGINA, com a política de retry aplicada. Lança se não conseguir ler. */
+async function fetchPage(
+  token: string,
+  body: string,
+): Promise<{ entries: LogEntry[]; nextPageToken?: string }> {
   let lastError = 'sem detalhe';
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    let res: Response;
-    try {
-      res = await fetch('https://logging.googleapis.com/v2/entries:list', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body,
-      });
-    } catch (err) {
-      // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
-      lastError = `rede: ${err instanceof Error ? err.message : String(err)}`;
-      if (attempt === MAX_ATTEMPTS) break;
-      await sleep(backoffDelay(attempt));
-      continue;
+    const result = await attemptOnce(token, body);
+    if (result.ok) {
+      return {
+        entries: result.entries,
+        ...(result.nextPageToken ? { nextPageToken: result.nextPageToken } : {}),
+      };
     }
 
-    if (res.ok) {
-      const parsed = (await res.json()) as { entries?: LogEntry[] };
-      return parsed.entries ?? [];
-    }
-
-    lastError = `${res.status}: ${await res.text().catch(() => '')}`;
-    if (!RETRIABLE_STATUS.has(res.status)) {
-      throw new Error(`Cloud Logging ${lastError}`);
-    }
+    lastError = result.detail;
+    // Defeito NOSSO (filtro inválido, falta de `logging.viewer`): repetir não
+    // conserta e só atrasa o diagnóstico.
+    if (!result.retriable) throw new Error(`Cloud Logging ${lastError}`);
     if (attempt === MAX_ATTEMPTS) break;
 
     const delay = backoffDelay(attempt);
     // Ruído deliberado no stdout do run: um retry silencioso esconderia que o
     // Google andou instável. Evidência, não silêncio.
     console.warn(
-      `[cloudLogging] ${res.status} do Google na tentativa ${attempt}/${MAX_ATTEMPTS} — repetindo em ${delay}ms`,
+      `[cloudLogging] ${result.kind} na tentativa ${attempt}/${MAX_ATTEMPTS} — repetindo em ${delay}ms`,
     );
     await sleep(delay);
   }
@@ -137,6 +250,59 @@ export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
   // verde falso num gate que existe para pegar paciente real sem confirmação.
   throw new Error(
     `Cloud Logging falhou em ${MAX_ATTEMPTS} tentativas (último erro — ${lastError})`,
+  );
+}
+
+/**
+ * Teto de páginas. É válvula de segurança, não orçamento: bater nele LANÇA, em vez
+ * de devolver o que juntou. Devolver seria dizer "zero" sem ter terminado de olhar.
+ */
+const MAX_PAGES = 20;
+
+/**
+ * Lista entradas de log que casam com o filtro (mais novas primeiro).
+ *
+ * Pagina até ter resposta CONCLUSIVA. Isto não é refinamento: a doc do
+ * `entries.list` diz que `entries` vazio COM `nextPageToken` significa *"the
+ * search found no log entries so far but it did not have time to search all the
+ * possible log entries"* — ou seja, **"não terminei", não "não achei"**. Parar na
+ * primeira página faria o smoke afirmar "zero `send_failed` nas últimas 24h" a
+ * partir de uma varredura pela metade: ausência de prova virando prova, que é a
+ * doença que este helper inteiro existe para não ter.
+ */
+export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
+  const token = await accessToken();
+  const limit = params.limit ?? 20;
+  const filter = buildFilter(params);
+  const acc: LogEntry[] = [];
+  let pageToken: string | undefined;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const body = JSON.stringify({
+      resourceNames: [`projects/${projectId()}`],
+      filter,
+      orderBy: 'timestamp desc',
+      pageSize: limit,
+      ...(pageToken ? { pageToken } : {}),
+    });
+
+    const { entries, nextPageToken } = await fetchPage(token, body);
+    acc.push(...entries);
+
+    // Já tenho o que foi pedido: não preciso terminar a varredura.
+    if (acc.length >= limit) return acc.slice(0, limit);
+    // Sem token = o Google terminou de olhar. Aqui `[]` é conclusão, não ignorância.
+    if (!nextPageToken) return acc;
+
+    pageToken = nextPageToken;
+  }
+
+  // Saiu do laço = o teto acabou antes da varredura. Devolver `acc` aqui seria
+  // dizer "zero" sem ter terminado de olhar; então LANÇA.
+  throw new Error(
+    `Cloud Logging não terminou a varredura em ${MAX_PAGES} páginas ` +
+      `(${acc.length} entrada(s) até aqui, ainda com nextPageToken) — ` +
+      `concluir "zero" daqui seria verde falso`,
   );
 }
 
