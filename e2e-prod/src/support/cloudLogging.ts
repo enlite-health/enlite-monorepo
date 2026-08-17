@@ -49,24 +49,86 @@ function buildFilter({ message, withinMinutes, match }: QueryLogsParams): string
   return parts.join(' AND ');
 }
 
+/**
+ * Status que valem NOVA TENTATIVA porque são transitórios do lado do Google, não
+ * defeito nosso. `entries:list` devolve `500 INTERNAL "Internal error encountered"`
+ * em rajadas: em 2026-08-17, entre 06:00 e 06:10 UTC, 6 de 15 chamadas do monitor
+ * voltaram 500 (medido em serviceruntime.googleapis.com/api/request_count) e
+ * derrubaram DOIS runs seguidos — em testes DIFERENTES, porque o sorteio era de
+ * qual chamada pegava o blip. A própria doc do Google manda repetir 500/503 com
+ * backoff exponencial.
+ *
+ * O que fica de FORA de propósito: 401/403 (falta `roles/logging.viewer`) e 400
+ * (filtro inválido). Repetir não conserta e só atrasa o diagnóstico.
+ */
+const RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+/** 1 tentativa + 3 repetições. Pior caso ~2,8s de espera — cabe no timeout do teste. */
+const MAX_ATTEMPTS = 4;
+const BASE_DELAY_MS = 400;
+
+/** Exponencial + jitter: evita que N chamadas em série repitam no mesmo instante. */
+function backoffDelay(attempt: number): number {
+  return BASE_DELAY_MS * 2 ** (attempt - 1) + Math.floor(Math.random() * BASE_DELAY_MS);
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 /** Lista entradas de log que casam com o filtro (mais novas primeiro). */
 export async function queryLogs(params: QueryLogsParams): Promise<LogEntry[]> {
   const token = await accessToken();
-  const res = await fetch('https://logging.googleapis.com/v2/entries:list', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      resourceNames: [`projects/${PROJECT_ID}`],
-      filter: buildFilter(params),
-      orderBy: 'timestamp desc',
-      pageSize: params.limit ?? 20,
-    }),
+  const body = JSON.stringify({
+    resourceNames: [`projects/${PROJECT_ID}`],
+    filter: buildFilter(params),
+    orderBy: 'timestamp desc',
+    pageSize: params.limit ?? 20,
   });
-  if (!res.ok) {
-    throw new Error(`Cloud Logging ${res.status}: ${await res.text().catch(() => '')}`);
+
+  let lastError = 'sem detalhe';
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch('https://logging.googleapis.com/v2/entries:list', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body,
+      });
+    } catch (err) {
+      // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
+      lastError = `rede: ${err instanceof Error ? err.message : String(err)}`;
+      if (attempt === MAX_ATTEMPTS) break;
+      await sleep(backoffDelay(attempt));
+      continue;
+    }
+
+    if (res.ok) {
+      const parsed = (await res.json()) as { entries?: LogEntry[] };
+      return parsed.entries ?? [];
+    }
+
+    lastError = `${res.status}: ${await res.text().catch(() => '')}`;
+    if (!RETRIABLE_STATUS.has(res.status)) {
+      throw new Error(`Cloud Logging ${lastError}`);
+    }
+    if (attempt === MAX_ATTEMPTS) break;
+
+    const delay = backoffDelay(attempt);
+    // Ruído deliberado no stdout do run: um retry silencioso esconderia que o
+    // Google andou instável. Evidência, não silêncio.
+    console.warn(
+      `[cloudLogging] ${res.status} do Google na tentativa ${attempt}/${MAX_ATTEMPTS} — repetindo em ${delay}ms`,
+    );
+    await sleep(delay);
   }
-  const body = (await res.json()) as { entries?: LogEntry[] };
-  return body.entries ?? [];
+
+  // Esgotou as tentativas → FALHA RUIDOSA, nunca lista vazia.
+  // Quem consome isto afirma "ZERO `send_failed` nas últimas 24h". Devolver `[]`
+  // quando a LEITURA falhou faria essa asserção passar por ausência de prova —
+  // verde falso num gate que existe para pegar paciente real sem confirmação.
+  throw new Error(
+    `Cloud Logging falhou em ${MAX_ATTEMPTS} tentativas (último erro — ${lastError})`,
+  );
 }
 
 /**

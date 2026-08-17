@@ -139,6 +139,18 @@ export default defineConfig({
         storageState: '.auth/admin.json',
       },
     },
+    // UNIT — os helpers de `src/support` que decidem se um teste passa ou falha.
+    // Não tocam rede nem browser (stub de `fetch`), rodam em ~3s e entram no run
+    // diário sozinhos. Existem porque a política de retry do cloudLogging tem duas
+    // metades opostas — repetir no transitório, LANÇAR no resto — e a metade
+    // "lançar" é a que, se regredir, vira verde falso silencioso num gate de
+    // paciente, em vez de teste vermelho.
+    {
+      name: 'unit',
+      testDir: './src/support',
+      testMatch: /\.spec\.ts$/,
+      use: {},
+    },
     // GATE DE COBERTURA — meta-teste: toda rota user-facing do manifesto tem spec? Senão, falha.
     {
       name: 'coverage-gate',
