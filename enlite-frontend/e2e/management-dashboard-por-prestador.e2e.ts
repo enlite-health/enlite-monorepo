@@ -83,9 +83,10 @@ const PROD_PAYLOAD = {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
     agendados: 37, seleccionados: 10, rechazados: 2557,
   },
-  // INVARIANTE do backend: `pctCapacidadeSemana.agendados` é a MESMA variável de
-  // `agendadosEstaSemana` (GetManagementDashboardUseCase.ts:366 e :372) — produção nunca
-  // emite os dois diferentes. Semana zerada: 0/30 = 0%.
+  // INVARIANTE do backend: no bloco `encuadres` do payload, `pctCapacidadeSemana.agendados` e
+  // `agendadosEstaSemana` recebem a MESMA variável `encuadre` (GetManagementDashboardUseCase,
+  // montagem de `encuadres`) — produção nunca emite os dois diferentes. Semana zerada: 0/30 = 0%.
+  // (Citação por símbolo, não por linha: este próprio PR já deslocou os números uma vez.)
   encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 0, capacidade: 30, pct: 0 } },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
