@@ -29,7 +29,7 @@
 
 import http from 'http';
 import { Pool } from 'pg';
-import { MirrorWorkerService } from '../../src/modules/integration/application/MirrorWorkerService';
+import { MirrorWorkerService, isAnaCareIdClaimed } from '../../src/modules/integration/application/MirrorWorkerService';
 import { AnaCareMirrorProvider } from '../../src/modules/integration/infrastructure/anacare/AnaCareMirrorProvider';
 import { AnaCareClient } from '../../src/modules/integration/infrastructure/anacare/AnaCareClient';
 
@@ -154,7 +154,13 @@ describe('AnaCare PATCH — conflito de unicidade (worker já linkado)', () => {
     process.env.ANACARE_BASE_URL = MOCK_BASE_URL;
 
     pool = new Pool({ connectionString: DATABASE_URL });
-    service = new MirrorWorkerService(new AnaCareMirrorProvider(AnaCareClient.fromEnv()));
+    // Guard do #201 com a implementação REAL (SQL contra o Postgres do e2e),
+    // não um stub: é a mesma escolha dos outros dois e2e do anacare. Stub aqui
+    // reintroduziria o footgun que o #201 fechou — o e2e passaria a exercitar
+    // um mundo em que nenhum ana_care_id está reivindicado, que não é o real.
+    service = new MirrorWorkerService(
+      new AnaCareMirrorProvider(AnaCareClient.fromEnv(), { isExternalIdClaimed: isAnaCareIdClaimed }),
+    );
   });
 
   afterAll(async () => {

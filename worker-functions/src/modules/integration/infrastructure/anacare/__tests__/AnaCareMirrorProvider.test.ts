@@ -486,7 +486,7 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
       .mockRejectedValueOnce(conflictOn({ telefono: ['No es posible usar este número de teléfono'] }))
       .mockResolvedValueOnce(nurseResponse);
 
-    const out = await new AnaCareMirrorProvider(client).upsert(makeRecord(), '42');
+    const out = await new AnaCareMirrorProvider(client, makeFreeDeps()).upsert(makeRecord(), '42');
 
     expect(out).toEqual({ externalId: '42' });
     expect(client.updateNurse).toHaveBeenCalledTimes(2);
@@ -503,7 +503,7 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
       .mockRejectedValueOnce(conflictOn({ telefono: ['x'], email: ['y'] }))
       .mockResolvedValueOnce(nurseResponse);
 
-    await new AnaCareMirrorProvider(client).upsert(makeRecord(), '42');
+    await new AnaCareMirrorProvider(client, makeFreeDeps()).upsert(makeRecord(), '42');
 
     const [, retryPayload] = (client.updateNurse as jest.Mock).mock.calls[1];
     expect(retryPayload).not.toHaveProperty('telefono');
@@ -517,7 +517,7 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
       conflictOn({ nombre: ['obrigatório'] } as unknown as Record<string, string[]>),
     );
 
-    await expect(new AnaCareMirrorProvider(client).upsert(makeRecord(), '42')).rejects.toThrow();
+    await expect(new AnaCareMirrorProvider(client, makeFreeDeps()).upsert(makeRecord(), '42')).rejects.toThrow();
     expect(client.updateNurse).toHaveBeenCalledTimes(1);
   });
 
@@ -530,7 +530,7 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
       ),
     );
 
-    await expect(new AnaCareMirrorProvider(client).upsert(makeRecord(), '42')).rejects.toThrow(/HTTP 400/);
+    await expect(new AnaCareMirrorProvider(client, makeFreeDeps()).upsert(makeRecord(), '42')).rejects.toThrow(/HTTP 400/);
     expect(client.updateNurse).toHaveBeenCalledTimes(1);
   });
 
@@ -540,6 +540,6 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
       .mockRejectedValueOnce(conflictOn({ telefono: ['x'] }))
       .mockRejectedValueOnce(new Error('HTTP 500'));
 
-    await expect(new AnaCareMirrorProvider(client).upsert(makeRecord(), '42')).rejects.toThrow('HTTP 500');
+    await expect(new AnaCareMirrorProvider(client, makeFreeDeps()).upsert(makeRecord(), '42')).rejects.toThrow('HTTP 500');
   });
 });
