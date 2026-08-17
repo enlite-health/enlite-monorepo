@@ -12,14 +12,17 @@
  * INVARIANTES: migrations 107 (schedule JSONB), 142 (encuadres.role),
  * 209 (worker_blocked_applications), 230 (funnel stages).
  *
- * ⚠️  ESCRITO MAS NÃO EXECUTADO nesta task — o Postgres docker é compartilhado e
- *     colidiria com suites paralelas. Rodar isolado com:
- *       npm run test:e2e:docker -- management-dashboard.integration
+ * EXECUTADO em 16/08/2026 contra o Postgres docker (4/4 verdes). O banco é compartilhado
+ * com outras suítes, então rodar isolado:
+ *   npm run test:e2e:docker -- management-dashboard.integration
+ * Por ser compartilhado, as asserções afirmam PISO (>=) sobre as linhas semeadas, nunca
+ * total exato — outra suíte rodando em paralelo não pode derrubar este teste.
  */
 
 import { Pool } from 'pg';
 import { GetManagementDashboardUseCase } from '../../src/modules/matching/application/GetManagementDashboardUseCase';
 import { REQUIRED_SUBSTITUTES } from '../../src/modules/matching/domain/armedCases';
+import { CURRENT_WEEK_START_SQL } from '../../src/modules/matching/domain/interviewSchedule';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -183,5 +186,82 @@ describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => 
     }
     assertNumbers(data, '');
     expect(numericLeaves).toBeGreaterThan(20); // o payload é majoritariamente numérico
+  });
+});
+
+/**
+ * % de capacidade semanal de encuadres — o DENOMINADOR vem da config, não de constante.
+ *
+ * Por que este bloco existe: `ENCUADRE_WEEKLY_CAPACITY` tem o valor espelhado em três
+ * lugares (default do código + backend-prd.yml + backend-stg.yml) e o teste unitário do
+ * default roda com a env APAGADA — ou seja, nenhum teste provava que a env é lida de
+ * verdade no caminho completo contra banco. Aqui a mesma agregação roda DUAS vezes com
+ * capacidades diferentes: se o denominador estivesse fixo no código, o segundo `execute()`
+ * devolveria o mesmo número e o teste quebraria.
+ *
+ * Fica DEPOIS dos blocos acima de propósito: semeia encuadres na semana corrente no seu
+ * próprio `beforeAll`, então as invariantes anteriores medem o banco sem essa interferência.
+ */
+describe('GetManagementDashboardUseCase — % de capacidade semanal (integration)', () => {
+  const SEEDED_ESTA_SEMANA = 3;
+  const CAPACIDADE_A = 12;
+  const CAPACIDADE_B = 25;
+  let capacidadeOriginal: string | undefined;
+
+  beforeAll(async () => {
+    capacidadeOriginal = process.env.ENCUADRE_WEEKLY_CAPACITY;
+
+    const jobId = await makeJob('SEARCHING', '1', null, 'capacidade');
+    for (let i = 0; i < SEEDED_ESTA_SEMANA; i++) {
+      const workerId = await makeWorker('REGISTERED', `capacidade-${i}`);
+      // Segunda-feira ao meio-dia no fuso da OPERAÇÃO: sempre dentro da semana corrente,
+      // qualquer que seja o dia/hora em que a suíte rodar. Reusa o SSOT de domínio em vez
+      // de recalcular o início da semana no teste.
+      await pool.query(
+        `INSERT INTO worker_job_applications
+           (worker_id, job_posting_id, application_funnel_stage, interview_datetime)
+         VALUES ($1, $2, 'CONFIRMED', ${CURRENT_WEEK_START_SQL} + INTERVAL '12 hours')`,
+        [workerId, jobId],
+      );
+    }
+  });
+
+  afterAll(() => {
+    if (capacidadeOriginal === undefined) delete process.env.ENCUADRE_WEEKLY_CAPACITY;
+    else process.env.ENCUADRE_WEEKLY_CAPACITY = capacidadeOriginal;
+  });
+
+  it('usa ENCUADRE_WEEKLY_CAPACITY como denominador e mantém pct coerente', async () => {
+    process.env.ENCUADRE_WEEKLY_CAPACITY = String(CAPACIDADE_A);
+    const dataA = await new GetManagementDashboardUseCase(pool).execute();
+    const pctA = dataA.encuadres.pctCapacidadeSemana;
+
+    expect(pctA).toBeDefined();
+    expect(pctA!.capacidade).toBe(CAPACIDADE_A);
+    // O numerador é o MESMO card exibido na tela — não um segundo cálculo.
+    expect(pctA!.agendados).toBe(dataA.encuadres.agendadosEstaSemana);
+    // O banco é compartilhado: afirmamos o piso que semeamos, não um total exato.
+    expect(pctA!.agendados).toBeGreaterThanOrEqual(SEEDED_ESTA_SEMANA);
+    expect(pctA!.pct).toBe(Math.round((pctA!.agendados / CAPACIDADE_A) * 1000) / 10);
+
+    // Trocar só a config muda o denominador (e o pct) sem tocar o numerador.
+    process.env.ENCUADRE_WEEKLY_CAPACITY = String(CAPACIDADE_B);
+    const dataB = await new GetManagementDashboardUseCase(pool).execute();
+    const pctB = dataB.encuadres.pctCapacidadeSemana;
+
+    expect(pctB).toBeDefined();
+    expect(pctB!.capacidade).toBe(CAPACIDADE_B);
+    expect(pctB!.agendados).toBe(pctA!.agendados);
+    expect(pctB!.pct).toBe(Math.round((pctB!.agendados / CAPACIDADE_B) * 1000) / 10);
+    expect(pctB!.pct).toBeLessThan(pctA!.pct); // denominador maior → percentual menor
+  });
+
+  it('omite o bloco quando a capacidade é inválida (nunca divisão por zero)', async () => {
+    process.env.ENCUADRE_WEEKLY_CAPACITY = '0';
+    const data = await new GetManagementDashboardUseCase(pool).execute();
+
+    expect(data.encuadres.pctCapacidadeSemana).toBeUndefined();
+    // O card cru continua sendo publicado — some o percentual, não o número.
+    expect(data.encuadres.agendadosEstaSemana).toBeGreaterThanOrEqual(SEEDED_ESTA_SEMANA);
   });
 });

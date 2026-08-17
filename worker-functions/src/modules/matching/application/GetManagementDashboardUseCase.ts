@@ -34,6 +34,12 @@ export interface ManagementDashboardOptions {
  * REVISADA para 30 na call de produto de 12/08 (Diego/Marcel, task 86ak04ygv):
  * o denominador passa a refletir a capacidade real da coordenação. Zero/inválida →
  * o percentual é OMITIDO do payload (nunca divisão por zero, nunca 0% falso).
+ *
+ * ⚠️ Este default é ESPELHADO em `.github/workflows/backend-prd.yml` e
+ * `.github/workflows/backend-stg.yml` (`ENCUADRE_WEEKLY_CAPACITY=30`). Em prd/stg
+ * a env VENCE — mudar o número SÓ aqui NÃO tem efeito em produção, e o teste do
+ * default continua verde (ele roda com `delete process.env.ENCUADRE_WEEKLY_CAPACITY`).
+ * Ao alterar a capacidade, alterar nos TRÊS lugares.
  */
 function readEncuadreWeeklyCapacity(): number | null {
   const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '30';
