@@ -344,6 +344,99 @@ test('projeto e serviço vêm do ambiente, com default quando a var não existe'
   }
 });
 
+// ------------------------------------------------------------- paginação
+
+test('vazio COM nextPageToken é "não terminei", não "não achei": segue paginando', async () => {
+  // Contrato publicado do `entries.list`: entries vazio + nextPageToken =
+  // "found no log entries SO FAR but did not have time to search all". Parar aqui
+  // faria o smoke afirmar "zero send_failed" de uma varredura pela metade.
+  const stub = stubFetch([
+    { status: 200, body: { entries: [], nextPageToken: 'pag-2' } },
+    { status: 200, body: { entries: [], nextPageToken: 'pag-3' } },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries, 'a entrada estava na 3a página').toHaveLength(1);
+  expect(stub.calls()).toBe(3);
+  // E o token tem que ir NO CORPO da requisição seguinte, senão relê a 1a página.
+  expect(stub.bodies()[0]?.pageToken, '1a página não manda token').toBeUndefined();
+  expect(stub.bodies()[1]?.pageToken).toBe('pag-2');
+  expect(stub.bodies()[2]?.pageToken).toBe('pag-3');
+});
+
+test('sem nextPageToken, `[]` é conclusão: não pagina nem inventa falha', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await expect(queryLogs(PARAMS)).resolves.toEqual([]);
+  expect(stub.calls(), 'varredura terminada = 1 chamada').toBe(1);
+});
+
+test('token infinito: LANÇA no teto de páginas em vez de concluir "zero"', async () => {
+  const stub = stubFetch(
+    Array.from({ length: 40 }, (_, i) => ({
+      status: 200 as const,
+      body: { entries: [], nextPageToken: `pag-${i + 2}` },
+    })),
+  );
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  expect(erro, 'nunca devolver [] com varredura em aberto').not.toBeNull();
+  expect(erro!.message).toMatch(/não terminou a varredura em 20 páginas/);
+  expect(erro!.message).toContain('verde falso');
+  expect(stub.calls(), 'para no teto, não roda para sempre').toBe(20);
+});
+
+test('para de paginar assim que junta o `limit` pedido', async () => {
+  const stub = stubFetch([
+    { status: 200, body: { entries: [ENTRY], nextPageToken: 'tem-mais' } },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs({ ...PARAMS, limit: 1 });
+
+  expect(entries).toHaveLength(1);
+  expect(stub.calls(), 'já tinha o pedido: não precisa terminar a varredura').toBe(1);
+});
+
+test('acumula através das páginas até o `limit`', async () => {
+  const outra = { timestamp: '2026-08-17T05:00:00Z', jsonPayload: { appointmentId: 'appt-2' } };
+  const stub = stubFetch([
+    { status: 200, body: { entries: [ENTRY], nextPageToken: 'pag-2' } },
+    { status: 200, body: { entries: [outra] } },
+  ]);
+
+  const entries = await queryLogs({ ...PARAMS, limit: 3 });
+
+  expect(entries).toHaveLength(2);
+  expect(entries.map((e) => e.jsonPayload?.appointmentId)).toEqual(['appt-1', 'appt-2']);
+  expect(stub.calls()).toBe(2);
+});
+
+test('nextPageToken que não é string é transitório (não vira varredura silenciosa)', async () => {
+  const stub = stubFetch([
+    { status: 200, raw: '{"entries":[],"nextPageToken":42}' },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries).toHaveLength(1);
+  expect(stub.calls()).toBe(2);
+});
+
+test('nextPageToken vazio conta como ausente (não pagina para sempre)', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [], nextPageToken: '' } }]);
+
+  await expect(queryLogs(PARAMS)).resolves.toEqual([]);
+  expect(stub.calls()).toBe(1);
+});
+
 // ------------------------------------------------------------- waitForLog
 
 test('waitForLog devolve a entrada assim que ela aparece', async () => {
