@@ -172,6 +172,46 @@ test('200 não-JSON sempre: LANÇA rotulado como Cloud Logging, nunca lista vazi
   expect(stub.calls()).toBe(4);
 });
 
+test('200 com JSON `[]`: LANÇA em vez de devolver `[].entries` (o pior verde falso)', async () => {
+  // `JSON.parse('[]').entries` é `Array.prototype.entries` — uma FUNÇÃO — e o
+  // `.length` dela é 0 (ARIDADE, não "zero resultados"). Sem a guarda de shape,
+  // `queryLogs` devolvia essa função tipada como `LogEntry[]` e o
+  // `expect(falhas.length).toBe(0)` do smoke de admissão passava por ausência de
+  // prova. Este teste existe para que isso nunca volte em silêncio.
+  const stub = stubFetch(Array.from({ length: 8 }, () => ({ status: 200 as const, raw: '[]' })));
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  expect(erro, 'deveria ter lançado, não devolvido uma função').not.toBeNull();
+  expect(erro!.message).toMatch(/^Cloud Logging falhou em 4 tentativas/);
+  expect(erro!.message).toContain('não é objeto JSON (array)');
+  expect(stub.calls()).toBe(4);
+});
+
+for (const [rotulo, raw, tipo] of [
+  ['array', '[]', 'array'],
+  ['string', '"texto"', 'string'],
+  ['número', '42', 'number'],
+  ['null', 'null', 'null'],
+] as const) {
+  test(`200 com JSON ${rotulo} é transitório: repete, recupera e nunca vaza não-array`, async () => {
+    const stub = stubFetch([
+      { status: 200, raw },
+      { status: 200, body: { entries: [ENTRY] } },
+    ]);
+
+    const entries = await queryLogs(PARAMS);
+
+    expect(Array.isArray(entries), `${tipo} nunca pode escapar como resultado`).toBe(true);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.timestamp).toBe(ENTRY.timestamp);
+    expect(stub.calls(), 'deveria ter repetido depois do corpo inesperado').toBe(2);
+  });
+}
+
 test('rejeição que não é Error ainda vira mensagem legível (não "[object Object]")', async () => {
   // `fetch` pode rejeitar com coisa que não é Error (undici já fez isso). O helper
   // usa String(err) nesse caso; sem isso o relatório sai ilegível.

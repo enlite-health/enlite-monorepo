@@ -106,6 +106,20 @@ type Attempt =
  * cold start devolvendo HTML). Esse último escapava da política e subia como
  * `SyntaxError` cru, sem repetir e sem dizer que era do Cloud Logging.
  */
+const fail = (kind: string, detail: string, retriable = true): Attempt => ({
+  ok: false,
+  kind,
+  detail,
+  retriable,
+});
+
+/** Rótulo honesto do que veio no lugar do objeto esperado (`typeof null` é 'object'). */
+function jsonKind(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  return typeof v;
+}
+
 async function attemptOnce(token: string, body: string): Promise<Attempt> {
   let res: Response;
   try {
@@ -116,29 +130,42 @@ async function attemptOnce(token: string, body: string): Promise<Attempt> {
     });
   } catch (err) {
     // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
-    return { ok: false, kind: 'rede', detail: `rede: ${errMessage(err)}`, retriable: true };
+    return fail('rede', `rede: ${errMessage(err)}`);
   }
 
   if (!res.ok) {
-    return {
-      ok: false,
-      kind: String(res.status),
-      detail: `${res.status}: ${await res.text().catch(() => '')}`,
-      retriable: RETRIABLE_STATUS.has(res.status),
-    };
+    return fail(
+      String(res.status),
+      `${res.status}: ${await res.text().catch(() => '')}`,
+      RETRIABLE_STATUS.has(res.status),
+    );
   }
 
+  let parsed: unknown;
   try {
-    const parsed = (await res.json()) as { entries?: LogEntry[] };
-    return { ok: true, entries: parsed.entries ?? [] };
+    parsed = await res.json();
   } catch (err) {
-    return {
-      ok: false,
-      kind: 'corpo não-JSON',
-      detail: `corpo não-JSON: ${errMessage(err)}`,
-      retriable: true,
-    };
+    return fail('corpo não-JSON', `corpo não-JSON: ${errMessage(err)}`);
   }
+
+  /**
+   * `entries:list` sempre responde um OBJETO. Array, escalar ou null aqui é
+   * intermediário se metendo no caminho (ou mudança de contrato) — e é mais
+   * perigoso que corpo ilegível, não menos:
+   *
+   *   JSON.parse('[]').entries  →  Array.prototype.entries, uma FUNÇÃO
+   *   (essa função).length      →  0   (aridade, não "zero resultados")
+   *
+   * Sem esta guarda, `queryLogs` devolveria uma função tipada como `LogEntry[]` e o
+   * `expect(falhas.length).toBe(0)` do smoke passaria — verde falso silencioso,
+   * exatamente o que a política toda existe para impedir. Escalar e string dão
+   * `undefined ?? []` = `[]`, que é o mesmo verde falso por outro caminho.
+   */
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return fail('corpo inesperado', `corpo 200 não é objeto JSON (${jsonKind(parsed)})`);
+  }
+
+  return { ok: true, entries: (parsed as { entries?: LogEntry[] }).entries ?? [] };
 }
 
 /** Lista entradas de log que casam com o filtro (mais novas primeiro). */
