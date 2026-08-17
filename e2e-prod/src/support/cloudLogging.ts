@@ -99,14 +99,12 @@ type Attempt =
   | { ok: false; kind: string; detail: string; retriable: boolean };
 
 /**
- * Uma ida ao `entries:list`, com TODA falha possível já traduzida em `Attempt`.
- *
- * As três formas de falhar moram aqui juntas porque a decisão de repetir é uma só,
- * lá no laço: rede caída, status ruim e **200 com corpo que não é JSON** (proxy ou
- * cold start devolvendo HTML). Esse último escapava da política e subia como
- * `SyntaxError` cru, sem repetir e sem dizer que era do Cloud Logging.
+ * Construtor de falha. `retriable` é OBRIGATÓRIO de propósito: um default
+ * `true` deixaria o esquecimento no lado perigoso — repetir 4× um 403 mascara
+ * falta de `roles/logging.viewer`, que é justamente o que `RETRIABLE_STATUS`
+ * existe para não deixar acontecer.
  */
-const fail = (kind: string, detail: string, retriable = true): Attempt => ({
+const fail = (kind: string, detail: string, retriable: boolean): Attempt => ({
   ok: false,
   kind,
   detail,
@@ -120,6 +118,15 @@ function jsonKind(v: unknown): string {
   return typeof v;
 }
 
+/**
+ * Uma ida ao `entries:list`, com TODA falha possível já traduzida em `Attempt`.
+ *
+ * As QUATRO formas de falhar moram aqui juntas porque a decisão de repetir é uma
+ * só, lá no laço: rede caída · status ruim · corpo que não é JSON (proxy ou cold
+ * start devolvendo HTML) · e 200 com JSON de forma inesperada. Os dois últimos
+ * escapavam da política — o primeiro subia como `SyntaxError` cru, o segundo era
+ * pior e não fazia barulho nenhum (ver a guarda de shape abaixo).
+ */
 async function attemptOnce(token: string, body: string): Promise<Attempt> {
   let res: Response;
   try {
@@ -130,7 +137,7 @@ async function attemptOnce(token: string, body: string): Promise<Attempt> {
     });
   } catch (err) {
     // Socket cortado / DNS / TLS: transitório por natureza, mesma política do 5xx.
-    return fail('rede', `rede: ${errMessage(err)}`);
+    return fail('rede', `rede: ${errMessage(err)}`, true);
   }
 
   if (!res.ok) {
@@ -145,27 +152,38 @@ async function attemptOnce(token: string, body: string): Promise<Attempt> {
   try {
     parsed = await res.json();
   } catch (err) {
-    return fail('corpo não-JSON', `corpo não-JSON: ${errMessage(err)}`);
+    return fail('corpo não-JSON', `corpo não-JSON: ${errMessage(err)}`, true);
   }
 
   /**
-   * `entries:list` sempre responde um OBJETO. Array, escalar ou null aqui é
-   * intermediário se metendo no caminho (ou mudança de contrato) — e é mais
-   * perigoso que corpo ilegível, não menos:
+   * `entries:list` sempre responde um OBJETO com `entries` array (ou ausente).
+   * Qualquer outra forma aqui é intermediário se metendo no caminho, e é mais
+   * perigosa que corpo ilegível — porque não faz barulho:
    *
-   *   JSON.parse('[]').entries  →  Array.prototype.entries, uma FUNÇÃO
-   *   (essa função).length      →  0   (aridade, não "zero resultados")
+   *   JSON.parse('[]').entries   →  Array.prototype.entries, uma FUNÇÃO
+   *   (essa função).length       →  0   (aridade, não "zero resultados")
+   *   {"entries": ""}            →  ""  →  .length 0
    *
-   * Sem esta guarda, `queryLogs` devolveria uma função tipada como `LogEntry[]` e o
-   * `expect(falhas.length).toBe(0)` do smoke passaria — verde falso silencioso,
-   * exatamente o que a política toda existe para impedir. Escalar e string dão
-   * `undefined ?? []` = `[]`, que é o mesmo verde falso por outro caminho.
+   * Nos três casos o `expect(falhas.length).toBe(0)` do smoke PASSA por ausência
+   * de prova — verde falso silencioso, exatamente o que a política toda existe
+   * para impedir. Por isso validamos o continente E o conteúdo: sem a segunda
+   * checagem, `queryLogs` ainda devolveria string/número tipado como `LogEntry[]`.
    */
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return fail('corpo inesperado', `corpo 200 não é objeto JSON (${jsonKind(parsed)})`);
+    return fail('corpo inesperado', `corpo 200 não é objeto JSON (${jsonKind(parsed)})`, true);
   }
 
-  return { ok: true, entries: (parsed as { entries?: LogEntry[] }).entries ?? [] };
+  // `null`/ausente é vazio legítimo (o Google omite `entries` quando não há match).
+  const entries = (parsed as { entries?: unknown }).entries ?? [];
+  if (!Array.isArray(entries)) {
+    return fail(
+      'entries inesperado',
+      `200 com entries que não é array (${jsonKind(entries)})`,
+      true,
+    );
+  }
+
+  return { ok: true, entries: entries as LogEntry[] };
 }
 
 /** Lista entradas de log que casam com o filtro (mais novas primeiro). */

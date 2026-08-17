@@ -212,6 +212,54 @@ for (const [rotulo, raw, tipo] of [
   });
 }
 
+test('200 com `entries` string vazia: LANÇA (era o último verde falso do conteúdo)', async () => {
+  // Continente certo (objeto), conteúdo errado: `"" ?? []` devolve `""`, cujo
+  // `.length` é 0 — a asserção "zero falhas" passaria por ausência de prova. A
+  // guarda de shape sozinha não pegava isto, porque ela só olha o continente.
+  const stub = stubFetch(
+    Array.from({ length: 8 }, () => ({ status: 200 as const, raw: '{"entries":""}' })),
+  );
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  expect(erro, 'deveria ter lançado, não devolvido uma string').not.toBeNull();
+  expect(erro!.message).toMatch(/^Cloud Logging falhou em 4 tentativas/);
+  expect(erro!.message).toContain('entries que não é array (string)');
+  expect(stub.calls()).toBe(4);
+});
+
+for (const [rotulo, raw, tipo] of [
+  ['string', '{"entries":"x"}', 'string'],
+  ['número', '{"entries":42}', 'number'],
+  ['objeto', '{"entries":{}}', 'object'],
+] as const) {
+  test(`200 com \`entries\` ${rotulo} é transitório: repete em vez de mentir o tipo`, async () => {
+    const stub = stubFetch([
+      { status: 200, raw },
+      { status: 200, body: { entries: [ENTRY] } },
+    ]);
+
+    const entries = await queryLogs(PARAMS);
+
+    expect(Array.isArray(entries), `${tipo} nunca pode escapar tipado como LogEntry[]`).toBe(true);
+    expect(entries).toHaveLength(1);
+    expect(stub.calls()).toBe(2);
+  });
+}
+
+test('`entries` ausente ou null segue sendo vazio LEGÍTIMO (não inventa falha)', async () => {
+  // O Google omite `entries` quando não há match. Isso é resposta boa, não erro —
+  // se virasse retry, o smoke ficaria vermelho todo dia que não houver tráfego.
+  for (const raw of ['{}', '{"entries":null}']) {
+    const stub = stubFetch([{ status: 200, raw }]);
+    await expect(queryLogs(PARAMS), `${raw} é vazio legítimo`).resolves.toEqual([]);
+    expect(stub.calls(), 'não deve repetir em resposta boa').toBe(1);
+  }
+});
+
 test('rejeição que não é Error ainda vira mensagem legível (não "[object Object]")', async () => {
   // `fetch` pode rejeitar com coisa que não é Error (undici já fez isso). O helper
   // usa String(err) nesse caso; sem isso o relatório sai ilegível.
