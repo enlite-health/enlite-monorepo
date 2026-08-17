@@ -131,7 +131,8 @@ function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void
     // Middleware montado com célula (ex.: `app.use('/api/docs', requirePermission(...))`)
     // é endpoint para efeito de catálogo: sem isso a família some da matriz.
     const cell = readPermissionMetadata(layer.handle);
-    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)) || '/', cell });
+    // Sem `|| '/'`: `joinPaths` já devolve '/' quando o resultado seria vazio.
+    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)), cell });
   }
 }
 
@@ -157,6 +158,10 @@ export function declaredCells(routes: ScannedRoute[]): PermissionMetadata[] {
   return [...byKey.values()].sort((a, b) => {
     const left = `${a.resource}:${a.action}`;
     const right = `${b.resource}:${b.action}`;
+    /* istanbul ignore next — o ramo de EMPATE é inalcançável: o `byKey` acima
+       já deduplica por chave, então nunca há dois itens iguais para comparar.
+       Fica escrito assim mesmo porque comparador que não devolve 0 para iguais
+       é comparador errado, e quem mexer no dedup amanhã depende disso. */
     return left < right ? -1 : left > right ? 1 : 0;
   });
 }

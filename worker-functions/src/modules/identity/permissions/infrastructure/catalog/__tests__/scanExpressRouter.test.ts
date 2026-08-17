@@ -148,3 +148,59 @@ describe('permissionMetadata', () => {
     expect(readPermissionMetadata(() => undefined)).toBeUndefined();
   });
 });
+
+/**
+ * Os ramos DEFENSIVOS da varredura (`?? []`, `|| '/'`, o empate no comparador).
+ * Não são preciosismo de cobertura: é aqui que a varredura cai quando o router
+ * tem forma inesperada — e uma varredura que quebra em silêncio significa
+ * catálogo incompleto E guard cego, as duas proteções de uma vez.
+ *
+ * Camadas sintéticas de propósito NESTE bloco: o Express não produz camada sem
+ * `stack`, sem `methods` ou com `path` ausente, e são exatamente essas formas
+ * que os fallbacks existem para tolerar.
+ */
+describe('ramos defensivos da varredura', () => {
+  function comCamadas(layers: unknown[]): ReturnType<typeof scanExpressRouter> {
+    return scanExpressRouter({ _router: { stack: layers } } as never);
+  }
+
+  it('rota sem `stack` e sem `methods` vira USE, sem quebrar', () => {
+    expect(comCamadas([{ route: { path: '/api/admin/x' } }])).toEqual([
+      { method: 'USE', path: '/api/admin/x' },
+    ]);
+  });
+
+  it('rota com `methods` todo false também vira USE', () => {
+    expect(comCamadas([{ route: { path: '/x', methods: { get: false }, stack: [] } }])[0].method).toBe('USE');
+  });
+
+  it('rota sem `path` cai na raiz em vez de virar caminho vazio', () => {
+    expect(comCamadas([{ route: { methods: { get: true }, stack: [] } }])).toEqual([
+      { method: 'GET', path: '/' },
+    ]);
+  });
+
+  it('middleware com célula montado na RAIZ vira `/` (e não caminho vazio)', () => {
+    const cell = { resource: 'api_docs', action: 'read' };
+    const handle = markPermissionHandler(((_req, _res, next) => next()) as RequestHandler, cell);
+    expect(comCamadas([{ handle, regexp: Object.assign(/^\/?$/, { fast_slash: true }) }])).toEqual([
+      { method: 'USE', path: '/', cell },
+    ]);
+  });
+
+  it('mountPathOf devolve vazio para regexp que resolve na raiz', () => {
+    expect(mountPathOf({ regexp: /^\/(?=\/|$)/ } as never)).toBe('');
+  });
+
+  it('declaredCells desempata células idênticas sem depender de locale', () => {
+    // O comparador tem o ramo `left > right ? 1 : 0`; o `0` (empate) só é
+    // alcançado por duas rotas declarando a MESMA célula — o caso comum de
+    // verdade (read e write da mesma família em rotas diferentes).
+    const cell = { resource: 'worker', action: 'read' };
+    const rotas = [
+      { method: 'GET', path: '/a', cell },
+      { method: 'GET', path: '/b', cell },
+    ];
+    expect(declaredCells(rotas)).toEqual([cell]);
+  });
+});

@@ -1,12 +1,18 @@
 name: E2E Tests — Worker Functions
 
+# ⚠️ `stage` entra junto com `main` (17/08/2026). Até aqui o e2e só rodava no
+# fluxo de PRODUÇÃO — e o fluxo real de trabalho do ABAC/painel de grupos é PR
+# para `stage`. Resultado concreto: o PR #226 levou 3 arquivos e2e novos (20
+# casos, banco e API reais) que NUNCA rodaram no CI; rodaram só na máquina de
+# quem escreveu. "E2E sem mock" era critério do gate de revisão e hábito de
+# quem lembrava, não camada.
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "stage" ]
     paths:
       - 'worker-functions/**'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "stage" ]
     paths:
       - 'worker-functions/**'
 
