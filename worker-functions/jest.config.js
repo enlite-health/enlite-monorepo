@@ -41,7 +41,7 @@ module.exports = {
    * Por que quatro listas NOMINAIS e um glob de módulo: `permissions/**` está
    * 100% inteiro, então protege por diretório e **cresce sozinho** com cada
    * arquivo novo. Os outros diretórios têm vizinho com dívida antiga
-   * (`AuthMiddleware.ts` em 79% de branches, `authTelemetryRoutes.ts`), e um
+   * (`AuthMiddleware.ts` em 84,7% de branches; `authTelemetryRoutes.ts` em 0% de funcs), e um
    * glob de diretório ali quebraria o CI sem ninguém ter regredido nada. A
    * consequência a saber: arquivo NOVO nessas pastas nasce fora do piso — quem
    * criar, acrescenta na lista.
@@ -85,6 +85,14 @@ module.exports = {
     // `mergeCustomClaims` (#220, `role` apagava `country`), `EmailService`
     // (guard de envio, 17/08). São exatamente as que não podem regredir calado.
     'src/shared/utils/{envFlag,envList}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // O aviso do vínculo de contas: o que ele DEIXA REGISTRADO quando não
+    // consegue avisar é a única pista de que alguém não foi avisado.
+    'src/modules/account-link/accountLinkNotice.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

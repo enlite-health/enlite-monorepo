@@ -75,7 +75,7 @@ describe('EmailService', () => {
     });
 
     it('does NOT call sgMail.setApiKey when SENDGRID_API_KEY is unset', () => {
-      delete process.env.SENDGRID_API_KEY;
+      // O `envDeProducao()` do beforeEach SETA a chave — este caso precisa tirá-la.
       delete process.env.SENDGRID_API_KEY;
       new EmailService();
       expect(mockSetApiKey).not.toHaveBeenCalled();

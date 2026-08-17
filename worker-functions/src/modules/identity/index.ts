@@ -42,7 +42,7 @@ export { SimplifiedAuthorizationEngine } from './infrastructure/SimplifiedAuthor
 export { CerbosAuthorizationAdapter } from './infrastructure/CerbosAuthorizationAdapter';
 export { GroupPermissionEngine, isStaffPrincipal } from './infrastructure/GroupPermissionEngine';
 export { GoogleIdentityService } from './infrastructure/GoogleIdentityService';
-export { EmailService } from './infrastructure/EmailService';
+export { EmailService, EmailChannelUnavailableError } from './infrastructure/EmailService';
 export {
   mockAuthMiddleware,
   createMockAuthEndpoints,

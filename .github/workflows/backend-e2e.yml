@@ -16,11 +16,18 @@ on:
     paths:
       - 'worker-functions/**'
 
-# Um merge na `stage` dispara a suíte duas vezes (o PR e o push). São ~15 min de
-# runner cada; a corrida anterior é descartável.
+# Cancela corridas SUPERSEDIDAS do mesmo PR (push novo enquanto a suíte de ~15
+# min ainda roda). NÃO cancela em `push`: um merge em `main`/`stage` tem que
+# concluir o e2e — cancelar ali deixaria um commit de produção sem prova, e é
+# por isso que os 5 workflows da casa usam `cancel-in-progress: false`.
+#
+# ⚠️ Isto NÃO deduplica PR × push do mesmo merge: os dois eventos têm `ref`
+# diferente (`refs/pull/<N>/merge` × `refs/heads/stage`), então continuam sendo
+# duas corridas — de propósito, porque a do push é a que carimba o commit que
+# ficou na branch.
 concurrency:
-  group: backend-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   e2e:
