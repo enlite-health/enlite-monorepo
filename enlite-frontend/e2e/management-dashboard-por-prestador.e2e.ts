@@ -83,7 +83,10 @@ const PROD_PAYLOAD = {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
     agendados: 37, seleccionados: 10, rechazados: 2557,
   },
-  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 30, pct: 23.3 } },
+  // INVARIANTE do backend: `pctCapacidadeSemana.agendados` é a MESMA variável de
+  // `agendadosEstaSemana` (GetManagementDashboardUseCase.ts:366 e :372) — produção nunca
+  // emite os dois diferentes. Semana zerada: 0/30 = 0%.
+  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 0, capacidade: 30, pct: 0 } },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
     alocadosCubriendoGuardias: 12, incompletos: 6735, nuevosCompletosMes: 41,
@@ -107,7 +110,8 @@ const PROD_PAYLOAD_DEPOIS = {
       colunas: { ...PROD_PAYLOAD.funnelPorPrestador.consolidado.colunas, IN_PROGRESS: 1172, CONFIRMED: 28 },
     },
   },
-  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 30, pct: 23.3 } },
+  // A entrevista marcada nesta semana move os DOIS campos juntos (ver invariante acima): 1/30 = 3,3%.
+  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 1, capacidade: 30, pct: 3.3 } },
 };
 
 const MOCK_ZONE_ANALYTICS = { zones: [], unresolvedCount: 0 };

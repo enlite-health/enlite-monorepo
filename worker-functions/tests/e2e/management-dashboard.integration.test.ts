@@ -192,9 +192,9 @@ describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => 
 /**
  * % de capacidade semanal de encuadres — o DENOMINADOR vem da config, não de constante.
  *
- * Por que este bloco existe: `ENCUADRE_WEEKLY_CAPACITY` tem o valor espelhado em três
- * lugares (default do código + backend-prd.yml + backend-stg.yml) e o teste unitário do
- * default roda com a env APAGADA — ou seja, nenhum teste provava que a env é lida de
+ * Por que este bloco existe: `ENCUADRE_WEEKLY_CAPACITY` tem o valor espelhado em quatro
+ * lugares (default do código + backend-prd.yml + backend-stg.yml + .env.example) e o teste
+ * unitário do default roda com a env APAGADA — ou seja, nenhum teste provava que a env é lida de
  * verdade no caminho completo contra banco. Aqui a mesma agregação roda DUAS vezes com
  * capacidades diferentes: se o denominador estivesse fixo no código, o segundo `execute()`
  * devolveria o mesmo número e o teste quebraria.
