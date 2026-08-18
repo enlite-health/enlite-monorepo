@@ -48,8 +48,27 @@ describe('AnaCareMirrorHealthService — o relógio começa em REGISTERED', () =
     await pool.end();
   });
 
+  /**
+   * Os casos abaixo afirmam contagens EXATAS (`toBe(1)`), porque o serviço conta a
+   * tabela inteira — não só o que este arquivo semeou. Isso hoje se sustenta pelo
+   * TRUNCATE de `tests/e2e/setup.ts`, mas isso é garantia ACIDENTAL: qualquer
+   * escrita concorrente no `enlite_e2e` (o container da API vive no mesmo banco)
+   * derrubaria os asserts com uma mensagem que não explica nada.
+   *
+   * Então a precondição vira explícita: se o conjunto elegível não estiver zerado
+   * depois da limpeza, o teste falha AQUI, dizendo o porquê.
+   */
   beforeEach(async () => {
     await pool.query(`DELETE FROM workers WHERE auth_uid LIKE 'e2e-mirror-health-%'`);
+
+    const baseline = await service.getMirrorHealth(STUCK_THRESHOLD_HOURS, RECENCY_WINDOW_HOURS);
+    if (baseline.stuckRecent !== 0 || baseline.chronicTotal !== 0) {
+      throw new Error(
+        `Banco de teste sujo: havia ${baseline.stuckRecent} preso(s) recente(s) e ` +
+          `${baseline.chronicTotal} crônico(s) ANTES de semear. Os asserts deste arquivo ` +
+          `são contagens absolutas e só valem com o conjunto elegível zerado.`,
+      );
+    }
   });
 
   async function seed(opts: SeedOptions): Promise<string> {
@@ -133,6 +152,28 @@ describe('AnaCareMirrorHealthService — o relógio começa em REGISTERED', () =
 
     const result = await health();
 
+    expect(result.stuckRecent).toBe(0);
+    expect(result.chronicTotal).toBe(0);
+    expect(result.stuck).toBe(false);
+  });
+
+  it('G) na oscilação, vale a ÚLTIMA vez que virou REGISTERED, não a primeira', async () => {
+    // Sem este caso, trocar MAX por MIN na subconsulta mantém todos os outros verdes —
+    // e o relógio passaria a medir de uma elegibilidade que já foi revogada.
+    // Cenário: registrou há 100h, foi desativado, e voltou a registrar há 1h.
+    const id = await seed({ key: 'g-oscilacao', createdAgoHours: 400, registeredAgoHours: 100 });
+    await pool.query(
+      `INSERT INTO worker_status_history
+         (worker_id, field_name, old_value, new_value, change_source, created_at)
+       VALUES ($1, 'status', 'REGISTERED', 'DISABLED', 'e2e', NOW() - make_interval(mins => 3000)),
+              ($1, 'status', 'DISABLED', 'REGISTERED', 'e2e', NOW() - make_interval(mins => 60))`,
+      [id],
+    );
+
+    const result = await health();
+
+    // Com MAX (correto): elegível há 1h → nem preso (< 2h) nem crônico.
+    // Com MIN: elegível há 100h → apareceria como preso recente.
     expect(result.stuckRecent).toBe(0);
     expect(result.chronicTotal).toBe(0);
     expect(result.stuck).toBe(false);
