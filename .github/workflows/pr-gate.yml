@@ -108,4 +108,11 @@ jobs:
             echo "::error::Alguma camada do gate não passou — ver os jobs acima."
             exit 1
           fi
+
+          # Dito explicitamente porque a informação SUMIU da lista de checks: o
+          # `deploy: skipping` dos workflows de produção vinha sendo usado como
+          # evidência barata de "este PR não deploya", e eles perderam o gatilho
+          # de `pull_request` neste mesmo commit. Sem esta linha, a próxima
+          # sessão teria de ir ler workflow para reconquistar a certeza.
+          echo "ℹ️  Este PR NÃO dispara deploy: os workflows de deploy são push-only."
           echo "✅ Todas as camadas aplicáveis passaram."
