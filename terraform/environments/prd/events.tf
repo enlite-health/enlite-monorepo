@@ -390,8 +390,17 @@ resource "google_monitoring_alert_policy" "anacare_mirror_stuck" {
       Ele não entra em caso, não é alocado, e ninguém percebe pela tela — o Kanban segue normal.
 
       ## O que este alerta afirma
-      Existe **pelo menos um** worker `REGISTERED` com `ana_care_id IS NULL` há mais de
-      **2 horas** (default de `mirrorStuckThresholdHours`), criado nos últimos 7 dias.
+      Existe **pelo menos um** worker `REGISTERED` com `ana_care_id IS NULL` que **virou
+      REGISTERED** há mais de **2 horas** (default de `mirrorStuckThresholdHours`) e há menos
+      de 7 dias.
+
+      O relógio começa na ELEGIBILIDADE (`worker_status_history`), não em `workers.created_at`.
+      A linha nasce no signup como `INCOMPLETE_REGISTER` e o espelho só dispara quando o
+      cadastro fica completo — usar `created_at` errava nas duas direções e as duas foram
+      vistas em 18/08/2026: quem completava o registro dias após o signup nascia "preso há
+      148h" (2 páginas falsas no dia, com o espelho são), e quem tinha signup com mais de 7
+      dias caía direto em `chronicTotal`, que não pagina — falha nova ficava muda, que é a
+      forma do incidente de 30/07.
       É sinal de **ESTADO**: enquanto houver alguém preso, o health check reemite a linha a cada
       5 minutos. **Ele não se auto-resolve com o problema de pé** — só apaga quando o backlog zera.
 
