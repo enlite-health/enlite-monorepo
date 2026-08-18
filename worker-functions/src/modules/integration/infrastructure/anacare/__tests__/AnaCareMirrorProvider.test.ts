@@ -9,7 +9,7 @@
  *   - Propagação de erro da API
  */
 
-import { AnaCareMirrorProvider, AnaCareLinkBlockedError } from '../AnaCareMirrorProvider';
+import { AnaCareMirrorProvider, AnaCareLinkBlockedError, toAnaCareNurseId } from '../AnaCareMirrorProvider';
 import type { AnaCareMirrorProviderDeps } from '../AnaCareMirrorProvider';
 import { AnaCareApiError } from '../AnaCareClient';
 import { logger } from '@shared/logging';
@@ -322,8 +322,20 @@ describe('AnaCareMirrorProvider.upsert', () => {
       const client = makeClient();
       const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
 
-      await expect(provider.deactivate('not-a-number')).rejects.toThrow('invalid externalId');
+      await expect(provider.deactivate('sem-digito')).rejects.toThrow('invalid externalId');
       expect(client.updateNurse).not.toHaveBeenCalled();
+    });
+
+    // O caso vivo: `deactivate` roda ANTES do gate de status do
+    // MirrorWorkerService, então é por aqui que os 13 workers com prefixo
+    // quebrariam primeiro se algum virasse `Baja`.
+    it('aceita o prefixo `A` do import antigo', async () => {
+      const client = makeClient();
+      const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+
+      await provider.deactivate('A86118');
+
+      expect(client.updateNurse).toHaveBeenCalledWith(86118, expect.any(Object));
     });
   });
 
@@ -541,5 +553,28 @@ describe('conflito de unicidade no PATCH (worker já linkado)', () => {
       .mockRejectedValueOnce(new Error('HTTP 500'));
 
     await expect(new AnaCareMirrorProvider(client, makeFreeDeps()).upsert(makeRecord(), '42')).rejects.toThrow('HTTP 500');
+  });
+});
+
+/**
+ * O prefixo `A` é ruído do import antigo, não identidade — o mesmo nurse aparece
+ * como `A87583` num cadastro e `87583` no outro (par medido em produção).
+ * `parseInt` devolvia `NaN`, o `NaN` virava `throw`, e o worker parava de
+ * sincronizar para sempre sem ninguém ver.
+ */
+describe('toAnaCareNurseId', () => {
+  it.each([
+    ['86118', 86118],
+    ['A86118', 86118],
+    ['a87583', 87583],
+    ['  87583  ', 87583],
+    ['A-876-36', 87636],
+  ])('%p → %p', (entrada, esperado) => {
+    expect(toAnaCareNurseId(entrada)).toBe(esperado);
+  });
+
+  // Sem dígito nenhum é externalId inválido DE VERDADE — quem chama lança.
+  it.each(['', 'A', 'sem-digito', '---'])('%p → null', (entrada) => {
+    expect(toAnaCareNurseId(entrada)).toBeNull();
   });
 });
