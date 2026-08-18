@@ -51,6 +51,26 @@ function normalizeNameForMatch(name: string): string {
 }
 
 /** Campos de unicidade que o AnaCare recusa quando já pertencem a outro nurse. */
+/**
+ * `ana_care_id` → id numérico do nurse no Ana Care.
+ *
+ * ⚠️ 13 workers em produção carregam o id com o prefixo `A` do import antigo
+ * (`A86118`, `A87583`…). `parseInt('A86118', 10)` é `NaN`, e o `NaN` vira
+ * `throw` — o worker para de sincronizar PARA SEMPRE, calado do ponto de vista
+ * de quem opera. O prefixo é ruído de importação, não identidade: o mesmo nurse
+ * aparece como `A87583` num cadastro e `87583` no outro.
+ *
+ * Só dígitos são considerados. `null` quando não sobra dígito nenhum — aí é
+ * externalId inválido de verdade, e quem chama continua lançando.
+ */
+export function toAnaCareNurseId(externalId: string): number | null {
+  const digitos = externalId.replace(/\D/g, '');
+  // Sem checar `NaN` depois: `parseInt` de uma string só-dígitos NÃO retorna
+  // `NaN`, e o ramo morto só serviria para o arquivo marcar 100% com uma
+  // condição que nenhum teste consegue exercitar.
+  return digitos === '' ? null : Number.parseInt(digitos, 10);
+}
+
 const UNIQUE_FIELDS = ['telefono', 'email'] as const;
 type UniqueField = (typeof UNIQUE_FIELDS)[number];
 
@@ -147,10 +167,10 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
 
     if (externalId !== null) {
       // PATCH — worker já existe no AnaCare
-      const id = parseInt(externalId, 10);
-      if (isNaN(id)) {
+      const id = toAnaCareNurseId(externalId);
+      if (id === null) {
         throw new Error(
-          `${TAG} upsert: invalid externalId (not a number): ${externalId}`,
+          `${TAG} upsert: invalid externalId (no digits): ${externalId}`,
         );
       }
 
@@ -314,10 +334,10 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
    *       NÃO é chamado no backfill v1.
    */
   async deactivate(externalId: string): Promise<void> {
-    const id = parseInt(externalId, 10);
-    if (isNaN(id)) {
+    const id = toAnaCareNurseId(externalId);
+    if (id === null) {
       throw new Error(
-        `${TAG} deactivate: invalid externalId (not a number): ${externalId}`,
+        `${TAG} deactivate: invalid externalId (no digits): ${externalId}`,
       );
     }
     // TODO: confirmar campo/valor de desativação com AnaCare antes de usar em produção.
