@@ -1812,3 +1812,24 @@ Evidência colhida em 2026-07-07: a SA `n8n-integration-identity` (citada nos co
 **Fix esperado:** atualizar os testes pra lidar com o modal de dedup (fechar/desviar quando aparecer, ou dados de teste com domicílios únicos) + re-gravar as baselines visuais afetadas. Enquanto aberto, PRs backend-only devem registrar a vermelhidão pré-existente com prova de controle (stash) em vez de "esperar verde".
 
 **Nota adicional (infra local):** `make test-integration` recria o container `enlite-api` a partir de imagem stale (node_modules sem `tsconfig-paths`) e trava no health-check — workaround documentado: `docker exec enlite-api npm install && docker restart enlite-api`. Consertar a imagem (rebuild) evita o remendo a cada swap de auth.
+
+## CI e merge — o que mudou em 17-18/08/2026 (D120)
+
+**`main` e `stage` estão PROTEGIDOS.** Antes não estavam (nem branch protection nem ruleset), e por
+isso dava para mergear PR com CI vermelho — aconteceu.
+
+- **Check obrigatório: `gate`**, do workflow `PR Gate` (`.github/workflows/pr-gate.yml`). É o único
+  que roda em TODO PR, sem `paths:` filter. `quality-gate` e `e2e` continuam podendo não rodar, e por
+  isso NÃO servem como required: check que não roda deixa o PR preso em *"Expected — waiting for
+  status to be reported"* para sempre.
+- **Sem bypass** (`enforce_admins`): a trava vale para todo mundo. Quando o CI estiver instável, a
+  entrega espera — é o que a torna trava.
+- **Push direto em `main`/`stage` passa a ser REJEITADO.** Toda mudança entra por PR. Houve 2 pushes
+  diretos nos 30 dias anteriores, e um deles gerou dívida que precisou de um PR para consertar.
+- **Os 4 workflows de deploy são push-only.** Quem gateia PR é o agregador; o `gate` diz na saída que
+  o PR não deploya (o sinal `deploy: skipping` sumiu da lista de checks junto com o gatilho).
+
+As três camadas que o `gate` consolida, e o que cada uma pega:
+1. **revisão** lê o DIFF (contrato mentiroso, duplicação, cobertura, desvio de design);
+2. **CI** executa o CONJUNTO (efeito cruzado entre suítes, dependência faltando, ambiente);
+3. **e2e** prova contra BANCO E API REAIS (o que o mock esconde).
