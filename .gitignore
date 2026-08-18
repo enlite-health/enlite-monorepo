@@ -35,6 +35,11 @@ build/
 # Artefatos de execução dos scripts de backfill (one-shot, contêm dados de auditoria)
 worker-functions/backfill-worker-names-unresolved.csv
 worker-functions/scripts/*.csv
+# Diretórios de saída: o padrão *.csv acima só pega a raiz de scripts/, e estes
+# snapshots carregam a linha inteira (nome, telefone, observações) — PII sob
+# Ley 25.326 a um `git add -A` de distância.
+worker-functions/scripts/bulk-archive-output/
+worker-functions/scripts/backfill-merged-output/
 
 # Exports do DBA (contêm PII — emails, telefones, nomes de pacientes/prestadores)
 data/dba-exports/
