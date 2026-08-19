@@ -80,7 +80,10 @@ export async function montarAppDeFamilia(opts: MontarAppOpts): Promise<AppDeFami
   const permissions = createPermissionsModule({
     pool: db.getPool(),
     systemPool: db.getSystemPool(),
-    staffRoles: ['admin', 'recruiter', 'community_manager'],
+    // A constante do domínio, não um literal: o harness se anuncia como a cadeia
+    // de verdade do `src/index.ts`, e é ela que o `src/index.ts` usa. Papel novo
+    // no `STAFF_ROLES` tem que valer aqui sem ninguém lembrar de editar o teste.
+    staffRoles: [...identity.STAFF_ROLES],
     ttlMs: opts.ttlMs ?? 0,
   });
 
@@ -155,12 +158,11 @@ export async function limparIamFixtures(
  */
 export async function grupoComCelulas(
   pool: Pool,
-  args: { nome: string; uid: string; celulas: Array<[string, string]>; tenant?: string },
+  args: { nome: string; uid: string; celulas: Array<[string, string]> },
 ): Promise<string> {
-  const tenant = args.tenant ?? TENANT_E2E;
   const grupo = await pool.query(
     `INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e') RETURNING id`,
-    [tenant, args.nome],
+    [TENANT_E2E, args.nome],
   );
   const id = grupo.rows[0].id as string;
 
@@ -179,7 +181,7 @@ export async function grupoComCelulas(
   await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [
     args.uid,
     id,
-    tenant,
+    TENANT_E2E,
   ]);
   return id;
 }

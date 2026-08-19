@@ -2,8 +2,7 @@ import { Router, Request, Response } from 'express';
 import { AdminPatientsController } from '../controllers/AdminPatientsController';
 import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatIdsController';
 import { AdminPatientChatRolesController } from '../controllers/AdminPatientChatRolesController';
-import { AuthMiddleware } from '@modules/identity';
-import type { PermissionMiddleware } from '@modules/identity/interfaces/middleware/PermissionMiddleware';
+import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
 import { requireCountryScope } from '@modules/identity/interfaces/middleware/countryScopeGuard';
 
