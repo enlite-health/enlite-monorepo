@@ -83,6 +83,21 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // `admin.workers` (3ª) é a primeira família ESPALHADA: 31 rotas em quatro
+    // arquivos, dois deles fora do módulo `worker`. Os quatro entram, senão a
+    // família fica coberta pela metade — que é o mesmo que não estar coberta.
+    'src/modules/worker/interfaces/routes/{adminWorkerRoutes,adminWorkerDocumentsRoutes,workerDocumentsRoutes}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/interfaces/routes/workerContextRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/identity/infrastructure/{GroupPermissionEngine,CerbosAuthorizationAdapter}.ts': {
       statements: 100,
       branches: 100,

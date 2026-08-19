@@ -31,6 +31,7 @@ import { logger } from '@shared/logging';
 import { parseEnvList } from '@shared/utils/envList';
 import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { currentDbContext } from '@shared/database/requestDbSession';
+import { PrincipalType } from '@modules/identity/domain/Auth';
 import {
   cellKey,
   ENLITE_TENANT_ID,
@@ -76,6 +77,8 @@ export class PermissionMiddleware {
   private readonly env: NodeJS.ProcessEnv;
   /** Famílias já avisadas como "não enforced" — 1 linha por boot, não por request. */
   private readonly pendingFamiliesLogged = new Set<string>();
+  /** Células já avisadas como "atravessadas por serviço" — 1 linha por célula. */
+  private readonly serviceCellsLogged = new Set<string>();
 
   constructor(deps: PermissionMiddlewareDeps) {
     this.client = deps.client;
@@ -133,6 +136,31 @@ export class PermissionMiddleware {
         return next();
       }
 
+      // ── Principal de SERVIÇO não é decisão de grupo (família admin.workers) ──
+      // 4 rotas desta família são `requireStaffOrApiKey` e o triage-service (a
+      // Luz) as consome por chave de API. Chave de API é serviço, não pessoa:
+      // `principal.id` vale `service:<nome>`, que não existe em `users` — sem
+      // este desvio o resolve devolveria "conta inexistente" e a virada da
+      // família derrubaria a Luz em produção com 403 (o inventário 0.6 já
+      // previa: "vai precisar de tratamento especial", route-permission-map §
+      // achados). É o mesmo desvio que o `GroupPermissionEngine` faz para
+      // não-staff (D119.1a), aqui pela porta das rotas.
+      //
+      // O predicado é POSITIVO de propósito — "é serviço" e não "não é staff".
+      // A forma negativa liberaria qualquer principal cujo papel não fosse
+      // reconhecido, o oposto de fail-closed; esta só libera quem a
+      // autenticação já classificou como serviço.
+      //
+      // Não vai para `permission_audit_log`: aquela trilha responde "que
+      // decisão o GRUPO de fulano produziu", e aqui não houve decisão de grupo.
+      // O acesso do serviço tem trilha própria (`logResourceAccess`, e o log de
+      // autenticação por chave). Misturar máquina com gente ali é justamente o
+      // que cegaria a vista de auditoria do painel.
+      if (req.authContext?.principal?.type === PrincipalType.SERVICE) {
+        this.logServicePrincipal(family, resource, action);
+        return next();
+      }
+
       const uid = principalUid(req);
       if (!uid) {
         this.refuse(req, res, next, { uid: null, resource, action, code: 'unauthenticated' });
@@ -167,13 +195,43 @@ export class PermissionMiddleware {
     return parseEnvList(this.env.PERMISSION_ENFORCED_ROUTES).includes(family);
   }
 
+  /** 1 linha por célula, não por request — o volume da Luz encheria o log. */
+  private logServicePrincipal(family: string, resource: string, action: string): void {
+    this.avisarUmaVez(
+      this.serviceCellsLogged,
+      `${family}:${cellKey(resource, action)}`,
+      { family, cell: cellKey(resource, action) },
+      '[perm] principal de serviço — célula não avaliada (chave de API não tem grupo)',
+    );
+  }
+
   private logPendingFamily(family: string, resource: string, action: string): void {
-    if (this.pendingFamiliesLogged.has(family)) return;
-    this.pendingFamiliesLogged.add(family);
-    logger.info(
+    this.avisarUmaVez(
+      this.pendingFamiliesLogged,
+      family,
       { family, cell: cellKey(resource, action) },
       '[perm] rota não enforced — família fora de PERMISSION_ENFORCED_ROUTES',
     );
+  }
+
+  /**
+   * Aviso de ROLLOUT: interessa saber que a situação existe, não quantas vezes
+   * aconteceu. Sem a memória, cada request de uma família não-enforced (ou cada
+   * chamada da Luz) viraria linha de log.
+   *
+   * A CHAVE é o que difere entre os dois usos e por isso vem de fora: pendência
+   * é por família (a mesma frase para todas as células dela), serviço é por
+   * célula (dizer só "admin.workers" esconderia QUAIS rotas a chave atravessa).
+   */
+  private avisarUmaVez(
+    vistos: Set<string>,
+    chave: string,
+    dados: Record<string, string>,
+    mensagem: string,
+  ): void {
+    if (vistos.has(chave)) return;
+    vistos.add(chave);
+    logger.info(dados, mensagem);
   }
 
   /**

@@ -366,7 +366,7 @@ app.use('/api', createWorkerApplicationsRoutes(workerApplicationsController, aut
 // ========== Worker Documents (fixed + additional) ==========
 app.use('/api', createWorkerDocumentsRoutes(
   workerDocumentsMeController, workerAdditionalDocsMeController,
-  adminAdditionalDocsController, authMiddleware,
+  adminAdditionalDocsController, authMiddleware, permissionMiddleware,
 ));
 
 // ========== Jobs refresh ==========
@@ -412,9 +412,9 @@ app.use('/api/admin', createAdminWorkerRoutes({
   serviceArea: adminWorkerServiceAreaController,
   tags: adminTagCatalogController,
   timeline: workerTimelineController,
-}, authMiddleware));
+}, authMiddleware, permissionMiddleware));
 
-app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware));
+app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware, permissionMiddleware));
 
 // ========== Admin Patients ==========
 app.use(
@@ -435,7 +435,7 @@ registerAdminMaintenanceRoutes(app, authMiddleware);
 app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware));
 
 // ========== Worker Context (triage-service / MCP internal) ==========
-app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware));
+app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));
 
 // ========== Admin Vacancies (extracted router) ==========
 app.use('/api/admin', createAdminVacanciesRoutes(

@@ -102,6 +102,38 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:patientId/addresses → patient:write',
         'PUT /api/admin/patients/:id/chat-ids → patient:write',
         'PUT /api/admin/patients/:id/status → patient:write',
+        // ── admin.workers (31) — a 3ª, espalhada em 4 arquivos
+        'DELETE /api/admin/worker-tags/:id → worker:write',
+        'DELETE /api/admin/workers/:id/additional-documents/:docId → worker_document:delete',
+        'DELETE /api/admin/workers/:id/documents/:type → worker_document:delete',
+        'DELETE /api/admin/workers/:id/documents/:type/validate → worker_document:validate',
+        'DELETE /api/admin/workers/:id/tags/:tagId → worker:write',
+        'GET /api/admin/worker-tags → worker:read',
+        'GET /api/admin/workers → worker:read',
+        'GET /api/admin/workers/:id → worker_pii:read',
+        'GET /api/admin/workers/:id/additional-documents → worker_document:read',
+        'GET /api/admin/workers/:id/available-vacancies → vacancy:read',
+        'GET /api/admin/workers/:id/current-interview → interview:read',
+        'GET /api/admin/workers/:id/timeline → worker:read',
+        'GET /api/admin/workers/by-phone → worker_pii:read',
+        'GET /api/admin/workers/case-options → worker:read',
+        'GET /api/admin/workers/export → worker:export',
+        'GET /api/admin/workers/filter-options → worker:read',
+        'GET /api/admin/workers/stats → worker:read',
+        'PATCH /api/admin/worker-tags/:id → worker:write',
+        'PATCH /api/admin/workers/:id/profile → worker:write',
+        'PATCH /api/admin/workers/:id/test-flag → worker:write',
+        'POST /api/admin/worker-tags → worker:write',
+        'POST /api/admin/workers/:id/additional-documents → worker_document:write',
+        'POST /api/admin/workers/:id/additional-documents/upload-url → worker_document:write',
+        'POST /api/admin/workers/:id/documents/:type/validate → worker_document:validate',
+        'POST /api/admin/workers/:id/documents/ingest-from-url → worker_document:write',
+        'POST /api/admin/workers/:id/documents/save → worker_document:write',
+        'POST /api/admin/workers/:id/documents/upload-url → worker_document:write',
+        'POST /api/admin/workers/:id/documents/view-url → worker_document:read',
+        'POST /api/admin/workers/:id/tags/:tagId → worker:write',
+        'POST /api/admin/workers/sync-talentum → talentum:write',
+        'PUT /api/admin/workers/:id/service-area → worker:write',
       ].sort(),
     );
   });
@@ -126,8 +158,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
 
   it('a dívida de rollout só encolhe — o número aqui desce a cada família da task 3.5', () => {
     const pendentes = inventario.governedRoutes.filter((r) => r.status === 'pending');
-    // Teto: 141 depois de `admin.users`, 120 depois de `admin.patients`. Cada
-    // família nova baixa este número no MESMO PR em que declara.
-    expect(pendentes.length).toBeLessThanOrEqual(120);
+    // Teto: 141 depois de `admin.users`, 120 depois de `admin.patients`, 89
+    // depois de `admin.workers`. Cada família nova baixa este número no MESMO
+    // PR em que declara.
+    expect(pendentes.length).toBeLessThanOrEqual(89);
   });
 });
