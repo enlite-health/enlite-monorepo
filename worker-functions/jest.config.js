@@ -67,6 +67,15 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Famílias já viradas para decisão por célula (task 3.5). Cada família nova
+    // entra AQUI no mesmo PR em que declara — senão a trava do piso não alcança
+    // o arquivo e a família nasce fora da rede.
+    'src/modules/case/interfaces/routes/adminPatientsRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/identity/infrastructure/{GroupPermissionEngine,CerbosAuthorizationAdapter}.ts': {
       statements: 100,
       branches: 100,

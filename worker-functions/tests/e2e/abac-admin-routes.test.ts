@@ -180,14 +180,21 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     process.env.DB_SYSTEM_POOL_MAX = '2';
 
     // 4. Só agora o `src/` entra.
-    const [{ correlationMiddleware }, { dbSessionMiddleware }, identity, caseModule, { DatabaseConnection }] =
-      await Promise.all([
-        import('@shared/logging/correlationMiddleware'),
-        import('@shared/database/dbSessionMiddleware'),
-        import('@modules/identity'),
-        import('@modules/case'),
-        import('@shared/database/DatabaseConnection'),
-      ]);
+    const [
+      { correlationMiddleware },
+      { dbSessionMiddleware },
+      identity,
+      caseModule,
+      { DatabaseConnection },
+      { createPermissionsModule },
+    ] = await Promise.all([
+      import('@shared/logging/correlationMiddleware'),
+      import('@shared/database/dbSessionMiddleware'),
+      import('@modules/identity'),
+      import('@modules/case'),
+      import('@shared/database/DatabaseConnection'),
+      import('@modules/identity/permissions'),
+    ]);
 
     // Wiring mínimo do `src/index.ts` — serviços REAIS, não stubs. Com USE_MOCK_AUTH o
     // `requireStaff()` resolve pelo `req.user` do mockAuth, mas a instância é a de
@@ -202,12 +209,34 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       new identity.SimplifiedAuthorizationEngine(),
     );
 
+    // A família `admin.patients` passou a declarar célula (task 3.5). Este teste
+    // é sobre RLS de país, não sobre permissão: sem `PERMISSION_ENGINE_ENABLED`
+    // o guard é inerte (deixa passar) e o recorte medido aqui continua sendo o
+    // do país. O middleware entra só porque a fábrica agora o exige.
+    const db = DatabaseConnection.getInstance();
+    const permissions = createPermissionsModule({
+      pool: db.getPool(),
+      systemPool: db.getSystemPool(),
+      staffRoles: ['admin', 'recruiter', 'community_manager'],
+      ttlMs: 0,
+    });
+    const permissionMiddleware = new identity.PermissionMiddleware({
+      client: permissions.client,
+      audit: permissions.repositories.audit,
+    });
+
     const app = express();
     app.use(express.json());
     app.use(correlationMiddleware);
     app.use(dbSessionMiddleware);
     app.use(identity.mockAuthMiddleware);
-    app.use('/api/admin', caseModule.createAdminPatientsRoutes(new caseModule.AdminPatientsController(), authMiddleware));
+    app.use('/api/admin', caseModule.createAdminPatientsRoutes(
+        new caseModule.AdminPatientsController(),
+        authMiddleware,
+        permissionMiddleware,
+        new caseModule.AdminPatientChatIdsController(),
+        new caseModule.AdminPatientChatRolesController(),
+      ));
 
     server = await new Promise<Server>((resolve) => {
       const s = app.listen(0, () => resolve(s));

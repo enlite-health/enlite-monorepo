@@ -153,7 +153,7 @@ export {
   patientChatRoleParamsSchema,
   listPatientChatRolesQuerySchema,
 } from './interfaces/validators/patientChatRolesSchema';
-export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
+export { createAdminPatientsRoutes, ADMIN_PATIENTS_FAMILY } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
 
 // Application — public intake (Task 1)
