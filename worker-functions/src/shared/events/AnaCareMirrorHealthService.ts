@@ -18,7 +18,7 @@ export interface AnaCareMirrorHealth {
 
 interface HealthQueryRow {
   stuck_recent: number;
-  oldest_stuck_created_at: Date | null;
+  oldest_stuck_since: Date | null;
   chronic_total: number;
 }
 
@@ -51,6 +51,31 @@ export class AnaCareMirrorHealthService {
   /**
    * @param stuckThresholdHours idade acima da qual um worker sem `ana_care_id` conta como preso
    * @param recencyWindowHours  idade acima da qual o preso é considerado backlog crônico (não pagina)
+   *
+   * O RELÓGIO COMEÇA EM `eligible_since` — o instante em que o worker virou
+   * REGISTERED —, NÃO em `workers.created_at`.
+   *
+   * `created_at` é quando a LINHA nasceu (em geral no signup, como
+   * INCOMPLETE_REGISTER); o espelho só é disparado quando o cadastro fica
+   * completo. Usar `created_at` errava nas DUAS direções, e as duas foram
+   * observadas em produção em 18/08/2026:
+   *
+   *   - FALSO POSITIVO: quem se cadastra hoje e completa o registro dias depois
+   *     nasce "preso há 148h" no segundo em que vira REGISTERED, e o alerta
+   *     dispara ~4min depois — com o espelho funcionando e fechando normal em
+   *     ~10min. Foram 2 páginas nesse dia, ambas auto-resolvidas. Ruído, que é
+   *     justamente o defeito que esta policy existe para consertar.
+   *
+   *   - FALSO NEGATIVO (pior): quem se cadastrou há MAIS de `recencyWindowHours`
+   *     e completa o registro hoje entra direto no balde `chronicTotal`, que por
+   *     desenho NÃO pagina. Uma falha nova de espelho ficava classificada como
+   *     "backlog histórico" e silenciosa — que é exatamente a forma do incidente
+   *     de 30/07 (11 dias sem ninguém ver). Em 18/08, 2 dos 5 cadastros
+   *     concluídos no dia caíam nesse ponto cego.
+   *
+   * `worker_status_history` é a fonte (344/346 REGISTERED de produção têm a
+   * linha; os 2 sem são cadastros fundidos). O COALESCE preserva o
+   * comportamento antigo para linhas importadas em massa, que não têm história.
    */
   async getMirrorHealth(
     stuckThresholdHours = 2,
@@ -58,32 +83,43 @@ export class AnaCareMirrorHealthService {
   ): Promise<AnaCareMirrorHealth> {
     const { rows } = await this.pool.query<HealthQueryRow>(
       `
+      WITH eligible AS (
+        SELECT COALESCE(
+                 (SELECT MAX(h.created_at)
+                    FROM worker_status_history h
+                   WHERE h.worker_id = w.id
+                     AND h.field_name = 'status'
+                     AND h.new_value = 'REGISTERED'),
+                 w.created_at
+               ) AS eligible_since
+          FROM workers w
+         WHERE w.status = 'REGISTERED'
+           AND w.ana_care_id IS NULL
+           AND w.deleted_at IS NULL
+           AND COALESCE(w.is_test, false) = false
+      )
       SELECT
         COUNT(*) FILTER (
-          WHERE created_at <= NOW() - make_interval(hours => $1::int)
-            AND created_at >  NOW() - make_interval(hours => $2::int)
+          WHERE eligible_since <= NOW() - make_interval(hours => $1::int)
+            AND eligible_since >  NOW() - make_interval(hours => $2::int)
         )::int AS stuck_recent,
-        MIN(created_at) FILTER (
-          WHERE created_at <= NOW() - make_interval(hours => $1::int)
-            AND created_at >  NOW() - make_interval(hours => $2::int)
-        ) AS oldest_stuck_created_at,
+        MIN(eligible_since) FILTER (
+          WHERE eligible_since <= NOW() - make_interval(hours => $1::int)
+            AND eligible_since >  NOW() - make_interval(hours => $2::int)
+        ) AS oldest_stuck_since,
         COUNT(*) FILTER (
-          WHERE created_at <= NOW() - make_interval(hours => $2::int)
+          WHERE eligible_since <= NOW() - make_interval(hours => $2::int)
         )::int AS chronic_total
-      FROM workers
-      WHERE status = 'REGISTERED'
-        AND ana_care_id IS NULL
-        AND deleted_at IS NULL
-        AND COALESCE(is_test, false) = false
+      FROM eligible
       `,
       [stuckThresholdHours, recencyWindowHours],
     );
 
-    const row = rows[0] ?? { stuck_recent: 0, oldest_stuck_created_at: null, chronic_total: 0 };
+    const row = rows[0] ?? { stuck_recent: 0, oldest_stuck_since: null, chronic_total: 0 };
 
     return {
       stuckRecent: row.stuck_recent,
-      oldestStuckAgeHours: computeOldestStuckAgeHours(row.oldest_stuck_created_at),
+      oldestStuckAgeHours: computeOldestStuckAgeHours(row.oldest_stuck_since),
       chronicTotal: row.chronic_total,
       stuck: isMirrorStuck(row.stuck_recent),
     };

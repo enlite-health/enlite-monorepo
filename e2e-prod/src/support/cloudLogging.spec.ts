@@ -1,0 +1,494 @@
+/**
+ * cloudLogging.spec.ts — o helper de leitura de log aguenta blip do Google?
+ *
+ * Por que existe: em 2026-08-17 o monitor ficou vermelho duas vezes seguidas, em
+ * testes DIFERENTES, com o mesmo erro — `Cloud Logging 500: Internal error
+ * encountered`. Não era regressão de produto: entre 06:00 e 06:10 UTC, 6 de 15
+ * chamadas a `logging.googleapis.com` voltaram 500 (medido nas métricas do próprio
+ * Google) e o helper lançava no primeiro não-ok, sem repetir.
+ *
+ * Estes testes travam as DUAS metades da política, que puxam para lados opostos:
+ *   • transitório (5xx/rede) → repete e sobrevive;
+ *   • esgotou / não-retriável → LANÇA. Nunca `[]`, porque os testes que consomem
+ *     isto afirmam "zero falhas" e lista vazia por erro de leitura seria verde falso.
+ *
+ * Hermético: nada de rede. `K_SERVICE` faz o accessToken() ir pelo caminho de
+ * metadata (que é `fetch`), então o stub cobre token e consulta.
+ *
+ * E o "PROIBIDO mock" do playwright.config? Vale para os projetos que SÃO o
+ * monitor (smoke/regression/admin): lá, mockar destruiria a única coisa que eles
+ * provam — que produção responde. Aqui o objeto sob teste é o próprio helper que
+ * JULGA pass/fail, e o que precisa ser encenado é a FALHA DO GOOGLE, que não se
+ * encomenda. Nenhum teste de produção passou a usar stub.
+ */
+import { test, expect } from '@playwright/test';
+import { queryLogs, waitForLog, payloadString } from './cloudLogging';
+
+type Reply =
+  | { status: number; body?: unknown }
+  | { status: number; raw: string } // corpo CRU: 200 devolvendo HTML, por exemplo
+  | { networkError: string }
+  | { thrown: unknown }; // erro que NÃO é Error — cobre o `String(err)`
+
+const LOGGING_HOST = 'logging.googleapis.com';
+
+const realFetch = globalThis.fetch;
+const realKService = process.env.K_SERVICE;
+
+interface Stub {
+  /** Quantas chamadas ao endpoint de logging aconteceram. */
+  calls: () => number;
+  /** URLs vistas (para assertar FORA do stub — ver nota abaixo). */
+  urls: () => string[];
+  /** Corpos enviados, já desserializados. */
+  bodies: () => Array<Record<string, unknown>>;
+}
+
+/**
+ * Instala um `fetch` que serve o token e depois consome `replies` em ordem.
+ *
+ * Nota deliberada: este stub NÃO faz `expect`. Um `expect` que falhasse aqui
+ * dentro lançaria DENTRO do `fetch`, e o helper classificaria como erro de rede —
+ * repetindo 4× e escondendo a causa real atrás de "falhou em 4 tentativas".
+ * O stub só REGISTRA; quem afirma é o teste, depois.
+ */
+function stubFetch(replies: Reply[]): Stub {
+  const urls: string[] = [];
+  const bodies: Array<Record<string, unknown>> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+    if (url.includes('metadata.google.internal')) {
+      return new Response(JSON.stringify({ access_token: 'token-de-teste' }), { status: 200 });
+    }
+
+    urls.push(url);
+    bodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+
+    const reply = replies[urls.length - 1];
+    if (!reply) throw new Error(`stub sem resposta programada para a chamada ${urls.length}`);
+    if ('networkError' in reply) throw new Error(reply.networkError);
+    if ('thrown' in reply) throw reply.thrown;
+    if ('raw' in reply) return new Response(reply.raw, { status: reply.status });
+    return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status });
+  }) as typeof fetch;
+
+  return { calls: () => urls.length, urls: () => [...urls], bodies: () => [...bodies] };
+}
+
+const PARAMS = { message: 'admission.notifier.confirmation.send_failed', withinMinutes: 60 };
+const ENTRY = { timestamp: '2026-08-17T06:00:00Z', jsonPayload: { appointmentId: 'appt-1' } };
+
+test.beforeEach(() => {
+  process.env.K_SERVICE = 'spec'; // token via metadata → interceptável pelo stub
+});
+
+test.afterEach(() => {
+  globalThis.fetch = realFetch;
+  if (realKService === undefined) delete process.env.K_SERVICE;
+  else process.env.K_SERVICE = realKService;
+});
+
+// ---------------------------------------------------------------- transitórios
+
+test('500 transitório: repete e devolve as entradas em vez de derrubar o teste', async () => {
+  const stub = stubFetch([
+    { status: 500, body: { error: { status: 'INTERNAL' } } },
+    { status: 500, body: { error: { status: 'INTERNAL' } } },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.jsonPayload?.appointmentId).toBe('appt-1');
+  expect(stub.calls(), 'deveria ter repetido até o 200').toBe(3);
+  expect(stub.urls().every((u) => u.includes(LOGGING_HOST))).toBe(true);
+});
+
+test('erro de rede também é transitório: repete e recupera', async () => {
+  const stub = stubFetch([
+    { networkError: 'socket hang up' },
+    { status: 200, body: { entries: [] } },
+  ]);
+
+  await expect(queryLogs(PARAMS)).resolves.toEqual([]);
+  expect(stub.calls()).toBe(2);
+});
+
+// ------------------------------------------------------------ falha ruidosa
+
+test('500 sempre: LANÇA depois de esgotar — nunca devolve lista vazia (verde falso)', async () => {
+  const stub = stubFetch(Array.from({ length: 8 }, () => ({ status: 500 as const })));
+
+  // O ponto crítico: quem chama afirma "zero send_failed". Se a leitura falhou e
+  // voltasse `[]`, a asserção passaria por AUSÊNCIA DE PROVA.
+  await expect(queryLogs(PARAMS)).rejects.toThrow(/falhou em 4 tentativas/);
+  expect(stub.calls(), 'exatamente 1 tentativa + 3 repetições').toBe(4);
+});
+
+test('rede caída sempre: LANÇA depois de esgotar, também sem lista vazia', async () => {
+  const stub = stubFetch(
+    Array.from({ length: 8 }, () => ({ networkError: 'ECONNRESET' as const })),
+  );
+
+  await expect(queryLogs(PARAMS)).rejects.toThrow(/falhou em 4 tentativas[\s\S]*ECONNRESET/);
+  expect(stub.calls()).toBe(4);
+});
+
+const HTML_DE_PROXY = '<html><body><h1>502 Bad Gateway</h1></body></html>';
+
+test('200 com corpo não-JSON é transitório: repete e recupera', async () => {
+  // Acontece de verdade: proxy/LB ou cold start devolvendo HTML com status 200.
+  // Antes isto subia como `SyntaxError` cru — sem repetir e sem dizer que era do
+  // Cloud Logging, escapando da política de retry por uma porta lateral.
+  const stub = stubFetch([
+    { status: 200, raw: HTML_DE_PROXY },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.timestamp).toBe(ENTRY.timestamp);
+  expect(stub.calls(), 'deveria ter repetido depois do corpo ilegível').toBe(2);
+});
+
+test('200 não-JSON sempre: LANÇA rotulado como Cloud Logging, nunca lista vazia', async () => {
+  const stub = stubFetch(
+    Array.from({ length: 8 }, () => ({ status: 200 as const, raw: HTML_DE_PROXY })),
+  );
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  // Rotulado (não `SyntaxError` pelado) e depois de esgotar as tentativas.
+  expect(erro, 'deveria ter lançado').not.toBeNull();
+  expect(erro!.message).toMatch(/^Cloud Logging falhou em 4 tentativas/);
+  expect(erro!.message, 'o motivo tem que aparecer no relatório').toContain('corpo não-JSON');
+  expect(stub.calls()).toBe(4);
+});
+
+test('200 com JSON `[]`: LANÇA em vez de devolver `[].entries` (o pior verde falso)', async () => {
+  // `JSON.parse('[]').entries` é `Array.prototype.entries` — uma FUNÇÃO — e o
+  // `.length` dela é 0 (ARIDADE, não "zero resultados"). Sem a guarda de shape,
+  // `queryLogs` devolvia essa função tipada como `LogEntry[]` e o
+  // `expect(falhas.length).toBe(0)` do smoke de admissão passava por ausência de
+  // prova. Este teste existe para que isso nunca volte em silêncio.
+  const stub = stubFetch(Array.from({ length: 8 }, () => ({ status: 200 as const, raw: '[]' })));
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  expect(erro, 'deveria ter lançado, não devolvido uma função').not.toBeNull();
+  expect(erro!.message).toMatch(/^Cloud Logging falhou em 4 tentativas/);
+  expect(erro!.message).toContain('não é objeto JSON (array)');
+  expect(stub.calls()).toBe(4);
+});
+
+for (const [rotulo, raw, tipo] of [
+  ['array', '[]', 'array'],
+  ['string', '"texto"', 'string'],
+  ['número', '42', 'number'],
+  ['null', 'null', 'null'],
+] as const) {
+  test(`200 com JSON ${rotulo} é transitório: repete, recupera e nunca vaza não-array`, async () => {
+    const stub = stubFetch([
+      { status: 200, raw },
+      { status: 200, body: { entries: [ENTRY] } },
+    ]);
+
+    const entries = await queryLogs(PARAMS);
+
+    expect(Array.isArray(entries), `${tipo} nunca pode escapar como resultado`).toBe(true);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.timestamp).toBe(ENTRY.timestamp);
+    expect(stub.calls(), 'deveria ter repetido depois do corpo inesperado').toBe(2);
+  });
+}
+
+test('200 com `entries` string vazia: LANÇA (era o último verde falso do conteúdo)', async () => {
+  // Continente certo (objeto), conteúdo errado: `"" ?? []` devolve `""`, cujo
+  // `.length` é 0 — a asserção "zero falhas" passaria por ausência de prova. A
+  // guarda de shape sozinha não pegava isto, porque ela só olha o continente.
+  const stub = stubFetch(
+    Array.from({ length: 8 }, () => ({ status: 200 as const, raw: '{"entries":""}' })),
+  );
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  expect(erro, 'deveria ter lançado, não devolvido uma string').not.toBeNull();
+  expect(erro!.message).toMatch(/^Cloud Logging falhou em 4 tentativas/);
+  expect(erro!.message).toContain('entries que não é array (string)');
+  expect(stub.calls()).toBe(4);
+});
+
+for (const [rotulo, raw, tipo] of [
+  ['string', '{"entries":"x"}', 'string'],
+  ['número', '{"entries":42}', 'number'],
+  ['objeto', '{"entries":{}}', 'object'],
+] as const) {
+  test(`200 com \`entries\` ${rotulo} é transitório: repete em vez de mentir o tipo`, async () => {
+    const stub = stubFetch([
+      { status: 200, raw },
+      { status: 200, body: { entries: [ENTRY] } },
+    ]);
+
+    const entries = await queryLogs(PARAMS);
+
+    expect(Array.isArray(entries), `${tipo} nunca pode escapar tipado como LogEntry[]`).toBe(true);
+    expect(entries).toHaveLength(1);
+    expect(stub.calls()).toBe(2);
+  });
+}
+
+test('`entries` ausente ou null segue sendo vazio LEGÍTIMO (não inventa falha)', async () => {
+  // O Google omite `entries` quando não há match. Isso é resposta boa, não erro —
+  // se virasse retry, o smoke ficaria vermelho todo dia que não houver tráfego.
+  for (const raw of ['{}', '{"entries":null}']) {
+    const stub = stubFetch([{ status: 200, raw }]);
+    await expect(queryLogs(PARAMS), `${raw} é vazio legítimo`).resolves.toEqual([]);
+    expect(stub.calls(), 'não deve repetir em resposta boa').toBe(1);
+  }
+});
+
+test('rejeição que não é Error ainda vira mensagem legível (não "[object Object]")', async () => {
+  // `fetch` pode rejeitar com coisa que não é Error (undici já fez isso). O helper
+  // usa String(err) nesse caso; sem isso o relatório sai ilegível.
+  const stub = stubFetch(Array.from({ length: 8 }, () => ({ thrown: 'boom-nao-error' })));
+
+  await expect(queryLogs(PARAMS)).rejects.toThrow(/rede: boom-nao-error/);
+  expect(stub.calls()).toBe(4);
+});
+
+// ------------------------------------------------------- não-retriáveis
+
+test('403 não é transitório: lança na primeira e não mascara falta de permissão', async () => {
+  const stub = stubFetch([
+    { status: 403, body: { error: { message: 'Permission denied on resource project.' } } },
+    { status: 200, body: { entries: [] } },
+  ]);
+
+  await expect(queryLogs(PARAMS)).rejects.toThrow(/Cloud Logging 403/);
+  expect(stub.calls(), '403 não deve ser repetido').toBe(1);
+});
+
+test('400 (filtro inválido) falha rápido, sem repetir', async () => {
+  const stub = stubFetch([{ status: 400, body: { error: { message: 'Invalid filter.' } } }]);
+
+  await expect(queryLogs(PARAMS)).rejects.toThrow(/Cloud Logging 400/);
+  expect(stub.calls()).toBe(1);
+});
+
+// ------------------------------------------------------------------ contrato
+
+test('200 sem entries continua devolvendo lista vazia (contrato preservado)', async () => {
+  const stub = stubFetch([{ status: 200, body: {} }]);
+
+  await expect(queryLogs(PARAMS)).resolves.toEqual([]);
+  expect(stub.calls()).toBe(1);
+  expect(stub.bodies()[0]?.pageSize, 'sem `limit` explícito o default é 20').toBe(20);
+});
+
+test('o filtro enviado ao Google carrega `match` e o `limit` pedido', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await queryLogs({ ...PARAMS, match: { patientId: 'pac-42' }, limit: 3 });
+
+  const [body] = stub.bodies();
+  expect(body?.pageSize).toBe(3);
+  const filtro = String(body?.filter);
+  expect(filtro).toContain(`jsonPayload.message="${PARAMS.message}"`);
+  expect(filtro, '`match` precisa virar igualdade no jsonPayload').toContain(
+    'jsonPayload.patientId="pac-42"',
+  );
+  expect(filtro).toContain('resource.type="cloud_run_revision"');
+});
+
+test('projeto e serviço vêm do ambiente, com default quando a var não existe', async () => {
+  const realProject = process.env.GCP_PROJECT_ID;
+  const realService = process.env.LOG_SERVICE_NAME;
+  try {
+    // (a) vars setadas → o valor do ambiente manda
+    process.env.GCP_PROJECT_ID = 'projeto-do-ambiente';
+    process.env.LOG_SERVICE_NAME = 'servico-do-ambiente';
+    const comEnv = stubFetch([{ status: 200, body: { entries: [] } }]);
+    await queryLogs(PARAMS);
+    expect(comEnv.bodies()[0]?.resourceNames).toEqual(['projects/projeto-do-ambiente']);
+    expect(String(comEnv.bodies()[0]?.filter)).toContain(
+      'resource.labels.service_name="servico-do-ambiente"',
+    );
+
+    // (b) vars ausentes → cai nos defaults de produção
+    delete process.env.GCP_PROJECT_ID;
+    delete process.env.LOG_SERVICE_NAME;
+    const semEnv = stubFetch([{ status: 200, body: { entries: [] } }]);
+    await queryLogs(PARAMS);
+    expect(semEnv.bodies()[0]?.resourceNames).toEqual(['projects/enlite-prd']);
+    expect(String(semEnv.bodies()[0]?.filter)).toContain(
+      'resource.labels.service_name="worker-functions"',
+    );
+  } finally {
+    if (realProject === undefined) delete process.env.GCP_PROJECT_ID;
+    else process.env.GCP_PROJECT_ID = realProject;
+    if (realService === undefined) delete process.env.LOG_SERVICE_NAME;
+    else process.env.LOG_SERVICE_NAME = realService;
+  }
+});
+
+// ------------------------------------------------------------- paginação
+
+test('vazio COM nextPageToken é "não terminei", não "não achei": segue paginando', async () => {
+  // Contrato publicado do `entries.list`: entries vazio + nextPageToken =
+  // "found no log entries SO FAR but did not have time to search all". Parar aqui
+  // faria o smoke afirmar "zero send_failed" de uma varredura pela metade.
+  const stub = stubFetch([
+    { status: 200, body: { entries: [], nextPageToken: 'pag-2' } },
+    { status: 200, body: { entries: [], nextPageToken: 'pag-3' } },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries, 'a entrada estava na 3a página').toHaveLength(1);
+  expect(stub.calls()).toBe(3);
+  // E o token tem que ir NO CORPO da requisição seguinte, senão relê a 1a página.
+  expect(stub.bodies()[0]?.pageToken, '1a página não manda token').toBeUndefined();
+  expect(stub.bodies()[1]?.pageToken).toBe('pag-2');
+  expect(stub.bodies()[2]?.pageToken).toBe('pag-3');
+});
+
+test('sem nextPageToken, `[]` é conclusão: não pagina nem inventa falha', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await expect(queryLogs(PARAMS)).resolves.toEqual([]);
+  expect(stub.calls(), 'varredura terminada = 1 chamada').toBe(1);
+});
+
+test('token infinito: LANÇA no teto de páginas em vez de concluir "zero"', async () => {
+  const stub = stubFetch(
+    Array.from({ length: 40 }, (_, i) => ({
+      status: 200 as const,
+      body: { entries: [], nextPageToken: `pag-${i + 2}` },
+    })),
+  );
+
+  const erro = await queryLogs(PARAMS).then(
+    () => null,
+    (e: unknown) => e as Error,
+  );
+
+  expect(erro, 'nunca devolver [] com varredura em aberto').not.toBeNull();
+  expect(erro!.message).toMatch(/não terminou a varredura em 20 páginas/);
+  expect(erro!.message).toContain('verde falso');
+  expect(stub.calls(), 'para no teto, não roda para sempre').toBe(20);
+});
+
+test('para de paginar assim que junta o `limit` pedido', async () => {
+  const stub = stubFetch([
+    { status: 200, body: { entries: [ENTRY], nextPageToken: 'tem-mais' } },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs({ ...PARAMS, limit: 1 });
+
+  expect(entries).toHaveLength(1);
+  expect(stub.calls(), 'já tinha o pedido: não precisa terminar a varredura').toBe(1);
+});
+
+test('acumula através das páginas até o `limit`', async () => {
+  const outra = { timestamp: '2026-08-17T05:00:00Z', jsonPayload: { appointmentId: 'appt-2' } };
+  const stub = stubFetch([
+    { status: 200, body: { entries: [ENTRY], nextPageToken: 'pag-2' } },
+    { status: 200, body: { entries: [outra] } },
+  ]);
+
+  const entries = await queryLogs({ ...PARAMS, limit: 3 });
+
+  expect(entries).toHaveLength(2);
+  expect(entries.map((e) => e.jsonPayload?.appointmentId)).toEqual(['appt-1', 'appt-2']);
+  expect(stub.calls()).toBe(2);
+});
+
+test('nextPageToken que não é string é transitório (não vira varredura silenciosa)', async () => {
+  const stub = stubFetch([
+    { status: 200, raw: '{"entries":[],"nextPageToken":42}' },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entries = await queryLogs(PARAMS);
+
+  expect(entries).toHaveLength(1);
+  expect(stub.calls()).toBe(2);
+});
+
+test('nextPageToken vazio conta como ausente (não pagina para sempre)', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [], nextPageToken: '' } }]);
+
+  await expect(queryLogs(PARAMS)).resolves.toEqual([]);
+  expect(stub.calls()).toBe(1);
+});
+
+// ------------------------------------------------------------- waitForLog
+
+test('waitForLog devolve a entrada assim que ela aparece', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [ENTRY] } }]);
+
+  const entry = await waitForLog(PARAMS);
+
+  expect(entry?.timestamp).toBe(ENTRY.timestamp);
+  expect(stub.calls()).toBe(1);
+  expect(stub.bodies()[0]?.pageSize, 'waitForLog pede 1 por vez').toBe(1);
+});
+
+test('waitForLog faz polling: vazio na 1ª volta, entrada na 2ª', async () => {
+  const stub = stubFetch([
+    { status: 200, body: { entries: [] } },
+    { status: 200, body: { entries: [ENTRY] } },
+  ]);
+
+  const entry = await waitForLog(PARAMS, { timeoutMs: 5_000, intervalMs: 1 });
+
+  expect(entry?.timestamp).toBe(ENTRY.timestamp);
+  expect(stub.calls()).toBe(2);
+});
+
+test('waitForLog devolve null quando estoura o prazo (mensagem fica com o caller)', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await expect(waitForLog(PARAMS, { timeoutMs: 0 })).resolves.toBeNull();
+  expect(stub.calls()).toBe(1);
+});
+
+test('waitForLog não devolve `undefined` se o Google mandar entries malformado', async () => {
+  // Defensivo de verdade: `entries: [null]` tem length 1 e passaria o guard, mas
+  // `entries[0]` é null — o caller espera `LogEntry | null`, nunca undefined.
+  const stub = stubFetch([{ status: 200, body: { entries: [null] } }]);
+
+  await expect(waitForLog(PARAMS, { timeoutMs: 0 })).resolves.toBeNull();
+  expect(stub.calls()).toBe(1);
+});
+
+// ---------------------------------------------------------- payloadString
+
+test('payloadString lê campo string e recusa o resto', () => {
+  const entry = {
+    timestamp: 'agora',
+    jsonPayload: { externalId: 'MM123', appointmentId: 42, nulo: null },
+  };
+
+  expect(payloadString(entry, 'externalId')).toBe('MM123');
+  expect(payloadString(entry, 'appointmentId'), 'número não é string → null').toBeNull();
+  expect(payloadString(entry, 'nulo')).toBeNull();
+  expect(payloadString(entry, 'inexistente')).toBeNull();
+  expect(payloadString({ timestamp: 'agora' }, 'externalId'), 'sem jsonPayload').toBeNull();
+  expect(payloadString(null, 'externalId'), 'sem entry').toBeNull();
+});

@@ -85,7 +85,7 @@ const dashboardFixture = {
     coberturaSinSchedule: 26,
   },
   pctRespostaRapida: { num: 0, den: 86, excluidos: 59, pct: 0 },
-  pctCapacidade: { agendados: 13, capacidade: 80, pct: 16.3 },
+  pctCapacidade: { agendados: 13, capacidade: 30, pct: 43.3 },
 } as unknown as {
   bigNumbers: ManagementDashboardData['bigNumbers'];
   pacientes: ManagementDashboardData['pacientes'];

@@ -6,10 +6,9 @@ on:
     branches: [ "stage" ]
     paths:
       - 'worker-functions/**'
-  pull_request:
-    branches: [ "stage" ]
-    paths:
-      - 'worker-functions/**'
+  # ⚠️ Sem gatilho de `pull_request`: quem roda qualidade em PR é o `pr-gate.yml`
+  # (o agregador que sempre reporta e por isso pode ser exigido em branch
+  # protection). Deixar o gatilho aqui rodaria a mesma suíte DUAS vezes por PR.
 
 concurrency:
   group: backend-stg
@@ -131,6 +130,7 @@ jobs:
             VERTEX_LOCATION=global
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
+            ENCUADRE_WEEKLY_CAPACITY=30
           secrets: |
             DB_PASSWORD=enlite-runtime-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest

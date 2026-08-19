@@ -8,6 +8,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { BackfillWorkerMirrorUseCase } from '../../application/BackfillWorkerMirrorUseCase';
+import { isAnaCareIdClaimed } from '../../application/MirrorWorkerService';
 import { AnaCareMirrorProvider } from '../../infrastructure/anacare/AnaCareMirrorProvider';
 import { AnaCareClient } from '../../infrastructure/anacare/AnaCareClient';
 import { logger, reportError } from '@shared/logging';
@@ -37,7 +38,7 @@ export class AnaCareBackfillController {
       // Provider lazy: AnaCareClient.create() (Secret Manager) só é chamado
       // quando há upsert real (dryRun=false). dryRun não toca em creds externas.
       const useCase = new BackfillWorkerMirrorUseCase(
-        async () => new AnaCareMirrorProvider(await AnaCareClient.create()),
+        async () => new AnaCareMirrorProvider(await AnaCareClient.create(), { isExternalIdClaimed: isAnaCareIdClaimed }),
       );
 
       const summary = await useCase.execute({ dryRun, limit });

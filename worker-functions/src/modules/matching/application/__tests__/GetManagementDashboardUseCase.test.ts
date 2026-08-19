@@ -156,7 +156,7 @@ describe('GetManagementDashboardUseCase', () => {
       // DESACOPLADO do funil SELECTED (=2 acima). Prova que a fonte mudou.
       { activos: 7, cubriendoGuardias: 3 },
       405, // pessoas distintas em vaga viva → funnel.bloqueados E prioridades.bloqueadosAlPostularse
-      8, // encuadres agendados esta semana (denominador de capacidade default = 80)
+      8, // encuadres agendados esta semana: NUMERADOR do % de capacidade (default 30 → 26,7%)
       // Funil por prestador: w1 em 2 vagas (IN_PROGRESS + REJECTED) e w2 rejeitado.
       [
         { worker_id: 'w1', stage: 'IN_PROGRESS', source: 'talentum', messaged_at: null },
@@ -248,8 +248,8 @@ describe('GetManagementDashboardUseCase', () => {
       encuadres: {
         agendadosEstaSemana: 8,
         semDataRegistrada: 0,
-        // Capacidade default 80 (env ausente): 8/80 = 10%.
-        pctCapacidadeSemana: { agendados: 8, capacidade: 80, pct: 10 },
+        // Capacidade default 30 (env ausente, call 12/08): 8/30 = 26,7%.
+        pctCapacidadeSemana: { agendados: 8, capacidade: 30, pct: 26.7 },
       },
       cadastros: {
         leads: 6882,

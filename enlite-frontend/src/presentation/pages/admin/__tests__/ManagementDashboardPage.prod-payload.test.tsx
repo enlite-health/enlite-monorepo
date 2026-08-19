@@ -11,6 +11,12 @@ import type { ManagementDashboardData } from '@domain/entities/ManagementDashboa
  * Teste com número inventado prova que a tela renderiza; com número real prova que ela
  * aguenta o dado que vai receber — inclusive os casos que só existem em produção
  * (consolidado fechando com o total, 37 agendados sem data, semana zerada).
+ *
+ * ⚠️ SNAPSHOT DATADO — não atualizar os números para "acompanhar" produção. O payload é
+ * de 30/07/2026 e é ANTERIOR à mudança de 16/08/2026, quando a capacidade semanal de
+ * encuadres (ENCUADRE_WEEKLY_CAPACITY) passou de 80 para 30. Por isso
+ * `pctCapacidadeSemana.capacidade` segue 80 aqui: é o valor que prod devolvia naquele dia.
+ * Trocar por 30 falsificaria o snapshot. Quem quiser um payload atual, capture um novo.
  */
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

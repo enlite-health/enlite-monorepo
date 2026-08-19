@@ -52,6 +52,18 @@ interface WorkerRow {
 
 export type MirrorResult = 'created' | 'updated' | 'skipped' | 'deactivated';
 
+/**
+ * Diz se um ana_care_id já está gravado em algum worker nosso — usado pelo
+ * AnaCareMirrorProvider antes de linkar um match encontrado por telefone+nome,
+ * pra não escrever no AnaCare e só depois esbarrar na constraint de unicidade
+ * local (achado real em prod, 11/08: duplicata de cadastro com mesmo telefone).
+ */
+export async function isAnaCareIdClaimed(externalId: string): Promise<boolean> {
+  const pool = DatabaseConnection.getInstance().getPool();
+  const { rows } = await pool.query('SELECT 1 FROM workers WHERE ana_care_id = $1 LIMIT 1', [externalId]);
+  return rows.length > 0;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Service
 // ─────────────────────────────────────────────────────────────────

@@ -12,6 +12,12 @@
 import { ProcessTalentumPrescreening, IWorkerLookup, IJobPostingLookup } from '../ProcessTalentumPrescreening';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { TalentumPrescreeningStatus } from '../../domain/TalentumPrescreening';
+import { reportError } from '@shared/logging';
+
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  reportError: jest.fn(),
+}));
 
 function buildPayload(overrides: {
   prescreeningId?: string;
@@ -108,10 +114,17 @@ describe('ProcessTalentumPrescreening', () => {
       release: jest.fn(),
     };
 
-    // Mock pool — query usado por autoCreateWorker e autoCreateEncuadre
+    // Mock pool — query usado por autoCreateWorker, autoCreateEncuadre e pela
+    // resolução da cadeia de merge (resolveCanonicalWorkerId).
     mockPool = {
       connect: jest.fn().mockResolvedValue(mockPoolClient),
-      query: jest.fn().mockImplementation((sql: string) => {
+      query: jest.fn().mockImplementation((sql: string, params?: unknown[]) => {
+        // Cadeia de merge (resolveCanonicalWorkerId): por padrão o worker está
+        // vivo → linha mais profunda é ele mesmo, com merged_into_id null.
+        // Os testes de merge sobrescrevem este mock.
+        if (sql.includes('WITH RECURSIVE chain')) {
+          return Promise.resolve({ rows: [{ id: params?.[0], depth: 0, merged_into_id: null }] });
+        }
         if (sql.includes('INSERT INTO workers')) {
           return Promise.resolve({ rows: [{ id: 'w-auto' }] });
         }
@@ -1048,6 +1061,82 @@ describe('ProcessTalentumPrescreening', () => {
       expect(call.status).toBe('PENDING');
       expect(call.status).not.toBe('ANALYZED');
       expect(VALID_DB_STATUSES).toContain(call.status);
+    });
+  });
+
+  // ─── Resolução ciente de merge (caso Norma Araujo, 13/08) ──────────
+  //
+  // O lookup por e-mail/telefone/CUIL devolve a linha crua de `workers`,
+  // inclusive uma já fundida em outra. Escrever nela cria uma segunda
+  // postulação da MESMA pessoa na mesma vaga — a UNIQUE (worker_id,
+  // job_posting_id) não pega, porque os IDs são diferentes.
+
+  describe('resolução ciente de merge', () => {
+    /**
+     * Faz a cadeia `from` → `to` (1 salto) na query recursiva, no shape que
+     * `resolveCanonicalWorkerId` lê: a linha mais profunda da corrente.
+     * `to = null` = corrente que não termina em worker vivo (ciclo) — a linha
+     * mais profunda ainda tem `merged_into_id` preenchido.
+     */
+    function mockMergeChain(from: string, to: string | null) {
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('WITH RECURSIVE chain')) {
+          const id = params?.[0];
+          if (id === from) {
+            return Promise.resolve({
+              rows: to
+                ? [{ id: to, depth: 1, merged_into_id: null }]
+                : [{ id: from, depth: 10, merged_into_id: 'w-loop' }],
+            });
+          }
+          return Promise.resolve({ rows: [{ id, depth: 0, merged_into_id: null }] });
+        }
+        if (sql.includes('INSERT INTO workers')) return Promise.resolve({ rows: [{ id: 'w-auto' }] });
+        if (sql.includes('SELECT id FROM workers')) return Promise.resolve({ rows: [{ id: 'w-dead' }] });
+        return Promise.resolve({ rows: [] });
+      });
+    }
+
+    it('lookup devolveu registro fundido → escreve a postulação no SOBREVIVENTE', async () => {
+      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
+      mockMergeChain('w-dead', 'w-alive');
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      const wja = mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.calls[0][0];
+      expect(wja.workerId).toBe('w-alive');
+      expect(wja.workerId).not.toBe('w-dead');
+    });
+
+    it('worker vivo segue intocado (sem regressão no caminho normal)', async () => {
+      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-alive' }) } as never);
+      mockMergeChain('w-alive', 'w-alive');
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      const wja = mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.calls[0][0];
+      expect(wja.workerId).toBe('w-alive');
+    });
+
+    it('cadeia quebrada (ciclo) → mantém o ID cru, NUNCA auto-cria outro cadastro', async () => {
+      // Devolver null aqui faria o fluxo auto-criar um worker novo — mais uma
+      // duplicata da mesma pessoa, pior que o bug original.
+      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
+      mockMergeChain('w-dead', null);
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      const wja = mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.calls[0][0];
+      expect(wja.workerId).toBe('w-dead');
+      expect(
+        mockPool.query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO workers')),
+      ).toBe(false);
+      // Escrever num cadastro possivelmente morto é exceção: precisa de alarme
+      // de verdade (reportError → Cloud Error Reporting), não console.error.
+      expect(reportError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('cadeia de merge não resolveu') }),
+        expect.objectContaining({ source: 'ProcessTalentumPrescreening:toCanonical' }),
+      );
     });
   });
 });
