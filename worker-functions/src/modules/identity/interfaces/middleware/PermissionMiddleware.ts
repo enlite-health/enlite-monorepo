@@ -32,6 +32,7 @@ import { parseEnvList } from '@shared/utils/envList';
 import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { PrincipalType } from '@modules/identity/domain/Auth';
+import { sanitizeRoute } from '@shared/database/dbSessionMiddleware';
 import {
   cellKey,
   ENLITE_TENANT_ID,
@@ -292,6 +293,10 @@ export class PermissionMiddleware {
       // id do ALVO, quando a rota tem um — nunca nome/telefone/documento (lex C16).
       resourceId: req.params?.id ?? null,
       reason: code,
+      // País do contexto: sob a RLS de país é o país das linhas que esta request
+      // podia tocar, então é o que a trilha pode afirmar com honestidade. NULL em
+      // caminho sem contexto de país (mig 283).
+      country: currentDbContext()?.country ?? null,
     });
   }
 }
@@ -302,13 +307,20 @@ export interface PermissionFamily {
 }
 
 /**
- * Caminho COMPLETO da request. `req.path` dentro de um router montado é
- * relativo ao ponto de montagem (`/users/abc`, não `/api/admin/users/abc`) — e
- * é justamente este campo que o relatório do `PERMISSION_REPORT_ONLY` usa para
- * decidir se uma família pode virar. Sem a query string (pode carregar dado).
+ * Caminho COMPLETO da request, **sem identificador**. `req.path` dentro de um
+ * router montado é relativo ao ponto de montagem (`/users/abc`, não
+ * `/api/admin/users/abc`) — e é justamente este campo que o relatório do
+ * `PERMISSION_REPORT_ONLY` usa para decidir se uma família pode virar.
+ *
+ * ⚠️ Tirar a query string NÃO basta: o identificador vive no próprio path
+ * (`/api/admin/patients/<uuid>`, `/api/dedup/groups/<telefone>`). Com o
+ * REPORT_ONLY ligado, esta linha leva o uid do colaborador junto — e uid de
+ * staff + id de paciente na MESMA linha, no bucket global, é o que a condição
+ * C16 do lex 0.1 proíbe. Por isso passa por `sanitizeRoute`, o mesmo recorte que
+ * o `dbSessionMiddleware` já aplica (lex 0.2, condição M2-3).
  */
 export function pathOf(req: Request): string {
-  return (req.originalUrl || req.path).split('?')[0];
+  return sanitizeRoute((req.originalUrl || req.path).split('?')[0]);
 }
 
 /** uid do principal autenticado (`requireAuth`/`requireStaff` já rodaram). */

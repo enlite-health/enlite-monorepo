@@ -249,6 +249,66 @@ describe('PermissionMiddleware.family().require()', () => {
     expect(logger.warn.mock.calls[0][0]).toMatchObject({ path: '/api/admin/users/abc' });
   });
 
+  // lex 0.2, condição M2-3. Com o REPORT_ONLY ligado esta linha leva o uid do
+  // COLABORADOR junto; uid de staff + id de paciente na mesma linha, no bucket
+  // global, é o que a condição C16 do lex 0.1 proíbe.
+  it.each([
+    ['uuid de paciente', '/api/admin/patients/3f2504e0-4f89-11d3-9a0c-0305e82c3301', '/api/admin/patients/:id'],
+    ['telefone de prestador', '/api/dedup/groups/5491133334444', '/api/dedup/groups/:id'],
+  ])('o log do ensaio NÃO leva %s — vai sanitizado', async (_caso, url, esperado) => {
+    const middleware = new PermissionMiddleware({
+      client: clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) }),
+      audit: { record: jest.fn() },
+      env: { ...LIGADO, PERMISSION_REPORT_ONLY: 'true' },
+    });
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as express.Request).authContext = { principal: { id: UID } } as never;
+      next();
+    });
+    const router = express.Router();
+    router.get('/:id', middleware.family('admin.users').require('user_management', 'read'), (_req, res) =>
+      res.json({ ok: true }),
+    );
+    app.use(url.slice(0, url.lastIndexOf('/')), router);
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
+    logger.warn.mockClear();
+
+    await request(app).get(url).expect(200);
+
+    const linha = logger.warn.mock.calls[0][0] as { path: string; uid: string };
+    expect(linha.path).toBe(esperado);
+    expect(linha.uid).toBe(UID); // o uid segue lá — é a razão de a rota ter de estar limpa
+    expect(JSON.stringify(linha)).not.toContain('3f2504e0');
+    expect(JSON.stringify(linha)).not.toContain('5491133334444');
+  });
+
+  it('nome legítimo de rota NÃO é colapsado (o relatório precisa dizer qual endpoint é)', async () => {
+    const middleware = new PermissionMiddleware({
+      client: clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) }),
+      audit: { record: jest.fn() },
+      env: { ...LIGADO, PERMISSION_REPORT_ONLY: 'true' },
+    });
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as express.Request).authContext = { principal: { id: UID } } as never;
+      next();
+    });
+    app.get(
+      '/api/admin/bulk-dispatch-incomplete-workers',
+      middleware.family('admin.users').require('user_management', 'read'),
+      (_req, res) => res.json({ ok: true }),
+    );
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
+    logger.warn.mockClear();
+
+    await request(app).get('/api/admin/bulk-dispatch-incomplete-workers').expect(200);
+
+    expect((logger.warn.mock.calls[0][0] as { path: string }).path).toBe(
+      '/api/admin/bulk-dispatch-incomplete-workers',
+    );
+  });
+
   it('sem originalUrl (chamada fora do Express), cai no path — nunca fica sem caminho', async () => {
     const gravadas: PermissionDecision[] = [];
     const middleware = new PermissionMiddleware({
