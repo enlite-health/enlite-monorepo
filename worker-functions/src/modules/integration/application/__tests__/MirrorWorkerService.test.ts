@@ -59,7 +59,7 @@ jest.mock('@shared/logging', () => ({
 
 // ── Imports ───────────────────────────────────────────────────────
 
-import { MirrorWorkerService } from '../MirrorWorkerService';
+import { MirrorWorkerService, isAnaCareIdClaimed } from '../MirrorWorkerService';
 import type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from '../../domain/WorkerMirrorProvider';
 import type { WorkerMirrorRecord } from '../../domain/WorkerMirrorRecord';
 
@@ -91,6 +91,11 @@ interface RowOverrides {
   sex_encrypted?: string | null;
   birth_date_encrypted?: string | null;
   document_number_encrypted?: string | null;
+  sa_address_line?: string | null;
+  sa_city?: string | null;
+  sa_state?: string | null;
+  sa_neighborhood?: string | null;
+  sa_postal_code?: string | null;
 }
 
 function makeRow(overrides: RowOverrides = {}) {
@@ -374,5 +379,116 @@ describe('MirrorWorkerService.mirrorOne', () => {
       apiError,
       expect.objectContaining({ source: expect.stringContaining('mirrorOne') }),
     );
+  });
+
+  // ─────────────────────────────────────────────
+  // 8. Provider sem deactivate → baja não quebra
+  // ─────────────────────────────────────────────
+
+  it('retorna "skipped" quando last_name_encrypted está ausente (buildRecord → null)', async () => {
+    setupFetchWorker(makeRow({ ana_care_id: null, last_name_encrypted: null }));
+    setupDecrypt();
+
+    const provider = makeFakeProvider();
+    const service = new MirrorWorkerService(provider);
+
+    await expect(service.mirrorOne(WORKER_ID)).resolves.toBe('skipped');
+    expect(provider.upsert).not.toHaveBeenCalled();
+  });
+
+  it('erro não-Error do provider vira Error antes de persistError + rethrow', async () => {
+    const row = makeRow({ ana_care_id: null });
+    setupFetchWorker(row);
+    setupDecrypt();
+
+    const provider = makeFakeProvider({ upsert: jest.fn().mockRejectedValue('socket hang up') });
+    const service = new MirrorWorkerService(provider);
+
+    await expect(service.mirrorOne(WORKER_ID)).rejects.toThrow('socket hang up');
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('SET ana_care_sync_error'),
+      [WORKER_ID, 'socket hang up'],
+    );
+  });
+
+  it('campos opcionais ausentes viram null no record (endereço/telefone/doc/nascimento)', async () => {
+    const row = makeRow({
+      ana_care_id: null,
+      phone: null,
+      profession: null,
+      occupation: null,
+      birth_date_encrypted: null,
+      document_number_encrypted: null,
+      sa_address_line: null,
+      sa_city: null,
+      sa_state: null,
+      sa_neighborhood: null,
+      sa_postal_code: null,
+    });
+    setupFetchWorker(row);
+    setupDecrypt();
+
+    const provider = makeFakeProvider();
+    const service = new MirrorWorkerService(provider);
+
+    await expect(service.mirrorOne(WORKER_ID)).resolves.toBe('created');
+
+    const [record] = (provider.upsert as jest.Mock).mock.calls[0] as [WorkerMirrorRecord];
+    expect(record.phone).toBeNull();
+    expect(record.birthDate).toBeNull();
+    expect(record.documentNumber).toBeNull();
+    expect(record.profession).toBeNull();
+    expect(record.occupation).toBeNull();
+    expect(record.address).toEqual({ line: null, city: null, state: null, neighborhood: null, postalCode: null });
+  });
+
+  it('retorna "deactivated" sem chamar nada quando o provider não suporta deactivate', async () => {
+    const row = makeRow({ ana_care_status: 'Baja', ana_care_id: '55' });
+    setupFetchWorker(row);
+    setupDecrypt();
+
+    const provider = makeFakeProvider({ deactivate: undefined });
+    const service = new MirrorWorkerService(provider);
+
+    await expect(service.mirrorOne(WORKER_ID)).resolves.toBe('deactivated');
+    expect(provider.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// isAnaCareIdClaimed — o guard que decide se o link pode acontecer
+//
+// ⚠️ Aqui o `pool.query` é MOCKADO: estes testes provam a leitura do resultado
+// (linha encontrada → true, nenhuma → false) e o SQL/params emitidos, NÃO que a
+// SQL roda no Postgres. A execução real da SQL é provada no e2e com banco de
+// verdade (tests/e2e/anacare-continuous-sync.e2e.test.ts, "SELECT real contra
+// Postgres").
+// ─────────────────────────────────────────────────────────────────
+
+describe('isAnaCareIdClaimed', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('true quando existe worker nosso com esse ana_care_id', async () => {
+    mockQuery.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+
+    await expect(isAnaCareIdClaimed('999')).resolves.toBe(true);
+    expect(mockQuery).toHaveBeenCalledWith(
+      'SELECT 1 FROM workers WHERE ana_care_id = $1 LIMIT 1',
+      ['999'],
+    );
+  });
+
+  it('false quando nenhum worker nosso tem esse ana_care_id', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await expect(isAnaCareIdClaimed('999')).resolves.toBe(false);
+  });
+
+  it('propaga a falha do banco (o provider é quem decide o fail-closed)', async () => {
+    mockQuery.mockRejectedValue(new Error('connection terminated unexpectedly'));
+
+    await expect(isAnaCareIdClaimed('999')).rejects.toThrow('connection terminated unexpectedly');
   });
 });

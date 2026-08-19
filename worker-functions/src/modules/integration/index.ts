@@ -44,7 +44,8 @@ export {
 
 // Infrastructure — AnaCare
 export { AnaCareClient } from './infrastructure/anacare/AnaCareClient';
-export { AnaCareMirrorProvider } from './infrastructure/anacare/AnaCareMirrorProvider';
+export { AnaCareMirrorProvider, AnaCareLinkBlockedError } from './infrastructure/anacare/AnaCareMirrorProvider';
+export type { AnaCareMirrorProviderDeps, AnaCareLinkBlockedReason } from './infrastructure/anacare/AnaCareMirrorProvider';
 export { AnaCareTypeResolver } from './infrastructure/anacare/anaCareTypeResolver';
 export type { ResolvedTypes } from './infrastructure/anacare/anaCareTypeResolver';
 export { mapWorkerToAnaCarePayload, mapSexToAnaCareGenero, formatDateYMD } from './infrastructure/anacare/anaCareMapper';
@@ -61,7 +62,7 @@ export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPost
 export type { CreateJobPostingFromTalentumInput, CreateJobPostingFromTalentumResult } from './application/CreateJobPostingFromTalentumUseCase';
 export { BackfillWorkerMirrorUseCase } from './application/BackfillWorkerMirrorUseCase';
 export type { BackfillOptions, BackfillSummary } from './application/BackfillWorkerMirrorUseCase';
-export { MirrorWorkerService } from './application/MirrorWorkerService';
+export { MirrorWorkerService, isAnaCareIdClaimed } from './application/MirrorWorkerService';
 export type { MirrorResult } from './application/MirrorWorkerService';
 export { createAnaCareMirrorHandler } from './application/AnaCareMirrorEventHandler';
 export type { AnaCareMirrorHandlerDeps } from './application/AnaCareMirrorEventHandler';

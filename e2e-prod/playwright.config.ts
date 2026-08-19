@@ -41,8 +41,12 @@ loadEnvLocal();
  *  - Timeouts TOLERANTES a cold start do Cloud Run (serviço ocioso às 3h da manhã).
  *  - trace on-first-retry = "time-travel debugging" do run que falhou (Fowler/Checkly).
  *  - retries: 1 no smoke = warm-up (1 retry distingue blip de outage; só alerta em falha consecutiva).
- *  - PROIBIDO page.route()/mock nesta suíte (é monitor real). Erro de negócio se testa real;
- *    erro de infra se monitora. (Enforcement por lint virá em .claude/rules.)
+ *  - PROIBIDO page.route()/mock nos projetos que SÃO o monitor (smoke/regression/admin):
+ *    lá mockar destruiria a única coisa que eles provam — que produção responde. Erro de
+ *    negócio se testa real; erro de infra se monitora. (Enforcement por lint virá em .claude/rules.)
+ *    ÚNICA exceção, no projeto `unit`: os helpers de `src/support` que JULGAM pass/fail podem
+ *    stubar `fetch`, porque o que precisa ser encenado ali é a falha do TERCEIRO (o 500 do
+ *    Google), que não se encomenda em prod. Ver o bloco do projeto `unit` mais abaixo.
  */
 
 const BASE_URL = process.env.PROD_BASE_URL; // ex.: https://<hash>.a.run.app (front prod) — recon confirma
@@ -138,6 +142,18 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         storageState: '.auth/admin.json',
       },
+    },
+    // UNIT — os helpers de `src/support` que decidem se um teste passa ou falha.
+    // Não tocam rede nem browser (stub de `fetch`), rodam em ~3s e entram no run
+    // diário sozinhos. Existem porque a política de retry do cloudLogging tem duas
+    // metades opostas — repetir no transitório, LANÇAR no resto — e a metade
+    // "lançar" é a que, se regredir, vira verde falso silencioso num gate de
+    // paciente, em vez de teste vermelho.
+    {
+      name: 'unit',
+      testDir: './src/support',
+      testMatch: /\.spec\.ts$/,
+      use: {},
     },
     // GATE DE COBERTURA — meta-teste: toda rota user-facing do manifesto tem spec? Senão, falha.
     {

@@ -206,7 +206,8 @@ export const managementDashboardSchema = z.object({
     /**
      * % da capacidade semanal contratada de encuadres (call 22/07, "regra de
      * três" interina até plugar o Google Calendar). `capacidade` vem de config
-     * (ENCUADRE_WEEKLY_CAPACITY — Marcel confirmou 80 e pediu configurável).
+     * (ENCUADRE_WEEKLY_CAPACITY — valor atual nos workflows; NÃO repetido aqui de
+     * propósito, para este comentário não envelhecer calado a cada revisão).
      * AUSENTE quando a config está zerada/inválida — nunca divisão por zero.
      * `pct` pode passar de 100 (semana com mais encuadres que o contratado).
      */

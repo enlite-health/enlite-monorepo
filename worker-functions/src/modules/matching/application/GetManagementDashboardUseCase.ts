@@ -30,11 +30,31 @@ export interface ManagementDashboardOptions {
 /**
  * Capacidade semanal contratada de encuadres (reuniões de coordenação).
  * Origem: call 22/07 (Marcel, 01:53 — "80 reuniões = 40h × 2/h, contratadas"),
- * confirmada em 30/07 com pedido explícito de ser CONFIGURÁVEL. Zero/inválida →
+ * confirmada em 30/07 com pedido explícito de ser CONFIGURÁVEL.
+ * REVISADA para 30 na call de produto de 12/08 (Diego/Marcel, task 86ak04ygv):
+ * o denominador passa a refletir a capacidade real da coordenação. Zero/inválida →
  * o percentual é OMITIDO do payload (nunca divisão por zero, nunca 0% falso).
+ *
+ * ⚠️ ARMADILHA DO DEFAULT ESPELHADO — ler antes de trocar este número.
+ * O `30` abaixo é só o fallback de dev/test. Em prd/stg a env
+ * `ENCUADRE_WEEKLY_CAPACITY` vem dos workflows e VENCE o default: mudar aqui não
+ * muda produção. E o erro não é silencioso de cara — é pior. Trocar só este literal
+ * deixa VERMELHO o teste do default (`__tests__/GetManagementDashboardUseCase.test.ts`,
+ * valor esperado na :252 — `{agendados: 8, capacidade: 30, pct: 26.7}` — afirmado com a
+ * env apagada). A armadilha é o passo SEGUINTE: "consertar" o teste para o valor novo
+ * devolve a suíte ao verde e dá a sensação de mudança feita, enquanto prd/stg seguem
+ * no valor antigo, porque a env continua a mesma.
+ *
+ * QUEM DECIDE PRODUÇÃO SÃO OS WORKFLOWS. O valor é espelhado em 4 lugares:
+ *   1. este default                        — só dev/test
+ *   2. .github/workflows/backend-prd.yml   ← o que vale em PRODUÇÃO
+ *   3. .github/workflows/backend-stg.yml   ← o que vale em STAGING
+ *   4. worker-functions/.env.example       — inventário de env, não afeta runtime
+ * Alterar nos 4 e só ENTÃO atualizar o valor esperado do teste — depois dos
+ * workflows, nunca no lugar deles.
  */
 function readEncuadreWeeklyCapacity(): number | null {
-  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '80';
+  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '30';
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
