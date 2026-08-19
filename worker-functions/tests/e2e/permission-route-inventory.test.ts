@@ -115,7 +115,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/workers/:id/available-vacancies → vacancy:read',
         'GET /api/admin/workers/:id/current-interview → interview:read',
         'GET /api/admin/workers/:id/timeline → worker:read',
-        'GET /api/admin/workers/by-phone → worker:read',
+        'GET /api/admin/workers/by-phone → worker_pii:read',
         'GET /api/admin/workers/case-options → worker:read',
         'GET /api/admin/workers/export → worker:export',
         'GET /api/admin/workers/filter-options → worker:read',

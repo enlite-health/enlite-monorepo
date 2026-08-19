@@ -38,7 +38,8 @@ jest.mock('@shared/audit/resourceAccessLog', () => ({
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
 const ESPERADO_WORKERS: Record<string, string> = {
   'GET /workers/stats': 'worker:read',
-  'GET /workers/by-phone': 'worker:read',
+  // PII: mesmo payload da ficha (corrigido contra o mapa da 0.6 — ver o router).
+  'GET /workers/by-phone': 'worker_pii:read',
   'GET /workers/case-options': 'worker:read',
   'GET /workers/filter-options': 'worker:read',
   'POST /workers/sync-talentum': 'talentum:write',
@@ -232,6 +233,13 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       resource: 'worker',
       action: 'read',
     });
+  });
+
+  it('by-phone é worker_pii:read — devolve o MESMO dossiê da ficha, não um resumo', () => {
+    // O mapa da 0.6 dizia `worker:read`. Com ele, `worker:read` sozinho seria
+    // negado em `/workers/:id` e pegaria o dossiê idêntico por telefone.
+    const rota = scanExpressRouter(routerPrincipal()).find((r) => r.path === '/workers/by-phone');
+    expect(rota?.cell).toMatchObject({ resource: 'worker_pii', action: 'read' });
   });
 
   it('exportar é célula própria (worker:export), não uma leitura a mais', () => {

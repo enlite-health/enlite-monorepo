@@ -64,8 +64,17 @@ export function createAdminWorkerRoutes(
 
   // ── Admin Workers ──
   router.get('/workers/stats', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getWorkerDateStats(req, res));
-  // by-phone aceita API key (consumido pelo triage-service pra resolver worker do contato)
-  router.get('/workers/by-phone', staffOrApiKey, perm.require('worker', 'read'), (req: Request, res: Response) => c.workers.getWorkerByPhone(req, res));
+  // by-phone aceita API key (consumido pelo triage-service pra resolver worker do contato).
+  //
+  // ⚠️ `worker_pii:read`, NÃO `worker:read` como o mapa da 0.6 dizia (decisão do
+  // Gabriel, 19/08). `getWorkerByPhone` monta a resposta com o MESMO
+  // `WORKER_DETAIL_COLS` + `buildWorkerDetailResponse` de `getWorkerById` —
+  // nome, DNI, nascimento, raça, religião, orientação sexual e URLs de
+  // documento. Com a célula fraca, quem tivesse só `worker:read` seria negado
+  // na ficha e pegaria o dossiê idêntico por aqui, e ainda sem trilha (a rota
+  // não tem `logResourceAccess` e `worker` não é recurso sensível). O gate
+  // achou; o mapa foi corrigido junto.
+  router.get('/workers/by-phone', staffOrApiKey, perm.require('worker_pii', 'read'), (req: Request, res: Response) => c.workers.getWorkerByPhone(req, res));
   router.get('/workers/case-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.listCaseOptions(req, res));
   // filter-options MUST be before /:id to avoid param capture
   router.get('/workers/filter-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getFilterOptions(req, res));

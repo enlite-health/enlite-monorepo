@@ -283,6 +283,20 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
       });
     });
 
+    it('by-phone TAMBÉM exige worker_pii:read — devolve o mesmo dossiê da ficha', async () => {
+      // O mapa da 0.6 dizia `worker:read`. Se voltar a dizer, este caso fica
+      // vermelho: com a célula fraca, `U.lista` seria negado na ficha logo
+      // acima e pegaria o dossiê idêntico por aqui, sem trilha nenhuma.
+      const negado = await chamar('GET', '/api/admin/workers/by-phone', U.lista);
+      expect(negado.status).toBe(403);
+      expect(negado.body).toMatchObject({ code: 'missing_cell' });
+
+      expect(await chamar('GET', '/api/admin/workers/by-phone', U.recrutadora)).toMatchObject({
+        status: 200,
+        body: { chegou: 'getWorkerByPhone' },
+      });
+    });
+
     it.each([
       ['GET', '/api/admin/workers/stats', 'getWorkerDateStats'],
       ['GET', '/api/admin/workers/filter-options', 'getFilterOptions'],
