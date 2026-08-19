@@ -17,14 +17,21 @@
  *   5. Handler recebe payload inválido → throw (DomainEventProcessor marca failed)
  *   6. Skip quando worker tem PII mínima ausente (sin lastName)
  *   7. Deactivate path: ana_care_status='Baja' + ana_care_id preenchido
+ *   8. isAnaCareIdClaimed — SQL real contra Postgres (id tomado → true, livre → false)
+ *   9. Guard de link: worker B NÃO é linkado num ana_care_id já tomado por worker A
+ *      (sem PATCH no parceiro externo, ana_care_id de B permanece NULL)
+ *
+ * O provider é montado com a MESMA fiação de produção (isExternalIdClaimed real),
+ * senão a suíte testaria o comportamento anterior ao guard.
  */
 
 import http from 'http';
 import { Pool } from 'pg';
-import { MirrorWorkerService } from '../../src/modules/integration/application/MirrorWorkerService';
+import { MirrorWorkerService, isAnaCareIdClaimed } from '../../src/modules/integration/application/MirrorWorkerService';
 import { createAnaCareMirrorHandler } from '../../src/modules/integration/application/AnaCareMirrorEventHandler';
 import { AnaCareMirrorProvider } from '../../src/modules/integration/infrastructure/anacare/AnaCareMirrorProvider';
 import { AnaCareClient } from '../../src/modules/integration/infrastructure/anacare/AnaCareClient';
+import type { AnaCareNurse } from '../../src/modules/integration/domain/IAnaCareApiClient';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -41,6 +48,10 @@ interface MockState {
   updateCalls: number;
   lastCreateBody: Record<string, unknown> | null;
   lastUpdateId: number | null;
+  /** true → POST responde 400 de conflito de unicidade (telefono/email), como o AnaCare real */
+  postConflict: boolean;
+  /** base retornada por GET /nurses/ — alimenta o matching por telefone+nome */
+  nurses: AnaCareNurse[];
 }
 
 function createAnaCareServer(state: MockState): http.Server {
@@ -60,9 +71,23 @@ function createAnaCareServer(state: MockState): http.Server {
         res.end(JSON.stringify({ count: 0, next: null, previous: null, results: [] }));
         return;
       }
+      if (req.url?.startsWith('/api/v2/agencies/nurses/?page=') && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ count: state.nurses.length, next: null, previous: null, results: state.nurses }));
+        return;
+      }
       if (req.url === '/api/v2/agencies/nurses/' && req.method === 'POST') {
         state.createCalls++;
         state.lastCreateBody = parsed;
+        if (state.postConflict) {
+          // corpo real do AnaCare quando telefone/email já existem em outro registro
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            telefono: ['No es posible usar este número de teléfono para el registro.'],
+            email: ['No es posible usar este correo electrónico para el registro.'],
+          }));
+          return;
+        }
         res.writeHead(201, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: MOCK_ANA_CARE_ID, nombre: parsed.nombre, apellidos: parsed.apellidos, genero: parsed.genero, email: parsed.email }));
         return;
@@ -92,7 +117,7 @@ describe('AnaCare Continuous Sync', () => {
   const workerIds: string[] = [];
 
   beforeAll(async () => {
-    mockState = { createCalls: 0, updateCalls: 0, lastCreateBody: null, lastUpdateId: null };
+    mockState = { createCalls: 0, updateCalls: 0, lastCreateBody: null, lastUpdateId: null, postConflict: false, nurses: [] };
     mockServer = createAnaCareServer(mockState);
     await new Promise<void>((resolve) => mockServer.listen(MOCK_PORT, resolve));
 
@@ -100,7 +125,9 @@ describe('AnaCare Continuous Sync', () => {
     process.env.ANACARE_BASE_URL = MOCK_BASE_URL;
 
     pool = new Pool({ connectionString: DATABASE_URL });
-    provider = new AnaCareMirrorProvider(AnaCareClient.fromEnv());
+    // MESMA fiação de produção (ver AnaCareMirrorEventHandler.defaultProviderFactory):
+    // sem a dep real, o guard nunca é exercitado e a suíte testaria o mundo pré-guard.
+    provider = new AnaCareMirrorProvider(AnaCareClient.fromEnv(), { isExternalIdClaimed: isAnaCareIdClaimed });
   });
 
   afterAll(async () => {
@@ -122,6 +149,8 @@ describe('AnaCare Continuous Sync', () => {
     mockState.updateCalls = 0;
     mockState.lastCreateBody = null;
     mockState.lastUpdateId = null;
+    mockState.postConflict = false;
+    mockState.nurses = [];
   });
 
   // ── Helper ──────────────────────────────────────────────────────
@@ -135,6 +164,7 @@ describe('AnaCare Continuous Sync', () => {
     ana_care_id?: string | null;
     ana_care_status?: string | null;
     status?: string;
+    phone?: string;
   }): Promise<string> {
     // Note: first_name_encrypted/last_name_encrypted/sex_encrypted can be explicitly null
     // Use undefined check (not ??) to allow passing null to the DB
@@ -145,9 +175,9 @@ describe('AnaCare Continuous Sync', () => {
     const r = await pool.query(
       `INSERT INTO workers (
          auth_uid, email, status, country,
-         first_name_encrypted, last_name_encrypted, sex_encrypted
+         first_name_encrypted, last_name_encrypted, sex_encrypted, phone
        )
-       VALUES ($1, $2, $3, 'AR', $4, $5, $6)
+       VALUES ($1, $2, $3, 'AR', $4, $5, $6, $7)
        RETURNING id`,
       [
         overrides.auth_uid,
@@ -156,6 +186,7 @@ describe('AnaCare Continuous Sync', () => {
         firstEnc,
         lastEnc,
         sexEnc,
+        overrides.phone ?? null,
       ],
     );
     const id = r.rows[0].id as string;
@@ -399,6 +430,149 @@ describe('AnaCare Continuous Sync', () => {
         [workerId],
       );
       expect(rows[0].first_name_encrypted).toBeNull();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 6. isAnaCareIdClaimed — a SQL do guard, rodada contra Postgres real
+  // ═══════════════════════════════════════════════════════════════
+
+  describe('isAnaCareIdClaimed (SELECT real contra Postgres)', () => {
+    it('id gravado em algum worker nosso → true; id livre → false', async () => {
+      const claimedId = '9100001';
+      const freeId = '9100002';
+
+      // ainda ninguém reivindicou
+      await expect(isAnaCareIdClaimed(claimedId)).resolves.toBe(false);
+
+      await insertWorkerWithPii({
+        auth_uid: 'csync-claimed-owner-1',
+        email: 'csync-claimed-owner-1@example.com',
+        ana_care_id: claimedId,
+      });
+
+      await expect(isAnaCareIdClaimed(claimedId)).resolves.toBe(true);
+      await expect(isAnaCareIdClaimed(freeId)).resolves.toBe(false);
+    });
+
+    it('worker com ana_care_id NULL não reivindica nada (NULL nunca casa)', async () => {
+      await insertWorkerWithPii({
+        auth_uid: 'csync-claimed-null-1',
+        email: 'csync-claimed-null-1@example.com',
+        ana_care_id: null,
+      });
+
+      await expect(isAnaCareIdClaimed('9100003')).resolves.toBe(false);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 7. EFEITO do guard: worker B não é linkado num id já tomado por A
+  //    (provider real + servidor HTTP real + Postgres real — sem mock de módulo)
+  // ═══════════════════════════════════════════════════════════════
+
+  describe('guard de link — ana_care_id já reivindicado por outro worker nosso', () => {
+    const CLAIMED_ANA_CARE_ID = 9200001;
+    // '5491133334444' → toNationalAR → '1133334444' (o que o mapper manda no payload)
+    const SHARED_PHONE = '5491133334444';
+    const NATIONAL_PHONE = '1133334444';
+    const FIRST_NAME = 'Carina';
+    const LAST_NAME = 'Duplicada';
+
+    /** valores em base64: KMSEncryptionService roda em passthrough quando NODE_ENV=test */
+    function enc(value: string): string {
+      return Buffer.from(value, 'utf8').toString('base64');
+    }
+
+    it('NÃO chama PATCH no AnaCare e deixa ana_care_id de B em NULL, com o motivo real na coluna de erro', async () => {
+      // Worker A — já é dono do ana_care_id no NOSSO lado
+      const workerA = await insertWorkerWithPii({
+        auth_uid: 'csync-guard-owner-a',
+        email: 'csync-guard-owner-a@example.com',
+        ana_care_id: String(CLAIMED_ANA_CARE_ID),
+      });
+
+      // Worker B — duplicata de cadastro: mesma pessoa, mesmo telefone, outro workerId
+      const workerB = await insertWorkerWithPii({
+        auth_uid: 'csync-guard-dup-b',
+        email: 'csync-guard-dup-b@example.com',
+        first_name_encrypted: enc(FIRST_NAME),
+        last_name_encrypted: enc(LAST_NAME),
+        sex_encrypted: enc('FEMALE'),
+        status: 'REGISTERED',
+        phone: SHARED_PHONE,
+      });
+
+      // AnaCare: POST colide por telefone/email e a base tem exatamente 1 nurse
+      // que casa por telefone E nome — é justamente a nurse do worker A.
+      mockState.postConflict = true;
+      mockState.nurses = [{
+        id: CLAIMED_ANA_CARE_ID,
+        nombre: FIRST_NAME,
+        apellidos: LAST_NAME,
+        genero: 'M',
+        email: 'gerado-pelo-anacare@ana.care',
+        telefono: NATIONAL_PHONE,
+      }];
+
+      const service = new MirrorWorkerService(provider);
+      const thrown = await service.mirrorOne(workerB).catch((e: Error) => e);
+
+      // 1) falhou pelo motivo certo — e o motivo diz "já pertence a OUTRO worker"
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain('link bloqueado');
+      expect((thrown as Error).message).toContain('já pertence a OUTRO worker nosso');
+
+      // 2) NADA foi escrito no parceiro externo
+      expect(mockState.updateCalls).toBe(0);
+      expect(mockState.createCalls).toBe(1); // só a tentativa de POST, que o AnaCare recusou
+
+      // 3) o ana_care_id de B continua NULL (o de A permanece dele)
+      const { rows } = await pool.query(
+        `SELECT id, ana_care_id, ana_care_sync_error FROM workers WHERE id = ANY($1::uuid[]) ORDER BY id`,
+        [[workerA, workerB]],
+      );
+      const rowA = rows.find((r) => r.id === workerA);
+      const rowB = rows.find((r) => r.id === workerB);
+      expect(rowA.ana_care_id).toBe(String(CLAIMED_ANA_CARE_ID));
+      expect(rowB.ana_care_id).toBeNull();
+
+      // 4) quem tria a fila pela coluna vê a causa REAL, não o conflito genérico do AnaCare
+      expect(rowB.ana_care_sync_error).toContain('já pertence a OUTRO worker nosso');
+    });
+
+    it('mesmo cenário com o id LIVRE → linka (PATCH acontece e ana_care_id é persistido)', async () => {
+      const FREE_ANA_CARE_ID = 9200002;
+      const workerC = await insertWorkerWithPii({
+        auth_uid: 'csync-guard-free-c',
+        email: 'csync-guard-free-c@example.com',
+        first_name_encrypted: enc('Libre'),
+        last_name_encrypted: enc('Sinduenio'),
+        sex_encrypted: enc('FEMALE'),
+        status: 'REGISTERED',
+        phone: '5491155556666',
+      });
+
+      mockState.postConflict = true;
+      mockState.nurses = [{
+        id: FREE_ANA_CARE_ID,
+        nombre: 'Libre',
+        apellidos: 'Sinduenio',
+        genero: 'M',
+        email: 'gerado-pelo-anacare-2@ana.care',
+        telefono: '1155556666',
+      }];
+
+      const service = new MirrorWorkerService(provider);
+      const result = await service.mirrorOne(workerC);
+
+      expect(result).toBe('created');
+      expect(mockState.updateCalls).toBe(1);
+      expect(mockState.lastUpdateId).toBe(FREE_ANA_CARE_ID);
+
+      const { rows } = await pool.query(`SELECT ana_care_id, ana_care_sync_error FROM workers WHERE id = $1`, [workerC]);
+      expect(rows[0].ana_care_id).toBe(String(FREE_ANA_CARE_ID));
+      expect(rows[0].ana_care_sync_error).toBeNull();
     });
   });
 });

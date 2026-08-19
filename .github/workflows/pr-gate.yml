@@ -1,0 +1,118 @@
+name: PR Gate
+
+# O ÚNICO check que pode ser exigido em branch protection.
+#
+# Por que ele existe: todos os workflows de qualidade têm `paths:` filter, e
+# required status check que NÃO RODA deixa o PR preso em "Expected — waiting for
+# status to be reported" para sempre. Um PR de docs, de `.github/` ou só do
+# ebrain nunca dispararia `backend-*`/`frontend-*` — e ficaria intravável.
+#
+# Este workflow roda em TODO PR para `main`/`stage`, sem `paths:` filter, decide
+# internamente o que é relevante e SEMPRE reporta o job `gate`. Quando o PR não
+# toca nada de código, os jobs pesados são pulados e o `gate` fecha verde na
+# hora.
+#
+# ⚠️ É por isso que `gate` é o nome a marcar como required — e não
+# `quality-gate` nem `e2e`, que continuam podendo não rodar.
+on:
+  pull_request:
+    branches: [ "main", "stage" ]
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Que áreas este PR toca? Decidido com `git diff` puro contra a base — sem
+  # action de terceiro, que aqui seria dependência nova só para comparar nomes
+  # de arquivo.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filtro.outputs.backend }}
+      frontend: ${{ steps.filtro.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filtro
+        run: |
+          set -euo pipefail
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --quiet origin "${{ github.base_ref }}"
+          ALTERADOS=$(git diff --name-only "$BASE...HEAD")
+          echo "Arquivos alterados:"; echo "$ALTERADOS"
+
+          eco() { grep -qE "$1" <<< "$ALTERADOS" && echo "true" || echo "false"; }
+          BACKEND=$(eco '^worker-functions/')
+          FRONTEND=$(eco '^enlite-frontend/')
+
+          # Mexer nos próprios workflows exige rodar tudo: é a mudança que pode
+          # DESLIGAR uma checagem, e ela não se auto-verifica.
+          if grep -qE '^\.github/workflows/' <<< "$ALTERADOS"; then
+            BACKEND=true; FRONTEND=true
+          fi
+
+          echo "backend=$BACKEND"   >> "$GITHUB_OUTPUT"
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+
+  backend-quality:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/_backend-quality.yml
+
+  backend-e2e:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/backend-e2e.yml
+
+  frontend-quality:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/_frontend-quality.yml
+
+  # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
+  # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
+  # existe para resolver.
+  gate:
+    needs: [changes, backend-quality, backend-e2e, frontend-quality]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consolidar resultado das camadas
+        run: |
+          set -euo pipefail
+          echo "changes:          ${{ needs.changes.result }}"
+          echo "backend-quality:  ${{ needs.backend-quality.result }}"
+          echo "backend-e2e:      ${{ needs.backend-e2e.result }}"
+          echo "frontend-quality: ${{ needs.frontend-quality.result }}"
+
+          # `skipped` é resultado legítimo (a área não foi tocada). Qualquer
+          # outra coisa que não seja `success` reprova — inclusive `cancelled`,
+          # para que corrida cancelada nunca passe por verde.
+          FALHOU=0
+          for r in "${{ needs.changes.result }}" \
+                   "${{ needs.backend-quality.result }}" \
+                   "${{ needs.backend-e2e.result }}" \
+                   "${{ needs.frontend-quality.result }}"; do
+            case "$r" in
+              success|skipped) ;;
+              *) FALHOU=1 ;;
+            esac
+          done
+
+          if [ "$FALHOU" -eq 1 ]; then
+            echo "::error::Alguma camada do gate não passou — ver os jobs acima."
+            exit 1
+          fi
+
+          # Dito explicitamente porque a informação SUMIU da lista de checks: o
+          # `deploy: skipping` dos workflows de produção vinha sendo usado como
+          # evidência barata de "este PR não deploya", e eles perderam o gatilho
+          # de `pull_request` neste mesmo commit. Sem esta linha, a próxima
+          # sessão teria de ir ler workflow para reconquistar a certeza.
+          echo "ℹ️  Este PR NÃO dispara deploy: os workflows de deploy são push-only."
+          echo "✅ Todas as camadas aplicáveis passaram."

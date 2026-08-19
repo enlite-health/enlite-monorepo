@@ -58,7 +58,7 @@ const MOCK_DASHBOARD = {
     },
   },
   funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, agendados: 0, seleccionados: 0, rechazados: 0 },
-  encuadres: { agendadosEstaSemana: 13, semDataRegistrada: 33, pctCapacidadeSemana: { agendados: 13, capacidade: 80, pct: 16.3 } },
+  encuadres: { agendadosEstaSemana: 13, semDataRegistrada: 33, pctCapacidadeSemana: { agendados: 13, capacidade: 30, pct: 43.3 } },
   cadastros: { leads: 7144, completos: 318, alocados: 61, alocadosActivos: 49, alocadosCubriendoGuardias: 12, incompletos: 6825, nuevosCompletosMes: 9 },
 };
 
