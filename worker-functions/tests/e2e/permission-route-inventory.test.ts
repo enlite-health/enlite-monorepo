@@ -161,6 +161,45 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // Teto: 141 depois de `admin.users`, 120 depois de `admin.patients`, 89
     // depois de `admin.workers`. Cada família nova baixa este número no MESMO
     // PR em que declara.
-    expect(pendentes.length).toBeLessThanOrEqual(89);
+    //
+    // ⚠️ ÚNICA VEZ em que este teto SUBIU: 89 → 99 (19/08). Não foi dívida
+    // acrescentada — foi a MEDIÇÃO que ficou mais larga. As 10 rotas de staff do
+    // `workerEncuadreRoutes` sempre estiveram sem declaração; elas viviam fora
+    // de `GOVERNED_PREFIXES` e por isso não apareciam aqui. Ao entrarem no
+    // perímetro por nome (`GOVERNED_ROUTES`), passaram a ser contadas. Número
+    // maior e verdadeiro vale mais que número menor e cego.
+    expect(pendentes.length).toBeLessThanOrEqual(99);
+  });
+
+  it('as 10 rotas de encuadre fora do prefixo estão DENTRO do perímetro (não `not_governed`)', () => {
+    // O que este caso protege: elas entraram por NOME. Se alguém remover uma
+    // linha de `GOVERNED_ROUTES`, a rota volta a sumir do inventário em
+    // silêncio — e sumir é exatamente o modo de falha que criou o achado.
+    const encuadre = [
+      'GET /api/workers/status-dashboard',
+      'GET /api/workers/by-status/:status',
+      'PUT /api/workers/:id/status',
+      'PUT /api/workers/:id/occupation',
+      'GET /api/workers/docs-expiring',
+      'PUT /api/workers/:id/doc-expiry',
+      'GET /api/workers/:id/encuadres',
+      'GET /api/workers/:id/cases',
+      'GET /api/cases/:caseNumber/encuadres',
+      'GET /api/cases/:caseNumber/workers',
+    ];
+    const vistas = new Map(
+      inventario.governedRoutes.map((r) => [`${r.method} ${r.path}`, r.status]),
+    );
+    expect(encuadre.map((chave) => `${chave} → ${vistas.get(chave) ?? 'FORA DO INVENTÁRIO'}`)).toEqual(
+      encuadre.map((chave) => `${chave} → pending`),
+    );
+  });
+
+  it('as rotas do PRESTADOR seguem FORA do perímetro — o que a lista nomeada preserva', () => {
+    // A alternativa descartada (ampliar `GOVERNED_PREFIXES` para `/api/workers/`)
+    // teria trazido estas para dentro, cada uma precisando de EXEMPT. Uma
+    // esquecida = app do candidato em 403 no dia da virada.
+    const doPrestador = inventario.governedRoutes.filter((r) => r.path.startsWith('/api/workers/me'));
+    expect(doPrestador).toEqual([]);
   });
 });

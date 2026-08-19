@@ -37,6 +37,42 @@ import { pathOf } from './PermissionMiddleware';
 export const GOVERNED_PREFIXES = ['/api/admin/', '/analytics/'] as const;
 
 /**
+ * Rotas de STAFF que o prefixo não alcança — governadas por NOME (19/08/2026).
+ *
+ * Achado medindo a 3ª família: `workerEncuadreRoutes` serve 10 rotas
+ * `requireStaff` sob `/api/workers/` e `/api/cases/`, incluindo escrita de funil
+ * (`PUT /api/workers/:id/status`). Fora do prefixo elas eram `not_governed`:
+ * invisíveis ao deny-by-default, ao `PENDING_DECLARATIONS` e ao oráculo de
+ * rotas. Depois da virada, um grupo com só `worker:read` seguiria movendo o
+ * funil — e nada avisaria.
+ *
+ * **Por que por NOME e não ampliando o prefixo** (decisão do Gabriel, 19/08):
+ * `/api/workers/` abriga ~21 rotas do PRESTADOR e públicas (`/workers/me/*`,
+ * `/workers/init`, `/workers/lookup`). Ampliar o prefixo puxaria todas para
+ * dentro da rede de deny-by-default, cada uma precisando de uma entrada em
+ * `EXEMPT_ROUTES` — e uma esquecida = app do candidato em 403 no dia da virada.
+ * É a mesma classe de risco que obrigou o desvio de não-staff no motor (D119.1a).
+ * A lista nomeada custa uma linha por rota e não toca em nada do prestador.
+ *
+ * ⚠️ O preço desta lista é ser MANUAL: rota de staff nova criada fora do
+ * prefixo continua nascendo sem rede. Por isso ela é curta, fechada e citada no
+ * handoff — não é substituto de prefixo, é o recorte de uma exceção conhecida.
+ */
+export const GOVERNED_ROUTES: ReadonlySet<string> = new Set([
+  // workerEncuadreRoutes.ts — funil/encuadre do prestador, tudo `requireStaff`
+  'GET /api/workers/status-dashboard',
+  'GET /api/workers/by-status/:status',
+  'PUT /api/workers/:id/status',
+  'PUT /api/workers/:id/occupation',
+  'GET /api/workers/docs-expiring',
+  'PUT /api/workers/:id/doc-expiry',
+  'GET /api/workers/:id/encuadres',
+  'GET /api/workers/:id/cases',
+  'GET /api/cases/:caseNumber/encuadres',
+  'GET /api/cases/:caseNumber/workers',
+]);
+
+/**
  * ⚠️ Comparação em MINÚSCULAS porque o Express roda com `case sensitive routing`
  * DESLIGADO (o default): `/API/ADMIN/foo` é despachado para o mesmo handler que
  * `/api/admin/foo`. Comparar com `startsWith` sensível a caixa deixava a rede de
@@ -48,8 +84,14 @@ export function isGovernedPath(path: string): boolean {
   return GOVERNED_PREFIXES.some((prefix) => lower === prefix.slice(0, -1) || lower.startsWith(prefix));
 }
 
+/**
+ * Governança de uma rota IDENTIFICADA (tem método e PADRÃO de caminho): o
+ * prefixo, ou a lista nomeada. É aqui que a decisão real acontece — o
+ * `isGovernedPath` acima só vê o caminho concreto da request e não sabe a qual
+ * padrão ele pertence.
+ */
 export function isGovernedRoute(route: ScannedRoute): boolean {
-  return isGovernedPath(route.path);
+  return isGovernedPath(route.path) || GOVERNED_ROUTES.has(routeKey(route.method, route.path));
 }
 
 export type RouteStatus = 'declared' | 'exempt' | 'pending' | 'undeclared' | 'not_governed' | 'unknown';
@@ -117,11 +159,21 @@ export class UndeclaredRouteRegistry {
     return 'undeclared';
   }
 
+  /**
+   * Status a partir do que a REQUEST traz: método + caminho concreto
+   * (`/api/workers/abc-123/status`), não o padrão.
+   *
+   * ⚠️ A ordem mudou em 19/08 e o motivo é a lista nomeada: `isGovernedPath`
+   * não pode mais ser o primeiro corte, porque ele vê `/api/workers/abc-123/status`
+   * e não tem como saber que aquilo é `PUT /api/workers/:id/status`. Quem sabe é
+   * o índice. Então: resolve primeiro, decide depois — e o prefixo só responde
+   * no caminho em que o índice não resolveu (antes do boot publicar, ou rota que
+   * não existe), onde a resposta continua sendo exatamente a de antes.
+   */
   statusOf(method: string, path: string): RouteStatus {
-    if (!isGovernedPath(path)) return 'not_governed';
-    if (!this.index) return 'unknown';
-    const route = this.index.find(method, path);
-    return route ? this.statusOfRoute(route) : 'unknown';
+    const route = this.index?.find(method, path);
+    if (route) return this.statusOfRoute(route);
+    return isGovernedPath(path) ? 'unknown' : 'not_governed';
   }
 }
 

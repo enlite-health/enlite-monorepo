@@ -9,7 +9,9 @@ import express from 'express';
 import request from 'supertest';
 import {
   denyUndeclaredRoutes,
+  GOVERNED_ROUTES,
   isGovernedPath,
+  isGovernedRoute,
   UndeclaredRouteRegistry,
 } from '../denyUndeclaredRoutes';
 import type { ScannedRoute } from '@modules/identity/permissions';
@@ -27,6 +29,8 @@ const declarada: ScannedRoute = {
 const isenta: ScannedRoute = { method: 'GET', path: '/api/admin/auth/profile' };
 const nova: ScannedRoute = { method: 'POST', path: '/api/admin/coisa-nova' };
 const foraDoDominio: ScannedRoute = { method: 'GET', path: '/api/workers/me' };
+/** Staff fora do prefixo — governada por NOME (`GOVERNED_ROUTES`, 19/08). */
+const encuadre: ScannedRoute = { method: 'PUT', path: '/api/workers/:id/status' };
 
 function registryCom(routes: ScannedRoute[]): UndeclaredRouteRegistry {
   const registry = new UndeclaredRouteRegistry();
@@ -47,6 +51,72 @@ describe('isGovernedPath', () => {
     ['/health', false],
   ])('%s → %s', (path, esperado) => {
     expect(isGovernedPath(path)).toBe(esperado);
+  });
+});
+
+/**
+ * O perímetro por NOME (19/08). `workerEncuadreRoutes` serve 10 rotas
+ * `requireStaff` sob `/api/workers/` e `/api/cases/` — inclusive escrita de
+ * funil. Fora do prefixo elas eram `not_governed`: invisíveis ao
+ * deny-by-default, à lista de pendências e ao oráculo.
+ */
+describe('GOVERNED_ROUTES — o perímetro que o prefixo não alcança', () => {
+  it('a rota nomeada é governada, mesmo sem casar prefixo nenhum', () => {
+    expect(isGovernedPath(encuadre.path)).toBe(false);
+    expect(isGovernedRoute(encuadre)).toBe(true);
+  });
+
+  it('MÉTODO faz parte da chave — `GET /api/workers/:id/status` não é a mesma rota', () => {
+    expect(isGovernedRoute({ method: 'GET', path: '/api/workers/:id/status' })).toBe(false);
+  });
+
+  it('as rotas do PRESTADOR seguem fora — é o ponto de não ter ampliado o prefixo', () => {
+    for (const path of ['/api/workers/me', '/api/workers/me/documents', '/api/workers/lookup']) {
+      expect(isGovernedRoute({ method: 'GET', path })).toBe(false);
+    }
+  });
+
+  it('a lista tem as 10 rotas de encuadre e nada além', () => {
+    expect([...GOVERNED_ROUTES].sort()).toEqual(
+      [
+        'GET /api/cases/:caseNumber/encuadres',
+        'GET /api/cases/:caseNumber/workers',
+        'GET /api/workers/:id/cases',
+        'GET /api/workers/:id/encuadres',
+        'GET /api/workers/by-status/:status',
+        'GET /api/workers/docs-expiring',
+        'GET /api/workers/status-dashboard',
+        'PUT /api/workers/:id/doc-expiry',
+        'PUT /api/workers/:id/occupation',
+        'PUT /api/workers/:id/status',
+      ].sort(),
+    );
+  });
+
+  it('pelo caminho CONCRETO da request, quem resolve é o índice — não o prefixo', () => {
+    // `/api/workers/abc-123/status` não casa prefixo nenhum. Se o pré-filtro de
+    // caminho ainda fosse o primeiro corte, a rota voltaria a ser `not_governed`
+    // e a lista nomeada não valeria nada em runtime. `pending` (e não
+    // `not_governed`) é a prova da cadeia inteira: entrou pelo nome, foi
+    // resolvida pelo índice e foi achada na dívida de rollout.
+    const registry = registryCom([encuadre]);
+    expect(registry.statusOf('PUT', '/api/workers/abc-123/status')).toBe('pending');
+  });
+
+  it('governada por nome, sem célula e fora das listas → `undeclared` (a rede pega)', () => {
+    // É este o desfecho que o perímetro existe para produzir: antes da lista
+    // nomeada, uma rota de staff criada ali nascia `not_governed` e passava.
+    const registry = new UndeclaredRouteRegistry({ exempt: new Set(), pending: new Set() });
+    registry.publish([encuadre]);
+    expect(registry.statusOf('PUT', '/api/workers/abc-123/status')).toBe('undeclared');
+    expect(registry.unexpectedlyUndeclared()).toEqual([encuadre]);
+  });
+
+  it('sem índice publicado, caminho fora do prefixo continua `not_governed`', () => {
+    // O comportamento de antes do boot não mudou: só o prefixo responde aqui.
+    const registry = new UndeclaredRouteRegistry();
+    expect(registry.statusOf('PUT', '/api/workers/abc-123/status')).toBe('not_governed');
+    expect(registry.statusOf('GET', '/api/admin/qualquer')).toBe('unknown');
   });
 });
 
