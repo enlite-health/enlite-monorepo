@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { AuthMiddleware } from '@modules/identity';
+import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { AdminWorkersController } from '../controllers/AdminWorkersController';
 import { AdminWorkersAuxController } from '../controllers/AdminWorkersAuxController';
 import { AdminWorkerTestFlagController } from '../controllers/AdminWorkerTestFlagController';
@@ -24,44 +24,72 @@ export interface AdminWorkerRouteControllers {
  *
  * Route ordering is significant: specific paths (export, filter-options,
  * timeline) MUST precede the `/workers/:id` param route to avoid capture.
+ *
+ * ── Família `admin.workers` (task 3.5, a 3ª a declarar célula) ───────────────
+ * Mapa rota→célula: `openspec/changes/painel-grupos-permissao/route-permission-map.md`.
+ * A família é declarada em QUATRO arquivos (este, `adminWorkerDocumentsRoutes`,
+ * o trecho admin de `workerDocumentsRoutes` e `workerContextRoutes`) porque as
+ * 31 rotas de `/api/admin/workers/*` sempre moraram espalhadas. O que as une é
+ * o nome da família — que é o que `PERMISSION_ENFORCED_ROUTES` liga, e por isso
+ * `ADMIN_WORKERS_FAMILY` é exportado daqui e importado pelos outros três: a
+ * família virar pela metade seria pior que não virar.
+ *
+ * A ordem dos guards é a mesma fixada por `adminUsersRoutes`/`adminPatientsRoutes`
+ * (contrato, não estilo): papel → célula → `logResourceAccess`. Acesso NEGADO
+ * não é acesso e não entra na trilha de leitura de ficha (a negativa tem trilha
+ * própria, D-P4); e os guards de papel de hoje FICAM, porque enquanto a família
+ * está fora de `PERMISSION_ENFORCED_ROUTES` o papel é a única proteção.
+ *
+ * ⚠️ `GET /workers/by-phone` é `requireStaffOrApiKey`: quem chama é o
+ * triage-service (a Luz). Chave de API é serviço, não pessoa, e não tem grupo —
+ * o desvio está no `PermissionMiddleware`, não aqui. A célula é declarada
+ * assim mesmo, porque quando um STAFF chama esta rota a decisão é dele.
+ *
+ * ℹ️ As 11 células desta família já existem no seed da migration 206 (medido) —
+ * ao contrário de `admin.patients`, ela NÃO depende de
+ * `PERMISSION_CATALOG_SYNC_ENABLED` ter ligado para poder ser enforçada.
  */
+export const ADMIN_WORKERS_FAMILY = 'admin.workers';
+
 export function createAdminWorkerRoutes(
   c: AdminWorkerRouteControllers,
   authMiddleware: AuthMiddleware,
+  permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
   const staffOrApiKey = authMiddleware.requireStaffOrApiKey();
   const adminOnly = authMiddleware.requireAdmin();
+  const perm = permissions.family(ADMIN_WORKERS_FAMILY);
 
   // ── Admin Workers ──
-  router.get('/workers/stats', staffOnly, (req: Request, res: Response) => c.aux.getWorkerDateStats(req, res));
+  router.get('/workers/stats', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getWorkerDateStats(req, res));
   // by-phone aceita API key (consumido pelo triage-service pra resolver worker do contato)
-  router.get('/workers/by-phone', staffOrApiKey, (req: Request, res: Response) => c.workers.getWorkerByPhone(req, res));
-  router.get('/workers/case-options', staffOnly, (req: Request, res: Response) => c.aux.listCaseOptions(req, res));
+  router.get('/workers/by-phone', staffOrApiKey, perm.require('worker', 'read'), (req: Request, res: Response) => c.workers.getWorkerByPhone(req, res));
+  router.get('/workers/case-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.listCaseOptions(req, res));
   // filter-options MUST be before /:id to avoid param capture
-  router.get('/workers/filter-options', staffOnly, (req: Request, res: Response) => c.aux.getFilterOptions(req, res));
-  router.post('/workers/sync-talentum', staffOnly, (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
+  router.get('/workers/filter-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getFilterOptions(req, res));
+  router.post('/workers/sync-talentum', staffOnly, perm.require('talentum', 'write'), (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
   // export MUST be registered before /:id to avoid param capture
-  router.get('/workers/export', adminOnly, (req: Request, res: Response) => c.workers.exportWorkers(req, res));
+  router.get('/workers/export', adminOnly, perm.require('worker', 'export'), (req: Request, res: Response) => c.workers.exportWorkers(req, res));
   // timeline MUST be registered before /:id to avoid param capture
-  router.get('/workers/:id/timeline', staffOnly, (req: Request, res: Response) => c.timeline.getTimeline(req, res));
-  router.get('/workers/:id', staffOnly, logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
+  router.get('/workers/:id/timeline', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.timeline.getTimeline(req, res));
+  router.get('/workers/:id', staffOnly, perm.require('worker_pii', 'read'), logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
   // test-flag e profile são admin-only (mais estrito que staff)
-  router.patch('/workers/:id/test-flag', adminOnly, (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
+  router.patch('/workers/:id/test-flag', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
   // edição de perfil do worker — apenas role ADMIN
-  router.patch('/workers/:id/profile', adminOnly, (req: Request, res: Response) => c.profile.updateProfile(req, res));
+  router.patch('/workers/:id/profile', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.profile.updateProfile(req, res));
   // edição de endereço/área de serviço — apenas role ADMIN (Google Places + lat/lng)
-  router.put('/workers/:id/service-area', adminOnly, (req: Request, res: Response) => c.serviceArea.updateServiceArea(req, res));
-  router.get('/workers', staffOnly, (req: Request, res: Response) => c.workers.listWorkers(req, res));
+  router.put('/workers/:id/service-area', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.serviceArea.updateServiceArea(req, res));
+  router.get('/workers', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.workers.listWorkers(req, res));
 
   // ── Worker Tags ──
-  router.get('/worker-tags', staffOnly, (req: Request, res: Response) => c.tags.list(req, res));
-  router.post('/worker-tags', adminOnly, (req: Request, res: Response) => c.tags.create(req, res));
-  router.patch('/worker-tags/:id', adminOnly, (req: Request, res: Response) => c.tags.update(req, res));
-  router.delete('/worker-tags/:id', adminOnly, (req: Request, res: Response) => c.tags.delete(req, res));
-  router.post('/workers/:id/tags/:tagId', staffOnly, (req: Request, res: Response) => c.tags.assign(req, res));
-  router.delete('/workers/:id/tags/:tagId', staffOnly, (req: Request, res: Response) => c.tags.remove(req, res));
+  router.get('/worker-tags', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.tags.list(req, res));
+  router.post('/worker-tags', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.create(req, res));
+  router.patch('/worker-tags/:id', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.update(req, res));
+  router.delete('/worker-tags/:id', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.delete(req, res));
+  router.post('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.assign(req, res));
+  router.delete('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.remove(req, res));
 
   return router;
 }

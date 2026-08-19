@@ -39,7 +39,7 @@
     "test:e2e:stack:down": "docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml down",
     "test:e2e:full": "npm run test:e2e:stack:up && USE_FIREBASE_EMULATOR=true FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 DATABASE_URL=postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e npm run test:e2e; npm run test:e2e:stack:down",
     "test:e2e:docker": "docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api && node scripts/wait-for-health.js && npm run test:e2e; docker compose -f docker-compose.yml -f docker-compose.test.yml down",
-    "test:e2e:reset": "docker compose -f docker-compose.yml -f docker-compose.test.yml down -v && docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api && node scripts/wait-for-health.js",
+    "test:e2e:reset": "docker compose -f docker-compose.yml -f docker-compose.test.yml down -v && docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build postgres api && node scripts/wait-for-health.js",
     "test:e2e:fixtures": "node scripts/generate-test-fixtures.js",
     "smoke:public-jobs": "ts-node -r tsconfig-paths/register scripts/smoke-public-jobs.ts",
     "test:playwright": "playwright test",

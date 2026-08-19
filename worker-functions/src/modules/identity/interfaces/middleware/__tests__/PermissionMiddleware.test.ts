@@ -10,6 +10,7 @@ import express from 'express';
 import request from 'supertest';
 import { PermissionMiddleware } from '../PermissionMiddleware';
 import type { PermissionClient, PermissionDecision, ResolvedAuthz } from '@modules/identity/permissions';
+import { PrincipalType } from '@modules/identity/domain/Auth';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -56,7 +57,7 @@ interface Harness {
 function harness(
   env: NodeJS.ProcessEnv,
   client: PermissionClient,
-  options: { uid?: string | null; resource?: string; action?: string } = {},
+  options: { uid?: string | null; resource?: string; action?: string; tipo?: PrincipalType } = {},
 ): Harness {
   const gravadas: PermissionDecision[] = [];
   const middleware = new PermissionMiddleware({
@@ -67,7 +68,11 @@ function harness(
   const app = express();
   app.use((req, _res, next) => {
     const uid = options.uid === undefined ? UID : options.uid;
-    if (uid) (req as express.Request).authContext = { principal: { id: uid } } as never;
+    if (uid) {
+      (req as express.Request).authContext = {
+        principal: { id: uid, ...(options.tipo ? { type: options.tipo } : {}) },
+      } as never;
+    }
     next();
   });
   app.get(
@@ -271,6 +276,67 @@ describe('PermissionMiddleware.family().require()', () => {
     const guard = middleware.family('admin.users').require('user_management', 'read', 'Ver usuários');
     const metadata = (guard as unknown as Record<symbol, unknown>)[Symbol.for('enlite.permissions.cell')];
     expect(metadata).toEqual({ resource: 'user_management', action: 'read', description: 'Ver usuários' });
+  });
+});
+
+/**
+ * O DESVIO DE PRINCIPAL DE SERVIÇO (família `admin.workers`, task 3.5-A1).
+ *
+ * 4 rotas de `/api/admin/workers/*` são `requireStaffOrApiKey` e quem as consome
+ * é o triage-service (a Luz) por chave de API. Chave de API é serviço, não
+ * pessoa: `principal.id` vale `service:<nome>` e não existe em `users`. Sem o
+ * desvio, virar a família derrubaria a Luz em produção com 403.
+ */
+describe('principal de SERVIÇO (o caminho da chave de API)', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  it('atravessa a família enforced sem resolver permissão — não tem grupo para resolver', async () => {
+    const client = clientStub();
+    const { app, gravadas } = harness(LIGADO, client, {
+      uid: 'service:triage-service',
+      tipo: PrincipalType.SERVICE,
+    });
+
+    await request(app).get('/api/admin/users/1').expect(200);
+
+    expect(client.resolve).not.toHaveBeenCalled();
+    expect(gravadas).toEqual([]);
+  });
+
+  it('avisa UMA vez por célula, não por request (o volume da Luz encheria o log)', async () => {
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { info: jest.Mock } };
+    const { app } = harness(LIGADO, clientStub(), {
+      uid: 'service:triage-service',
+      tipo: PrincipalType.SERVICE,
+    });
+
+    await request(app).get('/api/admin/users/1').expect(200);
+    await request(app).get('/api/admin/users/2').expect(200);
+
+    const avisos = logger.info.mock.calls.filter((c) => String(c[1]).includes('principal de serviço'));
+    expect(avisos).toHaveLength(1);
+  });
+
+  it('o desvio é POSITIVO: principal SEM tipo declarado continua sendo decidido por célula', async () => {
+    // A forma negativa ("não é staff, então passa") liberaria qualquer principal
+    // cujo papel não fosse reconhecido — o oposto de fail-closed. Este caso é a
+    // prova de que a regra não foi escrita ao contrário.
+    const client = clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) });
+    const { app } = harness(LIGADO, client, { uid: 'pessoa-sem-tipo' });
+
+    const res = await request(app).get('/api/admin/users/1').expect(403);
+
+    expect(res.body).toMatchObject({ code: 'missing_cell' });
+    expect(client.resolve).toHaveBeenCalled();
+  });
+
+  it('principal de outro tipo (USER) também é decidido por célula', async () => {
+    const client = clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) });
+    const { app } = harness(LIGADO, client, { uid: UID, tipo: PrincipalType.USER });
+
+    await request(app).get('/api/admin/users/1').expect(403);
+
+    expect(client.resolve).toHaveBeenCalled();
   });
 });
 

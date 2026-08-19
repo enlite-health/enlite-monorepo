@@ -13,9 +13,9 @@ import express from 'express';
 import request from 'supertest';
 import { scanExpressRouter, cellKey, undeclaredRoutes } from '@modules/identity/permissions';
 import { createAdminUsersRoutes, ADMIN_USERS_FAMILY } from '../adminUsersRoutes';
-import { PermissionMiddleware } from '../../middleware/PermissionMiddleware';
+import type { PermissionMiddleware } from '../../middleware/PermissionMiddleware';
 import type { AdminController } from '../../controllers/AdminController';
-import type { AuthMiddleware } from '../../middleware/AuthMiddleware';
+import { authDouble, permissionsDouble } from '@modules/identity/interfaces/middleware/__tests__/permissionFamilyDoubles';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -45,26 +45,7 @@ function build(over: { permissions?: PermissionMiddleware } = {}) {
     updateAdminRole: responde('updateAdminRole'),
   } as unknown as AdminController;
 
-  const auth = {
-    requireAdmin: () => (_req: unknown, _res: unknown, next: express.NextFunction) => next(),
-    requireStaff: () => (_req: unknown, _res: unknown, next: express.NextFunction) => next(),
-  } as unknown as AuthMiddleware;
-
-  const permissions =
-    over.permissions ??
-    new PermissionMiddleware({
-      client: {
-        resolve: jest.fn(),
-        can: jest.fn(),
-        isFeatureAvailable: jest.fn(),
-        featureConfig: jest.fn(),
-        invalidate: jest.fn(),
-      },
-      audit: { record: jest.fn() },
-      env: {},
-    });
-
-  return createAdminUsersRoutes(controller, auth, permissions);
+  return createAdminUsersRoutes(controller, authDouble(), over.permissions ?? permissionsDouble());
 }
 
 describe('createAdminUsersRoutes', () => {

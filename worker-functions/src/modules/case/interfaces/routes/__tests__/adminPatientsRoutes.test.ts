@@ -13,11 +13,10 @@ import express from 'express';
 import request from 'supertest';
 import { scanExpressRouter, cellKey, undeclaredRoutes } from '@modules/identity/permissions';
 import { createAdminPatientsRoutes, ADMIN_PATIENTS_FAMILY } from '../adminPatientsRoutes';
-import { PermissionMiddleware } from '@modules/identity/interfaces/middleware/PermissionMiddleware';
+import { authDouble, permissionsDouble } from '@modules/identity/interfaces/middleware/__tests__/permissionFamilyDoubles';
 import type { AdminPatientsController } from '../../controllers/AdminPatientsController';
 import type { AdminPatientChatIdsController } from '../../controllers/AdminPatientChatIdsController';
 import type { AdminPatientChatRolesController } from '../../controllers/AdminPatientChatRolesController';
-import type { AuthMiddleware } from '@modules/identity';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -106,24 +105,7 @@ function pecas() {
     delete: responde('chatRoles.delete'),
   } as unknown as AdminPatientChatRolesController;
 
-  const auth = {
-    requireAdmin: () => (_req: unknown, _res: unknown, next: express.NextFunction) => next(),
-    requireStaff: () => (_req: unknown, _res: unknown, next: express.NextFunction) => next(),
-  } as unknown as AuthMiddleware;
-
-  const permissions = new PermissionMiddleware({
-    client: {
-      resolve: jest.fn(),
-      can: jest.fn(),
-      isFeatureAvailable: jest.fn(),
-      featureConfig: jest.fn(),
-      invalidate: jest.fn(),
-    },
-    audit: { record: jest.fn() },
-    env: {},
-  });
-
-  return { controller, chatIds, chatRoles, auth, permissions };
+  return { controller, chatIds, chatRoles, auth: authDouble(), permissions: permissionsDouble() };
 }
 
 /** O router com TODOS os dublês — o default dos testes. */
