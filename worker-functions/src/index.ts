@@ -54,6 +54,7 @@ import { createMessagingRoutes } from '@modules/notification/interfaces/routes/m
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
 import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
 import { publicContextMiddleware, systemContextMiddleware } from './shared/database/systemContextMiddleware';
+import { staffAccessLogMiddleware } from './shared/logging/staffAccessLog';
 import { noStoreMiddleware } from './shared/http/noStoreMiddleware';
 import { startServer } from './bootstrap/startServer';
 import {
@@ -122,6 +123,13 @@ app.use(correlationMiddleware);
 // Sessão de banco da request (contexto de país da RLS + devolução do client).
 // Depois do correlation (que cria o store do ALS) e antes de qualquer rota.
 app.use(dbSessionMiddleware);
+
+// Medição de acesso de COLABORADOR (staff) — default OFF, ligada só por
+// STAFF_ACCESS_LOG_ENABLED. Depende do store do ALS acima; o ator é preenchido
+// depois, pelo AuthMiddleware, e lido no `finish`. Condições jurídicas no
+// cabeçalho de staffAccessLog.ts (lex 0.2 / D125) — não trocar pelo `logger`
+// comum: a linha não pode carregar traceId.
+app.use(staffAccessLogMiddleware);
 
 app.use(mockAuthMiddleware);
 
