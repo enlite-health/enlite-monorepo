@@ -61,15 +61,22 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/identity/interfaces/routes/{adminUsersRoutes,permissionRoutesInventoryRoute}.ts': {
+    'src/modules/identity/interfaces/routes/permissionRoutesInventoryRoute.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
       lines: 100,
     },
-    // Famílias já viradas para decisão por célula (task 3.5). Cada família nova
-    // entra AQUI no mesmo PR em que declara — senão a trava do piso não alcança
-    // o arquivo e a família nasce fora da rede.
+    // ROUTERS DE FAMÍLIA já virados para decisão por célula (task 3.5), em um
+    // bloco só e em ordem de virada. Família nova entra AQUI no mesmo PR em que
+    // declara — senão a trava do piso não alcança o arquivo e a família nasce
+    // fora da rede. Moram em módulos diferentes, daí a lista explícita.
+    'src/modules/identity/interfaces/routes/adminUsersRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/interfaces/routes/adminPatientsRoutes.ts': {
       statements: 100,
       branches: 100,

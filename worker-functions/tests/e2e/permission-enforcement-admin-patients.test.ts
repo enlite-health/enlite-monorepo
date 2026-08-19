@@ -1,14 +1,20 @@
-import type { Server } from 'http';
-import type { AddressInfo } from 'net';
 import { Pool } from 'pg';
+import {
+  TENANT_E2E,
+  tokenMock,
+  montarAppDeFamilia,
+  limparIamFixtures,
+  grupoComCelulas,
+  type AppDeFamilia,
+} from './helpers/permissionFamilyHarness';
 
 /**
  * A SEGUNDA FAMÍLIA VIRADA — HTTP REAL, BANCO REAL (task 3.5/3.8, design 6).
  *
- * O contrato genérico (sem grupo → `no_group`, conta em admissão → 
- * `account_not_active`, sem credencial → 401, cache × invalidação) já é provado
- * em `permission-enforcement-admin-users`. Repetir aqui seria custo sem
- * informação. **Este arquivo prova o que é ESPECÍFICO de `admin.patients`:**
+ * O contrato genérico (sem grupo → `no_group`, conta em admissão →
+ * `account_not_active`, cache × invalidação) já é provado em
+ * `permission-enforcement-admin-users`. Repetir aqui seria custo sem informação.
+ * **Este arquivo prova o que é ESPECÍFICO de `admin.patients`:**
  *
  *  1. a granularidade read × write dentro do mesmo recurso;
  *  2. as três células que NÃO são o óbvio `patient:*` — `vacancy:read` na lista
@@ -27,8 +33,9 @@ import { Pool } from 'pg';
  * Periskope, e não são o objeto do teste): os handlers devolvem 200 com um
  * marcador, então "passou" e "não passou" são inequívocos.
  *
- * ⚠️ As envs de flag são escritas ANTES do primeiro import de `src/`, por isso
- * todo o `src/` entra por `await import()` dentro do `beforeAll`.
+ * O wiring real (pools, ordem dos middlewares, limpeza do `iam.*`) vem de
+ * `helpers/permissionFamilyHarness` — é o mesmo contrato das outras famílias, e
+ * por isso mora num lugar só.
  */
 
 const DATABASE_URL =
@@ -36,10 +43,8 @@ const DATABASE_URL =
 
 describe('família admin.patients sob a decisão real por célula (HTTP real, banco real)', () => {
   let pool: Pool;
-  let server: Server;
-  let baseUrl: string;
+  let app: AppDeFamilia;
 
-  const TENANT = '00000000-0000-0000-0000-000000000001';
   const U = {
     /** `patient:read` apenas — a pessoa que consulta ficha e não edita. */
     leitora: 'perm-pac-e2e-leitora',
@@ -54,24 +59,10 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     vizinha: 'Perm Pac E2E Vizinha',
   };
 
-  /**
-   * `patient:delete` é semeada por este teste (ver `semear()`). Se ela FICAR no
-   * catálogo, `permissions-iam-schema.e2e` — que afirma a matriz exata de 41
-   * células — quebra: foi exatamente o que aconteceu na 1ª rodada. Só removemos
-   * o que ESTE teste criou; se um dia o sync do catálogo passar a criá-la, a
-   * flag fica falsa e a limpeza não encosta nela.
-   */
-  let celulaDeleteCriadaPeloTeste = false;
-
   const envAnterior: Record<string, string | undefined> = {};
   function setEnv(chave: string, valor: string): void {
     envAnterior[chave] = process.env[chave];
     process.env[chave] = valor;
-  }
-
-  function token(uid: string, role = 'admin'): string {
-    const dados = Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role })).toString('base64');
-    return `Bearer mock_${dados}`;
   }
 
   async function chamar(
@@ -79,10 +70,10 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     caminho: string,
     uid: string | null,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const res = await fetch(`${baseUrl}${caminho}`, {
+    const res = await fetch(`${app.url}${caminho}`, {
       method: metodo,
       headers: {
-        ...(uid ? { Authorization: token(uid) } : {}),
+        ...(uid ? { Authorization: tokenMock(uid) } : {}),
         'Content-Type': 'application/json',
       },
       ...(metodo === 'POST' || metodo === 'PUT' || metodo === 'PATCH' ? { body: '{}' } : {}),
@@ -90,52 +81,28 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
   }
 
-  async function limpar(): Promise<void> {
-    const uids = Object.values(U);
-    const nomes = Object.values(GRUPOS);
-    await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [uids]);
+  /**
+   * `patient:delete` é a célula NOVA da D116: o seed da migration 206 só tem
+   * read/write. Em produção ela nasce pelo sync do catálogo (`iam.sync_permission_cell`,
+   * mig 281) quando `PERMISSION_CATALOG_SYNC_ENABLED` ligar, no fim da task 3.5.
+   * Aqui a semeadura é direta porque o objeto do teste é o enforcement, não o sync.
+   *
+   * Removida na ENTRADA e na SAÍDA de propósito: se um processo morrer no meio
+   * (OOM, Ctrl-C, timeout duro), a linha sobreviveria e `permissions-iam-schema`
+   * — que afirma a matriz exata de 41 células — passaria a falhar em toda rodada
+   * seguinte, sem se curar sozinha. Apagar na entrada torna a suíte idempotente.
+   */
+  async function removerCelulaDelete(): Promise<void> {
     await pool.query(
-      `DELETE FROM iam.permission_group_changes WHERE group_id IN
-         (SELECT id FROM iam.permission_groups WHERE name = ANY($1))`,
-      [nomes],
+      `DELETE FROM iam.group_permissions
+         WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = 'patient' AND action = 'delete')`,
     );
-    await pool.query(`DELETE FROM iam.user_groups WHERE user_id = ANY($1)`, [uids]);
-    await pool.query(
-      `DELETE FROM iam.group_permissions WHERE group_id IN
-         (SELECT id FROM iam.permission_groups WHERE name = ANY($1))`,
-      [nomes],
-    );
-    await pool.query(`DELETE FROM iam.permission_groups WHERE name = ANY($1)`, [nomes]);
-    await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1)`, [uids]);
+    await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient' AND action = 'delete'`);
   }
 
-  /** Um grupo com exatamente as células pedidas, e a pessoa dentro dele. */
-  async function grupoCom(nome: string, uid: string, celulas: Array<[string, string]>): Promise<string> {
-    const grupo = await pool.query(
-      `INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e') RETURNING id`,
-      [TENANT, nome],
-    );
-    const id = grupo.rows[0].id;
-    for (const [resource, action] of celulas) {
-      const inseriu = await pool.query(
-        `INSERT INTO iam.group_permissions (group_id, permission_id)
-           SELECT $1, id FROM iam.permissions WHERE resource = $2 AND action = $3
-         RETURNING permission_id`,
-        [id, resource, action],
-      );
-      // Célula inexistente no catálogo entraria como grupo VAZIO e o teste
-      // passaria por engano ("negou porque não tinha" em vez de "negou porque a
-      // célula certa é outra"). Falhar aqui é o que impede esse falso verde.
-      if (inseriu.rowCount !== 1) {
-        throw new Error(`célula ${resource}:${action} não existe em iam.permissions — o seed do teste está errado`);
-      }
-    }
-    await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [
-      uid,
-      id,
-      TENANT,
-    ]);
-    return id;
+  async function limpar(): Promise<void> {
+    await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
+    await removerCelulaDelete();
   }
 
   async function semear(): Promise<void> {
@@ -144,31 +111,32 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
          ($1, 'perm-pac-leitora@e2e.local',  'admin', 'ACTIVE', true, $4),
          ($2, 'perm-pac-admissao@e2e.local', 'admin', 'ACTIVE', true, $4),
          ($3, 'perm-pac-vizinha@e2e.local',  'admin', 'ACTIVE', true, $4)`,
-      [U.leitora, U.admissao, U.vizinha, TENANT],
+      [U.leitora, U.admissao, U.vizinha, TENANT_E2E],
     );
 
-    // `patient:delete` é a célula NOVA da D116: o seed da migration 206 só tem
-    // read/write. Em produção ela nasce pelo sync do catálogo (`iam.sync_permission_cell`,
-    // mig 281) quando `PERMISSION_CATALOG_SYNC_ENABLED` ligar, no fim da task 3.5.
-    // Aqui a semeadura é direta porque o objeto do teste é o enforcement, não o sync.
-    const celula = await pool.query(
+    await pool.query(
       `INSERT INTO iam.permissions (resource, action, description, category)
-         VALUES ('patient', 'delete', 'Remover pacientes de teste', 'Pacientes')
-       ON CONFLICT (resource, action) DO NOTHING
-       RETURNING id`,
+         VALUES ('patient', 'delete', 'Remover pacientes de teste', 'Pacientes')`,
     );
-    celulaDeleteCriadaPeloTeste = celula.rowCount === 1;
 
-    await grupoCom(GRUPOS.leitura, U.leitora, [['patient', 'read']]);
-    await grupoCom(GRUPOS.admissao, U.admissao, [
-      ['patient', 'read'],
-      ['patient', 'write'],
-      ['patient', 'delete'],
-    ]);
-    await grupoCom(GRUPOS.vizinha, U.vizinha, [
-      ['vacancy', 'read'],
-      ['messaging', 'read'],
-    ]);
+    await grupoComCelulas(pool, { nome: GRUPOS.leitura, uid: U.leitora, celulas: [['patient', 'read']] });
+    await grupoComCelulas(pool, {
+      nome: GRUPOS.admissao,
+      uid: U.admissao,
+      celulas: [
+        ['patient', 'read'],
+        ['patient', 'write'],
+        ['patient', 'delete'],
+      ],
+    });
+    await grupoComCelulas(pool, {
+      nome: GRUPOS.vizinha,
+      uid: U.vizinha,
+      celulas: [
+        ['vacancy', 'read'],
+        ['messaging', 'read'],
+      ],
+    });
   }
 
   /** Handlers-marcador: só dizem que chegaram. */
@@ -205,56 +173,23 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     };
   }
 
-  /** Sobe a cadeia real do `src/index.ts` numa porta efêmera. */
-  async function subirApp(familiasEnforced: string): Promise<{ servidor: Server; url: string }> {
-    const express = (await import('express')).default;
-    const { correlationMiddleware } = await import('@shared/logging/correlationMiddleware');
-    const { dbSessionMiddleware } = await import('@shared/database/dbSessionMiddleware');
-    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
-    const { AuthMiddleware, PermissionMiddleware, SimplifiedAuthorizationEngine, mockAuthMiddleware } =
-      await import('@modules/identity');
+  async function subirApp(familiasEnforced: string): Promise<AppDeFamilia> {
     const { createAdminPatientsRoutes } = await import('@modules/case');
-    const { createPermissionsModule } = await import('@modules/identity/permissions');
-
-    const db = DatabaseConnection.getInstance();
-    const permissions = createPermissionsModule({
-      pool: db.getPool(),
-      systemPool: db.getSystemPool(),
-      staffRoles: ['admin', 'recruiter', 'community_manager'],
-      ttlMs: 0,
-    });
-
-    const auth = new AuthMiddleware(
-      { parseCredentials: () => null, authenticate: async () => null } as never,
-      new SimplifiedAuthorizationEngine(),
-      permissions.client,
-    );
-    const permissionMiddleware = new PermissionMiddleware({
-      client: permissions.client,
-      audit: permissions.repositories.audit,
-      env: { ...process.env, PERMISSION_ENFORCED_ROUTES: familiasEnforced },
-    });
-
     const c = controllersMarcadores();
-    const app = express();
-    app.use(express.json());
-    app.use(correlationMiddleware);
-    app.use(dbSessionMiddleware);
-    app.use(mockAuthMiddleware);
-    app.use(
-      '/api/admin',
-      createAdminPatientsRoutes(
-        c.patients as never,
-        auth,
-        permissionMiddleware,
-        c.chatIds as never,
-        c.chatRoles as never,
-      ),
-    );
-
-    const servidor = app.listen(0);
-    await new Promise<void>((resolve) => servidor.once('listening', () => resolve()));
-    return { servidor, url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}` };
+    return montarAppDeFamilia({
+      enforcedRoutes: familiasEnforced,
+      montarRotas: ({ app: express, auth, permissions }) =>
+        express.use(
+          '/api/admin',
+          createAdminPatientsRoutes(
+            c.patients as never,
+            auth,
+            permissions,
+            c.chatIds as never,
+            c.chatRoles as never,
+          ),
+        ),
+    });
   }
 
   beforeAll(async () => {
@@ -268,20 +203,14 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     setEnv('PERMISSION_CACHE_TTL_MS', '0');
     setEnv('DATABASE_URL', DATABASE_URL);
 
-    const app = await subirApp('admin.patients');
-    server = app.servidor;
-    baseUrl = app.url;
+    app = await subirApp('admin.patients');
   }, 30000);
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    await app?.fechar();
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
-    if (celulaDeleteCriadaPeloTeste) {
-      // Depois de `limpar()`: os group_permissions que a referenciam já se foram.
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient' AND action = 'delete'`);
-    }
     await pool.end();
     for (const [chave, valor] of Object.entries(envAnterior)) {
       if (valor === undefined) delete process.env[chave];
@@ -349,7 +278,7 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
   });
 
   describe('patient:delete — a célula nova da D116', () => {
-    it('quem tem read+write mas não delete NÃO purga', async () => {
+    it('quem tem read mas não delete NÃO purga', async () => {
       const res = await chamar('DELETE', '/api/admin/patients/abc-123', U.leitora);
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: 'missing_cell' });
@@ -398,7 +327,7 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       ]);
     });
 
-    it('nenhuma linha da trilha carrega PII do paciente', async () => {
+    it('nenhuma coluna da trilha carrega PII do paciente', async () => {
       const colunas = await pool.query(
         `SELECT column_name FROM information_schema.columns
           WHERE table_schema = 'iam' AND table_name = 'permission_audit_log'`,
@@ -415,12 +344,12 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       const outra = await subirApp('admin.users');
       try {
         const res = await fetch(`${outra.url}/api/admin/patients`, {
-          headers: { Authorization: token(U.vizinha) },
+          headers: { Authorization: tokenMock(U.vizinha) },
         });
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({ chegou: 'listPatients' });
       } finally {
-        await new Promise<void>((resolve) => outra.servidor.close(() => resolve()));
+        await outra.fechar();
       }
     });
   });

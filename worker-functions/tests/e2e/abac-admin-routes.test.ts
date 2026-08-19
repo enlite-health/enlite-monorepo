@@ -1,7 +1,5 @@
-import express from 'express';
-import type { Server } from 'http';
-import type { AddressInfo } from 'net';
 import { Pool } from 'pg';
+import { montarAppDeFamilia, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 /**
  * AS ROTAS DE PACIENTE SOB A RLS DE PAÍS — HTTP REAL, BANCO REAL (abac-pais-fase1).
@@ -35,7 +33,7 @@ const DATABASE_URL =
 
 describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
   let adminPool: Pool;
-  let server: Server;
+  let app: AppDeFamilia;
   let baseUrl: string;
 
   const RUNTIME_USER = 'abac_routes_runtime';
@@ -180,26 +178,17 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     process.env.DB_SYSTEM_POOL_MAX = '2';
 
     // 4. Só agora o `src/` entra.
-    const [
-      { correlationMiddleware },
-      { dbSessionMiddleware },
-      identity,
-      caseModule,
-      { DatabaseConnection },
-      { createPermissionsModule },
-    ] = await Promise.all([
-      import('@shared/logging/correlationMiddleware'),
-      import('@shared/database/dbSessionMiddleware'),
+    const [identity, caseModule, { DatabaseConnection }] = await Promise.all([
       import('@modules/identity'),
       import('@modules/case'),
       import('@shared/database/DatabaseConnection'),
-      import('@modules/identity/permissions'),
     ]);
 
     // Wiring mínimo do `src/index.ts` — serviços REAIS, não stubs. Com USE_MOCK_AUTH o
     // `requireStaff()` resolve pelo `req.user` do mockAuth, mas a instância é a de
     // produção: é ela que chama `rememberActorInAls` → `setDbContext`, o elo que liga o
-    // claim de país da request ao GUC lido pela policy.
+    // claim de país da request ao GUC lido pela policy. Por isso o `AuthMiddleware` é
+    // construído AQUI e passado ao harness, em vez de usar o dublê padrão dele.
     const authService = new identity.MultiAuthService(
       { enableApiKeys: true, enableJwt: false, enableGoogleIdToken: true },
       DatabaseConnection.getInstance().getPool(),
@@ -209,43 +198,30 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       new identity.SimplifiedAuthorizationEngine(),
     );
 
-    // A família `admin.patients` passou a declarar célula (task 3.5). Este teste
-    // é sobre RLS de país, não sobre permissão: sem `PERMISSION_ENGINE_ENABLED`
-    // o guard é inerte (deixa passar) e o recorte medido aqui continua sendo o
-    // do país. O middleware entra só porque a fábrica agora o exige.
-    const db = DatabaseConnection.getInstance();
-    const permissions = createPermissionsModule({
-      pool: db.getPool(),
-      systemPool: db.getSystemPool(),
-      staffRoles: ['admin', 'recruiter', 'community_manager'],
-      ttlMs: 0,
+    // A família `admin.patients` passou a declarar célula (task 3.5). Este teste é
+    // sobre RLS de país, não sobre permissão: sem `PERMISSION_ENGINE_ENABLED` o guard
+    // é inerte (deixa passar) e o recorte medido aqui continua sendo o do país. O
+    // `PermissionMiddleware` entra só porque a fábrica de rotas agora o exige — quem o
+    // constrói, com os mesmos pools de sempre, é o harness compartilhado.
+    app = await montarAppDeFamilia({
+      auth: authMiddleware,
+      montarRotas: ({ app: express, auth, permissions }) =>
+        express.use(
+          '/api/admin',
+          caseModule.createAdminPatientsRoutes(
+            new caseModule.AdminPatientsController(),
+            auth,
+            permissions,
+            new caseModule.AdminPatientChatIdsController(),
+            new caseModule.AdminPatientChatRolesController(),
+          ),
+        ),
     });
-    const permissionMiddleware = new identity.PermissionMiddleware({
-      client: permissions.client,
-      audit: permissions.repositories.audit,
-    });
-
-    const app = express();
-    app.use(express.json());
-    app.use(correlationMiddleware);
-    app.use(dbSessionMiddleware);
-    app.use(identity.mockAuthMiddleware);
-    app.use('/api/admin', caseModule.createAdminPatientsRoutes(
-        new caseModule.AdminPatientsController(),
-        authMiddleware,
-        permissionMiddleware,
-        new caseModule.AdminPatientChatIdsController(),
-        new caseModule.AdminPatientChatRolesController(),
-      ));
-
-    server = await new Promise<Server>((resolve) => {
-      const s = app.listen(0, () => resolve(s));
-    });
-    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    baseUrl = app.url;
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    await app?.fechar();
 
     for (const [key, value] of Object.entries(envAnterior)) {
       if (value === undefined) delete process.env[key];
