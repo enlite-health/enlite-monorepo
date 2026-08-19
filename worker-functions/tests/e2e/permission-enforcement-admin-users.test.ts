@@ -1,6 +1,11 @@
-import type { Server } from 'http';
-import type { AddressInfo } from 'net';
 import { Pool } from 'pg';
+import {
+  TENANT_E2E,
+  tokenMock,
+  montarAppDeFamilia,
+  limparIamFixtures,
+  type AppDeFamilia,
+} from './helpers/permissionFamilyHarness';
 
 /**
  * A PRIMEIRA FAMÍLIA VIRADA — HTTP REAL, BANCO REAL (task 3.8, design 6).
@@ -30,10 +35,7 @@ const DATABASE_URL =
 
 describe('família admin.users sob a decisão real por célula (HTTP real, banco real)', () => {
   let pool: Pool;
-  let server: Server;
-  let baseUrl: string;
-
-  const TENANT = '00000000-0000-0000-0000-000000000001';
+  let app: AppDeFamilia;
   const U = {
     /** Tem `user_management:*` — o gestor de acesso. */
     gestora: 'perm-e2e-gestora',
@@ -54,37 +56,24 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
     process.env[chave] = valor;
   }
 
-  function token(uid: string, role = 'admin'): string {
-    const dados = Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role })).toString('base64');
-    return `Bearer mock_${dados}`;
-  }
-
   async function chamar(
     metodo: string,
     caminho: string,
     uid: string | null,
     role = 'admin',
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const res = await fetch(`${baseUrl}${caminho}`, {
+    const res = await fetch(`${app.url}${caminho}`, {
       method: metodo,
-      headers: uid ? { Authorization: token(uid, role) } : {},
+      headers: uid ? { Authorization: tokenMock(uid, role) } : {},
     });
     return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
   }
 
   async function limpar(): Promise<void> {
-    const uids = Object.values(U);
-    await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [uids]);
-    await pool.query(
-      `DELETE FROM iam.permission_group_changes WHERE group_id IN
-         (SELECT id FROM iam.permission_groups WHERE name = ANY($1))`,
-      [[GRUPO_GESTAO, GRUPO_SEM_CELULA]],
-    );
-    await pool.query(`DELETE FROM iam.user_groups WHERE user_id = ANY($1)`, [uids]);
-    await pool.query(`DELETE FROM iam.group_permissions WHERE group_id IN
-      (SELECT id FROM iam.permission_groups WHERE name = ANY($1))`, [[GRUPO_GESTAO, GRUPO_SEM_CELULA]]);
-    await pool.query(`DELETE FROM iam.permission_groups WHERE name = ANY($1)`, [[GRUPO_GESTAO, GRUPO_SEM_CELULA]]);
-    await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1)`, [uids]);
+    await limparIamFixtures(pool, {
+      uids: Object.values(U),
+      grupos: [GRUPO_GESTAO, GRUPO_SEM_CELULA],
+    });
   }
 
   /** Cria grupo + células + membros como superuser (o painel usa a mig 279; aqui é só semeadura). */
@@ -95,17 +84,17 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
          ($2, 'perm-semcel@e2e.local',   'admin',     'ACTIVE', true,  $5),
          ($3, 'perm-semgrupo@e2e.local', 'admin',     'ACTIVE', true,  $5),
          ($4, 'perm-admissao@e2e.local', 'admin',     'PENDING_ONBOARDING', true, $5)`,
-      [U.gestora, U.semCelula, U.semGrupo, U.emAdmissao, TENANT],
+      [U.gestora, U.semCelula, U.semGrupo, U.emAdmissao, TENANT_E2E],
     );
 
     const gestao = await pool.query(
       `INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e') RETURNING id`,
-      [TENANT, GRUPO_GESTAO],
+      [TENANT_E2E, GRUPO_GESTAO],
     );
     grupoGestaoId = gestao.rows[0].id;
     const semCelula = await pool.query(
       `INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e') RETURNING id`,
-      [TENANT, GRUPO_SEM_CELULA],
+      [TENANT_E2E, GRUPO_SEM_CELULA],
     );
 
     await pool.query(
@@ -121,12 +110,12 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
 
     await pool.query(
       `INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $4), ($3, $2, $4)`,
-      [U.gestora, grupoGestaoId, U.emAdmissao, TENANT],
+      [U.gestora, grupoGestaoId, U.emAdmissao, TENANT_E2E],
     );
     await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [
       U.semCelula,
       semCelula.rows[0].id,
-      TENANT,
+      TENANT_E2E,
     ]);
   }
 
@@ -143,36 +132,7 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
     setEnv('PERMISSION_CACHE_TTL_MS', '0');
     setEnv('DATABASE_URL', DATABASE_URL);
 
-    const express = (await import('express')).default;
-    const { correlationMiddleware } = await import('@shared/logging/correlationMiddleware');
-    const { dbSessionMiddleware } = await import('@shared/database/dbSessionMiddleware');
-    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
-    const {
-      AuthMiddleware,
-      PermissionMiddleware,
-      SimplifiedAuthorizationEngine,
-      createAdminUsersRoutes,
-      mockAuthMiddleware,
-    } = await import('@modules/identity');
-    const { createPermissionsModule } = await import('@modules/identity/permissions');
-
-    const db = DatabaseConnection.getInstance();
-    const permissions = createPermissionsModule({
-      pool: db.getPool(),
-      systemPool: db.getSystemPool(),
-      staffRoles: ['admin', 'recruiter', 'community_manager'],
-      ttlMs: 0,
-    });
-
-    const auth = new AuthMiddleware(
-      { parseCredentials: () => null, authenticate: async () => null } as never,
-      new SimplifiedAuthorizationEngine(),
-      permissions.client,
-    );
-    const permissionMiddleware = new PermissionMiddleware({
-      client: permissions.client,
-      audit: permissions.repositories.audit,
-    });
+    const { createAdminUsersRoutes } = await import('@modules/identity');
 
     // Só o controller é substituído — ver o cabeçalho.
     const controller = {
@@ -184,21 +144,14 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
       updateAdminRole: (_req: unknown, res: { json: (b: unknown) => void }) => res.json({ chegou: 'updateAdminRole' }),
     };
 
-    const app = express();
-    app.use(express.json());
-    app.use(correlationMiddleware);
-    app.use(dbSessionMiddleware);
-    app.use(mockAuthMiddleware);
-    app.use('/api/admin', createAdminUsersRoutes(controller as never, auth, permissionMiddleware));
-
-    await new Promise<void>((resolve) => {
-      server = app.listen(0, () => resolve());
+    app = await montarAppDeFamilia({
+      montarRotas: ({ app: express, auth, permissions }) =>
+        express.use('/api/admin', createAdminUsersRoutes(controller as never, auth, permissions)),
     });
-    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   }, 30000);
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    await app?.fechar();
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
@@ -305,9 +258,26 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
   });
 
   it('com cache LIGADO, a invalidação por evento é o que faz a revogação valer', async () => {
-    const cacheado = createComTtl();
+    // Segunda app, com TTL longo: é a ÚNICA forma de observar a janela em que o
+    // cache ainda responde a decisão antiga. A app principal roda com TTL 0.
+    const { createAdminUsersRoutes } = await import('@modules/identity');
+    const cacheado = await montarAppDeFamilia({
+      ttlMs: 60_000,
+      montarRotas: ({ app: express, auth, permissions }) =>
+        express.use(
+          '/api/admin',
+          createAdminUsersRoutes(
+            { listAdminUsers: (_r: unknown, res: { json: (b: unknown) => void }) => res.json({ ok: true }) } as never,
+            auth,
+            permissions,
+          ),
+        ),
+    });
+    const chamarCacheado = async (): Promise<number> =>
+      (await fetch(`${cacheado.url}/api/admin/users`, { headers: { Authorization: tokenMock(U.gestora) } })).status;
+
     try {
-      expect((await cacheado.chamar()).status).toBe(200);
+      expect(await chamarCacheado()).toBe(200);
 
       const permissao = await pool.query(
         `SELECT id FROM iam.permissions WHERE resource = 'user_management' AND action = 'read'`,
@@ -318,11 +288,11 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
       ]);
 
       // Sem invalidar, o cache ainda responde a decisão antiga (a janela do TTL).
-      expect((await cacheado.chamar()).status).toBe(200);
+      expect(await chamarCacheado()).toBe(200);
 
       // É o handler de `permission.changed` que chama isto em produção.
-      cacheado.invalidate([U.gestora]);
-      expect((await cacheado.chamar()).status).toBe(403);
+      cacheado.invalidar([U.gestora]);
+      expect(await chamarCacheado()).toBe(403);
 
       await pool.query(`INSERT INTO iam.group_permissions (group_id, permission_id) VALUES ($1, $2)`, [
         grupoGestaoId,
@@ -332,68 +302,4 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
       await cacheado.fechar();
     }
   });
-
-  /** Segunda app, com TTL longo — para observar cache e invalidação. */
-  function createComTtl(): {
-    chamar: () => Promise<{ status: number }>;
-    invalidate: (uids: string[]) => void;
-    fechar: () => Promise<void>;
-  } {
-    let servidorTtl: Server | undefined;
-    let urlTtl = '';
-    let invalidar: (uids: string[]) => void = () => undefined;
-
-    const pronto = (async () => {
-      const express = (await import('express')).default;
-      const { correlationMiddleware } = await import('@shared/logging/correlationMiddleware');
-      const { dbSessionMiddleware } = await import('@shared/database/dbSessionMiddleware');
-      const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
-      const { AuthMiddleware, PermissionMiddleware, SimplifiedAuthorizationEngine, createAdminUsersRoutes, mockAuthMiddleware } =
-        await import('@modules/identity');
-      const { createPermissionsModule } = await import('@modules/identity/permissions');
-
-      const db = DatabaseConnection.getInstance();
-      const permissions = createPermissionsModule({
-        pool: db.getPool(),
-        systemPool: db.getSystemPool(),
-        staffRoles: ['admin', 'recruiter', 'community_manager'],
-        ttlMs: 60_000,
-      });
-      invalidar = (uids) => permissions.client.invalidate(uids);
-
-      const app = express();
-      app.use(correlationMiddleware);
-      app.use(dbSessionMiddleware);
-      app.use(mockAuthMiddleware);
-      app.use(
-        '/api/admin',
-        createAdminUsersRoutes(
-          { listAdminUsers: (_r: unknown, res: { json: (b: unknown) => void }) => res.json({ ok: true }) } as never,
-          new AuthMiddleware(
-            { parseCredentials: () => null, authenticate: async () => null } as never,
-            new SimplifiedAuthorizationEngine(),
-            permissions.client,
-          ),
-          new PermissionMiddleware({ client: permissions.client, audit: permissions.repositories.audit }),
-        ),
-      );
-      const servidor = app.listen(0);
-      await new Promise<void>((resolve) => servidor.once('listening', () => resolve()));
-      servidorTtl = servidor;
-      urlTtl = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`;
-    })();
-
-    return {
-      chamar: async () => {
-        await pronto;
-        const res = await fetch(`${urlTtl}/api/admin/users`, { headers: { Authorization: token(U.gestora) } });
-        return { status: res.status };
-      },
-      invalidate: (uids) => invalidar(uids),
-      fechar: async () => {
-        await pronto;
-        await new Promise<void>((resolve) => servidorTtl?.close(() => resolve()));
-      },
-    };
-  }
 });

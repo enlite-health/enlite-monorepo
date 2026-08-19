@@ -20,7 +20,13 @@ import express, { Request, Response } from 'express';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
-import { AdminPatientsController, createAdminPatientsRoutes, PublicLeadsController } from '@modules/case';
+import {
+  AdminPatientsController,
+  AdminPatientChatIdsController,
+  AdminPatientChatRolesController,
+  createAdminPatientsRoutes,
+  PublicLeadsController,
+} from '@modules/case';
 import { UserController } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes } from '@modules/identity';
 import {
@@ -411,7 +417,16 @@ app.use('/api/admin', createAdminWorkerRoutes({
 app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware));
 
 // ========== Admin Patients ==========
-app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
+app.use(
+  '/api/admin',
+  createAdminPatientsRoutes(
+    adminPatientsController,
+    authMiddleware,
+    permissionMiddleware,
+    new AdminPatientChatIdsController(),
+    new AdminPatientChatRolesController(),
+  ),
+);
 
 // ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
 registerAdminMaintenanceRoutes(app, authMiddleware);
