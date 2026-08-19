@@ -578,3 +578,114 @@ describe('toAnaCareNurseId', () => {
     expect(toAnaCareNurseId(entrada)).toBeNull();
   });
 });
+
+// ─── Alias de e-mail (conflito com profissional de OUTRA empresa) ──
+
+describe('AnaCareMirrorProvider.upsert — fallback de alias de e-mail', () => {
+  const EMAIL_TAKEN = JSON.stringify({
+    email: ['No es posible usar este correo electrónico para el registro.'],
+  });
+  const PHONE_AND_EMAIL_TAKEN = JSON.stringify({
+    telefono: ['No es posible usar este número de teléfono para el registro.'],
+    email: ['No es posible usar este correo electrónico para el registro.'],
+  });
+  const conflict = (body: string) =>
+    new AnaCareApiError('POST', '/api/v2/agencies/nurses/', 400, body);
+
+  /** Cliente sem nenhum nurse na base — o match por telefone+nome não acha nada. */
+  function makeClientSemMatch(): IAnaCareApiClient {
+    const client = makeClient();
+    (client.listNurses as jest.Mock).mockResolvedValue({
+      count: 0, next: null, previous: null, results: [],
+    } as AnaCarePagedResponse<AnaCareNurse>);
+    return client;
+  }
+
+  it('cria com +1 quando só o e-mail colide e a pessoa não está na nossa agência', async () => {
+    const client = makeClientSemMatch();
+    (client.createNurse as jest.Mock)
+      .mockRejectedValueOnce(conflict(EMAIL_TAKEN))
+      .mockResolvedValueOnce({ ...nurseResponse, id: 777 });
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    const result = await provider.upsert(makeRecord({ email: 'nelida@gmail.com' }), null);
+
+    expect(result).toEqual({ externalId: '777', emailAliasUsed: 'nelida+1@gmail.com' });
+    expect((client.createNurse as jest.Mock).mock.calls[1][0].email).toBe('nelida+1@gmail.com');
+  });
+
+  it('tenta o próximo alias quando o +1 também está tomado', async () => {
+    const client = makeClientSemMatch();
+    (client.createNurse as jest.Mock)
+      .mockRejectedValueOnce(conflict(EMAIL_TAKEN))
+      .mockRejectedValueOnce(conflict(EMAIL_TAKEN))
+      .mockResolvedValueOnce({ ...nurseResponse, id: 778 });
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    const result = await provider.upsert(makeRecord({ email: 'nelida@gmail.com' }), null);
+
+    expect(result.emailAliasUsed).toBe('nelida+2@gmail.com');
+  });
+
+  it('propaga o erro ORIGINAL quando todos os aliases também colidem', async () => {
+    const client = makeClientSemMatch();
+    (client.createNurse as jest.Mock).mockRejectedValue(conflict(EMAIL_TAKEN));
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    await expect(provider.upsert(makeRecord(), null)).rejects.toThrow(/correo electrónico/);
+    // 1 tentativa original + MAX_EMAIL_ALIAS_ATTEMPTS aliases
+    expect((client.createNurse as jest.Mock).mock.calls.length).toBe(1 + 3);
+  });
+
+  it('NÃO aplica alias quando o telefone também colide — alias não resolveria', async () => {
+    const client = makeClientSemMatch();
+    (client.createNurse as jest.Mock).mockRejectedValue(conflict(PHONE_AND_EMAIL_TAKEN));
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    await expect(provider.upsert(makeRecord(), null)).rejects.toThrow(/teléfono/);
+    // NENHUMA tentativa de alias: trocar o e-mail não liberaria o telefone.
+    expect((client.createNurse as jest.Mock).mock.calls.length).toBe(1);
+  });
+
+  it('para na hora se a tentativa com alias devolver OUTRO erro — não insiste', async () => {
+    const client = makeClientSemMatch();
+    (client.createNurse as jest.Mock)
+      .mockRejectedValueOnce(conflict(EMAIL_TAKEN))            // original: só e-mail
+      .mockRejectedValueOnce(conflict(PHONE_AND_EMAIL_TAKEN)); // alias: telefone entrou no conflito
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    await expect(provider.upsert(makeRecord(), null)).rejects.toThrow(/teléfono/);
+    expect((client.createNurse as jest.Mock).mock.calls.length).toBe(2);
+  });
+
+  it('não vaza o alias no log — ele contém o e-mail da pessoa', async () => {
+    const client = makeClientSemMatch();
+    (client.createNurse as jest.Mock)
+      .mockRejectedValueOnce(conflict(EMAIL_TAKEN))
+      .mockResolvedValueOnce({ ...nurseResponse, id: 999 });
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    await provider.upsert(makeRecord({ email: 'nelida@gmail.com' }), null);
+
+    const logado = JSON.stringify(loggerWarnSpy.mock.calls);
+    expect(logado).toContain('ALIAS');
+    expect(logado).not.toContain('nelida');
+  });
+
+  it('vínculo por telefone+nome tem precedência: acha a pessoa e NÃO cria duplicata', async () => {
+    const client = makeClient();
+    (client.listNurses as jest.Mock).mockResolvedValue({
+      count: 1, next: null, previous: null,
+      results: [{ ...nurseResponse, id: 555, telefono: '1123456789' }],
+    });
+    (client.createNurse as jest.Mock).mockRejectedValueOnce(conflict(EMAIL_TAKEN));
+    (client.updateNurse as jest.Mock).mockResolvedValue({ ...nurseResponse, id: 555 });
+
+    const provider = new AnaCareMirrorProvider(client, makeFreeDeps());
+    const result = await provider.upsert(makeRecord({ phone: '+5491123456789' }), null);
+
+    expect(result.externalId).toBe('555');
+    expect(result.emailAliasUsed).toBeUndefined();
+    expect((client.createNurse as jest.Mock).mock.calls.length).toBe(1); // não tentou alias
+  });
+});
