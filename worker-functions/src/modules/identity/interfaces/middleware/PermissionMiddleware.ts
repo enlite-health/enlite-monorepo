@@ -197,22 +197,41 @@ export class PermissionMiddleware {
 
   /** 1 linha por célula, não por request — o volume da Luz encheria o log. */
   private logServicePrincipal(family: string, resource: string, action: string): void {
-    const chave = `${family}:${cellKey(resource, action)}`;
-    if (this.serviceCellsLogged.has(chave)) return;
-    this.serviceCellsLogged.add(chave);
-    logger.info(
+    this.avisarUmaVez(
+      this.serviceCellsLogged,
+      `${family}:${cellKey(resource, action)}`,
       { family, cell: cellKey(resource, action) },
       '[perm] principal de serviço — célula não avaliada (chave de API não tem grupo)',
     );
   }
 
   private logPendingFamily(family: string, resource: string, action: string): void {
-    if (this.pendingFamiliesLogged.has(family)) return;
-    this.pendingFamiliesLogged.add(family);
-    logger.info(
+    this.avisarUmaVez(
+      this.pendingFamiliesLogged,
+      family,
       { family, cell: cellKey(resource, action) },
       '[perm] rota não enforced — família fora de PERMISSION_ENFORCED_ROUTES',
     );
+  }
+
+  /**
+   * Aviso de ROLLOUT: interessa saber que a situação existe, não quantas vezes
+   * aconteceu. Sem a memória, cada request de uma família não-enforced (ou cada
+   * chamada da Luz) viraria linha de log.
+   *
+   * A CHAVE é o que difere entre os dois usos e por isso vem de fora: pendência
+   * é por família (a mesma frase para todas as células dela), serviço é por
+   * célula (dizer só "admin.workers" esconderia QUAIS rotas a chave atravessa).
+   */
+  private avisarUmaVez(
+    vistos: Set<string>,
+    chave: string,
+    dados: Record<string, string>,
+    mensagem: string,
+  ): void {
+    if (vistos.has(chave)) return;
+    vistos.add(chave);
+    logger.info(dados, mensagem);
   }
 
   /**
