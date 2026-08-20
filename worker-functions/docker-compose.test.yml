@@ -80,6 +80,19 @@ services:
       # O comportamento do cache é provado por unit (TTL, forceRefresh,
       # clearCache, truncada-não-cacheia). Aqui queremos determinismo.
       PERISKOPE_CHATS_CACHE_TTL_MS: ${PERISKOPE_CHATS_CACHE_TTL_MS:-0}
+      # Roster de atendentes de admissão (change agenda-admissao-atendentes).
+      #
+      # LIGADO aqui, que é arquivo só de teste, pelo mesmo motivo do bloco
+      # acima: o e2e tem que exercitar o modo que vai para produção, não o que
+      # está sendo substituído. Com a tabela `interview_hosts` vazia — que é
+      # como o banco de teste nasce — o endpoint público responde 200 com lista
+      # vazia, que é o cenário "país sem atendente ativa" do spec. Sem isto ele
+      # responderia 500 por falta de agenda configurada, e o teste passaria
+      # aceitando um erro como se fosse resposta.
+      #
+      # Em produção o default do código continua OFF: a virada é por env, com
+      # a tabela já populada (design § Migration Plan).
+      ADMISSION_HOST_ROSTER_ENABLED: ${ADMISSION_HOST_ROSTER_ENABLED:-true}
     # host.docker.internal existe sozinho no Docker Desktop (macOS), mas NÃO no
     # Linux do runner do CI — sem isto o container não acha o stub e os testes de
     # candidatos falham só no CI.
