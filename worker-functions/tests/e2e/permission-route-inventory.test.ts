@@ -227,6 +227,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/dedup/imported-groups → dedup:read',
         'GET /api/admin/dedup/candidates → dedup:read',
         'POST /api/admin/dedup/manual-group → dedup:execute',
+        // ── A6: admin.encuadre (10) — as que o perímetro não alcançava; ZERAM a dívida
+        'GET /api/workers/status-dashboard → worker:read',
+        'GET /api/workers/by-status/:status → worker:read',
+        'PUT /api/workers/:id/status → worker:write',
+        'PUT /api/workers/:id/occupation → worker:write',
+        'GET /api/workers/docs-expiring → worker_document:read',
+        'PUT /api/workers/:id/doc-expiry → worker_document:write',
+        'GET /api/workers/:id/encuadres → match:read',
+        'GET /api/workers/:id/cases → match:read',
+        'GET /api/cases/:caseNumber/encuadres → match:read',
+        'GET /api/cases/:caseNumber/workers → match:read',
       ].sort(),
     );
   });
@@ -249,7 +260,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     expect(mortas).toEqual([]);
   });
 
-  it('a dívida de rollout só encolhe — o número aqui desce a cada família da task 3.5', () => {
+  it('🎉 a dívida de rollout ZEROU — a task 3.5 terminou', () => {
     const pendentes = inventario.governedRoutes.filter((r) => r.status === 'pending');
     // Teto: 141 depois de `admin.users`, 120 depois de `admin.patients`, 89
     // depois de `admin.workers`. Cada família nova baixa este número no MESMO
@@ -261,8 +272,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // de `GOVERNED_PREFIXES` e por isso não apareciam aqui. Ao entrarem no
     // perímetro por nome (`GOVERNED_ROUTES`), passaram a ser contadas. Número
     // maior e verdadeiro vale mais que número menor e cego. Depois de
-    // `admin.vacancies` (45): 54. Depois de `analytics`+`recruitment` (26): 28. Depois do A4 (9): 19. Depois do A5 (9): 10.
-    expect(pendentes.length).toBeLessThanOrEqual(10);
+    // `admin.vacancies` (45): 54. Depois de `analytics`+`recruitment` (26): 28. Depois do A4 (9): 19. Depois do A5 (9): 10. Depois do A6 (10): **ZERO**.
+    // Daqui em diante o teste é de INVARIANTE, não de teto: rota administrativa
+    // nova nasce `undeclared` e o e2e acima já a pega. Só com esta lista vazia é
+    // que o A7 pode ligar `PERMISSION_CATALOG_SYNC_ENABLED`.
+    expect(pendentes).toEqual([]);
   });
 
   it('as 10 rotas de encuadre fora do prefixo estão DENTRO do perímetro (não `not_governed`)', () => {
@@ -284,8 +298,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     const vistas = new Map(
       inventario.governedRoutes.map((r) => [`${r.method} ${r.path}`, r.status]),
     );
+    // Desde o A6 elas são `declared` (antes eram `pending`). O que este caso
+    // protege segue igual: se alguém remover uma linha de `GOVERNED_ROUTES`, a
+    // rota some do inventário em silêncio — e sumir é o modo de falha original.
     expect(encuadre.map((chave) => `${chave} → ${vistas.get(chave) ?? 'FORA DO INVENTÁRIO'}`)).toEqual(
-      encuadre.map((chave) => `${chave} → pending`),
+      encuadre.map((chave) => `${chave} → declared`),
     );
   });
 
