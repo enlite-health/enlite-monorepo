@@ -217,6 +217,16 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/messaging/bulk-dispatch-incomplete → messaging:send',
         'POST /api/admin/integrations/anacare/backfill → integration:execute',
         'POST /api/admin/test-fixtures/cleanup → test_fixtures:execute',
+        // ── A5: admin.dedup (9) — a última de propósito
+        'GET /api/admin/dedup/groups → dedup:read',
+        'GET /api/admin/dedup/groups/:phoneNormalized → dedup:read',
+        'POST /api/admin/dedup/merge → dedup:execute',
+        'POST /api/admin/dedup/dismiss → dedup:execute',
+        'POST /api/admin/dedup/merges/:auditId/undo → dedup:execute',
+        'GET /api/admin/dedup/history → dedup:read',
+        'GET /api/admin/dedup/imported-groups → dedup:read',
+        'GET /api/admin/dedup/candidates → dedup:read',
+        'POST /api/admin/dedup/manual-group → dedup:execute',
       ].sort(),
     );
   });
@@ -251,8 +261,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // de `GOVERNED_PREFIXES` e por isso não apareciam aqui. Ao entrarem no
     // perímetro por nome (`GOVERNED_ROUTES`), passaram a ser contadas. Número
     // maior e verdadeiro vale mais que número menor e cego. Depois de
-    // `admin.vacancies` (45): 54. Depois de `analytics`+`recruitment` (26): 28. Depois do A4 (9): 19.
-    expect(pendentes.length).toBeLessThanOrEqual(19);
+    // `admin.vacancies` (45): 54. Depois de `analytics`+`recruitment` (26): 28. Depois do A4 (9): 19. Depois do A5 (9): 10.
+    expect(pendentes.length).toBeLessThanOrEqual(10);
   });
 
   it('as 10 rotas de encuadre fora do prefixo estão DENTRO do perímetro (não `not_governed`)', () => {

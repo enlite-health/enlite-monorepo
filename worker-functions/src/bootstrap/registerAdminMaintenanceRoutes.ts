@@ -5,9 +5,8 @@
  * Fixtures cleanup (teardown E2E + faxina geral de dado is_test).
  * Extraído de src/index.ts para respeitar o limite de 400 linhas.
  *
- * ⚠️ Monta DUAS famílias da task 3.5: `admin.test_fixtures` (A4, declarada) e
- * `admin.dedup` (A5, ainda pendente). O `permissions` já entra aqui por causa da
- * primeira; o A5 usa o mesmo parâmetro.
+ * ⚠️ Monta DUAS famílias da task 3.5, ambas declaradas: `admin.test_fixtures`
+ * (A4) e `admin.dedup` (A5). As duas usam o mesmo `permissions`.
  */
 
 import type { Express } from 'express';
@@ -24,7 +23,7 @@ export function registerAdminMaintenanceRoutes(
 ): void {
   // ========== Admin Dedup (Centro de Duplicados) ==========
   const adminDedupController = new AdminDedupController();
-  app.use('/api/admin/dedup', createDedupRoutes(adminDedupController, authMiddleware));
+  app.use('/api/admin/dedup', createDedupRoutes(adminDedupController, authMiddleware, permissions));
 
   // ========== Admin Test Fixtures (teardown E2E + faxina is_test) ==========
   const adminTestFixturesController = new AdminTestFixturesController();

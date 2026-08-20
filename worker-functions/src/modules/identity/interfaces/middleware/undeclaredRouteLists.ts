@@ -40,16 +40,6 @@ export const EXEMPT_ROUTES: ReadonlySet<string> = new Set([
  * boot. Ordem: método + caminho, como o app registrou.
  */
 export const PENDING_DECLARATIONS: ReadonlySet<string> = new Set([
-  // ── admin.dedup (9) ────────────────────────────────────────
-  'GET /api/admin/dedup/groups',
-  'GET /api/admin/dedup/groups/:phoneNormalized',
-  'POST /api/admin/dedup/merge',
-  'POST /api/admin/dedup/dismiss',
-  'POST /api/admin/dedup/merges/:auditId/undo',
-  'GET /api/admin/dedup/history',
-  'GET /api/admin/dedup/imported-groups',
-  'GET /api/admin/dedup/candidates',
-  'POST /api/admin/dedup/manual-group',
   // ── encuadre/funil fora do prefixo (10) ─────────────────────────
   // Entraram no perímetro por NOME em 19/08 (`GOVERNED_ROUTES`): são
   // `requireStaff` mas vivem sob `/api/workers/` e `/api/cases/`, então estavam
