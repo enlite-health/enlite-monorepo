@@ -400,7 +400,7 @@ app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, 
 app.use('/api', createAuthTelemetryRoutes(authMiddleware));
 
 // ========== Worker Status & Encuadres ==========
-app.use('/api', createWorkerEncuadreRoutes(encuadreController, authMiddleware));
+app.use('/api', createWorkerEncuadreRoutes(encuadreController, authMiddleware, permissionMiddleware));
 
 // ========== Admin Workers & Worker Tags ==========
 const staffOnly = authMiddleware.requireStaff();

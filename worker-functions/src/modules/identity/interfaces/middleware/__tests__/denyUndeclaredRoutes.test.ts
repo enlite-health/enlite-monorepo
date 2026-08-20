@@ -96,11 +96,19 @@ describe('GOVERNED_ROUTES — o perímetro que o prefixo não alcança', () => {
   it('pelo caminho CONCRETO da request, quem resolve é o índice — não o prefixo', () => {
     // `/api/workers/abc-123/status` não casa prefixo nenhum. Se o pré-filtro de
     // caminho ainda fosse o primeiro corte, a rota voltaria a ser `not_governed`
-    // e a lista nomeada não valeria nada em runtime. `pending` (e não
-    // `not_governed`) é a prova da cadeia inteira: entrou pelo nome, foi
-    // resolvida pelo índice e foi achada na dívida de rollout.
+    // e a lista nomeada não valeria nada em runtime.
+    //
+    // ⚠️ A asserção é "NÃO é `not_governed`", e o valor exato vem do fixture —
+    // que é uma `ScannedRoute` sem célula. A versão anterior deste caso afirmava
+    // `'pending'`, e quebrou quando o A6 declarou a família e tirou a rota da
+    // dívida: estava acoplada à LISTA em vez de ao MECANISMO, que é o que o caso
+    // existe para provar.
     const registry = registryCom([encuadre]);
-    expect(registry.statusOf('PUT', '/api/workers/abc-123/status')).toBe('pending');
+
+    const status = registry.statusOf('PUT', '/api/workers/abc-123/status');
+
+    expect(status).not.toBe('not_governed');
+    expect(status).toBe('undeclared');
   });
 
   it('governada por nome, sem célula e fora das listas → `undeclared` (a rede pega)', () => {

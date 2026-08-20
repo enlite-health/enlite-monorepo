@@ -40,19 +40,4 @@ export const EXEMPT_ROUTES: ReadonlySet<string> = new Set([
  * boot. Ordem: método + caminho, como o app registrou.
  */
 export const PENDING_DECLARATIONS: ReadonlySet<string> = new Set([
-  // ── encuadre/funil fora do prefixo (10) ─────────────────────────
-  // Entraram no perímetro por NOME em 19/08 (`GOVERNED_ROUTES`): são
-  // `requireStaff` mas vivem sob `/api/workers/` e `/api/cases/`, então estavam
-  // `not_governed` — fora do deny-by-default e fora desta lista. A dívida não
-  // cresceu: ela ficou VISÍVEL. Declarar é família própria, PR seguinte.
-  'GET /api/workers/status-dashboard',
-  'GET /api/workers/by-status/:status',
-  'PUT /api/workers/:id/status',
-  'PUT /api/workers/:id/occupation',
-  'GET /api/workers/docs-expiring',
-  'PUT /api/workers/:id/doc-expiry',
-  'GET /api/workers/:id/encuadres',
-  'GET /api/workers/:id/cases',
-  'GET /api/cases/:caseNumber/encuadres',
-  'GET /api/cases/:caseNumber/workers',
 ]);

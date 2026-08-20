@@ -116,7 +116,7 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/matching/interfaces/routes/{workerContextRoutes,adminVacanciesRoutes,analyticsRoutes,recruitmentRoutes}.ts': {
+    'src/modules/matching/interfaces/routes/{workerContextRoutes,adminVacanciesRoutes,analyticsRoutes,recruitmentRoutes,workerEncuadreRoutes}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
