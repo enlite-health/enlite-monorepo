@@ -144,6 +144,14 @@ export class AdmissionSchedulingService {
    */
   private async resolveTimezone(country: AdmissionCountry, calendarId: string): Promise<string> {
     const cfg = getAdmissionCountryConfig(country);
+
+    // Só no modo roster. Com a flag desligada o merge tem que ser NEUTRO, e
+    // isto aqui não seria: acrescentaria uma chamada ao Google por request no
+    // endpoint público e trocaria a fonte do fuso por algo editável fora do
+    // código. Hoje os dois valores coincidem (medido 20/08), então ligar junto
+    // com o roster não muda nada para quem já usa — muda a partir do flip.
+    if (!isHostRosterEnabled()) return cfg.timezone;
+
     try {
       const tz = await this.calendar.getCalendarTimezone(calendarId, this.impersonateEmail);
       if (tz) return tz;
@@ -247,7 +255,9 @@ export class AdmissionSchedulingService {
     const cfg = getAdmissionCountryConfig(country);
     const calendarId = this.resolveCalendarId(country);
     const teamName = resolveTeamDisplayName(country);
-    const lineName = resolveLineName(country);
+    // A linha (Care/Clinic) entra no título junto com o roster. Trocar o título
+    // dos eventos que já são criados hoje não é neutro, e o merge precisa ser.
+    const eventLabel = isHostRosterEnabled() ? resolveLineName(country) : teamName;
     const timezone = await this.resolveTimezone(country, calendarId);
 
     // 1) Paciente existe e é do país.
@@ -267,7 +277,7 @@ export class AdmissionSchedulingService {
         country,
         calendarId,
         teamName,
-        lineName,
+        eventLabel,
         startISO,
         endISO,
         timezone,
@@ -313,7 +323,7 @@ export class AdmissionSchedulingService {
       const { eventId, meetLink } = await this.calendar.createEventWithMeet({
         calendarId,
         impersonateEmail: this.impersonateEmail,
-        summary: `Entrevista de admisión — ${lineName}`,
+        summary: `Entrevista de admisión — ${eventLabel}`,
         description: `Entrevista de admisión Enlite (${country}).`,
         startISO,
         endISO,
@@ -506,13 +516,13 @@ export class AdmissionSchedulingService {
     country: AdmissionCountry;
     calendarId: string;
     teamName: string;
-    lineName: string;
+    eventLabel: string;
     startISO: string;
     endISO: string;
     timezone: string;
     patientEmail?: string;
   }): Promise<BookResult> {
-    const { patientId, country, calendarId, teamName, lineName, startISO, endISO, timezone } = input;
+    const { patientId, country, calendarId, teamName, eventLabel, startISO, endISO, timezone } = input;
 
     if (await this.isAdmissionCalendarBusy(calendarId, startISO, endISO, timezone)) {
       throw new SlotTakenError();
@@ -536,7 +546,7 @@ export class AdmissionSchedulingService {
     const { eventId, meetLink } = await this.calendar.createEventWithMeet({
       calendarId,
       impersonateEmail: this.impersonateEmail,
-      summary: `Entrevista de admisión — ${lineName}`,
+      summary: `Entrevista de admisión — ${eventLabel}`,
       description: `Entrevista de admisión Enlite (${country}).`,
       startISO,
       endISO,

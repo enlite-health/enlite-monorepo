@@ -637,6 +637,16 @@ describe('AdmissionSchedulingService — fuso da agenda', () => {
     }
   });
 
+  it('com a flag DESLIGADA nem pergunta o fuso ao Google — nenhuma chamada nova no ar', async () => {
+    delete process.env.ADMISSION_HOST_ROSTER_ENABLED;
+    const { service, calendar } = makeService({ countryBusy: [] });
+
+    const slots = await service.getAvailableSlots('AR', NOW);
+
+    expect(calendar.getCalendarTimezone).not.toHaveBeenCalled();
+    expect(slots[0].startISO).toContain('-03:00'); // o default do país, como hoje
+  });
+
   it('pergunta o fuso para a agenda do país, impersonando o dono', async () => {
     const { service, calendar } = makeService({ hosts: [ANA], busyByHost: {} });
 
@@ -727,14 +737,16 @@ describe('AdmissionSchedulingService — título do evento', () => {
     expect(calendar.createEventWithMeet.mock.calls[0][0].summary).not.toContain('Ana');
   });
 
-  it('o modo antigo também ganha a linha no título', async () => {
+  it('com a flag DESLIGADA o título fica como está no ar hoje — merge é neutro', async () => {
     delete process.env.ADMISSION_HOST_ROSTER_ENABLED;
     const { service, calendar } = makeService({ countryBusy: [] });
 
     await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
 
+    // Trocar o título dos eventos que já são criados hoje seria mudar produção
+    // no merge. A linha (Care/Clinic) entra junto com o roster.
     expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toBe(
-      'Entrevista de admisión — EnLite Care',
+      `Entrevista de admisión — ${TEAM_AR}`,
     );
   });
 });

@@ -59,6 +59,9 @@ interface StubOptions {
 /** Agenda dublada: nunca sai da máquina, nunca cria evento de verdade. */
 function stubCalendar(opts: StubOptions = {}): AdmissionCalendarService {
   return {
+    // Sem isto o serviço caía no `catch` do fuso e o e2e nunca exercitava o
+    // caminho real — achado do gate de revisão.
+    getCalendarTimezone: async () => AR_ZONE,
     getBusyIntervals: async () => [],
     getFreeBusyByCalendar: async (ids: string[]): Promise<CalendarBusyResult[]> =>
       ids.map((calendarId) => ({ calendarId, busy: opts.busyByHost?.[calendarId] ?? [] })),
