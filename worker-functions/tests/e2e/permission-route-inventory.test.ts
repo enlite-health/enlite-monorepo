@@ -134,6 +134,52 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/workers/:id/tags/:tagId → worker:write',
         'POST /api/admin/workers/sync-talentum → talentum:write',
         'PUT /api/admin/workers/:id/service-area → worker:write',
+        // ── admin.vacancies (45) — a 4ª e maior, um arquivo só
+        'DELETE /api/admin/interview-slots/:slotId → interview:delete',
+        'DELETE /api/admin/vacancies/:id → vacancy:delete',
+        'DELETE /api/admin/vacancies/:id/publish-talentum → talentum:write',
+        'DELETE /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId → funnel:write',
+        'GET /api/admin/dashboard/alerts → dashboard:read',
+        'GET /api/admin/dashboard/conversion-by-channel → dashboard:read',
+        'GET /api/admin/dashboard/coordinator-capacity → dashboard:read',
+        'GET /api/admin/vacancies → vacancy:read',
+        'GET /api/admin/vacancies/:id → vacancy:read',
+        'GET /api/admin/vacancies/:id/funnel → funnel:read',
+        'GET /api/admin/vacancies/:id/funnel-table → funnel:read',
+        'GET /api/admin/vacancies/:id/interview-slots → interview:read',
+        'GET /api/admin/vacancies/:id/match-results → match:read',
+        'GET /api/admin/vacancies/:id/prescreening-config → prescreening:read',
+        'GET /api/admin/vacancies/:id/social-links-stats → vacancy:read',
+        'GET /api/admin/vacancies/:id/talentum-status → talentum:read',
+        'GET /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:read',
+        'GET /api/admin/vacancies/:vacancyId/workers/:workerId/delivery-status → messaging:read',
+        'GET /api/admin/vacancies/by-address → vacancy:read',
+        'GET /api/admin/vacancies/cases-for-select → vacancy:read',
+        'GET /api/admin/vacancies/filter-options → vacancy:read',
+        'GET /api/admin/vacancies/in-progress → vacancy:read',
+        'GET /api/admin/vacancies/next-vacancy-number → vacancy:read',
+        'GET /api/admin/vacancies/pending-address-review → vacancy:read',
+        'GET /api/admin/vacancies/stats → vacancy:read',
+        'POST /api/admin/interview-slots/:slotId/book → interview:write',
+        'POST /api/admin/vacancies → vacancy:write',
+        'POST /api/admin/vacancies/:id/generate-ai-content → vacancy:write',
+        'POST /api/admin/vacancies/:id/generate-talentum-description → talentum:write',
+        'POST /api/admin/vacancies/:id/interview-slots → interview:write',
+        'POST /api/admin/vacancies/:id/match → match:execute',
+        'POST /api/admin/vacancies/:id/prescreening-config → prescreening:write',
+        'POST /api/admin/vacancies/:id/publish-talentum → talentum:write',
+        'POST /api/admin/vacancies/:id/resolve-address-review → vacancy:write',
+        'POST /api/admin/vacancies/:id/social-links → vacancy:write',
+        'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:write',
+        'POST /api/admin/vacancies/blocked-applications/:blockedId/reject → funnel:write',
+        'POST /api/admin/vacancies/blocked-applications/:blockedId/restore → funnel:write',
+        'POST /api/admin/vacancies/meet-links/lookup → vacancy:read',
+        'POST /api/admin/vacancies/sync-talentum → talentum:write',
+        'PUT /api/admin/encuadres/:id/move → funnel:write',
+        'PUT /api/admin/encuadres/:id/result → funnel:write',
+        'PUT /api/admin/vacancies/:id → vacancy:write',
+        'PUT /api/admin/vacancies/:id/meet-links → vacancy:write',
+        'PUT /api/admin/vacancies/:id/talentum-description → talentum:write',
       ].sort(),
     );
   });
@@ -167,8 +213,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // `workerEncuadreRoutes` sempre estiveram sem declaração; elas viviam fora
     // de `GOVERNED_PREFIXES` e por isso não apareciam aqui. Ao entrarem no
     // perímetro por nome (`GOVERNED_ROUTES`), passaram a ser contadas. Número
-    // maior e verdadeiro vale mais que número menor e cego.
-    expect(pendentes.length).toBeLessThanOrEqual(99);
+    // maior e verdadeiro vale mais que número menor e cego. Depois de
+    // `admin.vacancies` (45): 54.
+    expect(pendentes.length).toBeLessThanOrEqual(54);
   });
 
   it('as 10 rotas de encuadre fora do prefixo estão DENTRO do perímetro (não `not_governed`)', () => {
