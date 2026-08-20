@@ -4,17 +4,6 @@ import { IMessagingService } from '../../domain/IMessagingService';
 import { MessageTemplateRepository } from '../../infrastructure/MessageTemplateRepository';
 import type { PermissionMiddleware } from '@modules/identity';
 
-/** Rota pública temporária — remover após configurar autenticação no cron. */
-export function createPublicBulkDispatchRoute(
-  messagingService: IMessagingService,
-  templateRepo: MessageTemplateRepository,
-): Router {
-  const router = Router();
-  const controller = new MessagingController(messagingService, templateRepo);
-  router.post('/bulk-dispatch-incomplete', (req, res) => controller.bulkDispatchIncomplete(req, res));
-  return router;
-}
-
 /**
  * ── Família `admin.messaging` (task 3.5-A4) ─────────────────────────────────
  * Mapa rota→célula: `openspec/changes/painel-grupos-permissao/route-permission-map.md`.
