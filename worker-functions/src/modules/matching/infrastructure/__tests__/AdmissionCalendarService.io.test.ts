@@ -387,7 +387,7 @@ describe('AdmissionCalendarService — I/O', () => {
       );
     });
 
-    it('leva a atendente como participante e ESCONDE a lista de convidados', async () => {
+    it('leva a atendente como participante, sem tentar esconder a lista de convidados', async () => {
       await service.createEventWithMeet({
         ...baseParams,
         coHostEmail: HOST_A,
@@ -400,8 +400,12 @@ describe('AdmissionCalendarService — I/O', () => {
         { email: HOST_A },
         { email: 'paciente@example.com' },
       ]);
-      // O paciente não pode descobrir quem vai atendê-lo.
-      expect(body.guestsCanSeeOtherGuests).toBe(false);
+      // NÃO mandamos `guestsCanSeeOtherGuests`: com `guestsCanModify: true` o
+      // Google descarta o campo (medido em 20/08), e a decisão de produto é
+      // que ver a atendente no convite é aceitável. Mandar um campo que a API
+      // ignora seria alegar uma proteção inexistente.
+      expect(body).not.toHaveProperty('guestsCanSeeOtherGuests');
+      expect(body.guestsCanModify).toBe(true);
       // ...e o título nomeia a EQUIPE, nunca a pessoa.
       expect(body.summary).toBe('Entrevista de admisión — Equipo de Admisión EnLite');
       expect(JSON.stringify(body)).not.toContain('Ana');
@@ -410,7 +414,6 @@ describe('AdmissionCalendarService — I/O', () => {
     it('sem atendente e sem paciente → nenhum participante', async () => {
       await service.createEventWithMeet(baseParams);
       expect(lastCall().body.attendees).toEqual([]);
-      expect(lastCall().body.guestsCanSeeOtherGuests).toBe(false);
     });
 
     it('sem timezone explícito o evento sai na zona AR', async () => {
