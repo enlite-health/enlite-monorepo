@@ -83,14 +83,18 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    // A4: as duas famílias de UMA rota. ⚠️ `messagingRoutes.ts` NÃO entra: o
-    // arquivo carrega `createPublicBulkDispatchRoute`, uma fábrica de rota
-    // "pública temporária" que dispara WhatsApp em massa SEM auth e que
-    // **nunca é chamada** (medido: só definida e re-exportada no barrel). Ela
-    // deixa o arquivo em 82%, e a saída honesta não é testar código morto para
-    // inflar o número — é apagá-lo, o que é decisão de produto e PR próprio.
-    // Enquanto isso, o arquivo fica fora do piso e a família é protegida pelo
-    // teste unit (que cobre 100% da fábrica VIVA) e pelo e2e.
+    // A4: as famílias de mensageria, integração e fixtures. `messagingRoutes.ts`
+    // entrou aqui em 20/08, quando a `createPublicBulkDispatchRoute` — fábrica
+    // de rota "pública temporária" que disparava WhatsApp em massa SEM auth e
+    // que nunca era chamada — foi apagada. Enquanto ela existia, o arquivo
+    // ficava em 82% e a saída honesta era ficar de fora, não testar código
+    // morto para inflar o número.
+    'src/modules/notification/interfaces/routes/messagingRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/integration/interfaces/routes/adminIntegrationsRoutes.ts': {
       statements: 100,
       branches: 100,

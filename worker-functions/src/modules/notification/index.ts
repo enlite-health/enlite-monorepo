@@ -64,7 +64,6 @@ export { InboundWhatsAppController } from './interfaces/controllers/InboundWhats
 export { PeriskopeWebhookController } from './interfaces/controllers/PeriskopeWebhookController';
 export {
   createMessagingRoutes,
-  createPublicBulkDispatchRoute,
 } from './interfaces/routes/messagingRoutes';
 export { createInternalRoutes } from './interfaces/routes/internalRoutes';
 export { internalAuthMiddleware } from './interfaces/middleware/InternalAuthMiddleware';
