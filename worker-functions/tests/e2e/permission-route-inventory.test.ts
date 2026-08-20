@@ -180,6 +180,33 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/vacancies/:id → vacancy:write',
         'PUT /api/admin/vacancies/:id/meet-links → vacancy:write',
         'PUT /api/admin/vacancies/:id/talentum-description → talentum:write',
+        // ── admin.analytics (15) + admin.recruitment (11) — a 5ª e a 6ª
+        'GET /analytics/dashboard/cases/:caseNumber → dashboard:read',
+        'GET /analytics/dashboard/global → dashboard:read',
+        'GET /analytics/dashboard/management → dashboard:read',
+        'GET /analytics/dashboard/reemplazos → dashboard:read',
+        'GET /analytics/dashboard/zone-analytics → dashboard:read',
+        'GET /analytics/dashboard/zones → dashboard:read',
+        'GET /analytics/dedup/candidates → dedup:read',
+        'GET /analytics/vacancies → analytics:read',
+        'GET /analytics/vacancies/:id → analytics:read',
+        'GET /analytics/vacancies/:id/incomplete-registrations → analytics:read',
+        'GET /analytics/vacancies/case/:caseNumber → analytics:read',
+        'GET /analytics/workers → analytics:read',
+        'GET /analytics/workers/:workerId/vacancies → analytics:read',
+        'GET /analytics/workers/missing-documents → analytics:read',
+        'GET /api/admin/recruitment/blocked-attempts → recruitment:read',
+        'GET /api/admin/recruitment/case/:caseNumber → recruitment:read',
+        'GET /api/admin/recruitment/clickup-cases → recruitment:read',
+        'GET /api/admin/recruitment/encuadres → match:read',
+        'GET /api/admin/recruitment/global-metrics → recruitment:read',
+        'GET /api/admin/recruitment/health → messaging:read',
+        'GET /api/admin/recruitment/progreso → recruitment:read',
+        'GET /api/admin/recruitment/publications → recruitment:read',
+        'GET /api/admin/recruitment/talentum-workers → talentum:read',
+        'GET /api/admin/recruitment/zones → recruitment:read',
+        'POST /analytics/dedup/run → dedup:execute',
+        'POST /api/admin/recruitment/calculate-reemplazos → recruitment:write',
       ].sort(),
     );
   });
@@ -214,8 +241,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // de `GOVERNED_PREFIXES` e por isso não apareciam aqui. Ao entrarem no
     // perímetro por nome (`GOVERNED_ROUTES`), passaram a ser contadas. Número
     // maior e verdadeiro vale mais que número menor e cego. Depois de
-    // `admin.vacancies` (45): 54.
-    expect(pendentes.length).toBeLessThanOrEqual(54);
+    // `admin.vacancies` (45): 54. Depois de `analytics`+`recruitment` (26): 28.
+    expect(pendentes.length).toBeLessThanOrEqual(28);
   });
 
   it('as 10 rotas de encuadre fora do prefixo estão DENTRO do perímetro (não `not_governed`)', () => {
