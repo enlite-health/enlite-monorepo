@@ -40,34 +40,6 @@ export const EXEMPT_ROUTES: ReadonlySet<string> = new Set([
  * boot. Ordem: método + caminho, como o app registrou.
  */
 export const PENDING_DECLARATIONS: ReadonlySet<string> = new Set([
-  // ── admin.analytics (15) ───────────────────────────────────
-  'GET /analytics/workers',
-  'GET /analytics/workers/missing-documents',
-  'GET /analytics/workers/:workerId/vacancies',
-  'GET /analytics/vacancies',
-  'GET /analytics/vacancies/case/:caseNumber',
-  'GET /analytics/vacancies/:id/incomplete-registrations',
-  'GET /analytics/vacancies/:id',
-  'GET /analytics/dedup/candidates',
-  'POST /analytics/dedup/run',
-  'GET /analytics/dashboard/global',
-  'GET /analytics/dashboard/zones',
-  'GET /analytics/dashboard/reemplazos',
-  'GET /analytics/dashboard/management',
-  'GET /analytics/dashboard/zone-analytics',
-  'GET /analytics/dashboard/cases/:caseNumber',
-  // ── admin.recruitment (11) ─────────────────────────────────
-  'GET /api/admin/recruitment/clickup-cases',
-  'GET /api/admin/recruitment/talentum-workers',
-  'GET /api/admin/recruitment/progreso',
-  'GET /api/admin/recruitment/publications',
-  'GET /api/admin/recruitment/encuadres',
-  'GET /api/admin/recruitment/global-metrics',
-  'GET /api/admin/recruitment/case/:caseNumber',
-  'GET /api/admin/recruitment/zones',
-  'POST /api/admin/recruitment/calculate-reemplazos',
-  'GET /api/admin/recruitment/blocked-attempts',
-  'GET /api/admin/recruitment/health',
   // ── admin.dedup (9) ────────────────────────────────────────
   'GET /api/admin/dedup/groups',
   'GET /api/admin/dedup/groups/:phoneNormalized',

@@ -61,7 +61,7 @@ import {
   runPermissionsBootTasks,
   wirePermissionsModule,
 } from './bootstrap/wirePermissionsModule';
-import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
+import { ADMIN_RECRUITMENT_FAMILY, createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
@@ -455,10 +455,10 @@ app.use('/api/admin', createAdminVacanciesRoutes(
 ));
 
 // ========== Analytics & BI (extracted router) ==========
-app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware));
+app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware, permissionMiddleware));
 
 // ========== Recruitment (extracted router) ==========
-app.use('/api', createRecruitmentRoutes(recruitmentController, authMiddleware));
+app.use('/api', createRecruitmentRoutes(recruitmentController, authMiddleware, permissionMiddleware));
 
 // ========== Messaging Routes ==========
 app.use('/api/admin/messaging', authMiddleware.requireStaff(), createMessagingRoutes(messagingService, templateRepo));
@@ -510,8 +510,23 @@ app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, syst
 );
 
 // ========== Recruitment Health Dashboard ==========
-app.get('/api/admin/recruitment/health', staffOnly, (req: Request, res: Response) =>
-  recruitmentHealthController.getHealth(req, res),
+// A 11ª rota da família `admin.recruitment` (task 3.5-A3). Mora aqui, e não em
+// `recruitmentRoutes.ts`, porque `recruitmentHealthController` depende do
+// `dbPool`, criado DEPOIS daquele mount — movê-la exigiria reordenar este
+// arquivo, e reordenar o `src/index.ts` é mudança de risco silencioso que não
+// pertence a um PR de declaração de célula.
+//
+// A célula é `messaging:read`, e não `recruitment:read`, porque a rota devolve
+// EXCLUSIVAMENTE agregados de disparo (`domain_events`, `messaging_outbox`,
+// `whatsapp_bulk_dispatch_logs` — zero tabela de worker ou encuadre, medido).
+// É a régua da D127 aplicada: vale o que a rota DEVOLVE, não o que o caminho
+// sugere. Família e célula são coisas diferentes — a família é a unidade de
+// rollout, a célula é a permissão.
+app.get(
+  '/api/admin/recruitment/health',
+  staffOnly,
+  permissionMiddleware.family(ADMIN_RECRUITMENT_FAMILY).require('messaging', 'read'),
+  (req: Request, res: Response) => recruitmentHealthController.getHealth(req, res),
 );
 
 // ========== Permissões (painel de grupos, grupo 2) ==========
