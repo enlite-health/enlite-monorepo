@@ -83,6 +83,26 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // A4: as duas famílias de UMA rota. ⚠️ `messagingRoutes.ts` NÃO entra: o
+    // arquivo carrega `createPublicBulkDispatchRoute`, uma fábrica de rota
+    // "pública temporária" que dispara WhatsApp em massa SEM auth e que
+    // **nunca é chamada** (medido: só definida e re-exportada no barrel). Ela
+    // deixa o arquivo em 82%, e a saída honesta não é testar código morto para
+    // inflar o número — é apagá-lo, o que é decisão de produto e PR próprio.
+    // Enquanto isso, o arquivo fica fora do piso e a família é protegida pelo
+    // teste unit (que cobre 100% da fábrica VIVA) e pelo e2e.
+    'src/modules/integration/interfaces/routes/adminIntegrationsRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/interfaces/routes/testFixturesRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // `admin.workers` (3ª) é a primeira família ESPALHADA: 31 rotas em quatro
     // arquivos, dois deles fora do módulo `worker`. Os quatro entram, senão a
     // família fica coberta pela metade — que é o mesmo que não estar coberta.

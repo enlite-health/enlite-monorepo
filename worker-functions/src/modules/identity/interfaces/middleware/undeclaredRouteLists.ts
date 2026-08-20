@@ -50,18 +50,6 @@ export const PENDING_DECLARATIONS: ReadonlySet<string> = new Set([
   'GET /api/admin/dedup/imported-groups',
   'GET /api/admin/dedup/candidates',
   'POST /api/admin/dedup/manual-group',
-  // ── admin.messaging (7) ────────────────────────────────────
-  'POST /api/admin/messaging/whatsapp/vacancy-match',
-  'POST /api/admin/messaging/whatsapp/direct',
-  'GET /api/admin/messaging/templates',
-  'POST /api/admin/messaging/templates',
-  'PUT /api/admin/messaging/templates/:slug',
-  'DELETE /api/admin/messaging/templates/:slug',
-  'POST /api/admin/messaging/bulk-dispatch-incomplete',
-  // ── admin.integrations (1) ─────────────────────────────────
-  'POST /api/admin/integrations/anacare/backfill',
-  // ── admin.outras (1) ───────────────────────────────────────
-  'POST /api/admin/test-fixtures/cleanup',
   // ── encuadre/funil fora do prefixo (10) ─────────────────────────
   // Entraram no perímetro por NOME em 19/08 (`GOVERNED_ROUTES`): são
   // `requireStaff` mas vivem sob `/api/workers/` e `/api/cases/`, então estavam
