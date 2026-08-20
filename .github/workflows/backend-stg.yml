@@ -93,6 +93,20 @@ jobs:
           # prd sem medir lá (runbook F4). NUNCA comentar DENTRO de env_vars: o
           # parseKVString do deploy-cloudrun não suporta '#' (linha com '=' vira
           # env de nome inválido e o deploy falha).
+          # ── A7 (task 3.5 fechada): PERMISSION_CATALOG_SYNC_ENABLED liga o sync do
+          # catálogo DERIVADO (D115) — o boot varre as rotas e faz upsert das células
+          # declaradas em iam.permissions, descontinuando as que nenhuma rota declara.
+          # Só pôde ligar com PENDING_DECLARATIONS em ZERO (PR #243): com a lista
+          # cheia, o sync descontinuaria tudo que ainda não tinha sido declarado.
+          #
+          # 🚨 A FLAG VAI EM UM SERVIÇO SÓ, E ESTE É O SERVIÇO. NÃO copiar para
+          # backend-mcp-stg.yml: os dois deploys usam a MESMA imagem, mas o MCP roda
+          # com MCP_ENABLED=true e monta rotas que este não monta. Dois serviços
+          # sincronizando = duas varreduras DIFERENTES do mesmo catálogo, e cada boot
+          # descontinuaria as células que o outro declara. Hoje nenhuma rota /mcp/v1
+          # declara célula, então o estrago seria zero — mas a primeira que declarar
+          # ligaria um flip-flop silencioso entre as duas revisões.
+          #
           # Declarativo: o YAML é o conjunto COMPLETO de env/secrets. Sem isto o
           # deploy-cloudrun faz MERGE e chave removida PERSISTE da revisão anterior —
           # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
@@ -111,6 +125,7 @@ jobs:
             DB_SYSTEM_USER=enlite_system
             DB_MIGRATION_USER=enlite_app
             COUNTRY_RLS_ENABLED=true
+            PERMISSION_CATALOG_SYNC_ENABLED=true
             DB_POOL_MAX=3
             DB_SYSTEM_POOL_MAX=1
             USE_KMS_ENCRYPTION=false

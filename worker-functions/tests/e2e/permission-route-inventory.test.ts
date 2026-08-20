@@ -306,6 +306,30 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     );
   });
 
+  /**
+   * As duas células ÓRFÃS do seed da 206 (decisão do Gabriel, 20/08): nenhuma
+   * rota as declara, e por isso o sync do catálogo (A7) as DESCONTINUA. Isso é
+   * de propósito — o catálogo é derivado do código (D115), e célula que nenhuma
+   * rota exige é promessa que o sistema não cumpre.
+   *
+   * Este caso existe para que a decisão seja REVERSÍVEL COM AVISO: se alguém
+   * declarar uma rota com `analytics:export` ou `worker:delete`, ele fica
+   * vermelho — e a pessoa descobre que também precisa contar com o `'revived'`
+   * do sync (o upsert limpa `deprecated_at`) em vez de ser surpreendida.
+   *
+   * ⚠️ Note o que este caso NÃO faz: ele não afirma nada sobre `iam.permissions`.
+   * O banco do e2e é semeado pelas migrations e **nunca roda o sync** (a flag só
+   * existe no deploy), então lá as 41 células do seed seguem vivas. A divergência
+   * é deliberada e vive só nos ambientes implantados.
+   */
+  it('`analytics:export` e `worker:delete` seguem SEM rota — as órfãs que o A7 descontinua', () => {
+    const declaradas = new Set(
+      inventario.governedRoutes.filter((r) => r.status === 'declared').map((r) => r.cell),
+    );
+    expect(declaradas.has('analytics:export')).toBe(false);
+    expect(declaradas.has('worker:delete')).toBe(false);
+  });
+
   it('as rotas do PRESTADOR seguem FORA do perímetro — o que a lista nomeada preserva', () => {
     // A alternativa descartada (ampliar `GOVERNED_PREFIXES` para `/api/workers/`)
     // teria trazido estas para dentro, cada uma precisando de EXEMPT. Uma
