@@ -37,9 +37,20 @@ export function createPermissionRoutesInventoryRouter(
       status: registry.statusOfRoute(route),
     }));
 
+    // ⚠️ `declaredCells` NÃO é `governedRoutes` filtrado: é a varredura INTEIRA,
+    // que é exatamente o que `SyncPermissionCatalogUseCase` consome. Uma célula
+    // declarada em rota FORA do perímetro (`/api/workers/me/*`, `/mcp/v1/*`,
+    // webhook) entra no catálogo dos ambientes implantados e NÃO apareceria em
+    // `governedRoutes` — um teste que usasse só aquela lista como oráculo daria
+    // verde enquanto o catálogo real divergisse. Achado no gate do PR #244.
+    const declaredCells = [
+      ...new Set(routes.filter((r) => r.cell).map((r) => cellKey(r.cell!.resource, r.cell!.action))),
+    ].sort();
+
     res.json({
       totalRoutes: routes.length,
       governedRoutes: governed,
+      declaredCells,
       undeclared: registry.unexpectedlyUndeclared().map((route) => `${route.method} ${route.path}`),
     });
   });
