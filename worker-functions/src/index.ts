@@ -449,6 +449,7 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   dashboardController,
   interviewSlotsController,
   authMiddleware,
+  permissionMiddleware,
   vacancyAddressReviewController,
   funnelTableController,
 ));
