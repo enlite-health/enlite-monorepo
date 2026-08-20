@@ -82,6 +82,8 @@ interface Fixture {
   busyOnRecheck?: Record<string, BusyInterval[]>;
   /** O que o KMS devolve ao decifrar o e-mail do paciente. */
   decryptsTo?: string;
+  /** Fuso devolvido pela agenda; `null` = ilegível (cai no default do país). */
+  calendarTimezone?: string | null;
 }
 
 function makeService(fx: Fixture) {
@@ -115,6 +117,9 @@ function makeService(fx: Fixture) {
   );
 
   const calendar = {
+    getCalendarTimezone: jest.fn(async () =>
+      fx.calendarTimezone === undefined ? AR_ZONE : fx.calendarTimezone,
+    ),
     getBusyIntervals: jest.fn(async () => fx.countryBusy ?? []),
     getFreeBusyByCalendar,
     createEventWithMeet: jest.fn(async () => ({
@@ -308,12 +313,20 @@ describe('AdmissionSchedulingService — roster', () => {
   });
 
   describe('configuração incompleta', () => {
-    it('sem a env da agenda do país, falha alto em vez de agendar no vazio', async () => {
+    it('sem a env da agenda do país, o BOOK falha alto em vez de agendar no vazio', async () => {
       delete process.env.ADMISSION_CALENDAR_ID_AR;
       const { service } = makeService({ hosts: [ANA], busyByHost: {} });
       await expect(
         service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW),
       ).rejects.toThrow(/missing env ADMISSION_CALENDAR_ID_AR/);
+    });
+
+    it('sem a env da agenda E sem atendente, a LISTAGEM devolve vazio — não 500', async () => {
+      // A tela pública é de paciente: país ainda sem configurar tem que dizer
+      // "não há horários", não explodir. O e2e completo pegou isto.
+      delete process.env.ADMISSION_CALENDAR_ID_AR;
+      const { service } = makeService({ hosts: [] });
+      await expect(service.getAvailableSlots('AR', NOW)).resolves.toEqual([]);
     });
   });
 
@@ -571,7 +584,8 @@ describe('AdmissionSchedulingService — roster', () => {
           impersonateEmail: IMPERSONATE,
           coHostEmail: ANA.email,
           patientEmail: 'paciente@example.com',
-          summary: `Entrevista de admisión — ${TEAM_AR}`,
+          // O título nomeia a LINHA (Care/Clinic), nunca a pessoa.
+          summary: 'Entrevista de admisión — EnLite Care',
         }),
       );
     });
@@ -598,5 +612,219 @@ describe('AdmissionSchedulingService — roster', () => {
       // O e-mail da atendente fica só no host_email, que é interno.
       expect(inserted[0].hostEmail).toBe(ANA.email);
     });
+  });
+});
+
+// ── Fuso vem da agenda do Google, não de constante no código ────────────────
+
+describe('AdmissionSchedulingService — fuso da agenda', () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of ['ADMISSION_HOST_ROSTER_ENABLED', 'ADMISSION_CALENDAR_ID_AR', 'ADMISSION_CALENDAR_ID_BR']) {
+      savedEnv[k] = process.env[k];
+    }
+    process.env.ADMISSION_CALENDAR_ID_AR = CAL_AR;
+    process.env.ADMISSION_CALENDAR_ID_BR = 'admission-br@group.calendar.google.com';
+    process.env.ADMISSION_HOST_ROSTER_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it('pergunta o fuso para a agenda do país, impersonando o dono', async () => {
+    const { service, calendar } = makeService({ hosts: [ANA], busyByHost: {} });
+
+    await service.getAvailableSlots('AR', NOW);
+
+    expect(calendar.getCalendarTimezone).toHaveBeenCalledWith(CAL_AR, IMPERSONATE);
+  });
+
+  it('a grade segue o fuso da AGENDA, não a constante do país', async () => {
+    // Agenda do Brasil configurada em Manaus (UTC-4) em vez de São Paulo (-03).
+    const { service } = makeService({
+      hosts: [ANA],
+      busyByHost: {},
+      calendarTimezone: 'America/Manaus',
+    });
+
+    const slots = await service.getAvailableSlots('BR', NOW);
+
+    // Os horários saem com o offset de Manaus; se viesse da constante do país
+    // (America/Sao_Paulo) seria -03:00.
+    expect(slots[0].startISO).toContain('-04:00');
+  });
+
+  it('fuso ilegível cai no default do país e AVISA — não derruba a página', async () => {
+    const { service } = makeService({
+      hosts: [ANA],
+      busyByHost: {},
+      calendarTimezone: null,
+    });
+
+    const slots = await service.getAvailableSlots('AR', NOW);
+
+    expect(slots[0].startISO).toContain('-03:00'); // Buenos Aires, o default
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ country: 'AR', fallback: AR_ZONE }),
+      expect.stringContaining('fuso'),
+    );
+  });
+
+  it('erro ao ler o fuso também cai no default, sem propagar', async () => {
+    const { service, calendar } = makeService({ hosts: [ANA], busyByHost: {} });
+    (calendar.getCalendarTimezone as jest.Mock).mockRejectedValue(new Error('rede caiu'));
+
+    await expect(service.getAvailableSlots('AR', NOW)).resolves.toEqual(expect.any(Array));
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ erro: 'rede caiu' }),
+      expect.stringContaining('fuso'),
+    );
+  });
+});
+
+// ── Título do evento distingue as duas frentes ───────────────────────────────
+
+describe('AdmissionSchedulingService — título do evento', () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of ['ADMISSION_HOST_ROSTER_ENABLED', 'ADMISSION_CALENDAR_ID_AR']) {
+      savedEnv[k] = process.env[k];
+    }
+    process.env.ADMISSION_CALENDAR_ID_AR = CAL_AR;
+    process.env.ADMISSION_HOST_ROSTER_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it('AR sai como Care no título, e o paciente segue lendo o nome da EQUIPE', async () => {
+    const { service, calendar, notifier } = makeService({ hosts: [ANA], busyByHost: {} });
+
+    const out = await service.book(
+      { patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' },
+      NOW,
+    );
+
+    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toBe(
+      'Entrevista de admisión — EnLite Care',
+    );
+    // A linha NÃO vaza para a confirmação do paciente, que é por equipe.
+    expect(out.hostDisplayName).toBe(TEAM_AR);
+    expect(notifier.onBooked.mock.calls[0][0].hostDisplayName).toBe(TEAM_AR);
+    // ...e continua sem nome de pessoa.
+    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).not.toContain('Ana');
+  });
+
+  it('o modo antigo também ganha a linha no título', async () => {
+    delete process.env.ADMISSION_HOST_ROSTER_ENABLED;
+    const { service, calendar } = makeService({ countryBusy: [] });
+
+    await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toBe(
+      'Entrevista de admisión — EnLite Care',
+    );
+  });
+});
+
+// ── Trilha de auditoria da atribuição ────────────────────────────────────────
+
+describe('AdmissionSchedulingService — log de auditoria', () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of ['ADMISSION_HOST_ROSTER_ENABLED', 'ADMISSION_CALENDAR_ID_AR']) {
+      savedEnv[k] = process.env[k];
+    }
+    process.env.ADMISSION_CALENDAR_ID_AR = CAL_AR;
+    process.env.ADMISSION_HOST_ROSTER_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it('registra a REGRA, o modo e quantas candidatas — costurado por appointmentId', async () => {
+    const { service } = makeService({
+      hosts: [ANA, MARI],
+      busyByHost: {
+        [ANA.email]: [busy('2026-08-05T09:00', '2026-08-05T11:00')],
+        [MARI.email]: [busy('2026-08-05T09:00', '2026-08-05T15:00')],
+      },
+    });
+
+    await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        country: 'AR',
+        appointmentId: 'appt-1',
+        mode: 'roster',
+        candidatesConsidered: 2,
+        attemptsBeforeSuccess: 0,
+        rule: 'least_busy_week_then_email_asc',
+      },
+      '[admission] entrevista atribuída',
+    );
+  });
+
+  it('NÃO registra e-mail de atendente nem carga — auditoria, não monitoramento', async () => {
+    const { service } = makeService({
+      hosts: [ANA, MARI],
+      busyByHost: { [ANA.email]: [busy('2026-08-05T09:00', '2026-08-05T15:00')], [MARI.email]: [] },
+    });
+
+    await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+    const registrado = JSON.stringify((logger.info as jest.Mock).mock.calls);
+    expect(registrado).not.toContain('@enlite.health');
+    expect(registrado).not.toContain('busyMinutes');
+    expect(registrado).not.toMatch(/\b360\b/); // 6h em minutos
+  });
+
+  it('conta a tentativa quando a primeira candidata perde a corrida', async () => {
+    const { service } = makeService({
+      hosts: [ANA, MARI],
+      busyByHost: {
+        [ANA.email]: [busy('2026-08-05T09:00', '2026-08-05T11:00')],
+        [MARI.email]: [busy('2026-08-05T09:00', '2026-08-05T15:00')],
+      },
+      insertThrowsOnce: { code: '23505' },
+    });
+
+    await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptsBeforeSuccess: 1, candidatesConsidered: 2 }),
+      '[admission] entrevista atribuída',
+    );
+  });
+
+  it('o modo antigo também deixa trilha, com a regra dele', async () => {
+    delete process.env.ADMISSION_HOST_ROSTER_ENABLED;
+    const { service } = makeService({ countryBusy: [] });
+
+    await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'country_calendar', rule: 'single_country_calendar' }),
+      '[admission] entrevista atribuída',
+    );
   });
 });

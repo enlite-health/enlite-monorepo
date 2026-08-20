@@ -92,13 +92,17 @@ beforeAll(async () => {
 afterAll(async () => {
   await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
   await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
-  await pool.query(`DELETE FROM interview_hosts WHERE email LIKE '%@admissionroster.test'`);
+  await pool.query('DELETE FROM interview_hosts');
   await pool.end();
 });
 
 beforeEach(async () => {
   await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
-  await pool.query(`DELETE FROM interview_hosts WHERE email LIKE '%@admissionroster.test'`);
+  // Limpa a tabela INTEIRA, não só os e-mails desta suíte. Aprendido do jeito
+  // caro: linhas deixadas por outro uso do banco de teste (um script de
+  // gestão rodado à mão, por exemplo) viram atendentes extras e fazem
+  // "nenhuma cadastrada" ter três — o teste passa sozinho e falha na suíte.
+  await pool.query('DELETE FROM interview_hosts');
 });
 
 // ── Migration 283: a trava certa está no lugar ────────────────────────────────

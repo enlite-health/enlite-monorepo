@@ -352,6 +352,37 @@ export class AdmissionCalendarService {
   }
 
   /**
+   * Fuso da agenda, lido do próprio Google (`calendars.get`).
+   *
+   * É a FONTE DE VERDADE do fuso (pedido do Gabriel, 20/08): a grade de
+   * horários passa a seguir o que está configurado na agenda, não uma constante
+   * por país no código. Assim, quem opera muda o fuso na tela do Google e o
+   * sistema acompanha — e não importa de onde a atendente trabalha, porque o
+   * horário oferecido é o da agenda do país, um só para todo mundo.
+   *
+   * Devolve `null` se não conseguir ler: fuso é apresentação, não trava de
+   * segurança, e derrubar a página pública por causa disso seria pior do que
+   * cair no default do país (que hoje é exatamente o mesmo valor — medido em
+   * 20/08: AR = America/Argentina/Buenos_Aires, BR = America/Sao_Paulo).
+   */
+  async getCalendarTimezone(calendarId: string, impersonateEmail: string): Promise<string | null> {
+    const token = await this.token(impersonateEmail);
+    if (!token) throw new Error(`[AdmissionCalendarService] no DWD token for ${impersonateEmail}`);
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}?fields=timeZone`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as { timeZone?: string };
+    const tz = data.timeZone?.trim();
+    if (!tz) return null;
+    // Fuso inválido viraria uma grade de horários silenciosamente errada.
+    return DateTime.now().setZone(tz).isValid ? tz : null;
+  }
+
+  /**
    * Ocupação de N agendas numa ÚNICA requisição, por `POST /freeBusy`.
    *
    * ⚠️ É deliberadamente esta API, e não `events.list`, porque aqui se lê a

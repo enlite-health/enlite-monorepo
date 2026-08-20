@@ -18,6 +18,7 @@ import {
   ADMISSION_COUNTRIES,
   AdmissionCountry,
   getAdmissionCountryConfig,
+  resolveLineName,
   resolveTeamDisplayName,
 } from '../domain/admissionCountries';
 import {
@@ -137,6 +138,29 @@ export class AdmissionSchedulingService {
   }
 
   /**
+   * Fuso do país: o da AGENDA de admissão no Google, com o default do código
+   * como rede (D-fuso, 20/08). Um fuso só por país — não o de cada atendente —
+   * porque a grade oferecida ao paciente é uma só.
+   */
+  private async resolveTimezone(country: AdmissionCountry, calendarId: string): Promise<string> {
+    const cfg = getAdmissionCountryConfig(country);
+    try {
+      const tz = await this.calendar.getCalendarTimezone(calendarId, this.impersonateEmail);
+      if (tz) return tz;
+      logger.warn(
+        { country, calendarId, fallback: cfg.timezone },
+        '[admission] fuso da agenda ilegível: usando o default do país',
+      );
+    } catch (err) {
+      logger.warn(
+        { country, calendarId, fallback: cfg.timezone, erro: (err as Error).message },
+        '[admission] falha ao ler o fuso da agenda: usando o default do país',
+      );
+    }
+    return cfg.timezone;
+  }
+
+  /**
    * Disponibilidade pública do país. Devolve só horário + rótulo: nunca quem
    * está livre neles. Roster ligado e sem nenhuma atendente ativa → lista
    * vazia, sem erro (é o estado "Sem horários" da tela).
@@ -144,26 +168,55 @@ export class AdmissionSchedulingService {
   async getAvailableSlots(country: AdmissionCountry, now: Date = new Date()): Promise<PublicSlot[]> {
     const cfg = getAdmissionCountryConfig(country);
 
+    // Roster ligado e ninguém cadastrado encerra AQUI, antes de resolver agenda
+    // ou fuso: o spec manda responder "zero horários, sem erro", e um país que
+    // ainda não tem agenda configurada não pode virar 500 na tela pública.
+    const activeHosts = isHostRosterEnabled()
+      ? await this.hosts.listActiveByCountry(country)
+      : null;
+    if (activeHosts && activeHosts.length === 0) {
+      logger.warn(
+        { country },
+        '[admission] roster ligado e nenhuma atendente ativa: zero horários oferecidos',
+      );
+      return [];
+    }
+
+    const calendarId = this.resolveCalendarId(country);
+    const timezone = await this.resolveTimezone(country, calendarId);
+
     // Janela de leitura: de hoje até um horizonte generoso (a fn pura corta em
     // N dias úteis + antecedência).
-    const fromISO = DateTime.fromJSDate(now, { zone: cfg.timezone }).startOf('day').toISO() as string;
-    const toISO = DateTime.fromJSDate(now, { zone: cfg.timezone })
+    const fromISO = DateTime.fromJSDate(now, { zone: timezone }).startOf('day').toISO() as string;
+    const toISO = DateTime.fromJSDate(now, { zone: timezone })
       .plus({ days: READ_HORIZON_DAYS })
       .endOf('day')
       .toISO() as string;
 
-    const busyIntervalsByHost = await this.readAvailabilitySources(
-      country,
-      fromISO,
-      toISO,
-      cfg.timezone,
-    );
+    const busyIntervalsByHost = activeHosts
+      ? await this.readHostsBusy(
+          activeHosts.map((h) => h.email),
+          fromISO,
+          toISO,
+          timezone,
+          country,
+        )
+      : {
+          [calendarId]: await this.calendar.getBusyIntervals(
+            calendarId,
+            this.impersonateEmail,
+            fromISO,
+            toISO,
+            timezone,
+          ),
+        };
+    // Todas as agendas ilegíveis (fail-closed) → nada a oferecer.
     if (Object.keys(busyIntervalsByHost).length === 0) return [];
 
     const slots = computeFreeSlots({
       busyIntervalsByHost,
       now,
-      timezone: cfg.timezone,
+      timezone,
       holidays: cfg.holidays,
       businessHours: cfg.businessHours,
       slotMinutes: resolveSlotMinutes(),
@@ -173,7 +226,7 @@ export class AdmissionSchedulingService {
     return slots.map((s) => ({
       startISO: s.startISO,
       label: DateTime.fromISO(s.startISO)
-        .setZone(cfg.timezone)
+        .setZone(timezone)
         .setLocale('es')
         .toFormat("cccc d LLL, HH:mm"),
     }));
@@ -194,11 +247,13 @@ export class AdmissionSchedulingService {
     const cfg = getAdmissionCountryConfig(country);
     const calendarId = this.resolveCalendarId(country);
     const teamName = resolveTeamDisplayName(country);
+    const lineName = resolveLineName(country);
+    const timezone = await this.resolveTimezone(country, calendarId);
 
     // 1) Paciente existe e é do país.
     const patient = await this.loadPatientForCountry(patientId, country);
 
-    const slotStart = DateTime.fromISO(slotStartISO, { zone: cfg.timezone });
+    const slotStart = DateTime.fromISO(slotStartISO, { zone: timezone });
     if (!slotStart.isValid) throw new Error(`Invalid slotStartISO: ${slotStartISO}`);
     const slotEnd = slotStart.plus({ minutes: resolveSlotMinutes() });
     const startISO = slotStart.toISO() as string;
@@ -212,9 +267,10 @@ export class AdmissionSchedulingService {
         country,
         calendarId,
         teamName,
+        lineName,
         startISO,
         endISO,
-        timezone: cfg.timezone,
+        timezone,
         patientEmail,
       });
     }
@@ -229,13 +285,13 @@ export class AdmissionSchedulingService {
     }
 
     // 3) Roster: candidatas livres no horário, da mais leve para a mais cheia.
-    const ranked = await this.rankFreeHostsForSlot(country, slotStart, slotEnd);
+    const ranked = await this.rankFreeHostsForSlot(country, slotStart, slotEnd, timezone);
     if (ranked.length === 0) throw new SlotTakenError();
 
     for (const { host } of ranked) {
       // 3a) Re-check ao vivo desta candidata: entre o ranking e agora a agenda
       //     dela pode ter mudado.
-      if (!(await this.isHostFreeAt(host.email, startISO, endISO, cfg.timezone))) continue;
+      if (!(await this.isHostFreeAt(host.email, startISO, endISO, timezone))) continue;
 
       // 3b) Reserva o nosso lado ANTES do evento, sob UNIQUE(host_email,
       //     slot_start). Perder a corrida aqui não é erro: é a próxima candidata.
@@ -257,16 +313,24 @@ export class AdmissionSchedulingService {
       const { eventId, meetLink } = await this.calendar.createEventWithMeet({
         calendarId,
         impersonateEmail: this.impersonateEmail,
-        summary: `Entrevista de admisión — ${teamName}`,
+        summary: `Entrevista de admisión — ${lineName}`,
         description: `Entrevista de admisión Enlite (${country}).`,
         startISO,
         endISO,
-        timezone: cfg.timezone,
+        timezone,
         coHostEmail: host.email,
         patientEmail,
       });
 
       await this.attachCalendarRefs(appointmentId, eventId, meetLink);
+
+      this.logAssignment({
+        country,
+        appointmentId,
+        mode: 'roster',
+        candidatesConsidered: ranked.length,
+        attemptsBeforeSuccess: ranked.findIndex((r) => r.host.email === host.email),
+      });
 
       await this.notifier.onBooked({
         appointmentId,
@@ -287,50 +351,35 @@ export class AdmissionSchedulingService {
     throw new SlotTakenError();
   }
 
-  // ─── internals ─────────────────────────────────────────────────────────────
-
   /**
-   * Fontes de ocupação do país, chaveadas por agenda. Modo antigo → uma
-   * entrada (a agenda do país). Modo roster → uma por atendente ativa, lida por
-   * `freeBusy`, e agenda ilegível fica FORA do resultado (fail-closed): melhor
-   * oferecer menos horários do que oferecer um horário em que a pessoa está
-   * ocupada e ninguém aparece.
+   * Trilha de auditoria da atribuição: por qual REGRA aquele compromisso ganhou
+   * dono, em qual modo, e quantas candidatas foram consideradas.
+   *
+   * ⚠️ De propósito NÃO leva e-mail da atendente nem a carga dela. Quem atende
+   * já está gravado em `admission_appointments.host_email`, que é trilha
+   * durável e consultável; o log responde o "por quê", o banco responde o
+   * "quem", e `appointmentId` costura os dois. Registrar minutos ocupados por
+   * pessoa no Cloud Logging seria transformar auditoria em monitoramento de
+   * empregada — é o que a condição CM3 do veredito do `lex` proíbe
+   * (Ley 25.326 art. 9 / LGPD art. 46).
    */
-  private async readAvailabilitySources(
-    country: AdmissionCountry,
-    fromISO: string,
-    toISO: string,
-    timezone: string,
-  ): Promise<Record<string, BusyInterval[]>> {
-    if (!isHostRosterEnabled()) {
-      const calendarId = this.resolveCalendarId(country);
-      const busy = await this.calendar.getBusyIntervals(
-        calendarId,
-        this.impersonateEmail,
-        fromISO,
-        toISO,
-        timezone,
-      );
-      return { [calendarId]: busy };
-    }
-
-    const hosts = await this.hosts.listActiveByCountry(country);
-    if (hosts.length === 0) {
-      logger.warn(
-        { country },
-        '[admission] roster ligado e nenhuma atendente ativa: zero horários oferecidos',
-      );
-      return {};
-    }
-
-    return this.readHostsBusy(
-      hosts.map((h) => h.email),
-      fromISO,
-      toISO,
-      timezone,
-      country,
+  private logAssignment(input: {
+    country: AdmissionCountry;
+    appointmentId: string;
+    mode: 'roster' | 'country_calendar';
+    candidatesConsidered: number;
+    attemptsBeforeSuccess: number;
+  }): void {
+    logger.info(
+      {
+        ...input,
+        rule: input.mode === 'roster' ? 'least_busy_week_then_email_asc' : 'single_country_calendar',
+      },
+      '[admission] entrevista atribuída',
     );
   }
+
+  // ─── internals ─────────────────────────────────────────────────────────────
 
   /**
    * Ocupação das agendas das atendentes numa única requisição `freeBusy`,
@@ -378,6 +427,7 @@ export class AdmissionSchedulingService {
     country: AdmissionCountry,
     slotStart: DateTime,
     slotEnd: DateTime,
+    timezone: string,
   ): Promise<RankedHost[]> {
     const cfg = getAdmissionCountryConfig(country);
     const hosts = await this.hosts.listActiveByCountry(country);
@@ -389,7 +439,7 @@ export class AdmissionSchedulingService {
       hosts.map((h) => h.email),
       weekStart.toISO() as string,
       weekEnd.toISO() as string,
-      cfg.timezone,
+      timezone,
       country,
     );
 
@@ -412,7 +462,7 @@ export class AdmissionSchedulingService {
         busyMinutesInWeek: sumBusyMinutesInWeek(
           busy,
           startISO,
-          cfg.timezone,
+          timezone,
           cfg.businessHours,
           cfg.holidays,
         ),
@@ -456,12 +506,13 @@ export class AdmissionSchedulingService {
     country: AdmissionCountry;
     calendarId: string;
     teamName: string;
+    lineName: string;
     startISO: string;
     endISO: string;
     timezone: string;
     patientEmail?: string;
   }): Promise<BookResult> {
-    const { patientId, country, calendarId, teamName, startISO, endISO, timezone } = input;
+    const { patientId, country, calendarId, teamName, lineName, startISO, endISO, timezone } = input;
 
     if (await this.isAdmissionCalendarBusy(calendarId, startISO, endISO, timezone)) {
       throw new SlotTakenError();
@@ -485,7 +536,7 @@ export class AdmissionSchedulingService {
     const { eventId, meetLink } = await this.calendar.createEventWithMeet({
       calendarId,
       impersonateEmail: this.impersonateEmail,
-      summary: `Entrevista de admisión — ${teamName}`,
+      summary: `Entrevista de admisión — ${lineName}`,
       description: `Entrevista de admisión Enlite (${country}).`,
       startISO,
       endISO,
@@ -494,6 +545,14 @@ export class AdmissionSchedulingService {
     });
 
     await this.attachCalendarRefs(appointmentId, eventId, meetLink);
+
+    this.logAssignment({
+      country,
+      appointmentId,
+      mode: 'country_calendar',
+      candidatesConsidered: 1,
+      attemptsBeforeSuccess: 0,
+    });
 
     await this.notifier.onBooked({
       appointmentId,

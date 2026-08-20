@@ -332,6 +332,44 @@ describe('AdmissionCalendarService — I/O', () => {
     });
   });
 
+  describe('getCalendarTimezone', () => {
+    it('lê o fuso da própria agenda, pedindo só esse campo', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({ timeZone: 'America/Sao_Paulo' }));
+
+      const tz = await service.getCalendarTimezone(CAL_AR, IMPERSONATE);
+
+      expect(tz).toBe('America/Sao_Paulo');
+      const { url } = lastCall();
+      expect(url).toContain(`/calendars/${encodeURIComponent(CAL_AR)}`);
+      expect(url).toContain('fields=timeZone');
+    });
+
+    it('HTTP de erro devolve null em vez de derrubar a página pública', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({}, false, 404));
+      expect(await service.getCalendarTimezone(CAL_AR, IMPERSONATE)).toBeNull();
+    });
+
+    it('resposta sem fuso, ou com fuso em branco, devolve null', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({}));
+      expect(await service.getCalendarTimezone(CAL_AR, IMPERSONATE)).toBeNull();
+
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({ timeZone: '   ' }));
+      expect(await service.getCalendarTimezone(CAL_AR, IMPERSONATE)).toBeNull();
+    });
+
+    it('fuso INVÁLIDO devolve null — grade errada em silêncio seria pior', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({ timeZone: 'Marte/Olympus' }));
+      expect(await service.getCalendarTimezone(CAL_AR, IMPERSONATE)).toBeNull();
+    });
+
+    it('sem token DWD → erro explícito', async () => {
+      (getAccessToken as jest.Mock).mockResolvedValue(null);
+      await expect(service.getCalendarTimezone(CAL_AR, IMPERSONATE)).rejects.toThrow(
+        /no DWD token/,
+      );
+    });
+  });
+
   describe('createEventWithMeet', () => {
     const baseParams = {
       calendarId: CAL_AR,
