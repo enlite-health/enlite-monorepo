@@ -455,9 +455,10 @@ export class AdmissionCalendarService {
   /**
    * Cria evento com Google Meet numa AGENDA DEDICADA de admissão (não na primary
    * de ninguém), impersonando `impersonateEmail` (= enlite@enlite.health).
-   * Attendees = [atendente atribuída?] + [paciente?], com
-   * `guestsCanSeeOtherGuests: false` para que o paciente não descubra quem vai
-   * atendê-lo. Retorna id + hangoutLink.
+   * Attendees = [atendente atribuída?] + [paciente?]. O paciente enxerga quem
+   * vai atendê-lo no convite, e isso é aceito (ver comentário no corpo): o que
+   * o produto proíbe é ele ESCOLHER, e essa trava está na borda de entrada.
+   * Retorna id + hangoutLink.
    */
   async createEventWithMeet(
     {
@@ -488,10 +489,18 @@ export class AdmissionCalendarService {
       attendees,
       // Convidados (o paciente) podem editar/reagendar via convite.
       guestsCanModify: true,
-      // A atribuição é transparente para o paciente (D4): ele vê o nome da
-      // EQUIPE no título e não deve descobrir quem vai atender. Sem isto, o
-      // Google mostra a lista de participantes para todo mundo.
-      guestsCanSeeOtherGuests: false,
+      // ⚠️ NÃO adicionar `guestsCanSeeOtherGuests: false` aqui: com
+      // `guestsCanModify: true` o Google DESCARTA o campo em silêncio — medido
+      // em 20/08 com dois eventos-sonda na agenda real (com a flag de edição,
+      // só `guestsCanModify` é gravado; sem ela, o `false` gruda). A linha
+      // existia e não protegia nada.
+      //
+      // E não precisa proteger: a decisão do produto (Gabriel, 20/08) é que
+      // ver quem vai atender DEPOIS do evento criado é aceitável — a pessoa
+      // vai encontrar a atendente no Meet de qualquer forma. O que não pode é
+      // o paciente ESCOLHER quem atende, e isso é barrado antes: a lista de
+      // horários não diz de quem é o horário, e o corpo do `book` é `.strict()`
+      // (mandar `hostEmail` devolve 400).
       conferenceData: {
         createRequest: {
           requestId: uuidv4(),
