@@ -429,10 +429,10 @@ app.use(
 );
 
 // ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
-registerAdminMaintenanceRoutes(app, authMiddleware);
+registerAdminMaintenanceRoutes(app, authMiddleware, permissionMiddleware);
 
 // ========== Admin Integrations (AnaCare mirror etc.) ==========
-app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware));
+app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));
@@ -461,7 +461,7 @@ app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware,
 app.use('/api', createRecruitmentRoutes(recruitmentController, authMiddleware, permissionMiddleware));
 
 // ========== Messaging Routes ==========
-app.use('/api/admin/messaging', authMiddleware.requireStaff(), createMessagingRoutes(messagingService, templateRepo));
+app.use('/api/admin/messaging', authMiddleware.requireStaff(), createMessagingRoutes(messagingService, templateRepo, permissionMiddleware));
 
 // ========== Internal Routes (Pub/Sub, Cloud Tasks, Cloud Scheduler) ==========
 const dbPool = DatabaseConnection.getInstance().getPool();
