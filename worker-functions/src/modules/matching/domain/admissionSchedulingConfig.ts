@@ -29,8 +29,15 @@ const MIN_LEAD_MINUTES_LEGACY = 120; // 2h — o que está no ar hoje
 
 /**
  * Roster de atendentes ligado? Kill-switch do go-live (D2): permite mergear
- * neutro, popular `interview_hosts` com calma e virar a chave depois por
- * `gcloud --update-env-vars`, sem redeploy — e voltar pela mesma via.
+ * neutro e popular `interview_hosts` com calma antes de ligar.
+ *
+ * ⚠️ A virada é EDITANDO `ADMISSION_HOST_ROSTER_ENABLED` no
+ * `.github/workflows/backend-prd.yml`, **não** por `gcloud --update-env-vars`.
+ * A chave passou a ser declarada no workflow, e o deploy aplica a lista com
+ * semântica de merge: um flip feito por `gcloud` sobreviveria até o próximo
+ * merge no `main` e então seria reafirmado como `false` em silêncio — com
+ * atendentes já atribuídas e pacientes já agendados. Editar o YAML deixa a
+ * virada num commit revisável, e o rollback é o commit inverso.
  */
 export function isHostRosterEnabled(): boolean {
   return process.env.ADMISSION_HOST_ROSTER_ENABLED === 'true';
