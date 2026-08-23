@@ -23,12 +23,10 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { DataRealm } from '@shared/domain/DataRealm';
 import {
   JobPosting,
-  WorkerCandidate,
   ScoredCandidate,
   MatchResult,
   MatchOptions,
   DEFAULT_RADIUS_KM,
-  registrationWarning,
 } from './MatchmakingTypes';
 import { runHardFilterOnlyPath } from './MatchmakingHardFilterPath';
 import { runHardFilter } from './MatchmakingHardFilterQuery';
@@ -140,8 +138,4 @@ export class MatchmakingService {
       systemActor('matchmaking'),
     );
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
