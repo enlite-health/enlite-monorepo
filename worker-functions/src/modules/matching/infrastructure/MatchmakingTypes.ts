@@ -67,12 +67,6 @@ export interface MatchOptions {
   /** Skip workers already assigned to an active (uncovered) case. */
   excludeWithActiveCases?: boolean;
   /**
-   * Run the structured scoring (Fase 2) and LLM scoring (Fase 3) after the
-   * hard filter. Default `false` — operations doesn't have enough history
-   * yet for the score signals (rejections, quality rating, diagnostic
-   * preferences) to be reliable. Flip to `true` once the data matures.
-   */
-  /**
    * Inclui workers com `status = 'INCOMPLETE_REGISTER'` no resultado.
    * Default `false` (admin UI clássico só mostra REGISTERED).
    *
