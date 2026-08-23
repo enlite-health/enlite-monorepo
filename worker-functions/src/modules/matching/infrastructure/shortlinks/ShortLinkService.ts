@@ -40,7 +40,6 @@ export class ShortLinkService {
       utm_campaign: String(input.caseNumber),
       utm_id: 'recrutamento',
       ...(input.country ? { utm_term: input.country } : {}),
-      utm_content: String(input.vacancyNumber),
     });
     const originalURL = `${baseUrl}?${utmParams.toString()}`;
 

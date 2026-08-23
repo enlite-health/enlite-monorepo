@@ -5,7 +5,7 @@
  *   1. buildAndCreate — builds correct UTM URL for 'site' channel (utm_source=portal_jobs)
  *   2. buildAndCreate — builds correct UTM URL for social channel (utm_source=channel)
  *   3. buildAndCreate — includes country as utm_term when provided
- *   4. buildAndCreate — includes pathologies as utm_content when provided
+ *   4. buildAndCreate — a URL é função PURA de caso/vaga/canal/país, sem dado de paciente
  *   5. buildAndCreate — omits optional UTM params when null
  *   6. buildAndCreate — passes domain to ShortIoClient
  *   7. buildAndCreate — returns shortURL + id + originalURL
@@ -22,13 +22,16 @@ const MockedShortIoClient = ShortIoClient as jest.MockedClass<typeof ShortIoClie
 
 describe('ShortLinkService', () => {
   let mockCreateLink: jest.Mock;
+  let mockDeleteLink: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockCreateLink = jest.fn();
+    mockDeleteLink = jest.fn();
     MockedShortIoClient.mockImplementation(() => ({
       config: { apiKey: 'test-key', domain: 'test.domain' },
       createLink: mockCreateLink,
+      deleteLink: mockDeleteLink,
     }) as unknown as ShortIoClient);
   });
 
@@ -97,7 +100,15 @@ describe('ShortLinkService', () => {
       expect(url.searchParams.has('utm_term')).toBe(false);
     });
 
-    it('utm_content carrega o número da vaga, não dado do paciente', async () => {
+    // ── Guarda de regressão: PROCEDÊNCIA, não formato ────────────────────────
+    // A URL encurtada é criada no Short.io (terceiro) e publicada em rede social.
+    // Até 23/08/2026 o `utm_content` recebia `patients.diagnosis` — texto livre.
+    //
+    // A 1ª versão desta guarda validava FORMA (`/^[A-Za-z0-9_-]{1,24}$/`) e FUROU:
+    // sabotar com 'Alzheimer' passava 16/16 verde. Todo diagnóstico curto passava.
+    // Agora a asserção é de igualdade EXATA do conjunto de params: qualquer chave
+    // a mais — com qualquer valor — reprova, sem depender de adivinhar o formato.
+    it('a URL é função PURA das entradas: nenhum param além dos derivados', async () => {
       mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/y', id: '5' });
 
       const svc = new ShortLinkService('key', 'srt.io');
@@ -105,32 +116,41 @@ describe('ShortLinkService', () => {
         caseNumber: 7,
         vacancyNumber: 2,
         channel: 'linkedin',
-      });
-
-      const url = new URL(result.originalURL);
-      expect(url.searchParams.get('utm_content')).toBe('2');
-    });
-
-    // Guarda de regressão: a URL encurtada é criada no Short.io (terceiro) e
-    // publicada em rede social. Nada de paciente pode entrar nela. Até 23/08/2026
-    // o `utm_content` recebia `patients.diagnosis` — texto livre, com cauda de
-    // 522 caracteres nas vagas que estavam no ar.
-    it('nenhum parâmetro da URL carrega dado clínico do paciente', async () => {
-      mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/z', id: '6' });
-
-      const svc = new ShortLinkService('key', 'srt.io');
-      const result = await svc.buildAndCreate({
-        caseNumber: 7,
-        vacancyNumber: 2,
-        channel: 'site',
         country: 'AR',
       });
 
       const url = new URL(result.originalURL);
-      const permitidos = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_id', 'utm_term', 'utm_content'];
-      expect([...url.searchParams.keys()].sort()).toEqual([...permitidos].sort());
-      // todo valor tem de ser derivável de caso/vaga/canal/país — nunca texto livre
-      expect([...url.searchParams.values()].every(v => /^[A-Za-z0-9_-]{1,24}$/.test(v))).toBe(true);
+      expect(url.origin + url.pathname).toBe('https://app.enlite.health/vacantes/caso7-2');
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        utm_source: 'linkedin',
+        utm_medium: 'vacante',
+        utm_campaign: '7',
+        utm_id: 'recrutamento',
+        utm_term: 'AR',
+      });
+    });
+
+    it('sem país, o utm_term some — e nada ocupa o lugar', async () => {
+      mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/z', id: '6' });
+
+      const svc = new ShortLinkService('key', 'srt.io');
+      const result = await svc.buildAndCreate({ caseNumber: 7, vacancyNumber: 2, channel: 'site' });
+
+      const url = new URL(result.originalURL);
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        utm_source: 'portal_jobs',
+        utm_medium: 'vacante',
+        utm_campaign: '7',
+        utm_id: 'recrutamento',
+      });
+    });
+
+    it('delete(id) repassa o id ao client do Short.io', async () => {
+      mockDeleteLink.mockResolvedValueOnce(undefined);
+
+      await new ShortLinkService('key', 'srt.io').delete('lnk-123');
+
+      expect(mockDeleteLink).toHaveBeenCalledWith('lnk-123');
     });
 
     it('passes correct domain to ShortIoClient.createLink', async () => {
