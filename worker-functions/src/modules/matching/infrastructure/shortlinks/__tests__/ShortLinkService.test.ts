@@ -97,7 +97,7 @@ describe('ShortLinkService', () => {
       expect(url.searchParams.has('utm_term')).toBe(false);
     });
 
-    it('includes utm_content when pathologies is provided', async () => {
+    it('utm_content carrega o número da vaga, não dado do paciente', async () => {
       mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/y', id: '5' });
 
       const svc = new ShortLinkService('key', 'srt.io');
@@ -105,14 +105,17 @@ describe('ShortLinkService', () => {
         caseNumber: 7,
         vacancyNumber: 2,
         channel: 'linkedin',
-        pathologies: 'TEA',
       });
 
       const url = new URL(result.originalURL);
-      expect(url.searchParams.get('utm_content')).toBe('TEA');
+      expect(url.searchParams.get('utm_content')).toBe('2');
     });
 
-    it('omits utm_content when pathologies is null', async () => {
+    // Guarda de regressão: a URL encurtada é criada no Short.io (terceiro) e
+    // publicada em rede social. Nada de paciente pode entrar nela. Até 23/08/2026
+    // o `utm_content` recebia `patients.diagnosis` — texto livre, com cauda de
+    // 522 caracteres nas vagas que estavam no ar.
+    it('nenhum parâmetro da URL carrega dado clínico do paciente', async () => {
       mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/z', id: '6' });
 
       const svc = new ShortLinkService('key', 'srt.io');
@@ -120,11 +123,14 @@ describe('ShortLinkService', () => {
         caseNumber: 7,
         vacancyNumber: 2,
         channel: 'site',
-        pathologies: null,
+        country: 'AR',
       });
 
       const url = new URL(result.originalURL);
-      expect(url.searchParams.has('utm_content')).toBe(false);
+      const permitidos = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_id', 'utm_term', 'utm_content'];
+      expect([...url.searchParams.keys()].sort()).toEqual([...permitidos].sort());
+      // todo valor tem de ser derivável de caso/vaga/canal/país — nunca texto livre
+      expect([...url.searchParams.values()].every(v => /^[A-Za-z0-9_-]{1,24}$/.test(v))).toBe(true);
     });
 
     it('passes correct domain to ShortIoClient.createLink', async () => {

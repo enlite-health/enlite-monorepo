@@ -2,7 +2,7 @@
  * MatchmakingTypes
  *
  * Tipos internos e públicos compartilhados entre MatchmakingService,
- * MatchmakingHardFilter e MatchmakingLLMScorer.
+ * MatchmakingHardFilter e MatchmakingHardFilterPath.
  */
 
 import { DataRealm } from '@shared/domain/DataRealm';
@@ -49,12 +49,6 @@ export interface WorkerCandidate {
   realm: DataRealm;
 }
 
-export interface LLMMatchScore {
-  score: number;
-  reasoning: string;
-  strengths: string[];
-  red_flags: string[];
-}
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -78,7 +72,6 @@ export interface MatchOptions {
    * yet for the score signals (rejections, quality rating, diagnostic
    * preferences) to be reliable. Flip to `true` once the data matures.
    */
-  useScoring?: boolean;
   /**
    * Inclui workers com `status = 'INCOMPLETE_REGISTER'` no resultado.
    * Default `false` (admin UI clássico só mostra REGISTERED).

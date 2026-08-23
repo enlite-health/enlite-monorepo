@@ -7,7 +7,8 @@
  *   3. Handles legacy string-format links when checking for existing
  *   4. Throws when vacancy not found
  *   5. Preserves existing links when adding a new one
- *   6. Calls shortLinkService with correct params (caseNumber, vacancyNumber, country, pathologies)
+ *   6. Calls shortLinkService with correct params (caseNumber, vacancyNumber, country)
+ *      — NUNCA com dado de paciente: a URL vai para o Short.io e para rede social.
  */
 
 import { EnsureVacancyShortLinkUseCase } from '../EnsureVacancyShortLinkUseCase';
@@ -37,7 +38,6 @@ describe('EnsureVacancyShortLinkUseCase', () => {
         case_number: 42,
         vacancy_number: 7,
         country: 'AR',
-        pathologies: 'TEA',
         social_short_links: {
           site: { url: 'https://srt.io/existing', id: 'existing-id' },
         },
@@ -57,7 +57,6 @@ describe('EnsureVacancyShortLinkUseCase', () => {
         case_number: 10,
         vacancy_number: 1,
         country: null,
-        pathologies: null,
         social_short_links: { facebook: 'https://srt.io/fb-legacy' },
       }],
     });
@@ -75,7 +74,6 @@ describe('EnsureVacancyShortLinkUseCase', () => {
           case_number: 42,
           vacancy_number: 7,
           country: 'AR',
-          pathologies: 'TEA',
           social_short_links: {},
         }],
       })
@@ -95,7 +93,6 @@ describe('EnsureVacancyShortLinkUseCase', () => {
       vacancyNumber: 7,
       channel: 'site',
       country: 'AR',
-      pathologies: 'TEA',
     });
 
     // Verify UPDATE was called
@@ -124,7 +121,6 @@ describe('EnsureVacancyShortLinkUseCase', () => {
           case_number: 5,
           vacancy_number: 2,
           country: null,
-          pathologies: null,
           social_short_links: {
             facebook: { url: 'https://srt.io/fb', id: 'fb-id' },
           },
@@ -153,7 +149,6 @@ describe('EnsureVacancyShortLinkUseCase', () => {
           case_number: 1,
           vacancy_number: 1,
           country: null,
-          pathologies: null,
           social_short_links: {},
         }],
       })

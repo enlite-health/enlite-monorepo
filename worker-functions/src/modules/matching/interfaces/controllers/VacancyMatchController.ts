@@ -30,7 +30,6 @@ export class VacancyMatchController {
       const topN                   = req.query.top_n     ? parseInt(req.query.top_n as string)     : 20;
       const radiusKm               = req.query.radius_km ? parseInt(req.query.radius_km as string) : undefined;
       const excludeWithActiveCases = req.query.exclude_active === 'true';
-      const useScoring             = req.query.use_scoring === 'true';
 
       const jobRes = await this.db.query<{ id: string }>(
         `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
@@ -46,7 +45,6 @@ export class VacancyMatchController {
         topN,
         radiusKm,
         excludeWithActiveCases,
-        useScoring,
       });
 
       res.status(200).json({ success: true, data: result });

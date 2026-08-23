@@ -7,7 +7,6 @@ export interface BuildShortLinkInput {
   vacancyNumber: number;
   channel: SocialChannel;
   country?: string | null;
-  pathologies?: string | null; // patients.diagnosis
 }
 
 export interface BuildShortLinkResult {
@@ -41,7 +40,7 @@ export class ShortLinkService {
       utm_campaign: String(input.caseNumber),
       utm_id: 'recrutamento',
       ...(input.country ? { utm_term: input.country } : {}),
-      ...(input.pathologies ? { utm_content: input.pathologies } : {}),
+      utm_content: String(input.vacancyNumber),
     });
     const originalURL = `${baseUrl}?${utmParams.toString()}`;
 
