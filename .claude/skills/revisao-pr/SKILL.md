@@ -21,22 +21,25 @@ bash .claude/skills/revisao-pr/verificar.sh origin/stage # PR para a stage
 ```
 
 11 checks sobre o DIFF, sem LLM. **Exit 1 se algum FALHAR → BLOQUEADO, e os 4
-critérios nem começam.** A saída **colada** é a evidência; descrever a saída em
+critérios nem começam.** Dois deles só **avisam** e nunca reprovam sozinhos —
+V7 (rota nova sem célula, porque a definição pode ser multilinha) e a metade do
+V2 que reporta **dívida herdada**. Check que varre corpus vazio devolve **N/A**,
+nunca ✅: contagem zero é falha, não sucesso. A saída **colada** é a evidência; descrever a saída em
 vez de colar conta como REPROVADO.
 
 | # | pega | por que é falha |
 |---|---|---|
 | V-1 | o próprio verificador está cego | contagem zero é falha, nunca sucesso |
 | V1 | `node_modules` no diff | `.gitignore` da raiz usa `node_modules/` **com barra**, e barra casa só diretório real → **symlink entra em `git add -A`**. Reincidente (#173, #231); checkout com ele quebra o build **mudo** |
-| V2 | import órfão | `noUnusedLocals: false` → **o tsc passa limpo com import morto**. É o rastro de PR que apaga código |
+| V2 | import órfão **introduzido pelo diff** | `noUnusedLocals: false` → **o tsc passa limpo com import morto**. É o rastro de PR que apaga código. Órfão que já existia na base vira AVISO: gate que culpa o autor por dívida alheia se aprende a ignorar |
 | V3 | import de arquivo apagado | quebra em runtime, não no diff |
 | V4 | `.only`/`.skip`/`xit` | suíte verde que não roda nada |
 | V5 | PII em log novo | "nunca logar PII" é regra dura |
 | V6 | dado clínico rumo a terceiro/URL/prompt | **texto clínico NUNCA sai do perímetro.** `patients.diagnosis` é TEXT livre |
-| V7 | rota nova sem célula | deny-when-undeclared: no flip do ABAC a rota é negada e o painel não mostra |
+| V7 | rota nova sem célula (**aviso**) | deny-when-undeclared: no flip do ABAC a rota é negada e o painel não mostra |
 | V8 | workflow de PRD tocado | overwrite PROIBIDO até reconciliar YAML × serviço vivo |
-| V9 | src sem teste no diff | — |
-| V10 | segredo literal | — |
+| V9 | arquivo de **feature** sem teste | delega a regra de camada ao `scripts/check-needs-tests.sh`, que já existia |
+| V10 | segredo literal | corpus próprio e mais largo: `.tf`, workflow, `.sh`, `.env` — onde segredo mora mais que em `.ts` |
 
 **Passar no Passo 0 NÃO é aprovação:** o script mede forma, os 4 critérios medem
 substância.
