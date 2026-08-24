@@ -102,8 +102,6 @@ O sprint doc original menciona autocomplete de paciente — **não está impleme
 | [`modules/matching/interfaces/controllers/VacancyMatchController.ts`](../worker-functions/src/modules/matching/interfaces/controllers/VacancyMatchController.ts) | `triggerMatch`, `getMatchResults`, `updateEncuadreResult`. |
 | [`modules/matching/infrastructure/MatchmakingService.ts`](../worker-functions/src/modules/matching/infrastructure/MatchmakingService.ts) | Orquestrador (Fase 1: hard filter; opcional Fase 2: structured; opcional Fase 3: LLM). |
 | [`modules/matching/infrastructure/MatchmakingHardFilterPath.ts`](../worker-functions/src/modules/matching/infrastructure/MatchmakingHardFilterPath.ts) | Path sem score (default agora). |
-| [`modules/matching/infrastructure/MatchmakingStructuredScorer.ts`](../worker-functions/src/modules/matching/infrastructure/MatchmakingStructuredScorer.ts) | Função pura — Fase 2 (disabled por default). |
-| [`modules/matching/infrastructure/MatchmakingLLMScorer.ts`](../worker-functions/src/modules/matching/infrastructure/MatchmakingLLMScorer.ts) | Groq — Fase 3 (disabled por default). |
 | [`modules/matching/infrastructure/MatchmakingTypes.ts`](../worker-functions/src/modules/matching/infrastructure/MatchmakingTypes.ts) | Tipos + `DEFAULT_RADIUS_KM=30`. |
 | [`modules/case/application/PatientService.ts`](../worker-functions/src/modules/case/application/PatientService.ts) | `upsertFromClickUp` → chama `replaceAddresses` que geocoda inline. |
 | [`modules/case/infrastructure/geocodePatientAddresses.ts`](../worker-functions/src/modules/case/infrastructure/geocodePatientAddresses.ts) | Best-effort wrapper do `GeocodingService` com timeout. |
@@ -161,13 +159,13 @@ $21::timestamptz                    -- closes_at (NULL ok)
 
 ### Endpoint
 
-`POST /api/admin/vacancies/:id/match?radius_km=30&top_n=20&exclude_active=false&use_scoring=false`
+`POST /api/admin/vacancies/:id/match?radius_km=30&top_n=20&exclude_active=false`
 
-- `use_scoring=true` liga Fase 2 (structured) + Fase 3 (LLM Groq) — desligadas por default porque histórico (rejection, quality_rating, diagnostic_preferences) não está maduro.
+- ⚠️ **`use_scoring` NÃO EXISTE MAIS** (removido em 23/08/2026). As fases 2 e 3 foram apagadas: o caminho nunca rodava em produção (default `false`, zero caller mandando `true`), mas o scorer chamava `fetch` na api.groq.com com o **diagnóstico do paciente no prompt**, sem guarda de chave. O único caminho hoje é o hard filter.
 
 ### Fase 2 e 3 (não usadas hoje)
 
-Código preservado em `MatchmakingStructuredScorer.ts` e `MatchmakingLLMScorer.ts`. Pra reativar: passar `useScoring: true`. Quando o histórico amadurecer, alguém deve revisitar:
+Código **apagado**, não preservado — está no git (`git log -- '*MatchmakingLLMScorer*'`). Reativar exige decidir antes o que vai no prompt: dado clínico de paciente **não pode** ir para terceiro. Quando o histórico amadurecer, revisitar:
 - `computeStructuredScore` — pesos (occupation 40, geo 35, dx 25) + penalties por rejection
 - LLM — formula `final = structured*0.35 + llm*0.65`
 
@@ -296,7 +294,7 @@ Use interfaces dedicadas, `unknown` + narrowing, ou tipos do Zod inferidos. Dív
 `SPRINT_CREATE_VACANCY_FORM_REFACTOR.md` descreve autocomplete de paciente. **A UI real usa case-select.** Antes de escrever spec/feature, abra `/admin/vacancies/new` no browser e veja qual pattern está hoje.
 
 ### Limite 400 linhas (backend)
-Ao tocar arquivo já no limite: split na mesma PR. `MatchmakingService.ts` foi de 401 → 363 extraindo `MatchmakingStructuredScorer.ts` + `MatchmakingHardFilterPath.ts`.
+Ao tocar arquivo já no limite: split na mesma PR. `MatchmakingService.ts` foi de 401 → 363 extraindo `MatchmakingStructuredScorer.ts` + `MatchmakingHardFilterPath.ts` (o primeiro foi apagado em 23/08 junto com o ramo de scoring).
 
 ### CI atual NÃO roda integration
 Os specs `*.integration.e2e.ts` só rodam local (`make test-integration`). Gap conhecido — não confiar em CI verde como prova de integração ponta-a-ponta.

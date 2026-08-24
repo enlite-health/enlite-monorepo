@@ -5,7 +5,7 @@
  *   1. buildAndCreate — builds correct UTM URL for 'site' channel (utm_source=portal_jobs)
  *   2. buildAndCreate — builds correct UTM URL for social channel (utm_source=channel)
  *   3. buildAndCreate — includes country as utm_term when provided
- *   4. buildAndCreate — includes pathologies as utm_content when provided
+ *   4. buildAndCreate — a URL é função PURA de caso/vaga/canal/país, sem dado de paciente
  *   5. buildAndCreate — omits optional UTM params when null
  *   6. buildAndCreate — passes domain to ShortIoClient
  *   7. buildAndCreate — returns shortURL + id + originalURL
@@ -15,6 +15,7 @@
 
 import { ShortLinkService } from '../ShortLinkService';
 import { ShortIoClient } from '../ShortIoClient';
+import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
 jest.mock('../ShortIoClient');
 
@@ -22,13 +23,16 @@ const MockedShortIoClient = ShortIoClient as jest.MockedClass<typeof ShortIoClie
 
 describe('ShortLinkService', () => {
   let mockCreateLink: jest.Mock;
+  let mockDeleteLink: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockCreateLink = jest.fn();
+    mockDeleteLink = jest.fn();
     MockedShortIoClient.mockImplementation(() => ({
       config: { apiKey: 'test-key', domain: 'test.domain' },
       createLink: mockCreateLink,
+      deleteLink: mockDeleteLink,
     }) as unknown as ShortIoClient);
   });
 
@@ -97,7 +101,15 @@ describe('ShortLinkService', () => {
       expect(url.searchParams.has('utm_term')).toBe(false);
     });
 
-    it('includes utm_content when pathologies is provided', async () => {
+    // ── Guarda de regressão: PROCEDÊNCIA, não formato ────────────────────────
+    // A URL encurtada é criada no Short.io (terceiro) e publicada em rede social.
+    // Até 23/08/2026 o `utm_content` recebia `patients.diagnosis` — texto livre.
+    //
+    // A 1ª versão desta guarda validava FORMA (`/^[A-Za-z0-9_-]{1,24}$/`) e FUROU:
+    // sabotar com 'Alzheimer' passava 16/16 verde. Todo diagnóstico curto passava.
+    // Agora a asserção é de igualdade EXATA do conjunto de params: qualquer chave
+    // a mais — com qualquer valor — reprova, sem depender de adivinhar o formato.
+    it('a URL é função PURA das entradas: nenhum param além dos derivados', async () => {
       mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/y', id: '5' });
 
       const svc = new ShortLinkService('key', 'srt.io');
@@ -105,26 +117,64 @@ describe('ShortLinkService', () => {
         caseNumber: 7,
         vacancyNumber: 2,
         channel: 'linkedin',
-        pathologies: 'TEA',
+        country: 'AR',
       });
 
       const url = new URL(result.originalURL);
-      expect(url.searchParams.get('utm_content')).toBe('TEA');
+      expect(url.origin + url.pathname).toBe('https://app.enlite.health/vacantes/caso7-2');
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        utm_source: 'linkedin',
+        utm_medium: 'vacante',
+        utm_campaign: '7',
+        utm_id: 'recrutamento',
+        utm_term: 'AR',
+      });
     });
 
-    it('omits utm_content when pathologies is null', async () => {
+    it('sem país, o utm_term some — e nada ocupa o lugar', async () => {
       mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/z', id: '6' });
+
+      const svc = new ShortLinkService('key', 'srt.io');
+      const result = await svc.buildAndCreate({ caseNumber: 7, vacancyNumber: 2, channel: 'site' });
+
+      const url = new URL(result.originalURL);
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        utm_source: 'portal_jobs',
+        utm_medium: 'vacante',
+        utm_campaign: '7',
+        utm_id: 'recrutamento',
+      });
+    });
+
+    // ⚠️ GUARDA DE CLASSE, não de campo. A versão anterior chamava
+    // `buildAndCreate` sem nenhum dado clínico na entrada, então qualquer
+    // parâmetro opcional NOVO que só emite quando presente passava verde — e
+    // foi exatamente assim que o defeito voltou por aqui (4381 testes verdes).
+    // Agora a entrada CARREGA clínico num campo inesperado, e a asserção é
+    // sobre tudo que o `ShortIoClient` recebe.
+    it('entrada com dado clínico em campo inesperado NÃO atravessa para o Short.io', async () => {
+      mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/w', id: '9' });
 
       const svc = new ShortLinkService('key', 'srt.io');
       const result = await svc.buildAndCreate({
         caseNumber: 7,
         vacancyNumber: 2,
-        channel: 'site',
-        pathologies: null,
+        channel: 'linkedin',
+        country: 'AR',
+        // campos que NÃO deveriam existir no contrato — se alguém acrescentar
+        // um e repassá-lo, isto pega, seja qual for o nome que ele escolher
+        ...({ extra: TEXTO_CLINICO, pathologies: TEXTO_CLINICO, diagnosis: TEXTO_CLINICO } as object),
       });
 
-      const url = new URL(result.originalURL);
-      expect(url.searchParams.has('utm_content')).toBe(false);
+      esperaSemVazamentoClinico(result.originalURL, mockCreateLink.mock.calls);
+    });
+
+    it('delete(id) repassa o id ao client do Short.io', async () => {
+      mockDeleteLink.mockResolvedValueOnce(undefined);
+
+      await new ShortLinkService('key', 'srt.io').delete('lnk-123');
+
+      expect(mockDeleteLink).toHaveBeenCalledWith('lnk-123');
     });
 
     it('passes correct domain to ShortIoClient.createLink', async () => {

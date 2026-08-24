@@ -7,14 +7,12 @@
  *   Elimina candidatos incompatíveis por occupation, funnel_stage,
  *   blacklist e sobreposição mínima de disponibilidade.
  *
- * Fase 2 — Structured Score (em memória, 0-100)
- *   Scoring determinístico: occupation, geo, diagnósticos, rejection history.
- *
- * Fase 3 — LLM Score (top N candidatos, 0-100)
- *   MatchmakingLLMScorer chama Groq com perfil completo.
- *   Descriptografa sex/nome via KMS apenas para esses N workers.
- *
- * Score final = structured_score * 0.35 + llm_score * 0.65
+ * A fase 2 (structured score) e a fase 3 (LLM via Groq) foram REMOVIDAS em
+ * 23/08/2026: `useScoring` tinha default `false` e nenhum caller no repo
+ * mandava `use_scoring=true`, então o caminho nunca rodava em produção — mas
+ * `score()` chamava `fetch` na api.groq.com sem guarda, e o diagnóstico do
+ * paciente ia no prompt. Código morto que alcança terceiro é o pior formato:
+ * ninguém mantém e ninguém percebe se disparar.
  */
 
 import { Pool } from 'pg';
@@ -25,15 +23,11 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { DataRealm } from '@shared/domain/DataRealm';
 import {
   JobPosting,
-  WorkerCandidate,
   ScoredCandidate,
   MatchResult,
   MatchOptions,
   DEFAULT_RADIUS_KM,
-  registrationWarning,
 } from './MatchmakingTypes';
-import { MatchmakingLLMScorer } from './MatchmakingLLMScorer';
-import { computeStructuredScore } from './MatchmakingStructuredScorer';
 import { runHardFilterOnlyPath } from './MatchmakingHardFilterPath';
 import { runHardFilter } from './MatchmakingHardFilterQuery';
 
@@ -44,15 +38,10 @@ export type { ScoredCandidate, MatchResult, MatchOptions } from './MatchmakingTy
 export class MatchmakingService {
   private db: Pool;
   private kms: KMSEncryptionService;
-  private llmScorer: MatchmakingLLMScorer;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
     this.kms = new KMSEncryptionService();
-    this.llmScorer = new MatchmakingLLMScorer(
-      process.env.GROQ_API_KEY ?? '',
-      process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
-    );
   }
 
   async matchWorkersForJob(
@@ -62,7 +51,6 @@ export class MatchmakingService {
     const topN                      = options.topN ?? 20;
     const radiusKm                  = options.radiusKm ?? DEFAULT_RADIUS_KM;
     const excludeWithActiveCases    = options.excludeWithActiveCases ?? false;
-    const useScoring                = options.useScoring ?? false;
     const includeIncompleteRegister = options.includeIncompleteRegister ?? false;
 
     const job = await this.loadJob(jobPostingId);
@@ -71,96 +59,14 @@ export class MatchmakingService {
     console.log(
       `[Matchmaking] ${candidates.length} candidatos passaram no hard filter para vaga ${jobPostingId}` +
       ` (raio: ${radiusKm}km)` +
-      `${excludeWithActiveCases ? ' (excluindo com casos ativos)' : ''}` +
-      `${useScoring ? '' : ' [SCORING DISABLED]'}`,
+      `${excludeWithActiveCases ? ' (excluindo com casos ativos)' : ''}`,
     );
 
 
-    if (!useScoring) {
-      return runHardFilterOnlyPath(
-        { kms: this.kms, saveMatchResults: this.saveMatchResults.bind(this) },
-        jobPostingId, job, candidates, radiusKm, topN,
-      );
-    }
-
-    const rankedByStructured = candidates
-      .map(w => {
-        const { score: structuredScore, distanceKm } = computeStructuredScore(w, job);
-        return { worker: w, structuredScore, distanceKm };
-      })
-      .sort((a, b) => b.structuredScore - a.structuredScore)
-      .slice(0, topN);
-
-    console.log(`[Matchmaking] Rodando LLM para ${rankedByStructured.length} candidatos...`);
-
-    const finalCandidates: ScoredCandidate[] = [];
-
-    for (const { worker, structuredScore, distanceKm } of rankedByStructured) {
-      const [firstName, lastName, sex] = await Promise.all([
-        this.kms.decrypt(worker.firstNameEncrypted),
-        this.kms.decrypt(worker.lastNameEncrypted),
-        this.kms.decrypt(worker.sexEncrypted),
-      ]);
-
-      const nameParts = firstName === lastName
-        ? [firstName].filter(Boolean)
-        : [firstName, lastName].filter(Boolean);
-      const workerName = nameParts.join(' ') || 'Sin nombre';
-
-      let llmScore: number | null = null;
-      let llmReasoning: string | null = null;
-      let llmRedFlags: string[] = [];
-      let llmStrengths: string[] = [];
-
-      try {
-        const llmResult = await this.llmScorer.score(job, worker, sex ?? '', distanceKm, worker.activeCases);
-        llmScore = llmResult.score;
-        llmReasoning = llmResult.reasoning;
-        llmRedFlags = llmResult.red_flags;
-        llmStrengths = llmResult.strengths;
-      } catch (err) {
-        console.error(`[Matchmaking] LLM falhou para worker ${worker.workerId}:`, (err as Error).message);
-      }
-
-      const finalScore =
-        llmScore !== null
-          ? Math.round(structuredScore * 0.35 + llmScore * 0.65)
-          : structuredScore;
-
-      finalCandidates.push({
-        workerId: worker.workerId,
-        workerName,
-        workerPhone: worker.phone,
-        occupation: worker.occupation,
-        workZone: worker.workZone ?? worker.workerAddress,
-        distanceKm: distanceKm !== null ? Math.round(distanceKm * 10) / 10 : null,
-        activeCasesCount: worker.activeCases.length,
-        workerStatus: worker.workerStatus,
-        registrationWarning: registrationWarning(worker.workerStatus),
-        structuredScore,
-        llmScore,
-        finalScore,
-        llmReasoning,
-        llmRedFlags,
-        llmStrengths,
-        alreadyApplied: worker.alreadyApplied,
-      });
-
-      await sleep(100); // Rate limit Groq free: 30 req/min
-    }
-
-    finalCandidates.sort((a, b) => b.finalScore - a.finalScore);
-    await this.saveMatchResults(jobPostingId, finalCandidates);
-
-    return {
-      jobPostingId,
-      radiusKm,
-      matchSummary: {
-        hardFilteredCount: candidates.length,
-        llmScoredCount: finalCandidates.filter(c => c.llmScore !== null).length,
-      },
-      candidates: finalCandidates,
-    };
+    return runHardFilterOnlyPath(
+      { kms: this.kms, saveMatchResults: this.saveMatchResults.bind(this) },
+      jobPostingId, job, candidates, radiusKm, topN,
+    );
   }
 
   // ─── Fase 1a: Carregar vaga ──────────────────────────────────────────────
@@ -232,8 +138,4 @@ export class MatchmakingService {
       systemActor('matchmaking'),
     );
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }

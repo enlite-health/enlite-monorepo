@@ -20,21 +20,18 @@ export class EnsureVacancyShortLinkUseCase {
       case_number: number;
       vacancy_number: number;
       country: string | null;
-      pathologies: string | null;
       social_short_links: Record<string, string | StoredLink>;
     }>(
       `SELECT jp.case_number, jp.vacancy_number, jp.country,
-              p.diagnosis AS pathologies,
               COALESCE(jp.social_short_links, '{}'::jsonb) AS social_short_links
        FROM job_postings jp
-       LEFT JOIN patients p ON jp.patient_id = p.id
        WHERE jp.id = $1 AND jp.deleted_at IS NULL`,
       [vacancyId],
     );
 
     if (result.rows.length === 0) throw new Error(`Vacancy ${vacancyId} not found`);
 
-    const { case_number, vacancy_number, country, pathologies, social_short_links } = result.rows[0];
+    const { case_number, vacancy_number, country, social_short_links } = result.rows[0];
 
     const existing = social_short_links[channel];
     if (existing) {
@@ -47,7 +44,6 @@ export class EnsureVacancyShortLinkUseCase {
       vacancyNumber: vacancy_number,
       channel,
       country,
-      pathologies,
     });
 
     const updatedLinks: Record<string, StoredLink> = {};

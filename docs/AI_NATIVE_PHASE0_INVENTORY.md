@@ -57,7 +57,10 @@
 
 ---
 
-### AI-002 — MatchmakingLLMScorer (score AT × vaga)
+### AI-002 — MatchmakingLLMScorer (score AT × vaga) — ⚠️ REMOVIDO em 23/08/2026
+
+> O componente foi **apagado**. Ele mandava `patients.diagnosis` (texto livre) no prompt para a
+> api.groq.com, sem guarda de chave, num caminho que nunca rodava em produção. Ver PR #249.
 
 | Atributo | Valor |
 |---|---|
