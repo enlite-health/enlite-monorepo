@@ -28,8 +28,8 @@ import type {
 import { readRows, withStaffWrite } from './dbAccess';
 
 const INSERT_SQL = `
-  INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, resource_id, decision)
-  VALUES ($1, $2, $3, $4, $5, $6)`;
+  INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, resource_id, decision, country)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)`;
 
 export class PgPermissionAuditRepository implements PermissionAuditRepository {
   constructor(private readonly pool: Pool) {}
@@ -43,6 +43,7 @@ export class PgPermissionAuditRepository implements PermissionAuditRepository {
         entry.action,
         entry.resourceId ?? null,
         entry.decision,
+        entry.country ?? null,
       ])
       .catch((err: unknown) => {
         logger.error(
@@ -70,6 +71,7 @@ export class PgPermissionAuditRepository implements PermissionAuditRepository {
           resource_id: string | null;
           decision: string;
           created_at: Date;
+          country: string | null;
         }>(`SELECT * FROM iam.query_audit($1, $2, $3, $4, $5)`, [
           filters.userId ?? null,
           filters.resource ?? null,
@@ -86,6 +88,7 @@ export class PgPermissionAuditRepository implements PermissionAuditRepository {
         resourceId: row.resource_id,
         decision: row.decision,
         createdAt: row.created_at,
+        country: row.country,
       }));
     });
   }

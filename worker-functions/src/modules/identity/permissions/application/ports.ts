@@ -148,6 +148,12 @@ export interface PermissionDecision {
   /** id do alvo quando houver (nunca nome, telefone ou documento — lex C16). */
   resourceId?: string | null;
   reason?: string | null;
+  /**
+   * País do CONTEXTO da request. É o que permite a `iam.query_audit` mascarar o
+   * `resourceId` para auditor de outro país sem SUPRIMIR a linha — suprimir
+   * cegaria a detecção de acesso cross-país (lex 0.2, M2-5; mig 283).
+   */
+  country?: string | null;
 }
 
 export interface PermissionAuditFilters {
@@ -163,9 +169,15 @@ export interface PermissionAuditRow {
   userId: string;
   resource: string;
   action: string;
+  /**
+   * `'<oculto>'` quando o auditor não tem escopo no país da linha — a linha
+   * APARECE (senão o acesso cross-país ficaria invisível para quem deve
+   * detectá-lo), só o identificador do titular é que não (mig 283).
+   */
   resourceId: string | null;
   decision: string;
   createdAt: Date;
+  country: string | null;
 }
 
 export interface PermissionAuditRepository {

@@ -446,18 +446,50 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
         .rejects.toMatchObject({ code: '42501' });
     });
 
+    /**
+     * ⚠️ A reaplicação roda dentro de UMA transação, com ROLLBACK no fim.
+     *
+     * A 279 define `iam.query_audit` com `CREATE OR REPLACE`, e migrations
+     * POSTERIORES redefinem a mesma função (280, e a 283 com o mascaramento por
+     * país). Reaplicar a 279 FORA de transação devolvia a versão ANTIGA da
+     * função para o banco inteiro — e, como o CI roda as suítes em paralelo
+     * contra o MESMO banco, derrubava a suíte vizinha enquanto este arquivo
+     * ficava verde. Foi exatamente assim que o mascaramento da 283 sumiu.
+     *
+     * A asserção de privilégio nunca perceberia: ela olha `has_table_privilege`,
+     * e o que muda é o CORPO da função. Por isso a guarda abaixo compara a
+     * definição INTEIRA de `query_audit` antes e depois — tudo que a
+     * reaplicação poderia ter mexido, não o campo que alguém lembrou de checar.
+     *
+     * O DDL das duas migrations é transacional (nenhum CONCURRENTLY), então o
+     * ROLLBACK devolve o banco ao estado anterior.
+     */
     it('re-rodar 274 e 279 DEPOIS da 280 mantém o audit INSERT-only (mãe, partições e view)', async () => {
       const fs = await import('node:fs');
       const path = await import('node:path');
-      await pool.query(fs.readFileSync(path.resolve(__dirname, '../../migrations/274_iam_schema.sql'), 'utf8'));
-      await pool.query(fs.readFileSync(path.resolve(__dirname, '../../migrations/279_iam_writer_functions.sql'), 'utf8'));
-      const r = await pool.query(`
-        SELECT has_table_privilege('app_runtime','iam.permission_audit_log','SELECT') mother,
-               has_table_privilege('app_runtime','public.permission_audit_log','SELECT') view,
-               (SELECT bool_or(has_table_privilege('app_runtime', c.oid, 'SELECT'))
-                  FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
-                 WHERE i.inhparent = 'iam.permission_audit_log'::regclass) any_part`);
-      expect(r.rows[0]).toEqual({ mother: false, view: false, any_part: false });
+      const DEF = `SELECT pg_get_functiondef('iam.query_audit(varchar,varchar,timestamptz,timestamptz,int)'::regprocedure) AS d`;
+      const antes = await pool.query<{ d: string }>(DEF);
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(fs.readFileSync(path.resolve(__dirname, '../../migrations/274_iam_schema.sql'), 'utf8'));
+        await client.query(fs.readFileSync(path.resolve(__dirname, '../../migrations/279_iam_writer_functions.sql'), 'utf8'));
+        const r = await client.query(`
+          SELECT has_table_privilege('app_runtime','iam.permission_audit_log','SELECT') mother,
+                 has_table_privilege('app_runtime','public.permission_audit_log','SELECT') view,
+                 (SELECT bool_or(has_table_privilege('app_runtime', c.oid, 'SELECT'))
+                    FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+                   WHERE i.inhparent = 'iam.permission_audit_log'::regclass) any_part`);
+        expect(r.rows[0]).toEqual({ mother: false, view: false, any_part: false });
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+
+      // A reaplicação não pode ter deixado rastro NENHUM na função instalada.
+      const depois = await pool.query<{ d: string }>(DEF);
+      expect(depois.rows[0].d).toBe(antes.rows[0].d);
     });
 
     it('app_runtime consegue INSERT (trilha) mas SELECT direto é negado', async () => {
