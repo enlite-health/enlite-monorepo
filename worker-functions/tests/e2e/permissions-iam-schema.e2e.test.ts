@@ -541,7 +541,16 @@ describe('S4 — get_user_effective_permissions() retorna array correto', () => 
 
     // Do CM
     expect(perms).toContain('messaging:send');
-    // Do Financeiro (que CM não tem)
+    // Do Financeiro (que CM não tem).
+    //
+    // ⚠️ Isto vale no banco do E2E, que é semeado pelas migrations e nunca roda o
+    // sync do catálogo (`PERMISSION_CATALOG_SYNC_ENABLED` só existe no deploy).
+    // Nos ambientes IMPLANTADOS, `analytics:export` é DESCONTINUADA pelo A7 —
+    // nenhuma rota a declara, e o catálogo é derivado do código (D115). Como
+    // `iam.effective_permissions` filtra `deprecated_at IS NULL`, lá esta
+    // permissão não aparece. A divergência é deliberada; quem garante que ela
+    // continua deliberada é o caso "as órfãs que o A7 descontinua", em
+    // `permission-route-inventory`.
     expect(perms).toContain('analytics:export');
     // Sem duplicatas (DISTINCT na função)
     const uniquePerms = [...new Set(perms)];

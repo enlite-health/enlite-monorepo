@@ -38,6 +38,8 @@ interface InventarioRota {
 interface Inventario {
   totalRoutes: number;
   governedRoutes: InventarioRota[];
+  /** A varredura INTEIRA — a mesma fonte que o sync do catálogo consome. */
+  declaredCells: string[];
   undeclared: string[];
 }
 
@@ -304,6 +306,44 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     expect(encuadre.map((chave) => `${chave} → ${vistas.get(chave) ?? 'FORA DO INVENTÁRIO'}`)).toEqual(
       encuadre.map((chave) => `${chave} → declared`),
     );
+  });
+
+  /**
+   * As CINCO células do seed da 206 que nenhuma rota declara — e que por isso o
+   * sync do catálogo (A7) vai descontinuar. O catálogo é DERIVADO do código
+   * (D115): célula que nenhuma rota exige é promessa que o sistema não cumpre.
+   *
+   * ⚠️ Elas NÃO são equivalentes entre si, e a diferença é o que este caso
+   * registra:
+   *   · `upload:read`, `upload:write` — a D116 já as declarou deprecated;
+   *   · `analytics:export`, `worker:delete` — órfãs de verdade, descontinuar de
+   *     propósito (decisão do Gabriel, 20/08); ninguém as usa, nem o frontend;
+   *   · `permission_management:read` — **NÃO é órfã.** `iam.query_audit`
+   *     (mig 280:143) levanta `42501` sem ela, e o painel do grupo 4 (tasks 4.1,
+   *     4.8, 4.10) é quem vai declará-la. É por causa dela que o A7 espera a
+   *     Fase B: descontinuá-la antes do painel mataria a leitura da trilha de
+   *     auditoria para todo mundo, inclusive o Acesso Master.
+   *
+   * Este caso existe para que a decisão seja REVERSÍVEL COM AVISO: declarar uma
+   * rota com qualquer uma delas deixa isto vermelho, e a pessoa descobre que
+   * precisa contar com o `'revived'` do sync (o upsert limpa `deprecated_at`).
+   *
+   * ⚠️ ORÁCULO: a fonte aqui é `declaredCells(scanExpressRouter(app))` — a
+   * varredura INTEIRA —, e **não** `inventario.governedRoutes`. O sync consome a
+   * varredura inteira, então uma célula declarada em rota FORA do perímetro
+   * (`/api/workers/me/*`, `/mcp/v1/*`, webhook) seria revivida no catálogo dos
+   * ambientes implantados sem este caso notar. Usar `governedRoutes` aqui
+   * derrotaria o próprio propósito do teste.
+   */
+  it('as 5 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
+    // `declaredCells` (não `governedRoutes`) é a varredura INTEIRA — a MESMA
+    // fonte que o sync consome. Ver o comentário no endpoint.
+    const declaradas = new Set(inventario.declaredCells);
+
+    expect(
+      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete', 'permission_management:read']
+        .filter((celula) => declaradas.has(celula)),
+    ).toEqual([]);
   });
 
   it('as rotas do PRESTADOR seguem FORA do perímetro — o que a lista nomeada preserva', () => {
