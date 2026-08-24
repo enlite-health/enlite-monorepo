@@ -18,6 +18,13 @@ set -uo pipefail
 VERIF="$(cd "$(dirname "$0")" && pwd)/verificar.sh"
 [ -f "$VERIF" ] || { echo "verificar.sh não encontrado"; exit 2; }
 
+# ⚠️ ISCAS do V10, montadas por CONCATENAÇÃO de propósito.
+# O V10 varre `.sh`. Se o segredo-isca estivesse literal aqui, o gate reprovaria
+# o PR que traz o teste do gate — e foi exatamente o que aconteceu na 1ª versão.
+# Um detector de segredo não pode carregar segredo literal no próprio teste.
+P1="sk_live_"; P2="9aBcDeFgHiJkLmNoPqRs"
+P3="SuperS";   P4="ecret1234567890abc"
+
 PASS=0; FAIL=0
 LAB=""; ESPERADO=""; SAIDA=""; RC=0
 
@@ -184,11 +191,11 @@ rodar; checa "[-] controller COM teste do mesmo projeto passa" 0
 # ══ V10 — segredo ════════════════════════════════════════════════════════════
 echo "## V10 — segredo literal"
 novo_repo
-printf 'const apiKey = "sk_live_9aBcDeFgHiJkLmNoPqRs";\n' > src/a.ts; commit c1
+printf 'const apiKey = "%s%s";\n' "$P1" "$P2" > src/a.ts; commit c1
 rodar; checa "[+] apiKey camelCase REPROVA (eram 170 identificadores cegos)" 1 "segredo literal"
 novo_repo
 mkdir -p terraform
-printf 'variable "db_password" {\n  default = "SuperSecret1234567890abc"\n}\n' > terraform/x.tf; commit c1
+printf 'variable "db_password" {\n  default = "%s%s"\n}\n' "$P3" "$P4" > terraform/x.tf; commit c1
 rodar; checa "[+] segredo em .tf REPROVA (corpus era só .ts)" 1 "segredo literal"
 novo_repo
 printf 'const apiKey = process.env.API_KEY;\n' > src/a.ts; commit c1
