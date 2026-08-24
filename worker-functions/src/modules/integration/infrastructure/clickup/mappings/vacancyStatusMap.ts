@@ -13,6 +13,7 @@
  */
 
 import type { PatientStatus } from '../../../../case/domain/enums/PatientStatus';
+import { recordUnmappedLabel } from '../helpers/unmappedLabelCounter';
 
 export interface VacancyStatusMapping {
   patientStatus: PatientStatus;
@@ -74,7 +75,18 @@ export const CLICKUP_TO_VACANCY_STATUS: Record<string, VacancyStatusMapping> = {
 export function mapClickUpVacancyStatus(
   clickupStatus: string | null | undefined,
 ): VacancyStatusMapping | null {
+  // Empty is legitimate: the task carries no status. Everything below is NOT.
   if (!clickupStatus) return null;
   const key = clickupStatus.trim().toLowerCase();
-  return CLICKUP_TO_VACANCY_STATUS[key] ?? null;
+  const mapped = CLICKUP_TO_VACANCY_STATUS[key];
+  if (mapped === undefined) {
+    // Unknown ClickUp label — ops may have added or renamed an option. Log it so it can be mapped.
+    // The warning lives HERE (not in the caller) so that BOTH call sites are covered:
+    // ClickUpPatientMapper already warned; ClickUpVacancyMapper never did.
+    // Task 1.5 — conta POR CAMPO (nunca por rótulo: seria a C1 do `lex` violada por acumulação).
+    recordUnmappedLabel('Estado de Pacientes (task status)');
+    console.warn('[vacancyStatusMap] Unknown ClickUp label:', { field: 'Estado de Pacientes (task status)', label: key });
+    return null;
+  }
+  return mapped;
 }

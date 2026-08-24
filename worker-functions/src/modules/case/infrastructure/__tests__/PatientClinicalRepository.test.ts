@@ -110,6 +110,23 @@ describe('PatientClinicalRepository.upsert', () => {
     expect(sql).toMatch(/additional_comments_updated_by = \$8/);
   });
 
+  it('clinicalSpecialtyReadable=false (2.2/rodada 4, D167 no DERIVADO): clinical_specialty NÃO entra no SET; null com readable ausente/true GRAVA null (D-E)', async () => {
+    const repo = new PatientClinicalRepository();
+    // "não consegui ler": a origem mandou algo que o catálogo não traduziu → a coluna fica como está.
+    await repo.upsert({ patientId: PATIENT, clinicalSpecialty: null, clinicalSpecialtyReadable: false, diagnosis: 'D' });
+    let { sql, params } = lastCall();
+    expect(sql).not.toMatch(/clinical_specialty/);
+    expect(params).toEqual([PATIENT, 'D']);
+    // "vazio legítimo": a origem não preencheu → grava NULL (congelado *parece* dado).
+    await repo.upsert({ patientId: PATIENT, clinicalSpecialty: null, clinicalSpecialtyReadable: true });
+    ({ sql, params } = lastCall());
+    expect(sql).toMatch(/clinical_specialty\s+= \$2/);
+    expect(params).toEqual([PATIENT, null]);
+    // só a bandeira, sem a chave → nada a gravar (Merge Patch)
+    await repo.upsert({ patientId: PATIENT, clinicalSpecialtyReadable: false });
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2);
+  });
+
   it('hasConsent=false explícito grava false (COALESCE preserva só o null)', async () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({ patientId: PATIENT, hasConsent: false });

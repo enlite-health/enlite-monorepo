@@ -420,5 +420,28 @@ describe('ClickUpPatientWebhookController', () => {
 
       delete process.env.CLICKUP_API_TOKEN;
     });
+
+    // ── a FIAÇÃO da 1.13, e por que ela precisa de asserção própria ───────────
+    // Medido em 24/08: arrancar UM hunk — o argumento `catalog` desta chamada —
+    // mata a recarga de catálogo em produção, e TUDO continua verde. O parâmetro é
+    // opcional no construtor, então compila; `create()` já era chamado por este
+    // teste, mas ninguém verificava o que ele MONTA; e o guardian da fase mede por
+    // PEÇA, não por hunk, então o sobrevivente não vira exit != 0.
+    //
+    // `create()` é o ÚNICO caminho que produção roda. Sem esta asserção, a task
+    // 1.13 inteira pode ser desfeita por uma linha, em silêncio.
+    it('create() FIA o refresher de catálogo no controller (task 1.13, hunk que sobrevivia)', async () => {
+      process.env.CLICKUP_API_TOKEN = 'tok-ok';
+      mockFieldResolverFromList.mockResolvedValueOnce({} as unknown as ClickUpFieldResolver);
+
+      const ctrl = await ClickUpPatientWebhookController.create();
+      const fiado = (ctrl as unknown as { catalog?: unknown }).catalog;
+
+      // não basta existir: tem de ser o refresher, e tem de saber recarregar
+      expect(fiado).toBeDefined();
+      expect(typeof (fiado as { ensureFreshFor?: unknown })?.ensureFreshFor).toBe('function');
+
+      delete process.env.CLICKUP_API_TOKEN;
+    });
   });
 });

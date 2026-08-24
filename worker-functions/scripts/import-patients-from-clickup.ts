@@ -32,6 +32,7 @@ import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/
 import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { SyncPatientFromClickUpTaskUseCase } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import { PatientSourceLabelRepository } from '../src/modules/case';
 import {
   checkExistingTaskIds,
   processDryRun,
@@ -146,7 +147,11 @@ async function main(): Promise<void> {
     const patientService = new PatientService();
     const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
     const mapper = new ClickUpPatientMapper(resolver);
-    useCase = new SyncPatientFromClickUpTaskUseCase({ mapper, patientService });
+    useCase = new SyncPatientFromClickUpTaskUseCase({
+      mapper, patientService,
+      // Task 2.3 — o cru vai junto do derivado, também no caminho de recuperação manual.
+      sourceLabelRepository: new PatientSourceLabelRepository(),
+    });
     pool = new Pool({ connectionString: DATABASE_URL });
   }
 

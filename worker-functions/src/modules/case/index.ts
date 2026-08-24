@@ -131,6 +131,24 @@ export type {
   UpdateChatRoleInput,
   SharedGroupConflict,
 } from './infrastructure/PatientChatRolesRepository';
+// Task 2.2 (`campos-admissao`): o rótulo CRU da origem, ao lado do derivado. Migration 284.
+export {
+  PatientSourceLabelRepository,
+  PatientSourceLabelCeilingError,
+  PATIENT_SOURCE_LABEL_CEILING,
+  sourceLabelsRead,
+  sourceLabelsUnreadable,
+} from './infrastructure/PatientSourceLabelRepository';
+export type {
+  PatientSourceLabelWriteInput,
+  PatientSourceLabelWriteResult,
+  PatientSourceLabelRejection,
+  PatientSourceLabelRejectionReason,
+  PatientSourceLabelRow,
+  PatientSourceLabelRejectionRow,
+  PatientSourceLabelsRead,
+  PatientSourceLabelWriteOutcome,
+} from './infrastructure/PatientSourceLabelRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
 export type {

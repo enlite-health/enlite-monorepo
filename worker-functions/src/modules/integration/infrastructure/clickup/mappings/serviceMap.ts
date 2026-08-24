@@ -1,4 +1,5 @@
 import type { Profession } from '@modules/worker';
+import { recordUnmappedLabel } from '../helpers/unmappedLabelCounter';
 
 /**
  * Translates ClickUp "Servicio" drop-down labels to canonical Profession[].
@@ -15,5 +16,20 @@ export const CLICKUP_TO_SERVICE_TYPES: Record<string, Profession[]> = {
 
 export function mapClickUpService(label: string | null): Profession[] {
   if (!label) return [];
-  return CLICKUP_TO_SERVICE_TYPES[label] ?? [];
+  const mapped = CLICKUP_TO_SERVICE_TYPES[label];
+  if (mapped === undefined) {
+    // CLINICAL field (dato sensible-salud, per the parecer's field table) — C1 do parecer do
+    // `lex` de 23/08 is a PARE on the raw value reaching a log. Field name + shape only;
+    // the catalog answers "which option" (C2).
+    // Task 1.5 — conta POR CAMPO (nunca por rótulo: seria a C1 do `lex` violada por acumulação).
+    recordUnmappedLabel('Servicio');
+    console.warn('[serviceMap] Unmapped ClickUp option (value withheld — C1/lex):', {
+      field: 'Servicio',
+      valueType: typeof label,
+      isArray: Array.isArray(label),
+      length: label.length,
+    });
+    return [];
+  }
+  return mapped;
 }

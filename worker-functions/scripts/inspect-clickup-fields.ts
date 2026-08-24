@@ -21,11 +21,13 @@ async function main() {
 
   console.log('\n=== Drop-down fields (orderindex → label) ===\n');
   for (const name of resolver.dropdownFieldNames.sort()) {
-    const options: Record<string, string> = {};
-    for (let i = 0; i < 50; i++) {
-      const label = resolver.resolveDropdown(name, i);
-      if (label !== null) options[String(i)] = label;
-    }
+    // INSPECTION path: ask the resolver for the whole map at once.
+    // The old range probe (`for (let i = 0; i < 50; i++) resolveDropdown(name, i)`) missed
+    // ~45 times per field, and since task 1.3 every miss emits a warning — the real alarm
+    // would drown in the probe's own noise (criterion 9.4: an alarm drowned in noise is an
+    // absent alarm). getDropdownOptions() is the read-only accessor, and it never warns.
+    // The SYNC path (ClickUpPatientMapper → resolveDropdown) keeps warning: that is the point.
+    const options = resolver.getDropdownOptions(name);
     console.log(`${name}:`);
     for (const [idx, label] of Object.entries(options)) {
       console.log(`  [${idx}] ${label}`);

@@ -34,7 +34,7 @@
  *       → slot uses fresh location values (NOT stale legacy)
  */
 
-import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { ClickUpPatientMapper, extractCaseNumber, PATIENT_DROPDOWN_FIELDS } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/extractPatientChatIds';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
@@ -53,7 +53,12 @@ function makeResolver(dropdowns: DropdownStub = {}) {
     },
     resolveLabel: () => null,
     resolveLabels: () => [],
-    getFieldType: () => null,
+    // Task 1.11: o stub responde pelo CATÁLOGO do ClickUp, não pelo mapa de opções acima.
+    // Estas fixtures exercitam campos que EXISTEM na lista (com ou sem opção mapeada aqui);
+    // devolver `null` diria "campo renomeado ou apagado", que é OUTRO cenário — o dele é
+    // `tests/unit/__tests__/clickup-1.11-campo-renomeado.test.ts`.
+    getFieldType: (fieldName: string): string | null =>
+      (PATIENT_DROPDOWN_FIELDS as readonly string[]).includes(fieldName) ? 'drop_down' : null,
   } as unknown as import('../../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver').ClickUpFieldResolver;
 }
 
@@ -362,8 +367,9 @@ describe('ClickUpPatientMapper', () => {
       { name: 'Domicilio 1 Principal Paciente', value: locationField('Balcarce 100, San Telmo') },
       { name: 'Domicilio Informado Paciente 1', value: 'Balcarce 100' },
       // Slot 2: HAS components → extracts from its OWN location, NOT from patient legacy
+      // (task 1.12: o nome real no ClickUp é `Domicilio 2 Paciente`, sem "Principal")
       {
-        name: 'Domicilio 2 Principal Paciente',
+        name: 'Domicilio 2 Paciente',
         value: locationField('Av. Cabildo 100, Belgrano, CABA', [
           { long_name: 'Ciudad Autónoma de Buenos Aires', short_name: 'CABA', types: ['administrative_area_level_1', 'political'] },
           { long_name: 'Buenos Aires', short_name: 'CABA', types: ['locality', 'political'] },
@@ -458,9 +464,9 @@ describe('ClickUpPatientMapper', () => {
       { name: 'Nombre de Paciente', value: 'Ignacio' },
       { name: 'Apellido del Paciente', value: 'Soto' },
       { name: 'Nombre de Responsable', value: 'María' },
-      { name: 'Apellido de Responsable', value: 'Soto' },
+      { name: 'Apellido del Responsable', value: 'Soto' },
       { name: 'Número de WhatsApp Responsable', value: '+54 9 11 1234-5678' },
-      { name: 'Email del Responsable', value: 'maria@example.com' },
+      { name: 'Email Responsable', value: 'maria@example.com' },
     ]);
 
     const result = mapper.map(task);
@@ -507,9 +513,9 @@ describe('ClickUpPatientMapper', () => {
       { name: 'Zona o Barrio Paciente', value: 'Godoy Cruz' },
       { name: 'Domicilio 1 Principal Paciente', value: locationField('San Martín 100, Mendoza') },
       { name: 'Domicilio Informado Paciente 1', value: 'San Martín 100' },
-      { name: 'Domicilio 2 Principal Paciente', value: locationField('España 200, Mendoza') },
+      { name: 'Domicilio 2 Paciente', value: locationField('España 200, Mendoza') },
       { name: 'Domicilio Informado Paciente 2', value: 'España 200' },
-      { name: 'Domicilio 3 Principal Paciente', value: locationField('Las Heras 300, Mendoza') },
+      { name: 'Domicilio 3 Paciente', value: locationField('Las Heras 300, Mendoza') },
       { name: 'Domicilio Informado Paciente 3', value: 'Las Heras 300' },
     ]);
 
@@ -792,12 +798,12 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
         { name: 'Equipo Tratante Multidisciplinario',         value: false },
         // Responsible
         { name: 'Nombre de Responsable',                      value: 'Andres' },
-        { name: 'Apellido de Responsable',                    value: 'Rodriguez' },
+        { name: 'Apellido del Responsable',                   value: 'Rodriguez' },
         { name: 'Relación con el Paciente',                   value: 5 },
         { name: 'Número de WhatsApp Responsable',             value: '+54 9 11 3207 5033' },
-        { name: 'Email del Responsable',                      value: 'andres@example.com' },
+        { name: 'Email Responsable',                          value: 'andres@example.com' },
         { name: 'Tipo de Documento Responsable',              value: 1 },
-        { name: 'Número de Documento Responsable',            value: '29064022' },
+        { name: 'Número do Documento Responsable',            value: '29064022' },
         // Primary address
         {
           name:  'Domicilio 1 Principal Paciente',
@@ -928,6 +934,11 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       'country',
       'status', 'caseNumber',
       'diagnosis', 'dependencyLevel', 'clinicalSpecialty',
+      // Task 2.2/rodada 4 — a bandeira que separa "a origem não preencheu" (vazio legítimo,
+      // e a D-E manda GRAVAR) de "a origem mandou e o catálogo não traduziu" (leitura
+      // impossível, e gravar APAGA). Sem ela, `clinicalSpecialty: null` significava as duas
+      // coisas e apagava `'ASD'` de paciente real. Ver `PatientClinicalRepository`.
+      'clinicalSpecialtyReadable',
       'serviceType', 'additionalComments',
       'hasCud', 'hasConsent', 'hasJudicialProtection',
       'healthInsuranceName', 'healthInsuranceMemberId',

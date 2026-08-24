@@ -1,5 +1,7 @@
 import type { PatientServiceUpsertInput } from '@modules/case';
 import type { PatientResponsibleInput } from '@modules/case';
+import { sourceLabelsRead, sourceLabelsUnreadable } from '@modules/case';
+import type { PatientSourceLabelsRead } from '@modules/case';
 import type { PatientAddress, PatientProfessional } from '../../../../infrastructure/repositories/PatientRepository';
 import { ClickUpFieldResolver } from './ClickUpFieldResolver';
 import type { ClickUpTask, ClickUpTaskCustomField } from './ClickUpTask';
@@ -21,8 +23,68 @@ import {
   extractNeighborhoodFromLocation,
 } from './helpers/locationHelpers';
 import { normalizeProvince, stripPostalCodePrefix } from '@shared/utils/argentinaLocationNormalizer';
+import { asIndexable } from './helpers/asIndexable';
+import {
+  assertReadableDropdownFields,
+  normalizeExpectation,
+  type CatalogFieldExpectation,
+} from './helpers/dropdownCatalogGuard';
+import { resolveCatalogValue, CATALOG_TYPES_SUPPORTED } from './helpers/resolveCatalogValue';
 
 type CustomFieldMap = Record<string, unknown>;
+
+/**
+ * Uma leitura crua de campo de catálogo, pronta para `PatientSourceLabelRepository`.
+ * `fieldName` é o nome NA ORIGEM — metadado de schema, nunca valor de paciente.
+ */
+export interface ClickUpSourceLabelRead {
+  fieldName: string;
+  read: PatientSourceLabelsRead;
+}
+
+/**
+ * Every drop_down field this mapper asks ClickUp for, by the name it asks for.
+ *
+ * Task 1.11: before mapping anything, the catalog is asked whether each of these still
+ * exists as a drop_down (`assertReadableDropdownFields`). A field renamed or deleted in
+ * ClickUp makes `cf['<old name>']` undefined, `asIndexable` return null SILENTLY (that
+ * null is legitimate for the 1424 of 1690 tasks that simply have no value), and the
+ * `UPDATE` erase what was stored. Reading the catalog is what tells the two nulls apart.
+ *
+ * Drift guard: `tests/unit/__tests__/clickup-1.11-campo-renomeado.test.ts` reads this file and
+ * fails if any dropdown resolved below names a field that is missing from this list.
+ */
+export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
+  'Dependencia',
+  'Sexo Asignado al Nacer (Uso Clínico)',
+  'Tipo de Documento Paciente',
+  // ⚠️ O ÚNICO campo com DOIS tipos aceitos, e isto é uma decisão, não folga.
+  // D-C da change `campos-admissao`: a Fase 2 transforma `Segmentos Clínicos` em MÚLTIPLO,
+  // o que no ClickUp significa trocar o tipo do campo de `drop_down` para `labels`. Com a
+  // lista antiga (só `drop_down` para todo mundo), o dia dessa virada — que é o plano
+  // declarado desta fase, não um acidente — fazia o preflight marcar `wrong_type` e o sync
+  // de pacientes PARAR INTEIRO, mudo na origem. Medido pelo QA-caça da 2.2 (defeito 1).
+  // Declarar os dois só é legítimo porque o leitor sabe ler os dois: `resolveCatalogValue`
+  // despacha pelo tipo VIVO do catálogo. Sem esse par, isto seria abrir a porta para o
+  // `null` de "não consegui ler" apagar dado (D167/F41).
+  { field: 'Segmentos Clínicos', accepts: CATALOG_TYPES_SUPPORTED },
+  'Servicio',
+  'Relación con el Paciente',
+  'Tipo de Documento Responsable',
+  // Task 1.12: o 8º. É `drop_down` vivo no catálogo e o mapper depende dele
+  // (`buildProfessionals` → `isTeam`), mas ele NÃO é lido por `resolveDropdown` — e por isso
+  // escapou da lista quando ela foi escrita à mão na 1.11. A trava de deriva desta task passou
+  // a ser dirigida pelo CATÁLOGO (que tipo o campo tem), não pela função que o lê.
+  'Equipo Tratante Multidisciplinario',
+];
+
+/**
+ * Só os NOMES dos campos acima, derivados — nunca escritos duas vezes. Duas listas à mão
+ * divergem em silêncio, que é o F20/F49/F51 desta casa. Consumido pelo controller
+ * (`declaredFields` do refresher) e pelas travas de deriva das tasks 1.11/1.12.
+ */
+export const PATIENT_DROPDOWN_FIELDS: readonly string[] =
+  PATIENT_CATALOG_FIELDS.map(f => normalizeExpectation(f).field);
 
 /**
  * ClickUpPatientMapper — converts a ClickUp task from "Estado de Pacientes" list
@@ -38,10 +100,112 @@ export class ClickUpPatientMapper {
   constructor(private readonly resolver: ClickUpFieldResolver) {}
 
   /**
+   * Nomes de custom field que o mapper PEDIU na última chamada de `map()` — pedidos, não
+   * encontrados: um nome que não existe no catálogo é registrado do mesmo jeito, e é
+   * exatamente esse o caso que interessa. Alimentado pelo `Proxy` de `buildCustomFieldMap`.
+   */
+  private readonly requestedFieldNames = new Set<string>();
+
+  /** Leitura da anotação acima. Usado pela trava de deriva da task 1.12. */
+  getRequestedFieldNames(): readonly string[] {
+    return [...this.requestedFieldNames];
+  }
+
+  /**
+   * Task 1.13b — QUEM PERGUNTA é quem sabe responder "este campo importa ao mapper?".
+   *
+   * O harvester da 1.12 (o `Proxy` de `buildCustomFieldMap`) já anota o nome de CADA leitura,
+   * inclusive nome vindo de variável ou de laço. O que faltava era poder consultá-lo ANTES de
+   * decidir escrever. Isto roda a mesma varredura de `map()` só para colher os nomes: não
+   * escreve nada, não faz rede, e o resultado é DESCARTADO.
+   *
+   * Por que uma varredura de verdade, e não uma lista: lista escrita à mão nasce desatualizada
+   * (F20/F49/F51) — foi assim que `Equipo Tratante Multidisciplinario` escapou da 1.11. Aqui o
+   * conjunto é o que o código ACABOU de ler, para ESTA tarefa.
+   *
+   * Dois cuidados:
+   *   - `status` é zerado na cópia para que o `console.warn` de status desconhecido, que carrega
+   *     `task.id`, NÃO seja emitido por causa da sonda (C1 do parecer do `lex`: `task.id` é
+   *     proibido na linha). A cópia é rasa e `status` não é custom field: nenhuma leitura muda.
+   *   - `map()` pode lançar antes da varredura (o preflight da 1.11 roda primeiro). Nesse caso o
+   *     conjunto volta VAZIO — e vazio significa "não sei", nunca "nada importa". Quem decide
+   *     trata a contagem zero como falha (F19).
+   *
+   * LIMITE DECLARADO: `extractCaseNumber` lê `task.custom_fields` direto, sem passar pelo mapa,
+   * então `Caso Número` não aparece aqui. Não é buraco desta decisão: aquele campo é lido da
+   * TAREFA por nome, não do catálogo — recarregar o catálogo não muda nada para ele.
+   */
+  fieldNamesReadFor(task: ClickUpTask): readonly string[] {
+    const semStatus: ClickUpTask = { ...task, status: { ...task.status, status: '' } };
+    try {
+      this.map(semStatus);
+    } catch {
+      // Deliberadamente silencioso: a sonda não decide nada sozinha, e o erro que importa
+      // (campo ilegível) já é gritado por `assertReadableDropdownFields` no caminho real.
+    }
+    return this.getRequestedFieldNames();
+  }
+
+  /**
+   * Task 2.3 — as LEITURAS CRUAS dos campos de catálogo, para persistir o rótulo literal ao
+   * lado do derivado (D-B). Uma entrada por campo de `PATIENT_CATALOG_FIELDS`, na ordem em
+   * que eles estão declarados.
+   *
+   * ── Por que TODOS os 8, e não só `Segmentos Clínicos` ───────────────────────
+   * A task 2.2 absorveu a antiga 1.4 e trouxe a generalidade junto: o cru é persistido para
+   * TODO mapa blindado na 1.3. Restringir a segmento deixaria os outros 7 exatamente como
+   * estavam — derivado gravado, literal perdido —, que é a perda que esta fase existe para
+   * fechar. O teto de 3 e a recusa registrada valem por campo, não por paciente.
+   *
+   * ── Por que uma passada PRÓPRIA, e não a de `map()` ─────────────────────────
+   * `map()` deriva com `resolveDropdown` desde antes desta change e é o caminho vivo de 1978
+   * testes. Reescrevê-lo para derivar A PARTIR daqui mudaria o comportamento de 7 campos numa
+   * task cujo critério é o 8º — e a régua de FORMA não pegaria (D155). Esta passada é
+   * ADITIVA: `map()` continua byte a byte o que era, e o cru sai daqui.
+   *
+   * O custo é resolver duas vezes o mesmo campo. É busca em `Record` já carregado, sem rede e
+   * sem banco, e `resolveCatalogValue` é pura: mesma entrada, mesma saída. O que NÃO se pode
+   * pagar duas vezes é o AVISO — por isso `warn: false`. O caminho vivo já gritou; dois avisos
+   * para o mesmo fato é ruído, e ruído desliga alarme (critério 9.4).
+   *
+   * ── O que esta função NÃO faz, de propósito ─────────────────────────────────
+   * Não decide o que gravar. Devolve `readable:false` quando a origem mandou valor que o
+   * catálogo não traduziu — e quem recebe isso não escreve e não apaga (D167/F41). Traduzir
+   * ilegível em lista vazia aqui seria reabrir o apagamento pela porta que a 2.2 fechou.
+   *
+   * ⚠️ Roda DEPOIS do preflight, como `map()`: se um campo sumiu do catálogo,
+   * `assertReadableDropdownFields` lança e nada disto é alcançado — o sync inteiro para, que
+   * é o comportamento da 1.11 e é o correto.
+   */
+  readSourceLabels(task: ClickUpTask): ClickUpSourceLabelRead[] {
+    assertReadableDropdownFields(this.resolver, PATIENT_CATALOG_FIELDS, 'ClickUpPatientMapper');
+
+    const cf = this.buildCustomFieldMap(task.custom_fields);
+
+    return PATIENT_CATALOG_FIELDS.map(expectation => {
+      const { field } = normalizeExpectation(expectation);
+      const leitura = resolveCatalogValue(this.resolver, field, cf[field], { warn: false });
+      return {
+        fieldName: field,
+        read: leitura.readable
+          ? sourceLabelsRead(leitura.labels)
+          : sourceLabelsUnreadable(leitura.reason),
+      };
+    });
+  }
+
+  /**
    * Converts a ClickUp task to PatientServiceUpsertInput.
    * Returns null if the task has no usable patient data (no first or last name).
    */
   map(task: ClickUpTask): PatientServiceUpsertInput | null {
+    // Fail closed BEFORE deriving anything: a drop_down field that the catalog no longer
+    // knows resolves to null for EVERY task, and that null is written over stored data.
+    // Throws ClickUpUnreadableFieldError — SyncPatientFromClickUpTaskUseCase turns it into
+    // kind='ERROR' + clickup_patient_sync.error and writes nothing. (Task 1.11; NOT COALESCE,
+    // which D-E forbids: a legitimately empty field keeps writing its emptiness, below.)
+    assertReadableDropdownFields(this.resolver, PATIENT_CATALOG_FIELDS, 'ClickUpPatientMapper');
+
     const cf = this.buildCustomFieldMap(task.custom_fields);
 
     // Identity: prefer custom fields; fall back to parsing task.name when empty.
@@ -60,11 +224,25 @@ export class ClickUpPatientMapper {
 
     if (!firstName && !lastName) return null;
 
-    const dependencyLabel    = this.resolver.resolveDropdown('Dependencia', this.asIndexable(cf['Dependencia']));
-    const sexLabel           = this.resolver.resolveDropdown('Sexo Asignado al Nacer (Uso Clínico)', this.asIndexable(cf['Sexo Asignado al Nacer (Uso Clínico)']));
-    const docTypeLabel       = this.resolver.resolveDropdown('Tipo de Documento Paciente', this.asIndexable(cf['Tipo de Documento Paciente']));
-    const specialtyLabel     = this.resolver.resolveDropdown('Segmentos Clínicos', this.asIndexable(cf['Segmentos Clínicos']));
-    const serviceLabel       = this.resolver.resolveDropdown('Servicio', this.asIndexable(cf['Servicio']));
+    const dependencyLabel    = this.resolver.resolveDropdown('Dependencia', asIndexable('Dependencia', cf['Dependencia']));
+    const sexLabel           = this.resolver.resolveDropdown('Sexo Asignado al Nacer (Uso Clínico)', asIndexable('Sexo Asignado al Nacer (Uso Clínico)', cf['Sexo Asignado al Nacer (Uso Clínico)']));
+    const docTypeLabel       = this.resolver.resolveDropdown('Tipo de Documento Paciente', asIndexable('Tipo de Documento Paciente', cf['Tipo de Documento Paciente']));
+    // `Segmentos Clínicos` é lido PELO TIPO VIVO do catálogo (defeito 1 do QA-caça da 2.2):
+    // `drop_down` hoje, `labels` a partir da virada da Fase 2 (D-C). O derivado da D-B segue
+    // sendo UM valor — no mundo `drop_down` a lista tem no máximo 1 item, então o
+    // comportamento de hoje é idêntico, byte a byte.
+    // LIMITE DECLARADO para o mundo múltiplo: o derivado vem do PRIMEIRO rótulo, sem escolher
+    // o "melhor". Escolher o primeiro que mapeia esconderia um rótulo desconhecido justamente
+    // quando ele é a novidade que a D-A manda gritar. Hoje isso não é ambíguo: F36 mediu 263
+    // pacientes com 1 valor e ZERO com 2+ (reconferido na 2.1). Quando aparecer o primeiro
+    // paciente com 2+, o critério de ORDEM é decisão de produto e já está sinalizado na 2.1.
+    const segmentoRead       = resolveCatalogValue(this.resolver, 'Segmentos Clínicos', cf['Segmentos Clínicos']);
+    // ⚠️ `specialtyLabel` sozinho não distingue os dois nulos, e essa confusão APAGAVA dado.
+    // `segmentoRead` já sabe a diferença (é o que a 2.2 construiu para o CRU); o que faltava era
+    // levá-la também ao DERIVADO. Ver `PatientClinicalRepository.clinicalSpecialtyReadable`.
+    const specialtyLabel     = segmentoRead.readable ? (segmentoRead.labels[0] ?? null) : null;
+    const specialtyReadable  = segmentoRead.readable;
+    const serviceLabel       = this.resolver.resolveDropdown('Servicio', asIndexable('Servicio', cf['Servicio']));
 
     const serviceTypes = mapClickUpService(serviceLabel);
 
@@ -97,11 +275,13 @@ export class ClickUpPatientMapper {
       diagnosis:          this.asString(cf['Diagnóstico (si lo conoce)']),
       dependencyLevel:    mapClickUpDependencyLevel(dependencyLabel),
       clinicalSpecialty:  mapClickUpClinicalSpecialty(specialtyLabel),
+      clinicalSpecialtyReadable: specialtyReadable,
       serviceType:        serviceTypes.length > 0 ? serviceTypes : null,
       additionalComments: this.asString(cf['Comentarios Adicionales Paciente']),
 
       // Health insurance (fill-only via COALESCE in PatientIdentityRepository)
-      // ClickUp: "Cobertura Informada"
+      // ClickUp: "Cobertura Informada " — o nome vivo tem ESPAÇO no fim (F15). Pedimos o nome
+      // aparado; o alias de `buildCustomFieldMap` faz os dois casarem (task 1.12).
       healthInsuranceName:     this.asString(cf['Cobertura Informada']),
       // ClickUp: "Número ID Afiliado Paciente"
       healthInsuranceMemberId: this.asString(cf['Número ID Afiliado Paciente']),
@@ -122,12 +302,42 @@ export class ClickUpPatientMapper {
 
   // ── Private helpers ──────────────────────────────────────────────────────────
 
+  /**
+   * Task 1.12 — duas coisas, além de montar o mapa:
+   *
+   * 1. ALIAS SEM ESPAÇO. Nome de campo no ClickUp pode carregar espaço nas pontas — medido:
+   *    o campo vivo se chama `'Cobertura Informada '`, com espaço no fim (F15/fase 0), e por
+   *    isso `cf['Cobertura Informada']` devolvia `undefined` para TODA tarefa, calado. O alias
+   *    torna a busca canônica: o mapper sempre pede o nome APARADO e continua funcionando com
+   *    ou sem o espaço — inclusive no dia em que o Javier corrigir o nome no ClickUp.
+   *
+   * 2. REGISTRO DO QUE FOI PEDIDO. O `Proxy` anota o nome de CADA leitura — o que foi PEDIDO,
+   *    não o que existe na tarefa. É o que a trava de deriva consulta (`getRequestedFieldNames`).
+   *    A trava da 1.11 varria o fonte atrás da chamada de resolveDropdown com nome literal, e
+   *    por isso era cega a `Equipo Tratante Multidisciplinario` — que é `drop_down`, mas não
+   *    passa por ali. Instrumento
+   *    que enxerga um padrão sintático deixa passar o próximo campo pelo mesmo motivo; este vê a
+   *    leitura acontecer, inclusive nome vindo de variável (`slot.nameCf`) ou de laço.
+   *
+   * O `get` não muda valor nenhum: `Reflect.get` devolve exatamente o que o objeto devolveria.
+   */
   private buildCustomFieldMap(fields: ClickUpTaskCustomField[]): CustomFieldMap {
     const map: CustomFieldMap = {};
     for (const field of fields) {
       map[field.name] = field.value;
+      const trimmed = field.name.trim();
+      if (trimmed !== field.name && !Object.prototype.hasOwnProperty.call(map, trimmed)) {
+        map[trimmed] = field.value;
+      }
     }
-    return map;
+
+    this.requestedFieldNames.clear();
+    return new Proxy(map, {
+      get: (target, prop, receiver) => {
+        if (typeof prop === 'string') this.requestedFieldNames.add(prop);
+        return Reflect.get(target, prop, receiver);
+      },
+    });
   }
 
   /**
@@ -156,12 +366,12 @@ export class ClickUpPatientMapper {
 
   private buildResponsibles(cf: CustomFieldMap): PatientResponsibleInput[] {
     const firstName = this.asString(cf['Nombre de Responsable']);
-    const lastName  = this.asString(cf['Apellido de Responsable']);
+    const lastName  = this.asString(cf['Apellido del Responsable']);
     if (!firstName && !lastName) return [];
 
     const relLabel = this.resolver.resolveDropdown(
       'Relación con el Paciente',
-      this.asIndexable(cf['Relación con el Paciente']),
+      asIndexable('Relación con el Paciente', cf['Relación con el Paciente']),
     );
 
     return [{
@@ -169,14 +379,14 @@ export class ClickUpPatientMapper {
       lastName:     lastName  ?? '',
       relationship: mapClickUpRelationship(relLabel),
       phone:        this.cleanPhone(this.asString(cf['Número de WhatsApp Responsable'])),
-      email:        this.asString(cf['Email del Responsable']),
+      email:        this.asString(cf['Email Responsable']),
       documentType: mapClickUpDocumentType(
         this.resolver.resolveDropdown(
           'Tipo de Documento Responsable',
-          this.asIndexable(cf['Tipo de Documento Responsable']),
+          asIndexable('Tipo de Documento Responsable', cf['Tipo de Documento Responsable']),
         ),
       ),
-      documentNumber: this.asString(cf['Número de Documento Responsable']),
+      documentNumber: this.asString(cf['Número do Documento Responsable']),
       isPrimary:    true,
       displayOrder: 1,
       source:       'clickup',
@@ -221,14 +431,14 @@ export class ClickUpPatientMapper {
         useLegacyFallback: true,
       },
       {
-        location: cf['Domicilio 2 Principal Paciente'],
+        location: cf['Domicilio 2 Paciente'],
         raw:      this.asString(cf['Domicilio Informado Paciente 2']),
         type:     'secondary' as const,
         order:    2,
         useLegacyFallback: false,
       },
       {
-        location: cf['Domicilio 3 Principal Paciente'],
+        location: cf['Domicilio 3 Paciente'],
         raw:      this.asString(cf['Domicilio Informado Paciente 3']),
         type:     'secondary' as const,
         order:    3,
@@ -346,12 +556,10 @@ export class ClickUpPatientMapper {
     return null;
   }
 
-  /** Converts a custom-field value to a number suitable for resolveDropdown(). */
-  private asIndexable(value: unknown): number | null {
-    if (value === null || value === undefined) return null;
-    const n = Number(value);
-    return Number.isNaN(n) ? null : n;
-  }
+  // asIndexable() moved to helpers/asIndexable.ts (C5 do parecer do `lex`, 23/08).
+  // The version that lived here was `Number(value)` with a NaN guard, and `Number([])`,
+  // `Number('')`, `Number('   ')` and `Number(false)` are all `0` — a valid orderindex.
+  // It FABRICATED the first catalog option of a clinical field. See the helper's header.
 
   private extractFormattedAddress(location: unknown): string | null {
     if (!location || typeof location !== 'object') return null;

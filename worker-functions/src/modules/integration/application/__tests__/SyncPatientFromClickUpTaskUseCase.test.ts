@@ -74,6 +74,8 @@ function makeTask(overrides: Partial<ClickUpTask> = {}): ClickUpTask {
 function makeDeps(overrides: Partial<{
   mapResult: PatientServiceUpsertInput | null | Error;
   upsertResult: { id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' } | Error;
+  sourceReads: unknown[];
+  replaceForField: jest.Mock;
 }>): SyncPatientDeps {
   const mapper = {
     map: jest.fn(() => {
@@ -81,6 +83,13 @@ function makeDeps(overrides: Partial<{
       if (r instanceof Error) throw r;
       return r ?? null;
     }),
+    // Task 2.3: o use case lê o cru depois do upsert. Vazio por padrão aqui — os testes desta
+    // suíte são sobre o DESPACHO (kind, log, conflito), não sobre a persistência do cru, que
+    // tem suíte própria. O que importa é que a lista exista: `[]` é tratado como FALHA pelo
+    // use case (F19), e um teste desta suíte prova isso.
+    readSourceLabels: jest.fn(() => overrides.sourceReads ?? [
+      { fieldName: 'Segmentos Clínicos', read: { readable: true, labels: [] } },
+    ]),
   } as unknown as ClickUpPatientMapper;
 
   const minimalInput: PatientServiceUpsertInput = {
@@ -102,7 +111,16 @@ function makeDeps(overrides: Partial<{
     (mapper.map as jest.Mock).mockReturnValue(overrides.mapResult);
   }
 
-  return { mapper, patientService };
+  // Task 2.3 — dublê do repositório do cru. Nenhum teste desta suíte toca banco.
+  const sourceLabelRepository = {
+    replaceForField: overrides.replaceForField ?? jest.fn(async () => ({
+      fieldName: 'Segmentos Clínicos', outcome: 'written' as const,
+      received: 0, empty: 0, accepted: [], rejected: [], newlyRejected: 0,
+      rejectionsDurable: 'not-applicable' as const,
+    })),
+  } as unknown as SyncPatientDeps['sourceLabelRepository'];
+
+  return { mapper, patientService, sourceLabelRepository };
 }
 
 function makeUpsertInput(firstName = 'Ana', lastName = 'García'): PatientServiceUpsertInput {

@@ -15,6 +15,7 @@ import type { ClickUpPatientMapper } from '../infrastructure/clickup/ClickUpPati
 import { extractPatientChatIds } from '../infrastructure/clickup/extractPatientChatIds';
 import type { PatientService } from '../../case/application/PatientService';
 import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
+import type { PatientSourceLabelRepository } from '@modules/case';
 
 // ── Result types ──────────────────────────────────────────────────────────────
 
@@ -37,6 +38,16 @@ export interface SyncPatientDeps {
    * PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED.
    */
   chatIdsService?: PatientChatIdsService;
+  /**
+   * Task 2.3 — onde o rótulo CRU é persistido, ao lado do derivado (D-B).
+   *
+   * OBRIGATÓRIA de propósito. Opcional, ela seria a fiação que ninguém liga: o sync seguiria
+   * verde, o derivado seguiria gravado e o cru seguiria perdido — exatamente o estado que
+   * esta fase existe para fechar, agora com uma coluna vazia para dar a impressão contrária.
+   * Sendo obrigatória, o compilador força CADA ponto de construção a decidir, o que é
+   * arquitetura em vez de instrução.
+   */
+  sourceLabelRepository: PatientSourceLabelRepository;
 }
 
 export interface SyncPatientOptions {
@@ -166,6 +177,15 @@ export class SyncPatientFromClickUpTaskUseCase {
 
       const kind: 'CREATED' | 'UPDATED' = result.created ? 'CREATED' : 'UPDATED';
 
+      // ── Task 2.3: o rótulo CRU, ao lado do derivado ────────────────────────
+      // Roda DEPOIS do upsert porque só aqui existe `patientId`. O derivado já está gravado:
+      // uma falha daqui não invalida o paciente, então ela NÃO derruba o sync — mas também
+      // não pode passar muda. O F43 desta casa é exatamente isto: o webhook devolvendo
+      // `success:true` com erro dentro, e ninguém sabendo. Evento PRÓPRIO, contagem, e o
+      // `outcome` de cada campo — que é o que distingue "gravei" de "não li e não toquei".
+      await this.persistSourceLabels(task, result.id, cid);
+
+
       // PII: não logar patientName aqui — vai pro Cloud Logging.
       // patientName fica apenas no SyncPatientResult retornado pro CLI script.
       functions.logger.info('clickup_patient_sync.completed', {
@@ -257,4 +277,57 @@ export class SyncPatientFromClickUpTaskUseCase {
   }
 
   private chatIdsServiceInstance?: PatientChatIdsService;
+
+  /**
+   * Persiste as leituras cruas dos campos de catálogo. Nunca lança: o paciente já foi gravado
+   * e o cru é acréscimo, não pré-requisito.
+   *
+   * O que sai em log é nome de campo, `outcome` e CONTAGEM (C1 do parecer do `lex`) — nunca o
+   * rótulo, nunca o uuid, nunca o `task.id` junto de valor clínico.
+   */
+  private async persistSourceLabels(task: ClickUpTask, patientId: string, cid: string): Promise<void> {
+    let leituras;
+    try {
+      leituras = this.deps.mapper.readSourceLabels(task);
+    } catch (err) {
+      // O preflight da 1.11 lançando aqui é ANOMALIA: `map()` acabou de passar por ele. Se
+      // acontecer, o catálogo mudou no meio da requisição.
+      const error = err instanceof Error ? err : new Error(String(err));
+      functions.logger.error('clickup_patient_sync.source_labels_error', {
+        patientId, error: error.message, stage: 'read', correlationId: cid,
+      });
+      return;
+    }
+
+    // Contagem zero é falha, nunca sucesso (F19): a lista é derivada de PATIENT_CATALOG_FIELDS,
+    // que nunca é vazia. Vazio aqui significa que a derivação quebrou, não que não há o que gravar.
+    if (leituras.length === 0) {
+      functions.logger.error('clickup_patient_sync.source_labels_error', {
+        patientId, error: 'readSourceLabels devolveu ZERO campos', stage: 'read', correlationId: cid,
+      });
+      return;
+    }
+
+    let gravados = 0;
+    let ilegiveis = 0;
+    let falhas = 0;
+    for (const { fieldName, read } of leituras) {
+      try {
+        const r = await this.deps.sourceLabelRepository.replaceForField({ patientId, fieldName, read });
+        if (r.outcome === 'skipped-unreadable') ilegiveis += 1;
+        else gravados += 1;
+      } catch (err) {
+        // Um campo que falha não impede os outros 7: perder tudo porque um deu erro é pior.
+        falhas += 1;
+        const error = err instanceof Error ? err : new Error(String(err));
+        functions.logger.error('clickup_patient_sync.source_labels_error', {
+          patientId, field: fieldName, error: error.message, stage: 'write', correlationId: cid,
+        });
+      }
+    }
+
+    functions.logger.info('clickup_patient_sync.source_labels', {
+      patientId, campos: leituras.length, gravados, ilegiveis, falhas, correlationId: cid,
+    });
+  }
 }

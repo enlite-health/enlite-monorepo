@@ -50,6 +50,11 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
   diagnosis?: string | null;
   dependencyLevel?: DependencyLevel | null;
   clinicalSpecialty?: ClinicalSpecialty | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `clinical_specialty` não é tocada no banco.
+   * `null` com `true` é vazio legítimo e É gravado (D-E). Ver `PatientClinicalRepository`.
+   */
+  clinicalSpecialtyReadable?: boolean;
   /** @deprecated Use clinicalSpecialty + serviceType instead. Preserved for backward compat. */
   clinicalSegments?: string | null;
   /** Array of professional roles the patient requires. Was string | null before migration 139. */
@@ -331,6 +336,7 @@ export class PatientService {
         diagnosis:             input.diagnosis,
         dependencyLevel:       input.dependencyLevel,
         clinicalSpecialty:     input.clinicalSpecialty,
+        clinicalSpecialtyReadable: input.clinicalSpecialtyReadable,
         clinicalSegments:      input.clinicalSegments,
         serviceType:           input.serviceType,
         deviceType:            input.deviceType,

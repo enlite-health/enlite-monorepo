@@ -10,6 +10,14 @@ export interface PatientClinicalUpsertInput {
   diagnosis?: string | null;
   dependencyLevel?: DependencyLevel | null;
   clinicalSpecialty?: ClinicalSpecialty | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `clinical_specialty` não é tocada.
+   *
+   * Não confundir com `clinicalSpecialty === null`: `null` com `readable:true` é vazio
+   * legítimo e É gravado (D-E). `readable:false` é "não consegui ler" e não escreve nada.
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  clinicalSpecialtyReadable?: boolean;
   /** @deprecated Use clinicalSpecialty instead. Preserved for backward compat. */
   clinicalSegments?: string | null;
   /** TEXT[] in DB after migration 139. */
@@ -101,7 +109,27 @@ export class PatientClinicalRepository {
       params.push(input.hasConsent);
       sets.push(`has_consent = COALESCE($${params.length}, has_consent)`);
     }
-    if (input.clinicalSpecialty !== undefined) push('clinical_specialty', input.clinicalSpecialty);
+    if (input.clinicalSpecialty !== undefined) {
+      // ⚠️ `clinicalSpecialtyReadable` é o conserto do ALTA da rodada 4 do QA-caça da 2.2, e ele é
+      // a MESMA distinção da D167 — um nível acima, no DERIVADO.
+      //
+      // Antes: `clinical_specialty = $N` com `?? null`. Um `null` chegando aqui significava DUAS
+      // coisas — "a origem não preencheu" (vazio legítimo, e a D-E manda gravar: dado congelado
+      // *parece* dado) e "a origem mandou um valor que o catálogo não traduziu" (leitura
+      // impossível, e gravar apaga). O 2º caso apagava `'ASD'` de um paciente e não punha nada no
+      // lugar: o cru estava protegido por `skipped-unreadable` e o derivado era apagado no MESMO
+      // webhook. Medido pelo QA-caça com uuid desconhecido.
+      //
+      // Agora o chamador declara qual dos dois é. `false` NÃO grava — sob o Merge Patch (D211.1)
+      // isso é simplesmente não entrar no SET: a coluna fica com o valor anterior, sem COALESCE e
+      // sem leitura prévia. (Na versão pré-Merge-Patch isto era um `CASE WHEN $12 THEN $11 ELSE
+      // clinical_specialty END`; o efeito é o mesmo.)
+      //
+      // Default `true` de propósito: todo chamador anterior a esta mudança escrevia sempre, e um
+      // default `false` os faria parar de escrever em silêncio — trocaria um apagamento por um
+      // congelamento, que é pior porque não aparece.
+      if (input.clinicalSpecialtyReadable ?? true) push('clinical_specialty', input.clinicalSpecialty);
+    }
 
     // Nada veio além do id: não há o que gravar (nem bater updated_at à toa).
     if (sets.length === 0) return;
