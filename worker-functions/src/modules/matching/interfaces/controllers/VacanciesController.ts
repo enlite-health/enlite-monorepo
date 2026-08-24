@@ -155,6 +155,18 @@ export class VacanciesController {
     }
   }
 
+  /**
+   * `GET /api/admin/vacancies/:id`
+   *
+   * ⚠️ Esta rota NÃO devolve o diagnóstico do paciente (C1 do veredito do `lex`):
+   * texto clínico livre não sai sob `vacancy:read`. Guarda de regressão em
+   * `__tests__/diagnosticoForaDaVaga.test.ts`, que assere a QUERY — não a
+   * resposta, porque apagar o campo depois do `SELECT` é esconder da tela.
+   *
+   * Os encuadres embutidos passam por `projectWorkerFields` (F2/C3): nome e
+   * telefone do prestador saem daqui em texto claro do `json_agg`, então a prova
+   * desta rota é a fronteira, e não o espião no KMS.
+   */
   async getVacancyById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -172,10 +184,11 @@ export class VacanciesController {
           -- outra celula: foi TIRADA, porque o dado nao e necessario para operar a
           -- vaga (o requisito de perfil vem de required_professions,
           -- worker_attributes e da descricao). Quem precisar do quadro clinico le
-          -- no cadastro do paciente, que tem guarda propria.
-          -- Guarda: diagnosticoForaDaVaga.test.ts -- ela assere a QUERY, e por isso
-          -- este comentario NAO soletra o nome da coluna: soletrar faria o proprio
-          -- comentario reprovar a guarda. Irmao: RecruitmentAnalyticsController.
+          -- no cadastro do paciente, que tem guarda propria. Irmao do mesmo
+          -- defeito: RecruitmentAnalyticsController.getCaseAnalysis.
+          -- (O ponteiro para a guarda mora no JSDoc do metodo, nao aqui: comentario
+          -- de SQL viaja DENTRO da query, e ate o NOME do arquivo de teste casaria
+          -- a regex clinica da guarda -- D182.)
           p.insurance_verified,
           p.service_type,
           COALESCE(pa.city, p.city_locality) as patient_city,

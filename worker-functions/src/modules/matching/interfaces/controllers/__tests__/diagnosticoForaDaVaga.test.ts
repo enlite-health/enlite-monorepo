@@ -26,8 +26,25 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 import { Request, Response } from 'express';
 import { VacanciesController } from '../VacanciesController';
 import { RecruitmentAnalyticsController } from '../RecruitmentAnalyticsController';
+import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
-const DIAGNOSTICO = 'Esclerose múltipla, surto-remissão';
+/**
+ * O canário é o MESMO texto da guarda compartilhada (D170). Vocabulário único:
+ * canário próprio por teste é como o defeito do `utm_content` reincidiu três
+ * vezes — cada guarda procurava a palavra que o autor dela lembrou.
+ */
+const DIAGNOSTICO = TEXTO_CLINICO;
+
+/**
+ * A regex clínica da casa, aplicada à query REAL capturada no mock.
+ *
+ * ⚠️ NÃO uso `esperaSqlSemDadoClinico` aqui, e a diferença é de propósito: ela
+ * também reprova `JOIN patients`, o que é certo para o caminho do short-link
+ * (que não deve tocar paciente nenhum) e ERRADO para esta rota, que precisa do
+ * paciente para nome, zona e nível de dependência. Reusar lá reprovaria código
+ * certo — e gate que reprova o certo se aprende a ignorar (D172).
+ */
+const VOCABULARIO_CLINICO = /diagnosis|diagnostico|patholog|patolog/i;
 
 function reqRes(params: Record<string, string>): [Request, Response] {
   const req = { params, body: {}, query: {} } as unknown as Request;
@@ -40,6 +57,11 @@ function reqRes(params: Record<string, string>): [Request, Response] {
 
 /** TODAS as queries da request, não `calls[0]` — o vazamento pode estar na 3ª. */
 function sqlDeTodasAsQueries(): string {
+  // Contagem zero é falha, nunca sucesso: sem query executada, todo
+  // `not.toMatch` abaixo passa no vácuo. A guarda da casa faz o mesmo.
+  if (mockQuery.mock.calls.length === 0) {
+    throw new Error('nenhuma query foi executada — a asserção passaria no vácuo');
+  }
   return mockQuery.mock.calls.map((c) => String(c[0])).join('\n---\n');
 }
 
@@ -62,11 +84,7 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     const [req, res] = reqRes({ id: 'jp-1' });
     await new VacanciesController().getVacancyById(req, res);
 
-    const sql = sqlDeTodasAsQueries();
-    expect(sql).not.toMatch(/p\.diagnosis/);
-    expect(sql).not.toMatch(/patient_diagnosis/);
-    // E a query nem sequer alcança a coluna por outro nome.
-    expect(sql).not.toMatch(/\bdiagnosis\b/);
+    expect(sqlDeTodasAsQueries()).not.toMatch(VOCABULARIO_CLINICO);
     expect((res.json as jest.Mock).mock.calls[0][0].success).toBe(true);
   });
 
@@ -76,10 +94,32 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     const [req, res] = reqRes({ caseNumber: '442' });
     await new RecruitmentAnalyticsController().getCaseAnalysis(req, res);
 
-    const sql = sqlDeTodasAsQueries();
-    expect(sql).not.toMatch(/p\.diagnosis/);
-    expect(sql).not.toMatch(/patient_diagnosis/);
-    expect(mockQuery).toHaveBeenCalled();
+    expect(sqlDeTodasAsQueries()).not.toMatch(VOCABULARIO_CLINICO);
+  });
+
+  it('o corpo é EXATAMENTE o que a query trouxe — por isso a guarda é sobre a query', async () => {
+    // ⚠️ `getVacancyById` faz `{ ...row }`: a rota não tem allowlist de campo,
+    // ela devolve o que o `SELECT` trouxer. Duas consequências, e as duas
+    // importam para a C4:
+    //   · asserir a QUERY implica asserir o corpo — é a asserção mais forte, e
+    //     é por isso que o canário no corpo não acrescenta nada AQUI;
+    //   · coluna clínica nova em `job_postings` (que entra pelo `jp.*`) sai
+    //     para o cliente sem ninguém decidir. Isso é a C4, não a C1.
+    // A fixture abaixo é REALISTA: só tem o que a query de hoje traz.
+    mockQuery.mockResolvedValue({
+      rows: [{
+        id: 'jp-1', vacancy_number: 42, schedule: null,
+        patient_first_name: 'Paciente', dependency_level: 'ALTA',
+        encuadres: null, publications: null,
+        service_type: null, required_professions: null, social_short_links: null,
+      }],
+    });
+
+    const [req, res] = reqRes({ id: 'jp-1' });
+    await new VacanciesController().getVacancyById(req, res);
+
+    esperaSemVazamentoClinico((res.json as jest.Mock).mock.calls[0][0]);
+    expect(sqlDeTodasAsQueries()).not.toMatch(VOCABULARIO_CLINICO);
   });
 
   it('o resto da vaga continua saindo — tirar o clínico não pode esvaziar a tela', async () => {
