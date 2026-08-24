@@ -31,10 +31,15 @@
 #   · V7 — só AVISA; rota sem célula não reprova (definição pode ser multilinha)
 #   · V9 — mede EXISTÊNCIA de teste no diff, nunca se o teste testa algo
 #   · V10 — segredo sem palavra-chave por perto (um UUID solto) passa
-#   · nenhum check lê a WORKING TREE além do diff commitado
+#   · V2 lê a WORKING TREE do lado "atual" (a base vem do commit): órfão que
+#     está no commit mas foi removido do disco sem commitar não é visto
+#   · V9 mede EXISTÊNCIA de teste no projeto, nunca se o teste cobre o arquivo
+#   · V7 só olha `router.`/`app.` — rota montada por outra abstração escapa
+#   · V8 casa `prd|prod` no nome do workflow; convenção nova de nome escapa
 # Todos com fixture em testar.sh quando cobertos; os de cima estão sem cobertura
 # porque são limitação, não bug.
 
+AQUI="$(cd "$(dirname "$0")" && pwd)"
 set -uo pipefail
 BASE="${1:-origin/main}"
 ROOT="$(git rev-parse --show-toplevel)" || exit 2
@@ -53,7 +58,13 @@ git diff                             "$MERGE_BASE"..HEAD > "$TMP/diff"
 # Sem este mapa, `git show BASE:destino` falha, a base vira vazia, e toda a
 # dívida antiga do arquivo é imputada a este PR (falso positivo que ensina a
 # ignorar o gate).
-git diff --name-status -M "$MERGE_BASE"..HEAD | awk -F'\t' '$1 ~ /^R/ {print $3"\t"$2}' > "$TMP/renomes"
+# ⚠️ sem `awk`: ele já matou o V10 duas vezes por diferença de implementação
+# (IGNORECASE do gawk, intervalo {n,} do mawk). Bash puro não tem dialeto.
+: > "$TMP/renomes"
+git diff --name-status -M "$MERGE_BASE"..HEAD > "$TMP/status" 2>/dev/null || : > "$TMP/status"
+while IFS="$(printf '\t')" read -r st origem destino; do
+  case "$st" in R*) [ -n "${destino:-}" ] && printf '%s\t%s\n' "$destino" "$origem" >> "$TMP/renomes" ;; esac
+done < "$TMP/status"
 
 # `+++ b/…` é cabeçalho do diff, não código: entrava no corpus e gerava falso
 # positivo pelo NOME do arquivo (um `token-store.ts` casava o V10).
@@ -108,6 +119,8 @@ if [ "$N_AUSENTES" -gt 0 ]; then
   falha "$N_AUSENTES arquivo(s) do diff NÃO estão no disco — os checks abaixo os ignorariam:"
   head -5 "$TMP/ausentes" | sed 's/^/        /'
   echo; echo "VERIFICADOR PARCIALMENTE CEGO — BLOQUEADO."; exit 1
+elif [ "$N_VIVOS" -eq 0 ]; then
+  na "diff só de deleções — nenhum arquivo vivo para ler"
 else
   ok "os $N_VIVOS arquivo(s) vivos do diff estão legíveis"
 fi
@@ -138,7 +151,7 @@ while IFS= read -r f; do
   case "$f" in *.ts|*.tsx) ;; *) continue ;; esac
   i=$((i+1))
   b="$TMP/base/$i.ts"
-  orig=$(awk -F'\t' -v d="$f" '$1==d {print $2}' "$TMP/renomes" | head -1)
+  orig=$(grep -F "$(printf '%s\t' "$f")" "$TMP/renomes" | head -1 | cut -f2)
   [ -n "$orig" ] || orig="$f"
   git show "$MERGE_BASE:$orig" > "$b" 2>/dev/null || : > "$b"
   printf '%s\t%s\n' "$f" "$b" >> "$TMP/pares"
@@ -149,55 +162,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 elif [ "$N_TS" -eq 0 ]; then
   na "nenhum arquivo TS/TSX vivo no diff"
 else
-python3 - "$TMP/pares" > "$TMP/orfaos" 2>"$TMP/py_err" <<'PYEOF'
-import re, sys, io, os
-# separador TAB: nome de arquivo com '|' corrompia o relatório da 1ª versão.
-pares = [l.split('\t') for l in io.open(sys.argv[1], encoding='utf-8', errors='replace').read().split('\n') if '\t' in l]
-IMPORT = re.compile(r"import\s+(?:type\s+)?([^;'\"]*?)\s+from\s+['\"][^'\"]+['\"]", re.S)
-
-def sem_comentario(src):
-    # bloco /* … */ INTEIRO — a 1ª versão só apagava a linha que ABRIA o bloco,
-    # então `import` no miolo virava "órfão". E `//` até o fim da linha, que
-    # antes contava como uso do símbolo.
-    src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
-    return re.sub(r'(?m)//.*$', '', src)
-
-def orfaos_de(caminho):
-    if not os.path.isfile(caminho):
-        return None                       # "não sei" ≠ "nenhum"
-    src = sem_comentario(io.open(caminho, encoding='utf-8', errors='replace').read())
-    corpo = IMPORT.sub('', src)
-    nomes = set()
-    for m in IMPORT.finditer(src):
-        cl = m.group(1)
-        ch = re.search(r'\{(.*)\}', cl, re.S)
-        itens = ch.group(1).split(',') if ch else []
-        itens += re.sub(r'\{.*\}', '', cl, flags=re.S).split(',')
-        for it in itens:
-            it = it.strip()
-            if not it:
-                continue
-            it = re.sub(r'^\*\s*', '', it)          # import * as X
-            it = re.sub(r'^type\s+', '', it)        # import { type X }
-            it = re.split(r'\bas\b', it)[-1].strip()  # nome LOCAL, por fronteira
-            if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_$]*', it):
-                nomes.add(it)
-    return {n for n in nomes if not re.search(r'\b' + re.escape(n) + r'\b', corpo)}
-
-lidos = 0
-for f, b in pares:
-    atual = orfaos_de(f)
-    if atual is None:
-        print("ERRO\t%s\tnão pôde ser lido" % f)
-        continue
-    lidos += 1
-    antes = orfaos_de(b) or set()
-    for n in sorted(atual - antes):
-        print("FALHA\t%s\t%s" % (f, n))
-    for n in sorted(atual & antes):
-        print("AVISO\t%s\t%s" % (f, n))
-print("LIDOS\t%d\t" % lidos)
-PYEOF
+python3 "$AQUI/orfaos.py" "$TMP/pares" > "$TMP/orfaos" 2>"$TMP/py_err"
   PY_RC=$?
   if [ "$PY_RC" -ne 0 ]; then
     falha "V2 NÃO RODOU: python3 saiu $PY_RC — $(head -1 "$TMP/py_err")"
@@ -227,24 +192,31 @@ echo
 #       tsconfig (497 `@shared/` + 125 `@modules/` = 622 sítios), ao
 #       `import()` dinâmico, ao `jest.mock()` e ao sufixo `.js`.
 echo "## V3 — import apontando para arquivo APAGADO neste diff"
+# A resolução vive em `importadores.py`: casar por BASENAME dava falso positivo
+# duro (14 basenames repetidos neste repo) e casar só `from '…'` era cego ao
+# alias do tsconfig, ao import() dinâmico e ao jest.mock().
 if [ "$N_APAG" -eq 0 ]; then
   na "nenhum arquivo apagado no diff"
+elif ! command -v python3 >/dev/null 2>&1; then
+  falha "V3 NÃO RODOU: python3 ausente. Check que não roda não é check verde."
 else
+  git ls-files '*.ts' '*.tsx' > "$TMP/todos_ts" 2>/dev/null || : > "$TMP/todos_ts"
   : > "$TMP/pend"
+  V3_ERRO=0
   while IFS= read -r f; do
     case "$f" in *.ts|*.tsx) ;; *) continue ;; esac
     grep -qF "	$f" "$TMP/renomes" && continue      # renomeado não é apagado
-    mod="$(basename "$f")"; mod="${mod%.*}"
-    # sufixo do caminho, para desambiguar basename repetido: pasta/Arquivo
-    suf="$(basename "$(dirname "$f")")/${mod}"
-    git grep -nE "(from|import\(|jest\.mock\(|require\()[[:space:]]*['\"][^'\"]*(${suf}|/${mod})(\.js|\.ts|\.tsx)?['\"]" \
-      -- '*.ts' '*.tsx' 2>/dev/null | grep -v "^${f}:" >> "$TMP/pend" || true
+    if ! python3 "$AQUI/importadores.py" "$f" "$ROOT" "$TMP/todos_ts" >> "$TMP/pend" 2>>"$TMP/v3_err"; then
+      V3_ERRO=1
+    fi
   done < "$TMP/apagados"
-  if [ -s "$TMP/pend" ]; then
+  if [ "$V3_ERRO" -ne 0 ]; then
+    falha "V3 NÃO RODOU por completo: $(head -1 "$TMP/v3_err")"
+  elif [ -s "$TMP/pend" ]; then
     falha "arquivo apagado ainda é importado ($(grep -c . "$TMP/pend" || true) sítio(s)):"
     head -8 "$TMP/pend" | sed 's/^/        /'
   else
-    ok "nenhuma referência pendente ($N_APAG arquivo(s) apagado(s))"
+    ok "nenhuma referência pendente ($N_APAG arquivo(s) apagado(s), $(grep -c . "$TMP/todos_ts" || true) arquivo(s) TS varridos)"
   fi
 fi
 echo
@@ -272,7 +244,7 @@ echo "## V5 — PII em log adicionado"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
 PII=$(grep -E "(console\.(log|error|warn)|logger?\.(info|warn|error|debug))" "$TMP/add_code" \
       | grep -iE '\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis)\b[[:space:]]*[,)]' \
-      | grep -viE '(count|total|qtd|quantidade|length|size|sem_|com_|has|missing|_n)\b|\.length' || true)
+      | grep -viE '\\b(count|total|qtd|quantidade|length|size|has|missing)\\b|\\bsem_|\\bcom_|\\.length' || true)
 if [ -n "$PII" ]; then
   falha "log novo interpolando campo pessoal — conferir um a um:"
   echo "$PII" | head -8 | sed 's/^/        /'
@@ -304,8 +276,11 @@ echo
 # A definição da rota pode ser multilinha; FAIL aqui teria falso positivo demais.
 # Quem decide é o critério 6 do SKILL.md, com o payload na mão.
 echo "## V7 — rota nova sem declaração de célula (aviso, nunca reprova sozinho)"
-ROTAS=$(git diff "$MERGE_BASE"..HEAD -- '*Routes.ts' '*routes.ts' 2>/dev/null \
-        | grep -E "^\+" | grep -v "^+++" | grep -E "\.(get|post|put|patch|delete)\(" || true)
+# ⚠️ rota nova não mora só em *Routes.ts: `app.post(...)` em `index.ts` ou
+# `server.ts` passava batido. Corpus = todo TS do diff.
+ROTAS=$(git diff "$MERGE_BASE"..HEAD -- '*.ts' 2>/dev/null \
+        | grep -E "^\+" | grep -v "^+++" \
+        | grep -E "\b(router|app)\.(get|post|put|patch|delete)\(" || true)
 if [ -z "$ROTAS" ]; then
   ok "nenhuma rota nova"
 else
@@ -321,9 +296,11 @@ echo
 
 # ─── V8 — workflow de PRD ─────────────────────────────────────────────────────
 echo "## V8 — workflow de produção tocado"
-if grep -qE "\.github/workflows/.*prd" "$TMP/todos"; then
-  falha "workflow de PRD no diff — overwrite PROIBIDO até reconciliar YAML × vivo:"
-  grep -E "\.github/workflows/.*prd" "$TMP/todos" | sed 's/^/        /'
+# ⚠️ `deploy-PRD.yml`, `-prod` e `-production` passavam: era case-sensitive
+# e só conhecia a string 'prd'.
+if grep -qiE "\.github/workflows/.*(prd|prod)" "$TMP/todos"; then
+  falha "workflow de PRODUÇÃO no diff — overwrite PROIBIDO até reconciliar YAML × vivo:"
+  grep -iE "\.github/workflows/.*(prd|prod)" "$TMP/todos" | sed 's/^/        /'
 else
   ok "nenhum workflow de PRD tocado"
 fi
@@ -368,34 +345,20 @@ echo
 #       accessToken ×30, authToken ×20, apiToken ×6 = 170 identificadores cegos.
 #       E não há gitleaks/trufflehog no CI para compensar.
 echo "## V10 — segredo aparente em linha adicionada"
+# corpus próprio e mais largo: segredo mora em .tf, workflow, .sh e .env muito
+# mais que em .ts. A varredura vive em `segredos.py` — ver lá os DOIS awks que
+# mataram este check antes (IGNORECASE do gawk e {16,} do mawk).
 # shellcheck disable=SC2086
-git diff "$MERGE_BASE"..HEAD -- '*.ts' '*.tsx' '*.js' '*.sql' '*.tf' '*.tfvars' '*.yml' '*.yaml' '*.sh' '*.env*' '*.json' '*.py' 2>/dev/null \
-  | grep -E "^\+" | grep -v "^+++" \
-  | grep -vE "^\+[[:space:]]*(//|\*|/\*|#|--)" > "$TMP/add_seg" 2>/dev/null || : > "$TMP/add_seg"
-N_SEG=$(grep -c . "$TMP/add_seg" || true)
-if [ "$N_SEG" -eq 0 ]; then na "0 linha de código/config no diff"; else
-# (a) chave e valor na MESMA linha — o caso de código
-# (b) chave e valor em linhas DIFERENTES — o caso de terraform/HCL/YAML:
-#       variable "db_password" {
-#         default = "SuperSecret…"
-#     A 1ª versão só via (a) e passava verde em .tf, que é onde segredo mais mora.
-# ⚠️ `IGNORECASE` é extensão do GNU awk; o awk do macOS a ignora em silêncio e
-# o check volta a ficar cego a `apiKey`. `tolower()` é POSIX e roda nos dois.
-awk '
-  { l = tolower($0) }
-  l ~ /(api[_-]?key|secret|passwd|password|token|credential)/ { ctx = 2 }
-  {
-    if (l ~ /(api[_-]?key|secret|passwd|password|token|credential)[":= '"'"']+[a-z0-9_.\/+-]{16,}/) print
-    else if (ctx > 0 && l ~ /[:=][ \t]*["'"'"'][a-z0-9_.\/+-]{16,}["'"'"']/) print
-    if (ctx > 0) ctx--
-  }
-' "$TMP/add_seg" > "$TMP/seg_hits" 2>/dev/null || : > "$TMP/seg_hits"
-SEG=$(grep -viE 'process\.env|\$\{|<[A-Z_]+>|:latest$|mockReturn|toBe\(|toEqual\(|expect\(|example\.com|xxxx+|placeholder|\bfake[-_]|\bdummy[-_]|[-_]fixture|var\.|local\.|data\.' "$TMP/seg_hits" || true)
-if [ -n "$SEG" ]; then
-  falha "possível segredo literal:"; echo "$SEG" | head -5 | sed 's/^/        /'
+git diff "$MERGE_BASE"..HEAD -- '*.ts' '*.tsx' '*.js' '*.sql' '*.tf' '*.tfvars' '*.yml' '*.yaml' '*.sh' '*.env*' '*.json' '*.py' 2>/dev/null > "$TMP/diff_seg" || : > "$TMP/diff_seg"
+N_SEG=$(grep -cE "^\\+" "$TMP/diff_seg" || true)
+if [ ! -s "$TMP/diff_seg" ]; then
+  na "0 linha de código/config no diff"
+elif ! python3 "$AQUI/segredos.py" "$TMP/diff_seg" > "$TMP/seg_hits" 2>"$TMP/seg_err"; then
+  falha "V10 NÃO RODOU: $(head -1 "$TMP/seg_err")"
+elif [ -s "$TMP/seg_hits" ]; then
+  falha "possível segredo literal:"; head -5 "$TMP/seg_hits" | sed 's/^/        /'
 else
-  ok "nenhum segredo literal aparente ($N_SEG linha(s) de código+config)"
-fi
+  ok "nenhum segredo literal aparente ($N_SEG linha(s) adicionada(s) de código+config)"
 fi
 
 echo

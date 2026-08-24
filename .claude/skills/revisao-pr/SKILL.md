@@ -21,6 +21,19 @@ bash .claude/skills/revisao-pr/verificar.sh origin/stage # PR para a stage
 bash .claude/skills/revisao-pr/testar.sh                 # o teste DO verificador
 ```
 
+⚠️ **`awk` é proibido neste script, e o `testar.sh` trava isso.** Ele já matou o
+V10 duas vezes: `IGNORECASE` (só no gawk — o awk do macOS ignora em silêncio) e
+`{16,}` (o **mawk**, awk padrão de Debian e Ubuntu, não honra intervalo). Nas
+duas o check ficou **morto e verde**. A varredura pesada vive em `orfaos.py`,
+`importadores.py` e `segredos.py`.
+
+⚠️ **Rodar em Linux antes de mergear mudança no script.** A guarda de
+portabilidade do `testar.sh` é estrutural (proíbe `awk`, `grep -P`, `sed -i`,
+`mapfile`…) e vale em qualquer máquina, mas não substitui a execução:
+```bash
+docker run --rm -v $(pwd):/w:ro node:20 bash -c 'cp -r /w/.claude /tmp/ && cd /tmp && bash .claude/skills/revisao-pr/testar.sh'
+```
+
 ⚠️ **Se você mexer no `verificar.sh`, rode o `testar.sh`.** São 25 fixtures, cada
 uma um defeito real que já passou por aqui, com controle **positivo** (o defeito
 presente → tem de reprovar) e **negativo** (o caso legítimo parecido → tem de
@@ -45,16 +58,19 @@ vez de colar conta como REPROVADO.
 | V-2 | arquivo do diff **ausente do disco** | o V-1 guarda o diff global e não vê o vácuo de um check: a 1ª versão pulava o arquivo em silêncio e imprimia a contagem CHEIA — "✅ em 14 arquivos" tendo lido 10, e os 4 pulados eram os defeituosos |
 | V1 | `node_modules` no diff | `.gitignore` da raiz usa `node_modules/` **com barra**, e barra casa só diretório real → **symlink entra em `git add -A`**. Reincidente (#173, #231); checkout com ele quebra o build **mudo** |
 | V2 | import órfão **introduzido pelo diff** | `noUnusedLocals: false` → **o tsc passa limpo com import morto**. É o rastro de PR que apaga código. Órfão que já existia na base vira AVISO: gate que culpa o autor por dívida alheia se aprende a ignorar |
-| V3 | import de arquivo apagado | quebra em runtime, não no diff. Vê **alias do tsconfig** (`@shared/`, `@modules/` — 622 sítios), `import()` dinâmico, `jest.mock()` e sufixo `.js`; desambigua basename repetido pelo caminho |
+| V3 | import de arquivo apagado | quebra em runtime, não no diff. **Resolve o caminho de verdade** (`importadores.py`): relativo pelo diretório do importador, alias pelo `paths` do tsconfig — 318 linhas do repo importam por `@shared/`/`@modules/`. Cobre `import()`, `jest.mock()` e sufixo `.js`. Sem isso, os **14 basenames repetidos** do repo geravam falso positivo duro |
 | V4 | `.only`/`.skip`/`xit` | suíte verde que não roda nada |
 | V5 | PII **interpolada** em log novo | "nunca logar PII" é regra dura — mas a mesma regra PERMITE contagem, então `sem_telefone=${n}` passa |
 | V6 | dado clínico rumo a terceiro/URL/prompt | **texto clínico NUNCA sai do perímetro.** `patients.diagnosis` é TEXT livre. Casa **palavra**, não substring: `diagnosticsHttpTimeoutMs` não é dado clínico |
 | V7 | rota nova sem célula (**aviso**) | deny-when-undeclared: no flip do ABAC a rota é negada e o painel não mostra |
 | V8 | workflow de PRD tocado | overwrite PROIBIDO até reconciliar YAML × serviço vivo |
-| V9 | arquivo de **feature** sem teste **do mesmo projeto** | cobre `src/modules/**` (onde estão 174 dos 175 arquivos de feature) e o frontend. ⚠️ NÃO reusa `scripts/check-needs-tests.sh`: aquele roda de dentro de `worker-functions/` e mira o layout legado, que hoje tem 1 arquivo |
-| V10 | segredo literal | corpus próprio e mais largo (`.tf`, workflow, `.sh`, `.env`), **case-insensitive** (`apiKey` camelCase são 170 no repo) e pega chave e valor em **linhas diferentes**, que é a forma do terraform |
+| V9 | arquivo de **feature** sem teste **do mesmo projeto** | cobre `interfaces/(controllers\|routes)`, `application`, `presentation/(pages\|components)` e `infrastructure/converters`, com ou sem `modules/` no meio — **574 arquivos**, contra **1** no layout legado. ⚠️ NÃO reusa `scripts/check-needs-tests.sh`: aquele roda de dentro de `worker-functions/` e mira o legado. ⚠️ **Mede EXISTÊNCIA de teste no projeto, não se o teste cobre o arquivo tocado** |
+| V10 | segredo literal | corpus próprio e mais largo (`.tf`, workflow, `.sh`, `.env`), **case-insensitive** (`apiKey` e afins são **123 linhas** em `worker-functions/src`) e janela de **4 linhas** para o terraform idiomático, sem atravessar arquivo nem hunk. Vive em `segredos.py` — **sem `awk`**, que matou este check duas vezes |
 
-**Passar no Passo 0 NÃO é aprovação:** o script mede forma, os 4 critérios medem
+**Exit codes:** `0` sem falha · `1` alguma falha → BLOQUEADO · `2` erro de uso
+(base inexistente, fora de repo git). **Testar `-eq 1` lê o 2 como aprovado.**
+
+**Passar no Passo 0 NÃO é aprovação:** o script mede forma, os 8 critérios medem
 substância.
 
 ## Os 4 critérios obrigatórios (SEMPRE, todo PR)

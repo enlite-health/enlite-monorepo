@@ -120,24 +120,55 @@ checa "[-] RENOME não imputa dívida antiga ao PR" 0 "PRÉ-EXISTENTE|SEM FALHA"
 
 # ══ V3 — import de arquivo apagado ═══════════════════════════════════════════
 echo "## V3 — referência a arquivo apagado"
+
+# [+] basename REPETIDO: o apagado tem de ser achado apesar do homônimo vivo.
+#     ⚠️ a fixture da 1ª versão punha o importador em `src/` e importava
+#     `../a/Comum`, que resolve para FORA de `src/` — ela passava por ACIDENTE,
+#     porque o V3 antigo casava por basename e não resolvia caminho nenhum.
 novo_repo
-mkdir -p src/a src/b
+mkdir -p src/a src/b src/c
 printf 'export const x = 1;\n' > src/a/Comum.ts
 printf 'export const x = 2;\n' > src/b/Comum.ts
-printf 'import { x } from "../b/Comum";\nimport { x as y } from "../a/Comum";\nexport const z = x + y;\n' > src/importa.ts
+printf 'import { x } from "../b/Comum";\nimport { x as y } from "../a/Comum";\nexport const z = x + y;\n' > src/c/importa.ts
 commit c0; git checkout -q main && git merge -q feature && git checkout -q -b f2
 git rm -q src/a/Comum.ts; commit c1
-rodar 2>/dev/null; SAIDA="$(bash "$VERIF" main 2>&1)"; RC=$?
-checa "[+] basename repetido: acha o apagado apesar do vivo (era 'head -1')" 1 "ainda é importado"
+SAIDA="$(bash "$VERIF" main 2>&1)"; RC=$?
+checa "[+] basename repetido: acha o apagado apesar do homônimo VIVO" 1 "src/c/importa.ts:2"
 
+# [-] CONTROLE NEGATIVO que faltava: apagar um homônimo que NINGUÉM importa,
+#     enquanto o outro é usado, tem de PASSAR. Sem este caso, o V3 podia
+#     reprovar todo PR que apagasse arquivo com nome repetido — e o repo real
+#     tem 14 basenames repetidos.
+novo_repo
+mkdir -p src/legacy src/new src/app
+printf 'export const b = 1;\n' > src/legacy/Utils.ts
+printf 'export const b = 2;\n' > src/new/Utils.ts
+printf 'import { b } from "../new/Utils";\nexport const z = b;\n' > src/app/main.ts
+commit c0; git checkout -q main && git merge -q feature && git checkout -q -b f2
+git rm -q src/legacy/Utils.ts; commit c1
+SAIDA="$(bash "$VERIF" main 2>&1)"; RC=$?
+checa "[-] apagar homônimo NÃO importado passa (14 basenames repetidos no repo)" 0
+
+# [+] ALIAS do tsconfig — a forma dominante de import do repo.
 novo_repo
 mkdir -p src/mod src/outro
+printf '{ "compilerOptions": { "baseUrl": ".", "paths": { "@shared/*": ["src/*"] } } }\n' > tsconfig.json
 printf 'export const x = 1;\n' > src/mod/Alvo.ts
 printf 'import { x } from "@shared/mod/Alvo";\nexport const z = x;\n' > src/outro/alias.ts
 commit c0; git checkout -q main && git merge -q feature && git checkout -q -b f2
 git rm -q src/mod/Alvo.ts; commit c1
 SAIDA="$(bash "$VERIF" main 2>&1)"; RC=$?
-checa "[+] import por ALIAS do tsconfig é visto (622 sítios no repo real)" 1 "ainda é importado"
+checa "[+] import por ALIAS do tsconfig é visto" 1 "src/outro/alias.ts"
+
+# [+] jest.mock() e import() dinâmico contam como referência.
+novo_repo
+mkdir -p src/mod src/outro
+printf 'export const x = 1;\n' > src/mod/Alvo.ts
+printf 'jest.mock("../mod/Alvo");\nexport const z = 1;\n' > src/outro/mock.ts
+commit c0; git checkout -q main && git merge -q feature && git checkout -q -b f2
+git rm -q src/mod/Alvo.ts; commit c1
+SAIDA="$(bash "$VERIF" main 2>&1)"; RC=$?
+checa "[+] jest.mock() de arquivo apagado é referência pendente" 1 "src/outro/mock.ts"
 
 # ══ V4 — teste desligado ═════════════════════════════════════════════════════
 echo "## V4 — teste desligado"
@@ -165,6 +196,38 @@ rodar; checa "[+] diagnosis em URL REPROVA" 1 "dado clínico com saída externa"
 novo_repo
 printf "const DIAGNOSTIC_ENDPOINT = 'http://localhost:8080/healthz';\n" > src/a.ts; commit c1
 rodar; checa "[-] diagnosticsHttp/Endpoint NÃO é dado clínico" 0
+
+# ══ V7 — rota nova sem célula ════════════════════════════════════════════════
+# Sem fixture até a 3ª revisão: check anunciado na tabela e nunca exercitado.
+echo "## V7 — rota nova sem célula (aviso)"
+novo_repo
+mkdir -p src
+printf 'router.post("/admin/purge", purgeTudo);\n' > src/adminRoutes.ts; commit c1
+rodar; checa "[+] rota nova sem célula AVISA (não reprova, por desenho)" 0 "sem célula na MESMA linha"
+novo_repo
+mkdir -p src
+printf 'router.post("/admin/purge", requirePermission("admin","purge"), purgeTudo);\n' > src/adminRoutes.ts; commit c1
+rodar; checa "[-] rota nova COM célula não avisa" 0 "toda rota nova declara célula"
+novo_repo
+mkdir -p src
+printf 'app.post("/admin/purge", purgeTudo);\n' > src/server.ts; commit c1
+rodar; checa "[+] rota fora de *Routes.ts também é vista (app.post em server.ts)" 0 "sem célula na MESMA linha"
+
+# ══ V8 — workflow de produção ════════════════════════════════════════════════
+# Idem: é FAIL DURO que fecha merge, e não tinha fixture nenhuma.
+echo "## V8 — workflow de produção"
+novo_repo
+mkdir -p .github/workflows
+printf 'name: deploy\n' > .github/workflows/backend-prd.yml; commit c1
+rodar; checa "[+] workflow -prd REPROVA" 1 "workflow de PRODUÇÃO"
+novo_repo
+mkdir -p .github/workflows
+printf 'name: deploy\n' > .github/workflows/deploy-PRODUCTION.yml; commit c1
+rodar; checa "[+] -PRODUCTION maiúsculo REPROVA (era case-sensitive e só 'prd')" 1 "workflow de PRODUÇÃO"
+novo_repo
+mkdir -p .github/workflows
+printf 'name: deploy\n' > .github/workflows/backend-stg.yml; commit c1
+rodar; checa "[-] workflow de staging passa" 0 "nenhum workflow de PRD"
 
 # ══ V9 — feature sem teste ═══════════════════════════════════════════════════
 echo "## V9 — feature sem teste"
@@ -200,6 +263,46 @@ rodar; checa "[+] segredo em .tf REPROVA (corpus era só .ts)" 1 "segredo litera
 novo_repo
 printf 'const apiKey = process.env.API_KEY;\n' > src/a.ts; commit c1
 rodar; checa "[-] leitura de env passa" 0
+
+# ══ PORTABILIDADE — a armadilha que já voltou DUAS vezes ═════════════════════
+# 1ª: `IGNORECASE` no awk (extensão do gawk) — o awk do macOS ignora em silêncio
+#     e o V10 voltava a ser cego a `apiKey`.
+# 2ª: `{16,}` no awk — o **mawk**, awk padrão de Debian E Ubuntu (portanto do
+#     CI), não honra intervalo: o V10 ficava MORTO e VERDE em Linux. Medido pelo
+#     revisor em `node:20` e `ubuntu:22.04`: 23/25 nos dois.
+#
+# Rodar o testar.sh em Linux pegaria — mas só se alguém rodar. Estas asserções
+# são ESTRUTURAIS: valem em qualquer máquina, inclusive nesta, e travam a CLASSE
+# em vez de esperar a terceira encarnação.
+echo "## Portabilidade — construções que se comportam diferente por plataforma"
+porta() {
+  local lab="$1" re="$2"
+  local hits
+  hits=$(grep -nE "$re" "$VERIF" | grep -v "^[0-9]*:#" || true)
+  if [ -n "$hits" ]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$lab"; echo "$hits" | head -3 | sed 's/^/        /'
+  else
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$lab"
+  fi
+}
+porta "sem \`awk\` — a fonte das duas armadilhas (use python3, já é dependência)" '(^|[^_[:alnum:]])awk[[:space:]]'
+porta "sem \`grep -P\` (PCRE é GNU-only, não existe no BSD)"                     'grep[^|]*-[a-zA-Z]*P'
+porta "sem \`sed -i\` sem sufixo (BSD exige argumento, GNU não)"                 'sed -i[[:space:]]'
+porta "sem \`readlink -f\` (não existe no BSD antigo)"                           'readlink -f'
+porta "sem \`mapfile\`/\`readarray\` (não existem no bash 3.2 do macOS)"        '(mapfile|readarray)[[:space:]]'
+porta "sem \`declare -A\` (array associativo não existe no bash 3.2)"            'declare -A'
+porta "sem \`date -d\` / \`stat -c\` (sintaxe GNU)"                             '(date -d|stat -c)'
+
+# O verificador tem de rodar num shell POSIX-ish sem estourar sintaxe
+if bash -n "$VERIF" 2>/dev/null; then
+  PASS=$((PASS+1)); printf '  ✅ %s\n' "verificar.sh passa no \`bash -n\`"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ %s\n' "verificar.sh NÃO passa no \`bash -n\`"
+fi
+
+echo
+echo "⚠️  Isto NÃO substitui rodar em Linux. Antes de mergear mudança neste"
+echo "    script:  docker run --rm -v \$(pwd):/w:ro node:20 bash -c 'cp -r /w/.claude /tmp/ && cd /tmp && bash .claude/skills/revisao-pr/testar.sh'"
 
 echo
 echo "================================================================"
