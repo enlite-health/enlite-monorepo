@@ -352,14 +352,31 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
         `SELECT user_id, resource, action, decision FROM iam.permission_audit_log WHERE user_id = ANY($1)`,
         [[U.manutencao, U.disparo]],
       );
-      expect(trilha.rows).toEqual([
+
+      // ⚠️ A asserção é sobre a ALEGAÇÃO, não sobre o tamanho da tabela.
+      //
+      // A versão anterior exigia `toEqual([...uma linha...])` — e isso afirmava,
+      // sem querer, que NENHUMA outra linha poderia existir para estes dois uids.
+      // É falso por duas razões, e as duas apareceram no CI (13 linhas recebidas
+      // onde se esperava 1):
+      //   · `execute` está em SENSITIVE_ACTIONS, então o `test_fixtures:execute`
+      //     dos casos acima É gravado — comportamento CERTO, não ruído;
+      //   · `record()` é fire-and-forget por desenho ("a escrita não devolve
+      //     promessa"), então INSERT em voo de um caso anterior chega DEPOIS do
+      //     DELETE daqui. Contar linha é uma corrida que não dá para vencer.
+      // O que este caso existe para provar é o D-P4 pela AÇÃO: ação sensível
+      // permitida vira linha; leitura comum não vira. É isso que se afirma.
+      expect(trilha.rows).toContainEqual(
         expect.objectContaining({
           user_id: U.manutencao,
           resource: 'integration',
           action: 'execute',
           decision: 'ALLOW',
         }),
-      ]);
+      );
+      expect(
+        trilha.rows.filter((r) => r.resource === 'messaging' && r.action === 'read' && r.decision === 'ALLOW'),
+      ).toEqual([]);
     });
   });
 
