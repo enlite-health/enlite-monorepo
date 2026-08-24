@@ -15,6 +15,7 @@
 
 import { ShortLinkService } from '../ShortLinkService';
 import { ShortIoClient } from '../ShortIoClient';
+import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
 jest.mock('../ShortIoClient');
 
@@ -143,6 +144,29 @@ describe('ShortLinkService', () => {
         utm_campaign: '7',
         utm_id: 'recrutamento',
       });
+    });
+
+    // ⚠️ GUARDA DE CLASSE, não de campo. A versão anterior chamava
+    // `buildAndCreate` sem nenhum dado clínico na entrada, então qualquer
+    // parâmetro opcional NOVO que só emite quando presente passava verde — e
+    // foi exatamente assim que o defeito voltou por aqui (4381 testes verdes).
+    // Agora a entrada CARREGA clínico num campo inesperado, e a asserção é
+    // sobre tudo que o `ShortIoClient` recebe.
+    it('entrada com dado clínico em campo inesperado NÃO atravessa para o Short.io', async () => {
+      mockCreateLink.mockResolvedValueOnce({ shortURL: 'https://srt.io/w', id: '9' });
+
+      const svc = new ShortLinkService('key', 'srt.io');
+      const result = await svc.buildAndCreate({
+        caseNumber: 7,
+        vacancyNumber: 2,
+        channel: 'linkedin',
+        country: 'AR',
+        // campos que NÃO deveriam existir no contrato — se alguém acrescentar
+        // um e repassá-lo, isto pega, seja qual for o nome que ele escolher
+        ...({ extra: TEXTO_CLINICO, pathologies: TEXTO_CLINICO, diagnosis: TEXTO_CLINICO } as object),
+      });
+
+      esperaSemVazamentoClinico(result.originalURL, mockCreateLink.mock.calls);
     });
 
     it('delete(id) repassa o id ao client do Short.io', async () => {

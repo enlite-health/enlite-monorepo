@@ -22,6 +22,8 @@ const mockShortLinkService = {
   buildAndCreate: mockBuildAndCreate,
 } as unknown as ShortLinkService;
 
+import { TEXTO_CLINICO, esperaSemVazamentoClinico, esperaSqlSemDadoClinico } from '../../__tests__/guardaVazamentoClinico';
+
 describe('EnsureVacancyShortLinkUseCase', () => {
   let useCase: EnsureVacancyShortLinkUseCase;
 
@@ -31,6 +33,47 @@ describe('EnsureVacancyShortLinkUseCase', () => {
   });
 
   const VACANCY_ID = 'vac-uuid-001';
+
+  // ⚠️ GUARDA DE CLASSE. Este use case é o caminho do `VacancyCrudController` e
+  // dos 3 scripts de backfill. Na revisão final do PR #249 o defeito ORIGINAL
+  // — `p.diagnosis` no `utm_content` — foi reintroduzido POR AQUI e a suíte
+  // inteira passou: 4381/4381 verdes. A fixture do banco não carregava clínico,
+  // então nada tinha o que detectar.
+  describe('vazamento clínico — a fixture do banco CARREGA diagnóstico', () => {
+    const LINHA_COM_CLINICO = {
+      case_number: 42,
+      vacancy_number: 7,
+      country: 'AR',
+      // colunas que o SELECT NÃO deve pedir; se alguém puser o JOIN de volta,
+      // o valor está aqui esperando e as asserções abaixo reprovam
+      diagnosis: TEXTO_CLINICO,
+      pathologies: TEXTO_CLINICO,
+      social_short_links: {},
+    };
+
+    beforeEach(() => {
+      mockQuery.mockResolvedValue({ rows: [LINHA_COM_CLINICO] });
+      mockBuildAndCreate.mockResolvedValue({ shortURL: 'https://srt.io/new', id: 'new-id' });
+    });
+
+    it('nenhuma query pede diagnosis nem faz JOIN em patients — em NENHUMA delas', async () => {
+      await useCase.execute(VACANCY_ID, 'site');
+
+      esperaSqlSemDadoClinico(mockQuery.mock.calls);
+    });
+
+    it('nada de clínico atravessa para o ShortLinkService, em campo nenhum', async () => {
+      const result = await useCase.execute(VACANCY_ID, 'site');
+
+      esperaSemVazamentoClinico(mockBuildAndCreate.mock.calls, result);
+    });
+
+    it('o UPDATE gravado também não carrega clínico', async () => {
+      await useCase.execute(VACANCY_ID, 'site');
+
+      esperaSemVazamentoClinico(mockQuery.mock.calls);
+    });
+  });
 
   it('returns existing link with alreadyExisted=true when channel is already stored', async () => {
     mockQuery.mockResolvedValueOnce({

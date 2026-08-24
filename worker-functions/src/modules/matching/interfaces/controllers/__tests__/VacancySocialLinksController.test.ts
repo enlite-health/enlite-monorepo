@@ -36,9 +36,10 @@ jest.mock('../../../infrastructure/JobPostingAuditRepository', () => ({
 
 import { Request, Response } from 'express';
 import { VacancySocialLinksController } from '../VacancySocialLinksController';
+import { TEXTO_CLINICO, esperaSemVazamentoClinico, esperaSqlSemDadoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
 /** Texto clínico livre, no formato real do campo (`patients.diagnosis` é TEXT). */
-const DIAGNOSTICO_DA_FIXTURE = 'Alzheimer moderado + diabetes tipo II, requiere asistencia total';
+const DIAGNOSTICO_DA_FIXTURE = TEXTO_CLINICO;
 
 const LINHA_DA_VAGA = {
   case_number: 7,
@@ -91,15 +92,29 @@ function payloadEnviado() {
 
 describe('generateSocialLink — o que ATRAVESSA a fronteira para o Short.io', () => {
   // ── A guarda central ──────────────────────────────────────────────────────
-  it('nenhum dado do paciente sai no payload — nem em param, nem no title, nem no path', async () => {
+  // ⚠️ A 1ª versão desta guarda olhava só o `body` do fetch. A revisão final
+  // provou três fugas que ela não via: header do fetch, SEGUNDA query trazendo
+  // o dado para a memória, e `console.log`. Agora a asserção é sobre TUDO que
+  // atravessa: a chamada inteira do fetch (url + init + headers), todas as
+  // queries, e o que foi para o log.
+  it('nada do paciente atravessa a fronteira — fetch INTEIRO, queries e log', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
     await new VacancySocialLinksController().generateSocialLink(makeReq(), makeRes());
 
-    const { body } = payloadEnviado();
-    const tudoQueSai = JSON.stringify(body);
+    esperaSemVazamentoClinico(
+      (global.fetch as jest.Mock).mock.calls,   // url + init + headers, tudo
+      mockQuery.mock.calls,                     // TODAS as queries, não a [0]
+      logSpy.mock.calls,
+      errSpy.mock.calls,
+    );
+  });
 
-    expect(tudoQueSai).not.toContain(DIAGNOSTICO_DA_FIXTURE);
-    expect(tudoQueSai).not.toContain('Alzheimer');
-    expect(tudoQueSai.toLowerCase()).not.toContain('diabetes');
+  it('nenhuma query pede diagnosis nem faz JOIN em patients — em NENHUMA delas', async () => {
+    await new VacancySocialLinksController().generateSocialLink(makeReq(), makeRes());
+
+    esperaSqlSemDadoClinico(mockQuery.mock.calls);
   });
 
   it('a URL é função PURA de caso/vaga/canal/país — conjunto EXATO de params', async () => {
@@ -146,14 +161,6 @@ describe('generateSocialLink — o que ATRAVESSA a fronteira para o Short.io', (
   });
 
   // ── A consulta ao banco não deve nem BUSCAR o dado clínico ────────────────
-  it('o SELECT não faz JOIN em patients nem pede diagnosis', async () => {
-    await new VacancySocialLinksController().generateSocialLink(makeReq(), makeRes());
-
-    const sql = mockQuery.mock.calls[0][0] as string;
-    expect(sql).not.toMatch(/diagnosis/i);
-    expect(sql).not.toMatch(/JOIN\s+patients/i);
-  });
-
   // ── Caminhos de erro ──────────────────────────────────────────────────────
   it('body inválido → 400 e não chama o Short.io', async () => {
     const res = makeRes();
