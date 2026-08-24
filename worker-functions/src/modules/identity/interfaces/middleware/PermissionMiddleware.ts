@@ -177,6 +177,13 @@ export class PermissionMiddleware {
         return;
       }
 
+      // As células vão para a request ANTES de qualquer decisão de resposta:
+      // é o que `projectWorkerFields` (C3) lê para decidir se o KMS roda. Fica
+      // aqui, e não no handler, porque o handler não tem como resolver sozinho
+      // — e resolver duas vezes por request é o dobro do custo com o dobro das
+      // chances de divergir.
+      req.permissionCells = resolved.permissions;
+
       const denial = denialFor(resolved, resource, action);
       if (denial) {
         this.refuse(req, res, next, { uid, resource, action, code: denial });

@@ -97,3 +97,7 @@ export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalo
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
 export { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 export { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
+export { projectWorkerFields, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';
+export type { WorkerRow, ProjectedWorker, Decryptor } from './application/projectWorkerFields';
+export { cellsOfRequest } from './application/cellsOfRequest';
+export { CELL_DESCRIPTION } from './domain/PermissionCell';
