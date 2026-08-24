@@ -160,6 +160,43 @@ describe('projectWorkerFields — a célula decide ANTES do KMS', () => {
     expect(out.name).toBe('María González');
   });
 
+  it('KMS que devolve VAZIO vira `null`, não string vazia', async () => {
+    // O piso do módulo é 100% de branch (jest.config.js): este ramo de `abrir()`
+    // é a diferença entre `name: null` e `name: ' '` — o `filter(Boolean)` do
+    // nome depende dele. Cifra que decripta para vazio existe (campo gravado em
+    // branco antes da 023), e a tela não pode receber um nome de um espaço só.
+    const decrypt = jest.fn(async () => '');
+    const out = await projectWorkerFields(
+      [CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ],
+      LINHA,
+      { decrypt },
+    );
+
+    expect(decrypt).toHaveBeenCalledTimes(7);
+    expect(out.name).toBeNull();
+    expect(out.whatsappPhone).toBeNull();
+    expect(out.documentNumber).toBeNull();
+    expect(out.birthDate).toBeNull();
+    expect(out.address).toBeNull();
+    expect(out.profilePhotoUrl).toBeNull();
+  });
+
+  it('dossiê em texto claro AUSENTE vira `null`, não `undefined`', async () => {
+    // `race`/`religion`/`sexualOrientation` são as únicas colunas do dossiê que
+    // não são cifradas. O ramo `?? null` delas só existe quando a linha vem sem
+    // elas — que é o caso de todo prestador que não respondeu.
+    const { kms } = espiao();
+    const out = await projectWorkerFields(
+      [CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ],
+      { id: 'w-4' },
+      kms,
+    );
+
+    expect(out.race).toBeNull();
+    expect(out.religion).toBeNull();
+    expect(out.sexualOrientation).toBeNull();
+  });
+
   it('campo cifrado vazio não vira chamada de KMS — não se paga por nada', async () => {
     const { kms, decrypt } = espiao();
 
