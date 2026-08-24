@@ -50,10 +50,17 @@ critérios nem começam.**
 
 Três estados, e a diferença importa:
 - **❌ falha** — reprova e derruba o exit code.
-- **⚠️ aviso** — informa e NÃO reprova. Só dois: **V7** (rota sem célula: a
-  definição pode ser multilinha, e um FAIL teria falso positivo demais) e a
-  metade do **V2** que reporta **dívida herdada** — gate que culpa o autor por
-  dívida alheia se aprende a ignorar.
+- **⚠️ aviso** — informa e NÃO reprova. São **V7** (rota sem célula: a definição
+  pode ser multilinha, e um FAIL teria falso positivo demais), o **V2 inteiro** e
+  o **V10**. Todos pela mesma razão: **gate que reprova código certo se aprende a
+  ignorar**. O V2 e o V10 foram rebaixados em 24/08 com falso positivo MEDIDO — o
+  `//` de uma URL trunca a linha e acusa import usado (`orfaos.py`), e 3 de 6
+  merges reais do `main` dão hit de segredo sem nenhum segredo (`segredos.py`,
+  basta `Content-Type` perto de `token`). Voltam a **falha** quando o tokenizador
+  de string e a exigência de aspas + mistura de classes entrarem — o achado está
+  escrito no cabeçalho do `verificar.sh`, não perdido.
+  ⚠️ **Aviso não é ✅.** V2 e V10 em aviso passam a ser leitura obrigatória do
+  revisor: o script deixou de decidir por eles.
 - **⚪ N/A** — o check não tinha o que varrer. **Nunca ✅**: contagem zero é
   falha, não sucesso. V2, V3, V4, V5, V6, V9 e V10 usam isto. A saída **colada** é a evidência; descrever a saída em
 vez de colar conta como REPROVADO.

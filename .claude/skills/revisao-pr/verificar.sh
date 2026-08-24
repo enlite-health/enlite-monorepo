@@ -38,6 +38,25 @@
 #   · V8 casa `prd|prod` no nome do workflow; convenção nova de nome escapa
 # Todos com fixture em testar.sh quando cobertos; os de cima estão sem cobertura
 # porque são limitação, não bug.
+#
+# ── Achados da 4ª rodada (24/08/2026), medidos e AINDA ABERTOS ───────────────
+# Falso NEGATIVO não é regressão: hoje o `main` não tem verificador nenhum. Por
+# isso estes ficam declarados aqui em vez de segurar o merge. O que era falso
+# POSITIVO (V2 e V10) foi rebaixado para aviso no mesmo commit.
+#   · V9 procura o teste em "$TMP/todos", que inclui os APAGADOS: um PR que
+#     apaga o teste e adiciona feature sem teste passa com ✅. O certo é
+#     "$TMP/vivos", e exigir `\.(test|spec)\.tsx?$` — hoje um .md dentro de
+#     tests/ satisfaz o check.
+#   · `LIDOS` é atribuído e impresso, NUNCA comparado com $N_TS. Com o orfaos.py
+#     saindo 0 sem varrer, o V2 imprime ✅ sobre o vácuo. Mesma forma no V10, que
+#     não recebe contagem nenhuma do segredos.py. É a morte do awk, sem o awk.
+#   · importadores.py:41 `except Exception: continue` — tsconfig ilegível vira
+#     "nenhum alias" e o V3 fica cego e VERDE, sem uma linha de aviso.
+#   · `.mjs`/`.cjs`/`.mts`/`.cts` estão fora dos pathspecs: V2/V4/V5/V6/V10 não
+#     os veem, e o ⚪ N/A MENTE ("0 linha de código"). Há 3 no repo, um deles em
+#     worker-functions/scripts/.
+#   · V-2 dispara antes do V1 em symlink legítimo e em nome acentuado
+#     (core.quotePath devolve "src/decis\303\243o.ts"), e ENCERRA o script.
 
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 set -uo pipefail
@@ -173,11 +192,16 @@ python3 "$AQUI/orfaos.py" "$TMP/pares" > "$TMP/orfaos" 2>"$TMP/py_err"
     grep "^ERRO	"  "$TMP/orfaos" > "$TMP/orf_erro"  2>/dev/null || : > "$TMP/orf_erro"
     while IFS=$'\t' read -r _ f id; do aviso "$f: '$id' órfão PRÉ-EXISTENTE (não é deste PR — vai para LISTA)"; done < "$TMP/orf_aviso"
     while IFS=$'\t' read -r _ f m;  do falha "$f: $m"; done < "$TMP/orf_erro"
+    # AVISO, não falha: `sem_comentario()` tem falso positivo MEDIDO — o `//` de
+    # uma URL trunca a linha e o `/*` dentro de string abre bloco fantasma, e nos
+    # dois casos um import USADO é acusado de órfão. Gate que reprova código certo
+    # se aprende a ignorar. Volta a `falha` quando o tokenizador de string entrar.
     if [ -s "$TMP/orf_falha" ]; then
-      while IFS=$'\t' read -r _ f id; do falha "$f: '$id' importado e nunca usado — INTRODUZIDO por este diff"; done < "$TMP/orf_falha"
-    elif [ ! -s "$TMP/orf_erro" ]; then
+      while IFS=$'\t' read -r _ f id; do aviso "$f: '$id' parece importado e nunca usado — INTRODUZIDO por este diff (CONFERIR à mão: URL com '//' e string com '/*' dão falso positivo)"; done < "$TMP/orf_falha"
+    fi
+    if [ ! -s "$TMP/orf_erro" ]; then
       # a contagem é do que foi LIDO, nunca do que se pretendia ler
-      ok "nenhum órfão introduzido — $LIDOS de $N_TS arquivo(s) TS efetivamente lidos"
+      ok "V2 rodou — $LIDOS de $N_TS arquivo(s) TS efetivamente lidos"
     fi
   fi
 fi
@@ -356,7 +380,11 @@ if [ ! -s "$TMP/diff_seg" ]; then
 elif ! python3 "$AQUI/segredos.py" "$TMP/diff_seg" > "$TMP/seg_hits" 2>"$TMP/seg_err"; then
   falha "V10 NÃO RODOU: $(head -1 "$TMP/seg_err")"
 elif [ -s "$TMP/seg_hits" ]; then
-  falha "possível segredo literal:"; head -5 "$TMP/seg_hits" | sed 's/^/        /'
+  # AVISO, não falha: MEDIDO sobre 6 merges reais já no main — 3 deles dão hit,
+  # zero com segredo verdadeiro (`Content-Type` perto de `token` basta). E o
+  # inverso também: senha forte com caractere fora de [A-Za-z0-9_./+-] escapa.
+  # Volta a `falha` quando exigir aspas no valor + mistura de classes.
+  aviso "possível segredo literal (CONFERIR à mão — falso positivo medido em 3 de 6 PRs reais):"; head -5 "$TMP/seg_hits" | sed 's/^/        /'
 else
   ok "nenhum segredo literal aparente ($N_SEG linha(s) adicionada(s) de código+config)"
 fi

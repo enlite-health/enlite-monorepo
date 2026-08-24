@@ -87,11 +87,11 @@ rodar; checa "[-] doc SOBRE a armadilha passa (nome não é caminho)" 0
 echo "## V2 — import órfão"
 novo_repo
 printf 'import { Usado, Orfao } from "./m";\nexport const z = Usado;\n' > src/a.ts; commit c1
-rodar; checa "[+] órfão introduzido REPROVA" 1 "'Orfao' importado e nunca usado"
+rodar; checa "[+] órfão introduzido AVISA (rebaixado: falso positivo em URL e string)" 0 "'Orfao' parece importado e nunca usado"
 
 novo_repo
 printf 'import * as Ns from "./m";\nexport const z = 1;\n' > src/a.ts; commit c1
-rodar; checa "[+] 'import * as X' órfão REPROVA (era ponto cego)" 1 "'Ns' importado"
+rodar; checa "[+] 'import * as X' órfão AVISA (era ponto cego)" 0 "'Ns' parece importado"
 
 novo_repo
 printf 'import { A as B } from "./m";\nexport const z = B;\n' > src/a.ts; commit c1
@@ -255,11 +255,11 @@ rodar; checa "[-] controller COM teste do mesmo projeto passa" 0
 echo "## V10 — segredo literal"
 novo_repo
 printf 'const apiKey = "%s%s";\n' "$P1" "$P2" > src/a.ts; commit c1
-rodar; checa "[+] apiKey camelCase REPROVA (eram 123 identificadores cegos, medidos)" 1 "segredo literal"
+rodar; checa "[+] apiKey camelCase AVISA (rebaixado: 3 de 6 PRs reais dão falso positivo)" 0 "segredo literal"
 novo_repo
 mkdir -p terraform
 printf 'variable "db_password" {\n  default = "%s%s"\n}\n' "$P3" "$P4" > terraform/x.tf; commit c1
-rodar; checa "[+] segredo em .tf REPROVA (corpus era só .ts)" 1 "segredo literal"
+rodar; checa "[+] segredo em .tf AVISA (corpus era só .ts)" 0 "segredo literal"
 novo_repo
 printf 'const apiKey = process.env.API_KEY;\n' > src/a.ts; commit c1
 rodar; checa "[-] leitura de env passa" 0
