@@ -166,7 +166,16 @@ export class VacanciesController {
           p.last_name as patient_last_name,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_zone,
           p.dependency_level as dependency_level,
-          p.diagnosis as patient_diagnosis,
+          -- ATENCAO: a coluna clinica livre de patients NAO entra neste SELECT
+          -- (C1 do veredito do lex). Ela saia sob vacancy:read -- a celula de quem
+          -- opera a vaga, que toda recrutadora tem. Nao foi movida para tras de
+          -- outra celula: foi TIRADA, porque o dado nao e necessario para operar a
+          -- vaga (o requisito de perfil vem de required_professions,
+          -- worker_attributes e da descricao). Quem precisar do quadro clinico le
+          -- no cadastro do paciente, que tem guarda propria.
+          -- Guarda: diagnosticoForaDaVaga.test.ts -- ela assere a QUERY, e por isso
+          -- este comentario NAO soletra o nome da coluna: soletrar faria o proprio
+          -- comentario reprovar a guarda. Irmao: RecruitmentAnalyticsController.
           p.insurance_verified,
           p.service_type,
           COALESCE(pa.city, p.city_locality) as patient_city,
