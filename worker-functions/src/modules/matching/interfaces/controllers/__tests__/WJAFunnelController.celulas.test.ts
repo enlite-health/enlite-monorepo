@@ -42,8 +42,15 @@ jest.mock('../../../infrastructure/BlockedApplicationRepository', () => ({
 import { Request, Response } from 'express';
 import { WJAFunnelController } from '../WJAFunnelController';
 import { NOME_REDIGIDO, CELL_WORKER_CONTACT_READ } from '@modules/identity/permissions';
+import {
+  PRESTADOR_CANARIO,
+  esperaSemContatoDePrestador,
+  esperaKmsNaoRodou,
+} from '../../../__tests__/guardaVazamentoPrestador';
 
-const TELEFONE = '+5491133445566';
+// Vocabulário ÚNICO (C4): canário próprio por teste é como o defeito clínico
+// reincidiu 3× — cada guarda procurava a palavra que o autor dela lembrou.
+const TELEFONE = PRESTADOR_CANARIO.telefone;
 
 function reqRes(cells: string[] | null): [Request, Response] {
   const req = { params: { id: 'jp-1' }, body: {}, query: {} } as unknown as Request;
@@ -61,8 +68,8 @@ function linha() {
   return {
     id: 'wja-1',
     worker_id: 'wid-aaaa-bbbb-cccc-12345678',
-    first_name_encrypted: 'encrypted:María',
-    last_name_encrypted: 'encrypted:González',
+    first_name_encrypted: `encrypted:${PRESTADOR_CANARIO.primeiroNome}`,
+    last_name_encrypted: `encrypted:${PRESTADOR_CANARIO.sobrenome}`,
     worker_phone: TELEFONE,
     occupation_raw: 'AT',
     interview_date: null, interview_time: null, meet_link: null,
@@ -98,22 +105,24 @@ describe('funnel (Kanban) — a célula decide ANTES do KMS', () => {
 
   it('sem worker_contact:read: KMS com ZERO chamadas nos DOIS sítios da rota', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [linha()] })                                  // cards de WJA
-      .mockResolvedValueOnce({ rows: [{ first_name_encrypted: 'encrypted:Ana',     // card bloqueado
-                                        last_name_encrypted: 'encrypted:Pérez',
-                                        phone: '+5491199887766' }] });
+      .mockResolvedValueOnce({ rows: [linha()] })                        // cards de WJA
+      .mockResolvedValueOnce({ rows: [{                                  // card bloqueado
+        first_name_encrypted: `encrypted:${PRESTADOR_CANARIO.primeiroNome}`,
+        last_name_encrypted: `encrypted:${PRESTADOR_CANARIO.sobrenome}`,
+        phone: PRESTADOR_CANARIO.whatsapp,
+      }] });
     mockListByVacancy.mockResolvedValue([bloqueado()]);
 
     const [req, res] = reqRes(['funnel:read']);
     await new WJAFunnelController().getEncuadreFunnel(req, res);
 
-    expect(mockKmsDecrypt).toHaveBeenCalledTimes(0);
+    // 4 campos cifrados na fixture (2 por sítio): sem isso, 0 chamadas ao KMS
+    // seria sucesso vazio, e `esperaKmsNaoRodou` recusa a invocação.
+    esperaKmsNaoRodou(mockKmsDecrypt, 4);
 
-    // Fronteira: o nome e o telefone não aparecem em NENHUM lugar do corpo.
-    const corpo = JSON.stringify((res.json as jest.Mock).mock.calls[0][0]);
-    for (const proibido of ['María', 'González', 'Ana', 'Pérez', TELEFONE, '+5491199887766']) {
-      expect(corpo).not.toContain(proibido);
-    }
+    // Fronteira, com o vocabulário compartilhado — e não com a lista de nomes
+    // que eu lembrei de escrever.
+    esperaSemContatoDePrestador((res.json as jest.Mock).mock.calls[0][0]);
   });
 
   it('sem a célula, o card do Kanban continua existindo — redigir não é apagar', async () => {
@@ -142,7 +151,7 @@ describe('funnel (Kanban) — a célula decide ANTES do KMS', () => {
     await new WJAFunnelController().getEncuadreFunnel(req, res);
 
     expect(todosOsCards(res)[0]).toMatchObject({
-      workerName: 'María González',
+      workerName: PRESTADOR_CANARIO.nomeCompleto,
       workerPhone: TELEFONE,
     });
   });
@@ -156,7 +165,7 @@ describe('funnel (Kanban) — a célula decide ANTES do KMS', () => {
 
     // O contrato do rollout: engine desligado devolve o que a rota já devolvia.
     expect(todosOsCards(res)[0]).toMatchObject({
-      workerName: 'María González',
+      workerName: PRESTADOR_CANARIO.nomeCompleto,
       workerPhone: TELEFONE,
     });
     expect(mockKmsDecrypt).toHaveBeenCalledTimes(2);
