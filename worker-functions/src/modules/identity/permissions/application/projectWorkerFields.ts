@@ -61,6 +61,15 @@ export interface WorkerRow {
   whatsappPhoneEncrypted?: string | null;
   email?: string | null;
 
+  /**
+   * ⚠️ Nome em TEXTO CLARO — `encuadres.worker_raw_name`, do import legado, que
+   * nunca foi cifrado. Entra aqui, e NÃO no chamador, porque senão a redação
+   * seria burlada por todo card legado: um `|| row.worker_raw_name` depois da
+   * projeção devolve o nome sem tocar o KMS, e por isso o espião da C3 não veria
+   * nada. Fonte diferente, mesmo dado, mesmo portão — nível de CONTATO.
+   */
+  rawName?: string | null;
+
   /** dossiê */
   documentNumberEncrypted?: string | null;
   birthDateEncrypted?: string | null;
@@ -143,7 +152,7 @@ export async function projectWorkerFields(
       abrir(kms, row.lastNameEncrypted),
       abrir(kms, row.whatsappPhoneEncrypted),
     ]);
-    out.name = [primeiro, ultimo].filter(Boolean).join(' ') || null;
+    out.name = [primeiro, ultimo].filter(Boolean).join(' ') || row.rawName || null;
     out.phone = row.phone ?? null;
     out.whatsappPhone = whatsapp;
     out.email = row.email ?? null;

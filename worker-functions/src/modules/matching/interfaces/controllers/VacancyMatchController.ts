@@ -10,6 +10,7 @@ import {
 } from '@shared/database/activeWorkerFilter';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
+import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
 
 /**
  * VacancyMatchController
@@ -122,18 +123,26 @@ export class VacancyMatchController {
       );
 
       const kms = new KMSEncryptionService();
+      // F2/C3: a célula decide ANTES do KMS. `cells === null` = engine não
+      // decidiu nesta request (a família ainda está fora de
+      // PERMISSION_ENFORCED_ROUTES) e a projeção devolve o que esta rota já
+      // devolvia — D113. NUNCA `?? []` aqui.
+      const cells = cellsOfRequest(req);
       const candidates = await Promise.all(
         result.rows.map(async row => {
-          const [firstName, lastName] = await Promise.all([
-            kms.decrypt(row.first_name_encrypted).catch(() => null),
-            kms.decrypt(row.last_name_encrypted).catch(() => null),
-          ]);
-          const workerName = [firstName, lastName].filter(Boolean).join(' ') || 'Nome não disponível';
+          const visivel = await projectWorkerFields(cells, {
+            phone: row.phone,
+            firstNameEncrypted: row.first_name_encrypted,
+            lastNameEncrypted: row.last_name_encrypted,
+          }, kms);
+          // O pseudônimo só entra quando a projeção AUTORIZOU o nome e não
+          // achou nenhum — nunca por cima da redação.
+          const workerName = visivel.name ?? 'Nome não disponível';
 
           return {
             workerId:          row.worker_id,
             workerName,
-            workerPhone:       row.phone,
+            workerPhone:       visivel.phone ?? null,
             occupation:        row.occupation,
             workZone:          row.work_zone,
             distanceKm:        row.distance_km,

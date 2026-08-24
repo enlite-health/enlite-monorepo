@@ -20,6 +20,7 @@ import {
   INTERVIEW_TIME_RESOLVED_SQL,
 } from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
+import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -163,18 +164,30 @@ export class WJAFunnelController {
       };
 
       const kms = new KMSEncryptionService();
+      // F2/C3: a célula decide ANTES do KMS, nos DOIS sítios desta rota (cards
+      // de WJA e cards de tentativa bloqueada). `cells === null` = o engine não
+      // decidiu nesta request → a projeção devolve o que a rota já devolvia
+      // (D113). NUNCA `?? []` aqui: `[]` redigiria o Kanban inteiro.
+      const cells = cellsOfRequest(req);
 
       // Decrypt WJA names + blocked worker names em paralelo no controller (não no repo)
-      const [decryptedWjaNames, decryptedBlockedNames] = await Promise.all([
-        Promise.all(result.rows.map(async (row) => {
-          const [firstName, lastName] = await Promise.all([
-            row.first_name_encrypted ? kms.decrypt(row.first_name_encrypted).catch(() => null) : null,
-            row.last_name_encrypted ? kms.decrypt(row.last_name_encrypted).catch(() => null) : null,
-          ]);
-          const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
-          if (fullName) return fullName;
+      const [visiveisWja, decryptedBlockedNames] = await Promise.all([
+        Promise.all(result.rows.map(async (row): Promise<{ name: string; phone: string | null }> => {
+          // O TELEFONE entra aqui junto do nome. Ele já vem em texto claro do
+          // SQL (COALESCE(w.phone, e.worker_raw_phone)) e por isso não custa
+          // KMS nenhum — se ficasse fora da projeção, sairia redigindo o nome e
+          // entregando o telefone, que é o mesmo dado de contato.
+          const visivel = await projectWorkerFields(cells, {
+            firstNameEncrypted: row.first_name_encrypted,
+            lastNameEncrypted: row.last_name_encrypted,
+            phone: (row.worker_phone as string | null) ?? null,
+          }, kms);
+          // O pseudônimo é para "autorizado e sem nome"; a redação já tem texto
+          // próprio e não pode ser sobrescrita por ele.
           const wid = row.worker_id as string | null;
-          return wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação';
+          const name = visivel.name
+            ?? (wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação');
+          return { name, phone: visivel.phone ?? null };
         })),
         Promise.all(blockedAttempts.map(async (ba): Promise<{ name: string | null; phone: string | null }> => {
           if (!ba.workerId) return { name: null, phone: null };
@@ -186,12 +199,12 @@ export class WJAFunnelController {
           );
           if (workerRow.rows.length === 0) return { name: null, phone: null };
           const wr = workerRow.rows[0];
-          const [fn, ln] = await Promise.all([
-            wr.first_name_encrypted ? kms.decrypt(wr.first_name_encrypted).catch(() => null) : null,
-            wr.last_name_encrypted ? kms.decrypt(wr.last_name_encrypted).catch(() => null) : null,
-          ]);
-          const name = [fn, ln].filter(Boolean).join(' ').trim();
-          return { name: name || null, phone: (wr.phone as string | null) ?? null };
+          const visivel = await projectWorkerFields(cells, {
+            firstNameEncrypted: wr.first_name_encrypted as string | null,
+            lastNameEncrypted: wr.last_name_encrypted as string | null,
+            phone: (wr.phone as string | null) ?? null,
+          }, kms);
+          return { name: visivel.name ?? null, phone: visivel.phone ?? null };
         })),
       ]);
 
@@ -215,8 +228,8 @@ export class WJAFunnelController {
           id: row.id,
           encuadreId: row.encuadre_id ?? null,
           workerId: row.worker_id ?? null,
-          workerName: decryptedWjaNames[i],
-          workerPhone: row.worker_phone,
+          workerName: visiveisWja[i].name,
+          workerPhone: visiveisWja[i].phone,
           occupation: row.occupation_raw,
           interviewDate: row.interview_date,
           interviewTime: row.interview_time,

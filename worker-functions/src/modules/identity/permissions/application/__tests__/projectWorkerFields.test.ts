@@ -135,6 +135,31 @@ describe('projectWorkerFields — a célula decide ANTES do KMS', () => {
     expect(out.status).toBe('ACTIVE');
   });
 
+  it('nome em TEXTO CLARO (`rawName`) obedece à mesma célula — não escapa por não custar KMS', async () => {
+    const { kms, decrypt } = espiao();
+    const legado: WorkerRow = { id: 'w-3', rawName: 'Carlos Legado' };
+
+    const redigido = await projectWorkerFields([], legado, kms);
+    const aberto = await projectWorkerFields([CELL_WORKER_CONTACT_READ], legado, kms);
+
+    // Zero chamadas nos dois casos: não há cifra nenhuma nesta linha. É
+    // exatamente por isso que o espião NÃO basta aqui, e a fronteira é a prova.
+    expect(decrypt).toHaveBeenCalledTimes(0);
+    expect(JSON.stringify(redigido)).not.toContain('Carlos Legado');
+    expect(redigido.name).toBe(NOME_REDIGIDO);
+    expect(aberto.name).toBe('Carlos Legado');
+  });
+
+  it('o cifrado ganha do texto claro quando os dois existem', async () => {
+    const { kms } = espiao();
+    const out = await projectWorkerFields(
+      [CELL_WORKER_CONTACT_READ],
+      { ...LINHA, rawName: 'Nome Antigo Do Import' },
+      kms,
+    );
+    expect(out.name).toBe('María González');
+  });
+
   it('campo cifrado vazio não vira chamada de KMS — não se paga por nada', async () => {
     const { kms, decrypt } = espiao();
 
