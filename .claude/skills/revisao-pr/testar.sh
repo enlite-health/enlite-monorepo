@@ -255,7 +255,7 @@ rodar; checa "[-] controller COM teste do mesmo projeto passa" 0
 echo "## V10 — segredo literal"
 novo_repo
 printf 'const apiKey = "%s%s";\n' "$P1" "$P2" > src/a.ts; commit c1
-rodar; checa "[+] apiKey camelCase REPROVA (eram 170 identificadores cegos)" 1 "segredo literal"
+rodar; checa "[+] apiKey camelCase REPROVA (eram 123 identificadores cegos, medidos)" 1 "segredo literal"
 novo_repo
 mkdir -p terraform
 printf 'variable "db_password" {\n  default = "%s%s"\n}\n' "$P3" "$P4" > terraform/x.tf; commit c1

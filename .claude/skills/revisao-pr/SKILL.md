@@ -31,8 +31,14 @@ duas o check ficou **morto e verde**. A varredura pesada vive em `orfaos.py`,
 portabilidade do `testar.sh` é estrutural (proíbe `awk`, `grep -P`, `sed -i`,
 `mapfile`…) e vale em qualquer máquina, mas não substitui a execução:
 ```bash
-docker run --rm -v $(pwd):/w:ro node:20 bash -c 'cp -r /w/.claude /tmp/ && cd /tmp && bash .claude/skills/revisao-pr/testar.sh'
+docker run --rm -v "$(pwd)/.claude/skills/revisao-pr:/skill:ro" node:20 bash -c \
+  'mkdir -p /tmp/w/.claude/skills/revisao-pr && cp /skill/* /tmp/w/.claude/skills/revisao-pr/ && cd /tmp/w \
+   && git config --global user.email t@t && git config --global user.name t \
+   && git config --global init.defaultBranch main \
+   && bash .claude/skills/revisao-pr/testar.sh'
 ```
+Medido em 23/08/2026: **41/41 no macOS (bash 3.2, BWK awk) e 41/41 no Linux
+(bash 5.2, mawk 1.3.4)** — o mesmo ambiente onde a versão com `awk` dava 23/25.
 
 ⚠️ **Se você mexer no `verificar.sh`, rode o `testar.sh`.** São 25 fixtures, cada
 uma um defeito real que já passou por aqui, com controle **positivo** (o defeito
