@@ -19,6 +19,7 @@
 
 import type { Express, Router } from 'express';
 import { readPermissionMetadata, type PermissionMetadata } from './permissionMetadata';
+import { CELL_DESCRIPTION, cellKey } from '../../domain/PermissionCell';
 
 export interface ScannedRoute {
   /** Verbo em maiúsculas; `USE` para middleware montado como rota. */
@@ -148,8 +149,14 @@ export function declaredCells(routes: ScannedRoute[]): PermissionMetadata[] {
   const byKey = new Map<string, PermissionMetadata>();
   for (const route of routes) {
     if (!route.cell) continue;
-    const key = `${route.cell.resource}:${route.cell.action}`;
-    if (!byKey.has(key)) byKey.set(key, route.cell);
+    const key = cellKey(route.cell.resource, route.cell.action);
+    if (byKey.has(key)) continue;
+    // A definição da célula entra AQUI, num lugar só, e não em 130 chamadas de
+    // `perm.require(...)`: descrição repetida por rota diverge no dia em que
+    // duas rotas exigem a mesma célula e alguém edita uma. O que a rota declarar
+    // explicitamente ganha — a rota é quem conhece o caso particular.
+    const description = route.cell.description ?? CELL_DESCRIPTION[key] ?? null;
+    byKey.set(key, { ...route.cell, description });
   }
   // Comparação de string CRUA (não `localeCompare`): a ordem alimenta o
   // catálogo e o arquivo de paridade do CI, e o locale da máquina não pode

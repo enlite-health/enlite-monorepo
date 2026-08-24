@@ -43,6 +43,7 @@ export const UNCATEGORIZED = 'Não categorizado';
 export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   worker: 'Trabalhadores',
   worker_pii: 'Trabalhadores',
+  worker_contact: 'Trabalhadores',
   worker_document: 'Trabalhadores',
   vacancy: 'Vagas e Funil',
   funnel: 'Vagas e Funil',
@@ -62,6 +63,43 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   upload: 'Importação',
   user_management: 'Administração',
   permission_management: 'Administração',
+};
+
+/**
+ * DEFINIÇÃO das células — o que cada uma protege, em uma frase que uma pessoa do
+ * time entende ao marcar a caixa na tela.
+ *
+ * Existe porque a célula sem definição escrita é promessa que ninguém consegue
+ * conferir: `worker_pii:read` estava no seed da 206 desde o início com o texto
+ * "Visualizar PII sensível de workers (CPF, endereço)" — errado no país onde a
+ * empresa opera (é DNI, não CPF) e CALADO justamente sobre o que torna a célula
+ * sensível: raça, religião e orientação sexual (Ley 25.326 art. 2 e 7.3;
+ * LGPD art. 6 III). Ninguém podia decidir quem recebe uma célula assim.
+ *
+ * O catálogo é DERIVADO do código (D115): o `sync_permission_cell` faz
+ * `COALESCE(EXCLUDED.description, iam.permissions.description)`, então o texto
+ * daqui SOBRESCREVE o do seed quando existe, e o seed permanece quando não.
+ * Por isso a definição mora aqui e não numa migration: migration é história,
+ * definição é vocabulário vivo.
+ *
+ * ⚠️ Os TRÊS níveis de prestador não são graus do mesmo acesso — são coisas
+ * diferentes, e é por isso que telefone e raça não podem compartilhar chave.
+ * Dar `worker_pii:read` a toda recrutadora para que ela veja um telefone
+ * esvazia a célula: quem abre o Kanban passa a ver o dossiê de brinde.
+ */
+export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
+  'worker:read':
+    'Ver o prestador em operação: identificador, status, ocupação, zona de trabalho e etapa do '
+    + 'funil. NÃO inclui nome, telefone nem documento.',
+  'worker_contact:read':
+    'Ver e usar o CONTATO do prestador: nome, telefone, WhatsApp e e-mail. É o instrumento diário '
+    + 'de quem recruta — a operação liga para a pessoa.',
+  'worker_pii:read':
+    'Ver o DOSSIÊ do prestador: documento (DNI), data de nascimento, endereço, fotos e os dados '
+    + 'sensíveis de raça, religião e orientação sexual. Acesso de auditoria e RH, não de operação.',
+  'worker:disable':
+    'Dar e reverter a baixa do prestador — as transições DE e PARA o estado DISABLED. Exige motivo '
+    + 'e não vem em nenhum grupo por padrão.',
 };
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */
