@@ -69,7 +69,42 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
  */
 
 /** O teto. Espelha o CHECK `patient_source_labels_ceiling_3` da migration 284. */
+/**
+ * Teto PADRÃO de rótulos crus por (paciente, campo). D166/D-C, sobre segmento clínico.
+ *
+ * ⚠️ Não é mais o único: a migration 286 deu teto **5** a `Tipo de Dispositivo`, igual à
+ * cardinalidade do catálogo dele — com isso truncar vira impossível em vez de administrado
+ * (C-E′ do parecer do `lex`). Use `tetoDoCampo()`, nunca esta constante direto.
+ */
 export const PATIENT_SOURCE_LABEL_CEILING = 3;
+
+/**
+ * Tetos por campo que FOGEM do padrão. Espelha o `CHECK` da migration 286.
+ *
+ * ⚠️ **Duas constantes escritas à mão divergem em silêncio** — é o F20/F49/F51 desta casa, e já
+ * mordeu 4× nesta change. Por isso existe um teste que LÊ a migration e compara com este mapa:
+ * `tests/unit/__tests__/clickup-4.2-teto-por-campo.test.ts`. Se você mudar um lado sem o outro,
+ * ele fica vermelho — o banco recusaria a escrita e o TypeScript acharia que podia.
+ */
+export const PATIENT_SOURCE_LABEL_CEILING_POR_CAMPO: Readonly<Record<string, number | null>> = {
+  // `null` = SEM teto. Ver migration 289: o limite deste campo é a FK de
+  // `patient_device_types` para `device_types`, que se ajusta sozinha quando o catálogo muda.
+  // A versão anterior punha `5` aqui, espelhando a cardinalidade do catálogo — e o catálogo
+  // virou editável sem deploy no mesmo dia, o que tornava o 5 uma mentira no 6º tipo criado.
+  'Tipo de Dispositivo': null,
+};
+
+/**
+ * O teto que vale para um campo. `null` = sem teto.
+ *
+ * ⚠️ É esta função que o código deve consultar, nunca a constante direto — o teto deixou de ser
+ * único quando `Tipo de Dispositivo` saiu da regra.
+ */
+export function tetoDoCampo(fieldName: string): number | null {
+  return fieldName in PATIENT_SOURCE_LABEL_CEILING_POR_CAMPO
+    ? PATIENT_SOURCE_LABEL_CEILING_POR_CAMPO[fieldName]
+    : PATIENT_SOURCE_LABEL_CEILING;
+}
 
 export type PatientSourceLabelRejectionReason = 'ceiling' | 'blank' | 'duplicate';
 
@@ -288,7 +323,7 @@ export class PatientSourceLabelRepository {
       };
     }
 
-    const plan = classify(input.read.labels);
+    const plan = classify(input.read.labels, input.fieldName);
 
     await this.inTransaction(client, async (executor) => {
       await lockField(executor, input.patientId, input.fieldName);
@@ -336,7 +371,7 @@ export class PatientSourceLabelRepository {
     client?: PoolClient,
   ): Promise<PatientSourceLabelWriteResult> {
     const source = input.source ?? 'clickup';
-    const plan = classify([input.label]);
+    const plan = classify([input.label], input.fieldName);
 
     type Decisao = {
       estourouOTeto: boolean;
@@ -371,12 +406,13 @@ export class PatientSourceLabelRepository {
                  rejected: [{ rawLabel: label, reason: 'duplicate' }] };
       }
 
-      if (stored.length >= PATIENT_SOURCE_LABEL_CEILING) {
+      const tetoAqui = tetoDoCampo(input.fieldName);
+      if (tetoAqui !== null && stored.length >= tetoAqui) {
         return { estourouOTeto: true, stored: stored.length, accepted: [], received: 1, empty: 0,
                  rejected: [{ rawLabel: label, reason: 'ceiling' }] };
       }
 
-      const proximo = firstFreeOrdinal(existing.rows.map(r => r.ordinal));
+      const proximo = firstFreeOrdinal(existing.rows.map(r => r.ordinal), input.fieldName);
       await executor.query(
         `INSERT INTO patient_source_labels
            (patient_id, field_name, ordinal, raw_label, source, updated_at)
@@ -400,7 +436,7 @@ export class PatientSourceLabelRepository {
     );
 
     if (decisao.estourouOTeto) {
-      throw new PatientSourceLabelCeilingError(input.fieldName, decisao.stored, PATIENT_SOURCE_LABEL_CEILING);
+      throw new PatientSourceLabelCeilingError(input.fieldName, decisao.stored, tetoDoCampo(input.fieldName) ?? -1);
     }
 
     return {
@@ -706,7 +742,15 @@ interface ClassifiedLabels {
  * opções da lista do Javier terminam em NBSP (task 1.6), e "literal" quer dizer literal —
  * normalizar aqui seria inventar um rótulo que a origem não tem.
  */
-export function classify(labels: readonly unknown[] | null | undefined): ClassifiedLabels {
+export function classify(
+  labels: readonly unknown[] | null | undefined,
+  /**
+   * ⚠️ O teto é POR CAMPO desde a migration 286, então `classify` precisa saber de qual campo
+   * se trata. Default `''` cai no teto padrão (3) — nenhum chamador antigo muda de comportamento,
+   * e quem quer o teto maior tem de dizer qual campo é.
+   */
+  fieldName = '',
+): ClassifiedLabels {
   const entrada = labels ?? [];
   const accepted: string[] = [];
   const rejected: PatientSourceLabelRejection[] = [];
@@ -738,7 +782,8 @@ export function classify(labels: readonly unknown[] | null | undefined): Classif
       continue;
     }
 
-    if (accepted.length >= PATIENT_SOURCE_LABEL_CEILING) {
+    const tetoDesteCampo = tetoDoCampo(fieldName);
+    if (tetoDesteCampo !== null && accepted.length >= tetoDesteCampo) {
       rejected.push({ rawLabel: value, reason: 'ceiling' });
       continue;
     }
@@ -761,13 +806,19 @@ function descreve(value: unknown): string {
   return `[${typeof value}] ${texto}`.slice(0, 200);
 }
 
-function firstFreeOrdinal(usados: readonly number[]): number {
-  for (let i = 1; i <= PATIENT_SOURCE_LABEL_CEILING; i++) {
+function firstFreeOrdinal(usados: readonly number[], fieldName: string): number {
+  // ⚠️ O teto é POR CAMPO desde a migration 286. Com o teto fixo em 3 aqui, o banco aceitaria
+  // o 4º dispositivo (CHECK permite até 5) e esta função devolveria erro — código mais estreito
+  // que o banco é tão errado quanto o contrário, e mais difícil de achar.
+  // Sem teto ⇒ a próxima posição livre é sempre alcançável; o limite superior aqui é só uma
+  // trava de sanidade contra laço infinito, não uma regra de negócio.
+  const teto = tetoDoCampo(fieldName) ?? Number.MAX_SAFE_INTEGER;
+  for (let i = 1; i <= teto; i++) {
     if (!usados.includes(i)) return i;
   }
-  // Inalcançável: quem chama já conferiu o teto. Fica explícito em vez de devolver 4 e
+  // Inalcançável: quem chama já conferiu o teto. Fica explícito em vez de devolver teto+1 e
   // deixar o CHECK do banco explodir com uma mensagem que não diz de onde veio.
-  throw new PatientSourceLabelCeilingError('<ordinal>', usados.length, PATIENT_SOURCE_LABEL_CEILING);
+  throw new PatientSourceLabelCeilingError(fieldName, usados.length, teto);
 }
 
 /**
@@ -834,7 +885,7 @@ async function upsertRejections(
                ELSE patient_source_label_rejections.last_warned_at
              END
        RETURNING occurrences, (last_warned_at >= NOW()) AS warn_now`,
-      [patientId, fieldName, r.rawLabel, r.reason, PATIENT_SOURCE_LABEL_CEILING, received, source,
+      [patientId, fieldName, r.rawLabel, r.reason, tetoDoCampo(fieldName) ?? -1, received, source,
        REJECTION_WARN_WINDOW],
     );
     if (res.rows[0]?.occurrences === 1) novas += 1;
@@ -901,7 +952,7 @@ function warnIfAnythingWasRefused(
     rejected: plan.rejected.length,
     newlyRejected: registro.newlyRejected,
     warned: registro.toWarn,
-    ceiling: PATIENT_SOURCE_LABEL_CEILING,
+    ceiling: tetoDoCampo(fieldName) ?? -1,
     byReason: porMotivo,
     // O leitor do registro durável (defeito 4): o acumulado do campo, em contagem.
     standingLabels:      registro.standing?.labels ?? null,
