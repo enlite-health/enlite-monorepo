@@ -32,6 +32,7 @@
 
 import { registry, z } from '../registry';
 import { ErrorResponseSchema } from '../schemas/common';
+import { COUNTRY_CODES as COUNTRY_CODES_DOC } from '@shared/domain/countryCodes';
 
 const PermissionCellSchema = z
   .object({
@@ -264,3 +265,70 @@ painel(
     'A vista nunca expõe conteúdo de dado pessoal — só identificadores e metadados.',
   z.object({ entries: z.array(AuditRowSchema) }),
 );
+
+// ── ESCRITA (F4) ─────────────────────────────────────────────────────────────
+//
+// ⚠️ O portão destas rotas NÃO é o `perm.require` do Express: cada escrita desce
+// para uma função `SECURITY DEFINER` da mig 279, onde `iam._require_manager()`
+// exige `permission_management:write` vigente do ator, dentro da transação. A
+// role do app teve INSERT/UPDATE/DELETE revogado em `iam.*` pela mig 269.
+
+const escrita = (
+  method: 'post' | 'patch' | 'put' | 'delete',
+  path: string,
+  summary: string,
+  description: string,
+  body?: z.ZodTypeAny,
+) => {
+  registry.registerPath({
+    method,
+    path,
+    tags: ['Painel · Acessos'],
+    summary,
+    description,
+    security: [{ firebaseAuth: [] }],
+    ...(body ? { request: { body: { content: { 'application/json': { schema: body } } } } } : {}),
+    responses: {
+      200: { description: 'OK.', content: { 'application/json': { schema: z.object({}).passthrough() } } },
+      400: { description: 'Payload, id ou país inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      403: { description: 'Sem `permission_management:write` — recusado PELO BANCO.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      404: { description: 'Grupo inexistente ou de outro tenant (indistinguíveis).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      409: { description: 'Nome repetido, grupo de sistema, ou anti-lockout (`last_manager`).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    },
+  });
+};
+
+escrita('post', '/api/admin/permission-groups', 'Cria um grupo de permissão',
+  'O criador fica registrado em `created_by`.',
+  z.object({ name: z.string().max(255), description: z.string().max(2000).nullable().optional() }));
+
+escrita('patch', '/api/admin/permission-groups/{id}', 'Renomeia ou redescreve um grupo',
+  'Patch vazio é 400: "salvei nada" e "salvei" têm de ser respostas diferentes. Grupo de sistema não é renomeável (409).',
+  z.object({ name: z.string().max(255).optional(), description: z.string().max(2000).nullable().optional() }));
+
+escrita('delete', '/api/admin/permission-groups/{id}', 'Arquiva um grupo',
+  'ARQUIVA, não apaga: a trilha do grupo tem de sobreviver ao grupo. Recusado com 409 `last_manager` se deixasse zero gestores.');
+
+escrita('put', '/api/admin/permission-groups/{id}/permissions', 'Substitui o conjunto de células do grupo',
+  'PUT, não PATCH: o conjunto vai inteiro e o diff vira trilha. Um PATCH incremental esconderia a REMOÇÃO de célula dentro de um "adicionei X". Lista vazia é operação legítima — o anti-lockout do banco é quem recusa se isso deixar zero gestores.',
+  z.object({ cellKeys: z.array(z.string()).max(500), reason: z.string().max(500).nullable().optional() }));
+
+escrita('post', '/api/admin/permission-groups/{id}/countries', 'Concede um país ao grupo',
+  'Motivo OBRIGATÓRIO — é o que a trilha guarda.',
+  z.object({ country: z.enum(COUNTRY_CODES_DOC), reason: z.string().max(500) }));
+
+escrita('delete', '/api/admin/permission-groups/{id}/countries/{country}', 'Revoga um país do grupo',
+  'REVOGA sem apagar: concessão e revogação ficam as duas na trilha.');
+
+escrita('post', '/api/admin/permission-groups/{id}/members', 'Adiciona membro ao grupo',
+  'O vínculo guarda quem concedeu.',
+  z.object({ userId: z.string().max(128) }));
+
+escrita('delete', '/api/admin/permission-groups/{id}/members/{userId}', 'Remove membro do grupo',
+  'Marca `removed_at`, não apaga. Recusado com 409 `last_manager` se fosse o último gestor — inclusive quando a pessoa remove a si mesma.');
+
+escrita('put', '/api/admin/country-features/{country}/{featureKey}', 'Liga/desliga uma feature num país',
+  'Override do painel sobre o padrão do manifest. Motivo obrigatório; a mudança anterior vai para `country_feature_changes`.',
+  z.object({ enabled: z.boolean(), config: z.unknown().optional(), reason: z.string().max(500) }));

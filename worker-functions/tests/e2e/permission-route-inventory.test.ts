@@ -92,6 +92,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/permission-groups/:id → permission_management:read',
         'GET /api/admin/permission-groups/:id/members → permission_management:read',
         'GET /api/admin/permissions/catalog → permission_management:read',
+        // ── admin.permissions, ESCRITA (9) — a F4. Todas `:write`, e o portão
+        // real delas é o `SECURITY DEFINER` da mig 279, não este `perm.require`.
+        'DELETE /api/admin/permission-groups/:id → permission_management:write',
+        'DELETE /api/admin/permission-groups/:id/countries/:country → permission_management:write',
+        'DELETE /api/admin/permission-groups/:id/members/:userId → permission_management:write',
+        'PATCH /api/admin/permission-groups/:id → permission_management:write',
+        'POST /api/admin/permission-groups → permission_management:write',
+        'POST /api/admin/permission-groups/:id/countries → permission_management:write',
+        'POST /api/admin/permission-groups/:id/members → permission_management:write',
+        'PUT /api/admin/country-features/:country/:featureKey → permission_management:write',
+        'PUT /api/admin/permission-groups/:id/permissions → permission_management:write',
         // ── admin.patients (21) — a 2ª
         'DELETE /api/admin/patient-chat-roles/:code → patient:write',
         'DELETE /api/admin/patients/:id → patient:delete',

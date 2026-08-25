@@ -28,7 +28,7 @@ import {
   PublicLeadsController,
 } from '@modules/case';
 import { UserController } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createPermissionPanelRoutes, principalUid } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createMeAuthzRouter } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
@@ -409,6 +409,16 @@ app.use('/api/admin', createPermissionPanelRoutes({
   groups: permissionsBoundary.permissions.repositories.groups,
   features: permissionsBoundary.permissions.repositories.features,
   audit: permissionsBoundary.permissions.audit,
+  auth: authMiddleware,
+  permissions: permissionMiddleware,
+}));
+// F4 — a ESCRITA do painel. Mesma família, célula `permission_management:write`.
+// ⚠️ O portão real NÃO é o `perm.require` daqui: cada escrita desce para uma
+// função SECURITY DEFINER da mig 279, onde `iam._require_manager()` exige a
+// célula vigente do ator no GUC. Com o engine off, esta é a ÚNICA defesa viva —
+// e ela vive no banco, não no Express.
+app.use('/api/admin', createPermissionPanelWriteRoutes({
+  writer: permissionsBoundary.permissions,
   auth: authMiddleware,
   permissions: permissionMiddleware,
 }));

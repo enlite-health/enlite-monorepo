@@ -91,4 +91,6 @@ export { requireCountryScope, hasLiveCountryGrant } from './interfaces/middlewar
 export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
 export { createPermissionPanelRoutes, ADMIN_PERMISSIONS_FAMILY } from './interfaces/routes/permissionPanelRoutes';
+export { createPermissionPanelWriteRoutes } from './interfaces/routes/permissionPanelWriteRoutes';
+export type { PanelWriter, PermissionPanelWriteDeps } from './interfaces/routes/permissionPanelWriteRoutes';
 export { createPermissionRoutesInventoryRouter } from './interfaces/routes/permissionRoutesInventoryRoute';
