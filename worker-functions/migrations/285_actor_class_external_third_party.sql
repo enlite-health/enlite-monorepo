@@ -1,5 +1,10 @@
 -- 285_actor_class_external_third_party.sql
 --
+-- ⚠️ TODO NOME É QUALIFICADO COM `iam.`, E ISSO NÃO É ESTILO. A migration 274
+-- moveu estas tabelas para o schema `iam` E DEIXOU VIEWS DE COMPATIBILIDADE em
+-- `public` com os mesmos nomes. Sem qualificar, `ALTER TABLE permission_groups`
+-- resolve para a VIEW e falha — foi o que quebrou o e2e na primeira tentativa.
+--
 -- POR QUÊ (C9 do veredito do `lex`): o Diego já anunciou plano de saúde no
 -- sistema (`2026-07-27a#PEND-03`). No dia em que um terceiro receber acesso ao
 -- painel, dar a ele um grupo comum entrega o dossiê do prestador — e cessão a
@@ -17,7 +22,7 @@
 -- precisando das células que tiver; a classe só remove do cardápio o que nunca
 -- pode ser concedido a terceiro.
 
-ALTER TABLE permission_groups
+ALTER TABLE iam.permission_groups
   ADD COLUMN IF NOT EXISTS actor_class VARCHAR(32) NOT NULL DEFAULT 'INTERNAL';
 
 DO $$
@@ -25,14 +30,14 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'permission_groups_actor_class_ck'
   ) THEN
-    ALTER TABLE permission_groups
+    ALTER TABLE iam.permission_groups
       ADD CONSTRAINT permission_groups_actor_class_ck
       CHECK (actor_class IN ('INTERNAL', 'EXTERNAL_THIRD_PARTY'));
   END IF;
 END
 $$;
 
-COMMENT ON COLUMN permission_groups.actor_class IS
+COMMENT ON COLUMN iam.permission_groups.actor_class IS
   'INTERNAL = colaborador da Enlite. EXTERNAL_THIRD_PARTY = terceiro (plano de '
   'saúde, parceiro): cessão de dado, regime do art. 11.1 da 25.326 e art. 11 '
   'da LGPD. Default INTERNAL porque todo grupo de hoje é interno — e um default '
@@ -75,14 +80,14 @@ DECLARE
   v_celula TEXT;
 BEGIN
   SELECT g.actor_class INTO v_classe
-    FROM permission_groups g WHERE g.id = NEW.group_id;
+    FROM iam.permission_groups g WHERE g.id = NEW.group_id;
 
   IF v_classe IS DISTINCT FROM 'EXTERNAL_THIRD_PARTY' THEN
     RETURN NEW;
   END IF;
 
   SELECT p.resource || ':' || p.action INTO v_celula
-    FROM permissions p WHERE p.id = NEW.permission_id;
+    FROM iam.permissions p WHERE p.id = NEW.permission_id;
 
   IF v_celula = ANY (iam.celulas_vedadas_a_terceiro()) THEN
     RAISE EXCEPTION
@@ -95,9 +100,9 @@ BEGIN
 END
 $$;
 
-DROP TRIGGER IF EXISTS veda_celula_a_terceiro ON group_permissions;
+DROP TRIGGER IF EXISTS veda_celula_a_terceiro ON iam.group_permissions;
 CREATE TRIGGER veda_celula_a_terceiro
-  BEFORE INSERT OR UPDATE ON group_permissions
+  BEFORE INSERT OR UPDATE ON iam.group_permissions
   FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_celula_a_terceiro();
 
 CREATE OR REPLACE FUNCTION iam.trg_veda_virar_externo()
@@ -113,8 +118,8 @@ BEGIN
   END IF;
 
   SELECT p.resource || ':' || p.action INTO v_celula
-    FROM group_permissions gp
-    JOIN permissions p ON p.id = gp.permission_id
+    FROM iam.group_permissions gp
+    JOIN iam.permissions p ON p.id = gp.permission_id
    WHERE gp.group_id = NEW.id
      AND p.resource || ':' || p.action = ANY (iam.celulas_vedadas_a_terceiro())
    LIMIT 1;
@@ -130,7 +135,7 @@ BEGIN
 END
 $$;
 
-DROP TRIGGER IF EXISTS veda_virar_externo ON permission_groups;
+DROP TRIGGER IF EXISTS veda_virar_externo ON iam.permission_groups;
 CREATE TRIGGER veda_virar_externo
-  BEFORE UPDATE ON permission_groups
+  BEFORE UPDATE ON iam.permission_groups
   FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_virar_externo();

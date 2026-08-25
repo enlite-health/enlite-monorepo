@@ -54,6 +54,24 @@ describe('C9 — paridade entre a lista do código e o trigger do banco', () => 
     }
   });
 
+  it('TODA referência a tabela do IAM é qualificada com `iam.` — as views mordem', () => {
+    // ⚠️ A migration 274 moveu estas tabelas para o schema `iam` E DEIXOU VIEWS
+    // de compatibilidade em `public` com os MESMOS nomes. Sem qualificar,
+    // `ALTER TABLE permission_groups` resolve para a VIEW e o Postgres recusa
+    // ("not supported for views"). Foi assim que a 1ª versão desta migration
+    // quebrou o e2e — e o meu teste isolado não pegou porque eu criei o fixture
+    // com tabelas reais nesse nome, confirmando a minha suposição.
+    const sql = fs.readFileSync(MIGRATION, 'utf8');
+    const semComentarios = sql.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+
+    for (const tabela of ['permission_groups', 'group_permissions', 'permissions']) {
+      // Casa o nome NÃO precedido de `iam.` nem de outra palavra/ponto.
+      const nu = new RegExp(`(?<![\\w.])${tabela}(?![\\w])`, 'g');
+      const ocorrencias = [...semComentarios.matchAll(nu)];
+      expect([tabela, ocorrencias.map((m) => m[0])]).toEqual([tabela, []]);
+    }
+  });
+
   it('o trigger guarda as DUAS direções — conceder célula E virar externo', () => {
     // Guardar só uma deixa a porta aberta pela outra, que é justamente o
     // caminho de quem quer "aproveitar um grupo que já existe".
@@ -62,10 +80,10 @@ describe('C9 — paridade entre a lista do código e o trigger do banco', () => 
     // substring, então renomear o trigger para `veda_virar_externo_DESLIGADO`
     // passaria — foi o que a sabotagem S19 mostrou.
     expect(sql).toMatch(
-      /CREATE TRIGGER veda_celula_a_terceiro\s+BEFORE INSERT OR UPDATE ON group_permissions/,
+      /CREATE TRIGGER veda_celula_a_terceiro\s+BEFORE INSERT OR UPDATE ON iam\.group_permissions/,
     );
     expect(sql).toMatch(
-      /CREATE TRIGGER veda_virar_externo\s+BEFORE UPDATE ON permission_groups/,
+      /CREATE TRIGGER veda_virar_externo\s+BEFORE UPDATE ON iam\.permission_groups/,
     );
   });
 });
