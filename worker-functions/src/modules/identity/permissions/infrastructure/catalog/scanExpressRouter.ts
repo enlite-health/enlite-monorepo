@@ -19,7 +19,7 @@
 
 import type { Express, Router } from 'express';
 import { readPermissionMetadata, type PermissionMetadata } from './permissionMetadata';
-import { CELL_DESCRIPTION, cellKey } from '../../domain/PermissionCell';
+import { CELL_DESCRIPTION, cellKey, parseCellKey } from '../../domain/PermissionCell';
 
 export interface ScannedRoute {
   /** Verbo em maiúsculas; `USE` para middleware montado como rota. */
@@ -144,7 +144,8 @@ export function scanExpressRouter(app: Express | Router): ScannedRoute[] {
   return routes;
 }
 
-/** Células distintas declaradas na varredura — a entrada do `syncCatalog`. */
+/** Células distintas declaradas na varredura de ROTAS — uma das duas fontes
+ * do catálogo; a outra é `cellsForaDeRota`, fundida pelo wiring. */
 export function declaredCells(routes: ScannedRoute[]): PermissionMetadata[] {
   const byKey = new Map<string, PermissionMetadata>();
   for (const route of routes) {
@@ -173,6 +174,51 @@ export function declaredCells(routes: ScannedRoute[]): PermissionMetadata[] {
     // é comparador errado, e quem mexer no dedup amanhã depende disso.
     return left < right ? -1 : left > right ? 1 : /* istanbul ignore next */ 0;
   });
+}
+
+/**
+ * A SEGUNDA fonte do catálogo: as células que o código enforça ABAIXO da rota.
+ *
+ * ⚠️ Por que precisam existir fora da varredura — o buraco que o gate de
+ * revisão achou no #253 e que teria detonado no flip:
+ * `worker_contact:read` é decidida por `projectWorkerFields` no nível do CAMPO,
+ * e `worker:disable` por `decidirTransicaoDeBaixa` no nível da OPERAÇÃO.
+ * Nenhuma das duas é portão de rota — pendurá-las num `perm.require` faria a
+ * rota INTEIRA exigi-las, que é o oposto do desenho (o Kanban abre com
+ * `funnel:read`; só o NOME do prestador depende do contato).
+ *
+ * Sem esta fonte elas nunca entravam em `iam.permissions`: o sync só via o que
+ * veio de rota. Medido no banco — as duas simplesmente NÃO EXISTIAM, nem pelo
+ * seed. Consequência no dia da virada: `cells` deixa de ser `null` sem NUNCA
+ * conter `worker_contact:read`, e a projeção redige nome e telefone para todo
+ * mundo — inclusive o Acesso Master —, enquanto toda baixa é recusada por
+ * `sem_celula_de_baixa`. É a armadilha "célula declarada ≠ célula existente"
+ * dentro do PR que existe para implementá-la.
+ *
+ * A descrição escrita É a declaração: quem definiu o que a célula libera está
+ * afirmando que ela existe. Fonte única, sem segunda lista para divergir.
+ *
+ * ⚠️ Recebe o que a varredura já achou e devolve só o COMPLEMENTO. A fusão fica
+ * no wiring, e não aqui dentro, por um motivo que custa caro errar: o
+ * `SyncPermissionCatalogUseCase` aborta fail-closed quando recebe lista VAZIA
+ * ("a varredura não achou nenhuma célula"). Se esta função emitisse sempre,
+ * varredura vazia chegaria ao sync como "4 células" e ele descontinuaria as 40
+ * de rota de uma vez.
+ */
+export function cellsForaDeRota(jaDeclaradas: PermissionMetadata[]): PermissionMetadata[] {
+  const vistas = new Set(jaDeclaradas.map((cell) => cellKey(cell.resource, cell.action)));
+  const fora: PermissionMetadata[] = [];
+
+  for (const [key, description] of Object.entries(CELL_DESCRIPTION)) {
+    if (vistas.has(key)) continue;
+    const parsed = parseCellKey(key);
+    /* istanbul ignore next -- chave malformada em CELL_DESCRIPTION é erro de
+       digitação; o guard existe para não empurrar lixo ao catálogo. */
+    if (!parsed) continue;
+    fora.push({ resource: parsed.resource, action: parsed.action, description });
+  }
+
+  return fora;
 }
 
 /**

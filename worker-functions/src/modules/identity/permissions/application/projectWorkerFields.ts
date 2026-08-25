@@ -115,12 +115,33 @@ function pode(cells: string[] | null, celula: string): boolean {
   return cells === null || cells.includes(celula);
 }
 
-/** `decrypt` que nunca lança — falha de KMS não pode derrubar a listagem. */
+/**
+ * Sentinela para "esta rota NÃO tem KMS e mesmo assim chegou campo cifrado" —
+ * erro de PROGRAMAÇÃO, não de runtime.
+ *
+ * Existe porque os dois casos estavam colados e o `catch` abaixo engolia os
+ * dois (achado ALTO do gate `revisao-pr`): `GET /vacancies/:id` instala um
+ * decryptor que promete "falhar alto", e a promessa era letra morta — o campo
+ * virava `null` em silêncio, indistinguível de redação por célula. O nome do
+ * prestador sumiria do Kanban e a leitura óbvia seria "faltou permissão".
+ */
+export class ProjecaoSemDecryptorError extends Error {}
+
+/**
+ * `decrypt` resiliente — mas só para o que É runtime.
+ *
+ * ⚠️ A distinção é o conserto, não o `catch`: falha de KMS (rede, cota, chave
+ * rotacionada) NÃO pode derrubar a listagem inteira, e por isso continua
+ * virando `null`. Já `ProjecaoSemDecryptorError` significa que alguém passou um
+ * campo `*Encrypted` para uma projeção montada sem KMS — isso não se degrada,
+ * se conserta, e tem de aparecer.
+ */
 async function abrir(kms: Decryptor, valor: string | null | undefined): Promise<string | null> {
   if (valor === null || valor === undefined || valor === '') return null;
   try {
     return (await kms.decrypt(valor)) || null;
-  } catch {
+  } catch (err) {
+    if (err instanceof ProjecaoSemDecryptorError) throw err;
     return null;
   }
 }

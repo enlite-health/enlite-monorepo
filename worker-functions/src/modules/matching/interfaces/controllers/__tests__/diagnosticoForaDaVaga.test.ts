@@ -141,4 +141,87 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
       id: 'jp-1', dependency_level: 'ALTA', patient_zone: 'Palermo', insurance_verified: true,
     });
   });
+
+  /**
+   * 🔴 CONTROLE POSITIVO — B6 do gate `revisao-pr`.
+   *
+   * O gate provou por MUTAÇÃO que esta guarda era inerte: trocando o `SELECT` de
+   * `getVacancyById` por `SELECT 1 AS gutado`, os 4 casos ficavam VERDES e os
+   * 265 testes de controller também. O motivo é estrutural — as asserções eram
+   * todas NEGATIVAS (`not.toMatch`), e o que passava por controle positivo
+   * afirmava sobre as LINHAS FIXAS do dublê, que voltam iguais qualquer que
+   * seja o SQL. Régua que só sabe dizer "não vi o proibido" dá verde para a
+   * query vazia.
+   *
+   * O comentário acima diz que "asserir a QUERY implica asserir o corpo — é a
+   * asserção mais forte". Na direção do vazamento, sim. Na direção de "a rota
+   * ainda funciona", é a mais FRACA, e é essa que faltava.
+   *
+   * ⚠️ E a allow-list de `p.` não é zelo: deny-list de nome de coluna não
+   * alcança projeção que não NOMEIA coluna. Medido na rota irmã de zonas —
+   * `json_build_object(…)::jsonb || to_jsonb(p)` passava com a guarda verde
+   * arrastando `diagnosis` inteiro. Aqui a mesma classe entraria por `p.*`.
+   */
+  /**
+   * ⚠️ O alias `p` está SOBRECARREGADO neste código: no `getCaseAnalysis` a 2ª
+   * query usa `p` para `publications` (`p.channel`, `p.recruiter_name`,
+   * `p.observations`). Uma allow-list sobre a UNIÃO das queries conflaria duas
+   * tabelas e aceitaria coluna de `patients` só porque `publications` tem uma
+   * homônima. Por isso o recorte é a query que de fato faz `JOIN patients p`.
+   *
+   * (O alias duplo é dívida do arquivo, não deste PR — anotado no handoff.)
+   */
+  const queryDePacientes = (): string => {
+    const q = mockQuery.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => /\bpatients\s+p\b/i.test(sql));
+    if (!q) throw new Error('nenhuma query faz JOIN patients p — a rota deixou de consultar o paciente');
+    return q;
+  };
+
+  const colunasDePacientes = (): Set<string> =>
+    new Set([...queryDePacientes().matchAll(/\bp\.([a-z_]+)/gi)].map((m) => m[1]));
+
+  it('🔴 GET /vacancies/:id continua trazendo o que a tela precisa, e SÓ colunas nomeadas de `patients`', async () => {
+    mockQuery.mockResolvedValue({ rows: [{ id: 'jp-1', encuadres: null, publications: null, social_short_links: null }] });
+    const [req, res] = reqRes({ id: 'jp-1' });
+
+    await new VacanciesController().getVacancyById(req, res);
+    const sql = queryDePacientes();
+
+    // Positivo: apagar o SELECT reprova aqui.
+    expect(sql).toMatch(/p\.first_name as patient_first_name/);
+    expect(sql).toMatch(/p\.dependency_level/);
+    expect(sql).toMatch(/COALESCE\(pa\.neighborhood, p\.zone_neighborhood\)/);
+
+    // Nenhuma projeção anônima sobre `patients` — a tabela que carrega o clínico.
+    expect(sql).not.toMatch(/to_jsonb\s*\(\s*p\b|row_to_json\s*\(\s*p\b|\bp\.\*/i);
+    // Conjunto EXATO. Cada membro conferido contra `\\d patients`: `dependency_level`
+    // é enum de severidade (SEVERE|VERY_SEVERE|MODERATE|MILD) que o C1 decidiu
+    // manter, `service_type` é array de profissão, `insurance_verified` e
+    // `city_locality` são operacionais. Nenhuma é texto clínico livre.
+    expect(colunasDePacientes()).toEqual(
+      new Set(['first_name', 'last_name', 'zone_neighborhood', 'dependency_level', 'id',
+               'city_locality', 'insurance_verified', 'service_type']),
+    );
+  });
+
+  it('🔴 GET /recruitment/case/:n idem — positivo e allow-list de `patients`', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    const [req, res] = reqRes({ caseNumber: '442' });
+
+    await new RecruitmentAnalyticsController().getCaseAnalysis(req, res);
+    const sql = queryDePacientes();
+
+    expect(sql).toMatch(/p\.first_name as patient_first_name/);
+    expect(sql).toMatch(/p\.dependency_level/);
+    expect(sql).not.toMatch(/to_jsonb\s*\(\s*p\b|row_to_json\s*\(\s*p\b|\bp\.\*/i);
+    // Conjunto MENOR que o do `getVacancyById`, e é assim mesmo: esta rota não
+    // pede `service_type`/`insurance_verified`/`city_locality`. Duas rotas, duas
+    // allow-lists — uma lista compartilhada aceitaria em uma o que só a outra
+    // tem direito de ver.
+    expect(colunasDePacientes()).toEqual(
+      new Set(['first_name', 'last_name', 'dependency_level', 'zone_neighborhood', 'id']),
+    );
+  });
 });

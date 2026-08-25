@@ -25,6 +25,21 @@
 
 export type WorkerStatus = 'REGISTERED' | 'INCOMPLETE_REGISTER' | 'DISABLED';
 
+/**
+ * ⚠️ CÓPIA CONSCIENTE da chave canônica (`CELL_WORKER_DISABLE` no barrel
+ * `@modules/identity/permissions`), e não descuido — o gate `revisao-pr`
+ * levantou a duplicação (B5) e esta é a justificativa que o critério 2 exige.
+ *
+ * Importar o barrel resolveria a duplicação e criaria coisa pior: ele exporta
+ * `createPermissionsModule`, que puxa `pg` e os repositórios Postgres. Este
+ * arquivo é domínio puro e hoje tem ZERO imports — a importação meteria o driver de
+ * banco no grafo de um módulo que não fala com banco.
+ *
+ * O dano REAL da duplicação é a divergência silenciosa (a chave muda de um lado
+ * e a projeção autoriza enquanto isto nega). Esse dano está fechado por
+ * `src/modules/worker/__tests__/paridadeDeCelulas.test.ts`, que reprova se as
+ * duas deixarem de bater.
+ */
 export const CELL_WORKER_DISABLE = 'worker:disable';
 
 /** Prefixo de ator do próprio prestador no histórico (D95). */

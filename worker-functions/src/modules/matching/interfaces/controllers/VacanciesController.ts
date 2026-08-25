@@ -10,7 +10,7 @@ import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
-import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -21,7 +21,11 @@ import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissio
  */
 const SEM_KMS = {
   async decrypt(): Promise<string> {
-    throw new Error('VacanciesController: esta rota não descriptografa — campo cifrado chegou à projeção');
+    // Sentinela, não `Error` cru: o `abrir()` da projeção engole exceção de
+    // runtime de propósito (oscilação de KMS não derruba o Kanban), e um
+    // `Error` comum virava `null` em silêncio — a promessa "falhar alto" deste
+    // bloco era letra morta. Achado ALTO do gate `revisao-pr`.
+    throw new ProjecaoSemDecryptorError('VacanciesController: esta rota não descriptografa — campo cifrado chegou à projeção');
   },
 };
 

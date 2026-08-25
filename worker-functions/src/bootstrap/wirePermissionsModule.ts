@@ -41,6 +41,7 @@ import { isEnvFlagOn } from '@shared/utils/envFlag';
 import {
   createPermissionsModule,
   createWellKnownPermissionsRouter,
+  cellsForaDeRota,
   declaredCells,
   registerPermissionEventHandlers,
   scanExpressRouter,
@@ -166,9 +167,20 @@ async function bootTasks(app: Express, boundary: PermissionsBoundary): Promise<v
 
   if (engineEnabled) await assertDataMigrationRan(permissions);
 
+  const deRota = declaredCells(routes);
+  // As DUAS fontes do catálogo: o portão de rota e o que o código enforça
+  // ABAIXO dela (`worker_contact:read` no campo, `worker:disable` na operação).
+  //
+  // ⚠️ O ternário NÃO é defensividade decorativa: o
+  // `SyncPermissionCatalogUseCase` aborta fail-closed com lista VAZIA ("a
+  // varredura não achou nenhuma célula"). Somar as de código incondicionalmente
+  // faria varredura vazia chegar lá como "4 células" — e o sync descontinuaria
+  // as 40 de rota de uma vez. A varredura continua sendo o sinal de vida.
+  const paraSincronizar = deRota.length === 0 ? [] : [...deRota, ...cellsForaDeRota(deRota)];
+
   if (isEnvFlagOn('PERMISSION_CATALOG_SYNC_ENABLED')) {
     // O use case já loga sucesso e falha, e nunca lança (ver GATE acima).
-    await permissions.catalog.sync.execute(declaredCells(routes));
+    await permissions.catalog.sync.execute(paraSincronizar);
   }
   if (isEnvFlagOn('COUNTRY_FEATURES_SYNC_ENABLED')) {
     await permissions.features.sync.execute();
@@ -181,7 +193,8 @@ async function bootTasks(app: Express, boundary: PermissionsBoundary): Promise<v
       featuresSync: isEnvFlagOn('COUNTRY_FEATURES_SYNC_ENABLED'),
       engine: engineEnabled,
       routesIndexed: routes.length,
-      declared: declaredCells(routes).length,
+      declared: paraSincronizar.length,
+      declaradasPorRota: deRota.length,
       undeclared: undeclared.length,
     },
     '[perm] módulo de permissões inicializado',

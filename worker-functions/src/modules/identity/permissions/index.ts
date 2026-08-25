@@ -75,7 +75,7 @@ export type { ActorClass } from './domain/ActorClass';
 // ── Catálogo derivado do código (declaração + varredura) ─────────────────────
 export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } from './infrastructure/catalog/permissionMetadata';
 export type { PermissionMetadata } from './infrastructure/catalog/permissionMetadata';
-export { declaredCells, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
+export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
 export type { RouteIndex } from './infrastructure/catalog/routeMatcher';
@@ -106,7 +106,7 @@ export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalo
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
 export { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 export { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
-export { projectWorkerFields, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';
+export { projectWorkerFields, ProjecaoSemDecryptorError, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';
 export type { WorkerRow, ProjectedWorker, Decryptor } from './application/projectWorkerFields';
 export { cellsOfRequest } from './application/cellsOfRequest';
 export { CELL_DESCRIPTION } from './domain/PermissionCell';

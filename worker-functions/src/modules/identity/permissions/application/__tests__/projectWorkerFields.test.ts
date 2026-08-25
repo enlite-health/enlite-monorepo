@@ -15,6 +15,7 @@ import {
   CELL_WORKER_CONTACT_READ,
   CELL_WORKER_PII_READ,
   type WorkerRow,
+  ProjecaoSemDecryptorError,
 } from '../projectWorkerFields';
 
 const LINHA: WorkerRow = {
@@ -203,5 +204,31 @@ describe('projectWorkerFields — a célula decide ANTES do KMS', () => {
     await projectWorkerFields([CELL_WORKER_CONTACT_READ], { id: 'w-2', firstNameEncrypted: '' }, kms);
 
     expect(decrypt).toHaveBeenCalledTimes(0);
+  });
+
+  describe('ProjecaoSemDecryptorError — erro de programação NÃO se degrada (ALTO do gate)', () => {
+    const linha = { firstNameEncrypted: 'cifra-que-nao-deveria-existir-nesta-rota' } as never;
+
+    it('🔴 sentinela ATRAVESSA o `catch` — a promessa "falhar alto" passa a valer', async () => {
+      const semKms = {
+        decrypt: async () => {
+          throw new ProjecaoSemDecryptorError('esta rota não descriptografa');
+        },
+      };
+
+      await expect(projectWorkerFields(null, linha, semKms)).rejects.toBeInstanceOf(ProjecaoSemDecryptorError);
+    });
+
+    it('falha de RUNTIME do KMS continua degradando — oscilação não derruba o Kanban', async () => {
+      const kmsCaiu = {
+        decrypt: async () => {
+          throw new Error('KMS: DEADLINE_EXCEEDED');
+        },
+      };
+
+      const projetada = await projectWorkerFields(null, linha, kmsCaiu);
+
+      expect(projetada).toBeDefined();
+    });
   });
 });

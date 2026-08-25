@@ -7,6 +7,7 @@
 
 import express, { Router, type RequestHandler } from 'express';
 import {
+  cellsForaDeRota,
   declaredCells,
   mountPathOf,
   scanExpressRouter,
@@ -238,5 +239,59 @@ describe('declaredCells — a definição da célula chega ao catálogo (C2 da F
     const cs = declaredCells([rota('worker_pii', 'read'), rota('worker_pii', 'read')] as never);
     expect(cs).toHaveLength(1);
     expect(cs[0].description).toBe(CELL_DESCRIPTION['worker_pii:read']);
+  });
+});
+
+describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)', () => {
+  /**
+   * 🔴 O conjunto é FIXO de propósito. Célula que o código enforça abaixo da
+   * rota e ninguém declarar não existe em `iam.permissions` — o painel não a
+   * oferece, ninguém a recebe, e no flip a projeção redige para TODO MUNDO.
+   * Se alguém escrever uma definição nova em `CELL_DESCRIPTION` sem rota, este
+   * caso fica vermelho e obriga a decisão a ser consciente.
+   */
+  it('as células sem rota são EXATAMENTE `worker_contact:read` e `worker:disable`', () => {
+    const deRota = declaredCells([
+      { method: 'GET', path: '/w', cell: { resource: 'worker', action: 'read' } },
+      { method: 'GET', path: '/d', cell: { resource: 'worker_pii', action: 'read' } },
+    ]);
+
+    expect(cellsForaDeRota(deRota).map((c) => `${c.resource}:${c.action}`)).toEqual([
+      'worker_contact:read',
+      'worker:disable',
+    ]);
+  });
+
+  it('cada uma chega ao catálogo COM a definição escrita — é ela que o painel mostra', () => {
+    const fora = cellsForaDeRota([]);
+    const contato = fora.find((c) => c.resource === 'worker_contact');
+
+    expect(contato?.description).toContain('CONTATO do prestador');
+    expect(fora.every((c) => (c.description ?? '').length > 0)).toBe(true);
+  });
+
+  it('o que a ROTA já declarou não é repetido — a rota conhece o caso particular', () => {
+    const deRota = declaredCells([
+      { method: 'GET', path: '/c', cell: { resource: 'worker_contact', action: 'read', description: 'só nesta rota' } },
+    ]);
+
+    const fora = cellsForaDeRota(deRota);
+
+    expect(fora.map((c) => `${c.resource}:${c.action}`)).not.toContain('worker_contact:read');
+    expect(fora.map((c) => `${c.resource}:${c.action}`)).toContain('worker:disable');
+  });
+
+  it('🔴 varredura VAZIA não é mascarada — a fusão do wiring devolve vazio', () => {
+    // O `SyncPermissionCatalogUseCase` aborta fail-closed com lista vazia. Se a
+    // fusão somasse as de código incondicionalmente, varredura vazia chegaria
+    // como "4 células" e o sync descontinuaria as 40 de rota de uma vez. Este
+    // caso reproduz a expressão do wiring.
+    const deRota = declaredCells([]);
+    const paraSincronizar = deRota.length === 0 ? [] : [...deRota, ...cellsForaDeRota(deRota)];
+
+    expect(deRota).toEqual([]);
+    expect(paraSincronizar).toEqual([]);
+    // E a 2ª fonte SOZINHA não é vazia — é isso que tornaria o mascaramento possível.
+    expect(cellsForaDeRota(deRota).length).toBeGreaterThan(0);
   });
 });
