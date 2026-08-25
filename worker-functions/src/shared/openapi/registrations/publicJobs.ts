@@ -11,7 +11,11 @@ import { ErrorResponseSchema } from '../schemas/common';
  * e os tipos não se chain bem em schemas com `.pipe().default()`. Custo
  * aceito: 2 lugares com lista de campos idêntica; review preventivo cobre.
  */
-const PublicJobsV1QuerySchema = z.object({
+// ⚠️ EXPORTADO desde 25/08/2026 para que exista uma RÉGUA. O comentário acima dizia
+// *"2 lugares com lista de campos idêntica; review preventivo cobre"* — e não cobriu: a doc
+// declarava o campo clínico no SINGULAR (`pathology`) enquanto o DTO devolvia o PLURAL
+// (`pathologies`), e ninguém comparou os dois por meses. Agora um teste compara.
+export const PublicJobsV1QuerySchema = z.object({
   country: z.string().optional().openapi({
     description: 'Código ISO 3166-1 alpha-2 do país (default AR). Transformado para uppercase.',
     example: 'AR',
