@@ -89,6 +89,19 @@ function sqlDeTodasAsQueries(): string {
  * INTEIRA, e de propósito: a coluna proibida não pode aparecer em lugar nenhum,
  * nem num `WHERE`, nem num `JOIN`.
  */
+/**
+ * O SQL SEM os comentários `--`.
+ *
+ * ⚠️ D182, e eu caí nela escrevendo esta própria guarda: comentário viaja
+ * DENTRO da string da query. O comentário que explica por que `case_number`
+ * precisa de `jp.` soletra `case_number`, e a asserção de ambiguidade reprovava
+ * o código certo por causa da explicação dele. Régua que lê comentário mede
+ * prosa, não código.
+ */
+function sqlSemComentarios(): string {
+  return sqlDeTodasAsQueries().replace(/--[^\n]*/g, '');
+}
+
 function projecaoDaQuery(): string {
   const sql = sqlDeTodasAsQueries();
   const m = /\bSELECT\b([\s\S]*?)\bFROM\b/i.exec(sql);
@@ -213,8 +226,31 @@ describe('L10 — a análise de zonas não busca dado clínico nem nome de pacie
     await new RecruitmentAnalyticsController().getZoneAnalysis(req, res);
 
     const projecao = projecaoDaQuery();
-    expect(projecao).toMatch(/'case_number', case_number/);
-    expect(projecao).toMatch(/'task_name', title/);
-    expect(projecao).toMatch(/'status', status/);
+    expect(projecao).toMatch(/'case_number', jp\.case_number/);
+    expect(projecao).toMatch(/'task_name', jp\.title/);
+    expect(projecao).toMatch(/'status', jp\.status/);
+  });
+
+  /**
+   * 🔴 A qualificação `jp.` é CONTRATO, não estilo.
+   *
+   * `case_number` e `status` existem em `job_postings` E em `patients`. Sem
+   * qualificar, o Postgres levanta `column reference is ambiguous` e a rota
+   * inteira responde 500 — que é como ela esteve em PRODUÇÃO por tempo
+   * indeterminado, e o motivo de ninguém no front consumi-la. Nenhum teste
+   * unit podia ver isso: com dublê de banco a query nunca executa. Quem achou
+   * foi o e2e (`zonas-sem-clinico.e2e.test.ts`), e este caso é a rede barata
+   * que impede a reincidência sem precisar do banco.
+   */
+  it('🔴 nenhuma coluna ambígua fica sem qualificar — `case_number` e `status` existem nas DUAS tabelas', async () => {
+    const [req, res] = reqRes();
+
+    await new RecruitmentAnalyticsController().getZoneAnalysis(req, res);
+
+    const sql = sqlSemComentarios();
+    // Referência CRUA: não precedida de ponto (qualificada) nem de aspa (é a
+    // chave literal do `json_build_object`, não uma coluna).
+    expect(sql).not.toMatch(/(?<![.\w'])case_number\b/);
+    expect(sql).not.toMatch(/(?<![.\w'])status\b/);
   });
 });
