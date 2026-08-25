@@ -142,6 +142,13 @@ export type {
   PatientInsuranceVerifiedRow,
   PatientInsuranceVerifiedOutcome,
 } from './infrastructure/PatientInsuranceVerifiedRepository';
+// Task 4.2 (`campos-admissao`): o Tipo de Dispositivo MÚLTIPLO. Migrations 287 e 290.
+export { PatientDeviceTypeRepository } from './infrastructure/PatientDeviceTypeRepository';
+export type {
+  PatientDeviceTypeWriteInput,
+  PatientDeviceTypeResult,
+  PatientDeviceTypeOutcome,
+} from './infrastructure/PatientDeviceTypeRepository';
 
 // Task 2.2 (`campos-admissao`): o rótulo CRU da origem, ao lado do derivado. Migration 284.
 export {

@@ -37,6 +37,10 @@ const OPCOES: Record<string, string[]> = {
   'Relación con el Paciente':               ['Madre', 'Padre'],
   'Tipo de Documento Responsable':          ['DNI'],
   'Equipo Tratante Multidisciplinario':     ['Sí', 'No'],
+  // Task 4.2 — o 10º campo declarado. Mesma razão da linha da 3.2 acima: sem ele o preflight
+  // da 1.11 vê `declared_absent`, falha fechado e a suíte inteira cai com `kind=ERROR` —
+  // que foi exatamente o que aconteceu ao declarar o campo. A trava funcionando.
+  'Tipo de Dispositivo':                    ['Domiciliario', 'Escolar', 'Institucional', 'Internación', 'Traslado'],
 };
 
 function resolverFalso(over: Partial<{ tipos: Record<string, string | null> }> = {}): ClickUpFieldResolver {
@@ -125,7 +129,14 @@ function bancada(over: Partial<{ falhaAoGravar: string; tipos: Record<string, st
     })),
   } as unknown as SyncPatientDeps['insuranceRepository'];
 
-  return { deps: { mapper, patientService, sourceLabelRepository, insuranceRepository }, gravacoes, derivado, erros, infos };
+  // Task 4.2 — dublê do tipo de dispositivo múltiplo.
+  const deviceTypeRepository = {
+    replaceForPatient: jest.fn(async () => ({
+      outcome: 'written' as const, received: 0, accepted: [], rejected: [], quarantined: 0,
+    })),
+  } as unknown as SyncPatientDeps['deviceTypeRepository'];
+
+  return { deps: { mapper, patientService, sourceLabelRepository, insuranceRepository, deviceTypeRepository }, gravacoes, derivado, erros, infos };
 }
 
 afterEach(() => jest.restoreAllMocks());

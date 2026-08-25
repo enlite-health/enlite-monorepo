@@ -169,6 +169,15 @@ function repoCoberturaFalso() {
   } as never;
 }
 
+/** Task 4.2 — dublê do tipo de dispositivo múltiplo. Nenhuma destas suítes toca banco. */
+function repoDispositivoFalso() {
+  return {
+    replaceForPatient: jest.fn(async () => ({
+      outcome: 'written' as const, received: 0, accepted: [], rejected: [], quarantined: 0,
+    })),
+  } as never;
+}
+
 function repoCruFalso() {
   return {
     replaceForField: jest.fn(async ({ fieldName }: { fieldName: string }) => ({
@@ -192,6 +201,7 @@ function deps(mapper: ClickUpPatientMapper, banco: BancoFalso): { deps: SyncPati
       patientService: { upsertFromClickUp: upsert } as unknown as PatientService,
       sourceLabelRepository: repoCruFalso(),
       insuranceRepository: repoCoberturaFalso(),
+      deviceTypeRepository: repoDispositivoFalso(),
     },
     upsert,
   };

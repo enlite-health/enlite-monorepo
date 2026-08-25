@@ -26,7 +26,7 @@ import { SyncPatientFromClickUpTaskUseCase } from '../../../application/SyncPati
 import { ClickUpFieldResolver } from '../../../infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper, PATIENT_DROPDOWN_FIELDS } from '../../../infrastructure/clickup/ClickUpPatientMapper';
 import { PatientSourceLabelRepository } from '@modules/case';
-import { PatientInsuranceVerifiedRepository } from '@modules/case';
+import { PatientInsuranceVerifiedRepository, PatientDeviceTypeRepository } from '@modules/case';
 import {
   ClickUpCatalogRefresher,
   unsettledDriftThatMatters,
@@ -71,6 +71,7 @@ export class ClickUpPatientWebhookController {
     private sourceLabelRepository?: PatientSourceLabelRepository,
     /** Task 3.3 — preguiçoso pelo mesmo motivo do de cima: o construtor abre pool. */
     private insuranceRepository?: PatientInsuranceVerifiedRepository,
+    private deviceTypeRepository?: PatientDeviceTypeRepository,
   ) {}
 
   /** O repositório do cru, construído na primeira vez que alguém realmente vai gravar. */
@@ -83,6 +84,11 @@ export class ClickUpPatientWebhookController {
   private getInsuranceRepository(): PatientInsuranceVerifiedRepository {
     this.insuranceRepository ??= new PatientInsuranceVerifiedRepository();
     return this.insuranceRepository;
+  }
+
+  private getDeviceTypeRepository(): PatientDeviceTypeRepository {
+    this.deviceTypeRepository ??= new PatientDeviceTypeRepository();
+    return this.deviceTypeRepository;
   }
 
   /**
@@ -179,7 +185,7 @@ export class ClickUpPatientWebhookController {
       // removido na origem ficava com o rótulo clínico apagado e a cobertura pendurada,
       // e o log dizia `source_labels_purge_failed` — a tabela errada. Supressão parcial
       // muda é pior que supressão que falha alto.
-      let purgados = { labels: 0, rejections: 0, cobertura: 0 };
+      let purgados = { labels: 0, rejections: 0, cobertura: 0, dispositivos: 0 };
       for (const row of result.rows as Array<{ id: string }>) {
         try {
           const r = await this.getSourceLabelRepository().purgeForPatient(row.id);
@@ -200,6 +206,18 @@ export class ClickUpPatientWebhookController {
             error: err instanceof Error ? err.message : String(err),
           });
         }
+        try {
+          // Task 4.2 — `try` PRÓPRIO pela mesma razão que a C-B′ estabeleceu: uma supressão que
+          // lança não pode impedir a seguinte, e o evento tem de nomear a SUA tabela.
+          // ⚠️ `patient_device_types` guarda regime de cuidado (INPATIENT, INSTITUTIONAL): é
+          // dado de saúde e some junto do paciente, não depois.
+          purgados.dispositivos += await this.getDeviceTypeRepository().purgeForPatient(row.id);
+        } catch (err) {
+          functions.logger.error('clickup_webhook.device_type_purge_failed', {
+            correlationId, taskId: body.task_id, patientId: row.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
       functions.logger.info('clickup_webhook.task_deleted', {
@@ -210,6 +228,7 @@ export class ClickUpPatientWebhookController {
         recusasSuprimidas:      purgados.rejections,
         // C-B′: supressão sem contagem é supressão sem prova (F43).
         coberturasSuprimidas:   purgados.cobertura,
+        dispositivosSuprimidos: purgados.dispositivos,
       });
       res.status(200).json({ success: true, action: 'soft_deleted', affectedRows: affected });
       return;
@@ -302,6 +321,7 @@ export class ClickUpPatientWebhookController {
       // compartilhado; não há transação do controller para carregar aqui.
       sourceLabelRepository: this.getSourceLabelRepository(),
       insuranceRepository:   this.getInsuranceRepository(),
+      deviceTypeRepository:  this.getDeviceTypeRepository(),
     });
     const syncResult = await useCase.execute(task, { onMissingContact: 'flag' }, correlationId);
 

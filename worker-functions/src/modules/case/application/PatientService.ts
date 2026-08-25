@@ -68,10 +68,30 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
    */
   insuranceVerifiedReadable?: boolean;
   insuranceVerifiedLabels?: PatientSourceLabelsRead;
+  /**
+   * Task 4.2 — a lista de `Tipo de Dispositivo`, destinada a `patient_device_types`.
+   *
+   * Não há campo escalar irmão, diferente da cobertura: `patients.device_type` é derivado
+   * por trigger a partir desta tabela (migration 290). Ver F64 — o escalar co-escrito era
+   * apagado a cada webhook, porque o mapper nunca produzia o valor e a escrita era
+   * incondicional.
+   */
+  deviceTypeLabels?: PatientSourceLabelsRead;
   /** @deprecated Use clinicalSpecialty + serviceType instead. Preserved for backward compat. */
   clinicalSegments?: string | null;
   /** Array of professional roles the patient requires. Was string | null before migration 139. */
   serviceType?: Profession[] | null;
+  /**
+   * ⚠️ O dispositivo do paciente é MÚLTIPLO e vive em `patient_device_types`; o escalar
+   * `patients.device_type` é derivado por trigger (migration 310, ex-290; F64). O caminho do
+   * ClickUp NÃO usa esta chave: o mapper emite `deviceTypeLabels` e `upsertRelated` não a
+   * repassa ao repositório clínico (25/08/2026).
+   *
+   * Ela fica no tipo SÓ porque `PatientRelatedInput` (drawer clínico do painel,
+   * `updatePatientSection('clinical')`) é um `Pick` deste tipo e o `main` de 03/09/2026 ainda
+   * grava o escalar como texto livre por ali. Escrever o escalar diverge do conjunto — a US-B4
+   * da spec 012 troca o texto livre pelo multi-select de `device_types` e aí a chave sai.
+   */
   deviceType?: string | null;
   additionalComments?: string | null;
   emergencyInstructions?: string | null;
@@ -105,6 +125,9 @@ export type PatientRelatedInput = Pick<
   | 'diagnosis'
   | 'dependencyLevel'
   | 'clinicalSpecialty'
+  // Task 2.2/rodada 4: a bandeira "leitura possível?" viaja junto do derivado (só o sync a emite;
+  // o drawer não a manda e o repositório assume `true`).
+  | 'clinicalSpecialtyReadable'
   | 'clinicalSegments'
   | 'serviceType'
   | 'deviceType'
@@ -352,7 +375,6 @@ export class PatientService {
         clinicalSpecialtyReadable: input.clinicalSpecialtyReadable,
         clinicalSegments:      input.clinicalSegments,
         serviceType:           input.serviceType,
-        deviceType:            input.deviceType,
         additionalComments:    input.additionalComments,
         emergencyInstructions: input.emergencyInstructions,
         hasJudicialProtection: input.hasJudicialProtection,

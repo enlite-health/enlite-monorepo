@@ -127,7 +127,14 @@ function makeDeps(overrides: Partial<{
     })),
   } as unknown as SyncPatientDeps['insuranceRepository'];
 
-  return { mapper, patientService, sourceLabelRepository, insuranceRepository };
+  // Task 4.2 — dublê do tipo de dispositivo múltiplo. Nenhum teste desta suíte toca banco.
+  const deviceTypeRepository = {
+    replaceForPatient: jest.fn(async () => ({
+      outcome: 'written' as const, received: 0, accepted: [], rejected: [], quarantined: 0,
+    })),
+  } as unknown as SyncPatientDeps['deviceTypeRepository'];
+
+  return { mapper, patientService, sourceLabelRepository, insuranceRepository, deviceTypeRepository };
 }
 
 function makeUpsertInput(firstName = 'Ana', lastName = 'García'): PatientServiceUpsertInput {

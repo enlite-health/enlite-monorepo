@@ -16,7 +16,7 @@ import { extractPatientChatIds } from '../infrastructure/clickup/extractPatientC
 import type { PatientService } from '../../case/application/PatientService';
 import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
 import type { PatientSourceLabelRepository } from '@modules/case';
-import type { PatientInsuranceVerifiedRepository } from '@modules/case';
+import type { PatientInsuranceVerifiedRepository, PatientDeviceTypeRepository } from '@modules/case';
 
 // ── Result types ──────────────────────────────────────────────────────────────
 
@@ -55,6 +55,11 @@ export interface SyncPatientDeps {
    * vazia — que é exatamente o estado que esta fase existe para consertar.
    */
   insuranceRepository: PatientInsuranceVerifiedRepository;
+  /**
+   * Task 4.2 — o `Tipo de Dispositivo` múltiplo. Obrigatória pelo mesmo motivo da de
+   * cobertura: dependência opcional vira "não persistiu e ninguém soube".
+   */
+  deviceTypeRepository: PatientDeviceTypeRepository;
 }
 
 export interface SyncPatientOptions {
@@ -192,6 +197,7 @@ export class SyncPatientFromClickUpTaskUseCase {
       // `outcome` de cada campo — que é o que distingue "gravei" de "não li e não toquei".
       await this.persistSourceLabels(task, result.id, cid);
       await this.persistInsuranceVerified(input, result.id, cid);
+      await this.persistDeviceTypes(input, result.id, cid);
 
 
       // PII: não logar patientName aqui — vai pro Cloud Logging.
@@ -320,6 +326,54 @@ export class SyncPatientFromClickUpTaskUseCase {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.insurance_verified_error', {
+        patientId, error: error.message, stage: 'write', correlationId: cid,
+      });
+    }
+  }
+
+  /**
+   * Persiste o `Tipo de Dispositivo` múltiplo (task 4.2). Nunca lança: o paciente já foi
+   * gravado.
+   *
+   * ⚠️ O MODO DE FALHA AQUI É DIFERENTE do da cobertura, e vale dizer qual é.
+   * Na cobertura, falhar depois do COMMIT deixa o escalar preenchido e a tabela vazia — duas
+   * cópias divergindo. Aqui não existe escalar co-escrito: `patients.device_type` é derivado
+   * da tabela por trigger (migration 290). Então falhar aqui deixa o conjunto **desatualizado**,
+   * e o escalar desatualizado JUNTO, coerente com ele. Não há divergência interna; há atraso.
+   *
+   * Isso é melhor, mas não é invisível de graça: quem detecta é
+   * `scripts/verificar-4.2-divergencia.ts`, que compara o escalar com o que o trigger
+   * calcularia. Sem esse verificador como critério de aceite, o atraso existiria e ninguém
+   * saberia — que é a F43 por outra porta.
+   */
+  private async persistDeviceTypes(
+    input: { deviceTypeLabels?: unknown },
+    patientId: string,
+    cid: string,
+  ): Promise<void> {
+    const read = input.deviceTypeLabels as
+      | { readable: true; labels: readonly unknown[] }
+      | { readable: false; reason: string }
+      | undefined;
+
+    // Ausente é ANOMALIA, não "nada a fazer": o mapper sempre emite o campo desde a 4.2.
+    if (read === undefined) {
+      functions.logger.error('clickup_patient_sync.device_type_error', {
+        patientId, error: 'mapper não emitiu deviceTypeLabels', stage: 'read', correlationId: cid,
+      });
+      return;
+    }
+
+    try {
+      const r = await this.deps.deviceTypeRepository.replaceForPatient({ patientId, read });
+      functions.logger.info('clickup_patient_sync.device_type', {
+        patientId, outcome: r.outcome, recebidos: r.received,
+        gravados: r.accepted.length, recusados: r.rejected.length,
+        quarentena: r.quarantined, correlationId: cid,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      functions.logger.error('clickup_patient_sync.device_type_error', {
         patientId, error: error.message, stage: 'write', correlationId: cid,
       });
     }

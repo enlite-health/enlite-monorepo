@@ -22,6 +22,19 @@ export interface PatientClinicalUpsertInput {
   clinicalSegments?: string | null;
   /** TEXT[] in DB after migration 139. */
   serviceType?: Profession[] | null;
+  /**
+   * ⚠️ `patients.device_type` é DERIVADO de `patient_device_types` por trigger (migration 310,
+   * ex-290; F64). O caminho do SYNC do ClickUp NÃO passa por aqui: `PatientServiceUpsertInput`
+   * não tem mais `deviceType` (25/08/2026), e o mapper emite `deviceTypeLabels`, que vai para o
+   * CONJUNTO (`PatientDeviceTypeRepository.replaceForPatient`) — o escalar se ajusta sozinho.
+   *
+   * A chave continua no tipo SÓ pelo drawer clínico do painel (`PatientService.updateSection`,
+   * `patientSectionSchemas.deviceType`), que no `main` de 03/09/2026 ainda grava o escalar como
+   * texto livre. Sob o Merge Patch (D211.1), chave AUSENTE não toca a coluna — o que fecha o
+   * "todo webhook grava NULL" do F64 sem precisar tirar a chave do tipo. Escrever o escalar por
+   * aqui vence o trigger (acontece depois dele) e DIVERGE do conjunto: a US-B4 da spec 012 troca
+   * o texto livre pelo multi-select de `device_types` e aí esta chave sai do tipo.
+   */
   deviceType?: string | null;
   additionalComments?: string | null;
   emergencyInstructions?: string | null;
@@ -85,6 +98,8 @@ export class PatientClinicalRepository {
       // serviceType is TEXT[] in DB after migration 139. Empty array → NULL (never store []).
       push('service_type', input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null);
     }
+    // Só o drawer do painel chega aqui com `deviceType` (ver o aviso no tipo): o sync do ClickUp
+    // não emite a chave, e o escalar é derivado do conjunto por trigger (migration 310).
     if (input.deviceType !== undefined) push('device_type', input.deviceType);
     if (input.additionalComments !== undefined) {
       push('additional_comments', input.additionalComments);

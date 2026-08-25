@@ -12,7 +12,7 @@
  */
 import { Pool } from 'pg';
 import { assertLocalDatabaseTarget, LOCAL_DB_NAME, LOCAL_DB_PORTS } from '@shared/database/assertLocalDatabaseTarget';
-import { PatientSourceLabelRepository, PatientInsuranceVerifiedRepository } from '@modules/case';
+import { PatientSourceLabelRepository, PatientInsuranceVerifiedRepository, PatientDeviceTypeRepository } from '@modules/case';
 
 let falhas = 0;
 const ok = (r: string, c: boolean, d: string) => { console.log(`${c ? 'OK  ' : 'FALHA'} | ${r} | ${d}`); if (!c) falhas += 1; };
@@ -49,12 +49,19 @@ async function main(): Promise<void> {
       await cli.query(
         `INSERT INTO patient_insurance_verified (patient_id,ordinal,raw_label,source)
          VALUES ($1,1,'OSDE','clickup')`, [id]);
+      // Task 4.2 (25/08): a 4ª tabela. Mesma armadilha da C-B′, e ela se repetiria de graça —
+      // verificador que não conhece a tabela nova APROVA a supressão que não aconteceu.
+      // `INPATIENT` revela regime de cuidado: é dado de saúde e tem de sumir junto.
+      await cli.query(
+        `INSERT INTO patient_device_types (patient_id,device_type,source)
+         VALUES ($1,'INPATIENT','clickup')`, [id]);
       return id;
     };
     const conta = async (id: string) => ({
       labels:     Number((await cli.query(`SELECT count(*) n FROM patient_source_labels WHERE patient_id=$1`, [id])).rows[0].n),
       rejections: Number((await cli.query(`SELECT count(*) n FROM patient_source_label_rejections WHERE patient_id=$1`, [id])).rows[0].n),
       cobertura:  Number((await cli.query(`SELECT count(*) n FROM patient_insurance_verified WHERE patient_id=$1`, [id])).rows[0].n),
+      dispositivos: Number((await cli.query(`SELECT count(*) n FROM patient_device_types WHERE patient_id=$1`, [id])).rows[0].n),
       deleted:    (await cli.query(`SELECT deleted_at FROM patients WHERE id=$1`, [id])).rows[0].deleted_at !== null,
       paciente:   Number((await cli.query(`SELECT count(*) n FROM patients WHERE id=$1`, [id])).rows[0].n),
     });
@@ -65,8 +72,9 @@ async function main(): Promise<void> {
     const a1 = await conta(pA);
     console.log(`\n[1] CONTROLE NEGATIVO — só o UPDATE deleted_at (o caminho de ontem)`);
     console.log(`      deleted_at preenchido=${a1.deleted}  rótulos=${a1.labels}  recusas=${a1.rejections}`);
-    console.log(`      cobertura=${a1.cobertura}`);
-    ok('sem a supressão, o clínico literal FICA', a1.deleted && a1.labels === 2 && a1.rejections === 1 && a1.cobertura === 1,
+    console.log(`      cobertura=${a1.cobertura}  dispositivos=${a1.dispositivos}`);
+    ok('sem a supressão, o clínico literal FICA', a1.deleted && a1.labels === 2 && a1.rejections === 1
+       && a1.cobertura === 1 && a1.dispositivos === 1,
        'é o furo que a C-B nomeou: o CASCADE não dispara no soft delete');
 
     // ── O CONSERTO: soft delete + purge ─────────────────────────────────────
@@ -83,6 +91,10 @@ async function main(): Promise<void> {
     const b2 = await conta(pB);
     ok('e a COBERTURA também (C-B′)', b2.cobertura === 0 && cob === 1,
        `apagadas=${cob}, restantes=${b2.cobertura} — a 3ª tabela, que o verificador não conhecia`);
+    const disp = await new PatientDeviceTypeRepository().purgeForPatient(pB, cli);
+    const b3 = await conta(pB);
+    ok('e os DISPOSITIVOS também (task 4.2)', b3.dispositivos === 0 && disp === 1,
+       `apagados=${disp}, restantes=${b3.dispositivos} — a 4ª tabela`);
     ok('contagem zero aqui é SUCESSO porque havia 2 e 1 antes', apagados.labels === 2 && apagados.rejections === 1,
        'sem esta linha, "0 depois" não distinguiria supressão de nunca ter existido (F19)');
     ok('o PACIENTE permanece (REQ-04 do Marcel)', b1.paciente === 1 && b1.deleted,

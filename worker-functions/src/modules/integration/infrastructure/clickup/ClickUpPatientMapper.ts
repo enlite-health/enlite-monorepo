@@ -74,6 +74,14 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
   // Declarada com os DOIS tipos pela mesma razão do segmento: quem declara que sabe ler os
   // dois formatos tem de ler os dois, e `resolveCatalogValue` despacha pelo tipo VIVO.
   { field: 'Cobertura Verificada', accepts: CATALOG_TYPES_SUPPORTED },
+  // Task 4.2 — `Tipo de Dispositivo` passa a ser LIDO. Medido: **253 de 349** pacientes o têm
+  // preenchido no ClickUp e o nosso banco tem **0 de 408** (F35/F64). O mapper nunca o leu —
+  // `grep -rn "Dispositivo"` no `src/` não achava uma linha aqui.
+  // Declarado com os DOIS tipos pela mesma razão do segmento e da cobertura: quem declara que
+  // sabe ler os dois formatos tem de ler os dois, e `resolveCatalogValue` despacha pelo tipo
+  // VIVO do catálogo. Sem o par, o dia em que a operação virar o campo para `labels` faria o
+  // preflight marcar `wrong_type` e PARAR o sync inteiro.
+  { field: 'Tipo de Dispositivo', accepts: CATALOG_TYPES_SUPPORTED },
   'Servicio',
   'Relación con el Paciente',
   'Tipo de Documento Responsable',
@@ -118,6 +126,14 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
  */
 export const PATIENT_FIELDS_SEM_CRU_GENERICO: readonly string[] = [
   'Cobertura Verificada',
+  // Task 4.2, pela MESMA razão da cobertura: `patient_device_types` (migration 287) é a fonte
+  // do conjunto, com FK para o catálogo. Deixar o campo também no cru genérico criaria duas
+  // cópias com regras diferentes — e aqui seria pior que na cobertura, porque o cru guarda o
+  // rótulo em espanhol e a tabela guarda o CÓDIGO em inglês: duas cópias que nem se parecem.
+  // ⚠️ O que VAI para `patient_source_labels` é só a QUARENTENA do que o ConceptMap não
+  // traduziu (`source = 'clickup-quarentena'`), escrita pelo `PatientDeviceTypeRepository`.
+  // Isso não é uma segunda cópia: é o que não coube na primeira.
+  'Tipo de Dispositivo',
 ];
 
 export const PATIENT_DROPDOWN_FIELDS: readonly string[] =
@@ -286,6 +302,11 @@ export class ClickUpPatientMapper {
     // ⚠️ Não confundir com `Cobertura Informada ` (com ESPAÇO no fim, F15), que é texto livre
     // digitado pela família e segue em `healthInsuranceName`, agora DEPRECADO.
     const coberturaRead      = resolveCatalogValue(this.resolver, 'Cobertura Verificada', cf['Cobertura Verificada']);
+    // Task 4.2 — o `Tipo de Dispositivo`, múltiplo (5 opções no catálogo vivo). Mesma leitura
+    // da cobertura: pelo tipo VIVO, preservando a distinção entre "vazio de verdade" e "não
+    // consegui ler" (D167). O escalar `patients.device_type` NÃO é escrito por aqui: ele é
+    // derivado da tabela do conjunto por trigger (migration 290 / F64).
+    const dispositivoRead    = resolveCatalogValue(this.resolver, 'Tipo de Dispositivo', cf['Tipo de Dispositivo']);
     const serviceLabel       = this.resolver.resolveDropdown('Servicio', asIndexable('Servicio', cf['Servicio']));
 
     const serviceTypes = mapClickUpService(serviceLabel);
@@ -329,6 +350,12 @@ export class ClickUpPatientMapper {
       insuranceVerifiedLabels: coberturaRead.readable
         ? sourceLabelsRead(coberturaRead.labels)
         : sourceLabelsUnreadable(coberturaRead.reason),
+      // Task 4.2 — a lista de dispositivos, para `patient_device_types`. Diferente da
+      // cobertura, aqui NÃO há escalar equivalente sendo escrito: `patients.device_type` é
+      // derivado por trigger, e o tipo `PatientClinicalUpsertInput` nem aceita mais o campo.
+      deviceTypeLabels: dispositivoRead.readable
+        ? sourceLabelsRead(dispositivoRead.labels)
+        : sourceLabelsUnreadable(dispositivoRead.reason),
       serviceType:        serviceTypes.length > 0 ? serviceTypes : null,
       additionalComments: this.asString(cf['Comentarios Adicionales Paciente']),
 
