@@ -62,6 +62,15 @@ export {
 export type { CountryFeature, FeatureType } from './domain/CountryFeature';
 export type { CountryGrant, GroupMembership } from './domain/GroupMembership';
 export { ENLITE_TENANT_ID } from './domain/tenant';
+export {
+  ACTOR_CLASSES,
+  ACTOR_CLASS_PADRAO,
+  CELULAS_VEDADAS_A_TERCEIRO,
+  isActorClass,
+  podeConceder,
+  motivoDaVedacao,
+} from './domain/ActorClass';
+export type { ActorClass } from './domain/ActorClass';
 
 // ── Catálogo derivado do código (declaração + varredura) ─────────────────────
 export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } from './infrastructure/catalog/permissionMetadata';
