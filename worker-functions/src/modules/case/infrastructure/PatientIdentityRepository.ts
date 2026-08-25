@@ -22,6 +22,19 @@ export interface PatientIdentityUpsertInput {
   phoneWhatsapp?: string | null;
   insuranceInformed?: string | null;
   insuranceVerified?: string | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `insurance_verified` não é tocada.
+   *
+   * ⚠️ Este campo existia no mapper e no `PatientService` desde a task 3.2 e **nunca era
+   * consumido aqui** — o `lex` achou (C-G). O mapper emitia o sinal, o tipo o declarava, um
+   * comentário dizia que era "a mesma distinção da D167", e o `UPDATE` gravava `?? null` de
+   * qualquer jeito. Uma leitura `options_partially_resolved` (pediu 2 rótulos, o catálogo
+   * traduziu 1) zerava a coluna que o painel lê, enquanto a tabela múltipla — corretamente —
+   * não era tocada: banco cheio, tela vazia.
+   *
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  insuranceVerifiedReadable?: boolean;
   cityLocality?: string | null;
   province?: string | null;
   zoneNeighborhood?: string | null;
@@ -120,7 +133,7 @@ export class PatientIdentityRepository {
         sex                 = EXCLUDED.sex,
         phone_whatsapp      = EXCLUDED.phone_whatsapp,
         insurance_informed  = EXCLUDED.insurance_informed,
-        insurance_verified  = EXCLUDED.insurance_verified,
+        insurance_verified  = CASE WHEN $22::boolean THEN EXCLUDED.insurance_verified ELSE patients.insurance_verified END,
         city_locality       = EXCLUDED.city_locality,
         province            = EXCLUDED.province,
         zone_neighborhood   = EXCLUDED.zone_neighborhood,
@@ -152,10 +165,13 @@ export class PatientIdentityRepository {
         country,
         input.needsAttention   ?? false,
         input.attentionReasons ? [...input.attentionReasons] : [],
+        // $22 — a bandeira da C-G. NÃO entra no INSERT (que é linha nova, sempre escreve);
+        // só no ON CONFLICT DO UPDATE, que é onde apagar é possível.
         input.healthInsuranceName      ?? null,
         input.healthInsuranceMemberId  ?? null,
         input.caseNumber       ?? null,
         input.status           ?? null,
+        input.insuranceVerifiedReadable ?? true,   // $22 — a bandeira da C-G
       ],
     );
 

@@ -173,16 +173,29 @@ export class ClickUpPatientWebhookController {
       //
       // Falha aqui NÃO derruba o soft delete: o paciente já está marcado, e reverter isso
       // seria pior. Mas grita com evento próprio — supressão que falha calada é o F43 outra vez.
-      let purgados = { labels: 0, rejections: 0 };
+      // ⚠️ CADA supressão em `try` PRÓPRIO — C-B′ do parecer do `lex` da Fase 3.
+      // A 1ª versão punha as duas no MESMO `try`, com a cobertura DEPOIS. Se a purga dos
+      // rótulos lançasse, o `catch` capturava e a da cobertura NUNCA rodava: o paciente
+      // removido na origem ficava com o rótulo clínico apagado e a cobertura pendurada,
+      // e o log dizia `source_labels_purge_failed` — a tabela errada. Supressão parcial
+      // muda é pior que supressão que falha alto.
+      let purgados = { labels: 0, rejections: 0, cobertura: 0 };
       for (const row of result.rows as Array<{ id: string }>) {
         try {
           const r = await this.getSourceLabelRepository().purgeForPatient(row.id);
-          purgados = { labels: purgados.labels + r.labels, rejections: purgados.rejections + r.rejections };
-          // Task 3.3 — a tabela nova entra na MESMA supressão (C-B do parecer do `lex`).
-          // Nasceu depois do parecer; ficar de fora seria repetir o furo que ele nomeou.
-          await this.getInsuranceRepository().purgeForPatient(row.id);
+          purgados.labels += r.labels; purgados.rejections += r.rejections;
         } catch (err) {
           functions.logger.error('clickup_webhook.source_labels_purge_failed', {
+            correlationId, taskId: body.task_id, patientId: row.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        try {
+          purgados.cobertura += await this.getInsuranceRepository().purgeForPatient(row.id);
+        } catch (err) {
+          // Evento PRÓPRIO: uma falha só da cobertura não pode sair com o nome da outra
+          // tabela, senão quem lê o log investiga o lugar errado.
+          functions.logger.error('clickup_webhook.insurance_purge_failed', {
             correlationId, taskId: body.task_id, patientId: row.id,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -195,6 +208,8 @@ export class ClickUpPatientWebhookController {
         affectedRows: affected,
         rotulosCrusSuprimidos:  purgados.labels,
         recusasSuprimidas:      purgados.rejections,
+        // C-B′: supressão sem contagem é supressão sem prova (F43).
+        coberturasSuprimidas:   purgados.cobertura,
       });
       res.status(200).json({ success: true, action: 'soft_deleted', affectedRows: affected });
       return;

@@ -89,6 +89,37 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
  * divergem em silêncio, que é o F20/F49/F51 desta casa. Consumido pelo controller
  * (`declaredFields` do refresher) e pelas travas de deriva das tasks 1.11/1.12.
  */
+/**
+ * Campos que ficam no preflight mas NÃO são persistidos no cru genérico — C-H do parecer do
+ * `lex` da Fase 3.
+ *
+ * ── O efeito colateral que esta lista fecha ─────────────────────────────────
+ * `PATIENT_CATALOG_FIELDS` tem DOIS consumidores: `assertReadableDropdownFields` (o preflight
+ * fail-closed da 1.11) e `readSourceLabels` (a persistência do cru da 2.3). Declarar
+ * `Cobertura Verificada` para o primeiro — que era o necessário — inscreveu o campo no segundo
+ * de brinde, sem que ninguém decidisse. Resultado não declarado em nenhuma task da Fase 3:
+ * a mesma cobertura passava a viver em DUAS tabelas, com regras diferentes.
+ *
+ * ── Por que a cobertura sai daqui, e não a tabela específica ────────────────
+ * `patient_insurance_verified` (migration 285) é a fonte da cobertura, e é a forma certa:
+ * **sem teto**, porque o limite é o catálogo de 33 opções. `patient_source_labels` tem
+ * **teto 3** por campo (D-C, decisão sobre segmento clínico). Manter as duas significaria uma
+ * cobertura truncada no 4º valor numa tabela e íntegra na outra — divergência silenciosa entre
+ * duas cópias do mesmo dado. Hoje a folga é 1 (F34: máximo 2 valores observados), então nada
+ * trunca; guardar duas cópias esperando a folga acabar é o oposto de desenhar.
+ *
+ * E há o argumento legal, que é o mais forte: art. 4º inc. 1 da Ley 25.326 exige dado
+ * *"no excesivo en relación a la finalidad"*. Duas cópias da mesma cobertura, com ciclos de
+ * vida distintos, é excesso por construção — não por volume, por governança.
+ *
+ * ⚠️ O campo CONTINUA em `PATIENT_CATALOG_FIELDS`: sair de lá o tiraria do preflight, e aí
+ * renomeá-lo no ClickUp voltaria a gravar `null` em silêncio. Preflight e persistência são
+ * perguntas diferentes, e esta lista é o que as separa.
+ */
+export const PATIENT_FIELDS_SEM_CRU_GENERICO: readonly string[] = [
+  'Cobertura Verificada',
+];
+
 export const PATIENT_DROPDOWN_FIELDS: readonly string[] =
   PATIENT_CATALOG_FIELDS.map(f => normalizeExpectation(f).field);
 
@@ -188,7 +219,9 @@ export class ClickUpPatientMapper {
 
     const cf = this.buildCustomFieldMap(task.custom_fields);
 
-    return PATIENT_CATALOG_FIELDS.map(expectation => {
+    return PATIENT_CATALOG_FIELDS
+      .filter(e => !PATIENT_FIELDS_SEM_CRU_GENERICO.includes(normalizeExpectation(e).field))
+      .map(expectation => {
       const { field } = normalizeExpectation(expectation);
       const leitura = resolveCatalogValue(this.resolver, field, cf[field], { warn: false });
       return {

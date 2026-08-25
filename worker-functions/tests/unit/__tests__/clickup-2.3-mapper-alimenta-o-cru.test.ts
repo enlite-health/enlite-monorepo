@@ -17,7 +17,7 @@
  * Nada aqui toca banco nem rede: resolver, repositório e serviço são dublês.
  */
 
-import { ClickUpPatientMapper, PATIENT_DROPDOWN_FIELDS } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { ClickUpPatientMapper, PATIENT_DROPDOWN_FIELDS, PATIENT_FIELDS_SEM_CRU_GENERICO } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { SyncPatientFromClickUpTaskUseCase } from '../../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
 import type { SyncPatientDeps } from '../../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
 import type { ClickUpFieldResolver } from '../../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
@@ -152,11 +152,24 @@ describe('2.3 — o mapper alimenta o CRU e continua alimentando o DERIVADO', ()
     await new SyncPatientFromClickUpTaskUseCase(b.deps).execute(TAREFA_BOA, {}, 'cid-2');
 
     const gravados = b.gravacoes.map(g => g.fieldName).sort();
-    const declarados = [...PATIENT_DROPDOWN_FIELDS].sort();
+    // ⚠️ A régua mudou na Fase 3 (C-H do `lex`), e a mudança é a informação: "declarado no
+    // preflight" e "persistido no cru genérico" deixaram de ser a mesma lista. `Cobertura
+    // Verificada` fica no preflight (renomeá-la no ClickUp tem de parar o sync) e sai da
+    // persistência genérica, porque tem tabela própria SEM teto — manter as duas daria uma
+    // cobertura truncada no 4º numa tabela e íntegra na outra.
+    const esperados = [...PATIENT_DROPDOWN_FIELDS].filter(f => !PATIENT_FIELDS_SEM_CRU_GENERICO.includes(f));
+    const declarados = esperados.sort();
     console.log(`>>> 2.3/generalidade | gravados=${gravados.length} | declarados=${declarados.length}`);
     console.log(`>>> 2.3/generalidade | faltando=${JSON.stringify(declarados.filter(d => !gravados.includes(d)))}`);
 
     expect(gravados.length).toBeGreaterThan(0);                // contagem zero reprova (F19)
+    // A exclusão da C-H não pode virar porta larga: o campo excluído CONTINUA no preflight,
+    // senão renomeá-lo no ClickUp volta a gravar `null` em silêncio (D167/1.11).
+    for (const excluido of PATIENT_FIELDS_SEM_CRU_GENERICO) {
+      expect(PATIENT_DROPDOWN_FIELDS).toContain(excluido);
+      expect(gravados).not.toContain(excluido);
+    }
+    expect(PATIENT_FIELDS_SEM_CRU_GENERICO.length).toBeGreaterThan(0);   // zero seria "não mediu"
     expect(gravados).toEqual(declarados);
   });
 
@@ -199,7 +212,8 @@ describe('2.3 — o mapper alimenta o CRU e continua alimentando o DERIVADO', ()
     expect(gritou.length).toBe(1);                             // mas grita, com evento próprio
     expect(resumo.length).toBe(1);                             // e o resumo sai com a contagem
     expect(resumo[0]).toContain('"falhas":1');
-    expect(b.gravacoes.length).toBe(PATIENT_DROPDOWN_FIELDS.length - 1);  // os outros 7 seguiram
+    // os outros seguiram: total declarado, menos os que não têm cru genérico, menos o que falhou
+    expect(b.gravacoes.length).toBe(PATIENT_DROPDOWN_FIELDS.length - PATIENT_FIELDS_SEM_CRU_GENERICO.length - 1);
   });
 
   it('C1/lex: nenhuma linha de log do caminho do cru carrega rótulo, valor ou id de tarefa', async () => {
