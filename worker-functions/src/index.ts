@@ -28,7 +28,8 @@ import {
   PublicLeadsController,
 } from '@modules/case';
 import { UserController } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createPermissionPanelRoutes, principalUid } from '@modules/identity';
+import { createMeAuthzRouter } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -400,6 +401,18 @@ app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), (
 // Família `admin.users` — extraída para router próprio na task 3.5 (primeira a
 // declarar célula). Ver modules/identity/interfaces/routes/adminUsersRoutes.ts.
 app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, permissionMiddleware));
+// Família `admin.permissions` — a leitura do painel de acessos (F3). É a rota
+// que DECLARA `permission_management:read`; sem ela o sync do catálogo
+// descontinua a célula e `iam.query_audit` responde 42501 para todo mundo.
+app.use('/api/admin', createPermissionPanelRoutes(permissionsBoundary.permissions.catalog.list, authMiddleware, permissionMiddleware));
+// `GET /v1/me/authz` — contrato agregado do painel (design 11). Fora de
+// `/api/admin/` de propósito: é rota de contrato versionado, não de decisão de
+// staff, e descreve o próprio ator para ele mesmo (por isso não pede célula).
+app.use('/v1', createMeAuthzRouter({
+  getMyAuthz: permissionsBoundary.permissions.authz,
+  staffGuard: authMiddleware.requireStaff(),
+  uidOf: principalUid,
+}));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
 app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);

@@ -67,7 +67,7 @@ export { AdminController } from './interfaces/controllers/AdminController';
 export { AuthTelemetryController } from './interfaces/controllers/AuthTelemetryController';
 export { UserController } from './interfaces/controllers/UserController';
 export { AuthMiddleware } from './interfaces/middleware/AuthMiddleware';
-export { PermissionMiddleware } from './interfaces/middleware/PermissionMiddleware';
+export { PermissionMiddleware, principalUid } from './interfaces/middleware/PermissionMiddleware';
 export type {
   DenialCode,
   PermissionAuditSink,
@@ -90,4 +90,5 @@ export {
 export { requireCountryScope, hasLiveCountryGrant } from './interfaces/middleware/countryScopeGuard';
 export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
+export { createPermissionPanelRoutes, ADMIN_PERMISSIONS_FAMILY } from './interfaces/routes/permissionPanelRoutes';
 export { createPermissionRoutesInventoryRouter } from './interfaces/routes/permissionRoutesInventoryRoute';

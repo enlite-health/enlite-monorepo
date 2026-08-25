@@ -346,7 +346,13 @@ export function pathOf(req: Request): string {
 }
 
 /** uid do principal autenticado (`requireAuth`/`requireStaff` já rodaram). */
-function principalUid(req: Request): string | null {
+/**
+ * O uid do principal. Exportado porque a rota `GET /v1/me/authz` precisa da
+ * MESMA extração que o guard usa — duas leituras do principal divergiriam em
+ * silêncio, e o contrato do painel passaria a descrever outra pessoa que não a
+ * que o guard avaliou.
+ */
+export function principalUid(req: Request): string | null {
   return req.authContext?.principal?.id ?? (req as { user?: { uid?: string } }).user?.uid ?? null;
 }
 

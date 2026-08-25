@@ -98,6 +98,14 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // `admin.permissions` (F3) — a leitura do painel. Entra junto com a
+    // declaração de `permission_management:read`, como a nota acima manda.
+    'src/modules/identity/interfaces/routes/permissionPanelRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/interfaces/routes/adminPatientsRoutes.ts': {
       statements: 100,
       branches: 100,
