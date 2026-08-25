@@ -131,6 +131,18 @@ export type {
   UpdateChatRoleInput,
   SharedGroupConflict,
 } from './infrastructure/PatientChatRolesRepository';
+// Task 3.3 (`campos-admissao`): a Cobertura Verificada MÚLTIPLA. Migration 285.
+export {
+  PatientInsuranceVerifiedRepository,
+  classifyInsuranceLabels,
+} from './infrastructure/PatientInsuranceVerifiedRepository';
+export type {
+  PatientInsuranceVerifiedWriteInput,
+  PatientInsuranceVerifiedResult,
+  PatientInsuranceVerifiedRow,
+  PatientInsuranceVerifiedOutcome,
+} from './infrastructure/PatientInsuranceVerifiedRepository';
+
 // Task 2.2 (`campos-admissao`): o rótulo CRU da origem, ao lado do derivado. Migration 284.
 export {
   PatientSourceLabelRepository,

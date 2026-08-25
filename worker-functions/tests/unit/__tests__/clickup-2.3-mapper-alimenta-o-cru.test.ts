@@ -23,9 +23,12 @@ import type { SyncPatientDeps } from '../../../src/modules/integration/applicati
 import type { ClickUpFieldResolver } from '../../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import type { ClickUpTask } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import type { PatientService } from '../../../src/modules/case/application/PatientService';
+import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 // ── Catálogo sintético: os 8 campos declarados, todos `drop_down` como hoje ───
 const OPCOES: Record<string, string[]> = {
+  // Task 3.2 — o 9º campo declarado. Sem ele o preflight da 1.11 lança e a suíte inteira cai.
+  'Cobertura Verificada':                   ['OSDE', 'Swiss Medical'],
   'Dependencia':                            ['LEVE', 'MODERADA', 'GRAVE'],
   'Sexo Asignado al Nacer (Uso Clínico)':   ['F', 'M'],
   'Tipo de Documento Paciente':             ['DNI', 'PASAPORTE'],
@@ -114,7 +117,15 @@ function bancada(over: Partial<{ falhaAoGravar: string; tipos: Record<string, st
   jest.spyOn(require('firebase-functions').logger, 'info').mockImplementation((...a: unknown[]) => { infos.push(JSON.stringify(a)); });
   jest.spyOn(require('firebase-functions').logger, 'warn').mockImplementation(() => {});
 
-  return { deps: { mapper, patientService, sourceLabelRepository }, gravacoes, derivado, erros, infos };
+  // Task 3.3 — dublê da cobertura. Esta suíte é sobre o CRU dos campos de catálogo; a
+  // cobertura múltipla tem suíte própria. O dublê existe para não abrir banco.
+  const insuranceRepository = {
+    replaceForPatient: jest.fn(async () => ({
+      outcome: 'written' as const, received: 0, accepted: [], rejected: [],
+    })),
+  } as unknown as SyncPatientDeps['insuranceRepository'];
+
+  return { deps: { mapper, patientService, sourceLabelRepository, insuranceRepository }, gravacoes, derivado, erros, infos };
 }
 
 afterEach(() => jest.restoreAllMocks());

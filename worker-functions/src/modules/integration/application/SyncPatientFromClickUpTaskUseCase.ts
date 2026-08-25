@@ -16,6 +16,7 @@ import { extractPatientChatIds } from '../infrastructure/clickup/extractPatientC
 import type { PatientService } from '../../case/application/PatientService';
 import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
 import type { PatientSourceLabelRepository } from '@modules/case';
+import type { PatientInsuranceVerifiedRepository } from '@modules/case';
 
 // ── Result types ──────────────────────────────────────────────────────────────
 
@@ -48,6 +49,12 @@ export interface SyncPatientDeps {
    * arquitetura em vez de instrução.
    */
   sourceLabelRepository: PatientSourceLabelRepository;
+  /**
+   * Task 3.2/3.3 — a `Cobertura Verificada` múltipla. Obrigatória pelo mesmo motivo da de
+   * cima: opcional, seria a fiação que ninguém liga, e o sync seguiria verde com a tabela
+   * vazia — que é exatamente o estado que esta fase existe para consertar.
+   */
+  insuranceRepository: PatientInsuranceVerifiedRepository;
 }
 
 export interface SyncPatientOptions {
@@ -184,6 +191,7 @@ export class SyncPatientFromClickUpTaskUseCase {
       // `success:true` com erro dentro, e ninguém sabendo. Evento PRÓPRIO, contagem, e o
       // `outcome` de cada campo — que é o que distingue "gravei" de "não li e não toquei".
       await this.persistSourceLabels(task, result.id, cid);
+      await this.persistInsuranceVerified(input, result.id, cid);
 
 
       // PII: não logar patientName aqui — vai pro Cloud Logging.
@@ -277,6 +285,45 @@ export class SyncPatientFromClickUpTaskUseCase {
   }
 
   private chatIdsServiceInstance?: PatientChatIdsService;
+
+  /**
+   * Persiste a `Cobertura Verificada` múltipla. Nunca lança: o paciente já foi gravado, e a
+   * cobertura múltipla é acréscimo ao escalar que continua sendo escrito.
+   *
+   * Falha aqui não derruba o sync, mas NÃO passa muda — evento próprio, com contagem (C1).
+   */
+  private async persistInsuranceVerified(
+    input: { insuranceVerifiedLabels?: unknown },
+    patientId: string,
+    cid: string,
+  ): Promise<void> {
+    const read = input.insuranceVerifiedLabels as
+      | { readable: true; labels: readonly unknown[] }
+      | { readable: false; reason: string }
+      | undefined;
+
+    // Ausente é ANOMALIA, não "nada a fazer": o mapper sempre emite o campo desde a 3.2.
+    // Tratar ausência como vazio é o D167 entrando pela porta do chamador.
+    if (read === undefined) {
+      functions.logger.error('clickup_patient_sync.insurance_verified_error', {
+        patientId, error: 'mapper não emitiu insuranceVerifiedLabels', stage: 'read', correlationId: cid,
+      });
+      return;
+    }
+
+    try {
+      const r = await this.deps.insuranceRepository.replaceForPatient({ patientId, read });
+      functions.logger.info('clickup_patient_sync.insurance_verified', {
+        patientId, outcome: r.outcome, recebidos: r.received,
+        gravados: r.accepted.length, recusados: r.rejected.length, correlationId: cid,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      functions.logger.error('clickup_patient_sync.insurance_verified_error', {
+        patientId, error: error.message, stage: 'write', correlationId: cid,
+      });
+    }
+  }
 
   /**
    * Persiste as leituras cruas dos campos de catálogo. Nunca lança: o paciente já foi gravado

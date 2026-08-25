@@ -17,6 +17,7 @@ import {
 import { PatientAddress, PatientProfessional } from '../../../infrastructure/repositories/PatientRepository';
 import { replacePatientAddresses, replacePatientProfessionals } from './PatientRelatedWriter';
 import type { DependencyLevel } from '../domain/enums/DependencyLevel';
+import type { PatientSourceLabelsRead } from '../infrastructure/PatientSourceLabelRepository';
 import type { ClinicalSpecialty } from '../domain/enums/ClinicalSpecialty';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { Profession } from '../../worker/domain/enums/Profession';
@@ -55,6 +56,18 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
    * `null` com `true` é vazio legítimo e É gravado (D-E). Ver `PatientClinicalRepository`.
    */
   clinicalSpecialtyReadable?: boolean;
+  /**
+   * Task 3.2/3.3 — `Cobertura Verificada`, que o mapper nunca leu (F7): 345 de 349 pacientes
+   * têm cobertura no ClickUp e o nosso banco tem ZERO.
+   *
+   * `insuranceVerified` (escalar) continua sendo o 1º rótulo, para quem já lê a coluna antiga.
+   * `insuranceVerifiedLabels` é a lista inteira, destinada à tabela `patient_insurance_verified`.
+   * `insuranceVerifiedReadable` é a MESMA distinção da D167 aplicada aqui: `null` com
+   * `readable:true` é "a origem não marcou nada" e É gravado; `readable:false` é "não consegui
+   * ler" e não escreve nada.
+   */
+  insuranceVerifiedReadable?: boolean;
+  insuranceVerifiedLabels?: PatientSourceLabelsRead;
   /** @deprecated Use clinicalSpecialty + serviceType instead. Preserved for backward compat. */
   clinicalSegments?: string | null;
   /** Array of professional roles the patient requires. Was string | null before migration 139. */

@@ -54,6 +54,7 @@ import { SyncPatientFromClickUpTaskUseCase } from '../../../src/modules/integrat
 import type { SyncPatientDeps } from '../../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
 import type { PatientService, PatientServiceUpsertInput } from '../../../src/modules/case/application/PatientService';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
+import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 // ── Nomes e sentinelas ────────────────────────────────────────────────────────
 const NOME_DE_HOJE   = 'Segmentos Clínicos';
@@ -96,7 +97,17 @@ function catalogo(nomeDoCampoClinico: string | null) {
       ] },
     });
   }
-  return { fields };
+  // Task 3.2 — o catálogo é COMPLETADO com os campos declarados que esta suíte não define.
+  // Sem isso, declarar um campo novo no mapper derruba esta suíte por contagem, não por
+  // defeito: o preflight da 1.11 (que é o que este arquivo testa) lança por campo ausente.
+  // O campo clínico que ESTA suíte manipula fica de fora da reposição: quando ela o apaga
+  // (`nomeDoCampoClinico === null`) ou o renomeia, é isso que o teste está provando. Repor
+  // seria a ferramenta apagando o caso de teste.
+  return {
+    fields: completaCatalogo(fields as never, {
+      exceto: [NOME_DE_HOJE, nomeDoCampoClinico],
+    }),
+  };
 }
 
 function fetchFalso(nomeDoCampoClinico: string | null): typeof fetch {
@@ -148,6 +159,16 @@ interface BancoFalso { clinical_specialty: string | null; escritas: number }
  * que nada aqui abra conexão de banco: o repositório real chama `DatabaseConnection` no
  * construtor e LANÇA sem `DATABASE_URL`.
  */
+
+/** Task 3.3 — dublê da cobertura múltipla. Nenhuma destas suítes toca banco. */
+function repoCoberturaFalso() {
+  return {
+    replaceForPatient: jest.fn(async () => ({
+      outcome: 'written' as const, received: 0, accepted: [], rejected: [],
+    })),
+  } as never;
+}
+
 function repoCruFalso() {
   return {
     replaceForField: jest.fn(async ({ fieldName }: { fieldName: string }) => ({
@@ -170,6 +191,7 @@ function deps(mapper: ClickUpPatientMapper, banco: BancoFalso): { deps: SyncPati
       mapper,
       patientService: { upsertFromClickUp: upsert } as unknown as PatientService,
       sourceLabelRepository: repoCruFalso(),
+      insuranceRepository: repoCoberturaFalso(),
     },
     upsert,
   };

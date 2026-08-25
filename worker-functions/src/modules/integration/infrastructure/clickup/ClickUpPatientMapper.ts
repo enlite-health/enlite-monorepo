@@ -68,6 +68,12 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
   // despacha pelo tipo VIVO do catálogo. Sem esse par, isto seria abrir a porta para o
   // `null` de "não consegui ler" apagar dado (D167/F41).
   { field: 'Segmentos Clínicos', accepts: CATALOG_TYPES_SUPPORTED },
+  // Task 3.2 — `Cobertura Verificada` passa a ser LIDA. Ela é `labels` com 33 opções no
+  // catálogo vivo, e o mapper nunca a leu (F7): 345 de 349 pacientes têm cobertura no
+  // ClickUp e o nosso banco tem ZERO. É a maior lacuna medida da change.
+  // Declarada com os DOIS tipos pela mesma razão do segmento: quem declara que sabe ler os
+  // dois formatos tem de ler os dois, e `resolveCatalogValue` despacha pelo tipo VIVO.
+  { field: 'Cobertura Verificada', accepts: CATALOG_TYPES_SUPPORTED },
   'Servicio',
   'Relación con el Paciente',
   'Tipo de Documento Responsable',
@@ -242,6 +248,11 @@ export class ClickUpPatientMapper {
     // levá-la também ao DERIVADO. Ver `PatientClinicalRepository.clinicalSpecialtyReadable`.
     const specialtyLabel     = segmentoRead.readable ? (segmentoRead.labels[0] ?? null) : null;
     const specialtyReadable  = segmentoRead.readable;
+    // Task 3.2 — a cobertura VERIFICADA, múltipla (D-D). Mesma leitura do segmento: pelo tipo
+    // vivo do catálogo, com a distinção entre "vazio de verdade" e "não consegui ler" (D167).
+    // ⚠️ Não confundir com `Cobertura Informada ` (com ESPAÇO no fim, F15), que é texto livre
+    // digitado pela família e segue em `healthInsuranceName`, agora DEPRECADO.
+    const coberturaRead      = resolveCatalogValue(this.resolver, 'Cobertura Verificada', cf['Cobertura Verificada']);
     const serviceLabel       = this.resolver.resolveDropdown('Servicio', asIndexable('Servicio', cf['Servicio']));
 
     const serviceTypes = mapClickUpService(serviceLabel);
@@ -276,6 +287,15 @@ export class ClickUpPatientMapper {
       dependencyLevel:    mapClickUpDependencyLevel(dependencyLabel),
       clinicalSpecialty:  mapClickUpClinicalSpecialty(specialtyLabel),
       clinicalSpecialtyReadable: specialtyReadable,
+      // Task 3.2/3.3 — o escalar CONTINUA sendo escrito (o 1º rótulo), exatamente como o
+      // derivado da D-B na Fase 2: o múltiplo nasce AO LADO, nunca no lugar. Quem lê
+      // `insurance_verified` hoje não quebra.
+      insuranceVerified:  coberturaRead.readable ? (coberturaRead.labels[0] ?? null) : null,
+      insuranceVerifiedReadable: coberturaRead.readable,
+      // E a lista inteira, para a tabela nova. `readable:false` NÃO vira lista vazia.
+      insuranceVerifiedLabels: coberturaRead.readable
+        ? sourceLabelsRead(coberturaRead.labels)
+        : sourceLabelsUnreadable(coberturaRead.reason),
       serviceType:        serviceTypes.length > 0 ? serviceTypes : null,
       additionalComments: this.asString(cf['Comentarios Adicionales Paciente']),
 

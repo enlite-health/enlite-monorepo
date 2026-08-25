@@ -37,6 +37,7 @@
 import { ClickUpPatientMapper, extractCaseNumber, PATIENT_DROPDOWN_FIELDS } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/extractPatientChatIds';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
+import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 // ── Mock ClickUpFieldResolver ─────────────────────────────────────────────────
 
@@ -939,6 +940,14 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       // impossível, e gravar APAGA). Sem ela, `clinicalSpecialty: null` significava as duas
       // coisas e apagava `'ASD'` de paciente real. Ver `PatientClinicalRepository`.
       'clinicalSpecialtyReadable',
+      // Task 3.2/3.3 — `Cobertura Verificada`, que o mapper nunca leu (F7): 345 de 349
+      // pacientes têm cobertura no ClickUp e o banco tinha ZERO. O escalar continua sendo
+      // escrito (o 1º rótulo, para quem já lê a coluna antiga); a LISTA vai para a tabela
+      // `patient_insurance_verified`; e `Readable` carrega a mesma distinção da D167 — vazio
+      // legítimo grava, "não consegui ler" não toca em nada.
+      'insuranceVerified',
+      'insuranceVerifiedReadable',
+      'insuranceVerifiedLabels',
       'serviceType', 'additionalComments',
       'hasCud', 'hasConsent', 'hasJudicialProtection',
       'healthInsuranceName', 'healthInsuranceMemberId',

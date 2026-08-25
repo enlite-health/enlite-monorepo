@@ -30,6 +30,7 @@
 import { ClickUpFieldResolver } from '../../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
+import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 // ── Sentinelas ────────────────────────────────────────────────────────────────
 // Strings/números que NÃO podem aparecer em nenhuma linha de log emitida.
@@ -42,7 +43,7 @@ const SENTINELA_INDEX = 987654321;                                   // formato 
 const PRIMEIRA_OPCAO_CLINICA = 'AT para Pacientes con Discapacidad Intelectual';
 
 const CATALOGO_SINTETICO = {
-  fields: [
+  fields: completaCatalogo([
     {
       id: 'cf-1', name: 'Segmentos Clínicos', type: 'drop_down',
       type_config: { options: [
@@ -68,7 +69,7 @@ const CATALOGO_SINTETICO = {
     // catálogo. Fixture, não asserção: nenhum caso deste arquivo mudou.
     { id: 'cf-8', name: 'Equipo Tratante Multidisciplinario', type: 'drop_down',
       type_config: { options: [{ id: 'e-0', name: 'No', orderindex: 0 }] } },
-  ],
+  ] as never),
 };
 
 let fetchChamadas = 0;

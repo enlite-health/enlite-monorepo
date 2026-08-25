@@ -120,7 +120,14 @@ function makeDeps(overrides: Partial<{
     })),
   } as unknown as SyncPatientDeps['sourceLabelRepository'];
 
-  return { mapper, patientService, sourceLabelRepository };
+  // Task 3.3 — dublê da cobertura múltipla. Nenhum teste desta suíte toca banco.
+  const insuranceRepository = {
+    replaceForPatient: jest.fn(async () => ({
+      outcome: 'written' as const, received: 0, accepted: [], rejected: [],
+    })),
+  } as unknown as SyncPatientDeps['insuranceRepository'];
+
+  return { mapper, patientService, sourceLabelRepository, insuranceRepository };
 }
 
 function makeUpsertInput(firstName = 'Ana', lastName = 'García'): PatientServiceUpsertInput {

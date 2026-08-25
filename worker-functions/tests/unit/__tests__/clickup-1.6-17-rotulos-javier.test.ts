@@ -49,6 +49,7 @@ import {
   resetUnmappedLabelCounts,
 } from '../../../src/modules/integration/infrastructure/clickup/helpers/unmappedLabelCounter';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
+import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 const CAMPO = 'Segmentos Clínicos';
 
@@ -127,7 +128,7 @@ function desfechoDe(rotulo: string): { desfecho: Desfecho; derivado: string | nu
 // existem, para que o preflight da 1.11 passe e não seja ele o assunto aqui.
 function catalogoDepoisDaLista() {
   return {
-    fields: [
+    fields: completaCatalogo([
       {
         id: 'cf-seg', name: CAMPO, type: 'drop_down',
         type_config: { options: ROTULOS_JAVIER.map((name, orderindex) => ({ id: `o-${orderindex}`, name, orderindex })) },
@@ -140,7 +141,7 @@ function catalogoDepoisDaLista() {
       { id: 'cf-dor', name: 'Tipo de Documento Responsable', type: 'drop_down', type_config: { options: [{ id: 'u-0', name: 'DNI', orderindex: 0 }] } },
       // Task 1.12: o 8º `drop_down` declarado. Fixture, não asserção.
       { id: 'cf-equ', name: 'Equipo Tratante Multidisciplinario', type: 'drop_down', type_config: { options: [{ id: 'e-0', name: 'No', orderindex: 0 }] } },
-    ],
+    ] as never),
   };
 }
 

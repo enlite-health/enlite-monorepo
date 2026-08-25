@@ -26,6 +26,7 @@ import { SyncPatientFromClickUpTaskUseCase } from '../../../application/SyncPati
 import { ClickUpFieldResolver } from '../../../infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper, PATIENT_DROPDOWN_FIELDS } from '../../../infrastructure/clickup/ClickUpPatientMapper';
 import { PatientSourceLabelRepository } from '@modules/case';
+import { PatientInsuranceVerifiedRepository } from '@modules/case';
 import {
   ClickUpCatalogRefresher,
   unsettledDriftThatMatters,
@@ -68,12 +69,20 @@ export class ClickUpPatientWebhookController {
      * ESCRITA mantém quem não escreve sem banco nenhum.
      */
     private sourceLabelRepository?: PatientSourceLabelRepository,
+    /** Task 3.3 — preguiçoso pelo mesmo motivo do de cima: o construtor abre pool. */
+    private insuranceRepository?: PatientInsuranceVerifiedRepository,
   ) {}
 
   /** O repositório do cru, construído na primeira vez que alguém realmente vai gravar. */
   private getSourceLabelRepository(): PatientSourceLabelRepository {
     this.sourceLabelRepository ??= new PatientSourceLabelRepository();
     return this.sourceLabelRepository;
+  }
+
+  /** Idem, para a cobertura verificada múltipla. */
+  private getInsuranceRepository(): PatientInsuranceVerifiedRepository {
+    this.insuranceRepository ??= new PatientInsuranceVerifiedRepository();
+    return this.insuranceRepository;
   }
 
   /**
@@ -169,6 +178,9 @@ export class ClickUpPatientWebhookController {
         try {
           const r = await this.getSourceLabelRepository().purgeForPatient(row.id);
           purgados = { labels: purgados.labels + r.labels, rejections: purgados.rejections + r.rejections };
+          // Task 3.3 — a tabela nova entra na MESMA supressão (C-B do parecer do `lex`).
+          // Nasceu depois do parecer; ficar de fora seria repetir o furo que ele nomeou.
+          await this.getInsuranceRepository().purgeForPatient(row.id);
         } catch (err) {
           functions.logger.error('clickup_webhook.source_labels_purge_failed', {
             correlationId, taskId: body.task_id, patientId: row.id,
@@ -274,6 +286,7 @@ export class ClickUpPatientWebhookController {
       // Task 2.3 — o cru vai junto do derivado. O repositório abre a própria conexão do pool
       // compartilhado; não há transação do controller para carregar aqui.
       sourceLabelRepository: this.getSourceLabelRepository(),
+      insuranceRepository:   this.getInsuranceRepository(),
     });
     const syncResult = await useCase.execute(task, { onMissingContact: 'flag' }, correlationId);
 

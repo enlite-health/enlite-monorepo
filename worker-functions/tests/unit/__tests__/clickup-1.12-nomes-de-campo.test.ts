@@ -414,7 +414,7 @@ describe('1.12 (a) — o 8º campo dispara o preflight como os outros 7', () => 
     expect(linhas).toHaveLength(0);
   });
 
-  it('renomear QUALQUER um dos 8 declarados — o da equipe inclusive — para a task inteira', async () => {
+  it('renomear QUALQUER um dos campos declarados — o da equipe inclusive — para a task inteira', async () => {
     const resultados: string[] = [];
 
     for (const campo of PATIENT_DROPDOWN_FIELDS) {
@@ -444,8 +444,13 @@ describe('1.12 (a) — o 8º campo dispara o preflight como os outros 7', () => 
 
     console.log(`>>> 1.12/preflight | declarados=${PATIENT_DROPDOWN_FIELDS.length} | pararam o sync=${resultados.filter(r => r.startsWith('PAROU')).length}`);
     for (const r of resultados) console.log(`>>> 1.12/preflight |   ${r}`);
-    expect(resultados).toHaveLength(8);
-    expect(resultados.filter(r => r.startsWith('PAROU'))).toHaveLength(8);
+    // ⚠️ O número vem da LISTA, não chumbado. Estava `8` e virou `9` quando a task 3.2
+    // declarou `Cobertura Verificada` — o teste reprovou por contar, não por defeito.
+    // Número chumbado aqui é uma segunda lista escrita à mão, que é o F20/F49/F51 desta casa:
+    // ela diverge da primeira em silêncio, e o dia em que divergir para MENOS ninguém percebe.
+    expect(resultados).toHaveLength(PATIENT_DROPDOWN_FIELDS.length);
+    expect(resultados.filter(r => r.startsWith('PAROU'))).toHaveLength(PATIENT_DROPDOWN_FIELDS.length);
+    expect(PATIENT_DROPDOWN_FIELDS.length).toBeGreaterThan(0);   // contagem zero reprova (F19)
   });
 
   it('o campo da equipe virando `labels` no ClickUp (o cenário F33) também para — wrong_type', async () => {
