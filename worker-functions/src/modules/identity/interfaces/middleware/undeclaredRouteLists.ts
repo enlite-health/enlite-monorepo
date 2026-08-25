@@ -33,6 +33,12 @@ export const EXEMPT_ROUTES: ReadonlySet<string> = new Set([
   // Telemetria do login (o front reporta falha de autenticação). É `self`, não
   // decisão de staff, e roda com optionalAuth.
   'POST /api/admin/auth/telemetry',
+  // `GET /v1/me/authz` — o contrato agregado que o painel carrega no login.
+  // Mesma razão do `auth/profile`: exigir célula trancaria fora justamente quem
+  // ainda não tem grupo, que é o público da tela de boas-vindas, e uma célula
+  // nova (`me:read`) ninguém teria no dia do flip. É `self`, não decisão de
+  // staff. `requireStaff()` continua sendo o portão — e agora HÁ TESTE disso.
+  'GET /v1/me/authz',
 ]);
 
 /**

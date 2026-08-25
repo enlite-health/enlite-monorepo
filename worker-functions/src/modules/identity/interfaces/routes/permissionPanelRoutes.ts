@@ -28,9 +28,17 @@
  * Duas delas tocam dado de PESSOA, e nas duas o recorte vem do veredito do lex,
  * não da minha conveniência:
  *   · membros do grupo — e-mail, papel e status de STAFF. É o mesmo dado que
- *     `GET /api/admin/users` já serve sob `user_management:read`; aqui o portão
- *     é mais estreito (`permission_management:read` é lista nomeada e curta,
- *     M2-8), nunca mais largo.
+ *     `GET /api/admin/users` serve sob `user_management:read`, e aqui ele sai
+ *     por uma célula DIFERENTE — não por um subconjunto.
+ *
+ *     ⚠️ Eu tinha escrito aqui "o portão é mais estreito, nunca mais largo", e
+ *     era FALSO: as duas células são independentes, e o próprio e2e é o
+ *     contraexemplo (a gestora do teste tem só `permission_management:read` e
+ *     lê e-mail de staff). O gate `revisao-pr` pegou. O comportamento está
+ *     dentro da spec — a tela de grupo "mostra os membros", gated em
+ *     `permission_management` — mas quem tem essa célula e NÃO tem
+ *     `user_management:read` ganha uma segunda porta para o mesmo dado. Isso é
+ *     desenho, não descuido; a frase é que não podia mentir sobre ele.
  *   · a trilha — `iam.query_audit` devolve identificador e metadado, NUNCA
  *     conteúdo (spec "Vista de auditoria"), e o `resourceId` já vem como
  *     `'<oculto>'` quando o auditor não tem escopo no país da linha (mig 283).

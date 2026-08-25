@@ -263,6 +263,40 @@ describe('GET /permission-groups/:id', () => {
     expect(d.findById).toHaveBeenCalledWith(TENANT, ID);
   });
 
+  /**
+   * 🔴 CONTRATO DE SAÍDA — M2 do gate `revisao-pr`.
+   *
+   * A rota faz `res.json(corpo)` com o que o repositório devolveu: não há
+   * allowlist de campo. O gate sabotou injetando `{...grupo, segredoVazado:
+   * 'cpf-do-membro-123'}` e os 38 unit + 26 e2e ficaram VERDES. Hoje nada vaza
+   * (o `SELECT` do repositório é projeção nomeada), mas uma coluna acrescentada
+   * lá chega ao cliente sem nada falhar — contra a spec "a vista nunca expõe
+   * conteúdo de dado pessoal".
+   *
+   * Travar as CHAVES é a rede barata: é o mesmo que `meAuthzRoute.test.ts` já
+   * faz com o contrato agregado. Campo novo obriga uma decisão consciente.
+   */
+  it('🔴 o corpo do grupo tem EXATAMENTE as chaves declaradas — campo a mais reprova', async () => {
+    const { router } = build();
+
+    const res = await GET(router, `/permission-groups/${ID}`).expect(200);
+
+    expect(Object.keys(res.body).sort()).toEqual([
+      'archivedAt', 'cells', 'countries', 'createdAt', 'createdBy',
+      'description', 'id', 'isSystem', 'memberCount', 'name', 'tenantId',
+    ]);
+  });
+
+  it('🔴 o corpo do membro idem — e-mail e papel são o teto, não o piso', async () => {
+    const { router } = build();
+
+    const res = await GET(router, `/permission-groups/${ID}/members`).expect(200);
+
+    expect(Object.keys(res.body.members[0]).sort()).toEqual([
+      'assignedAt', 'assignedBy', 'email', 'role', 'status', 'userId',
+    ]);
+  });
+
   it('🔴 grupo de OUTRO tenant é 404 — indistinguível de inexistente', async () => {
     const { router } = build({ findById: jest.fn().mockResolvedValue(null) });
 

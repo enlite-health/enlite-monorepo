@@ -29,14 +29,14 @@ const CONTRATO: AuthzContract = {
   features: { AR: { 'screen:access': { enabled: true, config: null } } },
 };
 
-function build(over: { execute?: jest.Mock; uid?: string | null; tenantId?: string } = {}) {
+function build(over: { execute?: jest.Mock; uid?: string | null; tenantId?: string; staffGuard?: express.RequestHandler } = {}) {
   const execute = over.execute ?? jest.fn().mockResolvedValue(CONTRATO);
   const app = express();
   app.use(
     '/v1',
     createMeAuthzRouter({
       getMyAuthz: { execute } as unknown as GetMyAuthzUseCase,
-      staffGuard: (_req, _res, next) => next(),
+      staffGuard: over.staffGuard ?? ((_req, _res, next) => next()),
       uidOf: () => (over.uid === undefined ? 'uid-gestora' : over.uid),
       tenantId: over.tenantId,
     }),
@@ -95,6 +95,36 @@ describe('GET /v1/me/authz', () => {
     await request(app).get('/v1/me/authz').expect(200);
 
     expect(execute).toHaveBeenCalledWith({ uid: 'uid-gestora', tenantId: 'tenant-de-teste' });
+  });
+
+  /**
+   * 🔴 BLOCKER-1 do gate `revisao-pr`.
+   *
+   * O `staffGuard` é a ÚNICA proteção desta rota — ela não declara célula, de
+   * propósito. E o gate provou que apagá-lo não quebrava NADA: 6/6 unit e 26/26
+   * e2e continuavam verdes. O caso "sem credencial → 401" passava por acidente,
+   * por outro caminho de código (`uidOf` devolvendo null), e não existia nenhum
+   * caso com principal AUTENTICADO e não-staff.
+   *
+   * O cabeçalho do arquivo afirmava "`requireStaff()` continua sendo o portão".
+   * Era afirmação sem prova. Este caso é a prova.
+   */
+  it('🔴 principal autenticado e NÃO-staff é barrado pelo guard, e o use case nem roda', async () => {
+    const execute = jest.fn().mockResolvedValue(CONTRATO);
+    const { app } = build({
+      execute,
+      staffGuard: (_req, res) => {
+        res.status(403).json({ success: false, error: 'Staff access required' });
+      },
+    });
+
+    const res = await request(app).get('/v1/me/authz').expect(403);
+
+    expect(res.body).toEqual({ success: false, error: 'Staff access required' });
+    expect(execute).not.toHaveBeenCalled();
+    // E o corpo do contrato não vaza pela borda do 403.
+    expect(res.body.permissions).toBeUndefined();
+    expect(res.body.features).toBeUndefined();
   });
 
   it('a rota NÃO declara célula — self não é decisão de staff (D116)', () => {

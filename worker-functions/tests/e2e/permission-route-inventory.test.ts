@@ -254,10 +254,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     );
   });
 
-  it('as isentas são as três da D116, e nenhuma a mais', () => {
+  it('as isentas são as QUATRO decididas, e nenhuma a mais', () => {
+    // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
+    // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
+    // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
+    // BLOCKER-1 do gate `revisao-pr`: a isenção tem de ser revisável, e é esta
+    // linha que a torna. Se alguém mover a rota para trás de uma célula, ou
+    // criar outra rota de staff fora do prefixo, este caso acusa.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'GET /api/admin/auth/profile',
+      'GET /v1/me/authz',
       'POST /api/admin/auth/telemetry',
       'POST /api/admin/setup',
     ]);

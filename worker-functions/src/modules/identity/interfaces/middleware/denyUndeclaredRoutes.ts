@@ -70,6 +70,12 @@ export const GOVERNED_ROUTES: ReadonlySet<string> = new Set([
   'GET /api/workers/:id/cases',
   'GET /api/cases/:caseNumber/encuadres',
   'GET /api/cases/:caseNumber/workers',
+  // meAuthzRoute.ts — o contrato agregado do painel. Mora em `/v1/`, fora dos
+  // prefixos, e por isso nascia `not_governed`: invisível ao inventário, ao
+  // `undeclared` e à revisão. Ela É isenta (self, D116), mas a isenção tem de
+  // ser uma LINHA REVISÁVEL em `EXEMPT_ROUTES`, como as outras três — e não um
+  // efeito colateral do prefixo. Achado pelo gate `revisao-pr` (BLOCKER-1).
+  'GET /v1/me/authz',
 ]);
 
 /**

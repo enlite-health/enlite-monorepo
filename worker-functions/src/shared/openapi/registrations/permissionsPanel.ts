@@ -12,6 +12,24 @@
  *    viva no catálogo derivado do código.
  */
 
+/**
+ * ⚠️ COBERTURA — justificativa técnica escrita, que o critério 3 do
+ * `revisao-pr` exige (M3 do gate).
+ *
+ * Este arquivo fica em 0% de statements no `npm test -- --coverage`, e os
+ * **38 de 38** vizinhos de `registrations/` também — medido. Não é dívida
+ * nova nem descuido: o módulo é declaração pura (`registry.registerPath`),
+ * executado por import de efeito colateral no `registrations/index.ts`, e a
+ * camada que o exercita é OUTRA — `tests/playwright/swagger-coverage.spec.ts`,
+ * que FALHA se uma rota Express não tiver registro.
+ *
+ * Por isso ele NÃO entra no `coverageThreshold`: pôr um piso de 100% aqui
+ * reprovaria o CI por um número que a suíte unit não tem como produzir, e gate
+ * que reprova o certo se aprende a ignorar (D172). A rede real destas 7 rotas é
+ * o swagger-coverage; se ele parar de rodar, é ELE que precisa voltar — não um
+ * teste inventado para colorir esta linha.
+ */
+
 import { registry, z } from '../registry';
 import { ErrorResponseSchema } from '../schemas/common';
 
