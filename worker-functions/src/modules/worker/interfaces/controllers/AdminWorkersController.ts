@@ -280,6 +280,11 @@ export class AdminWorkersController {
         res.status(404).json({ success: false, error: 'Worker not found' });
         return;
       }
+      // C6: a trilha precisa do UUID, e o telefone NÃO pode ser o identificador
+      // dela. O handler é o primeiro ponto onde o worker existe; `logResourceAccess`
+      // lê isto no `finish`.
+      req.recursoAcessadoId = workerResult.rows[0].id as string;
+
       const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {
@@ -313,6 +318,11 @@ export class AdminWorkersController {
         res.status(404).json({ success: false, error: 'Worker not found' });
         return;
       }
+      // C6: a trilha precisa do UUID, e o telefone NÃO pode ser o identificador
+      // dela. O handler é o primeiro ponto onde o worker existe; `logResourceAccess`
+      // lê isto no `finish`.
+      req.recursoAcessadoId = workerResult.rows[0].id as string;
+
       const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {

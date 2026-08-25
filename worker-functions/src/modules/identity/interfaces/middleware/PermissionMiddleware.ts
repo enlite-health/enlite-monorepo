@@ -64,8 +64,23 @@ export type DenialCode = 'unauthenticated' | 'account_not_active' | 'no_group' |
  * sempre; ALLOW só aqui, porque registrar todo GET de listagem encheria a
  * partição com ruído e esconderia justamente estes.
  */
-const SENSITIVE_RESOURCES = new Set(['worker_pii', 'patient', 'worker_document']);
-const SENSITIVE_ACTIONS = new Set(['delete', 'execute', 'export']);
+export const SENSITIVE_RESOURCES = new Set(['worker_pii', 'patient', 'worker_document']);
+export const SENSITIVE_ACTIONS = new Set(['delete', 'execute', 'export']);
+
+/**
+ * ⚠️ C6 — o que NÃO pode entrar em `SENSITIVE_RESOURCES`, e por quê.
+ *
+ * `funnel`, `match` e `vacancy` são recursos de LISTAGEM: o Kanban de uma vaga
+ * é um GET que uma recrutadora abre dezenas de vezes por dia. Marcá-los como
+ * sensíveis geraria uma linha de ALLOW por abertura — enche a partição de ruído
+ * e ESCONDE justamente as linhas que a trilha existe para destacar (abertura de
+ * dossiê, exclusão, export).
+ *
+ * O acesso a contato NESSAS rotas tem trilha própria e agregada — uma linha por
+ * request com o conjunto de workers cujo contato de fato saiu, não uma por
+ * worker. Guarda em `__tests__/sensitiveResources.test.ts`.
+ */
+export const NUNCA_SENSIVEIS = ['funnel', 'match', 'vacancy'] as const;
 
 function isSensitive(resource: string, action: string): boolean {
   return SENSITIVE_RESOURCES.has(resource) || SENSITIVE_ACTIONS.has(action);

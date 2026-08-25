@@ -31,8 +31,12 @@ jest.mock('@shared/logging', () => ({
   loggingAls: { getStore: () => undefined },
 }));
 
+const trilhaArgs: unknown[][] = [];
 jest.mock('@shared/audit/resourceAccessLog', () => ({
-  logResourceAccess: () => (_req: unknown, _res: unknown, next: express.NextFunction) => next(),
+  logResourceAccess: (...args: unknown[]) => {
+    trilhaArgs.push(args);
+    return (_req: unknown, _res: unknown, next: express.NextFunction) => next();
+  },
 }));
 
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
@@ -261,6 +265,25 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       const res = await request(app)[metodo as 'get'](caminho).expect(200);
 
       expect(res.body.m).toBe(esperado);
+    });
+
+    it('C6 — a trilha do by-phone tira o id do HANDLER, nunca do telefone', () => {
+      // A trilha é mock aqui, então supertest não alcançaria a arrow. O que
+      // importa não é ela rodar: é o CONTRATO dela — de onde o id vem.
+      routerPrincipal();
+      const doByPhone = trilhaArgs.find((a) => a[1] === 'read_by_phone');
+      expect(doByPhone).toBeDefined();
+      expect(doByPhone![0]).toBe('worker');
+
+      const idFrom = doByPhone![2] as (r: Record<string, unknown>) => string | undefined;
+
+      // Com o worker resolvido pelo handler → o UUID.
+      expect(idFrom({ recursoAcessadoId: 'w-uuid-1', query: { phone: '+5491133445566' } }))
+        .toBe('w-uuid-1');
+
+      // SEM o handler ter resolvido → `undefined`, e a trilha não grava. O que
+      // NÃO pode acontecer é cair no telefone da query como identificador.
+      expect(idFrom({ query: { phone: '+5491133445566' } })).toBeUndefined();
     });
 
     it('/workers/:id/timeline não é engolido por /workers/:id', async () => {

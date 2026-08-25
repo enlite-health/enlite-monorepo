@@ -179,17 +179,23 @@ export function logResourceAccess(
   idFrom: (req: Request) => string | undefined = (req) => req.params.id,
 ): RequestHandler {
   return (req, res, next) => {
-    const resourceId = idFrom(req);
     const user = req.user;
-    // Sem id ou sem operador identificado não há o que afirmar na trilha.
-    if (!resourceId || !user?.uid) return next();
+    // Sem operador identificado não há o que afirmar na trilha.
+    if (!user?.uid) return next();
 
     // Congela o contexto AGORA: no `finish` o ALS da request pode não valer mais.
+    // ⚠️ O CONTEXTO é congelado aqui; o ID **não**. Rota que descobre o recurso
+    // só DENTRO do handler (`by-phone` resolve o worker pelo telefone, C6) não
+    // tem id nenhum neste ponto — antes desta mudança ela saía por `next()` e
+    // ficava sem trilha, em silêncio. Para quem usa `req.params.id`, avaliar
+    // antes ou depois dá o mesmo valor: o param não muda no meio da request.
     const context = currentDbContext();
     const operatorRole = user.roles?.[0] ?? user.role ?? 'unknown';
 
     res.once('finish', () => {
       if (!isSuccessful(res)) return;
+      const resourceId = idFrom(req);
+      if (!resourceId) return;
       // UM ciclo de contexto de sistema para a leitura do país E o INSERT: são
       // duas queries da mesma trilha, e abrir duas sessões (dois clients, dois
       // pares de set_config) dobraria o custo de cada abertura de dossiê.

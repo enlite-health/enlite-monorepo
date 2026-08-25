@@ -26,6 +26,15 @@ declare global {
        * e aí a redação vale. Confundir os dois nega tudo para todo mundo no flip.
        */
       permissionCells?: string[];
+      /**
+       * Id do recurso que o HANDLER resolveu, para a trilha de acesso (C6).
+       *
+       * ⚠️ Existe para rota que descobre o recurso só depois de rodar — o
+       * `by-phone` acha o worker PELO TELEFONE. O telefone **não** pode ser o
+       * `resourceId` da trilha (C6: sem telefone), então o handler publica aqui
+       * o UUID que encontrou e o `logResourceAccess` lê no `finish`.
+       */
+      recursoAcessadoId?: string;
       servicePrincipal?: ServicePrincipal;
       onBehalfOfWorkerId?: string;
     }
