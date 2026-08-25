@@ -25,6 +25,7 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit';
 
 import express from 'express';
+import { appDeRota } from '@shared/__tests__/appDeRota';
 import request from 'supertest';
 import { scanExpressRouter, cellKey, undeclaredRoutes } from '@modules/identity/permissions';
 import {
@@ -224,8 +225,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
       ['get', '/api/admin/vacancies/in-progress', 'aux'],
       ['get', '/api/admin/vacancies/by-address', 'aux'],
     ] as const)('%s %s NÃO é capturado por /vacancies/:id', async (metodo, caminho, esperado) => {
-      const app = express();
-      app.use('/api/admin', build());
+      const app = appDeRota('adminVacancies', '/api/admin', build);
 
       const res = await request(app)[metodo](caminho);
 
@@ -237,8 +237,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
     });
 
     it('a vaga por id continua chegando no handler de id', async () => {
-      const app = express();
-      app.use('/api/admin', build());
+      const app = appDeRota('adminVacancies', '/api/admin', build);
 
       const res = await request(app).get('/api/admin/vacancies/abc-123').expect(200);
 
@@ -246,8 +245,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
     });
 
     it('blocked-applications não é engolido por /vacancies/:id', async () => {
-      const app = express();
-      app.use('/api/admin', build());
+      const app = appDeRota('adminVacancies', '/api/admin', build);
 
       const res = await request(app).post('/api/admin/vacancies/blocked-applications/b1/reject').expect(200);
 
@@ -255,8 +253,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
     });
 
     it('meet-links/lookup não é engolido por /vacancies/:id', async () => {
-      const app = express();
-      app.use('/api/admin', build());
+      const app = appDeRota('adminVacancies', '/api/admin', build);
 
       const res = await request(app).post('/api/admin/vacancies/meet-links/lookup').expect(200);
 
@@ -326,8 +323,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
       ['delete', '/api/admin/vacancies/v1/workers/w1/contact-notes/n1', 'AUX'],
       ['get', '/api/admin/vacancies/v1/workers/w1/delivery-status', 'AUX'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
-    const app = express();
-    app.use('/api/admin', build());
+    const app = appDeRota('adminVacancies', '/api/admin', build);
 
     const res = await request(app)[metodo](caminho);
 

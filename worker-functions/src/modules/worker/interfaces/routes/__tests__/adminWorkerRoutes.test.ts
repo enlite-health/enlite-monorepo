@@ -12,6 +12,7 @@
  */
 
 import express from 'express';
+import { appDeRota } from '@shared/__tests__/appDeRota';
 import request from 'supertest';
 import { scanExpressRouter, cellKey, undeclaredRoutes } from '@modules/identity/permissions';
 import {
@@ -321,11 +322,11 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
    * acrescentar rota sem teste derrube a cobertura per-file.
    */
   describe('cada rota chega no handler certo', () => {
-    function appCom(monta: () => express.Router, prefixo: string) {
-      const app = express();
-      app.use(prefixo, monta());
-      return app;
-    }
+    // Ver `@shared/__tests__/appDeRota`: app NOVO por caso do `it.each` era a
+    // maior fonte de falso positivo desta suíte — 2 falhas em 15 rodadas dela
+    // sozinha, com `400 Bad Request` (clientError do socket) e `200` truncado.
+    const appCom = (monta: () => express.Router, prefixo: string) =>
+      appDeRota(`${monta.name}|${prefixo}`, prefixo, monta);
 
     it.each([
       ['get', '/api/admin/workers/stats', 'getWorkerDateStats'],
