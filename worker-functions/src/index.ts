@@ -210,7 +210,21 @@ app.get('/api/workers/lookup', workerLookupRateLimit, (req: Request, res: Respon
   workerController.lookupByEmail(req, res);
 });
 
-app.get('/api/vacancies/:id', (req: Request, res: Response) => {
+/**
+ * A rota pública de detalhe da vaga era a ÚNICA rota pública sem rate limit nenhum, e é
+ * enumerável por slug (`caso{N}-{M}`, inteiros sequenciais) — ou seja, varrer o catálogo
+ * inteiro custava um `for`. O teto é o mesmo do feed (60/min): não atrapalha um candidato
+ * navegando, e torna a varredura cara.
+ */
+const publicVacancyRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.get('/api/vacancies/:id', publicVacancyRateLimit, (req: Request, res: Response) => {
   publicVacancyController.getById(req, res);
 });
 
