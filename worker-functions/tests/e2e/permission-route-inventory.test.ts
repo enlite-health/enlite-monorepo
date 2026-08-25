@@ -82,6 +82,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/users/:id/role → permission_management:write',
         'POST /api/admin/users → user_management:write',
         'POST /api/admin/users/:id/reset-password → user_management:write',
+        // ── admin.permissions (1) — a leitura do painel (F3). É esta linha que
+        // mantém `permission_management:read` viva no catálogo: sem ela o sync
+        // descontinua a célula e `iam.query_audit` responde 42501 para todos.
+        'GET /api/admin/permissions/catalog → permission_management:read',
         // ── admin.patients (21) — a 2ª
         'DELETE /api/admin/patient-chat-roles/:code → patient:write',
         'DELETE /api/admin/patients/:id → patient:delete',

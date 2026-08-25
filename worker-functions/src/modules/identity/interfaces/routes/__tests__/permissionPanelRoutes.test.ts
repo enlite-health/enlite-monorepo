@@ -66,6 +66,18 @@ describe('createPermissionPanelRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
+  it('montada em `/api/admin`, a rota é `GET /api/admin/permissions/catalog`', () => {
+    // A string EXATA que a lista dourada do `permission-route-inventory.test.ts`
+    // espera. Aquele e2e lê o app pela rede (reflete o BINÁRIO do container, não
+    // a árvore), então local ele não prova nada — este caso prova aqui o que lá
+    // só se confirma no CI.
+    const rotas = scanExpressRouter(appCom(build().router) as never);
+
+    expect(rotas.map((r) => `${r.method} ${r.path} → ${r.cell ? cellKey(r.cell.resource, r.cell.action) : null}`)).toEqual([
+      'GET /api/admin/permissions/catalog → permission_management:read',
+    ]);
+  });
+
   it('devolve o catálogo agrupado por categoria', async () => {
     const { router, execute } = build();
 
