@@ -68,6 +68,22 @@ export async function recalculateWorkerStatus(
   workerId: string,
   pubsub: PubSubClient | null,
 ): Promise<WorkerStatus | null> {
+  // ⚠️ C7 — A BAIXA NÃO É RECALCULÁVEL. Este caminho é chamado por UPLOAD e por
+  // REVISÃO DE DOCUMENTO (`UploadWorkerDocumentsUseCase`,
+  // `ReviewWorkerDocumentsUseCase`), não só por decisão de staff: sem esta
+  // guarda, subir um documento de alguém que pediu baixa RESSUSCITA a conta —
+  // sem ninguém decidir, sem motivo escrito e sem passar por célula nenhuma.
+  //
+  // Era o furo mais silencioso dos dois: o outro (DISABLED →
+  // INCOMPLETE_REGISTER, em `EncuadreController.updateWorkerStatus`) pelo menos
+  // exigia alguém clicar. Reverter baixa é decisão explícita, com motivo — ver
+  // `domain/transicaoDeBaixa.ts`.
+  const { rows: atual } = await pool.query<{ status: WorkerStatus }>(
+    'SELECT status FROM workers WHERE id = $1',
+    [workerId],
+  );
+  if (atual[0]?.status === 'DISABLED') return null;
+
   const traceId = loggingAls.getStore()?.traceId ?? null;
   let mirrorEventId: string | null = null;
   let registrationCompletedEventId: string | null = null;

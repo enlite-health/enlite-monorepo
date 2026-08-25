@@ -449,3 +449,48 @@ describe('PermissionMiddleware.requireCountryFeature()', () => {
     expect(client.isFeatureAvailable).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A canalização da C3: o handler precisa das células para decidir se o KMS roda.
+ * Se ela quebrar, `projectWorkerFields` recebe `null` e devolve TUDO — o
+ * vazamento volta com a suíte verde, porque nenhum outro teste olha para cá.
+ */
+describe('as células chegam ao handler (C3 da F2)', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  function harnessQueEcoaCelulas(env: NodeJS.ProcessEnv) {
+    const middleware = new PermissionMiddleware({
+      client: clientStub(),
+      audit: { record: () => undefined },
+      env,
+    });
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as express.Request).authContext = { principal: { id: UID } } as never;
+      next();
+    });
+    app.get(
+      '/api/admin/users/:id',
+      middleware.family('admin.users').require('user_management', 'read'),
+      (req, res) => res.json({ cells: req.permissionCells ?? null }),
+    );
+    return app;
+  }
+
+  it('com a família ENFORCED, o handler recebe as células do ator', async () => {
+    const res = await request(harnessQueEcoaCelulas(LIGADO)).get('/api/admin/users/abc');
+
+    expect(res.status).toBe(200);
+    expect(res.body.cells).toContain('user_management:read');
+  });
+
+  it('com a família FORA do enforcement, chega `null` — nunca `[]`', async () => {
+    const res = await request(harnessQueEcoaCelulas({ PERMISSION_ENGINE_ENABLED: 'true' })).get(
+      '/api/admin/users/abc',
+    );
+
+    expect(res.status).toBe(200);
+    // `[]` aqui redigiria o nome de todo mundo com o engine ainda desligado.
+    expect(res.body.cells).toBeNull();
+  });
+});

@@ -61,6 +61,27 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Peças da F2 (células de prestador). Entram aqui no mesmo PR que as cria —
+    // o gate `revisao-pr` pegou as quatro nascendo FORA do piso, que é
+    // exatamente o que a nota acima avisa. Medidas em 100/100/100/100.
+    'src/modules/worker/application/export/workerExportCells.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/domain/transicaoDeBaixa.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/shared/audit/{contactAccessLog,contactAccessFromRequest}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/identity/interfaces/routes/permissionRoutesInventoryRoute.ts': {
       statements: 100,
       branches: 100,

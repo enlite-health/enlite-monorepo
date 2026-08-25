@@ -18,6 +18,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { WorkerExportColumnKey, COLUMN_LABELS_ES } from './export/workerExportColumns';
+import { decidirColunas } from './export/workerExportCells';
 import { csvRow } from './export/csvUtils';
 import { buildAllValidatedClause, buildPendingValidationClause } from './workerDocumentFilters';
 
@@ -39,12 +40,30 @@ export interface ExportWorkersInput {
   format: 'csv' | 'xlsx';
   columns: WorkerExportColumnKey[];
   filters: ExportWorkersFilters;
+  /**
+   * Células do ator (C5). `null` = o engine não decidiu nesta request → nada
+   * muda (D113). **Nunca `[]` por omissão**: `[]` derruba o dossiê inteiro.
+   */
+  cells: string[] | null;
+}
+
+/**
+ * Toda coluna pedida caiu no gate. É 403, e não planilha vazia: arquivo vazio
+ * parece cadastro vazio, e a pessoa vai procurar o defeito no lugar errado.
+ */
+export class ExportSemColunaPermitidaError extends Error {
+  constructor(public readonly negadas: WorkerExportColumnKey[]) {
+    super(`Nenhuma coluna permitida: ${negadas.join(', ')} exigem worker_pii:read`);
+    this.name = 'ExportSemColunaPermitidaError';
+  }
 }
 
 export type CsvLineEmitter = (line: string) => void;
 
 export interface ExportWorkersResult {
   format: 'csv' | 'xlsx';
+  /** Colunas tiradas pelo gate da C5 — o chamador TEM de avisar quem pediu. */
+  negadas: WorkerExportColumnKey[];
   /** Present only for XLSX — full buffer ready to send. */
   xlsxBuffer?: Buffer;
   /** Present only for CSV — async generator yielding one CRLF-terminated line at a time. */
@@ -111,30 +130,74 @@ interface WorkerDbRow {
 
 type PlaintextWorker = Record<WorkerExportColumnKey, string>;
 
+/**
+ * Cada coluna cifrada e a cifra de onde ela sai. É esta tabela que permite
+ * descriptografar SÓ o que a coluna pede.
+ */
+const CIFRA_DA_COLUNA = {
+  first_name: 'first_name_encrypted',
+  last_name: 'last_name_encrypted',
+  gender: 'gender_encrypted',
+  sex: 'sex_encrypted',
+  birth_date: 'birth_date_encrypted',
+  document_number: 'document_number_encrypted',
+  languages: 'languages_encrypted',
+  sexual_orientation: 'sexual_orientation_encrypted',
+  race: 'race_encrypted',
+  religion: 'religion_encrypted',
+  weight_kg: 'weight_kg_encrypted',
+  height_cm: 'height_cm_encrypted',
+  whatsapp_phone: 'whatsapp_phone_encrypted',
+  linkedin_url: 'linkedin_url_encrypted',
+} as const satisfies Partial<Record<WorkerExportColumnKey, keyof WorkerDbRow>>;
+
+type ColunaCifrada = keyof typeof CIFRA_DA_COLUNA;
+
+/**
+ * Descriptografa APENAS as colunas pedidas.
+ *
+ * ⚠️ Antes da C5 este `Promise.all` abria os 14 campos SEMPRE — exportar só
+ * `status` descriptografava DNI, raça, religião e orientação sexual, e jogava
+ * fora. Texto claro que existiu em memória e pôde cair num log de erro do KMS
+ * para quem nunca pediu aquele dado. É o mesmo defeito da C3, noutra rota: a
+ * decisão tem de vir ANTES do KMS, não depois.
+ *
+ * A prova disso é o espião com a CONTAGEM esperada, não a leitura do código.
+ */
 async function decryptRow(
   kms: KMSEncryptionService,
   row: WorkerDbRow,
+  colunas: readonly WorkerExportColumnKey[],
 ): Promise<PlaintextWorker> {
-  const [
-    firstName, lastName, gender, sex, birthDate, documentNumber,
-    languages, sexualOrientation, race, religion, weightKg, heightCm,
-    whatsappPhone, linkedinUrl,
-  ] = await Promise.all([
-    safeDecrypt(kms, row.first_name_encrypted, row.id, 'first_name_encrypted'),
-    safeDecrypt(kms, row.last_name_encrypted, row.id, 'last_name_encrypted'),
-    safeDecrypt(kms, row.gender_encrypted, row.id, 'gender_encrypted'),
-    safeDecrypt(kms, row.sex_encrypted, row.id, 'sex_encrypted'),
-    safeDecrypt(kms, row.birth_date_encrypted, row.id, 'birth_date_encrypted'),
-    safeDecrypt(kms, row.document_number_encrypted, row.id, 'document_number_encrypted'),
-    safeDecrypt(kms, row.languages_encrypted, row.id, 'languages_encrypted'),
-    safeDecrypt(kms, row.sexual_orientation_encrypted, row.id, 'sexual_orientation_encrypted'),
-    safeDecrypt(kms, row.race_encrypted, row.id, 'race_encrypted'),
-    safeDecrypt(kms, row.religion_encrypted, row.id, 'religion_encrypted'),
-    safeDecrypt(kms, row.weight_kg_encrypted, row.id, 'weight_kg_encrypted'),
-    safeDecrypt(kms, row.height_cm_encrypted, row.id, 'height_cm_encrypted'),
-    safeDecrypt(kms, row.whatsapp_phone_encrypted, row.id, 'whatsapp_phone_encrypted'),
-    safeDecrypt(kms, row.linkedin_url_encrypted, row.id, 'linkedin_url_encrypted'),
-  ]);
+  const pedidas = new Set<string>(colunas);
+  const abertos = {} as Record<ColunaCifrada, string>;
+
+  const chaves = (Object.keys(CIFRA_DA_COLUNA) as ColunaCifrada[]).filter((c) => pedidas.has(c));
+  const valores = await Promise.all(
+    chaves.map((c) => {
+      const campo = CIFRA_DA_COLUNA[c];
+      return safeDecrypt(kms, row[campo] as string | null, row.id, campo);
+    }),
+  );
+  chaves.forEach((c, i) => { abertos[c] = valores[i]; });
+
+  // Coluna não pedida sai como string vazia — o chamador nunca a lê, e um
+  // `undefined` aqui viraria "undefined" no CSV se alguém errasse a seleção.
+  const abrir = (c: ColunaCifrada): string => abertos[c] ?? '';
+  const firstName = abrir('first_name');
+  const lastName = abrir('last_name');
+  const gender = abrir('gender');
+  const sex = abrir('sex');
+  const birthDate = abrir('birth_date');
+  const documentNumber = abrir('document_number');
+  const languages = abrir('languages');
+  const sexualOrientation = abrir('sexual_orientation');
+  const race = abrir('race');
+  const religion = abrir('religion');
+  const weightKg = abrir('weight_kg');
+  const heightCm = abrir('height_cm');
+  const whatsappPhone = abrir('whatsapp_phone');
+  const linkedinUrl = abrir('linkedin_url');
 
   return {
     first_name: firstName,
@@ -232,7 +295,14 @@ export class ExportWorkersUseCase {
   }
 
   async execute(input: ExportWorkersInput): Promise<ExportWorkersResult> {
-    const { format, columns, filters } = input;
+    const { format, filters } = input;
+    // C5: a célula decide as colunas ANTES da query e ANTES do KMS. O que for
+    // negado nem chega a ser descriptografado — negar depois seria esconder da
+    // planilha, não proteger o dado.
+    const { permitidas: columns, negadas } = decidirColunas(input.cells, input.columns);
+    if (columns.length === 0) {
+      throw new ExportSemColunaPermitidaError(negadas);
+    }
     const { clause, params } = buildExportWhere(filters);
 
     const query = `
@@ -259,12 +329,12 @@ export class ExportWorkersUseCase {
     const rows = result.rows;
 
     if (format === 'csv') {
-      return { format: 'csv', csvLines: this.streamCsvLines(rows, columns) };
+      return { format: 'csv', negadas, csvLines: this.streamCsvLines(rows, columns) };
     }
 
     // XLSX — buffer in memory
     const xlsxBuffer = await this.buildXlsx(rows, columns);
-    return { format: 'xlsx', xlsxBuffer };
+    return { format: 'xlsx', negadas, xlsxBuffer };
   }
 
   // ── CSV streaming ─────────────────────────────────────────────────
@@ -279,7 +349,7 @@ export class ExportWorkersUseCase {
     // Process in chunks of DECRYPT_CHUNK_SIZE
     for (let i = 0; i < rows.length; i += DECRYPT_CHUNK_SIZE) {
       const chunk = rows.slice(i, i + DECRYPT_CHUNK_SIZE);
-      const decrypted = await Promise.all(chunk.map((row) => decryptRow(this.kms, row)));
+      const decrypted = await Promise.all(chunk.map((row) => decryptRow(this.kms, row, columns)));
 
       for (const record of decrypted) {
         yield csvRow(columns.map((col) => record[col])) + '\r\n';
@@ -297,7 +367,7 @@ export class ExportWorkersUseCase {
 
     for (let i = 0; i < rows.length; i += DECRYPT_CHUNK_SIZE) {
       const chunk = rows.slice(i, i + DECRYPT_CHUNK_SIZE);
-      const decrypted = await Promise.all(chunk.map((row) => decryptRow(this.kms, row)));
+      const decrypted = await Promise.all(chunk.map((row) => decryptRow(this.kms, row, columns)));
 
       for (const record of decrypted) {
         data.push(columns.map((col) => record[col]));

@@ -9,7 +9,7 @@
  *   2. PUT /api/workers/:id/status → REGISTERED em worker incompleto → deve manter INCOMPLETE_REGISTER
  *   3. Criar job application → stage PRE_SCREENING (via inserção direta no banco)
  *   4. Atualizar stage → PLACED (via query direta no banco)
- *   5. PUT /api/workers/:id/status → DISABLED
+ *   5. PUT /api/workers/:id/status → DISABLED  (⚠️ exige `motivo` desde a C7)
  *   6. Guard: trigger bloqueia SET REGISTERED direto no banco em worker incompleto
  *
  * Obs: job applications não têm endpoint público de criação — são geradas
@@ -223,11 +223,30 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
   // ── Cenário 5: PUT /api/workers/:id/status → DISABLED ────────────────────────
 
   describe('Cenário 5 — PUT /api/workers/:id/status → DISABLED', () => {
+    it('SEM motivo é 403 — dar baixa passou a exigir motivo escrito (C7)', async () => {
+      // ⚠️ Este teste vem ANTES do caminho feliz de propósito: ele é o que
+      // documenta a mudança de contrato. Sem ele, alguém que visse só o
+      // `motivo` na chamada abaixo poderia achar que é campo opcional que
+      // "ficou lá".
+      const res = await api.put(
+        `/api/workers/${workerId}/status`,
+        { status: 'DISABLED' },
+        adminHeaders(),
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.data.details?.motivo).toBe('motivo_obrigatorio');
+
+      // E o banco NÃO mudou: negar depois de escrever não é negar.
+      const db = await pool.query('SELECT status FROM workers WHERE id = $1', [workerId]);
+      expect(db.rows[0].status).not.toBe('DISABLED');
+    });
+
     it('deve retornar 200 e persistir status = DISABLED no banco', async () => {
       // Act
       const res = await api.put(
         `/api/workers/${workerId}/status`,
-        { status: 'DISABLED' },
+        { status: 'DISABLED', motivo: 'E2E — baixa administrativa de cenário' },
         adminHeaders(),
       );
 

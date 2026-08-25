@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
+import { cellsOfRequest } from '@modules/identity/permissions';
 import { GetFunnelTableUseCase } from '../../application/GetFunnelTableUseCase';
 import { FunnelBucket } from '../../domain/FunnelTableRow';
 
@@ -38,7 +39,9 @@ export class WJAFunnelTableController {
         return;
       }
 
-      const result = await this.useCase.execute(id, bucketParam as FunnelBucket);
+      // F2/C3: as células do ator descem até a projeção. `cellsOfRequest`
+      // devolve `null` quando o engine não decidiu — e `null` ≠ `[]`.
+      const result = await this.useCase.execute(id, bucketParam as FunnelBucket, cellsOfRequest(req));
 
       res.json({ success: true, data: result });
     } catch (error) {

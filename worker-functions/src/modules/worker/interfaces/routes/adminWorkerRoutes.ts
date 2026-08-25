@@ -74,7 +74,13 @@ export function createAdminWorkerRoutes(
   // na ficha e pegaria o dossiê idêntico por aqui, e ainda sem trilha (a rota
   // não tem `logResourceAccess` e `worker` não é recurso sensível). O gate
   // achou; o mapa foi corrigido junto.
-  router.get('/workers/by-phone', staffOrApiKey, perm.require('worker_pii', 'read'), (req: Request, res: Response) => c.workers.getWorkerByPhone(req, res));
+  // C6: `by-phone` abre o dossiê inteiro e não tinha trilha. O id vem do que o
+  // handler resolveu (`req.recursoAcessadoId`), NUNCA do telefone da query — o
+  // telefone é o próprio dado pessoal, e gravá-lo como identificador da trilha
+  // publicaria em tabela auditada aquilo que a trilha existe para proteger.
+  router.get('/workers/by-phone', staffOrApiKey, perm.require('worker_pii', 'read'),
+    logResourceAccess('worker', 'read_by_phone', (req) => req.recursoAcessadoId),
+    (req: Request, res: Response) => c.workers.getWorkerByPhone(req, res));
   router.get('/workers/case-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.listCaseOptions(req, res));
   // filter-options MUST be before /:id to avoid param capture
   router.get('/workers/filter-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getFilterOptions(req, res));

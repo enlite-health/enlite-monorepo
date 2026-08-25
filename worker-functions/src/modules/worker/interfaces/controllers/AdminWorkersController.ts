@@ -8,7 +8,8 @@ import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { mapPlatformLabel, matchesSearch, WorkerListItem, WORKER_DETAIL_COLS } from './AdminWorkersControllerHelpers';
 import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
-import { ExportWorkersUseCase } from '../../application/ExportWorkersUseCase';
+import { ExportWorkersUseCase, ExportSemColunaPermitidaError } from '../../application/ExportWorkersUseCase';
+import { cellsOfRequest } from '@modules/identity/permissions';
 import { WORKER_EXPORT_COLUMN_KEYS, WorkerExportColumnKey } from '../../application/export/workerExportColumns';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
 import {
@@ -279,6 +280,11 @@ export class AdminWorkersController {
         res.status(404).json({ success: false, error: 'Worker not found' });
         return;
       }
+      // C6: a trilha precisa do UUID, e o telefone NÃO pode ser o identificador
+      // dela. O handler é o primeiro ponto onde o worker existe; `logResourceAccess`
+      // lê isto no `finish`.
+      req.recursoAcessadoId = workerResult.rows[0].id as string;
+
       const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {
@@ -312,6 +318,11 @@ export class AdminWorkersController {
         res.status(404).json({ success: false, error: 'Worker not found' });
         return;
       }
+      // C6: a trilha precisa do UUID, e o telefone NÃO pode ser o identificador
+      // dela. O handler é o primeiro ponto onde o worker existe; `logResourceAccess`
+      // lê isto no `finish`.
+      req.recursoAcessadoId = workerResult.rows[0].id as string;
+
       const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {
@@ -361,7 +372,19 @@ export class AdminWorkersController {
         format,
         columns,
         filters: { status, platform, docs_complete, docs_validated, case_id },
+        // C5: `cellsOfRequest` devolve `null` quando o engine não decidiu — e
+        // `null` NÃO é `[]`. Escrever `?? []` aqui derrubaria o dossiê de todo
+        // export antes mesmo do flip.
+        cells: cellsOfRequest(req),
       });
+
+      // Coluna negada NUNCA some em silêncio: planilha faltando coluna parece
+      // cadastro incompleto, e quem exportou vai caçar o defeito no lugar errado.
+      // Vai em header porque o corpo é o arquivo — não há onde pôr um aviso.
+      if (result.negadas.length > 0) {
+        res.setHeader('X-Colunas-Negadas', result.negadas.join(','));
+        res.setHeader('X-Colunas-Negadas-Motivo', 'worker_pii:read');
+      }
 
       if (result.format === 'xlsx') {
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -380,6 +403,21 @@ export class AdminWorkersController {
       res.end();
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));
+      // Toda coluna pedida caiu no gate: é 403, não 500 e não planilha vazia.
+      // Arquivo vazio parece base vazia; 500 parece defeito nosso. O que houve
+      // foi falta de célula, e a resposta tem de dizer isso.
+      if (e instanceof ExportSemColunaPermitidaError && !res.headersSent) {
+        logger.warn({
+          msg: 'export negado por célula', source: 'AdminWorkersController',
+          negadas: e.negadas.join(','),
+        });
+        res.status(403).json({
+          success: false,
+          error: 'Sem permissão para as colunas pedidas',
+          details: { negadas: e.negadas, exige: 'worker_pii:read' },
+        });
+        return;
+      }
       logger.error({ msg: 'exportWorkers error', source: 'AdminWorkersController', err: e.message });
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: 'Export failed', details: e.message });

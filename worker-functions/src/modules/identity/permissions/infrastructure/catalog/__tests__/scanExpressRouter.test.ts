@@ -7,12 +7,14 @@
 
 import express, { Router, type RequestHandler } from 'express';
 import {
+  cellsForaDeRota,
   declaredCells,
   mountPathOf,
   scanExpressRouter,
   undeclaredRoutes,
 } from '../scanExpressRouter';
 import { markPermissionHandler, readPermissionMetadata } from '../permissionMetadata';
+import { CELL_DESCRIPTION } from '../../../domain/PermissionCell';
 
 const ok: RequestHandler = (_req, res) => res.json({});
 
@@ -201,6 +203,95 @@ describe('ramos defensivos da varredura', () => {
       { method: 'GET', path: '/a', cell },
       { method: 'GET', path: '/b', cell },
     ];
-    expect(declaredCells(rotas)).toEqual([cell]);
+    // A asserção é sobre a DEDUPE, que é o que este caso prova. A `description`
+    // que o `declaredCells` passou a preencher (C2 da F2) é contrato de outro
+    // caso, logo abaixo — travar a forma do objeto aqui faria este teste
+    // reprovar toda vez que uma definição de célula nova fosse escrita.
+    expect(declaredCells(rotas)).toHaveLength(1);
+    expect(declaredCells(rotas)[0]).toMatchObject(cell);
+  });
+});
+
+describe('declaredCells — a definição da célula chega ao catálogo (C2 da F2)', () => {
+  const rota = (resource: string, action: string, description?: string) => ({
+    method: 'GET',
+    path: `/api/admin/${resource}`,
+    cell: { resource, action, ...(description ? { description } : {}) },
+  });
+
+  it('célula SEM descrição na rota sai com a definição do vocabulário', () => {
+    const [c] = declaredCells([rota('worker_contact', 'read')] as never);
+    expect(c.description).toBe(CELL_DESCRIPTION['worker_contact:read']);
+    expect(c.description).toContain('telefone');
+  });
+
+  it('o que a ROTA declara ganha do vocabulário — a rota conhece o caso particular', () => {
+    const [c] = declaredCells([rota('worker_pii', 'read', 'só nesta rota')] as never);
+    expect(c.description).toBe('só nesta rota');
+  });
+
+  it('célula sem definição em lugar nenhum sai `null`, nunca `undefined`', () => {
+    const [c] = declaredCells([rota('coisa_nova', 'read')] as never);
+    expect(c.description).toBeNull();
+  });
+
+  it('a definição NÃO se perde na dedupe de duas rotas com a mesma célula', () => {
+    const cs = declaredCells([rota('worker_pii', 'read'), rota('worker_pii', 'read')] as never);
+    expect(cs).toHaveLength(1);
+    expect(cs[0].description).toBe(CELL_DESCRIPTION['worker_pii:read']);
+  });
+});
+
+describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)', () => {
+  /**
+   * 🔴 O conjunto é FIXO de propósito. Célula que o código enforça abaixo da
+   * rota e ninguém declarar não existe em `iam.permissions` — o painel não a
+   * oferece, ninguém a recebe, e no flip a projeção redige para TODO MUNDO.
+   * Se alguém escrever uma definição nova em `CELL_DESCRIPTION` sem rota, este
+   * caso fica vermelho e obriga a decisão a ser consciente.
+   */
+  it('as células sem rota são EXATAMENTE `worker_contact:read` e `worker:disable`', () => {
+    const deRota = declaredCells([
+      { method: 'GET', path: '/w', cell: { resource: 'worker', action: 'read' } },
+      { method: 'GET', path: '/d', cell: { resource: 'worker_pii', action: 'read' } },
+    ]);
+
+    expect(cellsForaDeRota(deRota).map((c) => `${c.resource}:${c.action}`)).toEqual([
+      'worker_contact:read',
+      'worker:disable',
+    ]);
+  });
+
+  it('cada uma chega ao catálogo COM a definição escrita — é ela que o painel mostra', () => {
+    const fora = cellsForaDeRota([]);
+    const contato = fora.find((c) => c.resource === 'worker_contact');
+
+    expect(contato?.description).toContain('CONTATO do prestador');
+    expect(fora.every((c) => (c.description ?? '').length > 0)).toBe(true);
+  });
+
+  it('o que a ROTA já declarou não é repetido — a rota conhece o caso particular', () => {
+    const deRota = declaredCells([
+      { method: 'GET', path: '/c', cell: { resource: 'worker_contact', action: 'read', description: 'só nesta rota' } },
+    ]);
+
+    const fora = cellsForaDeRota(deRota);
+
+    expect(fora.map((c) => `${c.resource}:${c.action}`)).not.toContain('worker_contact:read');
+    expect(fora.map((c) => `${c.resource}:${c.action}`)).toContain('worker:disable');
+  });
+
+  it('🔴 varredura VAZIA não é mascarada — a fusão do wiring devolve vazio', () => {
+    // O `SyncPermissionCatalogUseCase` aborta fail-closed com lista vazia. Se a
+    // fusão somasse as de código incondicionalmente, varredura vazia chegaria
+    // como "4 células" e o sync descontinuaria as 40 de rota de uma vez. Este
+    // caso reproduz a expressão do wiring.
+    const deRota = declaredCells([]);
+    const paraSincronizar = deRota.length === 0 ? [] : [...deRota, ...cellsForaDeRota(deRota)];
+
+    expect(deRota).toEqual([]);
+    expect(paraSincronizar).toEqual([]);
+    // E a 2ª fonte SOZINHA não é vazia — é isso que tornaria o mascaramento possível.
+    expect(cellsForaDeRota(deRota).length).toBeGreaterThan(0);
   });
 });

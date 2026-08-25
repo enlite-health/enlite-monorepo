@@ -114,7 +114,11 @@ export class RecruitmentAnalyticsController {
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
           p.dependency_level,
-          p.diagnosis as patient_diagnosis,
+          -- ATENCAO: a coluna clinica livre de patients fica fora daqui pelo mesmo
+          -- motivo da C1 (ver VacanciesController.getVacancyById): texto clinico sob
+          -- celula de operacao. Este sitio NAO estava na condicao do lex -- apareceu
+          -- ao procurar os irmaos do primeiro, e o Gabriel autorizou fechar os dois.
+          -- O comentario nao soletra a coluna de proposito: a guarda le a QUERY.
           p.zone_neighborhood
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id

@@ -180,7 +180,6 @@ export default function VacancyDetailPage() {
           <VacancyPatientCard
             firstName={vacancy.patient_first_name ?? null}
             lastName={vacancy.patient_last_name ?? null}
-            diagnosis={vacancy.patient_diagnosis ?? null}
             zone={vacancy.patient_zone ?? null}
             insuranceVerified={vacancy.insurance_verified ?? null}
           />
@@ -193,7 +192,10 @@ export default function VacancyDetailPage() {
               : null
           }
           requiredSex={vacancy.required_sex ?? null}
-          diagnosis={vacancy.patient_diagnosis ?? null}
+          // C1 do `lex`: a API não devolve mais o diagnóstico. O campo fica na
+          // tela mostrando `—` de propósito — sumir a linha esconderia que existe
+          // um dado ali que esta tela deixou de poder ver.
+          diagnosis={null}
           talentumDescription={vacancy.talentum_description ?? null}
           ageRangeMin={vacancy.age_range_min ?? null}
           ageRangeMax={vacancy.age_range_max ?? null}

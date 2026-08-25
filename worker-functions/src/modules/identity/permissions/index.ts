@@ -62,11 +62,20 @@ export {
 export type { CountryFeature, FeatureType } from './domain/CountryFeature';
 export type { CountryGrant, GroupMembership } from './domain/GroupMembership';
 export { ENLITE_TENANT_ID } from './domain/tenant';
+export {
+  ACTOR_CLASSES,
+  ACTOR_CLASS_PADRAO,
+  CELULAS_VEDADAS_A_TERCEIRO,
+  isActorClass,
+  podeConceder,
+  motivoDaVedacao,
+} from './domain/ActorClass';
+export type { ActorClass } from './domain/ActorClass';
 
 // ── Catálogo derivado do código (declaração + varredura) ─────────────────────
 export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } from './infrastructure/catalog/permissionMetadata';
 export type { PermissionMetadata } from './infrastructure/catalog/permissionMetadata';
-export { declaredCells, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
+export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
 export type { RouteIndex } from './infrastructure/catalog/routeMatcher';
@@ -97,3 +106,7 @@ export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalo
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
 export { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 export { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
+export { projectWorkerFields, ProjecaoSemDecryptorError, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';
+export type { WorkerRow, ProjectedWorker, Decryptor } from './application/projectWorkerFields';
+export { cellsOfRequest } from './application/cellsOfRequest';
+export { CELL_DESCRIPTION } from './domain/PermissionCell';

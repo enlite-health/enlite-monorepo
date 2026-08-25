@@ -10,6 +10,24 @@ import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
+
+/**
+ * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
+ * TEXTO CLARO do SQL, então nenhum ramo da projeção tem cifra para abrir. Se
+ * este `decrypt` for chamado, é porque alguém passou um campo `*Encrypted` para
+ * a projeção sem trazer o KMS de verdade — e aí falhar alto é o certo, não
+ * devolver string vazia em silêncio.
+ */
+const SEM_KMS = {
+  async decrypt(): Promise<string> {
+    // Sentinela, não `Error` cru: o `abrir()` da projeção engole exceção de
+    // runtime de propósito (oscilação de KMS não derruba o Kanban), e um
+    // `Error` comum virava `null` em silêncio — a promessa "falhar alto" deste
+    // bloco era letra morta. Achado ALTO do gate `revisao-pr`.
+    throw new ProjecaoSemDecryptorError('VacanciesController: esta rota não descriptografa — campo cifrado chegou à projeção');
+  },
+};
 
 /**
  * VacanciesController
@@ -141,6 +159,18 @@ export class VacanciesController {
     }
   }
 
+  /**
+   * `GET /api/admin/vacancies/:id`
+   *
+   * ⚠️ Esta rota NÃO devolve o diagnóstico do paciente (C1 do veredito do `lex`):
+   * texto clínico livre não sai sob `vacancy:read`. Guarda de regressão em
+   * `__tests__/diagnosticoForaDaVaga.test.ts`, que assere a QUERY — não a
+   * resposta, porque apagar o campo depois do `SELECT` é esconder da tela.
+   *
+   * Os encuadres embutidos passam por `projectWorkerFields` (F2/C3): nome e
+   * telefone do prestador saem daqui em texto claro do `json_agg`, então a prova
+   * desta rota é a fronteira, e não o espião no KMS.
+   */
   async getVacancyById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -152,7 +182,17 @@ export class VacanciesController {
           p.last_name as patient_last_name,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_zone,
           p.dependency_level as dependency_level,
-          p.diagnosis as patient_diagnosis,
+          -- ATENCAO: a coluna clinica livre de patients NAO entra neste SELECT
+          -- (C1 do veredito do lex). Ela saia sob vacancy:read -- a celula de quem
+          -- opera a vaga, que toda recrutadora tem. Nao foi movida para tras de
+          -- outra celula: foi TIRADA, porque o dado nao e necessario para operar a
+          -- vaga (o requisito de perfil vem de required_professions,
+          -- worker_attributes e da descricao). Quem precisar do quadro clinico le
+          -- no cadastro do paciente, que tem guarda propria. Irmao do mesmo
+          -- defeito: RecruitmentAnalyticsController.getCaseAnalysis.
+          -- (O ponteiro para a guarda mora no JSDoc do metodo, nao aqui: comentario
+          -- de SQL viaja DENTRO da query, e ate o NOME do arquivo de teste casaria
+          -- a regex clinica da guarda -- D182.)
           p.insurance_verified,
           p.service_type,
           COALESCE(pa.city, p.city_locality) as patient_city,
@@ -194,8 +234,38 @@ export class VacanciesController {
       }
 
       const row = result.rows[0];
+
+      // F2/C3 — os encuadres embutidos carregam NOME e TELEFONE do prestador
+      // sob `vacancy:read`. Aqui não há KMS a economizar: `e.worker_raw_name` e
+      // `COALESCE(w.phone, e.worker_raw_phone)` já saem do SQL em texto claro.
+      // Logo a prova desta rota NÃO é o espião com 0 chamadas — é a fronteira:
+      // o nome não pode aparecer em NENHUM lugar do corpo da resposta.
+      // `cells === null` = engine não decidiu → devolve como antes (D113).
+      const cells = cellsOfRequest(req);
+      const encuadresBrutos = Array.isArray(row.encuadres) ? row.encuadres : null;
+      const encuadres = encuadresBrutos
+        ? await Promise.all(
+            encuadresBrutos.map(async (e: Record<string, unknown>) => {
+              const visivel = await projectWorkerFields(
+                cells,
+                {
+                  rawName: (e.worker_name as string | null) ?? null,
+                  phone: (e.worker_phone as string | null) ?? null,
+                },
+                SEM_KMS,
+              );
+              return {
+                ...e,
+                worker_name: visivel.name ?? null,
+                worker_phone: visivel.phone ?? null,
+              };
+            }),
+          )
+        : row.encuadres;
+
       const normalized = {
         ...row,
+        encuadres,
         schedule: normalizeSchedule(row.schedule),
       };
 

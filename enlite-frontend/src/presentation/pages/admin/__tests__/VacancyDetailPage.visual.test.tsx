@@ -128,7 +128,6 @@ const mockVacancy = {
   vacancy_number: 1,
   patient_first_name: 'Juan',
   patient_last_name: 'Perez',
-  patient_diagnosis: 'TEA',
   patient_zone: 'Palermo',
   patient_city: null,
   patient_neighborhood: null,

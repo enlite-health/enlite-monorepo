@@ -111,6 +111,45 @@ describe('wirePermissionsModule', () => {
     expect(featureSync).toHaveBeenCalled();
   });
 
+  it('🔴 varredura NÃO-vazia sincroniza rota + as células que o código enforça abaixo dela (B1)', async () => {
+    // O buraco que o gate `revisao-pr` achou: `worker_contact:read` e
+    // `worker:disable` são decididas no CAMPO e na OPERAÇÃO, nunca num
+    // `perm.require`. Sem a 2ª fonte elas nunca entravam em `iam.permissions` —
+    // e no flip a projeção redigiria nome e telefone para TODO MUNDO.
+    process.env.PERMISSION_CATALOG_SYNC_ENABLED = 'true';
+    process.env.PERMISSION_ENGINE_ENABLED = 'true';
+    const { app, boundary } = setup();
+    comMigracaoMarcada(boundary);
+    const catalogSync = jest.spyOn(boundary.permissions.catalog.sync, 'execute').mockResolvedValue(null);
+    jest.spyOn(boundary.permissions.assertStaffHasGroup, 'alertOnBoot').mockResolvedValue();
+
+    // Uma rota que DECLARA — é o que torna a varredura não-vazia.
+    app.get('/api/admin/coisa', boundary.middleware.family('t').require('worker', 'read'), (_req, res) => res.end());
+
+    await runPermissionsBootTasks(app, boundary);
+
+    const enviadas = (catalogSync.mock.calls[0][0] as Array<{ resource: string; action: string }>)
+      .map((c) => `${c.resource}:${c.action}`);
+    expect(enviadas).toContain('worker:read');           // da rota
+    expect(enviadas).toContain('worker_contact:read');   // do código
+    expect(enviadas).toContain('worker:disable');        // do código
+  });
+
+  it('🔴 varredura VAZIA não é mascarada pelas células de código — o sync tem de abortar', async () => {
+    // Se a fusão somasse incondicionalmente, varredura vazia chegaria ao use
+    // case como "4 células" e ele descontinuaria as 40 de rota de uma vez.
+    process.env.PERMISSION_CATALOG_SYNC_ENABLED = 'true';
+    process.env.PERMISSION_ENGINE_ENABLED = 'true';
+    const { app, boundary } = setup();
+    comMigracaoMarcada(boundary);
+    const catalogSync = jest.spyOn(boundary.permissions.catalog.sync, 'execute').mockResolvedValue(null);
+    jest.spyOn(boundary.permissions.assertStaffHasGroup, 'alertOnBoot').mockResolvedValue();
+
+    await runPermissionsBootTasks(app, boundary);
+
+    expect(catalogSync).toHaveBeenCalledWith([]);
+  });
+
   it('publica o índice do guard com a varredura do router', async () => {
     const { app, boundary } = setup();
     app.get('/api/admin/coisas', (_req, res) => res.json({}));

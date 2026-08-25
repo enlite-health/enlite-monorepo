@@ -19,6 +19,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { staffActor } from '@shared/audit/actorSource';
 import { classifyWorkerCaseStatus, groupByResultado } from './EncuadreControllerHelpers';
+import { decidirTransicaoDeBaixa, type WorkerStatus as StatusDeBaixa } from '@modules/worker/domain/transicaoDeBaixa';
+import { cellsOfRequest } from '@modules/identity/permissions';
 
 export class EncuadreController {
   private encuadreRepo = new EncuadreRepository();
@@ -280,11 +282,46 @@ export class EncuadreController {
   async updateWorkerStatus(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, motivo } = req.body;
       if (!['REGISTERED', 'INCOMPLETE_REGISTER', 'DISABLED'].includes(status)) {
         res.status(400).json({ success: false, error: 'status inválido. Use: REGISTERED, INCOMPLETE_REGISTER, DISABLED' });
         return;
       }
+
+      // C7/C8 — dar e reverter baixa não é `worker:write`. Lê o estado ATUAL e
+      // quem fez a baixa: a decisão depende dos dois, e nenhum deles vem do
+      // corpo da request (o cliente não é fonte para isto).
+      const { rows: atual } = await this.db.query(
+        `SELECT w.status,
+                (SELECT h.changed_by FROM worker_status_history h
+                  WHERE h.worker_id = w.id AND h.field_name = 'status'
+                    AND h.new_value = 'DISABLED'
+                  ORDER BY h.created_at DESC LIMIT 1) AS autor_da_baixa
+           FROM workers w WHERE w.id = $1`,
+        [id],
+      );
+      if (atual.length === 0) {
+        res.status(404).json({ success: false, error: 'Worker not found' });
+        return;
+      }
+
+      const decisao = decidirTransicaoDeBaixa({
+        de: (atual[0].status ?? null) as StatusDeBaixa | null,
+        para: status as StatusDeBaixa,
+        cells: cellsOfRequest(req),
+        motivo,
+        autorDaBaixa: atual[0].autor_da_baixa as string | null,
+      });
+      if (!decisao.permitida) {
+        // 403 e não 400: não é pedido malformado, é permissão/vontade do titular.
+        res.status(403).json({
+          success: false,
+          error: decisao.explicacao,
+          details: { motivo: decisao.motivoRecusa },
+        });
+        return;
+      }
+
       // REGISTERED não pode ser forçado manualmente — recalcular com base nos campos obrigatórios
       if (status === 'REGISTERED') await this.workerRepo.recalculateStatus(id);
       else await this.runWorkerUpdate(id, 'UPDATE workers SET status = $2 WHERE id = $1', status, (req as any).user?.uid);
