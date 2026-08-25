@@ -224,14 +224,19 @@ export class RecruitmentAnalyticsController {
         SELECT
           COALESCE(p.zone_neighborhood, 'Sin Zona') as zone,
           COUNT(*) as case_count,
-          COUNT(*) FILTER (WHERE status IN ('SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE')) as active_count,
+          -- ATENCAO: o prefixo jp. NAO e estilo. As colunas case_number e
+          -- status existem em job_postings E em patients (medido em
+          -- information_schema). Sem qualificar, o Postgres levanta
+          -- "column reference is ambiguous" e a rota inteira responde 500 --
+          -- que e como ela esteve, em producao, por tempo indeterminado.
+          -- title so existe em job_postings, mas vai qualificado junto: meia
+          -- qualificacao convida o proximo a errar.
+          COUNT(*) FILTER (WHERE jp.status IN ('SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE')) as active_count,
           json_agg(
             json_build_object(
-              'case_number', case_number,
-              'task_name', title,
-              'status', status,
-              'diagnosis', p.diagnosis,
-              'patient_name', p.first_name
+              'case_number', jp.case_number,
+              'task_name', jp.title,
+              'status', jp.status
             )
           ) as cases
         FROM job_postings jp
