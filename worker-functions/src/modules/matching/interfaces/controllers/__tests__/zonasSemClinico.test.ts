@@ -61,6 +61,28 @@ function sqlDeTodasAsQueries(): string {
   return mockQuery.mock.calls.map((c) => String(c[0])).join('\n---\n');
 }
 
+/**
+ * Só a PROJEÇÃO — o trecho entre `SELECT` e `FROM`.
+ *
+ * ⚠️ Isto existe por causa de uma falha do próprio verificador, achada por
+ * sabotagem: o controle positivo casava `zone_neighborhood` em QUALQUER lugar
+ * da query, e a string sobrevive no `GROUP BY` mesmo com a projeção destruída.
+ * Sabotar o `SELECT` para `'Sin Zona' as zone, COUNT(*) as contagem_qualquer`
+ * deixava os 4 casos VERDES. Régua de forma não mede substância: para afirmar
+ * "a rota continua servindo o que serve", a asserção tem de olhar a projeção,
+ * não o texto inteiro.
+ *
+ * O caminho contrário — a asserção de vazamento — continua sobre a query
+ * INTEIRA, e de propósito: a coluna proibida não pode aparecer em lugar nenhum,
+ * nem num `WHERE`, nem num `JOIN`.
+ */
+function projecaoDaQuery(): string {
+  const sql = sqlDeTodasAsQueries();
+  const m = /\bSELECT\b([\s\S]*?)\bFROM\b/i.exec(sql);
+  if (!m) throw new Error('nenhuma query com projeção — a rota deixou de consultar o banco');
+  return m[1];
+}
+
 describe('L10 — a análise de zonas não busca dado clínico nem nome de paciente', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -109,9 +131,10 @@ describe('L10 — a análise de zonas não busca dado clínico nem nome de pacie
 
     await new RecruitmentAnalyticsController().getZoneAnalysis(req, res);
 
-    const sql = sqlDeTodasAsQueries();
-    expect(sql).toMatch(/zone_neighborhood/);
-    expect(sql).toMatch(/case_count/);
+    const projecao = projecaoDaQuery();
+    expect(projecao).toMatch(/COALESCE\(p\.zone_neighborhood, 'Sin Zona'\) as zone/);
+    expect(projecao).toMatch(/COUNT\(\*\) as case_count/);
+    expect(projecao).toMatch(/as active_count/);
 
     const corpo = (res.json as jest.Mock).mock.calls[0][0];
     expect(corpo.success).toBe(true);
@@ -125,9 +148,9 @@ describe('L10 — a análise de zonas não busca dado clínico nem nome de pacie
 
     await new RecruitmentAnalyticsController().getZoneAnalysis(req, res);
 
-    const sql = sqlDeTodasAsQueries();
-    expect(sql).toMatch(/'case_number', case_number/);
-    expect(sql).toMatch(/'task_name', title/);
-    expect(sql).toMatch(/'status', status/);
+    const projecao = projecaoDaQuery();
+    expect(projecao).toMatch(/'case_number', case_number/);
+    expect(projecao).toMatch(/'task_name', title/);
+    expect(projecao).toMatch(/'status', status/);
   });
 });
