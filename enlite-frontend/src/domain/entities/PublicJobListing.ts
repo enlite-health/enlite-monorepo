@@ -8,7 +8,10 @@ export interface PublicJobListing {
   schedule_days_hours: string | null;
   worker_profile_sought: string | null;
   service: string | null;
-  pathologies: string | null;
+  /**
+   * ⚠️ REMOVIDO em 25/08/2026: era `patients.diagnosis` cru, servido pela rota pública sem
+   * autenticação. O backend deixou de emitir o campo — manter aqui prometeria dado que não vem.
+   */
   state: string | null;
   city: string | null;
   detail_link: string;
