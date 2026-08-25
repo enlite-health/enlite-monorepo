@@ -43,9 +43,22 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 
 import { Request, Response } from 'express';
 import { RecruitmentAnalyticsController } from '../RecruitmentAnalyticsController';
+import { TEXTO_CLINICO } from '@modules/matching/__tests__/guardaVazamentoClinico';
 
-const DIAGNOSTICO = 'Esclerose múltipla, surto-remissão';
+/**
+ * O canário é o da GUARDA COMPARTILHADA, não um meu (B3 do gate `revisao-pr`).
+ *
+ * `guardaVazamentoClinico.ts` existe porque este defeito reincidiu TRÊS vezes,
+ * cada guarda procurando a palavra que o autor dela lembrou. Eu tinha
+ * reinventado uma quarta, mais fraca — a minha regex era `/\bdiagnosis\b/`, a
+ * da casa é `/diagnosis|diagnostico|patholog|patolog/i`. Vocabulário por autor é
+ * exatamente o mecanismo da reincidência.
+ */
+const DIAGNOSTICO = TEXTO_CLINICO;
 const NOME_PACIENTE = 'Rosario';
+
+/** A régua clínica da casa, aplicada à query REAL capturada no dublê. */
+const VOCABULARIO_CLINICO = /diagnosis|diagnostico|patholog|patolog/i;
 
 function reqRes(): [Request, Response] {
   const req = { params: {}, body: {}, query: {} } as unknown as Request;
@@ -110,7 +123,9 @@ describe('L10 — a análise de zonas não busca dado clínico nem nome de pacie
 
     const sql = sqlDeTodasAsQueries();
     expect(sql).not.toMatch(/p\.diagnosis/);
-    expect(sql).not.toMatch(/\bdiagnosis\b/);
+    // A régua LARGA da casa, não a estreita que eu tinha escrito: `patologia`,
+    // `pathology` e `diagnostico` também reprovam.
+    expect(sql).not.toMatch(VOCABULARIO_CLINICO);
     expect((res.status as jest.Mock).mock.calls[0][0]).toBe(200);
   });
 
