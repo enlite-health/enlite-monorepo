@@ -352,15 +352,32 @@ describe('inventário de rotas governadas (app real de pé)', () => {
    * ambientes implantados sem este caso notar. Usar `governedRoutes` aqui
    * derrotaria o próprio propósito do teste.
    */
-  it('as 5 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
+  it('as 4 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
     // `declaredCells` (não `governedRoutes`) é a varredura INTEIRA — a MESMA
     // fonte que o sync consome. Ver o comentário no endpoint.
+    //
+    // ⚠️ Eram CINCO. `permission_management:read` saiu da lista porque a F3 a
+    // declara em `GET /api/admin/permissions/catalog` e nas irmãs — que é o
+    // motivo de a F3 existir. O plano já previa exatamente isto: no delta da
+    // F5 ela é a descontinuação "benigna", porque o painel a declara e o
+    // upsert faz `deprecated_at = NULL` com log `'revived'`. Enquanto ela
+    // estava aqui, `iam.query_audit` respondia 42501 para todo mundo na QA.
+    //
+    // Ou seja: este caso ficar vermelho na chegada da F3 é o mecanismo
+    // funcionando. Se ele voltar a ter 5, alguém apagou a declaração e a
+    // trilha de auditoria morre de novo.
     const declaradas = new Set(inventario.declaredCells);
 
     expect(
-      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete', 'permission_management:read']
+      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete']
         .filter((celula) => declaradas.has(celula)),
     ).toEqual([]);
+  });
+
+  it('🔴 `permission_management:read` está DECLARADA — é o que revive a trilha de auditoria', () => {
+    // Controle POSITIVO do caso acima: sem ele, apagar a célula da lista de
+    // cima passaria despercebido — a lista só sabe dizer "não vi", nunca "vi".
+    expect(new Set(inventario.declaredCells)).toContain('permission_management:read');
   });
 
   it('as rotas do PRESTADOR seguem FORA do perímetro — o que a lista nomeada preserva', () => {
