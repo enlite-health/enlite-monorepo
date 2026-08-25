@@ -404,7 +404,14 @@ app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, pe
 // Família `admin.permissions` — a leitura do painel de acessos (F3). É a rota
 // que DECLARA `permission_management:read`; sem ela o sync do catálogo
 // descontinua a célula e `iam.query_audit` responde 42501 para todo mundo.
-app.use('/api/admin', createPermissionPanelRoutes(permissionsBoundary.permissions.catalog.list, authMiddleware, permissionMiddleware));
+app.use('/api/admin', createPermissionPanelRoutes({
+  catalog: permissionsBoundary.permissions.catalog.list,
+  groups: permissionsBoundary.permissions.repositories.groups,
+  features: permissionsBoundary.permissions.repositories.features,
+  audit: permissionsBoundary.permissions.audit,
+  auth: authMiddleware,
+  permissions: permissionMiddleware,
+}));
 // `GET /v1/me/authz` — contrato agregado do painel (design 11). Fora de
 // `/api/admin/` de propósito: é rota de contrato versionado, não de decisão de
 // staff, e descreve o próprio ator para ele mesmo (por isso não pede célula).

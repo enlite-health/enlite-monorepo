@@ -2,84 +2,241 @@
  * src/modules/identity/interfaces/routes/permissionPanelRoutes.ts
  *
  * A família `admin.permissions` — a API de LEITURA do painel de acessos (F3 do
- * plano, task 4.1 na parte de leitura). Nasce com uma rota só, e a rota existe
- * por dois motivos, nesta ordem:
+ * plano, task 4.1 na parte de leitura). Seis rotas, TODAS `GET`, todas sob
+ * `permission_management:read`.
  *
- *  1. **É ela que declara `permission_management:read`.** Nenhuma rota do
- *     sistema declarava essa célula (medido: `git grep permission_management`
- *     achava só a `:write`, em `adminUsersRoutes.ts:72`). Com o
- *     `PERMISSION_CATALOG_SYNC_ENABLED` ligado na `stage` pelo #245, o sync
- *     conclui que a célula sumiu do código e a DESCONTINUA; `iam.effective_
- *     permissions` filtra `deprecated_at IS NULL`; e `iam.query_audit`
- *     (mig 280:143) passa a levantar **42501 para todo mundo, inclusive o
- *     Acesso Master**. É o efeito que hoje está no ar na QA. Declarada aqui, o
- *     próximo boot chama `sync_permission_cell`, que faz `deprecated_at = NULL`
- *     e loga `'revived'` — a trilha de auditoria volta sozinha.
- *  2. O catálogo é o desenho da MATRIZ da tela de grupo. Sem ele o gestor não
- *     tem o que marcar.
+ * ⚠️ **NÃO existe rota de escrita aqui, e não é omissão:** escrita em `iam.*`
+ * só pode sair das funções `SECURITY DEFINER` da mig 279 (lex C4) — a role do
+ * app teve INSERT/UPDATE/DELETE REVOGADO nessas tabelas pela mig 269. Para o
+ * compilador ajudar a manter isso, os repositórios entram por PORTAS ESTREITAS
+ * (`PanelGroupReader`, `PanelFeatureReader`), que só declaram os métodos de
+ * leitura: um `addMember` chamado por engano daqui não compila. É a F4 que
+ * abre a escrita, com a bateria de abuso da 4.1b junto.
+ *
+ * ── Por que a família existe, antes do painel ────────────────────────────────
+ * `GET /permissions/catalog` é quem DECLARA `permission_management:read`.
+ * Nenhuma rota do sistema declarava essa célula (medido: `git grep
+ * permission_management` achava só a `:write`, em `adminUsersRoutes.ts:72`).
+ * Com `PERMISSION_CATALOG_SYNC_ENABLED` ligado na `stage` pelo #245, o sync
+ * conclui que a célula sumiu do código e a DESCONTINUA;
+ * `iam.effective_permissions` filtra `deprecated_at IS NULL`; e
+ * `iam.query_audit` (mig 280:143) passa a levantar **42501 para todo mundo,
+ * inclusive o Acesso Master**. Declarada, o próximo boot faz
+ * `deprecated_at = NULL` e loga `'revived'`.
+ *
+ * ── O que estas rotas expõem de dado pessoal ─────────────────────────────────
+ * Duas delas tocam dado de PESSOA, e nas duas o recorte vem do veredito do lex,
+ * não da minha conveniência:
+ *   · membros do grupo — e-mail, papel e status de STAFF. É o mesmo dado que
+ *     `GET /api/admin/users` já serve sob `user_management:read`; aqui o portão
+ *     é mais estreito (`permission_management:read` é lista nomeada e curta,
+ *     M2-8), nunca mais largo.
+ *   · a trilha — `iam.query_audit` devolve identificador e metadado, NUNCA
+ *     conteúdo (spec "Vista de auditoria"), e o `resourceId` já vem como
+ *     `'<oculto>'` quando o auditor não tem escopo no país da linha (mig 283).
+ *     A linha continua aparecendo de propósito: esconder a linha inteira
+ *     tornaria o acesso cross-país invisível para quem existe para detectá-lo.
+ * O gate da trilha **não está aqui**: está na função `iam.query_audit`, que
+ * exige a célula do ator no GUC e registra o próprio ato de auditar (lex C7). A
+ * célula na rota é a segunda tranca, não a única.
  *
  * ⚠️ O `requireStaff` fica ALÉM da célula, como nas outras famílias: enquanto
  * `admin.permissions` não estiver em `PERMISSION_ENFORCED_ROUTES` (F13), o
- * guard de papel é a ÚNICA proteção viva desta rota. Tirar agora seria abri-la.
- *
- * ⚠️ O catálogo NÃO carrega dado pessoal — é a lista de células do código
- * (`recurso:ação` + categoria + serviço dono). O que ele expõe é topologia, e é
- * por isso que a rota é gateada e não pública; o par público é o
- * `/.well-known/permissions`, que já roda atrás do guard interno (lex C14).
+ * guard de papel é a ÚNICA proteção viva destas rotas. Tirar agora seria abri-las.
  */
 
-import { Router } from 'express';
+import { Router, type RequestHandler, type Response } from 'express';
 import { z } from 'zod';
 import { logger } from '@shared/logging';
-import type { ListPermissionCatalogUseCase } from '@modules/identity/permissions';
+import { COUNTRY_CODES } from '@shared/domain/countryCodes';
+import {
+  ENLITE_TENANT_ID,
+  type CountryFeature,
+  type GroupMemberView,
+  type ListPermissionCatalogUseCase,
+  type PermissionGroupDetail,
+  type QueryPermissionAuditUseCase,
+} from '@modules/identity/permissions';
 import type { AuthMiddleware } from '../middleware/AuthMiddleware';
 import type { PermissionMiddleware } from '../middleware/PermissionMiddleware';
 
 export const ADMIN_PERMISSIONS_FAMILY = 'admin.permissions';
 
 /**
- * Zod na borda (task 4.1). `includeDeprecated` é opt-in explícito: a tela de
- * grupo NÃO pode oferecer célula descontinuada para marcar — só a vista de
- * auditoria, que precisa mostrar o que um grupo tinha numa data.
+ * Porta ESTREITA do repositório de grupos: só leitura. Ver o aviso do
+ * cabeçalho — a estreiteza é o que faz o compilador recusar escrita daqui.
  */
-const CatalogQuery = z.object({
-  includeDeprecated: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((value) => value === 'true'),
+export interface PanelGroupReader {
+  list(tenantId: string, options?: { includeArchived?: boolean }): Promise<PermissionGroupDetail[]>;
+  findById(tenantId: string, groupId: string): Promise<PermissionGroupDetail | null>;
+  listMembers(tenantId: string, groupId: string): Promise<GroupMemberView[]>;
+}
+
+/** Idem para disponibilidade por país. */
+export interface PanelFeatureReader {
+  list(): Promise<CountryFeature[]>;
+}
+
+export interface PermissionPanelDeps {
+  catalog: ListPermissionCatalogUseCase;
+  groups: PanelGroupReader;
+  features: PanelFeatureReader;
+  audit: QueryPermissionAuditUseCase;
+  auth: AuthMiddleware;
+  permissions: PermissionMiddleware;
+  tenantId?: string;
+}
+
+// ── Zod na borda (task 4.1) ──────────────────────────────────────────────────
+
+/**
+ * `'true'`/`'false'` explícitos, e nada mais. Query string não tem booleano: o
+ * atalho comum (`!!req.query.x`) faz `?includeArchived=false` ligar o filtro,
+ * que é o oposto do que quem escreveu a URL pediu.
+ */
+const CatalogQuery = z
+  .object({ includeDeprecated: z.enum(['true', 'false']).optional() })
+  .transform((q) => q.includeDeprecated === 'true');
+
+const GroupsQuery = z
+  .object({ includeArchived: z.enum(['true', 'false']).optional() })
+  .transform((q) => q.includeArchived === 'true');
+
+/** Id malformado é 400, não 500: sem isto o `uuid` inválido explode no cast do Postgres. */
+const GroupParams = z.object({ id: z.string().uuid() });
+
+const FeaturesQuery = z.object({ country: z.enum(COUNTRY_CODES).optional() });
+
+/**
+ * ⚠️ O `limit` é validado AQUI e clampado DE NOVO no use case (1..1000), e a
+ * redundância é de propósito: o use case é a fronteira que vale mesmo se algum
+ * chamador futuro pular a rota. Aqui o papel do zod é recusar `limit=abc` com
+ * 400 em vez de deixar virar `NaN` silencioso.
+ */
+const AuditQuery = z.object({
+  userId: z.string().min(1).max(128).optional(),
+  resource: z.string().min(1).max(64).optional(),
+  since: z.coerce.date().optional(),
+  until: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
-export function createPermissionPanelRoutes(
-  listCatalog: ListPermissionCatalogUseCase,
-  auth: AuthMiddleware,
-  permissions: PermissionMiddleware,
-): Router {
-  const router = Router();
-  const perm = permissions.family(ADMIN_PERMISSIONS_FAMILY);
+// ── Casca comum ──────────────────────────────────────────────────────────────
 
-  router.get(
-    '/permissions/catalog',
-    auth.requireStaff(),
-    perm.require('permission_management', 'read'),
-    async (req, res) => {
-      const query = CatalogQuery.safeParse(req.query);
-      if (!query.success) {
-        res.status(400).json({ success: false, error: 'Invalid query parameters' });
+/**
+ * Não há `asyncHandler` na casa, e rejeição de handler `async` NÃO chega ao
+ * error handler do Express 4 — vira `unhandledRejection` e a request pendura
+ * até o timeout do cliente. Este wrapper é o que fecha isso, uma vez, em vez de
+ * seis `try` copiados.
+ */
+function responder<T>(res: Response, rotulo: string, trabalho: () => Promise<T | null>): void {
+  void trabalho()
+    .then((corpo) => {
+      // `null` é "não achei" — e inclui o grupo de OUTRO TENANT, que a porta
+      // devolve como `null` de propósito: 404 indistinguível de inexistente,
+      // senão o 403 confirmaria que o id existe em algum lugar (spec).
+      if (corpo === null) {
+        res.status(404).json({ success: false, error: 'Not found' });
         return;
       }
+      res.json(corpo);
+    })
+    .catch((err: unknown) => {
+      logger.error({ err, rotulo }, '[perm] falha na API de leitura do painel');
+      res.status(500).json({ success: false, error: `Failed to read ${rotulo}` });
+    });
+}
 
-      // Sem `asyncHandler` na casa: rejeição de handler `async` não chega ao
-      // error handler do Express 4 — vira `unhandledRejection` e a request
-      // pendura até o timeout do cliente. O `try` é o que fecha isso.
-      try {
-        const categories = await listCatalog.execute({ includeDeprecated: query.data.includeDeprecated });
-        res.json({ categories });
-      } catch (err) {
-        logger.error({ err }, '[perm] falha ao listar o catálogo de células');
-        res.status(500).json({ success: false, error: 'Failed to list permission catalog' });
-      }
-    },
-  );
+export function createPermissionPanelRoutes(deps: PermissionPanelDeps): Router {
+  const router = Router();
+  const perm = deps.permissions.family(ADMIN_PERMISSIONS_FAMILY);
+  const tenantId = deps.tenantId ?? ENLITE_TENANT_ID;
+
+  /** Os dois guards de toda rota desta família, na ordem: papel → célula. */
+  const portao: RequestHandler[] = [
+    deps.auth.requireStaff(),
+    perm.require('permission_management', 'read'),
+  ];
+
+  router.get('/permissions/catalog', ...portao, (req, res) => {
+    const query = CatalogQuery.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query parameters' });
+      return;
+    }
+
+    responder(res, 'permission catalog', async () => ({
+      categories: await deps.catalog.execute({ includeDeprecated: query.data }),
+    }));
+  });
+
+  router.get('/permission-groups', ...portao, (req, res) => {
+    const query = GroupsQuery.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query parameters' });
+      return;
+    }
+
+    responder(res, 'permission groups', async () => ({
+      groups: await deps.groups.list(tenantId, { includeArchived: query.data }),
+    }));
+  });
+
+  // ⚠️ ANTES de `/:id` — não porque `/:id` engoliria (é um segmento só), mas
+  // porque a ordem estática→dinâmica é a convenção da casa e a próxima rota
+  // acrescentada aqui pode não ter essa sorte.
+  router.get('/permission-groups/:id/members', ...portao, (req, res) => {
+    const params = GroupParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid group id' });
+      return;
+    }
+
+    responder(res, 'group members', async () => {
+      // O grupo é conferido ANTES dos membros: sem isto, id de OUTRO tenant
+      // devolveria `{members: []}` com 200 — indistinguível de "grupo vazio" e,
+      // pior, confirmando que o id existe.
+      const grupo = await deps.groups.findById(tenantId, params.data.id);
+      if (!grupo) return null;
+      return { members: await deps.groups.listMembers(tenantId, params.data.id) };
+    });
+  });
+
+  router.get('/permission-groups/:id', ...portao, (req, res) => {
+    const params = GroupParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid group id' });
+      return;
+    }
+
+    responder(res, 'permission group', () => deps.groups.findById(tenantId, params.data.id));
+  });
+
+  router.get('/country-features', ...portao, (req, res) => {
+    const query = FeaturesQuery.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query parameters' });
+      return;
+    }
+
+    responder(res, 'country features', async () => {
+      const todas = await deps.features.list();
+      const pais = query.data.country;
+      return { features: pais ? todas.filter((f) => f.country === pais) : todas };
+    });
+  });
+
+  router.get('/permission-audit', ...portao, (req, res) => {
+    const query = AuditQuery.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query parameters' });
+      return;
+    }
+
+    responder(res, 'permission audit', async () => ({
+      entries: await deps.audit.execute(query.data),
+    }));
+  });
 
   return router;
 }

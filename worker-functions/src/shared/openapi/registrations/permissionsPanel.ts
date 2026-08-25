@@ -1,8 +1,8 @@
 /**
  * src/shared/openapi/registrations/permissionsPanel.ts
  *
- * A API de leitura do painel de acessos (F3). Duas rotas com naturezas
- * OPOSTAS, e o contraste é o que documenta o desenho:
+ * A API de leitura do painel de acessos (F3). Sete rotas, e o contraste entre
+ * as duas primeiras é o que documenta o desenho:
  *
  *  · `GET /v1/me/authz` — *self*. Qualquer staff autenticado lê o PRÓPRIO
  *    contrato; não pede célula, e não aceita `uid` de ninguém (o principal é a
@@ -116,3 +116,133 @@ registry.registerPath({
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
+
+// ── Grupos, países e trilha ─────────────────────────────────────────────────
+
+const PermissionGroupSchema = registry.register(
+  'PermissionGroupDetail',
+  z
+    .object({
+      id: z.string().uuid(),
+      tenantId: z.string().uuid(),
+      name: z.string().openapi({ example: 'Recrutamento AR' }),
+      description: z.string().nullable(),
+      isSystem: z.boolean().openapi({ description: 'Semeado pela mig 206 — não renomeia, não arquiva.' }),
+      archivedAt: z.string().datetime().nullable(),
+      createdBy: z.string().nullable(),
+      createdAt: z.string().datetime(),
+      cells: z.array(z.string()).openapi({ description: 'Chaves `recurso:ação` do grupo.', example: ['worker:read'] }),
+      countries: z.array(z.string()).openapi({ example: ['AR'] }),
+      memberCount: z.number().int().openapi({ description: 'Membros vivos — a tela avisa antes de arquivar.' }),
+    })
+    .openapi({ description: 'Grupo com os dois eixos resolvidos: células e países.' }),
+);
+
+const GroupMemberSchema = z
+  .object({
+    userId: z.string(),
+    email: z.string().nullable(),
+    role: z.string().nullable(),
+    status: z.enum(['ACTIVE', 'PENDING_ONBOARDING', 'SUSPENDED', 'DEACTIVATED']).nullable(),
+    assignedBy: z.string().nullable(),
+    assignedAt: z.string().datetime(),
+  })
+  .openapi({ description: 'Membro do grupo. Dado de STAFF — o mesmo que `GET /api/admin/users` serve sob um portão mais largo.' });
+
+const CountryFeatureSchema = z
+  .object({
+    country: z.string().openapi({ example: 'AR' }),
+    featureKey: z.string().openapi({ example: 'screen:talentum' }),
+    enabled: z.boolean(),
+    config: z.unknown(),
+    source: z.enum(['default', 'override']).openapi({ description: '`default` = manifest em código; `override` = painel.' }),
+    reason: z.string().nullable(),
+    updatedBy: z.string(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi({ description: 'Disponibilidade de uma feature num país.' });
+
+const AuditRowSchema = z
+  .object({
+    id: z.string(),
+    userId: z.string(),
+    resource: z.string(),
+    action: z.string(),
+    resourceId: z.string().nullable().openapi({
+      description:
+        '`<oculto>` quando o auditor não tem escopo no país da linha (mig 283). A LINHA aparece de ' +
+        'propósito — esconder tornaria o acesso cross-país invisível para quem existe para detectá-lo.',
+    }),
+    decision: z.string().openapi({ example: 'DENY' }),
+    createdAt: z.string().datetime(),
+    country: z.string().nullable(),
+  })
+  .openapi({ description: 'Uma decisão da trilha. Identificador e metadado — nunca conteúdo de dado pessoal.' });
+
+const painel = (path: string, summary: string, description: string, ok: z.ZodTypeAny, extras: Record<number, string> = {}) => {
+  registry.registerPath({
+    method: 'get',
+    path,
+    tags: ['Painel · Acessos'],
+    summary,
+    description,
+    security: [{ firebaseAuth: [] }],
+    responses: {
+      200: { description: 'OK.', content: { 'application/json': { schema: ok } } },
+      400: { description: 'Query ou id inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      403: { description: 'Sem `permission_management:read`.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+      ...Object.fromEntries(
+        Object.entries(extras).map(([code, desc]) => [
+          code,
+          { description: desc, content: { 'application/json': { schema: ErrorResponseSchema } } },
+        ]),
+      ),
+      500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    },
+  });
+};
+
+painel(
+  '/api/admin/permission-groups',
+  'Lista os grupos de permissão do tenant',
+  'Cada grupo já vem com os dois eixos resolvidos (células e países) e a contagem de membros vivos. ' +
+    '`?includeArchived=true` traz os arquivados — arquivar não apaga.',
+  z.object({ groups: z.array(PermissionGroupSchema) }),
+);
+
+painel(
+  '/api/admin/permission-groups/{id}',
+  'Detalhe de um grupo',
+  'Grupo de OUTRO tenant devolve 404, indistinguível de inexistente: um 403 confirmaria que o id ' +
+    'existe em algum lugar.',
+  PermissionGroupSchema,
+  { 404: 'Grupo inexistente neste tenant.' },
+);
+
+painel(
+  '/api/admin/permission-groups/{id}/members',
+  'Membros vivos de um grupo',
+  'Dado de STAFF (e-mail, papel, status). O grupo é conferido ANTES: id de outro tenant devolve 404, ' +
+    'nunca `{members: []}` com 200 — o 200 vazio confirmaria a existência do id.',
+  z.object({ members: z.array(GroupMemberSchema) }),
+  { 404: 'Grupo inexistente neste tenant.' },
+);
+
+painel(
+  '/api/admin/country-features',
+  'Disponibilidade de features por país',
+  'A matriz país × feature: padrão do manifest e overrides do painel. `?country=AR` filtra; país fora ' +
+    'do catálogo é 400, não lista vazia.',
+  z.object({ features: z.array(CountryFeatureSchema) }),
+);
+
+painel(
+  '/api/admin/permission-audit',
+  'Trilha de decisões de permissão',
+  'O gate real NÃO está na rota: está em `iam.query_audit` (mig 279/280), que exige a célula do ator ' +
+    'no GUC e registra o próprio ato de auditar (lex C7). A role do app não tem SELECT na tabela. ' +
+    'Filtros: `userId`, `resource`, `since`, `until`, `limit` (1..1000, default 200). ' +
+    'A vista nunca expõe conteúdo de dado pessoal — só identificadores e metadados.',
+  z.object({ entries: z.array(AuditRowSchema) }),
+);

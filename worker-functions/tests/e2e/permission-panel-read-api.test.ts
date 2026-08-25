@@ -44,6 +44,15 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
   };
   const GRUPO_GESTAO = 'Panel E2E Gestão de Acessos';
   const GRUPO_SEM_CELULA = 'Panel E2E Sem Células';
+  let grupoGestaoId: string;
+  /**
+   * ⚠️ `iam.country_features` nasce VAZIA no banco de e2e (medido: 0 linhas) —
+   * quem a preenche é o sync do manifest no boot, que não roda aqui. Sem esta
+   * semeadura, "devolve a matriz" e "filtra por país" passariam sobre conjunto
+   * vazio: `every` de array vazio é `true`, e o teste ficaria verde provando
+   * nada. Duas linhas, dois países, para o filtro ter o que excluir.
+   */
+  const FEATURE_E2E = 'screen:panel-e2e';
 
   const envAnterior: Record<string, string | undefined> = {};
   function setEnv(chave: string, valor: string): void {
@@ -62,6 +71,7 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
   }
 
   async function limpar(): Promise<void> {
+    await pool.query(`DELETE FROM iam.country_features WHERE feature_key = $1`, [FEATURE_E2E]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: [GRUPO_GESTAO, GRUPO_SEM_CELULA] });
   }
 
@@ -79,7 +89,7 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
 
     // `grupoComCelulas` explode se a célula não existir em `iam.permissions` —
     // é o controle positivo de que `permission_management:read` está no seed.
-    await grupoComCelulas(pool, {
+    grupoGestaoId = await grupoComCelulas(pool, {
       nome: GRUPO_GESTAO,
       uid: U.gestora,
       celulas: [['permission_management', 'read']],
@@ -89,6 +99,13 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
       uid: U.semCelula,
       celulas: [['vacancy', 'read']],
     });
+
+    await pool.query(
+      `INSERT INTO iam.country_features (country, feature_key, enabled, source, updated_by) VALUES
+         ('AR', $1, true,  'default',  'e2e'),
+         ('BR', $1, false, 'override', 'e2e')`,
+      [FEATURE_E2E],
+    );
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -102,7 +119,15 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.permissions',
       montarRotas: ({ app: express, auth, permissions, modulo }) => {
-        express.use('/api/admin', createPermissionPanelRoutes(modulo.catalog.list, auth, permissions));
+        express.use('/api/admin', createPermissionPanelRoutes({
+          catalog: modulo.catalog.list,
+          groups: modulo.repositories.groups,
+          features: modulo.repositories.features,
+          audit: modulo.audit,
+          auth,
+          permissions,
+          tenantId: TENANT_E2E,
+        }));
         express.use(
           '/v1',
           createMeAuthzRouter({
@@ -213,6 +238,136 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
 
     it('sem credencial → 401', async () => {
       expect((await chamar('/v1/me/authz', null)).status).toBe(401);
+    });
+  });
+
+  describe('GET /api/admin/permission-groups — os grupos e os dois eixos', () => {
+    it('lista os grupos do tenant, com células, países e contagem de membros', async () => {
+      const res = await chamar('/api/admin/permission-groups', U.gestora);
+
+      expect(res.status).toBe(200);
+      const grupos = res.body.groups as Array<{ id: string; name: string; cells: string[]; memberCount: number }>;
+      const gestao = grupos.find((g) => g.id === grupoGestaoId);
+      expect(gestao).toMatchObject({ name: GRUPO_GESTAO, memberCount: 1 });
+      expect(gestao?.cells).toEqual(['permission_management:read']);
+    });
+
+    it('staff SEM a célula → 403, e a lista não sai', async () => {
+      const res = await chamar('/api/admin/permission-groups', U.semCelula);
+
+      expect(res.status).toBe(403);
+      expect(res.body.groups).toBeUndefined();
+    });
+
+    it('o detalhe traz o grupo resolvido', async () => {
+      const res = await chamar(`/api/admin/permission-groups/${grupoGestaoId}`, U.gestora);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: grupoGestaoId, name: GRUPO_GESTAO, isSystem: false });
+    });
+
+    it('🔴 id que não existe neste tenant → 404, nunca 200 vazio', async () => {
+      // Aqui o id é inexistente; o caso "existe em OUTRO tenant" é o mesmo
+      // caminho de código — a porta devolve `null` nos dois, de propósito
+      // (404 indistinguível de inexistente), e o unit cobre o contrato.
+      const res = await chamar('/api/admin/permission-groups/99999999-9999-4999-8999-999999999999', U.gestora);
+
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ success: false, error: 'Not found' });
+    });
+
+    it('id malformado → 400, não 500 no cast do Postgres', async () => {
+      expect((await chamar('/api/admin/permission-groups/nao-e-uuid', U.gestora)).status).toBe(400);
+    });
+
+    it('os membros do grupo saem com e-mail, papel e status', async () => {
+      const res = await chamar(`/api/admin/permission-groups/${grupoGestaoId}/members`, U.gestora);
+
+      expect(res.status).toBe(200);
+      expect(res.body.members).toEqual([
+        expect.objectContaining({
+          userId: U.gestora,
+          email: 'panel-gestora@e2e.local',
+          status: 'ACTIVE',
+        }),
+      ]);
+    });
+
+    it('🔴 membros de grupo inexistente → 404, NÃO `{members: []}` com 200', async () => {
+      const res = await chamar('/api/admin/permission-groups/99999999-9999-4999-8999-999999999999/members', U.gestora);
+
+      expect(res.status).toBe(404);
+      expect(res.body.members).toBeUndefined();
+    });
+  });
+
+  describe('GET /api/admin/country-features — disponibilidade por país', () => {
+    it('devolve a matriz país × feature — a MESMA chave nos dois países', async () => {
+      const res = await chamar('/api/admin/country-features', U.gestora);
+
+      expect(res.status).toBe(200);
+      const minhas = (res.body.features as Array<{ country: string; featureKey: string; enabled: boolean; source: string }>)
+        .filter((f) => f.featureKey === FEATURE_E2E);
+
+      expect(minhas).toEqual([
+        expect.objectContaining({ country: 'AR', enabled: true, source: 'default' }),
+        expect.objectContaining({ country: 'BR', enabled: false, source: 'override' }),
+      ]);
+    });
+
+    it('filtra por país — e o outro país SOME, que é o que prova o filtro', async () => {
+      const res = await chamar('/api/admin/country-features?country=AR', U.gestora);
+
+      expect(res.status).toBe(200);
+      const features = res.body.features as Array<{ country: string; featureKey: string }>;
+      // Não-vazio primeiro: `every` de lista vazia é `true` e aprovaria o filtro quebrado.
+      expect(features.length).toBeGreaterThan(0);
+      expect(features.every((f) => f.country === 'AR')).toBe(true);
+      expect(features.some((f) => f.featureKey === FEATURE_E2E)).toBe(true);
+      expect(features.some((f) => f.country === 'BR')).toBe(false);
+    });
+
+    it('país fora do catálogo → 400, não lista vazia silenciosa', async () => {
+      expect((await chamar('/api/admin/country-features?country=XX', U.gestora)).status).toBe(400);
+    });
+
+    it('staff SEM a célula → 403', async () => {
+      expect((await chamar('/api/admin/country-features', U.semCelula)).status).toBe(403);
+    });
+  });
+
+  describe('GET /api/admin/permission-audit — a trilha', () => {
+    it('🔴 o gestor lê a trilha por `iam.query_audit` — a função que o #245 quase matou', async () => {
+      // Este caso é o motivo de a F3 vir antes da F5. Se
+      // `permission_management:read` estiver descontinuada, a função levanta
+      // 42501 e isto vira 500 — inclusive para o Acesso Master.
+      const res = await chamar('/api/admin/permission-audit?limit=10', U.gestora);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.entries)).toBe(true);
+    });
+
+    it('a negativa que acabou de acontecer aparece na trilha', async () => {
+      await chamar('/api/admin/permission-groups', U.semCelula);
+      // A trilha é assíncrona fail-safe (nunca segura a request) — daí a espera.
+      await new Promise((r) => setTimeout(r, 400));
+
+      const res = await chamar(`/api/admin/permission-audit?userId=${U.semCelula}&limit=50`, U.gestora);
+
+      expect(res.status).toBe(200);
+      const linhas = res.body.entries as Array<{ userId: string; resource: string; decision: string }>;
+      expect(linhas.some((l) => l.userId === U.semCelula && l.resource === 'permission_management')).toBe(true);
+    });
+
+    it('`limit` acima do teto → 400 (o teto é contrato)', async () => {
+      expect((await chamar('/api/admin/permission-audit?limit=5000', U.gestora)).status).toBe(400);
+    });
+
+    it('🔴 staff SEM a célula → 403 na rota, antes mesmo de a função do banco opinar', async () => {
+      const res = await chamar('/api/admin/permission-audit', U.semCelula);
+
+      expect(res.status).toBe(403);
+      expect(res.body.entries).toBeUndefined();
     });
   });
 });
