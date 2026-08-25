@@ -228,8 +228,6 @@ describe('cada rota chega no use case certo, com o payload certo', () => {
 });
 
 describe('zod na borda — recusa ANTES de qualquer ida ao banco', () => {
-  const casos: Array<[string, () => request.Test, string]> = [];
-
   it('grupo sem nome é 400', async () => {
     const { app, d } = build();
     await request(app).post('/api/admin/permission-groups').send({ description: 'só isso' }).expect(400);
@@ -296,8 +294,6 @@ describe('zod na borda — recusa ANTES de qualquer ida ao banco', () => {
     await request(app).put(`/api/admin/permission-groups/${ID}/permissions`).send({ cellKeys: [] }).expect(200);
     expect(d.setPermissions).toHaveBeenCalledWith(expect.objectContaining({ cellKeys: [] }));
   });
-
-  expect(casos).toEqual([]);
 });
 
 describe('erro de domínio → HTTP: é o contrato que a tela lê', () => {
@@ -308,12 +304,21 @@ describe('erro de domínio → HTTP: é o contrato que a tela lê', () => {
     ['invalid_input', 400],
   ];
 
-  it.each(mapa)('`%s` vira %i, com o código no corpo', async (code, status) => {
-    const { app } = build({ create: jest.fn().mockRejectedValue(new PermissionError(code as never, `falhou: ${code}`)) });
+  it.each(mapa)('`%s` vira %i, com o código no corpo e a frase da CASA', async (code, status) => {
+    // ⚠️ A mensagem original NÃO vai no corpo. Medido pelo gate: no 23505 o
+    // `perm.message` é `duplicate key value violates unique constraint
+    // "permission_groups_tenant_id_name_key"` — nome de tabela e de constraint
+    // para o cliente. O `code` é o que a tela consome; a frase é nossa.
+    const original = `CRU DO POSTGRES: ${code} em permission_groups_tenant_id_name_key`;
+    const { app } = build({ create: jest.fn().mockRejectedValue(new PermissionError(code as never, original)) });
 
     const res = await request(app).post('/api/admin/permission-groups').send({ name: 'G' }).expect(status);
 
-    expect(res.body).toEqual({ success: false, error: `falhou: ${code}`, code });
+    expect(res.body.code).toBe(code);
+    expect(res.body.error).not.toContain('permission_groups_tenant_id_name_key');
+    expect(res.body.error).not.toContain('CRU DO POSTGRES');
+    expect(typeof res.body.error).toBe('string');
+    expect((res.body.error as string).length).toBeGreaterThan(0);
   });
 
   it('🔴 `last_manager` é 409, NÃO 403 — quem pediu tinha permissão', async () => {
@@ -324,6 +329,7 @@ describe('erro de domínio → HTTP: é o contrato que a tela lê', () => {
     const res = await request(app).delete(`/api/admin/permission-groups/${ID}/members/uid-1`).expect(409);
 
     expect(res.body.code).toBe('last_manager');
+    expect(res.body.error).toBe('A operação deixaria a empresa sem nenhum gestor de acessos.');
   });
 
   it('🔴 erro do DRIVER é traduzido — a borda não conhece SQLSTATE', async () => {

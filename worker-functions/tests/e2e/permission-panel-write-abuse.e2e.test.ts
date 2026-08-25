@@ -104,11 +104,26 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
     // regressão — e o diagnóstico vai para o lugar errado.
     await pool.query(`DELETE FROM iam.country_features WHERE feature_key LIKE 'screen:abuse%'`);
     await pool.query(`DELETE FROM iam.country_feature_changes WHERE feature_key LIKE 'screen:abuse%'`);
-    await pool.query(`DELETE FROM iam.permission_groups WHERE name LIKE $1`, ['Abuse E2E%outro']);
+    // ⚠️ Por PREFIXO e ANTES dos users. Lista de nomes é régua de FORMA: quebra
+    // assim que um caso cria um grupo a mais — foi como o arquivo irmão ficou
+    // com `Test Suites: failed` e `Tests: 9 passed` ao mesmo tempo.
+    // ⚠️ Nome OU autoria. Só o prefixo não basta: o controle positivo do
+    // `PATCH` RENOMEIA o grupo, e o renomeado deixa de casar o prefixo — foi
+    // assim que a suíte voltou a dar `Tests: 37 passed` com `Test Suites:
+    // failed`. Nome é mutável; `created_by` não.
+    const doTeste = `(SELECT id FROM iam.permission_groups
+                        WHERE name LIKE 'Abuse E2E%' OR created_by = ANY('{${Object.values(U).join(',')}}'))`;
+    await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [Object.values(U)]);
+    await pool.query(`DELETE FROM iam.permission_group_changes WHERE group_id IN ${doTeste}`);
+    await pool.query(`DELETE FROM iam.group_country_scopes WHERE group_id IN ${doTeste}`);
+    await pool.query(`DELETE FROM iam.group_permissions WHERE group_id IN ${doTeste}`);
+    await pool.query(`DELETE FROM iam.user_groups WHERE group_id IN ${doTeste}`);
+    await pool.query(
+      `DELETE FROM iam.permission_groups WHERE name LIKE 'Abuse E2E%' OR created_by = ANY($1)`,
+      [Object.values(U)],
+    );
     await pool.query(`DELETE FROM iam.tenants WHERE name = 'Abuse E2E Outro Tenant'`);
-    await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(G) });
-    await pool.query(`DELETE FROM iam.group_country_scopes WHERE group_id IN (SELECT id FROM iam.permission_groups WHERE name = ANY($1))`, [Object.values(G)]);
-    await pool.query(`DELETE FROM iam.permission_groups WHERE name = ANY($1)`, [Object.values(G)]);
+    await limparIamFixtures(pool, { uids: Object.values(U), grupos: [] });
   }
 
   beforeAll(async () => {
@@ -249,10 +264,14 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
       expect(res.status).toBe(404);
     });
 
-    it('id malformado é 400 e não chega ao banco', async () => {
-      const res = await chamar('PATCH', '/api/admin/permission-groups/../../etc/passwd', U.gestor, { name: 'x' });
+    it('🔴 id que não é uuid é 400 e não chega ao banco', async () => {
+      // ⚠️ Antes eu usava `../../etc/passwd` e aceitava `[400, 404]`: o `fetch`
+      // NORMALIZA o caminho antes de sair, então o servidor nunca via um id
+      // malformado — o caso media a normalização do cliente, não a borda.
+      const res = await chamar('PATCH', '/api/admin/permission-groups/nao-e-uuid', U.gestor, { name: 'x' });
 
-      expect([400, 404]).toContain(res.status);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Invalid group id');
     });
   });
 
@@ -261,7 +280,7 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
   describe('(d) staff sem célula chamando cada rota direto, não pela tela', () => {
     const rotas: Array<[string, string, unknown]> = [
       ['POST', '/api/admin/permission-groups', { name: 'Abuse E2E direto' }],
-      ['PATCH', '/api/admin/permission-groups/:id', { name: 'renomeado' }],
+      ['PATCH', '/api/admin/permission-groups/:id', { name: 'Abuse E2E renomeado' }],
       ['DELETE', '/api/admin/permission-groups/:id', undefined],
       ['PUT', '/api/admin/permission-groups/:id/permissions', { cellKeys: ['worker:read'] }],
       ['POST', '/api/admin/permission-groups/:id/countries', { country: 'BR', reason: 'x' }],
@@ -293,6 +312,44 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
     it('sem credencial nenhuma é 401, antes de qualquer decisão', async () => {
       const res = await chamar('POST', '/api/admin/permission-groups', null, { name: 'x' });
       expect(res.status).toBe(401);
+    });
+
+    /**
+     * 🔴 CONTROLE POSITIVO POR ROTA — e é ele que faz o bloco (d) acima valer.
+     *
+     * Medido pelo gate `revisao-pr`: com `iam.add_member` recusando TODO MUNDO
+     * com 42501 (função quebrada, GRANT faltando — nada a ver com "o ator não
+     * tem a célula"), a bateria inteira ficava **28/28 VERDE**. Ou seja: para 8
+     * das 9 rotas ela não distinguia "o banco recusou porque não é gestor" de
+     * "o banco recusou porque está quebrado".
+     *
+     * Eu tinha escrito que o caso do `set_group_permissions` era "controle
+     * positivo da bateria INTEIRA". Era falso: controle positivo vale para a
+     * rota que ele exercita, não para as vizinhas.
+     *
+     * Cada caso usa um grupo SACRIFICIAL próprio, criado na hora: sem isso o
+     * `DELETE` arquivaria o alvo e os seguintes voltariam 404 — que passaria num
+     * `not.toBe(403)` sem provar que a rota funciona.
+     */
+    it.each(rotas)('🔴 CONTROLE POSITIVO — %s %s: o GESTOR consegue', async (metodo, caminho, corpo) => {
+      const criado = await chamar('POST', '/api/admin/permission-groups', U.gestor, {
+        name: `Abuse E2E Sacrificial ${metodo} ${caminho}`,
+      });
+      expect(criado.status).toBe(200);
+      const alvo = criado.body.groupId as string;
+
+      // As rotas de membro e de revogação precisam de algo para operar.
+      if (caminho.includes('/members/')) {
+        await chamar('POST', `/api/admin/permission-groups/${alvo}/members`, U.gestor, { userId: U.comum });
+      }
+      if (caminho.includes('/countries/')) {
+        await chamar('POST', `/api/admin/permission-groups/${alvo}/countries`, U.gestor, { country: 'AR', reason: 'controle' });
+      }
+
+      const res = await chamar(metodo, caminho.replace(':id', alvo), U.gestor, corpo);
+
+      // 200 estrito: `not.toBe(403)` aceitaria 404 de rota quebrada.
+      expect(res.status).toBe(200);
     });
   });
 
@@ -409,12 +466,19 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
       expect(r.rowCount).toBe(0);
     });
 
-    it('chave de feature malformada é recusada — e a mensagem diz qual é o problema', async () => {
-      const res = await chamar('PUT', '/api/admin/country-features/AR/NAO_E_CHAVE', U.comum, {
+    it('🔴 chave de feature malformada é recusada — pelo GESTOR, que é quem chega ao validador', async () => {
+      // ⚠️ Antes eu media isto com o `U.comum` e aceitava `[400, 403]`. O status
+      // real era 403 (falta de célula): o teste NUNCA exercitava a validação de
+      // chave, e o `toContain` de dois valores escondia isso. Com o gestor, o
+      // 400 só pode vir do validador — que é o que o caso promete medir.
+      const res = await chamar('PUT', '/api/admin/country-features/AR/NAO_E_CHAVE', U.gestor, {
         enabled: true, reason: 'x',
       });
 
-      expect([400, 403]).toContain(res.status);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_feature_key');
+      const r = await pool.query(`SELECT 1 FROM iam.country_features WHERE feature_key = $1`, ['NAO_E_CHAVE']);
+      expect(r.rowCount).toBe(0);
     });
   });
 });

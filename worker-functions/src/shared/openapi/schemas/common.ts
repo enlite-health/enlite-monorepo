@@ -12,6 +12,17 @@ export const ErrorResponseSchema = registry.register(
           'Mensagem curta legível por humano descrevendo a falha.',
         example: 'Invalid query params',
       }),
+      code: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'Código ESTÁVEL da falha, quando o endpoint o publica. É o único discriminador dos três '
+            + '409 do painel de acessos (`duplicate_name`, `system_group`, `last_manager`) — a frase '
+            + 'de `error` é para humano e pode mudar; este não. Achado pelo gate `revisao-pr`: a tela '
+            + 'dependia de um campo que o contrato não declarava.',
+          example: 'last_manager',
+        }),
       details: z
         .unknown()
         .optional()

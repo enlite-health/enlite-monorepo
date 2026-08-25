@@ -53,18 +53,34 @@ describe('escrita do painel — caminho feliz, efeito no banco (F4)', () => {
     return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
   }
 
+  /**
+   * ⚠️ A ordem aqui é contrato, e eu errei nela: os grupos saem por PREFIXO e
+   * ANTES de `limparIamFixtures`, que apaga os users.
+   *
+   * O que quebrava: o helper apaga os grupos pela lista EXATA de nomes e só
+   * então os users. Um grupo criado pelo teste com nome fora da lista (o
+   * `Write E2E Para Arquivar`, do último caso) sobrevivia com
+   * `archived_by = GESTOR`, e o `DELETE FROM users` batia na FK
+   * `permission_groups_archived_by_fkey`. A suíte reportava `Tests: 9 passed` e
+   * `Test Suites: 1 failed` — verde por dentro, vermelha por fora, e a rodada
+   * seguinte já explodia no `beforeAll` por resíduo.
+   *
+   * Lista de nomes é régua de FORMA: quebra assim que um caso cria um grupo a
+   * mais. O prefixo cobre a classe. Os dependentes saem junto, na ordem das FKs.
+   */
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM iam.country_feature_changes WHERE feature_key = $1`, [FEATURE]);
     await pool.query(`DELETE FROM iam.country_features WHERE feature_key = $1`, [FEATURE]);
-    await pool.query(
-      `DELETE FROM iam.group_country_scopes WHERE group_id IN
-         (SELECT id FROM iam.permission_groups WHERE name LIKE 'Write E2E%')`,
-    );
-    await limparIamFixtures(pool, {
-      uids: [GESTOR, MEMBRO],
-      grupos: [G_GESTAO, G_TRABALHO, 'Write E2E Novo', 'Write E2E Renomeado'],
-    });
+
+    const doTeste = `(SELECT id FROM iam.permission_groups WHERE name LIKE 'Write E2E%')`;
+    await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [[GESTOR, MEMBRO]]);
+    await pool.query(`DELETE FROM iam.permission_group_changes WHERE group_id IN ${doTeste}`);
+    await pool.query(`DELETE FROM iam.group_country_scopes WHERE group_id IN ${doTeste}`);
+    await pool.query(`DELETE FROM iam.group_permissions WHERE group_id IN ${doTeste}`);
+    await pool.query(`DELETE FROM iam.user_groups WHERE group_id IN ${doTeste}`);
     await pool.query(`DELETE FROM iam.permission_groups WHERE name LIKE 'Write E2E%'`);
+
+    await limparIamFixtures(pool, { uids: [GESTOR, MEMBRO], grupos: [] });
   }
 
   beforeAll(async () => {

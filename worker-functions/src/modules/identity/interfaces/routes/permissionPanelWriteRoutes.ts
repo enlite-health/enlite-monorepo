@@ -25,13 +25,28 @@
  * simultâneos veriam um ao outro vivos). Cobre as três destrutivas — medido:
  * `archive_group`, `set_group_permissions`, `remove_member`.
  *
- * ⚠️ Ele conta `users.status = 'ACTIVE'`, então DESATIVAR o último gestor pela
- * tabela `users` passaria por fora. Hoje não há rota que faça isso (medido:
- * nenhum `UPDATE users SET status`). A task 4.1 prevê `PATCH /users/:uid`
- * estendido com `status` — quando ela vier, precisa de `SECURITY DEFINER`
- * próprio chamando o mesmo assert, ou reabre o lockout por caminho indireto.
- * Está FORA desta fase de propósito: o critério de saída da F4 nomeia grupo,
- * células, países, membros e features.
+ * ⚠️ **Ele NÃO cobre todos os caminhos, e eu afirmei que cobria.** A nota antiga
+ * media por `grep` de `UPDATE users SET status` — régua de FORMA: prova que uma
+ * string não aparece, não que a propriedade "zera gestores" é impossível. O gate
+ * `revisao-pr` achou TRÊS caminhos vivos hoje, e os dois primeiros são rota:
+ *
+ *  1. **`PATCH /api/admin/users/:id/role`** (`adminUsersRoutes.ts:69`) — guardada
+ *     pela MESMA célula `permission_management:write`. Chama `change_user_role`,
+ *     que só faz `UPDATE users SET role` e **não** chama o assert. Trocar o role
+ *     do último gestor para não-staff o tranca fora de todo `/api/admin` via
+ *     `requireStaff()` — e o assert não vê nada, porque `effective_permissions`
+ *     filtra `u.status = 'ACTIVE'` e **não olha `role`** (medido na mig 276).
+ *  2. **`DELETE /api/admin/users/:id`** — hard delete; `effective_permissions`
+ *     faz `JOIN users`, e sem a linha o gestor some do cálculo.
+ *  3. `iam.deprecate_missing_permission_cells` — descontinuar a célula a remove
+ *     de `effective_permissions`. É o incidente que já está vermelho na `stage`.
+ *
+ * Os três são rotas/funções PRÉ-EXISTENTES, fora do diff desta fase — vão para a
+ * lista do Gabriel, não para este PR. O que muda aqui é o comentário parar de
+ * afirmar cobertura que não existe.
+ *
+ * A task 4.1 ainda prevê `PATCH /users/:uid` com `status`; quando vier, precisa
+ * de `SECURITY DEFINER` próprio chamando o mesmo assert.
  */
 
 import { Router, type RequestHandler, type Response } from 'express';
@@ -119,6 +134,25 @@ const STATUS_POR_CODIGO: Readonly<Record<PermissionErrorCode, number>> = {
   invalid_input: 400,
 };
 
+/**
+ * A frase que o cliente vê. Existe porque `perm.message` carrega, em alguns
+ * códigos, a mensagem CRUA do Postgres — com nome de tabela e de constraint.
+ * O `code` é o que a tela consome; a frase é para humano, e é nossa.
+ */
+const MENSAGEM_POR_CODIGO: Readonly<Record<PermissionErrorCode, string>> = {
+  forbidden: 'Sem permissão para gerenciar acessos.',
+  not_found: 'Grupo não encontrado.',
+  duplicate_name: 'Já existe um grupo com esse nome.',
+  system_group: 'Grupo de sistema não pode ser alterado nem arquivado.',
+  last_manager: 'A operação deixaria a empresa sem nenhum gestor de acessos.',
+  invalid_cell: 'Célula fora do catálogo ou descontinuada.',
+  reason_required: 'Esta operação exige um motivo.',
+  invalid_feature_key: 'Chave de feature inválida.',
+  invalid_feature_config: 'Configuração da feature inválida.',
+  invalid_country: 'País não suportado.',
+  invalid_input: 'Dados inválidos.',
+};
+
 function responder<T>(res: Response, rotulo: string, trabalho: () => Promise<T>): void {
   void trabalho()
     .then((corpo) => {
@@ -133,9 +167,19 @@ function responder<T>(res: Response, rotulo: string, trabalho: () => Promise<T>)
       // 500 mascarado de 4xx pelo índice `undefined`.
       const perm = isPermissionError(err) ? err : toPermissionError(err);
       if (isPermissionError(perm)) {
-        // Negativa NÃO é ruído: é o sinal de que o gate do banco funcionou.
-        logger.warn({ rotulo, code: perm.code }, '[perm] escrita do painel recusada');
-        res.status(STATUS_POR_CODIGO[perm.code]).json({ success: false, error: perm.message, code: perm.code });
+        // Negativa NÃO é ruído: é o sinal de que o gate do banco funcionou. A
+        // mensagem ORIGINAL fica aqui, no log, e só aqui.
+        logger.warn({ rotulo, code: perm.code, detalhe: perm.message }, '[perm] escrita do painel recusada');
+        // ⚠️ O corpo leva MENSAGEM DA CASA, não a do Postgres. Medido pelo gate:
+        // no 23505 o `perm.message` é `duplicate key value violates unique
+        // constraint "permission_groups_tenant_id_name_key"` — nome de tabela e
+        // de constraint indo para o cliente, no mesmo arquivo cujo comentário
+        // abaixo promete que a borda não vaza estrutura interna.
+        res.status(STATUS_POR_CODIGO[perm.code]).json({
+          success: false,
+          error: MENSAGEM_POR_CODIGO[perm.code],
+          code: perm.code,
+        });
         return;
       }
       logger.error({ err, rotulo }, '[perm] falha na escrita do painel');
