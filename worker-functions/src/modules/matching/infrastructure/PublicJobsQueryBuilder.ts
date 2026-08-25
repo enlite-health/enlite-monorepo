@@ -48,9 +48,9 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
     conditions.push(`pa.city ILIKE ${push(filters.city)}`);
   }
 
-  if (filters.pathology) {
-    conditions.push(`p.diagnosis ILIKE ${push(`%${filters.pathology}%`)}`);
-  }
+  // Removido em 25/08/2026: aqui havia o filtro `pathology`, que casava sobre a coluna
+  // clinica de patients. Ver o comentario em PublicJobsFilters.ts -- o controller agora
+  // recusa o parametro com 400 em vez de aceita-lo em silencio.
 
   if (filters.worker_sex) {
     conditions.push(`jp.required_sex = ${push(filters.worker_sex)}`);
@@ -64,8 +64,13 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
     const term = `%${filters.q}%`;
     // Single placeholder reused across OR branches
     const p = push(term);
+    // ⚠️ O ramo sobre a coluna clinica do paciente saiu daqui em 25/08/2026, e a busca livre
+    // continua funcionando sobre titulo e localidade. Sem isso, `?q=<termo clinico>` era o
+    // MESMO oraculo do filtro removido acima, por outra porta: quem quisesse sondar so
+    // trocava o nome do parametro. Consertar um e deixar o outro seria consertar a
+    // instancia e chamar de classe.
     conditions.push(
-      `(jp.title ILIKE ${p} OR p.diagnosis ILIKE ${p} OR COALESCE(pa.neighborhood, p.zone_neighborhood) ILIKE ${p} OR pa.state ILIKE ${p} OR pa.city ILIKE ${p})`,
+      `(jp.title ILIKE ${p} OR COALESCE(pa.neighborhood, p.zone_neighborhood) ILIKE ${p} OR pa.state ILIKE ${p} OR pa.city ILIKE ${p})`,
     );
   }
 
