@@ -5,6 +5,7 @@
  */
 
 import express from 'express';
+import { appDeRota } from '@shared/__tests__/appDeRota';
 import request from 'supertest';
 import { scanExpressRouter, cellKey, undeclaredRoutes } from '@modules/identity/permissions';
 import {
@@ -101,8 +102,7 @@ describe('família admin.analytics — 15 rotas declaram célula', () => {
       ['get', '/analytics/dashboard/zones', 'getZoneMetrics'],
       ['get', '/analytics/dashboard/zone-analytics', 'getZoneAnalytics'],
     ] as const)('%s %s NÃO é capturado pela rota paramétrica', async (metodo, caminho, esperado) => {
-      const app = express();
-      app.use('/analytics', build());
+      const app = appDeRota('analytics', '/analytics', build);
 
       const res = await request(app)[metodo](caminho).expect(200);
 
@@ -132,8 +132,7 @@ describe('família admin.analytics — 15 rotas declaram célula', () => {
     ['get', '/analytics/dashboard/zone-analytics', 'getZoneAnalytics'],
     ['get', '/analytics/dashboard/cases/42', 'getCaseMetrics'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
-    const app = express();
-    app.use('/analytics', build());
+    const app = appDeRota('analytics', '/analytics', build);
 
     const res = await request(app)[metodo](caminho).expect(200);
 
