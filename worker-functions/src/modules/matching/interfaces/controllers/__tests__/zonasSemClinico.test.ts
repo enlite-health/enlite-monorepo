@@ -124,6 +124,39 @@ describe('L10 — a análise de zonas não busca dado clínico nem nome de pacie
     expect(sql).not.toMatch(/patient_name/);
   });
 
+  /**
+   * 🔴 ALLOW-LIST — e é ela que faz esta guarda valer alguma coisa.
+   *
+   * As duas asserções acima são DENY-LIST de nome de coluna, e deny-list não
+   * alcança projeção que não NOMEIA coluna. Medido, não suposto: com
+   * `json_build_object(…)::jsonb || to_jsonb(p)` os quatro casos deste arquivo
+   * ficavam VERDES enquanto a linha inteira de `patients` — `diagnosis`,
+   * `first_name` e `additional_comments` (o texto livre que o front rotula
+   * `diagnosisCard.details`) — atravessava para o cliente, porque o controller
+   * repassa `cases: row.cases` verbatim.
+   *
+   * Invertido o sentido: em vez de listar o proibido, esta afirma o CONJUNTO
+   * EXATO de colunas de `patients` que a rota tem direito de tocar. Coluna nova
+   * de `p` no `SELECT` reprova por padrão — que é o mesmo princípio do
+   * `projectWorkerFields` (campo novo nasce FORA de todos os ramos, e portanto
+   * invisível).
+   */
+  it('🔴 a rota toca EXATAMENTE duas colunas de `patients`, e nenhuma projeção anônima', async () => {
+    const [req, res] = reqRes();
+
+    await new RecruitmentAnalyticsController().getZoneAnalysis(req, res);
+
+    const sql = sqlDeTodasAsQueries();
+
+    // 1. projeção que não nomeia coluna é proibida — é o buraco da deny-list.
+    expect(sql).not.toMatch(/to_jsonb|to_json\s*\(|row_to_json|\bp\.\*|\bjp\.\*|SELECT\s+\*/i);
+
+    // 2. o conjunto exato: `zone_neighborhood` (a razão de ser da rota, no
+    //    SELECT e no GROUP BY) e `id` (a condição do JOIN). Nada mais.
+    const colunasDeP = [...sql.matchAll(/\bp\.([a-z_]+)/gi)].map((m) => m[1]);
+    expect(new Set(colunasDeP)).toEqual(new Set(['zone_neighborhood', 'id']));
+  });
+
   it('a rota continua servindo o que ela existe para servir — zona e contagem', async () => {
     // Controle POSITIVO: sem isto, apagar a query inteira também passaria nos
     // dois casos acima. A rota tem de continuar respondendo o agregado.
@@ -140,6 +173,22 @@ describe('L10 — a análise de zonas não busca dado clínico nem nome de pacie
     expect(corpo.success).toBe(true);
     expect(corpo.data.totalCases).toBe(3);
     expect(corpo.data.zones[0]).toMatchObject({ zone: 'Palermo', caseCount: 2, activeCount: 1 });
+    expect(corpo.data.identifiedZones).toBe(1);
+  });
+
+  it('sem nenhuma linha `Sin Zona`, o total de sem-zona é 0 e não NaN', async () => {
+    // Ramo `…?.case_count || 0` (l.241): sem este caso, o fallback nunca roda e
+    // um `nullPercentage` NaN chegaria à tela sem nada acusar.
+    mockQuery.mockResolvedValue({
+      rows: [{ zone: 'Palermo', case_count: '2', active_count: '1', cases: [] }],
+    });
+    const [req, res] = reqRes();
+
+    await new RecruitmentAnalyticsController().getZoneAnalysis(req, res);
+
+    const corpo = (res.json as jest.Mock).mock.calls[0][0];
+    expect(corpo.data.nullCount).toBe(0);
+    expect(corpo.data.nullPercentage).toBe('0.0');
     expect(corpo.data.identifiedZones).toBe(1);
   });
 
