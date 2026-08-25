@@ -225,9 +225,7 @@ export class RecruitmentAnalyticsController {
             json_build_object(
               'case_number', case_number,
               'task_name', title,
-              'status', status,
-              'diagnosis', p.diagnosis,
-              'patient_name', p.first_name
+              'status', status
             )
           ) as cases
         FROM job_postings jp
