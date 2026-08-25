@@ -32,6 +32,11 @@ jest.mock('../../../infrastructure/BlockedApplicationQueryRepository', () => ({
   })),
 }));
 
+const mockTrilha = jest.fn();
+jest.mock('@shared/audit/contactAccessFromRequest', () => ({
+  emitirTrilhaDeContato: (...a: unknown[]) => mockTrilha(...a),
+}));
+
 jest.mock('../../../infrastructure/BlockedApplicationRepository', () => ({
   BlockedApplicationRepository: jest.fn().mockImplementation(() => ({
     dismiss: jest.fn(),
@@ -169,6 +174,30 @@ describe('funnel (Kanban) — a célula decide ANTES do KMS', () => {
       workerPhone: TELEFONE,
     });
     expect(mockKmsDecrypt).toHaveBeenCalledTimes(2);
+  });
+
+  it('C6 — sem a célula, a trilha de contato NÃO grava: nada foi revelado', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [linha()] });
+    mockListByVacancy.mockResolvedValue([]);
+
+    const [req, res] = reqRes([]);
+    await new WJAFunnelController().getEncuadreFunnel(req, res);
+
+    // A trilha é chamada, mas com lista vazia — o filtro é explícito, e é o
+    // emissor que decide não gravar. Registrar "tentou ver" viraria trilha de
+    // comportamento, que é outro tratamento (M1-2 proíbe uso disciplinar).
+    expect(mockTrilha).toHaveBeenCalledTimes(1);
+    expect(mockTrilha.mock.calls[0][1]).toEqual([null]);
+  });
+
+  it('C6 — com a célula, a trilha recebe o worker cujo contato SAIU', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [linha()] });
+    mockListByVacancy.mockResolvedValue([]);
+
+    const [req, res] = reqRes(['funnel:read', CELL_WORKER_CONTACT_READ]);
+    await new WJAFunnelController().getEncuadreFunnel(req, res);
+
+    expect(mockTrilha.mock.calls[0][1]).toEqual(['wid-aaaa-bbbb-cccc-12345678']);
   });
 
   it('o pseudônimo `Worker #…` não sobrescreve a redação', async () => {

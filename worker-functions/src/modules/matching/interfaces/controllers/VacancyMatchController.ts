@@ -10,7 +10,8 @@ import {
 } from '@shared/database/activeWorkerFilter';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
-import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
+import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 
 /**
  * VacancyMatchController
@@ -161,6 +162,11 @@ export class VacancyMatchController {
             messagedAt:        row.messaged_at,
           };
         })
+      );
+
+      emitirTrilhaDeContato(
+        req,
+        candidates.map((c) => (c.workerName === NOME_REDIGIDO ? null : (c.workerId as string | null))),
       );
 
       res.status(200).json({

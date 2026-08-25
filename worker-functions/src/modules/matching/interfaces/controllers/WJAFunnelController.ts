@@ -20,7 +20,8 @@ import {
   INTERVIEW_TIME_RESOLVED_SQL,
 } from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
-import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
+import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -207,6 +208,14 @@ export class WJAFunnelController {
           return { name: visivel.name ?? null, phone: visivel.phone ?? null };
         })),
       ]);
+
+      // C6: a trilha sai com quem teve o contato REVELADO, não com quem a página
+      // trouxe. Ator redigido não gera linha — nada foi revelado.
+      emitirTrilhaDeContato(
+        req,
+        result.rows.map((row, i) =>
+          visiveisWja[i].name === NOME_REDIGIDO ? null : (row.worker_id as string | null)),
+      );
 
       // Classify WJA rows into kanban columns
       let classifiedCount = 0;
