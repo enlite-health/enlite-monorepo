@@ -100,4 +100,10 @@ describe('adminAuthStore — o contrato de authz', () => {
     expect(getMyAuthz).not.toHaveBeenCalled();
     emailGoogle = 'a@enlite.health';
   });
+
+  it('login por senha com perfil falhando e SEM trace: nada explode, perfil nulo', async () => {
+    (AdminApiService.getProfile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('404'));
+    await expect(useAdminAuthStore.getState().login('a@enlite.health', 'x')).resolves.toBeUndefined();
+    expect(useAdminAuthStore.getState().adminProfile).toBeNull();
+  });
 });
