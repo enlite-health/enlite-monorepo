@@ -16,6 +16,7 @@ import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AccessPage, GroupDetailPage, CountryFeaturesPage, AuditPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
@@ -205,6 +206,11 @@ export function App() {
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
+          {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
+          <Route path="access" element={<AccessPage />} />
+          <Route path="access/groups/:id" element={<GroupDetailPage />} />
+          <Route path="access/features" element={<CountryFeaturesPage />} />
+          <Route path="access/audit" element={<AuditPage />} />
           <Route
             path="api-docs"
             element={
