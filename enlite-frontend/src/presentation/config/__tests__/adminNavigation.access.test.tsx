@@ -32,3 +32,11 @@ describe('menu — o item de acessos deriva da CÉLULA, não do role', () => {
     expect(result.current.map((i) => i.href)).not.toContain('/admin/access');
   });
 });
+
+describe('seção "Administración" — quem abre a seção', () => {
+  it('sem itens de admin (recruiter), o item de acessos carrega o sectionStart', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['permission_management:read']) });
+    const item = renderHook(() => useAdminNavItems()).result.current.find((i) => i.href === '/admin/access');
+    expect(item?.sectionStart).toBeTruthy();
+  });
+});

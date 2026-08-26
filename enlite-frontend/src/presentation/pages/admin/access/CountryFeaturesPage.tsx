@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AdminPermissionsApiService, type CountryFeature } from '@infrastructure/http/AdminPermissionsApiService';
 import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Input, Label } from '@presentation/components/atoms';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
-import { ActionButton } from '@presentation/components/features/access';
+import { ActionButton, PanelErrorAlert } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
@@ -46,7 +46,7 @@ function FeaturesMatrix(): JSX.Element {
       await AdminPermissionsApiService.setCountryFeature(f.country, f.featureKey, {
         enabled: !f.enabled,
         config: f.config,
-        reason: reason.trim() || 'panel',
+        reason: reason.trim(),
       });
       await load();
     } catch (err) {
@@ -63,11 +63,7 @@ function FeaturesMatrix(): JSX.Element {
           <Input id="feat-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('admin.access.group.reasonPlaceholder')} />
         </div>
       )}
-      {error && (
-        <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg" role="alert">
-          <Text size="sm" color="primary">{t(error)}</Text>
-        </div>
-      )}
+      <PanelErrorAlert keyName={error} />
       {isLoading ? (
         <TableSkeleton />
       ) : (
@@ -90,7 +86,7 @@ function FeaturesMatrix(): JSX.Element {
                   <TableCell>{t(`admin.access.features.${f.source}`)}</TableCell>
                   <TableCell>{new Date(f.updatedAt).toLocaleDateString('es-AR')}</TableCell>
                   <TableCell unwrapped align="right">
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" onClick={() => toggle(f)}>
+                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!reason.trim()} onClick={() => toggle(f)}>
                       {f.enabled ? t('admin.access.features.disable') : t('admin.access.features.enable')}
                     </ActionButton>
                   </TableCell>

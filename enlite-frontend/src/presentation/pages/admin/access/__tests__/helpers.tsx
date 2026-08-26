@@ -24,6 +24,7 @@ export function renderRota(ui: ReactNode, path: string, pattern = path) {
         <Route path={pattern} element={ui} />
         <Route path="/admin" element={<div data-testid="admin-home" />} />
         <Route path="/admin/access" element={<div data-testid="access-home" />} />
+        <Route path="/admin/access/groups/:id" element={<div data-testid="group-detail-route" />} />
       </Routes>
     </MemoryRouter>,
   );

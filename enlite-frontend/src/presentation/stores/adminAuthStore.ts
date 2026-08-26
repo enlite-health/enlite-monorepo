@@ -82,11 +82,14 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
       const profile = await AdminApiService.getProfile();
       trace?.step('backend-profile:ok', { role: profile.role });
       set({ adminProfile: profile });
-      await get().fetchAuthz();
 
       // Force refresh token to pick up custom claims set by backend auto-provisioning
       await authService.forceRefreshToken();
       trace?.step('token-refresh:ok');
+      // DEPOIS do refresh: no 1º login o token ainda não tem as claims, e
+      // `requireStaff` decide por elas — o contrato viria 403 e a tela nasceria
+      // vazia até a próxima troca de área. Achado pelo gate (code-review #4).
+      await get().fetchAuthz();
     } catch (err) {
       trace?.fail('backend-profile-or-refresh', err);
       set({ adminProfile: null });

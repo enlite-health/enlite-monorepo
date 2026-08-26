@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { Gated, ReadOnlyField, ActionButton } from '..';
+import { Gated, ReadOnlyField, ActionButton, PanelErrorAlert } from '..';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
@@ -86,5 +86,17 @@ describe('ActionButton', () => {
     render(<ActionButton resource="x" onClick={onClick}>Salvar</ActionButton>);
     screen.getByRole('button', { name: 'Salvar' }).click();
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ReadOnlyField sem id / PanelErrorAlert', () => {
+  it('sem `id` não gera data-testid, e ainda mostra o valor', () => {
+    render(<ReadOnlyField label="L" value="V" editable={false} />);
+    expect(screen.getByText('V')).toBeInTheDocument();
+    expect(document.querySelector('[data-testid]')).toBeNull();
+    const { container } = render(<PanelErrorAlert keyName={null} />);
+    expect(container).toBeEmptyDOMElement();
+    render(<PanelErrorAlert keyName="k" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('k');
   });
 });

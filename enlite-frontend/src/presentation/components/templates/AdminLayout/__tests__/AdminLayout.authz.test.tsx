@@ -6,10 +6,13 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { AdminLayout } from '../AdminLayout';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+const logout = vi.fn().mockResolvedValue(undefined);
 vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ logout: vi.fn(), adminProfile: { role: 'admin', email: 'a@enlite.health' } }),
+  useAdminAuth: () => ({ logout, adminProfile: { role: 'admin', email: 'a@enlite.health' } }),
 }));
-vi.mock('@presentation/components/templates/DashboardLayout', () => ({ AppSidebar: () => <nav data-testid="sidebar" /> }));
+vi.mock('@presentation/components/templates/DashboardLayout', () => ({
+  AppSidebar: ({ onMenuClick }: { onMenuClick: () => void }) => <nav data-testid="sidebar"><button onClick={onMenuClick}>sair</button></nav>,
+}));
 
 /** Uma página com links para navegar DENTRO do mesmo router — remontar o router zeraria a memória do layout. */
 function Pagina({ nome }: { nome: string }) {
@@ -28,6 +31,7 @@ function montar(caminho: string) {
     <MemoryRouter initialEntries={[caminho]}>
       <Routes>
         <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Pagina nome="home" />} />
           <Route path="workers" element={<Pagina nome="workers" />} />
           <Route path="workers/:id" element={<Pagina nome="worker-detalhe" />} />
           <Route path="access" element={<Pagina nome="access" />} />
@@ -57,5 +61,19 @@ describe('AdminLayout — o contrato é recarregado por ÁREA', () => {
     await userEvent.click(screen.getByText('mesma-area'));
     expect(await screen.findByText('worker-detalhe')).toBeInTheDocument();
     expect(fetchAuthz).not.toHaveBeenCalled();
+  });
+
+  it('sair chama o logout e volta ao login', async () => {
+    montar('/admin/workers');
+    await userEvent.click(screen.getByText('sair'));
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('a home `/admin` conta como área vazia — ir dela para outra área recarrega', async () => {
+    montar('/admin');
+    expect(await screen.findByText('home')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('outra-area'));
+    await screen.findByText('access');
+    expect(fetchAuthz).toHaveBeenCalledTimes(1);
   });
 });

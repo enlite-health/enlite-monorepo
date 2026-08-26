@@ -4,6 +4,7 @@ import { AdminPermissionsApiService, type PermissionAuditRow } from '@infrastruc
 import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Input, Label } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
+import { PanelErrorAlert } from '@presentation/components/features/access';
 import { AccessGate } from './AccessGate';
 
 /**
@@ -71,11 +72,7 @@ function AuditTrail(): JSX.Element {
         </div>
         <Button type="submit" variant="outline" size="sm">{t('admin.access.audit.search')}</Button>
       </form>
-      {error && (
-        <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg" role="alert">
-          <Text size="sm" color="primary">{t(error)}</Text>
-        </div>
-      )}
+      <PanelErrorAlert keyName={error} />
       {isLoading ? (
         <TableSkeleton />
       ) : (

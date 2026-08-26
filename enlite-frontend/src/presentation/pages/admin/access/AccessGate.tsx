@@ -3,6 +3,7 @@ import { Navigate, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Heading, Text } from '@presentation/components/atoms';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
+import { PanelErrorAlert } from '@presentation/components/features/access';
 
 /** O recurso que governa o painel inteiro — a mesma célula que TODA rota da família exige. */
 export const PANEL_RESOURCE = 'permission_management';
@@ -21,13 +22,7 @@ export function AccessGate({ children }: { children: ReactNode }): JSX.Element {
   if (access.status === 'idle' || access.status === 'loading') {
     return <Text size="sm" color="secondary">{t('admin.access.loading')}</Text>;
   }
-  if (access.status === 'error') {
-    return (
-      <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg" role="alert">
-        <Text size="sm" color="primary">{t('admin.access.authzError')}</Text>
-      </div>
-    );
-  }
+  if (access.status === 'error') return <PanelErrorAlert keyName="admin.access.authzError" />;
   if (access.level === 'hidden') return <Navigate to="/admin" replace />;
 
   const tab = 'px-3 py-2 rounded-lg text-sm';

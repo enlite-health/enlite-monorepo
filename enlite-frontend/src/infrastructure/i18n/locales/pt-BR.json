@@ -3315,7 +3315,8 @@
         "lastManager": "Não dá: deixaria o time sem ninguém com permission_management:write.",
         "systemGroup": "Grupos de sistema não são renomeados nem arquivados.",
         "duplicateName": "Já existe um grupo com esse nome.",
-        "error": "Não foi possível concluir a ação."
+        "error": "Não foi possível concluir a ação.",
+        "reasonRequired": "Escreva o motivo: ele fica na trilha de auditoria."
       },
       "features": {
         "title": "Funções por país",

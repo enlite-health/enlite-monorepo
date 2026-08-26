@@ -3,24 +3,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: vi.fn().mockImplementation(() => ({
     signInWithEmail: vi.fn().mockResolvedValue({ user: { id: 'u1', email: 'a@enlite.health' } }),
-    signInWithGoogle: vi.fn(),
+    signInWithGoogle: vi.fn().mockResolvedValue({ user: { id: 'u1', email: 'a@enlite.health' } }),
     logout: vi.fn().mockResolvedValue(undefined),
     onAuthStateChanged: vi.fn(),
     getIdToken: vi.fn().mockResolvedValue('tok'),
-    forceRefreshToken: vi.fn(),
+    forceRefreshToken: vi.fn().mockImplementation(async () => { ordem.push('refresh'); }),
   })),
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: { getProfile: vi.fn().mockResolvedValue({ firebaseUid: 'u1', role: 'admin' }) },
 }));
-const getMyAuthz = vi.fn();
+const ordem: string[] = [];
+const getMyAuthz = vi.fn().mockImplementation(async () => { ordem.push('authz'); return CONTRATO; });
 vi.mock('@infrastructure/http/AdminAuthzApiService', () => ({
   AdminAuthzApiService: { getMyAuthz: (...a: unknown[]) => getMyAuthz(...a) },
 }));
 
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 
-const CONTRATO = { uid: 'u1', tenantId: 't', status: 'ACTIVE', permissions: ['permission_management:read'], countries: ['AR'], groups: [], features: {} };
+const CONTRATO: Record<string, unknown> = { uid: 'u1', tenantId: 't', status: 'ACTIVE', permissions: ['permission_management:read'], countries: ['AR'], groups: [], features: {} };
 
 describe('adminAuthStore — o contrato de authz', () => {
   beforeEach(() => {
@@ -60,5 +61,13 @@ describe('adminAuthStore — o contrato de authz', () => {
     useAdminAuthStore.setState({ authz: CONTRATO as never, authzStatus: 'ready' });
     await useAdminAuthStore.getState().logout();
     expect(useAdminAuthStore.getState()).toMatchObject({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('🔴 login Google: o contrato só é buscado DEPOIS do refresh do token (claims do auto-provisioning)', async () => {
+    ordem.length = 0;
+    getMyAuthz.mockImplementation(async () => { ordem.push('authz'); return CONTRATO; });
+    await useAdminAuthStore.getState().loginWithGoogle();
+    expect(ordem).toEqual(['refresh', 'authz']);
+    expect(useAdminAuthStore.getState().authzStatus).toBe('ready');
   });
 });

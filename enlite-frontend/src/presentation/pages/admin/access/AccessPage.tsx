@@ -5,7 +5,7 @@ import { AdminPermissionsApiService, type PermissionGroupDetail } from '@infrast
 import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Checkbox, Input, Label, Textarea } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
-import { ActionButton } from '@presentation/components/features/access';
+import { ActionButton, PanelErrorAlert } from '@presentation/components/features/access';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
 
@@ -81,11 +81,7 @@ function GroupsList(): JSX.Element {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg" role="alert">
-          <Text size="sm" color="primary">{t(error)}</Text>
-        </div>
-      )}
+      <PanelErrorAlert keyName={error} />
 
       {creating && (
         <form

@@ -94,3 +94,32 @@ describe('AdminAuthzApiService', () => {
     await expect(AdminAuthzApiService.getMyAuthz()).rejects.toThrow('boom');
   });
 });
+
+describe('AdminPermissionsApiService — query strings e ausência de token', () => {
+  beforeEach(() => fetchMock.mockReset());
+
+  it('includeDeprecated / includeArchived / country viram query string', async () => {
+    fetchMock.mockResolvedValue(resposta(200, { categories: [], groups: [], features: [] }));
+    await AdminPermissionsApiService.getCatalog(true);
+    await AdminPermissionsApiService.listGroups(false);
+    await AdminPermissionsApiService.listCountryFeatures();
+    const urls = fetchMock.mock.calls.map(([u]) => String(u).replace(/^https?:\/\/[^/]+/, ''));
+    expect(urls).toEqual(['/api/admin/permissions/catalog?includeDeprecated=true', '/api/admin/permission-groups', '/api/admin/country-features']);
+  });
+});
+
+describe('sem token do Firebase', () => {
+  it('os dois clientes chamam sem Authorization — o backend responde 401, não o front', async () => {
+    vi.resetModules();
+    vi.doMock('@infrastructure/services/FirebaseAuthService', () => ({
+      FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: vi.fn().mockResolvedValue(null) })),
+    }));
+    const { AdminPermissionsApiService: P } = await import('../AdminPermissionsApiService');
+    const { AdminAuthzApiService: A } = await import('../AdminAuthzApiService');
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(resposta(200, { groups: [] })).mockResolvedValueOnce(resposta(401, {}));
+    await P.listGroups();
+    await expect(A.getMyAuthz()).rejects.toThrow('HTTP 401');
+    for (const [, init] of fetchMock.mock.calls) expect((init as RequestInit).headers).not.toHaveProperty('Authorization');
+  });
+});

@@ -3394,7 +3394,8 @@
         "lastManager": "No se puede: dejaría al equipo sin nadie con permission_management:write.",
         "systemGroup": "Los grupos de sistema no se renombran ni se archivan.",
         "duplicateName": "Ya existe un grupo con ese nombre.",
-        "error": "No se pudo completar la acción."
+        "error": "No se pudo completar la acción.",
+        "reasonRequired": "Escribí el motivo: queda en la trilla de auditoría."
       },
       "features": {
         "title": "Funciones por país",

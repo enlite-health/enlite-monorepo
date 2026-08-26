@@ -10,7 +10,7 @@ import {
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { AdminUser } from '@domain/entities/AdminUser';
 import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Input, Textarea, Checkbox, Select, Label } from '@presentation/components/atoms';
-import { ActionButton, ReadOnlyField } from '@presentation/components/features/access';
+import { ActionButton, ReadOnlyField, PanelErrorAlert } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
@@ -105,7 +105,7 @@ function GroupDetail(): JSX.Element {
   if (!group) {
     return (
       <div className="space-y-3">
-        {error && <div role="alert"><Text size="sm" color="primary">{t(error)}</Text></div>}
+        <PanelErrorAlert keyName={error} />
         <Link to="/admin/access" className="text-blue-600 hover:underline text-sm">{t('admin.access.group.back')}</Link>
       </div>
     );
@@ -117,11 +117,7 @@ function GroupDetail(): JSX.Element {
     <div className="space-y-8">
       <Link to="/admin/access" className="text-blue-600 hover:underline text-sm">← {t('admin.access.group.back')}</Link>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 px-4 py-3 rounded-lg" role="alert">
-          <Text size="sm" color="primary">{t(error)}</Text>
-        </div>
-      )}
+      <PanelErrorAlert keyName={error} />
       {notice && (
         <div className="bg-green-50 border border-green-200 px-4 py-2 rounded-lg" role="status">
           <Text size="sm" color="primary">{t(notice)}</Text>
@@ -254,7 +250,7 @@ function GroupDetail(): JSX.Element {
                       {t('admin.access.group.revoke')}
                     </ActionButton>
                   ) : (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" onClick={() => run(() => AdminPermissionsApiService.grantCountry(group.id, c, reason.trim() || 'panel'))}>
+                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!reason.trim()} onClick={() => run(() => AdminPermissionsApiService.grantCountry(group.id, c, reason.trim()))}>
                       {t('admin.access.group.grant')}
                     </ActionButton>
                   )

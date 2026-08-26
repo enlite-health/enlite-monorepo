@@ -138,4 +138,68 @@ describe('GroupDetailPage — a regra por componente', () => {
     await screen.findByText('maria@enlite.health');
     expect(document.querySelector('table[data-clarity-mask="True"]')).not.toBeNull();
   });
+
+  it('write: salvar identidade manda nome/descrição aparados; descrição vazia vira null', async () => {
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    const nome = await screen.findByLabelText('admin.access.groups.name');
+    await userEvent.clear(nome); await userEvent.type(nome, '  Novo nome ');
+    const desc = screen.getByLabelText('admin.access.groups.description');
+    await userEvent.clear(desc);
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.save' }));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Novo nome', description: null }));
+    expect(await screen.findByRole('status')).toHaveTextContent('admin.access.group.saved');
+  });
+
+  it('🔴 write: conceder país exige motivo (botão desabilitado sem ele); com motivo chama a API; revogar não exige', async () => {
+    postura('write');
+    api.grantCountry.mockResolvedValue({ scopeId: 's' });
+    api.revokeCountry.mockResolvedValue({ revoked: 1 });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByLabelText('admin.access.groups.name');
+    const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
+    expect(conceder).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('admin.access.group.reason'), 'expansão');
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.grant' }));
+    await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR', 'expansão'));
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.revoke' }));
+    await waitFor(() => expect(api.revokeCountry).toHaveBeenCalledWith(GRUPO.id, 'AR'));
+  });
+
+  it('write: "Não" no arquivamento fecha a confirmação sem chamar a API', async () => {
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByLabelText('admin.access.groups.name');
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.archive' }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.archiveNo' }));
+    expect(screen.queryByTestId('archive-confirm')).not.toBeInTheDocument();
+    expect(api.archiveGroup).not.toHaveBeenCalled();
+  });
+
+  it('sem membros, sem células e sem países: os três vazios aparecem em read', async () => {
+    postura('read');
+    api.getGroup.mockResolvedValue({ ...GRUPO, cells: [], countries: [] });
+    api.listMembers.mockResolvedValue([]);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    expect(await screen.findByText('admin.access.group.noMembers')).toBeInTheDocument();
+    expect(screen.getByText('admin.access.group.noCells')).toBeInTheDocument();
+    expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
+  });
+
+  it('grupo ARQUIVADO: mesmo em write vira só leitura, e a lista de candidatos ainda é buscada só por write', async () => {
+    postura('write');
+    api.getGroup.mockResolvedValue({ ...GRUPO, archivedAt: '2026-08-01T00:00:00Z' });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    expect(screen.queryByRole('button', { name: 'admin.access.group.archive' })).not.toBeInTheDocument();
+    expect(screen.getByText(/admin.access.groups.archived/)).toBeInTheDocument();
+  });
+
+  it('membro sem e-mail/papel/status mostra o uid e travessões', async () => {
+    postura('read');
+    api.listMembers.mockResolvedValue([{ ...MEMBRO, email: null, role: null, status: null }]);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    expect(await screen.findByText('uid-maria')).toBeInTheDocument();
+  });
 });

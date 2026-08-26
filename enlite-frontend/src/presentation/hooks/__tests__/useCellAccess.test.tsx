@@ -60,3 +60,11 @@ describe('useHasCell', () => {
     expect(renderHook(() => useHasCell('worker', 'export')).result.current).toBe(true);
   });
 });
+
+describe('contrato `ready` com authz nulo — estado impossível, mas o hook não pode explodir', () => {
+  it('trata como hidden', () => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'ready' });
+    expect(renderHook(() => useCellAccess('x')).result.current.level).toBe('hidden');
+    expect(renderHook(() => useHasCell('x', 'read')).result.current).toBe(false);
+  });
+});
