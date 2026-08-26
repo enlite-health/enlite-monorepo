@@ -54,13 +54,13 @@ async function login(page: Page, permissions: string[]): Promise<void> {
     body: JSON.stringify({ categories: [{ category: 'workers', cells: [{ resource: 'worker', action: 'read', category: 'workers', ownerService: 'wf' }] }] }),
   }));
   await page.route('**/api/admin/users**', (route) => route.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { admins: [], total: 0 } }),
+    status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }),
   }));
 
   await page.goto('/admin/login');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();
+  await page.locator('form button[type="submit"]').click();
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
 }
 
