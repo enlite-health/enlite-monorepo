@@ -21,6 +21,7 @@ import type { AddressInfo } from 'net';
 import type { Express } from 'express';
 import type { Pool } from 'pg';
 import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
+import type { PermissionsModule } from '@modules/identity/permissions';
 
 /** O tenant único de hoje — o mesmo que `ENLITE_TENANT_ID` no domínio. */
 export const TENANT_E2E = '00000000-0000-0000-0000-000000000001';
@@ -36,7 +37,17 @@ export interface MontarAppOpts {
    * Monta as rotas da família no app. Recebe as peças REAIS já construídas —
    * quem chama decide o prefixo e quais controllers entram.
    */
-  montarRotas: (deps: { app: Express; auth: AuthMiddleware; permissions: PermissionMiddleware }) => void;
+  montarRotas: (deps: {
+    app: Express;
+    auth: AuthMiddleware;
+    permissions: PermissionMiddleware;
+    /**
+     * O MÓDULO de permissões (use cases + repositórios), para as rotas do
+     * PAINEL — que não consomem um controller, consomem o use case direto.
+     * As famílias antigas ignoram este campo.
+     */
+    modulo: PermissionsModule;
+  }) => void;
   /**
    * Sobrescreve `PERMISSION_ENFORCED_ROUTES` só para ESTA app, sem mexer no
    * processo — é como se testa "família fora da lista não muda nada" sem
@@ -108,7 +119,7 @@ export async function montarAppDeFamilia(opts: MontarAppOpts): Promise<AppDeFami
   app.use(correlationMiddleware);
   app.use(dbSessionMiddleware);
   app.use(identity.mockAuthMiddleware);
-  opts.montarRotas({ app, auth, permissions: permissionMiddleware });
+  opts.montarRotas({ app, auth, permissions: permissionMiddleware, modulo: permissions });
 
   const servidor = app.listen(0);
   await new Promise<void>((resolve) => servidor.once('listening', () => resolve()));

@@ -76,9 +76,16 @@ describe('GOVERNED_ROUTES — o perímetro que o prefixo não alcança', () => {
     }
   });
 
-  it('a lista tem as 10 rotas de encuadre e nada além', () => {
+  it('a lista tem as 10 rotas de encuadre, o `/v1/me/authz` da F3, e nada além', () => {
+    // A 11ª entrada NÃO é de encuadre: `GET /v1/me/authz` mora em `/v1/`, fora
+    // dos `GOVERNED_PREFIXES`, e nascia `not_governed` — isenta SEM linha,
+    // invisível ao inventário e à revisão (BLOCKER-1 do gate `revisao-pr`).
+    // Governada por NOME + isenta em `EXEMPT_ROUTES`, a isenção passa a ser
+    // revisável. Que este caso tenha ficado vermelho é o mecanismo funcionando:
+    // acrescentar rota ao perímetro é decisão consciente, não efeito colateral.
     expect([...GOVERNED_ROUTES].sort()).toEqual(
       [
+        'GET /v1/me/authz',
         'GET /api/cases/:caseNumber/encuadres',
         'GET /api/cases/:caseNumber/workers',
         'GET /api/workers/:id/cases',

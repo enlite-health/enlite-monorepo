@@ -98,6 +98,8 @@ export {
 export { registerPermissionEventHandlers } from './interface/registerPermissionEventHandlers';
 export type { HandlerRegistry } from './interface/registerPermissionEventHandlers';
 export { createWellKnownPermissionsRouter } from './interface/wellKnownPermissionsRoute';
+export { createMeAuthzRouter } from './interface/meAuthzRoute';
+export type { MeAuthzRouterDeps } from './interface/meAuthzRoute';
 
 // ── Use cases (a API do painel monta em cima destes) ─────────────────────────
 export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY } from './application/AssertNoActiveStaffWithoutGroupUseCase';
