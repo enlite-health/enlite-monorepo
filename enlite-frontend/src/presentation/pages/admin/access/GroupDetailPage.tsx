@@ -296,7 +296,8 @@ function GroupDetail(): JSX.Element {
             </div>
           )}
         </div>
-        <Table>
+        {/* lex C1: e-mail/papel/status de staff não podem ir à gravação de sessão do Clarity. */}
+        <Table data-clarity-mask="True">
           <TableHeader>
             <TableHead>{t('admin.access.group.email')}</TableHead>
             <TableHead>{t('admin.access.group.role')}</TableHead>

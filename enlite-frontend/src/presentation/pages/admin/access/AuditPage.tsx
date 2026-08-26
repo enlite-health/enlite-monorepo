@@ -80,7 +80,8 @@ function AuditTrail(): JSX.Element {
         <TableSkeleton />
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-400">
-          <Table>
+          {/* lex C1: uid de staff, id de recurso e decisão não podem ir à gravação de sessão do Clarity. */}
+          <Table data-clarity-mask="True">
             <TableHeader>
               <TableHead>{t('admin.access.audit.when')}</TableHead>
               <TableHead>{t('admin.access.audit.userId')}</TableHead>

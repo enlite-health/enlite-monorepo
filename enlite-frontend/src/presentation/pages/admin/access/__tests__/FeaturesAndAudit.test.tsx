@@ -67,3 +67,13 @@ describe('AuditPage', () => {
     await waitFor(() => expect(api.queryAudit).toHaveBeenLastCalledWith({ userId: undefined, resource: 'worker', limit: 100 }));
   });
 });
+
+describe('lex C1 — máscara do Clarity nas tabelas com dado de pessoa', () => {
+  it('a trilha de auditoria carrega `data-clarity-mask`', async () => {
+    api.queryAudit.mockReset().mockResolvedValue([LINHA]);
+    postura('read');
+    renderRota(<AuditPage />, '/admin/access/audit');
+    await screen.findByText('DENY');
+    expect(document.querySelector('table[data-clarity-mask="True"]')).not.toBeNull();
+  });
+});

@@ -131,4 +131,11 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     expect(await screen.findByRole('alert')).toHaveTextContent('admin.access.group.notFound');
   });
+
+  it('lex C1: a tabela de membros carrega `data-clarity-mask` — e-mail de staff não vai ao Clarity', async () => {
+    postura('read');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByText('maria@enlite.health');
+    expect(document.querySelector('table[data-clarity-mask="True"]')).not.toBeNull();
+  });
 });
