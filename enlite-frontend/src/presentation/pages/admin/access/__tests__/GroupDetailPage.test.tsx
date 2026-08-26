@@ -202,4 +202,16 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     expect(await screen.findByText('uid-maria')).toBeInTheDocument();
   });
+
+  it('write: descrição nula vira campo vazio; desmarcar célula tira do conjunto; motivo vazio vira null', async () => {
+    postura('write');
+    api.getGroup.mockResolvedValue({ ...GRUPO, description: null });
+    api.setGroupPermissions.mockResolvedValue({ cells: 1 });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByLabelText('admin.access.groups.name');
+    expect(screen.getByLabelText('admin.access.groups.description')).toHaveValue('');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'worker:read' }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
+    await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read'], null));
+  });
 });

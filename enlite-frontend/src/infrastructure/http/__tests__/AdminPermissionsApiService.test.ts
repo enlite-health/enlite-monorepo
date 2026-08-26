@@ -123,3 +123,11 @@ describe('sem token do Firebase', () => {
     for (const [, init] of fetchMock.mock.calls) expect((init as RequestInit).headers).not.toHaveProperty('Authorization');
   });
 });
+
+describe('queryAudit sem filtros', () => {
+  it('não põe `?` na URL', async () => {
+    fetchMock.mockReset().mockResolvedValue(resposta(200, { entries: [] }));
+    await AdminPermissionsApiService.queryAudit();
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/admin\/permission-audit$/);
+  });
+});
