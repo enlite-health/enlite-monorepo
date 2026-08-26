@@ -106,4 +106,12 @@ describe('adminAuthStore — o contrato de authz', () => {
     await expect(useAdminAuthStore.getState().login('a@enlite.health', 'x')).resolves.toBeUndefined();
     expect(useAdminAuthStore.getState().adminProfile).toBeNull();
   });
+
+  it('login por senha COM trace e perfil ok: o trace vê o perfil e o contrato carrega', async () => {
+    getMyAuthz.mockResolvedValue(CONTRATO);
+    const trace = { step: vi.fn(), fail: vi.fn() };
+    await useAdminAuthStore.getState().login('a@enlite.health', 'x', trace as never);
+    expect(trace.step).toHaveBeenCalledWith('backend-profile:ok', { role: 'admin' });
+    expect(useAdminAuthStore.getState().authzStatus).toBe('ready');
+  });
 });
