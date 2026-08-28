@@ -783,6 +783,37 @@ describe('KanbanCard — botão Reenviar e último envio', () => {
     expect(screen.getByTestId('resend-last-sent')).toHaveTextContent('admin.kanban.neverSent');
   });
 
+  // D200.1: dentro da janela o botão já vem desabilitado com o porquê — o 422 nunca acontece.
+  it('resendBlockedReason desabilita o botão e mostra o motivo + quando a janela abre', () => {
+    const onResend = vi.fn();
+    render(
+      <KanbanCard
+        {...defaultProps}
+        workerId="w-1"
+        onResend={onResend}
+        lastMessagedAt="2026-08-28T17:35:00.000Z"
+        resendBlockedReason={{ code: 'RESEND_COOLDOWN', until: '2026-08-29T17:35:00.000Z' }}
+      />,
+    );
+    const btn = screen.getByTestId('resend-button');
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('title', 'admin.messaging.blocked.RESEND_COOLDOWN');
+    const reason = screen.getByTestId('resend-blocked-reason');
+    expect(reason).toHaveTextContent('admin.messaging.blocked.RESEND_COOLDOWN');
+    expect(reason).toHaveTextContent('admin.kanban.resendBlockedUntil');
+    // Sem clique possível: o handler NÃO é chamado.
+    fireEvent.click(btn);
+    expect(onResend).not.toHaveBeenCalled();
+  });
+
+  it('sem resendBlockedReason o botão fica habilitado e sem título', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} resendBlockedReason={null} />);
+    const btn = screen.getByTestId('resend-button');
+    expect(btn).not.toBeDisabled();
+    expect(btn).not.toHaveAttribute('title');
+    expect(screen.queryByTestId('resend-blocked-reason')).not.toBeInTheDocument();
+  });
+
   it('mostra a data/hora do último envio quando existe', () => {
     render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} lastMessagedAt="2026-08-28T17:35:00.000Z" />);
     expect(screen.getByTestId('resend-last-sent')).toHaveTextContent('admin.kanban.lastSentAt');

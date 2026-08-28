@@ -9,7 +9,25 @@ const MAX_UNANSWERED = Number(process.env.MANUAL_INVITE_MAX_UNANSWERED ?? 3);
 
 // Janela mínima entre dois REENVIOS manuais para a mesma pessoa na mesma vaga
 // (botão "Reenviar" da tarjeta — planning 26/08, REQ-08). Horas, configurável.
-const RESEND_COOLDOWN_HOURS = Number(process.env.MANUAL_RESEND_COOLDOWN_HOURS ?? 24);
+export const RESEND_COOLDOWN_HOURS = Number(process.env.MANUAL_RESEND_COOLDOWN_HOURS ?? 24);
+
+/**
+ * FONTE ÚNICA da janela de reenvio (D200.1): a mesma expressão decide o 422 do
+ * guard E o `resendBlockedReason` que o funil manda ao card — assim o botão
+ * nunca fica habilitado onde o clique seria recusado. Devolve o instante em que
+ * a janela ABRE (último envio + janela) ou NULL quando não há envio na janela.
+ *
+ * `hoursParam` é o placeholder da janela em horas (ex.: '$3'); os outros dois
+ * são expressões SQL do worker e da vaga (placeholder ou coluna).
+ */
+export function resendCooldownUntilSql(workerExpr: string, jobExpr: string, hoursParam: string): string {
+  return `(SELECT MAX(dispatched_at) + (${hoursParam} * INTERVAL '1 hour')
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE worker_id = ${workerExpr}
+      AND job_posting_id = ${jobExpr}
+      AND status = 'sent'
+      AND dispatched_at > NOW() - (${hoursParam} * INTERVAL '1 hour'))`;
+}
 
 export type VacancyInviteMode = 'invite' | 'resend';
 
@@ -26,7 +44,7 @@ export interface VacancyInviteGuardOptions {
 
 export type VacancyInviteGuardResult =
   | { allowed: true }
-  | { allowed: false; code: string; detail: string };
+  | { allowed: false; code: string; detail: string; until?: string };
 
 /**
  * Guard reutilizável para o disparo INDIVIDUAL MANUAL de convite de vaga.
@@ -63,21 +81,17 @@ export async function assertVacancyInviteAllowed(
 
   if (mode === 'resend') {
     // Reenvio explícito: só a janela entre reenvios ao MESMO worker×vaga.
-    const resendRes = await db.query<{ exists: boolean }>(
-      `SELECT EXISTS(
-        SELECT 1 FROM whatsapp_bulk_dispatch_logs
-        WHERE worker_id = $1
-          AND job_posting_id = $2
-          AND status = 'sent'
-          AND dispatched_at > NOW() - ($3 * INTERVAL '1 hour')
-      ) AS exists`,
+    const resendRes = await db.query<{ until: Date | string | null }>(
+      `SELECT ${resendCooldownUntilSql('$1', '$2', '$3')} AS until`,
       [workerId, jobPostingId, RESEND_COOLDOWN_HOURS],
     );
-    if (resendRes.rows[0]?.exists) {
+    const until = resendRes.rows[0]?.until ?? null;
+    if (until) {
       return {
         allowed: false,
         code: 'RESEND_COOLDOWN',
         detail: `Já houve um envio para esta pessoa nesta vaga nas últimas ${RESEND_COOLDOWN_HOURS} horas.`,
+        until: new Date(until).toISOString(),
       };
     }
     return assertNotThrottled(db, workerId);

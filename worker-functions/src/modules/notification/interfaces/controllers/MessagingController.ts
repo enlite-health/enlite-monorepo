@@ -88,7 +88,7 @@ export class MessagingController {
     const guard = await assertVacancyInviteAllowed(this.db, String(workerId), String(jobPostingId), { mode });
     if (!guard.allowed) {
       logger.info({ workerId, jobPostingId, code: guard.code, mode }, 'Convite de vaga bloqueado pelo guard');
-      res.status(422).json({ error: guard.code, detail: guard.detail });
+      res.status(422).json({ error: guard.code, detail: guard.detail, ...(guard.until ? { until: guard.until } : {}) });
       return;
     }
 

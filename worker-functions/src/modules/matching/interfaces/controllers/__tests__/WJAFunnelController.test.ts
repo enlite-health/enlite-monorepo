@@ -127,7 +127,7 @@ describe('WJAFunnelController', () => {
           makeRow({ id: 'e1', funnel_stage: null }),
           // system+INVITED counts only when actually messaged (real invite) — AC2 86ajb48v1
           makeRow({ id: 'e2', funnel_stage: 'INVITED', source: 'system', messaged_at: '2026-07-09T10:00:00Z' }),
-          makeRow({ id: 'e-manual', funnel_stage: 'INVITED', source: 'manual' }),
+          makeRow({ id: 'e-manual', funnel_stage: 'INVITED', source: 'manual', messaged_at: '2026-08-28T10:00:00Z', resend_blocked_until: '2026-08-29T10:00:00Z' }),
           makeRow({ id: 'e3', funnel_stage: 'PRE_SCREENING', talentum_status: 'PRE_SCREENING' }),
           makeRow({ id: 'e4', funnel_stage: 'IN_PROGRESS', talentum_status: 'IN_PROGRESS' }),
           makeRow({ id: 'e5', funnel_stage: 'COMPLETED', talentum_status: 'COMPLETED' }),
@@ -159,10 +159,18 @@ describe('WJAFunnelController', () => {
       expect(invitedIds).toContain('e2');
       // REQ-08: o card carrega o último envio (messaged_at) em ISO — é o que o
       // botão "Reenviar" mostra como "Último envío"; sem envio → null.
-      const e2 = (stages.INVITED as Array<{ id: string; lastMessagedAt: string | null }>).find(e => e.id === 'e2');
+      const e2 = (stages.INVITED as Array<{ id: string; lastMessagedAt: string | null; resendBlockedReason: unknown }>).find(e => e.id === 'e2');
       expect(e2?.lastMessagedAt).toBe('2026-07-09T10:00:00.000Z');
       const e1 = (stages.INVITED as Array<{ id: string; lastMessagedAt: string | null }>).find(e => e.id === 'e1');
       expect(e1?.lastMessagedAt).toBeNull();
+      // D200.1: sem envio na janela → botão livre (null); dentro da janela → motivo + quando abre.
+      expect(e2?.resendBlockedReason).toBeNull();
+      const manual = (stages.INICIADO as Array<{ id: string; resendBlockedReason: unknown }>).find(e => e.id === 'e-manual');
+      expect(manual?.resendBlockedReason).toEqual({ code: 'RESEND_COOLDOWN', until: '2026-08-29T10:00:00.000Z' });
+      // A janela (horas) vai como parâmetro da MESMA query do funil — fonte única com o guard.
+      const [funnelSql, funnelParams] = mockQuery.mock.calls[0];
+      expect(funnelSql).toMatch(/AS resend_blocked_until/);
+      expect(funnelParams).toEqual(['jp-001', 24]);
 
       // INVITED+source='manual' → INICIADO
       expect(stages.INICIADO).toHaveLength(1);

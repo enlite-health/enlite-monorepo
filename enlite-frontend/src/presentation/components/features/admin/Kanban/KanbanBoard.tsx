@@ -77,6 +77,7 @@ function cardProps(enc: FunnelCard, stage: string) {
     missingFields: enc.missingFields,
     attemptCount: enc.attemptCount,
     lastMessagedAt: enc.lastMessagedAt ?? null,
+    resendBlockedReason: enc.resendBlockedReason ?? null,
   };
 }
 

@@ -13,8 +13,8 @@
  *   - a tarjeta tem o botão "Reenviar" e mostra "Último envío" (nunca → "Sin envíos");
  *   - um clique dispara a mensagem (o stub recebe o POST; o log e o messaged_at
  *     ficam no Postgres) e o card passa a mostrar data/hora;
- *   - um segundo clique dentro da janela é recusado com o motivo na tela
- *     (RESEND_COOLDOWN) — sem novo envio.
+ *   - dentro da janela (D200.1) o botão JÁ VEM desabilitado com o motivo e a hora
+ *     em que a janela abre — o backend decide antes do clique, não há 422 na tela.
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -118,7 +118,7 @@ test.describe('Tarjeta: "Reenviar" de um clique + último envio (REQ-08) @integr
     runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
   });
 
-  test('um clique reenvia, o card mostra a hora; o segundo clique é recusado pelo cooldown', async ({ page }, testInfo) => {
+  test('um clique reenvia, o card mostra a hora; dentro da janela o botão já vem desabilitado com o motivo', async ({ page }, testInfo) => {
     await loginAsRealStaff(page);
     await page.goto(`/admin/vacancies/${vacancyId}`);
     await page.getByRole('button', { name: 'Kanban' }).click();
@@ -126,6 +126,8 @@ test.describe('Tarjeta: "Reenviar" de um clique + último envio (REQ-08) @integr
     const card = page.locator('[data-testid^="kanban-card-"]').filter({ hasText: `Prestador ${WORKER_LAST}` });
     await expect(card).toBeVisible({ timeout: 30_000 });
     await expect(card.getByTestId('resend-last-sent')).toHaveText('Sin envíos');
+    await expect(card.getByTestId('resend-button')).toBeEnabled();
+    await expect(card.getByTestId('resend-blocked-reason')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('01-card-sin-envios.png'), fullPage: true });
     await expect(page).toHaveScreenshot('req08-card-sin-envios.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
 
@@ -141,10 +143,18 @@ test.describe('Tarjeta: "Reenviar" de um clique + último envio (REQ-08) @integr
     await page.screenshot({ path: testInfo.outputPath('02-card-enviado-com-hora.png'), fullPage: true });
     await expect(page).toHaveScreenshot('req08-card-enviado.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
 
-    // 2º clique → RESEND_COOLDOWN na tela, sem novo envio
-    await card.getByTestId('resend-button').click();
-    await expect(card.getByRole('alert')).toContainText('últimas 24 h', { timeout: 30_000 });
-    expect(stub.calls).toHaveLength(1);
+    // D200.1: o funil recarregado já traz resendBlockedReason → botão desabilitado
+    // com o porquê e a hora em que a janela abre. Clicar não é possível; sem 422.
+    await expect(card.getByTestId('resend-button')).toBeDisabled({ timeout: 30_000 });
+    await expect(card.getByTestId('resend-blocked-reason')).toContainText('últimas 24 h');
+    await expect(card.getByTestId('resend-blocked-reason')).toContainText('Reenvío disponible desde');
+    // O que a tela diz bate com o guard: o funil devolve `until` = último envio + 24 h.
+    const untilRow = runSQL(`SELECT (MAX(dispatched_at) + INTERVAL '24 hours') > NOW() FROM whatsapp_bulk_dispatch_logs WHERE worker_id = '${workerId}' AND job_posting_id = '${vacancyId}' AND status = 'sent'`);
+    expect(untilRow).toBe('t');
+    expect(stub.calls).toHaveLength(1); // desabilitado = nenhum novo envio
     await page.screenshot({ path: testInfo.outputPath('03-card-cooldown.png'), fullPage: true });
+    await expect(page).toHaveScreenshot('req08-card-cooldown.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
+    // Só o card: a página inteira corta o rodapé da tarjeta (o Kanban rola por dentro).
+    await expect(card).toHaveScreenshot('req08-card-cooldown-card.png', { maxDiffPixelRatio: 0.05 });
   });
 });

@@ -736,5 +736,24 @@ describe('KanbanBoard — Reenviar', () => {
     fireEvent.click(buttons[1]);
     expect(await screen.findByRole('alert')).toHaveTextContent('Ya se le reenvió');
   });
+
+  // D200.1: o motivo vem do funil (mesma janela do 422) e chega ao card — botão desabilitado ANTES do clique.
+  it('resendBlockedReason do funil desabilita o botão do card com o motivo', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [
+      makeEncuadre({
+        id: 'in-window', workerId: 'w-1', encuadreId: 'enc-1',
+        lastMessagedAt: '2026-08-28T10:00:00.000Z',
+        resendBlockedReason: { code: 'RESEND_COOLDOWN', until: '2026-08-29T10:00:00.000Z' },
+      }),
+    ];
+    const onResendInvite = vi.fn();
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onResendInvite={onResendInvite} />);
+    const btn = screen.getByTestId('resend-button');
+    expect(btn).toBeDisabled();
+    expect(screen.getByTestId('resend-blocked-reason')).toHaveTextContent('admin.messaging.blocked.RESEND_COOLDOWN');
+    fireEvent.click(btn);
+    expect(onResendInvite).not.toHaveBeenCalled();
+  });
 });
 

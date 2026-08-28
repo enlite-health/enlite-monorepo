@@ -20,6 +20,7 @@ import {
   INTERVIEW_TIME_RESOLVED_SQL,
 } from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
+import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -111,6 +112,10 @@ export class WJAFunnelController {
              wja.application_funnel_stage AS funnel_stage,
              wja.source,
              wja.messaged_at,
+             -- D200.1: quando a janela de reenvio (MANUAL_RESEND_COOLDOWN_HOURS) abre de novo
+             -- para este worker×vaga, ou NULL se o "Reenviar" está livre. MESMA expressão que
+             -- o guard usa para o 422 — o card desabilita o botão antes do clique.
+             ${resendCooldownUntilSql('wja.worker_id', 'wja.job_posting_id', '$2')} AS resend_blocked_until,
              CASE WHEN wja.source != 'talentum' OR wja.source IS NULL THEN NULL
                WHEN (SELECT tp.status FROM talentum_prescreenings tp WHERE tp.worker_id = wja.worker_id AND tp.job_posting_id = wja.job_posting_id ORDER BY tp.updated_at DESC LIMIT 1) = 'PENDING' THEN 'PENDING'
                ELSE wja.application_funnel_stage END AS talentum_status,
@@ -142,7 +147,7 @@ export class WJAFunnelController {
              -- (mesmo recorte de FunnelTableRepository/VacancyMatchController)
              AND ${excludeDisabledWorkersSql('w')}
            ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
-          [id],
+          [id, RESEND_COOLDOWN_HOURS],
         ),
         this.blockedRepo.listByVacancy(id),
       ]);
@@ -237,6 +242,11 @@ export class WJAFunnelController {
           // Último envio de WhatsApp a esta candidatura (manual ou em lote) —
           // o card mostra a data/hora ao lado do botão "Reenviar" (REQ-08).
           lastMessagedAt: row.messaged_at ? new Date(row.messaged_at as string | Date).toISOString() : null,
+          // D200.1: motivo pelo qual o "Reenviar" está desabilitado AGORA (null = livre).
+          // Só a janela de reenvio é calculada aqui; opt-out/throttle continuam no 422.
+          resendBlockedReason: row.resend_blocked_until
+            ? { code: 'RESEND_COOLDOWN', until: new Date(row.resend_blocked_until as string | Date).toISOString() }
+            : null,
         };
 
         // Classificação 100% baseada em (stage, source) — SSOT em deriveKanbanColumn

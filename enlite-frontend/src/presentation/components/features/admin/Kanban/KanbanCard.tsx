@@ -53,6 +53,8 @@ interface KanbanCardProps {
   resendStatus?: 'idle' | 'sending' | 'sent' | 'error';
   /** Motivo localizado quando o backend recusa (422) ou falha. */
   resendMessage?: string | null;
+  /** D200.1: o backend já sabe que o reenvio seria recusado (janela) — botão nasce desabilitado com o porquê, sem 422. */
+  resendBlockedReason?: { code: string; until: string } | null;
   /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
   /**
@@ -131,6 +133,7 @@ export function KanbanCard({
   onResend,
   resendStatus = 'idle',
   resendMessage,
+  resendBlockedReason,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -326,12 +329,13 @@ export function KanbanCard({
           <button
             data-testid="resend-button"
             type="button"
-            disabled={resendStatus === 'sending'}
+            disabled={resendStatus === 'sending' || !!resendBlockedReason}
+            title={resendBlockedReason ? t(`admin.messaging.blocked.${resendBlockedReason.code}`) : undefined}
             onClick={(e) => {
               e.stopPropagation();
               onResend();
             }}
-            className="w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-200 disabled:opacity-60 disabled:cursor-wait"
+            className="w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
             <Send className="w-3 h-3" />
             {resendStatus === 'sending' ? t('admin.kanban.resendSending') : t('admin.kanban.resendButton')}
@@ -341,6 +345,12 @@ export function KanbanCard({
               ? t('admin.kanban.lastSentAt', { date: formatLastSent(lastMessagedAt) })
               : t('admin.kanban.neverSent')}
           </span>
+          {resendBlockedReason && (
+            <span data-testid="resend-blocked-reason" className="px-2 text-[10px] text-amber-700">
+              {t(`admin.messaging.blocked.${resendBlockedReason.code}`)}{' '}
+              {t('admin.kanban.resendBlockedUntil', { date: formatLastSent(resendBlockedReason.until) })}
+            </span>
+          )}
           {resendStatus === 'sent' && (
             <span data-testid="resend-feedback" className="px-2 text-[10px] text-emerald-700">
               {t('admin.kanban.resendDone')}

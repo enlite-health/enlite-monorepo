@@ -1582,6 +1582,7 @@
       "lastSentAt": "Último envio: {{date}}",
       "neverSent": "Sem envios",
       "resendDone": "Enviado ✓",
+      "resendBlockedUntil": "Reenvio disponível a partir de {{date}}",
       "moveToButton": "Mover para…",
       "collapseColumn": "Colapsar coluna",
       "expandColumn": "Expandir coluna",

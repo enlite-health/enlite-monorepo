@@ -49,6 +49,11 @@ interface FunnelEncuadre {
   selfAppliedAt?: string | null;
   /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. REQ-08. */
   lastMessagedAt?: string | null;
+  /**
+   * D200.1: por que o "Reenviar" está desabilitado AGORA (null = livre). Calculado pelo
+   * backend com a MESMA janela do 422 — o card não deixa clicar onde o clique seria recusado.
+   */
+  resendBlockedReason?: { code: string; until: string } | null;
   /** Blocked card que foi "rechazado" (soft-dismiss): aparece em RECHAZADOS, com botão de voltar. */
   isDismissed?: boolean;
 }

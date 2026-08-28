@@ -18,7 +18,7 @@
  */
 
 import { Pool } from 'pg';
-import { assertVacancyInviteAllowed } from '../VacancyInviteGuard';
+import { assertVacancyInviteAllowed, resendCooldownUntilSql } from '../VacancyInviteGuard';
 
 // Helpers ────────────────────────────────────────────────────────────────────
 
@@ -150,17 +150,27 @@ describe('assertVacancyInviteAllowed — mode: resend', () => {
     expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
-  it('reenvio dentro da janela (mesmo worker×vaga) → RESEND_COOLDOWN, com a janela em horas na query', async () => {
+  it('reenvio dentro da janela (mesmo worker×vaga) → RESEND_COOLDOWN com `until` (quando a janela abre), janela em horas na query', async () => {
     mockQuery
       .mockResolvedValueOnce(existsRow(false)) // opt-out
-      .mockResolvedValueOnce(existsRow(true)); // já houve envio na janela
+      .mockResolvedValueOnce({ rows: [{ until: new Date('2026-08-29T15:00:00Z') }] }); // já houve envio na janela
     const result = await assertVacancyInviteAllowed(makeDb(mockQuery), WORKER_ID, JOB_ID, { mode: 'resend' });
-    expect(result).toMatchObject({ allowed: false, code: 'RESEND_COOLDOWN' });
+    // D200.1: o `until` é o que o funil/card usam para desabilitar o botão ANTES do clique.
+    expect(result).toMatchObject({ allowed: false, code: 'RESEND_COOLDOWN', until: '2026-08-29T15:00:00.000Z' });
     expect(mockQuery).toHaveBeenCalledTimes(2);
     const [sql, params] = mockQuery.mock.calls[1];
     expect(sql).toMatch(/job_posting_id = \$2/);
     expect(sql).toMatch(/INTERVAL '1 hour'/);
     expect(params).toEqual([WORKER_ID, JOB_ID, 24]); // default MANUAL_RESEND_COOLDOWN_HOURS
+  });
+
+  it('a expressão SQL da janela é UMA só (guard e funil): resendCooldownUntilSql', () => {
+    const sql = resendCooldownUntilSql('wja.worker_id', 'wja.job_posting_id', '$2');
+    expect(sql).toMatch(/MAX\(dispatched_at\) \+ \(\$2 \* INTERVAL '1 hour'\)/);
+    expect(sql).toMatch(/worker_id = wja\.worker_id/);
+    expect(sql).toMatch(/job_posting_id = wja\.job_posting_id/);
+    expect(sql).toMatch(/status = 'sent'/);
+    expect(sql).toMatch(/dispatched_at > NOW\(\) - \(\$2 \* INTERVAL '1 hour'\)/);
   });
 
   it('fora da janela mas throttled (unanswered>=3, !engaged) → UNANSWERED_THROTTLE (o throttle vale para reenvio)', async () => {

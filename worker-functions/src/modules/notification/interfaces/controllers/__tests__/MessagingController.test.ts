@@ -443,12 +443,13 @@ describe('MessagingController.sendVacancyMatch — resend: true', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321', messaging_channel: 'twilio' }] })
       .mockResolvedValueOnce({ rows: [{ exists: false }] }) // opt-out
-      .mockResolvedValueOnce({ rows: [{ exists: true }] });  // reenvio recente
+      .mockResolvedValueOnce({ rows: [{ until: new Date('2026-08-29T15:00:00Z') }] }); // reenvio recente: janela abre em `until`
 
     await controller.sendVacancyMatch(req({ workerId: 'w-1', jobPostingId: 'job-1', resend: true }), res as unknown as Response);
 
     expect(res.status).toHaveBeenCalledWith(422);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'RESEND_COOLDOWN' }));
+    // D200.1: o 422 diz QUANDO a janela abre — o mesmo instante que o funil manda ao card.
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'RESEND_COOLDOWN', until: '2026-08-29T15:00:00.000Z' }));
     expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
   });
 });
