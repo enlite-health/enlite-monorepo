@@ -5,7 +5,7 @@
  *
  * Cobre as 3 funcionalidades novas:
  *   1. Formatação de telefone por país (AR, BR, genérico)
- *   2. Nome clicável que navega para /admin/workers/:id
+ *   2. Nome como link que abre /admin/workers/:id em nova aba
  *   3. Tag de data/hora da reunião na coluna Confirmados
  */
 
@@ -353,7 +353,7 @@ test.describe('Kanban — testes visuais (screenshot)', () => {
 
   // ── 2. Nome clicável → navegação para worker detail ───────────────────
 
-  test('nome do worker é clicável e navega para /admin/workers/:id', async ({ page }) => {
+  test('nome do worker é link e abre o perfil em NOVA ABA (/admin/workers/:id)', async ({ page, context }) => {
     await seedAdminAndLogin(page);
     await mockVacancyApis(page);
 
@@ -371,14 +371,18 @@ test.describe('Kanban — testes visuais (screenshot)', () => {
 
     // Screenshot antes do click — nome com estilo de link
     const card = page.locator('[data-testid="kanban-card-vis-ar"]');
-    const nameButton = card.getByRole('button', { name: 'María Gabriela Arena' });
-    await expect(nameButton).toBeVisible();
+    const nameLink = card.getByRole('link', { name: 'María Gabriela Arena' });
+    await expect(nameLink).toBeVisible();
+    await expect(nameLink).toHaveAttribute('href', '/admin/workers/worker-ar-001');
+    await expect(nameLink).toHaveAttribute('target', '_blank');
 
     await expect(card).toHaveScreenshot('kanban-card-clickable-name.png');
 
-    // Click no nome navega para detalhe do worker
-    await nameButton.click();
-    await expect(page).toHaveURL(/\/admin\/workers\/worker-ar-001/, { timeout: 10000 });
+    // Click no nome abre NOVA ABA com o perfil — e o Kanban fica na aba original
+    const [popup] = await Promise.all([context.waitForEvent('page'), nameLink.click()]);
+    await expect(popup).toHaveURL(/\/admin\/workers\/worker-ar-001/, { timeout: 10000 });
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`));
+    await popup.close();
   });
 
   test('nome NÃO é clicável quando workerId é null', async ({ page }) => {
@@ -391,7 +395,7 @@ test.describe('Kanban — testes visuais (screenshot)', () => {
     // Jean Dupont tem workerId: null — nome deve ser texto plain, sem button
     const card = page.locator('[data-testid="kanban-card-vis-generic"]');
     await expect(card.locator('text=Jean Dupont')).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Jean Dupont' })).not.toBeVisible();
+    await expect(card.getByRole('link', { name: 'Jean Dupont' })).not.toBeVisible();
 
     // Screenshot do card sem link no nome
     await expect(card).toHaveScreenshot('kanban-card-non-clickable-name.png');

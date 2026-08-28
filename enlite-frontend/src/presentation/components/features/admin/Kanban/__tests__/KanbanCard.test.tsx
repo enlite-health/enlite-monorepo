@@ -359,8 +359,7 @@ describe('KanbanCard — blocked badge', () => {
     expect(screen.getByText('admin.kanban.noName')).toBeInTheDocument();
   });
 
-  it('renders the worker name as a clickable link even when isBlocked, when workerId + onWorkerClick are present', () => {
-    const onClick = vi.fn();
+  it('renders the worker name as a link to the profile (new tab) even when isBlocked, when workerId is present', () => {
     render(
       <KanbanCard
         {...defaultProps}
@@ -368,12 +367,11 @@ describe('KanbanCard — blocked badge', () => {
         isBlocked={true}
         workerId="worker-blocked-1"
         workerName="Lucía Fernández"
-        onWorkerClick={onClick}
       />,
     );
-    const button = screen.getByRole('button', { name: 'Lucía Fernández' });
-    fireEvent.click(button);
-    expect(onClick).toHaveBeenCalledWith('worker-blocked-1');
+    const link = screen.getByRole('link', { name: 'Lucía Fernández' });
+    expect(link).toHaveAttribute('href', '/admin/workers/worker-blocked-1');
+    expect(link).toHaveAttribute('target', '_blank');
   });
 
   it('renders the notes button in a blocked card when onOpenNotes is provided (contact notes are keyed by worker, not WJA)', () => {
@@ -396,59 +394,39 @@ describe('KanbanCard — blocked badge', () => {
 
 // ── Clickable Worker Name ───────────────────────────────────────────────────
 
-describe('KanbanCard — clickable worker name', () => {
-  it('renders name as a button when workerId and onWorkerClick are provided', () => {
-    const onClick = vi.fn();
-    render(
-      <KanbanCard {...defaultProps} workerId="worker-42" onWorkerClick={onClick} />,
-    );
-    const button = screen.getByRole('button');
-    expect(button).toBeInTheDocument();
-    expect(button).toHaveTextContent('Ana Martínez');
+describe('KanbanCard — worker name opens the profile in a NEW TAB', () => {
+  it('renders the name as a real link to /admin/workers/:id when workerId is provided', () => {
+    render(<KanbanCard {...defaultProps} workerId="worker-42" />);
+    const link = screen.getByRole('link', { name: 'Ana Martínez' });
+    expect(link).toHaveAttribute('href', '/admin/workers/worker-42');
   });
 
-  it('does NOT render button when workerId is null', () => {
-    const onClick = vi.fn();
-    render(
-      <KanbanCard {...defaultProps} workerId={null} onWorkerClick={onClick} />,
-    );
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    // Name should still be visible as plain text
+  it('opens in a new tab safely (target=_blank + rel=noopener noreferrer)', () => {
+    render(<KanbanCard {...defaultProps} workerId="worker-42" />);
+    const link = screen.getByRole('link', { name: 'Ana Martínez' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('does NOT render a link when workerId is null — name stays plain text', () => {
+    render(<KanbanCard {...defaultProps} workerId={null} />);
+    expect(screen.queryByRole('link', { name: 'Ana Martínez' })).not.toBeInTheDocument();
     expect(screen.getByText('Ana Martínez')).toBeInTheDocument();
   });
 
-  it('does NOT render button when onWorkerClick is undefined', () => {
+  it('does not let the click bubble to the draggable card', () => {
+    const onParentClick = vi.fn();
     render(
-      <KanbanCard {...defaultProps} workerId="worker-42" />,
+      <div onClick={onParentClick}>
+        <KanbanCard {...defaultProps} workerId="worker-42" />
+      </div>,
     );
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Ana Martínez' }));
+    expect(onParentClick).not.toHaveBeenCalled();
   });
 
-  it('calls onWorkerClick with workerId when name is clicked', () => {
-    const onClick = vi.fn();
-    render(
-      <KanbanCard {...defaultProps} workerId="worker-42" onWorkerClick={onClick} />,
-    );
-    fireEvent.click(screen.getByRole('button'));
-    expect(onClick).toHaveBeenCalledTimes(1);
-    expect(onClick).toHaveBeenCalledWith('worker-42');
-  });
-
-  it('does NOT call onWorkerClick when workerId is null even if button somehow clicked', () => {
-    const onClick = vi.fn();
-    render(
-      <KanbanCard {...defaultProps} workerId={null} onWorkerClick={onClick} />,
-    );
-    // No button rendered, so click on name text
-    fireEvent.click(screen.getByText('Ana Martínez'));
-    expect(onClick).not.toHaveBeenCalled();
-  });
-
-  it('applies hover:underline class to clickable name', () => {
-    const onClick = vi.fn();
-    render(
-      <KanbanCard {...defaultProps} workerId="worker-42" onWorkerClick={onClick} />,
-    );
+  it('applies hover:underline class to the linked name', () => {
+    render(<KanbanCard {...defaultProps} workerId="worker-42" />);
     const nameSpan = screen.getByText('Ana Martínez');
     expect(nameSpan.className).toContain('hover:underline');
   });
