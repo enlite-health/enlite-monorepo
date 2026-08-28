@@ -1,5 +1,8 @@
 -- 296: anti-lockout pelos caminhos INDIRETOS (spec 002 §fora-de-escopo; lex C8 da 002; pré-F13)
 --
+-- NUMERAÇÃO: salta 286-295 de propósito — a linhagem `campos-admissao` (branch ainda não
+-- mergeada em 28/08/2026) ocupa esses dez números; o runner ordena por nome, gap não quebra.
+--
 -- POR QUÊ: a 279 protege o último gestor (staff ACTIVE com permission_management:write
 -- vigente) SÓ nas três operações do painel: remove_member, archive_group e
 -- set_group_permissions. Três outros caminhos derrubavam o mesmo gestor sem nenhum
@@ -51,8 +54,14 @@ BEGIN
   LOOP
     IF 'permission_management:write' = ANY (iam.effective_permissions(p_user_id, v_tenant)) THEN
       PERFORM pg_advisory_xact_lock(hashtext('iam:managers:' || v_tenant::text));
+      -- Só quem tem vínculo vivo no tenant pode ser gestor: o JOIN corta a
+      -- varredura de `users` (que guarda TODO mundo do Firebase) para o staff com grupo.
       SELECT count(DISTINCT u.firebase_uid) INTO v_outros
         FROM users u
+        JOIN iam.user_groups ug2
+          ON ug2.user_id = u.firebase_uid
+         AND ug2.tenant_id = v_tenant
+         AND ug2.removed_at IS NULL
        WHERE u.status = 'ACTIVE'
          AND u.firebase_uid <> p_user_id
          AND 'permission_management:write' = ANY (iam.effective_permissions(u.firebase_uid, v_tenant));
@@ -144,10 +153,13 @@ COMMENT ON FUNCTION iam.deprecate_missing_permission_cells(VARCHAR, TEXT[]) IS
 -- ── ACL ──────────────────────────────────────────────────────────────────────────
 DO $$
 BEGIN
-  REVOKE ALL ON FUNCTION iam.is_last_manager(varchar) FROM PUBLIC;
-  REVOKE ALL ON FUNCTION iam.trg_users_guard_last_manager() FROM PUBLIC;
-  REVOKE ALL ON FUNCTION iam.deprecate_missing_permission_cells(varchar,text[]) FROM PUBLIC;
+  -- REVOKE e GRANT dentro da MESMA guarda: num banco sem as roles do app (dev
+  -- novo), revogar de PUBLIC sem conceder a ninguém faria o trigger estourar
+  -- 42501 para qualquer role que mexa em `users`.
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    REVOKE ALL ON FUNCTION iam.is_last_manager(varchar) FROM PUBLIC;
+    REVOKE ALL ON FUNCTION iam.trg_users_guard_last_manager() FROM PUBLIC;
+    REVOKE ALL ON FUNCTION iam.deprecate_missing_permission_cells(varchar,text[]) FROM PUBLIC;
     -- O trigger roda como quem faz o DELETE/UPDATE: as duas roles precisam EXECUTAR o check.
     GRANT EXECUTE ON FUNCTION iam.is_last_manager(varchar) TO app_runtime, app_system;
     -- CREATE OR REPLACE preserva a ACL da 281, mas re-afirmar é mais barato que supor.

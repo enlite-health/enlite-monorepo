@@ -21,8 +21,14 @@
  * e-mail MASCARADO.
  *
  * Uso (proxies: prod em 5436, stage em 5434):
- *   FIREBASE_PROJECT_ID=enlite-stg DATABASE_URL_PROD=… DATABASE_URL=… \
- *     npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/espelhar-staff-stage.ts [--execute] [--contas-teste]
+ *   npm run espelho:stage:dry -- [--contas-teste]     # só mostra
+ *   npm run espelho:stage -- [--contas-teste]         # grava (== --execute)
+ *
+ * GRUPO DAS CONTAS DE TESTE — por que INSERT direto e não `iam.add_member` (279):
+ * a 279 exige um ATOR com `permission_management:write` em sessão (`_require_manager`),
+ * e este script roda justamente quando a stage ainda NÃO tem gestor nenhum — ele é o
+ * bootstrap do primeiro, como o seed da 206 foi. A autoria não fica vazia: `assigned_by`
+ * recebe o uid do gestor QA (a primeira conta criada), e o comentário na linha diz isso.
  */
 import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
@@ -59,10 +65,13 @@ async function main(): Promise<void> {
   const prod = new Pool({ connectionString: prodUrl });
   const stg = new Pool({ connectionString: stgUrl });
   const c = { idpCriada: 0, idpJaTinha: 0, linhaNova: 0, linhaAtualizada: 0, claim: 0, claimJaTinha: 0 };
+  /** O mesmo predicado nas duas pontas — senão "4 → 28" compara réguas diferentes. */
+  const STAFF_ATIVO = `role = ANY($1) AND is_active = true AND status = 'ACTIVE'`;
+  let gestorQaUid: string | null = null;
   try {
     const { rows: staff } = await prod.query<Staff>(
       `SELECT email, display_name, role, department FROM users
-        WHERE role = ANY($1) AND is_active = true AND status = 'ACTIVE' AND email IS NOT NULL ORDER BY email`,
+        WHERE ${STAFF_ATIVO} AND email IS NOT NULL ORDER BY email`,
       [STAFF_ROLES],
     );
     console.log(`[espelho] staff ativo em PROD: ${staff.length} (${EXECUTE ? 'EXECUTE' : 'DRY-RUN'})`);
@@ -86,47 +95,76 @@ async function main(): Promise<void> {
       }
       if (p.senha) senhas[p.email] = p.senha;
 
-      // 2. users em stage (por e-mail; o uid de stage é OUTRO que o de prod)
+      if (p.email === TESTE[0].email) gestorQaUid = uid;
+
+      // 2-4. Tudo do BANCO desta pessoa numa transação: falha no meio não deixa
+      //      linha sem grupo nem grupo sem linha (o IdP fica fora — não é transacional).
       const existente = await stg.query<{ firebase_uid: string; role: string }>(`SELECT firebase_uid, role FROM users WHERE email = $1`, [p.email]);
-      if (existente.rowCount === 0) {
-        c.linhaNova += 1;
-        if (EXECUTE) await stg.query(
-          `INSERT INTO users (firebase_uid, email, display_name, role, department, is_active, status, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, true, 'ACTIVE', $6)`,
-          [uid, p.email, p.display_name, p.role, p.department, TENANT]);
-      } else {
-        c.linhaAtualizada += 1;
-        if (EXECUTE) await stg.query(
-          `UPDATE users SET firebase_uid = $1, display_name = COALESCE($2, display_name), role = $3, department = COALESCE($4, department),
-                  is_active = true, status = 'ACTIVE', tenant_id = COALESCE(tenant_id, $5), updated_at = now() WHERE email = $6`,
-          [uid, p.display_name, p.role, p.department, TENANT, p.email]);
-      }
+      if (existente.rowCount === 0) c.linhaNova += 1; else c.linhaAtualizada += 1;
+      if (!EXECUTE) continue;
 
-      // 3. claim country = AR (D207)
-      if (EXECUTE) {
-        const cur = ((await auth.getUser(uid)).customClaims ?? {}).country;
-        if (cur === 'AR') c.claimJaTinha += 1; else { await mergeCustomClaims(uid, { country: 'AR' }); c.claim += 1; }
-      }
-
-      // 4. grupo das contas de teste — pelo SECURITY DEFINER da 279, nunca INSERT direto
-      if (EXECUTE && p.grupo) {
-        const g = await stg.query<{ id: string }>(`SELECT id FROM iam.permission_groups WHERE name = $1 AND tenant_id = $2 AND archived_at IS NULL`, [p.grupo, TENANT]);
-        if (g.rowCount !== 1) throw new Error(`grupo '${p.grupo}' não existe em stage`);
-        const ja = await stg.query(`SELECT 1 FROM iam.user_groups WHERE user_id = $1 AND group_id = $2 AND removed_at IS NULL`, [uid, g.rows[0].id]);
-        if (ja.rowCount === 0) {
-          await stg.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [uid, g.rows[0].id, TENANT]);
+      const client = await stg.connect();
+      try {
+        await client.query('BEGIN');
+        if (existente.rowCount === 0) {
+          await client.query(
+            `INSERT INTO users (firebase_uid, email, display_name, role, department, is_active, status, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, true, 'ACTIVE', $6)`,
+            [uid, p.email, p.display_name, p.role, p.department, TENANT]);
+        } else {
+          // Vínculo vivo com OUTRO uid impediria o UPDATE (FK sem ON UPDATE CASCADE):
+          // remove o vínculo antigo com autoria de sistema antes de trocar o uid.
+          const antigo = existente.rows[0].firebase_uid;
+          if (antigo !== uid) {
+            await client.query(`UPDATE iam.user_groups SET removed_at = now() WHERE user_id = $1 AND removed_at IS NULL`, [antigo]);
+          }
+          await client.query(
+            `UPDATE users SET firebase_uid = $1, display_name = COALESCE($2, display_name), role = $3, department = COALESCE($4, department),
+                    is_active = true, status = 'ACTIVE', tenant_id = COALESCE(tenant_id, $5), updated_at = now() WHERE email = $6`,
+            [uid, p.display_name, p.role, p.department, TENANT, p.email]);
         }
+
+        // grupo das contas de teste — INSERT direto com AUTORIA (ver cabeçalho: é o
+        // bootstrap do primeiro gestor; a 279 exigiria um gestor que ainda não existe).
+        if (p.grupo) {
+          const g = await client.query<{ id: string }>(`SELECT id FROM iam.permission_groups WHERE name = $1 AND tenant_id = $2 AND archived_at IS NULL`, [p.grupo, TENANT]);
+          if (g.rowCount !== 1) throw new Error(`grupo '${p.grupo}' não existe em stage`);
+          const ja = await client.query(`SELECT 1 FROM iam.user_groups WHERE user_id = $1 AND group_id = $2 AND removed_at IS NULL`, [uid, g.rows[0].id]);
+          if (ja.rowCount === 0) {
+            await client.query(
+              `INSERT INTO iam.user_groups (user_id, group_id, tenant_id, assigned_by) VALUES ($1, $2, $3, $4)`,
+              [uid, g.rows[0].id, TENANT, gestorQaUid ?? uid],
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
       }
+
+      // claim country = AR (D207) — depois do banco, fora da transação
+      const cur = ((await auth.getUser(uid)).customClaims ?? {}).country;
+      if (cur === 'AR') c.claimJaTinha += 1; else { await mergeCustomClaims(uid, { country: 'AR' }); c.claim += 1; }
     }
     console.log(`[espelho] IdP: criadas=${c.idpCriada} existentes=${c.idpJaTinha} · users(stage): novas=${c.linhaNova} atualizadas=${c.linhaAtualizada} · claim AR: atribuídos=${c.claim} já_tinham=${c.claimJaTinha}`);
 
     if (EXECUTE && CONTAS_TESTE && Object.keys(senhas).length > 0) {
       const payload = JSON.stringify(senhas);
-      try { execFileSync('gcloud', ['secrets', 'create', 'abac-qa-accounts', '--project=enlite-stg', '--replication-policy=automatic', '--data-file=-'], { input: payload, stdio: ['pipe', 'ignore', 'ignore'] }); }
-      catch { execFileSync('gcloud', ['secrets', 'versions', 'add', 'abac-qa-accounts', '--project=enlite-stg', '--data-file=-'], { input: payload, stdio: ['pipe', 'ignore', 'ignore'] }); }
+      try {
+        execFileSync('gcloud', ['secrets', 'create', 'abac-qa-accounts', '--project=enlite-stg', '--replication-policy=automatic', '--data-file=-'], { input: payload, stdio: ['pipe', 'ignore', 'pipe'] });
+      } catch (e) {
+        // Só "já existe" cai para `versions add`; qualquer outra causa (gcloud sem auth,
+        // sem permissão) sobe com o stderr original, não some num segundo erro.
+        const stderr = String((e as { stderr?: Buffer }).stderr ?? '');
+        if (!/already exists|ALREADY_EXISTS/i.test(stderr)) throw new Error(`gcloud secrets create falhou: ${stderr.trim()}`);
+        execFileSync('gcloud', ['secrets', 'versions', 'add', 'abac-qa-accounts', '--project=enlite-stg', '--data-file=-'], { input: payload, stdio: ['pipe', 'ignore', 'pipe'] });
+      }
       console.log(`[espelho] senhas das ${Object.keys(senhas).length} contas de teste gravadas no secret enlite-stg/abac-qa-accounts (não impressas)`);
     }
-    const stgCount = await stg.query(`SELECT count(*) FROM users WHERE role = ANY($1) AND is_active = true`, [STAFF_ROLES]);
+    const stgCount = await stg.query(`SELECT count(*) FROM users WHERE ${STAFF_ATIVO}`, [STAFF_ROLES]);
     console.log(`[espelho] staff ativo em STAGE agora: ${stgCount.rows[0].count}`);
   } finally { await prod.end(); await stg.end(); }
 }

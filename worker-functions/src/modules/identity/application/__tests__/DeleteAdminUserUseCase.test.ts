@@ -21,7 +21,7 @@ jest.mock('firebase-admin', () => ({
 }));
 
 import { DeleteAdminUserUseCase } from '../DeleteAdminUserUseCase';
-import { LAST_MANAGER_ERROR } from '../../domain/lastManager';
+import { LAST_MANAGER } from '../DeleteAdminUserUseCase';
 
 const UID = 'uid-gestor';
 
@@ -38,7 +38,7 @@ describe('DeleteAdminUserUseCase', () => {
     const result = await new DeleteAdminUserUseCase().execute(UID);
 
     expect(result.isFailure).toBe(true);
-    expect(result.error).toBe(LAST_MANAGER_ERROR);
+    expect(result.error).toBe(LAST_MANAGER);
     expect(mockDeleteUser).not.toHaveBeenCalled();
     expect(mockDeleteByFirebaseUid).not.toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe('DeleteAdminUserUseCase', () => {
 
     const result = await new DeleteAdminUserUseCase().execute(UID);
 
-    expect(result.error).toBe(LAST_MANAGER_ERROR);
+    expect(result.error).toBe(LAST_MANAGER);
   });
 
   it('outro erro do banco segue com a mensagem original', async () => {

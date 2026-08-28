@@ -7,6 +7,7 @@
 const mockExecute = jest.fn();
 jest.mock('../../../application/DeleteAdminUserUseCase', () => ({
   DeleteAdminUserUseCase: jest.fn().mockImplementation(() => ({ execute: mockExecute })),
+  LAST_MANAGER: 'last_manager',
 }));
 jest.mock('../../../application/DeleteUserByEmailUseCase', () => ({ DeleteUserByEmailUseCase: jest.fn() }));
 jest.mock('../../../application/CreateAdminUserUseCase', () => ({ CreateAdminUserUseCase: jest.fn() }));
@@ -21,7 +22,7 @@ jest.mock('../../../infrastructure/GoogleIdentityService', () => ({ GoogleIdenti
 import type { Request, Response } from 'express';
 import { AdminController } from '../AdminController';
 import { Result } from '@shared/utils/Result';
-import { LAST_MANAGER_ERROR } from '../../../domain/lastManager';
+import { LAST_MANAGER } from '../../../application/DeleteAdminUserUseCase';
 
 function res(): Response & { status: jest.Mock; json: jest.Mock } {
   const r = { status: jest.fn(), json: jest.fn() } as unknown as Response & { status: jest.Mock; json: jest.Mock };
@@ -34,11 +35,11 @@ describe('AdminController.deleteAdminUser', () => {
   beforeEach(() => mockExecute.mockReset());
 
   it('último gestor → 409 `last_manager`', async () => {
-    mockExecute.mockResolvedValue(Result.fail(LAST_MANAGER_ERROR));
+    mockExecute.mockResolvedValue(Result.fail(LAST_MANAGER));
     const r = res();
     await new AdminController().deleteAdminUser(req, r);
     expect(r.status).toHaveBeenCalledWith(409);
-    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'last_manager' }));
+    expect(r.json).toHaveBeenCalledWith({ success: false, code: 'last_manager', error: 'A operação deixaria a empresa sem nenhum gestor de acessos.' });
   });
 
   it('outra falha do use case → 400 com a mensagem', async () => {

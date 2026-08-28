@@ -57,12 +57,12 @@ import {
   ENLITE_TENANT_ID,
   isPermissionError,
   toPermissionError,
-  type PermissionErrorCode,
 } from '@modules/identity/permissions';
 import type { PermissionsModule } from '@modules/identity/permissions';
 import type { AuthMiddleware } from '../middleware/AuthMiddleware';
 import type { PermissionMiddleware } from '../middleware/PermissionMiddleware';
 import { ADMIN_PERMISSIONS_FAMILY } from './permissionPanelRoutes';
+import { MENSAGEM_POR_CODIGO, STATUS_POR_CODIGO } from '../http/permissionErrorHttp';
 
 /**
  * Porta ESTREITA de escrita — só os 9 use cases desta fase. O `PermissionsModule`
@@ -111,47 +111,6 @@ const MembroBody = z.object({ userId: z.string().min(1).max(128) });
 const MembroParam = z.object({ id: z.string().uuid(), userId: z.string().min(1).max(128) });
 const FeatureParam = z.object({ country: z.enum(COUNTRY_CODES), featureKey: z.string().min(3).max(120) });
 const FeatureBody = z.object({ enabled: z.boolean(), config: z.unknown().optional(), reason: Motivo });
-
-/**
- * Vocabulário de falha → HTTP. O domínio existe justamente para a borda não
- * depender de `error.code` do driver nem de frase do Postgres.
- *
- * `last_manager` é **409**, não 403: quem pediu TINHA permissão; o que o
- * sistema recusa é o estado resultante. Um 403 diria "você não pode", e a
- * pessoa iria procurar a permissão que falta — que não é o problema.
- */
-const STATUS_POR_CODIGO: Readonly<Record<PermissionErrorCode, number>> = {
-  forbidden: 403,
-  not_found: 404,
-  duplicate_name: 409,
-  system_group: 409,
-  last_manager: 409,
-  invalid_cell: 400,
-  reason_required: 400,
-  invalid_feature_key: 400,
-  invalid_feature_config: 400,
-  invalid_country: 400,
-  invalid_input: 400,
-};
-
-/**
- * A frase que o cliente vê. Existe porque `perm.message` carrega, em alguns
- * códigos, a mensagem CRUA do Postgres — com nome de tabela e de constraint.
- * O `code` é o que a tela consome; a frase é para humano, e é nossa.
- */
-const MENSAGEM_POR_CODIGO: Readonly<Record<PermissionErrorCode, string>> = {
-  forbidden: 'Sem permissão para gerenciar acessos.',
-  not_found: 'Grupo não encontrado.',
-  duplicate_name: 'Já existe um grupo com esse nome.',
-  system_group: 'Grupo de sistema não pode ser alterado nem arquivado.',
-  last_manager: 'A operação deixaria a empresa sem nenhum gestor de acessos.',
-  invalid_cell: 'Célula fora do catálogo ou descontinuada.',
-  reason_required: 'Esta operação exige um motivo.',
-  invalid_feature_key: 'Chave de feature inválida.',
-  invalid_feature_config: 'Configuração da feature inválida.',
-  invalid_country: 'País não suportado.',
-  invalid_input: 'Dados inválidos.',
-};
 
 function responder<T>(res: Response, rotulo: string, trabalho: () => Promise<T>): void {
   void trabalho()

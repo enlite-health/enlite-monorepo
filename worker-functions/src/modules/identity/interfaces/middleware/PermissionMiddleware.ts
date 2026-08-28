@@ -40,7 +40,6 @@ import {
   type PermissionClient,
   type PermissionDecision,
   type ResolvedAuthz,
-  exemptHandler,
 } from '@modules/identity/permissions';
 
 /** Só o que o middleware usa da trilha — o repositório inteiro não sai do módulo. */
@@ -113,7 +112,6 @@ export class PermissionMiddleware {
     return {
       require: (resource: string, action: string, description?: string) =>
         this.buildGuard(family, resource, action, description),
-      exempt: (reason: string) => exemptHandler(reason),
     };
   }
 
@@ -328,12 +326,6 @@ export class PermissionMiddleware {
 export interface PermissionFamily {
   /** Guard que exige `recurso:ação` e declara a célula para o catálogo. */
   require(resource: string, action: string, description?: string): RequestHandler;
-  /**
-   * Marca a rota como ISENTA de célula na montagem (`self`, D116). Não decide
-   * nada — o guard de papel continua sendo o portão. Rota marcada entra no
-   * perímetro e no inventário como `exempt`, sem linha em lista nenhuma.
-   */
-  exempt(reason: string): RequestHandler;
 }
 
 /**
