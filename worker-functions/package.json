@@ -22,6 +22,7 @@
     "archive:stale-workers": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts --execute",
     "archive:stale-workers:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts",
     "claims:country": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-staff-country-claim.ts --execute",
+    "espelho:stage": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/espelhar-staff-stage.ts",
     "claims:country:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-staff-country-claim.ts",
     "sync:talentum": "ts-node -r dotenv/config scripts/sync-talentum-status.ts",
     "sync:talentum:dry": "ts-node -r dotenv/config scripts/sync-talentum-status.ts --dry-run",
