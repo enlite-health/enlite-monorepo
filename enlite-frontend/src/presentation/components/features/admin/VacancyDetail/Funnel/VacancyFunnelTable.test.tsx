@@ -176,8 +176,21 @@ describe('VacancyFunnelTable', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it('renders "—" for a row without invite date and the "no" label when accepted=false', () => {
+    const rows: FunnelTableRow[] = [{ ...mockRows[0], invitedAt: null, accepted: false }];
+    renderTable({ ...defaultProps, rows });
+    expect(screen.getByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('opens the contact notes modal for the row when the notes button is clicked', () => {
+    renderTable(defaultProps);
+    fireEvent.click(screen.getAllByTestId('funnel-notes-button')[0]);
+    expect(screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.modalTitle')).toBeInTheDocument();
+  });
+
   it('renders plain text (no link) when the row has no workerId', () => {
-    const rowsNoId: FunnelTableRow[] = [{ ...mockRows[0], workerId: '' }];
+    const rowsNoId: FunnelTableRow[] = [{ ...mockRows[0], workerId: '' }, { ...mockRows[1], workerId: '' }];
     renderTable({ ...defaultProps, rows: rowsNoId });
     expect(screen.queryByTestId('funnel-worker-link')).not.toBeInTheDocument();
     expect(screen.getAllByText('Juan Pérez').length).toBeGreaterThan(0);

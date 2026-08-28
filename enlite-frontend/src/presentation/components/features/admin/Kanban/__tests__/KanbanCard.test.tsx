@@ -753,3 +753,17 @@ describe('KanbanCard — selo de auto-postulação', () => {
     expect(screen.queryByTestId('self-applied-badge')).toBeNull();
   });
 });
+
+// ── Reprogram badge (F7.b) ──────────────────────────────────────────────────
+
+describe('KanbanCard — reprogram badge', () => {
+  it('renders the badge when interviewResponse=awaiting_reschedule and there is no meet link', () => {
+    render(<KanbanCard {...defaultProps} interviewResponse="awaiting_reschedule" meetLink={null} />);
+    expect(screen.getByTestId('reprogram-badge')).toHaveTextContent('admin.kanban.reprogramBadge');
+  });
+
+  it('does NOT render the badge when a meet link already exists', () => {
+    render(<KanbanCard {...defaultProps} interviewResponse="awaiting_reschedule" meetLink="https://meet.google.com/x" />);
+    expect(screen.queryByTestId('reprogram-badge')).not.toBeInTheDocument();
+  });
+});
