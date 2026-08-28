@@ -81,6 +81,14 @@ interface PatientRow {
   id: string;
   country: string;
   contact_email_encrypted: string | null;
+  /**
+   * E-mail do responsável primário. Quando quem preencheu o formulário público
+   * é um familiar (`requesterType='responsible'`), o e-mail vai para
+   * `patient_responsibles` e `contact_email_encrypted` fica nulo — sem isto o
+   * evento saía sem convidado e a pessoa caía na sala de espera do Meet
+   * (planning 26/08, PEND-09).
+   */
+  responsible_email_encrypted: string | null;
 }
 
 /** Candidata a atender um horário, com a carga da semana já medida. */
@@ -269,7 +277,7 @@ export class AdmissionSchedulingService {
     const startISO = slotStart.toISO() as string;
     const endISO = slotEnd.toISO() as string;
 
-    const patientEmail = await this.decryptPatientEmail(patient);
+    const patientEmail = await this.resolveRequesterEmail(patient);
 
     if (!isHostRosterEnabled()) {
       return this.bookOnCountryCalendar({
@@ -585,9 +593,14 @@ export class AdmissionSchedulingService {
   ): Promise<PatientRow> {
     const db = DatabaseConnection.getInstance().getPool();
     const res = await db.query<PatientRow>(
-      `SELECT id, country, contact_email_encrypted
-         FROM patients
-        WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT p.id, p.country, p.contact_email_encrypted,
+              (SELECT r.email_encrypted
+                 FROM patient_responsibles r
+                WHERE r.patient_id = p.id AND r.email_encrypted IS NOT NULL
+                ORDER BY r.is_primary DESC, r.display_order ASC
+                LIMIT 1) AS responsible_email_encrypted
+         FROM patients p
+        WHERE p.id = $1 AND p.deleted_at IS NULL`,
       [patientId],
     );
     const row = res.rows[0];
@@ -598,9 +611,16 @@ export class AdmissionSchedulingService {
     return row;
   }
 
-  private async decryptPatientEmail(patient: PatientRow): Promise<string | undefined> {
-    if (!patient.contact_email_encrypted) return undefined;
-    const email = await this.encryption.decrypt(patient.contact_email_encrypted);
+  /**
+   * E-mail de quem vai entrar no Meet: o do paciente quando ele mesmo solicitou;
+   * senão o do responsável primário (quem preencheu o formulário). É esse
+   * e-mail que vira convidado do evento — convidado listado entra na sala sem
+   * pedir autorização ao anfitrião.
+   */
+  private async resolveRequesterEmail(patient: PatientRow): Promise<string | undefined> {
+    const cipher = patient.contact_email_encrypted || patient.responsible_email_encrypted;
+    if (!cipher) return undefined;
+    const email = await this.encryption.decrypt(cipher);
     return email.trim() ? email.trim() : undefined;
   }
 

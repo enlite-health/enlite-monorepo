@@ -54,6 +54,8 @@ interface StubOptions {
   /** Ocupação por e-mail; ausente = totalmente livre. */
   busyByHost?: Record<string, BusyInterval[]>;
   createdEvents?: string[];
+  /** E-mail convidado em cada evento criado (undefined = sem convidado). */
+  invitedEmails?: (string | undefined)[];
 }
 
 /** Agenda dublada: nunca sai da máquina, nunca cria evento de verdade. */
@@ -65,8 +67,9 @@ function stubCalendar(opts: StubOptions = {}): AdmissionCalendarService {
     getBusyIntervals: async () => [],
     getFreeBusyByCalendar: async (ids: string[]): Promise<CalendarBusyResult[]> =>
       ids.map((calendarId) => ({ calendarId, busy: opts.busyByHost?.[calendarId] ?? [] })),
-    createEventWithMeet: async ({ coHostEmail }: { coHostEmail?: string }) => {
+    createEventWithMeet: async ({ coHostEmail, patientEmail }: { coHostEmail?: string; patientEmail?: string }) => {
       opts.createdEvents?.push(coHostEmail ?? '(sem atendente)');
+      opts.invitedEmails?.push(patientEmail);
       return { eventId: `evt-${opts.createdEvents?.length ?? 0}`, meetLink: 'https://meet.google.com/e2e-test' };
     },
     deleteEvent: async () => undefined,
@@ -316,5 +319,61 @@ describe('endpoint público de horários', () => {
       validateStatus: () => true,
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ── PEND-09: quem solicitou entra no Meet como convidado ─────────────────────
+//
+// O buraco que a planning de 26/08 relatou: quando um FAMILIAR preenche o
+// formulário, o e-mail vai para `patient_responsibles` e `patients.contact_email`
+// fica nulo — o evento saía sem convidado e a pessoa caía na sala de espera.
+// Aqui o paciente e o responsável são linhas REAIS no Postgres; só o KMS é
+// dublado (modo de teste = base64) e o Google, como sempre neste arquivo.
+
+describe('convidado do Meet = quem solicitou (PEND-09)', () => {
+  const RESP_EMAIL = 'responsable.e2e@admissionroster.test';
+  let responsiblePatientId: string;
+
+  function makeServiceWithBase64Kms(calendar: AdmissionCalendarService): AdmissionSchedulingService {
+    const notifier = { onBooked: async () => undefined } as unknown as AdmissionNotifier;
+    // Espelha o KMSEncryptionService em modo de teste (USE_KMS_ENCRYPTION=false): base64.
+    const encryption = {
+      decrypt: async (c: string) => Buffer.from(c, 'base64').toString('utf8'),
+    } as unknown as KMSEncryptionService;
+    return new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health');
+  }
+
+  beforeAll(async () => {
+    const res = await pool.query<{ id: string }>(
+      `INSERT INTO patients (first_name, last_name, country, contact_email_encrypted)
+       VALUES ('Paciente', 'E2E Responsable', 'AR', NULL) RETURNING id`,
+    );
+    responsiblePatientId = res.rows[0].id;
+    await pool.query(
+      `INSERT INTO patient_responsibles (patient_id, first_name, last_name, email_encrypted, is_primary, display_order, source)
+       VALUES ($1, 'Familiar', 'E2E', $2, true, 1, 'web_form')`,
+      [responsiblePatientId, Buffer.from(RESP_EMAIL, 'utf8').toString('base64')],
+    );
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [responsiblePatientId]);
+    await pool.query(`DELETE FROM patient_responsibles WHERE patient_id = $1`, [responsiblePatientId]);
+    await pool.query(`DELETE FROM patients WHERE id = $1`, [responsiblePatientId]);
+  });
+
+  it('paciente sem e-mail + responsável com e-mail no banco → o evento convida o responsável', async () => {
+    await pool.query(
+      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1, 'Ana', 'AR', true)`,
+      [ANA],
+    );
+    const invitedEmails: (string | undefined)[] = [];
+    const service = makeServiceWithBase64Kms(stubCalendar({ invitedEmails }));
+
+    await service.book({ patientId: responsiblePatientId, slotStartISO: SLOT_START.toISO() as string, country: 'AR' }, NOW);
+
+    expect(invitedEmails).toEqual([RESP_EMAIL]);
+    // eslint-disable-next-line no-console
+    console.log('[PEND-09] convidado no evento:', invitedEmails[0]);
   });
 });
