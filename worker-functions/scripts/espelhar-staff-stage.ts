@@ -29,13 +29,14 @@
  * e este script roda justamente quando a stage ainda NÃO tem gestor nenhum — ele é o
  * bootstrap do primeiro, como o seed da 206 foi. A autoria não fica vazia: `assigned_by`
  * recebe o uid do gestor QA (a primeira conta criada), e o comentário na linha diz isso.
- * O mesmo vale para a REMOÇÃO de vínculo antigo (staff cujo uid de stage mudou): não
- * passa por `iam.remove_member` pelo mesmo motivo (exige ator em sessão), grava
- * `removed_by` com o gestor QA, e CONTA o que removeu no log final — vínculo que some
- * sem contagem é configuração do time desaparecendo em silêncio. ⚠️ Este ramo passa por
- * fora do anti-lockout da 279 (que mora na função, não em trigger de `iam.user_groups`):
- * por isso ele só roda quando o uid MUDOU, e o log final imprime quantos gestores vivos
- * a stage tem — zero é falha, nunca sucesso.
+ * UID DIVERGENTE (linha em `users` de stage com uid diferente do IdP): o script NÃO
+ * conserta — reporta e sai com código 1. Trocar `firebase_uid` numa linha com vínculos
+ * é impossível sem apagar histórico (FK `iam.user_groups.user_id` sem ON UPDATE CASCADE,
+ * `removed_at` não libera a FK), e remover vínculo por fora da 279 passa por fora do
+ * anti-lockout. O gate `revisao-pr` (28/08, 3ª rodada) provou que a versão que tentava
+ * consertar isso falhava na primeira execução — o ramo foi removido, não remendado.
+ * O log final imprime SEMPRE (dry-run incluído) quantos gestores vivos a stage tem —
+ * zero é falha (exit 1), nunca sucesso.
  */
 import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
@@ -71,11 +72,12 @@ async function main(): Promise<void> {
 
   const prod = new Pool({ connectionString: prodUrl });
   const stg = new Pool({ connectionString: stgUrl });
-  const c = { idpCriada: 0, idpJaTinha: 0, linhaNova: 0, linhaAtualizada: 0, claim: 0, claimJaTinha: 0, vinculosRemovidos: 0 };
+  const c = { idpCriada: 0, idpJaTinha: 0, linhaNova: 0, linhaAtualizada: 0, claim: 0, claimJaTinha: 0, uidDivergente: 0 };
   /** O mesmo predicado nas duas pontas — senão "4 → 28" compara réguas diferentes. */
   const STAFF_ATIVO = `role = ANY($1) AND is_active = true AND status = 'ACTIVE'`;
   let gestorQaUid: string | null = null;
   try {
+    try { gestorQaUid = (await auth.getUserByEmail(TESTE[0].email)).uid; } catch { /* ainda não existe: nasce nesta rodada */ }
     const { rows: staff } = await prod.query<Staff>(
       `SELECT email, display_name, role, department FROM users
         WHERE ${STAFF_ATIVO} AND email IS NOT NULL ORDER BY email`,
@@ -111,7 +113,13 @@ async function main(): Promise<void> {
       // 2-4. Tudo do BANCO desta pessoa numa transação: falha no meio não deixa
       //      linha sem grupo nem grupo sem linha (o IdP fica fora — não é transacional).
       const existente = await stg.query<{ firebase_uid: string; role: string }>(`SELECT firebase_uid, role FROM users WHERE email = $1`, [p.email]);
-      if (existente.rowCount === 0) c.linhaNova += 1; else c.linhaAtualizada += 1;
+      if (existente.rowCount === 0) c.linhaNova += 1;
+      else if (existente.rows[0].firebase_uid !== uid) {
+        // Inconsistência IdP × users: reportada, nunca "consertada" (ver cabeçalho).
+        c.uidDivergente += 1;
+        console.error(`  [uid divergente — NÃO tocado] ${mask(p.email)}`);
+        continue;
+      } else c.linhaAtualizada += 1;
       if (!EXECUTE) continue;
 
       const client = await stg.connect();
@@ -123,21 +131,11 @@ async function main(): Promise<void> {
              VALUES ($1, $2, $3, $4, $5, true, 'ACTIVE', $6)`,
             [uid, p.email, p.display_name, p.role, p.department, TENANT]);
         } else {
-          // Vínculo vivo com OUTRO uid impediria o UPDATE (FK sem ON UPDATE CASCADE):
-          // remove o vínculo antigo com AUTORIA do gestor QA (ver cabeçalho — a 279
-          // exigiria ator em sessão) e conta, para o log final acusar o que sumiu.
-          const antigo = existente.rows[0].firebase_uid;
-          if (antigo !== uid) {
-            const r = await client.query(
-              `UPDATE iam.user_groups SET removed_at = now(), removed_by = $2 WHERE user_id = $1 AND removed_at IS NULL`,
-              [antigo, gestorQaUid ?? uid],
-            );
-            c.vinculosRemovidos += r.rowCount ?? 0;
-          }
+          // Mesmo uid (garantido acima): só os atributos mutáveis são refrescados.
           await client.query(
-            `UPDATE users SET firebase_uid = $1, display_name = COALESCE($2, display_name), role = $3, department = COALESCE($4, department),
-                    is_active = true, status = 'ACTIVE', tenant_id = COALESCE(tenant_id, $5), updated_at = now() WHERE email = $6`,
-            [uid, p.display_name, p.role, p.department, TENANT, p.email]);
+            `UPDATE users SET display_name = COALESCE($1, display_name), role = $2, department = COALESCE($3, department),
+                    is_active = true, status = 'ACTIVE', tenant_id = COALESCE(tenant_id, $4), updated_at = now() WHERE email = $5`,
+            [p.display_name, p.role, p.department, TENANT, p.email]);
         }
 
         // grupo das contas de teste — INSERT direto com AUTORIA (ver cabeçalho: é o
@@ -165,16 +163,18 @@ async function main(): Promise<void> {
       const cur = ((await auth.getUser(uid)).customClaims ?? {}).country;
       if (cur === 'AR') c.claimJaTinha += 1; else { await mergeCustomClaims(uid, { country: 'AR' }); c.claim += 1; }
     }
-    console.log(`[espelho] IdP: criadas=${c.idpCriada} existentes=${c.idpJaTinha} · users(stage): novas=${c.linhaNova} atualizadas=${c.linhaAtualizada} · claim AR: atribuídos=${c.claim} já_tinham=${c.claimJaTinha} · vínculos antigos removidos=${c.vinculosRemovidos}`);
-    if (EXECUTE) {
-      const gestores = await stg.query(
-        `SELECT count(DISTINCT u.firebase_uid) AS n FROM users u
-          WHERE u.status = 'ACTIVE' AND 'permission_management:write' = ANY (iam.effective_permissions(u.firebase_uid, $1))`,
-        [TENANT]);
-      const n = Number(gestores.rows[0].n);
-      console.log(`[espelho] gestores vivos em STAGE (permission_management:write): ${n}`);
-      if (n === 0) console.error('[espelho] ⚠️ ZERO gestores em stage — anti-lockout: alguém precisa entrar no Acesso Master antes de qualquer flip');
-    }
+    console.log(`[espelho] IdP: criadas=${c.idpCriada} existentes=${c.idpJaTinha} · users(stage): novas=${c.linhaNova} atualizadas=${c.linhaAtualizada} uid_divergente=${c.uidDivergente} · claim AR: atribuídos=${c.claim} já_tinham=${c.claimJaTinha}`);
+    // Sempre (é leitura), na forma da 296: só staff com vínculo vivo no tenant.
+    const gestores = await stg.query(
+      `SELECT count(DISTINCT u.firebase_uid) AS n
+         FROM users u
+         JOIN iam.user_groups ug ON ug.user_id = u.firebase_uid AND ug.tenant_id = $1 AND ug.removed_at IS NULL
+        WHERE u.status = 'ACTIVE' AND 'permission_management:write' = ANY (iam.effective_permissions(u.firebase_uid, $1))`,
+      [TENANT]);
+    const n = Number(gestores.rows[0].n);
+    console.log(`[espelho] gestores vivos em STAGE (permission_management:write): ${n}`);
+    if (n === 0) { console.error('[espelho] ⚠️ ZERO gestores em stage — anti-lockout: alguém precisa entrar no Acesso Master antes de qualquer flip'); process.exitCode = 1; }
+    if (c.uidDivergente > 0) { console.error(`[espelho] ⚠️ ${c.uidDivergente} conta(s) com uid divergente entre IdP e users — resolver à mão`); process.exitCode = 1; }
 
     if (EXECUTE && CONTAS_TESTE && Object.keys(senhas).length > 0) {
       const payload = JSON.stringify(senhas);
