@@ -73,8 +73,16 @@ export {
 export type { ActorClass } from './domain/ActorClass';
 
 // ── Catálogo derivado do código (declaração + varredura) ─────────────────────
-export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } from './infrastructure/catalog/permissionMetadata';
-export type { PermissionMetadata } from './infrastructure/catalog/permissionMetadata';
+export {
+  markPermissionHandler,
+  readPermissionMetadata,
+  PERMISSION_METADATA,
+  markExemptHandler,
+  readExemptMetadata,
+  exemptHandler,
+  EXEMPT_METADATA,
+} from './infrastructure/catalog/permissionMetadata';
+export type { PermissionMetadata, ExemptMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
@@ -98,6 +106,8 @@ export {
 export { registerPermissionEventHandlers } from './interface/registerPermissionEventHandlers';
 export type { HandlerRegistry } from './interface/registerPermissionEventHandlers';
 export { createWellKnownPermissionsRouter } from './interface/wellKnownPermissionsRoute';
+export { createMeAuthzRouter } from './interface/meAuthzRoute';
+export type { MeAuthzRouterDeps } from './interface/meAuthzRoute';
 
 // ── Use cases (a API do painel monta em cima destes) ─────────────────────────
 export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY } from './application/AssertNoActiveStaffWithoutGroupUseCase';

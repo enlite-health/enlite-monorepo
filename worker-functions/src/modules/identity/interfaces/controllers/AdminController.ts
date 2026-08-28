@@ -10,6 +10,7 @@ import { AdminRepository } from '../../infrastructure/AdminRepository';
 import { UserRepository } from '../../infrastructure/UserRepository';
 import { GoogleIdentityService } from '../../infrastructure/GoogleIdentityService';
 import { isStaffRole } from '../../domain/EnliteRole';
+import { LAST_MANAGER_ERROR, LAST_MANAGER_MESSAGE } from '../../domain/lastManager';
 
 export class AdminController {
   private deleteUserByEmailUseCase: DeleteUserByEmailUseCase;
@@ -196,6 +197,11 @@ export class AdminController {
       const { id } = req.params;
       const result = await this.deleteAdminUseCase.execute(id);
       if (result.isFailure) {
+        // 409 com o MESMO código do painel: quem consome já sabe mostrar "último gestor".
+        if (result.error === LAST_MANAGER_ERROR) {
+          res.status(409).json({ success: false, code: LAST_MANAGER_ERROR, error: LAST_MANAGER_MESSAGE });
+          return;
+        }
         res.status(400).json({ success: false, error: result.error });
         return;
       }

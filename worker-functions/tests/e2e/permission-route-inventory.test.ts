@@ -82,6 +82,27 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/users/:id/role → permission_management:write',
         'POST /api/admin/users → user_management:write',
         'POST /api/admin/users/:id/reset-password → user_management:write',
+        // ── admin.permissions (6) — a leitura do painel (F3). São estas linhas
+        // que mantêm `permission_management:read` viva no catálogo: sem nenhuma
+        // delas o sync descontinua a célula e `iam.query_audit` responde 42501
+        // para todos. Ordenadas como o `.sort()` acima devolve.
+        'GET /api/admin/country-features → permission_management:read',
+        'GET /api/admin/permission-audit → permission_management:read',
+        'GET /api/admin/permission-groups → permission_management:read',
+        'GET /api/admin/permission-groups/:id → permission_management:read',
+        'GET /api/admin/permission-groups/:id/members → permission_management:read',
+        'GET /api/admin/permissions/catalog → permission_management:read',
+        // ── admin.permissions, ESCRITA (9) — a F4. Todas `:write`, e o portão
+        // real delas é o `SECURITY DEFINER` da mig 279, não este `perm.require`.
+        'DELETE /api/admin/permission-groups/:id → permission_management:write',
+        'DELETE /api/admin/permission-groups/:id/countries/:country → permission_management:write',
+        'DELETE /api/admin/permission-groups/:id/members/:userId → permission_management:write',
+        'PATCH /api/admin/permission-groups/:id → permission_management:write',
+        'POST /api/admin/permission-groups → permission_management:write',
+        'POST /api/admin/permission-groups/:id/countries → permission_management:write',
+        'POST /api/admin/permission-groups/:id/members → permission_management:write',
+        'PUT /api/admin/country-features/:country/:featureKey → permission_management:write',
+        'PUT /api/admin/permission-groups/:id/permissions → permission_management:write',
         // ── admin.patients (21) — a 2ª
         'DELETE /api/admin/patient-chat-roles/:code → patient:write',
         'DELETE /api/admin/patients/:id → patient:delete',
@@ -244,10 +265,18 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     );
   });
 
-  it('as isentas são as três da D116, e nenhuma a mais', () => {
+  it('as isentas são as QUATRO decididas, e nenhuma a mais', () => {
+    // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
+    // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
+    // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
+    // BLOCKER-1 do gate `revisao-pr`: a isenção tem de ser revisável, e é esta
+    // linha que a torna. Desde 28/08 ela entra aqui pela MARCA da montagem
+    // (`exemptHandler` em `meAuthzRoute.ts`), não por lista: tirar a marca faz
+    // a rota sumir deste inventário e este caso acusa.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'GET /api/admin/auth/profile',
+      'GET /v1/me/authz',
       'POST /api/admin/auth/telemetry',
       'POST /api/admin/setup',
     ]);
@@ -335,14 +364,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
    * ambientes implantados sem este caso notar. Usar `governedRoutes` aqui
    * derrotaria o próprio propósito do teste.
    */
-  it('as 5 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
+  it('as 4 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
     // `declaredCells` (não `governedRoutes`) é a varredura INTEIRA — a MESMA
     // fonte que o sync consome. Ver o comentário no endpoint.
+    // `permission_management:read` SAIU desta lista em 28/08: a F3 (família
+    // `admin.permissions`, 6 rotas) passou a declará-la — é o `'revived'` do
+    // sync acontecendo, exatamente como o comentário acima previa. Este caso
+    // ficou vermelho na base por isso (achado #1 da task 004).
     const declaradas = new Set(inventario.declaredCells);
 
     expect(
-      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete', 'permission_management:read']
-        .filter((celula) => declaradas.has(celula)),
+      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete'].filter((celula) => declaradas.has(celula)),
     ).toEqual([]);
   });
 

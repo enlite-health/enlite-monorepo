@@ -30,6 +30,13 @@ vi.mock('@infrastructure/http/AdminApiService', () => {
   };
 });
 
+// O store passou a carregar o contrato de authz depois do perfil. Sem este mock o
+// serviço real instanciaria um FirebaseAuthService ANTES do store — e o
+// `mock.results[0]` que os testes abaixo usam apontaria para a instância errada.
+vi.mock('@infrastructure/http/AdminAuthzApiService', () => ({
+  AdminAuthzApiService: { getMyAuthz: vi.fn().mockRejectedValue(new Error('sem backend no unit')) },
+}));
+
 vi.mock('@infrastructure/http/WorkerApiService', () => {
   return {
     WorkerApiService: {

@@ -1,15 +1,11 @@
-import { HTTP as Cerbos } from '@cerbos/http';
 import { HttpClient } from '../http/HttpClient';
 import { TokenStorage } from '../storage/TokenStorage';
 import { AuthRepository } from '../repositories/AuthRepository';
-import { CerbosAuthorizationRepository } from '../repositories/CerbosAuthorizationRepository';
 import { HttpUserRepository } from '../repositories/HttpUserRepository';
 import { FirebaseAuthService } from '../services/FirebaseAuthService';
 import { AuthenticateWithGoogleUseCase } from '@application/use-cases/AuthenticateWithGoogleUseCase';
 import { GetCurrentUserUseCase } from '@application/use-cases/GetCurrentUserUseCase';
 import { LogoutUseCase } from '@application/use-cases/LogoutUseCase';
-import { CheckPermissionUseCase } from '@application/use-cases/CheckPermissionUseCase';
-import { GetUserPermissionsUseCase } from '@application/use-cases/GetUserPermissionsUseCase';
 import { RegisterUserUseCase } from '@application/use-cases/RegisterUserUseCase';
 import { ENV } from '../config/env';
 
@@ -18,25 +14,17 @@ export class Container {
   
   private readonly tokenStorage: TokenStorage;
   private readonly httpClient: HttpClient;
-  private readonly cerbos: Cerbos;
   private readonly authRepository: AuthRepository;
-  private readonly authzRepository: CerbosAuthorizationRepository;
   private readonly userRepository: HttpUserRepository;
   private readonly firebaseAuthService: FirebaseAuthService;
 
   private constructor() {
     this.tokenStorage = new TokenStorage();
     this.httpClient = new HttpClient({ baseURL: ENV.API_WORKER_FUNCTIONS_URL });
-    this.cerbos = new Cerbos(ENV.CERBOS_URL);
     
     this.authRepository = new AuthRepository(this.httpClient, this.tokenStorage);
     this.userRepository = new HttpUserRepository(this.httpClient);
     this.firebaseAuthService = new FirebaseAuthService();
-    
-    this.authzRepository = new CerbosAuthorizationRepository(
-      this.cerbos,
-      () => this.getCurrentUserId()
-    );
   }
 
   static getInstance(): Container {
@@ -58,20 +46,7 @@ export class Container {
     return new LogoutUseCase(this.authRepository);
   }
 
-  getCheckPermissionUseCase(): CheckPermissionUseCase {
-    return new CheckPermissionUseCase(this.authzRepository);
-  }
-
-  getUserPermissionsUseCase(): GetUserPermissionsUseCase {
-    return new GetUserPermissionsUseCase(this.authzRepository);
-  }
-
   getRegisterUserUseCase(): RegisterUserUseCase {
     return new RegisterUserUseCase(this.firebaseAuthService, this.userRepository);
-  }
-
-  private getCurrentUserId(): string | null {
-    const token = this.tokenStorage.get();
-    return token?.idToken || null;
   }
 }

@@ -56,7 +56,7 @@ export class FirebaseAuthService {
               // Check if it hasn't expired
               const expTime = parsed.stsTokenManager?.expirationTime;
               if (!expTime || expTime > Date.now()) {
-                console.log('[FirebaseAuthService] Mock auth detected for:', parsed.email);
+                console.log('[FirebaseAuthService] Mock auth detected');
                 break;
               }
             }
@@ -115,7 +115,7 @@ export class FirebaseAuthService {
     
     try {
       await sendEmailVerification(credential.user, actionCodeSettings);
-      console.log('[FirebaseAuthService] ✅ Verification email sent to:', email);
+      console.log('[FirebaseAuthService] ✅ Verification email sent');
       console.log('[FirebaseAuthService] Please check your inbox and spam folder');
     } catch (emailError) {
       console.error('[FirebaseAuthService] ❌ Error sending verification email:', emailError);
@@ -225,7 +225,7 @@ export class FirebaseAuthService {
     // synchronously so ProtectedRoute sees the user immediately on reload.
     const mockUser = readMockAuth();
     if (mockUser) {
-      console.log('[FirebaseAuthService] Mock auth detected for:', mockUser.email);
+      console.log('[FirebaseAuthService] Mock auth detected');
       // Dispatch synchronously so ProtectedRoute sees the user immediately.
       callback(mockUser);
       // Register the real listener but ignore null callbacks while mock auth is active.

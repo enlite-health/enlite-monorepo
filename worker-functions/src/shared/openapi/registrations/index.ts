@@ -17,6 +17,7 @@ import './adminSocialLinks';
 import './adminMeetLinks';
 import './adminTalentum';
 import './adminUsers';
+import './permissionsPanel';
 import './adminVacancies';
 import './adminWorkerDocuments';
 import './adminWorkers';

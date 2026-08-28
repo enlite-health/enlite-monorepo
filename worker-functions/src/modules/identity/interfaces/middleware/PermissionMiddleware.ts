@@ -40,6 +40,7 @@ import {
   type PermissionClient,
   type PermissionDecision,
   type ResolvedAuthz,
+  exemptHandler,
 } from '@modules/identity/permissions';
 
 /** Só o que o middleware usa da trilha — o repositório inteiro não sai do módulo. */
@@ -112,6 +113,7 @@ export class PermissionMiddleware {
     return {
       require: (resource: string, action: string, description?: string) =>
         this.buildGuard(family, resource, action, description),
+      exempt: (reason: string) => exemptHandler(reason),
     };
   }
 
@@ -326,6 +328,12 @@ export class PermissionMiddleware {
 export interface PermissionFamily {
   /** Guard que exige `recurso:ação` e declara a célula para o catálogo. */
   require(resource: string, action: string, description?: string): RequestHandler;
+  /**
+   * Marca a rota como ISENTA de célula na montagem (`self`, D116). Não decide
+   * nada — o guard de papel continua sendo o portão. Rota marcada entra no
+   * perímetro e no inventário como `exempt`, sem linha em lista nenhuma.
+   */
+  exempt(reason: string): RequestHandler;
 }
 
 /**
@@ -346,7 +354,13 @@ export function pathOf(req: Request): string {
 }
 
 /** uid do principal autenticado (`requireAuth`/`requireStaff` já rodaram). */
-function principalUid(req: Request): string | null {
+/**
+ * O uid do principal. Exportado porque a rota `GET /v1/me/authz` precisa da
+ * MESMA extração que o guard usa — duas leituras do principal divergiriam em
+ * silêncio, e o contrato do painel passaria a descrever outra pessoa que não a
+ * que o guard avaliou.
+ */
+export function principalUid(req: Request): string | null {
   return req.authContext?.principal?.id ?? (req as { user?: { uid?: string } }).user?.uid ?? null;
 }
 

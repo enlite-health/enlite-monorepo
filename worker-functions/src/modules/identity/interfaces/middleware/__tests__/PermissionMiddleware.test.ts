@@ -494,3 +494,25 @@ describe('as células chegam ao handler (C3 da F2)', () => {
     expect(res.body.cells).toBeNull();
   });
 });
+
+describe('PermissionMiddleware.family().exempt()', () => {
+  it('carimba a isenção na montagem e é passthrough — o guard de papel continua sendo o portão', async () => {
+    const middleware = new PermissionMiddleware({
+      client: clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: [] })) }),
+      audit: { record: jest.fn() },
+      env: LIGADO,
+    });
+    const app = express();
+    app.get('/v1/self', middleware.family('me').exempt('self (D116)'), (_req, res) => res.json({ ok: true }));
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { scanExpressRouter } = require('@modules/identity/permissions') as typeof import('@modules/identity/permissions');
+    const rota = scanExpressRouter(app).find((r) => r.path === '/v1/self');
+    expect(rota?.exempt).toEqual({ reason: 'self (D116)' });
+    expect(rota?.cell).toBeUndefined();
+
+    // Sem célula e sem authz nenhum resolvido, a rota responde: a marca não decide.
+    const res = await request(app).get('/v1/self');
+    expect(res.status).toBe(200);
+  });
+});
