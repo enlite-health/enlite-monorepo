@@ -12,7 +12,7 @@ import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 import { PgCountryFeatureRepository } from '../PgCountryFeatureRepository';
 import { PgEffectiveAuthzRepository } from '../PgEffectiveAuthzRepository';
 import { PgPermissionAuditRepository } from '../PgPermissionAuditRepository';
-import { PgPermissionCatalogRepository } from '../PgPermissionCatalogRepository';
+import { PgPermissionCatalogRepository, PROTECTED_CELLS } from '../PgPermissionCatalogRepository';
 import { PgPermissionGroupRepository } from '../PgPermissionGroupRepository';
 import { PgRolloutStateRepository } from '../PgRolloutStateRepository';
 import type { PermissionError } from '../../domain/PermissionError';
@@ -183,6 +183,38 @@ describe('PgPermissionCatalogRepository', () => {
     expect(query.mock.calls[0][1]).toEqual(['worker', 'read', null, 'Trabalhadores', 'worker-functions']);
     // e a lista de chaves vivas é o que protege contra descontinuar tudo
     expect(query.mock.calls[2][1]).toEqual(['worker-functions', ['worker:read', 'patient:delete']]);
+  });
+
+  it('célula protegida ausente da varredura vira WARN — e a lista viva segue como está (296)', async () => {
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
+    logger.warn.mockClear();
+    const query = jest.fn().mockResolvedValue({ rows: [{ outcome: 'unchanged', n: 0 }] });
+    const repo = new PgPermissionCatalogRepository(poolMockWithConnect(jest.fn()) as never, poolMockWithConnect(query) as never);
+
+    await repo.sync([{ resource: 'worker', action: 'read' }], 'worker-functions');
+
+    const avisadas = logger.warn.mock.calls.map((c) => (c[0] as { cell: string }).cell).sort();
+    expect(avisadas).toEqual([...PROTECTED_CELLS].sort());
+    // O aviso NÃO injeta a célula na lista: quem decide manter é o banco, não o cliente.
+    const deprecate = query.mock.calls.find((c) => String(c[0]).includes('deprecate_missing_permission_cells'));
+    expect(deprecate?.[1]).toEqual(['worker-functions', ['worker:read']]);
+  });
+
+  it('com as duas protegidas na varredura, nada é avisado', async () => {
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
+    logger.warn.mockClear();
+    const query = jest.fn().mockResolvedValue({ rows: [{ outcome: 'unchanged', n: 0 }] });
+    const repo = new PgPermissionCatalogRepository(poolMockWithConnect(jest.fn()) as never, poolMockWithConnect(query) as never);
+
+    await repo.sync(
+      [
+        { resource: 'permission_management', action: 'read' },
+        { resource: 'permission_management', action: 'write' },
+      ],
+      'worker-functions',
+    );
+
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('idsByCellKey não vai ao banco com lista vazia', async () => {
