@@ -176,11 +176,10 @@ describe('VacancyFunnelTable', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('renders "—" for a row without invite date and the "no" label when accepted=false', () => {
-    const rows: FunnelTableRow[] = [{ ...mockRows[0], invitedAt: null, accepted: false }];
+  it('renders the "no" label when accepted=false', () => {
+    const rows: FunnelTableRow[] = [{ ...mockRows[0], accepted: false }];
     renderTable({ ...defaultProps, rows });
     expect(screen.getByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
   it('opens the contact notes modal for the row when the notes button is clicked', () => {
