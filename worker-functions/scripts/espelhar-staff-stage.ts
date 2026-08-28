@@ -92,6 +92,10 @@ async function main(): Promise<void> {
       let uid: string;
       try {
         uid = (await auth.getUserByEmail(p.email)).uid; c.idpJaTinha += 1;
+        // Conta de TESTE que já existia: a senha é REDEFINIDA nesta rodada, senão o
+        // secret gravado abaixo (senha nova) e o IdP (senha antiga) divergem —
+        // aconteceu na 2ª execução de 28/08 e foi lido na saída, não num teste.
+        if (p.senha && EXECUTE) await auth.updateUser(uid, { password: p.senha });
       } catch {
         c.idpCriada += 1;
         if (!EXECUTE) { console.log(`  [criaria conta IdP] ${mask(p.email)}`); uid = `dry-${c.idpCriada}`; }
