@@ -73,8 +73,16 @@ export {
 export type { ActorClass } from './domain/ActorClass';
 
 // ── Catálogo derivado do código (declaração + varredura) ─────────────────────
-export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } from './infrastructure/catalog/permissionMetadata';
-export type { PermissionMetadata } from './infrastructure/catalog/permissionMetadata';
+export {
+  markPermissionHandler,
+  readPermissionMetadata,
+  PERMISSION_METADATA,
+  markExemptHandler,
+  readExemptMetadata,
+  exemptHandler,
+  EXEMPT_METADATA,
+} from './infrastructure/catalog/permissionMetadata';
+export type { PermissionMetadata, ExemptMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';

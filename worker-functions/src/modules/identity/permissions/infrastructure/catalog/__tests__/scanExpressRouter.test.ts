@@ -13,7 +13,7 @@ import {
   scanExpressRouter,
   undeclaredRoutes,
 } from '../scanExpressRouter';
-import { markPermissionHandler, readPermissionMetadata } from '../permissionMetadata';
+import { markPermissionHandler, readPermissionMetadata, exemptHandler, readExemptMetadata } from '../permissionMetadata';
 import { CELL_DESCRIPTION } from '../../../domain/PermissionCell';
 
 const ok: RequestHandler = (_req, res) => res.json({});
@@ -293,5 +293,29 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
     expect(paraSincronizar).toEqual([]);
     // E a 2ª fonte SOZINHA não é vazia — é isso que tornaria o mascaramento possível.
     expect(cellsForaDeRota(deRota).length).toBeGreaterThan(0);
+  });
+});
+
+describe('isenção declarada na montagem (exemptHandler)', () => {
+  it('a varredura lê a marca de isenção da rota, em qualquer posição da pilha', () => {
+    const app = express();
+    app.get('/v1/self', (_req, _res, next) => next(), exemptHandler('self'), (_req, res) => res.end());
+    app.get('/v1/nada', (_req, res) => res.end());
+    const rotas = scanExpressRouter(app);
+    expect(rotas.find((r) => r.path === '/v1/self')?.exempt).toEqual({ reason: 'self' });
+    expect(rotas.find((r) => r.path === '/v1/nada')?.exempt).toBeUndefined();
+  });
+
+  it('readExemptMetadata só lê função — string, objeto e undefined devolvem undefined', () => {
+    expect(readExemptMetadata('x')).toBeUndefined();
+    expect(readExemptMetadata({})).toBeUndefined();
+    expect(readExemptMetadata(undefined)).toBeUndefined();
+    expect(readExemptMetadata(exemptHandler('r'))).toEqual({ reason: 'r' });
+  });
+
+  it('o handler isento é passthrough: chama next() e não responde', () => {
+    const next = jest.fn();
+    exemptHandler('r')({} as never, {} as never, next);
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

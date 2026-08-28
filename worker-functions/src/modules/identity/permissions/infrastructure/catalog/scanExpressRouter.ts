@@ -18,7 +18,12 @@
  */
 
 import type { Express, Router } from 'express';
-import { readPermissionMetadata, type PermissionMetadata } from './permissionMetadata';
+import {
+  readExemptMetadata,
+  readPermissionMetadata,
+  type ExemptMetadata,
+  type PermissionMetadata,
+} from './permissionMetadata';
 import { CELL_DESCRIPTION, cellKey, parseCellKey } from '../../domain/PermissionCell';
 
 export interface ScannedRoute {
@@ -26,6 +31,8 @@ export interface ScannedRoute {
   method: string;
   path: string;
   cell?: PermissionMetadata;
+  /** Isenção declarada na montagem (`exemptHandler`) — governada sem célula. */
+  exempt?: ExemptMetadata;
 }
 
 /** Camada interna do Express — tipada só no que esta varredura usa. */
@@ -107,6 +114,15 @@ function cellOfRoute(route: NonNullable<ExpressLayer['route']>): PermissionMetad
   return undefined;
 }
 
+/** Isenção declarada em QUALQUER handler da rota. */
+function exemptOfRoute(route: NonNullable<ExpressLayer['route']>): ExemptMetadata | undefined {
+  for (const layer of route.stack ?? []) {
+    const exempt = readExemptMetadata(layer.handle);
+    if (exempt) return exempt;
+  }
+  return undefined;
+}
+
 function methodsOf(route: NonNullable<ExpressLayer['route']>): string[] {
   const methods = Object.keys(route.methods ?? {}).filter((m) => route.methods?.[m]);
   return methods.length > 0 ? methods.map((m) => m.toUpperCase()) : ['USE'];
@@ -116,10 +132,11 @@ function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void
   for (const layer of layers) {
     if (layer.route) {
       const cell = cellOfRoute(layer.route);
+      const exempt = exemptOfRoute(layer.route);
       const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path ?? ''];
       for (const path of paths) {
         for (const method of methodsOf(layer.route)) {
-          out.push({ method, path: joinPaths(prefix, path), ...(cell ? { cell } : {}) });
+          out.push({ method, path: joinPaths(prefix, path), ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
         }
       }
       continue;

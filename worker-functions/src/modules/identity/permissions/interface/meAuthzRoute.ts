@@ -35,6 +35,7 @@ import { Router, type Request, type RequestHandler } from 'express';
 import { logger } from '@shared/logging';
 import type { GetMyAuthzUseCase } from '../application/GetMyAuthzUseCase';
 import { ENLITE_TENANT_ID } from '../domain/tenant';
+import { exemptHandler } from '../infrastructure/catalog/permissionMetadata';
 
 export interface MeAuthzRouterDeps {
   getMyAuthz: GetMyAuthzUseCase;
@@ -49,7 +50,13 @@ export function createMeAuthzRouter(deps: MeAuthzRouterDeps): Router {
   const router = Router();
   const tenantId = deps.tenantId ?? ENLITE_TENANT_ID;
 
-  router.get('/me/authz', deps.staffGuard, async (req, res) => {
+  // A isenção é DECLARADA aqui, na montagem — é a marca que põe a rota no
+  // perímetro (`isGovernedRoute`) e no inventário como `exempt`, sem linha em
+  // `GOVERNED_ROUTES`/`EXEMPT_ROUTES`. Tirar esta linha faz a rota sumir do
+  // oráculo, e o e2e `permission-route-inventory` acusa.
+  const isenta = exemptHandler('self (D116): o contrato descreve o próprio ator; requireStaff é o portão');
+
+  router.get('/me/authz', deps.staffGuard, isenta, async (req, res) => {
     const uid = deps.uidOf(req);
     if (!uid) {
       // Alcançável: `requireStaff` aceita principal cuja forma não carrega

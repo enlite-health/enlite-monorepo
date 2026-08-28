@@ -137,5 +137,8 @@ describe('GET /v1/me/authz', () => {
 
     expect(authz).toBeDefined();
     expect(authz?.cell).toBeUndefined();
+    // …mas DECLARA a isenção na montagem: é a marca que a põe no perímetro como
+    // `exempt`, sem linha em `GOVERNED_ROUTES`/`EXEMPT_ROUTES` (28/08).
+    expect(authz?.exempt?.reason).toContain('self');
   });
 });

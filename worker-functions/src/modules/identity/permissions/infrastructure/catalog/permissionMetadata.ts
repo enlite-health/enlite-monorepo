@@ -44,3 +44,47 @@ export function readPermissionMetadata(handler: unknown): PermissionMetadata | u
   if (typeof handler !== 'function') return undefined;
   return (handler as DeclaredHandler)[PERMISSION_METADATA];
 }
+
+/**
+ * Isenção declarada NA MONTAGEM (28/08/2026, achado #9 da 002).
+ *
+ * Uma rota de staff isenta de célula (`self`, D116) era invisível ao perímetro
+ * quando morava fora dos prefixos: precisava de uma linha em `GOVERNED_ROUTES`
+ * E outra em `EXEMPT_ROUTES` — duas listas à mão para dizer "esta rota existe e
+ * é isenta". Foi assim que `GET /v1/me/authz` nasceu `not_governed`. Carimbar a
+ * isenção no handler faz a MONTAGEM ser a fonte, como já é para a célula: a
+ * rota entra no inventário porque está marcada, não porque alguém lembrou.
+ */
+export const EXEMPT_METADATA = Symbol.for('enlite.permissions.exempt');
+
+export interface ExemptMetadata {
+  /** Por que esta rota não exige célula — texto revisável, vai ao inventário. */
+  reason: string;
+}
+
+export type ExemptHandler = RequestHandler & { [EXEMPT_METADATA]?: ExemptMetadata };
+
+/** Carimba a isenção no handler e devolve o MESMO handler. */
+export function markExemptHandler<T extends RequestHandler>(handler: T, exempt: ExemptMetadata): T {
+  Object.defineProperty(handler, EXEMPT_METADATA, {
+    value: exempt,
+    enumerable: false,
+    configurable: true,
+  });
+  return handler;
+}
+
+/** Isenção declarada por este handler, se houver. */
+export function readExemptMetadata(handler: unknown): ExemptMetadata | undefined {
+  if (typeof handler !== 'function') return undefined;
+  return (handler as ExemptHandler)[EXEMPT_METADATA];
+}
+
+/**
+ * Handler que só existe para carregar a marca: `router.get(p, guard, exemptHandler('self'), h)`.
+ * Não decide nada — o portão da rota continua sendo o guard que a acompanha.
+ */
+export function exemptHandler(reason: string): RequestHandler {
+  const passthrough: RequestHandler = (_req, _res, next) => next();
+  return markExemptHandler(passthrough, { reason });
+}

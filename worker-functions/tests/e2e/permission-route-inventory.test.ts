@@ -270,8 +270,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
     // BLOCKER-1 do gate `revisao-pr`: a isenção tem de ser revisável, e é esta
-    // linha que a torna. Se alguém mover a rota para trás de uma célula, ou
-    // criar outra rota de staff fora do prefixo, este caso acusa.
+    // linha que a torna. Desde 28/08 ela entra aqui pela MARCA da montagem
+    // (`exemptHandler` em `meAuthzRoute.ts`), não por lista: tirar a marca faz
+    // a rota sumir deste inventário e este caso acusa.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'GET /api/admin/auth/profile',
@@ -363,14 +364,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
    * ambientes implantados sem este caso notar. Usar `governedRoutes` aqui
    * derrotaria o próprio propósito do teste.
    */
-  it('as 5 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
+  it('as 4 células do seed que NENHUMA rota declara — as que o A7 descontinua', () => {
     // `declaredCells` (não `governedRoutes`) é a varredura INTEIRA — a MESMA
     // fonte que o sync consome. Ver o comentário no endpoint.
+    // `permission_management:read` SAIU desta lista em 28/08: a F3 (família
+    // `admin.permissions`, 6 rotas) passou a declará-la — é o `'revived'` do
+    // sync acontecendo, exatamente como o comentário acima previa. Este caso
+    // ficou vermelho na base por isso (achado #1 da task 004).
     const declaradas = new Set(inventario.declaredCells);
 
     expect(
-      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete', 'permission_management:read']
-        .filter((celula) => declaradas.has(celula)),
+      ['upload:read', 'upload:write', 'analytics:export', 'worker:delete'].filter((celula) => declaradas.has(celula)),
     ).toEqual([]);
   });
 

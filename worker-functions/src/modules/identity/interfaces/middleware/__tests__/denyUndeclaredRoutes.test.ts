@@ -6,6 +6,7 @@
  */
 
 import express from 'express';
+import { routeKey } from '../undeclaredRouteLists';
 import request from 'supertest';
 import {
   denyUndeclaredRoutes,
@@ -76,16 +77,14 @@ describe('GOVERNED_ROUTES — o perímetro que o prefixo não alcança', () => {
     }
   });
 
-  it('a lista tem as 10 rotas de encuadre, o `/v1/me/authz` da F3, e nada além', () => {
-    // A 11ª entrada NÃO é de encuadre: `GET /v1/me/authz` mora em `/v1/`, fora
-    // dos `GOVERNED_PREFIXES`, e nascia `not_governed` — isenta SEM linha,
-    // invisível ao inventário e à revisão (BLOCKER-1 do gate `revisao-pr`).
-    // Governada por NOME + isenta em `EXEMPT_ROUTES`, a isenção passa a ser
-    // revisável. Que este caso tenha ficado vermelho é o mecanismo funcionando:
-    // acrescentar rota ao perímetro é decisão consciente, não efeito colateral.
+  it('a lista tem as 10 rotas de encuadre e nada além — `/v1/me/authz` saiu, é marca de montagem', () => {
+    // `GET /v1/me/authz` esteve aqui (BLOCKER-1 do gate, 25/08) como 11ª
+    // entrada + linha em `EXEMPT_ROUTES`. Em 28/08 a isenção passou a ser
+    // declarada NA ROTA (`exemptHandler`), e é a marca que a governa — ver o
+    // describe "governança pela MONTAGEM" abaixo. Que este caso fique vermelho
+    // quando a lista muda é o mecanismo funcionando: perímetro é decisão consciente.
     expect([...GOVERNED_ROUTES].sort()).toEqual(
       [
-        'GET /v1/me/authz',
         'GET /api/cases/:caseNumber/encuadres',
         'GET /api/cases/:caseNumber/workers',
         'GET /api/workers/:id/cases',
@@ -219,5 +218,65 @@ describe('denyUndeclaredRoutes', () => {
   it('REPORT_ONLY loga e deixa passar', async () => {
     const app = appCom(registry, { PERMISSION_ENGINE_ENABLED: 'true', PERMISSION_REPORT_ONLY: 'true' });
     await request(app).post('/api/admin/coisa-nova').expect(200);
+  });
+});
+
+/**
+ * ALVO PLANTADO (D157): a governança pela MONTAGEM. Três rotas em `/v1/`, fora
+ * de todo prefixo e de toda lista — a única diferença entre elas é a marca no
+ * handler. É o que prova que rota nova fora do prefixo é detectada sem ninguém
+ * editar lista: célula → `declared`, isenção → `exempt`, nada → `not_governed`.
+ * O terceiro caso é o CONTROLE NEGATIVO — sem ele, um `isGovernedRoute` que
+ * devolvesse `true` para tudo passaria nos dois primeiros.
+ */
+describe('governança pela MONTAGEM — o alvo plantado fora do prefixo (achado #9 da 002)', () => {
+  function plantar() {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const perms = require('@modules/identity/permissions') as typeof import('@modules/identity/permissions');
+    const app = express();
+    // ⚠️ Um handler NOVO por rota: a marca é carimbada NO OBJETO da função, e
+    // um handler compartilhado faria as três rotas "declararem" a mesma célula
+    // — foi exatamente o que a 1ª rodada deste teste acusou (aliasing no fixture).
+    const ok = () => (_req: express.Request, res: express.Response) => res.json({ ok: true });
+    app.get('/v1/plantado/com-celula', perms.markPermissionHandler(ok(), { resource: 'plantado', action: 'read' }));
+    app.get('/v1/plantado/isenta', perms.exemptHandler('alvo plantado: self'), ok());
+    app.get('/v1/plantado/sem-marca', ok());
+    const rotas = perms.scanExpressRouter(app);
+    const registry = new UndeclaredRouteRegistry();
+    registry.publish(rotas);
+    const de = (path: string) => rotas.find((r) => r.path === path)!;
+    return { rotas, registry, de };
+  }
+
+  it('célula na montagem ⇒ governada e `declared`, sem prefixo e sem lista', () => {
+    const { registry, de } = plantar();
+    const rota = de('/v1/plantado/com-celula');
+    expect(GOVERNED_ROUTES.has(routeKey(rota.method, rota.path))).toBe(false);
+    expect(isGovernedPath(rota.path)).toBe(false);
+    expect(isGovernedRoute(rota)).toBe(true);
+    expect(registry.statusOfRoute(rota)).toBe('declared');
+  });
+
+  it('isenção na montagem ⇒ governada e `exempt`, com o motivo legível', () => {
+    const { registry, de } = plantar();
+    const rota = de('/v1/plantado/isenta');
+    expect(rota.exempt?.reason).toBe('alvo plantado: self');
+    expect(isGovernedRoute(rota)).toBe(true);
+    expect(registry.statusOfRoute(rota)).toBe('exempt');
+  });
+
+  it('CONTROLE NEGATIVO: sem marca, fora do prefixo, continua `not_governed`', () => {
+    const { registry, de } = plantar();
+    const rota = de('/v1/plantado/sem-marca');
+    expect(isGovernedRoute(rota)).toBe(false);
+    expect(registry.statusOfRoute(rota)).toBe('not_governed');
+    expect(registry.unexpectedlyUndeclared()).toEqual([]);
+  });
+
+  it('a marca vale também pela REQUEST (índice publicado): `statusOf` resolve o padrão', () => {
+    const { registry } = plantar();
+    expect(registry.statusOf('GET', '/v1/plantado/com-celula')).toBe('declared');
+    expect(registry.statusOf('GET', '/v1/plantado/isenta')).toBe('exempt');
+    expect(registry.statusOf('GET', '/v1/plantado/sem-marca')).toBe('not_governed');
   });
 });
