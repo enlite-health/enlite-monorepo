@@ -29,6 +29,13 @@
  * e este script roda justamente quando a stage ainda NÃO tem gestor nenhum — ele é o
  * bootstrap do primeiro, como o seed da 206 foi. A autoria não fica vazia: `assigned_by`
  * recebe o uid do gestor QA (a primeira conta criada), e o comentário na linha diz isso.
+ * O mesmo vale para a REMOÇÃO de vínculo antigo (staff cujo uid de stage mudou): não
+ * passa por `iam.remove_member` pelo mesmo motivo (exige ator em sessão), grava
+ * `removed_by` com o gestor QA, e CONTA o que removeu no log final — vínculo que some
+ * sem contagem é configuração do time desaparecendo em silêncio. ⚠️ Este ramo passa por
+ * fora do anti-lockout da 279 (que mora na função, não em trigger de `iam.user_groups`):
+ * por isso ele só roda quando o uid MUDOU, e o log final imprime quantos gestores vivos
+ * a stage tem — zero é falha, nunca sucesso.
  */
 import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
@@ -64,7 +71,7 @@ async function main(): Promise<void> {
 
   const prod = new Pool({ connectionString: prodUrl });
   const stg = new Pool({ connectionString: stgUrl });
-  const c = { idpCriada: 0, idpJaTinha: 0, linhaNova: 0, linhaAtualizada: 0, claim: 0, claimJaTinha: 0 };
+  const c = { idpCriada: 0, idpJaTinha: 0, linhaNova: 0, linhaAtualizada: 0, claim: 0, claimJaTinha: 0, vinculosRemovidos: 0 };
   /** O mesmo predicado nas duas pontas — senão "4 → 28" compara réguas diferentes. */
   const STAFF_ATIVO = `role = ANY($1) AND is_active = true AND status = 'ACTIVE'`;
   let gestorQaUid: string | null = null;
@@ -113,10 +120,15 @@ async function main(): Promise<void> {
             [uid, p.email, p.display_name, p.role, p.department, TENANT]);
         } else {
           // Vínculo vivo com OUTRO uid impediria o UPDATE (FK sem ON UPDATE CASCADE):
-          // remove o vínculo antigo com autoria de sistema antes de trocar o uid.
+          // remove o vínculo antigo com AUTORIA do gestor QA (ver cabeçalho — a 279
+          // exigiria ator em sessão) e conta, para o log final acusar o que sumiu.
           const antigo = existente.rows[0].firebase_uid;
           if (antigo !== uid) {
-            await client.query(`UPDATE iam.user_groups SET removed_at = now() WHERE user_id = $1 AND removed_at IS NULL`, [antigo]);
+            const r = await client.query(
+              `UPDATE iam.user_groups SET removed_at = now(), removed_by = $2 WHERE user_id = $1 AND removed_at IS NULL`,
+              [antigo, gestorQaUid ?? uid],
+            );
+            c.vinculosRemovidos += r.rowCount ?? 0;
           }
           await client.query(
             `UPDATE users SET firebase_uid = $1, display_name = COALESCE($2, display_name), role = $3, department = COALESCE($4, department),
@@ -149,7 +161,16 @@ async function main(): Promise<void> {
       const cur = ((await auth.getUser(uid)).customClaims ?? {}).country;
       if (cur === 'AR') c.claimJaTinha += 1; else { await mergeCustomClaims(uid, { country: 'AR' }); c.claim += 1; }
     }
-    console.log(`[espelho] IdP: criadas=${c.idpCriada} existentes=${c.idpJaTinha} · users(stage): novas=${c.linhaNova} atualizadas=${c.linhaAtualizada} · claim AR: atribuídos=${c.claim} já_tinham=${c.claimJaTinha}`);
+    console.log(`[espelho] IdP: criadas=${c.idpCriada} existentes=${c.idpJaTinha} · users(stage): novas=${c.linhaNova} atualizadas=${c.linhaAtualizada} · claim AR: atribuídos=${c.claim} já_tinham=${c.claimJaTinha} · vínculos antigos removidos=${c.vinculosRemovidos}`);
+    if (EXECUTE) {
+      const gestores = await stg.query(
+        `SELECT count(DISTINCT u.firebase_uid) AS n FROM users u
+          WHERE u.status = 'ACTIVE' AND 'permission_management:write' = ANY (iam.effective_permissions(u.firebase_uid, $1))`,
+        [TENANT]);
+      const n = Number(gestores.rows[0].n);
+      console.log(`[espelho] gestores vivos em STAGE (permission_management:write): ${n}`);
+      if (n === 0) console.error('[espelho] ⚠️ ZERO gestores em stage — anti-lockout: alguém precisa entrar no Acesso Master antes de qualquer flip');
+    }
 
     if (EXECUTE && CONTAS_TESTE && Object.keys(senhas).length > 0) {
       const payload = JSON.stringify(senhas);

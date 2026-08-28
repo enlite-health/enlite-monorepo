@@ -77,10 +77,8 @@ export {
   markPermissionHandler,
   readPermissionMetadata,
   PERMISSION_METADATA,
-  markExemptHandler,
   readExemptMetadata,
   exemptHandler,
-  EXEMPT_METADATA,
 } from './infrastructure/catalog/permissionMetadata';
 export type { PermissionMetadata, ExemptMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
