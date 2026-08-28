@@ -43,4 +43,15 @@ describe('AdminMessagingApiService.sendVacancyMatchInvite — resend (REQ-08)', 
     mockFetch(500, { success: false });
     await expect(AdminMessagingApiService.sendVacancyMatchInvite('w-1', 'job-1')).rejects.toThrow('HTTP 500');
   });
+
+  it('422 sem `detail` no corpo: a mensagem do InviteBlockedError cai para o code', async () => {
+    mockFetch(422, { error: 'OPTED_OUT' });
+    await expect(AdminMessagingApiService.sendVacancyMatchInvite('w-1', 'job-1')).rejects.toThrow('OPTED_OUT');
+  });
+
+  it('InviteBlockedError sem detail usa o code como mensagem (super(detail || code))', () => {
+    const err = new InviteBlockedError('WORKER_STATUS_INVALID');
+    expect(err.message).toBe('WORKER_STATUS_INVALID');
+    expect(err.detail).toBeUndefined();
+  });
 });

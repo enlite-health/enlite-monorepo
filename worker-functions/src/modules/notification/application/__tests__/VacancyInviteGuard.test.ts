@@ -133,6 +133,20 @@ describe('assertVacancyInviteAllowed', () => {
     expect(result).toEqual({ allowed: true });
     expect(mockQuery).toHaveBeenCalledTimes(5);
   });
+
+  it('(g) query de unanswered sem linha (rows: []) → conta como 0, não bloqueia (?? 0)', async () => {
+    mockQuery
+      .mockResolvedValueOnce(existsRow(false)) // opt-out
+      .mockResolvedValueOnce(existsRow(false)) // cooldown
+      .mockResolvedValueOnce(existsRow(false)) // idempotência
+      .mockResolvedValueOnce({ rows: [] })     // unanswered: nenhuma linha devolvida
+      .mockResolvedValueOnce(existsRow(false)); // hasEngaged = false
+
+    const result = await assertVacancyInviteAllowed(makeDb(mockQuery), WORKER_ID, JOB_ID);
+
+    expect(result).toEqual({ allowed: true });
+    expect(mockQuery).toHaveBeenCalledTimes(5);
+  });
 });
 
 // ── modo `resend` (botão "Reenviar" da tarjeta — REQ-08) ─────────────────────

@@ -134,6 +134,63 @@ describe('PatientIdentityCard', () => {
     const editButton = screen.getByText('Editar');
     expect(() => fireEvent.click(editButton)).not.toThrow();
   });
+
+  it('renders "—" for admission date when createdAt is an empty string (formatDate cannot parse it)', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, createdAt: '' }} />);
+    const admissionLabel = screen.getByText(/Admissão/);
+    expect(admissionLabel.parentElement).toHaveTextContent('Admissão: —');
+  });
+
+  it('builds the address from neighborhood/city/province when no address has fullAddress', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          addresses: [],
+          zoneNeighborhood: 'Palermo',
+          cityLocality: 'CABA',
+          province: 'Buenos Aires',
+        }}
+      />,
+    );
+    expect(screen.getByText('Endereço:')).toBeInTheDocument();
+    expect(screen.getByText('Palermo, CABA, Buenos Aires')).toBeInTheDocument();
+  });
+
+  it('does not render the address field when there is no fullAddress and no location parts', () => {
+    render(
+      <PatientIdentityCard
+        patient={{ ...patientDetailFixture, addresses: [], zoneNeighborhood: null, cityLocality: null, province: null }}
+      />,
+    );
+    expect(screen.queryByText('Endereço:')).not.toBeInTheDocument();
+  });
+
+  it('falls back to "—" for the responsible name when both firstName and lastName are null', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: [{ ...patientDetailFixture.responsibles[0], firstName: null, lastName: null }],
+        }}
+      />,
+    );
+    const nameLabel = screen.getByText(/Nome do Responsável/);
+    expect(nameLabel.parentElement).toHaveTextContent('Nome do Responsável: —');
+  });
+
+  it('renders "—" for the responsible document when documentType and documentNumber are both null', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: [{ ...patientDetailFixture.responsibles[0], documentType: null, documentNumber: null }],
+        }}
+      />,
+    );
+    const docLabel = screen.getByText(/Tipo de documento/);
+    expect(docLabel.parentElement).toHaveTextContent('Tipo de documento: —');
+  });
 });
 
 // ── PatientGeneralInfoCard ───────────────────────────────────────────────────

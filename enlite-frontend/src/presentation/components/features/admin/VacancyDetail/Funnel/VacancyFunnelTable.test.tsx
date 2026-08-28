@@ -195,6 +195,24 @@ describe('VacancyFunnelTable', () => {
     expect(screen.getAllByText('Juan Pérez').length).toBeGreaterThan(0);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
+
+  it('renders "—" with no title on the link when the row has a workerId but no workerName', () => {
+    const rows: FunnelTableRow[] = [{ ...mockRows[0], workerName: null }];
+    renderTable({ ...defaultProps, rows });
+    const link = screen.getByTestId('funnel-worker-link');
+    expect(link).toHaveTextContent('—');
+    expect(link).not.toHaveAttribute('title');
+  });
+
+  it('renders "—" with no title on the plain text when the row has neither workerId nor workerName', () => {
+    const rows: FunnelTableRow[] = [
+      { ...mockRows[0], workerId: '', workerName: null, selfAppliedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    renderTable({ ...defaultProps, rows });
+    expect(screen.queryByTestId('funnel-worker-link')).not.toBeInTheDocument();
+    const nameText = screen.getByText('—');
+    expect(nameText).not.toHaveAttribute('title');
+  });
 });
 
 // Coluna "Origen" — o mesmo sinal do card do Kanban, aqui na vista que é o DEFAULT

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import { KanbanBoard } from '../KanbanBoard';
 import type { FunnelStages } from '@hooks/admin/useWJAFunnel';
 
@@ -26,9 +26,21 @@ vi.mock('react-i18next', () => ({
 // ── dnd-kit mocks ────────────────────────────────────────────────────────────
 let droppableIds: { id: string; disabled: boolean }[] = [];
 let draggableIds: { id: string; disabled: boolean }[] = [];
+// Capturado do DndContext real (KanbanBoardShell) — permite simular o INÍCIO
+// do arrasto sem depender de pointer events reais do dnd-kit em jsdom.
+let capturedOnDragStart: ((e: { active: { id: string } }) => void) | null = null;
 
 vi.mock('@dnd-kit/core', () => ({
-  DndContext: ({ children }: { children: React.ReactNode }) => <div data-testid="dnd-context">{children}</div>,
+  DndContext: ({
+    children,
+    onDragStart,
+  }: {
+    children: React.ReactNode;
+    onDragStart?: (e: { active: { id: string } }) => void;
+  }) => {
+    capturedOnDragStart = onDragStart ?? null;
+    return <div data-testid="dnd-context">{children}</div>;
+  },
   DragOverlay: ({ children }: { children: React.ReactNode }) => <div data-testid="drag-overlay">{children}</div>,
   useSensor: vi.fn(),
   useSensors: vi.fn(() => []),
@@ -73,8 +85,20 @@ vi.mock('lucide-react', () => ({
 
 // ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({
-  ContactNotesModal: ({ vacancyId, workerId, workerName }: { vacancyId: string; workerId: string; workerName: string | null }) => (
-    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-worker-id={workerId} data-worker-name={workerName ?? ''} />
+  ContactNotesModal: ({
+    vacancyId,
+    workerId,
+    workerName,
+    onClose,
+  }: {
+    vacancyId: string;
+    workerId: string;
+    workerName: string | null;
+    onClose: () => void;
+  }) => (
+    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-worker-id={workerId} data-worker-name={workerName ?? ''}>
+      <button data-testid="contact-notes-close" onClick={onClose}>fechar</button>
+    </div>
   ),
 }));
 
@@ -124,6 +148,7 @@ const noop = vi.fn(async () => null);
 beforeEach(() => {
   droppableIds = [];
   draggableIds = [];
+  capturedOnDragStart = null;
   vi.clearAllMocks();
 });
 
@@ -754,6 +779,106 @@ describe('KanbanBoard — Reenviar', () => {
     expect(screen.getByTestId('resend-blocked-reason')).toHaveTextContent('admin.messaging.blocked.RESEND_COOLDOWN');
     fireEvent.click(btn);
     expect(onResendInvite).not.toHaveBeenCalled();
+  });
+});
+
+// ── "Rechazar" num card NÃO bloqueado (tem encuadreId) ───────────────────────
+
+describe('KanbanBoard — "Rechazar" num card com encuadreId (não bloqueado)', () => {
+  it('abre o modal de motivo e chama onMove(encuadreId, REJECTED, categoria) — não onRejectBlocked', () => {
+    const onMove = vi.fn(async () => null);
+    const onRejectBlocked = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-rej', encuadreId: 'enc-rej', workerName: 'Pedro Luna' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={onRejectBlocked} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('reject-button'));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('rejection-modal')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByTestId('rejection-option-worker-declined')).getByRole('radio'));
+    fireEvent.click(screen.getByTestId('rejection-confirm'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-rej', 'REJECTED', 'WORKER_DECLINED');
+    expect(onRejectBlocked).not.toHaveBeenCalled();
+  });
+});
+
+// ── Overlay de arrasto (card sob o cursor) ───────────────────────────────────
+
+describe('KanbanBoard — overlay de arrasto', () => {
+  it('mostra uma cópia SÓ LEITURA do card no overlay ao iniciar o arrasto (sem menu de mover)', () => {
+    const stages = emptyStages();
+    stages.INICIADO = [makeEncuadre({ id: 'enc-overlay', encuadreId: 'enc-overlay-real', workerName: 'Overlay Worker' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    expect(capturedOnDragStart).toBeTruthy();
+    act(() => {
+      capturedOnDragStart!({ active: { id: 'enc-overlay' } });
+    });
+
+    const overlay = screen.getByTestId('drag-overlay');
+    expect(within(overlay).getByText('Overlay Worker')).toBeInTheDocument();
+    // Read-only: o overlay não recebe onMoveTo/onReject/onOpenNotes.
+    expect(within(overlay).queryByTestId('move-to-button')).not.toBeInTheDocument();
+  });
+});
+
+// ── Cancelar os modais de papel e de agenda ──────────────────────────────────
+
+describe('KanbanBoard — cancelar os modais de papel e de agenda', () => {
+  it('cancelar o modal de papel (SELECTED) não chama onMove e fecha o modal', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-role-cancel', encuadreId: 'enc-role-cancel', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-SELECTED'));
+    expect(screen.getByTestId('role-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('role-cancel'));
+
+    expect(screen.queryByTestId('role-modal')).not.toBeInTheDocument();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('cancelar o modal de agenda (CONFIRMED) não chama onMove e fecha o modal', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-sched-cancel', encuadreId: 'enc-sched-cancel', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    expect(screen.getByTestId('interview-schedule-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('interview-schedule-cancel'));
+
+    expect(screen.queryByTestId('interview-schedule-modal')).not.toBeInTheDocument();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+// ── Fechar o modal de comentários ─────────────────────────────────────────────
+
+describe('KanbanBoard — fechar o modal de comentários', () => {
+  it('fechar o ContactNotesModal remove o modal da tela', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-notes-close', workerId: 'wk-1', workerName: 'Marcia Costa' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(screen.getByTestId('contact-notes-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('contact-notes-close'));
+
+    expect(screen.queryByTestId('contact-notes-modal')).not.toBeInTheDocument();
   });
 });
 
