@@ -62,6 +62,7 @@ vi.mock('lucide-react', () => ({
   CalendarClock: (props: Record<string, unknown>) => <svg data-testid="icon-calendar-clock" {...props} />,
   MapPin: (props: Record<string, unknown>) => <svg data-testid="icon-map-pin" {...props} />,
   MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
+  Send: (props: Record<string, unknown>) => <svg data-testid="icon-send" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
   ArrowRightLeft: (props: Record<string, unknown>) => <svg data-testid="icon-move" {...props} />,
@@ -695,3 +696,45 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     expect(onUnrejectBlocked).toHaveBeenCalledWith('ba-99');
   });
 });
+
+// ── "Reenviar" por card (REQ-08) ───────────────────────────────────────────
+
+describe('KanbanBoard — Reenviar', () => {
+  const noopAsync = vi.fn().mockResolvedValue(null);
+
+  it('sem onResendInvite não há botão', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'c1', workerId: 'w-1', encuadreId: 'enc-1' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} />);
+    expect(screen.queryByTestId('resend-button')).not.toBeInTheDocument();
+  });
+
+  it('card sem workerId ou sem encuadre não ganha o botão', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [
+      makeEncuadre({ id: 'no-worker', workerId: null, encuadreId: 'enc-1' }),
+      makeEncuadre({ id: 'no-enc', workerId: 'w-2', encuadreId: null }),
+    ];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onResendInvite={vi.fn()} />);
+    expect(screen.queryByTestId('resend-button')).not.toBeInTheDocument();
+  });
+
+  it('clique → chama onResendInvite(workerId) e mostra "enviado"; recusa mostra o motivo', async () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [
+      makeEncuadre({ id: 'ok', workerId: 'w-ok', encuadreId: 'enc-ok', lastMessagedAt: null }),
+      makeEncuadre({ id: 'blocked', workerId: 'w-bl', encuadreId: 'enc-bl' }),
+    ];
+    const onResendInvite = vi.fn(async (workerId: string) => (workerId === 'w-bl' ? 'Ya se le reenvió' : null));
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onResendInvite={onResendInvite} />);
+
+    const buttons = screen.getAllByTestId('resend-button');
+    fireEvent.click(buttons[0]);
+    expect(onResendInvite).toHaveBeenCalledWith('w-ok');
+    expect(await screen.findByText('admin.kanban.resendDone')).toBeInTheDocument();
+
+    fireEvent.click(buttons[1]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ya se le reenvió');
+  });
+});
+

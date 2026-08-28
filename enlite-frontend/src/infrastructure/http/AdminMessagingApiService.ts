@@ -26,6 +26,7 @@ export const INVITE_BLOCKED_CODES = [
   'COOLDOWN',
   'ALREADY_INVITED',
   'UNANSWERED_THROTTLE',
+  'RESEND_COOLDOWN',
   'WORKER_STATUS_INVALID',
 ] as const;
 export type InviteBlockedCode = (typeof INVITE_BLOCKED_CODES)[number];
@@ -92,11 +93,14 @@ export class AdminMessagingApiServiceClass {
   async sendVacancyMatchInvite(
     workerId: string,
     jobPostingId: string,
+    options: { resend?: boolean } = {},
   ): Promise<VacancyMatchInviteResult> {
     return this.request<VacancyMatchInviteResult>(
       'POST',
       '/api/admin/messaging/whatsapp/vacancy-match',
-      { workerId, jobPostingId },
+      // `resend: true` = botão "Reenviar" da tarjeta (REQ-08): o backend troca as
+      // travas de convite pelo cooldown de reenvio. Ausente = convite normal.
+      { workerId, jobPostingId, ...(options.resend ? { resend: true } : {}) },
     );
   }
 

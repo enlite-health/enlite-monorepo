@@ -21,6 +21,7 @@ vi.mock('lucide-react', () => ({
   CalendarClock: (props: Record<string, unknown>) => <svg data-testid="icon-calendar-clock" {...props} />,
   MapPin: (props: Record<string, unknown>) => <svg data-testid="icon-map-pin" {...props} />,
   MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
+  Send: (props: Record<string, unknown>) => <svg data-testid="icon-send" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
   Hand: (props: Record<string, unknown>) => <svg data-testid="icon-hand" {...props} />,
@@ -767,3 +768,61 @@ describe('KanbanCard — reprogram badge', () => {
     expect(screen.queryByTestId('reprogram-badge')).not.toBeInTheDocument();
   });
 });
+
+// ── "Reenviar" (REQ-08) ─────────────────────────────────────────────────────
+
+describe('KanbanCard — botão Reenviar e último envio', () => {
+  it('não renderiza a seção quando onResend não é passado', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" />);
+    expect(screen.queryByTestId('resend-section')).not.toBeInTheDocument();
+  });
+
+  it('renderiza o botão e "sem envios" quando nunca houve envio', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} lastMessagedAt={null} />);
+    expect(screen.getByTestId('resend-button')).toHaveTextContent('admin.kanban.resendButton');
+    expect(screen.getByTestId('resend-last-sent')).toHaveTextContent('admin.kanban.neverSent');
+  });
+
+  it('mostra a data/hora do último envio quando existe', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} lastMessagedAt="2026-08-28T17:35:00.000Z" />);
+    expect(screen.getByTestId('resend-last-sent')).toHaveTextContent('admin.kanban.lastSentAt');
+  });
+
+  it('data inválida não quebra o card (mostra o valor cru)', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} lastMessagedAt="não-é-data" />);
+    expect(screen.getByTestId('resend-last-sent')).toBeInTheDocument();
+  });
+
+  it('clicar chama onResend e não propaga o clique ao card (drag)', () => {
+    const onResend = vi.fn();
+    const onParent = vi.fn();
+    render(
+      <div onClick={onParent}>
+        <KanbanCard {...defaultProps} workerId="w-1" onResend={onResend} />
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId('resend-button'));
+    expect(onResend).toHaveBeenCalledTimes(1);
+    expect(onParent).not.toHaveBeenCalled();
+  });
+
+  it('enquanto envia, o botão fica desabilitado com o rótulo de envio', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} resendStatus="sending" />);
+    const btn = screen.getByTestId('resend-button');
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent('admin.kanban.resendSending');
+  });
+
+  it('mostra "enviado" após sucesso e o motivo (role=alert) após recusa', () => {
+    const { rerender } = render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} resendStatus="sent" />);
+    expect(screen.getByTestId('resend-feedback')).toHaveTextContent('admin.kanban.resendDone');
+    rerender(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} resendStatus="error" resendMessage="Ya se le reenvió" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Ya se le reenvió');
+  });
+
+  it('erro sem mensagem não renderiza feedback', () => {
+    render(<KanbanCard {...defaultProps} workerId="w-1" onResend={vi.fn()} resendStatus="error" resendMessage={null} />);
+    expect(screen.queryByTestId('resend-feedback')).not.toBeInTheDocument();
+  });
+});
+
