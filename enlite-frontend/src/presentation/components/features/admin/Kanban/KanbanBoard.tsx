@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from './KanbanBoardShell';
 import { KanbanCard } from './KanbanCard';
@@ -76,7 +75,6 @@ function cardProps(enc: FunnelCard, stage: string) {
 
 export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked }: KanbanBoardProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
    *  - { encuadreId } → mover encuadre para REJECTED (onMove).
@@ -94,10 +92,6 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
    * inclusive BLOQUEADO — e não zera quando o card é promovido.
    */
   const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
-
-  function handleWorkerClick(workerId: string) {
-    navigate(`/admin/workers/${workerId}`);
-  }
 
   const columns = COLUMN_CONFIG.map((col) => ({
     ...col,
@@ -188,7 +182,6 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
           <KanbanCard
             {...cardProps(enc, columnId)}
             isDismissed={enc.isDismissed}
-            onWorkerClick={handleWorkerClick}
             onReject={
               enc.encuadreId
                 ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })

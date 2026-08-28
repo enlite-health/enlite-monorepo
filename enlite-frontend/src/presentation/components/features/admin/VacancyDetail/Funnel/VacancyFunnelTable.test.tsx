@@ -165,21 +165,34 @@ describe('VacancyFunnelTable', () => {
     expect(screen.getByRole('table')).toBeInTheDocument();
   });
 
-  it('navigates to worker detail with origin path in state when clicking the name', () => {
+  it('renders the worker name as a link that opens the profile in a NEW TAB', () => {
     renderTable(defaultProps, '/admin/vacancies/vac-123');
     const links = screen.getAllByTestId('funnel-worker-link');
+    expect(links[0]).toHaveAttribute('href', '/admin/workers/w-1');
+    expect(links[0]).toHaveAttribute('target', '_blank');
+    expect(links[0]).toHaveAttribute('rel', 'noopener noreferrer');
     fireEvent.click(links[0]);
-    expect(mockNavigate).toHaveBeenCalledWith('/admin/workers/w-1', {
-      state: { from: '/admin/vacancies/vac-123' },
-    });
+    // Nova aba: a lista da vaga não navega
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('does not navigate when the row has no workerId', () => {
-    const rowsNoId: FunnelTableRow[] = [{ ...mockRows[0], workerId: '' }];
+  it('renders the "no" label when accepted=false', () => {
+    const rows: FunnelTableRow[] = [{ ...mockRows[0], accepted: false }];
+    renderTable({ ...defaultProps, rows });
+    expect(screen.getByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeInTheDocument();
+  });
+
+  it('opens the contact notes modal for the row when the notes button is clicked', () => {
+    renderTable(defaultProps);
+    fireEvent.click(screen.getAllByTestId('funnel-notes-button')[0]);
+    expect(screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.modalTitle')).toBeInTheDocument();
+  });
+
+  it('renders plain text (no link) when the row has no workerId', () => {
+    const rowsNoId: FunnelTableRow[] = [{ ...mockRows[0], workerId: '' }, { ...mockRows[1], workerId: '' }];
     renderTable({ ...defaultProps, rows: rowsNoId });
-    const link = screen.getByTestId('funnel-worker-link');
-    expect(link).toBeDisabled();
-    fireEvent.click(link);
+    expect(screen.queryByTestId('funnel-worker-link')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Juan Pérez').length).toBeGreaterThan(0);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

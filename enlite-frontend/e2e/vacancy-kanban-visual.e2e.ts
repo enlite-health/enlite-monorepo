@@ -5,11 +5,11 @@
  *
  * Cobre as 3 funcionalidades novas:
  *   1. Formatação de telefone por país (AR, BR, genérico)
- *   2. Nome clicável que navega para /admin/workers/:id
+ *   2. Nome como link que abre /admin/workers/:id em nova aba
  *   3. Tag de data/hora da reunião na coluna Confirmados
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, BrowserContext } from '@playwright/test';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY = 'test-api-key';
@@ -279,6 +279,29 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
 }
 
+/**
+ * A rota /admin/vacancies/:id/kanban não existe mais: o Kanban vive dentro da
+ * página da vaga, atrás do toggle "Kanban" do funil (vista padrão = Lista).
+ * Os mocks vão no CONTEXT porque o perfil abre em nova aba (outra page).
+ */
+async function gotoVacancyKanban(page: Page, ctx: BrowserContext): Promise<void> {
+  await ctx.route('**/api/admin/auth/profile', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { id: 'ctx-admin', email: 'ctx@test.com', role: 'superadmin', firstName: 'Admin', lastName: 'Visual', isActive: true, mustChangePassword: false },
+      }),
+    }),
+  );
+  await page.route(`**/api/admin/vacancies/${MOCK_VACANCY_ID}/funnel-table**`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { rows: [], total: 0 } }) }),
+  );
+  await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
+  await page.getByRole('button', { name: 'Kanban' }).click();
+}
+
 function mockVacancyApis(page: Page) {
   return Promise.all([
     page.route(`**/api/admin/vacancies/${MOCK_VACANCY_ID}`, (route) =>
@@ -353,12 +376,12 @@ test.describe('Kanban — testes visuais (screenshot)', () => {
 
   // ── 2. Nome clicável → navegação para worker detail ───────────────────
 
-  test('nome do worker é clicável e navega para /admin/workers/:id', async ({ page }) => {
+  test('nome do worker é link e abre o perfil em NOVA ABA (/admin/workers/:id)', async ({ page, context }) => {
     await seedAdminAndLogin(page);
     await mockVacancyApis(page);
 
-    // Mock worker detail page to avoid 404
-    await page.route('**/api/admin/workers/worker-ar-001', (route) =>
+    // Mock worker detail no CONTEXT: a nova aba é outra page e não herda page.route
+    await context.route('**/api/admin/workers/worker-ar-001**', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -366,32 +389,36 @@ test.describe('Kanban — testes visuais (screenshot)', () => {
       }),
     );
 
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`);
+    await gotoVacancyKanban(page, context);
     await expect(page.locator('[data-testid="kanban-card-vis-ar"]')).toBeVisible({ timeout: 15000 });
 
     // Screenshot antes do click — nome com estilo de link
     const card = page.locator('[data-testid="kanban-card-vis-ar"]');
-    const nameButton = card.getByRole('button', { name: 'María Gabriela Arena' });
-    await expect(nameButton).toBeVisible();
+    const nameLink = card.getByRole('link', { name: 'María Gabriela Arena' });
+    await expect(nameLink).toBeVisible();
+    await expect(nameLink).toHaveAttribute('href', '/admin/workers/worker-ar-001');
+    await expect(nameLink).toHaveAttribute('target', '_blank');
 
     await expect(card).toHaveScreenshot('kanban-card-clickable-name.png');
 
-    // Click no nome navega para detalhe do worker
-    await nameButton.click();
-    await expect(page).toHaveURL(/\/admin\/workers\/worker-ar-001/, { timeout: 10000 });
+    // Click no nome abre NOVA ABA com o perfil — e o Kanban fica na aba original
+    const [popup] = await Promise.all([context.waitForEvent('page'), nameLink.click()]);
+    await expect(popup).toHaveURL(/\/admin\/workers\/worker-ar-001/, { timeout: 10000 });
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${MOCK_VACANCY_ID}$`));
+    await popup.close();
   });
 
-  test('nome NÃO é clicável quando workerId é null', async ({ page }) => {
+  test('nome NÃO é clicável quando workerId é null', async ({ page, context }) => {
     await seedAdminAndLogin(page);
     await mockVacancyApis(page);
 
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`);
+    await gotoVacancyKanban(page, context);
     await expect(page.locator('[data-testid="kanban-card-vis-generic"]')).toBeVisible({ timeout: 15000 });
 
-    // Jean Dupont tem workerId: null — nome deve ser texto plain, sem button
+    // Jean Dupont tem workerId: null — nome deve ser texto plain, sem link
     const card = page.locator('[data-testid="kanban-card-vis-generic"]');
     await expect(card.locator('text=Jean Dupont')).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Jean Dupont' })).not.toBeVisible();
+    await expect(card.getByRole('link', { name: 'Jean Dupont' })).not.toBeVisible();
 
     // Screenshot do card sem link no nome
     await expect(card).toHaveScreenshot('kanban-card-non-clickable-name.png');

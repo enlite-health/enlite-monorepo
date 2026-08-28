@@ -34,7 +34,6 @@ interface KanbanCardProps {
   attemptCount?: number;
   /** Blocked card "rechazado" (soft-dismiss) — aparece em RECHAZADOS com botão de voltar. */
   isDismissed?: boolean;
-  onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
   /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (só para isDismissed). */
   onUndismiss?: () => void;
@@ -104,7 +103,6 @@ export function KanbanCard({
   missingFields,
   attemptCount,
   isDismissed,
-  onWorkerClick,
   onReject,
   onUndismiss,
   onMoveTo,
@@ -121,12 +119,10 @@ export function KanbanCard({
     workerName ??
     (isBlocked ? t('admin.kanban.blockedNoName') : t('admin.kanban.noName'));
 
-  const handleNameClick = (e: React.MouseEvent) => {
-    if (workerId && onWorkerClick) {
-      e.stopPropagation();
-      onWorkerClick(workerId);
-    }
-  };
+  // O nome abre o perfil em NOVA ABA (pedido do Javier, planning 26/08): link real
+  // (funciona com clique do meio / ctrl+clique) e o Kanban fica intacto atrás.
+  // stopPropagation evita que o clique dispare o drag do card.
+  const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   const interviewLabel = interviewDate
     ? `${new Date(interviewDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}${interviewTime ? ` ${interviewTime}` : ''}`
@@ -139,16 +135,18 @@ export function KanbanCard({
       className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2">
-        {workerId && onWorkerClick ? (
-          <button
-            type="button"
+        {workerId ? (
+          <a
+            href={`/admin/workers/${workerId}`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-left truncate"
-            onClick={handleNameClick}
+            onClick={stopPropagation}
           >
             <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
               {nameLabel}
             </Text>
-          </button>
+          </a>
         ) : (
           <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate">
             {nameLabel}

@@ -294,32 +294,33 @@ describe('KanbanBoard — edge cases', () => {
 
 // ── Worker Name Navigation ──────────────────────────────────────────────────
 
-describe('KanbanBoard — worker name navigation', () => {
-  it('navigates to worker detail page when clicking worker name', () => {
+describe('KanbanBoard — worker name opens the profile in a new tab', () => {
+  it('renders the worker name as a link to /admin/workers/:id with target=_blank', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nav', workerId: 'worker-99', workerName: 'Carlos Test' })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
-    const button = screen.getByRole('button', { name: 'Carlos Test' });
-    fireEvent.click(button);
-
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith('/admin/workers/worker-99');
+    const link = screen.getByRole('link', { name: 'Carlos Test' });
+    expect(link).toHaveAttribute('href', '/admin/workers/worker-99');
+    expect(link).toHaveAttribute('target', '_blank');
+    // Não navega na mesma aba: nenhum navigate() é chamado
+    fireEvent.click(link);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('does NOT render clickable name when workerId is null', () => {
+  it('does NOT render a link when workerId is null', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nolink', workerId: null, workerName: 'No Link' })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
-    expect(screen.queryByRole('button', { name: 'No Link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'No Link' })).not.toBeInTheDocument();
     // Name should still render as plain text
     expect(screen.getByText('No Link')).toBeInTheDocument();
   });
 
-  it('passes workerId and onWorkerClick to cards in all columns', () => {
+  it('links the name in cards of all columns', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'w1', workerId: 'wk-1', workerName: 'Worker A' })];
     stages.CONFIRMED = [makeEncuadre({ id: 'w2', workerId: 'wk-2', workerName: 'Worker B' })];
@@ -327,14 +328,9 @@ describe('KanbanBoard — worker name navigation', () => {
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
-    // All should have clickable names
-    expect(screen.getByRole('button', { name: 'Worker A' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Worker B' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Worker C' })).toBeInTheDocument();
-
-    // Click each and verify navigation
-    fireEvent.click(screen.getByRole('button', { name: 'Worker C' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/admin/workers/wk-3');
+    expect(screen.getByRole('link', { name: 'Worker A' })).toHaveAttribute('href', '/admin/workers/wk-1');
+    expect(screen.getByRole('link', { name: 'Worker B' })).toHaveAttribute('href', '/admin/workers/wk-2');
+    expect(screen.getByRole('link', { name: 'Worker C' })).toHaveAttribute('href', '/admin/workers/wk-3');
   });
 });
 

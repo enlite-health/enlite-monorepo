@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
 import { Hand, MessageSquare } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { WorkerAvatar } from '@presentation/components/atoms/WorkerAvatar';
 import { WhatsappStatusBadge } from '@presentation/components/atoms/WhatsappStatusBadge';
 import { Text } from '@presentation/components/atoms/Text';
@@ -24,15 +23,6 @@ export function VacancyFunnelTableRow({
   onOpenNotes,
 }: VacancyFunnelTableRowProps): JSX.Element {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const handleWorkerClick = (): void => {
-    if (!row.workerId) return;
-    navigate(`/admin/workers/${row.workerId}`, {
-      state: { from: `${location.pathname}${location.search}` },
-    });
-  };
 
   const formattedDate = row.invitedAt
     ? new Intl.DateTimeFormat('es-AR', {
@@ -75,24 +65,38 @@ export function VacancyFunnelTableRow({
         <div className="flex items-center gap-2 max-w-[280px]">
           <WorkerAvatar name={row.workerName} avatarUrl={row.workerAvatarUrl} size={32} />
           <div className="flex flex-col min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={handleWorkerClick}
-              disabled={!row.workerId}
-              data-testid="funnel-worker-link"
-              title={row.workerName ?? undefined}
-              className="min-w-0 text-left truncate rounded-sm hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:no-underline"
-            >
+            {row.workerId ? (
+              // Perfil em NOVA ABA (planning 26/08): a lista da vaga fica intacta atrás.
+              <a
+                href={`/admin/workers/${row.workerId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="funnel-worker-link"
+                title={row.workerName ?? undefined}
+                className="min-w-0 text-left truncate rounded-sm hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <Text
+                  as="span"
+                  size="sm"
+                  weight="medium"
+                  color="secondary"
+                  className="truncate"
+                >
+                  {row.workerName ?? '—'}
+                </Text>
+              </a>
+            ) : (
               <Text
                 as="span"
                 size="sm"
                 weight="medium"
                 color="secondary"
+                title={row.workerName ?? undefined}
                 className="truncate"
               >
                 {row.workerName ?? '—'}
               </Text>
-            </button>
+            )}
             <Text
               as="span"
               size="xs"
