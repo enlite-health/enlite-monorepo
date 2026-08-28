@@ -2727,7 +2727,7 @@
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admissão",
-          "PENDING_ADMISSION": "Aguardando Ativação",
+          "PENDING_ADMISSION": "Aguardando financeiro",
           "ACTIVE": "Ativo"
         }
       },
@@ -2874,6 +2874,7 @@
         "patientStatusLabel": "Status do paciente",
         "patientStatus": {
           "EM_ADMISSAO": "Em Admissão",
+          "PENDING_ADMISSION": "Aguardando financeiro",
           "EM_ATENDIMENTO": "Em Atendimento",
           "PACIENTE_COM_ALTA": "Paciente com alta",
           "CANCELADO": "Cancelado"

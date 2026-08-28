@@ -69,8 +69,36 @@ describe('PatientIdentityCard', () => {
     expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
   });
 
-  it('renders status badge Em Admissão', () => {
+  it('renders status badge "Aguardando financeiro" for PENDING_ADMISSION (D195 — nome pelo motivo real)', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
+    expect(screen.getByText('Aguardando financeiro')).toBeInTheDocument();
+    expect(screen.queryByText('Em Admissão')).not.toBeInTheDocument();
+  });
+
+  it('renders the case number badge when lastCaseNumber is present', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, lastCaseNumber: 747 }} />);
+    expect(screen.getByText(/#747/)).toBeInTheDocument();
+  });
+
+  it('renders "—" when the patient has no status', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: null }} />);
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('falls back to the raw ISO string when the runtime cannot format the date', () => {
+    const spy = vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => {
+      throw new RangeError('locale');
+    });
+    try {
+      render(<PatientIdentityCard patient={patientDetailFixture} />);
+      expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('keeps the legacy EM_ADMISSAO label for the legacy status value', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: 'EM_ADMISSAO' }} />);
     expect(screen.getByText('Em Admissão')).toBeInTheDocument();
   });
 
