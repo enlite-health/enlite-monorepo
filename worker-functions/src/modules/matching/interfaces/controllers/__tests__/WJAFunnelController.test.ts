@@ -157,6 +157,12 @@ describe('WJAFunnelController', () => {
       const invitedIds = (stages.INVITED as Array<{ id: string }>).map(e => e.id);
       expect(invitedIds).toContain('e1');
       expect(invitedIds).toContain('e2');
+      // REQ-08: o card carrega o último envio (messaged_at) em ISO — é o que o
+      // botão "Reenviar" mostra como "Último envío"; sem envio → null.
+      const e2 = (stages.INVITED as Array<{ id: string; lastMessagedAt: string | null }>).find(e => e.id === 'e2');
+      expect(e2?.lastMessagedAt).toBe('2026-07-09T10:00:00.000Z');
+      const e1 = (stages.INVITED as Array<{ id: string; lastMessagedAt: string | null }>).find(e => e.id === 'e1');
+      expect(e1?.lastMessagedAt).toBeNull();
 
       // INVITED+source='manual' → INICIADO
       expect(stages.INICIADO).toHaveLength(1);

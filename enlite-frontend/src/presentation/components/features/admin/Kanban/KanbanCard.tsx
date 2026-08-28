@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
+import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Send, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
@@ -43,6 +43,17 @@ interface KanbanCardProps {
   onMoveTo?: (targetStage: string) => void;
   /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
+  /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. */
+  lastMessagedAt?: string | null;
+  /**
+   * "Reenviar" (REQ-08, planning 26/08): redispara a mensagem da etapa para
+   * ESTA pessoa com um clique — antes as recrutadoras arrastavam a tarjeta ida e
+   * volta. Só é passado para cards com worker e encuadre.
+   */
+  onResend?: () => void;
+  resendStatus?: 'idle' | 'sending' | 'sent' | 'error';
+  /** Motivo localizado quando o backend recusa (422) ou falha. */
+  resendMessage?: string | null;
   /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
   /**
@@ -82,6 +93,13 @@ function completadoBadgeStyle(internalStage: string): string {
   return COMPLETADO_BADGE_STYLE[internalStage] ?? '';
 }
 
+/** "28/08 14:35" no fuso de quem olha — data curta, hora sem segundos. */
+function formatLastSent(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 export function KanbanCard({
   id,
   workerId,
@@ -111,6 +129,10 @@ export function KanbanCard({
   onOpenNotes,
   contactNotesCount = 0,
   selfAppliedAt,
+  lastMessagedAt,
+  onResend,
+  resendStatus = 'idle',
+  resendMessage,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -299,6 +321,39 @@ export function KanbanCard({
           {t('admin.kanban.notesButton')}
           <NotesCountBadge count={contactNotesCount} />
         </button>
+      )}
+
+      {onResend && (
+        <div className="mt-2 flex flex-col gap-0.5" data-testid="resend-section">
+          <button
+            data-testid="resend-button"
+            type="button"
+            disabled={resendStatus === 'sending'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onResend();
+            }}
+            className="w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-200 disabled:opacity-60 disabled:cursor-wait"
+          >
+            <Send className="w-3 h-3" />
+            {resendStatus === 'sending' ? t('admin.kanban.resendSending') : t('admin.kanban.resendButton')}
+          </button>
+          <span data-testid="resend-last-sent" className="px-2 text-[10px] text-slate-500">
+            {lastMessagedAt
+              ? t('admin.kanban.lastSentAt', { date: formatLastSent(lastMessagedAt) })
+              : t('admin.kanban.neverSent')}
+          </span>
+          {resendStatus === 'sent' && (
+            <span data-testid="resend-feedback" className="px-2 text-[10px] text-emerald-700">
+              {t('admin.kanban.resendDone')}
+            </span>
+          )}
+          {resendStatus === 'error' && resendMessage && (
+            <span data-testid="resend-feedback" role="alert" className="px-2 text-[10px] text-red-600">
+              {resendMessage}
+            </span>
+          )}
+        </div>
       )}
 
       {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}

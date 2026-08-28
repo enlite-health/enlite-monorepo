@@ -25,6 +25,12 @@ interface KanbanBoardProps {
   onRejectBlocked: (blockedId: string, rejectionReasonCategory: string) => Promise<MoveEncuadreError | null>;
   /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
   onUnrejectBlocked: (blockedId: string) => Promise<MoveEncuadreError | null>;
+  /**
+   * "Reenviar" da tarjeta (REQ-08): redispara a mensagem para o worker. Devolve
+   * null quando enviou, ou a mensagem localizada do motivo da recusa/falha.
+   * Ausente = o board não mostra o botão.
+   */
+  onResendInvite?: (workerId: string) => Promise<string | null>;
 }
 
 /** Colunas do funil de vaga. Fonte ÚNICA de quais aceitam drop (`droppable`) —
@@ -71,10 +77,11 @@ function cardProps(enc: FunnelCard, stage: string) {
     blockedReason: enc.blockedReason,
     missingFields: enc.missingFields,
     attemptCount: enc.attemptCount,
+    lastMessagedAt: enc.lastMessagedAt ?? null,
   };
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onResendInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   /**
@@ -94,6 +101,20 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
    * inclusive BLOQUEADO — e não zera quando o card é promovido.
    */
   const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
+  /** Estado do "Reenviar" por card (id do card): enviando / enviado / motivo da recusa. */
+  const [resendByCard, setResendByCard] = useState<
+    Record<string, { status: 'sending' | 'sent' | 'error'; message: string | null }>
+  >({});
+
+  async function handleResend(cardId: string, workerId: string) {
+    if (!onResendInvite) return;
+    setResendByCard((prev) => ({ ...prev, [cardId]: { status: 'sending', message: null } }));
+    const failure = await onResendInvite(workerId);
+    setResendByCard((prev) => ({
+      ...prev,
+      [cardId]: failure ? { status: 'error', message: failure } : { status: 'sent', message: null },
+    }));
+  }
 
   function handleWorkerClick(workerId: string) {
     navigate(`/admin/workers/${workerId}`);
@@ -209,6 +230,13 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
             }
             contactNotesCount={enc.contactNotesCount}
             selfAppliedAt={enc.selfAppliedAt}
+            onResend={
+              onResendInvite && enc.workerId && enc.encuadreId
+                ? () => handleResend(enc.id, enc.workerId!)
+                : undefined
+            }
+            resendStatus={resendByCard[enc.id]?.status ?? 'idle'}
+            resendMessage={resendByCard[enc.id]?.message ?? null}
           />
         )}
         /* O card sob o cursor é só leitura: sem handlers, sem menu de mover. */

@@ -1577,6 +1577,11 @@
       },
       "reprogramBadge": "🔄 Reprogramado",
       "notesButton": "Comentarios",
+      "resendButton": "Reenviar",
+      "resendSending": "Enviando…",
+      "lastSentAt": "Último envío: {{date}}",
+      "neverSent": "Sin envíos",
+      "resendDone": "Enviado ✓",
       "moveToButton": "Mover a…",
       "collapseColumn": "Colapsar columna",
       "expandColumn": "Expandir columna",
@@ -3255,6 +3260,7 @@
         "collapse": "Contraer"
       },
       "blocked": {
+        "RESEND_COOLDOWN": "Ya se le reenvió a esta persona en esta vacante en las últimas 24 h.",
         "OPTED_OUT": "El trabajador pidió no recibir más mensajes (baja).",
         "COOLDOWN": "El trabajador ya recibió un mensaje en los últimos 3 días.",
         "ALREADY_INVITED": "El trabajador ya fue invitado a esta vacante en los últimos 7 días.",

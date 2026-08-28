@@ -134,3 +134,56 @@ describe('assertVacancyInviteAllowed', () => {
     expect(mockQuery).toHaveBeenCalledTimes(5);
   });
 });
+
+// ── modo `resend` (botão "Reenviar" da tarjeta — REQ-08) ─────────────────────
+// Ordem das queries no modo resend: 1. opt-out · 2. cooldown de reenvio (worker×vaga)
+// · 3. unanswered · 4. engaged. NÃO consulta cooldown 3d nem idempotência 7d.
+
+describe('assertVacancyInviteAllowed — mode: resend', () => {
+  let mockQuery: jest.Mock;
+  beforeEach(() => { mockQuery = jest.fn(); });
+
+  it('opt-out continua bloqueando o reenvio → OPTED_OUT', async () => {
+    mockQuery.mockResolvedValueOnce(existsRow(true));
+    const result = await assertVacancyInviteAllowed(makeDb(mockQuery), WORKER_ID, JOB_ID, { mode: 'resend' });
+    expect(result).toMatchObject({ allowed: false, code: 'OPTED_OUT' });
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('reenvio dentro da janela (mesmo worker×vaga) → RESEND_COOLDOWN, com a janela em horas na query', async () => {
+    mockQuery
+      .mockResolvedValueOnce(existsRow(false)) // opt-out
+      .mockResolvedValueOnce(existsRow(true)); // já houve envio na janela
+    const result = await assertVacancyInviteAllowed(makeDb(mockQuery), WORKER_ID, JOB_ID, { mode: 'resend' });
+    expect(result).toMatchObject({ allowed: false, code: 'RESEND_COOLDOWN' });
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    const [sql, params] = mockQuery.mock.calls[1];
+    expect(sql).toMatch(/job_posting_id = \$2/);
+    expect(sql).toMatch(/INTERVAL '1 hour'/);
+    expect(params).toEqual([WORKER_ID, JOB_ID, 24]); // default MANUAL_RESEND_COOLDOWN_HOURS
+  });
+
+  it('fora da janela mas throttled (unanswered>=3, !engaged) → UNANSWERED_THROTTLE (o throttle vale para reenvio)', async () => {
+    mockQuery
+      .mockResolvedValueOnce(existsRow(false)) // opt-out
+      .mockResolvedValueOnce(existsRow(false)) // cooldown de reenvio
+      .mockResolvedValueOnce(countRow(3))      // unanswered
+      .mockResolvedValueOnce(existsRow(false)); // engaged
+    const result = await assertVacancyInviteAllowed(makeDb(mockQuery), WORKER_ID, JOB_ID, { mode: 'resend' });
+    expect(result).toMatchObject({ allowed: false, code: 'UNANSWERED_THROTTLE' });
+  });
+
+  it('fora da janela e engajado → allowed (mesmo com convite há 2 dias: idempotência/cooldown 3d NÃO se aplicam)', async () => {
+    mockQuery
+      .mockResolvedValueOnce(existsRow(false)) // opt-out
+      .mockResolvedValueOnce(existsRow(false)) // cooldown de reenvio
+      .mockResolvedValueOnce(countRow(1))
+      .mockResolvedValueOnce(existsRow(true));
+    const result = await assertVacancyInviteAllowed(makeDb(mockQuery), WORKER_ID, JOB_ID, { mode: 'resend' });
+    expect(result).toEqual({ allowed: true });
+    expect(mockQuery).toHaveBeenCalledTimes(4);
+    // Nenhuma das 4 queries é a idempotência de 7 dias
+    for (const [sql] of mockQuery.mock.calls) expect(sql).not.toMatch(/7 days/);
+  });
+});
+

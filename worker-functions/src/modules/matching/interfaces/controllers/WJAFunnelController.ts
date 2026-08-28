@@ -234,6 +234,9 @@ export class WJAFunnelController {
           internalStage: stage ?? null,
           contactNotesCount: Number(row.contact_notes_count ?? 0),
           selfAppliedAt: row.self_applied_at ?? null,
+          // Último envio de WhatsApp a esta candidatura (manual ou em lote) —
+          // o card mostra a data/hora ao lado do botão "Reenviar" (REQ-08).
+          lastMessagedAt: row.messaged_at ? new Date(row.messaged_at as string | Date).toISOString() : null,
         };
 
         // Classificação 100% baseada em (stage, source) — SSOT em deriveKanbanColumn

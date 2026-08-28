@@ -47,6 +47,8 @@ interface FunnelEncuadre {
   contactNotesCount?: number;
   /** ISO de quando o próprio prestador entrou na vaga pelo link (null = desconhecido). */
   selfAppliedAt?: string | null;
+  /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. REQ-08. */
+  lastMessagedAt?: string | null;
   /** Blocked card que foi "rechazado" (soft-dismiss): aparece em RECHAZADOS, com botão de voltar. */
   isDismissed?: boolean;
 }
