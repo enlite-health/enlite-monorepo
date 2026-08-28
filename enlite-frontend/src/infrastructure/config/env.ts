@@ -1,6 +1,5 @@
 export const ENV = {
   GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
-  CERBOS_URL: import.meta.env.VITE_CERBOS_URL || 'http://localhost:3592',
   API_WORKER_FUNCTIONS_URL: import.meta.env.VITE_API_WORKER_FUNCTIONS_URL || 'http://localhost:3000',
   FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY || '',
   FIREBASE_AUTH_DOMAIN: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
@@ -27,8 +26,5 @@ export function validateEnv(): void {
   }
   if (!ENV.FIREBASE_PROJECT_ID) {
     throw new Error('VITE_FIREBASE_PROJECT_ID is required');
-  }
-  if (!ENV.CERBOS_URL) {
-    throw new Error('VITE_CERBOS_URL is required');
   }
 }

@@ -8,9 +8,6 @@ overrides:
   swagger-client: 3.36.0
 
 dependencies:
-  '@cerbos/http':
-    specifier: ^0.26.0
-    version: 0.26.0(@bufbuild/protobuf@2.11.0)(@cerbos/api@0.6.0)
   '@dnd-kit/core':
     specifier: ^6.3.1
     version: 6.3.1(react-dom@18.3.1)(react@18.3.1)
@@ -371,41 +368,6 @@ packages:
   /@bcoe/v8-coverage@0.2.3:
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
     dev: true
-
-  /@bufbuild/protobuf@2.11.0:
-    resolution: {integrity: sha512-sBXGT13cpmPR5BMgHE6UEEfEaShh5Ror6rfN3yEK5si7QVrtZg8LEPQb0VVhiLRUslD2yLnXtnRzG035J/mZXQ==}
-    dev: false
-
-  /@cerbos/api@0.6.0:
-    resolution: {integrity: sha512-NgJlJPCyhKSN9pVWE6TPnbQNTbCINFFo4YQcDOsr5BqnxybsLDsh+BdDLbA7gpsYgWrhIu2tegEpJsctDvWbHg==}
-    engines: {node: '>= 20'}
-    dependencies:
-      '@bufbuild/protobuf': 2.11.0
-    dev: false
-
-  /@cerbos/core@0.28.0(@bufbuild/protobuf@2.11.0):
-    resolution: {integrity: sha512-7UeTOxHL1VbH3aMlbiK1TwY9HgvIUAK/fYWS3s9bo77MZafbRjKTHpe85J0WRzCyVkNKg2MulwAafK0KSttzHA==}
-    engines: {node: '>= 20'}
-    peerDependencies:
-      '@bufbuild/protobuf': ^2.11.0
-    dependencies:
-      '@bufbuild/protobuf': 2.11.0
-      '@cerbos/api': 0.6.0
-      uuid: 13.0.0
-    dev: false
-
-  /@cerbos/http@0.26.0(@bufbuild/protobuf@2.11.0)(@cerbos/api@0.6.0):
-    resolution: {integrity: sha512-dQToWiiQeu0R+yH4DLc2dnAAwpZlCqHj3BWTu/TSkH7tMUKiomR+9pDSG+Jo65aSpJCTmM2QmjjfwLFw9Kwu/g==}
-    engines: {node: '>= 20'}
-    peerDependencies:
-      '@bufbuild/protobuf': ^2.11.0
-      '@cerbos/api': ^0.6.0
-    dependencies:
-      '@bufbuild/protobuf': 2.11.0
-      '@cerbos/api': 0.6.0
-      '@cerbos/core': 0.28.0(@bufbuild/protobuf@2.11.0)
-      qs: 6.15.0
-    dev: false
 
   /@csstools/color-helpers@5.1.0:
     resolution: {integrity: sha512-S11EXWJyy0Mz5SYvRmY8nJYTFFd1LCNV+7cXyAgQtOOuzb4EsgfqDufL+9esx72/eLhsRdGZwaldu/h+E4t4BA==}
@@ -5273,13 +5235,6 @@ packages:
     engines: {node: '>=6'}
     dev: true
 
-  /qs@6.15.0:
-    resolution: {integrity: sha512-mAZTtNCeetKMH+pSjrb76NAM8V9a05I9aBZOHztWy/UqcJdQYNsf59vrRKWnojAT9Y+GbIvoTBC++CPHqpDBhQ==}
-    engines: {node: '>=0.6'}
-    dependencies:
-      side-channel: 1.1.0
-    dev: false
-
   /querystringify@2.2.0:
     resolution: {integrity: sha512-FIqgj2EUvTa7R50u0rGsyTftzjYmv/a3hO345bZNrqabNqjtgiDMgmo4mkUjd+nzU5oF3dClKqFIPUKybUyqoQ==}
 
@@ -6276,11 +6231,6 @@ packages:
   /util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
     dev: true
-
-  /uuid@13.0.0:
-    resolution: {integrity: sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w==}
-    hasBin: true
-    dev: false
 
   /uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
