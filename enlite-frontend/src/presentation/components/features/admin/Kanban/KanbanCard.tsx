@@ -4,6 +4,8 @@ import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Send, Star } from 'l
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
+import { KanbanCardStageMessage } from './KanbanCardStageMessage';
+import { formatLastSent } from './kanbanCardFormat';
 
 interface KanbanCardProps {
   id: string;
@@ -44,6 +46,8 @@ interface KanbanCardProps {
   onOpenNotes?: () => void;
   /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. */
   lastMessagedAt?: string | null;
+  /** PEND-14/DEC-12: último template enfileirado por ETAPA (mover a tarjeta) — o painel mostra o último envio por pessoa. */
+  lastStageMessage?: { stage: string; templateSlug: string | null; at: string } | null;
   /**
    * "Reenviar" (REQ-08, planning 26/08): redispara a mensagem da etapa para
    * ESTA pessoa com um clique — antes as recrutadoras arrastavam a tarjeta ida e
@@ -94,12 +98,6 @@ function completadoBadgeStyle(internalStage: string): string {
   return COMPLETADO_BADGE_STYLE[internalStage] ?? '';
 }
 
-/** "28/08 14:35" no fuso de quem olha — data curta, hora sem segundos. */
-function formatLastSent(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
 
 export function KanbanCard({
   id,
@@ -130,6 +128,7 @@ export function KanbanCard({
   contactNotesCount = 0,
   selfAppliedAt,
   lastMessagedAt,
+  lastStageMessage,
   onResend,
   resendStatus = 'idle',
   resendMessage,
@@ -323,6 +322,8 @@ export function KanbanCard({
           <NotesCountBadge count={contactNotesCount} />
         </button>
       )}
+
+      <KanbanCardStageMessage lastStageMessage={lastStageMessage} />
 
       {onResend && (
         <div className="mt-2 flex flex-col gap-0.5" data-testid="resend-section">

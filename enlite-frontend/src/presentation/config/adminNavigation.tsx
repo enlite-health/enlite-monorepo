@@ -96,6 +96,15 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
           label: t('admin.nav.dedup', 'Duplicados'),
           href: '/admin/dedup',
         },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8m-8 4h5m-9 6l3-3h9a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v13z" />
+        </svg>
+      ),
+      label: t('admin.nav.funnelStageMessages', 'Mensajes por etapa'),
+      href: '/admin/mensajes-por-etapa',
+    },
         {
           icon: (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

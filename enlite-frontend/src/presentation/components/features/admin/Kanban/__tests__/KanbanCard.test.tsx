@@ -857,3 +857,26 @@ describe('KanbanCard — botão Reenviar e último envio', () => {
   });
 });
 
+
+describe('KanbanCard — último envio por etapa (PEND-14 / DEC-12)', () => {
+  it('sem lastStageMessage → nada renderizado', () => {
+    render(<KanbanCard {...defaultProps} />);
+    expect(screen.queryByTestId('stage-last-message')).toBeNull();
+  });
+
+  it('com lastStageMessage → "Mensaje de etapa" com a etapa e a data', () => {
+    render(<KanbanCard {...defaultProps} lastStageMessage={{ stage: 'COMPLETED', templateSlug: 'x', at: '2026-08-29T12:00:00Z' }} />);
+    const el = screen.getByTestId('stage-last-message');
+    expect(el).toBeInTheDocument();
+    expect(el.textContent).toContain('admin.kanban.stageLastMessage');
+  });
+});
+
+describe('KanbanCard — desfazer descarte', () => {
+  it('descartado com onUndismiss → botão aparece e chama o callback sem propagar o clique', () => {
+    const onUndismiss = vi.fn();
+    render(<KanbanCard {...defaultProps} isDismissed onUndismiss={onUndismiss} />);
+    fireEvent.click(screen.getByTestId('undismiss-button'));
+    expect(onUndismiss).toHaveBeenCalledTimes(1);
+  });
+});

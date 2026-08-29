@@ -21,6 +21,8 @@ import {
 } from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
+import { PubSubClient } from '@shared/events/PubSubClient';
+import { emitFunnelStageEvent, type FunnelStage } from '../../application/FunnelStageEventEmitter';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -55,11 +57,13 @@ const encuadreRoleSchema = z.enum(['TITULAR', 'RAPID_RESPONSE']);
  */
 export class WJAFunnelController {
   private db: Pool;
+  private pubsub: PubSubClient;
   private blockedRepo: BlockedApplicationQueryRepository;
   private blockedWriteRepo: BlockedApplicationRepository;
 
   constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.pubsub = new PubSubClient();
     this.blockedRepo = new BlockedApplicationQueryRepository();
     this.blockedWriteRepo = new BlockedApplicationRepository();
   }
@@ -129,6 +133,12 @@ export class WJAFunnelController {
              (SELECT h.created_at::text FROM worker_job_application_stage_history h
               WHERE h.application_id = wja.id AND h.changed_by LIKE 'worker_self:%'
               ORDER BY h.created_at ASC LIMIT 1) AS self_applied_at,
+             -- PEND-14/DEC-12: último template enfileirado POR ETAPA para esta candidatura
+             -- (o card mostra "Último mensaje: <template> · <data>", trilha de medição Luz × humano).
+             (SELECT json_build_object('stage', l.stage, 'templateSlug', l.template_slug, 'at', l.created_at)
+              FROM funnel_stage_message_log l
+              WHERE l.worker_id = wja.worker_id AND l.job_posting_id = wja.job_posting_id AND l.status = 'queued'
+              ORDER BY l.created_at DESC LIMIT 1) AS last_stage_message,
              wsa.work_zone
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
@@ -244,6 +254,7 @@ export class WJAFunnelController {
           lastMessagedAt: row.messaged_at ? new Date(row.messaged_at as string | Date).toISOString() : null,
           // D200.1: motivo pelo qual o "Reenviar" está desabilitado AGORA (null = livre).
           // Só a janela de reenvio é calculada aqui; opt-out/throttle continuam no 422.
+          lastStageMessage: (row.last_stage_message as { stage: string; templateSlug: string | null; at: string } | null) ?? null,
           resendBlockedReason: row.resend_blocked_until
             ? { code: 'RESEND_COOLDOWN', until: new Date(row.resend_blocked_until as string | Date).toISOString() }
             : null,
@@ -420,7 +431,18 @@ export class WJAFunnelController {
       // card (o trigger de histórico lê `app.current_uid` — ver actorContext).
       // Efeito colateral desejado: a candidatura e o encuadre passam a mudar
       // juntos; antes, falha na 2ª query deixava a etapa já alterada.
+      // PEND-14/DEC-12: o movimento vira EVENTO quando a etapa muda. A etapa
+      // anterior é lida na mesma transação; o INSERT em domain_events roda no
+      // mesmo client (etapa e evento nascem — ou não — juntos).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const actorUid = ((req as any).user as { uid?: string } | undefined)?.uid ?? null;
+      let stageEventId: string | null = null;
       await withActorContext(this.db, async (client) => {
+        const prev = await client.query<{ application_funnel_stage: string | null }>(
+          `SELECT application_funnel_stage FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+          [workerId, jobPostingId],
+        );
+        const previousStage = prev.rows[0]?.application_funnel_stage ?? null;
         await client.query(
           `INSERT INTO worker_job_applications (
              worker_id, job_posting_id, application_funnel_stage, source,
@@ -463,7 +485,21 @@ export class WJAFunnelController {
             [id, rejectionReasonCategory ?? null, rejectionReason ?? null],
           );
         }
+
+        stageEventId = await emitFunnelStageEvent(client, {
+          workerId, jobPostingId, previousStage, targetStage: targetStage as FunnelStage, actorUid, source: 'kanban',
+        });
       });
+
+      // Depois do COMMIT: o evento já está gravado (pending); a publicação só
+      // acelera o processamento — se falhar, a varredura de segurança reprocessa.
+      if (stageEventId) {
+        try {
+          await this.pubsub.publish('talentum-prescreening-qualified', { eventId: stageEventId });
+        } catch (err) {
+          reportError(err instanceof Error ? err : new Error(String(err)), { source: 'WJAFunnelController:moveEncuadre:publish' });
+        }
+      }
 
       res.json({ success: true, data: { encuadreId: id, targetStage } });
     } catch (error) {

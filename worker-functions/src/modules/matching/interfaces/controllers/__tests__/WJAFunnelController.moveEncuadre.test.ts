@@ -18,6 +18,11 @@ jest.mock('@modules/matching/infrastructure/BlockedApplicationQueryRepository', 
   })),
 }));
 
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  reportError: (...a: unknown[]) => mockReportError(...a),
+}));
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
@@ -74,6 +79,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
     });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
     mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
 
     const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'PRE_SCREENING' });
@@ -93,6 +99,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
     });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
     const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVITED' });
@@ -104,8 +111,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
 
     // INVITED não é terminal → não toca resultado do encuadre (só 3 queries)
-    expect(mockQuery).toHaveBeenCalledTimes(3);
-    const upsertCall = mockQuery.mock.calls[2];
+    expect(mockQuery).toHaveBeenCalledTimes(5); // + etapa anterior + domain_events (PEND-14)
+    const upsertCall = mockQuery.mock.calls[3];
     expect(upsertCall[0]).toContain('worker_job_applications');
     // Agendamento ausente → data/hora/meet viajam como null (movimento sem data é válido).
     expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'INVITED', null, null, null]);
@@ -132,6 +139,21 @@ describe('WJAFunnelController — moveEncuadre', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
+  it('falha ao publicar o evento no Pub/Sub depois do COMMIT → 200 mesmo assim + reportError (a varredura reprocessa)', async () => {
+    mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED' }] }); // etapa anterior
+    mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
+    (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockRejectedValue(new Error('pubsub down')) };
+
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    await controller.moveEncuadre(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+    expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'WJAFunnelController:moveEncuadre:publish' }));
+  });
+
   it('move para CONFIRMED — atualiza application_funnel_stage sem tocar resultado', async () => {
     // Query 1: SELECT encuadre
     mockQuery.mockResolvedValueOnce({
@@ -140,6 +162,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // Query 2: SELECT status FROM workers (eligibility check)
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
     // Query 3: INSERT/UPDATE worker_job_applications
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
@@ -152,10 +175,10 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
 
     // Deve ter feito exatamente 3 queries (SELECT + eligibility + upsert wja)
-    expect(mockQuery).toHaveBeenCalledTimes(3);
+    expect(mockQuery).toHaveBeenCalledTimes(5); // + etapa anterior + domain_events (PEND-14)
 
     // Terceira query: upsert em worker_job_applications com stage CONFIRMED
-    const upsertCall = mockQuery.mock.calls[2];
+    const upsertCall = mockQuery.mock.calls[3];
     expect(upsertCall[0]).toContain('worker_job_applications');
     expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'CONFIRMED', null, null, null]);
     // O SQL é ESTÁTICO (sempre referencia $4/$5 — interpolar 'NULL' deixando 6 valores no
@@ -178,6 +201,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     }
 
@@ -190,7 +214,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       );
       await controller.moveEncuadre(req, res);
 
-      const upsertCall = mockQuery.mock.calls[2];
+      const upsertCall = mockQuery.mock.calls[3];
       expect(upsertCall[0]).toContain('interview_datetime =');
       expect(upsertCall[0]).toContain("AT TIME ZONE 'America/Argentina/Buenos_Aires'");
       expect(upsertCall[0]).not.toContain("AT TIME ZONE 'UTC'");
@@ -210,7 +234,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       );
       await controller.moveEncuadre(req, res);
 
-      const upsertCall = mockQuery.mock.calls[2];
+      const upsertCall = mockQuery.mock.calls[3];
       expect(upsertCall[0]).toContain('worker_job_applications');
       // encuadres.interview_date é o legado — não recebe escrita nova.
       expect(upsertCall[0]).not.toMatch(/UPDATE\s+encuadres[\s\S]*interview_date\s*=/);
@@ -231,7 +255,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       );
       await controller.moveEncuadre(req, res);
 
-      const upsertCall = mockQuery.mock.calls[2];
+      const upsertCall = mockQuery.mock.calls[3];
       expect(upsertCall[1][5]).toBe('https://meet.google.com/abc-defg-hij');
       expect(res.status).not.toHaveBeenCalledWith(400);
     });
@@ -320,6 +344,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // Query 2: eligibility check
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
     // Query 3: upsert wja
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     // Query 4: UPDATE encuadre resultado = SELECCIONADO
@@ -334,10 +359,10 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
 
     // 4 queries: SELECT + eligibility + upsert wja + UPDATE encuadre
-    expect(mockQuery).toHaveBeenCalledTimes(4);
+    expect(mockQuery).toHaveBeenCalledTimes(6); // + etapa anterior + domain_events (PEND-14)
 
     // Quarta query: UPDATE resultado = SELECCIONADO
-    const updateCall = mockQuery.mock.calls[3];
+    const updateCall = mockQuery.mock.calls[4];
     expect(updateCall[0]).toContain('SELECCIONADO');
   });
 
@@ -348,6 +373,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // eligibility
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
     // upsert wja
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     // UPDATE encuadre resultado = RECHAZADO
@@ -365,7 +391,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
 
     // Quarta query: UPDATE resultado = RECHAZADO com category
-    const updateCall = mockQuery.mock.calls[3];
+    const updateCall = mockQuery.mock.calls[4];
     expect(updateCall[0]).toContain('RECHAZADO');
     expect(updateCall[1]).toContain('DISTANCE');
   });
@@ -388,6 +414,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       });
       // eligibility OK
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
       mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
 
       const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: stage });

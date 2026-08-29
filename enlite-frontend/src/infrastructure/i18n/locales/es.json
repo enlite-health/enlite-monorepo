@@ -1090,7 +1090,8 @@
       "tags": "Etiquetas",
       "dedup": "Duplicados",
       "adminSection": "Administración",
-      "patientChatRoles": "Roles de grupos"
+      "patientChatRoles": "Roles de grupos",
+      "funnelStageMessages": "Mensajes por etapa"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -1630,7 +1631,8 @@
         "confirm": "Agendar",
         "cancel": "Cancelar",
         "unknown": "Todavía no sé la fecha — mover igual"
-      }
+      },
+      "stageLastMessage": "Mensaje de etapa ({{stage}}): {{date}}"
     },
     "workerDetail": {
       "status": "Estado del Prestador",
@@ -3337,6 +3339,33 @@
         "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "No se puede hacerlo exclusivo: {{groupCount}} grupo(s) están compartidos hoy entre {{patientCount}} pacientes. Resolvé esos casos primero — el sistema no elige cuál paciente pierde el vínculo.",
         "CHAT_ROLE_ALREADY_EXISTS": "Ya existe un rol con ese código.",
         "CHAT_ROLE_NOT_FOUND": "Ese rol no existe (¿alguien lo eliminó mientras tanto?)."
+      }
+    },
+    "funnelStageMessages": {
+      "title": "Mensajes por etapa",
+      "subtitle": "Cuando una tarjeta entra en una etapa del Kanban, sale el template elegido (WhatsApp, Twilio). Todo nace apagado: prendé una etapa, medí, después extendé.",
+      "stage": "Etapa",
+      "template": "Template",
+      "enabled": "Activa",
+      "updatedBy": "Última edición",
+      "builtin": "Incorporada: invitación a entrevista (no configurable)",
+      "none": "— sin template —",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "saved": "Guardado",
+      "error": "No se pudo guardar",
+      "never": "Nunca",
+      "adminOnly": "Solo un administrador puede cambiar esta configuración.",
+      "ineligible": {
+        "CATEGORY": "no es UTILITY (Meta)",
+        "DENY_LIST": "recordatorio/cobranza: bloqueado por etapa",
+        "PLACEHOLDERS": "variables que el sistema no completa",
+        "INACTIVE": "inactivo"
+      },
+      "eligibleHint": "Solo templates aprobados por Meta como UTILITY, sin recordatorios, con variables que el sistema completa (nombre como token, número de caso).",
+      "stages": {
+        "QUALIFIED": "Calificados (Talentum)",
+        "IN_DOUBT": "En duda"
       }
     }
   },

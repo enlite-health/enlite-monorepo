@@ -77,6 +77,10 @@ import { AccountLinkController } from '@modules/account-link/AccountLinkControll
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
+import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
+import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
+import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
+import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
 
 const app = express();
 
@@ -408,6 +412,9 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   funnelTableController,
 ));
 
+// ========== Mensagem por etapa (DEC-12) ==========
+app.use('/api/admin', createFunnelStageMessagesRoutes(new FunnelStageMessagesController(), authMiddleware));
+
 // ========== Analytics & BI (extracted router) ==========
 app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware));
 
@@ -428,6 +435,16 @@ domainEventProcessor.registerHandler(
   'funnel_stage.qualified',
   createQualifiedInterviewHandler(dbPool, pubsubClient, tokenService),
 );
+
+// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite
+// `funnel_stage.<etapa>`; QUALIFIED continua no handler acima (built-in).
+for (const stage of FUNNEL_STAGES) {
+  if (stage === 'QUALIFIED') continue;
+  domainEventProcessor.registerHandler(
+    funnelStageEventName(stage),
+    createStageMessageHandler(dbPool, pubsubClient, tokenService, stage),
+  );
+}
 
 domainEventProcessor.registerHandler(
   'vacancy.created',

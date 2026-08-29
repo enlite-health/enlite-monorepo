@@ -270,8 +270,11 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (evento funnel_stage.*, PEND-14)
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado+role
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events (funnel_stage.selected)
+      (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockResolvedValue(undefined) };
 
       const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'SELECTED', role: 'TITULAR' });
       await controller.moveEncuadre(req, res);
@@ -280,7 +283,7 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         success: true,
         data: { encuadreId: 'e1', targetStage: 'SELECTED' },
       });
-      const updateCall = mockQuery.mock.calls[3];
+      const updateCall = mockQuery.mock.calls[4]; // [3] é o upsert da WJA; a leitura da etapa anterior (PEND-14) entrou em [2]
       expect(updateCall[1]).toEqual(['e1', 'TITULAR']);
     });
   });
