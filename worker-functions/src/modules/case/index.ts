@@ -144,6 +144,7 @@ export type {
 
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
+export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

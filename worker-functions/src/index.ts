@@ -34,6 +34,7 @@ import {
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
+import { AdminWorkersMapController } from './modules/worker/interfaces/controllers/AdminWorkersMapController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
@@ -151,6 +152,7 @@ const adminWorkerTestFlagController = new AdminWorkerTestFlagController();
 const adminWorkerProfileController = new AdminWorkerProfileController();
 const adminWorkerServiceAreaController = new AdminWorkerServiceAreaController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
+const adminWorkersMapController = new AdminWorkersMapController();
 const adminTagCatalogController = new AdminTagCatalogController();
 const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
 const adminPatientsController = new AdminPatientsController();
@@ -376,6 +378,7 @@ app.use('/api/admin', createAdminWorkerRoutes({
   serviceArea: adminWorkerServiceAreaController,
   tags: adminTagCatalogController,
   timeline: workerTimelineController,
+  map: adminWorkersMapController,
 }, authMiddleware));
 
 app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware));

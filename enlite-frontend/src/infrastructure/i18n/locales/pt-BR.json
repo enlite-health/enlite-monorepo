@@ -1090,7 +1090,8 @@
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
-      "patientChatRoles": "Papéis de grupos"
+      "patientChatRoles": "Papéis de grupos",
+      "map": "Mapa"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3250,6 +3251,65 @@
         "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "Não dá para tornar exclusivo: {{groupCount}} grupo(s) estão hoje divididos entre {{patientCount}} pacientes. Resolva esses casos primeiro — o sistema não escolhe qual paciente perde o vínculo.",
         "CHAT_ROLE_ALREADY_EXISTS": "Já existe um papel com esse código.",
         "CHAT_ROLE_NOT_FOUND": "Esse papel não existe (alguém apagou enquanto isso?)."
+      }
+    },
+    "map": {
+      "title": "Mapa",
+      "subtitle": "Prestadores e pacientes no mapa. Clique no mapa para mover o centro do raio.",
+      "refresh": "Atualizar",
+      "tabs": {
+        "workers": "Prestadores",
+        "patients": "Pacientes"
+      },
+      "country": "País",
+      "radius": "Raio",
+      "centerOnPatient": {
+        "label": "Centrar em paciente",
+        "placeholder": "Centrar em um paciente…"
+      },
+      "docs": {
+        "label": "Documentação",
+        "all": "Todos",
+        "complete": "Documentação completa",
+        "incomplete": "Registro incompleto"
+      },
+      "profession": {
+        "label": "Profissão",
+        "all": "Todas as profissões",
+        "unknown": "Sem profissão",
+        "AT": "AT",
+        "CAREGIVER": "Cuidador",
+        "NURSE": "Enfermagem",
+        "KINESIOLOGIST": "Fisioterapia",
+        "PSYCHOLOGIST": "Psicologia"
+      },
+      "workerStatus": {
+        "REGISTERED": "Documentação completa",
+        "INCOMPLETE_REGISTER": "Registro incompleto",
+        "DISABLED": "Desativado"
+      },
+      "patientStatus": {
+        "label": "Estado",
+        "all": "Todos os estados",
+        "ACTIVE": "Ativo",
+        "ADMISSION": "Em admissão",
+        "PENDING_ADMISSION": "Aguardando financeiro",
+        "SOLICITANTE": "Solicitante",
+        "SUSPENDED": "Suspenso",
+        "DISCONTINUED": "Baixa",
+        "DISCHARGED": "Alta"
+      },
+      "onlyOpenVacancies": "Só com vagas abertas",
+      "openVacancies": "{{count}} vaga(s) aberta(s)",
+      "loading": "Carregando…",
+      "inRadius": "em {{km}} km",
+      "withoutCoordinates": "{{count}} sem localização",
+      "truncated": "lista cortada — reduza o raio",
+      "noLocation": "sem localização",
+      "empty": "Ninguém neste raio. Tente um raio maior ou mova o centro.",
+      "unavailable": "O mapa não está disponível (sem chave do Google Maps). A lista continua funcionando.",
+      "status": {
+        "unknown": "Sem estado"
       }
     }
   },

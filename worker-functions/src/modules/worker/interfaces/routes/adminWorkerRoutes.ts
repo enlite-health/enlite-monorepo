@@ -7,6 +7,7 @@ import { AdminWorkerProfileController } from '../controllers/AdminWorkerProfileC
 import { AdminWorkerServiceAreaController } from '../controllers/AdminWorkerServiceAreaController';
 import { AdminTagCatalogController } from '../controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from '../controllers/WorkerTimelineController';
+import { AdminWorkersMapController } from '../controllers/AdminWorkersMapController';
 
 export interface AdminWorkerRouteControllers {
   workers: AdminWorkersController;
@@ -16,6 +17,8 @@ export interface AdminWorkerRouteControllers {
   serviceArea: AdminWorkerServiceAreaController;
   tags: AdminTagCatalogController;
   timeline: WorkerTimelineController;
+  /** Opcional só para não quebrar quem monta o router sem mapa (testes antigos). */
+  map?: AdminWorkersMapController;
 }
 
 /**
@@ -40,6 +43,11 @@ export function createAdminWorkerRoutes(
   router.get('/workers/case-options', staffOnly, (req: Request, res: Response) => c.aux.listCaseOptions(req, res));
   // filter-options MUST be before /:id to avoid param capture
   router.get('/workers/filter-options', staffOnly, (req: Request, res: Response) => c.aux.getFilterOptions(req, res));
+  // map MUST be before /:id — pontos do mapa de prestadores (REQ-04, DEC-14). POST com corpo: o centro do raio nunca vai na URL (lex C2).
+  if (c.map) {
+    const map = c.map;
+    router.post('/workers/map', staffOnly, (req: Request, res: Response) => map.getMapPoints(req, res));
+  }
   router.post('/workers/sync-talentum', staffOnly, (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
   // export MUST be registered before /:id to avoid param capture
   router.get('/workers/export', adminOnly, (req: Request, res: Response) => c.workers.exportWorkers(req, res));
