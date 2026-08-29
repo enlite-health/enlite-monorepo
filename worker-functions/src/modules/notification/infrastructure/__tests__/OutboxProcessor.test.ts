@@ -46,7 +46,7 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-import { loggingAls, reportError } from '@shared/logging';
+import { loggingAls, logger, reportError } from '@shared/logging';
 
 describe('OutboxProcessor', () => {
   let mockMessaging: { sendWhatsApp: jest.Mock };
@@ -132,6 +132,11 @@ describe('OutboxProcessor', () => {
       expect(sql).toMatch(/UPDATE worker_job_applications/);
       expect(sql).toMatch(/SET messaged_at = NOW\(\)/);
       expect(params).toEqual(['w-1', 'jp-9']);
+      // Evento que o monitor diário (e2e-prod) lê como evidência de que o serviço rodou.
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ outboxId: 'ob-2', workerId: 'w-1', jobPostingId: 'jp-9' }),
+        'outbox.messaged_at.updated',
+      );
     });
 
     it('falha ao gravar messaged_at é best-effort: a mensagem continua marcada como enviada', async () => {
@@ -144,6 +149,12 @@ describe('OutboxProcessor', () => {
 
       await expect(processor.processById('ob-3')).resolves.toBeUndefined();
       expect(mockQuery.mock.calls[2][0]).toContain("status = 'sent'");
+      // Evento que acende o alerta do monitor diário.
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ outboxId: 'ob-3', error: 'lock timeout' }),
+        'outbox.messaged_at.failed',
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(expect.anything(), 'outbox.messaged_at.updated');
     });
 
     it('retorna silenciosamente se mensagem não existe', async () => {

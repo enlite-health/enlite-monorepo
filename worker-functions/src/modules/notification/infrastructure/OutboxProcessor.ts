@@ -280,15 +280,19 @@ export class OutboxProcessor {
     // D200.9: o convite AUTOMÁTICO também é um envio — carimba messaged_at na candidatura,
     // como o manual faz (MessagingController). Sem isto o card dizia "Sin envíos" depois do
     // auto-invite, com o "Reenviar" travado pela janela (que lê o log acima). Best-effort.
+    // Os dois eventos abaixo são lidos pelo monitor diário (e2e-prod/smoke/outbox-messaged-at.smoke.ts):
+    // `failed` > 0 nas últimas 24 h acende o alerta; `updated` é a evidência de que o serviço rodou.
     if (row.job_posting_id) {
       await this.db.query(
         `UPDATE worker_job_applications
          SET messaged_at = NOW(), updated_at = NOW()
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [row.worker_id, row.job_posting_id],
-      ).catch((err: unknown) => {
+      ).then(() => {
+        logger.info({ outboxId: row.id, workerId: row.worker_id, jobPostingId: row.job_posting_id }, 'outbox.messaged_at.updated');
+      }).catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
-        logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao atualizar messaged_at (outbox)');
+        logger.warn({ error: error.message, outboxId: row.id, workerId: row.worker_id, jobPostingId: row.job_posting_id }, 'outbox.messaged_at.failed');
         reportError(error, { source: 'OutboxProcessor:messagedAt', outboxId: row.id });
       });
     }
