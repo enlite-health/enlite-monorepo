@@ -1090,7 +1090,8 @@
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
-      "patientChatRoles": "Papéis de grupos"
+      "patientChatRoles": "Papéis de grupos",
+      "presentationInvite": "Convite à apresentação"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -2552,7 +2553,8 @@
         "documents": "Documentação",
         "registeredAt": "Cadastro",
         "platform": "Plataforma",
-        "view": "Ver"
+        "view": "Ver",
+        "actions": "Ações"
       },
       "platformOptions": {
         "all": "Todas",
@@ -3259,6 +3261,58 @@
         "CHAT_ROLE_ALREADY_EXISTS": "Já existe um papel com esse código.",
         "CHAT_ROLE_NOT_FOUND": "Esse papel não existe (alguém apagou enquanto isso?)."
       }
+    },
+    "presentationInvite": {
+      "title": "Convite à reunião de apresentação",
+      "subtitle": "Um clique na tarjeta ou na lista de prestadores envia o convite por WhatsApp; a Luz conduz a conversa. Tudo nasce desligado: configure, ligue, meça.",
+      "meetLink": "Link da reunião (Google Meet)",
+      "scheduleLabel": "Horário (texto que vai na mensagem)",
+      "scheduleLabelHint": "Ex.: \"Todas as terças às 18:00 (hora de Buenos Aires)\"",
+      "template": "Template de WhatsApp",
+      "enabled": "Ativa",
+      "save": "Salvar",
+      "saved": "Salvo",
+      "error": "Não foi possível salvar",
+      "adminOnly": "Só um administrador pode alterar esta configuração.",
+      "templateHint": "Só templates aprovados pela Meta como UTILITY, com as variáveis que o sistema preenche (nome como token, link, horário). O template deste convite ainda não foi aprovado: enquanto estiver inativo nada sai.",
+      "ineligible": {
+        "INACTIVE": "inativo (ainda não aprovado)",
+        "CATEGORY": "não é UTILITY",
+        "PLACEHOLDERS": "variáveis não suportadas",
+        "OPT_OUT_CLAUSE": "sem frase de saída (BAJA / não receber)"
+      },
+      "stats": {
+        "title": "Últimos 30 dias",
+        "queued": "Convites enviados",
+        "skipped": "Pulados",
+        "attended": "Compareceram",
+        "noPresenceSource": "Sem fonte de presença ainda (REQ-17): a presença é registrada manualmente.",
+        "bySource": "Por origem",
+        "kanban": "Tarjeta",
+        "workers_list": "Lista de prestadores"
+      },
+      "button": "Convidar à reunião de apresentação",
+      "sending": "Enviando…",
+      "never": "Sem convite",
+      "lastAt": "Último convite: {{date}}",
+      "queued": "Convite enviado — a Luz conduz a conversa",
+      "skip": {
+        "DISABLED_CONFIG": "O convite está desligado (configure em Convite à apresentação)",
+        "NO_TEMPLATE": "Sem template configurado",
+        "TEMPLATE_INACTIVE": "Template ainda não aprovado pela Meta",
+        "TEMPLATE_NOT_ALLOWED": "Template não permitido",
+        "NO_MEET_LINK": "Falta o link da reunião",
+        "WORKER_NOT_FOUND": "Prestador não encontrado",
+        "COUNTRY_BLOCKED": "Só Argentina por enquanto",
+        "WORKER_DISABLED": "Conta desativada",
+        "OPT_OUT": "A pessoa pediu para não receber mensagens",
+        "ALREADY_INVITED": "Já foi convidada nos últimos 7 dias",
+        "UNKNOWN": "Pulado",
+        "SIN_VINCULO": "Sem vínculo verificável (ficha importada ou sem aceite de termos) — não se convida",
+        "COUNTRY_MISMATCH": "O telefone não é da Argentina"
+      },
+      "lastEdit": "Última edição",
+      "by": "por"
     }
   },
   "publicVacancy": {

@@ -4,6 +4,8 @@ import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Send, Star } from 'l
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
+import { formatLastSent } from './kanbanCardFormat';
+import { KanbanCardPresentationInvite, type PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanCardProps {
   id: string;
@@ -55,6 +57,8 @@ interface KanbanCardProps {
   resendMessage?: string | null;
   /** D200.1: o backend já sabe que o reenvio seria recusado (janela) — botão nasce desabilitado com o porquê, sem 422. */
   resendBlockedReason?: { code: string; until: string } | null;
+  /** REQ-09: "Invitar a reunión de presentación" — um clique, a Luz conduz a resposta. Ausente = sem botão. */
+  presentationInvite?: { onInvite: () => void; state?: PresentationInviteState; lastInvitedAt?: string | null };
   /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
   /**
@@ -94,12 +98,6 @@ function completadoBadgeStyle(internalStage: string): string {
   return COMPLETADO_BADGE_STYLE[internalStage] ?? '';
 }
 
-/** "28/08 14:35" no fuso de quem olha — data curta, hora sem segundos. */
-function formatLastSent(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
 
 export function KanbanCard({
   id,
@@ -134,6 +132,7 @@ export function KanbanCard({
   resendStatus = 'idle',
   resendMessage,
   resendBlockedReason,
+  presentationInvite,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -324,6 +323,7 @@ export function KanbanCard({
         </button>
       )}
 
+      {presentationInvite && <KanbanCardPresentationInvite onInvite={presentationInvite.onInvite} state={presentationInvite.state} lastInvitedAt={presentationInvite.lastInvitedAt} />}
       {onResend && (
         <div className="mt-2 flex flex-col gap-0.5" data-testid="resend-section">
           <button

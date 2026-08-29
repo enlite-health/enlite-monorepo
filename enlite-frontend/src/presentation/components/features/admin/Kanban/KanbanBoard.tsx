@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from './KanbanBoardShell';
@@ -8,6 +8,8 @@ import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { AdminPresentationInviteApiService, type PresentationInviteResult, type PresentationInviteLast } from '@infrastructure/http/AdminPresentationInviteApiService';
+import type { PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
@@ -30,6 +32,11 @@ interface KanbanBoardProps {
    * Ausente = o board não mostra o botão.
    */
   onResendInvite?: (workerId: string) => Promise<string | null>;
+  /**
+   * REQ-09: "Invitar a reunión de presentación" da tarjeta. Devolve o resultado do backend
+   * (enfileirado ou pulado com motivo); lança em falha. Ausente = o board não mostra o botão.
+   */
+  onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
 }
 
 /** Colunas do funil de vaga. Fonte ÚNICA de quais aceitam drop (`droppable`) —
@@ -81,7 +88,7 @@ function cardProps(enc: FunnelCard, stage: string) {
   };
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onResendInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
@@ -104,6 +111,35 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
   const [resendByCard, setResendByCard] = useState<
     Record<string, { status: 'sending' | 'sent' | 'error'; message: string | null }>
   >({});
+
+  /** REQ-09: estado do convite à reunión de presentación por card + último convite por worker. */
+  const [presentationByCard, setPresentationByCard] = useState<Record<string, PresentationInviteState>>({});
+  const [lastPresentationByWorker, setLastPresentationByWorker] = useState<PresentationInviteLast>({});
+  const workerIdsKey = Object.values(stages).flat().map((e) => e.workerId).filter((id): id is string => !!id).sort().join(',');
+  useEffect(() => {
+    if (!onPresentationInvite || !workerIdsKey) return;
+    let alive = true;
+    AdminPresentationInviteApiService.last(workerIdsKey.split(','))
+      .then((m) => { if (alive) setLastPresentationByWorker(m); })
+      .catch(() => { /* sem "último convite" a tela segue; o botão continua funcionando */ });
+    return () => { alive = false; };
+  }, [onPresentationInvite, workerIdsKey]);
+
+  async function handlePresentationInvite(cardId: string, workerId: string) {
+    if (!onPresentationInvite) return;
+    setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'sending' } }));
+    try {
+      const r = await onPresentationInvite(workerId);
+      if (r.status === 'queued') {
+        setLastPresentationByWorker((prev) => ({ ...prev, [workerId]: { at: new Date().toISOString(), by: null } }));
+        setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'queued' } }));
+      } else {
+        setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'skipped', detail: r.skipReason } }));
+      }
+    } catch (err) {
+      setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'error', detail: err instanceof Error ? err.message : null } }));
+    }
+  }
 
   async function handleResend(cardId: string, workerId: string) {
     if (!onResendInvite) return;
@@ -231,6 +267,11 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
             }
             resendStatus={resendByCard[enc.id]?.status ?? 'idle'}
             resendMessage={resendByCard[enc.id]?.message ?? null}
+            presentationInvite={
+              onPresentationInvite && enc.workerId
+                ? { onInvite: () => handlePresentationInvite(enc.id, enc.workerId!), state: presentationByCard[enc.id], lastInvitedAt: lastPresentationByWorker[enc.workerId]?.at ?? null }
+                : undefined
+            }
           />
         )}
         /* O card sob o cursor é só leitura: sem handlers, sem menu de mover. */

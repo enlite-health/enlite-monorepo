@@ -10,6 +10,8 @@ import { Select } from '@presentation/components/atoms/Select';
 import { WorkerFilters } from '@presentation/components/features/admin/WorkerFilters';
 import { WorkerStatsCards } from '@presentation/components/features/admin/WorkerStatsCards';
 import { WorkersTable } from '@presentation/components/features/admin/WorkersTable';
+import { KanbanCardPresentationInvite, type PresentationInviteState } from '@presentation/components/features/admin/Kanban/KanbanCardPresentationInvite';
+import { AdminPresentationInviteApiService, type PresentationInviteLast } from '@infrastructure/http/AdminPresentationInviteApiService';
 import { WorkerExportModal } from '@presentation/components/features/admin/WorkerExport/WorkerExportModal';
 import { useWorkersData } from '@hooks/admin/useWorkersData';
 import { useCaseOptions } from '@hooks/admin/useCaseOptions';
@@ -29,6 +31,24 @@ export function AdminWorkersPage(): JSX.Element {
   const { t } = useTranslation();
   const { adminProfile } = useAdminAuth();
   const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+
+  /** REQ-09: convite à reunión de presentación por linha — inclusive quem NÃO terminou o registro (REQ-04). */
+  const [inviteByWorker, setInviteByWorker] = useState<Record<string, PresentationInviteState>>({});
+  const [lastInviteByWorker, setLastInviteByWorker] = useState<PresentationInviteLast>({});
+  const handlePresentationInvite = useCallback(async (workerId: string) => {
+    setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'sending' } }));
+    try {
+      const r = await AdminPresentationInviteApiService.invite(workerId, 'workers_list');
+      if (r.status === 'queued') {
+        setLastInviteByWorker((prev) => ({ ...prev, [workerId]: { at: new Date().toISOString(), by: null } }));
+        setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'queued' } }));
+      } else {
+        setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'skipped', detail: r.skipReason } }));
+      }
+    } catch (err) {
+      setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'error', detail: err instanceof Error ? err.message : null } }));
+    }
+  }, []);
 
   const docsStatusOptions = getDocsStatusOptions(t);
   const validationStatusOptions = getValidationStatusOptions(t);
@@ -272,7 +292,13 @@ export function AdminWorkersPage(): JSX.Element {
           <div className="mt-6"><TableSkeleton /></div>
         ) : (
           <div className="mt-6">
-            <WorkersTable workers={workers} onRowClick={(id) => navigate(`/admin/workers/${id}`)} />
+            <WorkersTable
+              workers={workers}
+              onRowClick={(id) => navigate(`/admin/workers/${id}`)}
+              renderAction={(row) => (
+                <KanbanCardPresentationInvite compact onInvite={() => handlePresentationInvite(row.id)} state={inviteByWorker[row.id]} lastInvitedAt={lastInviteByWorker[row.id]?.at ?? null} />
+              )}
+            />
           </div>
         )}
 

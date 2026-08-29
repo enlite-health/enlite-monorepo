@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent, act } from '@testing-library/react';
+import { render, screen, within, fireEvent, act, waitFor } from '@testing-library/react';
 import { KanbanBoard } from '../KanbanBoard';
 import type { FunnelStages } from '@hooks/admin/useWJAFunnel';
 
@@ -882,3 +882,49 @@ describe('KanbanBoard — fechar o modal de comentários', () => {
   });
 });
 
+
+// ── REQ-09: "Invitar a reunión de presentación" na tarjeta ──────────────────────────
+const { piInvite, piLast } = vi.hoisted(() => ({ piInvite: vi.fn(), piLast: vi.fn() }));
+vi.mock('@infrastructure/http/AdminPresentationInviteApiService', () => ({
+  AdminPresentationInviteApiService: { last: (...a: unknown[]) => piLast(...a), invite: (...a: unknown[]) => piInvite(...a) },
+}));
+
+describe('KanbanBoard — convite à reunión de presentación (REQ-09)', () => {
+  const noopAsync = vi.fn().mockResolvedValue(null);
+  beforeEach(() => { piLast.mockReset(); piInvite.mockReset(); piLast.mockResolvedValue({}); });
+
+  it('sem onPresentationInvite não há botão nem consulta ao /last', () => {
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'c1', workerId: 'w-1', encuadreId: 'enc-1' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} />);
+    expect(screen.queryByTestId('presentation-invite-button')).not.toBeInTheDocument();
+    expect(piLast).not.toHaveBeenCalled();
+  });
+
+  it('com o handler: busca o último convite dos workers do board (ordenado, sem nulos) e mostra na tarjeta; card sem worker não ganha botão', async () => {
+    piLast.mockResolvedValue({ 'w-1': { at: '2026-08-29T15:00:00Z', by: 'Gabi' } });
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'c1', workerId: 'w-1', encuadreId: 'enc-1' }), makeEncuadre({ id: 'c0', workerId: null, encuadreId: 'enc-0' })];
+    stages.COMPLETED = [makeEncuadre({ id: 'c2', workerId: 'w-2', encuadreId: null })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={vi.fn()} />);
+    await waitFor(() => expect(piLast).toHaveBeenCalledWith(['w-1', 'w-2']));
+    expect(screen.getAllByTestId('presentation-invite-button')).toHaveLength(2); // w-1 e w-2 (encuadre não é exigido)
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-c1')).getByTestId('presentation-invite-last').textContent).toContain('admin.presentationInvite.lastAt'));
+    expect(within(screen.getByTestId('kanban-card-c2')).getByTestId('presentation-invite-last')).toHaveTextContent('admin.presentationInvite.never');
+  });
+
+  it('clique → queued mostra feedback e atualiza "último"; skipped mostra o motivo; erro mostra a mensagem; falha do /last não derruba a tela', async () => {
+    piLast.mockRejectedValue(new Error('down'));
+    const onPresentationInvite = vi.fn(async (workerId: string) =>
+      workerId === 'w-ok' ? { status: 'queued' as const, outboxId: 'o1' } : workerId === 'w-skip' ? { status: 'skipped' as const, skipReason: 'OPT_OUT' } : Promise.reject(new Error('boom')));
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'ok', workerId: 'w-ok', encuadreId: 'e1' }), makeEncuadre({ id: 'skip', workerId: 'w-skip', encuadreId: 'e2' }), makeEncuadre({ id: 'err', workerId: 'w-err', encuadreId: 'e3' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={onPresentationInvite} />);
+    for (const id of ['ok', 'skip', 'err']) fireEvent.click(within(screen.getByTestId(`kanban-card-${id}`)).getByTestId('presentation-invite-button'));
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-ok')).getByTestId('presentation-invite-feedback')).toHaveTextContent('admin.presentationInvite.queued'));
+    expect(within(screen.getByTestId('kanban-card-ok')).getByTestId('presentation-invite-last').textContent).not.toContain('never');
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-skip')).getByTestId('presentation-invite-feedback')).toHaveTextContent('OPT_OUT'));
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-err')).getByTestId('presentation-invite-feedback')).toHaveTextContent('boom'));
+    expect(onPresentationInvite).toHaveBeenCalledWith('w-ok');
+  });
+});

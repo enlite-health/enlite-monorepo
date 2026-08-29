@@ -62,6 +62,9 @@ import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyA
 import { createAnaCareMirrorHandler } from '@modules/integration/application/AnaCareMirrorEventHandler';
 import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
+import { createPresentationInviteRoutes } from '@modules/notification/interfaces/routes/presentationInviteRoutes';
+import { PresentationInviteController } from '@modules/notification/interfaces/controllers/PresentationInviteController';
+import { InvitePresentationMeetingUseCase } from '@modules/notification/application/InvitePresentationMeetingUseCase';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
 import { internalAuthMiddleware } from '@modules/notification';
@@ -422,6 +425,12 @@ const dbPool = DatabaseConnection.getInstance().getPool();
 const cloudTasksClient = new CloudTasksClient();
 const pubsubClient = new PubSubClient();
 const tokenService = new TokenService(dbPool);
+
+// ========== Convite à reunión de presentación (REQ-09, planning 26/08) ==========
+app.use('/api/admin', createPresentationInviteRoutes(
+  new PresentationInviteController(new InvitePresentationMeetingUseCase(dbPool, tokenService, pubsubClient)),
+  authMiddleware,
+));
 const domainEventProcessor = new DomainEventProcessor(dbPool);
 
 domainEventProcessor.registerHandler(
