@@ -1,359 +1,238 @@
 /**
- * QualifiedInterviewHandler.test.ts
+ * QualifiedInterviewHandler.test.ts — o handler do evento funnel_stage.qualified (D211.4).
  *
- * Testa o handler do evento funnel_stage.qualified.
- *
- * Cenários:
- * 1. Enfileira mensagem qualified_worker_request com slots e case_number (sem links)
- * 2. Pula envio se vaga não encontrada
- * 3. Pula envio se vaga sem meet links configurados
- * 4. Pula envio se worker não encontrado
- * 5. Publica outbox-enqueued no Pub/Sub após inserir na outbox
- * 6. Marca interview_response = 'pending' na worker_job_applications
- * 7. Funciona com apenas 1 ou 2 meet links (opções parciais)
- * 8. formatSlotOption formata datetime corretamente
+ * Régua: as queries e a ordem delas (mocks puros). Cenários:
+ *  - oferta = fixos futuros ∪ recorrente, no FUSO da vaga (11:30Z → 08:30 AR)
+ *  - cada pulo grava UMA linha em interview_invite_skips com o motivo (lex C1-C3)
+ *  - idempotência de 7 dias (ALREADY_INVITED), opt-out (mesmo predicado), DISABLED
+ *  - <3 opções repetem a última; case_number null → '—'; pubsub + interview_response
  */
+jest.mock('../../../logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn() },
+  reportError: jest.fn(),
+  loggingAls: { run: jest.fn((_: unknown, fn: () => unknown) => fn()), getStore: jest.fn() },
+}));
 
 import {
   createQualifiedInterviewHandler,
   formatSlotOption,
+  INVITE_IDEMPOTENCY_WINDOW,
 } from '../QualifiedInterviewHandler';
+import { logger } from '../../../logging';
+
+const AR = 'America/Argentina/Buenos_Aires';
+// Datas FUTURAS fixas (2099): o handler descarta slot no passado.
+const DT_1 = '2099-08-10T11:30:00Z'; // segunda 08:30 AR
+const DT_2 = '2099-08-11T13:00:00Z'; // terça 10:00 AR
+const DT_3 = '2099-08-12T20:00:00Z'; // quarta 17:00 AR
+
+const payload = { workerId: 'worker-1', jobPostingId: 'job-1', eventId: 'evt-1' };
+
+const vacancyRow = {
+  case_number: 42, country: 'AR', timezone: AR,
+  meet_link_1: 'https://meet.google.com/aaa-aaaa-aaa', meet_datetime_1: DT_1,
+  meet_link_2: 'https://meet.google.com/bbb-bbbb-bbb', meet_datetime_2: DT_2,
+  meet_link_3: 'https://meet.google.com/ccc-cccc-ccc', meet_datetime_3: DT_3,
+  meet_recurring_weekday: null, meet_recurring_time: null, meet_recurring_link: null,
+};
+const workerRow = { id: 'worker-1', status: 'REGISTERED', country: 'AR', opted_out: false };
+
+type Q = jest.Mock;
+
+/** Programa as respostas na ordem em que o handler consulta: vaga, worker, dup, outbox insert, wja update. */
+function program(mockQuery: Q, opts: { vacancy?: unknown[]; worker?: unknown[]; dup?: unknown[] } = {}): void {
+  mockQuery.mockImplementation(async (sql: string) => {
+    if (sql.includes('FROM job_postings')) return { rows: opts.vacancy ?? [vacancyRow] };
+    if (sql.includes('FROM workers')) return { rows: opts.worker ?? [workerRow] };
+    if (sql.includes('FROM messaging_outbox')) return { rows: opts.dup ?? [] };
+    if (sql.includes('INSERT INTO messaging_outbox')) return { rows: [{ id: 'outbox-1' }] };
+    if (sql.includes('INSERT INTO interview_invite_skips')) return { rows: [] };
+    if (sql.includes('UPDATE worker_job_applications')) return { rows: [] };
+    throw new Error(`query inesperada: ${sql.slice(0, 60)}`);
+  });
+}
+
+const callsTo = (mockQuery: Q, needle: string) => mockQuery.mock.calls.filter((c) => (c[0] as string).includes(needle));
+const outboxInsert = (mockQuery: Q) => callsTo(mockQuery, 'INSERT INTO messaging_outbox')[0];
+const skipInsert = (mockQuery: Q) => callsTo(mockQuery, 'INSERT INTO interview_invite_skips')[0];
+const variablesOf = (mockQuery: Q) => JSON.parse(outboxInsert(mockQuery)[1][2] as string);
 
 describe('QualifiedInterviewHandler', () => {
-  let mockQuery: jest.Mock;
-  let mockDb: { query: jest.Mock };
+  let mockQuery: Q;
   let mockPubsub: { publish: jest.Mock };
-  let mockTokenService: { generate: jest.Mock };
   let handler: (payload: Record<string, unknown>) => Promise<void>;
-
-  const payload = {
-    workerId: 'worker-1',
-    jobPostingId: 'job-1',
-  };
-
-  // Datas FUTURAS fixas (2027): o handler descarta slot no passado.
-  const DT_1 = '2027-04-07T10:00:00Z';
-  const DT_2 = '2027-04-08T15:00:00Z';
-  const DT_3 = '2027-04-09T09:00:00Z';
-
-  const vacancyRow = {
-    case_number: 42,
-    meet_link_1: 'https://meet.google.com/abc-1',
-    meet_datetime_1: DT_1,
-    meet_link_2: 'https://meet.google.com/abc-2',
-    meet_datetime_2: DT_2,
-    meet_link_3: 'https://meet.google.com/abc-3',
-    meet_datetime_3: DT_3,
-  };
 
   beforeEach(() => {
     mockQuery = jest.fn();
-    mockDb = { query: mockQuery };
     mockPubsub = { publish: jest.fn().mockResolvedValue(null) };
-    mockTokenService = { generate: jest.fn().mockResolvedValue('tk_abc123def456') };
-    handler = createQualifiedInterviewHandler(
-      mockDb as any,
-      mockPubsub as any,
-      mockTokenService as any,
-    );
+    handler = createQualifiedInterviewHandler({ query: mockQuery } as never, mockPubsub as never, { generate: jest.fn() } as never);
   });
-
   afterEach(() => jest.clearAllMocks());
 
-  it('enfileira mensagem qualified_worker_request com slots e case_number (sem links)', async () => {
-    mockQuery
-      // 1. SELECT job_posting (case_number + meet links)
-      .mockResolvedValueOnce({ rows: [vacancyRow] })
-      // 2. SELECT worker
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      // 3. INSERT outbox
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      // 4. UPDATE worker_job_applications
-      .mockResolvedValueOnce({ rows: [] });
-
+  it('enfileira qualified_worker_request com os 3 slots no FUSO da vaga, case_number e job_posting_id; sem links', async () => {
+    program(mockQuery);
     await handler(payload);
-
-    // Verifica INSERT na outbox com template qualified_worker_request
-    const insertCall = mockQuery.mock.calls[2];
-    expect(insertCall[0]).toContain('qualified_worker_request');
-    expect(insertCall[1][1]).toBe('job-1'); // coluna job_posting_id preenchida
-    const vars = JSON.parse(insertCall[1][2]);
-    expect(vars.slot_1).toBe(formatSlotOption(DT_1));
-    expect(vars.slot_2).toBe(formatSlotOption(DT_2));
-    expect(vars.slot_3).toBe(formatSlotOption(DT_3));
-    expect(vars.case_number).toBe('42');
-    expect(vars.job_posting_id).toBe('job-1');
-    // Links não são enviados — BookSlotFromWhatsAppUseCase busca do job_postings
-    expect(vars.link_1).toBeUndefined();
-    expect(vars.link_2).toBeUndefined();
-    expect(vars.link_3).toBeUndefined();
+    const [sql, params] = outboxInsert(mockQuery);
+    expect(sql).toContain("'qualified_worker_request'");
+    expect(sql).toContain("'pending', 0");
+    expect(params[0]).toBe('worker-1');
+    expect(params[1]).toBe('job-1');
+    expect(variablesOf(mockQuery)).toEqual({
+      slot_1: 'Lun 10/08 08:30',
+      slot_2: 'Mar 11/08 10:00',
+      slot_3: 'Mié 12/08 17:00',
+      case_number: '42',
+      job_posting_id: 'job-1',
+    });
+    expect(JSON.stringify(variablesOf(mockQuery))).not.toContain('meet.google.com');
+    expect(skipInsert(mockQuery)).toBeUndefined();
   });
 
-  it('pula envio se vaga não encontrada', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
+  it('consulta vaga (com recorrente + fuso + país) e worker (status + opt-out pelo predicado único)', async () => {
+    program(mockQuery);
     await handler(payload);
-
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    const vacancySql = callsTo(mockQuery, 'FROM job_postings')[0][0] as string;
+    expect(vacancySql).toMatch(/meet_recurring_weekday, meet_recurring_time, meet_recurring_link/);
+    expect(vacancySql).toMatch(/timezone/);
+    expect(vacancySql).toMatch(/country/);
+    const workerSql = callsTo(mockQuery, 'FROM workers')[0][0] as string;
+    expect(workerSql).toMatch(/w\.status/);
+    expect(workerSql).toMatch(/messaging_opt_out moo/);
+    expect(workerSql).toMatch(/moo\.opted_in_at IS NULL/);
   });
 
-  it('pula envio se vaga sem meet links configurados (todos null)', async () => {
-    const emptyVacancy = {
-      case_number: 42,
-      meet_link_1: null,
-      meet_datetime_1: null,
-      meet_link_2: null,
-      meet_datetime_2: null,
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-    mockQuery.mockResolvedValueOnce({ rows: [emptyVacancy] });
-
+  it('só recorrente (segundas 08:30 AR, sem fixos): oferece as 2 próximas ocorrências e repete a última no slot 3', async () => {
+    program(mockQuery, { vacancy: [{ ...vacancyRow, meet_link_1: null, meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null, meet_recurring_weekday: 1, meet_recurring_time: '08:30:00', meet_recurring_link: 'https://meet.google.com/rrr-rrrr-rrr' }] });
     await handler(payload);
-
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    const v = variablesOf(mockQuery);
+    expect(v.slot_1).toMatch(/^Lun \d{2}\/\d{2} 08:30$/);
+    expect(v.slot_2).toMatch(/^Lun \d{2}\/\d{2} 08:30$/);
+    expect(v.slot_2).not.toBe(v.slot_1);
+    expect(v.slot_3).toBe(v.slot_2);
+    expect(skipInsert(mockQuery)).toBeUndefined();
   });
 
-  it('pula envio se meet_link_1 existe mas meet_datetime_1 é null', async () => {
-    const linkSemDatetime = {
-      case_number: 42,
-      meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: null,
-      meet_link_2: null,
-      meet_datetime_2: null,
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-    mockQuery.mockResolvedValueOnce({ rows: [linkSemDatetime] });
-
+  it('fixo + recorrente: união ordenada (o recorrente entra entre os fixos)', async () => {
+    program(mockQuery, { vacancy: [{ ...vacancyRow, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null, meet_recurring_weekday: 3, meet_recurring_time: '10:00', meet_recurring_link: 'https://meet.google.com/rrr-rrrr-rrr' }] });
     await handler(payload);
-
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
+    const v = variablesOf(mockQuery);
+    // recorrente é "próxima quarta" (2026), muito antes do fixo em 2099
+    expect(v.slot_1).toMatch(/^Mié \d{2}\/\d{2} 10:00$/);
+    expect(v.slot_2).toMatch(/^Mié \d{2}\/\d{2} 10:00$/);
+    expect(v.slot_3).toBe('Lun 10/08 08:30');
   });
 
-  it('pula envio se meet_datetime_1 existe mas meet_link_1 é null', async () => {
-    const datetimeSemLink = {
-      case_number: 42,
-      meet_link_1: null,
-      meet_datetime_1: DT_1,
-      meet_link_2: null,
-      meet_datetime_2: null,
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-    mockQuery.mockResolvedValueOnce({ rows: [datetimeSemLink] });
-
-    await handler(payload);
-
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
-  });
-
-  it('pula envio se worker não encontrado', async () => {
-    mockQuery
-      // 1. SELECT job_posting — encontra vaga
-      .mockResolvedValueOnce({ rows: [vacancyRow] })
-      // 2. SELECT worker — não encontra
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    expect(mockQuery).toHaveBeenCalledTimes(2);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
-  });
-
-  it('publica outbox-enqueued no Pub/Sub após inserir na outbox', async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [vacancyRow] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-99' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-99' });
-  });
-
-  it('marca interview_response = pending na worker_job_applications', async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [vacancyRow] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const updateCall = mockQuery.mock.calls[3];
-    expect(updateCall[0]).toContain('interview_response');
-    expect(updateCall[0]).toContain('pending');
-    expect(updateCall[1]).toEqual(['worker-1', 'job-1']);
-  });
-
-  it('com 2 meet links, slot_3 repete o último horário válido (nunca vazio)', async () => {
-    const twoLinksVacancy = {
-      case_number: 42,
-      meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: DT_1,
-      meet_link_2: 'https://meet.google.com/abc-2',
-      meet_datetime_2: DT_2,
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-
-    mockQuery
-      .mockResolvedValueOnce({ rows: [twoLinksVacancy] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][2]);
-    expect(vars.slot_1).toBe(formatSlotOption(DT_1));
-    expect(vars.slot_2).toBe(formatSlotOption(DT_2));
-    expect(vars.slot_3).toBe(formatSlotOption(DT_2)); // repete, não vazio
-  });
-
-  it('com apenas 1 meet link, slots 2 e 3 repetem o horário 1 (nunca vazios)', async () => {
-    const partialVacancy = {
-      case_number: 42,
-      meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: DT_1,
-      meet_link_2: null,
-      meet_datetime_2: null,
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-
-    mockQuery
-      .mockResolvedValueOnce({ rows: [partialVacancy] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][2]);
-    expect(vars.slot_1).toBe(formatSlotOption(DT_1));
-    expect(vars.slot_2).toBe(formatSlotOption(DT_1));
-    expect(vars.slot_3).toBe(formatSlotOption(DT_1));
-  });
-
-  it('descarta slot no PASSADO: convite usa só os futuros', async () => {
-    const mixedVacancy = {
-      case_number: 42,
-      meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: '2026-06-08T11:30:00Z', // passado (bug real de prod: "Lun 08/06")
-      meet_link_2: 'https://meet.google.com/abc-2',
-      meet_datetime_2: DT_2,
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-
-    mockQuery
-      .mockResolvedValueOnce({ rows: [mixedVacancy] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][2]);
-    expect(vars.slot_1).toBe(formatSlotOption(DT_2));
-    expect(vars.slot_2).toBe(formatSlotOption(DT_2));
-    expect(vars.slot_3).toBe(formatSlotOption(DT_2));
-  });
-
-  it('pula envio se TODOS os slots estão no passado', async () => {
-    const staleVacancy = {
-      case_number: 42,
-      meet_link_1: 'https://meet.google.com/abc-1',
-      meet_datetime_1: '2026-06-08T11:30:00Z',
-      meet_link_2: 'https://meet.google.com/abc-2',
-      meet_datetime_2: '2026-06-17T11:30:00Z',
-      meet_link_3: null,
-      meet_datetime_3: null,
-    };
-    mockQuery.mockResolvedValueOnce({ rows: [staleVacancy] });
-
-    await handler(payload);
-
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(mockPubsub.publish).not.toHaveBeenCalled();
-  });
-
-  it('case_number null produz "—" (variável vazia é rejeitada pela Meta)', async () => {
-    const vacancyNullCase = {
-      ...vacancyRow,
-      case_number: null,
-    };
-
-    mockQuery
-      .mockResolvedValueOnce({ rows: [vacancyNullCase] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][2]);
-    expect(vars.case_number).toBe('—');
-  });
-
-  it('inclui job_posting_id nas variáveis da outbox', async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [vacancyRow] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const insertCall = mockQuery.mock.calls[2];
-    const vars = JSON.parse(insertCall[1][2]);
-    expect(vars.job_posting_id).toBe('job-1');
-  });
-
-  it('insere na outbox com status pending e attempts 0', async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [vacancyRow] })
-      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    await handler(payload);
-
-    const insertCall = mockQuery.mock.calls[2];
-    expect(insertCall[0]).toContain("'pending'");
-    expect(insertCall[0]).toContain('0');
-    expect(insertCall[1][0]).toBe('worker-1');
-    expect(insertCall[1][1]).toBe('job-1');
-  });
-
-  describe('formatSlotOption', () => {
-    it('formata datetime ISO para "Dia DD/MM HH:MM"', () => {
-      expect(formatSlotOption('2026-04-07T10:00:00Z')).toBe('Mar 07/04 10:00');
+  describe('pulos contáveis (interview_invite_skips)', () => {
+    it('vaga não encontrada → VACANCY_NOT_FOUND com país do worker; sem outbox', async () => {
+      program(mockQuery, { vacancy: [] });
+      await handler(payload);
+      const [sql, params] = skipInsert(mockQuery);
+      expect(sql).toContain('INSERT INTO interview_invite_skips');
+      expect(params).toEqual(['worker-1', null, 'evt-1', 'AR', 'VACANCY_NOT_FOUND']);
+      expect(outboxInsert(mockQuery)).toBeUndefined();
+      expect(mockPubsub.publish).not.toHaveBeenCalled();
     });
 
-    it('formata horário com minutos', () => {
-      expect(formatSlotOption('2026-04-08T15:30:00Z')).toBe('Mié 08/04 15:30');
+    it('vaga E worker desconhecidos → só log, nenhuma linha (país indeterminado, NOT NULL sem default)', async () => {
+      program(mockQuery, { vacancy: [], worker: [] });
+      await handler({ ...payload, eventId: undefined });
+      expect(skipInsert(mockQuery)).toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'interview_invite.skipped', reason: 'VACANCY_NOT_FOUND' }));
     });
 
-    it('aceita objeto Date', () => {
-      const date = new Date('2026-04-09T09:00:00Z');
-      expect(formatSlotOption(date)).toBe('Jue 09/04 09:00');
+    it.each([
+      ['todos null', { meet_link_1: null, meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null }],
+      ['link sem datetime', { meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null }],
+      ['datetime sem link', { meet_link_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null }],
+      ['todos no PASSADO', { meet_datetime_1: '2020-01-01T10:00:00Z', meet_datetime_2: '2020-01-02T10:00:00Z', meet_datetime_3: '2020-01-03T10:00:00Z' }],
+      ['recorrente incompleto (sem sala)', { meet_link_1: null, meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null, meet_recurring_weekday: 1, meet_recurring_time: '08:30' }],
+    ])('sem slot futuro (%s) → NO_FUTURE_SLOT', async (_label, over) => {
+      program(mockQuery, { vacancy: [{ ...vacancyRow, ...over }] });
+      await handler(payload);
+      expect(skipInsert(mockQuery)[1]).toEqual(['worker-1', 'job-1', 'evt-1', 'AR', 'NO_FUTURE_SLOT']);
+      expect(outboxInsert(mockQuery)).toBeUndefined();
     });
 
-    it('formata sábado e domingo corretamente', () => {
-      expect(formatSlotOption('2026-04-11T14:00:00Z')).toBe('Sáb 11/04 14:00');
-      expect(formatSlotOption('2026-04-12T08:00:00Z')).toBe('Dom 12/04 08:00');
+    it('slot no passado é descartado, os futuros seguem (repete o último)', async () => {
+      program(mockQuery, { vacancy: [{ ...vacancyRow, meet_datetime_1: '2020-01-01T10:00:00Z' }] });
+      await handler(payload);
+      expect(variablesOf(mockQuery)).toMatchObject({ slot_1: 'Mar 11/08 10:00', slot_2: 'Mié 12/08 17:00', slot_3: 'Mié 12/08 17:00' });
     });
+
+    it('worker não encontrado → WORKER_NOT_FOUND com país da vaga, worker_id null', async () => {
+      program(mockQuery, { worker: [] });
+      await handler(payload);
+      expect(skipInsert(mockQuery)[1]).toEqual([null, 'job-1', 'evt-1', 'AR', 'WORKER_NOT_FOUND']);
+      expect(outboxInsert(mockQuery)).toBeUndefined();
+    });
+
+    it('worker DISABLED → WORKER_DISABLED, sem outbox (lex C3)', async () => {
+      program(mockQuery, { worker: [{ ...workerRow, status: 'DISABLED' }] });
+      await handler(payload);
+      expect(skipInsert(mockQuery)[1]).toEqual(['worker-1', 'job-1', 'evt-1', 'AR', 'WORKER_DISABLED']);
+      expect(outboxInsert(mockQuery)).toBeUndefined();
+    });
+
+    it('worker em opt-out → OPT_OUT, sem outbox (lex C2 — pré-check aditivo)', async () => {
+      program(mockQuery, { worker: [{ ...workerRow, opted_out: true }] });
+      await handler(payload);
+      expect(skipInsert(mockQuery)[1]).toEqual(['worker-1', 'job-1', 'evt-1', 'AR', 'OPT_OUT']);
+      expect(outboxInsert(mockQuery)).toBeUndefined();
+    });
+
+    it('já convidado nos últimos 7 dias → ALREADY_INVITED, sem 2ª outbox (lex C1)', async () => {
+      program(mockQuery, { dup: [{ id: 'outbox-old' }] });
+      await handler(payload);
+      const dupSql = callsTo(mockQuery, 'FROM messaging_outbox')[0][0] as string;
+      expect(dupSql).toContain(`INTERVAL '${INVITE_IDEMPOTENCY_WINDOW}'`);
+      expect(dupSql).toContain("template_slug = 'qualified_worker_request'");
+      expect(skipInsert(mockQuery)[1]).toEqual(['worker-1', 'job-1', 'evt-1', 'AR', 'ALREADY_INVITED']);
+      expect(outboxInsert(mockQuery)).toBeUndefined();
+      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ reason: 'ALREADY_INVITED', outboxId: 'outbox-old' }));
+    });
+
+    it('país cai no do worker quando a vaga não tem', async () => {
+      program(mockQuery, { vacancy: [{ ...vacancyRow, country: null }], worker: [{ ...workerRow, country: 'BR', status: 'DISABLED' }] });
+      await handler(payload);
+      expect(skipInsert(mockQuery)[1][3]).toBe('BR');
+    });
+  });
+
+  it('publica outbox-enqueued com o id da outbox e marca interview_response = pending', async () => {
+    program(mockQuery);
+    await handler(payload);
+    expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-1' });
+    const [sql, params] = callsTo(mockQuery, 'UPDATE worker_job_applications')[0];
+    expect(sql).toContain("interview_response = 'pending'");
+    expect(params).toEqual(['worker-1', 'job-1']);
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ msg: 'interview_invite.queued', slots: ['fixed', 'fixed', 'fixed'] }));
+  });
+
+  it('com 2 fixos, slot_3 repete o último; com 1, slots 2 e 3 repetem o 1', async () => {
+    program(mockQuery, { vacancy: [{ ...vacancyRow, meet_link_3: null, meet_datetime_3: null }] });
+    await handler(payload);
+    expect(variablesOf(mockQuery)).toMatchObject({ slot_1: 'Lun 10/08 08:30', slot_2: 'Mar 11/08 10:00', slot_3: 'Mar 11/08 10:00' });
+    mockQuery.mockReset();
+    program(mockQuery, { vacancy: [{ ...vacancyRow, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null }] });
+    await handler(payload);
+    expect(variablesOf(mockQuery)).toMatchObject({ slot_1: 'Lun 10/08 08:30', slot_2: 'Lun 10/08 08:30', slot_3: 'Lun 10/08 08:30' });
+  });
+
+  it('case_number null produz "—"; fuso de São Paulo formata na hora dele; timezone null cai no default', async () => {
+    program(mockQuery, { vacancy: [{ ...vacancyRow, case_number: null, timezone: 'America/Sao_Paulo' }] });
+    await handler(payload);
+    expect(variablesOf(mockQuery)).toMatchObject({ case_number: '—', slot_1: 'Lun 10/08 08:30' });
+    mockQuery.mockReset();
+    program(mockQuery, { vacancy: [{ ...vacancyRow, timezone: null }] });
+    await handler(payload);
+    expect(variablesOf(mockQuery).slot_1).toBe('Lun 10/08 08:30');
+  });
+});
+
+describe('formatSlotOption (compat)', () => {
+  it('formata no fuso da Argentina por padrão e aceita Date', () => {
+    expect(formatSlotOption('2027-04-07T13:00:00Z')).toBe('Mié 07/04 10:00');
+    expect(formatSlotOption(new Date('2027-04-10T13:05:00Z'))).toBe('Sáb 10/04 10:05');
+    expect(formatSlotOption('2027-04-11T13:00:00Z', 'America/Sao_Paulo')).toBe('Dom 11/04 10:00');
   });
 });

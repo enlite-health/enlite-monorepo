@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { formatDateUTC, formatTimeUTC } from '@shared/utils/dateFormatters';
+import { formatDateInTimezone, formatTimeInTimezone } from '@shared/utils/dateFormatters';
+import { resolveOfferedSlots, type OfferedSlot, type VacancySlotSource } from '@modules/matching/domain/interviewSlotResolver';
 import { withActorContext } from '@shared/database/actorContext';
 import { workerSelfActor, type ActorContext } from '@shared/audit/actorSource';
 import { PubSubClient } from '@shared/events/PubSubClient';
@@ -22,8 +23,14 @@ export interface BookInterviewSlotParams {
   /** Email do worker (null → pula o convite de Calendar, agendamento segue). */
   workerEmail: string | null;
   jobPostingId: string;
-  /** 1..3 — posição do meet_link_N/meet_datetime_N na vaga. */
+  /** 1..3 — posição na OFERTA (botão slot_N da mensagem). */
   slotIndex: number;
+  /**
+   * Hora em que a oferta foi montada (created_at da mensagem). A oferta é
+   * recomputada com o mesmo instante para o índice apontar para a ocorrência
+   * que a pessoa viu (slot recorrente, mig 291). Omitido = agora.
+   */
+  offeredAt?: Date;
   /**
    * Quem agendou. O caminho por BOTÃO no WhatsApp é o próprio candidato; a tool
    * `book_interview` da Luz passa `luzActor('book-interview')`. Omitido, cai no
@@ -35,7 +42,7 @@ export interface BookInterviewSlotParams {
 export type BookInterviewSlotResult =
   | {
       ok: true;
-      /** dd/MM e HH:mm (UTC) — os MESMOS formatos da confirmação WhatsApp. */
+      /** dd/MM e HH:mm no FUSO DA VAGA — os MESMOS formatos da confirmação WhatsApp. */
       confirmedDate: string;
       confirmedTime: string;
       /** ISO do slot efetivamente agendado (pode diferir do pedido — fallback de slot). */
@@ -68,7 +75,7 @@ export class BookInterviewSlotUseCase {
   ) {}
 
   async execute(params: BookInterviewSlotParams): Promise<BookInterviewSlotResult> {
-    const { workerId, workerEmail, jobPostingId, slotIndex } = params;
+    const { workerId, workerEmail, jobPostingId, slotIndex, offeredAt } = params;
 
     if (!Number.isInteger(slotIndex) || slotIndex < 1 || slotIndex > 3) {
       return { ok: false, reason: 'invalid_slot' };
@@ -101,9 +108,11 @@ export class BookInterviewSlotUseCase {
     }
 
     const vacancyResult = await this.db.query(
-      `SELECT meet_link_1, meet_datetime_1,
+      `SELECT timezone,
+              meet_link_1, meet_datetime_1,
               meet_link_2, meet_datetime_2,
-              meet_link_3, meet_datetime_3
+              meet_link_3, meet_datetime_3,
+              meet_recurring_weekday, meet_recurring_time, meet_recurring_link
        FROM job_postings
        WHERE id = $1 AND deleted_at IS NULL`,
       [jobPostingId],
@@ -113,37 +122,30 @@ export class BookInterviewSlotUseCase {
       return { ok: false, reason: 'job_not_found' };
     }
 
-    const vacancy = vacancyResult.rows[0] as Record<string, string | null>;
+    const vacancy = vacancyResult.rows[0] as VacancySlotSource;
+    const timezone = vacancy.timezone ?? undefined;
 
-    // Fallback: com <3 slots configurados o convite repete o último horário
-    // válido nas posições vazias (variável vazia é rejeitada pela Meta), então
-    // o botão 2/3 pode apontar pra slot inexistente — e o worker viu um
-    // horário REAL na mensagem. Cai no primeiro slot futuro configurado em
-    // vez de falhar. Também cobre slot escolhido que já passou (resposta tardia).
-    const slotOf = (n: number) => ({
-      index: n,
-      link: vacancy[`meet_link_${n}`],
-      datetime: vacancy[`meet_datetime_${n}`],
-    });
-    const isBookable = (
-      s: { index: number; link: string | null; datetime: string | null },
-    ): s is { index: number; link: string; datetime: string } =>
-      Boolean(s.link && s.datetime && new Date(s.datetime).getTime() > Date.now());
-
-    const chosen = slotOf(slotIndex);
-    let effective: { index: number; link: string; datetime: string } | undefined =
-      isBookable(chosen) ? chosen : undefined;
+    // A MESMA oferta que a mensagem mostrou (fixos ∪ recorrente, asOf = hora da
+    // oferta). Com <3 opções o convite repete a última nas posições vazias
+    // (variável vazia é rejeitada pela Meta), então o botão 2/3 pode apontar
+    // para posição inexistente — e a pessoa viu um horário REAL. Se o escolhido
+    // não existe ou já passou (resposta tardia), cai na primeira opção ainda
+    // futura AGORA, em vez de falhar.
+    const now = new Date();
+    const offered = resolveOfferedSlots(vacancy, offeredAt ?? now);
+    const stillFuture = (s: OfferedSlot): boolean => s.datetime.getTime() > now.getTime();
+    let effective: OfferedSlot | undefined = offered.find((s) => s.index === slotIndex && stillFuture(s));
     if (!effective) {
-      effective = [1, 2, 3].map(slotOf).find(isBookable);
+      effective = offered.find(stillFuture) ?? resolveOfferedSlots(vacancy, now)[0];
       if (!effective) {
         return { ok: false, reason: 'invalid_slot' };
       }
       console.warn(
-        `[BookInterviewSlot] slot_${slotIndex} inválido/passado para job ${jobPostingId} — usando primeiro slot futuro configurado`,
+        `[BookInterviewSlot] slot_${slotIndex} inválido/passado para job ${jobPostingId} — usando primeira opção futura`,
       );
     }
     const meetLink = effective.link;
-    const meetDatetime = effective.datetime;
+    const meetDatetime = effective.datetime.toISOString();
 
     // Google Calendar — adicionar worker como convidado (resultado propagado)
     let calendarInvite: CalendarInviteOutcome;
@@ -181,8 +183,10 @@ export class BookInterviewSlotUseCase {
       params.actor ?? workerSelfActor(workerId),
     );
 
-    const confirmedDate = formatDateUTC(meetDatetime);
-    const confirmedTime = formatTimeUTC(meetDatetime);
+    // No fuso da vaga (não UTC): 08:30 em Buenos Aires é 11:30Z — a pessoa
+    // precisa ler a hora que ela vive (mesma régua do rótulo do convite).
+    const confirmedDate = formatDateInTimezone(meetDatetime, timezone);
+    const confirmedTime = formatTimeInTimezone(meetDatetime, timezone);
     const okResult: BookInterviewSlotResult = {
       ok: true,
       confirmedDate,

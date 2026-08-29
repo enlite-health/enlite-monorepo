@@ -8,6 +8,10 @@ interface VacancyMeetLinksRowProps {
   meetDatetime2: string | null;
   meetLink3: string | null;
   meetDatetime3: string | null;
+  /** Slot RECORRENTE (mig 291). */
+  recurringWeekday?: number | null;
+  recurringTime?: string | null;
+  recurringLink?: string | null;
 }
 
 function formatMeetDate(dateStr: string | null): string | null {
@@ -64,8 +68,18 @@ export function VacancyMeetLinksRow({
   meetDatetime2,
   meetLink3,
   meetDatetime3,
+  recurringWeekday = null,
+  recurringTime = null,
+  recurringLink = null,
 }: VacancyMeetLinksRowProps) {
   const { t } = useTranslation();
+  const hasRecurring = recurringWeekday !== null && recurringWeekday !== undefined && !!recurringTime && !!recurringLink;
+  const recurringLabel = hasRecurring
+    ? t('admin.vacancyDetail.meetRecurring.every', {
+        day: t(`admin.vacancyDetail.meetRecurring.days.${recurringWeekday}`),
+        time: (recurringTime ?? '').slice(0, 5),
+      })
+    : '';
 
   const slots: MeetSlot[] = [
     { link: meetLink1, datetime: meetDatetime1 },
@@ -75,7 +89,7 @@ export function VacancyMeetLinksRow({
 
   const filledSlots = slots.filter((s) => s.link || s.datetime);
 
-  if (filledSlots.length === 0) {
+  if (filledSlots.length === 0 && !hasRecurring) {
     return null;
   }
 
@@ -88,6 +102,18 @@ export function VacancyMeetLinksRow({
         {filledSlots.map((slot, idx) => (
           <MeetDatePill key={idx} slot={slot} />
         ))}
+        {hasRecurring && (
+          <a
+            href={recurringLink ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="meet-recurring-pill"
+            className="bg-white border-2 border-primary text-primary text-base font-medium px-5 py-2 rounded inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
+          >
+            <span aria-hidden>↻</span>
+            {recurringLabel}
+          </a>
+        )}
       </div>
     </div>
   );

@@ -308,7 +308,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     expect(vars.meet_link).toBeUndefined();
   });
 
-  it('response variables formatam date e time corretamente via formatDateUTC/formatTimeUTC', async () => {
+  it('response variables formatam date e time no FUSO DA VAGA (14:00Z = 11:00 AR) — D213', async () => {
     setupHappyPathWithSid();
 
     await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
@@ -317,7 +317,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     const vars = JSON.parse(insertCall[1][1]);
     // meet_datetime_1 = '2027-04-10T14:00:00.000Z'
     expect(vars.date).toBe('10/04');
-    expect(vars.time).toBe('14:00');
+    expect(vars.time).toBe('11:00');
   });
 
   // ─── WJA update fields ────────────────────────────────────────

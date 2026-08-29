@@ -1,35 +1,67 @@
 import { Pool } from 'pg';
 import { PubSubClient } from '../PubSubClient';
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
+import { logger } from '../../logging';
+import { optedOutExistsSql } from '../../database/messagingOptOutFilter';
+import {
+  formatSlotLabel,
+  resolveOfferedSlots,
+  type VacancySlotSource,
+} from '../../../modules/matching/domain/interviewSlotResolver';
 
 /**
- * Formata um datetime ISO para opção de slot legível.
- * Ex: "2026-04-07T10:00:00Z" → "Lun 07/04 10:00"
+ * Formata um instante como opção de slot, no fuso da vaga (default Argentina).
+ * Ex: "2026-04-07T11:30:00Z" → "Mar 07/04 08:30". Mantido exportado por
+ * compatibilidade; a lógica vive em `interviewSlotResolver`.
  */
-export function formatSlotOption(datetime: string | Date): string {
-  const date = new Date(datetime);
-  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-  const day = dayNames[date.getUTCDay()];
-  const dd = String(date.getUTCDate()).padStart(2, '0');
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const min = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${day} ${dd}/${mm} ${hh}:${min}`;
+export function formatSlotOption(datetime: string | Date, timezone?: string | null): string {
+  return formatSlotLabel(new Date(datetime), timezone ?? undefined);
+}
+
+export type InviteSkipReason =
+  | 'VACANCY_NOT_FOUND'
+  | 'NO_FUTURE_SLOT'
+  | 'WORKER_NOT_FOUND'
+  | 'WORKER_DISABLED'
+  | 'OPT_OUT'
+  | 'ALREADY_INVITED';
+
+/** Janela de idempotência: mesmo (worker, vaga, template) não repete em 7 dias (índice da mig 173). */
+export const INVITE_IDEMPOTENCY_WINDOW = '7 days';
+
+interface VacancyRow extends VacancySlotSource {
+  case_number: number | null;
+  country: string | null;
+}
+
+interface WorkerRow {
+  id: string;
+  status: string | null;
+  country: string | null;
+  opted_out: boolean;
 }
 
 /**
  * Cria o handler para o evento `funnel_stage.qualified`.
  *
  * Quando um worker transita para QUALIFIED no Talentum:
- *   1. Busca meet links + case_number da vaga (job_postings)
- *   2. Verifica que worker existe
- *   3. Formata as opções de horário
- *   4. Insere na messaging_outbox com template 'qualified_worker'
+ *   1. Busca a vaga (slots fixos + recorrente + fuso, mig 291) e o worker
+ *      (status + opt-out, MESMO predicado do OutboxProcessor).
+ *   2. Resolve a oferta (`resolveOfferedSlots`): fixos futuros ∪ próximas
+ *      ocorrências do recorrente, no fuso da vaga.
+ *   3. Pré-checks — cada um que falha grava UMA linha em
+ *      `interview_invite_skips` (contável, D211.4 / lex C1-C3) e sai:
+ *      vaga inexistente · sem slot futuro · worker inexistente · DISABLED ·
+ *      opt-out · já convidado nos últimos 7 dias (idempotência).
+ *   4. Insere na messaging_outbox com template 'qualified_worker_request'
  *      Variáveis Twilio: {{1}}=slot_1 {{2}}=slot_2 {{3}}=slot_3 {{4}}=case_number
- *      Os meet_links não vão no template — BookSlotFromWhatsAppUseCase
- *      busca o link correto do job_postings quando o worker escolhe o slot.
+ *      Os meet_links não vão no template — BookInterviewSlotUseCase recomputa a
+ *      MESMA oferta (asOf = created_at da mensagem) quando o worker escolhe.
  *   5. Publica no Pub/Sub para processamento imediato
  *   6. Marca interview_response = 'pending' em worker_job_applications
+ *
+ * O opt-out continua sendo barrado no OutboxProcessor (ponto único de
+ * defesa, incidente 10/07): o pré-check aqui é ADITIVO, só para contar.
  */
 export function createQualifiedInterviewHandler(
   db: Pool,
@@ -39,68 +71,88 @@ export function createQualifiedInterviewHandler(
   return async (payload) => {
     const workerId = payload.workerId as string;
     const jobPostingId = payload.jobPostingId as string;
+    const domainEventId = typeof payload.eventId === 'string' ? payload.eventId : null;
 
-    // 1. Buscar meet links + case_number da vaga
-    const vacancyResult = await db.query(
-      `SELECT case_number,
-              meet_link_1, meet_datetime_1,
-              meet_link_2, meet_datetime_2,
-              meet_link_3, meet_datetime_3
-       FROM job_postings
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [jobPostingId],
-    );
-
-    if (vacancyResult.rows.length === 0) {
-      console.warn(`[QualifiedInterviewHandler] Job posting ${jobPostingId} not found`);
-      return;
-    }
+    const [vacancyResult, workerResult] = await Promise.all([
+      db.query<VacancyRow>(
+        `SELECT case_number, country, timezone,
+                meet_link_1, meet_datetime_1,
+                meet_link_2, meet_datetime_2,
+                meet_link_3, meet_datetime_3,
+                meet_recurring_weekday, meet_recurring_time, meet_recurring_link
+         FROM job_postings
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [jobPostingId],
+      ),
+      db.query<WorkerRow>(
+        `SELECT w.id, w.status, w.country, ${optedOutExistsSql('w.id')} AS opted_out
+         FROM workers w
+         WHERE w.id = $1`,
+        [workerId],
+      ),
+    ]);
 
     const vacancy = vacancyResult.rows[0];
+    const worker = workerResult.rows[0];
+    const country = vacancy?.country ?? worker?.country ?? null;
 
-    // Só slots CONFIGURADOS (link + datetime) e FUTUROS entram no convite.
-    // Slot no passado é pior que não enviar: oferece horário que não existe
-    // (aconteceu em prod — convites de 31/07 oferecendo "Lun 08/06").
-    const now = Date.now();
-    const futureSlots: Array<{ label: string }> = [];
-    for (const n of [1, 2, 3] as const) {
-      const link = vacancy[`meet_link_${n}`];
-      const dt = vacancy[`meet_datetime_${n}`];
-      if (link && dt && new Date(dt).getTime() > now) {
-        futureSlots.push({ label: formatSlotOption(dt) });
+    const skip = async (reason: InviteSkipReason, detail: Record<string, unknown> = {}): Promise<void> => {
+      logger.warn({ msg: 'interview_invite.skipped', reason, workerId, jobPostingId, ...detail });
+      if (!country) {
+        // Vaga E worker desconhecidos: sem país não há linha (NOT NULL sem default, lex C4).
+        return;
       }
-    }
-
-    if (futureSlots.length === 0) {
-      console.warn(
-        `[QualifiedInterviewHandler] No FUTURE meet slots configured for job posting ${jobPostingId} — invite skipped`,
+      await db.query(
+        `INSERT INTO interview_invite_skips (worker_id, job_posting_id, domain_event_id, country, reason)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [worker?.id ?? null, vacancy ? jobPostingId : null, domainEventId, country, reason],
       );
+    };
+
+    if (!vacancy) {
+      await skip('VACANCY_NOT_FOUND');
       return;
     }
 
-    // 2. Verificar que worker existe
-    const workerResult = await db.query(
-      `SELECT id FROM workers WHERE id = $1`,
-      [workerId],
+    const now = new Date();
+    const offered = resolveOfferedSlots(vacancy, now);
+    if (offered.length === 0) {
+      await skip('NO_FUTURE_SLOT');
+      return;
+    }
+
+    if (!worker) {
+      await skip('WORKER_NOT_FOUND');
+      return;
+    }
+    if (worker.status === 'DISABLED') {
+      await skip('WORKER_DISABLED');
+      return;
+    }
+    if (worker.opted_out) {
+      await skip('OPT_OUT');
+      return;
+    }
+
+    // Idempotência (lex C1): o slot recorrente nunca vence, então um 2º
+    // `qualified` do mesmo par (bounce de etapa, re-sweep) repetiria a mensagem.
+    const dup = await db.query<{ id: string }>(
+      `SELECT id FROM messaging_outbox
+       WHERE worker_id = $1 AND job_posting_id = $2 AND template_slug = 'qualified_worker_request'
+         AND created_at > NOW() - INTERVAL '${INVITE_IDEMPOTENCY_WINDOW}'
+       LIMIT 1`,
+      [workerId, jobPostingId],
     );
-
-    if (workerResult.rows.length === 0) {
-      console.warn(`[QualifiedInterviewHandler] Worker ${workerId} not found`);
+    if (dup.rows.length > 0) {
+      await skip('ALREADY_INVITED', { outboxId: dup.rows[0].id });
       return;
     }
 
-    // 3. Formatar opções de horário (ex: "Lun 07/04 10:00")
-    // Variáveis mapeadas para posições do template Twilio qualified_worker:
-    //   {{1}}=slot_1 {{2}}=slot_2 {{3}}=slot_3 {{4}}=case_number
     // O template aprovado na Meta tem 3 opções FIXAS no corpo e variável
     // vazia é rejeitado pelo WhatsApp (Twilio 'Content Variables parameter is
-    // invalid' — causa de 100% de falha quando a vaga tinha <3 slots).
-    // Com menos de 3 slots futuros, repete o último válido: o worker vê o
-    // mesmo horário 2x/3x e qualquer botão agenda um slot real
-    // (BookSlotFromWhatsAppUseCase cai no primeiro slot futuro).
-    // meet_links não são enviados no template — o BookSlotFromWhatsAppUseCase
-    // busca o link correto do job_postings quando o worker escolhe o slot.
-    const lastSlot = futureSlots[futureSlots.length - 1];
+    // invalid'). Com menos de 3 slots, repete o último: qualquer botão agenda
+    // um slot real (BookInterviewSlotUseCase cai no primeiro futuro).
+    const last = offered[offered.length - 1];
     const outboxResult = await db.query(
       `INSERT INTO messaging_outbox (worker_id, job_posting_id, template_slug, variables, status, attempts)
        VALUES ($1, $2, 'qualified_worker_request', $3::jsonb, 'pending', 0)
@@ -109,11 +161,10 @@ export function createQualifiedInterviewHandler(
         workerId,
         jobPostingId,
         JSON.stringify({
-          slot_1: futureSlots[0].label,
-          slot_2: (futureSlots[1] ?? lastSlot).label,
-          slot_3: (futureSlots[2] ?? lastSlot).label,
-          // Variável vazia = rejeição Meta/Twilio; '—' nunca acontece na
-          // prática (case_number é obrigatório na vaga) mas mantém o envio vivo.
+          slot_1: offered[0].label,
+          slot_2: (offered[1] ?? last).label,
+          slot_3: (offered[2] ?? last).label,
+          // '—' nunca acontece na prática (case_number é obrigatório na vaga) mas mantém o envio vivo.
           case_number: String(vacancy.case_number ?? '—'),
           job_posting_id: jobPostingId,
         }),
@@ -123,7 +174,6 @@ export function createQualifiedInterviewHandler(
     const outboxId = outboxResult.rows[0].id;
     await pubsub.publish('outbox-enqueued', { outboxId });
 
-    // 4. Marcar interview_response = 'pending'
     await db.query(
       `UPDATE worker_job_applications
        SET interview_response = 'pending', updated_at = NOW()
@@ -131,8 +181,12 @@ export function createQualifiedInterviewHandler(
       [workerId, jobPostingId],
     );
 
-    console.log(
-      `[QualifiedInterviewHandler] Queued qualified_worker worker=${workerId} job=${jobPostingId} case=${vacancy.case_number}`,
-    );
+    logger.info({
+      msg: 'interview_invite.queued',
+      workerId,
+      jobPostingId,
+      outboxId,
+      slots: offered.map((s) => s.source),
+    });
   };
 }

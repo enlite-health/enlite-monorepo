@@ -49,6 +49,9 @@ import {
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
+
+/** Slot recorrente da reunión de presentación (mig 291). */
+export interface RecurringMeetSlot { weekday: number; time: string; link: string }
 export { ApiError } from './ApiError';
 
 class AdminApiServiceClass {
@@ -173,19 +176,29 @@ class AdminApiServiceClass {
     await this.request<unknown>('DELETE', `/api/admin/vacancies/${id}`);
   }
 
+  /**
+   * `recurring` (mig 291): omitido = não mexe; `null` = limpa; objeto = grava
+   * {weekday 0..6, time 'HH:MM' LOCAL da vaga, link da sala}.
+   */
   async updateVacancyMeetLinks(
     vacancyId: string,
     meetLinks: [string | null, string | null, string | null],
+    recurring?: RecurringMeetSlot | null,
   ): Promise<{
     meet_link_1: string | null; meet_datetime_1: string | null;
     meet_link_2: string | null; meet_datetime_2: string | null;
     meet_link_3: string | null; meet_datetime_3: string | null;
+    meet_recurring?: RecurringMeetSlot | null;
   }> {
     return this.request<{
       meet_link_1: string | null; meet_datetime_1: string | null;
       meet_link_2: string | null; meet_datetime_2: string | null;
       meet_link_3: string | null; meet_datetime_3: string | null;
-    }>('PUT', `/api/admin/vacancies/${vacancyId}/meet-links`, { meet_links: meetLinks });
+      meet_recurring?: RecurringMeetSlot | null;
+    }>('PUT', `/api/admin/vacancies/${vacancyId}/meet-links`, {
+      meet_links: meetLinks,
+      ...(recurring !== undefined ? { recurring } : {}),
+    });
   }
 
   /**

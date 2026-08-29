@@ -82,4 +82,36 @@ describe('VacancyMeetLinksRow — with slots', () => {
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+
+  it('slot RECORRENTE sozinho renderiza a seção com a pill "todos os <dia> às <hora>" apontando para a sala', () => {
+    render(
+      <VacancyMeetLinksRow
+        meetLink1={null} meetDatetime1={null} meetLink2={null} meetDatetime2={null} meetLink3={null} meetDatetime3={null}
+        recurringWeekday={1} recurringTime="08:30:00" recurringLink="https://meet.google.com/rec-urri-ngx"
+      />,
+    );
+    const pill = screen.getByTestId('meet-recurring-pill');
+    expect(pill).toHaveAttribute('href', 'https://meet.google.com/rec-urri-ngx');
+    // o mock de i18n devolve a chave; a interpolação (dia/hora) é do i18next real — coberta no e2e
+    expect(pill.textContent).toContain('meetRecurring.every');
+  });
+
+  it('recorrente incompleto (sem sala) não conta como slot: continua renderizando nada', () => {
+    const { container } = render(
+      <VacancyMeetLinksRow
+        meetLink1={null} meetDatetime1={null} meetLink2={null} meetDatetime2={null} meetLink3={null} meetDatetime3={null}
+        recurringWeekday={1} recurringTime="08:30" recurringLink={null}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('datetime inválido não derruba a linha: a pill mostra o texto cru (catch do formatador)', () => {
+    render(
+      <VacancyMeetLinksRow
+        meetLink1={null} meetDatetime1="not-a-date" meetLink2={null} meetDatetime2={null} meetLink3={null} meetDatetime3={null}
+      />,
+    );
+    expect(screen.getByText('not-a-date')).toBeInTheDocument();
+  });
 });
