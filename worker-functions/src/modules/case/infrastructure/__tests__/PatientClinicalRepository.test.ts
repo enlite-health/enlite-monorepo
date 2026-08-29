@@ -56,6 +56,20 @@ describe('PatientClinicalRepository.upsert', () => {
     expect(params).toEqual([PATIENT, null, null, null]);
   });
 
+  it('instruções de emergência (D211.2): SET + autoria PRÓPRIA só quando o campo veio; ausente → nada', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, emergencyInstructions: 'Llamar 107', actorUid: 'uid-staff-9' });
+    const { sql, params } = lastCall();
+    expect(sql).toMatch(/emergency_instructions\s+= \$2/);
+    expect(sql).toMatch(/emergency_instructions_updated_at = NOW\(\)/);
+    expect(sql).toMatch(/emergency_instructions_updated_by = \$3/);
+    expect(sql).not.toMatch(/additional_comments/);
+    expect(params).toEqual([PATIENT, 'Llamar 107', 'uid-staff-9']);
+    mockPoolQuery.mockClear();
+    await repo.upsert({ patientId: PATIENT, additionalComments: 'x', actorUid: 'u' });
+    expect(lastCall().sql).not.toMatch(/emergency_instructions/);
+  });
+
   it('todas as chaves (caminho do sync do ClickUp, D167): tudo entra, na ordem, e has_consent vai por COALESCE', async () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({

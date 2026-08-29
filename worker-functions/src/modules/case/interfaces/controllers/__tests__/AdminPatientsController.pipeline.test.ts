@@ -100,6 +100,21 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
   // ── a. PATCH /:id/:section ──────────────────────────────────────────────────
 
   describe('a. updatePatientSection', () => {
+    it('C1 (D211.2): ator sem `patient_clinical:read` NÃO escreve emergencyInstructions → 403 e o service não é chamado; sem células (engine não decidiu) passa', async () => {
+      const updatePatientSection = jest.fn().mockResolvedValue({ id: VALID_ID, updated: true });
+      const controller = makeController({ updatePatientSection });
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { emergencyInstructions: 'Llamar 107' });
+      (req as unknown as { permissionCells: string[] }).permissionCells = ['patient:write'];
+      await controller.updatePatientSection(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(updatePatientSection).not.toHaveBeenCalled();
+      // outro campo clínico com as mesmas células passa (a trava é do campo restrito)
+      const [req2, res2] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { deviceType: 'silla' });
+      (req2 as unknown as { permissionCells: string[] }).permissionCells = ['patient:write'];
+      await controller.updatePatientSection(req2, res2);
+      expect(res2.status).not.toHaveBeenCalledWith(403);
+    });
+
     it.each([
       ['general', { firstName: 'Ana', phoneWhatsapp: '+549110000000' }],
       ['clinical', { diagnosis: 'x', dependencyLevel: 'MILD' }],

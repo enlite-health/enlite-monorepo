@@ -48,6 +48,9 @@ export class ReadonlyDbQueryService {
   }
 }
 
+/** Colunas de texto clínico restrito (patients): proibidas em SQL ad-hoc. */
+export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions/i;
+
 function validateAndNormalize(sql: string): string {
   const trimmed = sql.trim().replace(/;+\s*$/, '');
   if (!trimmed) {
@@ -58,6 +61,11 @@ function validateAndNormalize(sql: string): string {
   }
   if (!/^(select|with)\b/i.test(trimmed)) {
     throw new Error('Only SELECT/WITH queries are allowed');
+  }
+  // Texto clínico restrito NUNCA sai por SQL ad-hoc para um LLM (D211.2, lex 29/08 C2): a coluna
+  // é redigida por permissão na API; esta capability não passa por aquele ponto, então nega aqui.
+  if (RESTRICTED_CLINICAL_COLUMNS.test(trimmed)) {
+    throw new Error('Query touches a restricted clinical column (emergency_instructions)');
   }
   return trimmed;
 }

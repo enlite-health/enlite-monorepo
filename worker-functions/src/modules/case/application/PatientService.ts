@@ -56,6 +56,7 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
   serviceType?: Profession[] | null;
   deviceType?: string | null;
   additionalComments?: string | null;
+  emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
   hasCud?: boolean | null;
   hasConsent?: boolean | null;
@@ -90,6 +91,7 @@ export type PatientRelatedInput = Pick<
   | 'serviceType'
   | 'deviceType'
   | 'additionalComments'
+  | 'emergencyInstructions'
   | 'hasJudicialProtection'
   | 'hasCud'
   | 'hasConsent'
@@ -332,6 +334,7 @@ export class PatientService {
         serviceType:           input.serviceType,
         deviceType:            input.deviceType,
         additionalComments:    input.additionalComments,
+        emergencyInstructions: input.emergencyInstructions,
         hasJudicialProtection: input.hasJudicialProtection,
         hasCud:                input.hasCud,
         hasConsent:            input.hasConsent,
@@ -521,6 +524,7 @@ export class PatientService {
               serviceType:           c.serviceType,
               deviceType:            c.deviceType,
               additionalComments:    c.additionalComments,
+              emergencyInstructions: c.emergencyInstructions,
               hasJudicialProtection: c.hasJudicialProtection,
               hasCud:                c.hasCud,
               hasConsent:            c.hasConsent,

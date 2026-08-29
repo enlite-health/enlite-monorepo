@@ -45,6 +45,7 @@ export const clinicalSectionSchema = z
     serviceType: z.array(professionEnum).nullable().optional(),
     deviceType: z.string().nullable().optional(),
     additionalComments: z.string().nullable().optional(),
+    emergencyInstructions: z.string().max(4000).nullable().optional(),
     hasJudicialProtection: z.boolean().nullable().optional(),
     hasCud: z.boolean().nullable().optional(),
     hasConsent: z.boolean().nullable().optional(),
