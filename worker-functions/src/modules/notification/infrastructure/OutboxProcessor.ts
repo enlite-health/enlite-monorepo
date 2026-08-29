@@ -276,6 +276,22 @@ export class OutboxProcessor {
       logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox sucesso');
       reportError(error, { source: 'OutboxProcessor:logSent', outboxId: row.id });
     });
+
+    // D200.9: o convite AUTOMÁTICO também é um envio — carimba messaged_at na candidatura,
+    // como o manual faz (MessagingController). Sem isto o card dizia "Sin envíos" depois do
+    // auto-invite, com o "Reenviar" travado pela janela (que lê o log acima). Best-effort.
+    if (row.job_posting_id) {
+      await this.db.query(
+        `UPDATE worker_job_applications
+         SET messaged_at = NOW(), updated_at = NOW()
+         WHERE worker_id = $1 AND job_posting_id = $2`,
+        [row.worker_id, row.job_posting_id],
+      ).catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao atualizar messaged_at (outbox)');
+        reportError(error, { source: 'OutboxProcessor:messagedAt', outboxId: row.id });
+      });
+    }
   }
 
   private async markFailed(id: string, attempts: number, error: string): Promise<void> {

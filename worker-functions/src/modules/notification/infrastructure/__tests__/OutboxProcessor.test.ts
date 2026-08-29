@@ -46,7 +46,7 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-import { loggingAls } from '@shared/logging';
+import { loggingAls, reportError } from '@shared/logging';
 
 describe('OutboxProcessor', () => {
   let mockMessaging: { sendWhatsApp: jest.Mock };
@@ -113,6 +113,37 @@ describe('OutboxProcessor', () => {
       expect(logCall[0]).toContain('whatsapp_bulk_dispatch_logs');
       expect(logCall[0]).toContain("'outbox'");
       expect(logCall[1][2]).toBe('system:outbox:ob-1');
+      // Sem job_posting_id (mensagem não é de vaga) NÃO carimba messaged_at.
+      expect(mockQuery.mock.calls).toHaveLength(4);
+    });
+
+    // D200.9: convite automático de vaga carimba messaged_at, como o manual.
+    it('mensagem de VAGA enviada → grava messaged_at na candidatura (worker × vaga)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-2', worker_id: 'w-1', job_posting_id: 'jp-9', template_slug: 'ar_vacancy_match_complete', variables: {}, attempts: 0, trace_id: 't' }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null, messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE outbox sent
+        .mockResolvedValueOnce({ rows: [] }) // INSERT log
+        .mockResolvedValueOnce({ rows: [] }); // UPDATE messaged_at
+
+      await processor.processById('ob-2');
+
+      const [sql, params] = mockQuery.mock.calls[4];
+      expect(sql).toMatch(/UPDATE worker_job_applications/);
+      expect(sql).toMatch(/SET messaged_at = NOW\(\)/);
+      expect(params).toEqual(['w-1', 'jp-9']);
+    });
+
+    it('falha ao gravar messaged_at é best-effort: a mensagem continua marcada como enviada', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-3', worker_id: 'w-1', job_posting_id: 'jp-9', template_slug: 'ar_vacancy_match_complete', variables: {}, attempts: 0, trace_id: 't' }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null, messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce(new Error('lock timeout'));
+
+      await expect(processor.processById('ob-3')).resolves.toBeUndefined();
+      expect(mockQuery.mock.calls[2][0]).toContain("status = 'sent'");
     });
 
     it('retorna silenciosamente se mensagem não existe', async () => {
@@ -221,6 +252,32 @@ describe('OutboxProcessor', () => {
       expect(logCall[0]).toContain("'error'");
       expect(logCall[0]).toContain("'outbox'");
       expect(logCall[1][2]).toBe('system:outbox:ob-2');
+    });
+
+    // Os logs em whatsapp_bulk_dispatch_logs são best-effort: falhar neles NÃO desfaz o estado da mensagem.
+    it('INSERT do log de sucesso falha → mensagem continua sent, erro reportado', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-ls', worker_id: 'w-1', job_posting_id: null, template_slug: 'welcome', variables: {}, attempts: 0, trace_id: 't' }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE sent
+        .mockRejectedValueOnce(new Error('log table locked')); // INSERT log
+
+      await expect(processor.processById('ob-ls')).resolves.toBeUndefined();
+      expect(mockQuery.mock.calls[2][0]).toContain("status = 'sent'");
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'OutboxProcessor:logSent', outboxId: 'ob-ls' }));
+    });
+
+    it('INSERT do log de falha definitiva falha → mensagem continua failed, erro reportado', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-lf', worker_id: 'w-2', job_posting_id: null, template_slug: 'reminder', variables: {}, attempts: 2, trace_id: null }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE failed
+        .mockRejectedValueOnce(new Error('log table locked')); // INSERT log error
+      mockMessaging.sendWhatsApp.mockResolvedValueOnce({ isFailure: true, error: 'Twilio error' });
+
+      await expect(processor.processById('ob-lf')).resolves.toBeUndefined();
+      expect(mockQuery.mock.calls[2][1][1]).toBe('failed');
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'OutboxProcessor:logFailed', outboxId: 'ob-lf' }));
     });
   });
 
