@@ -536,8 +536,9 @@ export class PatientService {
           break;
         }
         case 'service': {
-          // Targeted: only service_type. Passing this through clinicalRepo.upsert
-          // would null out the rest of the clinical block, so update directly.
+          // Targeted: only service_type. (Desde a D211.1 o clinicalRepo.upsert é
+          // parcial — chave ausente não toca a coluna — mas este caminho
+          // continua direto: uma coluna, uma query.)
           const serviceType = (data as PatientRelatedInput).serviceType;
           const value =
             serviceType !== undefined && serviceType !== null && serviceType.length > 0

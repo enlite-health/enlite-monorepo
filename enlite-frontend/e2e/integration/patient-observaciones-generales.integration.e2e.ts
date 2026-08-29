@@ -11,8 +11,8 @@
  *     `additional_comments_updated_at` agora — na MESMA transação do PATCH — e a ficha mostra
  *     "Última edición: <data> · <nome do staff>" (nome resolvido em `users`, o uid não sai);
  *   - o container do texto leva `data-clarity-mask="True"` na ficha e no drawer (lex C1.1);
- *   - MEDIÇÃO (SUP-10 do plano): o que acontece com `diagnosis` quando SÓ as observações são
- *     editadas — registrado como evidência, não como gate.
+ *   - GATE (D211.1): editar SÓ as observações preserva `diagnosis`; editar SÓ o aparelho preserva
+ *     as observações — o PATCH parcial é Merge Patch (chave ausente = não mexe).
  */
 import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
@@ -118,10 +118,12 @@ test.describe('Ficha do paciente: "Observaciones generales" texto longo + autori
     const row = runSQL(`SELECT additional_comments_updated_by || '|' || (additional_comments_updated_at > NOW() - INTERVAL '2 minutes')::text || '|' || (additional_comments = E'${NOTES.replace(/\n/g, '\\n')}')::text FROM patients WHERE id = '${patientId}'`);
     expect(row).toBe(`${uid}|true|true`);
 
-    // MEDIÇÃO SUP-10: editar SÓ as observações mexeu no diagnóstico?
+    // GATE (D211.1, era a medição SUP-10): editar SÓ as observações NÃO toca o diagnóstico.
+    // Em 29/08 isto media "F84.0 TEA" → NULL; agora é o que o conserto promete.
     const diagnosisAfter = runSQL(`SELECT COALESCE(diagnosis, '<NULL>') FROM patients WHERE id = '${patientId}'`);
-    testInfo.annotations.push({ type: 'evidência', description: `SUP-10 — diagnosis antes="${diagnosisBefore}" depois="${diagnosisAfter}"` });
-    console.log(`[SUP-10] diagnosis antes="${diagnosisBefore}" depois="${diagnosisAfter}"`);
+    testInfo.annotations.push({ type: 'evidência', description: `D211.1 — diagnosis antes="${diagnosisBefore}" depois="${diagnosisAfter}"` });
+    expect(diagnosisAfter).toBe(diagnosisBefore);
+    expect(diagnosisAfter).toBe('F84.0 TEA');
   });
 
   test('editar OUTRO campo clínico não reescreve a autoria das observações', async ({ page }) => {
@@ -135,9 +137,10 @@ test.describe('Ficha do paciente: "Observaciones generales" texto longo + autori
     await expect(page.getByTestId('general-notes-edited')).toContainText(STAFF_NAME, { timeout: 15_000 });
     expect(runSQL(`SELECT additional_comments_updated_at::text FROM patients WHERE id = '${patientId}'`)).toBe(before);
     expect(runSQL(`SELECT device_type FROM patients WHERE id = '${patientId}'`)).toBe('Silla de ruedas');
-    // MEDIÇÃO SUP-10 (inversa): editar SÓ o aparelho mexeu nas observações?
+    // GATE (D211.1, inversa): editar SÓ o aparelho preserva as observações E o diagnóstico.
     const notesAfter = runSQL(`SELECT COALESCE(additional_comments, '<NULL>') FROM patients WHERE id = '${patientId}'`);
-    test.info().annotations.push({ type: 'evidência', description: `SUP-10 inversa — additional_comments depois de editar só device_type: "${notesAfter.slice(0, 40)}"` });
-    console.log(`[SUP-10 inversa] additional_comments depois de editar só device_type = "${notesAfter.slice(0, 40)}"`);
+    test.info().annotations.push({ type: 'evidência', description: `D211.1 inversa — additional_comments depois de editar só device_type: "${notesAfter.slice(0, 40)}"` });
+    expect(notesAfter).toBe(NOTES);
+    expect(runSQL(`SELECT COALESCE(diagnosis, '<NULL>') FROM patients WHERE id = '${patientId}'`)).toBe('F84.0 TEA');
   });
 });

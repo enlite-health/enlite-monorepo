@@ -1,10 +1,11 @@
-import type { Pool, PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import { PatientClinicalRepository } from '../PatientClinicalRepository';
 
 /**
- * PatientClinicalRepository — SQL emitido pelo upsert (REQ-01 · migration 286).
- * Régua sobre o comando e os parâmetros: a autoria de additional_comments só
- * muda quando o campo VEIO no input ($12=true), e grava o uid ($13), nunca o valor.
+ * PatientClinicalRepository — SQL emitido pelo upsert.
+ * Régua (D211.1, RFC 7396): chave AUSENTE não entra no SET; `null` limpa;
+ * `has_consent` só via COALESCE; autoria de additional_comments só quando o
+ * campo veio (grava uid, nunca valor); nada além do id → nenhuma query.
  */
 const mockPoolQuery = jest.fn();
 jest.mock('@shared/database/DatabaseConnection', () => ({
@@ -13,53 +14,87 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 
 const PATIENT = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
+function lastCall(): { sql: string; params: unknown[] } {
+  const [sql, params] = mockPoolQuery.mock.calls[mockPoolQuery.mock.calls.length - 1];
+  return { sql, params };
+}
+
 describe('PatientClinicalRepository.upsert', () => {
   beforeEach(() => { mockPoolQuery.mockReset().mockResolvedValue({ rows: [] }); });
 
-  it('additionalComments presente → $12=true e $13=uid (autoria gravada na MESMA query do UPDATE)', async () => {
+  it('só as chaves PRESENTES entram no SET — editar as observações não toca diagnosis (o defeito de 29/08)', async () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({ patientId: PATIENT, additionalComments: 'Texto clínico', actorUid: 'uid-staff-1' });
 
     expect(mockPoolQuery).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockPoolQuery.mock.calls[0];
-    expect(sql).toMatch(/additional_comments_updated_at = CASE WHEN \$12::boolean THEN NOW\(\)/);
-    expect(sql).toMatch(/additional_comments_updated_by = CASE WHEN \$12::boolean THEN \$13/);
-    expect(params[0]).toBe(PATIENT);
-    expect(params[6]).toBe('Texto clínico');
-    expect(params[11]).toBe(true);
-    expect(params[12]).toBe('uid-staff-1');
+    const { sql, params } = lastCall();
+    expect(sql).not.toMatch(/diagnosis|dependency_level|clinical_segments|service_type|device_type|has_judicial_protection|has_cud|has_consent|clinical_specialty/);
+    expect(sql).toMatch(/additional_comments\s+= \$2/);
+    expect(sql).toMatch(/additional_comments_updated_at = NOW\(\)/);
+    expect(sql).toMatch(/additional_comments_updated_by = \$3/);
+    expect(sql).toMatch(/updated_at = NOW\(\)/);
+    expect(sql).toMatch(/WHERE id = \$1/);
+    expect(params).toEqual([PATIENT, 'Texto clínico', 'uid-staff-1']);
   });
 
-  it('additionalComments ausente → $12=false: a autoria anterior é preservada (CASE ELSE)', async () => {
+  it('additionalComments ausente → autoria NÃO é tocada; diagnosis presente entra', async () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({ patientId: PATIENT, diagnosis: 'F84.0', actorUid: 'uid-staff-1' });
-
-    const [sql, params] = mockPoolQuery.mock.calls[0];
-    expect(sql).toMatch(/ELSE additional_comments_updated_at END/);
-    expect(sql).toMatch(/ELSE additional_comments_updated_by END/);
-    expect(params[11]).toBe(false);
+    const { sql, params } = lastCall();
+    expect(sql).toMatch(/diagnosis\s+= \$2/);
+    expect(sql).not.toMatch(/additional_comments/);
+    expect(params).toEqual([PATIENT, 'F84.0']);
   });
 
-  it('additionalComments = null (limpar) conta como "veio": autoria registrada; sem actor → $13 null', async () => {
+  it('`null` explícito LIMPA (Merge Patch): additionalComments=null grava NULL e registra autoria; sem actor → uid null', async () => {
     const repo = new PatientClinicalRepository();
-    await repo.upsert({ patientId: PATIENT, additionalComments: null });
-
-    const [, params] = mockPoolQuery.mock.calls[0];
-    expect(params[6]).toBeNull();
-    expect(params[11]).toBe(true);
-    expect(params[12]).toBeNull();
+    await repo.upsert({ patientId: PATIENT, additionalComments: null, diagnosis: null });
+    const { sql, params } = lastCall();
+    expect(sql).toMatch(/diagnosis\s+= \$2/);
+    expect(sql).toMatch(/additional_comments\s+= \$3/);
+    expect(sql).toMatch(/additional_comments_updated_by = \$4/);
+    expect(params).toEqual([PATIENT, null, null, null]);
   });
 
-  it('usa o client transacional quando fornecido (mesma transação do PATCH)', async () => {
+  it('todas as chaves (caminho do sync do ClickUp, D167): tudo entra, na ordem, e has_consent vai por COALESCE', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({
+      patientId: PATIENT, diagnosis: 'D', dependencyLevel: 'HIGH' as never, clinicalSegments: null, serviceType: ['AT'] as never,
+      deviceType: 'silla', additionalComments: 'obs', hasJudicialProtection: true, hasCud: false, hasConsent: null,
+      clinicalSpecialty: 'ASD' as never, actorUid: null,
+    });
+    const { sql, params } = lastCall();
+    expect(sql).toMatch(/has_consent = COALESCE\(\$11, has_consent\)/);
+    expect(params).toEqual([PATIENT, 'D', 'HIGH', null, ['AT'], 'silla', 'obs', null, true, false, null, 'ASD']);
+    expect(sql).toMatch(/clinical_specialty\s+= \$12/);
+    expect(sql).toMatch(/additional_comments_updated_by = \$8/);
+  });
+
+  it('hasConsent=false explícito grava false (COALESCE preserva só o null)', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, hasConsent: false });
+    const { sql, params } = lastCall();
+    expect(sql).toMatch(/has_consent = COALESCE\(\$2, has_consent\)/);
+    expect(params).toEqual([PATIENT, false]);
+  });
+
+  it('só patientId → nenhuma query (não bate updated_at à toa)', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT });
+    await repo.upsert({ patientId: PATIENT, actorUid: 'uid-1' });
+    expect(mockPoolQuery).not.toHaveBeenCalled();
+  });
+
+  it('usa o client transacional quando fornecido; serviceType [] vira NULL (migration 139) e null fica null', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
     const client = { query: clientQuery } as unknown as PoolClient;
     const repo = new PatientClinicalRepository();
     await repo.upsert({ patientId: PATIENT, serviceType: [], additionalComments: 'x' }, client);
-
     expect(clientQuery).toHaveBeenCalledTimes(1);
     expect(mockPoolQuery).not.toHaveBeenCalled();
-    // serviceType [] vira NULL (regra existente, migration 139)
-    expect(clientQuery.mock.calls[0][1][4]).toBeNull();
+    expect(clientQuery.mock.calls[0][1]).toEqual([PATIENT, null, 'x', null]);
+    await repo.upsert({ patientId: PATIENT, serviceType: null }, client);
+    expect(clientQuery.mock.calls[1][1]).toEqual([PATIENT, null]);
   });
 
   it('findByPatientId devolve null quando não há linha e mapeia quando há', async () => {
