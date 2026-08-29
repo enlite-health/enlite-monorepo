@@ -52,9 +52,10 @@ jest.mock('../../infrastructure/PatientIdentityRepository', () => ({
   })),
 }));
 
+const mockClinicalUpsert = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../infrastructure/PatientClinicalRepository', () => ({
   PatientClinicalRepository: jest.fn().mockImplementation(() => ({
-    upsert: jest.fn().mockResolvedValue(undefined),
+    upsert: mockClinicalUpsert,
   })),
 }));
 
@@ -250,6 +251,22 @@ describe('PatientService — native write path (migration 251)', () => {
     const update = seen.find(s => s.includes('UPDATE patients SET service_type'));
     expect(update).toBeDefined();
     expect(update).not.toContain('diagnosis');
+  });
+
+  // ── e3. autoria (REQ-01): o uid do ator chega ao repositório clínico ──────
+  it('e3. updatePatientSection(clinical) repassa actorUid ao clinicalRepo.upsert', async () => {
+    mockClinicalUpsert.mockClear();
+    await service.updatePatientSection('nat-008', 'clinical', { additionalComments: 'texto' } as never, { uid: 'uid-staff-9' });
+
+    expect(mockClinicalUpsert).toHaveBeenCalledTimes(1);
+    expect(mockClinicalUpsert.mock.calls[0][0]).toMatchObject({ patientId: 'nat-008', additionalComments: 'texto', actorUid: 'uid-staff-9' });
+  });
+
+  it('e4. updatePatientSection(clinical) sem actor → actorUid null', async () => {
+    mockClinicalUpsert.mockClear();
+    await service.updatePatientSection('nat-009', 'clinical', { diagnosis: 'F84' } as never);
+
+    expect(mockClinicalUpsert.mock.calls[0][0]).toMatchObject({ patientId: 'nat-009', diagnosis: 'F84', actorUid: null });
   });
 
   it('e2. updatePatientSection(support-network) delegates to responsibleRepo.replaceAll', async () => {

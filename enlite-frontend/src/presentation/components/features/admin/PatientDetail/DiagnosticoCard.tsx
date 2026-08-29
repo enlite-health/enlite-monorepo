@@ -21,6 +21,41 @@ function Field({ label, value }: { label: string; value: string | null }) {
   );
 }
 
+/** "28/08/2026, 14:35" no fuso de quem olha. */
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * Observações gerais (REQ-01): texto longo com quebras preservadas + quem editou por
+ * último e quando. `data-clarity-mask` — narrativa clínica não pode ir para a gravação
+ * de sessão (lex 29/08, C1.1).
+ */
+function GeneralNotes({ label, patient }: { label: string; patient: PatientDetail }) {
+  const { t } = useTranslation();
+  const edited = patient.additionalCommentsUpdatedAt
+    ? t('admin.patients.detail.diagnosisCard.lastEditedBy', {
+        date: formatDateTime(patient.additionalCommentsUpdatedAt),
+        name: patient.additionalCommentsUpdatedBy ?? '—',
+      })
+    : null;
+  return (
+    <div className="flex flex-col gap-1" data-clarity-mask="True" data-testid="general-notes">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label}</Text>
+      <div data-testid="general-notes-text" className="whitespace-pre-wrap">
+        <Text size="sm" color="muted" className="whitespace-pre-wrap leading-snug">{patient.additionalComments ?? '—'}</Text>
+      </div>
+      {edited && (
+        <span data-testid="general-notes-edited">
+          <Text as="span" size="xs" color="muted">{edited}</Text>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function BoolField({ label, value }: { label: string; value: boolean | null }) {
   const { t } = useTranslation();
   const display = value === null ? null : value ? t('common.yes', 'Sim') : t('common.no', 'Não');
@@ -56,7 +91,7 @@ export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
 
       <div className="flex flex-col gap-2.5">
         <Field label={`${t('admin.patients.detail.diagnosisCard.cid')}:`} value={patient.diagnosis} />
-        <Field label={`${t('admin.patients.detail.diagnosisCard.details')}:`} value={patient.additionalComments} />
+        <GeneralNotes label={`${t('admin.patients.detail.diagnosisCard.generalNotes')}:`} patient={patient} />
         <Field label={`${t('admin.patients.detail.diagnosisCard.pathologyTypes')}:`} value={specialtyLabel} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.hasFollowUp')}:`} value={null} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.receivesMoney')}:`} value={null} />

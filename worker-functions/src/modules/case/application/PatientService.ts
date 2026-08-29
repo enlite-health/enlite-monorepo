@@ -496,6 +496,8 @@ export class PatientService {
     patientId: string,
     section: PatientSection,
     data: PatientGeneralSectionData | PatientRelatedInput,
+    /** Quem está editando (uid do staff) — hoje só a seção clínica usa (autoria de additional_comments). */
+    actor?: { uid: string },
   ): Promise<{ id: string; updated: true }> {
     const db     = DatabaseConnection.getInstance();
     const client = await db.getClient();
@@ -522,6 +524,7 @@ export class PatientService {
               hasJudicialProtection: c.hasJudicialProtection,
               hasCud:                c.hasCud,
               hasConsent:            c.hasConsent,
+              actorUid:              actor?.uid ?? null,
             },
             client,
           );

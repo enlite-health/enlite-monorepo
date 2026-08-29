@@ -19,6 +19,11 @@ export interface PatientClinicalUpsertInput {
   hasJudicialProtection?: boolean | null;
   hasCud?: boolean | null;
   hasConsent?: boolean | null;
+  /**
+   * uid do staff que está editando (REQ-01/D195). Só é gravado quando
+   * `additionalComments` veio no input — é a autoria DESSE campo, não do bloco.
+   */
+  actorUid?: string | null;
 }
 
 /**
@@ -58,6 +63,10 @@ export class PatientClinicalRepository {
         has_cud                 = $9,
         has_consent             = COALESCE($10, has_consent),
         clinical_specialty      = $11,
+        -- Autoria de additional_comments: só muda quando o campo veio no PATCH
+        -- ($12 = veio?). Grava o uid ($13), nunca o valor (lex 29/08, item 3).
+        additional_comments_updated_at = CASE WHEN $12::boolean THEN NOW() ELSE additional_comments_updated_at END,
+        additional_comments_updated_by = CASE WHEN $12::boolean THEN $13 ELSE additional_comments_updated_by END,
         updated_at              = NOW()
        WHERE id = $1`,
       [
@@ -75,6 +84,8 @@ export class PatientClinicalRepository {
         // clearing consent is the opt-out flow's job, never an omission's (D108).
         input.hasConsent             ?? null,
         input.clinicalSpecialty      ?? null,
+        input.additionalComments !== undefined,
+        input.actorUid               ?? null,
       ],
     );
   }

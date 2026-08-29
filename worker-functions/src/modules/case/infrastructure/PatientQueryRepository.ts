@@ -73,6 +73,9 @@ export interface PatientDetailRow {
   serviceType: string[] | null;
   deviceType: string | null;
   additionalComments: string | null;
+  /** Autoria da última edição das observações (mig 286): ISO/Date e NOME resolvido de users. */
+  additionalCommentsUpdatedAt: Date | null;
+  additionalCommentsUpdatedBy: string | null;
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;
