@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { VacancyMeetLinksRow } from '../VacancyMeetLinksRow';
 
+const tSpy = vi.fn((key: string, _opts?: unknown) => key);
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string, opts?: unknown) => tSpy(key, opts) }),
 }));
 
 const emptyProps = {
@@ -94,6 +95,20 @@ describe('VacancyMeetLinksRow — with slots', () => {
     expect(pill).toHaveAttribute('href', 'https://meet.google.com/rec-urri-ngx');
     // o mock de i18n devolve a chave; a interpolação (dia/hora) é do i18next real — coberta no e2e
     expect(pill.textContent).toContain('meetRecurring.every');
+    // a hora vai sem os segundos do TIME do Postgres, e o dia é a chave i18n do weekday
+    expect(tSpy).toHaveBeenCalledWith('admin.vacancyDetail.meetRecurring.every', { day: 'admin.vacancyDetail.meetRecurring.days.1', time: '08:30' });
+  });
+
+  it('recorrente convive com um slot fixo (os dois aparecem)', () => {
+    render(
+      <VacancyMeetLinksRow
+        {...emptyProps}
+        meetLink1="https://meet.google.com/abc-defg-hij" meetDatetime1="2026-05-10T13:00:00Z"
+        recurringWeekday={3} recurringTime="10:00" recurringLink="https://meet.google.com/rec-urri-ngx"
+      />,
+    );
+    expect(screen.getAllByRole('link')).toHaveLength(2);
+    expect(screen.getByTestId('meet-recurring-pill')).toBeInTheDocument();
   });
 
   it('recorrente incompleto (sem sala) não conta como slot: continua renderizando nada', () => {

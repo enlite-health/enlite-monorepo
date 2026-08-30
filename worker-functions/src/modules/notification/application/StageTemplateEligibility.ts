@@ -69,7 +69,12 @@ export interface TemplateLike {
   is_active?: boolean | null;
 }
 
-/** Placeholders `{{x}}` do corpo, sem duplicatas, na ordem em que aparecem. */
+/**
+ * Placeholders `{{x}}` do corpo, sem duplicatas, na ordem em que aparecem.
+ * Fonte ÚNICA do parser — o TwilioMessagingService (posicional `{{1}}`…) usa
+ * este mesmo; `{{ x }}` com espaço é tolerado (superconjunto do `\w+` antigo,
+ * provado no teste do Twilio).
+ */
 export function extractPlaceholders(body: string | null | undefined): string[] {
   if (!body) return [];
   const out: string[] = [];

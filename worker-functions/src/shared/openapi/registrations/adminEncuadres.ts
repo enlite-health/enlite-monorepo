@@ -1,5 +1,6 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
+import { FUNNEL_STAGES } from '@modules/matching/application/FunnelStageEventEmitter';
 
 const EncuadreResultBody = z.object({
   resultado: z.enum(['PENDIENTE', 'SELECCIONADO', 'RECHAZADO', 'AT_NO_ACEPTA', 'REPROGRAMAR']).openapi({
@@ -14,10 +15,7 @@ const EncuadreResultBody = z.object({
 
 const EncuadreMoveBody = z.object({
   targetStage: z
-    .enum([
-      'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED',
-      'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED',
-    ])
+    .enum(FUNNEL_STAGES)
     .openapi({
       description: 'Etapa de destino no funil (coluna do Kanban).',
       example: 'CONFIRMED',

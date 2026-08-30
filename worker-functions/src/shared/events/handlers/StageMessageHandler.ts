@@ -75,29 +75,30 @@ export function createStageMessageHandler(
     const config = configResult.rows[0];
     const templateSlug = config?.template_slug ?? null;
 
-    const log = async (status: 'queued' | 'skipped', extra: { skipReason?: StageSkipReason; outboxId?: string }): Promise<void> => {
-      logger.info({ msg: 'funnel_stage_message', stage, status, reason: extra.skipReason ?? null, workerId, jobPostingId, source });
+    // Só o PULO passa por aqui: a linha `queued` é gravada dentro da transação (abaixo), junto do outbox.
+    const skip = async (skipReason: StageSkipReason): Promise<void> => {
+      logger.info({ msg: 'funnel_stage_message', stage, status: 'skipped', reason: skipReason, workerId, jobPostingId, source });
       if (!country) return; // vaga E worker desconhecidos: sem país não há linha (NOT NULL sem default)
       await db.query(
         `INSERT INTO funnel_stage_message_log
            (worker_id, job_posting_id, stage, template_slug, actor_uid, source, outbox_id, status, skip_reason, country)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [worker?.id ?? null, vacancy ? jobPostingId : null, stage, templateSlug, actorUid, source, extra.outboxId ?? null, status, extra.skipReason ?? null, country],
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, 'skipped', $7, $8)`,
+        [worker?.id ?? null, vacancy ? jobPostingId : null, stage, templateSlug, actorUid, source, skipReason, country],
       );
     };
 
-    if (source !== 'kanban') { await log('skipped', { skipReason: 'SOURCE_NOT_HUMAN' }); return; }
-    if (!vacancy) { await log('skipped', { skipReason: 'VACANCY_NOT_FOUND' }); return; }
-    if (!worker) { await log('skipped', { skipReason: 'WORKER_NOT_FOUND' }); return; }
-    if ((worker.country ?? country) !== 'AR') { await log('skipped', { skipReason: 'COUNTRY_BLOCKED' }); return; }
+    if (source !== 'kanban') { await skip('SOURCE_NOT_HUMAN'); return; }
+    if (!vacancy) { await skip('VACANCY_NOT_FOUND'); return; }
+    if (!worker) { await skip('WORKER_NOT_FOUND'); return; }
+    if ((worker.country ?? country) !== 'AR') { await skip('COUNTRY_BLOCKED'); return; }
     // Etapa desligada ou sem template: é o estado padrão — não é erro, é "não configurado".
-    if (!config || config.builtin || !config.enabled) { await log('skipped', { skipReason: 'DISABLED' }); return; }
-    if (!templateSlug) { await log('skipped', { skipReason: 'NO_TEMPLATE' }); return; }
+    if (!config || config.builtin || !config.enabled) { await skip('DISABLED'); return; }
+    if (!templateSlug) { await skip('NO_TEMPLATE'); return; }
     const eligibility = evaluateTemplateEligibility({ slug: templateSlug, body: config.body, category: config.category, is_active: config.is_active });
-    if (eligibility.reason === 'INACTIVE') { await log('skipped', { skipReason: 'TEMPLATE_INACTIVE' }); return; }
-    if (!eligibility.eligible) { await log('skipped', { skipReason: 'TEMPLATE_NOT_ALLOWED' }); return; }
-    if (worker.status === 'DISABLED') { await log('skipped', { skipReason: 'WORKER_DISABLED' }); return; }
-    if (worker.opted_out) { await log('skipped', { skipReason: 'OPT_OUT' }); return; }
+    if (eligibility.reason === 'INACTIVE') { await skip('TEMPLATE_INACTIVE'); return; }
+    if (!eligibility.eligible) { await skip('TEMPLATE_NOT_ALLOWED'); return; }
+    if (worker.status === 'DISABLED') { await skip('WORKER_DISABLED'); return; }
+    if (worker.opted_out) { await skip('OPT_OUT'); return; }
 
     // Variáveis: nome vai como TOKEN (nunca o valor); nº do caso vai cru.
     const needsName = eligibility.placeholders.some((p) => p === 'worker_name' || p === 'name');
@@ -143,7 +144,7 @@ export function createStageMessageHandler(
       client.release();
     }
 
-    if (alreadySent) { await log('skipped', { skipReason: 'ALREADY_SENT' }); return; }
+    if (alreadySent) { await skip('ALREADY_SENT'); return; }
     await pubsub.publish('outbox-enqueued', { outboxId });
     logger.info({ msg: 'funnel_stage_message', stage, status: 'queued', workerId, jobPostingId, source, outboxId });
   };

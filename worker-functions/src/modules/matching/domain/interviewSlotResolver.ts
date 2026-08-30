@@ -38,8 +38,9 @@ export interface OfferedSlot {
   source: 'fixed' | 'recurring';
 }
 
+import { DAY_NAMES_ES_SHORT } from '@shared/utils/dateFormatters';
+
 export const DEFAULT_TIMEZONE = 'America/Argentina/Buenos_Aires';
-const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MAX_SLOTS = 3;
 /** Quantas ocorrências do recorrente entram na oferta (os fixos preenchem o resto). */
 const RECURRING_OCCURRENCES = 2;
@@ -62,17 +63,31 @@ function formatter(tz: string): Intl.DateTimeFormat {
 
 const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
-/** Partes LOCAIS (no fuso) de um instante. */
+/**
+ * Partes LOCAIS (no fuso) de um instante.
+ *
+ * Com `en-US` e as opções acima o Intl SEMPRE devolve as 6 partes, com o
+ * weekday em inglês abreviado — então faltar parte é defeito do runtime
+ * (ICU sem dados, fuso inválido não lança aqui), não um caso de negócio.
+ * Por isso não há fallback silencioso (`?? ''` mascararia um "NaN/NaN 00:00"
+ * no convite): falta de parte LANÇA, e o evento fica `failed` com a causa.
+ */
 export function localParts(instant: Date, tz: string): LocalParts {
   const parts = formatter(tz).formatToParts(instant);
-  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  const get = (type: string): string => {
+    const value = parts.find((p) => p.type === type)?.value;
+    if (value === undefined) throw new Error(`Intl.DateTimeFormat sem a parte "${type}" para o fuso ${tz}`);
+    return value;
+  };
+  const weekday = WEEKDAY_INDEX[get('weekday')];
+  if (weekday === undefined) throw new Error(`Intl.DateTimeFormat devolveu weekday desconhecido para o fuso ${tz}`);
   return {
     year: Number(get('year')),
     month: Number(get('month')),
     day: Number(get('day')),
     hour: Number(get('hour')) % 24,
     minute: Number(get('minute')),
-    weekday: WEEKDAY_INDEX[get('weekday')] ?? 0,
+    weekday,
   };
 }
 
@@ -99,7 +114,7 @@ export function formatSlotLabel(instant: Date, tz: string = DEFAULT_TIMEZONE): s
   const mm = String(p.month).padStart(2, '0');
   const hh = String(p.hour).padStart(2, '0');
   const mi = String(p.minute).padStart(2, '0');
-  return `${DAY_NAMES[p.weekday]} ${dd}/${mm} ${hh}:${mi}`;
+  return `${DAY_NAMES_ES_SHORT[p.weekday]} ${dd}/${mm} ${hh}:${mi}`;
 }
 
 function parseTime(time: string): { hh: number; mm: number } | null {

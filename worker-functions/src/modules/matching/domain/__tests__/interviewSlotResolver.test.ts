@@ -23,6 +23,21 @@ describe('localParts / zonedLocalToInstant', () => {
     expect(zonedLocalToInstant(2027, 1, 4, 9, 0, NY).toISOString()).toBe('2027-01-04T14:00:00.000Z');
   });
 
+  it('Intl sem uma parte (runtime sem dados ICU) LANÇA em vez de devolver "NaN/NaN 00:00" — erro visível', () => {
+    const spy = jest.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts');
+    try {
+      spy.mockReturnValue([{ type: 'year', value: '2027' }] as Intl.DateTimeFormatPart[]);
+      expect(() => localParts(new Date('2027-04-05T11:30:00Z'), AR)).toThrow(/sem a parte "weekday"/);
+      spy.mockReturnValue([
+        { type: 'weekday', value: 'lun.' }, { type: 'year', value: '2027' }, { type: 'month', value: '04' },
+        { type: 'day', value: '05' }, { type: 'hour', value: '08' }, { type: 'minute', value: '30' },
+      ] as Intl.DateTimeFormatPart[]);
+      expect(() => localParts(new Date('2027-04-05T11:30:00Z'), AR)).toThrow(/weekday desconhecido/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('meia-noite local não escorrega de dia (hourCycle h23)', () => {
     const p = localParts(new Date('2027-04-06T03:00:00Z'), AR); // 00:00 AR
     expect(p).toMatchObject({ day: 6, hour: 0, minute: 0 });

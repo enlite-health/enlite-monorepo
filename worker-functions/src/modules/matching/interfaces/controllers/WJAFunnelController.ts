@@ -22,7 +22,7 @@ import {
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { emitFunnelStageEvent, type FunnelStage } from '../../application/FunnelStageEventEmitter';
+import { emitFunnelStageEvent, FUNNEL_STAGES, isFunnelStage } from '../../application/FunnelStageEventEmitter';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -360,13 +360,8 @@ export class WJAFunnelController {
         return;
       }
 
-      const validStages = [
-        'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
-        'CONFIRMED', 'SELECTED', 'REJECTED',
-      ];
-
-      if (!targetStage || !validStages.includes(targetStage)) {
-        res.status(400).json({ success: false, error: `targetStage must be one of: ${validStages.join(', ')}` });
+      if (!isFunnelStage(targetStage)) {
+        res.status(400).json({ success: false, error: `targetStage must be one of: ${FUNNEL_STAGES.join(', ')}` });
         return;
       }
 
@@ -487,7 +482,7 @@ export class WJAFunnelController {
         }
 
         stageEventId = await emitFunnelStageEvent(client, {
-          workerId, jobPostingId, previousStage, targetStage: targetStage as FunnelStage, actorUid, source: 'kanban',
+          workerId, jobPostingId, previousStage, targetStage, actorUid, source: 'kanban',
         });
       });
 

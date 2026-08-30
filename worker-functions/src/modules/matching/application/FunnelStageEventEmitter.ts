@@ -19,13 +19,19 @@ import type { PoolClient } from 'pg';
  * fica `pending` e a varredura de segurança o reprocessa se a publicação falhar).
  */
 
-export type FunnelStage =
-  | 'INVITED' | 'PRE_SCREENING' | 'IN_PROGRESS' | 'COMPLETED' | 'QUALIFIED'
-  | 'IN_DOUBT' | 'CONFIRMED' | 'SELECTED' | 'REJECTED';
-
-export const FUNNEL_STAGES: readonly FunnelStage[] = [
+/**
+ * As 9 etapas do funil — fonte ÚNICA (tupla `as const` para o `z.enum` do
+ * OpenAPI e a validação do moveEncuadre usarem a MESMA lista).
+ */
+export const FUNNEL_STAGES = [
   'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED',
-];
+] as const;
+
+export type FunnelStage = (typeof FUNNEL_STAGES)[number];
+
+export function isFunnelStage(value: unknown): value is FunnelStage {
+  return typeof value === 'string' && (FUNNEL_STAGES as readonly string[]).includes(value);
+}
 
 export function funnelStageEventName(stage: FunnelStage): string {
   return `funnel_stage.${stage.toLowerCase()}`;

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
 import { evaluateTemplateEligibility } from '../../../notification/application/StageTemplateEligibility';
-import { FUNNEL_STAGES } from '../../application/FunnelStageEventEmitter';
+import { FUNNEL_STAGES, isFunnelStage } from '../../application/FunnelStageEventEmitter';
 
 /**
  * FunnelStageMessagesController — a configuração "mensagem por etapa" (DEC-12).
@@ -75,8 +75,8 @@ export class FunnelStageMessagesController {
   }
 
   async update(req: Request, res: Response): Promise<void> {
-    const stage = String(req.params.stage ?? '').toUpperCase();
-    if (!(FUNNEL_STAGES as readonly string[]).includes(stage)) {
+    const stage = String(req.params.stage).toUpperCase();
+    if (!isFunnelStage(stage)) {
       res.status(400).json({ success: false, error: 'Unknown stage' });
       return;
     }

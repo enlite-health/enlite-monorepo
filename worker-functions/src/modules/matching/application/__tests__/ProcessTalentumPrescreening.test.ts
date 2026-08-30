@@ -176,8 +176,8 @@ describe('ProcessTalentumPrescreening', () => {
     );
     expect(domainEventCall).toBeDefined();
     expect(domainEventCall[0]).toContain('funnel_stage.qualified');
-    expect(domainEventCall[1][0]).toContain('w-1');
-    expect(domainEventCall[1][0]).toContain('jp-1');
+    // payload leva a ORIGEM (só medição — o handler loga `source`, B1 do gate 30/08)
+    expect(JSON.parse(domainEventCall[1][0])).toEqual({ workerId: 'w-1', jobPostingId: 'jp-1', source: 'talentum' });
 
     // Client released
     expect(mockPoolClient.release).toHaveBeenCalled();

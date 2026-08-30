@@ -1,22 +1,10 @@
 import { Pool } from 'pg';
+import type { DomainEventHandler } from '../DomainEventProcessor';
 import { PubSubClient } from '../PubSubClient';
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
 import { logger } from '../../logging';
 import { optedOutExistsSql } from '../../database/messagingOptOutFilter';
-import {
-  formatSlotLabel,
-  resolveOfferedSlots,
-  type VacancySlotSource,
-} from '../../../modules/matching/domain/interviewSlotResolver';
-
-/**
- * Formata um instante como opção de slot, no fuso da vaga (default Argentina).
- * Ex: "2026-04-07T11:30:00Z" → "Mar 07/04 08:30". Mantido exportado por
- * compatibilidade; a lógica vive em `interviewSlotResolver`.
- */
-export function formatSlotOption(datetime: string | Date, timezone?: string | null): string {
-  return formatSlotLabel(new Date(datetime), timezone ?? undefined);
-}
+import { resolveOfferedSlots, type VacancySlotSource } from '../../../modules/matching/domain/interviewSlotResolver';
 
 export type InviteSkipReason =
   | 'VACANCY_NOT_FOUND'
@@ -25,6 +13,20 @@ export type InviteSkipReason =
   | 'WORKER_DISABLED'
   | 'OPT_OUT'
   | 'ALREADY_INVITED';
+
+/**
+ * Quem disparou o `funnel_stage.qualified` — só para MEDIR (log), nunca para
+ * decidir: desde o PEND-14 o arrasto humano da tarjeta (`kanban`) também
+ * dispara o convite, além do webhook da Talentum. A decisão de manter ou não
+ * o convite no arrasto é do Gabriel, com este dado na mão.
+ */
+export type QualifiedSource = 'human_drag' | 'talentum' | 'unknown';
+
+export function qualifiedSourceOf(payload: Record<string, unknown>): QualifiedSource {
+  if (payload.source === 'kanban') return 'human_drag';
+  if (payload.source === 'talentum') return 'talentum';
+  return 'unknown';
+}
 
 /** Janela de idempotência: mesmo (worker, vaga, template) não repete em 7 dias (índice da mig 173). */
 export const INVITE_IDEMPOTENCY_WINDOW = '7 days';
@@ -67,11 +69,14 @@ export function createQualifiedInterviewHandler(
   db: Pool,
   pubsub: PubSubClient,
   _tokenService: TokenService,
-): (payload: Record<string, unknown>) => Promise<void> {
-  return async (payload) => {
+): DomainEventHandler {
+  return async (payload, meta) => {
     const workerId = payload.workerId as string;
     const jobPostingId = payload.jobPostingId as string;
-    const domainEventId = typeof payload.eventId === 'string' ? payload.eventId : null;
+    // O id vem da LINHA processada, entregue pelo DomainEventProcessor — o
+    // emissor não o conhece antes do INSERT (D187: fixture não confirma suposição).
+    const domainEventId = meta.eventId;
+    const source = qualifiedSourceOf(payload);
 
     const [vacancyResult, workerResult] = await Promise.all([
       db.query<VacancyRow>(
@@ -97,7 +102,7 @@ export function createQualifiedInterviewHandler(
     const country = vacancy?.country ?? worker?.country ?? null;
 
     const skip = async (reason: InviteSkipReason, detail: Record<string, unknown> = {}): Promise<void> => {
-      logger.warn({ msg: 'interview_invite.skipped', reason, workerId, jobPostingId, ...detail });
+      logger.warn({ msg: 'interview_invite.skipped', reason, workerId, jobPostingId, domainEventId, source, ...detail });
       if (!country) {
         // Vaga E worker desconhecidos: sem país não há linha (NOT NULL sem default, lex C4).
         return;
@@ -185,6 +190,8 @@ export function createQualifiedInterviewHandler(
       msg: 'interview_invite.queued',
       workerId,
       jobPostingId,
+      domainEventId,
+      source,
       outboxId,
       slots: offered.map((s) => s.source),
     });

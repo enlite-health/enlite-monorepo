@@ -1,11 +1,18 @@
 import type { PoolClient } from 'pg';
-import { emitFunnelStageEvent, funnelStageEventName, FUNNEL_STAGES } from '../FunnelStageEventEmitter';
+import { emitFunnelStageEvent, funnelStageEventName, FUNNEL_STAGES, isFunnelStage } from '../FunnelStageEventEmitter';
 
 describe('funnelStageEventName', () => {
   it('é funnel_stage.<etapa minúscula> — QUALIFIED bate com o evento do webhook da Talentum', () => {
     expect(funnelStageEventName('QUALIFIED')).toBe('funnel_stage.qualified');
     expect(funnelStageEventName('PRE_SCREENING')).toBe('funnel_stage.pre_screening');
     expect(FUNNEL_STAGES).toHaveLength(9);
+  });
+
+  it('isFunnelStage: a MESMA lista vale para o moveEncuadre, a config por etapa e o OpenAPI', () => {
+    for (const s of FUNNEL_STAGES) expect(isFunnelStage(s)).toBe(true);
+    expect(isFunnelStage('qualified')).toBe(false);
+    expect(isFunnelStage(undefined)).toBe(false);
+    expect(isFunnelStage(42)).toBe(false);
   });
 });
 

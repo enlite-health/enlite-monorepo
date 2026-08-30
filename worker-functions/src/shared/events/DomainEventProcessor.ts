@@ -2,7 +2,18 @@ import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { loggingAls } from '@shared/logging';
 
-export type DomainEventHandler = (payload: Record<string, unknown>) => Promise<void>;
+/**
+ * Metadados que o processador entrega ao handler JUNTO com o payload.
+ * O `eventId` vem da LINHA de `domain_events` (nunca do payload): o emissor
+ * não conhece o id antes do INSERT, e um handler que lesse `payload.eventId`
+ * gravaria NULL em produção enquanto a fixture do unit o confirmava (D187).
+ */
+export interface DomainEventMeta {
+  /** `domain_events.id` da linha sendo processada. */
+  eventId: string;
+}
+
+export type DomainEventHandler = (payload: Record<string, unknown>, meta: DomainEventMeta) => Promise<void>;
 
 /**
  * Processes domain events from the `domain_events` table.
@@ -63,7 +74,7 @@ export class DomainEventProcessor {
       try {
         await loggingAls.run(
           { traceId: row.trace_id ?? uuidv4() },
-          () => handler(row.payload),
+          () => handler(row.payload, { eventId: row.id }),
         );
         await client.query(
           `UPDATE domain_events SET status = 'processed', processed_at = NOW() WHERE id = $1`,

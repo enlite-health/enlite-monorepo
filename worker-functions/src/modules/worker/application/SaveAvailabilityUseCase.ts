@@ -2,18 +2,9 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { IAvailabilityRepository } from '../ports/IAvailabilityRepository';
 import { SaveAvailabilityDTO, Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
+import { DAY_NAMES_ES } from '@shared/utils/dateFormatters';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
-
-const DAY_NAMES_ES = [
-  'domingo',
-  'lunes',
-  'martes',
-  'miércoles',
-  'jueves',
-  'viernes',
-  'sábado',
-];
 
 const toMinutes = (time: string): number => {
   const [h, m] = time.split(':').map(Number);

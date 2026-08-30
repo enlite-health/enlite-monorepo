@@ -86,6 +86,19 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     expect(mockQuery.mock.calls[1][1]).toEqual(['SM-abc123']);
   });
 
+  it('created_at da mensagem vira offeredAt: o botão aponta para a oferta que a pessoa VIU (mig 291)', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [WORKER] })
+      .mockResolvedValueOnce({ rows: [{ job_posting_id: 'jp-1', created_at: '2026-08-20T12:00:00.000Z' }] });
+    const inner = (useCase as unknown as { bookInterviewSlot: { execute: jest.Mock } }).bookInterviewSlot;
+    const spy = jest.spyOn(inner, 'execute').mockResolvedValue({ isSuccess: true } as never);
+
+    await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
+
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ jobPostingId: 'jp-1', offeredAt: new Date('2026-08-20T12:00:00.000Z') }));
+    spy.mockRestore();
+  });
+
   it('mapeia slot_1 ao meet_link_1 da vaga', async () => {
     setupHappyPathWithSid();
 

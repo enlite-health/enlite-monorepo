@@ -77,8 +77,10 @@ describe('StageMessageHandler', () => {
     const expectSkip = (reason: string, over: Partial<{ worker: unknown; job: unknown }> = {}) => {
       const call = logInsert(q) as unknown as [string, unknown[]];
       expect(call).toBeDefined();
-      expect(call[1][7]).toBe('skipped');
-      expect(call[1][8]).toBe(reason);
+      // status 'skipped' e outbox NULL vão no SQL (o helper só pula — B2 do gate 30/08); o motivo é o $7
+      expect(call[0]).toContain("NULL, 'skipped', $7, $8");
+      expect(call[1]).toHaveLength(8);
+      expect(call[1][6]).toBe(reason);
       if (over.worker !== undefined) expect(call[1][0]).toBe(over.worker);
       if (over.job !== undefined) expect(call[1][1]).toBe(over.job);
       expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO messaging_outbox'), expect.anything());
@@ -111,10 +113,16 @@ describe('StageMessageHandler', () => {
       expect(q.mock.calls.some((c) => (c[0] as string).includes('FROM funnel_stage_messages'))).toBe(false);
     });
 
-    it('worker de outro país → COUNTRY_BLOCKED (lex C10 — L3 aberto)', async () => {
+    it('worker de outro país → COUNTRY_BLOCKED (lex C10 — L3 aberto); worker sem país herda o da vaga', async () => {
       program(q, { worker: [{ ...workerRow, country: 'BR' }] });
       await handler()(payload);
       expectSkip('COUNTRY_BLOCKED');
+      q.mockReset(); client = makeClient(); pubsub.publish.mockClear();
+      // worker.country null + vaga BR → bloqueado pelo país da VAGA; sem ator (payload sem actorUid) → actor_uid null
+      program(q, { vacancy: [{ ...vacancyRow, country: 'BR' }], worker: [{ ...workerRow, country: null }] });
+      await handler()({ ...payload, actorUid: undefined });
+      expectSkip('COUNTRY_BLOCKED');
+      expect((logInsert(q) as unknown as [string, unknown[]])[1][4]).toBeNull();
     });
 
     it('etapa desligada / sem linha / built-in → DISABLED (o estado padrão, não é erro)', async () => {

@@ -2,7 +2,7 @@
  * wja-outbox-delivery-1.e2e.test.ts  (Fase C do gate de regressão WJA — Part 1 de 2)
  *
  * Valida o payload completo gravado em messaging_outbox:
- *   T6 — qualified_worker_request: slot_1/slot_2/slot_3 via formatSlotOption (UTC)
+ *   T6 — qualified_worker_request: slot_1/slot_2/slot_3 via formatSlotLabel (fuso da vaga)
  *   T7 — qualified_worker_response: date/time via formatDateUTC/formatTimeUTC (UTC)
  *   Dedup T7: window 5min impede duplicatas.
  *
@@ -33,7 +33,7 @@ export const OD_PHONE_2 = '+5491199960002';
 export const OD_EMAIL_1 = 'wja-outbox-1@e2e.local';
 export const OD_EMAIL_2 = 'wja-outbox-2@e2e.local';
 
-/** Datetimes UTC → formatSlotOption usa getUTC*; dias calculados com node */
+/** Datetimes UTC → formatSlotLabel formata no fuso da vaga; dias calculados com node */
 export const OD_DT_1 = '2099-08-10T10:00:00Z'; // Lun 10/08 07:00 em Buenos Aires (UTC-3)
 export const OD_DT_2 = '2099-08-10T14:00:00Z'; // Lun 10/08 11:00 AR
 export const OD_DT_3 = '2099-08-11T09:30:00Z'; // Mar 11/08 06:30 AR
@@ -153,7 +153,7 @@ describe('WJA Outbox Delivery Part 1 — T6 + T7 + Dedup @integration', () => {
 
   // ── Step 1: T6 payload completo com 3 slots formatados ───────────────────
 
-  describe('Step 1 — T6: 3 slots formatados via formatSlotOption (UTC)', () => {
+  describe('Step 1 — T6: 3 slots formatados via formatSlotLabel (fuso da vaga)', () => {
     const ENDPOINT = '/api/webhooks/talentum/prescreening';
 
     it('drive INITIATED + IN_PROGRESS + COMPLETED via Talentum', async () => {

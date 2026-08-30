@@ -173,6 +173,10 @@ describe('Convite de entrevista com slot RECORRENTE + pulos contáveis (D211.4) 
     expect((await outboxFor(workers.recurring)).rows).toHaveLength(1);
     const skips = (await skipsFor(workers.recurring)).rows;
     expect(skips).toEqual([{ reason: 'ALREADY_INVITED', country: 'AR', job_posting_id: jobs.recurring }]);
+    // A1 (gate 30/08): o pulo aponta para a LINHA de domain_events processada — o id vem do
+    // processador, não do payload (que não o carrega). Antes, era NULL em prod.
+    const { rows: linked } = await pool.query(`SELECT domain_event_id FROM interview_invite_skips WHERE worker_id = $1`, [workers.recurring]);
+    expect(linked).toEqual([{ domain_event_id: ev[0].id }]);
   });
 
   it('vaga sem slot nenhum → zero outbox e NO_FUTURE_SLOT contável', async () => {

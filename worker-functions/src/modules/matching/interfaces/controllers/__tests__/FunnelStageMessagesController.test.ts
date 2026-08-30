@@ -66,6 +66,8 @@ describe('FunnelStageMessagesController', () => {
     it('etapa desconhecida → 400; QUALIFIED → 409 (built-in)', async () => {
       const r1 = makeRes(); await c.update(req('FOO', { template_slug: null, enabled: false }), r1); expect(r1.statusCode).toBe(400);
       const r2 = makeRes(); await c.update(req('qualified', { template_slug: null, enabled: false }), r2); expect(r2.statusCode).toBe(409);
+      // sem :stage nenhum (rota mal montada) → 400, nunca 500
+      const r3 = makeRes(); await c.update({ params: {}, body: {} } as unknown as Request, r3); expect(r3.statusCode).toBe(400);
       expect(mockQuery).not.toHaveBeenCalled();
     });
     it('corpo inválido → 400 (strict; enabled sem template)', async () => {

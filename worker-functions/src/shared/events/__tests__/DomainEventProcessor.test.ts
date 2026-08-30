@@ -32,7 +32,8 @@ describe('DomainEventProcessor', () => {
     const result = await processor.processEvent('evt-1');
 
     expect(result.status).toBe('processed');
-    expect(handler).toHaveBeenCalledWith({ workerId: 'w-1' });
+    // O id da LINHA vai como meta (2º argumento) — o payload não o carrega (A1 do gate 30/08).
+    expect(handler).toHaveBeenCalledWith({ workerId: 'w-1' }, { eventId: 'evt-1' });
   });
 
   it('returns skipped when event is not found in DB', async () => {

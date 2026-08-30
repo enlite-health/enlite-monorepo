@@ -55,4 +55,9 @@ describe('ListInterviewSlotsForVacancyUseCase', () => {
 
     expect(result).toEqual({ ok: true, caseNumber: 100, slots: [] });
   });
+
+  it('vaga sem case_number → caseNumber null (a Luz não inventa número de caso)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ case_number: null, meet_link_1: null, meet_datetime_1: null }] });
+    expect(await useCase.execute('jp-1')).toEqual({ ok: true, caseNumber: null, slots: [] });
+  });
 });

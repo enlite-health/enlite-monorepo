@@ -424,6 +424,14 @@ describe('TwilioMessagingService', () => {
       expect(result).toEqual({});
     });
 
+    it('usa o MESMO parser da elegibilidade por etapa (extractPlaceholders): ordem, sem duplicata, e tolera espaço nas chaves', () => {
+      const { extractPlaceholders } = require('../../application/StageTemplateEligibility');
+      const body = '{{name}} dijo {{name}}: {{ date }} — {{1}}';
+      expect(extractPlaceholders(body)).toEqual(['name', 'date', '1']);
+      // superconjunto do regex antigo (`\\w+` sem espaço): `{{ date }}` agora conta como posição 2
+      expect(service.mapToContentVariables(body, { name: 'Juan', date: '07/04', '1': 'x' })).toEqual({ '1': 'Juan', '2': '07/04', '3': 'x' });
+    });
+
     it('mapeia 4 variáveis do template qualified_worker na ordem correta', () => {
       const body = '{{slot_1}}{{slot_2}}{{slot_3}}{{case_number}}';
       const vars = {

@@ -15,9 +15,10 @@ jest.mock('../../../logging', () => ({
 
 import {
   createQualifiedInterviewHandler,
-  formatSlotOption,
   INVITE_IDEMPOTENCY_WINDOW,
+  qualifiedSourceOf,
 } from '../QualifiedInterviewHandler';
+import type { DomainEventHandler } from '../../DomainEventProcessor';
 import { logger } from '../../../logging';
 
 const AR = 'America/Argentina/Buenos_Aires';
@@ -26,7 +27,9 @@ const DT_1 = '2099-08-10T11:30:00Z'; // segunda 08:30 AR
 const DT_2 = '2099-08-11T13:00:00Z'; // terça 10:00 AR
 const DT_3 = '2099-08-12T20:00:00Z'; // quarta 17:00 AR
 
-const payload = { workerId: 'worker-1', jobPostingId: 'job-1', eventId: 'evt-1' };
+// O id do evento NÃO vai no payload: o processador entrega `{ eventId }` como 2º argumento (A1 do gate 30/08).
+const payload = { workerId: 'worker-1', jobPostingId: 'job-1' };
+const META = { eventId: 'evt-1' };
 
 const vacancyRow = {
   case_number: 42, country: 'AR', timezone: AR,
@@ -60,12 +63,14 @@ const variablesOf = (mockQuery: Q) => JSON.parse(outboxInsert(mockQuery)[1][2] a
 describe('QualifiedInterviewHandler', () => {
   let mockQuery: Q;
   let mockPubsub: { publish: jest.Mock };
-  let handler: (payload: Record<string, unknown>) => Promise<void>;
+  let rawHandler: DomainEventHandler;
+  /** Chama o handler como o DomainEventProcessor chama: payload + meta com o id da linha. */
+  const handler = (p: Record<string, unknown>, meta = META): Promise<void> => rawHandler(p, meta);
 
   beforeEach(() => {
     mockQuery = jest.fn();
     mockPubsub = { publish: jest.fn().mockResolvedValue(null) };
-    handler = createQualifiedInterviewHandler({ query: mockQuery } as never, mockPubsub as never, { generate: jest.fn() } as never);
+    rawHandler = createQualifiedInterviewHandler({ query: mockQuery } as never, mockPubsub as never, { generate: jest.fn() } as never);
   });
   afterEach(() => jest.clearAllMocks());
 
@@ -135,7 +140,7 @@ describe('QualifiedInterviewHandler', () => {
 
     it('vaga E worker desconhecidos → só log, nenhuma linha (país indeterminado, NOT NULL sem default)', async () => {
       program(mockQuery, { vacancy: [], worker: [] });
-      await handler({ ...payload, eventId: undefined });
+      await handler(payload);
       expect(skipInsert(mockQuery)).toBeUndefined();
       expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'interview_invite.skipped', reason: 'VACANCY_NOT_FOUND' }));
     });
@@ -229,10 +234,24 @@ describe('QualifiedInterviewHandler', () => {
   });
 });
 
-describe('formatSlotOption (compat)', () => {
-  it('formata no fuso da Argentina por padrão e aceita Date', () => {
-    expect(formatSlotOption('2027-04-07T13:00:00Z')).toBe('Mié 07/04 10:00');
-    expect(formatSlotOption(new Date('2027-04-10T13:05:00Z'))).toBe('Sáb 10/04 10:05');
-    expect(formatSlotOption('2027-04-11T13:00:00Z', 'America/Sao_Paulo')).toBe('Dom 11/04 10:00');
+describe('origem do evento (B1 do gate 30/08 — medir, não decidir)', () => {
+  it('qualifiedSourceOf: kanban → human_drag, talentum → talentum, ausente/outro → unknown', () => {
+    expect(qualifiedSourceOf({ source: 'kanban' })).toBe('human_drag');
+    expect(qualifiedSourceOf({ source: 'talentum' })).toBe('talentum');
+    expect(qualifiedSourceOf({})).toBe('unknown');
+    expect(qualifiedSourceOf({ source: 'system' })).toBe('unknown');
+  });
+
+  it('o log do convite enfileirado E do pulo levam source + domainEventId da linha (não do payload)', async () => {
+    const mockQuery = jest.fn();
+    const rawHandler = createQualifiedInterviewHandler({ query: mockQuery } as never, { publish: jest.fn().mockResolvedValue(null) } as never, { generate: jest.fn() } as never);
+    program(mockQuery);
+    await rawHandler({ ...payload, source: 'kanban', eventId: 'NAO-E-ESTE' }, { eventId: 'evt-da-linha' });
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ msg: 'interview_invite.queued', source: 'human_drag', domainEventId: 'evt-da-linha' }));
+    mockQuery.mockReset();
+    program(mockQuery, { vacancy: [] });
+    await rawHandler({ ...payload, source: 'talentum' }, { eventId: 'evt-2' });
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'interview_invite.skipped', source: 'talentum', domainEventId: 'evt-2' }));
+    expect(skipInsert(mockQuery)[1][2]).toBe('evt-2');
   });
 });

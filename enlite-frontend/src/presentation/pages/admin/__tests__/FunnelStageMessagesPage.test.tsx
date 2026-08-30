@@ -21,7 +21,8 @@ vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ admi
 const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED'];
 const config = () => ({
   country: 'AR',
-  stages: STAGES.map((stage) => ({ stage, templateSlug: stage === 'COMPLETED' ? 'ok_tpl' : null, enabled: stage === 'COMPLETED', channel: 'whatsapp', builtin: stage === 'QUALIFIED' ? 'interview_invite' : null, updatedBy: stage === 'COMPLETED' ? 'Gabi' : null, updatedAt: stage === 'COMPLETED' ? '2026-08-29T12:00:00Z' : null })),
+  // COMPLETED: editado por Gabi; SELECTED: editado por usuário já removido (updatedBy null, updatedAt presente → "—")
+  stages: STAGES.map((stage) => ({ stage, templateSlug: stage === 'COMPLETED' ? 'ok_tpl' : null, enabled: stage === 'COMPLETED', channel: 'whatsapp', builtin: stage === 'QUALIFIED' ? 'interview_invite' : null, updatedBy: stage === 'COMPLETED' ? 'Gabi' : null, updatedAt: stage === 'COMPLETED' || stage === 'SELECTED' ? '2026-08-29T12:00:00Z' : null })),
   templates: [
     { slug: 'ok_tpl', name: 'Ok', category: 'UTILITY', eligible: true, reason: null, placeholders: ['case_number'], unsupported: [] },
     { slug: 'mkt', name: 'Mkt', category: 'MARKETING', eligible: false, reason: 'CATEGORY', placeholders: [], unsupported: [] },
@@ -46,6 +47,8 @@ describe('FunnelStageMessagesPage', () => {
     expect(opts.find((o) => o.value === 'pos')?.textContent).toContain('ineligible.PLACEHOLDERS');
     expect((screen.getByTestId('fsm-enabled-COMPLETED') as HTMLInputElement).checked).toBe(true);
     expect(screen.getByTestId('fsm-row-COMPLETED')).toHaveTextContent('Gabi');
+    expect(screen.getByTestId('fsm-row-COMPLETED')).toHaveTextContent(/2026/);
+    expect(screen.getByTestId('fsm-row-SELECTED')).toHaveTextContent('—');
     expect(screen.getByTestId('fsm-row-INVITED')).toHaveTextContent('admin.funnelStageMessages.never');
     expect(screen.queryByTestId('fsm-admin-only')).toBeNull();
   });

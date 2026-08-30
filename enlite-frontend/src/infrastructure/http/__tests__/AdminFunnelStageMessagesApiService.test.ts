@@ -5,8 +5,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AdminFunnelStageMessagesApiService } from '../AdminFunnelStageMessagesApiService';
 
+const mockGetIdToken = vi.fn().mockResolvedValue('mock-token');
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
-  FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: vi.fn().mockResolvedValue('mock-token') })),
+  FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: (...a: unknown[]) => mockGetIdToken(...a) })),
 }));
 
 function mockFetch(data: unknown) {
@@ -39,6 +40,16 @@ describe('AdminFunnelStageMessagesApiService', () => {
     expect(url).toContain('/api/admin/funnel-stage-messages/COMPLETED');
     expect(init.method).toBe('PUT');
     expect(JSON.parse(String(init.body))).toEqual({ template_slug: null, enabled: false });
+  });
+
+  it('com token → Authorization: Bearer; sem token (sessão caída) → sem o header, e o backend é quem nega', async () => {
+    const f = mockFetch({ country: 'AR', stages: [], templates: [] });
+    await AdminFunnelStageMessagesApiService.getFunnelStageMessages();
+    expect((f.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer mock-token' });
+    mockGetIdToken.mockResolvedValueOnce(null);
+    const f2 = mockFetch({ country: 'AR', stages: [], templates: [] });
+    await AdminFunnelStageMessagesApiService.getFunnelStageMessages();
+    expect((f2.mock.calls[0][1] as RequestInit).headers).not.toHaveProperty('Authorization');
   });
 
   it('resposta success=false → lança Error com a mensagem do backend', async () => {

@@ -165,6 +165,27 @@ describe('AdminApiService - Vacancies Methods', () => {
     });
   });
 
+  describe('updateVacancyMeetLinks (slot recorrente, mig 291)', () => {
+    const links: [string | null, string | null, string | null] = ['https://meet.google.com/aaa-aaaa-aaa', null, null];
+    const echo = { meet_link_1: links[0], meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null };
+
+    it('sem `recurring` → o corpo NÃO leva a chave (o backend preserva o recorrente atual)', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(echo);
+      const result = await AdminApiService.updateVacancyMeetLinks('v1', links);
+      expect(requestSpy).toHaveBeenCalledWith('PUT', '/api/admin/vacancies/v1/meet-links', { meet_links: links });
+      expect(result).toEqual(echo);
+    });
+
+    it('com objeto → manda o recorrente; com null → manda null (apaga o recorrente)', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue({ ...echo, meet_recurring: null });
+      const recurring = { weekday: 1, time: '08:30', link: 'https://meet.google.com/rec-urri-ngx' };
+      await AdminApiService.updateVacancyMeetLinks('v1', links, recurring);
+      expect(requestSpy).toHaveBeenLastCalledWith('PUT', '/api/admin/vacancies/v1/meet-links', { meet_links: links, recurring });
+      await AdminApiService.updateVacancyMeetLinks('v1', links, null);
+      expect(requestSpy).toHaveBeenLastCalledWith('PUT', '/api/admin/vacancies/v1/meet-links', { meet_links: links, recurring: null });
+    });
+  });
+
   describe('deleteVacancy', () => {
     it('should delete vacancy', async () => {
       const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(undefined);

@@ -154,6 +154,23 @@ describe('WJAFunnelController — moveEncuadre', () => {
     expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'WJAFunnelController:moveEncuadre:publish' }));
   });
 
+  it('rejeição do Pub/Sub que não é Error vira Error no reportError (nunca engole)', async () => {
+    mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] });
+    (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockRejectedValue('pubsub string') };
+
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    await controller.moveEncuadre(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+    const [errArg] = mockReportError.mock.calls[0];
+    expect(errArg).toBeInstanceOf(Error);
+    expect((errArg as Error).message).toBe('pubsub string');
+  });
+
   it('move para CONFIRMED — atualiza application_funnel_stage sem tocar resultado', async () => {
     // Query 1: SELECT encuadre
     mockQuery.mockResolvedValueOnce({

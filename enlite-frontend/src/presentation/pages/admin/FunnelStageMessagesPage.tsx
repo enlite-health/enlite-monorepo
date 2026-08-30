@@ -18,9 +18,9 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
  */
 type RowState = { templateSlug: string; enabled: boolean; status: 'idle' | 'saving' | 'saved' | 'error'; error?: string };
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return '';
-  try { return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; }
+/** Só é chamado com `updatedAt` presente; ISO inválido vira "Invalid Date" na tela (visível, não mascarado). */
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function FunnelStageMessagesPage(): JSX.Element {
@@ -97,6 +97,7 @@ export function FunnelStageMessagesPage(): JSX.Element {
           </TableHeader>
           <TableBody>
             {config.stages.map((s: FunnelStageMessageRow) => {
+              // `rows` nasce junto de `config` (mesmo load, mesmo render): toda etapa tem linha.
               const r = rows[s.stage];
               const builtin = !!s.builtin;
               return (
@@ -106,12 +107,12 @@ export function FunnelStageMessagesPage(): JSX.Element {
                     {builtin ? (
                       <Text size="xs" color="secondary">{t('admin.funnelStageMessages.builtin')}</Text>
                     ) : (
-                      <Select data-testid={`fsm-template-${s.stage}`} options={templateOptions} value={r?.templateSlug ?? ''} disabled={!isAdmin} onValueChange={(v) => patch(s.stage, { templateSlug: v, enabled: v ? rows[s.stage]?.enabled ?? false : false })} aria-label={t('admin.funnelStageMessages.template')} />
+                      <Select data-testid={`fsm-template-${s.stage}`} options={templateOptions} value={r.templateSlug} disabled={!isAdmin} onValueChange={(v) => patch(s.stage, { templateSlug: v, enabled: v ? r.enabled : false })} aria-label={t('admin.funnelStageMessages.template')} />
                     )}
                   </TableCell>
                   <TableCell unwrapped>
                     {!builtin && (
-                      <input type="checkbox" data-testid={`fsm-enabled-${s.stage}`} checked={!!r?.enabled} disabled={!isAdmin || !r?.templateSlug} onChange={(e) => patch(s.stage, { enabled: e.target.checked })} aria-label={t('admin.funnelStageMessages.enabled')} />
+                      <input type="checkbox" data-testid={`fsm-enabled-${s.stage}`} checked={r.enabled} disabled={!isAdmin || !r.templateSlug} onChange={(e) => patch(s.stage, { enabled: e.target.checked })} aria-label={t('admin.funnelStageMessages.enabled')} />
                     )}
                   </TableCell>
                   <TableCell unwrapped>
@@ -120,11 +121,11 @@ export function FunnelStageMessagesPage(): JSX.Element {
                   <TableCell unwrapped align="right">
                     {!builtin && isAdmin && (
                       <span className="inline-flex items-center gap-2">
-                        <Button variant="primary" size="sm" data-testid={`fsm-save-${s.stage}`} disabled={r?.status === 'saving'} onClick={() => void save(s.stage)}>
-                          {r?.status === 'saving' ? t('admin.funnelStageMessages.saving') : t('admin.funnelStageMessages.save')}
+                        <Button variant="primary" size="sm" data-testid={`fsm-save-${s.stage}`} disabled={r.status === 'saving'} onClick={() => void save(s.stage)}>
+                          {r.status === 'saving' ? t('admin.funnelStageMessages.saving') : t('admin.funnelStageMessages.save')}
                         </Button>
-                        {r?.status === 'saved' && <span className="text-green-700" data-testid={`fsm-saved-${s.stage}`}><Text as="span" size="xs" color="inherit">{t('admin.funnelStageMessages.saved')}</Text></span>}
-                        {r?.status === 'error' && <span className="text-red-600" data-testid={`fsm-error-${s.stage}`}><Text as="span" size="xs" color="inherit">{r.error}</Text></span>}
+                        {r.status === 'saved' && <span className="text-green-700" data-testid={`fsm-saved-${s.stage}`}><Text as="span" size="xs" color="inherit">{t('admin.funnelStageMessages.saved')}</Text></span>}
+                        {r.status === 'error' && <span className="text-red-600" data-testid={`fsm-error-${s.stage}`}><Text as="span" size="xs" color="inherit">{r.error}</Text></span>}
                       </span>
                     )}
                   </TableCell>

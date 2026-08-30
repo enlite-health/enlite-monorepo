@@ -73,13 +73,11 @@ export function VacancyMeetLinksRow({
   recurringLink = null,
 }: VacancyMeetLinksRowProps) {
   const { t } = useTranslation();
-  const hasRecurring = recurringWeekday !== null && recurringWeekday !== undefined && !!recurringTime && !!recurringLink;
-  const recurringLabel = hasRecurring
-    ? t('admin.vacancyDetail.meetRecurring.every', {
-        day: t(`admin.vacancyDetail.meetRecurring.days.${recurringWeekday}`),
-        time: (recurringTime ?? '').slice(0, 5),
-      })
-    : '';
+  // Recorrente só conta COMPLETO (dia + hora + sala): incompleto não é slot — e o
+  // objeto estreito o tipo, sem `?? ''` para um valor que já foi conferido.
+  const recurring = recurringWeekday !== null && recurringWeekday !== undefined && recurringTime && recurringLink
+    ? { weekday: recurringWeekday, time: recurringTime.slice(0, 5), link: recurringLink }
+    : null;
 
   const slots: MeetSlot[] = [
     { link: meetLink1, datetime: meetDatetime1 },
@@ -89,7 +87,7 @@ export function VacancyMeetLinksRow({
 
   const filledSlots = slots.filter((s) => s.link || s.datetime);
 
-  if (filledSlots.length === 0 && !hasRecurring) {
+  if (filledSlots.length === 0 && !recurring) {
     return null;
   }
 
@@ -102,16 +100,19 @@ export function VacancyMeetLinksRow({
         {filledSlots.map((slot, idx) => (
           <MeetDatePill key={idx} slot={slot} />
         ))}
-        {hasRecurring && (
+        {recurring && (
           <a
-            href={recurringLink ?? undefined}
+            href={recurring.link}
             target="_blank"
             rel="noopener noreferrer"
             data-testid="meet-recurring-pill"
             className="bg-white border-2 border-primary text-primary text-base font-medium px-5 py-2 rounded inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
           >
             <span aria-hidden>↻</span>
-            {recurringLabel}
+            {t('admin.vacancyDetail.meetRecurring.every', {
+              day: t(`admin.vacancyDetail.meetRecurring.days.${recurring.weekday}`),
+              time: recurring.time,
+            })}
           </a>
         )}
       </div>
