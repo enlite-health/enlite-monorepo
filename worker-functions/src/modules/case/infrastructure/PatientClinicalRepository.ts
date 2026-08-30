@@ -16,6 +16,7 @@ export interface PatientClinicalUpsertInput {
   serviceType?: Profession[] | null;
   deviceType?: string | null;
   additionalComments?: string | null;
+  emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
   hasCud?: boolean | null;
   hasConsent?: boolean | null;
@@ -78,6 +79,13 @@ export class PatientClinicalRepository {
       sets.push('additional_comments_updated_at = NOW()');
       sets.push(`additional_comments_updated_by = $${params.length}`);
     }
+    if (input.emergencyInstructions !== undefined) {
+      push('emergency_instructions', input.emergencyInstructions);
+      // Autoria própria do campo (D211.2, molde de additional_comments): uid, nunca o valor.
+      params.push(input.actorUid ?? null);
+      sets.push('emergency_instructions_updated_at = NOW()');
+      sets.push(`emergency_instructions_updated_by = $${params.length}`);
+    }
     if (input.hasJudicialProtection !== undefined) push('has_judicial_protection', input.hasJudicialProtection);
     if (input.hasCud !== undefined) push('has_cud', input.hasCud);
     if (input.hasConsent !== undefined) {
@@ -108,6 +116,7 @@ export class PatientClinicalRepository {
         clinical_segments AS "clinicalSegments",
         service_type AS "serviceType", device_type AS "deviceType",
         additional_comments AS "additionalComments",
+        emergency_instructions AS "emergencyInstructions",
         has_judicial_protection AS "hasJudicialProtection",
         has_cud AS "hasCud", has_consent AS "hasConsent"
        FROM patients WHERE id = $1`,

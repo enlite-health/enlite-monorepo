@@ -37,6 +37,7 @@ const BOOL_VALUES = ['', 'true', 'false'] as const;
 const schema = z.object({
   diagnosis: z.string().optional(),
   additionalComments: z.string().max(GENERAL_NOTES_MAX).optional(),
+  emergencyInstructions: z.string().max(GENERAL_NOTES_MAX).optional(),
   deviceType: z.string().optional(),
   dependencyLevel: z.string().optional(),
   clinicalSpecialty: z.string().optional(),
@@ -76,6 +77,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     defaultValues: {
       diagnosis: patient.diagnosis ?? '',
       additionalComments: patient.additionalComments ?? '',
+      emergencyInstructions: patient.emergencyInstructions ?? '',
       deviceType: patient.deviceType ?? '',
       dependencyLevel: patient.dependencyLevel ?? '',
       clinicalSpecialty: patient.clinicalSpecialty ?? '',
@@ -93,6 +95,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
   const generalNotesLength = (watch('additionalComments') ?? '').length;
+  const emergencyLength = (watch('emergencyInstructions') ?? '').length;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
@@ -115,6 +118,8 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     const nz = (v: string | undefined): string | null => { const s = (v ?? '').trim(); return s ? s : null; };
     if (nz(values.diagnosis) !== (patient.diagnosis ?? null)) payload.diagnosis = nz(values.diagnosis);
     if (nz(values.additionalComments) !== (patient.additionalComments ?? null)) payload.additionalComments = nz(values.additionalComments);
+    // Redigido para este ator: o campo nem entra no formulário como valor real — nunca sobrescrever.
+    if (!patient.emergencyInstructionsRedacted && nz(values.emergencyInstructions) !== (patient.emergencyInstructions ?? null)) payload.emergencyInstructions = nz(values.emergencyInstructions);
     if (nz(values.deviceType) !== (patient.deviceType ?? null)) payload.deviceType = nz(values.deviceType);
     if (nz(values.dependencyLevel) !== (patient.dependencyLevel ?? null)) payload.dependencyLevel = nz(values.dependencyLevel);
     if (nz(values.clinicalSpecialty) !== (patient.clinicalSpecialty ?? null)) payload.clinicalSpecialty = nz(values.clinicalSpecialty);
@@ -193,6 +198,28 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
               <span className="self-end" data-testid="pce-comments-counter">
                 <Text as="span" size="xs" color="muted">
                   {td('diagnosisCard.generalNotesCounter').replace('{{count}}', String(generalNotesLength)).replace('{{max}}', String(GENERAL_NOTES_MAX))}
+                </Text>
+              </span>
+            </div>
+          </FormField>
+          {/* REQ-01 (D211.2): instruções de emergência — mesmo molde; se o backend redigiu para este
+              ator, o campo não é editável (não há valor real para preservar). */}
+          <FormField label={td('diagnosisCard.emergencyInstructions')} htmlFor="pce-emergency" optional>
+            <div data-clarity-mask="True" className="flex flex-col gap-1">
+              <Textarea
+                id="pce-emergency"
+                inputSize="compact"
+                rows={6}
+                resize="vertical"
+                maxLength={GENERAL_NOTES_MAX}
+                disabled={!!patient.emergencyInstructionsRedacted}
+                placeholder={patient.emergencyInstructionsRedacted ? td('diagnosisCard.emergencyRedacted') : undefined}
+                data-testid="pce-emergency"
+                {...register('emergencyInstructions')}
+              />
+              <span className="self-end" data-testid="pce-emergency-counter">
+                <Text as="span" size="xs" color="muted">
+                  {td('diagnosisCard.generalNotesCounter').replace('{{count}}', String(emergencyLength)).replace('{{max}}', String(GENERAL_NOTES_MAX))}
                 </Text>
               </span>
             </div>

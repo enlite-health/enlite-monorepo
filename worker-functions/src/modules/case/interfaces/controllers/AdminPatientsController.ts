@@ -1,13 +1,14 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
-import { reportError } from '@shared/logging';
+import { reportError, logger } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
+import { projectPatientClinicalForActor, clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
 import { GetPatientFunnelUseCase } from '../../application/GetPatientFunnelUseCase';
 import { patientFunnelQuerySchema } from '../../application/patientFunnelSchema';
 import {
@@ -188,6 +189,12 @@ export class AdminPatientsController {
         error: 'Invalid body',
         details: bodyResult.error.flatten(),
       });
+      return;
+    }
+
+    // Ponto ÚNICO (D211.2, lex C1): quem não pode LER o texto clínico restrito também não o escreve.
+    if ('emergencyInstructions' in (bodyResult.data as Record<string, unknown>) && !canReadPatientClinical(clinicalCellsOf(req))) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyInstructions', cell: PATIENT_CLINICAL_READ_CELL } });
       return;
     }
 
@@ -424,7 +431,15 @@ export class AdminPatientsController {
         return;
       }
 
-      res.status(200).json({ success: true, data: result.patient });
+      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2): redige para quem não pode.
+      const cells = clinicalCellsOf(req);
+      const projected = projectPatientClinicalForActor(result.patient as unknown as Record<string, unknown>, cells);
+      // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
+      // Nunca o texto, nunca o nome. Request redigida não gera linha (minimização).
+      if (canReadPatientClinical(cells)) {
+        logger.info({ msg: 'patient_clinical.read', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: parsed.data.id, country: (result.patient as { country?: string | null }).country ?? null, decision: 'allowed' });
+      }
+      res.status(200).json({ success: true, data: projected });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:getPatientById' });

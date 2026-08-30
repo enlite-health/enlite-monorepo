@@ -76,6 +76,10 @@ export interface PatientDetailRow {
   /** Autoria da última edição das observações (mig 286): ISO/Date e NOME resolvido de users. */
   additionalCommentsUpdatedAt: Date | null;
   additionalCommentsUpdatedBy: string | null;
+  /** Instruções de emergência (mig 294): valor + autoria; redigido no ponto único quando o ator não pode ler. */
+  emergencyInstructions: string | null;
+  emergencyInstructionsUpdatedAt: Date | null;
+  emergencyInstructionsUpdatedBy: string | null;
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;

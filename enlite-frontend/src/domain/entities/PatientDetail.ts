@@ -93,6 +93,11 @@ export interface PatientDetail {
   /** Autoria da última edição das observações (REQ-01): ISO e NOME do staff (resolvido no backend). null = nunca editado pelo painel. */
   additionalCommentsUpdatedAt: string | null;
   additionalCommentsUpdatedBy: string | null;
+  /** Instruções de emergência (REQ-01 · D211.2). null + redacted=true = o ator não pode ler (ponto único no backend). */
+  emergencyInstructions: string | null;
+  emergencyInstructionsUpdatedAt: string | null;
+  emergencyInstructionsUpdatedBy: string | null;
+  emergencyInstructionsRedacted?: boolean;
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;
@@ -177,6 +182,7 @@ export interface PatientClinicalSectionPayload {
   serviceType?: string[] | null;
   deviceType?: string | null;
   additionalComments?: string | null;
+  emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
   hasCud?: boolean | null;
   hasConsent?: boolean | null;

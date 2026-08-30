@@ -56,6 +56,40 @@ function GeneralNotes({ label, patient }: { label: string; patient: PatientDetai
   );
 }
 
+/**
+ * Instruções de emergência (REQ-01 · D211.2): mesmo molde das observações — texto longo com
+ * autoria — mas com um estado a mais: REDIGIDO, quando o backend (ponto único
+ * `patient_clinical:read`) decidiu que este ator não lê. `data-clarity-mask` obrigatório.
+ */
+function EmergencyInstructions({ label, patient }: { label: string; patient: PatientDetail }) {
+  const { t } = useTranslation();
+  const edited = patient.emergencyInstructionsUpdatedAt
+    ? t('admin.patients.detail.diagnosisCard.lastEditedBy', {
+        date: formatDateTime(patient.emergencyInstructionsUpdatedAt),
+        name: patient.emergencyInstructionsUpdatedBy ?? '—',
+      })
+    : null;
+  return (
+    <div className="flex flex-col gap-1" data-clarity-mask="True" data-testid="emergency-instructions">
+      <Text as="span" size="sm" weight="medium" color="secondary">{label}</Text>
+      <div data-testid="emergency-instructions-text" className="whitespace-pre-wrap">
+        {patient.emergencyInstructionsRedacted ? (
+          <span data-testid="emergency-instructions-redacted">
+            <Text as="span" size="sm" color="muted">{t('admin.patients.detail.diagnosisCard.emergencyRedacted')}</Text>
+          </span>
+        ) : (
+          <Text size="sm" color="muted" className="whitespace-pre-wrap leading-snug">{patient.emergencyInstructions ?? '—'}</Text>
+        )}
+      </div>
+      {edited && !patient.emergencyInstructionsRedacted && (
+        <span data-testid="emergency-instructions-edited">
+          <Text as="span" size="xs" color="muted">{edited}</Text>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function BoolField({ label, value }: { label: string; value: boolean | null }) {
   const { t } = useTranslation();
   const display = value === null ? null : value ? t('common.yes', 'Sim') : t('common.no', 'Não');
@@ -92,6 +126,7 @@ export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
       <div className="flex flex-col gap-2.5">
         <Field label={`${t('admin.patients.detail.diagnosisCard.cid')}:`} value={patient.diagnosis} />
         <GeneralNotes label={`${t('admin.patients.detail.diagnosisCard.generalNotes')}:`} patient={patient} />
+        <EmergencyInstructions label={`${t('admin.patients.detail.diagnosisCard.emergencyInstructions')}:`} patient={patient} />
         <Field label={`${t('admin.patients.detail.diagnosisCard.pathologyTypes')}:`} value={specialtyLabel} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.hasFollowUp')}:`} value={null} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.receivesMoney')}:`} value={null} />

@@ -78,4 +78,13 @@ describe('ReadonlyDbQueryService', () => {
     expect(calls).toContain('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
   });
+
+  it('C2 (D211.2): query que toca emergency_instructions é recusada antes de abrir transação', async () => {
+    const { pool, client } = makePool();
+    const service = new ReadonlyDbQueryService(pool as never);
+    await expect(service.run('SELECT emergency_instructions FROM patients', 10)).rejects.toThrow(/restricted clinical column/);
+    await expect(service.run('select p.EMERGENCY_INSTRUCTIONS_updated_by from patients p', 10)).rejects.toThrow(/restricted clinical column/);
+    expect(pool.connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+  });
 });

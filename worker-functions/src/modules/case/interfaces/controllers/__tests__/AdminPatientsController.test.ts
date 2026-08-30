@@ -9,6 +9,11 @@
 
 // ─── Mocks (antes de qualquer import do módulo) ───────────────────────────────
 
+const mockLoggerInfo = jest.fn();
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  logger: { info: (...a: unknown[]) => mockLoggerInfo(...a), warn: jest.fn(), error: jest.fn(), child: jest.fn(() => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() })) },
+}));
 const mockFindDetailById = jest.fn();
 const mockList = jest.fn();
 const mockFetchPatientVacancies = jest.fn();
@@ -140,6 +145,38 @@ describe('AdminPatientsController.getPatientById', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect((res as any).json).toHaveBeenCalledWith({ success: true, data: patient });
+    });
+
+    it('ponto único (D211.2): sem células (engine não decidiu) devolve as instruções de emergência; células sem `patient_clinical:read` → null + redacted', async () => {
+      const patient = makePatientDetail({ emergencyInstructions: 'Llamar 107', emergencyInstructionsUpdatedAt: new Date('2026-08-29T00:00:00Z'), emergencyInstructionsUpdatedBy: 'Gabi' } as never);
+      mockFindDetailById.mockResolvedValue(patient);
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+      expect((res as any).json.mock.calls[0][0].data.emergencyInstructions).toBe('Llamar 107');
+      expect((res as any).json.mock.calls[0][0].data.emergencyInstructionsRedacted).toBeUndefined();
+
+      mockFindDetailById.mockResolvedValue(patient);
+      const [req2, res2] = mockReqRes({ id: PATIENT_ID });
+      (req2 as any).permissionCells = ['patient:read'];
+      await controller.getPatientById(req2, res2);
+      const data = (res2 as any).json.mock.calls[0][0].data;
+      expect(data).toMatchObject({ emergencyInstructions: null, emergencyInstructionsUpdatedAt: null, emergencyInstructionsUpdatedBy: null, emergencyInstructionsRedacted: true });
+      expect(data.diagnosis).toBe(patient.diagnosis);
+    });
+
+    it('C3: leitura permitida gera trilha SEM valor (uid, paciente, país, decisão); redigida não gera', async () => {
+      const patient = makePatientDetail({ emergencyInstructions: 'Llamar 107' } as never);
+      mockFindDetailById.mockResolvedValue(patient);
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+      const call = mockLoggerInfo.mock.calls.find((c: unknown[]) => (c[0] as { msg: string }).msg === 'patient_clinical.read');
+      expect(call).toBeDefined();
+      expect(JSON.stringify(call![0])).not.toContain('Llamar 107');
+      expect(call![0]).toMatchObject({ patientId: PATIENT_ID, decision: 'allowed', country: 'AR' });
+      mockLoggerInfo.mockClear(); mockFindDetailById.mockResolvedValue(patient);
+      const [req2, res2] = mockReqRes({ id: PATIENT_ID }); (req2 as any).permissionCells = [];
+      await controller.getPatientById(req2, res2);
+      expect(mockLoggerInfo.mock.calls.some((c: unknown[]) => (c[0] as { msg: string }).msg === 'patient_clinical.read')).toBe(false);
     });
 
     it('deve incluir responsibles, addresses e professionals no data', async () => {

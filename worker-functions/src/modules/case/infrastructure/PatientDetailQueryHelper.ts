@@ -37,6 +37,12 @@ const PATIENT_DETAIL_SQL = `
     p.additional_comments_updated_at AS "additionalCommentsUpdatedAt",
     (SELECT COALESCE(u.display_name, u.email) FROM users u
       WHERE u.firebase_uid = p.additional_comments_updated_by) AS "additionalCommentsUpdatedBy",
+    -- Instruções de emergência (mig 294, D211.2): mesmo molde de autoria; a redação por permissão
+    -- acontece DEPOIS, no ponto único (PatientService.redactClinicalForActor).
+    p.emergency_instructions AS "emergencyInstructions",
+    p.emergency_instructions_updated_at AS "emergencyInstructionsUpdatedAt",
+    (SELECT COALESCE(u.display_name, u.email) FROM users u
+      WHERE u.firebase_uid = p.emergency_instructions_updated_by) AS "emergencyInstructionsUpdatedBy",
     has_judicial_protection  AS "hasJudicialProtection",
     has_cud                  AS "hasCud",
     has_consent              AS "hasConsent",
@@ -228,6 +234,9 @@ export async function fetchPatientDetail(
     additionalComments: p.additionalComments,
     additionalCommentsUpdatedAt: p.additionalCommentsUpdatedAt,
     additionalCommentsUpdatedBy: p.additionalCommentsUpdatedBy,
+    emergencyInstructions: p.emergencyInstructions,
+    emergencyInstructionsUpdatedAt: p.emergencyInstructionsUpdatedAt,
+    emergencyInstructionsUpdatedBy: p.emergencyInstructionsUpdatedBy,
     hasJudicialProtection: p.hasJudicialProtection,
     hasCud: p.hasCud,
     hasConsent: p.hasConsent,

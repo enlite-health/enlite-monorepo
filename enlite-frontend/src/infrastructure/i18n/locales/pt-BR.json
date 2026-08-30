@@ -2979,7 +2979,9 @@
           "comments": "Comentários",
           "priorityNormal": "Normal",
           "priorityHigh": "Alta",
-          "priorityUrgent": "Urgente"
+          "priorityUrgent": "Urgente",
+          "emergencyInstructions": "Instruções de emergência",
+          "emergencyRedacted": "Você não tem permissão para ver as instruções de emergência."
         },
         "therapeuticProjectCard": {
           "title": "Projeto Terapêutico",

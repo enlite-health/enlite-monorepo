@@ -278,6 +278,28 @@ describe('DiagnosticoCard', () => {
     expect(edited.textContent).toMatch(/28\/08\/2026/);
   });
 
+  // ── D211.2: instruções de emergência — visível, com autoria; ou REDIGIDO pelo ponto único do backend ──
+  it('instruções de emergência: texto com quebras, máscara do Clarity e "Última edição"', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, emergencyInstructions: 'Llamar al 107\nAvisar a la madre' }} />);
+    const box = screen.getByTestId('emergency-instructions');
+    expect(box).toHaveAttribute('data-clarity-mask', 'True');
+    expect(screen.getByText(/Instruções de emergência/)).toBeInTheDocument();
+    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('Llamar al 107\nAvisar a la madre');
+    expect(screen.getByTestId('emergency-instructions-edited').textContent).toMatch(/Coordinadora E2E/);
+    expect(screen.queryByTestId('emergency-instructions-redacted')).not.toBeInTheDocument();
+  });
+
+  it('redigido pelo backend: mostra o aviso de permissão, sem texto nem autoria', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, emergencyInstructions: null, emergencyInstructionsUpdatedAt: null, emergencyInstructionsUpdatedBy: null, emergencyInstructionsRedacted: true }} />);
+    expect(screen.getByTestId('emergency-instructions-redacted')).toBeInTheDocument();
+    expect(screen.queryByTestId('emergency-instructions-edited')).not.toBeInTheDocument();
+  });
+
+  it('sem instruções (nunca preenchido) mostra —', () => {
+    render(<DiagnosticoCard patient={patientDetailMinimal} />);
+    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('—');
+  });
+
   it('sem autoria (nunca editado pelo painel) não mostra a linha "Última edição"', () => {
     render(<DiagnosticoCard patient={patientDetailMinimal} />);
     expect(screen.queryByTestId('general-notes-edited')).not.toBeInTheDocument();

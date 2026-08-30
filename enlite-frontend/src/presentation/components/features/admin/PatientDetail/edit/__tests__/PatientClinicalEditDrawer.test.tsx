@@ -156,4 +156,26 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
     expect(updatePatientSection).not.toHaveBeenCalled();
   });
+
+  // ── D211.2: instruções de emergência ──
+  it('instruções de emergência: textarea com máscara, contador, e salvar manda SÓ esse campo', async () => {
+    render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const ta = screen.getByTestId('pce-emergency');
+    expect(ta.tagName).toBe('TEXTAREA');
+    expect(ta).toHaveValue('Llamar al 107 y avisar a la madre');
+    expect(ta).not.toBeDisabled();
+    expect(ta.parentElement).toHaveAttribute('data-clarity-mask', 'True');
+    fireEvent.change(ta, { target: { value: 'Nuevo protocolo\nLínea 2' } });
+    expect(screen.getByTestId('pce-emergency-counter').textContent).toBe(`23/${GENERAL_NOTES_MAX} caracteres`);
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', { emergencyInstructions: 'Nuevo protocolo\nLínea 2' }));
+  });
+
+  it('redigido pelo backend: o campo vem desabilitado e NUNCA entra no PATCH (não há valor real para preservar)', async () => {
+    render(<PatientClinicalEditDrawer patient={{ ...patientDetailFixture, emergencyInstructions: null, emergencyInstructionsRedacted: true }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pce-emergency')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'novo' } });
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', { additionalComments: 'novo' }));
+  });
 });
