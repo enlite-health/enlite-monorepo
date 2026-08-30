@@ -8,6 +8,10 @@ interface VacancyMeetLinksRowProps {
   meetDatetime2: string | null;
   meetLink3: string | null;
   meetDatetime3: string | null;
+  /** Slot RECORRENTE (mig 291). */
+  recurringWeekday?: number | null;
+  recurringTime?: string | null;
+  recurringLink?: string | null;
 }
 
 function formatMeetDate(dateStr: string | null): string | null {
@@ -64,8 +68,16 @@ export function VacancyMeetLinksRow({
   meetDatetime2,
   meetLink3,
   meetDatetime3,
+  recurringWeekday = null,
+  recurringTime = null,
+  recurringLink = null,
 }: VacancyMeetLinksRowProps) {
   const { t } = useTranslation();
+  // Recorrente só conta COMPLETO (dia + hora + sala): incompleto não é slot — e o
+  // objeto estreito o tipo, sem `?? ''` para um valor que já foi conferido.
+  const recurring = recurringWeekday !== null && recurringWeekday !== undefined && recurringTime && recurringLink
+    ? { weekday: recurringWeekday, time: recurringTime.slice(0, 5), link: recurringLink }
+    : null;
 
   const slots: MeetSlot[] = [
     { link: meetLink1, datetime: meetDatetime1 },
@@ -75,7 +87,7 @@ export function VacancyMeetLinksRow({
 
   const filledSlots = slots.filter((s) => s.link || s.datetime);
 
-  if (filledSlots.length === 0) {
+  if (filledSlots.length === 0 && !recurring) {
     return null;
   }
 
@@ -88,6 +100,21 @@ export function VacancyMeetLinksRow({
         {filledSlots.map((slot, idx) => (
           <MeetDatePill key={idx} slot={slot} />
         ))}
+        {recurring && (
+          <a
+            href={recurring.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="meet-recurring-pill"
+            className="bg-white border-2 border-primary text-primary text-base font-medium px-5 py-2 rounded inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
+          >
+            <span aria-hidden>↻</span>
+            {t('admin.vacancyDetail.meetRecurring.every', {
+              day: t(`admin.vacancyDetail.meetRecurring.days.${recurring.weekday}`),
+              time: recurring.time,
+            })}
+          </a>
+        )}
       </div>
     </div>
   );

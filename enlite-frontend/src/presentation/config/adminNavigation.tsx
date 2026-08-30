@@ -1,5 +1,6 @@
 import { AppSidebarNavItem } from '@presentation/components/templates/DashboardLayout';
 import { useTranslation } from 'react-i18next';
+import { MapPin } from 'lucide-react';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 
@@ -55,6 +56,11 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       href: '/admin/patients',
     },
     {
+      icon: <MapPin className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.map', 'Mapa'),
+      href: '/admin/mapa',
+    },
+    {
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -99,11 +105,29 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
         {
           icon: (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8m-8 4h5m-9 6l3-3h9a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v13z" />
+            </svg>
+          ),
+          label: t('admin.nav.funnelStageMessages', 'Mensajes por etapa'),
+          href: '/admin/mensajes-por-etapa',
+        },
+        {
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.2-3.6A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
           ),
           label: t('admin.nav.patientChatRoles', 'Roles de grupos'),
           href: '/admin/patient-chat-roles',
+        },
+        {
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zm7 9v-4m-2 2h4" />
+            </svg>
+          ),
+          label: t('admin.nav.presentationInvite', 'Invitación a presentación'),
+          href: '/admin/invitacion-presentacion',
         },
         {
           icon: (

@@ -44,16 +44,21 @@ export class BookSlotFromWhatsAppUseCase {
     // 2. Buscar job_posting_id via OriginalRepliedMessageSid (correlação exata)
     //    Fallback para busca por interview_response='pending' se SID não disponível (janela 7 dias)
     let jobPostingId: string | null = null;
+    // Hora em que a oferta foi montada: o botão N aponta para a N-ésima opção
+    // DAQUELA oferta (slot recorrente anda com o tempo — mig 291).
+    let offeredAt: Date | undefined;
 
     if (originalMessageSid) {
       const outboxResult = await this.db.query(
-        `SELECT variables->>'job_posting_id' AS job_posting_id
+        `SELECT variables->>'job_posting_id' AS job_posting_id, created_at
          FROM messaging_outbox
          WHERE twilio_sid = $1
          LIMIT 1`,
         [originalMessageSid],
       );
       jobPostingId = outboxResult.rows[0]?.job_posting_id ?? null;
+      const createdAt = outboxResult.rows[0]?.created_at as string | Date | undefined;
+      if (createdAt) offeredAt = new Date(createdAt);
     }
 
     if (!jobPostingId) {
@@ -88,6 +93,7 @@ export class BookSlotFromWhatsAppUseCase {
       workerEmail: worker.email,
       jobPostingId,
       slotIndex,
+      offeredAt,
     });
 
     if (!booking.ok) {

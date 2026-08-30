@@ -21,3 +21,8 @@ services:
       USE_MOCK_AUTH: "false"
       FIREBASE_AUTH_EMULATOR_HOST: "firebase-emulator:9099"
       GCLOUD_PROJECT: "demo-enlite-test"
+      # O emulador (firebase-tools no node:alpine) ignora o --project e sobe como
+      # "demo-no-project" — toda conta criada pelo SDK/REST cai nesse project.
+      # MultiAuthService lê FIREBASE_PROJECT_ID; sem isto o Admin SDK procura em
+      # enlite-e2e-test e o auto-provision do staff falha com "no user record".
+      FIREBASE_PROJECT_ID: "demo-no-project"

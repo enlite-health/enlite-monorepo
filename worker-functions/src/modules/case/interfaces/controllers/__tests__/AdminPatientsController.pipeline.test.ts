@@ -13,6 +13,11 @@
 
 const mockPoolQuery = jest.fn();
 
+jest.mock('@shared/logging', () => ({
+  reportError: jest.fn(),
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: jest.fn().mockReturnThis() },
+}));
+
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
@@ -43,6 +48,7 @@ jest.mock('@modules/matching', () => ({
   buildInsertParams: jest.fn(),
 }));
 
+import { reportError } from '@shared/logging';
 import { AdminPatientsController } from '../AdminPatientsController';
 import {
   PatientNotFoundError,
@@ -94,6 +100,21 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
   // ── a. PATCH /:id/:section ──────────────────────────────────────────────────
 
   describe('a. updatePatientSection', () => {
+    it('C1 (D211.2): ator sem `patient_clinical:read` NÃO escreve emergencyInstructions → 403 e o service não é chamado; sem células (engine não decidiu) passa', async () => {
+      const updatePatientSection = jest.fn().mockResolvedValue({ id: VALID_ID, updated: true });
+      const controller = makeController({ updatePatientSection });
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { emergencyInstructions: 'Llamar 107' });
+      (req as unknown as { permissionCells: string[] }).permissionCells = ['patient:write'];
+      await controller.updatePatientSection(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(updatePatientSection).not.toHaveBeenCalled();
+      // outro campo clínico com as mesmas células passa (a trava é do campo restrito)
+      const [req2, res2] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { deviceType: 'silla' });
+      (req2 as unknown as { permissionCells: string[] }).permissionCells = ['patient:write'];
+      await controller.updatePatientSection(req2, res2);
+      expect(res2.status).not.toHaveBeenCalledWith(403);
+    });
+
     it.each([
       ['general', { firstName: 'Ana', phoneWhatsapp: '+549110000000' }],
       ['clinical', { diagnosis: 'x', dependencyLevel: 'MILD' }],
@@ -108,7 +129,8 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect((res as any).json).toHaveBeenCalledWith({ success: true, data: { id: VALID_ID } });
-      expect(updatePatientSection).toHaveBeenCalledWith(VALID_ID, section, expect.objectContaining(body));
+      // 4º arg = actor (autoria, REQ-01): sem auth no request mockado vai undefined.
+      expect(updatePatientSection).toHaveBeenCalledWith(VALID_ID, section, expect.objectContaining(body), undefined);
     });
 
     it('deve retornar 400 para section desconhecida (não chama o service)', async () => {
@@ -147,6 +169,56 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
   });
 
   // ── b. PUT /:id/status ──────────────────────────────────────────────────────
+
+  // ── a2. autoria (REQ-01 · D195 · lex item 3) ──────────────────────────────
+  describe('a2. autoria do PATCH', () => {
+    const CLINICAL_TEXT = 'Paciente con TEA nivel 2; evitar ruidos fuertes; crisis: llamar a la madre.';
+
+    it('passa o uid do staff autenticado como 4º argumento (actor)', async () => {
+      const updatePatientSection = jest.fn().mockResolvedValue({ id: VALID_ID, updated: true });
+      const controller = makeController({ updatePatientSection });
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { additionalComments: CLINICAL_TEXT });
+      (req as unknown as { authContext: unknown }).authContext = { principal: { id: 'uid-staff-1' } };
+
+      await controller.updatePatientSection(req, res);
+
+      expect(updatePatientSection).toHaveBeenCalledWith(VALID_ID, 'clinical', expect.objectContaining({ additionalComments: CLINICAL_TEXT }), { uid: 'uid-staff-1' });
+    });
+
+    it('sem contexto de auth, actor é undefined (o repositório não grava autoria)', async () => {
+      const updatePatientSection = jest.fn().mockResolvedValue({ id: VALID_ID, updated: true });
+      const controller = makeController({ updatePatientSection });
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { additionalComments: CLINICAL_TEXT });
+
+      await controller.updatePatientSection(req, res);
+
+      expect(updatePatientSection.mock.calls[0][3]).toBeUndefined();
+    });
+
+    // lex C1.2: o texto clínico NUNCA vai para log/telemetria. Régua: o payload do
+    // reportError não contém o texto. Controle positivo abaixo prova que a régua
+    // detecta um vazamento — sem ele, "não contém" poderia ser "não olhei".
+    const contemTexto = (v: unknown): boolean => JSON.stringify(v).includes(CLINICAL_TEXT);
+
+    it('falha do service: reportError NÃO leva o texto clínico (só section)', async () => {
+      const updatePatientSection = jest.fn().mockRejectedValue(new Error('db down'));
+      const controller = makeController({ updatePatientSection });
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { additionalComments: CLINICAL_TEXT });
+
+      await controller.updatePatientSection(req, res);
+
+      expect(reportError).toHaveBeenCalledTimes(1);
+      const [err, meta] = (reportError as jest.Mock).mock.calls[0];
+      expect(contemTexto(meta)).toBe(false);
+      expect(contemTexto((err as Error).message)).toBe(false);
+      expect(meta).toEqual({ source: 'AdminPatientsController:updatePatientSection', section: 'clinical' });
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('controle positivo: a régua acusa quando o texto aparece no metadado', () => {
+      expect(contemTexto({ source: 'x', body: { additionalComments: CLINICAL_TEXT } })).toBe(true);
+    });
+  });
 
   describe('b. updatePatientStatus', () => {
     it('deve validar e mover o status, retornando 200 { id, status }', async () => {

@@ -9,8 +9,8 @@
  *   - i18n keys are resolved correctly
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
 
@@ -37,12 +37,19 @@ function t(key: string, optsOrDefault?: any): string {
 }
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t }),
+  useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }),
 }));
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({ id: 'test-id' }),
+}));
+
+// AdminApiService — só usado no PATCH do PatientClinicalEditDrawer (DiagnosticoCard).
+// Nenhum outro card deste arquivo clica em "salvar", então mockar aqui é seguro.
+const updatePatientSection = vi.fn();
+vi.mock('@infrastructure/http/AdminApiService', () => ({
+  AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
 }));
 
 // ── Imports (after mocks) ────────────────────────────────────────────────────
@@ -69,8 +76,36 @@ describe('PatientIdentityCard', () => {
     expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
   });
 
-  it('renders status badge Em Admissão', () => {
+  it('renders status badge "Aguardando financeiro" for PENDING_ADMISSION (D195 — nome pelo motivo real)', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
+    expect(screen.getByText('Aguardando financeiro')).toBeInTheDocument();
+    expect(screen.queryByText('Em Admissão')).not.toBeInTheDocument();
+  });
+
+  it('renders the case number badge when lastCaseNumber is present', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, lastCaseNumber: 747 }} />);
+    expect(screen.getByText(/#747/)).toBeInTheDocument();
+  });
+
+  it('renders "—" when the patient has no status', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: null }} />);
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('falls back to the raw ISO string when the runtime cannot format the date', () => {
+    const spy = vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => {
+      throw new RangeError('locale');
+    });
+    try {
+      render(<PatientIdentityCard patient={patientDetailFixture} />);
+      expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('keeps the legacy EM_ADMISSAO label for the legacy status value', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: 'EM_ADMISSAO' }} />);
     expect(screen.getByText('Em Admissão')).toBeInTheDocument();
   });
 
@@ -105,6 +140,63 @@ describe('PatientIdentityCard', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
     const editButton = screen.getByText('Editar');
     expect(() => fireEvent.click(editButton)).not.toThrow();
+  });
+
+  it('renders "—" for admission date when createdAt is an empty string (formatDate cannot parse it)', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, createdAt: '' }} />);
+    const admissionLabel = screen.getByText(/Admissão/);
+    expect(admissionLabel.parentElement).toHaveTextContent('Admissão: —');
+  });
+
+  it('builds the address from neighborhood/city/province when no address has fullAddress', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          addresses: [],
+          zoneNeighborhood: 'Palermo',
+          cityLocality: 'CABA',
+          province: 'Buenos Aires',
+        }}
+      />,
+    );
+    expect(screen.getByText('Endereço:')).toBeInTheDocument();
+    expect(screen.getByText('Palermo, CABA, Buenos Aires')).toBeInTheDocument();
+  });
+
+  it('does not render the address field when there is no fullAddress and no location parts', () => {
+    render(
+      <PatientIdentityCard
+        patient={{ ...patientDetailFixture, addresses: [], zoneNeighborhood: null, cityLocality: null, province: null }}
+      />,
+    );
+    expect(screen.queryByText('Endereço:')).not.toBeInTheDocument();
+  });
+
+  it('falls back to "—" for the responsible name when both firstName and lastName are null', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: [{ ...patientDetailFixture.responsibles[0], firstName: null, lastName: null }],
+        }}
+      />,
+    );
+    const nameLabel = screen.getByText(/Nome do Responsável/);
+    expect(nameLabel.parentElement).toHaveTextContent('Nome do Responsável: —');
+  });
+
+  it('renders "—" for the responsible document when documentType and documentNumber are both null', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: [{ ...patientDetailFixture.responsibles[0], documentType: null, documentNumber: null }],
+        }}
+      />,
+    );
+    const docLabel = screen.getByText(/Tipo de documento/);
+    expect(docLabel.parentElement).toHaveTextContent('Tipo de documento: —');
   });
 });
 
@@ -157,6 +249,8 @@ describe('PatientGeneralInfoCard', () => {
 // ── DiagnosticoCard ──────────────────────────────────────────────────────────
 
 describe('DiagnosticoCard', () => {
+  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: 'x' }); });
+
   it('renders card title Diagnóstico', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.getByText('Diagnóstico')).toBeInTheDocument();
@@ -167,9 +261,61 @@ describe('DiagnosticoCard', () => {
     expect(screen.getByText('CID 6A02.5 Transtorno do espectro autista')).toBeInTheDocument();
   });
 
-  it('renders additionalComments (details) value', () => {
+  it('renders additionalComments (observações gerais) value', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.getByText('TDAH severo')).toBeInTheDocument();
+    expect(screen.getByText(/Observações gerais/)).toBeInTheDocument();
+  });
+
+  // ── REQ-01: observações gerais com quebras, autoria e máscara do Clarity ──
+  it('preserva quebras de linha (whitespace-pre-wrap) e mostra "Última edição: data · nome"', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, additionalComments: 'linha 1\nlinha 2' }} />);
+    const text = screen.getByTestId('general-notes-text');
+    expect(text).toHaveClass('whitespace-pre-wrap');
+    expect(text.textContent).toBe('linha 1\nlinha 2');
+    const edited = screen.getByTestId('general-notes-edited');
+    expect(edited.textContent).toMatch(/^Última edição: .+ · Coordinadora E2E$/);
+    expect(edited.textContent).toMatch(/28\/08\/2026/);
+  });
+
+  // ── D211.2: instruções de emergência — visível, com autoria; ou REDIGIDO pelo ponto único do backend ──
+  it('instruções de emergência: texto com quebras, máscara do Clarity e "Última edição"', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, emergencyInstructions: 'Llamar al 107\nAvisar a la madre' }} />);
+    const box = screen.getByTestId('emergency-instructions');
+    expect(box).toHaveAttribute('data-clarity-mask', 'True');
+    expect(screen.getByText(/Instruções de emergência/)).toBeInTheDocument();
+    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('Llamar al 107\nAvisar a la madre');
+    expect(screen.getByTestId('emergency-instructions-edited').textContent).toMatch(/Coordinadora E2E/);
+    expect(screen.queryByTestId('emergency-instructions-redacted')).not.toBeInTheDocument();
+  });
+
+  it('redigido pelo backend: mostra o aviso de permissão, sem texto nem autoria', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, emergencyInstructions: null, emergencyInstructionsUpdatedAt: null, emergencyInstructionsUpdatedBy: null, emergencyInstructionsRedacted: true }} />);
+    expect(screen.getByTestId('emergency-instructions-redacted')).toBeInTheDocument();
+    expect(screen.queryByTestId('emergency-instructions-edited')).not.toBeInTheDocument();
+  });
+
+  it('sem instruções (nunca preenchido) mostra —', () => {
+    render(<DiagnosticoCard patient={patientDetailMinimal} />);
+    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('—');
+  });
+
+  it('sem autoria (nunca editado pelo painel) não mostra a linha "Última edição"', () => {
+    render(<DiagnosticoCard patient={patientDetailMinimal} />);
+    expect(screen.queryByTestId('general-notes-edited')).not.toBeInTheDocument();
+    expect(screen.getByTestId('general-notes-text').textContent).toBe('—');
+  });
+
+  it('com data mas sem nome resolvido, mostra "—" no lugar do nome; data inválida cai no ISO cru', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, additionalCommentsUpdatedAt: 'não-é-data', additionalCommentsUpdatedBy: null }} />);
+    expect(screen.getByTestId('general-notes-edited').textContent).toBe('Última edição: não-é-data · —');
+  });
+
+  // lex C1.1: o bloco da narrativa clínica leva data-clarity-mask="True". Este teste é a
+  // trava: se alguém remover o atributo, fica vermelho.
+  it('o bloco das observações leva data-clarity-mask="True"', () => {
+    render(<DiagnosticoCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('general-notes')).toHaveAttribute('data-clarity-mask', 'True');
   });
 
   it('renders CID label', () => {
@@ -195,6 +341,26 @@ describe('DiagnosticoCard', () => {
     expect(editButton).not.toBeDisabled();
     fireEvent.click(editButton);
     expect(screen.getByTestId('patient-clinical-edit-drawer')).toBeInTheDocument();
+  });
+
+  it('salvar uma mudança no drawer chama o onSaved do card e fecha o drawer', async () => {
+    const onSaved = vi.fn();
+    render(<DiagnosticoCard patient={patientDetailFixture} onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('edit-clinical-btn'));
+    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('patient-clinical-edit-drawer')).not.toBeInTheDocument(), { timeout: 1500 });
+  });
+
+  it('sem a prop onSaved (opcional), salvar não quebra e ainda assim fecha o drawer', async () => {
+    render(<DiagnosticoCard patient={patientDetailFixture} />);
+    fireEvent.click(screen.getByTestId('edit-clinical-btn'));
+    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
+    expect(() => fireEvent.click(screen.getByTestId('pce-save'))).not.toThrow();
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('patient-clinical-edit-drawer')).not.toBeInTheDocument(), { timeout: 1500 });
   });
 });
 

@@ -1,4 +1,8 @@
 #!/bin/bash
+# ⛔ PROIBIDO RODAR — ver D218 (ebrain, 29/08/2026). Este arquivo é a receita exata do vazamento fechado pelo
+# scripts/create-mcp-ro-role.sql: SELECT ON ALL TABLES + ALTER DEFAULT PRIVILEGES contra a instância de prd.
+# A role `enlite_readonly` NÃO existe em prod (medido) e o secret não existe. Mantido só como histórico.
+echo "PROIBIDO — ver D218"; exit 1
 # Wrapper para iniciar o MCP de PostgreSQL com credencial READ-ONLY em producao.
 # Usa o role enlite_readonly (apenas SELECT) e busca a senha no GCP Secret Manager.
 # Se o Cloud SQL Proxy nao estiver rodando, inicia automaticamente.

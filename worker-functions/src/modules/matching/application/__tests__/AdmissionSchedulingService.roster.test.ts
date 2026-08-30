@@ -82,6 +82,8 @@ interface Fixture {
   busyOnRecheck?: Record<string, BusyInterval[]>;
   /** O que o KMS devolve ao decifrar o e-mail do paciente. */
   decryptsTo?: string;
+  /** Linha do paciente (default: paciente com e-mail, sem responsável). */
+  patientRow?: { contact_email_encrypted: string | null; responsible_email_encrypted: string | null };
   /** Fuso devolvido pela agenda; `null` = ilegível (cai no default do país). */
   calendarTimezone?: string | null;
 }
@@ -92,7 +94,8 @@ function makeService(fx: Fixture) {
 
   mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
     if (sql.includes('FROM patients')) {
-      return { rows: [{ id: PATIENT_ID, country: 'AR', contact_email_encrypted: 'cipher' }] };
+      const row = fx.patientRow ?? { contact_email_encrypted: 'cipher', responsible_email_encrypted: null };
+      return { rows: [{ id: PATIENT_ID, country: 'AR', ...row }] };
     }
     if (sql.includes('INSERT INTO admission_appointments')) {
       if (insertThrows) {
@@ -130,7 +133,9 @@ function makeService(fx: Fixture) {
 
   const notifier = { onBooked: jest.fn(async () => undefined) } as unknown as jest.Mocked<AdmissionNotifier>;
   const encryption = {
-    decrypt: jest.fn(async () => fx.decryptsTo ?? 'paciente@example.com'),
+    decrypt: jest.fn(async (c: string) =>
+      fx.decryptsTo ?? (c === 'cipher-resp' ? 'responsable@example.com' : 'paciente@example.com'),
+    ),
   } as unknown as KMSEncryptionService;
   const hosts = {
     listActiveByCountry: jest.fn(async () => fx.hosts ?? []),
@@ -277,6 +282,30 @@ describe('AdmissionSchedulingService — roster', () => {
       await expect(
         service.book({ patientId: PATIENT_ID, slotStartISO: 'não-é-data', country: 'AR' }, NOW),
       ).rejects.toThrow(/Invalid slotStartISO/);
+    });
+
+    it('solicitante RESPONSÁVEL (paciente sem e-mail) → o e-mail do responsável vira convidado (PEND-09)', async () => {
+      const { service, calendar } = makeService({
+        hosts: [ANA],
+        busyByHost: {},
+        patientRow: { contact_email_encrypted: null, responsible_email_encrypted: 'cipher-resp' },
+      });
+
+      await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+      expect(calendar.createEventWithMeet.mock.calls[0][0].patientEmail).toBe('responsable@example.com');
+    });
+
+    it('paciente e responsável sem e-mail → evento sem convidado', async () => {
+      const { service, calendar } = makeService({
+        hosts: [ANA],
+        busyByHost: {},
+        patientRow: { contact_email_encrypted: null, responsible_email_encrypted: null },
+      });
+
+      await service.book({ patientId: PATIENT_ID, slotStartISO: SLOT_ISO, country: 'AR' }, NOW);
+
+      expect(calendar.createEventWithMeet.mock.calls[0][0].patientEmail).toBeUndefined();
     });
 
     it('e-mail do paciente em branco não vira convidado vazio no evento', async () => {

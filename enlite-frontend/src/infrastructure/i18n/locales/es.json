@@ -1090,7 +1090,10 @@
       "tags": "Etiquetas",
       "dedup": "Duplicados",
       "adminSection": "Administración",
-      "patientChatRoles": "Roles de grupos"
+      "patientChatRoles": "Roles de grupos",
+      "funnelStageMessages": "Mensajes por etapa",
+      "presentationInvite": "Invitación a presentación",
+      "map": "Mapa"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -1577,6 +1580,12 @@
       },
       "reprogramBadge": "🔄 Reprogramado",
       "notesButton": "Comentarios",
+      "resendButton": "Reenviar",
+      "resendSending": "Enviando…",
+      "lastSentAt": "Último envío: {{date}}",
+      "neverSent": "Sin envíos",
+      "resendDone": "Enviado ✓",
+      "resendBlockedUntil": "Reenvío disponible desde {{date}}",
       "moveToButton": "Mover a…",
       "collapseColumn": "Colapsar columna",
       "expandColumn": "Expandir columna",
@@ -1624,7 +1633,8 @@
         "confirm": "Agendar",
         "cancel": "Cancelar",
         "unknown": "Todavía no sé la fecha — mover igual"
-      }
+      },
+      "stageLastMessage": "Mensaje de etapa ({{stage}}): {{date}}"
     },
     "workerDetail": {
       "status": "Estado del Prestador",
@@ -2325,6 +2335,36 @@
         "cancel": "Cancelar",
         "close": "Cerrar",
         "errorEmpty": "La descripción no puede quedar vacía."
+      },
+      "meetRecurring": {
+        "title": "Horario recurrente (reunión de presentación)",
+        "hint": "Todas las semanas, el mismo día y hora, en la misma sala. El convite ofrece las próximas fechas automáticamente.",
+        "weekday": "Día",
+        "time": "Hora (Argentina)",
+        "link": "Sala de Meet",
+        "none": "Sin horario recurrente",
+        "clear": "Quitar",
+        "every": "Todos los {{day}} a las {{time}}",
+        "invalidTime": "Hora inválida (HH:MM)",
+        "incomplete": "Completá día, hora y sala",
+        "days": {
+          "0": "domingos",
+          "1": "lunes",
+          "2": "martes",
+          "3": "miércoles",
+          "4": "jueves",
+          "5": "viernes",
+          "6": "sábados"
+        },
+        "daysShort": {
+          "0": "Domingo",
+          "1": "Lunes",
+          "2": "Martes",
+          "3": "Miércoles",
+          "4": "Jueves",
+          "5": "Viernes",
+          "6": "Sábado"
+        }
       }
     },
     "vacancyModal": {
@@ -2625,7 +2665,8 @@
         "documents": "Documentación",
         "registeredAt": "Registro",
         "platform": "Plataforma",
-        "view": "Ver"
+        "view": "Ver",
+        "actions": "Acciones"
       },
       "platformOptions": {
         "all": "Todas",
@@ -2806,7 +2847,7 @@
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admisión",
-          "PENDING_ADMISSION": "Esperando Activación",
+          "PENDING_ADMISSION": "Esperando financiero",
           "ACTIVE": "Activo"
         }
       },
@@ -2953,6 +2994,7 @@
         "patientStatusLabel": "Estado del paciente",
         "patientStatus": {
           "EM_ADMISSAO": "En Admisión",
+          "PENDING_ADMISSION": "Esperando financiero",
           "EM_ATENDIMENTO": "En Atendimiento",
           "PACIENTE_COM_ALTA": "Dado de alta",
           "CANCELADO": "Cancelado"
@@ -3004,6 +3046,9 @@
           "title": "Diagnóstico",
           "cid": "Hipótesis Diagnóstica - CID",
           "details": "Detalles",
+          "generalNotes": "Observaciones generales",
+          "generalNotesCounter": "{{count}}/{{max}} caracteres",
+          "lastEditedBy": "Última edición: {{date}} · {{name}}",
           "priority": "Prioridad",
           "hasFollowUp": "¿Ya tiene acompañamiento?",
           "receivesMoney": "¿Recibe dinero?",
@@ -3016,7 +3061,9 @@
           "comments": "Comentarios",
           "priorityNormal": "Normal",
           "priorityHigh": "Alta",
-          "priorityUrgent": "Urgente"
+          "priorityUrgent": "Urgente",
+          "emergencyInstructions": "Instrucciones de emergencia",
+          "emergencyRedacted": "No tenés permiso para ver las instrucciones de emergencia."
         },
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
@@ -3255,6 +3302,7 @@
         "collapse": "Contraer"
       },
       "blocked": {
+        "RESEND_COOLDOWN": "Ya se le reenvió a esta persona en esta vacante en las últimas 24 h.",
         "OPTED_OUT": "El trabajador pidió no recibir más mensajes (baja).",
         "COOLDOWN": "El trabajador ya recibió un mensaje en los últimos 3 días.",
         "ALREADY_INVITED": "El trabajador ya fue invitado a esta vacante en los últimos 7 días.",
@@ -3329,6 +3377,145 @@
         "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "No se puede hacerlo exclusivo: {{groupCount}} grupo(s) están compartidos hoy entre {{patientCount}} pacientes. Resolvé esos casos primero — el sistema no elige cuál paciente pierde el vínculo.",
         "CHAT_ROLE_ALREADY_EXISTS": "Ya existe un rol con ese código.",
         "CHAT_ROLE_NOT_FOUND": "Ese rol no existe (¿alguien lo eliminó mientras tanto?)."
+      }
+    },
+    "funnelStageMessages": {
+      "title": "Mensajes por etapa",
+      "subtitle": "Cuando una tarjeta entra en una etapa del Kanban, sale el template elegido (WhatsApp, Twilio). Todo nace apagado: prendé una etapa, medí, después extendé.",
+      "stage": "Etapa",
+      "template": "Template",
+      "enabled": "Activa",
+      "updatedBy": "Última edición",
+      "builtin": "Incorporada: invitación a entrevista (no configurable)",
+      "none": "— sin template —",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "saved": "Guardado",
+      "error": "No se pudo guardar",
+      "never": "Nunca",
+      "adminOnly": "Solo un administrador puede cambiar esta configuración.",
+      "ineligible": {
+        "CATEGORY": "no es UTILITY (Meta)",
+        "DENY_LIST": "recordatorio/cobranza: bloqueado por etapa",
+        "PLACEHOLDERS": "variables que el sistema no completa",
+        "INACTIVE": "inactivo"
+      },
+      "eligibleHint": "Solo templates aprobados por Meta como UTILITY, sin recordatorios, con variables que el sistema completa (nombre como token, número de caso).",
+      "stages": {
+        "QUALIFIED": "Calificados (Talentum)",
+        "IN_DOUBT": "En duda"
+      }
+    },
+    "presentationInvite": {
+      "title": "Invitación a reunión de presentación",
+      "subtitle": "Un clic en la tarjeta o en la lista de prestadores envía la invitación por WhatsApp; Luz sigue la conversación. Todo nace apagado: configurá, prendé, medí.",
+      "meetLink": "Link de la reunión (Google Meet)",
+      "scheduleLabel": "Horario (texto que va en el mensaje)",
+      "scheduleLabelHint": "Ej.: \"Todos los martes a las 18:00 (hora de Buenos Aires)\"",
+      "template": "Template de WhatsApp",
+      "enabled": "Activa",
+      "save": "Guardar",
+      "saved": "Guardado",
+      "error": "No se pudo guardar",
+      "adminOnly": "Solo un administrador puede modificar esta configuración.",
+      "templateHint": "Solo templates aprobados por Meta como UTILITY, con las variables que el sistema completa (nombre como token, link, horario). El template de esta invitación todavía no fue aprobado: mientras esté inactivo nada sale.",
+      "ineligible": {
+        "INACTIVE": "inactivo (todavía no aprobado)",
+        "CATEGORY": "no es UTILITY",
+        "PLACEHOLDERS": "variables no soportadas",
+        "OPT_OUT_CLAUSE": "sin frase de baja (BAJA / no recibir)"
+      },
+      "stats": {
+        "title": "Últimos 30 días",
+        "queued": "Invitaciones enviadas",
+        "skipped": "Omitidas",
+        "attended": "Asistieron",
+        "noPresenceSource": "Sin fuente de presencia todavía (REQ-17): la asistencia se registra manualmente.",
+        "bySource": "Por origen",
+        "kanban": "Tarjeta",
+        "workers_list": "Lista de prestadores"
+      },
+      "button": "Invitar a reunión de presentación",
+      "sending": "Enviando…",
+      "never": "Sin invitación",
+      "lastAt": "Última invitación: {{date}}",
+      "queued": "Invitación enviada — Luz sigue la conversación",
+      "skip": {
+        "DISABLED_CONFIG": "La invitación está apagada (configurala en Invitación a presentación)",
+        "NO_TEMPLATE": "Sin template configurado",
+        "TEMPLATE_INACTIVE": "Template todavía no aprobado por Meta",
+        "TEMPLATE_NOT_ALLOWED": "Template no permitido",
+        "NO_MEET_LINK": "Falta el link de la reunión",
+        "NO_SCHEDULE_LABEL": "El template usa el horario y no hay horario configurado",
+        "WORKER_NOT_FOUND": "Prestador no encontrado",
+        "COUNTRY_BLOCKED": "Solo Argentina por ahora",
+        "WORKER_DISABLED": "Cuenta desactivada",
+        "OPT_OUT": "La persona pidió no recibir mensajes",
+        "ALREADY_INVITED": "Ya fue invitada en los últimos 7 días",
+        "UNKNOWN": "Omitida",
+        "SIN_VINCULO": "Sin vínculo verificable (ficha importada o sin aceptación de términos) — no se invita",
+        "COUNTRY_MISMATCH": "El teléfono no es de Argentina"
+      },
+      "lastEdit": "Última edición",
+      "by": "por"
+    },
+    "map": {
+      "title": "Mapa",
+      "subtitle": "Prestadores y pacientes sobre el mapa. Hacé clic en el mapa para mover el centro del radio.",
+      "refresh": "Actualizar",
+      "tabs": {
+        "workers": "Prestadores",
+        "patients": "Pacientes"
+      },
+      "country": "País",
+      "radius": "Radio",
+      "centerOnPatient": {
+        "label": "Centrar en paciente",
+        "placeholder": "Centrar en un paciente…"
+      },
+      "docs": {
+        "label": "Documentación",
+        "all": "Todos",
+        "complete": "Documentación completa",
+        "incomplete": "Registro incompleto"
+      },
+      "profession": {
+        "label": "Profesión",
+        "all": "Todas las profesiones",
+        "unknown": "Sin profesión",
+        "AT": "AT",
+        "CAREGIVER": "Cuidador",
+        "NURSE": "Enfermería",
+        "KINESIOLOGIST": "Kinesiología",
+        "PSYCHOLOGIST": "Psicología"
+      },
+      "workerStatus": {
+        "REGISTERED": "Documentación completa",
+        "INCOMPLETE_REGISTER": "Registro incompleto",
+        "DISABLED": "Dado de baja"
+      },
+      "patientStatus": {
+        "label": "Estado",
+        "all": "Todos los estados",
+        "ACTIVE": "Activo",
+        "ADMISSION": "En admisión",
+        "PENDING_ADMISSION": "Esperando financiero",
+        "SOLICITANTE": "Solicitante",
+        "SUSPENDED": "Suspendido",
+        "DISCONTINUED": "Baja",
+        "DISCHARGED": "Alta"
+      },
+      "onlyOpenVacancies": "Solo con vacantes abiertas",
+      "openVacancies": "{{count}} vacante(s) abierta(s)",
+      "loading": "Cargando…",
+      "inRadius": "en {{km}} km",
+      "withoutCoordinates": "{{count}} sin ubicación",
+      "showingFirst": "mostrando los primeros {{shown}} de {{total}} — achicá el radio",
+      "noLocation": "sin ubicación",
+      "empty": "Nadie en este radio. Probá un radio mayor o mové el centro.",
+      "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",
+      "status": {
+        "unknown": "Sin estado"
       }
     }
   },

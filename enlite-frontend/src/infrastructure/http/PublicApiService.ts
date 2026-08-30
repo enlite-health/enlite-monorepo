@@ -23,7 +23,10 @@ export interface PublicJobsFilters {
   country?: string;
   state?: string;
   city?: string;
-  pathology?: string;
+  // ⚠️ `pathology` saiu em 25/08/2026 e NÃO deve voltar: o backend agora responde **400** a
+  // este parâmetro. Ele filtrava sobre a coluna clínica do paciente numa rota aberta, o que
+  // fazia dela um oráculo — sondar termos devolvia a lista de vagas que casavam, cada uma com
+  // número de caso, bairro e cidade. Mantê-lo aqui reintroduziria a chamada que quebra.
   worker_sex?: 'FEMALE' | 'MALE' | 'BOTH';
   worker_type?: string;
   /** Busca textual livre */
@@ -79,9 +82,28 @@ class PublicApiServiceClass {
   }
 }
 
+/**
+ * Parâmetros que o feed público aceita. Lista de PERMISSÃO, não de bloqueio.
+ *
+ * ⚠️ A versão anterior fazia `Object.entries(filters)` e mandava **qualquer** chave presente
+ * no objeto. Isso torna o TIPO decorativo: remover um campo de `PublicJobsFilters` não impede
+ * nada em runtime — um chamador em JS, um build antigo em cache, ou um objeto vindo de fora
+ * continuam enviando. Medido ao remover `pathology`: o teste de controle positivo mostrou o
+ * parâmetro saindo na URL mesmo depois de o campo sumir do tipo.
+ *
+ * Isso importa mais do que parece aqui: o backend responde **400** a `pathology`, então
+ * mandá-lo não degrada o filtro — **quebra a listagem inteira**.
+ *
+ * Parâmetro novo entra nesta lista de propósito, por alguém que justifique que ele não é
+ * clínico. Uma lista de bloqueio deixaria passar o próximo campo que ninguém previu.
+ */
+const PARAMS_PERMITIDOS = ['country', 'state', 'city', 'worker_sex', 'worker_type', 'q'] as const;
+
 function buildQueryString(filters: PublicJobsFilters): string {
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
+  const bruto = filters as Record<string, unknown>;
+  for (const key of PARAMS_PERMITIDOS) {
+    const value = bruto[key];
     if (value !== undefined && value !== null && value !== '') {
       params.append(key, String(value));
     }

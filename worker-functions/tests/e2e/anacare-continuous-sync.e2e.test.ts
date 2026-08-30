@@ -40,6 +40,8 @@ const DATABASE_URL =
 const MOCK_PORT = 29998;
 const MOCK_BASE_URL = `http://localhost:${MOCK_PORT}`;
 const MOCK_ANA_CARE_ID = 555;
+/** O DomainEventProcessor entrega `meta` junto do payload; este handler ignora, mas o contrato exige. */
+const META = { eventId: 'evt-test' };
 
 // ─── Mock HTTP Server ──────────────────────────────────────────────
 
@@ -307,7 +309,7 @@ describe('AnaCare Continuous Sync', () => {
         providerFactory: async () => provider,
       });
 
-      await expect(handler({})).rejects.toThrow(/workerId must be a non-empty string/);
+      await expect(handler({}, META)).rejects.toThrow(/workerId must be a non-empty string/);
     });
 
     it('lança erro quando workerId é string vazia', async () => {
@@ -315,7 +317,7 @@ describe('AnaCare Continuous Sync', () => {
         providerFactory: async () => provider,
       });
 
-      await expect(handler({ workerId: '' })).rejects.toThrow(/workerId must be a non-empty string/);
+      await expect(handler({ workerId: '' }, META)).rejects.toThrow(/workerId must be a non-empty string/);
     });
 
     it('processa sem lançar quando workerId válido (worker inexistente → skipped)', async () => {
@@ -324,7 +326,7 @@ describe('AnaCare Continuous Sync', () => {
       });
 
       // Worker não existe no banco → mirrorOne retorna 'skipped'
-      await expect(handler({ workerId: '00000000-0000-0000-0000-000000000000' })).resolves.toBeUndefined();
+      await expect(handler({ workerId: '00000000-0000-0000-0000-000000000000' }, META)).resolves.toBeUndefined();
     });
   });
 

@@ -1,0 +1,142 @@
+/**
+ * mcp-ro-role.e2e.test.ts @integration — D216 · D218 (MCP `db.query.readonly` sem texto clínico)
+ *
+ * Banco REAL do stack (Postgres do docker-compose), SEM mock: aplica `scripts/create-mcp-ro-role.sql`
+ * via `psql` (o script usa \if/\gexec, que só o psql entende) e prova, como `enlite_mcp_ro`:
+ *   1. o script é idempotente (roda duas vezes, rc=0 nas duas);
+ *   2. `SELECT * FROM patients` e `SELECT diagnosis FROM patients` → permission denied
+ *      (tanto logando como a role quanto via `SET ROLE` a partir do superuser);
+ *   3. `SELECT id, status FROM patients` e `count(*)` passam (item 1 da Regra: contagem sempre);
+ *   4. `to_jsonb(p)` — a forma que a guarda por nome de coluna do ReadonlyDbQueryService não vê —
+ *      também é negada PELO BANCO;
+ *   5. nada de texto clínico sai por `patients_ro` (só has_/len), e a role não é membro de
+ *      `pg_read_all_data` (lex C1).
+ * Requer `psql` no PATH (ubuntu-latest do CI já traz; local: brew install libpq).
+ *
+ * ⚠️ RLS (F1 do ABAC, `patients_country_isolation`): quando a política está LIGADA em `patients`
+ * (QA/local com a F1 aplicada; NÃO no CI desta branch, cujas migrations não a trazem), ela lê
+ * `iam.user_groups`, onde `enlite_mcp_ro` não tem USAGE — e aí NENHUMA coluna de patients sai,
+ * nem as permitidas. O teste mede o estado da RLS e prova o que cabe em cada caso: sem RLS, as
+ * colunas nomeadas SAEM; com RLS, o que barra é a POLÍTICA (`user_groups`), nunca `patients` —
+ * ou seja, o grant de coluna está certo e o achado é o cruzamento D216 × F1 (registrado na LISTA).
+ */
+import { execFileSync } from 'child_process';
+import path from 'path';
+import { Pool } from 'pg';
+
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
+const SCRIPT = path.resolve(__dirname, '../../../scripts/create-mcp-ro-role.sql');
+// Credencial do e2e local, não é segredo: a role só existe no Postgres descartável do stack.
+const ROLE_CREDENTIAL = process.env.E2E_MCP_RO_CREDENTIAL || 'e2e-local-only';
+const CLINICAL_TEXT = 'Texto clinico que NUNCA pode sair pelo MCP 4f2a';
+
+function applyScript(): string {
+  return execFileSync(
+    'psql',
+    [DATABASE_URL, '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=terse', '-v', `mcp_ro_password=${ROLE_CREDENTIAL}`, '-1', '-q', '-f', SCRIPT],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+}
+
+describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integration', () => {
+  let admin: Pool;
+  let ro: Pool;
+  let patientId = '';
+  let rlsLigada = false;
+
+  /** Colunas permitidas: passam pelo grant; sob RLS, quem barra é a política (user_groups), não patients. */
+  async function expectAllowedColumns(run: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }>): Promise<void> {
+    const q = run('SELECT id, status FROM patients WHERE id = $1', [patientId]);
+    if (rlsLigada) {
+      await expect(q).rejects.toThrow(/permission denied for table user_groups/);
+      await expect(q).rejects.not.toThrow(/for table patients/);
+      return;
+    }
+    expect((await q).rows).toEqual([{ id: patientId, status: 'ACTIVE' }]);
+    const n = await run('SELECT count(*) AS n FROM patients WHERE id = $1', [patientId]);
+    expect((n.rows[0] as { n: string }).n).toBe('1');
+  }
+
+  beforeAll(async () => {
+    admin = new Pool({ connectionString: DATABASE_URL });
+    // Idempotência: duas aplicações seguidas, ambas sem erro (execFileSync lança se rc≠0).
+    applyScript();
+    applyScript();
+    const u = new URL(DATABASE_URL);
+    ro = new Pool({ host: u.hostname, port: Number(u.port || 5432), database: u.pathname.slice(1), user: 'enlite_mcp_ro', password: ROLE_CREDENTIAL });
+    await admin.query(`DELETE FROM patients WHERE clickup_task_id = 'mcp-ro-e2e-1'`);
+    const { rows: [p] } = await admin.query<{ id: string }>(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, diagnosis, additional_comments, country, status)
+       VALUES ('mcp-ro-e2e-1', 'Paciente', 'McpRo', $1, $1, 'AR', 'ACTIVE') RETURNING id`,
+      [CLINICAL_TEXT],
+    );
+    patientId = p.id;
+    rlsLigada = (await admin.query<{ on: boolean }>(`SELECT relrowsecurity AS "on" FROM pg_class WHERE oid = 'public.patients'::regclass`)).rows[0].on;
+  });
+
+  afterAll(async () => {
+    await admin.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
+    await ro.end();
+    await admin.end();
+  });
+
+  it('como enlite_mcp_ro: `select * from patients` e `select diagnosis` → permission denied; colunas nomeadas e count(*) passam', async () => {
+    await expect(ro.query('SELECT * FROM patients LIMIT 1')).rejects.toThrow(/permission denied for table patients/);
+    await expect(ro.query('SELECT diagnosis FROM patients LIMIT 1')).rejects.toThrow(/permission denied for table patients/);
+    await expect(ro.query('SELECT additional_comments FROM patients LIMIT 1')).rejects.toThrow(/permission denied for table patients/);
+    await expectAllowedColumns((sql, params) => ro.query(sql, params));
+  });
+
+  it('via SET ROLE a partir do superuser: a mesma negação (o privilégio é da role, não da conexão)', async () => {
+    // Cada statement na própria transação: um erro aborta a transação, e o client volta ao pool limpo.
+    const asRole = async (sql: string, params: unknown[]): Promise<{ rows: unknown[] }> => {
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE enlite_mcp_ro');
+        return await client.query(sql, params);
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        client.release();
+      }
+    };
+    await expect(asRole('SELECT * FROM patients LIMIT 1', [])).rejects.toThrow(/permission denied for table patients/);
+    await expectAllowedColumns(asRole);
+  });
+
+  it('formas de linha inteira que a guarda por nome de coluna não vê (to_jsonb, row_to_json, p.*) são negadas pelo BANCO', async () => {
+    await expect(ro.query('SELECT to_jsonb(p) FROM patients p WHERE id = $1', [patientId])).rejects.toThrow(/permission denied/);
+    await expect(ro.query('SELECT row_to_json(patients) FROM patients WHERE id = $1', [patientId])).rejects.toThrow(/permission denied/);
+    await expect(ro.query('SELECT p.* FROM patients p WHERE id = $1', [patientId])).rejects.toThrow(/permission denied/);
+  });
+
+  it('patients_ro devolve metadado (has_/len), nunca o texto; a role não herda pg_read_all_data nem tem SELECT de tabela', async () => {
+    const view = await ro.query('SELECT * FROM patients_ro WHERE id = $1', [patientId]);
+    expect(view.rows).toHaveLength(1);
+    expect(view.rows[0]).toMatchObject({ has_diagnosis: true, diagnosis_len: CLINICAL_TEXT.length, has_additional_comments: true });
+    expect(Object.keys(view.rows[0])).not.toEqual(expect.arrayContaining(['diagnosis', 'additional_comments', 'first_name', 'last_name']));
+    expect(JSON.stringify(view.rows)).not.toContain(CLINICAL_TEXT);
+
+    const residual = await admin.query(
+      `SELECT r.rolname FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid JOIN pg_roles g ON g.oid = m.member WHERE g.rolname = 'enlite_mcp_ro'`,
+    );
+    expect(residual.rows).toEqual([]);
+    const priv = await admin.query<{ t: boolean; c: boolean }>(
+      `SELECT has_table_privilege('enlite_mcp_ro', 'public.patients', 'SELECT') AS t,
+              has_column_privilege('enlite_mcp_ro', 'public.patients', 'diagnosis', 'SELECT') AS c`,
+    );
+    expect(priv.rows[0]).toEqual({ t: false, c: false });
+  });
+
+  it('CONTROLE POSITIVO (D157): GRANT da coluna reabre a leitura; REVOKE fecha de novo', async () => {
+    await admin.query('GRANT SELECT (diagnosis) ON public.patients TO enlite_mcp_ro');
+    try {
+      const q = ro.query<{ diagnosis: string }>('SELECT diagnosis FROM patients WHERE id = $1', [patientId]);
+      if (rlsLigada) await expect(q).rejects.toThrow(/permission denied for table user_groups/); // passou por patients
+      else expect((await q).rows[0].diagnosis).toBe(CLINICAL_TEXT);
+    } finally {
+      await admin.query('REVOKE SELECT (diagnosis) ON public.patients FROM enlite_mcp_ro');
+    }
+    await expect(ro.query('SELECT diagnosis FROM patients WHERE id = $1', [patientId])).rejects.toThrow(/permission denied/);
+  });
+});

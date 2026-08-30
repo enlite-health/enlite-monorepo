@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
+import { ClinicalLongText } from './ClinicalLongText';
 
 interface DiagnosticoCardProps {
   patient: PatientDetail;
@@ -56,7 +57,23 @@ export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
 
       <div className="flex flex-col gap-2.5">
         <Field label={`${t('admin.patients.detail.diagnosisCard.cid')}:`} value={patient.diagnosis} />
-        <Field label={`${t('admin.patients.detail.diagnosisCard.details')}:`} value={patient.additionalComments} />
+        {/* REQ-01: observações gerais — texto longo com autoria (lex C1.1: máscara do Clarity dentro do componente). */}
+        <ClinicalLongText
+          testId="general-notes"
+          label={`${t('admin.patients.detail.diagnosisCard.generalNotes')}:`}
+          text={patient.additionalComments}
+          updatedAt={patient.additionalCommentsUpdatedAt}
+          updatedBy={patient.additionalCommentsUpdatedBy}
+        />
+        {/* D211.2: instruções de emergência — mesmo molde, com o estado REDIGIDO decidido pelo backend (ponto único). */}
+        <ClinicalLongText
+          testId="emergency-instructions"
+          label={`${t('admin.patients.detail.diagnosisCard.emergencyInstructions')}:`}
+          text={patient.emergencyInstructions}
+          updatedAt={patient.emergencyInstructionsUpdatedAt}
+          updatedBy={patient.emergencyInstructionsUpdatedBy}
+          redactedMessage={patient.emergencyInstructionsRedacted ? t('admin.patients.detail.diagnosisCard.emergencyRedacted') : null}
+        />
         <Field label={`${t('admin.patients.detail.diagnosisCard.pathologyTypes')}:`} value={specialtyLabel} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.hasFollowUp')}:`} value={null} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.receivesMoney')}:`} value={null} />

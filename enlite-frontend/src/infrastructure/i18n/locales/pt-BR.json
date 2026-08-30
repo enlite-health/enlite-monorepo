@@ -1090,7 +1090,10 @@
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
-      "patientChatRoles": "Papéis de grupos"
+      "patientChatRoles": "Papéis de grupos",
+      "funnelStageMessages": "Mensagens por etapa",
+      "presentationInvite": "Convite à apresentação",
+      "map": "Mapa"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -1577,6 +1580,12 @@
       },
       "reprogramBadge": "🔄 Remarcado",
       "notesButton": "Comentários",
+      "resendButton": "Reenviar",
+      "resendSending": "Enviando…",
+      "lastSentAt": "Último envio: {{date}}",
+      "neverSent": "Sem envios",
+      "resendDone": "Enviado ✓",
+      "resendBlockedUntil": "Reenvio disponível a partir de {{date}}",
       "moveToButton": "Mover para…",
       "collapseColumn": "Colapsar coluna",
       "expandColumn": "Expandir coluna",
@@ -1624,7 +1633,8 @@
         "confirm": "Agendar",
         "cancel": "Cancelar",
         "unknown": "Ainda não sei a data — mover assim mesmo"
-      }
+      },
+      "stageLastMessage": "Mensagem de etapa ({{stage}}): {{date}}"
     },
     "workerDetail": {
       "status": "Status do Prestador",
@@ -2246,6 +2256,36 @@
         "cancel": "Cancelar",
         "close": "Fechar",
         "errorEmpty": "A descrição não pode ficar vazia."
+      },
+      "meetRecurring": {
+        "title": "Horário recorrente (reunião de apresentação)",
+        "hint": "Toda semana, no mesmo dia e hora, na mesma sala. O convite oferece as próximas datas automaticamente.",
+        "weekday": "Dia",
+        "time": "Hora (Argentina)",
+        "link": "Sala do Meet",
+        "none": "Sem horário recorrente",
+        "clear": "Remover",
+        "every": "Toda(o) {{day}} às {{time}}",
+        "invalidTime": "Hora inválida (HH:MM)",
+        "incomplete": "Preencha dia, hora e sala",
+        "days": {
+          "0": "domingo",
+          "1": "segunda",
+          "2": "terça",
+          "3": "quarta",
+          "4": "quinta",
+          "5": "sexta",
+          "6": "sábado"
+        },
+        "daysShort": {
+          "0": "Domingo",
+          "1": "Segunda",
+          "2": "Terça",
+          "3": "Quarta",
+          "4": "Quinta",
+          "5": "Sexta",
+          "6": "Sábado"
+        }
       }
     },
     "vacancyModal": {
@@ -2546,7 +2586,8 @@
         "documents": "Documentação",
         "registeredAt": "Cadastro",
         "platform": "Plataforma",
-        "view": "Ver"
+        "view": "Ver",
+        "actions": "Ações"
       },
       "platformOptions": {
         "all": "Todas",
@@ -2727,7 +2768,7 @@
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admissão",
-          "PENDING_ADMISSION": "Aguardando Ativação",
+          "PENDING_ADMISSION": "Aguardando financeiro",
           "ACTIVE": "Ativo"
         }
       },
@@ -2874,6 +2915,7 @@
         "patientStatusLabel": "Status do paciente",
         "patientStatus": {
           "EM_ADMISSAO": "Em Admissão",
+          "PENDING_ADMISSION": "Aguardando financeiro",
           "EM_ATENDIMENTO": "Em Atendimento",
           "PACIENTE_COM_ALTA": "Paciente com alta",
           "CANCELADO": "Cancelado"
@@ -2925,6 +2967,9 @@
           "title": "Diagnóstico",
           "cid": "Hipótese Diagnóstica - CID",
           "details": "Detalhes",
+          "generalNotes": "Observações gerais",
+          "generalNotesCounter": "{{count}}/{{max}} caracteres",
+          "lastEditedBy": "Última edição: {{date}} · {{name}}",
           "priority": "Prioridade",
           "hasFollowUp": "Já tem acompanhamento?",
           "receivesMoney": "Você recebe dinheiro?",
@@ -2937,7 +2982,9 @@
           "comments": "Comentários",
           "priorityNormal": "Normal",
           "priorityHigh": "Alta",
-          "priorityUrgent": "Urgente"
+          "priorityUrgent": "Urgente",
+          "emergencyInstructions": "Instruções de emergência",
+          "emergencyRedacted": "Você não tem permissão para ver as instruções de emergência."
         },
         "therapeuticProjectCard": {
           "title": "Projeto Terapêutico",
@@ -3176,6 +3223,7 @@
         "collapse": "Recolher"
       },
       "blocked": {
+        "RESEND_COOLDOWN": "Já foi reenviado a esta pessoa nesta vaga nas últimas 24 h.",
         "OPTED_OUT": "O worker pediu para não receber mensagens (opt-out).",
         "COOLDOWN": "O worker recebeu uma mensagem nos últimos 3 dias.",
         "ALREADY_INVITED": "O worker já foi convidado para esta vaga nos últimos 7 dias.",
@@ -3250,6 +3298,145 @@
         "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "Não dá para tornar exclusivo: {{groupCount}} grupo(s) estão hoje divididos entre {{patientCount}} pacientes. Resolva esses casos primeiro — o sistema não escolhe qual paciente perde o vínculo.",
         "CHAT_ROLE_ALREADY_EXISTS": "Já existe um papel com esse código.",
         "CHAT_ROLE_NOT_FOUND": "Esse papel não existe (alguém apagou enquanto isso?)."
+      }
+    },
+    "funnelStageMessages": {
+      "title": "Mensagens por etapa",
+      "subtitle": "Quando uma tarjeta entra numa etapa do Kanban, sai o template escolhido (WhatsApp, Twilio). Tudo nasce desligado: ligue uma etapa, meça, depois estenda.",
+      "stage": "Etapa",
+      "template": "Template",
+      "enabled": "Ativa",
+      "updatedBy": "Última edição",
+      "builtin": "Embutida: convite à entrevista (não configurável)",
+      "none": "— sem template —",
+      "save": "Salvar",
+      "saving": "Salvando…",
+      "saved": "Salvo",
+      "error": "Não foi possível salvar",
+      "never": "Nunca",
+      "adminOnly": "Só um administrador pode alterar esta configuração.",
+      "ineligible": {
+        "CATEGORY": "não é UTILITY (Meta)",
+        "DENY_LIST": "lembrete/cobrança: bloqueado por etapa",
+        "PLACEHOLDERS": "variáveis que o sistema não preenche",
+        "INACTIVE": "inativo"
+      },
+      "eligibleHint": "Só templates aprovados pela Meta como UTILITY, sem lembretes, com variáveis que o sistema preenche (nome como token, número do caso).",
+      "stages": {
+        "QUALIFIED": "Qualificados (Talentum)",
+        "IN_DOUBT": "Em dúvida"
+      }
+    },
+    "presentationInvite": {
+      "title": "Convite à reunião de apresentação",
+      "subtitle": "Um clique na tarjeta ou na lista de prestadores envia o convite por WhatsApp; a Luz conduz a conversa. Tudo nasce desligado: configure, ligue, meça.",
+      "meetLink": "Link da reunião (Google Meet)",
+      "scheduleLabel": "Horário (texto que vai na mensagem)",
+      "scheduleLabelHint": "Ex.: \"Todas as terças às 18:00 (hora de Buenos Aires)\"",
+      "template": "Template de WhatsApp",
+      "enabled": "Ativa",
+      "save": "Salvar",
+      "saved": "Salvo",
+      "error": "Não foi possível salvar",
+      "adminOnly": "Só um administrador pode alterar esta configuração.",
+      "templateHint": "Só templates aprovados pela Meta como UTILITY, com as variáveis que o sistema preenche (nome como token, link, horário). O template deste convite ainda não foi aprovado: enquanto estiver inativo nada sai.",
+      "ineligible": {
+        "INACTIVE": "inativo (ainda não aprovado)",
+        "CATEGORY": "não é UTILITY",
+        "PLACEHOLDERS": "variáveis não suportadas",
+        "OPT_OUT_CLAUSE": "sem frase de saída (BAJA / não receber)"
+      },
+      "stats": {
+        "title": "Últimos 30 dias",
+        "queued": "Convites enviados",
+        "skipped": "Pulados",
+        "attended": "Compareceram",
+        "noPresenceSource": "Sem fonte de presença ainda (REQ-17): a presença é registrada manualmente.",
+        "bySource": "Por origem",
+        "kanban": "Tarjeta",
+        "workers_list": "Lista de prestadores"
+      },
+      "button": "Convidar à reunião de apresentação",
+      "sending": "Enviando…",
+      "never": "Sem convite",
+      "lastAt": "Último convite: {{date}}",
+      "queued": "Convite enviado — a Luz conduz a conversa",
+      "skip": {
+        "DISABLED_CONFIG": "O convite está desligado (configure em Convite à apresentação)",
+        "NO_TEMPLATE": "Sem template configurado",
+        "TEMPLATE_INACTIVE": "Template ainda não aprovado pela Meta",
+        "TEMPLATE_NOT_ALLOWED": "Template não permitido",
+        "NO_MEET_LINK": "Falta o link da reunião",
+        "NO_SCHEDULE_LABEL": "O template usa o horário e não há horário configurado",
+        "WORKER_NOT_FOUND": "Prestador não encontrado",
+        "COUNTRY_BLOCKED": "Só Argentina por enquanto",
+        "WORKER_DISABLED": "Conta desativada",
+        "OPT_OUT": "A pessoa pediu para não receber mensagens",
+        "ALREADY_INVITED": "Já foi convidada nos últimos 7 dias",
+        "UNKNOWN": "Pulado",
+        "SIN_VINCULO": "Sem vínculo verificável (ficha importada ou sem aceite de termos) — não se convida",
+        "COUNTRY_MISMATCH": "O telefone não é da Argentina"
+      },
+      "lastEdit": "Última edição",
+      "by": "por"
+    },
+    "map": {
+      "title": "Mapa",
+      "subtitle": "Prestadores e pacientes no mapa. Clique no mapa para mover o centro do raio.",
+      "refresh": "Atualizar",
+      "tabs": {
+        "workers": "Prestadores",
+        "patients": "Pacientes"
+      },
+      "country": "País",
+      "radius": "Raio",
+      "centerOnPatient": {
+        "label": "Centrar em paciente",
+        "placeholder": "Centrar em um paciente…"
+      },
+      "docs": {
+        "label": "Documentação",
+        "all": "Todos",
+        "complete": "Documentação completa",
+        "incomplete": "Registro incompleto"
+      },
+      "profession": {
+        "label": "Profissão",
+        "all": "Todas as profissões",
+        "unknown": "Sem profissão",
+        "AT": "AT",
+        "CAREGIVER": "Cuidador",
+        "NURSE": "Enfermagem",
+        "KINESIOLOGIST": "Fisioterapia",
+        "PSYCHOLOGIST": "Psicologia"
+      },
+      "workerStatus": {
+        "REGISTERED": "Documentação completa",
+        "INCOMPLETE_REGISTER": "Registro incompleto",
+        "DISABLED": "Desativado"
+      },
+      "patientStatus": {
+        "label": "Estado",
+        "all": "Todos os estados",
+        "ACTIVE": "Ativo",
+        "ADMISSION": "Em admissão",
+        "PENDING_ADMISSION": "Aguardando financeiro",
+        "SOLICITANTE": "Solicitante",
+        "SUSPENDED": "Suspenso",
+        "DISCONTINUED": "Baixa",
+        "DISCHARGED": "Alta"
+      },
+      "onlyOpenVacancies": "Só com vagas abertas",
+      "openVacancies": "{{count}} vaga(s) aberta(s)",
+      "loading": "Carregando…",
+      "inRadius": "em {{km}} km",
+      "withoutCoordinates": "{{count}} sem localização",
+      "showingFirst": "mostrando os primeiros {{shown}} de {{total}} — reduza o raio",
+      "noLocation": "sem localização",
+      "empty": "Ninguém neste raio. Tente um raio maior ou mova o centro.",
+      "unavailable": "O mapa não está disponível (sem chave do Google Maps). A lista continua funcionando.",
+      "status": {
+        "unknown": "Sem estado"
       }
     }
   },

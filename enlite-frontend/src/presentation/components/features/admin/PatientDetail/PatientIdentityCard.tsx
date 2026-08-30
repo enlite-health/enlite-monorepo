@@ -22,7 +22,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_I18N_MAP: Record<string, string> = {
-  PENDING_ADMISSION: 'admin.patients.detail.patientStatus.EM_ADMISSAO',
+  // D195 (26/08): o estado leva o nome do motivo real da espera — "Aguardando
+  // financeiro" — o mesmo que a coluna do Kanban de pacientes. Antes a ficha
+  // dizia "En Admisión" para o mesmo estado.
+  PENDING_ADMISSION: 'admin.patients.detail.patientStatus.PENDING_ADMISSION',
   ACTIVE: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
   SUSPENDED: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
   DISCONTINUED: 'admin.patients.detail.patientStatus.CANCELADO',

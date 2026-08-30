@@ -13,6 +13,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { ClinicalTextareaField } from './ClinicalTextareaField';
 
 interface Props {
   patient: PatientDetail;
@@ -27,13 +28,16 @@ const CLINICAL_SPECIALTIES = [
 ] as const;
 const SERVICE_TYPES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 const CLOSE_MS = 300;
+/** Teto das observações gerais (REQ-01). O banco é TEXT; o teto é da tela, para o contador ter referência. */
+export const GENERAL_NOTES_MAX = 4000;
 
 // tri-state boolean flag as select: '' (unset/null) | 'true' | 'false'
 const BOOL_VALUES = ['', 'true', 'false'] as const;
 
 const schema = z.object({
   diagnosis: z.string().optional(),
-  additionalComments: z.string().optional(),
+  additionalComments: z.string().max(GENERAL_NOTES_MAX).optional(),
+  emergencyInstructions: z.string().max(GENERAL_NOTES_MAX).optional(),
   deviceType: z.string().optional(),
   dependencyLevel: z.string().optional(),
   clinicalSpecialty: z.string().optional(),
@@ -68,11 +72,12 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, control } = useForm<FormValues>({
+  const { register, handleSubmit, control, watch } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       diagnosis: patient.diagnosis ?? '',
       additionalComments: patient.additionalComments ?? '',
+      emergencyInstructions: patient.emergencyInstructions ?? '',
       deviceType: patient.deviceType ?? '',
       dependencyLevel: patient.dependencyLevel ?? '',
       clinicalSpecialty: patient.clinicalSpecialty ?? '',
@@ -111,6 +116,8 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     const nz = (v: string | undefined): string | null => { const s = (v ?? '').trim(); return s ? s : null; };
     if (nz(values.diagnosis) !== (patient.diagnosis ?? null)) payload.diagnosis = nz(values.diagnosis);
     if (nz(values.additionalComments) !== (patient.additionalComments ?? null)) payload.additionalComments = nz(values.additionalComments);
+    // Redigido para este ator: o campo nem entra no formulário como valor real — nunca sobrescrever.
+    if (!patient.emergencyInstructionsRedacted && nz(values.emergencyInstructions) !== (patient.emergencyInstructions ?? null)) payload.emergencyInstructions = nz(values.emergencyInstructions);
     if (nz(values.deviceType) !== (patient.deviceType ?? null)) payload.deviceType = nz(values.deviceType);
     if (nz(values.dependencyLevel) !== (patient.dependencyLevel ?? null)) payload.dependencyLevel = nz(values.dependencyLevel);
     if (nz(values.clinicalSpecialty) !== (patient.clinicalSpecialty ?? null)) payload.clinicalSpecialty = nz(values.clinicalSpecialty);
@@ -172,9 +179,28 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
           <FormField label={td('diagnosisCard.cid')} htmlFor="pce-diagnosis" optional>
             <InputWithIcon id="pce-diagnosis" inputSize="compact" data-testid="pce-diagnosis" {...register('diagnosis')} />
           </FormField>
-          <FormField label={td('diagnosisCard.details')} htmlFor="pce-comments" optional>
-            <InputWithIcon id="pce-comments" inputSize="compact" data-testid="pce-comments" {...register('additionalComments')} />
-          </FormField>
+          {/* REQ-01 (D195): "observações gerais" é narrativa clínica — textarea grande com contador e
+              máscara do Clarity (lex 29/08, C1.1), dentro de ClinicalTextareaField. */}
+          <ClinicalTextareaField
+            id="pce-comments"
+            label={td('diagnosisCard.generalNotes')}
+            rows={8}
+            maxChars={GENERAL_NOTES_MAX}
+            value={watch('additionalComments')}
+            {...register('additionalComments')}
+          />
+          {/* REQ-01 (D211.2): instruções de emergência — mesmo molde; se o backend redigiu para este
+              ator, o campo não é editável (não há valor real para preservar). */}
+          <ClinicalTextareaField
+            id="pce-emergency"
+            label={td('diagnosisCard.emergencyInstructions')}
+            rows={6}
+            maxChars={GENERAL_NOTES_MAX}
+            value={watch('emergencyInstructions')}
+            disabled={!!patient.emergencyInstructionsRedacted}
+            placeholder={patient.emergencyInstructionsRedacted ? td('diagnosisCard.emergencyRedacted') : undefined}
+            {...register('emergencyInstructions')}
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" optional>
               <Controller control={control} name="dependencyLevel" render={({ field }) => (

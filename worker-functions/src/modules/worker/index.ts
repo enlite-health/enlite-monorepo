@@ -62,6 +62,7 @@ export { AdminWorkersController } from './interfaces/controllers/AdminWorkersCon
 export { AdminWorkerTestFlagController } from './interfaces/controllers/AdminWorkerTestFlagController';
 export { AdminWorkerProfileController } from './interfaces/controllers/AdminWorkerProfileController';
 export { AdminWorkerServiceAreaController } from './interfaces/controllers/AdminWorkerServiceAreaController';
+export { AdminWorkersMapController } from './interfaces/controllers/AdminWorkersMapController';
 export { createAdminWorkerRoutes } from './interfaces/routes/adminWorkerRoutes';
 export type { AdminWorkerRouteControllers } from './interfaces/routes/adminWorkerRoutes';
 export { JobsController } from './interfaces/controllers/JobsController';

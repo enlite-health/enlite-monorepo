@@ -63,11 +63,26 @@ describe('buildPublicJobsWhere', () => {
     expect(params).toEqual(['AR', 'Palermo']);
   });
 
-  it('adds pathology ILIKE with %val% wrapping', () => {
-    const { whereClause, params } = buildPublicJobsWhere({ country: 'AR', pathology: 'Alzheimer' });
+  // INVERTIDO em 25/08/2026. Era: `adds pathology ILIKE with %val% wrapping`, esperando
+  // `p.diagnosis ILIKE $2` — a suite exigia o filtro sobre a coluna clinica.
+  it('NUNCA gera condicao sobre a coluna clinica, nem se o filtro for forcado', () => {
+    const { whereClause, params } = buildPublicJobsWhere(
+      { country: 'AR', pathology: 'Alzheimer' } as never,
+    );
 
-    expect(whereClause).toContain('p.diagnosis ILIKE $2');
-    expect(params).toEqual(['AR', '%Alzheimer%']);
+    expect(whereClause).not.toContain('diagnosis');
+    expect(params).toEqual(['AR']);
+    expect(JSON.stringify(params)).not.toContain('Alzheimer');
+  });
+
+  it('a busca livre `q` tambem nao toca a coluna clinica', () => {
+    const { whereClause } = buildPublicJobsWhere({ country: 'AR', q: 'Alzheimer' });
+
+    // `q` segue funcionando sobre titulo e localidade...
+    expect(whereClause).toContain('jp.title ILIKE');
+    expect(whereClause).toContain('pa.city ILIKE');
+    // ...e NAO sobre a coluna clinica: senao `?q=` seria o mesmo oraculo por outra porta.
+    expect(whereClause).not.toContain('diagnosis');
   });
 
   it('adds worker_sex exact match clause', () => {
@@ -100,14 +115,15 @@ describe('buildPublicJobsWhere', () => {
       country: 'AR',
       state: 'CABA',
       worker_sex: 'FEMALE',
-      pathology: 'TEA',
     });
 
     expect(whereClause).toContain('jp.country = $1');
     expect(whereClause).toContain('pa.state ILIKE $2');
-    expect(whereClause).toContain('p.diagnosis ILIKE $3');
-    expect(whereClause).toContain('jp.required_sex = $4');
-    expect(params).toEqual(['AR', 'CABA', '%TEA%', 'FEMALE']);
+    // O 3o placeholder era `p.diagnosis ILIKE $3`. Com o filtro clinico fora, os seguintes
+    // sobem uma posicao — e conferir a NUMERACAO importa: `push()` resolve o proximo $N
+    // sozinho, entao remover uma condicao no meio renumera tudo em silencio.
+    expect(whereClause).toContain('jp.required_sex = $3');
+    expect(params).toEqual(['AR', 'CABA', 'FEMALE']);
   });
 
   it('params length matches the highest placeholder number used', () => {

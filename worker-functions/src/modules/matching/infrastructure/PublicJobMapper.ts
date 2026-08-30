@@ -1,3 +1,21 @@
+/**
+ * PublicJobMapper — o que o feed publico `GET /api/public/v1/jobs` entrega.
+ *
+ * ⚠️ Em 25/08/2026 o campo `pathologies` saiu daqui, do DTO e do SELECT. Ele era
+ * `patients.diagnosis` — TEXTO LIVRE — servido CRU numa rota sem autenticacao, com
+ * `Cache-Control: public`. Medido em producao no dia: **186 de 189** vagas do feed o
+ * carregavam, **184 pacientes distintos**, e **179** saiam junto do bairro.
+ *
+ * A defesa escrita no codigo era "exposto sem nome associado". A medicao a derrubou: o campo
+ * tem **156 valores distintos para 184 pacientes (85%)**, ate 522 chars. String quase unica e
+ * identificador na pratica, e com bairro + cidade no mesmo registro a pessoa e **determinavel**
+ * (Ley 25.326 art. 2). Nao por o nome nao e anonimizar.
+ *
+ * 🔒 Regra que fica: aqui e a FRONTEIRA. Campo novo neste objeto vai ao ar para qualquer pessoa
+ * do planeta — inclusive para o portal WordPress, que renderiza o feed em HTML indexavel. O
+ * teste `guarda de fronteira` assere sobre o corpo inteiro, nao sobre uma lista de campos
+ * lembrados; foi a lista de campos que deixou este vazamento passar por meses.
+ */
 import type { PublicJobRow, PublicJobDto } from '../domain/PublicJobDto';
 import { formatScheduleToText } from './formatScheduleToText';
 import { buildScheduleWeek } from './buildScheduleWeek';
@@ -66,7 +84,6 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     schedule_days_hours: resolveScheduleDaysHours(row),
     worker_profile_sought: row.worker_profile_sought,
     service: row.service,
-    pathologies: row.pathologies,
     state: row.state,
     city: row.city,
     detail_link: row.detail_link,

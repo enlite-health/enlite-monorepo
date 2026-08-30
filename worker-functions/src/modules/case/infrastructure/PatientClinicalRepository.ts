@@ -16,9 +16,15 @@ export interface PatientClinicalUpsertInput {
   serviceType?: Profession[] | null;
   deviceType?: string | null;
   additionalComments?: string | null;
+  emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
   hasCud?: boolean | null;
   hasConsent?: boolean | null;
+  /**
+   * uid do staff que está editando (REQ-01/D195). Só é gravado quando
+   * `additionalComments` veio no input — é a autoria DESSE campo, não do bloco.
+   */
+  actorUid?: string | null;
 }
 
 /**
@@ -33,49 +39,79 @@ export class PatientClinicalRepository {
     this.pool = DatabaseConnection.getInstance().getPool();
   }
 
+  /**
+   * Atualização PARCIAL com semântica de JSON Merge Patch (RFC 7396, D211.1):
+   *   - chave AUSENTE (`undefined`)  → a coluna NÃO é tocada;
+   *   - chave presente com `null`    → a coluna é limpa;
+   *   - `has_consent` é registro legal: `null` nunca limpa (COALESCE, D108).
+   *
+   * Por que importa: o drawer clínico manda só o que mudou. Antes, todo campo
+   * omitido virava NULL — editar só as observações apagava o diagnóstico
+   * (medido no e2e, 29/08).
+   *
+   * Efeito no sync do ClickUp (ClickUpPatientMapper.map): o mapper NÃO emite
+   * `clinicalSegments` nem `deviceType` — as chaves ficam AUSENTES e, sob Merge
+   * Patch, `clinical_segments`/`device_type` deixam de ser zeradas a cada sync
+   * (antes deste contrato, viravam NULL). O que o mapper emite com `null`
+   * explícito (diagnosis, additionalComments, dependencyLevel…) continua sendo
+   * limpo quando o campo está vazio no ClickUp (D167). Teste que fixa isso:
+   * PatientClinicalRepository.test.ts ("chaves que o mapper não emite").
+   */
   async upsert(
     input: PatientClinicalUpsertInput,
     client?: PoolClient,
   ): Promise<void> {
     const executor = client ?? this.pool;
 
-    // serviceType is TEXT[] in DB after migration 139.
-    // Pass null when empty array to avoid storing [].
-    const serviceTypeValue =
-      input.serviceType !== undefined && input.serviceType !== null && input.serviceType.length > 0
-        ? input.serviceType
-        : null;
+    const sets: string[] = [];
+    const params: unknown[] = [input.patientId];
+    const push = (column: string, value: unknown): void => {
+      params.push(value);
+      sets.push(`${column} = $${params.length}`);
+    };
 
+    if (input.diagnosis !== undefined) push('diagnosis', input.diagnosis);
+    if (input.dependencyLevel !== undefined) push('dependency_level', input.dependencyLevel);
+    if (input.clinicalSegments !== undefined) push('clinical_segments', input.clinicalSegments);
+    if (input.serviceType !== undefined) {
+      // serviceType is TEXT[] in DB after migration 139. Empty array → NULL (never store []).
+      push('service_type', input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null);
+    }
+    if (input.deviceType !== undefined) push('device_type', input.deviceType);
+    if (input.additionalComments !== undefined) {
+      push('additional_comments', input.additionalComments);
+      // Autoria de additional_comments: só muda quando o campo veio no PATCH.
+      // Grava o uid, nunca o valor (lex 29/08, item 3).
+      params.push(input.actorUid ?? null);
+      sets.push('additional_comments_updated_at = NOW()');
+      sets.push(`additional_comments_updated_by = $${params.length}`);
+    }
+    if (input.emergencyInstructions !== undefined) {
+      push('emergency_instructions', input.emergencyInstructions);
+      // Autoria própria do campo (D211.2, molde de additional_comments): uid, nunca o valor.
+      params.push(input.actorUid ?? null);
+      sets.push('emergency_instructions_updated_at = NOW()');
+      sets.push(`emergency_instructions_updated_by = $${params.length}`);
+    }
+    if (input.hasJudicialProtection !== undefined) push('has_judicial_protection', input.hasJudicialProtection);
+    if (input.hasCud !== undefined) push('has_cud', input.hasCud);
+    if (input.hasConsent !== undefined) {
+      // has_consent is a LEGAL record (Ley 25.326/LGPD): null/omitted ⇒ preserved.
+      // Explicit false still writes false; clearing consent is the opt-out flow's job (D108).
+      params.push(input.hasConsent);
+      sets.push(`has_consent = COALESCE($${params.length}, has_consent)`);
+    }
+    if (input.clinicalSpecialty !== undefined) push('clinical_specialty', input.clinicalSpecialty);
+
+    // Nada veio além do id: não há o que gravar (nem bater updated_at à toa).
+    if (sets.length === 0) return;
+
+    sets.push('updated_at = NOW()');
     await executor.query(
       `UPDATE patients SET
-        diagnosis               = $2,
-        dependency_level        = $3,
-        clinical_segments       = $4,
-        service_type            = $5,
-        device_type             = $6,
-        additional_comments     = $7,
-        has_judicial_protection = $8,
-        has_cud                 = $9,
-        has_consent             = COALESCE($10, has_consent),
-        clinical_specialty      = $11,
-        updated_at              = NOW()
+        ${sets.join(',\n        ')}
        WHERE id = $1`,
-      [
-        input.patientId,
-        input.diagnosis              ?? null,
-        input.dependencyLevel        ?? null,
-        input.clinicalSegments       ?? null,
-        serviceTypeValue,
-        input.deviceType             ?? null,
-        input.additionalComments     ?? null,
-        input.hasJudicialProtection  ?? null,
-        input.hasCud                 ?? null,
-        // has_consent is a LEGAL record (Ley 25.326/LGPD): omitted in a partial
-        // PATCH ⇒ preserved (COALESCE above). Explicit false still writes false;
-        // clearing consent is the opt-out flow's job, never an omission's (D108).
-        input.hasConsent             ?? null,
-        input.clinicalSpecialty      ?? null,
-      ],
+      params,
     );
   }
 
@@ -87,6 +123,7 @@ export class PatientClinicalRepository {
         clinical_segments AS "clinicalSegments",
         service_type AS "serviceType", device_type AS "deviceType",
         additional_comments AS "additionalComments",
+        emergency_instructions AS "emergencyInstructions",
         has_judicial_protection AS "hasJudicialProtection",
         has_cud AS "hasCud", has_consent AS "hasConsent"
        FROM patients WHERE id = $1`,

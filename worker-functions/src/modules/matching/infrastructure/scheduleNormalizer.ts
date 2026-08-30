@@ -9,7 +9,7 @@
  * - Forma esperada pelo frontend: `{ <dayName>: [{ start, end }] }`
  */
 
-const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+import { DAY_KEYS_ES } from '@shared/utils/dateFormatters';
 
 export type NormalizedSchedule = Record<string, { start: string; end: string }[]>;
 
@@ -26,7 +26,7 @@ export function normalizeSchedule(raw: unknown): NormalizedSchedule | null {
 
   const result: NormalizedSchedule = {};
   for (const slot of raw as ArraySlot[]) {
-    const dayName = DAY_NAMES[slot.dayOfWeek];
+    const dayName = DAY_KEYS_ES[slot.dayOfWeek];
     if (!dayName) continue;
     if (!result[dayName]) result[dayName] = [];
     result[dayName].push({ start: slot.startTime, end: slot.endTime });

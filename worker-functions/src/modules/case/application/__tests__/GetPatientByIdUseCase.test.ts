@@ -33,6 +33,14 @@ const mockPatient: PatientDetailRow = {
   serviceType: ['AT'],
   deviceType: 'DOMICILIARIO',
   additionalComments: 'Needs structured environment',
+  additionalCommentsUpdatedAt: null,
+  additionalCommentsUpdatedBy: null,
+
+  emergencyInstructions: null,
+
+  emergencyInstructionsUpdatedAt: null,
+
+  emergencyInstructionsUpdatedBy: null,
   hasJudicialProtection: false,
   hasCud: true,
   hasConsent: true,

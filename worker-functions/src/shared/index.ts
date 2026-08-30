@@ -11,15 +11,12 @@ export { KMSEncryptionService } from './security/KMSEncryptionService';
 
 // Events (infra)
 export { DomainEventProcessor } from './events/DomainEventProcessor';
-export type { DomainEventHandler } from './events/DomainEventProcessor';
+export type { DomainEventHandler, DomainEventMeta } from './events/DomainEventProcessor';
 export { CloudTasksClient } from './events/CloudTasksClient';
 export type { ScheduleTaskOptions } from './events/CloudTasksClient';
 export { PubSubClient } from './events/PubSubClient';
 export type { PubSubMessage } from './events/PubSubClient';
-export {
-  createQualifiedInterviewHandler,
-  formatSlotOption,
-} from './events/handlers/QualifiedInterviewHandler';
+export { createQualifiedInterviewHandler } from './events/handlers/QualifiedInterviewHandler';
 
 // Utils
 export * from './utils/pagination';

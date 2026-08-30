@@ -78,4 +78,53 @@ describe('ReadonlyDbQueryService', () => {
     expect(calls).toContain('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
   });
+
+  it('C2 (D211.2): query que toca emergency_instructions é recusada antes de abrir transação', async () => {
+    const { pool, client } = makePool();
+    const service = new ReadonlyDbQueryService(pool as never);
+    await expect(service.run('SELECT emergency_instructions FROM patients', 10)).rejects.toThrow(/restricted clinical column/);
+    await expect(service.run('select p.EMERGENCY_INSTRUCTIONS_updated_by from patients p', 10)).rejects.toThrow(/restricted clinical column/);
+    expect(pool.connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReadonlyDbQueryService — projeção de linha inteira em tabela clínica (D216, defesa em profundidade)', () => {
+  const recusadas: Array<[string, string]> = [
+    ['select *', 'select * from patients'],
+    ['SELECT DISTINCT *', 'SELECT DISTINCT * FROM patients WHERE country = \'AR\''],
+    ['alias.*', 'select p.* from patients p'],
+    ['* depois de coluna', 'select id, * from patients'],
+    ['subselect com *', 'select count(1) from (select * from patients) s'],
+    ['patient_* com *', 'select * from patient_responsibles'],
+    ['to_jsonb(p)', 'select to_jsonb(p) from patients p'],
+    ['to_json(p)', 'select to_json(p) from patients p'],
+    ['row_to_json(patients)', 'select row_to_json(patients) from patients'],
+    ['json_agg(p)', 'select json_agg(p) from patients p'],
+    ['jsonb_agg(p)', 'select jsonb_agg(p) from patients p'],
+    ['hstore(p)', 'select hstore(p) from patients p'],
+    ['CTE que toca patients', 'with p as (select * from patients) select id from p'],
+  ];
+  it.each(recusadas)('%s → recusada antes de abrir transação', async (_nome, sql) => {
+    const { pool, client } = makePool();
+    const service = new ReadonlyDbQueryService(pool as never);
+    await expect(service.run(sql)).rejects.toThrow(/Whole-row projection/);
+    expect(pool.connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+  });
+
+  const permitidas: Array<[string, string]> = [
+    ['colunas nomeadas', 'select id, status from patients'],
+    ['count(*) — contagem é item 1', 'SELECT count(*) FROM patients'],
+    ['count( * ) com espaços', 'select count( * ) from patient_responsibles'],
+    ['multiplicação não é projeção', 'select id, dependency_level, 2 * 3 as x from patients'],
+    ['patients_ro é a view sem texto clínico', 'select * from patients_ro'],
+    ['tabela não clínica com *', 'select * from workers'],
+    ['to_jsonb em tabela não clínica', 'select to_jsonb(w) from workers w'],
+  ];
+  it.each(permitidas)('%s → passa', async (_nome, sql) => {
+    const { pool } = makePool([]);
+    const service = new ReadonlyDbQueryService(pool as never);
+    await expect(service.run(sql)).resolves.toMatchObject({ rowCount: 0 });
+  });
 });

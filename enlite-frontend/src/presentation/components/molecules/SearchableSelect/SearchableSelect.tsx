@@ -15,6 +15,10 @@ interface SearchableSelectProps {
   label?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  /** `compact` casa com o `Select` compact das linhas de filtro (h-10). */
+  inputSize?: 'default' | 'compact';
+  /** Vai para o botão que abre a lista — é o que o e2e clica. */
+  'data-testid'?: string;
 }
 
 function normalizeText(text: string): string {
@@ -32,6 +36,8 @@ export function SearchableSelect({
   label,
   searchPlaceholder,
   disabled = false,
+  inputSize = 'default',
+  'data-testid': testId,
 }: SearchableSelectProps): JSX.Element {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -89,9 +95,10 @@ export function SearchableSelect({
           type="button"
           onClick={handleOpen}
           disabled={disabled}
-          className="w-full h-12 px-4 rounded-[10px] border-[1.5px] border-[#D9D9D9] bg-white font-lexend font-medium text-[#374151] text-sm flex items-center justify-between gap-2 focus:outline-none focus:border-[#180149] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`w-full ${inputSize === 'compact' ? 'h-10 px-3' : 'h-12 px-4'} rounded-[10px] border-[1.5px] border-[#D9D9D9] bg-white font-lexend font-medium text-[#374151] text-sm flex items-center justify-between gap-2 focus:outline-none focus:border-[#180149] transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
+          data-testid={testId}
         >
           <span
             className={

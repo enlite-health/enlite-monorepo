@@ -9,7 +9,6 @@ import type {
 import { legacyChatIdAliases } from '../domain/PatientChatId';
 import {
   computeAddressAvailability,
-  type AddressAvailability,
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 
@@ -32,6 +31,17 @@ const PATIENT_DETAIL_SQL = `
     service_type             AS "serviceType",
     device_type              AS "deviceType",
     additional_comments      AS "additionalComments",
+    -- Autoria da última edição das observações (migration 286): data + NOME resolvido
+    -- na leitura a partir do uid — o uid não sai da API (lex 29/08, item 3).
+    p.additional_comments_updated_at AS "additionalCommentsUpdatedAt",
+    (SELECT COALESCE(u.display_name, u.email) FROM users u
+      WHERE u.firebase_uid = p.additional_comments_updated_by) AS "additionalCommentsUpdatedBy",
+    -- Instruções de emergência (mig 294, D211.2): mesmo molde de autoria; a redação por permissão
+    -- acontece DEPOIS, no ponto único (PatientService.redactClinicalForActor).
+    p.emergency_instructions AS "emergencyInstructions",
+    p.emergency_instructions_updated_at AS "emergencyInstructionsUpdatedAt",
+    (SELECT COALESCE(u.display_name, u.email) FROM users u
+      WHERE u.firebase_uid = p.emergency_instructions_updated_by) AS "emergencyInstructionsUpdatedBy",
     has_judicial_protection  AS "hasJudicialProtection",
     has_cud                  AS "hasCud",
     has_consent              AS "hasConsent",
@@ -221,6 +231,11 @@ export async function fetchPatientDetail(
     serviceType: p.serviceType,
     deviceType: p.deviceType,
     additionalComments: p.additionalComments,
+    additionalCommentsUpdatedAt: p.additionalCommentsUpdatedAt,
+    additionalCommentsUpdatedBy: p.additionalCommentsUpdatedBy,
+    emergencyInstructions: p.emergencyInstructions,
+    emergencyInstructionsUpdatedAt: p.emergencyInstructionsUpdatedAt,
+    emergencyInstructionsUpdatedBy: p.emergencyInstructionsUpdatedBy,
     hasJudicialProtection: p.hasJudicialProtection,
     hasCud: p.hasCud,
     hasConsent: p.hasConsent,

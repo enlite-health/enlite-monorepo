@@ -34,6 +34,7 @@ import {
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
+import { AdminWorkersMapController } from './modules/worker/interfaces/controllers/AdminWorkersMapController';
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
@@ -62,6 +63,9 @@ import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyA
 import { createAnaCareMirrorHandler } from '@modules/integration/application/AnaCareMirrorEventHandler';
 import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
 import { TokenService } from '@modules/notification/infrastructure/TokenService';
+import { createPresentationInviteRoutes } from '@modules/notification/interfaces/routes/presentationInviteRoutes';
+import { PresentationInviteController } from '@modules/notification/interfaces/controllers/PresentationInviteController';
+import { InvitePresentationMeetingUseCase } from '@modules/notification/application/InvitePresentationMeetingUseCase';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
 import { internalAuthMiddleware } from '@modules/notification';
@@ -77,6 +81,10 @@ import { AccountLinkController } from '@modules/account-link/AccountLinkControll
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
+import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
+import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
+import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
+import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
 
 const app = express();
 
@@ -151,6 +159,7 @@ const adminWorkerTestFlagController = new AdminWorkerTestFlagController();
 const adminWorkerProfileController = new AdminWorkerProfileController();
 const adminWorkerServiceAreaController = new AdminWorkerServiceAreaController();
 const adminWorkersAuxController = new AdminWorkersAuxController();
+const adminWorkersMapController = new AdminWorkersMapController();
 const adminTagCatalogController = new AdminTagCatalogController();
 const workerTimelineController = new WorkerTimelineController(DatabaseConnection.getInstance().getPool());
 const adminPatientsController = new AdminPatientsController();
@@ -210,7 +219,21 @@ app.get('/api/workers/lookup', workerLookupRateLimit, (req: Request, res: Respon
   workerController.lookupByEmail(req, res);
 });
 
-app.get('/api/vacancies/:id', (req: Request, res: Response) => {
+/**
+ * A rota pública de detalhe da vaga era a ÚNICA rota pública sem rate limit nenhum, e é
+ * enumerável por slug (`caso{N}-{M}`, inteiros sequenciais) — ou seja, varrer o catálogo
+ * inteiro custava um `for`. O teto é o mesmo do feed (60/min): não atrapalha um candidato
+ * navegando, e torna a varredura cara.
+ */
+const publicVacancyRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+});
+
+app.get('/api/vacancies/:id', publicVacancyRateLimit, (req: Request, res: Response) => {
   publicVacancyController.getById(req, res);
 });
 
@@ -376,6 +399,7 @@ app.use('/api/admin', createAdminWorkerRoutes({
   serviceArea: adminWorkerServiceAreaController,
   tags: adminTagCatalogController,
   timeline: workerTimelineController,
+  map: adminWorkersMapController,
 }, authMiddleware));
 
 app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsController, authMiddleware));
@@ -408,6 +432,9 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   funnelTableController,
 ));
 
+// ========== Mensagem por etapa (DEC-12) ==========
+app.use('/api/admin', createFunnelStageMessagesRoutes(new FunnelStageMessagesController(), authMiddleware));
+
 // ========== Analytics & BI (extracted router) ==========
 app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware));
 
@@ -422,12 +449,28 @@ const dbPool = DatabaseConnection.getInstance().getPool();
 const cloudTasksClient = new CloudTasksClient();
 const pubsubClient = new PubSubClient();
 const tokenService = new TokenService(dbPool);
+
+// ========== Convite à reunión de presentación (REQ-09, planning 26/08) ==========
+app.use('/api/admin', createPresentationInviteRoutes(
+  new PresentationInviteController(new InvitePresentationMeetingUseCase(dbPool, tokenService, pubsubClient)),
+  authMiddleware,
+));
 const domainEventProcessor = new DomainEventProcessor(dbPool);
 
 domainEventProcessor.registerHandler(
   'funnel_stage.qualified',
   createQualifiedInterviewHandler(dbPool, pubsubClient, tokenService),
 );
+
+// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite
+// `funnel_stage.<etapa>`; QUALIFIED continua no handler acima (built-in).
+for (const stage of FUNNEL_STAGES) {
+  if (stage === 'QUALIFIED') continue;
+  domainEventProcessor.registerHandler(
+    funnelStageEventName(stage),
+    createStageMessageHandler(dbPool, pubsubClient, tokenService, stage),
+  );
+}
 
 domainEventProcessor.registerHandler(
   'vacancy.created',

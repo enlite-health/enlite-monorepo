@@ -67,6 +67,18 @@ export interface WorkerListFilters {
    * como o admin acha alguém para reverter a baixa.
    */
   status?: string;
+  /**
+   * Lista de status (o mapa aceita vários). Quando presente, MANDA: vira
+   * `w.status = ANY(...)` e o exclude de DISABLED da casa NÃO entra — pedir
+   * `DISABLED` explicitamente é "quem deu baixa também". Se `docs_complete`
+   * vier junto, ele RESTRINGE a lista (interseção): `complete` mantém só
+   * REGISTERED, `incomplete` só INCOMPLETE_REGISTER. Interseção vazia
+   * (ex.: `['DISABLED']` + `incomplete`) devolve lista vazia de propósito —
+   * o pedido é contraditório e a resposta honesta é "ninguém", nunca um WHERE
+   * com `status = 'X' AND status = ANY(...)` que só o banco sabe que é falso.
+   * Ignorado quando vazio. Tem precedência sobre `status` (singular).
+   */
+  statuses?: string[];
   limit: string;
   offset: string;
 }
@@ -88,6 +100,40 @@ export interface WorkerListQuery {
  * interpolation is injection-safe; all values go through parameterized `$n`.
  * Returns unchanged when the match has neither keys nor patterns.
  */
+/**
+ * O PREDICADO de "esta linha de `worker_service_areas` casa o filtro de
+ * provincia/localidad" — a mesma forma que o EXISTS da lista usa. Exportado
+ * para o mapa ordenar o LATERAL por ele (a linha que casa o filtro vence).
+ * Devolve `sql: null` quando o match não tem chave nem padrão.
+ *
+ * @param alias alias da linha de `worker_service_areas` na query chamadora.
+ */
+export function locationMatchSql(
+  alias: string,
+  params: unknown[],
+  paramIndex: number,
+  primaryColumn: 'city' | 'state',
+  match: LocationFilterMatch,
+): { sql: string | null; paramIndex: number } {
+  const conds: string[] = [];
+
+  if (match.exactKeys.length > 0) {
+    const p = paramIndex++;
+    params.push(match.exactKeys);
+    conds.push(`lower(btrim(${alias}.${primaryColumn})) = ANY($${p}::text[])`);
+    conds.push(`lower(btrim(${alias}.work_zone)) = ANY($${p}::text[])`);
+  }
+
+  if (match.containsPatterns.length > 0) {
+    const p = paramIndex++;
+    params.push(match.containsPatterns.map((pat) => `%${pat}%`));
+    conds.push(`${alias}.work_zone ILIKE ANY($${p}::text[])`);
+    conds.push(`${alias}.interest_zone ILIKE ANY($${p}::text[])`);
+  }
+
+  return { sql: conds.length === 0 ? null : `(${conds.join(' OR ')})`, paramIndex };
+}
+
 function appendLocationExists(
   whereClause: string,
   params: unknown[],
@@ -95,31 +141,22 @@ function appendLocationExists(
   primaryColumn: 'city' | 'state',
   match: LocationFilterMatch,
 ): { whereClause: string; paramIndex: number } {
-  const conds: string[] = [];
-
-  if (match.exactKeys.length > 0) {
-    const p = paramIndex++;
-    params.push(match.exactKeys);
-    conds.push(`lower(btrim(wsa.${primaryColumn})) = ANY($${p}::text[])`);
-    conds.push(`lower(btrim(wsa.work_zone)) = ANY($${p}::text[])`);
-  }
-
-  if (match.containsPatterns.length > 0) {
-    const p = paramIndex++;
-    params.push(match.containsPatterns.map((pat) => `%${pat}%`));
-    conds.push(`wsa.work_zone ILIKE ANY($${p}::text[])`);
-    conds.push(`wsa.interest_zone ILIKE ANY($${p}::text[])`);
-  }
-
-  if (conds.length === 0) return { whereClause, paramIndex };
+  const built = locationMatchSql('wsa', params, paramIndex, primaryColumn, match);
+  if (built.sql === null) return { whereClause, paramIndex: built.paramIndex };
 
   return {
     whereClause:
       whereClause +
-      ` AND EXISTS (SELECT 1 FROM worker_service_areas wsa WHERE wsa.worker_id = w.id AND (${conds.join(' OR ')}))`,
-    paramIndex,
+      ` AND EXISTS (SELECT 1 FROM worker_service_areas wsa WHERE wsa.worker_id = w.id AND ${built.sql})`,
+    paramIndex: built.paramIndex,
   };
 }
+
+/** `docs_complete` é um recorte de status: qual status cada valor significa. */
+const DOCS_COMPLETE_STATUS: Record<string, string> = {
+  complete: 'REGISTERED',
+  incomplete: 'INCOMPLETE_REGISTER',
+};
 
 // ── Builder ────────────────────────────────────────────────────────────────────
 
@@ -136,8 +173,16 @@ export function buildWorkerListWhereClause(filters: WorkerListFilters): WorkerLi
 
   // ── Status ──────────────────────────────────────────────────────────────────
   // Filtro explícito manda (inclusive `DISABLED`); sem filtro, quem deu baixa
-  // na conta não aparece na lista/busca.
-  if (typeof filters.status === 'string' && filters.status.trim() !== '') {
+  // na conta não aparece na lista/busca. A lista (`statuses`) tem precedência
+  // e absorve `docs_complete` por interseção — regra escrita na interface.
+  const statuses = Array.isArray(filters.statuses) && filters.statuses.length > 0 ? filters.statuses : null;
+  if (statuses !== null) {
+    const docsStatus = filters.docs_complete !== undefined ? DOCS_COMPLETE_STATUS[filters.docs_complete] : undefined;
+    const effective = docsStatus !== undefined ? statuses.filter((st) => st === docsStatus) : statuses;
+    whereClause += ` AND w.status = ANY($${paramIndex}::text[])`;
+    params.push(effective);
+    paramIndex++;
+  } else if (typeof filters.status === 'string' && filters.status.trim() !== '') {
     whereClause += ` AND w.status = $${paramIndex}`;
     params.push(filters.status.trim());
     paramIndex++;
@@ -159,9 +204,10 @@ export function buildWorkerListWhereClause(filters: WorkerListFilters): WorkerLi
   }
 
   // ── Docs complete ───────────────────────────────────────────────────────────
-  if (filters.docs_complete === 'complete') {
+  // Só quando `statuses` não veio — com a lista, já entrou por interseção acima.
+  if (statuses === null && filters.docs_complete === 'complete') {
     whereClause += ` AND w.status = 'REGISTERED'`;
-  } else if (filters.docs_complete === 'incomplete') {
+  } else if (statuses === null && filters.docs_complete === 'incomplete') {
     whereClause += ` AND w.status = 'INCOMPLETE_REGISTER'`;
   }
 
