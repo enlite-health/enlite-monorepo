@@ -1092,7 +1092,8 @@
       "adminSection": "Administración",
       "patientChatRoles": "Roles de grupos",
       "funnelStageMessages": "Mensajes por etapa",
-      "presentationInvite": "Invitación a presentación"
+      "presentationInvite": "Invitación a presentación",
+      "map": "Mapa"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -3456,6 +3457,65 @@
       },
       "lastEdit": "Última edición",
       "by": "por"
+    },
+    "map": {
+      "title": "Mapa",
+      "subtitle": "Prestadores y pacientes sobre el mapa. Hacé clic en el mapa para mover el centro del radio.",
+      "refresh": "Actualizar",
+      "tabs": {
+        "workers": "Prestadores",
+        "patients": "Pacientes"
+      },
+      "country": "País",
+      "radius": "Radio",
+      "centerOnPatient": {
+        "label": "Centrar en paciente",
+        "placeholder": "Centrar en un paciente…"
+      },
+      "docs": {
+        "label": "Documentación",
+        "all": "Todos",
+        "complete": "Documentación completa",
+        "incomplete": "Registro incompleto"
+      },
+      "profession": {
+        "label": "Profesión",
+        "all": "Todas las profesiones",
+        "unknown": "Sin profesión",
+        "AT": "AT",
+        "CAREGIVER": "Cuidador",
+        "NURSE": "Enfermería",
+        "KINESIOLOGIST": "Kinesiología",
+        "PSYCHOLOGIST": "Psicología"
+      },
+      "workerStatus": {
+        "REGISTERED": "Documentación completa",
+        "INCOMPLETE_REGISTER": "Registro incompleto",
+        "DISABLED": "Dado de baja"
+      },
+      "patientStatus": {
+        "label": "Estado",
+        "all": "Todos los estados",
+        "ACTIVE": "Activo",
+        "ADMISSION": "En admisión",
+        "PENDING_ADMISSION": "Esperando financiero",
+        "SOLICITANTE": "Solicitante",
+        "SUSPENDED": "Suspendido",
+        "DISCONTINUED": "Baja",
+        "DISCHARGED": "Alta"
+      },
+      "onlyOpenVacancies": "Solo con vacantes abiertas",
+      "openVacancies": "{{count}} vacante(s) abierta(s)",
+      "loading": "Cargando…",
+      "inRadius": "en {{km}} km",
+      "withoutCoordinates": "{{count}} sin ubicación",
+      "truncated": "lista cortada — achicá el radio",
+      "noLocation": "sin ubicación",
+      "empty": "Nadie en este radio. Probá un radio mayor o mové el centro.",
+      "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",
+      "status": {
+        "unknown": "Sin estado"
+      }
     }
   },
   "publicVacancy": {

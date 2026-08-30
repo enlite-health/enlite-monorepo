@@ -3,6 +3,7 @@ import { AdminPatientsController } from '../controllers/AdminPatientsController'
 import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatIdsController';
 import { AdminPatientChatRolesController } from '../controllers/AdminPatientChatRolesController';
 import { AuthMiddleware } from '@modules/identity';
+import { AdminPatientsMapController } from '../controllers/AdminPatientsMapController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -16,6 +17,7 @@ export function createAdminPatientsRoutes(
   authMiddleware: AuthMiddleware,
   chatIdsController: AdminPatientChatIdsController = new AdminPatientChatIdsController(),
   chatRolesController: AdminPatientChatRolesController = new AdminPatientChatRolesController(),
+  mapController: AdminPatientsMapController = new AdminPatientsMapController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -69,6 +71,11 @@ export function createAdminPatientsRoutes(
   // capturaria 'chat-map' como :id e devolveria 400 de UUID inválido.
   router.get('/patients/chat-map', staffOnly, (req: Request, res: Response) =>
     chatIdsController.getChatMap(req, res),
+  );
+
+  // Pontos do mapa de pacientes (REQ-04, DEC-14). POST com corpo (lex C2: coordenada fora da URL). ESTÁTICA: antes de /patients/:id.
+  router.post('/patients/map', staffOnly, (req: Request, res: Response) =>
+    mapController.getMapPoints(req, res),
   );
 
   router.get('/patients', staffOnly, (req: Request, res: Response) =>

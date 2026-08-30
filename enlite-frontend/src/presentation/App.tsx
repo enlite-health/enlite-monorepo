@@ -27,6 +27,7 @@ import TalentumConfigPage from './pages/admin/TalentumConfigPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
+import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
@@ -204,6 +205,7 @@ export function App() {
           <Route path="patients" element={<AdminPatientsPage />} />
           <Route path="patients/kanban" element={<PatientKanbanPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
+          <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />

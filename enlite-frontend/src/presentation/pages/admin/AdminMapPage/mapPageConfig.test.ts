@@ -1,0 +1,52 @@
+import { describe, it, expect } from 'vitest';
+import type { TFunction } from 'i18next';
+import {
+  DEFAULT_CENTER, DEFAULT_RADIUS_KM, PATIENT_STATUS_COLOR, WORKER_STATUS_COLOR, distanceLabel, patientPointTitle,
+  patientStatusLabel, placeLabel, professionLabel, workerPointTitle, workerStatusLabel,
+} from './mapPageConfig';
+
+// t que devolve o fallback (a chave nunca é traduzida aqui — o que se testa é a composição)
+const t = ((key: string, fallback?: string | Record<string, unknown>) => {
+  if (typeof fallback === 'string') return fallback;
+  if (fallback && typeof fallback === 'object') return String(fallback.defaultValue).replace('{{count}}', String(fallback.count));
+  return key;
+}) as unknown as TFunction;
+
+describe('mapPageConfig', () => {
+  it('centro padrão é CABA e o raio nasce em 25 km (FATO-17)', () => {
+    expect(DEFAULT_CENTER).toEqual({ lat: -34.6037, lng: -58.3816 });
+    expect(DEFAULT_RADIUS_KM).toBe(25);
+    expect(WORKER_STATUS_COLOR.REGISTERED).not.toBe(WORKER_STATUS_COLOR.INCOMPLETE_REGISTER);
+    expect(PATIENT_STATUS_COLOR.ACTIVE).toBeDefined();
+  });
+
+  it('rótulos com fallback para valor desconhecido', () => {
+    expect(workerStatusLabel(t, 'REGISTERED')).toBe('Documentación completa');
+    expect(workerStatusLabel(t, 'XYZ')).toBe('XYZ');
+    expect(patientStatusLabel(t, 'PENDING_ADMISSION')).toBe('Esperando financiero');
+    expect(patientStatusLabel(t, 'XYZ')).toBe('XYZ');
+    // status NULL no banco (visto no e2e): nunca a chave crua
+    expect(patientStatusLabel(t, null)).toBe('Sin estado');
+    expect(workerStatusLabel(t, null)).toBe('Sin estado');
+    expect(professionLabel(t, 'AT')).toBe('AT');
+    expect(professionLabel(t, 'OTHER')).toBe('OTHER');
+    expect(professionLabel(t, null)).toBe('Sin profesión');
+  });
+
+  it('placeLabel e distanceLabel', () => {
+    expect(placeLabel({ city: 'CABA', neighborhood: 'Flores' })).toBe('Flores · CABA');
+    expect(placeLabel({ city: null, neighborhood: null })).toBe('');
+    expect(distanceLabel(null)).toBe('');
+    expect(distanceLabel(2.345)).toBe('2.3 km');
+    expect(distanceLabel(12.6)).toBe('13 km');
+  });
+
+  it('títulos dos pinos: nome + status + lugar (+ vagas no paciente), sem dado clínico', () => {
+    expect(workerPointTitle(t, { id: 'w', name: 'Ana', lat: 0, lng: 0, status: 'INCOMPLETE_REGISTER', documentsComplete: false, profession: 'CAREGIVER', city: 'CABA', neighborhood: null, state: null, distanceKm: null }))
+      .toBe('Ana — Cuidador — Registro incompleto — CABA');
+    expect(patientPointTitle(t, { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null }))
+      .toBe('Luz — Activo — 2 vacante(s) abierta(s)');
+    expect(patientPointTitle(t, { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 0, distanceKm: null }))
+      .toBe('Luz — Activo');
+  });
+});
