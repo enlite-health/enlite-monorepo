@@ -90,6 +90,9 @@ export interface PatientDetail {
   serviceType: string[] | null;
   deviceType: string | null;
   additionalComments: string | null;
+  /** Autoria da última edição das observações (REQ-01): ISO e NOME do staff (resolvido no backend). null = nunca editado pelo painel. */
+  additionalCommentsUpdatedAt: string | null;
+  additionalCommentsUpdatedBy: string | null;
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;

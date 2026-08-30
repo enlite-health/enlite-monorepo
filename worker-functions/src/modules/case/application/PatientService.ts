@@ -496,6 +496,8 @@ export class PatientService {
     patientId: string,
     section: PatientSection,
     data: PatientGeneralSectionData | PatientRelatedInput,
+    /** Quem está editando (uid do staff) — hoje só a seção clínica usa (autoria de additional_comments). */
+    actor?: { uid: string },
   ): Promise<{ id: string; updated: true }> {
     const db     = DatabaseConnection.getInstance();
     const client = await db.getClient();
@@ -522,6 +524,7 @@ export class PatientService {
               hasJudicialProtection: c.hasJudicialProtection,
               hasCud:                c.hasCud,
               hasConsent:            c.hasConsent,
+              actorUid:              actor?.uid ?? null,
             },
             client,
           );
@@ -533,8 +536,9 @@ export class PatientService {
           break;
         }
         case 'service': {
-          // Targeted: only service_type. Passing this through clinicalRepo.upsert
-          // would null out the rest of the clinical block, so update directly.
+          // Targeted: only service_type. (Desde a D211.1 o clinicalRepo.upsert é
+          // parcial — chave ausente não toca a coluna — mas este caminho
+          // continua direto: uma coluna, uma query.)
           const serviceType = (data as PatientRelatedInput).serviceType;
           const value =
             serviceType !== undefined && serviceType !== null && serviceType.length > 0

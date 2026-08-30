@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { reportError } from '@shared/logging';
+import { AuthMiddleware } from '@modules/identity';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
@@ -197,10 +198,13 @@ export class AdminPatientsController {
         return;
       }
 
+      // Autoria (REQ-01): o uid do staff vai para a mesma transação do PATCH.
+      const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id;
       await this.patientService.updatePatientSection(
         id,
         section,
         bodyResult.data as PatientGeneralSectionData | PatientRelatedInput,
+        actorUid ? { uid: actorUid } : undefined,
       );
       res.status(200).json({ success: true, data: { id } });
     } catch (err: unknown) {

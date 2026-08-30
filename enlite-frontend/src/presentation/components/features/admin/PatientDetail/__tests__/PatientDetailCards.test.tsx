@@ -9,8 +9,8 @@
  *   - i18n keys are resolved correctly
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
 
@@ -43,6 +43,13 @@ vi.mock('react-i18next', () => ({
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({ id: 'test-id' }),
+}));
+
+// AdminApiService — só usado no PATCH do PatientClinicalEditDrawer (DiagnosticoCard).
+// Nenhum outro card deste arquivo clica em "salvar", então mockar aqui é seguro.
+const updatePatientSection = vi.fn();
+vi.mock('@infrastructure/http/AdminApiService', () => ({
+  AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
 }));
 
 // ── Imports (after mocks) ────────────────────────────────────────────────────
@@ -242,6 +249,8 @@ describe('PatientGeneralInfoCard', () => {
 // ── DiagnosticoCard ──────────────────────────────────────────────────────────
 
 describe('DiagnosticoCard', () => {
+  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: 'x' }); });
+
   it('renders card title Diagnóstico', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.getByText('Diagnóstico')).toBeInTheDocument();
@@ -252,9 +261,39 @@ describe('DiagnosticoCard', () => {
     expect(screen.getByText('CID 6A02.5 Transtorno do espectro autista')).toBeInTheDocument();
   });
 
-  it('renders additionalComments (details) value', () => {
+  it('renders additionalComments (observações gerais) value', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.getByText('TDAH severo')).toBeInTheDocument();
+    expect(screen.getByText(/Observações gerais/)).toBeInTheDocument();
+  });
+
+  // ── REQ-01: observações gerais com quebras, autoria e máscara do Clarity ──
+  it('preserva quebras de linha (whitespace-pre-wrap) e mostra "Última edição: data · nome"', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, additionalComments: 'linha 1\nlinha 2' }} />);
+    const text = screen.getByTestId('general-notes-text');
+    expect(text).toHaveClass('whitespace-pre-wrap');
+    expect(text.textContent).toBe('linha 1\nlinha 2');
+    const edited = screen.getByTestId('general-notes-edited');
+    expect(edited.textContent).toMatch(/^Última edição: .+ · Coordinadora E2E$/);
+    expect(edited.textContent).toMatch(/28\/08\/2026/);
+  });
+
+  it('sem autoria (nunca editado pelo painel) não mostra a linha "Última edição"', () => {
+    render(<DiagnosticoCard patient={patientDetailMinimal} />);
+    expect(screen.queryByTestId('general-notes-edited')).not.toBeInTheDocument();
+    expect(screen.getByTestId('general-notes-text').textContent).toBe('—');
+  });
+
+  it('com data mas sem nome resolvido, mostra "—" no lugar do nome; data inválida cai no ISO cru', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, additionalCommentsUpdatedAt: 'não-é-data', additionalCommentsUpdatedBy: null }} />);
+    expect(screen.getByTestId('general-notes-edited').textContent).toBe('Última edição: não-é-data · —');
+  });
+
+  // lex C1.1: o bloco da narrativa clínica leva data-clarity-mask="True". Este teste é a
+  // trava: se alguém remover o atributo, fica vermelho.
+  it('o bloco das observações leva data-clarity-mask="True"', () => {
+    render(<DiagnosticoCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('general-notes')).toHaveAttribute('data-clarity-mask', 'True');
   });
 
   it('renders CID label', () => {
@@ -280,6 +319,26 @@ describe('DiagnosticoCard', () => {
     expect(editButton).not.toBeDisabled();
     fireEvent.click(editButton);
     expect(screen.getByTestId('patient-clinical-edit-drawer')).toBeInTheDocument();
+  });
+
+  it('salvar uma mudança no drawer chama o onSaved do card e fecha o drawer', async () => {
+    const onSaved = vi.fn();
+    render(<DiagnosticoCard patient={patientDetailFixture} onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('edit-clinical-btn'));
+    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('patient-clinical-edit-drawer')).not.toBeInTheDocument(), { timeout: 1500 });
+  });
+
+  it('sem a prop onSaved (opcional), salvar não quebra e ainda assim fecha o drawer', async () => {
+    render(<DiagnosticoCard patient={patientDetailFixture} />);
+    fireEvent.click(screen.getByTestId('edit-clinical-btn'));
+    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
+    expect(() => fireEvent.click(screen.getByTestId('pce-save'))).not.toThrow();
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('patient-clinical-edit-drawer')).not.toBeInTheDocument(), { timeout: 1500 });
   });
 });
 
