@@ -3446,6 +3446,7 @@
         "TEMPLATE_INACTIVE": "Template todavía no aprobado por Meta",
         "TEMPLATE_NOT_ALLOWED": "Template no permitido",
         "NO_MEET_LINK": "Falta el link de la reunión",
+        "NO_SCHEDULE_LABEL": "El template usa el horario y no hay horario configurado",
         "WORKER_NOT_FOUND": "Prestador no encontrado",
         "COUNTRY_BLOCKED": "Solo Argentina por ahora",
         "WORKER_DISABLED": "Cuenta desactivada",

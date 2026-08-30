@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from './KanbanBoardShell';
@@ -8,7 +8,8 @@ import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
-import { AdminPresentationInviteApiService, type PresentationInviteResult, type PresentationInviteLast } from '@infrastructure/http/AdminPresentationInviteApiService';
+import type { PresentationInviteResult } from '@infrastructure/http/AdminPresentationInviteApiService';
+import { usePresentationInviteLast } from '@hooks/admin/usePresentationInviteLast';
 import type { PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanBoardProps {
@@ -115,22 +116,14 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
 
   /** REQ-09: estado do convite à reunión de presentación por card + último convite por worker. */
   const [presentationByCard, setPresentationByCard] = useState<Record<string, PresentationInviteState>>({});
-  const [lastPresentationByWorker, setLastPresentationByWorker] = useState<PresentationInviteLast>({});
-  const workerIdsKey = Object.values(stages).flat().map((e) => e.workerId).filter((id): id is string => !!id).sort().join(',');
-  useEffect(() => {
-    if (!onPresentationInvite || !workerIdsKey) return;
-    let alive = true;
-    AdminPresentationInviteApiService.last(workerIdsKey.split(','))
-      .then((m) => { if (alive) setLastPresentationByWorker(m); })
-      .catch(() => { /* sem "último convite" a tela segue; o botão continua funcionando */ });
-    return () => { alive = false; };
-  }, [onPresentationInvite, workerIdsKey]);
+  const [lastPresentationByWorker, setLastPresentationByWorker] = usePresentationInviteLast(
+    Object.values(stages).flat().map((e) => e.workerId), !!onPresentationInvite,
+  );
 
-  async function handlePresentationInvite(cardId: string, workerId: string) {
-    if (!onPresentationInvite) return;
+  async function handlePresentationInvite(cardId: string, workerId: string, invite: NonNullable<typeof onPresentationInvite>) {
     setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'sending' } }));
     try {
-      const r = await onPresentationInvite(workerId);
+      const r = await invite(workerId);
       if (r.status === 'queued') {
         setLastPresentationByWorker((prev) => ({ ...prev, [workerId]: { at: new Date().toISOString(), by: null } }));
         setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'queued' } }));
@@ -270,7 +263,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
             resendMessage={resendByCard[enc.id]?.message ?? null}
             presentationInvite={
               onPresentationInvite && enc.workerId
-                ? { onInvite: () => handlePresentationInvite(enc.id, enc.workerId!), state: presentationByCard[enc.id], lastInvitedAt: lastPresentationByWorker[enc.workerId]?.at ?? null }
+                ? { onInvite: () => handlePresentationInvite(enc.id, enc.workerId!, onPresentationInvite), state: presentationByCard[enc.id], lastInvitedAt: lastPresentationByWorker[enc.workerId]?.at ?? null }
                 : undefined
             }
           />

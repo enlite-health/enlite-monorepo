@@ -33,7 +33,34 @@ export const DENIED_SLUG_PREFIXES: readonly string[] = [
   'qualified_reminder_',
 ];
 
-export type IneligibilityReason = 'INACTIVE' | 'CATEGORY' | 'DENY_LIST' | 'PLACEHOLDERS';
+export type IneligibilityReason = 'INACTIVE' | 'CATEGORY' | 'DENY_LIST' | 'PLACEHOLDERS' | 'OPT_OUT_CLAUSE';
+
+/**
+ * O que muda entre um uso e outro da mesma triagem (mensagem por etapa × convite à
+ * reunión de presentación — REQ-09). O que NÃO muda: categoria UTILITY e a allowlist fechada.
+ */
+export interface EligibilityPolicy {
+  /** Placeholders que o sistema preenche sozinho neste uso. */
+  supportedPlaceholders: ReadonlySet<string>;
+  /** Prefixos de slug negados (lex C6). Vazio = não aplica. */
+  deniedSlugPrefixes: readonly string[];
+  /** Cláusula de saída obrigatória no corpo (lex C3, Decreto 1558/2001 art. 27). null = não exige. */
+  optOutClauseRe: RegExp | null;
+  /**
+   * false → INACTIVE é a PRIMEIRA razão (etapa: inativo não se configura).
+   * true  → INACTIVE é a ÚLTIMA (REQ-09: template inativo pode ser escolhido como placeholder
+   *          até a Meta aprovar; só o envio espera) — e as outras razões aparecem antes dele.
+   */
+  inactiveLast: boolean;
+}
+
+/** Política das mensagens por etapa (DEC-12) — a de sempre. */
+export const STAGE_MESSAGE_POLICY: EligibilityPolicy = {
+  supportedPlaceholders: SUPPORTED_PLACEHOLDERS,
+  deniedSlugPrefixes: DENIED_SLUG_PREFIXES,
+  optOutClauseRe: null,
+  inactiveLast: false,
+};
 
 export interface TemplateLike {
   slug: string;
@@ -52,8 +79,8 @@ export function extractPlaceholders(body: string | null | undefined): string[] {
   return out;
 }
 
-export function isDeniedSlug(slug: string): boolean {
-  return DENIED_SLUG_PREFIXES.some((p) => slug.startsWith(p));
+export function isDeniedSlug(slug: string, prefixes: readonly string[] = DENIED_SLUG_PREFIXES): boolean {
+  return prefixes.some((p) => slug.startsWith(p));
 }
 
 export interface EligibilityResult {
@@ -64,14 +91,17 @@ export interface EligibilityResult {
   unsupported: string[];
 }
 
-export function evaluateTemplateEligibility(t: TemplateLike): EligibilityResult {
+export function evaluateTemplateEligibility(t: TemplateLike, policy: EligibilityPolicy = STAGE_MESSAGE_POLICY): EligibilityResult {
   const placeholders = extractPlaceholders(t.body);
-  const unsupported = placeholders.filter((p) => !SUPPORTED_PLACEHOLDERS.has(p));
+  const unsupported = placeholders.filter((p) => !policy.supportedPlaceholders.has(p));
+  const inactive: IneligibilityReason | null = t.is_active === false ? 'INACTIVE' : null;
   let reason: IneligibilityReason | null = null;
-  if (t.is_active === false) reason = 'INACTIVE';
+  if (!policy.inactiveLast && inactive) reason = inactive;
   else if ((t.category ?? '').toUpperCase() !== ALLOWED_TEMPLATE_CATEGORY) reason = 'CATEGORY';
-  else if (isDeniedSlug(t.slug)) reason = 'DENY_LIST';
+  else if (isDeniedSlug(t.slug, policy.deniedSlugPrefixes)) reason = 'DENY_LIST';
   else if (unsupported.length > 0) reason = 'PLACEHOLDERS';
+  else if (policy.optOutClauseRe && !policy.optOutClauseRe.test(t.body ?? '')) reason = 'OPT_OUT_CLAUSE';
+  else if (policy.inactiveLast && inactive) reason = inactive;
   return { eligible: reason === null, reason, placeholders, unsupported };
 }
 

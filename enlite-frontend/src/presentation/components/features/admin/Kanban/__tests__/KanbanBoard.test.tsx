@@ -927,4 +927,12 @@ describe('KanbanBoard — convite à reunión de presentación (REQ-09)', () => 
     await waitFor(() => expect(within(screen.getByTestId('kanban-card-err')).getByTestId('presentation-invite-feedback')).toHaveTextContent('boom'));
     expect(onPresentationInvite).toHaveBeenCalledWith('w-ok');
   });
+
+  it('rejeição que não é Error cai no texto padrão de erro', async () => {
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'err', workerId: 'w-err', encuadreId: 'e3' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={vi.fn().mockRejectedValue('x')} />);
+    fireEvent.click(screen.getByTestId('presentation-invite-button'));
+    await waitFor(() => expect(screen.getByTestId('presentation-invite-feedback')).toHaveTextContent('admin.presentationInvite.error'));
+  });
 });

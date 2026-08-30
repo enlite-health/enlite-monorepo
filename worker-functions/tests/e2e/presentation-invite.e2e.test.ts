@@ -77,7 +77,11 @@ describe('Convite à reunión de presentación (REQ-09) @integration', () => {
     const good = { template_slug: TEMPLATE, meet_link: MEET, schedule_label: 'Martes 18:00 (Buenos Aires)', enabled: true };
     expect((await api.put('/api/admin/presentation-invite/settings', good, asRecruiter)).status).toBe(403);
     expect((await api.put('/api/admin/presentation-invite/settings', { ...good, meet_link: 'https://zoom.us/j/123' }, asAdmin)).status).toBe(400);
-    expect((await api.put('/api/admin/presentation-invite/settings', { ...good, schedule_label: 'Martes, medicación del paciente' }, asAdmin)).status).toBe(400);
+    const denied = await api.put('/api/admin/presentation-invite/settings', { ...good, schedule_label: 'Martes, medicación del paciente' }, asAdmin);
+    expect(denied.status).toBe(400); expect(denied.data.details).toEqual({ reason: 'SCHEDULE_LABEL_DENIED', term: 'paciente' });
+    // rótulo ausente com template que usa {{schedule_label}} e enabled → 400 (nunca variável vazia na Twilio)
+    const noLabel = await api.put('/api/admin/presentation-invite/settings', { ...good, schedule_label: null }, asAdmin);
+    expect(noLabel.status).toBe(400); expect(noLabel.data.details.reason).toBe('SCHEDULE_LABEL_REQUIRED');
     const noBaja = await api.put('/api/admin/presentation-invite/settings', { ...good, template_slug: 'pi_e2e_no_baja' }, asAdmin);
     expect(noBaja.status).toBe(400); expect(noBaja.data.details.reason).toBe('OPT_OUT_CLAUSE');
     expect((await api.put('/api/admin/presentation-invite/settings', good, asAdmin)).status).toBe(200);

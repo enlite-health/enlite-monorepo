@@ -54,8 +54,9 @@ export function PresentationInvitePage() {
     }
   };
 
-  const count = (status: string) => stats?.rows.filter((r) => r.status === status).reduce((a, r) => a + r.count, 0) ?? 0;
-  const bySource = (source: string) => stats?.rows.filter((r) => r.status === 'queued' && r.source === source).reduce((a, r) => a + r.count, 0) ?? 0;
+  // Só se lê dentro de `{stats && …}` — o parâmetro evita o `?? 0` de um "stats null" que nunca chega aqui.
+  const count = (rows: PresentationInviteStats['rows'], status: string) => rows.filter((r) => r.status === status).reduce((a, r) => a + r.count, 0);
+  const bySource = (rows: PresentationInviteStats['rows'], source: string) => rows.filter((r) => r.status === 'queued' && r.source === source).reduce((a, r) => a + r.count, 0);
 
   return (
     <div className="p-6 max-w-4xl" data-testid="presentation-invite-page">
@@ -112,12 +113,12 @@ export function PresentationInvitePage() {
         <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5" data-testid="pi-stats">
           <Heading level={3}>{t('admin.presentationInvite.stats.title')}</Heading>
           <div className="mt-3 grid grid-cols-3 gap-4">
-            <div><Text size="xs" color="secondary">{t('admin.presentationInvite.stats.queued')}</Text><span data-testid="pi-stat-queued"><Text as="span" size="xl" weight="semibold">{count('queued')}</Text></span></div>
-            <div><Text size="xs" color="secondary">{t('admin.presentationInvite.stats.skipped')}</Text><span data-testid="pi-stat-skipped"><Text as="span" size="xl" weight="semibold">{count('skipped')}</Text></span></div>
+            <div><Text size="xs" color="secondary">{t('admin.presentationInvite.stats.queued')}</Text><span data-testid="pi-stat-queued"><Text as="span" size="xl" weight="semibold">{count(stats.rows, 'queued')}</Text></span></div>
+            <div><Text size="xs" color="secondary">{t('admin.presentationInvite.stats.skipped')}</Text><span data-testid="pi-stat-skipped"><Text as="span" size="xl" weight="semibold">{count(stats.rows, 'skipped')}</Text></span></div>
             <div><Text size="xs" color="secondary">{t('admin.presentationInvite.stats.attended')}</Text><span data-testid="pi-stat-attended"><Text as="span" size="xl" weight="semibold">{stats.attended}</Text></span></div>
           </div>
           <Text size="xs" color="secondary" className="mt-2">
-            {t('admin.presentationInvite.stats.bySource')}: {t('admin.presentationInvite.stats.kanban')} {bySource('kanban')} · {t('admin.presentationInvite.stats.workers_list')} {bySource('workers_list')}
+            {t('admin.presentationInvite.stats.bySource')}: {t('admin.presentationInvite.stats.kanban')} {bySource(stats.rows, 'kanban')} · {t('admin.presentationInvite.stats.workers_list')} {bySource(stats.rows, 'workers_list')}
           </Text>
           <Text size="xs" color="secondary" className="mt-1">{t('admin.presentationInvite.stats.noPresenceSource')}</Text>
         </div>

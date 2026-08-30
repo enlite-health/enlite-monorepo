@@ -4,8 +4,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AdminPresentationInviteApiService } from '../AdminPresentationInviteApiService';
 
+const { getIdToken } = vi.hoisted(() => ({ getIdToken: vi.fn() }));
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
-  FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: vi.fn().mockResolvedValue('mock-token') })),
+  FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken })),
 }));
 
 function mockFetch(data: unknown, ok = true, status = 200) {
@@ -15,7 +16,17 @@ function mockFetch(data: unknown, ok = true, status = 200) {
 const call = (f: ReturnType<typeof vi.fn>) => f.mock.calls[0] as [string, RequestInit];
 
 describe('AdminPresentationInviteApiService', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => { vi.clearAllMocks(); getIdToken.mockResolvedValue('mock-token'); });
+
+  it('com token manda Authorization; sem token (sessão caída) não manda o header — e o backend responde 401 visível', async () => {
+    const f = mockFetch({ country: 'AR' });
+    await AdminPresentationInviteApiService.getSettings();
+    expect((call(f)[1].headers as Record<string, string>).Authorization).toBe('Bearer mock-token');
+    getIdToken.mockResolvedValue(null);
+    const g = mockFetch('Unauthenticated', false, 401);
+    await expect(AdminPresentationInviteApiService.getSettings()).rejects.toThrow('Unauthenticated');
+    expect((call(g)[1].headers as Record<string, string>).Authorization).toBeUndefined();
+  });
 
   it('getSettings → GET /settings; stats → GET /stats', async () => {
     const f = mockFetch({ country: 'AR' });

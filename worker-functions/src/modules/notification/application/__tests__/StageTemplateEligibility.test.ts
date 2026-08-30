@@ -4,6 +4,8 @@ import {
   extractPlaceholders,
   isDeniedSlug,
   DENIED_SLUG_PREFIXES,
+  STAGE_MESSAGE_POLICY,
+  type EligibilityPolicy,
 } from '../StageTemplateEligibility';
 
 describe('extractPlaceholders', () => {
@@ -63,5 +65,28 @@ describe('buildStageVariables (allowlist fechada)', () => {
     expect(buildStageVariables(['name'], { workerNameToken: 'tk_2', caseNumber: null })).toEqual({ name: 'tk_2' });
     expect(buildStageVariables(['worker_name', 'case_number'], { workerNameToken: null, caseNumber: null })).toEqual({ case_number: '—' });
     expect(buildStageVariables([], { workerNameToken: 'x', caseNumber: 1 })).toEqual({});
+  });
+});
+
+describe('evaluateTemplateEligibility com política própria (o que muda entre etapa e REQ-09)', () => {
+  const t = { slug: 'complete_register_x', body: 'Hola {{meet_link}}', category: 'UTILITY', is_active: false };
+  const custom: EligibilityPolicy = { supportedPlaceholders: new Set(['meet_link']), deniedSlugPrefixes: [], optOutClauseRe: /baja/i, inactiveLast: true };
+
+  it('a política padrão é a das mensagens por etapa — chamada sem política = STAGE_MESSAGE_POLICY', () => {
+    expect(evaluateTemplateEligibility({ ...t, is_active: true, body: 'x {{case_number}}' })).toEqual(evaluateTemplateEligibility({ ...t, is_active: true, body: 'x {{case_number}}' }, STAGE_MESSAGE_POLICY));
+    expect(STAGE_MESSAGE_POLICY).toMatchObject({ optOutClauseRe: null, inactiveLast: false, deniedSlugPrefixes: DENIED_SLUG_PREFIXES });
+  });
+  it('inactiveLast: as outras razões vêm ANTES de INACTIVE; inativo sem outra razão → INACTIVE por último', () => {
+    expect(evaluateTemplateEligibility({ ...t, category: 'MARKETING' }, custom).reason).toBe('CATEGORY');
+    expect(evaluateTemplateEligibility({ ...t, body: 'Hola {{1}} baja' }, custom).reason).toBe('PLACEHOLDERS');
+    expect(evaluateTemplateEligibility(t, custom).reason).toBe('OPT_OUT_CLAUSE');
+    expect(evaluateTemplateEligibility({ ...t, body: 'Hola {{meet_link}} BAJA' }, custom).reason).toBe('INACTIVE');
+    expect(evaluateTemplateEligibility({ ...t, body: 'Hola {{meet_link}} BAJA', is_active: true }, custom)).toEqual({ eligible: true, reason: null, placeholders: ['meet_link'], unsupported: [] });
+  });
+  it('optOutClauseRe: corpo null/undefined sem cláusula → OPT_OUT_CLAUSE; allowlist e deny-list vêm da política (deny vazia deixa o slug de lembrete passar)', () => {
+    expect(evaluateTemplateEligibility({ ...t, body: null, is_active: true }, custom).reason).toBe('OPT_OUT_CLAUSE');
+    expect(evaluateTemplateEligibility({ ...t, body: undefined, is_active: true }, custom).reason).toBe('OPT_OUT_CLAUSE');
+    expect(evaluateTemplateEligibility({ ...t, body: 'x {{meet_link}} baja', is_active: true }, { ...custom, deniedSlugPrefixes: DENIED_SLUG_PREFIXES }).reason).toBe('DENY_LIST');
+    expect(isDeniedSlug('complete_register_x', [])).toBe(false);
   });
 });

@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, f?: string) => (typeof f === 'string' ? f : k), i18n: { language: 'es' } }) }));
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+const navigate = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ adminProfile: { role: 'admin' }, isAuthenticated: true, isLoading: false }) }));
 vi.mock('@hooks/admin/useCaseOptions', () => ({ useCaseOptions: () => ({ options: [], isLoading: false }) }));
 vi.mock('@hooks/admin/useWorkersData', () => ({
@@ -25,9 +26,9 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 vi.mock('@presentation/components/features/admin/WorkerFilters', () => ({ WorkerFilters: () => null }));
 vi.mock('@presentation/components/features/admin/WorkerStatsCards', () => ({ WorkerStatsCards: () => null }));
 vi.mock('@presentation/components/features/admin/WorkerExport/WorkerExportModal', () => ({ WorkerExportModal: () => null }));
-const invite = vi.fn();
+const invite = vi.fn(); const last = vi.fn();
 vi.mock('@infrastructure/http/AdminPresentationInviteApiService', () => ({
-  AdminPresentationInviteApiService: { invite: (...a: unknown[]) => invite(...a) },
+  AdminPresentationInviteApiService: { invite: (...a: unknown[]) => invite(...a), last: (...a: unknown[]) => last(...a) },
 }));
 
 import { AdminWorkersPage } from '../AdminWorkersPage';
@@ -35,7 +36,25 @@ import { AdminWorkersPage } from '../AdminWorkersPage';
 const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 
 describe('AdminWorkersPage — convite à reunión de presentación por linha', () => {
-  beforeEach(() => { invite.mockReset(); });
+  beforeEach(() => { invite.mockReset(); last.mockReset(); last.mockResolvedValue({}); navigate.mockReset(); });
+
+  it('clicar na linha abre a ficha; clicar no botão de convite NÃO navega (stopPropagation)', async () => {
+    render(<AdminWorkersPage />);
+    await waitFor(() => expect(screen.getAllByTestId('presentation-invite-button')).toHaveLength(3));
+    fireEvent.click(rowOf('Ok').querySelector('[data-testid="presentation-invite-button"]')!);
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Ok'));
+    expect(navigate).toHaveBeenCalledWith('/admin/workers/w-ok');
+  });
+
+  it('ao carregar, busca o último convite dos workers da página (o mesmo /last do Kanban) e mostra na linha antes de qualquer clique', async () => {
+    last.mockResolvedValue({ 'w-skip': { at: '2026-08-29T15:00:00Z', by: 'Gabi' } });
+    render(<AdminWorkersPage />);
+    await waitFor(() => expect(last).toHaveBeenCalledWith(['w-err', 'w-ok', 'w-skip']));
+    await waitFor(() => expect(rowOf('Skip').querySelector('[data-testid="presentation-invite-last"]')).toHaveTextContent('admin.presentationInvite.lastAt'));
+    expect(rowOf('Ok').querySelector('[data-testid="presentation-invite-last"]')).toHaveTextContent('admin.presentationInvite.never');
+    expect(invite).not.toHaveBeenCalled();
+  });
 
   it('cada linha tem o botão; clique → invite(id, "workers_list"); queued / skipped / erro aparecem na linha', async () => {
     invite.mockImplementation(async (id: string) =>

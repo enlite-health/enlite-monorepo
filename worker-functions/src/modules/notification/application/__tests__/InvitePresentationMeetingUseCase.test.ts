@@ -7,7 +7,8 @@ jest.mock('../../../../shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-import { InvitePresentationMeetingUseCase, PRESENTATION_INVITE_COOLDOWN, templatePlaceholders } from '../InvitePresentationMeetingUseCase';
+import { InvitePresentationMeetingUseCase, PRESENTATION_INVITE_COOLDOWN, PRESENTATION_INVITE_POLICY } from '../InvitePresentationMeetingUseCase';
+import { evaluateTemplateEligibility } from '../StageTemplateEligibility';
 
 type Q = jest.Mock;
 const input = { workerId: 'w1', jobPostingId: 'j1', actorUid: 'staff-1', source: 'kanban' as const };
@@ -40,8 +41,12 @@ describe('InvitePresentationMeetingUseCase', () => {
     q = jest.fn(); client = makeClient(); pubsub = { publish: jest.fn().mockResolvedValue(null) }; tokens = { generate: jest.fn().mockResolvedValue('tk_name') };
   });
 
-  it('templatePlaceholders: únicos, sem espaços', () => {
-    expect(templatePlaceholders('a {{ x }} b {{y}} {{x}}')).toEqual(['x', 'y']);
+  it('PRESENTATION_INVITE_POLICY: a MESMA triagem das mensagens por etapa, com link+horário na allowlist, BAJA obrigatória e INATIVO por último', () => {
+    const t = { slug: 'complete_register_x', body: 'Hola {{ worker_name }} {{schedule_label}} {{meet_link}} {{worker_name}} BAJA', category: 'UTILITY', is_active: false };
+    expect(evaluateTemplateEligibility(t, PRESENTATION_INVITE_POLICY)).toEqual({ eligible: false, reason: 'INACTIVE', placeholders: ['worker_name', 'schedule_label', 'meet_link'], unsupported: [] });
+    expect(evaluateTemplateEligibility({ ...t, is_active: true }, PRESENTATION_INVITE_POLICY).eligible).toBe(true); // deny-list de slug não se aplica aqui
+    expect(evaluateTemplateEligibility({ ...t, body: 'Hola {{case_number}} BAJA' }, PRESENTATION_INVITE_POLICY).reason).toBe('PLACEHOLDERS');
+    expect(evaluateTemplateEligibility({ ...t, body: 'Hola {{meet_link}}' }, PRESENTATION_INVITE_POLICY).reason).toBe('OPT_OUT_CLAUSE');
   });
 
   it('feliz: outbox com nome TOKENIZADO + link + rótulo, log queued com autoria/origem/vaga, lock, pubsub', async () => {
@@ -64,12 +69,18 @@ describe('InvitePresentationMeetingUseCase', () => {
     expect(wsql).toMatch(/privacy_accepted_at IS NOT NULL/); expect(wsql).toMatch(/@enlite\.import/); expect(wsql).toMatch(/base1import/);
   });
 
-  it('rótulo ausente → string vazia; sem vaga → job null', async () => {
-    program(q, { cfg: [{ ...cfgOn, schedule_label: null }] });
+  it('sem vaga → job null; rótulo com espaços em volta vai aparado; template sem {{schedule_label}} ignora o rótulo', async () => {
+    program(q, { cfg: [{ ...cfgOn, schedule_label: '  Martes 18:00  ' }] });
     await uc().execute({ ...input, jobPostingId: null });
     const outbox = client.query.mock.calls.find((c) => (c[0] as string).includes('INSERT INTO messaging_outbox')) as unknown as [string, unknown[]];
     expect(outbox[1][1]).toBeNull();
-    expect(JSON.parse(outbox[1][3] as string).schedule_label).toBe('');
+    expect(JSON.parse(outbox[1][3] as string).schedule_label).toBe('Martes 18:00');
+    q.mockReset(); client = makeClient();
+    program(q, { cfg: [{ ...cfgOn, schedule_label: null, body: 'Hola {{name}} {{meet_link}} BAJA' }] });
+    const r = await uc().execute(input);
+    expect(r.status).toBe('queued');
+    const ob2 = client.query.mock.calls.find((c) => (c[0] as string).includes('INSERT INTO messaging_outbox')) as unknown as [string, unknown[]];
+    expect(JSON.parse(ob2[1][3] as string)).toEqual({ name: 'tk_name', meet_link: 'https://meet.google.com/abc-defg-hij' });
   });
 
   describe('pulos contáveis', () => {
@@ -84,8 +95,11 @@ describe('InvitePresentationMeetingUseCase', () => {
       extra?.(call);
     };
 
-    it('worker inexistente → WORKER_NOT_FOUND (worker_id null, país default)', async () => {
-      await expectSkip('WORKER_NOT_FOUND', { worker: [] }, (c) => { expect(c[1][0]).toBeNull(); expect(c[1][6]).toBe('AR'); });
+    it('worker inexistente → WORKER_NOT_FOUND (worker_id null, país default); sem vaga → job null no log', async () => {
+      await expectSkip('WORKER_NOT_FOUND', { worker: [] }, (c) => { expect(c[1][0]).toBeNull(); expect(c[1][1]).toBe('j1'); expect(c[1][6]).toBe('AR'); });
+      q.mockReset(); program(q, { worker: [] });
+      await uc().execute({ ...input, jobPostingId: undefined });
+      expect(logInsert(q)![1][1]).toBeNull();
     });
     it('país ≠ AR → COUNTRY_BLOCKED; telefone não +54 → COUNTRY_MISMATCH (lex C2: dois sinais)', async () => {
       await expectSkip('COUNTRY_BLOCKED', { worker: [{ ...workerRow, country: 'BR' }] }, (c) => expect(c[1][6]).toBe('BR'));
@@ -96,15 +110,20 @@ describe('InvitePresentationMeetingUseCase', () => {
         expect(q.mock.calls.some((c) => (c[0] as string).includes('FROM presentation_invite_settings'))).toBe(false);
       });
     });
-    it('config desligada/inexistente → DISABLED_CONFIG', async () => {
+    it('config desligada/inexistente → DISABLED_CONFIG (slug do template no log quando há, null quando não)', async () => {
       await expectSkip('DISABLED_CONFIG', { cfg: [{ ...cfgOn, enabled: false }] }, (c) => expect(c[1][4]).toBe('ar_presentacion_invite'));
-      await expectSkip('DISABLED_CONFIG', { cfg: [] });
+      await expectSkip('DISABLED_CONFIG', { cfg: [{ ...cfgOn, enabled: false, template_slug: null }] }, (c) => expect(c[1][4]).toBeNull());
+      await expectSkip('DISABLED_CONFIG', { cfg: [] }, (c) => expect(c[1][4]).toBeNull());
     });
-    it('sem template → NO_TEMPLATE; inativo (Meta não aprovou) → TEMPLATE_INACTIVE; MARKETING/variável fora da allowlist → TEMPLATE_NOT_ALLOWED', async () => {
+    it('sem template → NO_TEMPLATE; inativo (Meta não aprovou) → TEMPLATE_INACTIVE; MARKETING/variável fora da allowlist/sem BAJA → TEMPLATE_NOT_ALLOWED', async () => {
       await expectSkip('NO_TEMPLATE', { cfg: [{ ...cfgOn, template_slug: null, body: null }] });
       await expectSkip('TEMPLATE_INACTIVE', { cfg: [{ ...cfgOn, is_active: false }] });
       await expectSkip('TEMPLATE_NOT_ALLOWED', { cfg: [{ ...cfgOn, category: 'MARKETING' }] });
-      await expectSkip('TEMPLATE_NOT_ALLOWED', { cfg: [{ ...cfgOn, body: 'Hola {{1}}' }] });
+      await expectSkip('TEMPLATE_NOT_ALLOWED', { cfg: [{ ...cfgOn, body: 'Hola {{1}} BAJA' }] });
+      await expectSkip('TEMPLATE_NOT_ALLOWED', { cfg: [{ ...cfgOn, body: 'Hola {{meet_link}}' }] });
+    });
+    it('template com {{schedule_label}} e rótulo null/vazio/só espaços → NO_SCHEDULE_LABEL — nunca variável vazia na outbox', async () => {
+      for (const schedule_label of [null, '', '   ']) await expectSkip('NO_SCHEDULE_LABEL', { cfg: [{ ...cfgOn, schedule_label }] }, (c) => expect(c[1][4]).toBe('ar_presentacion_invite'));
     });
     it('sem link → NO_MEET_LINK; DISABLED → WORKER_DISABLED; opt-out → OPT_OUT', async () => {
       await expectSkip('NO_MEET_LINK', { cfg: [{ ...cfgOn, meet_link: null }] });
@@ -121,6 +140,11 @@ describe('InvitePresentationMeetingUseCase', () => {
       expect(ins[1]).toEqual(['w1', 'j1', 'staff-1', 'kanban', 'ar_presentacion_invite', 'AR']);
       expect(client.query).toHaveBeenCalledWith('COMMIT');
       expect(pubsub.publish).not.toHaveBeenCalled();
+      // sem vaga: job null também no log do pulo dentro da transação
+      q.mockReset(); program(q); client = makeClient([{ id: 'old' }]);
+      await uc().execute({ ...input, jobPostingId: null });
+      const ins2 = client.query.mock.calls.find((c) => (c[0] as string).includes("'ALREADY_INVITED'")) as unknown as [string, unknown[]];
+      expect(ins2[1][1]).toBeNull();
     });
   });
 

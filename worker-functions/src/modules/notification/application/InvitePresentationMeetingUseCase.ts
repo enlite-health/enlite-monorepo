@@ -14,16 +14,29 @@
 import type { Pool, PoolClient } from 'pg';
 import { logger } from '@shared/logging';
 import { optedOutExistsSql } from '@shared/database/messagingOptOutFilter';
+import { evaluateTemplateEligibility, type EligibilityPolicy } from './StageTemplateEligibility';
 
 export const PRESENTATION_INVITE_COUNTRY = 'AR';
 export const PRESENTATION_INVITE_COOLDOWN = '7 days';
-export const PRESENTATION_INVITE_ALLOWED_CATEGORY = 'UTILITY';
 /** Variáveis que o sistema completa — nada além disto entra no template. */
-export const PRESENTATION_INVITE_PLACEHOLDERS = new Set(['worker_name', 'name', 'meet_link', 'schedule_label']);
+export const PRESENTATION_INVITE_PLACEHOLDERS: ReadonlySet<string> = new Set(['worker_name', 'name', 'meet_link', 'schedule_label']);
+/** lex C3 (Decreto 1558/2001, art. 27): o template tem de dizer, de forma expressa, como sair. */
+export const OPT_OUT_CLAUSE_RE = /baja|no recibir|dejar de recibir|no querés recibir|stop|salir/i;
+/**
+ * A MESMA triagem das mensagens por etapa (StageTemplateEligibility), com o que muda aqui:
+ * allowlist com link e horário, cláusula de saída obrigatória, sem deny-list de slug, e
+ * template INATIVO pode ser escolhido (placeholder até a Meta aprovar) — o envio é que espera.
+ */
+export const PRESENTATION_INVITE_POLICY: EligibilityPolicy = {
+  supportedPlaceholders: PRESENTATION_INVITE_PLACEHOLDERS,
+  deniedSlugPrefixes: [],
+  optOutClauseRe: OPT_OUT_CLAUSE_RE,
+  inactiveLast: true,
+};
 
 export type PresentationInviteSource = 'kanban' | 'workers_list';
 export type PresentationInviteSkip =
-  | 'DISABLED_CONFIG' | 'NO_TEMPLATE' | 'TEMPLATE_INACTIVE' | 'TEMPLATE_NOT_ALLOWED' | 'NO_MEET_LINK'
+  | 'DISABLED_CONFIG' | 'NO_TEMPLATE' | 'TEMPLATE_INACTIVE' | 'TEMPLATE_NOT_ALLOWED' | 'NO_MEET_LINK' | 'NO_SCHEDULE_LABEL'
   | 'WORKER_NOT_FOUND' | 'COUNTRY_BLOCKED' | 'COUNTRY_MISMATCH' | 'SIN_VINCULO' | 'WORKER_DISABLED' | 'OPT_OUT' | 'ALREADY_INVITED';
 
 export interface InvitePresentationInput {
@@ -44,10 +57,6 @@ interface SettingsRow {
   body: string | null; category: string | null; is_active: boolean | null;
 }
 interface WorkerRow { id: string; status: string; country: string | null; opted_out: boolean; phone_ar: boolean; has_link: boolean }
-
-export function templatePlaceholders(body: string): string[] {
-  return Array.from(new Set(Array.from(body.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g), (m) => m[1])));
-}
 
 export class InvitePresentationMeetingUseCase {
   constructor(
@@ -97,18 +106,21 @@ export class InvitePresentationMeetingUseCase {
     if (!cfg || !cfg.enabled) return skip('DISABLED_CONFIG', cfg?.template_slug ?? null);
     if (!cfg.template_slug || cfg.body === null) return skip('NO_TEMPLATE');
     if (!cfg.is_active) return skip('TEMPLATE_INACTIVE', cfg.template_slug);
-    const placeholders = templatePlaceholders(cfg.body);
-    if (cfg.category !== PRESENTATION_INVITE_ALLOWED_CATEGORY || placeholders.some((p) => !PRESENTATION_INVITE_PLACEHOLDERS.has(p))) {
-      return skip('TEMPLATE_NOT_ALLOWED', cfg.template_slug);
-    }
+    const { eligible, placeholders } = evaluateTemplateEligibility(
+      { slug: cfg.template_slug, body: cfg.body, category: cfg.category, is_active: cfg.is_active }, PRESENTATION_INVITE_POLICY,
+    );
+    if (!eligible) return skip('TEMPLATE_NOT_ALLOWED', cfg.template_slug);
     if (!cfg.meet_link) return skip('NO_MEET_LINK', cfg.template_slug);
+    // Variável vazia num template aprovado pela Meta é rejeitada pela Twilio — nunca enfileirar "".
+    const scheduleLabel = cfg.schedule_label?.trim() ?? '';
+    if (placeholders.includes('schedule_label') && !scheduleLabel) return skip('NO_SCHEDULE_LABEL', cfg.template_slug);
     if (worker.status === 'DISABLED') return skip('WORKER_DISABLED', cfg.template_slug);
     if (worker.opted_out) return skip('OPT_OUT', cfg.template_slug);
 
     const variables: Record<string, string> = {};
     for (const p of placeholders) {
       if (p === 'meet_link') variables[p] = cfg.meet_link;
-      else if (p === 'schedule_label') variables[p] = cfg.schedule_label ?? '';
+      else if (p === 'schedule_label') variables[p] = scheduleLabel;
       else variables[p] = await this.tokens.generate(worker.id, p); // nome NUNCA em texto: token
     }
 
