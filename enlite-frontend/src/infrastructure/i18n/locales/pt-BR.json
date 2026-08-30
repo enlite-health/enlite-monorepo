@@ -1090,7 +1090,8 @@
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
-      "patientChatRoles": "Papéis de grupos"
+      "patientChatRoles": "Papéis de grupos",
+      "funnelStageMessages": "Mensagens por etapa"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -1630,7 +1631,8 @@
         "confirm": "Agendar",
         "cancel": "Cancelar",
         "unknown": "Ainda não sei a data — mover assim mesmo"
-      }
+      },
+      "stageLastMessage": "Mensagem de etapa ({{stage}}): {{date}}"
     },
     "workerDetail": {
       "status": "Status do Prestador",
@@ -3288,6 +3290,33 @@
         "CHAT_ROLE_EXCLUSIVITY_CONFLICT": "Não dá para tornar exclusivo: {{groupCount}} grupo(s) estão hoje divididos entre {{patientCount}} pacientes. Resolva esses casos primeiro — o sistema não escolhe qual paciente perde o vínculo.",
         "CHAT_ROLE_ALREADY_EXISTS": "Já existe um papel com esse código.",
         "CHAT_ROLE_NOT_FOUND": "Esse papel não existe (alguém apagou enquanto isso?)."
+      }
+    },
+    "funnelStageMessages": {
+      "title": "Mensagens por etapa",
+      "subtitle": "Quando uma tarjeta entra numa etapa do Kanban, sai o template escolhido (WhatsApp, Twilio). Tudo nasce desligado: ligue uma etapa, meça, depois estenda.",
+      "stage": "Etapa",
+      "template": "Template",
+      "enabled": "Ativa",
+      "updatedBy": "Última edição",
+      "builtin": "Embutida: convite à entrevista (não configurável)",
+      "none": "— sem template —",
+      "save": "Salvar",
+      "saving": "Salvando…",
+      "saved": "Salvo",
+      "error": "Não foi possível salvar",
+      "never": "Nunca",
+      "adminOnly": "Só um administrador pode alterar esta configuração.",
+      "ineligible": {
+        "CATEGORY": "não é UTILITY (Meta)",
+        "DENY_LIST": "lembrete/cobrança: bloqueado por etapa",
+        "PLACEHOLDERS": "variáveis que o sistema não preenche",
+        "INACTIVE": "inativo"
+      },
+      "eligibleHint": "Só templates aprovados pela Meta como UTILITY, sem lembretes, com variáveis que o sistema preenche (nome como token, número do caso).",
+      "stages": {
+        "QUALIFIED": "Qualificados (Talentum)",
+        "IN_DOUBT": "Em dúvida"
       }
     }
   },
