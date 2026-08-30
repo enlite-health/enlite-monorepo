@@ -123,6 +123,11 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // Os dois mapas. POST (e não GET) de propósito: o centro do raio é a casa de alguém
   // e a URL crua vai para o log do Cloud Run (lex 29/08, C2).
   { route: 'POST /api/admin/patients/map', surface: 'api', tier: 'regression' },
+  // Kanban do staff (Spec 009, Fase 1). A `delivery-status` já era tag ÓRFÃ antes desta
+  // spec — rota viva em `adminVacanciesRoutes.ts:225` que nunca entrou no denominador;
+  // entra agora porque o `kanban-staff` também a cobre.
+  { route: 'GET /api/admin/vacancies/:vacancyId/workers/:workerId/delivery-status', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/workers/:workerId/presentation-invite', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/workers/map', surface: 'api', tier: 'regression' },
   { route: 'PUT /api/admin/patients/:id/status', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients/:id/activate', surface: 'api', tier: 'regression' },
