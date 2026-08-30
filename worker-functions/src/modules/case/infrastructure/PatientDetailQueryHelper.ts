@@ -9,7 +9,6 @@ import type {
 import { legacyChatIdAliases } from '../domain/PatientChatId';
 import {
   computeAddressAvailability,
-  type AddressAvailability,
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 
