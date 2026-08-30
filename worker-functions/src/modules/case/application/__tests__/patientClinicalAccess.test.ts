@@ -38,3 +38,25 @@ describe('patientClinicalAccess', () => {
     expect(red.emergencyInstructionsRedacted).toBe(true);
   });
 });
+
+describe('contrato com o engine do ABAC (D113): `req.permissionCells`', () => {
+  it('a propriedade lida chama-se EXATAMENTE `permissionCells` — outro nome é ignorado (null = comportamento anterior)', () => {
+    expect(clinicalCellsOf({ cells: [] } as unknown as Request)).toBeNull();
+    expect(clinicalCellsOf({ permission_cells: [] } as unknown as Request)).toBeNull();
+    expect(clinicalCellsOf({ permissionCells: null } as unknown as Request)).toBeNull();
+    expect(clinicalCellsOf({ permissionCells: [] } as unknown as Request)).toEqual([]);
+  });
+
+  it('ponta a ponta do helper: request sem engine NÃO redige; request com `permissionCells: []` REDIGE', () => {
+    const semEngine = projectPatientClinicalForActor(patient, clinicalCellsOf({} as Request));
+    expect(semEngine).toBe(patient);
+    expect(semEngine.emergencyInstructionsRedacted).toBeUndefined();
+
+    const comEngineSemCelula = projectPatientClinicalForActor(patient, clinicalCellsOf({ permissionCells: [] } as unknown as Request));
+    expect(comEngineSemCelula.emergencyInstructions).toBeNull();
+    expect(comEngineSemCelula.emergencyInstructionsRedacted).toBe(true);
+
+    const comCelula = projectPatientClinicalForActor(patient, clinicalCellsOf({ permissionCells: [PATIENT_CLINICAL_READ_CELL] } as unknown as Request));
+    expect(comCelula).toBe(patient);
+  });
+});

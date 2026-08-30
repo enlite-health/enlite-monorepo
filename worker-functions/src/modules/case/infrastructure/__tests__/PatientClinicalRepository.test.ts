@@ -70,6 +70,32 @@ describe('PatientClinicalRepository.upsert', () => {
     expect(lastCall().sql).not.toMatch(/emergency_instructions/);
   });
 
+  it('instruções de emergência SEM actor (escrita sem ator identificado): autoria grava uid NULL, nunca omite a autoria', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, emergencyInstructions: 'Llamar 107' });
+    const { sql, params } = lastCall();
+    expect(sql).toMatch(/emergency_instructions_updated_at = NOW\(\)/);
+    expect(sql).toMatch(/emergency_instructions_updated_by = \$3/);
+    expect(params).toEqual([PATIENT, 'Llamar 107', null]);
+  });
+
+  it('chaves que o mapper do ClickUp NÃO emite (clinicalSegments, deviceType) ficam AUSENTES → as colunas não são tocadas pelo sync (Merge Patch)', async () => {
+    // Espelha o que ClickUpPatientMapper.map entrega hoje (sem clinicalSegments/deviceType);
+    // o teste do mapper fixa o lado dele. Se um dia o mapper passar a emitir a chave, este
+    // teste continua verde — o que ele fixa é: chave ausente ⇒ coluna intocada.
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({
+      patientId: PATIENT, diagnosis: null, dependencyLevel: null, clinicalSpecialty: null, serviceType: null,
+      additionalComments: null, hasJudicialProtection: null, hasCud: null, hasConsent: null, actorUid: null,
+    });
+    const { sql, params } = lastCall();
+    expect(sql).not.toMatch(/clinical_segments|device_type/);
+    expect(sql).toMatch(/diagnosis\s+= \$2/);
+    expect(sql).toMatch(/additional_comments\s+= \$5/);
+    expect(sql).toMatch(/additional_comments_updated_by = \$6/);
+    expect(params).toEqual([PATIENT, null, null, null, null, null, null, null, null, null]);
+  });
+
   it('todas as chaves (caminho do sync do ClickUp, D167): tudo entra, na ordem, e has_consent vai por COALESCE', async () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({

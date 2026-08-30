@@ -76,16 +76,30 @@ $$;
 
 -- 3. Leitura explícita das tabelas DE HOJE (item 1). Sem ALTER DEFAULT PRIVILEGES (lex C6):
 --    tabela nova exige GRANT nomeado na própria migration — a regra da F1 (D216 3b).
-GRANT CONNECT ON DATABASE enlite_ar TO enlite_mcp_ro;
+--    O banco é o corrente (enlite_ar em prod, enlite_e2e no stack do e2e) — o e2e
+--    tests/e2e/mcp-ro-role.e2e.test.ts aplica este MESMO arquivo e prova a negação.
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO enlite_mcp_ro', current_database());
+END
+$$;
 GRANT USAGE ON SCHEMA public TO enlite_mcp_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO enlite_mcp_ro;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO enlite_mcp_ro;
 --    Desfaz qualquer default privilege que exista (versão anterior deste script, ou concessão à mão):
 --    medido no ensaio 29/08 — o default gravado antes fazia tabela nova nascer visível mesmo sem
---    a linha no script. Sem isto, "não criar" não basta.
-ALTER DEFAULT PRIVILEGES FOR ROLE enlite_app IN SCHEMA public REVOKE SELECT ON TABLES FROM enlite_mcp_ro;
-ALTER DEFAULT PRIVILEGES FOR ROLE enlite_app IN SCHEMA public REVOKE SELECT ON SEQUENCES FROM enlite_mcp_ro;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE SELECT ON TABLES FROM enlite_mcp_ro;
+--    a linha no script. Sem isto, "não criar" não basta. Só para as roles que EXISTEM neste
+--    banco (no stack do e2e não há enlite_app nem postgres; ALTER DEFAULT PRIVILEGES FOR ROLE
+--    inexistente aborta a transação inteira).
+DO $$
+DECLARE dona text;
+BEGIN
+  FOR dona IN SELECT rolname FROM pg_roles WHERE rolname IN ('enlite_app', 'postgres') LOOP
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE SELECT ON TABLES FROM enlite_mcp_ro', dona);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE SELECT ON SEQUENCES FROM enlite_mcp_ro', dona);
+  END LOOP;
+END
+$$;
 
 -- 4. `patients`: SELECT por coluna. Lista POSITIVA — o que não está aqui, a role não vê.
 --    Fora (item 2, texto clínico livre): diagnosis, additional_comments, emergency_instructions.
@@ -187,7 +201,11 @@ BEGIN
        || 'coalesce(length(additional_comments),0) AS additional_comments_len'
        || extra
        || ' FROM public.patients';
-  EXECUTE 'ALTER VIEW public.patients_ro OWNER TO enlite_app';
+  -- Dona = enlite_app onde ela existe (prod); no stack do e2e não há enlite_app e a view fica
+  -- com quem rodou o script (superuser) — a semântica (has_/len sem o texto) é a mesma.
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'enlite_app') THEN
+    EXECUTE 'ALTER VIEW public.patients_ro OWNER TO enlite_app';
+  END IF;
   EXECUTE 'REVOKE ALL ON public.patients_ro FROM PUBLIC';
   EXECUTE 'GRANT SELECT ON public.patients_ro TO enlite_mcp_ro';
 END

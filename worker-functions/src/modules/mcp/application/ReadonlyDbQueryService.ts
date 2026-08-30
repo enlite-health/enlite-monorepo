@@ -51,6 +51,21 @@ export class ReadonlyDbQueryService {
 /** Colunas de texto clínico restrito (patients): proibidas em SQL ad-hoc. */
 export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions/i;
 
+/**
+ * Tabelas com texto clínico livre (`patients`, `patient_*`). A view `patients_ro` (D216) fica
+ * de fora de propósito: ela já nasce sem o texto, é o caminho recomendado para o conector.
+ */
+export const CLINICAL_TABLES = /\bpatients\b|\bpatient_\w+/i;
+
+/**
+ * Formas que devolvem a LINHA INTEIRA — e com ela `diagnosis`/`additional_comments`/
+ * `emergency_instructions` — sem escrever o nome da coluna. A guarda por nome de coluna acima
+ * não as vê; por isso, quando a query toca uma tabela clínica, estas são recusadas também.
+ * `count(*)` NÃO projeta linha (item 1 da Regra: contagem sempre) e é neutralizado antes.
+ */
+export const WHOLE_ROW_PROJECTION = /(?:\bselect\s+(?:distinct\s+)?|,\s*|\(\s*)(?:\w+\.)?\*(?=[\s,)]|$)/i;
+export const WHOLE_ROW_FUNCTIONS = /\b(?:to_jsonb|to_json|row_to_json|json_agg|jsonb_agg|hstore)\s*\(/i;
+
 function validateAndNormalize(sql: string): string {
   const trimmed = sql.trim().replace(/;+\s*$/, '');
   if (!trimmed) {
@@ -66,6 +81,15 @@ function validateAndNormalize(sql: string): string {
   // é redigida por permissão na API; esta capability não passa por aquele ponto, então nega aqui.
   if (RESTRICTED_CLINICAL_COLUMNS.test(trimmed)) {
     throw new Error('Query touches a restricted clinical column (emergency_instructions)');
+  }
+  // Defesa em profundidade (D216): o controle que vale é a role `enlite_mcp_ro` com SELECT por
+  // coluna (scripts/create-mcp-ro-role.sql). Esta camada só garante que `SELECT *`, `p.*`,
+  // `to_jsonb(p)` e afins não cheguem ao banco quando a query toca `patients`/`patient_*`.
+  if (CLINICAL_TABLES.test(trimmed)) {
+    const semCount = trimmed.replace(/\bcount\s*\(\s*\*\s*\)/gi, 'count(1)');
+    if (WHOLE_ROW_PROJECTION.test(semCount) || WHOLE_ROW_FUNCTIONS.test(semCount)) {
+      throw new Error('Whole-row projection (*, alias.*, to_jsonb/row_to_json/json_agg/hstore) is not allowed on clinical tables (patients, patient_*); name the columns or use patients_ro');
+    }
   }
   return trimmed;
 }

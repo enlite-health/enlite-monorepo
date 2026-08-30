@@ -47,8 +47,15 @@ export class PatientClinicalRepository {
    *
    * Por que importa: o drawer clínico manda só o que mudou. Antes, todo campo
    * omitido virava NULL — editar só as observações apagava o diagnóstico
-   * (medido no e2e, 29/08). O sync do ClickUp NÃO muda: o mapper entrega todas
-   * as chaves, com `null` explícito quando o campo está vazio (D167).
+   * (medido no e2e, 29/08).
+   *
+   * Efeito no sync do ClickUp (ClickUpPatientMapper.map): o mapper NÃO emite
+   * `clinicalSegments` nem `deviceType` — as chaves ficam AUSENTES e, sob Merge
+   * Patch, `clinical_segments`/`device_type` deixam de ser zeradas a cada sync
+   * (antes deste contrato, viravam NULL). O que o mapper emite com `null`
+   * explícito (diagnosis, additionalComments, dependencyLevel…) continua sendo
+   * limpo quando o campo está vazio no ClickUp (D167). Teste que fixa isso:
+   * PatientClinicalRepository.test.ts ("chaves que o mapper não emite").
    */
   async upsert(
     input: PatientClinicalUpsertInput,

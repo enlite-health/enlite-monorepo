@@ -10,6 +10,15 @@
  *   - cells === []    → ator conhecido e sem célula → redige
  *   - cells inclui `patient_clinical:read` → lê
  * O valor NUNCA vai para log; quem quiser trilha de leitura registra só (paciente, ator, quando).
+ *
+ * CONTRATO com o engine do ABAC (ainda não montado nesta base — fail-open por D113):
+ *   - o engine pendura as células decididas em `req.permissionCells` (readonly string[]);
+ *   - enquanto NENHUM middleware montar essa propriedade, `clinicalCellsOf` devolve `null` e o
+ *     comportamento é o anterior (todo staff lê);
+ *   - `[]` é diferente de `null`: ator conhecido e sem célula → redige. `?? []` no lugar de
+ *     `?? null` redigiria para todo mundo (mesma pegadinha do Kanban, CLAUDE.md).
+ * O nome `permissionCells` é fixado por teste (patientClinicalAccess.test.ts): quando o engine
+ * chegar, o teste é o contrato — mudar o nome lá sem mudar aqui fica vermelho.
  */
 import type { Request } from 'express';
 

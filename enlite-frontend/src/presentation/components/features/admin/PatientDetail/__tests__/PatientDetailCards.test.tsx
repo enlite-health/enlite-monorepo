@@ -37,7 +37,7 @@ function t(key: string, optsOrDefault?: any): string {
 }
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t }),
+  useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }),
 }));
 
 vi.mock('react-router-dom', () => ({

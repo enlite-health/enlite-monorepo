@@ -13,7 +13,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
-import { Textarea } from '@presentation/components/atoms/Textarea';
+import { ClinicalTextareaField } from './ClinicalTextareaField';
 
 interface Props {
   patient: PatientDetail;
@@ -94,8 +94,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   }, []);
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
-  const generalNotesLength = (watch('additionalComments') ?? '').length;
-  const emergencyLength = (watch('emergencyInstructions') ?? '').length;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
@@ -181,49 +179,28 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
           <FormField label={td('diagnosisCard.cid')} htmlFor="pce-diagnosis" optional>
             <InputWithIcon id="pce-diagnosis" inputSize="compact" data-testid="pce-diagnosis" {...register('diagnosis')} />
           </FormField>
-          {/* REQ-01 (D195): "observações gerais" é narrativa clínica — área de texto grande, com
-              contador. `data-clarity-mask` porque o Clarity está vivo em PRD e o modo padrão não
-              mascara texto corrido (lex 29/08, C1.1). */}
-          <FormField label={td('diagnosisCard.generalNotes')} htmlFor="pce-comments" optional>
-            <div data-clarity-mask="True" className="flex flex-col gap-1">
-              <Textarea
-                id="pce-comments"
-                inputSize="compact"
-                rows={8}
-                resize="vertical"
-                maxLength={GENERAL_NOTES_MAX}
-                data-testid="pce-comments"
-                {...register('additionalComments')}
-              />
-              <span className="self-end" data-testid="pce-comments-counter">
-                <Text as="span" size="xs" color="muted">
-                  {td('diagnosisCard.generalNotesCounter').replace('{{count}}', String(generalNotesLength)).replace('{{max}}', String(GENERAL_NOTES_MAX))}
-                </Text>
-              </span>
-            </div>
-          </FormField>
+          {/* REQ-01 (D195): "observações gerais" é narrativa clínica — textarea grande com contador e
+              máscara do Clarity (lex 29/08, C1.1), dentro de ClinicalTextareaField. */}
+          <ClinicalTextareaField
+            id="pce-comments"
+            label={td('diagnosisCard.generalNotes')}
+            rows={8}
+            maxChars={GENERAL_NOTES_MAX}
+            value={watch('additionalComments')}
+            {...register('additionalComments')}
+          />
           {/* REQ-01 (D211.2): instruções de emergência — mesmo molde; se o backend redigiu para este
               ator, o campo não é editável (não há valor real para preservar). */}
-          <FormField label={td('diagnosisCard.emergencyInstructions')} htmlFor="pce-emergency" optional>
-            <div data-clarity-mask="True" className="flex flex-col gap-1">
-              <Textarea
-                id="pce-emergency"
-                inputSize="compact"
-                rows={6}
-                resize="vertical"
-                maxLength={GENERAL_NOTES_MAX}
-                disabled={!!patient.emergencyInstructionsRedacted}
-                placeholder={patient.emergencyInstructionsRedacted ? td('diagnosisCard.emergencyRedacted') : undefined}
-                data-testid="pce-emergency"
-                {...register('emergencyInstructions')}
-              />
-              <span className="self-end" data-testid="pce-emergency-counter">
-                <Text as="span" size="xs" color="muted">
-                  {td('diagnosisCard.generalNotesCounter').replace('{{count}}', String(emergencyLength)).replace('{{max}}', String(GENERAL_NOTES_MAX))}
-                </Text>
-              </span>
-            </div>
-          </FormField>
+          <ClinicalTextareaField
+            id="pce-emergency"
+            label={td('diagnosisCard.emergencyInstructions')}
+            rows={6}
+            maxChars={GENERAL_NOTES_MAX}
+            value={watch('emergencyInstructions')}
+            disabled={!!patient.emergencyInstructionsRedacted}
+            placeholder={patient.emergencyInstructionsRedacted ? td('diagnosisCard.emergencyRedacted') : undefined}
+            {...register('emergencyInstructions')}
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" optional>
               <Controller control={control} name="dependencyLevel" render={({ field }) => (

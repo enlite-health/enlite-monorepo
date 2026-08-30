@@ -571,3 +571,29 @@ describe('AdminPatientsController — test-flag', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 });
+
+describe('AdminPatientsController.getPatientById — trilha de leitura (C3) com e sem contexto de auth', () => {
+  let controller: AdminPatientsController;
+  beforeEach(() => { jest.clearAllMocks(); controller = new AdminPatientsController(); });
+
+  it('com auth context: a trilha leva o uid do principal; país ausente sai null — nunca o texto', async () => {
+    const patient = makePatientDetail({ emergencyInstructions: 'Llamar 107', country: null } as never);
+    mockFindDetailById.mockResolvedValue(patient);
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+    (req as any).authContext = { principal: { id: 'uid-staff-7' } };
+    await controller.getPatientById(req, res);
+    const call = mockLoggerInfo.mock.calls.find((c: unknown[]) => (c[0] as { msg: string }).msg === 'patient_clinical.read');
+    expect(call![0]).toMatchObject({ uid: 'uid-staff-7', patientId: PATIENT_ID, country: null, decision: 'allowed' });
+    expect(JSON.stringify(call![0])).not.toContain('Llamar 107');
+  });
+
+  it('sem auth context (rota montada sem o middleware): uid null na trilha, resposta 200 igual', async () => {
+    const patient = makePatientDetail({ emergencyInstructions: 'Llamar 107' } as never);
+    mockFindDetailById.mockResolvedValue(patient);
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+    await controller.getPatientById(req, res);
+    const call = mockLoggerInfo.mock.calls.find((c: unknown[]) => (c[0] as { msg: string }).msg === 'patient_clinical.read');
+    expect(call![0]).toMatchObject({ uid: null, country: 'AR' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+});
