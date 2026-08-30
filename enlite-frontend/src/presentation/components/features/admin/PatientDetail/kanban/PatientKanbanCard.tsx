@@ -22,6 +22,10 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
   const dependencyLabel = patient.dependencyLevel
     ? t(`admin.patients.dependencyOptions.${patient.dependencyLevel}`, { defaultValue: patient.dependencyLevel })
     : null;
+  // Lead do formulário público: sem nome, todo card diz "Solicitante" e o board
+  // vira N caixas idênticas. O contato mascarado é o que desempata — só existe
+  // quando o servidor decidiu que existe (lex C2); aqui não há regra nenhuma.
+  const leadContact = patient.leadContactEmailMasked ?? null;
 
   return (
     <div
@@ -45,6 +49,30 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
           </span>
         )}
       </div>
+      {leadContact && (
+        // `data-clarity-mask` — o Clarity grava as sessões do painel e o modo do
+        // portal não é verificável aqui; a máscara do DOM é a garantia local
+        // (lex 30/08, C3). Mesmo padrão de ClinicalLongText.tsx:34.
+        <div className="mt-1" data-clarity-mask="True">
+          <span
+            data-testid={`patient-kanban-card-${patient.id}-contact`}
+            className="block truncate text-[11px] text-slate-500"
+            title={leadContact}
+          >
+            {leadContact}
+          </span>
+          {patient.leadContactIsResponsible && (
+            // Sem esta marca o card atribuiria contato de um FAMILIAR ao
+            // paciente — dado inexato sobre dois titulares (lex C6).
+            <span
+              data-testid={`patient-kanban-card-${patient.id}-contact-responsible`}
+              className="mt-0.5 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+            >
+              {t('admin.patients.kanban.contactOfResponsible', { defaultValue: 'Contacto del responsable' })}
+            </span>
+          )}
+        </div>
+      )}
       {dependencyLabel && (
         <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
           {dependencyLabel}

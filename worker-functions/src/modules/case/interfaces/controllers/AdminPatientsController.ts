@@ -397,7 +397,25 @@ export class AdminPatientsController {
         hoursInStage: row.hoursInStage ?? null,
         slaThresholdHours: row.slaThresholdHours ?? null,
         slaBreached: row.slaBreached ?? false,
+        // Desempate do lead sem nome — JÁ mascarado pelo repositório (lex C1).
+        // Ausente (null) em toda ficha com nome real (lex C2).
+        leadContactEmailMasked: row.leadContactEmailMasked ?? null,
+        leadContactIsResponsible: row.leadContactIsResponsible ?? false,
       }));
+
+      // Trilha de LEITURA de contato (lex 30/08 C5, molde OP-08/OP-11-D225):
+      // quem leu, de que país, quantos e QUAIS pacientes. Nunca o e-mail — nem
+      // mascarado. Sem contato exposto não há linha (minimização).
+      const contactRows = data.filter((d) => d.leadContactEmailMasked != null);
+      if (contactRows.length > 0) {
+        logger.info({
+          msg: 'patient_lead_contact.read',
+          uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
+          country: parsed.data.country ?? null,
+          n: contactRows.length,
+          patientIds: contactRows.map((d) => d.id),
+        });
+      }
 
       res.status(200).json({ success: true, data, total });
     } catch (err: unknown) {

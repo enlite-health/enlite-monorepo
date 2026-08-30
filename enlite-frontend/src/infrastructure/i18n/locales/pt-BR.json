@@ -2771,7 +2771,8 @@
           "ADMISSION": "Admissão",
           "PENDING_ADMISSION": "Aguardando financeiro",
           "ACTIVE": "Ativo"
-        }
+        },
+        "contactOfResponsible": "Contato do responsável"
       },
       "countryLabel": "País",
       "countryOptions": {
