@@ -35,7 +35,7 @@ describe('ListInterviewSlotsForVacancyUseCase', () => {
     expect(result).toEqual({
       ok: true,
       caseNumber: 795,
-      slots: [{ index: 2, label: 'Mié 07/04 10:00', iso: '2027-04-07T10:00:00.000Z' }],
+      slots: [{ index: 1, label: 'Mié 07/04 07:00', iso: '2027-04-07T10:00:00.000Z' }] // reindexado na oferta; rótulo no fuso da vaga (AR),
     });
     expect(JSON.stringify(result)).not.toContain('meet.google.com');
   });

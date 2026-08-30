@@ -5,6 +5,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TokenService } from './TokenService';
 import { PERISKOPE_PAUSED_ERROR } from './RoutingMessagingService';
 import { loggingAls, logger, reportError } from '@shared/logging';
+import { optedOutExistsSql } from '@shared/database/messagingOptOutFilter';
 
 const MAX_ATTEMPTS = 3;
 const BATCH_SIZE = 50;
@@ -142,10 +143,7 @@ export class OutboxProcessor {
     }>(
       `SELECT w1.whatsapp_phone_encrypted, w1.phone,
               COALESCE(w2.messaging_channel, w1.messaging_channel) AS messaging_channel,
-              EXISTS(
-                SELECT 1 FROM messaging_opt_out moo
-                WHERE moo.worker_id = w1.id AND moo.opted_in_at IS NULL
-              ) AS opted_out
+              ${optedOutExistsSql('w1.id')} AS opted_out
        FROM workers w1
        LEFT JOIN workers w2 ON w2.id = w1.merged_into_id
        WHERE w1.id = $1

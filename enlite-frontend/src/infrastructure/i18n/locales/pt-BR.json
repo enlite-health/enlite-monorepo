@@ -2252,6 +2252,36 @@
         "cancel": "Cancelar",
         "close": "Fechar",
         "errorEmpty": "A descrição não pode ficar vazia."
+      },
+      "meetRecurring": {
+        "title": "Horário recorrente (reunião de apresentação)",
+        "hint": "Toda semana, no mesmo dia e hora, na mesma sala. O convite oferece as próximas datas automaticamente.",
+        "weekday": "Dia",
+        "time": "Hora (Argentina)",
+        "link": "Sala do Meet",
+        "none": "Sem horário recorrente",
+        "clear": "Remover",
+        "every": "Toda(o) {{day}} às {{time}}",
+        "invalidTime": "Hora inválida (HH:MM)",
+        "incomplete": "Preencha dia, hora e sala",
+        "days": {
+          "0": "domingo",
+          "1": "segunda",
+          "2": "terça",
+          "3": "quarta",
+          "4": "quinta",
+          "5": "sexta",
+          "6": "sábado"
+        },
+        "daysShort": {
+          "0": "Domingo",
+          "1": "Segunda",
+          "2": "Terça",
+          "3": "Quarta",
+          "4": "Quinta",
+          "5": "Sexta",
+          "6": "Sábado"
+        }
       }
     },
     "vacancyModal": {

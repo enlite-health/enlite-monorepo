@@ -14,7 +14,18 @@ import { JobPostingAuditRepository } from '../../infrastructure/JobPostingAuditR
  *
  * Endpoints:
  *   PUT /api/admin/vacancies/:id/meet-links — Salva até 3 Meet links com datetime resolvido
+ *     + slot RECORRENTE opcional (`recurring`: {weekday, time, link} | null — mig 291)
  */
+
+/**
+ * Slot RECORRENTE (mig 291): dia da semana (0=domingo) + hora LOCAL da vaga +
+ * sala. Merge Patch: chave `recurring` AUSENTE = não mexe; `null` = limpa.
+ */
+export const RecurringSlotSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time deve ser HH:MM'),
+  link: z.string().min(1),
+}).strict();
 
 const MeetLinksBodySchema = z.object({
   meet_links: z.tuple([
@@ -22,7 +33,8 @@ const MeetLinksBodySchema = z.object({
     z.string().nullable(),
     z.string().nullable(),
   ]),
-});
+  recurring: RecurringSlotSchema.nullable().optional(),
+}).strict();
 
 const MeetLinkLookupSchema = z.object({
   link: z.string().min(1),
@@ -106,6 +118,17 @@ export class VacancyMeetLinksController {
         return;
       }
 
+      // Slot recorrente: valida o formato da sala; a hora é LOCAL, nada a resolver no Calendar.
+      const recurringPatch = parseResult.data.recurring; // undefined = não mexe; null = limpa
+      let recurringLink: string | null = null;
+      if (recurringPatch) {
+        recurringLink = normalizeMeetLink(recurringPatch.link);
+        if (!googleCalendarService.isValidMeetLink(recurringLink)) {
+          res.status(400).json({ success: false, error: 'Invalid recurring meet link format', details: { link: recurringPatch.link } });
+          return;
+        }
+      }
+
       // Resolve datetimes em paralelo (falha silenciosa: retorna null se não achar)
       const [datetime1, datetime2, datetime3] = await Promise.all([
         link1 !== null ? googleCalendarService.resolveDateTime(link1) : Promise.resolve(null),
@@ -122,6 +145,15 @@ export class VacancyMeetLinksController {
       const client = await this.db.connect();
       try {
         await client.query('BEGIN');
+        const recurringSet = recurringPatch === undefined
+          ? ''
+          : `,
+               meet_recurring_weekday = $8,
+               meet_recurring_time    = $9::time,
+               meet_recurring_link    = $10`;
+        const recurringParams = recurringPatch === undefined
+          ? []
+          : [recurringPatch?.weekday ?? null, recurringPatch?.time ?? null, recurringLink];
         await client.query(
           `UPDATE job_postings
            SET meet_link_1     = $1,
@@ -130,9 +162,9 @@ export class VacancyMeetLinksController {
                meet_datetime_2 = $4,
                meet_link_3     = $5,
                meet_datetime_3 = $6,
-               updated_at      = NOW()
+               updated_at      = NOW()${recurringSet}
            WHERE id = $7`,
-          [link1, datetime1, link2, datetime2, link3, datetime3, id],
+          [link1, datetime1, link2, datetime2, link3, datetime3, id, ...recurringParams],
         );
         // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
         // leaving the surrounding transaction (and the UPDATE above) intact.
@@ -142,7 +174,10 @@ export class VacancyMeetLinksController {
           fieldName: 'meet_links',
           changes: {
             before: null,
-            after: { meet_link_1: link1, meet_link_2: link2, meet_link_3: link3 },
+            after: {
+              meet_link_1: link1, meet_link_2: link2, meet_link_3: link3,
+              ...(recurringPatch !== undefined ? { meet_recurring: recurringPatch ? { weekday: recurringPatch.weekday, time: recurringPatch.time, link: recurringLink } : null } : {}),
+            },
           },
           actorUserId,
           actorType: 'HUMAN',
@@ -166,6 +201,9 @@ export class VacancyMeetLinksController {
           meet_datetime_2: datetime2,
           meet_link_3:     link3,
           meet_datetime_3: datetime3,
+          ...(recurringPatch !== undefined
+            ? { meet_recurring: recurringPatch ? { weekday: recurringPatch.weekday, time: recurringPatch.time, link: recurringLink } : null }
+            : {}),
         },
       });
     } catch (error: unknown) {
