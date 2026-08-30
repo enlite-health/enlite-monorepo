@@ -192,6 +192,15 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // `geohash5` nasce em 100% (arquivo novo desta condição do lex): é a peça
+    // que decide QUANTA localização vai para o log — regressão silenciosa aqui
+    // é vazamento de precisão, não perda de teste.
+    'src/shared/utils/geohash.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/shared/utils/dateFormatters.ts': {
       statements: 100,
       branches: 100,

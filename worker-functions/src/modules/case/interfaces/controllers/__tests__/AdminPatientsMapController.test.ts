@@ -3,7 +3,8 @@
  *
  * Régua: TEXTO do SQL + ordem dos params + contrato HTTP. E as travas do lex
  * de 29/08: C1 (sem coluna nem filtro clínico — strict), C3 (escopo +
- * truncated), C4 (country), C5 (trilha sem coordenada/nome).
+ * truncated), C4 (country), C5 (trilha sem coordenada/nome — allowlist
+ * FECHADA, com catálogo e geohash-5) e C6 (nenhum identificador na linha).
  */
 const mockQuery = jest.fn();
 const mockReportError = jest.fn();
@@ -26,6 +27,7 @@ import {
   MAX_PATIENT_MAP_POINTS,
 } from '../AdminPatientsMapController';
 import { LIVE_JOB_POSTING_SQL, OPEN_JOB_STATUSES } from '@modules/matching/domain/openJobStatuses';
+import { geohash5 } from '@shared/utils/geohash';
 
 function mockRes(): Response & { body: unknown; statusCode: number } {
   const res = { statusCode: 0, body: undefined as unknown } as Response & { body: unknown; statusCode: number };
@@ -183,8 +185,52 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     expect(body.data[3]).toMatchObject({ id: 'p3', lat: -34.62, lng: -58.4, openVacancies: 1, distanceKm: 3 });
     expect(JSON.stringify(body)).not.toMatch(/diagnos/i);
     const entry = mockLogInfo.mock.calls[0][0];
-    expect(entry).toEqual({ msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius', n: 4, withoutCoordinates: 1, truncated: false });
-    expect(JSON.stringify(entry)).not.toMatch(/Ana|Paz|34\.6|p1|a1/);
+    // ALLOWLIST FECHADA: a lista é COMPLETA — chave a mais no log reprova aqui.
+    // `profession` fica null: o mapa de pacientes não filtra por profissão, mas
+    // a FORMA da linha é a mesma nas duas rotas (uma consulta de auditoria só).
+    expect(entry).toEqual({
+      msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius',
+      n: 4, withoutCoordinates: 1, truncated: false,
+      totalMatching: 4, status: null, profession: null,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      radiusKm: 5, geohash5: '69y7p',
+    });
+    // o centro é a casa de um paciente (picker "Centrar en paciente"): vai a
+    // CÉLULA de 5 caracteres, nunca a coordenada crua nem um identificador.
+    expect((entry as { geohash5: string }).geohash5).toHaveLength(5);
+    expect((entry as { geohash5: string }).geohash5).toBe(geohash5(CABA.lat, CABA.lng));
+    expect(JSON.stringify(entry)).not.toContain(String(CABA.lat));
+    expect(JSON.stringify(entry)).not.toContain(String(CABA.lng));
+    expect(JSON.stringify(entry)).not.toMatch(/Ana|Paz|34\.6|58\.3|p1|a1|Flores/);
+    for (const chave of ['id', 'patientId', 'addressId', 'name', 'lat', 'lng', 'center']) {
+      expect(entry).not.toHaveProperty(chave);
+    }
+  });
+
+  it('trilha com filtro de catálogo: status vai ao log; a localidade so como booleano; sem centro nao ha geocodigo', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(4231, [row()]) });
+    const res = mockRes();
+    await controller.getMapPoints(req({ country: 'AR', state: 'Buenos Aires', city: 'La Plata', status: ['ACTIVE', 'SUSPENDED'] }, 'uid-cat'), res);
+    expect(res.statusCode).toBe(200);
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({
+      msg: 'patients.map.read', uid: 'uid-cat', country: 'AR', scope: 'location',
+      n: 1, withoutCoordinates: 0, truncated: true,
+      totalMatching: 4231, status: ['ACTIVE', 'SUSPENDED'], profession: null,
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: true,
+      radiusKm: null, geohash5: null,
+    });
+  });
+
+  it('REPROVA identificador na trilha: nenhum UUID de paciente/endereço entra no objeto logado', async () => {
+    // C6: geohash + id de paciente seria endereço aproximado de IDENTIFICADO.
+    const uuid = '9f1c2e30-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
+    mockQuery.mockResolvedValueOnce({ rows: [row({ id: uuid, address_id: uuid })] });
+    const res = mockRes();
+    await controller.getMapPoints(req(SCOPE), res);
+    const entry = mockLogInfo.mock.calls[0][0] as Record<string, unknown>;
+    expect((res.body as { data: Array<{ id: string }> }).data[0].id).toBe(uuid); // existe na RESPOSTA
+    expect(JSON.stringify(entry)).not.toContain(uuid);                           // e não no LOG
+    for (const chave of ['id', 'patientId', 'addressId', 'ids', 'data', 'points']) expect(entry).not.toHaveProperty(chave);
   });
 
   it('escopo por localidade sem req.user: trilha com uid null e scope location', async () => {
@@ -192,7 +238,15 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     const res = mockRes();
     await controller.getMapPoints({ body: { country: 'BR', state: 'PR' } } as unknown as Request, res);
     expect(res.statusCode).toBe(200);
-    expect(mockLogInfo.mock.calls[0][0]).toMatchObject({ uid: null, country: 'BR', scope: 'location', n: 0, truncated: false });
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({
+      msg: 'patients.map.read', uid: null, country: 'BR', scope: 'location',
+      n: 0, withoutCoordinates: 0, truncated: false,
+      // 'PR' não é apelido do conjunto fechado (só CABA/PBA são): a trilha diz
+      // QUE houve recorte por província, não QUAL — texto livre não entra no log.
+      totalMatching: 0, status: null, profession: null,
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: false,
+      radiusKm: null, geohash5: null,
+    });
   });
 
   it('teto 500: a lista corta, a CONTAGEM não — total vem do COUNT(*) OVER(), truncated marca o corte', async () => {
@@ -209,7 +263,14 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     expect(body.total).toBe(4231);
     expect(body.total).not.toBe(body.data.length);
     expect(body.truncated).toBe(true);
-    expect(mockLogInfo.mock.calls[0][0]).toEqual({ msg: 'patients.map.read', uid: 'staff-1', country: 'AR', scope: 'radius', n: 500, withoutCoordinates: 0, truncated: true });
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({
+      msg: 'patients.map.read', uid: 'staff-1', country: 'AR', scope: 'radius',
+      n: 500, withoutCoordinates: 0, truncated: true,
+      // `totalMatching` é o tamanho REAL da varredura (4231), não o da tela (500).
+      totalMatching: 4231, status: null, profession: null,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      radiusKm: 5, geohash5: '69y7p',
+    });
   });
 
   it('500: log só com a origem', async () => {

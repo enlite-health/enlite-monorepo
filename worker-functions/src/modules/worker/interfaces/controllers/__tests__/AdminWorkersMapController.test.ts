@@ -4,7 +4,8 @@
  * O banco só entra no e2e; aqui a régua é o TEXTO do SQL + a ordem dos params
  * (buildWorkersMapQuery) e o contrato HTTP (getMapPoints) — inclusive as
  * condições do lex de 29/08: C1 (strict), C3 (escopo obrigatório + truncated),
- * C4 (country), C5 (trilha sem coordenada/nome). O que é comum aos dois mapas
+ * C4 (country), C5 (trilha sem coordenada/nome — allowlist FECHADA, com
+ * catálogo e geohash-5) e C6 (nenhum identificador na linha do geohash). O que é comum aos dois mapas
  * (escopo, num, 400, trilha, catch) tem teste próprio em mapQueryCommon.test.
  */
 const mockQuery = jest.fn();
@@ -26,6 +27,7 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 
 import { Request, Response } from 'express';
 import { resolveLocationFilter } from '@shared/utils/normalizeLocationValue';
+import { geohash5 } from '@shared/utils/geohash';
 import {
   AdminWorkersMapController,
   buildWorkersMapQuery,
@@ -238,7 +240,7 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(JSON.stringify(body)).not.toMatch(/@|test\.local|phone|document_number|email/);
   });
 
-  it('trilha de leitura (lex C5): uid, país, escopo e contagens — sem coordenada, nome ou UUID', async () => {
+  it('trilha de leitura (lex C5/C6): allowlist FECHADA — escopo, catálogo e geohash-5, sem coordenada, nome ou UUID', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [row({ distance_km: '2.25' })] });
     const res = mockRes();
     await controller.getMapPoints(req(SCOPE, 'uid-abc'), res);
@@ -247,8 +249,58 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(body.truncated).toBe(false);
     expect(mockLogInfo).toHaveBeenCalledTimes(1);
     const entry = mockLogInfo.mock.calls[0][0];
-    expect(entry).toEqual({ msg: 'workers.map.read', uid: 'uid-abc', country: 'AR', scope: 'radius', n: 1, withoutCoordinates: 0, truncated: false });
-    expect(JSON.stringify(entry)).not.toMatch(/34\.6|58\.3|foo|w1/);
+    // Lista COMPLETA: campo novo no log é decisão de privacidade e reprova aqui.
+    expect(entry).toEqual({
+      msg: 'workers.map.read', uid: 'uid-abc', country: 'AR', scope: 'radius',
+      n: 1, withoutCoordinates: 0, truncated: false,
+      totalMatching: 1, status: null, profession: null,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      radiusKm: 5, geohash5: '69y7p',
+    });
+    // a casa vira CÉLULA: o geohash tem 5 caracteres e a coordenada crua some
+    expect((entry as { geohash5: string }).geohash5).toHaveLength(5);
+    expect((entry as { geohash5: string }).geohash5).toBe(geohash5(CABA.lat, CABA.lng));
+    expect(JSON.stringify(entry)).not.toContain(String(CABA.lat));
+    expect(JSON.stringify(entry)).not.toContain(String(CABA.lng));
+    expect(JSON.stringify(entry)).not.toMatch(/34\.6|58\.3|foo|bar|w1|Palermo/);
+    expect(JSON.stringify(entry)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    for (const chave of ['id', 'workerId', 'patientId', 'name', 'lat', 'lng', 'center']) {
+      expect(entry).not.toHaveProperty(chave);
+    }
+  });
+
+  it('trilha com filtro de catálogo: status, profession, localidade NAO vai ao log como texto: so o booleano (o valor livre fica fora)', async () => {
+    // O que a trilha tem de permitir reconstruir é o ESCOPO da varredura:
+    // "quem, de onde, com que filtro, quantos existiam". Status e profissão são
+    // catálogo (enum fechado / código de profissão), não dado de pessoa.
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(4231, [row()]) });
+    const res = mockRes();
+    await controller.getMapPoints(req({
+      country: 'AR', state: 'Buenos Aires', city: 'La Plata',
+      status: ['REGISTERED', 'DISABLED'], profession: ['AT', 'NURSE'],
+    }, 'uid-cat'), res);
+    expect(res.statusCode).toBe(200);
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({
+      msg: 'workers.map.read', uid: 'uid-cat', country: 'AR', scope: 'location',
+      n: 1, withoutCoordinates: 0, truncated: true,
+      totalMatching: 4231,
+      status: ['REGISTERED', 'DISABLED'], profession: ['AT', 'NURSE'],
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: true,
+      // sem centro não há geocódigo NENHUM — nem grosso.
+      radiusKm: null, geohash5: null,
+    });
+  });
+
+  it('REPROVA identificador na trilha: nenhum UUID de resultado entra no objeto logado', async () => {
+    // C6: o geohash só é admissível porque não há identificador na MESMA linha.
+    const uuid = '9f1c2e30-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
+    mockQuery.mockResolvedValueOnce({ rows: [row({ id: uuid })] });
+    const res = mockRes();
+    await controller.getMapPoints(req(SCOPE), res);
+    const entry = mockLogInfo.mock.calls[0][0] as Record<string, unknown>;
+    expect((res.body as { data: Array<{ id: string }> }).data[0].id).toBe(uuid); // ele EXISTE na resposta
+    expect(JSON.stringify(entry)).not.toContain(uuid);                           // e NÃO no log
+    for (const chave of ['id', 'workerId', 'ids', 'data', 'points']) expect(entry).not.toHaveProperty(chave);
   });
 
   it('descriptografa só cifra não nula, em lotes, numa passada só, preservando a ordem', async () => {
@@ -289,8 +341,15 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(body.total).toBe(4231);
     expect(body.total).not.toBe(body.data.length);
     expect(body.truncated).toBe(true);
-    // o log conta o que SAIU (500), e não ganhou campo novo
-    expect(mockLogInfo.mock.calls[0][0]).toEqual({ msg: 'workers.map.read', uid: 'staff-1', country: 'AR', scope: 'radius', n: 500, withoutCoordinates: 0, truncated: true });
+    // o log conta o que SAIU (500) e, agora, o que EXISTIA (4231) — é
+    // `totalMatching` que revela o tamanho real da varredura; `n` sozinho não.
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({
+      msg: 'workers.map.read', uid: 'staff-1', country: 'AR', scope: 'radius',
+      n: 500, withoutCoordinates: 0, truncated: true,
+      totalMatching: 4231, status: null, profession: null,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      radiusKm: 5, geohash5: '69y7p',
+    });
   });
 
   it('500: o log de erro leva só a origem — nenhum filtro, nome ou coordenada', async () => {
