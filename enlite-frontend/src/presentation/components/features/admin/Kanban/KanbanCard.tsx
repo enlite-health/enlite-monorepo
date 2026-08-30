@@ -6,6 +6,7 @@ import { NotesCountBadge } from '@presentation/components/features/admin/Vacancy
 import { MoveToMenu } from './MoveToMenu';
 import { KanbanCardStageMessage } from './KanbanCardStageMessage';
 import { formatLastSent } from './kanbanCardFormat';
+import { KanbanCardPresentationInvite, type PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanCardProps {
   id: string;
@@ -59,6 +60,8 @@ interface KanbanCardProps {
   resendMessage?: string | null;
   /** D200.1: o backend já sabe que o reenvio seria recusado (janela) — botão nasce desabilitado com o porquê, sem 422. */
   resendBlockedReason?: { code: string; until: string } | null;
+  /** REQ-09: "Invitar a reunión de presentación" — um clique, a Luz conduz a resposta. Ausente = sem botão. */
+  presentationInvite?: { onInvite: () => void; state?: PresentationInviteState; lastInvitedAt?: string | null };
   /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
   /**
@@ -133,6 +136,7 @@ export function KanbanCard({
   resendStatus = 'idle',
   resendMessage,
   resendBlockedReason,
+  presentationInvite,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -324,7 +328,7 @@ export function KanbanCard({
       )}
 
       <KanbanCardStageMessage lastStageMessage={lastStageMessage} />
-
+      {presentationInvite && <KanbanCardPresentationInvite onInvite={presentationInvite.onInvite} state={presentationInvite.state} lastInvitedAt={presentationInvite.lastInvitedAt} />}
       {onResend && (
         <div className="mt-2 flex flex-col gap-0.5" data-testid="resend-section">
           <button

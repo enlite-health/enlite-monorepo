@@ -8,6 +8,7 @@ import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { InviteBlockedError, blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { AdminPresentationInviteApiService } from '@infrastructure/http/AdminPresentationInviteApiService';
 
 interface VacancyFunnelKanbanProps {
   vacancyId: string;
@@ -68,6 +69,12 @@ export function VacancyFunnelKanban({
       }
     },
     [vacancyId, refetch, t],
+  );
+
+  /** REQ-09: convite à reunión de presentación a partir da tarjeta (origem 'kanban', vaga anexada ao log). */
+  const handlePresentationInvite = useCallback(
+    (workerId: string) => AdminPresentationInviteApiService.invite(workerId, 'kanban', vacancyId),
+    [vacancyId],
   );
 
   const handleUnrejectBlocked = useCallback(
@@ -166,6 +173,7 @@ export function VacancyFunnelKanban({
           onRejectBlocked={handleRejectBlocked}
           onUnrejectBlocked={handleUnrejectBlocked}
           onResendInvite={handleResendInvite}
+          onPresentationInvite={handlePresentationInvite}
         />
       )}
     </div>
