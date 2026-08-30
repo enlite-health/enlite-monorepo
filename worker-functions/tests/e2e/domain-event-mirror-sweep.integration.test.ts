@@ -138,7 +138,9 @@ describe('DomainEventProcessor.sweepPendingByEvent (banco real)', () => {
 
     expect(result.total).toBeGreaterThanOrEqual(1);
     expect(result.processed).toBeGreaterThanOrEqual(1);
-    expect(handler).toHaveBeenCalledWith({ workerId });
+    // O `meta` carrega o id da PROPRIA linha varrida (D187) — asserir o valor real,
+    // e nao `expect.anything()`, faz este teste vigiar o contrato novo do processor.
+    expect(handler).toHaveBeenCalledWith({ workerId }, { eventId: mirrorEventId });
 
     // The other event type must remain pending — untouched by this sweep.
     const { rows } = await pool.query(`SELECT status FROM domain_events WHERE id = $1`, [otherEventId]);
