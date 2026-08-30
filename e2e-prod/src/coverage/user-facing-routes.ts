@@ -74,6 +74,10 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // rota fora dele é cobertura fantasma.
   { route: '/admin/patients/kanban', surface: 'admin', tier: 'regression' },
   { route: '/admin/tags', surface: 'admin', tier: 'regression' },
+  // Mapa do painel (REQ-04 · DEC-14, subiu em 30/08). Mesma história da linha acima:
+  // a tela estava em produção e fora do denominador — invisível ao gate, portanto
+  // nunca cobrada. Entra junto com a Spec 009, que a cobre.
+  { route: '/admin/mapa', surface: 'admin', tier: 'regression' },
   // Páginas PÚBLICAS de admissão (form B2C multi-país, sem login).
   { route: '/admission-ar', surface: 'public', tier: 'smoke' },
   { route: '/admission-br', surface: 'public', tier: 'smoke' },
@@ -116,6 +120,10 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'GET /api/admin/patients', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/patients/funnel', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients', surface: 'api', tier: 'regression' },
+  // Os dois mapas. POST (e não GET) de propósito: o centro do raio é a casa de alguém
+  // e a URL crua vai para o log do Cloud Run (lex 29/08, C2).
+  { route: 'POST /api/admin/patients/map', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/workers/map', surface: 'api', tier: 'regression' },
   { route: 'PUT /api/admin/patients/:id/status', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients/:id/activate', surface: 'api', tier: 'regression' },
   { route: 'PATCH /api/admin/patients/:id/:section', surface: 'api', tier: 'regression' },
