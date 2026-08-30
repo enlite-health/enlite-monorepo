@@ -67,6 +67,34 @@ describe('o que desempata os cards', () => {
   });
 });
 
+describe('hierarquia: o contato é a identidade, não um rodapé', () => {
+  it('com contato, o TÍTULO é o contato — a palavra "Solicitante" não aparece', () => {
+    // A coluna já se chama "Solicitante". Repetir a palavra em negrito escuro em
+    // cada card empurrava para cinza de 11px a única coisa que os distingue.
+    renderCard(lead());
+    const card = screen.getByTestId('patient-kanban-card-lead-1');
+    expect(card).toHaveTextContent('jo***@gmail.com');
+    expect(card).not.toHaveTextContent('Solicitante');
+  });
+
+  it('o contato é o alvo de clique que abre a ficha', () => {
+    renderCard(lead());
+    const abrir = screen.getByTestId('patient-kanban-card-lead-1-open');
+    expect(abrir).toHaveTextContent('jo***@gmail.com');
+  });
+
+  it('SEM contato, o título volta a ser o nome — nada quebra', () => {
+    renderCard(lead({ firstName: 'Ana', lastName: 'García', leadContactEmailMasked: null }));
+    const card = screen.getByTestId('patient-kanban-card-lead-1');
+    expect(card).toHaveTextContent('Ana García');
+  });
+
+  it('lead sem contato nenhum ainda mostra o placeholder — degradação, não tela vazia', () => {
+    renderCard(lead({ leadContactEmailMasked: null }));
+    expect(screen.getByTestId('patient-kanban-card-lead-1')).toHaveTextContent('Solicitante');
+  });
+});
+
 describe('C3 — o Clarity não pode gravar o contato', () => {
   it('o contato está dentro de um elemento com data-clarity-mask', () => {
     renderCard(lead());
