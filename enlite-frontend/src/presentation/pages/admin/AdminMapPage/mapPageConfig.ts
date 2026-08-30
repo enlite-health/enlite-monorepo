@@ -4,15 +4,23 @@
  * afirmar a tabela sem montar React.
  */
 import type { TFunction } from 'i18next';
-import type { PatientMapPoint, WorkerMapPoint } from '@infrastructure/http/AdminMapApiService';
+import type { MapCountry, PatientMapPoint, WorkerMapPoint } from '@infrastructure/http/AdminMapApiService';
+import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 
-/** Obelisco (CABA) — a operação é AR; o raio nasce em 25 km (FATO-17 da ata de 22/07). */
-export const DEFAULT_CENTER = { lat: -34.6037, lng: -58.3816 };
+/**
+ * Onde o mapa nasce em cada país — trocar o país move o centro para cá.
+ * AR: Obelisco (CABA) — a operação é AR (FATO-17 da ata de 22/07).
+ * BR: Praça da Sé (São Paulo) — sem isto o mapa BR ficava preso em Buenos Aires.
+ */
+export const DEFAULT_CENTER_BY_COUNTRY: Record<MapCountry, { lat: number; lng: number }> = {
+  AR: { lat: -34.6037, lng: -58.3816 },
+  BR: { lat: -23.5505, lng: -46.6333 },
+};
+export const DEFAULT_COUNTRY: MapCountry = 'AR';
+export const DEFAULT_CENTER = DEFAULT_CENTER_BY_COUNTRY[DEFAULT_COUNTRY];
+/** O raio nasce em 25 km (FATO-17 da ata de 22/07). */
 export const DEFAULT_RADIUS_KM = 25;
 export const RADIUS_OPTIONS_KM = [5, 10, 20, 25, 50] as const;
-export const DEFAULT_COUNTRY = 'AR' as const;
-/** Raio para listar pacientes no seletor "centrar en paciente" (escopo obrigatório, lex C3). */
-export const PATIENT_PICKER_RADIUS_KM = 100;
 
 export const WORKER_STATUS_COLOR: Record<string, string> = {
   REGISTERED: '#16a34a',
@@ -30,7 +38,8 @@ export const PATIENT_STATUS_COLOR: Record<string, string> = {
   DISCHARGED: '#6b7280',
 };
 
-export const PROFESSIONS = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
+/** A fonte é a entidade de domínio — o mapa não mantém lista própria de profissões. */
+export const PROFESSIONS = WORKER_PROFESSIONS;
 export const PATIENT_STATUSES = ['ACTIVE', 'ADMISSION', 'PENDING_ADMISSION', 'SOLICITANTE', 'SUSPENDED', 'DISCONTINUED', 'DISCHARGED'] as const;
 
 export function workerStatusLabel(t: TFunction, status: string | null): string {

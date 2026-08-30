@@ -52,6 +52,28 @@ describe('useMapPoints', () => {
     await waitFor(() => expect(AdminMapApiService.getWorkersMap).toHaveBeenCalledTimes(3));
   });
 
+  it('enabled=false NÃO chama a API (aba inativa): fica vazio e sem "carregando"; ligar depois busca uma vez', async () => {
+    vi.mocked(AdminMapApiService.getPatientsMap).mockResolvedValue(OK as never);
+    const { result, rerender } = renderHook(({ on }) => usePatientsMapPoints({ country: 'AR', center: CABA, radius_km: 25 }, on), { initialProps: { on: false } });
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.points).toEqual([]);
+    expect(result.current.error).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(AdminMapApiService.getPatientsMap).not.toHaveBeenCalled();
+    // refetch com enabled=false também não chama
+    act(() => result.current.refetch());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(AdminMapApiService.getPatientsMap).not.toHaveBeenCalled();
+    rerender({ on: true });
+    await waitFor(() => expect(result.current.points).toEqual([{ id: 'w1' }]));
+    expect(AdminMapApiService.getPatientsMap).toHaveBeenCalledTimes(1);
+    // desligar não refaz a chamada nem apaga o que já veio
+    rerender({ on: false });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(AdminMapApiService.getPatientsMap).toHaveBeenCalledTimes(1);
+    expect(result.current.points).toEqual([{ id: 'w1' }]);
+  });
+
   it('resposta atrasada de um filtro antigo não sobrescreve o atual (cancelamento)', async () => {
     let resolveFirst: (v: never) => void = () => {};
     vi.mocked(AdminMapApiService.getWorkersMap)

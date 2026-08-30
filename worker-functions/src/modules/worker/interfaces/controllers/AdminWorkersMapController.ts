@@ -22,57 +22,51 @@
  * Um raio nunca esconde quem não tem posição — "não sei onde está" ≠ "está longe".
  *
  * Privacidade: sai nome, status, profissão, cidade/bairro e posição. Nada de
- * telefone, e-mail, documento. A leitura em massa deixa trilha (lex C5):
- * uid, país, escopo e contagens — sem coordenada, sem nome.
+ * telefone, e-mail, documento — quem não tem nome sai como '—', nunca o e-mail.
+ * A leitura em massa deixa trilha (lex C5): uid, país, escopo e contagens —
+ * sem coordenada, sem nome.
+ *
+ * KMS — teto por request: o LIMIT do SQL já corta em `MAX_MAP_POINTS` (5000)
+ * linhas, e cada linha tem até 2 cifras (nome e sobrenome), então o pior caso
+ * é 10.000 decrypts numa request. Só cifra NÃO nula vai ao KMS (quem não tem
+ * nome não custa nada), os dois campos entram numa ÚNICA passada, em lotes de
+ * `DECRYPT_BATCH` em paralelo. Sem cache: a mesma cifra em duas requests custa
+ * duas vezes — decisão consciente, o cache global de PII é assunto do ABAC.
  */
 
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import { logger, reportError } from '@shared/logging';
-import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { resolveLocationFilter } from '@shared/utils/normalizeLocationValue';
+import {
+  MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, withMapScopeRules,
+} from '@shared/http/mapQueryCommon';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
-import { buildWorkerListWhereClause } from './AdminWorkersListHelpers';
+import { buildWorkerListWhereClause, locationMatchSql } from './AdminWorkersListHelpers';
 
-export const MAX_MAP_POINTS = 5000;
-/** Decrypt em lotes: em prod cada nome é uma chamada ao KMS. */
-const DECRYPT_BATCH = 25;
+export { MAX_MAP_POINTS };
+/** Cifras por rodada de decrypt em paralelo (em prod cada uma é uma chamada ao KMS). */
+export const DECRYPT_BATCH = 50;
 
 const WorkerStatusEnum = z.enum(['REGISTERED', 'INCOMPLETE_REGISTER', 'DISABLED']);
 
-const coord = (min: number, max: number) => z.number().min(min).max(max);
-const text = z.string().trim().min(1).max(120);
-
 /** `.strict()`: parâmetro desconhecido é 400, não silêncio (lex C1). */
-export const WorkersMapBodySchema = z
-  .object({
-    country: z.enum(['AR', 'BR']),
-    /** Lista de status. Ausente = REGISTERED + INCOMPLETE_REGISTER (quem deu baixa fica fora). */
-    status: z.array(WorkerStatusEnum).optional(),
-    docs_complete: z.enum(['complete', 'incomplete']).optional(),
-    docs_validated: z.enum(['all_validated', 'pending_validation']).optional(),
-    /** AT,CAREGIVER,NURSE,KINESIOLOGIST,PSYCHOLOGIST */
-    profession: z.array(z.string().trim().min(1)).optional(),
-    state: text.optional(),
-    city: text.optional(),
-    center: z.object({ lat: coord(-90, 90), lng: coord(-180, 180) }).strict().optional(),
-    radius_km: z.number().min(1).max(100).optional(),
-    limit: z.number().int().min(1).max(MAX_MAP_POINTS).default(MAX_MAP_POINTS),
-  })
-  .strict()
-  .refine((q) => q.radius_km === undefined || q.center !== undefined, {
-    message: 'radius_km requires center',
-  })
-  .refine((q) => hasScope(q), {
-    message: 'scope required: center+radius_km, or state/city',
-  });
+export const WorkersMapBodySchema = withMapScopeRules(
+  z
+    .object({
+      ...mapScopeShape,
+      /** Lista de status. Ausente = REGISTERED + INCOMPLETE_REGISTER (quem deu baixa fica fora). */
+      status: z.array(WorkerStatusEnum).optional(),
+      docs_complete: z.enum(['complete', 'incomplete']).optional(),
+      docs_validated: z.enum(['all_validated', 'pending_validation']).optional(),
+      /** AT,CAREGIVER,NURSE,KINESIOLOGIST,PSYCHOLOGIST */
+      profession: z.array(z.string().trim().min(1)).optional(),
+    })
+    .strict(),
+);
 
 export type WorkersMapBody = z.infer<typeof WorkersMapBodySchema>;
-
-function hasScope(q: { center?: unknown; radius_km?: number; state?: string; city?: string }): boolean {
-  return (q.center !== undefined && q.radius_km !== undefined) || q.state !== undefined || q.city !== undefined;
-}
 
 export interface WorkerMapPoint {
   id: string;
@@ -91,7 +85,6 @@ export interface WorkerMapPoint {
 
 interface WorkerMapRow {
   id: string;
-  email: string;
   first_name_encrypted: string | null;
   last_name_encrypted: string | null;
   status: string;
@@ -106,24 +99,17 @@ interface WorkerMapRow {
 
 const DEFAULT_STATUSES = ['REGISTERED', 'INCOMPLETE_REGISTER'];
 
-function num(v: string | number | null): number | null {
-  if (v === null || v === undefined) return null;
-  const n = typeof v === 'number' ? v : parseFloat(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
  * Monta o SQL do mapa. Exportada para o teste afirmar a forma da query
  * (a régua aqui é o TEXTO do SQL + a ordem dos params, porque o banco real
  * só entra no e2e).
  */
 export function buildWorkersMapQuery(q: WorkersMapBody): { sql: string; params: unknown[] } {
-  // `status` da lista aceita UM valor; o mapa aceita vários. Chamo o builder
-  // SEM status (ele então exclui DISABLED, a regra da casa) e aplico o ANY por
-  // cima. Só quando o pedido inclui DISABLED explicitamente — "quem deu baixa
-  // também" — o exclude da casa daria contradição, e é trocado por TRUE.
-  const statuses = q.status && q.status.length > 0 ? q.status : DEFAULT_STATUSES;
+  // `status` da lista aceita UM valor; o mapa aceita vários e passa a LISTA ao
+  // builder, que a resolve (ANY, sem o exclude de DISABLED da casa, e
+  // `docs_complete` por interseção) — a regra está escrita em `statuses`.
   const base = buildWorkerListWhereClause({
+    statuses: q.status && q.status.length > 0 ? q.status : DEFAULT_STATUSES,
     docs_complete: q.docs_complete,
     profession: q.profession?.join(','),
     state: q.state,
@@ -136,19 +122,25 @@ export function buildWorkersMapQuery(q: WorkersMapBody): { sql: string; params: 
   const params = [...base.params];
   let i = base.paramIndex;
 
-  if (statuses.includes('DISABLED')) {
-    where = where.replace(excludeDisabledWorkersSql('w'), 'TRUE');
-  }
-  where += ` AND w.status = ANY($${i}::text[])`;
-  params.push(statuses);
-  i++;
-
   where += ` AND w.country = $${i}`;
   params.push(q.country);
   i++;
 
   if (q.docs_validated === 'all_validated') where += ` AND ${buildAllValidatedClause('wd')}`;
   if (q.docs_validated === 'pending_validation') where += ` AND ${buildPendingValidationClause('wd')}`;
+
+  // O prestador pode ter mais de uma área. O LATERAL escolhe UMA: primeiro a
+  // que casa o filtro de província/localidade (mesmo predicado do EXISTS da
+  // lista — senão o filtro aceita o worker por uma área e o pino mostra outra),
+  // depois quem tem coordenada, depois a mais recente.
+  const lateralOrder: string[] = [];
+  for (const [column, value] of [['state', q.state], ['city', q.city]] as const) {
+    if (value === undefined) continue;
+    const built = locationMatchSql('s', params, i, column, resolveLocationFilter(value));
+    i = built.paramIndex;
+    if (built.sql !== null) lateralOrder.push(`${built.sql} DESC NULLS LAST`);
+  }
+  lateralOrder.push('(s.latitude IS NULL)', 's.updated_at DESC');
 
   let distanceSelect = 'NULL::numeric AS distance_km';
   if (q.center) {
@@ -169,7 +161,7 @@ export function buildWorkersMapQuery(q: WorkersMapBody): { sql: string; params: 
   params.push(q.limit);
 
   const sql = `
-    SELECT w.id, w.email, w.first_name_encrypted, w.last_name_encrypted, w.status, w.profession,
+    SELECT w.id, w.first_name_encrypted, w.last_name_encrypted, w.status, w.profession,
       wsa.latitude, wsa.longitude, wsa.city, wsa.neighborhood, wsa.state,
       ${distanceSelect}
     FROM workers w
@@ -178,7 +170,7 @@ export function buildWorkersMapQuery(q: WorkersMapBody): { sql: string; params: 
       SELECT s.latitude, s.longitude, s.location, s.city, s.neighborhood, s.state
       FROM worker_service_areas s
       WHERE s.worker_id = w.id AND s.deleted_at IS NULL
-      ORDER BY (s.latitude IS NULL), s.updated_at DESC
+      ORDER BY ${lateralOrder.join(', ')}
       LIMIT 1
     ) wsa ON true
     ${where}
@@ -188,42 +180,45 @@ export function buildWorkersMapQuery(q: WorkersMapBody): { sql: string; params: 
   return { sql, params };
 }
 
-async function mapInBatches<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = [];
-  for (let start = 0; start < items.length; start += size) {
-    const chunk = items.slice(start, start + size);
-    out.push(...(await Promise.all(chunk.map(fn))));
-  }
-  return out;
-}
-
 export class AdminWorkersMapController {
   private readonly db = DatabaseConnection.getInstance().getPool();
   private readonly encryption = new KMSEncryptionService();
 
+  /**
+   * Descriptografa só as cifras não nulas, em lotes paralelos de
+   * `DECRYPT_BATCH`, e devolve na MESMA posição da entrada ('' onde era null).
+   */
+  private async decryptAll(values: Array<string | null>): Promise<string[]> {
+    const out = values.map(() => '');
+    const pending = values.map((v, idx) => ({ v, idx })).filter((x): x is { v: string; idx: number } => x.v !== null);
+    for (let start = 0; start < pending.length; start += DECRYPT_BATCH) {
+      const chunk = pending.slice(start, start + DECRYPT_BATCH);
+      const plain = await Promise.all(chunk.map((x) => this.encryption.decrypt(x.v)));
+      chunk.forEach((x, k) => { out[x.idx] = plain[k]; });
+    }
+    return out;
+  }
+
   /** POST /api/admin/workers/map */
   async getMapPoints(req: Request, res: Response): Promise<void> {
-    const parsed = WorkersMapBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: 'Invalid map filters', details: parsed.error.flatten() });
-      return;
-    }
+    const body = parseMapBody(WorkersMapBodySchema, req, res);
+    if (!body) return;
 
     try {
-      const { sql, params } = buildWorkersMapQuery(parsed.data);
+      const { sql, params } = buildWorkersMapQuery(body);
       const result = await this.db.query<WorkerMapRow>(sql, params);
+      const rows = result.rows;
 
-      const data = await mapInBatches(result.rows, DECRYPT_BATCH, async (row): Promise<WorkerMapPoint> => {
-        const [firstName, lastName] = await Promise.all([
-          this.encryption.decrypt(row.first_name_encrypted),
-          this.encryption.decrypt(row.last_name_encrypted),
-        ]);
+      // Uma passada só: nome e sobrenome de todas as linhas (já cortadas pelo LIMIT).
+      const names = await this.decryptAll(rows.flatMap((r) => [r.first_name_encrypted, r.last_name_encrypted]));
+
+      const data: WorkerMapPoint[] = rows.map((row, k) => {
         const lat = num(row.latitude);
         const lng = num(row.longitude);
         const hasCoords = lat !== null && lng !== null;
         return {
           id: row.id,
-          name: [firstName, lastName].filter(Boolean).join(' ') || row.email,
+          name: [names[2 * k], names[2 * k + 1]].filter(Boolean).join(' ') || '—',
           lat: hasCoords ? lat : null,
           lng: hasCoords ? lng : null,
           status: row.status,
@@ -236,27 +231,9 @@ export class AdminWorkersMapController {
         };
       });
 
-      const withoutCoordinates = data.filter((p) => p.lat === null).length;
-      const truncated = data.length >= parsed.data.limit;
-
-      // Trilha de leitura em massa (lex C5): quem, país, escopo, quantos. Sem
-      // coordenada, sem nome, sem UUID. A tabela da OP-08 chega com o ABAC (D212).
-      logger.info({
-        msg: 'workers.map.read',
-        uid: req.user?.uid ?? null,
-        country: parsed.data.country,
-        scope: parsed.data.center ? 'radius' : 'location',
-        n: data.length,
-        withoutCoordinates,
-        truncated,
-      });
-
-      res.status(200).json({ success: true, data, total: data.length, withoutCoordinates, truncated });
+      respondMapPoints(req, res, 'workers.map.read', body, data);
     } catch (error: unknown) {
-      const e = error instanceof Error ? error : new Error(String(error));
-      // Só a origem: nenhuma coordenada, nome ou filtro vai para o log.
-      reportError(e, { source: 'AdminWorkersMapController:getMapPoints' });
-      res.status(500).json({ success: false, error: 'Failed to load workers map' });
+      respondMapError(res, error, 'AdminWorkersMapController:getMapPoints', 'Failed to load workers map');
     }
   }
 }

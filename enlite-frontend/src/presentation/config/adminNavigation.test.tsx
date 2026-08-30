@@ -122,3 +122,51 @@ describe('useAdminNavItems — Postulaciones bloqueadas é admin-only', () => {
     expect(items.some((item) => item.href === BLOCKED_HREF)).toBe(false);
   });
 });
+
+describe('useAdminNavItems — Mensajes por etapa (DEC-12 / PEND-14) é admin-only', () => {
+  const HREF = '/admin/mensajes-por-etapa';
+
+  it('admin vê o item dentro da seção Administración, com o rótulo "Mensajes por etapa"', () => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: { role: EnliteRole.ADMIN } as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+
+    const items = renderHook(() => useAdminNavItems()).result.current;
+    const idx = items.findIndex((item) => item.href === HREF);
+    const sectionIdx = items.findIndex((item) => item.sectionStart !== undefined);
+
+    expect(idx).toBeGreaterThan(-1);
+    expect(idx).toBeGreaterThanOrEqual(sectionIdx);
+    expect(items[idx].label).toMatch(/Mensajes por etapa|Mensagens por etapa/);
+  });
+
+  it.each([
+    ['RECRUITER', EnliteRole.RECRUITER],
+    ['sem perfil', null],
+  ])('%s NÃO vê o item', (_label, role) => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: role ? ({ role } as ReturnType<typeof useAdminAuth>['adminProfile']) : null,
+    } as ReturnType<typeof useAdminAuth>);
+
+    const items = renderHook(() => useAdminNavItems()).result.current;
+    expect(items.some((item) => item.href === HREF)).toBe(false);
+  });
+});
+
+describe('useAdminNavItems — Mapa (REQ-04) é item base, para todo staff', () => {
+  it.each([EnliteRole.ADMIN, EnliteRole.RECRUITER])('%s vê "Mapa" apontando para /admin/mapa, depois de Pacientes', (role) => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: { role } as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+
+    const { result } = renderHook(() => useAdminNavItems());
+    const items = result.current;
+
+    const mapIdx = items.findIndex((item) => item.href === '/admin/mapa');
+    expect(mapIdx).toBeGreaterThan(-1);
+    expect(items[mapIdx].label).toBe('Mapa');
+    expect(items[mapIdx].icon).toBeTruthy();
+    expect(items[mapIdx].sectionStart).toBeUndefined();
+    expect(mapIdx).toBe(items.findIndex((item) => item.href === '/admin/patients') + 1);
+  });
+});

@@ -24,8 +24,8 @@ import {
   buildPatientsMapQuery,
   PatientsMapBodySchema,
   MAX_PATIENT_MAP_POINTS,
-  OPEN_VACANCY_STATUSES,
 } from '../AdminPatientsMapController';
+import { LIVE_JOB_POSTING_SQL, OPEN_JOB_STATUSES } from '@modules/matching/domain/openJobStatuses';
 
 function mockRes(): Response & { body: unknown; statusCode: number } {
   const res = { statusCode: 0, body: undefined as unknown } as Response & { body: unknown; statusCode: number };
@@ -36,7 +36,6 @@ function mockRes(): Response & { body: unknown; statusCode: number } {
 
 const CABA = { lat: -34.6037, lng: -58.3816 };
 const SCOPE = { country: 'AR', center: CABA, radius_km: 5 };
-const OPEN = [...OPEN_VACANCY_STATUSES];
 
 function parse(body: Record<string, unknown>) {
   const r = PatientsMapBodySchema.safeParse(body);
@@ -87,9 +86,19 @@ describe('buildPatientsMapQuery', () => {
     expect(sql).not.toContain('AND p.status = ANY');
     expect(sql).not.toContain('ST_DWithin');
     expect(sql).toContain('NULL::numeric AS distance_km');
-    expect(sql).toContain('jp.status = ANY($3::text[])');
-    expect(params).toEqual(['AR', 'Buenos Aires', OPEN, MAX_PATIENT_MAP_POINTS]);
-    expect(sql).toContain('LIMIT $4');
+    expect(params).toEqual(['AR', 'Buenos Aires', MAX_PATIENT_MAP_POINTS]);
+    expect(sql).toContain('LIMIT $3');
+  });
+
+  it('"vaga aberta" é a fonte única da lista de vagas (LIVE_JOB_POSTING_SQL), contada UMA vez num LATERAL', () => {
+    const { sql } = buildPatientsMapQuery(parse({ ...SCOPE, with_open_vacancies: true }));
+    expect(sql).toContain(LIVE_JOB_POSTING_SQL);
+    expect(sql).toContain("'PENDING_ACTIVATION'");
+    expect(sql).toContain('jp.is_draft = false');
+    expect(sql.match(/COUNT\(\*\)/g)?.length).toBe(1);
+    expect(sql.match(/FROM job_postings jp/g)?.length).toBe(1);
+    expect(sql).toContain('ov.open_vacancies,');
+    for (const st of OPEN_JOB_STATUSES) expect(sql).toContain(`'${st}'`);
   });
 
   it('status: lista vira ANY; lista vazia não filtra', () => {
@@ -106,23 +115,23 @@ describe('buildPatientsMapQuery', () => {
   });
 
   it('with_open_vacancies=true filtra por contagem > 0; false não filtra', () => {
-    expect(buildPatientsMapQuery(parse({ ...SCOPE, with_open_vacancies: true })).sql).toContain(')::int > 0');
-    expect(buildPatientsMapQuery(parse({ ...SCOPE, with_open_vacancies: false })).sql).not.toContain(')::int > 0');
+    expect(buildPatientsMapQuery(parse({ ...SCOPE, with_open_vacancies: true })).sql).toContain('AND ov.open_vacancies > 0');
+    expect(buildPatientsMapQuery(parse({ ...SCOPE, with_open_vacancies: false })).sql).not.toContain('ov.open_vacancies > 0');
   });
 
   it('centro + raio: ST_DWithin em metros sobre o ponto do endereço; sem coordenada NÃO é excluído; lng antes de lat', () => {
     const { sql, params } = buildPatientsMapQuery(parse({ country: 'AR', center: { lat: -34.6, lng: -58.4 }, radius_km: 10, limit: 7 }));
-    expect(sql).toContain('(pa.lat IS NULL OR pa.lng IS NULL OR ST_DWithin(ST_SetSRID(ST_MakePoint(pa.lng, pa.lat), 4326)::geography, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5))');
+    expect(sql).toContain('(pa.lat IS NULL OR pa.lng IS NULL OR ST_DWithin(ST_SetSRID(ST_MakePoint(pa.lng, pa.lat), 4326)::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4))');
     expect(sql).toContain('ELSE ST_Distance(');
-    expect(params).toEqual(['AR', OPEN, -58.4, -34.6, 10000, 7]);
-    expect(sql).toContain('LIMIT $6');
+    expect(params).toEqual(['AR', -58.4, -34.6, 10000, 7]);
+    expect(sql).toContain('LIMIT $5');
   });
 
   it('centro sem raio (escopo por state): distância sim, filtro de raio não', () => {
     const { sql, params } = buildPatientsMapQuery(parse({ country: 'AR', state: 'Buenos Aires', center: { lat: -34.6, lng: -58.4 } }));
     expect(sql).not.toContain('ST_DWithin');
     expect(sql).toContain('AS distance_km');
-    expect(params).toEqual(['AR', 'Buenos Aires', OPEN, -58.4, -34.6, MAX_PATIENT_MAP_POINTS]);
+    expect(params).toEqual(['AR', 'Buenos Aires', -58.4, -34.6, MAX_PATIENT_MAP_POINTS]);
   });
 });
 
@@ -144,21 +153,24 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     mockQuery.mockResolvedValueOnce({ rows: [
       row(),
       row({ address_id: 'a2', address_type: 'secondary', lat: '-34.61', lng: '-58.39', distance_km: '0.5' }),
-      row({ id: 'p2', first_name: null, last_name: null, address_id: null, address_type: null, lat: null, lng: null, city: null, neighborhood: null, state: null, open_vacancies: 0 }),
+      row({ id: 'p2', first_name: null, last_name: null, address_id: null, address_type: null, lat: null, lng: null, city: null, neighborhood: null, state: null, open_vacancies: null }),
+      // o driver pode entregar número (coluna double) em vez de string
+      row({ id: 'p3', address_id: 'a3', lat: -34.62, lng: -58.4, open_vacancies: 1, distance_km: 3 }),
     ] });
     const res = mockRes();
-    await controller.getMapPoints(req({ ...SCOPE, limit: 3 }, 'uid-xyz'), res);
+    await controller.getMapPoints(req({ ...SCOPE, limit: 4 }, 'uid-xyz'), res);
     expect(res.statusCode).toBe(200);
     const body = res.body as { data: Array<Record<string, unknown>>; total: number; withoutCoordinates: number; truncated: boolean };
-    expect(body.total).toBe(3);
+    expect(body.total).toBe(4);
     expect(body.withoutCoordinates).toBe(1);
     expect(body.truncated).toBe(true);
     expect(body.data[0]).toEqual({ id: 'p1', addressId: 'a1', name: 'Ana Paz', lat: -34.6, lng: -58.38, status: 'ACTIVE', addressType: 'primary', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', openVacancies: 2, distanceKm: null });
     expect(body.data[1]).toMatchObject({ addressId: 'a2', distanceKm: 0.5 });
     expect(body.data[2]).toEqual({ id: 'p2', addressId: null, name: '—', lat: null, lng: null, status: 'ACTIVE', addressType: null, city: null, neighborhood: null, state: null, openVacancies: 0, distanceKm: null });
+    expect(body.data[3]).toMatchObject({ id: 'p3', lat: -34.62, lng: -58.4, openVacancies: 1, distanceKm: 3 });
     expect(JSON.stringify(body)).not.toMatch(/diagnos/i);
     const entry = mockLogInfo.mock.calls[0][0];
-    expect(entry).toEqual({ msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius', n: 3, withoutCoordinates: 1, truncated: true });
+    expect(entry).toEqual({ msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius', n: 4, withoutCoordinates: 1, truncated: true });
     expect(JSON.stringify(entry)).not.toMatch(/Ana|Paz|34\.6|p1|a1/);
   });
 

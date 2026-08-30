@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { TFunction } from 'i18next';
+import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 import {
-  DEFAULT_CENTER, DEFAULT_RADIUS_KM, PATIENT_STATUS_COLOR, WORKER_STATUS_COLOR, distanceLabel, patientPointTitle,
-  patientStatusLabel, placeLabel, professionLabel, workerPointTitle, workerStatusLabel,
+  DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM, PATIENT_STATUS_COLOR, PROFESSIONS, WORKER_STATUS_COLOR,
+  distanceLabel, patientPointTitle, patientStatusLabel, placeLabel, professionLabel, workerPointTitle, workerStatusLabel,
 } from './mapPageConfig';
 
 // t que devolve o fallback (a chave nunca é traduzida aqui — o que se testa é a composição)
@@ -13,9 +14,14 @@ const t = ((key: string, fallback?: string | Record<string, unknown>) => {
 }) as unknown as TFunction;
 
 describe('mapPageConfig', () => {
-  it('centro padrão é CABA e o raio nasce em 25 km (FATO-17)', () => {
-    expect(DEFAULT_CENTER).toEqual({ lat: -34.6037, lng: -58.3816 });
+  it('centro padrão por país: AR nasce em CABA, BR em São Paulo; o raio nasce em 25 km (FATO-17)', () => {
+    expect(DEFAULT_COUNTRY).toBe('AR');
+    expect(DEFAULT_CENTER_BY_COUNTRY.AR).toEqual({ lat: -34.6037, lng: -58.3816 });
+    expect(DEFAULT_CENTER_BY_COUNTRY.BR).toEqual({ lat: -23.5505, lng: -46.6333 });
+    expect(DEFAULT_CENTER).toBe(DEFAULT_CENTER_BY_COUNTRY.AR);
     expect(DEFAULT_RADIUS_KM).toBe(25);
+    // profissões vêm da entidade de domínio, não de lista própria
+    expect(PROFESSIONS).toBe(WORKER_PROFESSIONS);
     expect(WORKER_STATUS_COLOR.REGISTERED).not.toBe(WORKER_STATUS_COLOR.INCOMPLETE_REGISTER);
     expect(PATIENT_STATUS_COLOR.ACTIVE).toBeDefined();
   });

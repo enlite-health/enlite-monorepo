@@ -7,13 +7,18 @@
  * POST com corpo, não GET (lex 29/08, C2): o centro do raio é a casa de
  * alguém e a URL crua vai para o log do Cloud Run. Escopo obrigatório (C3):
  * centro+raio ou província/localidade — sem escopo é export da base, 400.
- * País como parâmetro (C4).
+ * País como parâmetro (C4). O que é comum aos dois mapas vive em
+ * `@shared/http/mapQueryCommon`.
  *
  * UM ponto por ENDEREÇO ativo (`patient_addresses.archived_at IS NULL`): um
  * paciente pode ter mais de um domicílio, e é o domicílio que o recrutador
  * cruza com a posição dos prestadores. Paciente sem endereço (ou sem
  * coordenada) continua na resposta com `lat`/`lng` nulos — "não sei onde
  * está" nunca some por causa de um raio.
+ *
+ * "Vaga aberta" é a MESMA regra da lista de vagas e do dashboard
+ * (`LIVE_JOB_POSTING_SQL`: status vivo, não rascunho, não apagada) — contada
+ * UMA vez num LATERAL e reaproveitada no filtro e na coluna.
  *
  * ⚠️ PRIVACIDADE (regra dura + lex C1): o SELECT NÃO traz coluna clínica
  * nenhuma — sem `diagnosis`, sem `additional_comments`, sem `dependency_level`
@@ -26,38 +31,25 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { logger, reportError } from '@shared/logging';
+import {
+  MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, withMapScopeRules,
+} from '@shared/http/mapQueryCommon';
+import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 
-export const MAX_PATIENT_MAP_POINTS = 5000;
+export const MAX_PATIENT_MAP_POINTS = MAX_MAP_POINTS;
 
-/** Vaga "aberta" para o mapa = ainda procurando gente. Mesma família da lista de vagas. */
-export const OPEN_VACANCY_STATUSES = ['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE'] as const;
-
-const coord = (min: number, max: number) => z.number().min(min).max(max);
-const text = z.string().trim().min(1).max(120);
-
-export const PatientsMapBodySchema = z
-  .object({
-    country: z.enum(['AR', 'BR']),
-    /** Status de paciente. Ausente = todos (o filtro é da tela). */
-    status: z.array(z.enum(PATIENT_STATUSES as unknown as [string, ...string[]])).optional(),
-    state: text.optional(),
-    city: text.optional(),
-    /** true → só pacientes com ao menos uma vaga aberta. */
-    with_open_vacancies: z.boolean().optional(),
-    center: z.object({ lat: coord(-90, 90), lng: coord(-180, 180) }).strict().optional(),
-    radius_km: z.number().min(1).max(100).optional(),
-    limit: z.number().int().min(1).max(MAX_PATIENT_MAP_POINTS).default(MAX_PATIENT_MAP_POINTS),
-  })
-  .strict()
-  .refine((q) => q.radius_km === undefined || q.center !== undefined, {
-    message: 'radius_km requires center',
-  })
-  .refine(
-    (q) => (q.center !== undefined && q.radius_km !== undefined) || q.state !== undefined || q.city !== undefined,
-    { message: 'scope required: center+radius_km, or state/city' },
-  );
+export const PatientsMapBodySchema = withMapScopeRules(
+  z
+    .object({
+      ...mapScopeShape,
+      /** Status de paciente. Ausente = todos (o filtro é da tela). */
+      status: z.array(z.enum(PATIENT_STATUSES as unknown as [string, ...string[]])).optional(),
+      /** true → só pacientes com ao menos uma vaga aberta. */
+      with_open_vacancies: z.boolean().optional(),
+    })
+    .strict(),
+);
 
 export type PatientsMapBody = z.infer<typeof PatientsMapBodySchema>;
 
@@ -88,14 +80,8 @@ interface PatientMapRow {
   city: string | null;
   neighborhood: string | null;
   state: string | null;
-  open_vacancies: string | number;
+  open_vacancies: string | number | null;
   distance_km: string | number | null;
-}
-
-function num(v: string | number | null | undefined): number | null {
-  if (v === null || v === undefined) return null;
-  const n = typeof v === 'number' ? v : parseFloat(v);
-  return Number.isFinite(n) ? n : null;
 }
 
 /** Monta o SQL do mapa. Exportada para o teste afirmar a forma (e a AUSÊNCIA de coluna clínica). */
@@ -123,15 +109,7 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
     params.push(q.city);
     i++;
   }
-
-  const openVacancies = `(
-    SELECT COUNT(*) FROM job_postings jp
-    WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL
-      AND jp.status = ANY($${i}::text[])
-  )::int`;
-  params.push([...OPEN_VACANCY_STATUSES]);
-  i++;
-  if (q.with_open_vacancies === true) conds.push(`${openVacancies} > 0`);
+  if (q.with_open_vacancies === true) conds.push('ov.open_vacancies > 0');
 
   const point = 'ST_SetSRID(ST_MakePoint(pa.lng, pa.lat), 4326)::geography';
   let distanceSelect = 'NULL::numeric AS distance_km';
@@ -155,10 +133,15 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
   const sql = `
     SELECT p.id, p.first_name, p.last_name, p.status,
       pa.id AS address_id, pa.address_type, pa.lat, pa.lng, pa.city, pa.neighborhood, pa.state,
-      ${openVacancies} AS open_vacancies,
+      ov.open_vacancies,
       ${distanceSelect}
     FROM patients p
     LEFT JOIN patient_addresses pa ON pa.patient_id = p.id AND pa.archived_at IS NULL
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS open_vacancies
+      FROM job_postings jp
+      WHERE jp.patient_id = p.id AND ${LIVE_JOB_POSTING_SQL}
+    ) ov ON true
     WHERE ${conds.join('\n      AND ')}
     ORDER BY distance_km ASC NULLS LAST, p.last_name ASC, p.first_name ASC, pa.display_order ASC
     LIMIT $${pLimit}
@@ -171,14 +154,11 @@ export class AdminPatientsMapController {
 
   /** POST /api/admin/patients/map */
   async getMapPoints(req: Request, res: Response): Promise<void> {
-    const parsed = PatientsMapBodySchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: 'Invalid map filters', details: parsed.error.flatten() });
-      return;
-    }
+    const body = parseMapBody(PatientsMapBodySchema, req, res);
+    if (!body) return;
 
     try {
-      const { sql, params } = buildPatientsMapQuery(parsed.data);
+      const { sql, params } = buildPatientsMapQuery(body);
       const result = await this.db.query<PatientMapRow>(sql, params);
 
       const data: PatientMapPoint[] = result.rows.map((row) => {
@@ -201,25 +181,9 @@ export class AdminPatientsMapController {
         };
       });
 
-      const withoutCoordinates = data.filter((p) => p.lat === null).length;
-      const truncated = data.length >= parsed.data.limit;
-
-      // Trilha de leitura em massa (lex C5): sem coordenada, nome ou UUID. Tabela da OP-08 vem com o ABAC (D212).
-      logger.info({
-        msg: 'patients.map.read',
-        uid: req.user?.uid ?? null,
-        country: parsed.data.country,
-        scope: parsed.data.center ? 'radius' : 'location',
-        n: data.length,
-        withoutCoordinates,
-        truncated,
-      });
-
-      res.status(200).json({ success: true, data, total: data.length, withoutCoordinates, truncated });
+      respondMapPoints(req, res, 'patients.map.read', body, data);
     } catch (error: unknown) {
-      const e = error instanceof Error ? error : new Error(String(error));
-      reportError(e, { source: 'AdminPatientsMapController:getMapPoints' });
-      res.status(500).json({ success: false, error: 'Failed to load patients map' });
+      respondMapError(res, error, 'AdminPatientsMapController:getMapPoints', 'Failed to load patients map');
     }
   }
 }

@@ -4,7 +4,8 @@
  * O banco só entra no e2e; aqui a régua é o TEXTO do SQL + a ordem dos params
  * (buildWorkersMapQuery) e o contrato HTTP (getMapPoints) — inclusive as
  * condições do lex de 29/08: C1 (strict), C3 (escopo obrigatório + truncated),
- * C4 (country), C5 (trilha sem coordenada/nome).
+ * C4 (country), C5 (trilha sem coordenada/nome). O que é comum aos dois mapas
+ * (escopo, num, 400, trilha, catch) tem teste próprio em mapQueryCommon.test.
  */
 const mockQuery = jest.fn();
 const mockDecrypt = jest.fn();
@@ -24,11 +25,13 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 }));
 
 import { Request, Response } from 'express';
+import { resolveLocationFilter } from '@shared/utils/normalizeLocationValue';
 import {
   AdminWorkersMapController,
   buildWorkersMapQuery,
   WorkersMapBodySchema,
   MAX_MAP_POINTS,
+  DECRYPT_BATCH,
 } from '../AdminWorkersMapController';
 
 function mockRes(): Response & { body: unknown; statusCode: number } {
@@ -40,6 +43,9 @@ function mockRes(): Response & { body: unknown; statusCode: number } {
 
 const CABA = { lat: -34.6037, lng: -58.3816 };
 const SCOPE = { country: 'AR', center: CABA, radius_km: 5 };
+const ACTIVE = ['REGISTERED', 'INCOMPLETE_REGISTER'];
+/** Só o WHERE (o SELECT também cita w.status como coluna). */
+const whereOf = (sql: string): string => sql.slice(sql.indexOf('WHERE w.merged_into_id'));
 
 function parse(body: Record<string, unknown>) {
   const r = WorkersMapBodySchema.safeParse(body);
@@ -48,6 +54,7 @@ function parse(body: Record<string, unknown>) {
 }
 const req = (body: unknown, uid = 'staff-1') => ({ body, user: { uid } }) as unknown as Request;
 
+// A linha do banco traz e-mail de propósito: o teste prova que ele NUNCA chega ao payload.
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'w1', email: 'w1@test.local', first_name_encrypted: 'Zm9v', last_name_encrypted: 'YmFy',
   status: 'REGISTERED', profession: 'AT', latitude: '-34.6', longitude: '-58.4',
@@ -87,38 +94,66 @@ describe('WorkersMapBodySchema (lex C1/C3/C4)', () => {
 });
 
 describe('buildWorkersMapQuery', () => {
-  it('escopo por localidade: exclui DISABLED pela regra da casa, ANY dos status ativos, país, sem raio', () => {
+  it('escopo por localidade: ANY dos status ativos (sem o exclude da casa, que seria redundante), país, sem raio', () => {
     const { sql, params } = buildWorkersMapQuery(parse({ country: 'AR', state: 'Buenos Aires' }));
-    expect(sql).toContain("COALESCE(w.status, '') <> 'DISABLED'");
+    expect(sql).not.toContain("<> 'DISABLED'");
+    expect(sql).toContain('w.status = ANY($1::text[])');
     expect(sql).toContain('EXISTS (SELECT 1 FROM worker_service_areas wsa');
-    expect(sql).toContain('w.status = ANY($2::text[])');
     expect(sql).toContain('w.country = $3');
-    expect(params.slice(1)).toEqual([['REGISTERED', 'INCOMPLETE_REGISTER'], 'AR', MAX_MAP_POINTS]);
+    expect(params[0]).toEqual(ACTIVE);
+    expect(params[2]).toBe('AR');
+    expect(params[params.length - 1]).toBe(MAX_MAP_POINTS);
     expect(sql).toContain('NULL::numeric AS distance_km');
     expect(sql).not.toContain('ST_DWithin');
     expect(sql).toContain('LEFT JOIN LATERAL');
     expect(sql).toContain('s.deleted_at IS NULL');
-    expect(sql).toContain('LIMIT $4');
+    expect(sql).toContain(`LIMIT $${params.length}`);
   });
 
-  it('status vazio cai no default; lista explícita passa como veio', () => {
-    expect(buildWorkersMapQuery(parse({ ...SCOPE, status: [] })).params[0]).toEqual(['REGISTERED', 'INCOMPLETE_REGISTER']);
+  it('status vazio cai no default; lista explícita passa como veio — inclusive DISABLED, sem cláusula contraditória', () => {
+    expect(buildWorkersMapQuery(parse({ ...SCOPE, status: [] })).params[0]).toEqual(ACTIVE);
     expect(buildWorkersMapQuery(parse({ ...SCOPE, status: ['INCOMPLETE_REGISTER'] })).params[0]).toEqual(['INCOMPLETE_REGISTER']);
-  });
-
-  it('pedido com DISABLED troca o exclude da casa por TRUE (senão contradiz o pedido)', () => {
     const { sql, params } = buildWorkersMapQuery(parse({ ...SCOPE, status: ['DISABLED', 'REGISTERED'] }));
     expect(sql).not.toContain("<> 'DISABLED'");
-    expect(sql).toContain('AND TRUE');
+    expect(sql).not.toContain('AND TRUE');
+    expect(whereOf(sql).match(/w\.status/g)?.length).toBe(1);
     expect(params[0]).toEqual(['DISABLED', 'REGISTERED']);
   });
 
-  it('docs_complete/profession/state/city reaproveitam o WHERE da lista', () => {
+  it('DISABLED + docs_complete=incomplete: interseção vazia (lista vazia no ANY), nunca `status = X AND status = ANY`', () => {
+    const { sql, params } = buildWorkersMapQuery(parse({ ...SCOPE, status: ['DISABLED'], docs_complete: 'incomplete' }));
+    expect(whereOf(sql).match(/w\.status/g)?.length).toBe(1);
+    expect(sql).not.toContain("w.status = 'INCOMPLETE_REGISTER'");
+    expect(params[0]).toEqual([]);
+  });
+
+  it('docs_complete restringe o default por interseção; profession/state/city reaproveitam o WHERE da lista', () => {
     const { sql, params } = buildWorkersMapQuery(parse({ country: 'AR', docs_complete: 'incomplete', profession: ['AT', 'NURSE'], state: 'Buenos Aires', city: 'La Plata' }));
-    expect(sql).toContain("w.status = 'INCOMPLETE_REGISTER'");
+    expect(params[0]).toEqual(['INCOMPLETE_REGISTER']);
     expect(sql).toContain('w.profession = ANY(');
     expect(sql.match(/EXISTS \(SELECT 1 FROM worker_service_areas wsa/g)?.length).toBe(2);
     expect(params).toContainEqual(['AT', 'NURSE']);
+  });
+
+  it('LATERAL com filtro de state/city: a área que casa o filtro vence, depois quem tem coordenada, depois a mais recente', () => {
+    const { sql, params } = buildWorkersMapQuery(parse({ country: 'AR', state: 'Córdoba', city: 'Villa Carlos Paz' }));
+    const lateral = sql.slice(sql.indexOf('LEFT JOIN LATERAL'), sql.indexOf(') wsa ON true'));
+    const order = lateral.slice(lateral.indexOf('ORDER BY'));
+    // mesmo predicado do EXISTS da lista, só que sobre o alias `s` do LATERAL
+    expect(order).toMatch(/ORDER BY \(lower\(btrim\(s\.state\)\) = ANY\(\$\d+::text\[\]\) OR lower\(btrim\(s\.work_zone\)\) = ANY\(\$\d+::text\[\]\)\) DESC NULLS LAST, \(lower\(btrim\(s\.city\)\) = ANY\(\$\d+::text\[\]\) OR lower\(btrim\(s\.work_zone\)\) = ANY\(\$\d+::text\[\]\)\) DESC NULLS LAST, \(s\.latitude IS NULL\), s\.updated_at DESC/);
+    // os params do LATERAL carregam as mesmas chaves normalizadas que o EXISTS
+    const stateParam = Number(order.match(/s\.state\)\) = ANY\(\$(\d+)/)![1]);
+    const cityParam = Number(order.match(/s\.city\)\) = ANY\(\$(\d+)/)![1]);
+    expect(params[stateParam - 1]).toEqual(resolveLocationFilter('Córdoba').exactKeys);
+    expect(params[cityParam - 1]).toEqual(resolveLocationFilter('Villa Carlos Paz').exactKeys);
+    // e são os MESMOS valores que o EXISTS da lista recebeu (mesma normalização)
+    expect(params.filter((p) => JSON.stringify(p) === JSON.stringify(params[stateParam - 1]))).toHaveLength(2);
+    expect(params.filter((p) => JSON.stringify(p) === JSON.stringify(params[cityParam - 1]))).toHaveLength(2);
+  });
+
+  it('LATERAL sem filtro de localidade: só coordenada e recência', () => {
+    const { sql } = buildWorkersMapQuery(parse(SCOPE));
+    expect(sql).toContain('ORDER BY (s.latitude IS NULL), s.updated_at DESC\n      LIMIT 1');
   });
 
   it('docs_validated acrescenta a cláusula sobre wd', () => {
@@ -128,17 +163,22 @@ describe('buildWorkersMapQuery', () => {
 
   it('centro sem raio (com state como escopo): distância calculada, sem filtro de raio', () => {
     const { sql, params } = buildWorkersMapQuery(parse({ country: 'AR', state: 'Buenos Aires', center: { lat: -34.6, lng: -58.4 } }));
-    expect(sql).toContain('ST_Distance(wsa.location, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography) / 1000.0 AS distance_km');
+    expect(sql).toMatch(/ST_Distance\(wsa\.location, ST_SetSRID\(ST_MakePoint\(\$\d+, \$\d+\), 4326\)::geography\) \/ 1000\.0 AS distance_km/);
     expect(sql).not.toContain('ST_DWithin');
-    // ordem: lng antes de lat (ST_MakePoint(x=lng, y=lat))
-    expect(params.slice(1)).toEqual([['REGISTERED', 'INCOMPLETE_REGISTER'], 'AR', -58.4, -34.6, MAX_MAP_POINTS]);
+    // ordem: lng antes de lat (ST_MakePoint(x=lng, y=lat)), depois o limit
+    expect(params.slice(-3)).toEqual([-58.4, -34.6, MAX_MAP_POINTS]);
   });
 
   it('centro + raio: ST_DWithin em METROS e quem não tem coordenada NÃO é excluído', () => {
     const { sql, params } = buildWorkersMapQuery(parse({ country: 'AR', center: { lat: -34.6, lng: -58.4 }, radius_km: 5, limit: 10 }));
     expect(sql).toContain('(wsa.location IS NULL OR ST_DWithin(wsa.location, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5))');
-    expect(params).toEqual([['REGISTERED', 'INCOMPLETE_REGISTER'], 'AR', -58.4, -34.6, 5000, 10]);
+    expect(params).toEqual([ACTIVE, 'AR', -58.4, -34.6, 5000, 10]);
     expect(sql).toContain('LIMIT $6');
+  });
+
+  it('o SELECT não pede e-mail, telefone nem documento', () => {
+    const { sql } = buildWorkersMapQuery(parse(SCOPE));
+    expect(sql.slice(0, sql.indexOf('FROM workers'))).not.toMatch(/email|phone|document/);
   });
 });
 
@@ -160,25 +200,29 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(mockLogInfo).not.toHaveBeenCalled();
   });
 
-  it('200: pontos com nome descriptografado, documentsComplete por status, sem-coordenada contado, truncated no teto', async () => {
+  it('200: nome descriptografado, documentsComplete por status, sem-coordenada contado, truncated no teto — e o e-mail NUNCA sai', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [
       row(),
       row({ id: 'w2', status: 'INCOMPLETE_REGISTER', latitude: null, longitude: null, first_name_encrypted: null, last_name_encrypted: null, email: 'semnome@test.local', profession: null, city: null, neighborhood: null, state: null }),
       row({ id: 'w3', latitude: 'abc', longitude: '-58.4', distance_km: '1.5' }),
+      // o driver pode entregar número (coluna double) em vez de string
+      row({ id: 'w4', latitude: -34.7, longitude: -58.5, distance_km: 2 }),
     ] });
     const res = mockRes();
-    await controller.getMapPoints(req({ ...SCOPE, limit: 3 }), res);
+    await controller.getMapPoints(req({ ...SCOPE, limit: 4 }), res);
     expect(res.statusCode).toBe(200);
     const body = res.body as { data: Array<Record<string, unknown>>; total: number; withoutCoordinates: number; truncated: boolean };
-    expect(body.total).toBe(3);
+    expect(body.total).toBe(4);
     expect(body.withoutCoordinates).toBe(2);
     expect(body.truncated).toBe(true);
     expect(body.data[0]).toEqual({ id: 'w1', name: 'foo bar', lat: -34.6, lng: -58.4, status: 'REGISTERED', documentsComplete: true, profession: 'AT', city: 'CABA', neighborhood: 'Palermo', state: 'Buenos Aires', distanceKm: null });
-    expect(body.data[1]).toMatchObject({ id: 'w2', name: 'semnome@test.local', lat: null, lng: null, documentsComplete: false, profession: null, city: null, distanceKm: null });
+    // sem nome → '—', e não o e-mail
+    expect(body.data[1]).toMatchObject({ id: 'w2', name: '—', lat: null, lng: null, documentsComplete: false, profession: null, city: null, distanceKm: null });
     // latitude não numérica = sem coordenada (e a distância não vaza)
     expect(body.data[2]).toMatchObject({ id: 'w3', lat: null, lng: null, distanceKm: null });
-    // nada de telefone/documento no payload
-    expect(JSON.stringify(body)).not.toMatch(/phone|document_number|email_bidx/);
+    expect(body.data[3]).toMatchObject({ id: 'w4', lat: -34.7, lng: -58.5, distanceKm: 2 });
+    // nada de e-mail, telefone ou documento no payload — em nenhum campo
+    expect(JSON.stringify(body)).not.toMatch(/@|test\.local|phone|document_number|email/);
   });
 
   it('trilha de leitura (lex C5): uid, país, escopo e contagens — sem coordenada, nome ou UUID', async () => {
@@ -194,22 +238,26 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(JSON.stringify(entry)).not.toMatch(/34\.6|58\.3|foo|w1/);
   });
 
-  it('trilha com escopo por localidade e sem req.user → uid null', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-    const res = mockRes();
-    await controller.getMapPoints({ body: { country: 'BR', city: 'Curitiba' } } as unknown as Request, res);
-    expect(mockLogInfo.mock.calls[0][0]).toMatchObject({ uid: null, country: 'BR', scope: 'location', n: 0 });
-  });
-
-  it('descriptografa em lotes (mais de 25 linhas → mais de uma rodada) e preserva a ordem', async () => {
-    const rows = Array.from({ length: 60 }, (_, k) => row({ id: `w${k}`, first_name_encrypted: Buffer.from(`n${k}`).toString('base64'), last_name_encrypted: null }));
+  it('descriptografa só cifra não nula, em lotes, numa passada só, preservando a ordem', async () => {
+    const rows = Array.from({ length: 120 }, (_, k) => row({ id: `w${k}`, first_name_encrypted: Buffer.from(`n${k}`).toString('base64'), last_name_encrypted: k % 2 === 0 ? null : Buffer.from(`s${k}`).toString('base64') }));
+    let inFlight = 0; let maxInFlight = 0;
+    mockDecrypt.mockImplementation(async (v: string) => {
+      inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 1));
+      inFlight--;
+      return Buffer.from(v, 'base64').toString('utf8');
+    });
     mockQuery.mockResolvedValueOnce({ rows });
     const res = mockRes();
     await controller.getMapPoints(req(SCOPE), res);
     const body = res.body as { data: Array<{ id: string; name: string }> };
     expect(body.data.map((p) => p.id)).toEqual(rows.map((r) => r.id));
-    expect(body.data[59].name).toBe('n59');
-    expect(mockDecrypt).toHaveBeenCalledTimes(120);
+    expect(body.data[0].name).toBe('n0');
+    expect(body.data[119].name).toBe('n119 s119');
+    // 120 nomes + 60 sobrenomes = 180 cifras; os 60 nulos não vão ao KMS
+    expect(mockDecrypt).toHaveBeenCalledTimes(180);
+    expect(mockDecrypt).not.toHaveBeenCalledWith(null);
+    expect(maxInFlight).toBe(DECRYPT_BATCH);
   });
 
   it('500: o log de erro leva só a origem — nenhum filtro, nome ou coordenada', async () => {
@@ -221,13 +269,5 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminWorkersMapController:getMapPoints' });
     expect(JSON.stringify(mockReportError.mock.calls[0][1])).not.toMatch(/34\.6|Palermo/);
     expect(mockLogInfo).not.toHaveBeenCalled();
-  });
-
-  it('500 com erro não-Error', async () => {
-    mockQuery.mockRejectedValueOnce('string-err');
-    const res = mockRes();
-    await controller.getMapPoints(req(SCOPE), res);
-    expect(res.statusCode).toBe(500);
-    expect((mockReportError.mock.calls[0][0] as Error).message).toBe('string-err');
   });
 });
