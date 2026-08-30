@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Send, Star } from 'lucide-react';
+import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
 import { KanbanCardStageMessage } from './KanbanCardStageMessage';
-import { formatLastSent } from './kanbanCardFormat';
+import { KanbanCardResend, type ResendStatus } from './KanbanCardResend';
 import { KanbanCardPresentationInvite, type PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanCardProps {
@@ -55,7 +55,7 @@ interface KanbanCardProps {
    * volta. Só é passado para cards com worker e encuadre.
    */
   onResend?: () => void;
-  resendStatus?: 'idle' | 'sending' | 'sent' | 'error';
+  resendStatus?: ResendStatus;
   /** Motivo localizado quando o backend recusa (422) ou falha. */
   resendMessage?: string | null;
   /** D200.1: o backend já sabe que o reenvio seria recusado (janela) — botão nasce desabilitado com o porquê, sem 422. */
@@ -330,43 +330,7 @@ export function KanbanCard({
       <KanbanCardStageMessage lastStageMessage={lastStageMessage} />
       {presentationInvite && <KanbanCardPresentationInvite onInvite={presentationInvite.onInvite} state={presentationInvite.state} lastInvitedAt={presentationInvite.lastInvitedAt} />}
       {onResend && (
-        <div className="mt-2 flex flex-col gap-0.5" data-testid="resend-section">
-          <button
-            data-testid="resend-button"
-            type="button"
-            disabled={resendStatus === 'sending' || !!resendBlockedReason}
-            title={resendBlockedReason ? t(`admin.messaging.blocked.${resendBlockedReason.code}`) : undefined}
-            onClick={(e) => {
-              e.stopPropagation();
-              onResend();
-            }}
-            className="w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          >
-            <Send className="w-3 h-3" />
-            {resendStatus === 'sending' ? t('admin.kanban.resendSending') : t('admin.kanban.resendButton')}
-          </button>
-          <span data-testid="resend-last-sent" className="px-2 text-[10px] text-slate-500">
-            {lastMessagedAt
-              ? t('admin.kanban.lastSentAt', { date: formatLastSent(lastMessagedAt) })
-              : t('admin.kanban.neverSent')}
-          </span>
-          {resendBlockedReason && (
-            <span data-testid="resend-blocked-reason" className="px-2 text-[10px] text-amber-700">
-              {t(`admin.messaging.blocked.${resendBlockedReason.code}`)}{' '}
-              {t('admin.kanban.resendBlockedUntil', { date: formatLastSent(resendBlockedReason.until) })}
-            </span>
-          )}
-          {resendStatus === 'sent' && (
-            <span data-testid="resend-feedback" className="px-2 text-[10px] text-emerald-700">
-              {t('admin.kanban.resendDone')}
-            </span>
-          )}
-          {resendStatus === 'error' && resendMessage && (
-            <span data-testid="resend-feedback" role="alert" className="px-2 text-[10px] text-red-600">
-              {resendMessage}
-            </span>
-          )}
-        </div>
+        <KanbanCardResend onResend={onResend} status={resendStatus} message={resendMessage} blockedReason={resendBlockedReason} lastMessagedAt={lastMessagedAt} />
       )}
 
       {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}
