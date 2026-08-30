@@ -23,6 +23,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 
 import { PublicVacancyController } from '../PublicVacancyController';
 import { Request, Response } from 'express';
+import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,24 @@ function mockReqRes(params: Record<string, string> = {}): [Request, Response] {
 
 const VACANCY_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
+/** Status que tornam uma vaga publicável — vai como parâmetro, não literal no SQL. */
+const STATUS_PUBLICAVEL = ['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE'];
+
+/**
+ * A LISTA DE PERMISSÃO da resposta pública, escrita por extenso de propósito.
+ *
+ * Antes o controller devolvia a linha crua (`res.json({ data: row })`), então o que a rota
+ * expunha era decidido pelo SELECT — e uma coluna nova ia ao ar sozinha. Esta lista é o
+ * contrato: acrescentar campo à resposta obriga a passar por aqui, e quem passar tem de
+ * justificar que o campo não é clínico.
+ */
+const CAMPOS_PUBLICOS = [
+  'id', 'case_number', 'vacancy_number', 'title', 'status', 'service_type',
+  'required_professions', 'required_sex', 'age_range_min', 'age_range_max',
+  'worker_attributes', 'schedule', 'schedule_days_hours', 'salary_text',
+  'talentum_description', 'talentum_whatsapp_url', 'patient_zone', 'country', 'created_at',
+].sort();
+
 function makeVacancyRow(overrides: Record<string, unknown> = {}) {
   return {
     id: VACANCY_ID,
@@ -44,8 +63,6 @@ function makeVacancyRow(overrides: Record<string, unknown> = {}) {
     vacancy_number: 1,
     title: 'CASO 42',
     status: 'SEARCHING',
-    dependency_level: 'MODERADA',
-    pathologies: ['TEA'],
     service_type: ['AT'],
     required_professions: ['psicopedagogo'],
     required_sex: null,
@@ -85,10 +102,15 @@ describe('PublicVacancyController.getById', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('jp.id = $1');
     expect(sql).toContain('jp.deleted_at IS NULL');
-    expect(params).toEqual([VACANCY_ID]);
+    expect(params).toEqual([VACANCY_ID, STATUS_PUBLICAVEL]);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: row });
+    const data = (res.json as jest.Mock).mock.calls[0][0].data;
+    // A resposta é uma PROJEÇÃO explícita, não mais a linha crua do banco: o conjunto de
+    // chaves é o contrato, e é ele que impede campo novo de vazar sem decisão.
+    expect(Object.keys(data).sort()).toEqual(CAMPOS_PUBLICOS);
+    expect(data.id).toBe(row.id);
+    expect(data.title).toBe(row.title);
   });
 
   it('returns 200 with vacancy data when found by slug (caso{N}-{N})', async () => {
@@ -103,10 +125,12 @@ describe('PublicVacancyController.getById', () => {
     expect(sql).toContain('jp.case_number = $1');
     expect(sql).toContain('jp.vacancy_number = $2');
     expect(sql).toContain('jp.deleted_at IS NULL');
-    expect(params).toEqual([42, 1]);
+    expect(params).toEqual([42, 1, STATUS_PUBLICAVEL]);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: row });
+    const data = (res.json as jest.Mock).mock.calls[0][0].data;
+    expect(Object.keys(data).sort()).toEqual(CAMPOS_PUBLICOS);
+    expect(data.case_number).toBe(row.case_number);
   });
 
   it('returns 404 when vacancy not found', async () => {
@@ -155,8 +179,7 @@ describe('PublicVacancyController.getById', () => {
       'jp.vacancy_number',
       'jp.title',
       'jp.status',
-      'p.dependency_level',
-      'p.diagnosis AS pathologies',
+      // as duas colunas clínicas saíram desta lista em 25/08/2026 — ver a guarda de fronteira
       'p.service_type AS service_type',
       'jp.required_professions',
       'jp.required_sex',
@@ -247,8 +270,12 @@ describe('PublicVacancyController.getById', () => {
     expect(sql).not.toMatch(/p\.last_name/);
     expect(sql).not.toMatch(/p\.insurance/);
 
-    // diagnosis exposed only as anonymized 'pathologies' alias — not the raw name/surname
-    expect(sql).toContain('p.diagnosis AS pathologies');
+    // ⚠️ INVERTIDO em 25/08/2026. Estava assim, e era a régua protegendo o defeito:
+    //     // diagnosis exposed only as anonymized 'pathologies' alias
+    //     expect(sql).toContain('p.diagnosis AS pathologies');
+    // Apelido não anonimiza: medido, `patients.diagnosis` tem 156 valores distintos para 184
+    // pacientes (85%) e saía junto de `patient_zone`. Quem consertasse a rota reprovava aqui.
+    expect(sql).not.toMatch(/p\.diagnosis/);
 
     // Coarse location: bairro + cidade + província (estruturado de pa.*, fallback pra texto-livre)
     expect(sql).toContain('pa.neighborhood');
@@ -263,5 +290,75 @@ describe('PublicVacancyController.getById', () => {
     expect(sql).not.toMatch(/pa\.complement/);
     expect(sql).not.toMatch(/pa\.lat/);
     expect(sql).not.toMatch(/pa\.lng/);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GUARDA DE FRONTEIRA (C3/C4 do parecer do `lex`, 25/08/2026)
+  //
+  // Estes testes NÃO afirmam sobre a lista de campos que eu lembrei de checar — foi assim que o
+  // vazamento reincidiu três vezes no PR #249, cada vez por um caminho novo. Eles afirmam sobre
+  // o que ATRAVESSA a fronteira: o corpo inteiro da resposta, serializado.
+  //
+  // ⚠️ O teste que existia aqui antes fazia `expect(sql).toContain('p.diagnosis AS pathologies')`,
+  // com o comentário "diagnosis exposed only as anonymized 'pathologies' alias". Ele TRAVAVA o
+  // defeito: quem consertasse reprovava. Apelido não é anonimização — medido, o campo tem 156
+  // valores distintos para 184 pacientes.
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('guarda de fronteira — dado clínico não atravessa', () => {
+    it('o corpo da resposta não contém dado clínico, mesmo se o banco devolver a coluna', async () => {
+      // A fixture carrega texto clínico REAL e finge que o banco devolveu as duas colunas
+      // proibidas — é o cenário "alguém acrescentou a coluna ao SELECT e ninguém percebeu".
+      // A projeção por lista de permissão tem de barrar, sem depender do SQL estar certo.
+      const row = makeVacancyRow({
+        diagnosis: TEXTO_CLINICO,
+        pathologies: TEXTO_CLINICO,
+        dependency_level: 'TOTAL',
+      });
+      mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await controller.getById(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      esperaSemVazamentoClinico(body);
+      expect(body.data).not.toHaveProperty('pathologies');
+      expect(body.data).not.toHaveProperty('diagnosis');
+      expect(body.data).not.toHaveProperty('dependency_level');
+    });
+
+    it('o SQL não pede as colunas clínicas', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await controller.getById(req, res);
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).not.toMatch(/p\.diagnosis/);
+      expect(sql).not.toMatch(/dependency_level/);
+    });
+
+    it('a rota só responde por vaga publicável — rascunho e status fechado não saem', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await controller.getById(req, res);
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toMatch(/is_draft\s*=\s*false/);
+      expect(sql).toMatch(/status\s*=\s*ANY/);
+      // A lista de status vai como PARÂMETRO — se virar literal no SQL, este teste segue
+      // passando por engano, então checo o parâmetro e não só o texto.
+      expect(params[params.length - 1]).toEqual(
+        ['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE'],
+      );
+    });
+
+    it('o placeholder do status acompanha o formato do id (slug tem 2 params, uuid tem 1)', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      const [req, res] = mockReqRes({ id: 'caso42-1' });
+      await controller.getById(req, res);
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(params).toHaveLength(3);          // case_number, vacancy_number, status[]
+      expect(sql).toMatch(/\$3::text\[\]/);
+    });
   });
 });

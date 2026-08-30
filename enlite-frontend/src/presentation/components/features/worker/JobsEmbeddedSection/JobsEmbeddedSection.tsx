@@ -11,7 +11,6 @@ import {
   getWorkerTypeOptions,
   getProvinceOptions,
   getLocalityOptions,
-  getPathologyOptions,
   getSexOptions,
   MOCK_JOBS,
   USE_MOCK,
@@ -41,7 +40,6 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
     localidad: dto.city ?? '',
     barrio: dto.neighborhood ?? '',
     workerSex: dto.worker_sex ?? '',
-    pathologies: dto.pathologies ?? '',
     description: dto.description,
     service: dto.service ?? '',
     daysAndHours: dto.schedule_days_hours ?? '',
@@ -63,7 +61,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
   const workerTypeOptions = useMemo(() => getWorkerTypeOptions(t), [t]);
   const provinceOptions = useMemo(() => getProvinceOptions(t), [t]);
   const localityOptions = useMemo(() => getLocalityOptions(), []);
-  const pathologyOptions = useMemo(() => getPathologyOptions(), []);
   const sexOptions = useMemo(() => getSexOptions(t), [t]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,7 +92,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
   const [filterType, setFilterType] = useState('');
   const [filterProvince, setFilterProvince] = useState('');
   const [filterLocality, setFilterLocality] = useState('');
-  const [filterPathology, setFilterPathology] = useState('');
   const [filterSex, setFilterSex] = useState('');
 
   const filteredJobs = useMemo(() => {
@@ -104,7 +100,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
       const matchesSearch = !searchTerm ||
         job.title.toLowerCase().includes(searchLower) ||
         job.code.includes(searchTerm) ||
-        job.pathologies.toLowerCase().includes(searchLower) ||
         job.workerType.toLowerCase().includes(searchLower) ||
         job.localidad.toLowerCase().includes(searchLower) ||
         job.provincia.toLowerCase().includes(searchLower);
@@ -112,12 +107,11 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
       const matchesType = !filterType || job.workerType === filterType;
       const matchesProvince = !filterProvince || job.provincia === filterProvince;
       const matchesLocality = !filterLocality || job.localidad === filterLocality;
-      const matchesPathology = !filterPathology || job.pathologies.toLowerCase().includes(filterPathology.toLowerCase());
       const matchesSex = !filterSex || job.workerSex === filterSex;
 
-      return matchesSearch && matchesType && matchesProvince && matchesLocality && matchesPathology && matchesSex;
+      return matchesSearch && matchesType && matchesProvince && matchesLocality && matchesSex;
     });
-  }, [jobs, searchTerm, filterType, filterProvince, filterLocality, filterPathology, filterSex]);
+  }, [jobs, searchTerm, filterType, filterProvince, filterLocality, filterSex]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -150,12 +144,11 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
     setFilterType('');
     setFilterProvince('');
     setFilterLocality('');
-    setFilterPathology('');
     setFilterSex('');
   };
 
   const activeFiltersCount = [
-    searchTerm, filterType, filterProvince, filterLocality, filterPathology, filterSex
+    searchTerm, filterType, filterProvince, filterLocality, filterSex
   ].filter(Boolean).length;
 
   if (isLoading) {
@@ -214,7 +207,7 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <Select
             inputSize="compact"
             value={filterType}
@@ -235,13 +228,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
             onValueChange={setFilterLocality}
             options={localityOptions}
             placeholder={t('jobs.filters.locality')}
-          />
-          <Select
-            inputSize="compact"
-            value={filterPathology}
-            onValueChange={setFilterPathology}
-            options={pathologyOptions}
-            placeholder={t('jobs.filters.pathology')}
           />
           <Select
             inputSize="compact"
@@ -335,11 +321,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
                 <div>
                   <span className="text-[#180149] font-semibold">{t('jobs.fields.schedule')}:</span> {job.daysAndHours.substring(0, 30)}...
                 </div>
-              </div>
-
-              <div className="text-xs text-[#737373] mb-2 font-lexend font-medium">
-                <span className="text-[#180149] font-semibold">{t('jobs.fields.pathology')}:</span>{' '}
-                <span className="text-[#180149]">{job.pathologies}</span>
               </div>
 
               <div className="text-xs text-[#737373] font-lexend font-medium">

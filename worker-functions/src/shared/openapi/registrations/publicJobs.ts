@@ -11,14 +11,19 @@ import { ErrorResponseSchema } from '../schemas/common';
  * e os tipos não se chain bem em schemas com `.pipe().default()`. Custo
  * aceito: 2 lugares com lista de campos idêntica; review preventivo cobre.
  */
-const PublicJobsV1QuerySchema = z.object({
+// ⚠️ EXPORTADO desde 25/08/2026 para que exista uma RÉGUA. O comentário acima dizia
+// *"2 lugares com lista de campos idêntica; review preventivo cobre"* — e não cobriu: a doc
+// declarava o campo clínico no SINGULAR (`pathology`) enquanto o DTO devolvia o PLURAL
+// (`pathologies`), e ninguém comparou os dois por meses. Agora um teste compara.
+export const PublicJobsV1QuerySchema = z.object({
   country: z.string().optional().openapi({
     description: 'Código ISO 3166-1 alpha-2 do país (default AR). Transformado para uppercase.',
     example: 'AR',
   }),
   state: z.string().optional().openapi({ description: 'Estado/província do atendimento.', example: 'Buenos Aires' }),
   city: z.string().optional().openapi({ description: 'Cidade do atendimento.', example: 'Palermo' }),
-  pathology: z.string().optional().openapi({ description: 'Patologia do paciente para filtrar vagas.', example: 'TEA' }),
+  // `pathology` foi removido em 25/08/2026: filtrava sobre a coluna clinica do paciente e
+  // transformava esta rota aberta num oraculo. O controller devolve 400 se ainda for enviado.
   worker_sex: z.enum(['FEMALE', 'MALE', 'BOTH']).optional().openapi({ description: 'Sexo do worker preferido pela família.' }),
   worker_type: z.string().optional().openapi({ description: 'Tipo de worker (AT, CUIDADOR, etc.).', example: 'AT' }),
   q: z.string().optional().openapi({ description: 'Busca textual livre no título e descrição.', example: 'acompanhante' }),
@@ -55,7 +60,9 @@ const PublicJobV1ItemSchema = registry.register(
       example: 'Palermo',
       description: 'Rótulo único de localização (o mais específico: barrio → localidad → provincia). Pronto pro portal exibir no título do accordion sem escolher entre campos.',
     }),
-    pathology: z.string().nullable().openapi({ example: 'TEA' }),
+  // O campo clinico saiu da resposta em 25/08/2026. Nota de arqueologia: ele estava
+  // documentado aqui no SINGULAR (`pathology`) enquanto o DTO devolvia o PLURAL
+  // (`pathologies`) -- a doc e a implementacao divergiam, e nenhuma regua comparava as duas.
     worker_sex: z.string().nullable().openapi({ example: 'FEMALE' }),
     worker_type: z.string().nullable().openapi({ example: 'AT' }),
     short_url: z.string().nullable().openapi({ example: 'https://enl.it/abc123' }),

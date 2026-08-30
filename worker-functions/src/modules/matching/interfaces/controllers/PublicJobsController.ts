@@ -22,6 +22,26 @@ export class PublicJobsController {
   async listActiveJobs(req: Request, res: Response): Promise<void> {
     const start = Date.now();
 
+    // ── Recusa EXPLICITA do filtro clinico removido (25/08/2026) ─────────────
+    // O schema nao e `.strict()` e nao pode ser: o portal WordPress manda um `_` de
+    // cache-bust que passaria a dar 400. Sem esta checagem, `?pathology=` seria descartado
+    // em SILENCIO — o chamador continuaria enviando, receberia a lista inteira achando que
+    // filtrou, e ninguem descobriria que o filtro morreu. Falha silenciosa e pior que erro.
+    if (req.query.pathology !== undefined) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid query params',
+        details: [{
+          path: ['pathology'],
+          code: 'removed',
+          message:
+            'The `pathology` filter was removed: it matched on patient clinical data on an ' +
+            'unauthenticated route. Filter by state, city, worker_type or q instead.',
+        }],
+      });
+      return;
+    }
+
     // Validate query params
     const parsed = PublicJobsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -44,7 +64,13 @@ export class PublicJobsController {
           event: 'public_jobs_list',
           count: jobs.length,
           durationMs: duration,
-          filters,
+          // ⚠️ C6 do parecer do `lex`: `filters` NAO sai inteiro no log. O `q` e busca livre
+          // digitada por quem chama, entao pode conter termo clinico — e este log carrega
+          // `req.ip` e cai em bucket global. Termo clinico + IP no mesmo registro e o achado
+          // F0 do plano de compliance, por outra porta. Sai a FORMA da consulta, nunca o
+          // conteudo: quais filtros vieram, e o tamanho do termo.
+          filterKeys: Object.keys(filters).sort(),
+          qLength: filters.q ? filters.q.length : 0,
           ip: req.ip,
         }),
       );

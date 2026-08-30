@@ -58,7 +58,6 @@ describe('mapPublicJobRow', () => {
       worker_profile_sought: 'Con experiencia en TEA',
       schedule: null,
       service: 'DOMICILIO',
-      pathologies: 'TEA',
       state: 'Buenos Aires',
       city: 'Palermo',
       detail_link: 'https://srt.io/abc',
@@ -88,7 +87,6 @@ describe('mapPublicJobRow', () => {
     expect(dto.schedule_days_hours).toBe('Lunes a Viernes 9-17');
     expect(dto.worker_profile_sought).toBe('Con experiencia en TEA');
     expect(dto.service).toBe('DOMICILIO');
-    expect(dto.pathologies).toBe('TEA');
     expect(dto.state).toBe('Buenos Aires');
     expect(dto.city).toBe('Palermo');
     expect(dto.detail_link).toBe('https://srt.io/abc');
@@ -122,7 +120,6 @@ describe('mapPublicJobRow', () => {
       schedule_days_hours: null,
       worker_profile_sought: null,
       service: null,
-      pathologies: null,
       state: null,
       city: null,
     });
@@ -131,7 +128,6 @@ describe('mapPublicJobRow', () => {
     expect(dto.schedule_days_hours).toBeNull();
     expect(dto.worker_profile_sought).toBeNull();
     expect(dto.service).toBeNull();
-    expect(dto.pathologies).toBeNull();
     expect(dto.state).toBeNull();
     expect(dto.city).toBeNull();
   });
@@ -310,5 +306,27 @@ describe('mapPublicJobRow', () => {
   it('returns schedule_week null when the schedule JSONB is free text (unstructurable)', () => {
     const dto = mapPublicJobRow(makeRow({ schedule: 'Lunes a viernes 9 a 17hs' }));
     expect(dto.schedule_week).toBeNull();
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GUARDA DE FRONTEIRA — o DTO publico nao carrega dado clinico (25/08/2026)
+  //
+  // Ate esta data havia aqui `expect(dto.pathologies).toBe('TEA')`: a suite EXIGIA que o
+  // diagnostico do paciente saisse no feed publico. Quem consertasse reprovava.
+  // O teste de agora e o inverso, e assere sobre o OBJETO INTEIRO — nao sobre os campos
+  // que alguem lembrou de listar, que foi exatamente como isto passou despercebido.
+  // ══════════════════════════════════════════════════════════════════════════
+  it('nao emite dado clinico, mesmo quando a linha do banco o traz', () => {
+    const CLINICO = 'Alzheimer moderado + diabetes tipo II, requiere asistencia total';
+    // A linha finge que alguem reintroduziu a coluna no SELECT sem tocar no mapper.
+    const row = makeRow({ pathologies: CLINICO, diagnosis: CLINICO } as never);
+
+    const dto = mapPublicJobRow(row);
+
+    expect(dto).not.toHaveProperty('pathologies');
+    expect(dto).not.toHaveProperty('diagnosis');
+    // A assercao que importa: nada do texto clinico atravessa, por campo NENHUM.
+    expect(JSON.stringify(dto)).not.toContain('Alzheimer');
+    expect(JSON.stringify(dto)).not.toContain('diabetes');
   });
 });

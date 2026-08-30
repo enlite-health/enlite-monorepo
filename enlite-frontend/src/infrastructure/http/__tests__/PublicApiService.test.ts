@@ -63,6 +63,18 @@ describe('PublicApiService', () => {
       expect(calledUrl).toContain('q=acompanhante');
     });
 
+    it('NUNCA envia `pathology`, nem se o chamador insistir (o backend devolve 400)', async () => {
+      const spy = mockFetch([]);
+
+      // `as never` força um campo que o tipo já não aceita — é assim que se prova que a
+      // proteção não depende só do TypeScript. Um chamador em JS puro faria exatamente isto.
+      await PublicApiService.getPublicJobs({ country: 'AR', pathology: 'Alzheimer' } as never);
+
+      const calledUrl = spy.mock.calls[0][0] as string;
+      expect(calledUrl).not.toContain('pathology');
+      expect(calledUrl).not.toContain('Alzheimer');
+    });
+
     it('ignora filters com valor undefined ou string vazia', async () => {
       const spy = mockFetch([]);
 
@@ -70,13 +82,16 @@ describe('PublicApiService', () => {
         country: 'AR',
         state: '',
         city: undefined,
-        pathology: undefined,
       });
 
       const calledUrl = spy.mock.calls[0][0] as string;
       expect(calledUrl).toContain('country=AR');
       expect(calledUrl).not.toContain('state=');
       expect(calledUrl).not.toContain('city=');
+      // ⚠️ CONTROLE POSITIVO (25/08/2026): `pathology` saiu do tipo, mas a asserção FICA — e
+      // com `as never` de propósito, para valer mesmo se alguém reintroduzir o campo. O
+      // backend responde **400** a este parâmetro; mandá-lo quebra a listagem inteira, não só
+      // o filtro. Régua que some junto com o campo não protege contra o campo voltar.
       expect(calledUrl).not.toContain('pathology=');
     });
 

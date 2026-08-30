@@ -16,7 +16,6 @@ export interface PublicJobRow {
    */
   schedule: unknown;
   service: string | null;
-  pathologies: string | null;
   state: string | null;
   city: string | null;
   detail_link: string;
@@ -61,7 +60,6 @@ export interface PublicJobDto {
   schedule_days_hours: string | null;
   worker_profile_sought: string | null;
   service: string | null;
-  pathologies: string | null;
   state: string | null;
   city: string | null;
   detail_link: string;
