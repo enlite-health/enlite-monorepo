@@ -91,6 +91,67 @@ async function abrirComAdmin(browser: Browser, rota: string): Promise<{ page: Pa
   return { page, fechar: async () => { await ctx.close(); } };
 }
 
+/**
+ * PORTÃO DA 3.2b. O fuso só é provável pela capability MCP, e ela exige um principal
+ * dedicado (`mcp-principal-e2e-prod`, UMA capability) que é ato do Gabriel em produção.
+ * Sem o token, a 3.2b é PULADA com o motivo escrito — nunca em silêncio.
+ */
+const MCP_TOKEN = process.env.MCP_TOKEN;
+const MCP_URL = process.env.MCP_URL ?? 'https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app/mcp/v1';
+
+/**
+ * +180 min: Buenos Aires é UTC−3 e a Argentina NÃO tem horário de verão desde 2009,
+ * então o offset é CONSTANTE — não existe "coincide em parte do dia".
+ * É por isso que um delta exato pode ser asserção, e não aproximação.
+ */
+const EXPECTED_OFFSET_MIN = 180;
+const SEMANA_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface McpSlot { index: number; label: string; iso: string }
+
+/**
+ * Chama `worker.interview.slots.list` no MCP de produção.
+ *
+ * ⚠️ `Accept` com os DOIS tipos: o transporte é StreamableHTTP, e ele recusa a
+ * requisição sem `text/event-stream` no Accept mesmo respondendo JSON
+ * (`enableJsonResponse: true`). Nome canônico COM pontos — `sanitizedToolNames` só é
+ * `true` no caminho OAuth, e este é o caminho de service principal.
+ */
+async function listarSlotsPeloMcp(jobPostingId: string): Promise<McpSlot[]> {
+  const res = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${MCP_TOKEN}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'worker.interview.slots.list', arguments: { jobPostingId } },
+    }),
+  });
+  // NUNCA logar o corpo em caso de erro: ele pode ecoar o header de autorização em
+  // alguns proxies. Só o status, como faz o `adminApi`.
+  expect(res.ok, `MCP tools/call respondeu HTTP ${res.status}`).toBe(true);
+
+  const body = (await res.json()) as {
+    result?: { structuredContent?: { slots?: McpSlot[] }; content?: Array<{ type: string; text?: string }> };
+    error?: { message?: string };
+  };
+  expect(body.error, `MCP devolveu erro JSON-RPC: ${body.error?.message ?? ''}`).toBeUndefined();
+
+  // O SDK devolve `structuredContent` quando o handler tem output schema; senão o
+  // payload vem serializado no primeiro bloco de texto. Aceitar as duas formas evita
+  // que uma mudança de SDK vire "zero slots" — que passaria como falso negativo.
+  const direto = body.result?.structuredContent?.slots;
+  if (direto) return direto;
+  const texto = body.result?.content?.find((c) => c.type === 'text')?.text;
+  expect(texto, 'a resposta do MCP não trouxe nem structuredContent nem bloco de texto').toBeTruthy();
+  return ((JSON.parse(texto!) as { slots?: McpSlot[] }).slots ?? []);
+}
+
 test.describe.serial('Spec 009 · Fase 3 — ciclo da vaga pela mão do staff', () => {
   let adminCtx: APIRequestContext | undefined;
 
@@ -220,6 +281,64 @@ test.describe.serial('Spec 009 · Fase 3 — ciclo da vaga pela mão do staff', 
       'NULL EXPLÍCITO LIMPA — o endpoint não está apenas ignorando escritas de `recurring`',
     ).toBeNull();
     expect(limpo.meet_recurring_link ?? null, 'e a sala foi junto').toBeNull();
+  });
+
+  test('[@route:PUT /api/admin/vacancies/:id/meet-links @depth:happy] 3.2b — o slot recorrente resolve as ocorrências NO FUSO DA VAGA, nunca em UTC (D213)', async () => {
+    test.skip(
+      !MCP_TOKEN,
+      'PORTÃO da 3.2b: falta o principal `mcp-principal-e2e-prod` (uma capability: ' +
+        'worker.interview.slots.list) e o secret `e2e-mcp-token` no runner. É ato do Gabriel ' +
+        'em produção — ver "Fase 3 · 3.2b" em specs/009-e2e-prod-jornada-staff/tasks.md.',
+    );
+
+    // A 3.2a limpou o recorrente no fim; regrava para esta prova.
+    const grava = await adminCtx!.put(`/api/admin/vacancies/${vaga.id}/meet-links`, {
+      data: { meet_links: [null, null, null], recurring: RECORRENTE },
+    });
+    expect(grava.status(), 'PUT /meet-links regrava o slot recorrente (200)').toBe(200);
+
+    const slots = await listarSlotsPeloMcp(vaga.id!);
+
+    // ── identificação POR CONSTRUÇÃO, não por link ──────────────────────────
+    // A capability declara "Meet links are never returned", então não dá para achar a
+    // ocorrência do recorrente pelo link que gravamos. Mas a vaga da 3.1 nasce SEM
+    // `meet_link_N`, logo sem `meet_datetime_N`: a oferta é EXATAMENTE as
+    // RECURRING_OCCURRENCES = 2 ocorrências do recorrente. Daí `=== 2`, e não `>= 2` —
+    // um `>=` deixaria um slot fixo intruso passar despercebido e mudaria o que se prova.
+    expect(
+      slots.length,
+      'vaga sem slot fixo ⇒ a oferta é exatamente as 2 ocorrências do recorrente',
+    ).toBe(2);
+
+    // ── as duas ocorrências são semanais ────────────────────────────────────
+    const t0 = Date.parse(slots[0]!.iso);
+    const t1 = Date.parse(slots[1]!.iso);
+    expect(Number.isNaN(t0) || Number.isNaN(t1), 'os dois `iso` são datas válidas').toBe(false);
+    expect(t1 - t0, 'as ocorrências do recorrente são separadas por exatamente 7×24 h').toBe(SEMANA_MS);
+
+    // ── A PROVA DO FUSO ─────────────────────────────────────────────────────
+    // O staff digitou 08:30 LOCAL. Se `zonedLocalToInstant` tratasse isso como UTC, o
+    // instante viria 3 h errado — e o LABEL continuaria dizendo "08:30", porque o mesmo
+    // erro na formatação cancela o erro na interpretação. Só o `iso` denuncia o par.
+    //
+    // 🔒 `getUTC*` de propósito: o Cloud Run Job roda em UTC e o laptop em −03. Um
+    // `getHours()` aqui mediria o fuso do RUNNER e daria resultados opostos nos dois.
+    const [hh, mm] = RECORRENTE.time.split(':').map(Number);
+    const minutosLocais = hh! * 60 + mm!;
+    for (const slot of slots) {
+      const d = new Date(slot.iso);
+      const minutosUtc = d.getUTCHours() * 60 + d.getUTCMinutes();
+      expect(
+        minutosUtc - minutosLocais,
+        `FUSO DA VAGA (D213): ${RECORRENTE.time} em Buenos Aires é ${EXPECTED_OFFSET_MIN} min ` +
+          `depois em UTC. Delta 0 significaria que a hora local foi interpretada COMO UTC — ` +
+          `e o convite ofereceria um horário 3 h errado, com o rótulo parecendo certo`,
+      ).toBe(EXPECTED_OFFSET_MIN);
+      // O rótulo continua sendo verificado, mas como COMPANHEIRO do instante, nunca sozinho.
+      expect(slot.label, 'o rótulo legível carrega a hora local que o staff digitou').toContain(
+        RECORRENTE.time,
+      );
+    }
   });
 
   test('[@route:/admin/vacancies @depth:happy] 3.3 — o combobox das listas longas filtra por digitação, e a escolha vira FILTRO na requisição', async ({ browser }) => {

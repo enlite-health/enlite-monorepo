@@ -40,6 +40,7 @@ fi
 : "${E2E_ADMIN_PASSWORD:?defina E2E_ADMIN_PASSWORD no e2e-prod/.env.local antes do deploy}"
 : "${FIREBASE_API_KEY:?defina FIREBASE_API_KEY no e2e-prod/.env.local antes do deploy}"
 ADMIN_PW_SECRET="e2e-admin-password"                   # secret do Secret Manager (criado/atualizado abaixo)
+MCP_TOKEN_SECRET="e2e-mcp-token"                       # token do principal MCP `e2e-prod` (Spec 009 · 3.2b)
 
 # IAM que a jornada do paciente exige na SA do JOB (concedidos 2026-07-30):
 #   • roles/logging.viewer no projeto        → ler os logs reais (Cloud Logging)
@@ -124,9 +125,14 @@ RUN_JOB_ARGS=(
   # MONITOR_ALERT_TO → destinatário do email (o reporter custom dispara a CADA run).
   # Credenciais (admin + Firebase) exigidas pelas JORNADAS (regression) e testes admin, que o
   # job agora exercita junto do smoke. FIREBASE_API_KEY é público (bundle do front) → env comum.
-  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com,E2E_ADMIN_EMAIL=${E2E_ADMIN_EMAIL},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-},GCP_PROJECT_ID=${GCP_PROJECT_ID:-enlite-prd},ADMISSION_IMPERSONATE_EMAIL=${ADMISSION_IMPERSONATE_EMAIL:-enlite@enlite.health},ADMISSION_CALENDAR_ID_AR=${ADMISSION_CALENDAR_ID_AR},ADMISSION_CALENDAR_ID_BR=${ADMISSION_CALENDAR_ID_BR},DWD_SIGNER_SA=${DWD_SIGNER_SA:-enlite-functions-sa@enlite-prd.iam.gserviceaccount.com}"
-  # Secrets (Secret Manager): SendGrid (email) + senha do admin (login staff das jornadas/admin).
-  --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest,E2E_ADMIN_PASSWORD=${ADMIN_PW_SECRET}:latest"
+  --set-env-vars="PROD_BASE_URL=${PROD_BASE_URL},PROD_API_URL=${PROD_API_URL},ENFORCE_COVERAGE=smoke,CI=true,MONITOR_ALERT_TO=gabriel.g.stein@gmail.com,E2E_ADMIN_EMAIL=${E2E_ADMIN_EMAIL},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN:-},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-},GCP_PROJECT_ID=${GCP_PROJECT_ID:-enlite-prd},ADMISSION_IMPERSONATE_EMAIL=${ADMISSION_IMPERSONATE_EMAIL:-enlite@enlite.health},ADMISSION_CALENDAR_ID_AR=${ADMISSION_CALENDAR_ID_AR},ADMISSION_CALENDAR_ID_BR=${ADMISSION_CALENDAR_ID_BR},DWD_SIGNER_SA=${DWD_SIGNER_SA:-enlite-functions-sa@enlite-prd.iam.gserviceaccount.com},MCP_URL=${MCP_URL:-https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app/mcp/v1}"
+  # Secrets (Secret Manager): SendGrid (email) + senha do admin (login staff das jornadas/admin)
+  # + o token do principal MCP `e2e-prod` (Spec 009 · 3.2b).
+  #
+  # MCP_TOKEN é o token de UM principal com UMA capability (worker.interview.slots.list) —
+  # ele NÃO carrega a allowlist, que vive do lado do MCP em `mcp-principal-e2e-prod`. Sem o
+  # secret o teste de fuso PULA com o motivo escrito; ele nunca falha por credencial ausente.
+  --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest,E2E_ADMIN_PASSWORD=${ADMIN_PW_SECRET}:latest,MCP_TOKEN=${MCP_TOKEN_SECRET}:latest"
   --max-retries=1          # 1 retry de nível-job absorve blip de cold start/egress; alerta só em falha real
   --task-timeout=900s      # 15min: smoke + admin + jornadas reais (publish Talentum ~30s + teardown)
 )
