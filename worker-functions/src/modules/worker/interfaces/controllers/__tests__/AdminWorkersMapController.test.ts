@@ -58,8 +58,11 @@ const req = (body: unknown, uid = 'staff-1') => ({ body, user: { uid } }) as unk
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'w1', email: 'w1@test.local', first_name_encrypted: 'Zm9v', last_name_encrypted: 'YmFy',
   status: 'REGISTERED', profession: 'AT', latitude: '-34.6', longitude: '-58.4',
-  city: 'CABA', neighborhood: 'Palermo', state: 'Buenos Aires', distance_km: null, ...over,
+  city: 'CABA', neighborhood: 'Palermo', state: 'Buenos Aires', distance_km: null, total_count: 1, ...over,
 });
+
+/** `COUNT(*) OVER()` é igual em TODA linha: é o total do filtro, não o da página. */
+const withTotal = <R extends object>(total: number, rows: R[]): Array<R & { total_count: number }> => rows.map((r) => ({ ...r, total_count: total }));
 
 describe('WorkersMapBodySchema (lex C1/C3/C4)', () => {
   it('country é obrigatório', () => {
@@ -176,6 +179,15 @@ describe('buildWorkersMapQuery', () => {
     expect(sql).toContain('LIMIT $6');
   });
 
+  it('a contagem sai do banco: COUNT(*) OVER() no SELECT, antes do LIMIT — e sem param novo', () => {
+    const { sql, params } = buildWorkersMapQuery(parse(SCOPE));
+    expect(sql).toContain('COUNT(*) OVER()::int AS total_count');
+    // a window está no SELECT (roda sobre o filtro inteiro) e o LIMIT vem depois
+    expect(sql.indexOf('COUNT(*) OVER()')).toBeLessThan(sql.indexOf('FROM workers'));
+    expect(sql.indexOf('COUNT(*) OVER()')).toBeLessThan(sql.lastIndexOf('LIMIT $'));
+    expect(params).toEqual([ACTIVE, 'AR', CABA.lng, CABA.lat, 5000, MAX_MAP_POINTS]);
+  });
+
   it('o SELECT não pede e-mail, telefone nem documento', () => {
     const { sql } = buildWorkersMapQuery(parse(SCOPE));
     expect(sql.slice(0, sql.indexOf('FROM workers'))).not.toMatch(/email|phone|document/);
@@ -200,21 +212,22 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(mockLogInfo).not.toHaveBeenCalled();
   });
 
-  it('200: nome descriptografado, documentsComplete por status, sem-coordenada contado, truncated no teto — e o e-mail NUNCA sai', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [
+  it('200: nome descriptografado, documentsComplete por status, sem-coordenada contado, limit cheio sem corte — e o e-mail NUNCA sai', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(4, [
       row(),
       row({ id: 'w2', status: 'INCOMPLETE_REGISTER', latitude: null, longitude: null, first_name_encrypted: null, last_name_encrypted: null, email: 'semnome@test.local', profession: null, city: null, neighborhood: null, state: null }),
       row({ id: 'w3', latitude: 'abc', longitude: '-58.4', distance_km: '1.5' }),
       // o driver pode entregar número (coluna double) em vez de string
       row({ id: 'w4', latitude: -34.7, longitude: -58.5, distance_km: 2 }),
-    ] });
+    ]) });
     const res = mockRes();
     await controller.getMapPoints(req({ ...SCOPE, limit: 4 }), res);
     expect(res.statusCode).toBe(200);
     const body = res.body as { data: Array<Record<string, unknown>>; total: number; withoutCoordinates: number; truncated: boolean };
     expect(body.total).toBe(4);
     expect(body.withoutCoordinates).toBe(2);
-    expect(body.truncated).toBe(true);
+    // 4 vieram e 4 existem: encheu o limit e mesmo assim NÃO está cortado.
+    expect(body.truncated).toBe(false);
     expect(body.data[0]).toEqual({ id: 'w1', name: 'foo bar', lat: -34.6, lng: -58.4, status: 'REGISTERED', documentsComplete: true, profession: 'AT', city: 'CABA', neighborhood: 'Palermo', state: 'Buenos Aires', distanceKm: null });
     // sem nome → '—', e não o e-mail
     expect(body.data[1]).toMatchObject({ id: 'w2', name: '—', lat: null, lng: null, documentsComplete: false, profession: null, city: null, distanceKm: null });
@@ -239,7 +252,7 @@ describe('AdminWorkersMapController.getMapPoints', () => {
   });
 
   it('descriptografa só cifra não nula, em lotes, numa passada só, preservando a ordem', async () => {
-    const rows = Array.from({ length: 120 }, (_, k) => row({ id: `w${k}`, first_name_encrypted: Buffer.from(`n${k}`).toString('base64'), last_name_encrypted: k % 2 === 0 ? null : Buffer.from(`s${k}`).toString('base64') }));
+    const rows = withTotal(120, Array.from({ length: 120 }, (_, k) => row({ id: `w${k}`, first_name_encrypted: Buffer.from(`n${k}`).toString('base64'), last_name_encrypted: k % 2 === 0 ? null : Buffer.from(`s${k}`).toString('base64') })));
     let inFlight = 0; let maxInFlight = 0;
     mockDecrypt.mockImplementation(async (v: string) => {
       inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
@@ -258,6 +271,26 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(mockDecrypt).toHaveBeenCalledTimes(180);
     expect(mockDecrypt).not.toHaveBeenCalledWith(null);
     expect(maxInFlight).toBe(DECRYPT_BATCH);
+  });
+
+  it('teto 500: a lista corta, a CONTAGEM não — total vem do COUNT(*) OVER(), truncated marca o corte', async () => {
+    // O cenário que a mudança de 30/08 expõe: o filtro casa 4231 prestadores e
+    // o teto deixa passar 500. Se `total` fosse `data.length`, a tela diria
+    // "500 en 25 km" havendo 4231 — o número da tela viraria o tamanho da página.
+    const rows = withTotal(4231, Array.from({ length: MAX_MAP_POINTS }, (_, k) => row({ id: `w${k}` })));
+    mockQuery.mockResolvedValueOnce({ rows });
+    const res = mockRes();
+    await controller.getMapPoints(req(SCOPE), res);
+    const body = res.body as { data: unknown[]; total: number; truncated: boolean };
+    expect(MAX_MAP_POINTS).toBe(500);
+    expect(mockQuery.mock.calls[0][1].at(-1)).toBe(500); // o LIMIT que foi ao banco
+    expect(mockQuery.mock.calls[0][0]).toContain('COUNT(*) OVER()::int AS total_count');
+    expect(body.data).toHaveLength(500);
+    expect(body.total).toBe(4231);
+    expect(body.total).not.toBe(body.data.length);
+    expect(body.truncated).toBe(true);
+    // o log conta o que SAIU (500), e não ganhou campo novo
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({ msg: 'workers.map.read', uid: 'staff-1', country: 'AR', scope: 'radius', n: 500, withoutCoordinates: 0, truncated: true });
   });
 
   it('500: o log de erro leva só a origem — nenhum filtro, nome ou coordenada', async () => {

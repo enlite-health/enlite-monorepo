@@ -14,7 +14,8 @@ jest.mock('@shared/logging', () => ({
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import {
-  MAX_MAP_POINTS, hasScope, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, withMapScopeRules,
+  MAX_MAP_POINTS, hasScope, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, totalFromRows,
+  withMapScopeRules,
 } from '../mapQueryCommon';
 
 function mockRes(): Response & { body: unknown; statusCode: number } {
@@ -26,6 +27,19 @@ function mockRes(): Response & { body: unknown; statusCode: number } {
 
 const CABA = { lat: -34.6037, lng: -58.3816 };
 const Schema = withMapScopeRules(z.object({ ...mapScopeShape, extra: z.string().optional() }).strict());
+
+describe('MAX_MAP_POINTS (governança, 30/08)', () => {
+  it('o teto é 500 — literal, para que mexer nele sem pensar quebre aqui', () => {
+    // O CSV de /workers/export é adminOnly porque foi mal usado; o mapa é
+    // staffOnly e não pode virar a mesma porta. Mexer no número é decisão, não
+    // detalhe: se este teste ficar vermelho, é para alguém explicar o porquê.
+    expect(MAX_MAP_POINTS).toBe(500);
+    expect(Schema.safeParse({ country: 'AR', city: 'x', limit: 500 }).success).toBe(true);
+    expect(Schema.safeParse({ country: 'AR', city: 'x', limit: 501 }).success).toBe(false);
+    const dflt = Schema.safeParse({ country: 'AR', city: 'x' });
+    expect(dflt.success && dflt.data.limit).toBe(500);
+  });
+});
 
 describe('hasScope / withMapScopeRules (lex C3)', () => {
   it('escopo = centro+raio, ou state, ou city', () => {
@@ -58,6 +72,16 @@ describe('num', () => {
   });
 });
 
+describe('totalFromRows', () => {
+  it('lê o COUNT(*) OVER() da primeira linha (número ou string); sem linha, 0', () => {
+    expect(totalFromRows([{ total_count: 4231 }, { total_count: 4231 }])).toBe(4231);
+    expect(totalFromRows([{ total_count: '4231' }])).toBe(4231);
+    expect(totalFromRows([])).toBe(0);
+    expect(totalFromRows([{ total_count: null }])).toBe(0);
+    expect(totalFromRows([{}])).toBe(0);
+  });
+});
+
 describe('parseMapBody', () => {
   it('corpo válido volta tipado; inválido (ou ausente) responde 400 e volta null', () => {
     const okRes = mockRes();
@@ -78,21 +102,30 @@ describe('parseMapBody', () => {
 describe('respondMapPoints (lex C5)', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('conta sem coordenada, marca truncated no teto, loga sem coordenada/nome/UUID', () => {
+  it('total vem do BANCO (não do array), truncated é a diferença, e o log conta o que SAIU — sem coordenada/nome/UUID', () => {
     const res = mockRes();
     const data = [{ id: 'u-1', name: 'Ana', lat: -34.6, lng: -58.4 }, { id: 'u-2', name: 'Bia', lat: null, lng: null }];
-    respondMapPoints({ user: { uid: 'staff-9' } } as Request, res, 'x.map.read', { country: 'AR', center: CABA, limit: 2 }, data);
+    respondMapPoints({ user: { uid: 'staff-9' } } as Request, res, 'x.map.read', { country: 'AR', center: CABA }, data, 4231);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, data, total: 2, withoutCoordinates: 1, truncated: true });
+    // 2 pontos vieram, 4231 existem: a tela diz a verdade e avisa que está cortada.
+    expect(res.body).toEqual({ success: true, data, total: 4231, withoutCoordinates: 1, truncated: true });
     expect(mockLogInfo).toHaveBeenCalledTimes(1);
     const entry = mockLogInfo.mock.calls[0][0];
+    // `n` é o que saiu; o log NÃO ganhou campo novo (nada de PII a mais).
     expect(entry).toEqual({ msg: 'x.map.read', uid: 'staff-9', country: 'AR', scope: 'radius', n: 2, withoutCoordinates: 1, truncated: true });
     expect(JSON.stringify(entry)).not.toMatch(/34\.6|58\.3|Ana|Bia|u-1/);
   });
 
-  it('sem req.user → uid null; sem centro → scope location; abaixo do teto → truncated false', () => {
+  it('total igual ao que veio → truncated false, mesmo com a lista cheia', () => {
     const res = mockRes();
-    respondMapPoints({} as Request, res, 'y.map.read', { country: 'BR', limit: 10 }, []);
+    const data = Array.from({ length: MAX_MAP_POINTS }, (_, k) => ({ id: `u-${k}`, lat: -34.6 }));
+    respondMapPoints({ user: { uid: 'staff-9' } } as Request, res, 'x.map.read', { country: 'AR' }, data, MAX_MAP_POINTS);
+    expect(res.body).toMatchObject({ total: MAX_MAP_POINTS, truncated: false });
+  });
+
+  it('sem req.user → uid null; sem centro → scope location; sem linha → total 0', () => {
+    const res = mockRes();
+    respondMapPoints({} as Request, res, 'y.map.read', { country: 'BR' }, [], 0);
     expect(mockLogInfo.mock.calls[0][0]).toEqual({ msg: 'y.map.read', uid: null, country: 'BR', scope: 'location', n: 0, withoutCoordinates: 0, truncated: false });
     expect(res.body).toEqual({ success: true, data: [], total: 0, withoutCoordinates: 0, truncated: false });
   });

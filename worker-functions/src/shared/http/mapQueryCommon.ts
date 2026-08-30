@@ -9,6 +9,8 @@
  *   - o `safeParse → 400` da borda;
  *   - a trilha de leitura em massa (lex C5): uid, país, escopo e contagens —
  *     NUNCA coordenada, nome ou UUID;
+ *   - o TETO de pontos por request e a leitura do `COUNT(*) OVER()` que mantém
+ *     a contagem da tela exata mesmo quando o teto corta a lista;
  *   - o `catch` que reporta só a origem.
  *
  * Fixar aqui é o que garante que uma mudança de regra (ex.: escopo passa a
@@ -19,7 +21,15 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { logger, reportError } from '@shared/logging';
 
-export const MAX_MAP_POINTS = 5000;
+/**
+ * Teto de pontos por request (30/08). Era 5000 — o mesmo volume que o CSV de
+ * `GET /workers/export`, que é `adminOnly` justamente porque recrutadora
+ * exportava a base e usava errado. O mapa é `staffOnly` (é a ferramenta dela)
+ * e não pode ser a mesma porta por outro caminho: 500 pontos é o que cabe numa
+ * tela e não é um export. A tela NÃO perde a contagem — `COUNT(*) OVER()` nas
+ * duas queries devolve o total do filtro inteiro, exato, mesmo cortado.
+ */
+export const MAX_MAP_POINTS = 500;
 
 const coord = (min: number, max: number) => z.number().min(min).max(max);
 const text = z.string().trim().min(1).max(120);
@@ -80,19 +90,34 @@ export function parseMapBody<S extends z.ZodTypeAny>(schema: S, req: Request, re
 }
 
 /**
+ * O total do filtro INTEIRO, lido do `COUNT(*) OVER()::int AS total_count` que
+ * as duas queries de mapa trazem: a window roda ANTES do LIMIT, então toda
+ * linha carrega o mesmo número e basta olhar a primeira. Sem linha nenhuma o
+ * total é 0 — é a única leitura possível, e é a verdadeira.
+ */
+export function totalFromRows(rows: Array<{ total_count?: string | number | null }>): number {
+  return num(rows[0]?.total_count) ?? 0;
+}
+
+/**
  * Fecha a leitura: contagens, trilha (lex C5) e resposta 200.
  * A trilha leva quem, país, escopo e quantos — sem coordenada, sem nome, sem
  * UUID. A tabela da OP-08 chega com o ABAC (D212).
+ *
+ * `total` é o do BANCO (`totalFromRows`), não o do array: com o teto em 500 a
+ * tela mostraria "500" havendo 4.000, e "4 en 25 km" viraria mentira. `n` no
+ * log continua sendo o que SAIU, e `truncated` é a diferença entre os dois.
  */
 export function respondMapPoints<P extends { lat: number | null }>(
   req: Request,
   res: Response,
   msg: string,
-  scope: Pick<MapScope, 'country' | 'center' | 'limit'>,
+  scope: Pick<MapScope, 'country' | 'center'>,
   data: P[],
+  total: number,
 ): void {
   const withoutCoordinates = data.filter((p) => p.lat === null).length;
-  const truncated = data.length >= scope.limit;
+  const truncated = total > data.length;
   logger.info({
     msg,
     uid: req.user?.uid ?? null,
@@ -102,7 +127,7 @@ export function respondMapPoints<P extends { lat: number | null }>(
     withoutCoordinates,
     truncated,
   });
-  res.status(200).json({ success: true, data, total: data.length, withoutCoordinates, truncated });
+  res.status(200).json({ success: true, data, total, withoutCoordinates, truncated });
 }
 
 /** Erro da leitura: só a origem vai para o log — nenhum filtro, nome ou coordenada. */

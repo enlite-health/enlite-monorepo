@@ -26,9 +26,9 @@
  * A leitura em massa deixa trilha (lex C5): uid, país, escopo e contagens —
  * sem coordenada, sem nome.
  *
- * KMS — teto por request: o LIMIT do SQL já corta em `MAX_MAP_POINTS` (5000)
+ * KMS — teto por request: o LIMIT do SQL já corta em `MAX_MAP_POINTS` (500)
  * linhas, e cada linha tem até 2 cifras (nome e sobrenome), então o pior caso
- * é 10.000 decrypts numa request. Só cifra NÃO nula vai ao KMS (quem não tem
+ * é 1.000 decrypts numa request. Só cifra NÃO nula vai ao KMS (quem não tem
  * nome não custa nada), os dois campos entram numa ÚNICA passada, em lotes de
  * `DECRYPT_BATCH` em paralelo. Sem cache: a mesma cifra em duas requests custa
  * duas vezes — decisão consciente, o cache global de PII é assunto do ABAC.
@@ -40,7 +40,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { resolveLocationFilter } from '@shared/utils/normalizeLocationValue';
 import {
-  MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, withMapScopeRules,
+  MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, totalFromRows,
+  withMapScopeRules,
 } from '@shared/http/mapQueryCommon';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
 import { buildWorkerListWhereClause, locationMatchSql } from './AdminWorkersListHelpers';
@@ -95,6 +96,8 @@ interface WorkerMapRow {
   neighborhood: string | null;
   state: string | null;
   distance_km: string | number | null;
+  /** `COUNT(*) OVER()`: o total do filtro INTEIRO, igual em toda linha. */
+  total_count: number;
 }
 
 const DEFAULT_STATUSES = ['REGISTERED', 'INCOMPLETE_REGISTER'];
@@ -163,7 +166,8 @@ export function buildWorkersMapQuery(q: WorkersMapBody): { sql: string; params: 
   const sql = `
     SELECT w.id, w.first_name_encrypted, w.last_name_encrypted, w.status, w.profession,
       wsa.latitude, wsa.longitude, wsa.city, wsa.neighborhood, wsa.state,
-      ${distanceSelect}
+      ${distanceSelect},
+      COUNT(*) OVER()::int AS total_count
     FROM workers w
     LEFT JOIN worker_documents wd ON wd.worker_id = w.id
     LEFT JOIN LATERAL (
@@ -231,7 +235,8 @@ export class AdminWorkersMapController {
         };
       });
 
-      respondMapPoints(req, res, 'workers.map.read', body, data);
+      // O total é o do BANCO, não o do array: o LIMIT corta a lista, nunca a contagem.
+      respondMapPoints(req, res, 'workers.map.read', body, data, totalFromRows(rows));
     } catch (error: unknown) {
       respondMapError(res, error, 'AdminWorkersMapController:getMapPoints', 'Failed to load workers map');
     }

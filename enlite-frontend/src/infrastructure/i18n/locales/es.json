@@ -3510,7 +3510,7 @@
       "loading": "Cargando…",
       "inRadius": "en {{km}} km",
       "withoutCoordinates": "{{count}} sin ubicación",
-      "truncated": "lista cortada — achicá el radio",
+      "showingFirst": "mostrando los primeros {{shown}} de {{total}} — achicá el radio",
       "noLocation": "sin ubicación",
       "empty": "Nadie en este radio. Probá un radio mayor o mové el centro.",
       "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",

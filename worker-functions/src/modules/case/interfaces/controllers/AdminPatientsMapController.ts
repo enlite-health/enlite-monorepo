@@ -32,7 +32,8 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
-  MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, withMapScopeRules,
+  MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, totalFromRows,
+  withMapScopeRules,
 } from '@shared/http/mapQueryCommon';
 import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
@@ -82,6 +83,8 @@ interface PatientMapRow {
   state: string | null;
   open_vacancies: string | number | null;
   distance_km: string | number | null;
+  /** `COUNT(*) OVER()`: o total do filtro INTEIRO, igual em toda linha. */
+  total_count: number;
 }
 
 /** Monta o SQL do mapa. Exportada para o teste afirmar a forma (e a AUSÊNCIA de coluna clínica). */
@@ -134,7 +137,8 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
     SELECT p.id, p.first_name, p.last_name, p.status,
       pa.id AS address_id, pa.address_type, pa.lat, pa.lng, pa.city, pa.neighborhood, pa.state,
       ov.open_vacancies,
-      ${distanceSelect}
+      ${distanceSelect},
+      COUNT(*) OVER()::int AS total_count
     FROM patients p
     LEFT JOIN patient_addresses pa ON pa.patient_id = p.id AND pa.archived_at IS NULL
     LEFT JOIN LATERAL (
@@ -181,7 +185,8 @@ export class AdminPatientsMapController {
         };
       });
 
-      respondMapPoints(req, res, 'patients.map.read', body, data);
+      // O total é o do BANCO, não o do array: o LIMIT corta a lista, nunca a contagem.
+      respondMapPoints(req, res, 'patients.map.read', body, data, totalFromRows(result.rows));
     } catch (error: unknown) {
       respondMapError(res, error, 'AdminPatientsMapController:getMapPoints', 'Failed to load patients map');
     }

@@ -3431,7 +3431,7 @@
       "loading": "Carregando…",
       "inRadius": "em {{km}} km",
       "withoutCoordinates": "{{count}} sem localização",
-      "truncated": "lista cortada — reduza o raio",
+      "showingFirst": "mostrando os primeiros {{shown}} de {{total}} — reduza o raio",
       "noLocation": "sem localização",
       "empty": "Ninguém neste raio. Tente um raio maior ou mova o centro.",
       "unavailable": "O mapa não está disponível (sem chave do Google Maps). A lista continua funcionando.",

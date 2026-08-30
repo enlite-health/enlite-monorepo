@@ -46,8 +46,12 @@ const req = (body: unknown, uid = 'staff-1') => ({ body, user: { uid } }) as unk
 
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'p1', first_name: 'Ana', last_name: 'Paz', status: 'ACTIVE', address_id: 'a1', address_type: 'primary',
-  lat: '-34.60', lng: '-58.38', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', open_vacancies: '2', distance_km: null, ...over,
+  lat: '-34.60', lng: '-58.38', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', open_vacancies: '2',
+  distance_km: null, total_count: 1, ...over,
 });
+
+/** `COUNT(*) OVER()` é igual em TODA linha: é o total do filtro, não o da página. */
+const withTotal = <R extends object>(total: number, rows: R[]): Array<R & { total_count: number }> => rows.map((r) => ({ ...r, total_count: total }));
 
 describe('PatientsMapBodySchema (lex C1/C3/C4)', () => {
   it('country e escopo obrigatórios', () => {
@@ -95,10 +99,18 @@ describe('buildPatientsMapQuery', () => {
     expect(sql).toContain(LIVE_JOB_POSTING_SQL);
     expect(sql).toContain("'PENDING_ACTIVATION'");
     expect(sql).toContain('jp.is_draft = false');
-    expect(sql.match(/COUNT\(\*\)/g)?.length).toBe(1);
+    expect(sql.match(/COUNT\(\*\)::int AS open_vacancies/g)?.length).toBe(1);
     expect(sql.match(/FROM job_postings jp/g)?.length).toBe(1);
     expect(sql).toContain('ov.open_vacancies,');
     for (const st of OPEN_JOB_STATUSES) expect(sql).toContain(`'${st}'`);
+  });
+
+  it('a contagem sai do banco: COUNT(*) OVER() no SELECT, antes do LIMIT — e sem param novo', () => {
+    const { sql, params } = buildPatientsMapQuery(parse({ country: 'AR', state: 'Buenos Aires' }));
+    expect(sql).toContain('COUNT(*) OVER()::int AS total_count');
+    expect(sql.indexOf('COUNT(*) OVER()')).toBeLessThan(sql.indexOf('FROM patients p'));
+    expect(sql.indexOf('COUNT(*) OVER()')).toBeLessThan(sql.lastIndexOf('LIMIT $'));
+    expect(params).toEqual(['AR', 'Buenos Aires', MAX_PATIENT_MAP_POINTS]);
   });
 
   it('status: lista vira ANY; lista vazia não filtra', () => {
@@ -150,27 +162,28 @@ describe('AdminPatientsMapController.getMapPoints', () => {
   });
 
   it('200: um ponto por endereço; sem endereço vira lat/lng nulos; contagens; trilha sem PII', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(4, [
       row(),
       row({ address_id: 'a2', address_type: 'secondary', lat: '-34.61', lng: '-58.39', distance_km: '0.5' }),
       row({ id: 'p2', first_name: null, last_name: null, address_id: null, address_type: null, lat: null, lng: null, city: null, neighborhood: null, state: null, open_vacancies: null }),
       // o driver pode entregar número (coluna double) em vez de string
       row({ id: 'p3', address_id: 'a3', lat: -34.62, lng: -58.4, open_vacancies: 1, distance_km: 3 }),
-    ] });
+    ]) });
     const res = mockRes();
     await controller.getMapPoints(req({ ...SCOPE, limit: 4 }, 'uid-xyz'), res);
     expect(res.statusCode).toBe(200);
     const body = res.body as { data: Array<Record<string, unknown>>; total: number; withoutCoordinates: number; truncated: boolean };
     expect(body.total).toBe(4);
     expect(body.withoutCoordinates).toBe(1);
-    expect(body.truncated).toBe(true);
+    // 4 vieram e 4 existem: encheu o limit e mesmo assim NÃO está cortado.
+    expect(body.truncated).toBe(false);
     expect(body.data[0]).toEqual({ id: 'p1', addressId: 'a1', name: 'Ana Paz', lat: -34.6, lng: -58.38, status: 'ACTIVE', addressType: 'primary', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', openVacancies: 2, distanceKm: null });
     expect(body.data[1]).toMatchObject({ addressId: 'a2', distanceKm: 0.5 });
     expect(body.data[2]).toEqual({ id: 'p2', addressId: null, name: '—', lat: null, lng: null, status: 'ACTIVE', addressType: null, city: null, neighborhood: null, state: null, openVacancies: 0, distanceKm: null });
     expect(body.data[3]).toMatchObject({ id: 'p3', lat: -34.62, lng: -58.4, openVacancies: 1, distanceKm: 3 });
     expect(JSON.stringify(body)).not.toMatch(/diagnos/i);
     const entry = mockLogInfo.mock.calls[0][0];
-    expect(entry).toEqual({ msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius', n: 4, withoutCoordinates: 1, truncated: true });
+    expect(entry).toEqual({ msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius', n: 4, withoutCoordinates: 1, truncated: false });
     expect(JSON.stringify(entry)).not.toMatch(/Ana|Paz|34\.6|p1|a1/);
   });
 
@@ -180,6 +193,23 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     await controller.getMapPoints({ body: { country: 'BR', state: 'PR' } } as unknown as Request, res);
     expect(res.statusCode).toBe(200);
     expect(mockLogInfo.mock.calls[0][0]).toMatchObject({ uid: null, country: 'BR', scope: 'location', n: 0, truncated: false });
+  });
+
+  it('teto 500: a lista corta, a CONTAGEM não — total vem do COUNT(*) OVER(), truncated marca o corte', async () => {
+    // Mesmo defeito do mapa de prestadores: com `total = data.length` a tela
+    // diria "500 en 25 km" havendo 4231 endereços no filtro.
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(4231, Array.from({ length: MAX_PATIENT_MAP_POINTS }, (_, k) => row({ id: `p${k}`, address_id: `a${k}` }))) });
+    const res = mockRes();
+    await controller.getMapPoints(req(SCOPE), res);
+    const body = res.body as { data: unknown[]; total: number; truncated: boolean };
+    expect(MAX_PATIENT_MAP_POINTS).toBe(500);
+    expect(mockQuery.mock.calls[0][1].at(-1)).toBe(500); // o LIMIT que foi ao banco
+    expect(mockQuery.mock.calls[0][0]).toContain('COUNT(*) OVER()::int AS total_count');
+    expect(body.data).toHaveLength(500);
+    expect(body.total).toBe(4231);
+    expect(body.total).not.toBe(body.data.length);
+    expect(body.truncated).toBe(true);
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({ msg: 'patients.map.read', uid: 'staff-1', country: 'AR', scope: 'radius', n: 500, withoutCoordinates: 0, truncated: true });
   });
 
   it('500: log só com a origem', async () => {

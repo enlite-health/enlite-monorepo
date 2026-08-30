@@ -199,8 +199,15 @@ export function AdminMapPage(): JSX.Element {
                     {' · '}{t('admin.map.withoutCoordinates', { defaultValue: '{{count}} sin ubicación', count: active.withoutCoordinates })}
                   </span>
                 )}
+                {/* `total` é o do banco (COUNT(*) OVER()), `points.length` é o
+                    que o teto de 500 deixou passar: quando diferem, a tela diz
+                    quantos está mostrando de quantos existem — nunca finge que
+                    o tamanho da página é o tamanho do filtro. */}
                 {active.truncated && (
-                  <span className="text-red-600" data-testid="map-truncated">{' · '}{t('admin.map.truncated', 'lista cortada — achicá el radio')}</span>
+                  <span className="text-red-600" data-testid="map-truncated">
+                    {' · '}
+                    {t('admin.map.showingFirst', { defaultValue: 'mostrando los primeros {{shown}} de {{total}} — achicá el radio', shown: active.points.length, total: active.total })}
+                  </span>
                 )}
               </>
             )}

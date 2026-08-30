@@ -51,7 +51,8 @@ const PT = (id: string, over: Record<string, unknown> = {}) => ({ id, addressId:
 // W3: tem coordenada mas nenhum lugar (cidade/bairro nulos) — a linha não pode dizer "sin ubicación".
 const okWorkers: { points: ReturnType<typeof W>[]; total: number; withoutCoordinates: number; truncated: boolean; isLoading: boolean; error: string | null; refetch: () => void } = { points: [W('1'), W('2', { status: 'INCOMPLETE_REGISTER', lat: null, lng: null, city: null, neighborhood: null, distanceKm: null, profession: null }), W('3', { city: null, neighborhood: null, distanceKm: null })], total: 3, withoutCoordinates: 1, truncated: false, isLoading: false, error: null, refetch: vi.fn() };
 // P8: sem endereço. P7: coordenada sem lugar. P6: lat sem lng (coordenada INCOMPLETA — não serve de centro). P5: coordenada sem addressId (id cai no do paciente).
-const okPatients: { points: ReturnType<typeof PT>[]; total: number; withoutCoordinates: number; truncated: boolean; isLoading: boolean; error: string | null; refetch: () => void } = { points: [PT('9'), PT('8', { addressId: null, lat: null, lng: null, city: null, openVacancies: 0, distanceKm: null }), PT('7', { city: null, neighborhood: null, openVacancies: 0 }), PT('6', { lng: null, openVacancies: 0 }), PT('5', { addressId: null, openVacancies: 0 })], total: 5, withoutCoordinates: 1, truncated: true, isLoading: false, error: null, refetch: vi.fn() };
+// `total` é o do BANCO (COUNT(*) OVER()) e `points` é o que o teto de 500 deixou passar: 5 na tela, 4231 no filtro → truncado.
+const okPatients: { points: ReturnType<typeof PT>[]; total: number; withoutCoordinates: number; truncated: boolean; isLoading: boolean; error: string | null; refetch: () => void } = { points: [PT('9'), PT('8', { addressId: null, lat: null, lng: null, city: null, openVacancies: 0, distanceKm: null }), PT('7', { city: null, neighborhood: null, openVacancies: 0 }), PT('6', { lng: null, openVacancies: 0 }), PT('5', { addressId: null, openVacancies: 0 })], total: 4231, withoutCoordinates: 1, truncated: true, isLoading: false, error: null, refetch: vi.fn() };
 
 function setup(workers = okWorkers, patients = okPatients) {
   mockWorkers.mockReturnValue(workers);
@@ -174,7 +175,9 @@ describe('AdminMapPage', () => {
     fireEvent.change(screen.getByTestId('map-patient-status'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('map-open-vacancies'));
     expect(lastPatientsFilters()).toEqual({ country: 'AR', center: CABA, radius_km: 25 });
-    expect(screen.getByTestId('map-truncated')).toBeInTheDocument();
+    // Truncado: a contagem é a do banco (4231), e o aviso diz quantos está mostrando de quantos existem.
+    expect(screen.getByTestId('map-total')).toHaveTextContent('4231');
+    expect(screen.getByTestId('map-truncated')).toHaveTextContent('mostrando los primeros 5 de 4231 — achicá el radio');
     const items = screen.getAllByTestId('map-list-item');
     expect(items[0]).toHaveTextContent('Activo · CABA · 1 vacante(s) abierta(s)');
     expect(items[0]).toHaveTextContent('0.4 km');
