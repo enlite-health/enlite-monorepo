@@ -35,14 +35,28 @@ interface Row { slug: string; body: string | null; category: string | null; cont
 /** A regra do ENVIO, importada — não copiada: é a ordem dela que precisa bater. */
 const placeholders = (body: string): string[] => extractPlaceholders(body);
 
-/** Troca cada placeholder pelo índice de aparição: as duas pontas ficam comparáveis. */
-function skeleton(body: string): string {
+/**
+ * Normaliza o corpo para comparar ORDEM. As duas pontas são normalizadas de
+ * formas DIFERENTES, e é isso que faz o instrumento enxergar:
+ *
+ *   - nosso `body` (nomes): cada nome vira o índice em que o ENVIO o coloca —
+ *     `mapToContentVariables` mapeia pela ordem de aparição;
+ *   - corpo aprovado (posicional): cada `{{n}}` vira o PRÓPRIO n.
+ *
+ * Normalizar os dois pela ordem de aparição — como esta função fazia — apagava
+ * exatamente o defeito procurado: `{{2}} … {{1}}` na Twilio produzia o mesmo
+ * esqueleto que `{{case_number}} … {{worker_name}}` no nosso, e o script dizia
+ * "igual" para um par que entrega os valores trocados.
+ *
+ * A classe de caractere é a mesma do `extractPlaceholders` (`[A-Za-z0-9_]+`):
+ * com `[^}]+?`, `{{first-name}}` ficava fora da lista de ordem e virava «0» dos
+ * dois lados — outro falso "igual".
+ */
+export function skeleton(body: string, modo: 'nomeado' | 'posicional' = 'nomeado'): string {
   const order = placeholders(body);
   return body
-    // MESMA classe de caractere do `order` (que vem de extractPlaceholders): com
-    // `[^}]+?` aqui, `{{first-name}}` não estava em `order`, virava «0» dos dois
-    // lados e o instrumento dizia "igual" para textos diferentes.
-    .replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_f, k: string) => `«${order.indexOf(k) + 1}»`)
+    .replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_f, k: string) =>
+      modo === 'posicional' && /^\d+$/.test(k) ? `«${k}»` : `«${order.indexOf(k) + 1}»`)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -73,8 +87,8 @@ async function main(): Promise<void> {
     const aprovado = bodyOfContent(await res.json());
     if (!aprovado) { semTexto.push(`${r.slug} (Content sem body)`); continue; }
 
-    const nosso = skeleton(r.body ?? '');
-    const deles = skeleton(aprovado);
+    const nosso = skeleton(r.body ?? '', 'nomeado');
+    const deles = skeleton(aprovado, 'posicional');
     const nomes = placeholders(r.body ?? '');
 
     if (nosso === deles) {
@@ -97,4 +111,8 @@ async function main(): Promise<void> {
   await db.end();
 }
 
-main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });
+// Só roda quando EXECUTADO; importado (pelo teste do `skeleton`), não faz nada.
+// Sem esta guarda, `import` do módulo dispara o main e derruba o processo.
+if (require.main === module) {
+  main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });
+}

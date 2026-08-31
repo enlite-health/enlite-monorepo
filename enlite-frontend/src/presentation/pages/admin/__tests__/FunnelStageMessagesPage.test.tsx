@@ -107,6 +107,40 @@ describe('FunnelStageMessagesPage', () => {
     await waitFor(() => expect(screen.getByTestId('fsm-modal-error')).toHaveTextContent('admin.funnelStageMessages.error'));
   });
 
+  it('PUT deu certo mas a RECARGA falhou: a modal continua aberta com o erro — nem "salvo" mudo, nem erro perdido', async () => {
+    // A modal fecha DEPOIS do reload justamente por isto. Fechando antes, o erro
+    // seria escrito numa linha cujo único renderizador é a modal já desmontada:
+    // a pessoa não veria nem sucesso nem falha, com a tabela mostrando dado velho.
+    render(<FunnelStageMessagesPage />);
+    await waitFor(() => expect(screen.getByTestId('fsm-table')).toBeInTheDocument());
+    mockGet.mockRejectedValueOnce(new Error('caiu ao recarregar'));
+
+    fireEvent.click(screen.getByTestId('fsm-open-INVITED'));
+    fireEvent.click(screen.getByTestId('fsm-option-ok_tpl'));
+    fireEvent.click(screen.getByTestId('fsm-modal-save'));
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('fsm-modal-error')).toHaveTextContent('caiu ao recarregar'));
+    expect(screen.getByTestId('fsm-modal')).toBeInTheDocument();
+    expect(screen.queryByTestId('fsm-saved-INVITED')).toBeNull();
+  });
+
+  it('abrir OUTRA etapa com a modal aberta não carrega a escolha da anterior', async () => {
+    // Sem `key={picking}` o componente não remonta: o `slug` escolhido para a
+    // etapa A continuaria no estado e poderia ser gravado na etapa B — gravar o
+    // template ERRADO numa etapa, em silêncio. O caminho real é pelo teclado.
+    render(<FunnelStageMessagesPage />);
+    await waitFor(() => expect(screen.getByTestId('fsm-table')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('fsm-open-INVITED'));   // etapa sem template
+    fireEvent.click(screen.getByTestId('fsm-option-sin_texto'));
+    expect(screen.getByTestId('fsm-option-sin_texto')).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByTestId('fsm-open-COMPLETED')); // etapa com ok_tpl
+    expect(screen.getByTestId('fsm-option-ok_tpl')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('fsm-option-sin_texto')).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('cancelar e Esc fecham sem gravar', async () => {
     render(<FunnelStageMessagesPage />);
     await waitFor(() => expect(screen.getByTestId('fsm-table')).toBeInTheDocument());
