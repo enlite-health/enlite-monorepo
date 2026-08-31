@@ -39,7 +39,10 @@ const placeholders = (body: string): string[] => extractPlaceholders(body);
 function skeleton(body: string): string {
   const order = placeholders(body);
   return body
-    .replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_f, k: string) => `«${order.indexOf(k) + 1}»`)
+    // MESMA classe de caractere do `order` (que vem de extractPlaceholders): com
+    // `[^}]+?` aqui, `{{first-name}}` não estava em `order`, virava «0» dos dois
+    // lados e o instrumento dizia "igual" para textos diferentes.
+    .replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_f, k: string) => `«${order.indexOf(k) + 1}»`)
     .replace(/\s+/g, ' ')
     .trim();
 }

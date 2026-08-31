@@ -64,7 +64,9 @@ export function previewTextOf(tpl: Pick<FunnelStageTemplateOption, 'body' | 'bod
     const resolved = Number.isInteger(pos) && pos > 0 ? (named[pos - 1] ?? key) : key;
     // `Object.hasOwn`: sem isto, `{{constructor}}` puxa do protótipo e imprime
     // "function Object() { [native code] }" dentro do balão que promete ser a mensagem.
-    return Object.hasOwn(SAMPLE, resolved) ? SAMPLE[resolved] : `«${resolved}»`;
+    // `hasOwnProperty.call` e não `Object.hasOwn`: o projeto compila em ES2020,
+    // e `hasOwn` é ES2022 — passa no lint e nos testes, e quebra o `tsc` do build.
+    return Object.prototype.hasOwnProperty.call(SAMPLE, resolved) ? SAMPLE[resolved] : `«${resolved}»`;
   });
 }
 

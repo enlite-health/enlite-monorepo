@@ -61,10 +61,13 @@ export function FunnelStageMessagesPage(): JSX.Element {
     setRows((prev) => ({ ...prev, [stage]: { ...prev[stage], status: 'saving', error: undefined } }));
     try {
       await AdminFunnelStageMessagesApiService.updateFunnelStageMessage(stage, { templateSlug: templateSlug || null, enabled });
-      setRows((prev) => ({ ...prev, [stage]: { templateSlug, enabled, status: 'saved' } }));
-      setPicking(null);
+      // A modal fecha DEPOIS do reload: fechando antes, uma falha na recarga
+      // escrevia `status:'error'` numa linha cujo único renderizador de erro é a
+      // própria modal, já desmontada — a pessoa não via nem "salvo" nem o erro.
       const data = await AdminFunnelStageMessagesApiService.getFunnelStageMessages();
       setConfig(data);
+      setRows((prev) => ({ ...prev, [stage]: { templateSlug, enabled, status: 'saved' } }));
+      setPicking(null);
     } catch (err: unknown) {
       // A modal fica aberta: o erro aparece ao lado do botão que a pessoa apertou.
       setRows((prev) => ({ ...prev, [stage]: { ...prev[stage], status: 'error', error: err instanceof Error ? err.message : t('admin.funnelStageMessages.error') } }));
@@ -173,6 +176,9 @@ export function FunnelStageMessagesPage(): JSX.Element {
 
       {picking && config && (
         <StageMessagePickerModal
+          // `key` por etapa: o estado interno (slug escolhido, busca) é DAQUELA etapa.
+          // Sem remontar, trocar de etapa sem fechar a modal levaria a escolha junto.
+          key={picking}
           stageLabel={stageLabel(picking)}
           templates={config.templates}
           initialSlug={rows[picking].templateSlug}

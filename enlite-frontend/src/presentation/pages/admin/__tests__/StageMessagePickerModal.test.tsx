@@ -138,6 +138,16 @@ describe('StageMessagePickerModal', () => {
     expect(onConfirm).toHaveBeenCalledWith('ok_tpl', true);
   });
 
+  it('slug configurado que NÃO está na lista (template desativado) também é bloqueado', () => {
+    // O `list` do backend devolve só `is_active = true`. Um template desativado
+    // depois de a etapa ser ligada não chega à modal: `selected` fica null. Antes,
+    // isso deixava Guardar habilitado e o PUT voltava 400 "not found or inactive".
+    renderModal({ initialSlug: 'sumiu_da_lista', initialEnabled: true });
+    expect(screen.getByTestId('fsm-current-blocked')).toHaveTextContent('sumiu_da_lista');
+    expect(screen.getByTestId('fsm-current-blocked')).toHaveTextContent('picker.notAvailable');
+    expect((screen.getByTestId('fsm-modal-save') as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('bloqueado SEM motivo declarado cai em PLACEHOLDERS — nunca fica sem explicação', () => {
     renderModal({ templates: [tpl({ slug: 'orfao', eligible: false, reason: null })], initialSlug: 'orfao' });
     expect(screen.getByTestId('fsm-current-blocked')).toHaveTextContent('ineligible.PLACEHOLDERS');

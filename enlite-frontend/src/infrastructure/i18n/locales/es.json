@@ -3431,7 +3431,8 @@
         "activate": "Activar esta etapa al guardar",
         "blockedGroup": "No se pueden usar acá ({{count}})",
         "currentBlocked": "Esta etapa quedó con un mensaje que ya no se puede usar:",
-        "pickAnother": "Elegí otro mensaje para poder guardar"
+        "pickAnother": "Elegí otro mensaje para poder guardar",
+        "notAvailable": "ya no está disponible en la lista de mensajes"
       }
     },
     "presentationInvite": {

@@ -82,7 +82,16 @@ export function StageMessagePickerModal({ stageLabel, templates, initialSlug, in
    * que o backend recusa com 400.
    */
   const selected = templates.find((tp) => tp.slug === slug) ?? null;
-  const selectedBlocked = !!selected && !selected.eligible;
+  /**
+   * Bloqueado é DUAS coisas, e a segunda é a que quase escapou: o template está
+   * na lista e é inelegível, OU há um slug configurado que a lista NÃO tem. O
+   * `list` devolve só `is_active = true`, então um template desativado depois de
+   * a etapa ser ligada simplesmente não chega aqui — `selected` ficava null,
+   * `Guardar` habilitado, e o PUT voltava 400 "Template not found or inactive".
+   * Tratar "configurado e ausente" como bloqueado cobre esse caso e qualquer
+   * outro em que a lista deixe de trazer o slug (apagado, renomeado, filtro novo).
+   */
+  const selectedBlocked = !!slug && (!selected || !selected.eligible);
   const preview = selected ? previewTextOf(selected) : null;
 
   return (
@@ -125,7 +134,9 @@ export function StageMessagePickerModal({ stageLabel, templates, initialSlug, in
               {selectedBlocked && (
                 <div data-testid="fsm-current-blocked" className="rounded-input border border-wait bg-learn/10 p-3">
                   <Text size="xs" weight="medium" color="inherit" className="text-amber-900">{t('admin.funnelStageMessages.picker.currentBlocked')}</Text>
-                  <Text size="xs" color="secondary">{selected.slug} · {t(`admin.funnelStageMessages.ineligible.${selected.reason ?? 'PLACEHOLDERS'}`)}</Text>
+                  <Text size="xs" color="secondary">
+                    {slug} · {selected ? t(`admin.funnelStageMessages.ineligible.${selected.reason ?? 'PLACEHOLDERS'}`) : t('admin.funnelStageMessages.picker.notAvailable')}
+                  </Text>
                 </div>
               )}
               <Text size="xs" color="secondary" className="uppercase tracking-wider">{t('admin.funnelStageMessages.picker.eligibleGroup', { count: eligible.length })}</Text>

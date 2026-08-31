@@ -3352,7 +3352,8 @@
         "activate": "Ativar esta etapa ao salvar",
         "blockedGroup": "Não podem ser usadas aqui ({{count}})",
         "currentBlocked": "Esta etapa ficou com uma mensagem que não pode mais ser usada:",
-        "pickAnother": "Escolha outra mensagem para poder salvar"
+        "pickAnother": "Escolha outra mensagem para poder salvar",
+        "notAvailable": "não está mais na lista de mensagens"
       }
     },
     "presentationInvite": {
