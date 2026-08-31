@@ -64,7 +64,7 @@ test.describe('D211.1 — Merge Patch clínico: chave ausente NÃO apaga a colun
     await adminCtx?.dispose();
   });
 
-  test('[@route:PATCH /api/admin/patients/:id/clinical @depth:happy] editar só as observações NÃO zera o diagnóstico; null explícito limpa', async () => {
+  test('[@route:PATCH /api/admin/patients/:id/:section @depth:happy] editar só as observações NÃO zera o diagnóstico; null explícito limpa', async () => {
     test.skip(
       !process.env.E2E_ADMIN_EMAIL || !process.env.FIREBASE_API_KEY,
       'requer E2E_ADMIN_EMAIL + FIREBASE_API_KEY (writes autenticados em prod)',
