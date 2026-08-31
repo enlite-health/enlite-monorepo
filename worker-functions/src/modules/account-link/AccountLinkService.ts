@@ -32,6 +32,7 @@ import {
 import { signLinkToken, FINALIZE_TOKEN_TTL_MS } from './linkToken';
 import { recordAccountLinkEvent, canStartWithinRateLimit } from './accountLinkEvents';
 import { sendLinkedNoticeEmail } from './accountLinkNotice';
+import { maskEmail as maskEmailShared } from '@shared/utils/emailMask';
 
 const log = () => logger.child({ source: 'AccountLinkService' });
 
@@ -294,13 +295,11 @@ export class AccountLinkService {
 }
 
 // ── Máscaras (não vazam identidade completa antes da posse) ────────────────
+// A de e-mail mora em `shared/utils/emailMask` desde 31/08 — era duplicada.
 
+/** Delega à política única (`shared/utils/emailMask`); aqui o fallback é '•••'. */
 export function maskEmail(email: string | null): string {
-  if (!email) return '•••';
-  const [user, domain] = email.split('@');
-  if (!domain) return '•••';
-  const visible = user.slice(0, Math.min(4, Math.max(1, user.length - 2)));
-  return `${visible}•••@${domain}`;
+  return maskEmailShared(email) ?? '•••';
 }
 
 export function maskPhone(phone: string): string {

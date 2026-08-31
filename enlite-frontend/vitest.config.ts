@@ -98,6 +98,13 @@ export default defineConfig({
         },
         // Detalhe do paciente: exibição e edição de texto clínico. Regra dura do
         // CLAUDE.md — texto clínico não vaza — mora parcialmente aqui.
+        // Acrescentados em 31/08 (feature do contato do lead). O próprio
+        // comentário acima manda: quem criar arquivo em 100%, acrescenta aqui —
+        // senão o 100% conquistado cai para 70 no próximo PR, em silêncio. Foi
+        // achado do gate `revisao-pr` (aviso 2), não meu.
+        '**/src/presentation/components/features/admin/PatientDetail/kanban/{PatientKanbanCard.tsx,PatientKanbanBoard.tsx}': {
+          lines: 100, statements: 100, functions: 100, branches: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/{ClinicalLongText,DiagnosticoCard}.tsx': {
           statements: 100,
           branches: 100,
