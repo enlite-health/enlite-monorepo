@@ -95,6 +95,7 @@ describe('GET /api/admin/patients — contato do lead sem nome', () => {
   let idLeadResponsavel = '';
   let idComNome = '';
   let idSemContato = '';
+  let idLocalCurto = '';
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
@@ -113,6 +114,9 @@ describe('GET /api/admin/patients — contato do lead sem nome', () => {
     idComNome = await seed({ firstName: 'Francisco', lastName: 'Alomon', contactEmail: 'francisco@gmail.com' });
     // 4. lead sem contato nenhum — degrada, não quebra
     idSemContato = await seed({ firstName: 'Solicitante' });
+    // 5. local part de 1 caractere — a borda em que a máscara falhava ABERTA
+    //    (lex C8, 31/08): `a@gmail.com` saía como `a•••@gmail.com`, inteiro.
+    idLocalCurto = await seed({ firstName: 'Solicitante', contactEmail: 'a@gmail.com' });
   });
 
   afterAll(async () => {
@@ -161,13 +165,25 @@ describe('GET /api/admin/patients — contato do lead sem nome', () => {
     expect(lead.leadContactEmailMasked).toBeNull();
   });
 
+  it('C8 — local part curto não vaza inteiro (o guarda de regex não pegava isso)', async () => {
+    const linhas = await listar();
+    const curto = linhas.find((p) => p.id === idLocalCurto)!;
+
+    // O regex de e-mail do teste abaixo NÃO casa `a•••@gmail.com`, então a
+    // afirmação aqui é sobre o local part especificamente.
+    expect(curto.leadContactEmailMasked).toBe('•••@gmail.com');
+    const visivel = curto.leadContactEmailMasked!.slice(0, curto.leadContactEmailMasked!.indexOf('•'));
+    expect(visivel.length).toBeLessThan('a'.length + 1);
+    expect(visivel).not.toBe('a');
+  });
+
   it('⛔ o corpo INTEIRO da resposta não contém nenhum e-mail completo', async () => {
     const res = await api.get('/api/admin/patients?limit=200&offset=0', {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const corpo = JSON.stringify(res.data);
 
-    for (const cru of ['joana@gmail.com', 'filha@hotmail.com', 'francisco@gmail.com']) {
+    for (const cru of ['joana@gmail.com', 'filha@hotmail.com', 'francisco@gmail.com', 'a@gmail.com']) {
       expect(corpo).not.toContain(cru);
     }
     // E a forma geral: nenhum endereço de e-mail íntegro em lugar nenhum.

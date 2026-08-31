@@ -44,8 +44,20 @@ describe('maskEmail — a máscara de servidor (C1)', () => {
     expect(maskEmail('gabriel.stein@enlite.health')).toBe('gabr•••@enlite.health');
   });
 
-  it('local part de 1 caractere não vira string vazia', () => {
-    expect(maskEmail('a@gmail.com')).toBe('a•••@gmail.com');
+  it('INVARIANTE: o local part nunca sai inteiro, nem com 1 ou 2 caracteres', () => {
+    // A versão anterior devolvia 'a•••@gmail.com' — o endereço todo. O teste
+    // antigo CONSAGRAVA isso como correto; foi o lex (C8, 31/08) que pegou.
+    expect(maskEmail('a@gmail.com')).toBe('•••@gmail.com');
+    expect(maskEmail('ab@gmail.com')).toBe('•••@gmail.com');
+    expect(maskEmail('abc@gmail.com')).toBe('a•••@gmail.com');
+  });
+
+  it('nenhuma entrada revela o local part completo', () => {
+    for (const local of ['a', 'ab', 'abc', 'joana', 'gabriel.stein']) {
+      const out = maskEmail(`${local}@x.com`)!;
+      const visivel = out.slice(0, out.indexOf('•'));
+      expect(visivel.length).toBeLessThan(local.length);
+    }
   });
 
   it('nunca devolve o endereço inteiro — a parte escondida some de verdade', () => {

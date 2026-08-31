@@ -50,10 +50,11 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
         >
           {/* O `Text` não repassa props extras, então testid e title vivem no
               span — não vale mexer num átomo compartilhado por isto. */}
-          <span
-            data-testid={leadContact ? `patient-kanban-card-${patient.id}-contact` : undefined}
-            title={leadContact ?? undefined}
-          >
+          {/* Sem `title`: o Clarity declara mascarar o CONTEÚDO do nó e dos
+              filhos, não os atributos (lex C9, 31/08). O atributo era redundante
+              — o mesmo texto já é o visível. Enquanto o gate A2 (transferência
+              AR→EUA) estiver aberto, contato que não precisa ir ao Clarity não vai. */}
+          <span data-testid={leadContact ? `patient-kanban-card-${patient.id}-contact` : undefined}>
             <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
               {title}
             </Text>

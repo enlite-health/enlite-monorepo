@@ -23,6 +23,12 @@ export function maskEmail(email: string | null | undefined): string | null {
 
   const local = trimmed.slice(0, at);
   const domain = trimmed.slice(at);
-  const visible = local.slice(0, Math.min(4, Math.max(1, local.length - 2)));
+  // INVARIANTE: o local part NUNCA sai inteiro. `len - 2` é sempre menor que
+  // `len`, então sempre sobra caractere oculto — e com 1 ou 2 chars nada é
+  // revelado. A versão anterior usava `max(1, len - 2)`, que garantia 1 visível
+  // e, com local part de 1 caractere, mostrava o endereço todo
+  // (`a@gmail.com` → `a•••@gmail.com`). Achado do lex em 31/08, C8.
+  // O TETO de 4 é o autorizado; crescer exige parecer novo.
+  const visible = local.slice(0, Math.max(0, Math.min(4, local.length - 2)));
   return `${visible}•••${domain}`;
 }
