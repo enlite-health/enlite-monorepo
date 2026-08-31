@@ -1094,7 +1094,8 @@
       "patientChatRoles": "Roles de grupos",
       "funnelStageMessages": "Mensajes por etapa",
       "presentationInvite": "Invitación a presentación",
-      "map": "Mapa"
+      "map": "Mapa",
+      "templateCatalog": "Plantillas"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -3545,6 +3546,68 @@
       "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",
       "status": {
         "unknown": "Sin estado"
+      }
+    },
+    "templateCatalog": {
+      "title": "Plantillas de mensajes",
+      "subtitle": "Los mensajes que la plataforma puede enviar por WhatsApp y en qué estado los tiene Meta.",
+      "readOnlyHint": "Solo lectura. Dónde se usa cada mensaje se decide en Mensajes por etapa.",
+      "message": "Mensaje",
+      "metaStatus": "Estado en Meta",
+      "usedIn": "Se usa en",
+      "checkedAt": "Última verificación",
+      "never": "Nunca",
+      "neverChecked": "Sin verificar",
+      "noText": "Sin texto sincronizado",
+      "unused": "Sin uso",
+      "empty": "Todavía no hay plantillas en el catálogo.",
+      "error": "No pudimos cargar el catálogo.",
+      "status": {
+        "APPROVED": "Aprobada",
+        "PENDING": "En revisión",
+        "REJECTED": "Rechazada",
+        "PAUSED": "Pausada por Meta",
+        "DISABLED": "Deshabilitada por Meta",
+        "IN_APPEAL": "En apelación",
+        "LIMIT_EXCEEDED": "Límite excedido",
+        "ARCHIVED": "Archivada",
+        "PENDING_DELETION": "Pendiente de borrado",
+        "DELETED": "Borrada"
+      },
+      "reason": {
+        "ABUSIVE_CONTENT": "Contenido abusivo",
+        "CATEGORY_NOT_AVAILABLE": "Categoría no disponible",
+        "INCORRECT_CATEGORY": "Categoría incorrecta",
+        "INVALID_FORMAT": "Formato inválido — Meta no dio más detalle",
+        "NONE": "Sin motivo informado",
+        "PROMOTIONAL": "Contenido promocional",
+        "SCAM": "Detectada como estafa",
+        "TAG_CONTENT_MISMATCH": "El idioma o la categoría no coinciden con el texto"
+      },
+      "ineligible": {
+        "generic": "No sirve para mensajes por etapa",
+        "CATEGORY": "No sirve para etapas: no es UTILITY",
+        "DENY_LIST": "No sirve para etapas: es un recordatorio",
+        "PLACEHOLDERS": "No sirve para etapas: usa datos que el sistema no completa",
+        "SLOT_MISMATCH": "No sirve para etapas: las variables no coinciden con el texto aprobado",
+        "INACTIVE": "Inactiva",
+        "OPT_OUT_CLAUSE": "Le falta la cláusula de baja"
+      },
+      "filter": {
+        "all": "Todas",
+        "approved": "Aprobadas",
+        "pending": "En revisión",
+        "off": "Desactivadas por Meta",
+        "rejected": "Rechazadas",
+        "unchecked": "Sin verificar",
+        "other": "Otros estados"
+      },
+      "filterEmpty": "Ninguna plantilla en este estado.",
+      "syncAge": {
+        "now": "Verificado recién",
+        "min": "Verificado hace {{count}} min",
+        "hour": "Verificado hace {{count}} h",
+        "day": "Verificado hace {{count}} d"
       }
     }
   },

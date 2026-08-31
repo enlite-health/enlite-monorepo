@@ -1094,7 +1094,8 @@
       "patientChatRoles": "Papéis de grupos",
       "funnelStageMessages": "Mensagens por etapa",
       "presentationInvite": "Convite à apresentação",
-      "map": "Mapa"
+      "map": "Mapa",
+      "templateCatalog": "Modelos"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3466,6 +3467,68 @@
       "unavailable": "O mapa não está disponível (sem chave do Google Maps). A lista continua funcionando.",
       "status": {
         "unknown": "Sem estado"
+      }
+    },
+    "templateCatalog": {
+      "title": "Modelos de mensagem",
+      "subtitle": "As mensagens que a plataforma pode enviar por WhatsApp e em que estado a Meta as tem.",
+      "readOnlyHint": "Somente leitura. Onde cada mensagem é usada se decide em Mensagens por etapa.",
+      "message": "Mensagem",
+      "metaStatus": "Estado na Meta",
+      "usedIn": "Usada em",
+      "checkedAt": "Última verificação",
+      "never": "Nunca",
+      "neverChecked": "Sem verificar",
+      "noText": "Sem texto sincronizado",
+      "unused": "Sem uso",
+      "empty": "Ainda não há modelos no catálogo.",
+      "error": "Não conseguimos carregar o catálogo.",
+      "status": {
+        "APPROVED": "Aprovada",
+        "PENDING": "Em revisão",
+        "REJECTED": "Recusada",
+        "PAUSED": "Pausada pela Meta",
+        "DISABLED": "Desabilitada pela Meta",
+        "IN_APPEAL": "Em recurso",
+        "LIMIT_EXCEEDED": "Limite excedido",
+        "ARCHIVED": "Arquivada",
+        "PENDING_DELETION": "Exclusão pendente",
+        "DELETED": "Excluída"
+      },
+      "reason": {
+        "ABUSIVE_CONTENT": "Conteúdo abusivo",
+        "CATEGORY_NOT_AVAILABLE": "Categoria indisponível",
+        "INCORRECT_CATEGORY": "Categoria incorreta",
+        "INVALID_FORMAT": "Formato inválido — a Meta não detalhou",
+        "NONE": "Sem motivo informado",
+        "PROMOTIONAL": "Conteúdo promocional",
+        "SCAM": "Detectada como golpe",
+        "TAG_CONTENT_MISMATCH": "O idioma ou a categoria não batem com o texto"
+      },
+      "ineligible": {
+        "generic": "Não serve para mensagens por etapa",
+        "CATEGORY": "Não serve para etapas: não é UTILITY",
+        "DENY_LIST": "Não serve para etapas: é um lembrete",
+        "PLACEHOLDERS": "Não serve para etapas: usa dados que o sistema não preenche",
+        "SLOT_MISMATCH": "Não serve para etapas: as variáveis não batem com o texto aprovado",
+        "INACTIVE": "Inativa",
+        "OPT_OUT_CLAUSE": "Falta a cláusula de saída"
+      },
+      "filter": {
+        "all": "Todas",
+        "approved": "Aprovadas",
+        "pending": "Em revisão",
+        "off": "Desativadas pela Meta",
+        "rejected": "Recusadas",
+        "unchecked": "Sem verificar",
+        "other": "Outros estados"
+      },
+      "filterEmpty": "Nenhum modelo neste estado.",
+      "syncAge": {
+        "now": "Verificado agora",
+        "min": "Verificado há {{count}} min",
+        "hour": "Verificado há {{count}} h",
+        "day": "Verificado há {{count}} d"
       }
     }
   },

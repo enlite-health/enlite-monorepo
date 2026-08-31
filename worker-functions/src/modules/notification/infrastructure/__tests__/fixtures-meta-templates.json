@@ -1,0 +1,299 @@
+[
+  {
+    "name": "admission_reminder_pt_hx48369d7544b03ed3759a3306b3432d35",
+    "language": "pt_BR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1787059814
+    },
+    "id": "2442096542944858"
+  },
+  {
+    "name": "admission_confirmation_pt_hxbce81c8d53926d61493cb870cb3254b4",
+    "language": "pt_BR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1786983922
+    },
+    "id": "1569274031532632"
+  },
+  {
+    "name": "admission_reminder_es_hx85f46263a1b26334b0f389716274d01c",
+    "language": "es",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1040583902039657"
+  },
+  {
+    "name": "admission_confirmation_es_hx0ff7a2b0796720e820c4fc0c1f51de7a",
+    "language": "es",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1785375913
+    },
+    "id": "1965883931096738"
+  },
+  {
+    "name": "talentum_incomplete_reminder_v2_hx0d728597bf03483534edf04a32f69a3b",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "3121909281338773"
+  },
+  {
+    "name": "ar_signup_pending_reminder_v2_hx7b796fd9668bb2609e6670bd82c5ca8c",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1019160684240190"
+  },
+  {
+    "name": "complete_register_utility_v2_hxddc4119a15dd1f30095ae23f54651b45",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "36830132329968101"
+  },
+  {
+    "name": "ar_vacancy_match_incomplete_v3_hx585a2432b3636b663cff277abd83c488",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1785508364
+    },
+    "id": "2221452675323780"
+  },
+  {
+    "name": "ar_vacancy_match_complete_v3_hx4c9adc8e0de4593e00b919bdd3313002",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1783966663
+    },
+    "id": "1764400234986014"
+  },
+  {
+    "name": "ar_vacancy_match_complete_v2_hxbd608e95260a97d1da8f9e21c9eae77a",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1781789245
+    },
+    "id": "4122747644535916"
+  },
+  {
+    "name": "ar_vacancy_match_incomplete_v2_hx28e3f10dde62eae90999fe1cf9bf23b3",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1782226125
+    },
+    "id": "1539672367772772"
+  },
+  {
+    "name": "complete_register_utility_hxbf25891bda5061822aae8c1cf7cad049",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1310817143932984"
+  },
+  {
+    "name": "talentum_incomplete_reminder_hx90b0cf73ba47f12016c02cfb8d4161df",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1507331984308166"
+  },
+  {
+    "name": "ar_signup_pending_reminder_hx0d0b07db24fe3f90f8261856c3e37353",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "963158176493514"
+  },
+  {
+    "name": "ar_invite_poetic_hx0e091cb0050c957f5d2ebe6096da888b",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1005979538445237"
+  },
+  {
+    "name": "ar_invite_open_hxfa0a2d7d8a9bf5a86ed1646e8497eb60",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1314554334113321"
+  },
+  {
+    "name": "ar_invite_luz_personal_hx5d77ccab1689ab6cf9b675a0b158e68d",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "964282853193843"
+  },
+  {
+    "name": "ar_finalize_signup_luz_hx54d66dd603a9fdfd1eb9255128178514",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "996027716622014"
+  },
+  {
+    "name": "ar_finalize_signup_direct_hxeb5ece4811d2dce435ffb43b5f8738d0",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1010684578310436"
+  },
+  {
+    "name": "qualified_reprogram_confirm_hxf07d6a0407ae68ccd1b402e82b32b1a8",
+    "language": "es",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1510019633886190"
+  },
+  {
+    "name": "qualified_reminder_confirm_hxcfcca88f4fc5ec4e00663ed8dd303a8b",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "963740096444270"
+  },
+  {
+    "name": "qualified_reminder_reason_hx108cd59b4c4c052789b01b097d51febd",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "965646195946735"
+  },
+  {
+    "name": "qualified_reminder_reschedule_hx40814510338a9568602dac39a2ef82df",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1899260630751397"
+  },
+  {
+    "name": "qualified_worker_response_hxed69d4daca5e063902af3177c5ebca5d",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1627616478484443"
+  },
+  {
+    "name": "qualified_worker_request_hx13ee9b7c406830e7eda764a052700c42",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1651743269463687"
+  },
+  {
+    "name": "qualified_worker_hxd554209761d15f38fbd8c39012066cb4",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "UTILITY",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "2178199849618731"
+  },
+  {
+    "name": "complete_register_ofc_hxf7a25b327e14989f78e6d6d4572debc0",
+    "language": "es_AR",
+    "status": "APPROVED",
+    "category": "MARKETING",
+    "quality_score": {
+      "score": "UNKNOWN",
+      "date": 1788207977
+    },
+    "id": "1457015435926881"
+  }
+]
