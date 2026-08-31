@@ -9,7 +9,10 @@ import { initReactI18next } from 'react-i18next';
 if (!i18n.isInitialized) {
   i18n.use(initReactI18next).init({
     lng: 'pt-BR',
-    fallbackLng: 'pt-BR',
+    // Espelha a PRODUÇÃO (infrastructure/i18n/config.ts:38 usa 'es'). Com
+    // 'pt-BR' aqui, chave faltando no es.json era servida em português e o
+    // teste passava verde — medido em 30/08 apagando stages.INTERVIEWED.
+    fallbackLng: 'es',
     resources: {},
     interpolation: { escapeValue: false },
     initImmediate: false,
