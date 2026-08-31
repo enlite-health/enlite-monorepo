@@ -151,12 +151,22 @@ echo
 # (#173 removeu, #231 trouxe de volta). Checkout com ele quebra o build MUDO.
 # ⚠️ ancorado: `docs/node_modules-armadilha.md` (a doc SOBRE a armadilha) não
 # pode ser bloqueada pelo próprio check.
+# ⚠️ Olha "$TMP/vivos" (não-apagados), NÃO "$TMP/todos": a doença é o
+# node_modules ENTRAR no diff; a REMOÇÃO dele é a cura, e com `todos` o check
+# bloqueava justamente quem estivesse consertando — catch-22 medido em 31/08,
+# impossível tirar o symlink versionado sem reprovar. Adição, alteração e rename
+# PARA dentro de node_modules continuam em `vivos`, então o check não perde dente
+# (controle positivo rodado: um arquivo novo sob node_modules/ reprova).
 echo "## V1 — node_modules no diff"
-if grep -qE "(^|/)node_modules(/|$)" "$TMP/todos"; then
-  falha "node_modules aparece no diff:"
-  grep -E "(^|/)node_modules(/|$)" "$TMP/todos" | sed 's/^/        /'
+if grep -qE "(^|/)node_modules(/|$)" "$TMP/vivos"; then
+  falha "node_modules aparece no diff (adicionado ou alterado):"
+  grep -E "(^|/)node_modules(/|$)" "$TMP/vivos" | sed 's/^/        /'
 else
-  ok "nenhum node_modules no diff"
+  if grep -qE "(^|/)node_modules(/|$)" "$TMP/apagados"; then
+    ok "node_modules apenas REMOVIDO do versionamento (é a cura, não a doença)"
+  else
+    ok "nenhum node_modules no diff"
+  fi
 fi
 echo
 
