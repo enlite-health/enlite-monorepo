@@ -118,4 +118,26 @@ describe('SLOT_MISMATCH — o corpo aprovado é quem diz quantos slots a Meta ex
     expect(twilioSlotCount(null)).toBe(0);
     expect(twilioSlotCount('')).toBe(0);
   });
+
+  it('não basta a QUANTIDADE bater: o corpo aprovado tem de pedir exatamente {{1}}..{{N}}', () => {
+    // 2 nomes nossos × 2 slots aprovados, mas numerados {{2}} e {{3}}: o
+    // mapeamento posicional do envio manda "1" e "2", e o {{3}} ficaria vazio.
+    const r = evaluateTemplateEligibility({
+      slug: 'x', category: 'UTILITY', is_active: true,
+      body: 'Hola {{worker_name}}, caso {{case_number}}', body_twilio: 'Hola {{2}}, caso {{3}}',
+    });
+    expect(r).toMatchObject({ eligible: false, reason: 'SLOT_MISMATCH' });
+
+    // e um NOME no lugar do número também não é mapeável por posição
+    expect(evaluateTemplateEligibility({
+      slug: 'x', category: 'UTILITY', is_active: true,
+      body: 'Hola {{name}}', body_twilio: 'Hola {{nombre}}',
+    })).toMatchObject({ eligible: false, reason: 'SLOT_MISMATCH' });
+
+    // 1..N na ordem certa continua elegível
+    expect(evaluateTemplateEligibility({
+      slug: 'x', category: 'UTILITY', is_active: true,
+      body: 'Hola {{worker_name}}, caso {{case_number}}', body_twilio: 'Hola {{1}}, caso {{2}}',
+    })).toMatchObject({ eligible: true });
+  });
 });

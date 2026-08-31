@@ -3,6 +3,15 @@
  *
  * PROVA VISUAL da tela de escolha da mensagem por etapa (DEC-12 / PEND-14).
  *
+ * COMO RODAR (dois tropeços já custaram tempo, meu e do revisor):
+ *   1. precisa de `enlite-frontend/.env` — é gitignored; sem ele o app não monta
+ *      e o teste morre no login, o que parece defeito da tela e não é;
+ *   2. depois de rodar, APAGUE o `.env`: ele define VITE_API_WORKER_FUNCTIONS_URL
+ *      e mata o ramo de fallback do ApiService, derrubando o piso de cobertura
+ *      do vitest com um vermelho que não existe no CI.
+ *   `npx vite --port 5173 --strictPort &` e
+ *   `npx playwright test --config=playwright.mocked.config.ts e2e/fsm-picker-visual.e2e.ts`
+ *
  * Auth pelo Firebase Emulator real (mesmo padrão do admin-api-docs). O payload
  * de `/api/admin/funnel-stage-messages` é fixado aqui com os DADOS REAIS de
  * produção lidos em 31/08/2026 — inclusive o corpo aprovado que veio da Content

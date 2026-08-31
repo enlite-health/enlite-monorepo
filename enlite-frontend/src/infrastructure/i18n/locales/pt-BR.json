@@ -3350,7 +3350,9 @@
         "unsynced": "Esta mensagem está aprovada pela Meta, mas o texto ainda não foi sincronizado aqui. Você pode escolhê-la, mas não temos como mostrar como ela se lê.",
         "sampleNote": "Valores como o nome e o número do caso são preenchidos pelo sistema quando a tarjeta se move; aqui são de exemplo.",
         "activate": "Ativar esta etapa ao salvar",
-        "blockedGroup": "Não podem ser usadas aqui ({{count}})"
+        "blockedGroup": "Não podem ser usadas aqui ({{count}})",
+        "currentBlocked": "Esta etapa ficou com uma mensagem que não pode mais ser usada:",
+        "pickAnother": "Escolha outra mensagem para poder salvar"
       }
     },
     "presentationInvite": {

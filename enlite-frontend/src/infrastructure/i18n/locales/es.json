@@ -3429,7 +3429,9 @@
         "unsynced": "Este mensaje está aprobado por Meta, pero su texto todavía no se sincronizó acá. Podés elegirlo, pero no podemos mostrarte cómo se lee.",
         "sampleNote": "Los valores como el nombre y el número de caso los completa el sistema al mover la tarjeta; acá van de ejemplo.",
         "activate": "Activar esta etapa al guardar",
-        "blockedGroup": "No se pueden usar acá ({{count}})"
+        "blockedGroup": "No se pueden usar acá ({{count}})",
+        "currentBlocked": "Esta etapa quedó con un mensaje que ya no se puede usar:",
+        "pickAnother": "Elegí otro mensaje para poder guardar"
       }
     },
     "presentationInvite": {

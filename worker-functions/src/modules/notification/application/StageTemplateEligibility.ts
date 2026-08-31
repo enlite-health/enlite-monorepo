@@ -105,11 +105,15 @@ export interface EligibilityResult {
  * Quantos slots a Twilio vai exigir. Conta QUALQUER `{{…}}` do corpo aprovado —
  * os corpos de lá são posicionais (`{{1}}`), que o parser nomeado não enxerga.
  */
-export function twilioSlotCount(bodyTwilio: string | null | undefined): number {
-  if (!bodyTwilio) return 0;
+export function twilioSlots(bodyTwilio: string | null | undefined): string[] {
+  if (!bodyTwilio) return [];
   const seen = new Set<string>();
   for (const m of bodyTwilio.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) seen.add(m[1]);
-  return seen.size;
+  return [...seen];
+}
+
+export function twilioSlotCount(bodyTwilio: string | null | undefined): number {
+  return twilioSlots(bodyTwilio).length;
 }
 
 export function evaluateTemplateEligibility(t: TemplateLike, policy: EligibilityPolicy = STAGE_MESSAGE_POLICY): EligibilityResult {
@@ -124,7 +128,13 @@ export function evaluateTemplateEligibility(t: TemplateLike, policy: Eligibility
    * template aprovado pede 2. Só se compara quando o corpo da Twilio é conhecido;
    * `null` = não sincronizado, e aí a regra antiga vale (nada a comparar).
    */
-  const slotsMismatch = t.body_twilio != null && twilioSlotCount(t.body_twilio) !== placeholders.length;
+  const slots = twilioSlots(t.body_twilio);
+  const esperados = placeholders.map((_, i) => String(i + 1));
+  // Não basta a QUANTIDADE bater: o corpo aprovado tem de pedir exatamente
+  // {{1}}..{{N}}. Numeração fora dessa faixa (ou um nome no lugar de um número)
+  // significa que o mapeamento posicional do envio não cobre o template.
+  const slotsMismatch = t.body_twilio != null
+    && (slots.length !== placeholders.length || esperados.some((e) => !slots.includes(e)));
   const inactive: IneligibilityReason | null = t.is_active === false ? 'INACTIVE' : null;
   let reason: IneligibilityReason | null = null;
   if (!policy.inactiveLast && inactive) reason = inactive;

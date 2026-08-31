@@ -81,6 +81,9 @@ describe('previewTextOf / summaryOf', () => {
   });
 
   it('slot inválido ou token estranho fica literal — a tela não finge que resolveu', () => {
+    // `constructor` vem do PROTÓTIPO: sem Object.hasOwn, isto imprimiria
+    // "function Object() { [native code] }" dentro do balão da mensagem.
+    expect(previewTextOf(tpl({ body: '', bodyTwilio: 'Hola {{constructor}}' }))).toBe('Hola «constructor»');
     expect(previewTextOf(tpl({ body: 'x {{case_number}}', bodyTwilio: 'Caso {{0}} e {{1}}' }))).toBe('Caso «0» e CASO 1042');
     expect(previewTextOf(tpl({ body: '', bodyTwilio: 'Hola {{first-name}}' }))).toBe('Hola {{first-name}}');
   });
@@ -114,6 +117,30 @@ describe('StageMessagePickerModal', () => {
   it('inelegível sem motivo declarado cai em PLACEHOLDERS, nunca some da lista', () => {
     renderModal({ templates: [tpl({ slug: 'orfao', eligible: false, reason: null })] });
     expect(screen.getByTestId('fsm-blocked-PLACEHOLDERS')).toHaveTextContent('orfao');
+  });
+
+  it('etapa configurada com template que VIROU inelegível: a modal diz, mostra o motivo e trava o Guardar', () => {
+    // É o cenário que o SLOT_MISMATCH cria: a etapa foi ligada quando o template
+    // era elegível, e o texto aprovado chegou depois. Procurando `selected` só
+    // entre os elegíveis, a modal abria como se nada estivesse configurado — e
+    // Guardar reenviava o slug bloqueado, que o backend recusa com 400.
+    const { onConfirm } = renderModal({ initialSlug: 'pos', initialEnabled: true });
+    expect(screen.getByTestId('fsm-current-blocked')).toHaveTextContent('pos');
+    expect(screen.getByTestId('fsm-current-blocked')).toHaveTextContent('ineligible.PLACEHOLDERS');
+    expect((screen.getByTestId('fsm-modal-save') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('fsm-save-blocked')).toBeInTheDocument();
+
+    // escolher um elegível destrava
+    fireEvent.click(screen.getByTestId('fsm-option-ok_tpl'));
+    expect(screen.queryByTestId('fsm-current-blocked')).toBeNull();
+    expect((screen.getByTestId('fsm-modal-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('fsm-modal-save'));
+    expect(onConfirm).toHaveBeenCalledWith('ok_tpl', true);
+  });
+
+  it('bloqueado SEM motivo declarado cai em PLACEHOLDERS — nunca fica sem explicação', () => {
+    renderModal({ templates: [tpl({ slug: 'orfao', eligible: false, reason: null })], initialSlug: 'orfao' });
+    expect(screen.getByTestId('fsm-current-blocked')).toHaveTextContent('ineligible.PLACEHOLDERS');
   });
 
   it('escolher mostra a prévia; escolher o sem-texto mostra o aviso, não o ponteiro', () => {

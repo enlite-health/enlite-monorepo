@@ -62,7 +62,9 @@ export function previewTextOf(tpl: Pick<FunnelStageTemplateOption, 'body' | 'bod
   return raw.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_full, key: string) => {
     const pos = Number(key);
     const resolved = Number.isInteger(pos) && pos > 0 ? (named[pos - 1] ?? key) : key;
-    return SAMPLE[resolved] ?? `«${resolved}»`;
+    // `Object.hasOwn`: sem isto, `{{constructor}}` puxa do protótipo e imprime
+    // "function Object() { [native code] }" dentro do balão que promete ser a mensagem.
+    return Object.hasOwn(SAMPLE, resolved) ? SAMPLE[resolved] : `«${resolved}»`;
   });
 }
 

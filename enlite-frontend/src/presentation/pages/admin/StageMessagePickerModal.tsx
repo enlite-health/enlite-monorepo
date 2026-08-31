@@ -72,7 +72,17 @@ export function StageMessagePickerModal({ stageLabel, templates, initialSlug, in
     return [...map.entries()];
   }, [blocked]);
 
-  const selected = eligible.find((tp) => tp.slug === slug) ?? null;
+  /**
+   * Procura em TODOS os templates, não só nos elegíveis. Uma etapa ligada pode
+   * estar apontando para um template que virou inelegível depois — é literalmente
+   * o que o `SLOT_MISMATCH` faz: aparece DEPOIS de a etapa estar funcionando,
+   * quando o texto aprovado chega. Procurando só entre elegíveis, a modal abria
+   * dizendo "escolha uma mensagem" como se nada estivesse configurado, enquanto a
+   * tabela mostrava a mensagem e "Activa" — e Guardar reenviava o slug bloqueado,
+   * que o backend recusa com 400.
+   */
+  const selected = templates.find((tp) => tp.slug === slug) ?? null;
+  const selectedBlocked = !!selected && !selected.eligible;
   const preview = selected ? previewTextOf(selected) : null;
 
   return (
@@ -111,6 +121,12 @@ export function StageMessagePickerModal({ stageLabel, templates, initialSlug, in
                   aria-label={t('admin.funnelStageMessages.picker.search')}
                   className="w-full rounded-input border border-gray-600 px-3 py-2 outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                 />
+              )}
+              {selectedBlocked && (
+                <div data-testid="fsm-current-blocked" className="rounded-input border border-wait bg-learn/10 p-3">
+                  <Text size="xs" weight="medium" color="inherit" className="text-amber-900">{t('admin.funnelStageMessages.picker.currentBlocked')}</Text>
+                  <Text size="xs" color="secondary">{selected.slug} · {t(`admin.funnelStageMessages.ineligible.${selected.reason ?? 'PLACEHOLDERS'}`)}</Text>
+                </div>
               )}
               <Text size="xs" color="secondary" className="uppercase tracking-wider">{t('admin.funnelStageMessages.picker.eligibleGroup', { count: eligible.length })}</Text>
 
@@ -182,7 +198,8 @@ export function StageMessagePickerModal({ stageLabel, templates, initialSlug, in
             <div className="flex items-center gap-2">
               {error && <span className="text-pink-cancel" data-testid="fsm-modal-error"><Text as="span" size="xs" color="inherit">{error}</Text></span>}
               <Button variant="outline" size="sm" onClick={onCancel} data-testid="fsm-modal-cancel">{t('admin.funnelStageMessages.picker.cancel')}</Button>
-              <Button variant="primary" size="sm" disabled={saving || !canSave} onClick={() => onConfirm(slug, enabled && !!slug)} data-testid="fsm-modal-save">
+              {selectedBlocked && <span className="text-amber-900" data-testid="fsm-save-blocked"><Text as="span" size="xs" color="inherit">{t('admin.funnelStageMessages.picker.pickAnother')}</Text></span>}
+              <Button variant="primary" size="sm" disabled={saving || !canSave || selectedBlocked} onClick={() => onConfirm(slug, enabled && !!slug)} data-testid="fsm-modal-save">
                 {saving ? t('admin.funnelStageMessages.saving') : t('admin.funnelStageMessages.save')}
               </Button>
             </div>

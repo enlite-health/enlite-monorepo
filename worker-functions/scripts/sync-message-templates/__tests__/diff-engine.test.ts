@@ -71,6 +71,21 @@ describe('computePlan — qual texto vai para qual coluna', () => {
     expect(updates).toHaveLength(0);
   });
 
+  it('approval ausente (--include-unapproved) → categoria null, e a do banco é preservada', () => {
+    // `approval: null` é o caminho do `--include-unapproved`: sem categoria vinda
+    // da Meta, não se sobrescreve a que já está no banco.
+    const { updates } = computePlan([{ content: content(), approval: null }], [dbRow({ category: 'UTILITY' })]);
+    expect(updates[0]?.fields).not.toHaveProperty('category');
+  });
+
+  it('nome mudou na Twilio → entra no plano; categoria diferente também', () => {
+    const { updates } = computePlan(
+      [{ content: content({ friendly_name: 'nome_novo' }), approval: { status: 'approved', category: 'MARKETING' } }],
+      [dbRow({ name: 'nome_velho', category: 'UTILITY' })],
+    );
+    expect(updates[0].fields).toMatchObject({ name: 'nome_novo', category: 'MARKETING' });
+  });
+
   it('DELETE: linha do banco sem correspondente aprovado entra no plano com o motivo', () => {
     const { deletes } = computePlan([], [dbRow({ slug: 'orfao', content_sid: 'HXsumiu' })]);
     expect(deletes).toEqual([expect.objectContaining({ slug: 'orfao', reason: expect.stringContaining('HXsumiu') })]);
