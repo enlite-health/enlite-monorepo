@@ -248,9 +248,25 @@ echo
 # ─── V4 — teste desligado ─────────────────────────────────────────────────────
 # ⚠️ usa add_code, não add: `.skip(` citado numa doc, ou `q.skip(10).limit(20)`
 # de paginação, NÃO é teste desligado. E exige o prefixo de teste.
-echo "## V4 — teste desligado (.only / .skip / xit / fdescribe)"
+#
+# ⚠️ SKIP CONDICIONAL NÃO É TESTE DESLIGADO (medido em 30/08).
+#   A 1ª versão era um regex puro em `test.skip(` e reprovava o idioma correto do
+#   Playwright para guarda de pré-condição:
+#       test.skip(!process.env.E2E_ADMIN_EMAIL, 'requer credencial')   ← guarda
+#       test.skip(true, 'prod não tem paciente para referenciar')      ← guarda
+#   Os TRÊS specs de regressão que já estavam no `main` usam esse padrão, 2× cada:
+#   a régua reprovaria o próprio repositório. Gate que reprova o correto ensina o
+#   time a ignorar o gate — é pior que gate nenhum.
+#
+#   A distinção é o PRIMEIRO ARGUMENTO:
+#       test.skip('nome do teste', fn)  → DECLARA um teste desligado   → REPROVA
+#       test.skip(<expressão>, 'motivo')→ guarda em tempo de execução  → passa
+#       test.skip()                     → pula o teste corrente        → passa
+#   `describe.skip(` / `context.skip(` reprovam SEMPRE (suíte inteira desligada
+#   nunca é guarda), e `.only` reprova sempre (nunca é condicional).
+echo "## V4 — teste desligado (.only / .skip com nome / xit / fdescribe)"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
-LIG=$(grep -E "\b(describe|it|test|context)\.(only|skip)\(|\b(xit|xdescribe|fdescribe|fit)\(" "$TMP/add_code" || true)
+LIG=$(grep -E "\b(describe|context)\.(only|skip)\(|\b(it|test)\.only\(|\b(it|test)\.skip\([[:space:]]*['\''\"\`]|\b(xit|xdescribe|fdescribe|fit)\(" "$TMP/add_code" || true)
 if [ -n "$LIG" ]; then
   falha "teste desligado sendo introduzido:"; echo "$LIG" | head -6 | sed 's/^/        /'
 else

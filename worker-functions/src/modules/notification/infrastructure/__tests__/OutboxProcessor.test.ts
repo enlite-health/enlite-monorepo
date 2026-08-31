@@ -434,6 +434,80 @@ describe('OutboxProcessor', () => {
       expect(call[0]).toContain("status = 'suppressed'");
       expect(call[1]).toContain('ob-optout');
     });
+
+    it('worker is_test → NÃO envia e marca suppressed (fixture de prod nunca vira mensagem real)', async () => {
+      const outboxRow = {
+        id: 'ob-istest',
+        worker_id: 'w-istest',
+        template_slug: 'qualified_worker_request',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        // Worker COM telefone válido e SEM opt-out — só a marca de teste bloqueia.
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100003333', messaging_channel: 'twilio', opted_out: false, is_test: true }],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-istest');
+
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      const call = mockQuery.mock.calls[2];
+      expect(call[0]).toContain("status = 'suppressed'");
+      expect(call[0]).toContain('is_test fixture');
+      expect(call[1]).toContain('ob-istest');
+    });
+
+    it('CONTROLE POSITIVO: worker NÃO-is_test com telefone válido CONTINUA enviando', async () => {
+      const outboxRow = {
+        id: 'ob-real',
+        worker_id: 'w-real',
+        template_slug: 'qualified_worker_request',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100004444', messaging_channel: 'twilio', opted_out: false, is_test: false }],
+        })
+        .mockResolvedValue({ rows: [] });
+
+      await processor.processById('ob-real');
+
+      // Sem este teste, o guard acima "passaria" mesmo se eu tivesse bloqueado TODO envio.
+      expect(mockMessaging.sendWhatsApp).toHaveBeenCalledTimes(1);
+    });
+
+    it('is_test tem precedência sobre opt-out: fixture não consome nem a checagem de supressão', async () => {
+      const outboxRow = {
+        id: 'ob-ambos',
+        worker_id: 'w-ambos',
+        template_slug: 'qualified_worker_request',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100005555', messaging_channel: 'twilio', opted_out: true, is_test: true }],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-ambos');
+
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      // A razão registrada é a de TESTE, não a de opt-out — o guard de is_test vem antes.
+      expect(mockQuery.mock.calls[2][0]).toContain('is_test fixture');
+    });
   });
 
   // ─── Verifica que não existem mais start/stop/timer ───────────────
