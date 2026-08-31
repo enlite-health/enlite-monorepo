@@ -19,8 +19,12 @@ function Explode(): JSX.Element {
   throw new Error("Cannot read properties of undefined (reading 'map')");
 }
 
-let spy: ReturnType<typeof vi.spyOn>;
-beforeEach(() => { spy = vi.spyOn(console, 'error').mockImplementation(() => {}); });
+// `ReturnType<typeof vi.spyOn>` é genérico e não casa com o spy concreto de
+// `console.error` (TS2322). Deixar o TS INFERIR do próprio `vi.spyOn` resolve
+// sem `any` e sem escrever a assinatura genérica à mão.
+let spy: ReturnType<typeof espionarConsole>;
+const espionarConsole = () => vi.spyOn(console, 'error').mockImplementation(() => {});
+beforeEach(() => { spy = espionarConsole(); });
 afterEach(() => { spy.mockRestore(); });
 
 describe('quando a tela quebra', () => {
