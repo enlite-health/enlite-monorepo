@@ -47,31 +47,49 @@ describe('previewTextOf / summaryOf', () => {
     expect(previewTextOf(OK)).toBe('Caso CASO 1042 para María González');
   });
 
-  it('sem corpo aprovado, cai para o nosso `body` nomeado', () => {
-    expect(previewTextOf(tpl({ body: 'Hola {{name}}', bodyTwilio: null }))).toBe('Hola María González');
-  });
-
-  it('corpo-ponteiro e corpo vazio não viram prévia — null, para a tela dizer que não sabe', () => {
+  it('SEM texto aprovado não há prévia — nem quando o nosso `body` tem texto', () => {
+    // A regra que mata a classe: a prévia lê só `bodyTwilio`. Assim nenhum
+    // sentinela (nem os que ainda não existem) tem por onde chegar à tela.
+    expect(previewTextOf(tpl({ body: 'Hola {{name}}', bodyTwilio: null }))).toBeNull();
     expect(previewTextOf(SIN)).toBeNull();
     expect(previewTextOf(tpl({ body: '[Template aprovado Twilio — conteúdo gerenciado via Content API]' }))).toBeNull();
-    expect(previewTextOf(tpl({ body: '   ', bodyTwilio: null }))).toBeNull();
+    expect(previewTextOf(tpl({ body: '[Template não-textual — popular body manualmente]' }))).toBeNull();
     expect(previewTextOf(tpl({ body: null, bodyTwilio: null }))).toBeNull();
+    expect(previewTextOf(tpl({ body: 'x', bodyTwilio: '   ' }))).toBeNull();
+  });
+
+  it('qualquer sentinela futuro em `body` é inalcançável pela tela — a regra não depende de reconhecê-lo', () => {
+    for (const inventado of ['<<TEMPLATE SEM TEXTO>>', 'TODO: preencher', '{{{ponteiro}}}', 'ver no Twilio']) {
+      expect(previewTextOf(tpl({ body: inventado, bodyTwilio: null }))).toBeNull();
+    }
   });
 
   it('variável fora da allowlist aparece marcada, não sumida', () => {
-    expect(previewTextOf(tpl({ body: 'El {{date}}', bodyTwilio: null }))).toBe('El «date»');
+    expect(previewTextOf(tpl({ body: 'El {{date}}', bodyTwilio: 'El {{1}}' }))).toBe('El «date»');
     // posicional sem nome correspondente em `body` mantém o número visível
     expect(previewTextOf(tpl({ body: '', bodyTwilio: 'Hola {{1}}' }))).toBe('Hola «1»');
   });
 
   it('summaryOf achata quebras de linha; sem texto → null', () => {
-    expect(summaryOf(tpl({ body: 'uma\n\nlinha só', bodyTwilio: null }))).toBe('uma linha só');
+    expect(summaryOf(tpl({ body: 'x', bodyTwilio: 'uma\n\nlinha só' }))).toBe('uma linha só');
     expect(summaryOf(SIN)).toBeNull();
   });
 
   it('placeholdersOf devolve sem duplicata, na ordem, tolerando espaço', () => {
     expect(placeholdersOf('{{ a }} {{b}} {{a}}')).toEqual(['a', 'b']);
     expect(placeholdersOf('')).toEqual([]);
+  });
+
+  it('slot inválido ou token estranho fica literal — a tela não finge que resolveu', () => {
+    expect(previewTextOf(tpl({ body: 'x {{case_number}}', bodyTwilio: 'Caso {{0}} e {{1}}' }))).toBe('Caso «0» e CASO 1042');
+    expect(previewTextOf(tpl({ body: '', bodyTwilio: 'Hola {{first-name}}' }))).toBe('Hola {{first-name}}');
+  });
+
+  it('CONTRATO com o backend: o parser aceita só [A-Za-z0-9_] — o que o envio enxerga', () => {
+    // Se o front aceitasse `{{first-name}}` e o backend não, a prévia diria que o
+    // valor cai no slot 2 e o envio o poria no slot 1. Este caso trava os dois.
+    expect(placeholdersOf('Hola {{first-name}}, caso {{case_number}}')).toEqual(['case_number']);
+    expect(placeholdersOf('{{a.b}} {{c}}')).toEqual(['c']);
   });
 });
 
@@ -112,7 +130,7 @@ describe('StageMessagePickerModal', () => {
     renderModal();
     expect(screen.queryByTestId('fsm-modal-search')).toBeNull();
 
-    const many = Array.from({ length: SEARCH_THRESHOLD + 1 }, (_, i) => tpl({ slug: `t${i}`, body: i === 0 ? 'Bienvenida al caso' : `Otro ${i}` }));
+    const many = Array.from({ length: SEARCH_THRESHOLD + 1 }, (_, i) => tpl({ slug: `t${i}`, bodyTwilio: i === 0 ? 'Bienvenida al caso' : `Otro ${i}` }));
     renderModal({ templates: many });
     const search = screen.getByTestId('fsm-modal-search');
     fireEvent.change(search, { target: { value: 'bienvenida' } });
@@ -127,7 +145,7 @@ describe('StageMessagePickerModal', () => {
   });
 
   it('busca com elegível SEM texto não quebra: casa pelo slug', () => {
-    const many = [SIN, ...Array.from({ length: SEARCH_THRESHOLD }, (_, i) => tpl({ slug: `t${i}`, body: `Otro ${i}` }))];
+    const many = [SIN, ...Array.from({ length: SEARCH_THRESHOLD }, (_, i) => tpl({ slug: `t${i}`, bodyTwilio: `Otro ${i}` }))];
     renderModal({ templates: many });
     fireEvent.change(screen.getByTestId('fsm-modal-search'), { target: { value: 'sin_' } });
     expect(screen.getByTestId('fsm-option-sin_texto')).toBeInTheDocument();
@@ -136,7 +154,7 @@ describe('StageMessagePickerModal', () => {
 
   it('mensagem longa é cortada no cartão da opção, com reticências', () => {
     const longo = 'a'.repeat(120);
-    renderModal({ templates: [tpl({ slug: 'longo', body: longo })] });
+    renderModal({ templates: [tpl({ slug: 'longo', bodyTwilio: longo })] });
     const opt = screen.getByTestId('fsm-option-longo');
     expect(opt).toHaveTextContent(`«${'a'.repeat(70)}…»`);
     expect(opt.textContent).not.toContain('a'.repeat(71));

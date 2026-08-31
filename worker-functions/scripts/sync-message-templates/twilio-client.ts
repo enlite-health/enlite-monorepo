@@ -3,6 +3,8 @@
  * Usa fetch nativo (Node 18+) + Basic auth.
  */
 
+import { contentBodyOrSentinel } from '../../src/modules/notification/infrastructure/twilioContentBody';
+
 const TWILIO_BASE = 'https://content.twilio.com';
 
 export interface TwilioContent {
@@ -74,19 +76,10 @@ export class TwilioContentClient {
  * Extrai o `body` mais útil de um Content. Twilio expõe vários tipos
  * (text, quick-reply, card, etc.); tentamos em ordem de preferência.
  */
-export function extractBody(types: TwilioContent['types']): string {
-  const order = [
-    'twilio/text',
-    'twilio/quick-reply',
-    'twilio/call-to-action',
-    'twilio/list-picker',
-    'twilio/card',
-  ];
-  for (const key of order) {
-    const t = types[key];
-    if (!t) continue;
-    if (t.body) return t.body;
-    if (t.title) return t.title;
-  }
-  return '[Template não-textual — popular body manualmente]';
-}
+/**
+ * @deprecated Use `extractContentBody` (texto real ou null) ou
+ * `contentBodyOrSentinel` (para a coluna legada `body`, NOT NULL), ambos em
+ * `src/modules/notification/infrastructure/twilioContentBody.ts`. Esta função
+ * fica como re-export para não quebrar chamador antigo — a regra é uma só.
+ */
+export const extractBody = contentBodyOrSentinel;

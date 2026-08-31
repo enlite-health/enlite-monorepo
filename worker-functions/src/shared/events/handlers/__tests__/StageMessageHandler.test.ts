@@ -211,7 +211,7 @@ describe('a mensagem que sai é a que está ESCOLHIDA agora (DEC-12)', () => {
     expect(trilha[1][3]).toBe('tpl_escolhido');
   });
 
-  it('template cujo corpo aprovado pede mais slots do que sabemos preencher NÃO é enfileirado', async () => {
+  it('template cujo corpo aprovado pede mais slots do que sabemos preencher NÃO é enfileirado — com razão PRÓPRIA, não silêncio', async () => {
     const q = jest.fn() as Q;
     const client = makeClient();
     const { pubsub, token } = doubles();
@@ -219,6 +219,8 @@ describe('a mensagem que sai é a que está ESCOLHIDA agora (DEC-12)', () => {
     await createStageMessageHandler(makeDb(q, client) as never, pubsub as never, token as never, 'COMPLETED')(payload);
 
     expect(outboxInsert(client)).toBeUndefined();
-    expect((logInsert(q) as unknown as [string, unknown[]])[1][6]).toBe('TEMPLATE_NOT_ALLOWED');
+    // Razão própria: é a única que pode aparecer DEPOIS de a etapa estar ligada,
+    // então confundi-la com 'nunca foi permitido' esconderia uma etapa que parou.
+    expect((logInsert(q) as unknown as [string, unknown[]])[1][6]).toBe('TEMPLATE_SLOT_MISMATCH');
   });
 });

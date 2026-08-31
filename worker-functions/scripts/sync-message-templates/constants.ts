@@ -19,11 +19,6 @@
  * pra estatística histórica.
  */
 export const HARDCODED_SLUGS = new Set<string>([
-  // Reserva do REQ-09: a migration 293 cria a linha INATIVA e sem content_sid
-  // enquanto a Meta não aprova o template da reunión de presentación. Sem sid e
-  // sem friendly_name na Twilio, ela cai no plano de DELETE por construção — e
-  // apagá-la destrói a configuração que PresentationInviteController escreve.
-  'ar_presentacion_invite',
   'vacancy_match',
   'qualified_reprogram_confirm',
   'qualified_worker_response',

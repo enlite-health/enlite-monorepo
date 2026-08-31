@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { reportError } from '@shared/logging';
+import { reportError, logger } from '@shared/logging';
+import { extractContentBody, type ContentTypes } from './twilioContentBody';
 
 /**
  * TwilioContentBodyProvider — traz da Content API o texto aprovado do template e
@@ -27,17 +28,18 @@ export interface TemplateNeedingBody {
   content_sid: string | null;
 }
 
-type Fetcher = (url: string, init: { headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+type Fetcher = (url: string, init: { headers: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
-/** Primeiro `body` que aparecer entre os `types` do Content (twilio/text, twilio/media, …). */
-export function extractContentBody(payload: unknown): string | null {
-  const types = (payload as { types?: Record<string, unknown> } | null)?.types;
-  if (!types) return null;
-  for (const value of Object.values(types)) {
-    const body = (value as { body?: unknown } | null)?.body;
-    if (typeof body === 'string' && body.trim()) return body;
-  }
-  return null;
+/** Teto por chamada: isto roda no caminho de uma request do painel. */
+export const FETCH_TIMEOUT_MS = 3000;
+
+/**
+ * O texto aprovado do payload da Content API — mesma regra do sync, importada,
+ * não copiada: os dois escrevem a MESMA coluna, e duas regras já produziram um
+ * sentinela na tela como se fosse mensagem.
+ */
+export function bodyOfContentPayload(payload: unknown): string | null {
+  return extractContentBody((payload as { types?: ContentTypes } | null)?.types);
 }
 
 export class TwilioContentBodyProvider {
@@ -58,17 +60,27 @@ export class TwilioContentBodyProvider {
    */
   async fillMissing(templates: TemplateNeedingBody[]): Promise<Map<string, string>> {
     const found = new Map<string, string>();
-    if (!this.configured) return found;
+    if (!this.configured) {
+      logger.warn({ msg: 'twilio_content_sem_credencial', pendentes: templates.length });
+      return found;
+    }
     const auth = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
 
     for (const tpl of templates.slice(0, MAX_LAZY_FETCH)) {
       if (!tpl.content_sid) continue;
       try {
-        const res = await this.fetchImpl(`${CONTENT_API}/${tpl.content_sid}`, { headers: { Authorization: `Basic ${auth}` } });
+        const res = await this.fetchImpl(`${CONTENT_API}/${tpl.content_sid}`, { headers: { Authorization: `Basic ${auth}` }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
         if (!res.ok) throw new Error(`Content API ${res.status} para ${tpl.content_sid}`);
-        const body = extractContentBody(await res.json());
-        if (!body) continue;
-        await this.db.query(`UPDATE message_templates SET body_twilio = $2, updated_at = NOW() WHERE slug = $1`, [tpl.slug, body]);
+        const body = bodyOfContentPayload(await res.json());
+        if (!body) {
+          // Content respondeu 200 sem texto: não é erro de rede, mas também não
+          // pode virar silêncio — é o caso que já mentiu na tela uma vez.
+          logger.warn({ msg: 'twilio_content_sem_texto', slug: tpl.slug, contentSid: tpl.content_sid });
+          continue;
+        }
+        // Sem `updated_at`: isto é efeito de uma LEITURA. E `IS DISTINCT FROM`
+        // para N staff abrindo a tela juntos não escreverem o mesmo valor N vezes.
+        await this.db.query(`UPDATE message_templates SET body_twilio = $2 WHERE slug = $1 AND body_twilio IS DISTINCT FROM $2`, [tpl.slug, body]);
         found.set(tpl.slug, body);
       } catch (error: unknown) {
         // Exibição: falhar aqui não pode derrubar a listagem da tela.

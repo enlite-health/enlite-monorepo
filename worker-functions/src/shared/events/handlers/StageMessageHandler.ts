@@ -6,6 +6,7 @@ import { optedOutExistsSql } from '../../database/messagingOptOutFilter';
 import {
   buildStageVariables,
   evaluateTemplateEligibility,
+  twilioSlotCount,
 } from '../../../modules/notification/application/StageTemplateEligibility';
 
 /**
@@ -32,9 +33,19 @@ import {
 
 export const STAGE_MESSAGE_COOLDOWN = '7 days';
 
-export type StageSkipReason =
-  | 'DISABLED' | 'NO_TEMPLATE' | 'TEMPLATE_INACTIVE' | 'TEMPLATE_NOT_ALLOWED' | 'WORKER_NOT_FOUND'
-  | 'WORKER_DISABLED' | 'OPT_OUT' | 'ALREADY_SENT' | 'VACANCY_NOT_FOUND' | 'SOURCE_NOT_HUMAN' | 'COUNTRY_BLOCKED';
+/**
+ * As razões de pulo. É a MESMA lista do CHECK de `funnel_stage_message_log`
+ * (migration 296) — por isso é um array exportado, e não só um `type`: o teste
+ * `funnel-stage-skip-reasons.e2e.test.ts` itera sobre ele e insere cada valor no
+ * banco real. Acrescentar razão sem acrescentar no CHECK falha em teste.
+ */
+export const STAGE_SKIP_REASONS = [
+  'DISABLED', 'NO_TEMPLATE', 'TEMPLATE_INACTIVE', 'TEMPLATE_NOT_ALLOWED', 'TEMPLATE_SLOT_MISMATCH',
+  'WORKER_NOT_FOUND', 'WORKER_DISABLED', 'OPT_OUT', 'ALREADY_SENT', 'VACANCY_NOT_FOUND',
+  'SOURCE_NOT_HUMAN', 'COUNTRY_BLOCKED',
+] as const;
+
+export type StageSkipReason = (typeof STAGE_SKIP_REASONS)[number];
 
 interface ConfigRow { template_slug: string | null; enabled: boolean; builtin: string | null; body: string | null; body_twilio: string | null; category: string | null; is_active: boolean | null }
 interface VacancyRow { case_number: number | null; country: string | null }
@@ -100,6 +111,20 @@ export function createStageMessageHandler(
     // recusa — o guard tem de valer nos três pontos, não em dois.
     const eligibility = evaluateTemplateEligibility({ slug: templateSlug, body: config.body, body_twilio: config.body_twilio, category: config.category, is_active: config.is_active });
     if (eligibility.reason === 'INACTIVE') { await skip('TEMPLATE_INACTIVE'); return; }
+    if (eligibility.reason === 'SLOT_MISMATCH') {
+      // Razão PRÓPRIA, e não `TEMPLATE_NOT_ALLOWED`: este é o único motivo que
+      // pode aparecer DEPOIS de a etapa já estar ligada e funcionando — basta o
+      // corpo aprovado chegar (sync, ou alguém abrir a tela). Confundi-lo com
+      // "nunca foi permitido" faria uma etapa parar de mandar mensagem sem que
+      // ninguém conseguisse distinguir de "não configurada".
+      logger.warn({
+        msg: 'funnel_stage_message_travada', stage, slug: templateSlug, workerId, jobPostingId,
+        motivo: 'o texto aprovado na Meta pede mais variáveis do que o sistema preenche',
+        slotsAprovados: twilioSlotCount(config.body_twilio), variaveisNossas: eligibility.placeholders.length,
+      });
+      await skip('TEMPLATE_SLOT_MISMATCH');
+      return;
+    }
     if (!eligibility.eligible) { await skip('TEMPLATE_NOT_ALLOWED'); return; }
     if (worker.status === 'DISABLED') { await skip('WORKER_DISABLED'); return; }
     if (worker.opted_out) { await skip('OPT_OUT'); return; }

@@ -11,7 +11,8 @@
  *   - Kanban da vaga: arrastar a tarjeta de "Invitados" para "Completados" → evento
  *     `funnel_stage.confirmed` gravado com o uid de quem moveu → processado pelo endpoint interno →
  *     outbox com o template + a tarjeta mostra "Mensaje de etapa (Completados): <data>";
- *   - `toHaveScreenshot` da página de config e da tarjeta (visual) + vídeo/prints para a task.
+ *   - `toHaveScreenshot` da tarjeta (visual, baseline versionada) + vídeo/prints para a task.
+ *     A prova visual da tela de config vive em `e2e/fsm-picker-visual.e2e.ts` (FILA U4).
  * Nenhuma mensagem sai (Twilio desconfigurado; canal pausado pelo kill-switch durante o ensaio).
  */
 import { test, expect, type Page } from '@playwright/test';
@@ -109,11 +110,14 @@ test.describe('Mensagem por etapa: configurar e arrastar a tarjeta (PEND-14 / DE
     await expect(page.getByTestId('fsm-preview')).toContainText('tu candidatura al caso');
     await page.getByTestId('fsm-modal-enabled').check();
     await page.screenshot({ path: testInfo.outputPath('01-modal-elegir-mensaje.png'), fullPage: false });
-    await expect(page.getByTestId('fsm-modal')).toHaveScreenshot('fsm-picker-modal.png', { maxDiffPixelRatio: 0.05 });
     await page.getByTestId('fsm-modal-save').click();
     await expect(page.getByTestId('fsm-modal')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('02-config-etapa-confirmados.png'), fullPage: false });
-    await expect(page.getByTestId('fsm-table')).toHaveScreenshot('fsm-config-table.png', { maxDiffPixelRatio: 0.05 });
+    // SEM `toHaveScreenshot` aqui: a baseline versionada é de dois redesenhos
+    // atrás e esta suíte não autentica local (FILA U4) — eu não consigo rodar
+    // este arquivo, e teste que eu não rodei não entra verde por decreto.
+    // A asserção visual desta tela vive em `e2e/fsm-picker-visual.e2e.ts`, que
+    // roda e cuja baseline está versionada. A U4 volta para a FILA como item.
     await expect(page.getByTestId('fsm-saved-CONFIRMED')).toBeVisible({ timeout: 15_000 });
     expect(runSQL(`SELECT template_slug || '|' || enabled::text || '|' || updated_by FROM funnel_stage_messages WHERE country = 'AR' AND stage = 'CONFIRMED'`)).toBe(`${TEMPLATE}|true|${uid}`);
     expect(runSQL(`SELECT COUNT(*) FROM funnel_stage_messages_audit WHERE stage = 'CONFIRMED' AND actor_uid = '${uid}'`)).not.toBe('0');
