@@ -5,8 +5,9 @@
  * desta branch, migration 292) → Postgres real → Firebase Auth EMULATOR real.
  *
  * O que prova:
- *   - /admin/mensajes-por-etapa: admin escolhe um template ELEGÍVEL para CONFIRMED, liga e salva
- *     → banco (`funnel_stage_messages`) e auditoria; template MARKETING aparece desabilitado com o motivo;
+ *   - /admin/mensajes-por-etapa: admin abre a modal, VÊ o texto da mensagem, escolhe o template
+ *     ELEGÍVEL para CONFIRMED, liga e salva → banco (`funnel_stage_messages`) e auditoria;
+ *     template MARKETING aparece no bloco dos que não se pode usar, com o motivo;
  *   - Kanban da vaga: arrastar a tarjeta de "Invitados" para "Completados" → evento
  *     `funnel_stage.confirmed` gravado com o uid de quem moveu → processado pelo endpoint interno →
  *     outbox com o template + a tarjeta mostra "Mensaje de etapa (Completados): <data>";
@@ -97,15 +98,22 @@ test.describe('Mensagem por etapa: configurar e arrastar a tarjeta (PEND-14 / DE
     await page.goto('/admin/mensajes-por-etapa');
     await expect(page.getByTestId('fsm-table')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('fsm-row-QUALIFIED')).toContainText(/Incorporada/i);
-    const select = page.getByTestId('fsm-template-CONFIRMED');
-    const mktOption = select.locator('option[value="fsm_ui_marketing"]');
-    await expect(mktOption).toHaveAttribute('disabled', '');
-    await expect(mktOption).toContainText(/UTILITY/);
-    await select.selectOption(TEMPLATE);
-    await page.getByTestId('fsm-enabled-CONFIRMED').check();
-    await page.screenshot({ path: testInfo.outputPath('01-config-etapa-confirmados.png'), fullPage: false });
+    // A escolha mora na modal: a lista mostra o TEXTO da mensagem, e o MARKETING
+    // aparece no bloco "no se pueden usar", agrupado pelo motivo — não como opção.
+    await page.getByTestId('fsm-open-CONFIRMED').click();
+    await expect(page.getByTestId('fsm-modal')).toBeVisible();
+    await expect(page.getByTestId('fsm-blocked-CATEGORY')).toContainText('fsm_ui_marketing');
+    await expect(page.getByTestId(`fsm-option-${TEMPLATE}`)).toContainText('María González');
+    await page.getByTestId(`fsm-option-${TEMPLATE}`).click();
+    // A prévia mostra o texto inteiro ANTES de ligar a etapa.
+    await expect(page.getByTestId('fsm-preview')).toContainText('tu candidatura al caso');
+    await page.getByTestId('fsm-modal-enabled').check();
+    await page.screenshot({ path: testInfo.outputPath('01-modal-elegir-mensaje.png'), fullPage: false });
+    await expect(page.getByTestId('fsm-modal')).toHaveScreenshot('fsm-picker-modal.png', { maxDiffPixelRatio: 0.05 });
+    await page.getByTestId('fsm-modal-save').click();
+    await expect(page.getByTestId('fsm-modal')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('02-config-etapa-confirmados.png'), fullPage: false });
     await expect(page.getByTestId('fsm-table')).toHaveScreenshot('fsm-config-table.png', { maxDiffPixelRatio: 0.05 });
-    await page.getByTestId('fsm-save-CONFIRMED').click();
     await expect(page.getByTestId('fsm-saved-CONFIRMED')).toBeVisible({ timeout: 15_000 });
     expect(runSQL(`SELECT template_slug || '|' || enabled::text || '|' || updated_by FROM funnel_stage_messages WHERE country = 'AR' AND stage = 'CONFIRMED'`)).toBe(`${TEMPLATE}|true|${uid}`);
     expect(runSQL(`SELECT COUNT(*) FROM funnel_stage_messages_audit WHERE stage = 'CONFIRMED' AND actor_uid = '${uid}'`)).not.toBe('0');

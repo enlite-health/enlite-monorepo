@@ -3383,7 +3383,7 @@
       "title": "Mensajes por etapa",
       "subtitle": "Cuando una tarjeta entra en una etapa del Kanban, sale el template elegido (WhatsApp, Twilio). Todo nace apagado: prendé una etapa, medí, después extendé.",
       "stage": "Etapa",
-      "template": "Template",
+      "template": "Mensaje",
       "enabled": "Activa",
       "updatedBy": "Última edición",
       "builtin": "Incorporada: invitación a entrevista (no configurable)",
@@ -3398,7 +3398,8 @@
         "CATEGORY": "no es UTILITY (Meta)",
         "DENY_LIST": "recordatorio/cobranza: bloqueado por etapa",
         "PLACEHOLDERS": "variables que el sistema no completa",
-        "INACTIVE": "inactivo"
+        "INACTIVE": "inactivo",
+        "SLOT_MISMATCH": "el texto aprobado pide más datos de los que el sistema completa"
       },
       "eligibleHint": "Solo templates aprobados por Meta como UTILITY, sin recordatorios, con variables que el sistema completa (nombre como token, número de caso).",
       "stages": {
@@ -3407,6 +3408,26 @@
         "INTERVIEWED": "Entrevistados",
         "PRESENTED": "Presentados",
         "HIRED": "Contratados"
+      },
+      "peek": "Ver",
+      "choose": "Elegir mensaje",
+      "change": "Cambiar",
+      "stateOn": "Activa",
+      "stateOff": "Apagada",
+      "picker": {
+        "title": "Mensaje para la etapa «{{stage}}»",
+        "close": "Cerrar",
+        "cancel": "Cancelar",
+        "search": "Buscar por texto o por slug",
+        "noMatch": "Ningún mensaje coincide con la búsqueda.",
+        "eligibleGroup": "Se pueden usar acá ({{count}})",
+        "previewLabel": "Así lo recibe la cuidadora",
+        "pickToPreview": "Elegí un mensaje de la izquierda para verlo acá.",
+        "noText": "Sin texto acá — vive en Twilio",
+        "unsynced": "Este mensaje está aprobado por Meta, pero su texto todavía no se sincronizó acá. Podés elegirlo, pero no podemos mostrarte cómo se lee.",
+        "sampleNote": "Los valores como el nombre y el número de caso los completa el sistema al mover la tarjeta; acá van de ejemplo.",
+        "activate": "Activar esta etapa al guardar",
+        "blockedGroup": "No se pueden usar acá ({{count}})"
       }
     },
     "presentationInvite": {

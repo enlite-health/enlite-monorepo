@@ -19,7 +19,7 @@ function makeRes(): Response & { statusCode: number; payload: unknown } {
 }
 const req = (stage: string, body?: unknown, uid = 'admin-1') => ({ params: { stage }, body, user: { uid } }) as unknown as Request;
 
-const T_OK = { slug: 'qualified_reprogram_confirm', name: 'Reprogramar', body: 'Caso {{case_number}}', category: 'UTILITY', is_active: true };
+const T_OK = { slug: 'qualified_reprogram_confirm', name: 'Reprogramar', body: 'Caso {{case_number}}', body_twilio: 'Caso {{1}}', category: 'UTILITY', is_active: true };
 const T_MKT = { slug: 'ar_invite_open', name: 'Invite', body: 'x', category: 'MARKETING', is_active: true };
 const T_DENY = { slug: 'complete_register_utility_v2', name: 'Cobrança', body: 'x', category: 'UTILITY', is_active: true };
 
@@ -36,7 +36,7 @@ describe('FunnelStageMessagesController', () => {
     it('devolve as 9 etapas (AR) com a config e os templates com elegibilidade explicada', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ stage: 'COMPLETED', template_slug: 'qualified_reprogram_confirm', enabled: true, channel: 'whatsapp', builtin: null, updated_by: 'u1', updated_at: '2026-08-29', updated_by_name: 'Gabi' }, { stage: 'QUALIFIED', template_slug: null, enabled: false, channel: 'whatsapp', builtin: 'interview_invite', updated_by: null, updated_at: null, updated_by_name: null }] })
-        .mockResolvedValueOnce({ rows: [T_OK, T_MKT, T_DENY, { slug: 'x_pos', name: 'p', body: 'Hola {{1}}', category: 'UTILITY', is_active: true }] });
+        .mockResolvedValueOnce({ rows: [T_OK, T_MKT, T_DENY, { slug: 'x_pos', name: 'p', body: 'Hola {{1}}', body_twilio: null, category: 'UTILITY', is_active: true }] });
       const res = makeRes();
       await c.list({} as Request, res);
       expect(res.statusCode).toBe(200);
@@ -50,7 +50,34 @@ describe('FunnelStageMessagesController', () => {
         ['qualified_reprogram_confirm', true, null], ['ar_invite_open', false, 'CATEGORY'], ['complete_register_utility_v2', false, 'DENY_LIST'], ['x_pos', false, 'PLACEHOLDERS'],
       ]);
       expect(mockQuery.mock.calls[0][1]).toEqual(['AR']);
+      // A tela precisa dos DOIS textos: `body` é o contrato de envio (nomeado) e
+      // `bodyTwilio` é o que a cuidadora recebe. Sem eles não existe prévia.
+      expect(data.templates.find((t) => t.slug === 'qualified_reprogram_confirm')).toMatchObject({ body: 'Caso {{case_number}}', bodyTwilio: 'Caso {{1}}' });
+      // Nunca sincronizado → null explícito, para a tela dizer que não sabe.
+      expect(data.templates.find((t) => t.slug === 'x_pos')).toMatchObject({ bodyTwilio: null });
     });
+    it('template sem texto sincronizado: busca na Twilio, usa o corpo achado e a elegibilidade passa a olhar os slots', async () => {
+      const fillMissing = jest.fn().mockResolvedValue(new Map([['ar_finalize_signup_luz', 'Hola {{1}}, entrá en {{2}}']]));
+      const c2 = new FunnelStageMessagesController({ fillMissing } as never);
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [
+          { slug: 'ar_finalize_signup_luz', name: 'x', body: '(ver Twilio Content Builder: HX54d6)', body_twilio: null, category: 'UTILITY', is_active: true, content_sid: 'HX54d6' },
+          { slug: 'ar_invite_open', name: 'y', body: 'x', body_twilio: null, category: 'MARKETING', is_active: true, content_sid: 'HXmkt' },
+          { slug: 'sem_categoria', name: 'z', body: 'x', body_twilio: null, category: null, is_active: true, content_sid: 'HXnull' },
+        ] });
+      const res = makeRes();
+      await c2.list({} as Request, res);
+
+      // Só a candidata (UTILITY, fora da deny-list) é buscada — MARKETING nunca aparece com prévia.
+      expect(fillMissing).toHaveBeenCalledWith([{ slug: 'ar_finalize_signup_luz', content_sid: 'HX54d6' }]);
+      const data = (res.payload as { data: { templates: Array<Record<string, unknown>> } }).data;
+      const luz = data.templates.find((t) => t.slug === 'ar_finalize_signup_luz');
+      // O corpo-ponteiro não tinha variável nenhuma e passava como elegível; o texto
+      // aprovado pede 2 slots que ninguém preenche — agora reprova, e com texto na tela.
+      expect(luz).toMatchObject({ bodyTwilio: 'Hola {{1}}, entrá en {{2}}', eligible: false, reason: 'SLOT_MISMATCH' });
+    });
+
     it('erro → 500', async () => {
       mockQuery.mockRejectedValueOnce(new Error('x'));
       const res = makeRes();

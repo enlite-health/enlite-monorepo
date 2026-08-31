@@ -2,9 +2,13 @@
  * Diff engine: dado o estado atual do banco + Twilio aprovados, calcula
  * o plano de INSERT/UPDATE/DELETE.
  *
- * Body NUNCA é sobrescrito automaticamente — TwilioMessagingService usa
+ * `body` NUNCA é sobrescrito automaticamente — TwilioMessagingService usa
  * placeholders nomeados ({{worker_name}}) que precisam casar com o que o
  * frontend envia. Body Twilio (numérico) seria conflito funcional.
+ *
+ * `body_twilio` é o oposto: existe justamente para guardar o texto cru da
+ * Twilio, só para exibição (a prévia da tela de mensagens por etapa). Ele é
+ * sobrescrito sempre que diverge — é a Twilio que manda nele.
  */
 import { extractBody, TwilioContent, WhatsAppApproval } from './twilio-client';
 import { DbTemplateRow } from './db';
@@ -13,6 +17,8 @@ export interface InsertPlan {
   slug: string;
   name: string;
   body: string;
+  /** Texto cru da Twilio, só exibição. No INSERT é igual ao body porque não há versão nomeada ainda. */
+  bodyTwilio: string;
   category: string | null;
   contentSid: string;
 }
@@ -20,7 +26,7 @@ export interface InsertPlan {
 export interface UpdatePlan {
   id: string;
   slug: string;
-  fields: Partial<Pick<DbTemplateRow, 'name' | 'category' | 'content_sid' | 'is_active'>>;
+  fields: Partial<Pick<DbTemplateRow, 'name' | 'category' | 'content_sid' | 'is_active' | 'body_twilio'>>;
   bodyDiverges: boolean;
   bodyTwilio: string;
 }
@@ -72,6 +78,7 @@ export function computePlan(
       slug: content.friendly_name,
       name: content.friendly_name,
       body,
+      bodyTwilio: body,
       category,
       contentSid: content.sid,
     });
@@ -107,6 +114,8 @@ function buildUpdatePlan(
   if (row.name !== content.friendly_name) fields.name = content.friendly_name;
   if (category !== null && row.category !== category) fields.category = category;
   if (!row.is_active) fields.is_active = true;
+  // Exibição: a Twilio é a fonte. Diferente de `body`, aqui sobrescrever é o certo.
+  if (row.body_twilio !== body) fields.body_twilio = body;
   const bodyDiverges = row.body !== body;
   if (Object.keys(fields).length === 0 && !bodyDiverges) return null;
   return { id: row.id, slug: row.slug, fields, bodyDiverges, bodyTwilio: body };
