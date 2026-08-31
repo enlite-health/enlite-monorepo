@@ -39,6 +39,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { resolveLocationFilter } from '@shared/utils/normalizeLocationValue';
+import { DECRYPT_BATCH } from '@shared/security/decryptBatch';
 import {
   MAX_MAP_POINTS, mapScopeShape, num, parseMapBody, respondMapError, respondMapPoints, totalFromRows,
   withMapScopeRules,
@@ -48,7 +49,9 @@ import { buildWorkerListWhereClause, locationMatchSql } from './AdminWorkersList
 
 export { MAX_MAP_POINTS };
 /** Cifras por rodada de decrypt em paralelo (em prod cada uma é uma chamada ao KMS). */
-export const DECRYPT_BATCH = 50;
+/** Reexportado de `@shared/security/decryptBatch` — a constante saiu daqui em
+ *  31/08 para não obrigar outra camada a importar de `interfaces/controllers`. */
+export { DECRYPT_BATCH } from '@shared/security/decryptBatch';
 
 const WorkerStatusEnum = z.enum(['REGISTERED', 'INCOMPLETE_REGISTER', 'DISABLED']);
 

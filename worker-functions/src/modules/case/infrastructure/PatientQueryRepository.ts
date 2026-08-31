@@ -5,7 +5,7 @@ import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
 import { derivePatientSla } from '../domain/PatientSla';
 import { isLeadPlaceholderName, maskEmail } from '../domain/LeadContact';
-import { DECRYPT_BATCH } from '../../worker/interfaces/controllers/AdminWorkersMapController';
+import { DECRYPT_BATCH } from '@shared/security/decryptBatch';
 import { logger } from '@shared/logging';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
@@ -402,6 +402,9 @@ export class PatientQueryRepository {
     // os cards perderem o contato em silêncio absoluto (blocker do gate, 31/08).
     let recusados = 0;
     let falhas = 0;
+    // Sem esta 3ª coluna, um rename do alias do SQL zera TODOS os cards com
+    // recusados=0 e falhas=0 — silêncio absoluto (aviso 1 do gate, 31/08).
+    let semCifra = 0;
 
     // Lotes de DECRYPT_BATCH: `Promise.all` sobre a página inteira dispararia até
     // 500 chamadas simultâneas ao KMS (teto do adminPatientsListSchema). O padrão
@@ -414,7 +417,7 @@ export class PatientQueryRepository {
         const own = (r.contactEmailEnc as string | null) ?? null;
         const responsible = (r.responsibleEmailEnc as string | null) ?? null;
         const cipher = own ?? responsible;
-        if (cipher == null) return;
+        if (cipher == null) { semCifra += 1; return; }
 
         try {
           const plain = await this.encryptionService.decrypt(cipher);
@@ -432,12 +435,13 @@ export class PatientQueryRepository {
 
     // O que era silêncio absoluto vira sinal. Só CONTAGEM: a regra dura proíbe
     // PII em log e permite contar (o V5 do gate afirma exatamente isso).
-    if (recusados > 0 || falhas > 0) {
+    if (recusados > 0 || falhas > 0 || semCifra > 0) {
       logger.warn({
         msg: 'patient_lead_contact.degraded',
         pendentes: pending.length,
         recusadosPelaMascara: recusados,
         falhasDeKms: falhas,
+        semCifra,
       });
     }
   }

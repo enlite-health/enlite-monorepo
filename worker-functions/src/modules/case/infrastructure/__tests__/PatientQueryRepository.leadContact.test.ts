@@ -34,7 +34,16 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 
 jest.mock('../PatientDetailQueryHelper', () => ({ fetchPatientDetail: jest.fn() }));
 
+/** Espião do sinal de degradação — sem ele o bloco inteiro some sem ninguém ver. */
+const warnSpy = jest.fn();
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  logger: { info: jest.fn(), warn: (...a: unknown[]) => warnSpy(...a), error: jest.fn(),
+            child: jest.fn(() => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() })) },
+}));
+
 import { PatientQueryRepository } from '../PatientQueryRepository';
+import { DECRYPT_BATCH } from '@shared/security/decryptBatch';
 import type { AdminPatientsListParams } from '../../interfaces/validators/adminPatientsListSchema';
 
 const FILTERS = { limit: 20, offset: 0 } as AdminPatientsListParams;
@@ -63,7 +72,15 @@ function resolveWith(rows: Array<Record<string, unknown>>): void {
 beforeEach(() => {
   mockPoolQuery.mockReset();
   decryptSpy.mockClear();
+  warnSpy.mockClear();
 });
+
+/** A linha de degradação, se houver. */
+function sinalDeDegradacao(): Record<string, unknown> | undefined {
+  return warnSpy.mock.calls
+    .map((c) => c[0] as Record<string, unknown>)
+    .find((a) => a && a.msg === 'patient_lead_contact.degraded');
+}
 
 describe('C2 — o corte de escopo vive no servidor', () => {
   it('ficha com nome REAL não devolve contato, mesmo tendo ciphertext na linha', async () => {
@@ -196,5 +213,91 @@ describe('C4 — o espião de KMS (molde D170)', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].leadContactEmailMasked).toBeNull();
+  });
+});
+
+
+describe('B5 — o sinal de degradação (o gate 31/08 apagou o bloco e nada acusou)', () => {
+  it('máscara recusando o valor CONTA e emite o sinal', async () => {
+    decryptSpy.mockResolvedValueOnce('nao-e-um-email');
+    resolveWith([row({ contactEmailEnc: 'enc(lixo)' })]);
+
+    await new PatientQueryRepository().list(FILTERS);
+
+    expect(sinalDeDegradacao()).toEqual({
+      msg: 'patient_lead_contact.degraded',
+      pendentes: 1,
+      recusadosPelaMascara: 1,
+      falhasDeKms: 0,
+      semCifra: 0,
+    });
+  });
+
+  it('falha do KMS CONTA na coluna certa', async () => {
+    decryptSpy.mockRejectedValueOnce(new Error('KMS unavailable'));
+    resolveWith([row({ contactEmailEnc: 'enc(joana@gmail.com)' })]);
+
+    await new PatientQueryRepository().list(FILTERS);
+
+    const s = sinalDeDegradacao()!;
+    expect(s.falhasDeKms).toBe(1);
+    expect(s.recusadosPelaMascara).toBe(0);
+  });
+
+  it('linha SEM cifra nenhuma também conta — era o buraco que sobrava', async () => {
+    // Se o alias do SQL mudar de nome, TODOS os cards perdem contato com
+    // recusados=0 e falhas=0, ou seja, sem uma linha de log sequer.
+    resolveWith([row({ contactEmailEnc: null, responsibleEmailEnc: null })]);
+
+    await new PatientQueryRepository().list(FILTERS);
+
+    const s = sinalDeDegradacao()!;
+    expect(s.semCifra).toBe(1);
+    expect(s.pendentes).toBe(1);
+  });
+
+  it('⛔ o sinal NUNCA carrega e-mail, nem mascarado', async () => {
+    decryptSpy.mockResolvedValueOnce('nao-e-um-email');
+    resolveWith([row({ contactEmailEnc: 'enc(joana@gmail.com)' })]);
+
+    await new PatientQueryRepository().list(FILTERS);
+
+    expect(JSON.stringify(sinalDeDegradacao())).not.toContain('@');
+  });
+
+  it('tudo certo → silêncio: nenhum sinal de degradação', async () => {
+    resolveWith([row({ contactEmailEnc: 'enc(joana@gmail.com)' })]);
+
+    await new PatientQueryRepository().list(FILTERS);
+
+    expect(sinalDeDegradacao()).toBeUndefined();
+  });
+});
+
+describe('B2 — o lote de KMS (trocar por MAX_SAFE_INTEGER não acusava nada)', () => {
+  it('a concorrência máxima nunca passa de DECRYPT_BATCH', async () => {
+    // Mesmo instrumento do vizinho de onde a constante veio
+    // (AdminWorkersMapController.test.ts: `expect(maxInFlight).toBe(DECRYPT_BATCH)`).
+    let emVoo = 0;
+    let maxEmVoo = 0;
+    decryptSpy.mockImplementation(async (c: string | null) => {
+      emVoo += 1;
+      maxEmVoo = Math.max(maxEmVoo, emVoo);
+      await new Promise((r) => setTimeout(r, 0));
+      emVoo -= 1;
+      return (c ?? '').replace(/^enc\(/, '').replace(/\)$/, '');
+    });
+
+    const n = DECRYPT_BATCH * 2 + 7;
+    resolveWith(
+      Array.from({ length: n }, (_, i) =>
+        row({ id: `l${i}`, contactEmailEnc: `enc(pessoa${i}@gmail.com)`, total_count: String(n) })),
+    );
+
+    await new PatientQueryRepository().list({ ...FILTERS, limit: 500 } as AdminPatientsListParams);
+
+    expect(decryptSpy).toHaveBeenCalledTimes(n);
+    expect(maxEmVoo).toBeGreaterThan(1);           // é paralelo DENTRO do lote
+    expect(maxEmVoo).toBeLessThanOrEqual(DECRYPT_BATCH); // e limitado pelo lote
   });
 });
