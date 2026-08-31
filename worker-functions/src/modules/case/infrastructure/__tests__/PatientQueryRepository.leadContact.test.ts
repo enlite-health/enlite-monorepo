@@ -88,7 +88,7 @@ describe('C2 — o corte de escopo vive no servidor', () => {
     const { rows } = await new PatientQueryRepository().list(FILTERS);
 
     expect(rows.find((r) => r.id === 'real')!.leadContactEmailMasked).toBeNull();
-    expect(rows.find((r) => r.id === 'lead')!.leadContactEmailMasked).toBe('jo***@gmail.com');
+    expect(rows.find((r) => r.id === 'lead')!.leadContactEmailMasked).toBe('joa•••@gmail.com');
   });
 });
 
@@ -98,7 +98,7 @@ describe('C1 — a máscara é do servidor, não do React', () => {
 
     const { rows } = await new PatientQueryRepository().list(FILTERS);
 
-    expect(rows[0].leadContactEmailMasked).toBe('jo***@gmail.com');
+    expect(rows[0].leadContactEmailMasked).toBe('joa•••@gmail.com');
     // A prova negativa: o local part inteiro não sobrevive em lugar nenhum da linha.
     expect(JSON.stringify(rows[0])).not.toContain('joana@gmail.com');
   });
@@ -110,7 +110,7 @@ describe('C6 — de quem é o contato', () => {
 
     const { rows } = await new PatientQueryRepository().list(FILTERS);
 
-    expect(rows[0].leadContactEmailMasked).toBe('jo***@gmail.com');
+    expect(rows[0].leadContactEmailMasked).toBe('joa•••@gmail.com');
     expect(rows[0].leadContactIsResponsible).toBe(false);
   });
 
@@ -121,7 +121,7 @@ describe('C6 — de quem é o contato', () => {
 
     const { rows } = await new PatientQueryRepository().list(FILTERS);
 
-    expect(rows[0].leadContactEmailMasked).toBe('fi***@gmail.com');
+    expect(rows[0].leadContactEmailMasked).toBe('fil•••@gmail.com');
     expect(rows[0].leadContactIsResponsible).toBe(true);
   });
 });

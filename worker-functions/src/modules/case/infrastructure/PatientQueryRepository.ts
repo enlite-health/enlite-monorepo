@@ -5,6 +5,8 @@ import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
 import { derivePatientSla } from '../domain/PatientSla';
 import { isLeadPlaceholderName, maskEmail } from '../domain/LeadContact';
+import { DECRYPT_BATCH } from '../../worker/interfaces/controllers/AdminWorkersMapController';
+import { logger } from '@shared/logging';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
 
@@ -296,7 +298,7 @@ export class PatientQueryRepository {
            FROM patient_responsibles r
           WHERE r.patient_id = p.id
             AND r.is_primary
-          ORDER BY r.display_order NULLS LAST, r.created_at
+          ORDER BY r.display_order, r.created_at
           LIMIT 1)            AS "responsibleEmailEnc",
         COUNT(*) OVER()        AS total_count
       FROM patients p
@@ -396,8 +398,17 @@ export class PatientQueryRepository {
 
     if (pending.length === 0) return;
 
+    // Contadores para o sinal do fim: sem eles, dado que deriva de forma faz TODOS
+    // os cards perderem o contato em silêncio absoluto (blocker do gate, 31/08).
+    let recusados = 0;
+    let falhas = 0;
+
+    // Lotes de DECRYPT_BATCH: `Promise.all` sobre a página inteira dispararia até
+    // 500 chamadas simultâneas ao KMS (teto do adminPatientsListSchema). O padrão
+    // e o número vêm de AdminWorkersMapController.ts:51, que já resolve isso.
+    for (let inicio = 0; inicio < pending.length; inicio += DECRYPT_BATCH) {
     await Promise.all(
-      pending.map(async ({ row, raw: r }) => {
+      pending.slice(inicio, inicio + DECRYPT_BATCH).map(async ({ row, raw: r }) => {
         // O e-mail do paciente manda; o do responsável é o fallback dos leads
         // preenchidos pelo familiar. Só UM dos dois é descriptografado.
         const own = (r.contactEmailEnc as string | null) ?? null;
@@ -408,14 +419,27 @@ export class PatientQueryRepository {
         try {
           const plain = await this.encryptionService.decrypt(cipher);
           const masked = maskEmail(plain);
-          if (masked == null) return;
+          if (masked == null) { recusados += 1; return; }
           row.leadContactEmailMasked = masked;
           row.leadContactIsResponsible = own == null;
         } catch {
-          // Silêncio proposital: sem contato o card continua utilizável.
+          // Degrada o card, não a listagem — mas CONTA (ver o warn abaixo).
+          falhas += 1;
         }
       }),
     );
+    }
+
+    // O que era silêncio absoluto vira sinal. Só CONTAGEM: a regra dura proíbe
+    // PII em log e permite contar (o V5 do gate afirma exatamente isso).
+    if (recusados > 0 || falhas > 0) {
+      logger.warn({
+        msg: 'patient_lead_contact.degraded',
+        pendentes: pending.length,
+        recusadosPelaMascara: recusados,
+        falhasDeKms: falhas,
+      });
+    }
   }
 
   async stats(country?: 'AR' | 'BR'): Promise<PatientStatsRow> {

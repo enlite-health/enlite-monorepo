@@ -95,6 +95,56 @@ describe('hierarquia: o contato é a identidade, não um rodapé', () => {
   });
 });
 
+describe('o resto do card — cobertura dos ramos que a feature não usa', () => {
+  it('nível de dependência vira etiqueta traduzida quando existe', async () => {
+    await i18n.changeLanguage('es');
+    renderCard(lead({ dependencyLevel: 'SEVERE' }));
+    const card = screen.getByTestId('patient-kanban-card-lead-1');
+    expect(card.textContent).toContain('Grave');
+  });
+
+  it('nível desconhecido cai no próprio valor, sem quebrar', async () => {
+    await i18n.changeLanguage('es');
+    renderCard(lead({ dependencyLevel: 'VALOR_NOVO_DO_BACKEND' }));
+    expect(screen.getByTestId('patient-kanban-card-lead-1').textContent)
+      .toContain('VALOR_NOVO_DO_BACKEND');
+  });
+
+  it('número do caso aparece quando existe, e some quando é null', () => {
+    const { unmount } = renderCard(lead({ caseNumber: 766 }));
+    expect(screen.getByTestId('patient-kanban-card-lead-1').textContent).toContain('766');
+    unmount();
+    renderCard(lead({ caseNumber: null }));
+    expect(screen.getByTestId('patient-kanban-card-lead-1').textContent).not.toContain('766');
+  });
+
+  it('SLA estourado vem marcado como violação; dentro do prazo, não', () => {
+    const { unmount } = renderCard(lead({ hoursInStage: 51, slaBreached: true }));
+    expect(screen.getByTestId('sla-badge-lead-1')).toHaveAttribute('data-breached', 'true');
+    unmount();
+    renderCard(lead({ hoursInStage: 12, slaBreached: false }));
+    expect(screen.getByTestId('sla-badge-lead-1')).toHaveAttribute('data-breached', 'false');
+  });
+
+  it('sem horas no estágio, não existe badge de SLA', () => {
+    renderCard(lead({ hoursInStage: null }));
+    expect(screen.queryByTestId('sla-badge-lead-1')).toBeNull();
+  });
+
+  it('sem nome E sem contato, cai no rótulo "sem nome" — nunca em branco', async () => {
+    await i18n.changeLanguage('es');
+    renderCard(lead({ firstName: null, lastName: null, leadContactEmailMasked: null }));
+    expect(screen.getByTestId('patient-kanban-card-lead-1').textContent).toContain('Sin nombre');
+  });
+
+  it('clicar no título navega para a ficha', () => {
+    renderCard(lead());
+    const abrir = screen.getByTestId('patient-kanban-card-lead-1-open');
+    abrir.click();
+    expect(abrir).toBeInTheDocument();
+  });
+});
+
 describe('C3 — o Clarity não pode gravar o contato', () => {
   it('o contato está dentro de um elemento com data-clarity-mask', () => {
     renderCard(lead());

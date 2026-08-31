@@ -32,25 +32,13 @@ export function isLeadPlaceholderName(
 }
 
 /**
- * Mascara um e-mail para exibição: `joana@gmail.com` → `jo***@gmail.com`.
+ * Máscara de e-mail: mora em `shared/utils/emailMask` — política ÚNICA do
+ * produto (o gate de 31/08 pegou esta função duplicando a do
+ * `AccountLinkService`, com saída divergente). Re-exportada aqui porque o
+ * repositório de pacientes consome deste módulo.
  *
- * A finalidade declarada é DESEMPATAR cards, e desempatar não exige o endereço
- * inteiro (lex C1 — LGPD art. 6º III, necessidade; Ley 25.326 art. 4º inc. 1,
- * "no excesivos en relación al ámbito y finalidad"). Roda no SERVIDOR: máscara
- * feita no cliente é teatro, porque o valor cru continua no payload, no devtools
- * e em qualquer gravação de sessão.
- *
- * Devolve null para qualquer entrada que não seja um e-mail reconhecível — em
- * vez de ecoar a string, que poderia ser um valor inesperado do banco.
+ * A finalidade declarada continua sendo DESEMPATAR cards, e desempatar não
+ * exige o endereço inteiro (lex C1 — LGPD art. 6º III; Ley 25.326 art. 4º inc.
+ * 1). Roda no SERVIDOR: máscara feita no cliente é teatro.
  */
-export function maskEmail(email: string | null | undefined): string | null {
-  const trimmed = (email ?? '').trim();
-  const at = trimmed.lastIndexOf('@');
-  // Precisa de ao menos 1 char antes do @ e um domínio com ponto depois dele.
-  if (at < 1 || !trimmed.slice(at + 1).includes('.')) return null;
-
-  const local = trimmed.slice(0, at);
-  const domain = trimmed.slice(at);
-  const keep = local.length >= 2 ? 2 : 1;
-  return `${local.slice(0, keep)}***${domain}`;
-}
+export { maskEmail } from '@shared/utils/emailMask';

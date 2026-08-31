@@ -53,7 +53,7 @@ function baseRow(overrides: Record<string, unknown> = {}) {
     addressesCount: 0, caseNumber: null,
     createdAt: new Date('2026-08-01T00:00:00Z'),
     updatedAt: new Date('2026-08-01T00:00:00Z'),
-    leadContactEmailMasked: 'jo***@gmail.com',
+    leadContactEmailMasked: 'joa•••@gmail.com',
     leadContactIsResponsible: false,
     ...overrides,
   };
@@ -78,7 +78,7 @@ describe('C1/C2 — o que sai no corpo da resposta', () => {
 
     await new AdminPatientsController().listPatients(req, res);
 
-    expect(bodyOf(res).data[0].leadContactEmailMasked).toBe('jo***@gmail.com');
+    expect(bodyOf(res).data[0].leadContactEmailMasked).toBe('joa•••@gmail.com');
   });
 
   it('ficha com nome real sai com null — nada de contato no payload', async () => {

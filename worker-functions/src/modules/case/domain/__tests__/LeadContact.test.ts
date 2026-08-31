@@ -39,13 +39,13 @@ describe('isLeadPlaceholderName — o corte de escopo (C2)', () => {
 });
 
 describe('maskEmail — a máscara de servidor (C1)', () => {
-  it('mantém 2 caracteres e o domínio, esconde o resto', () => {
-    expect(maskEmail('joana@gmail.com')).toBe('jo***@gmail.com');
-    expect(maskEmail('gabriel.stein@enlite.health')).toBe('ga***@enlite.health');
+  it('mantém até 4 caracteres e o domínio, esconde o resto', () => {
+    expect(maskEmail('joana@gmail.com')).toBe('joa•••@gmail.com');
+    expect(maskEmail('gabriel.stein@enlite.health')).toBe('gabr•••@enlite.health');
   });
 
   it('local part de 1 caractere não vira string vazia', () => {
-    expect(maskEmail('a@gmail.com')).toBe('a***@gmail.com');
+    expect(maskEmail('a@gmail.com')).toBe('a•••@gmail.com');
   });
 
   it('nunca devolve o endereço inteiro — a parte escondida some de verdade', () => {
