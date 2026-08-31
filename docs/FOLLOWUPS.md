@@ -1833,3 +1833,60 @@ As três camadas que o `gate` consolida, e o que cada uma pega:
 1. **revisão** lê o DIFF (contrato mentiroso, duplicação, cobertura, desvio de design);
 2. **CI** executa o CONJUNTO (efeito cruzado entre suítes, dependência faltando, ambiente);
 3. **e2e** prova contra BANCO E API REAIS (o que o mock esconde).
+
+## TD-0XX — MCP: env var com vírgula é PARTIDA no deploy (prd e stg, medido 30/08/2026)
+
+**Severidade: ALTA — quatro efeitos vivos, todos silenciosos, nos DOIS ambientes.**
+
+A action `google-github-actions/deploy-cloudrun` separa `env_vars` por vírgula e por quebra de
+linha, e documenta: *"Keys or values that contain separators must be escaped with a backslash
+(e.g. `\,`) unless quoted"*. Os dois workflows do MCP não escapavam. Medido nos serviços vivos:
+
+| ambiente | variável | declarado | **vivo** | efeito real |
+|---|---|---|---|---|
+| **prd** | `MCP_PRINCIPAL_NAMES` | `triage-service,claude-code` | `triage-service` | principal **`claude-code` MORTO** |
+| **prd** | `ALLOWED_MEDIA_HOSTS` | 3 hosts | `api.twilio.com` | Chatwoot e `*.twilio.com` **fora da allowlist** |
+| **stg** | `MCP_PRINCIPAL_NAMES` | `triage-service,claude-code` | `claude-code` | **`triage-service` MORTO** |
+| **stg** | `ALLOWED_MEDIA_HOSTS` | 3 hosts | `api.twilio.com;*.twilio.com;chatwoot.enlite.health` | **ZERO hosts permitidos** |
+
+⚠️ **O `;` da `stage` não é conserto, é piora.** Os dois consumidores fazem `.split(',')`
+(`ServicePrincipalSecretManagerRepo.ts:58`, `ExternalMediaDownloader.ts:35`): o valor com `;` vira
+UM elemento que não casa com hostname nenhum.
+
+**Como foi descoberto:** ao reconciliar YAML × serviço vivo antes de tocar num workflow de PRD (a
+regra dura do `CLAUDE.md`). O serviço de prd tinha 26 env vars contra 18 declaradas.
+
+**FIX APLICADO neste PR:** escape `\,` nas 4 linhas (prd + stg). O bloco é literal (`|`), então a
+contrabarra chega à action como caractere.
+
+⚠️ **NÃO PROVADO PONTA A PONTA.** O escape resolve o parsing DA ACTION; se ela repassar ao `gcloud`
+sem o delimitador `^:^`, a vírgula pode ser partida de novo na camada de baixo. **Verificação
+obrigatória no primeiro deploy após o merge**, nos dois ambientes:
+```bash
+gcloud run services describe worker-functions-mcp --region=southamerica-west1 --project=enlite-prd \
+  --format=json | python3 -c "import sys,json; e={x['name']:x.get('value') for x in \
+  json.load(sys.stdin)['spec']['template']['spec']['containers'][0]['env']}; \
+  print(e.get('MCP_PRINCIPAL_NAMES')); print(e.get('ALLOWED_MEDIA_HOSTS'))"
+```
+Esperado em prd: `triage-service,claude-code,e2e-prod` e os 3 hosts. Se vier partido, o fallback é
+mover as duas chaves para `flags` com `--update-env-vars='^:^KEY=v1,v2'` (sintaxe do gcloud, não
+depende do parser da action).
+
+### O que este PR NÃO conserta (exige comando, não YAML)
+
+**As 3 env vars-lixo continuam no serviço de prd**, com valor vazio: `claude-code`, `*.twilio.com`,
+`chatwoot.enlite.health`. Elas são resíduo dos deploys quebrados. A estratégia padrão da action é
+`merge`, que **preserva** chave ausente do YAML — então elas não somem sozinhas:
+```bash
+gcloud run services update worker-functions-mcp --project=enlite-prd --region=southamerica-west1 \
+  --remove-env-vars='^:^claude-code:*.twilio.com:chatwoot.enlite.health'
+```
+🔴 **NÃO use `env_vars_update_strategy: overwrite` para limpar isso.** Ele tornaria o YAML
+autoritativo e apagaria junto as **5 vars aplicadas à mão que só existem no servidor**
+(`CHATWOOT_URL`, `HANDOVER_NOTIFY_ENABLED`, `PERISKOPE_API_KEY`, `PERISKOPE_GROUP_RECRUITMENT_ID`,
+`PERISKOPE_PHONE` — classe da D219, aberto em item próprio).
+
+**Correção manual já aplicada em prd (30/08), temporária:** `MCP_PRINCIPAL_NAMES` restaurado com
+`--update-env-vars='^:^MCP_PRINCIPAL_NAMES=triage-service,claude-code,e2e-prod'` (revisão 00164).
+Vale até o próximo deploy; depois deste PR, o deploy passa a aplicar o valor certo sozinho.
+**Não afeta** `worker-functions` — `backend-prd.yml` não tem valor com vírgula (conferido).
