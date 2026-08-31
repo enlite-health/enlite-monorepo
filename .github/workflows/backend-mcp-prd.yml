@@ -58,14 +58,25 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
-            MCP_PRINCIPAL_NAMES=triage-service,claude-code
+            # ⚠️ VÍRGULA ESCAPADA (`\,`) NAS DUAS LINHAS ABAIXO — não é enfeite.
+            # A action `deploy-cloudrun` separa `env_vars` por vírgula E por quebra de linha, e
+            # documenta: "Keys or values that contain separators must be escaped with a backslash
+            # (e.g. `\,`) unless quoted". Sem o escape o valor era PARTIDO e o resto virava env
+            # var-lixo de valor vazio. E os DOIS consumidores fazem `.split(',')` no código
+            # (`ServicePrincipalSecretManagerRepo.ts:58` e `ExternalMediaDownloader.ts:35`),
+            # então separador alternativo (`;`) também não resolve — só piora, virando um
+            # elemento único que não casa com nada.
+            # Ver `docs/FOLLOWUPS.md` → "MCP: env var com vírgula é partida no deploy".
+            # `e2e-prod`: principal de UMA capability (worker.interview.slots.list) do monitor
+            # e2e-prod, que prova o fuso do slot recorrente (D213 · Spec 009 · 3.2b).
+            MCP_PRINCIPAL_NAMES=triage-service\,claude-code\,e2e-prod
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             FIREBASE_WEB_API_KEY=AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI
             FIREBASE_WEB_AUTH_DOMAIN=enlite-prd.firebaseapp.com
-            ALLOWED_MEDIA_HOSTS=api.twilio.com,*.twilio.com,chatwoot.enlite.health
+            ALLOWED_MEDIA_HOSTS=api.twilio.com\,*.twilio.com\,chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest

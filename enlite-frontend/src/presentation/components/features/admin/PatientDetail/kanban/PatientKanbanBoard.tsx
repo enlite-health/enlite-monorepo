@@ -53,6 +53,10 @@ export function PatientKanbanBoard({ groups, onMove }: Props): JSX.Element {
       getItemId={(p) => p.id}
       onDrop={handleDrop}
       collapseStorageKey="kanban-collapsed-patients"
+      // 4 colunas: a 280px somavam 1156px em 1096px úteis e a 4ª ("Activo")
+      // ficava 60px fora da tela. A 260px cabem as quatro (1076px) e ninguém
+      // precisa descobrir que o board rola para ver a coluna que importa.
+      columnWidthClass="w-[260px]"
       renderCard={(p) => <PatientKanbanCard patient={p} />}
     />
   );

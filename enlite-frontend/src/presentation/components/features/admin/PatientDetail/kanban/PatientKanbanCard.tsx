@@ -19,6 +19,14 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
 
   const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ').trim()
     || t('admin.patients.kanban.noName', { defaultValue: 'Sin nombre' });
+  // Lead do formulário público: sem nome, todo card diz "Solicitante" e o board
+  // vira N caixas idênticas. O contato mascarado é o que desempata — só existe
+  // quando o servidor decidiu que existe (lex C2); aqui não há regra nenhuma.
+  const leadContact = patient.leadContactEmailMasked ?? null;
+  // A COLUNA já se chama "Solicitante": repetir a palavra em negrito escuro em
+  // cada card é ruído, e empurrava para cinza de 11px justamente a única coisa
+  // que distingue um card do outro. Quando há contato, ele É a identidade.
+  const title = leadContact ?? fullName;
   const dependencyLabel = patient.dependencyLevel
     ? t(`admin.patients.dependencyOptions.${patient.dependencyLevel}`, { defaultValue: patient.dependencyLevel })
     : null;
@@ -34,10 +42,23 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
           className="text-left truncate"
           onClick={(e) => { e.stopPropagation(); navigate(`/admin/patients/${patient.id}`); }}
           data-testid={`patient-kanban-card-${patient.id}-open`}
+          // `data-clarity-mask` SÓ quando o título é o contato: o Clarity grava
+          // as sessões do painel e o modo do portal não é verificável daqui, então
+          // a máscara do DOM é a garantia local (lex 30/08, C3). Nome de paciente
+          // já tem o seu próprio tratamento e não entra nesta regra.
+          data-clarity-mask={leadContact ? 'True' : undefined}
         >
-          <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
-            {fullName}
-          </Text>
+          {/* O `Text` não repassa props extras, então testid e title vivem no
+              span — não vale mexer num átomo compartilhado por isto. */}
+          {/* Sem `title`: o Clarity declara mascarar o CONTEÚDO do nó e dos
+              filhos, não os atributos (lex C9, 31/08). O atributo era redundante
+              — o mesmo texto já é o visível. Enquanto o gate A2 (transferência
+              AR→EUA) estiver aberto, contato que não precisa ir ao Clarity não vai. */}
+          <span data-testid={leadContact ? `patient-kanban-card-${patient.id}-contact` : undefined}>
+            <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
+              {title}
+            </Text>
+          </span>
         </button>
         {patient.caseNumber != null && (
           <span className="shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700">
@@ -45,6 +66,17 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
           </span>
         )}
       </div>
+      {leadContact && patient.leadContactIsResponsible && (
+        // Sem esta marca o card atribuiria contato de um FAMILIAR ao paciente —
+        // dado inexato sobre dois titulares (lex C6). Agora que o contato É o
+        // título, dizer de quem ele é passou a ser ainda mais necessário.
+        <span
+          data-testid={`patient-kanban-card-${patient.id}-contact-responsible`}
+          className="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+        >
+          {t('admin.patients.kanban.contactOfResponsible', { defaultValue: 'Contacto del responsable' })}
+        </span>
+      )}
       {dependencyLabel && (
         <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
           {dependencyLabel}

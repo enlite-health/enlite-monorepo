@@ -151,12 +151,22 @@ echo
 # (#173 removeu, #231 trouxe de volta). Checkout com ele quebra o build MUDO.
 # ⚠️ ancorado: `docs/node_modules-armadilha.md` (a doc SOBRE a armadilha) não
 # pode ser bloqueada pelo próprio check.
+# ⚠️ Olha "$TMP/vivos" (não-apagados), NÃO "$TMP/todos": a doença é o
+# node_modules ENTRAR no diff; a REMOÇÃO dele é a cura, e com `todos` o check
+# bloqueava justamente quem estivesse consertando — catch-22 medido em 31/08,
+# impossível tirar o symlink versionado sem reprovar. Adição, alteração e rename
+# PARA dentro de node_modules continuam em `vivos`, então o check não perde dente
+# (controle positivo rodado: um arquivo novo sob node_modules/ reprova).
 echo "## V1 — node_modules no diff"
-if grep -qE "(^|/)node_modules(/|$)" "$TMP/todos"; then
-  falha "node_modules aparece no diff:"
-  grep -E "(^|/)node_modules(/|$)" "$TMP/todos" | sed 's/^/        /'
+if grep -qE "(^|/)node_modules(/|$)" "$TMP/vivos"; then
+  falha "node_modules aparece no diff (adicionado ou alterado):"
+  grep -E "(^|/)node_modules(/|$)" "$TMP/vivos" | sed 's/^/        /'
 else
-  ok "nenhum node_modules no diff"
+  if grep -qE "(^|/)node_modules(/|$)" "$TMP/apagados"; then
+    ok "node_modules apenas REMOVIDO do versionamento (é a cura, não a doença)"
+  else
+    ok "nenhum node_modules no diff"
+  fi
 fi
 echo
 
@@ -248,9 +258,25 @@ echo
 # ─── V4 — teste desligado ─────────────────────────────────────────────────────
 # ⚠️ usa add_code, não add: `.skip(` citado numa doc, ou `q.skip(10).limit(20)`
 # de paginação, NÃO é teste desligado. E exige o prefixo de teste.
-echo "## V4 — teste desligado (.only / .skip / xit / fdescribe)"
+#
+# ⚠️ SKIP CONDICIONAL NÃO É TESTE DESLIGADO (medido em 30/08).
+#   A 1ª versão era um regex puro em `test.skip(` e reprovava o idioma correto do
+#   Playwright para guarda de pré-condição:
+#       test.skip(!process.env.E2E_ADMIN_EMAIL, 'requer credencial')   ← guarda
+#       test.skip(true, 'prod não tem paciente para referenciar')      ← guarda
+#   Os TRÊS specs de regressão que já estavam no `main` usam esse padrão, 2× cada:
+#   a régua reprovaria o próprio repositório. Gate que reprova o correto ensina o
+#   time a ignorar o gate — é pior que gate nenhum.
+#
+#   A distinção é o PRIMEIRO ARGUMENTO:
+#       test.skip('nome do teste', fn)  → DECLARA um teste desligado   → REPROVA
+#       test.skip(<expressão>, 'motivo')→ guarda em tempo de execução  → passa
+#       test.skip()                     → pula o teste corrente        → passa
+#   `describe.skip(` / `context.skip(` reprovam SEMPRE (suíte inteira desligada
+#   nunca é guarda), e `.only` reprova sempre (nunca é condicional).
+echo "## V4 — teste desligado (.only / .skip com nome / xit / fdescribe)"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
-LIG=$(grep -E "\b(describe|it|test|context)\.(only|skip)\(|\b(xit|xdescribe|fdescribe|fit)\(" "$TMP/add_code" || true)
+LIG=$(grep -E "\b(describe|context)\.(only|skip)\(|\b(it|test)\.only\(|\b(it|test)\.skip\([[:space:]]*['\''\"\`]|\b(xit|xdescribe|fdescribe|fit)\(" "$TMP/add_code" || true)
 if [ -n "$LIG" ]; then
   falha "teste desligado sendo introduzido:"; echo "$LIG" | head -6 | sed 's/^/        /'
 else

@@ -1074,9 +1074,10 @@
       }
     },
     "errorBoundary": {
-      "title": "Error al cargar la página de admin",
-      "description": "Ocurrió un error inesperado. Detalles técnicos:",
-      "reload": "Recargar página"
+      "title": "No pudimos cargar esta página",
+      "description": "Algo falló de nuestro lado. Recargá la página; si vuelve a pasar, avisá al equipo técnico con los detalles de abajo.",
+      "reload": "Recargar página",
+      "details": "Detalles técnicos"
     },
     "nav": {
       "dashboard": "Gestión a la Vista",
@@ -2849,7 +2850,8 @@
           "ADMISSION": "Admisión",
           "PENDING_ADMISSION": "Esperando financiero",
           "ACTIVE": "Activo"
-        }
+        },
+        "contactOfResponsible": "Contacto del responsable"
       },
       "countryLabel": "País",
       "countryOptions": {

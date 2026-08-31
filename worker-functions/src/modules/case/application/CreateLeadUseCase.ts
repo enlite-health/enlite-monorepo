@@ -4,6 +4,7 @@ import {
   LEAD_SERVICE_TO_PROFESSION,
   type PublicLeadBody,
 } from '../interfaces/validators/publicLeadSchema';
+import { LEAD_PLACEHOLDER_FIRST_NAME } from '../domain/LeadContact';
 
 /**
  * CreateLeadUseCase — turns a public web-form submission into a native patient
@@ -25,8 +26,13 @@ import {
  * controller surfaces it as a clear 400.
  */
 
-/** Placeholder used when the form omits the optional name. */
-export const LEAD_PLACEHOLDER_FIRST_NAME = 'Solicitante';
+/**
+ * Placeholder used when the form omits the optional name.
+ * Mora no domínio (`domain/LeadContact`) porque a listagem do Kanban também
+ * precisa reconhecê-lo, e application/infrastructure não se importam entre si.
+ * Re-exportado aqui para não quebrar quem já importa deste módulo.
+ */
+export { LEAD_PLACEHOLDER_FIRST_NAME } from '../domain/LeadContact';
 
 export interface CreateLeadResult {
   id: string;

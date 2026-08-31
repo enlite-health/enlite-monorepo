@@ -340,6 +340,15 @@ export interface PatientKanbanItem {
   slaBreached?: boolean;
   /** The SLA threshold (hours) that applies to the current status. */
   slaThresholdHours?: number | null;
+  // ── Desempate do lead sem nome (lex 30/08) ───────────────────────────────
+  /**
+   * E-mail de contato JÁ MASCARADO pelo servidor (`jo***@gmail.com`). Presente
+   * só nas fichas cujo nome é o placeholder 'Solicitante' — nas demais é null,
+   * e o endereço cru NUNCA chega ao browser (a máscara é do servidor, C1).
+   */
+  leadContactEmailMasked?: string | null;
+  /** true quando o contato acima é do responsável, não do paciente (C6). */
+  leadContactIsResponsible?: boolean;
 }
 
 /**
