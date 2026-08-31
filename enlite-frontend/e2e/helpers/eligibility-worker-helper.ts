@@ -349,6 +349,21 @@ export function getWorkerStatusByAuthUid(authUid: string): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * Reads `workers.years_experience` straight from the DB.
+ *
+ * A profile assertion MUST NOT be made by reloading the page: the Zustand store
+ * is persisted to localStorage, so the field would render filled even if the
+ * PUT never left the browser — exactly the bug this reads for. The database is
+ * the only honest oracle here.
+ */
+export function getWorkerYearsExperience(workerId: string): string | null {
+  if (!workerId) return null;
+  const out = runSQL(`SELECT years_experience FROM workers WHERE id = '${workerId}'`);
+  const m = out.match(/\b(0_2|3_5|6_10|10_plus)\b/);
+  return m ? m[1] : null;
+}
+
 /** Full cleanup for a worker provisioned via the real UI (resolved by auth_uid). */
 export function cleanupWorkerByAuthUid(authUid: string): void {
   const workerId = resolveWorkerIdByAuthUid(authUid);

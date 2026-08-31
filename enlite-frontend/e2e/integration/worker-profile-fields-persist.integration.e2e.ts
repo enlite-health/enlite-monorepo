@@ -20,6 +20,7 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   insertEligibilityWorker,
   cleanupEligibilityWorker,
+  getWorkerYearsExperience,
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
@@ -86,5 +87,47 @@ test.describe('@integration Worker profile — campos não somem', () => {
     await expect(page.locator('#fullName')).toHaveValue('TestNombre', { timeout: 20_000 });
     await expect(page.locator('#lastName')).toHaveValue('TestApellido');
     await expect(page.locator('#cpf')).toHaveValue('12345678');
+  });
+  /**
+   * Regressão do incidente de 31/08 (prestadora "solo falta los años de
+   * experiencia, intenta completar pero se le borra").
+   *
+   * Causa raiz: os <select> nativos da aba passavam `onChange={field.onChange}`
+   * cru — só os MultiSelect chamavam `triggerSave()`. Como a tela NÃO tem botão
+   * Guardar, quem entra para corrigir UM campo de dropdown e sai nunca gera
+   * blur dentro do form: o PUT nunca é feito. Prova em prod: 6 aberturas da aba
+   * e ZERO `PUT /api/workers/me/general-info` no log do worker-functions.
+   *
+   * O que este teste faz de diferente de todos os outros da casa:
+   *   • mexe em UM campo só — nenhum outro toque, nenhum blur forçado;
+   *   • confere no BANCO, não na tela (o store é persistido em localStorage,
+   *     então recarregar a página mostraria o valor mesmo sem ter salvo).
+   *
+   * Sem o fix este teste falha no waitForResponse (nenhum PUT sai).
+   */
+  test('mudar SÓ o select de anos de experiência grava no banco', async ({ page }) => {
+    const w = insertEligibilityWorker({ occupation: 'AT', yearsExperience: false });
+    await login(page, w);
+
+    await page.goto('/worker/profile?tab=general', { waitUntil: 'networkidle', timeout: 30_000 });
+    await expect(page.locator('#fullName')).toHaveValue('TestNombre', { timeout: 20_000 });
+
+    // Ponto de partida: exatamente a situação da prestadora — o campo está vazio.
+    expect(getWorkerYearsExperience(w.workerId), 'começa NULL no banco').toBeNull();
+
+    const saved = page.waitForResponse(
+      (r) => r.url().includes('/api/workers/me/general-info') && r.request().method() === 'PUT',
+      { timeout: 15_000 },
+    );
+
+    // O ÚNICO gesto do teste. Sem clicar em mais nada, sem blur forçado.
+    await page.locator('select#yearsExperience').selectOption('3_5');
+
+    const resp = await saved;
+    expect(resp.status(), 'o PUT tem de sair sozinho e passar').toBeLessThan(400);
+
+    await expect
+      .poll(() => getWorkerYearsExperience(w.workerId), { timeout: 10_000 })
+      .toBe('3_5');
   });
 });
