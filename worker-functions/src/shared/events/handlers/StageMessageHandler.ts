@@ -36,7 +36,7 @@ export type StageSkipReason =
   | 'DISABLED' | 'NO_TEMPLATE' | 'TEMPLATE_INACTIVE' | 'TEMPLATE_NOT_ALLOWED' | 'WORKER_NOT_FOUND'
   | 'WORKER_DISABLED' | 'OPT_OUT' | 'ALREADY_SENT' | 'VACANCY_NOT_FOUND' | 'SOURCE_NOT_HUMAN' | 'COUNTRY_BLOCKED';
 
-interface ConfigRow { template_slug: string | null; enabled: boolean; builtin: string | null; body: string | null; category: string | null; is_active: boolean | null }
+interface ConfigRow { template_slug: string | null; enabled: boolean; builtin: string | null; body: string | null; body_twilio: string | null; category: string | null; is_active: boolean | null }
 interface VacancyRow { case_number: number | null; country: string | null }
 interface WorkerRow { id: string; status: string | null; country: string | null; opted_out: boolean }
 
@@ -65,7 +65,7 @@ export function createStageMessageHandler(
 
     const configResult = country
       ? await db.query<ConfigRow>(
-          `SELECT m.template_slug, m.enabled, m.builtin, t.body, t.category, t.is_active
+          `SELECT m.template_slug, m.enabled, m.builtin, t.body, t.body_twilio, t.category, t.is_active
            FROM funnel_stage_messages m
            LEFT JOIN message_templates t ON t.slug = m.template_slug
            WHERE m.country = $1 AND m.stage = $2`,
@@ -94,7 +94,11 @@ export function createStageMessageHandler(
     // Etapa desligada ou sem template: é o estado padrão — não é erro, é "não configurado".
     if (!config || config.builtin || !config.enabled) { await skip('DISABLED'); return; }
     if (!templateSlug) { await skip('NO_TEMPLATE'); return; }
-    const eligibility = evaluateTemplateEligibility({ slug: templateSlug, body: config.body, category: config.category, is_active: config.is_active });
+    // `body_twilio` entra aqui pelo mesmo motivo que entra no painel: é o corpo
+    // aprovado que diz quantos slots a Meta exige. Sem ele, uma etapa configurada
+    // antes desta regra (ou por SQL direto) enfileiraria um template que a Twilio
+    // recusa — o guard tem de valer nos três pontos, não em dois.
+    const eligibility = evaluateTemplateEligibility({ slug: templateSlug, body: config.body, body_twilio: config.body_twilio, category: config.category, is_active: config.is_active });
     if (eligibility.reason === 'INACTIVE') { await skip('TEMPLATE_INACTIVE'); return; }
     if (!eligibility.eligible) { await skip('TEMPLATE_NOT_ALLOWED'); return; }
     if (worker.status === 'DISABLED') { await skip('WORKER_DISABLED'); return; }

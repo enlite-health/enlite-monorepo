@@ -27,6 +27,7 @@ const INTERNAL_SECRET = process.env.INTERNAL_TOKEN_SECRET || 'test-secret-for-e2
 const ADMIN_UID = 'fsm-admin-uid';
 const RECRUITER_UID = 'fsm-recruiter-uid';
 const TEMPLATE = 'fsm_e2e_stage_notice';
+const TEMPLATE_B = 'fsm_e2e_stage_notice_v2';
 const CASE_A = 99990; const CASE_B = 99991;
 
 function mockToken(uid: string, role: string): string {
@@ -39,6 +40,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
   const asAdmin = { headers: { Authorization: `Bearer ${mockToken(ADMIN_UID, 'admin')}` } };
   const asRecruiter = { headers: { Authorization: `Bearer ${mockToken(RECRUITER_UID, 'recruiter')}` } };
   let workerA = ''; let workerOptOut = ''; let jobA = ''; let encA = ''; let encOpt = '';
+  let workerB = ''; let workerC = ''; let encB = ''; let encC = '';
 
   async function processLatestEvent(eventName: string, workerId: string): Promise<string | null> {
     const { rows } = await pool.query(
@@ -72,19 +74,23 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
     // Template elegível (UTILITY, allowlist) + um MARKETING para o 400
     await pool.query(`INSERT INTO message_templates (slug, name, body, category, is_active, created_at, updated_at) VALUES
       ($1, 'FSM aviso de etapa', 'Hola {{worker_name}}, tu candidatura al caso {{case_number}} avanzó.', 'UTILITY', true, NOW(), NOW()),
+      ($2, 'FSM aviso v2', 'Hola {{worker_name}}, novedades del caso {{case_number}}.', 'UTILITY', true, NOW(), NOW()),
       ('fsm_e2e_marketing', 'FSM marketing', 'Hola', 'MARKETING', true, NOW(), NOW())
-      ON CONFLICT (slug) DO UPDATE SET body = EXCLUDED.body, category = EXCLUDED.category, is_active = true`, [TEMPLATE]);
+      ON CONFLICT (slug) DO UPDATE SET body = EXCLUDED.body, category = EXCLUDED.category, is_active = true`, [TEMPLATE, TEMPLATE_B]);
 
-    const w = async (tag: string) => (await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid, email, phone, status, country) VALUES ($1, $2, $3, 'REGISTERED', 'AR') RETURNING id`, [`fsm-uid-${tag}`, `fsm-${tag}@e2e.local`, `+54911999900${tag === 'a' ? '01' : '02'}`])).rows[0].id;
-    workerA = await w('a'); workerOptOut = await w('o');
+    const w = async (tag: string) => (await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid, email, phone, status, country) VALUES ($1, $2, $3, 'REGISTERED', 'AR') RETURNING id`, [`fsm-uid-${tag}`, `fsm-${tag}@e2e.local`, `+549119999${{ a: '0001', o: '0002', b: '0003', c: '0004' }[tag] ?? '0009'}`])).rows[0].id;
+    workerA = await w('a'); workerOptOut = await w('o'); workerB = await w('b'); workerC = await w('c');
     await pool.query(`INSERT INTO messaging_opt_out (worker_id, phone, opted_out_at) VALUES ($1, '+5491199990002', NOW())`, [workerOptOut]);
     jobA = (await pool.query<{ id: string }>(`INSERT INTO job_postings (case_number, title, status, country) VALUES ($1, $2, 'SEARCHING', 'AR') RETURNING id`, [CASE_A, `CASO ${CASE_A} FSM`])).rows[0].id;
     // encuadres + candidatura em INVITED (o card existe no Kanban)
-    for (const [wid, key] of [[workerA, 'a'], [workerOptOut, 'o']] as const) {
+    for (const [wid, key] of [[workerA, 'a'], [workerOptOut, 'o'], [workerB, 'b'], [workerC, 'c']] as const) {
       await pool.query(`INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source) VALUES ($1, $2, 'INVITED', 'manual') ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET application_funnel_stage = 'INVITED'`, [wid, jobA]);
       // O encuadre nasce por TRIGGER no INSERT da candidatura (trg_ensure_encuadre_on_wja_insert) — só ler.
       const e = await pool.query<{ id: string }>(`SELECT id FROM encuadres WHERE worker_id = $1 AND job_posting_id = $2 LIMIT 1`, [wid, jobA]);
-      if (key === 'a') encA = e.rows[0].id; else encOpt = e.rows[0].id;
+      if (key === 'a') encA = e.rows[0].id;
+      else if (key === 'o') encOpt = e.rows[0].id;
+      else if (key === 'b') encB = e.rows[0].id;
+      else encC = e.rows[0].id;
     }
     // O setup do e2e trunca tabelas entre suítes e leva o seed da migration 292 junto:
     // (re)semear as 9 etapas AR (mesmo INSERT da migration) e zerar a config.
@@ -174,5 +180,52 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
     expect(me?.lastStageMessage).toMatchObject({ stage: 'COMPLETED', templateSlug: TEMPLATE });
     const paused = await pool.query(`SELECT paused FROM messaging_channel_pause WHERE channel = 'whatsapp'`);
     expect(paused.rows[0].paused).toBe(true);
+  });
+
+  it('TROCAR a mensagem escolhida troca a que é enfileirada — a antiga não sai mais, e a já enviada não é reescrita', async () => {
+    // Estado de partida: COMPLETED está com o TEMPLATE (o teste de config ligou).
+    const cfg0 = await api.get('/api/admin/funnel-stage-messages', asAdmin);
+    expect(cfg0.data.data.stages.find((x: { stage: string }) => x.stage === 'COMPLETED')).toMatchObject({ templateSlug: TEMPLATE, enabled: true });
+
+    // 1) Arrasta a tarjeta do worker B → sai o TEMPLATE.
+    expect((await api.put(`/api/admin/encuadres/${encB}/move`, { targetStage: 'COMPLETED' }, asAdmin)).status).toBe(200);
+    await processLatestEvent('funnel_stage.completed', workerB);
+    const outB = await pool.query(`SELECT template_slug FROM messaging_outbox WHERE worker_id = $1`, [workerB]);
+    expect(outB.rows.map((r) => r.template_slug)).toEqual([TEMPLATE]);
+
+    // 2) O admin TROCA a mensagem da etapa pelo painel (mesma rota que a modal usa).
+    const troca = await api.put('/api/admin/funnel-stage-messages/COMPLETED', { template_slug: TEMPLATE_B, enabled: true }, asAdmin);
+    expect(troca.status).toBe(200);
+
+    // 3) Arrasta a tarjeta do worker C → tem de sair o NOVO, e só ele.
+    expect((await api.put(`/api/admin/encuadres/${encC}/move`, { targetStage: 'COMPLETED' }, asAdmin)).status).toBe(200);
+    await processLatestEvent('funnel_stage.completed', workerC);
+    const outC = await pool.query(`SELECT template_slug, variables FROM messaging_outbox WHERE worker_id = $1`, [workerC]);
+    expect(outC.rows.map((r) => r.template_slug)).toEqual([TEMPLATE_B]);
+    expect(outC.rows.map((r) => r.template_slug)).not.toContain(TEMPLATE);
+
+    // As variáveis são as do corpo do template NOVO (nome como token, caso cru).
+    const vars = outC.rows[0].variables as Record<string, string>;
+    expect(Object.keys(vars).sort()).toEqual(['case_number', 'worker_name']);
+    expect(vars.case_number).toBe(String(CASE_A));
+
+    // A trilha registra o slug de cada momento — e o envio de B não foi reescrito.
+    expect((await logFor(workerB)).rows.map((r) => r.template_slug)).toEqual([TEMPLATE]);
+    expect((await logFor(workerC)).rows.map((r) => r.template_slug)).toEqual([TEMPLATE_B]);
+    expect((await pool.query(`SELECT template_slug FROM messaging_outbox WHERE worker_id = $1`, [workerB])).rows.map((r) => r.template_slug)).toEqual([TEMPLATE]);
+
+    // 4) Desligar a etapa: a próxima ação não dispara mensagem nenhuma.
+    expect((await api.put('/api/admin/funnel-stage-messages/COMPLETED', { template_slug: TEMPLATE_B, enabled: false }, asAdmin)).status).toBe(200);
+    expect((await api.put(`/api/admin/encuadres/${encB}/move`, { targetStage: 'IN_DOUBT' }, asAdmin)).status).toBe(200);
+    await processLatestEvent('funnel_stage.in_doubt', workerB);
+    expect((await api.put(`/api/admin/encuadres/${encB}/move`, { targetStage: 'COMPLETED' }, asAdmin)).status).toBe(200);
+    await processLatestEvent('funnel_stage.completed', workerB);
+    expect((await pool.query(`SELECT template_slug FROM messaging_outbox WHERE worker_id = $1`, [workerB])).rows).toHaveLength(1);
+    expect((await logFor(workerB)).rows.map((r) => `${r.stage}:${r.status}:${r.skip_reason ?? ''}`)).toEqual([
+      'COMPLETED:queued:', 'IN_DOUBT:skipped:DISABLED', 'COMPLETED:skipped:DISABLED',
+    ]);
+
+    // Restaura o estado que os outros testes assumem.
+    expect((await api.put('/api/admin/funnel-stage-messages/COMPLETED', { template_slug: TEMPLATE, enabled: true }, asAdmin)).status).toBe(200);
   });
 });

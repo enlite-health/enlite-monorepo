@@ -595,4 +595,43 @@ describe('TwilioMessagingService', () => {
       expect(mockCreate).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('o template ENVIADO é o do slug pedido — nunca outro (DEC-12)', () => {
+    /** Dois templates aprovados, com Content SID e corpo DIFERENTES. */
+    const A = { slug: 'tpl_a', body: 'Hola {{worker_name}}', contentSid: 'HXaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', isActive: true };
+    const B = { slug: 'tpl_b', body: 'Caso {{case_number}} — {{worker_name}}', contentSid: 'HXbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', isActive: true };
+
+    beforeEach(() => {
+      mockTemplateRepo.findBySlug.mockImplementation(async (slug: string) => (slug === A.slug ? A : slug === B.slug ? B : null));
+      mockCreate.mockResolvedValue({ sid: 'SM123', status: 'queued' });
+    });
+
+    it('slug B → contentSid de B e variáveis na ordem do corpo de B', async () => {
+      const res = await service.sendWhatsApp({ to: '+5491100001111', templateSlug: 'tpl_b', variables: { worker_name: 'María', case_number: '1042' } });
+
+      expect(res.isSuccess).toBe(true);
+      expect(mockTemplateRepo.findBySlug).toHaveBeenCalledWith('tpl_b');
+      const arg = mockCreate.mock.calls[0][0];
+      expect(arg.contentSid).toBe(B.contentSid);
+      expect(arg.contentSid).not.toBe(A.contentSid);
+      // A ordem é a do corpo de B: {{case_number}} é o slot 1, {{worker_name}} o 2.
+      expect(JSON.parse(arg.contentVariables)).toEqual({ '1': '1042', '2': 'María' });
+    });
+
+    it('trocar o slug entre dois envios troca o Content SID — não fica preso no primeiro', async () => {
+      await service.sendWhatsApp({ to: '+5491100001111', templateSlug: 'tpl_a', variables: { worker_name: 'María' } });
+      await service.sendWhatsApp({ to: '+5491100001111', templateSlug: 'tpl_b', variables: { worker_name: 'María', case_number: '1042' } });
+
+      expect(mockCreate.mock.calls.map((c) => c[0].contentSid)).toEqual([A.contentSid, B.contentSid]);
+      // E cada envio usou o mapeamento do SEU corpo (A tem 1 slot; B tem 2).
+      expect(JSON.parse(mockCreate.mock.calls[0][0].contentVariables)).toEqual({ '1': 'María' });
+      expect(JSON.parse(mockCreate.mock.calls[1][0].contentVariables)).toEqual({ '1': '1042', '2': 'María' });
+    });
+
+    it('slug que não existe não cai em template nenhum: falha, e nada é enviado', async () => {
+      const res = await service.sendWhatsApp({ to: '+5491100001111', templateSlug: 'tpl_inexistente', variables: {} });
+      expect(res.isFailure).toBe(true);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+  });
 });
