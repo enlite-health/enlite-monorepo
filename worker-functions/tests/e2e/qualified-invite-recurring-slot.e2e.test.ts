@@ -147,11 +147,20 @@ describe('Convite de entrevista com slot RECORRENTE + pulos contáveis (D211.4) 
     expect(rows[0].status).toBe('pending');
 
     // Oráculo independente: as duas próximas segundas às 08:30 no fuso da vaga, estritamente depois de agora.
+    // ⚠️ `d::date` NÃO é decoração. `generate_series(date, date, interval)` devolve
+    // TIMESTAMPTZ, e `AT TIME ZONE` sobre timestamptz vai na direção INVERSA: em vez
+    // de ler 08:30 como hora argentina, converte 08:30 UTC para 05:30 AR. Medido em
+    // 31/08: `(d + TIME '08:30') AT TIME ZONE tz` dava `2026-08-31 05:30` (naive),
+    // contra `2026-08-31 11:30+00` com o cast — 3 horas de deslocamento silencioso.
+    // O erro só MUDA o resultado na janela estreita de uma segunda entre ~05:30 e
+    // 08:30 AR, por isso ficou verde por meses e reprovou o CI numa segunda de manhã,
+    // culpando um PR que não tocava nada disso. O código de produção sempre fez certo
+    // (`interviewSchedule.ts:55` e `EncuadreQueryRepository.ts:280` castam antes).
     const oracle = await pool.query<{ label: string }>(
       `SELECT 'Lun ' || to_char(d, 'DD/MM') || ' 08:30' AS label
        FROM generate_series((NOW() AT TIME ZONE $1)::date, (NOW() AT TIME ZONE $1)::date + 21, '1 day') d
        WHERE EXTRACT(DOW FROM d) = 1
-         AND ((d + TIME '08:30') AT TIME ZONE $1) > NOW()
+         AND ((d::date + TIME '08:30') AT TIME ZONE $1) > NOW()
        ORDER BY d LIMIT 2`,
       [TZ],
     );
