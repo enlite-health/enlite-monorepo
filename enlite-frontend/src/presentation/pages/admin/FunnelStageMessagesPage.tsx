@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AdminFunnelStageMessagesApiService, type FunnelStageMessagesConfig, type FunnelStageMessageRow } from '@infrastructure/http/AdminFunnelStageMessagesApiService';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
@@ -7,6 +8,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
+import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 
@@ -79,21 +81,36 @@ export function FunnelStageMessagesPage(): JSX.Element {
         <Heading level={1}>{t('admin.funnelStageMessages.title')}</Heading>
         <Text size="sm" color="secondary">{t('admin.funnelStageMessages.subtitle')}</Text>
         <Text size="xs" color="secondary">{t('admin.funnelStageMessages.eligibleHint')}</Text>
-        {!isAdmin && <div className="mt-1" data-testid="fsm-admin-only"><Text size="xs" color="secondary">{t('admin.funnelStageMessages.adminOnly')}</Text></div>}
+        {/* Este aviso muda o que a pessoa PODE FAZER; o subtítulo e a dica acima
+            não. Renderizados iguais (3 linhas cinzas de 12px), o único que
+            importa some no meio dos outros dois. */}
+        {!isAdmin && (
+          <div
+            className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+            data-testid="fsm-admin-only"
+            role="status"
+          >
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+            <Text size="sm" color="inherit" className="text-amber-900">{t('admin.funnelStageMessages.adminOnly')}</Text>
+          </div>
+        )}
       </div>
 
       {loadError && <div data-testid="fsm-load-error" className="mb-3 rounded-lg px-4 py-2 bg-red-50 border border-red-200"><Text size="sm" color="inherit" className="text-red-700">{loadError}</Text></div>}
 
       {config && (
         <Table data-testid="fsm-table">
+          {/* Sem <TableRow> aqui: o TableHeader já emite o próprio <tr>. Envolver
+              em outro produzia <tr> dentro de <tr>; o parser desfazia o
+              aninhamento e o cabeçalho saía do cálculo de colunas da tabela —
+              os títulos ficavam numa faixa de 349px sobre linhas de 1096px, sem
+              nenhum alinhar com a sua coluna. */}
           <TableHeader>
-            <TableRow clickable={false}>
-              <TableHead>{t('admin.funnelStageMessages.stage')}</TableHead>
-              <TableHead>{t('admin.funnelStageMessages.template')}</TableHead>
-              <TableHead>{t('admin.funnelStageMessages.enabled')}</TableHead>
-              <TableHead>{t('admin.funnelStageMessages.updatedBy')}</TableHead>
-              <TableHead unwrapped><span /></TableHead>
-            </TableRow>
+            <TableHead>{t('admin.funnelStageMessages.stage')}</TableHead>
+            <TableHead>{t('admin.funnelStageMessages.template')}</TableHead>
+            <TableHead>{t('admin.funnelStageMessages.enabled')}</TableHead>
+            <TableHead>{t('admin.funnelStageMessages.updatedBy')}</TableHead>
+            <TableHead unwrapped><span /></TableHead>
           </TableHeader>
           <TableBody>
             {config.stages.map((s: FunnelStageMessageRow) => {
@@ -112,7 +129,14 @@ export function FunnelStageMessagesPage(): JSX.Element {
                   </TableCell>
                   <TableCell unwrapped>
                     {!builtin && (
-                      <input type="checkbox" data-testid={`fsm-enabled-${s.stage}`} checked={r.enabled} disabled={!isAdmin || !r.templateSlug} onChange={(e) => patch(s.stage, { enabled: e.target.checked })} aria-label={t('admin.funnelStageMessages.enabled')} />
+                      <Checkbox
+                        data-testid={`fsm-enabled-${s.stage}`}
+                        checked={r.enabled}
+                        disabled={!isAdmin || !r.templateSlug}
+                        onChange={(e) => patch(s.stage, { enabled: e.target.checked })}
+                        aria-label={t('admin.funnelStageMessages.enabled')}
+                        className={!isAdmin || !r.templateSlug ? 'opacity-40' : ''}
+                      />
                     )}
                   </TableCell>
                   <TableCell unwrapped>

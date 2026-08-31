@@ -3403,7 +3403,10 @@
       "eligibleHint": "Solo templates aprobados por Meta como UTILITY, sin recordatorios, con variables que el sistema completa (nombre como token, número de caso).",
       "stages": {
         "QUALIFIED": "Calificados (Talentum)",
-        "IN_DOUBT": "En duda"
+        "IN_DOUBT": "En duda",
+        "INTERVIEWED": "Entrevistados",
+        "PRESENTED": "Presentados",
+        "HIRED": "Contratados"
       }
     },
     "presentationInvite": {
