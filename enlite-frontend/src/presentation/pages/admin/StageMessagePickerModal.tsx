@@ -8,10 +8,13 @@
  * amigável não existe em lugar nenhum, então quem escolhe não tem como saber o
  * que vai sair. Aqui a identidade da opção é o começo do próprio texto.
  *
- * A prévia usa `bodyTwilio` (o que a Meta aprovou) e cai para `body` quando o
- * sync ainda não rodou. Os dois sentinelas de "corpo que não é corpo" — escritos
- * pelas nossas migrations quando o conteúdo mora no Content Builder — nunca
- * viram prévia: a tela diz que não tem o texto.
+ * A prévia mostra SÓ `bodyTwilio` — o texto que a Meta aprovou. Nunca `body`:
+ * ele é o contrato de ENVIO (a ordem dos nomes), e uma conferência de 31/08
+ * contra a Content API achou 12 de 27 templates com `body` divergindo do texto
+ * aprovado, de ponteiro a cópia velha. Enquanto a prévia depender só do texto
+ * aprovado, sentinela nenhum — inclusive os que ainda não existem — tem por onde
+ * chegar à tela, e não é preciso filtro reconhecendo literais. Sem texto
+ * aprovado, a tela diz que não sabe.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

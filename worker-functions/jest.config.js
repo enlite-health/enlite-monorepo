@@ -1,7 +1,10 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src', '<rootDir>/tests'],
+  // `scripts` entra aqui porque script que escreve em produção (o sync de
+  // templates) precisa de teste como qualquer código — a pasta inteira estava
+  // fora do alcance do runner, e por isso a 0%.
+  roots: ['<rootDir>/src', '<rootDir>/tests', '<rootDir>/scripts'],
   testMatch: ['**/__tests__/**/*.test.ts', '!**/e2e/**'],
   collectCoverageFrom: [
     'src/**/*.ts',
@@ -128,6 +131,16 @@ module.exports = {
     // template PODE ser disparado: quando ela regride, alguém recebe mensagem
     // que não devia — o modo de falha do incidente de opt-out.
     'src/modules/notification/application/{BookSlotFromWhatsAppUseCase,InvitePresentationMeetingUseCase,StageTemplateEligibility}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // O texto aprovado do template: `twilioContentBody` é a regra ÚNICA de
+    // extração (duas regras divergentes já puseram um sentinela na tela como se
+    // fosse a mensagem da cuidadora) e o provider é quem a persiste. Entram no
+    // piso no mesmo PR que as cria.
+    'src/modules/notification/infrastructure/{twilioContentBody,TwilioContentBodyProvider}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

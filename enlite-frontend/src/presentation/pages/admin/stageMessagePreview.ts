@@ -28,7 +28,7 @@ const SAMPLE: Record<string, string> = {
  * no backend — `[A-Za-z0-9_]+`, não `[^}]+`. Elas precisam casar porque o envio
  * monta as contentVariables pela ordem que o BACKEND enxerga, e a prévia promete
  * mostrar essa mesma mensagem. Divergir faz a tela mentir sobre qual valor cai em
- * qual slot. O teste `stageMessagePreview.test.ts` trava os dois casos de borda.
+ * qual slot. O teste `__tests__/StageMessagePickerModal.test.tsx` trava os dois casos de borda.
  */
 export function placeholdersOf(body: string): string[] {
   const out: string[] = [];

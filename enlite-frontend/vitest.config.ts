@@ -162,6 +162,15 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // A modal de escolha da mensagem por etapa e a regra de texto dela.
+        // Nascem em 100% (medido na suíte inteira) e entram no piso no MESMO PR
+        // que as cria — foi um achado do gate que a regra acima existe.
+        '**/src/presentation/pages/admin/{StageMessagePickerModal.tsx,stageMessagePreview.ts}': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
       },
     },
   },
