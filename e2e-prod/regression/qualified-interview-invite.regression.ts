@@ -59,7 +59,7 @@ const EXPECTED_TEMPLATE = 'qualified_worker_request';
 
 type PatientsListBody = { data: { id: string; caseNumber: number | null }[] };
 type CreateVacancyBody = { data: { id: string; is_test: boolean } };
-type FunnelBody = { data: { stages: Record<string, { id: string; workerId: string | null; internalStage: string | null }[]> } };
+type FunnelBody = { data: { stages: Record<string, { id: string; encuadreId: string | null; workerId: string | null; internalStage: string | null }[]> } };
 type DeliveryBody = {
   data: {
     wjaStage: string | null;
@@ -105,7 +105,16 @@ test.describe('D224 — arrasto para QUALIFIED enfileira o convite e o guard is_
       data: { authUid: localId, email: WORKER_EMAIL, lgpdOptIn: true, country: 'AR' },
     });
     expect(initRes.status(), 'POST /api/workers/init cria o worker (201)').toBe(201);
-    workerId = ((await initRes.json()) as { data: { id: string } }).data.id;
+    // ⚠️ `/api/workers/init` devolve `{ status, worker }` — NÃO `{ id }`.
+    // Medido em 31/08 lendo `InitWorkerOutput` (união discriminada) depois de prod
+    // devolver `invalid input syntax for type uuid: "undefined"`: a extração `.data.id`
+    // dava `undefined`, que virava a STRING "undefined" na URL do passo seguinte.
+    // O `worker-journey`, que roda verde todo dia, sempre fez assim — e assere as duas
+    // coisas abaixo, que é o que transforma o defeito num erro no lugar certo.
+    const initBody = (await initRes.json()) as { data: { status: string; worker: { id: string } } };
+    expect(initBody.data.status, 'init retorna status "ok" (não claim_pending)').toBe('ok');
+    workerId = initBody.data.worker.id;
+    expect(workerId, 'init retorna o id do worker criado').toBeTruthy();
 
     await completeCaregiverRegistration(workerCtx, uniqueArMobile());
 
@@ -169,7 +178,29 @@ test.describe('D224 — arrasto para QUALIFIED enfileira o convite e o guard is_
     const card = items.find(it => it.workerId === workerId);
     expect(card, 'a postulação criou a tarjeta do nosso worker').toBeTruthy();
 
-    const moveRes = await adminCtx.put(`/api/admin/encuadres/${card!.id}/move`, {
+    // ⚠️ `card.id` é o id da LINHA do funil; a rota do move quer o `encuadreId`, que é
+    // outro campo (`KanbanBoard.tsx:249` usa `enc.encuadreId`). Usar `id` aqui devolve
+    // 404 "Encuadre not found". Medido em 31/08, na 1ª execução real deste fluxo — este
+    // spec nasceu bloqueado pela pré-condição e nunca tinha rodado contra prod.
+    // O encuadre nasce DEPOIS da postulação, então espera-se pela CONDIÇÃO.
+    await expect
+      .poll(
+        async () => {
+          const r = await adminCtx!.get(`/api/admin/vacancies/${vacancyId}/funnel`);
+          if (r.status() !== 200) return null;
+          const todos = Object.values(((await r.json()) as FunnelBody).data.stages).flat();
+          return todos.find((it) => it.workerId === workerId)?.encuadreId ?? null;
+        },
+        { timeout: 60_000, intervals: [1_000, 2_000, 5_000], message: 'o encuadre da postulação nunca apareceu' },
+      )
+      .not.toBeNull();
+
+    const funnelRes2 = await adminCtx.get(`/api/admin/vacancies/${vacancyId}/funnel`);
+    const encuadreId = Object.values(((await funnelRes2.json()) as FunnelBody).data.stages)
+      .flat()
+      .find((it) => it.workerId === workerId)!.encuadreId!;
+
+    const moveRes = await adminCtx.put(`/api/admin/encuadres/${encuadreId}/move`, {
       data: { targetStage: 'QUALIFIED' },
     });
     expect(moveRes.status(), 'PUT /encuadres/:id/move para QUALIFIED responde 200').toBe(200);
