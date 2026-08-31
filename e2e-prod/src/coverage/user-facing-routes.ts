@@ -78,6 +78,10 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // a tela estava em produção e fora do denominador — invisível ao gate, portanto
   // nunca cobrada. Entra junto com a Spec 009, que a cobre.
   { route: '/admin/mapa', surface: 'admin', tier: 'regression' },
+  // Mensagem por etapa (DEC-12 / PEND-14). Terceira vez que a mesma história se
+  // repete: a tela estava em produção desde 30/08 e FORA do denominador — logo,
+  // invisível ao gate e nunca cobrada. Entra junto com o spec que a cobre.
+  { route: '/admin/mensajes-por-etapa', surface: 'admin', tier: 'regression' },
   // Páginas PÚBLICAS de admissão (form B2C multi-país, sem login).
   { route: '/admission-ar', surface: 'public', tier: 'smoke' },
   { route: '/admission-br', surface: 'public', tier: 'smoke' },
@@ -103,6 +107,11 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'GET /api/vacancies/:id', surface: 'api', tier: 'smoke' },
   { route: 'GET /api/jobs', surface: 'api', tier: 'smoke' },
   { route: 'GET /health', surface: 'api', tier: 'smoke' },
+  // Config da mensagem por etapa (DEC-12). A de leitura é a que alimenta a tela;
+  // a de escrita entra porque o monitor exercita as REJEIÇÕES dela (409/400) —
+  // caminho de erro real, que não grava por mecanismo.
+  { route: 'GET /api/admin/funnel-stage-messages', surface: 'api', tier: 'regression' },
+  { route: 'PUT /api/admin/funnel-stage-messages/:stage', surface: 'api', tier: 'regression' },
   // Check NEGATIVO: deve 401/403 sem secret (gate interno não vaza pra fora).
   { route: 'GET /api/internal/vertex-health', surface: 'api', tier: 'smoke' },
   { route: 'POST /api/workers/init', surface: 'api', tier: 'regression' },
