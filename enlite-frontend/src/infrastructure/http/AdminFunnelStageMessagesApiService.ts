@@ -5,7 +5,13 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 
 export interface FunnelStageMessageRow { stage: string; templateSlug: string | null; enabled: boolean; channel: string; builtin: string | null; updatedBy: string | null; updatedAt: string | null }
-export interface FunnelStageTemplateOption { slug: string; name: string; category: string | null; eligible: boolean; reason: string | null; placeholders: string[]; unsupported: string[] }
+/**
+ * `body`      — contrato de ENVIO: placeholders nomeados, na ordem em que viram
+ *               as contentVariables posicionais da Twilio.
+ * `bodyTwilio` — texto aprovado na Meta, só EXIBIÇÃO (posicional). `null` = nunca
+ *               sincronizado; a tela diz que não sabe em vez de inventar.
+ */
+export interface FunnelStageTemplateOption { slug: string; name: string; body: string | null; bodyTwilio: string | null; category: string | null; eligible: boolean; reason: string | null; placeholders: string[]; unsupported: string[] }
 export interface FunnelStageMessagesConfig { country: string; stages: FunnelStageMessageRow[]; templates: FunnelStageTemplateOption[] }
 export interface FunnelStageMessageUpdate { stage: string; templateSlug: string | null; enabled: boolean }
 

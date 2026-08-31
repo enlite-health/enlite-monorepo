@@ -175,3 +175,52 @@ describe('StageMessageHandler', () => {
     expect(pubsub.publish).not.toHaveBeenCalled();
   });
 });
+
+describe('a mensagem que sai é a que está ESCOLHIDA agora (DEC-12)', () => {
+  const outboxInsert = (c: { query: jest.Mock }) => c.query.mock.calls.find((k) => (k[0] as string).includes('INSERT INTO messaging_outbox'));
+  const trilhaInsert = (c: { query: jest.Mock }) => c.query.mock.calls.find((k) => (k[0] as string).includes('INSERT INTO funnel_stage_message_log'));
+  const doubles = () => ({ pubsub: { publish: jest.fn().mockResolvedValue(null) }, token: { generate: jest.fn().mockResolvedValue('tk_name') } });
+
+  it('trocar o template na config troca o slug enfileirado — sem reiniciar o handler', async () => {
+    const q = jest.fn() as Q;
+    const client = makeClient();
+    const { pubsub, token } = doubles();
+    const handler = createStageMessageHandler(makeDb(q, client) as never, pubsub as never, token as never, 'COMPLETED');
+
+    program(q, { config: [{ ...configOn, template_slug: 'tpl_antigo' }] });
+    await handler(payload);
+    expect(outboxInsert(client)![1][2]).toBe('tpl_antigo');
+
+    // Mesmo handler, mesma instância: só o banco mudou (foi o que o painel gravou).
+    client.query.mockClear();
+    program(q, { config: [{ ...configOn, template_slug: 'tpl_novo' }] });
+    await handler({ ...payload, workerId: 'w2' });
+    expect(outboxInsert(client)![1][2]).toBe('tpl_novo');
+  });
+
+  it('o slug do outbox, o da trilha e o da config são o MESMO — não há default escondido', async () => {
+    const q = jest.fn() as Q;
+    const client = makeClient();
+    const { pubsub, token } = doubles();
+    program(q, { config: [{ ...configOn, template_slug: 'tpl_escolhido' }] });
+    await createStageMessageHandler(makeDb(q, client) as never, pubsub as never, token as never, 'COMPLETED')(payload);
+
+    const outbox = outboxInsert(client)!;
+    const trilha = trilhaInsert(client)!;
+    expect(outbox[1][2]).toBe('tpl_escolhido');
+    expect(trilha[1][3]).toBe('tpl_escolhido');
+  });
+
+  it('template cujo corpo aprovado pede mais slots do que sabemos preencher NÃO é enfileirado — com razão PRÓPRIA, não silêncio', async () => {
+    const q = jest.fn() as Q;
+    const client = makeClient();
+    const { pubsub, token } = doubles();
+    program(q, { config: [{ ...configOn, template_slug: 'ar_finalize_signup_luz', body: '(ver Twilio Content Builder: HX54d6)', body_twilio: 'Hola {{1}}, falta {{2}}' }] });
+    await createStageMessageHandler(makeDb(q, client) as never, pubsub as never, token as never, 'COMPLETED')(payload);
+
+    expect(outboxInsert(client)).toBeUndefined();
+    // Razão própria: é a única que pode aparecer DEPOIS de a etapa estar ligada,
+    // então confundi-la com 'nunca foi permitido' esconderia uma etapa que parou.
+    expect((logInsert(q) as unknown as [string, unknown[]])[1][6]).toBe('TEMPLATE_SLOT_MISMATCH');
+  });
+});

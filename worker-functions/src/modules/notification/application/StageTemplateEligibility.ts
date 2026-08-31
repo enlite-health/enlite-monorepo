@@ -33,7 +33,7 @@ export const DENIED_SLUG_PREFIXES: readonly string[] = [
   'qualified_reminder_',
 ];
 
-export type IneligibilityReason = 'INACTIVE' | 'CATEGORY' | 'DENY_LIST' | 'PLACEHOLDERS' | 'OPT_OUT_CLAUSE';
+export type IneligibilityReason = 'INACTIVE' | 'CATEGORY' | 'DENY_LIST' | 'PLACEHOLDERS' | 'OPT_OUT_CLAUSE' | 'SLOT_MISMATCH';
 
 /**
  * O que muda entre um uso e outro da mesma triagem (mensagem por etapa × convite à
@@ -65,6 +65,11 @@ export const STAGE_MESSAGE_POLICY: EligibilityPolicy = {
 export interface TemplateLike {
   slug: string;
   body: string | null | undefined;
+  /**
+   * Corpo APROVADO na Meta, vindo da Content API. É ele que diz quantos slots a
+   * Twilio exige — `body` só diz quantos nós sabemos preencher.
+   */
+  body_twilio?: string | null;
   category?: string | null;
   is_active?: boolean | null;
 }
@@ -96,15 +101,47 @@ export interface EligibilityResult {
   unsupported: string[];
 }
 
+/**
+ * Quantos slots a Twilio vai exigir. Conta QUALQUER `{{…}}` do corpo aprovado —
+ * os corpos de lá são posicionais (`{{1}}`), que o parser nomeado não enxerga.
+ */
+export function twilioSlots(bodyTwilio: string | null | undefined): string[] {
+  if (!bodyTwilio) return [];
+  const seen = new Set<string>();
+  for (const m of bodyTwilio.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) seen.add(m[1]);
+  return [...seen];
+}
+
+export function twilioSlotCount(bodyTwilio: string | null | undefined): number {
+  return twilioSlots(bodyTwilio).length;
+}
+
 export function evaluateTemplateEligibility(t: TemplateLike, policy: EligibilityPolicy = STAGE_MESSAGE_POLICY): EligibilityResult {
   const placeholders = extractPlaceholders(t.body);
   const unsupported = placeholders.filter((p) => !policy.supportedPlaceholders.has(p));
+  /**
+   * O envio monta as contentVariables mapeando, NA ORDEM, os placeholders
+   * nomeados de `body` para "1","2",… Se a Twilio exige mais slots do que temos
+   * nomes, a Meta rejeita a mensagem inteira ("Content Variables parameter is
+   * invalid") — e o `body` sozinho não denuncia isso: `ar_finalize_signup_luz`
+   * tem corpo-ponteiro sem nenhuma variável e passaria como elegível, enquanto o
+   * template aprovado pede 2. Só se compara quando o corpo da Twilio é conhecido;
+   * `null` = não sincronizado, e aí a regra antiga vale (nada a comparar).
+   */
+  const slots = twilioSlots(t.body_twilio);
+  const esperados = placeholders.map((_, i) => String(i + 1));
+  // Não basta a QUANTIDADE bater: o corpo aprovado tem de pedir exatamente
+  // {{1}}..{{N}}. Numeração fora dessa faixa (ou um nome no lugar de um número)
+  // significa que o mapeamento posicional do envio não cobre o template.
+  const slotsMismatch = t.body_twilio != null
+    && (slots.length !== placeholders.length || esperados.some((e) => !slots.includes(e)));
   const inactive: IneligibilityReason | null = t.is_active === false ? 'INACTIVE' : null;
   let reason: IneligibilityReason | null = null;
   if (!policy.inactiveLast && inactive) reason = inactive;
   else if ((t.category ?? '').toUpperCase() !== ALLOWED_TEMPLATE_CATEGORY) reason = 'CATEGORY';
   else if (isDeniedSlug(t.slug, policy.deniedSlugPrefixes)) reason = 'DENY_LIST';
   else if (unsupported.length > 0) reason = 'PLACEHOLDERS';
+  else if (slotsMismatch) reason = 'SLOT_MISMATCH';
   else if (policy.optOutClauseRe && !policy.optOutClauseRe.test(t.body ?? '')) reason = 'OPT_OUT_CLAUSE';
   else if (policy.inactiveLast && inactive) reason = inactive;
   return { eligible: reason === null, reason, placeholders, unsupported };

@@ -5,8 +5,7 @@ import {
   isDeniedSlug,
   DENIED_SLUG_PREFIXES,
   STAGE_MESSAGE_POLICY,
-  type EligibilityPolicy,
-} from '../StageTemplateEligibility';
+  type EligibilityPolicy, twilioSlotCount } from '../StageTemplateEligibility';
 
 describe('extractPlaceholders', () => {
   it('lista os placeholders {{x}} sem duplicatas, na ordem; corpo vazio → []', () => {
@@ -88,5 +87,57 @@ describe('evaluateTemplateEligibility com política própria (o que muda entre e
     expect(evaluateTemplateEligibility({ ...t, body: undefined, is_active: true }, custom).reason).toBe('OPT_OUT_CLAUSE');
     expect(evaluateTemplateEligibility({ ...t, body: 'x {{meet_link}} baja', is_active: true }, { ...custom, deniedSlugPrefixes: DENIED_SLUG_PREFIXES }).reason).toBe('DENY_LIST');
     expect(isDeniedSlug('complete_register_x', [])).toBe(false);
+  });
+});
+
+describe('SLOT_MISMATCH — o corpo aprovado é quem diz quantos slots a Meta exige', () => {
+  const base = { slug: 'ar_finalize_signup_luz', category: 'UTILITY', is_active: true };
+
+  it('corpo-ponteiro sem variável × template Twilio com 2 slots → INELEGÍVEL (envio quebraria)', () => {
+    const r = evaluateTemplateEligibility({ ...base, body: '(ver Twilio Content Builder: HX54d6)', body_twilio: 'Hola {{1}}, entrá en {{2}}' });
+    expect(r).toMatchObject({ eligible: false, reason: 'SLOT_MISMATCH' });
+  });
+
+  it('mesma quantidade de slots → elegível (1 nomeado ↔ 1 posicional)', () => {
+    const r = evaluateTemplateEligibility({ slug: 'qualified_reprogram_confirm', category: 'UTILITY', is_active: true, body: 'Caso {{case_number}}', body_twilio: 'Caso {{1}}' });
+    expect(r).toMatchObject({ eligible: true, reason: null });
+  });
+
+  it('sem corpo sincronizado (null) não há o que comparar — a regra antiga vale', () => {
+    const r = evaluateTemplateEligibility({ ...base, body: 'Texto sem variável', body_twilio: null });
+    expect(r).toMatchObject({ eligible: true, reason: null });
+  });
+
+  it('a razão mais forte vem antes: deny-list ganha de SLOT_MISMATCH', () => {
+    const r = evaluateTemplateEligibility({ slug: 'admission_reminder_es', category: 'UTILITY', is_active: true, body: 'x', body_twilio: '{{1}}' });
+    expect(r.reason).toBe('DENY_LIST');
+  });
+
+  it('twilioSlotCount conta slot distinto, tolera espaço e ignora corpo vazio', () => {
+    expect(twilioSlotCount('{{1}} e {{ 2 }} e {{1}}')).toBe(2);
+    expect(twilioSlotCount(null)).toBe(0);
+    expect(twilioSlotCount('')).toBe(0);
+  });
+
+  it('não basta a QUANTIDADE bater: o corpo aprovado tem de pedir exatamente {{1}}..{{N}}', () => {
+    // 2 nomes nossos × 2 slots aprovados, mas numerados {{2}} e {{3}}: o
+    // mapeamento posicional do envio manda "1" e "2", e o {{3}} ficaria vazio.
+    const r = evaluateTemplateEligibility({
+      slug: 'x', category: 'UTILITY', is_active: true,
+      body: 'Hola {{worker_name}}, caso {{case_number}}', body_twilio: 'Hola {{2}}, caso {{3}}',
+    });
+    expect(r).toMatchObject({ eligible: false, reason: 'SLOT_MISMATCH' });
+
+    // e um NOME no lugar do número também não é mapeável por posição
+    expect(evaluateTemplateEligibility({
+      slug: 'x', category: 'UTILITY', is_active: true,
+      body: 'Hola {{name}}', body_twilio: 'Hola {{nombre}}',
+    })).toMatchObject({ eligible: false, reason: 'SLOT_MISMATCH' });
+
+    // 1..N na ordem certa continua elegível
+    expect(evaluateTemplateEligibility({
+      slug: 'x', category: 'UTILITY', is_active: true,
+      body: 'Hola {{worker_name}}, caso {{case_number}}', body_twilio: 'Hola {{1}}, caso {{2}}',
+    })).toMatchObject({ eligible: true });
   });
 });
