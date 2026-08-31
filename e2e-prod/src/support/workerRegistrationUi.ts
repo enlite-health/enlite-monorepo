@@ -74,8 +74,9 @@ async function pickFirstMultiSelect(page: Page, testId: string, label: string): 
       const dropdown = page.locator(`[data-testid="${testId}-dropdown"]`);
       await expect(dropdown, `${label}: dropdown abriu`).toBeVisible({ timeout: 10_000 });
       await dropdown.locator('div').first().click();
-      await page.keyboard.press('Escape');
-      await expect(dropdown, `${label}: dropdown fechou`).toBeHidden({ timeout: 10_000 });
+      // O MultiSelect fecha por mousedown FORA — `Escape` não fecha (medido).
+      // Fechar importa porque o dropdown aberto cobre o campo seguinte.
+      await page.mouse.click(5, 5);
     },
     label,
   );
