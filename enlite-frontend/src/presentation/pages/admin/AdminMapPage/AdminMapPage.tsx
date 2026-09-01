@@ -227,7 +227,10 @@ export function AdminMapPage(): JSX.Element {
               <Field id="map-center-patient" label={t('admin.map.centerOnPatient.label', 'Centrar en paciente')} group>
                 {/* o `onFocusCapture`/`onClick` no wrapper preserva a busca preguiçosa:
                     o seletor só vai ao servidor depois que alguém o toca. */}
-                <div data-testid="map-center-patient" onFocusCapture={() => setPickerTouched(true)} onClick={() => setPickerTouched(true)}>
+                {/* mascarado como as demais: as opções são "nome · bairro" de
+                    paciente, e o `SearchableSelect` não usa portal (lex 02/09, C-1
+                    — furo da lista de 4 superfícies do parecer de 01/09). */}
+                <div data-testid="map-center-patient" data-clarity-mask="True" onFocusCapture={() => setPickerTouched(true)} onClick={() => setPickerTouched(true)}>
                   <SearchableSelect
                     options={patientPickerOptions}
                     value={centerPatientId}

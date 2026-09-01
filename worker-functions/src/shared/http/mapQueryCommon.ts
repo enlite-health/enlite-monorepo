@@ -128,10 +128,12 @@ export function totalFromRows(rows: Array<{ total_count?: string | number | null
  *
  * ⚠️ INVARIANTE DO `geohash5` (lex 30/08, C6) — LEIA ANTES DE ACRESCENTAR CAMPO.
  * O geocódigo do centro só é admissível aqui porque NÃO HÁ IDENTIFICADOR NA
- * MESMA LINHA. A tela tem um picker "Centrar en paciente"
- * (`AdminMapPage.tsx:98-104`) que põe o centro na coordenada EXATA do domicílio
- * de um paciente escolhido; se esta linha carregasse junto o id (ou o nome) de
- * alguém, o par vira "endereço aproximado de paciente identificado" — e a regra
+ * MESMA LINHA. O centro pode cair na coordenada EXATA do domicílio de alguém por
+ * DUAS portas (atualizado em 02/09, lex C-2): o seletor "Centrar en paciente" e o
+ * botão "Centrar aquí" do balão do pino — este último vale para QUALQUER ponto,
+ * inclusive de PRESTADOR, não só de paciente. Se esta linha carregasse junto o id
+ * (ou o nome) de alguém, o par vira "endereço aproximado de pessoa identificada"
+ * — e a regra
  * HIPAA-like interna só aceita geocódigo abaixo do nível de estado quando o
  * registro está DESIDENTIFICADO. `uid` é o do STAFF que consultou (quem olhou),
  * nunca o de quem foi olhado, e é por isso que ele pode conviver com o geohash.

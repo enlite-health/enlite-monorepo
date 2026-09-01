@@ -323,6 +323,8 @@ describe('AdminMapPage', () => {
     expect(screen.getByTestId('map-list')).toHaveAttribute('data-clarity-mask', 'True');
     // o rótulo do centro, que exibe o NOME do paciente escolhido
     expect(screen.getByTestId('map-center-label')).toHaveAttribute('data-clarity-mask', 'True');
+    // o seletor de paciente: as opções são "nome · bairro"
+    expect(screen.getByTestId('map-center-patient')).toHaveAttribute('data-clarity-mask', 'True');
     // o mapa: cobre o balão e o `title` dos marcadores, que são DOM do Google
     expect(screen.getByTestId('fake-map').closest('[data-clarity-mask="True"]')).not.toBeNull();
     // o aviso de quem não tem coordenada herda a máscara do mesmo wrapper
