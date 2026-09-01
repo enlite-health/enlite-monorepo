@@ -17,6 +17,11 @@ export const DEFAULT_CENTER_BY_COUNTRY: Record<MapCountry, { lat: number; lng: n
   BR: { lat: -23.5505, lng: -46.6333 },
 };
 export const DEFAULT_COUNTRY: MapCountry = 'AR';
+
+/** Comparação por valor — o centro anda por clique e vira objeto novo a cada vez. */
+export function sameCenter(a: { lat: number; lng: number }, b: { lat: number; lng: number }): boolean {
+  return a.lat === b.lat && a.lng === b.lng;
+}
 export const DEFAULT_CENTER = DEFAULT_CENTER_BY_COUNTRY[DEFAULT_COUNTRY];
 /** O raio nasce em 25 km (FATO-17 da ata de 22/07). */
 export const DEFAULT_RADIUS_KM = 25;
@@ -72,11 +77,45 @@ export function distanceLabel(km: number | null): string {
   return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
 }
 
+/**
+ * A linha secundária — profissão/status/lugar. UMA função para a lista e para
+ * o balão do pino: quando eram dois trechos iguais em dois lugares, os dois
+ * podiam divergir sem ninguém notar.
+ */
+export function workerDetails(t: TFunction, p: WorkerMapPoint): string {
+  const place = placeLabel(p) || (p.lat === null ? t('admin.map.noLocation', 'sin ubicación') : '');
+  return [professionLabel(t, p.profession), workerStatusLabel(t, p.status), place].filter(Boolean).join(' · ');
+}
+
+export function patientDetails(t: TFunction, p: PatientMapPoint): string {
+  const place = placeLabel(p) || (p.lat === null ? t('admin.map.noLocation', 'sin ubicación') : '');
+  const vac = p.openVacancies > 0 ? t('admin.map.openVacancies', { count: p.openVacancies, defaultValue: '{{count}} vacante(s) abierta(s)' }) : '';
+  return [patientStatusLabel(t, p.status), place, vac].filter(Boolean).join(' · ');
+}
+
+/** Tooltip NATIVO do pino (o `title` do marcador), onde só cabe uma linha. */
 export function workerPointTitle(t: TFunction, p: WorkerMapPoint): string {
-  return [p.name, professionLabel(t, p.profession), workerStatusLabel(t, p.status), placeLabel(p)].filter(Boolean).join(' — ');
+  return [p.name, workerDetails(t, p)].filter(Boolean).join(' — ');
 }
 
 export function patientPointTitle(t: TFunction, p: PatientMapPoint): string {
-  const vac = p.openVacancies > 0 ? t('admin.map.openVacancies', { count: p.openVacancies, defaultValue: '{{count}} vacante(s) abierta(s)' }) : '';
-  return [p.name, patientStatusLabel(t, p.status), placeLabel(p), vac].filter(Boolean).join(' — ');
+  return [p.name, patientDetails(t, p)].filter(Boolean).join(' — ');
+}
+
+/**
+ * Legenda das bolinhas — UMA entrada por COR, não por status: `ADMISSION` e
+ * `PENDING_ADMISSION` são o mesmo azul, `DISCONTINUED` e `DISCHARGED` o mesmo
+ * cinza. Duas entradas com a mesma cor não seriam legenda, seriam enigma.
+ */
+export function legendEntries(t: TFunction, kind: 'workers' | 'patients'): Array<{ color: string; label: string }> {
+  // Percorre o PRÓPRIO mapa de cores (e não a lista de status): assim não
+  // existe o caso "status sem cor" — que seria um ramo impossível de testar.
+  const colors = kind === 'workers' ? WORKER_STATUS_COLOR : PATIENT_STATUS_COLOR;
+  const label = kind === 'workers' ? workerStatusLabel : patientStatusLabel;
+
+  const byColor = new Map<string, string[]>();
+  for (const [status, color] of Object.entries(colors)) {
+    byColor.set(color, [...(byColor.get(color) ?? []), label(t, status)]);
+  }
+  return [...byColor].map(([color, labels]) => ({ color, label: labels.join(' / ') }));
 }

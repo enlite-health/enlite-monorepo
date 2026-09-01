@@ -102,3 +102,20 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   text-align: center;
 }
+
+/*
+ * Balão do mapa (PointsMap). O InfoWindow do Google chega com
+ * `padding: 0 0 0 12px` — 12px SÓ à esquerda — e `overflow: scroll` no miolo:
+ * era isso que deixava o conteúdo torto e o link colado no fundo do balão.
+ * Aqui o padding vira zero e quem espaça é o cartão (`p-3`), simétrico.
+ * O `:has()` restringe a regra ao NOSSO balão; qualquer outro InfoWindow que
+ * apareça no app segue com o visual padrão do Google.
+ */
+.gm-style-iw-c:has(.points-map-info) {
+  padding: 0 !important;
+}
+
+.gm-style-iw-c:has(.points-map-info) .gm-style-iw-d {
+  overflow: visible !important;
+  max-height: none !important;
+}

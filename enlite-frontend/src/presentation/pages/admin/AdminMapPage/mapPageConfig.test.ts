@@ -3,7 +3,8 @@ import type { TFunction } from 'i18next';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 import {
   DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM, PATIENT_STATUS_COLOR, PROFESSIONS, WORKER_STATUS_COLOR,
-  distanceLabel, patientPointTitle, patientStatusLabel, placeLabel, professionLabel, workerPointTitle, workerStatusLabel,
+  distanceLabel, legendEntries, patientDetails, patientPointTitle, patientStatusLabel, placeLabel, professionLabel,
+  sameCenter, workerDetails, workerPointTitle, workerStatusLabel,
 } from './mapPageConfig';
 
 // t que devolve o fallback (a chave nunca é traduzida aqui — o que se testa é a composição)
@@ -47,12 +48,37 @@ describe('mapPageConfig', () => {
     expect(distanceLabel(12.6)).toBe('13 km');
   });
 
-  it('títulos dos pinos: nome + status + lugar (+ vagas no paciente), sem dado clínico', () => {
+  it('linha de detalhe: a MESMA para a lista e para o balão, com "sin ubicación" quando não há lugar nem coordenada', () => {
+    const w = { id: 'w', name: 'Ana', lat: 0, lng: 0, status: 'INCOMPLETE_REGISTER', documentsComplete: false, profession: 'CAREGIVER', city: 'CABA', neighborhood: null, state: null, distanceKm: null };
+    expect(workerDetails(t, w)).toBe('Cuidador · Registro incompleto · CABA');
+    expect(workerDetails(t, { ...w, lat: null, lng: null, city: null })).toBe('Cuidador · Registro incompleto · sin ubicación');
+    // tem coordenada mas o endereço não traz cidade/bairro: omite o lugar, não mente "sin ubicación"
+    expect(workerDetails(t, { ...w, city: null })).toBe('Cuidador · Registro incompleto');
+
+    const p = { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null };
+    expect(patientDetails(t, p)).toBe('Activo · 2 vacante(s) abierta(s)');
+    expect(patientDetails(t, { ...p, openVacancies: 0 })).toBe('Activo');
+    expect(patientDetails(t, { ...p, lat: null, lng: null, openVacancies: 0 })).toBe('Activo · sin ubicación');
+  });
+
+  it('tooltip nativo do pino: nome + a linha de detalhe, sem dado clínico', () => {
     expect(workerPointTitle(t, { id: 'w', name: 'Ana', lat: 0, lng: 0, status: 'INCOMPLETE_REGISTER', documentsComplete: false, profession: 'CAREGIVER', city: 'CABA', neighborhood: null, state: null, distanceKm: null }))
-      .toBe('Ana — Cuidador — Registro incompleto — CABA');
+      .toBe('Ana — Cuidador · Registro incompleto · CABA');
     expect(patientPointTitle(t, { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null }))
-      .toBe('Luz — Activo — 2 vacante(s) abierta(s)');
-    expect(patientPointTitle(t, { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 0, distanceKm: null }))
-      .toBe('Luz — Activo');
+      .toBe('Luz — Activo · 2 vacante(s) abierta(s)');
+  });
+
+  it('legenda: uma entrada por COR, com os status que dividem a cor juntos', () => {
+    const w = legendEntries(t, 'workers');
+    expect(w.map((e) => e.label)).toEqual(['Documentación completa', 'Registro incompleto', 'Dado de baja']);
+    const p = legendEntries(t, 'patients');
+    expect(p).toHaveLength(5);
+    expect(p.map((e) => e.color)).toEqual([...new Set(p.map((e) => e.color))]);
+    expect(p.find((e) => e.label.includes('/'))?.label).toBe('En admisión / Esperando financiero');
+  });
+
+  it('sameCenter compara por valor', () => {
+    expect(sameCenter({ lat: 1, lng: 2 }, { lat: 1, lng: 2 })).toBe(true);
+    expect(sameCenter({ lat: 1, lng: 2 }, { lat: 1, lng: 3 })).toBe(false);
   });
 });

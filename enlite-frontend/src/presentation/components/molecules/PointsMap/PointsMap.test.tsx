@@ -6,7 +6,10 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { PointsMap, type MapPoint } from './PointsMap';
+
+const last = <T,>(arr: T[]): T | undefined => arr[arr.length - 1];
 
 const loadGoogleMaps = vi.fn();
 vi.mock('@infrastructure/services/loadGoogleMaps', () => ({ loadGoogleMaps: () => loadGoogleMaps() }));
@@ -29,6 +32,9 @@ class FakeMarker extends FakeEmitter {
   setPosition = vi.fn();
   setIcon = vi.fn();
   setTitle = vi.fn();
+  setZIndex = vi.fn();
+  /** O componente usa a posição do marcador para levar a viewport até ele. */
+  getPosition = vi.fn(() => this.opts.position);
   constructor(opts: Record<string, unknown>) { super(); this.opts = opts; markers.push(this); }
 }
 class FakeCircle {
@@ -39,10 +45,11 @@ class FakeCircle {
   constructor(opts: Record<string, unknown>) { this.opts = opts; circles.push(this); }
 }
 class FakeInfoWindow extends FakeEmitter {
+  opts: Record<string, unknown>;
   setContent = vi.fn();
   open = vi.fn();
   close = vi.fn();
-  constructor() { super(); infos.push(this); }
+  constructor(opts: Record<string, unknown> = {}) { super(); this.opts = opts; infos.push(this); }
 }
 let markers: FakeMarker[] = [];
 let circles: FakeCircle[] = [];
@@ -146,20 +153,23 @@ describe('PointsMap', () => {
     expect(screen.getByTestId('points-map')).toHaveAttribute('data-markers', '2');
   });
 
-  it('clique no pino → onSelect(id); selectedId abre o balão com título escapado e link; closeclick → onSelect(null); sem selecionado fecha', async () => {
-    const { rerender, onSelect } = renderMap({ points: [P('a', { title: 'Ana <b>' }), P('b', { href: undefined })] });
+  it('clique no pino → onSelect(id); selectedId abre o balão no nó do React; closeclick → onSelect(null); sem selecionado fecha', async () => {
+    const pts = [P('a', { title: 'Ana <b>' }), P('b', { href: undefined })];
+    const { rerender, onSelect } = renderMap({ points: pts });
     await waitFor(() => expect(markers.filter((m) => m.opts.title)).toHaveLength(2));
     const a = markers.find((m) => m.opts.title === 'Ana <b>') as FakeMarker;
     act(() => a.emit('click'));
     expect(onSelect).toHaveBeenCalledWith('a');
-    rerender(<PointsMap points={[P('a', { title: 'Ana <b>' }), P('b', { href: undefined })]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onSelect={onSelect} selectedId="a" placeholderText="x" />);
+    rerender(<PointsMap points={pts} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onSelect={onSelect} selectedId="a" placeholderText="x" />);
     await waitFor(() => expect(infos[0].open).toHaveBeenCalled());
-    const html = infos[0].setContent.mock.calls[0][0] as string;
-    expect(html).toContain('Ana &lt;b&gt;');
-    expect(html).toContain('href="/x/a"');
-    rerender(<PointsMap points={[P('a', { title: 'Ana <b>' }), P('b', { href: undefined })]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onSelect={onSelect} selectedId="b" placeholderText="x" />);
-    await waitFor(() => expect(infos[0].setContent).toHaveBeenCalledTimes(2));
-    expect(infos[0].setContent.mock.calls[1][0]).not.toContain('href=');
+
+    // O conteúdo é um NÓ, não string de HTML: o nome entra como texto e não há
+    // markup para escapar — `<b>` continua sendo `<b>` escrito, não negrito.
+    const node = infos[0].setContent.mock.calls[0][0] as HTMLElement;
+    expect(node).toBeInstanceOf(HTMLElement);
+    await waitFor(() => expect(node.textContent).toContain('Ana <b>'));
+    expect(node.querySelector('b')).toBeNull();
+
     act(() => infos[0].emit('closeclick'));
     expect(onSelect).toHaveBeenCalledWith(null);
     const closesBefore = infos[0].close.mock.calls.length;
@@ -168,6 +178,107 @@ describe('PointsMap', () => {
     // selecionado que não está no mapa (sem coordenada / removido) fecha o balão
     rerender(<PointsMap points={[P('a')]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onSelect={onSelect} selectedId="zzz" placeholderText="x" />);
     await waitFor(() => expect(infos[0].close.mock.calls.length).toBe(closesBefore + 2));
+  });
+
+  it('o balão mostra nome, detalhe, distância e um link do ROUTER (não recarrega o SPA)', async () => {
+    const pt = P('a', { title: 'Lucía Fernández', details: 'AT · Documentación completa · Monserrat', distance: '0.4 km', href: '/admin/workers/a' });
+    render(
+      <MemoryRouter>
+        <PointsMap points={[pt]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} selectedId="a" linkLabel="Ver perfil" placeholderText="x" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(infos[0].open).toHaveBeenCalled());
+    const node = infos[0].setContent.mock.calls[0][0] as HTMLElement;
+    await waitFor(() => expect(node.querySelector('[data-testid="points-map-info-card"]')).not.toBeNull());
+    expect(node.textContent).toContain('Lucía Fernández');
+    expect(node.textContent).toContain('AT · Documentación completa · Monserrat');
+    expect(node.textContent).toContain('0.4 km');
+    const link = node.querySelector('a') as HTMLAnchorElement;
+    expect(link.textContent).toContain('Ver perfil');
+    expect(link.getAttribute('href')).toBe('/admin/workers/a');
+    // o tooltip nativo do pino continua sendo a linha única
+    expect(markers.find((m) => m.opts.title)?.opts.title).toBe('Lucía Fernández');
+  });
+
+  it('o header do Google fica desligado e quem fecha é o botão do cartão', async () => {
+    const onSelect = vi.fn();
+    render(
+      <MemoryRouter>
+        <PointsMap points={[P('a', { title: 'Ana' })]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onSelect={onSelect} selectedId="a" linkLabel="Ver perfil" closeLabel="Cerrar" placeholderText="x" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(infos[0].open).toHaveBeenCalled());
+    // a faixa branca de cima era o header do Google
+    expect(infos[0].opts.headerDisabled).toBe(true);
+    // ...e o foco não é roubado para dentro do balão
+    expect((infos[0].open.mock.calls[0][0] as { shouldFocus: boolean }).shouldFocus).toBe(false);
+
+    const node = infos[0].setContent.mock.calls[0][0] as HTMLElement;
+    await waitFor(() => expect(node.querySelector('[data-testid="points-map-info-close"]')).not.toBeNull());
+    const close = node.querySelector('[data-testid="points-map-info-close"]') as HTMLButtonElement;
+    expect(close.getAttribute('aria-label')).toBe('Cerrar');
+    act(() => close.click());
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('sem linkLabel o balão não oferece link, e sem distância não inventa uma', async () => {
+    render(
+      <MemoryRouter>
+        <PointsMap points={[P('a', { title: 'Sin link', details: 'AT', distance: null })]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} selectedId="a" placeholderText="x" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(infos[0].open).toHaveBeenCalled());
+    const node = infos[0].setContent.mock.calls[0][0] as HTMLElement;
+    await waitFor(() => expect(node.textContent).toContain('Sin link'));
+    expect(node.querySelector('a')).toBeNull();
+    expect(node.textContent).toContain('AT');
+  });
+
+  it('o path do pino leva os parâmetros do arco em grupos de 7 — a forma compacta o Google recusa', async () => {
+    renderMap();
+    await waitFor(() => expect(markers.filter((m) => m.opts.title)).toHaveLength(2));
+    const path = (markers.find((m) => m.opts.title)?.opts.icon as { path: string }).path;
+    // `a` (arco) consome 7 parâmetros por repetição. Na forma compacta as flags
+    // grudam no x (`0 110-5`) e o parser do Google lê 5 números onde precisa de
+    // 7 — daí "Expected number at position 109, found z" e ZERO pinos na tela.
+    // A prova de que desenha é o navegador (sonda de 31/08); isto aqui só
+    // impede a volta da forma que não desenha.
+    const arcs = path.split(/(?=a)/).filter((s) => s.startsWith('a'));
+    expect(arcs.length).toBeGreaterThan(0);
+    for (const arc of arcs) {
+      const nums = arc.slice(1).match(/-?\d*\.?\d+/g) ?? [];
+      expect(nums.length % 7).toBe(0);
+    }
+  });
+
+  it('escolher um ponto leva a viewport até ele — sem isso o balão abre fora da tela', async () => {
+    const { rerender, onSelect } = renderMap();
+    await waitFor(() => expect(markers.filter((m) => m.opts.title)).toHaveLength(2));
+    maps[0].panTo.mockClear();
+    rerender(<PointsMap points={[P('a'), P('b'), P('c', { lat: null, lng: null })]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onSelect={onSelect} selectedId="a" placeholderText="x" />);
+    await waitFor(() => expect(maps[0].panTo).toHaveBeenCalledWith({ lat: -34.6, lng: -58.4 }));
+  });
+
+  it('destaque nos dois sentidos: hoveredId engorda o pino e o solta; mouseover/mouseout no pino chamam onHover', async () => {
+    const onHover = vi.fn();
+    const base = [P('a'), P('b')];
+    const { rerender } = render(<PointsMap points={base} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onHover={onHover} placeholderText="x" />);
+    await waitFor(() => expect(markers.filter((m) => m.opts.title)).toHaveLength(2));
+    const a = markers.find((m) => m.opts.title === 'T a') as FakeMarker;
+
+    rerender(<PointsMap points={base} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onHover={onHover} hoveredId="a" placeholderText="x" />);
+    await waitFor(() => expect(a.setIcon).toHaveBeenCalled());
+    expect((last(a.setIcon.mock.calls)?.[0] as { scale: number }).scale).toBe(2);
+    expect(a.setZIndex).toHaveBeenLastCalledWith(900);
+
+    rerender(<PointsMap points={base} center={CABA} radiusKm={5} onCenterChange={vi.fn()} onHover={onHover} hoveredId={null} placeholderText="x" />);
+    await waitFor(() => expect((last(a.setIcon.mock.calls)?.[0] as { scale: number }).scale).toBe(1.4));
+    expect(a.setZIndex).toHaveBeenLastCalledWith(null);
+
+    act(() => a.emit('mouseover'));
+    expect(onHover).toHaveBeenCalledWith('a');
+    act(() => a.emit('mouseout'));
+    expect(onHover).toHaveBeenCalledWith(null);
   });
 
   it('sem onSelect: clique no pino e closeclick não quebram', async () => {
