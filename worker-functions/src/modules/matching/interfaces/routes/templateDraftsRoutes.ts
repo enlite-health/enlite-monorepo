@@ -5,8 +5,13 @@ import { TemplateDraftsController } from '../controllers/TemplateDraftsControlle
 /**
  * Rotas do rascunho de mensagem (spec 010, F2 passos 2.1 e 2.2) — em /api/admin.
  *
- * Leitura: staff. Escrita: admin — precedente do parecer `lex` de 29/08,
- * condição C7 (quem configura ≠ quem dispara).
+ * 🔒 TUDO exige ADMIN, inclusive a leitura — decisão do Gabriel em 01/09/2026:
+ * "apenas admins podem ter acesso a essa funcionalidade". O menu já filtrava por
+ * `isAdmin`, mas a rota de leitura aceitava staff: quem não via o item ainda
+ * podia chamar a API direto. Menu não é controle de acesso; rota é.
+ *
+ * Mantém o precedente do parecer `lex` de 29/08, condição C7 (quem configura ≠
+ * quem dispara) — aqui ele fica mais estrito, não menos.
  *
  * 🔒 REGISTRO: a rota `/submit` escreve para FORA do perímetro (cria Content na
  * Twilio e submete à Meta) e o parecer do `lex` NÃO foi emitido. O Gabriel
@@ -21,7 +26,7 @@ export function createTemplateDraftsRoutes(
   authMiddleware: AuthMiddleware,
 ): Router {
   const router = Router();
-  router.get('/template-drafts', authMiddleware.requireStaff(), (req: Request, res: Response) => controller.list(req, res));
+  router.get('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.list(req, res));
   router.post('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.create(req, res));
   router.put('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.update(req, res));
   router.delete('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.archive(req, res));
