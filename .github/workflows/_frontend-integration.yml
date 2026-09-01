@@ -35,17 +35,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Stack real: Postgres + API, os mesmos composes do desenvolvimento ──
-      # O emulador do Firebase (9099) NÃO é opcional aqui, ao contrário do que a
-      # doc de desenvolvimento sugere: vários specs de integração autenticam por
-      # ele e, sem ele, falham em massa com `ECONNREFUSED 127.0.0.1:9099` — o que
-      # lê como "a suíte está quebrada" quando o que falta é infraestrutura.
+      # ── Stack real: Postgres + API + emulador Firebase ──
+      #
+      # Duas invocações de propósito, e a ORDEM importa:
+      #
+      # 1. `postgres api` SEM o override do firebase. Esse override troca a API
+      #    para `USE_MOCK_AUTH=false` — que não é o modo em que esta suíte roda
+      #    (os testes injetam token `mock_*`).
+      # 2. o emulador com `--no-deps`. Sem isso o compose exige
+      #    `firebase-emulator: condition: service_healthy`, e o healthcheck desse
+      #    container está quebrado (aparece `unhealthy` mesmo servindo 200 em
+      #    9099 — reproduzido local e no runner). O gate viraria falso-vermelho.
+      #    Quem decide se está pronto é a espera por HTTP abaixo, não o healthcheck.
+      #
+      # O emulador não é opcional: vários specs autenticam por ele e, sem ele,
+      # falham em massa com `ECONNREFUSED 127.0.0.1:9099`.
       - name: Sobe Postgres + API + emulador Firebase
         working-directory: worker-functions
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.test.yml \
-                         -f docker-compose.firebase.yml \
-                         up -d postgres api firebase-emulator
+          BASE="-f docker-compose.yml -f docker-compose.test.yml"
+          docker compose $BASE up -d postgres api
+          docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
+
           espera() {
             for i in $(seq 1 60); do
               curl -sf "$2" >/dev/null && echo "$1 pronto" && return 0
@@ -55,10 +66,13 @@ jobs:
             return 1
           }
           espera "api" http://localhost:8080/health || {
-            docker compose -f docker-compose.yml -f docker-compose.test.yml logs api | tail -50
+            docker compose $BASE logs api | tail -50
             exit 1
           }
-          espera "emulador Firebase" http://localhost:9099/ || exit 1
+          espera "emulador Firebase" http://localhost:9099/ || {
+            docker compose $BASE -f docker-compose.firebase.yml logs firebase-emulator | tail -50
+            exit 1
+          }
 
       - uses: pnpm/action-setup@v2
         with:
