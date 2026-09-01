@@ -101,6 +101,20 @@ jobs:
         env:
           VITE_API_WORKER_FUNCTIONS_URL: http://localhost:8080
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          # Config do Firebase FALSA de propósito, e nenhum segredo é preciso: o
+          # helper de auth desta suíte intercepta `identitytoolkit.googleapis.com`
+          # e `securetoken.googleapis.com` com `page.route`, então nenhuma dessas
+          # chamadas sai do navegador. O que o app precisa é apenas que
+          # `initializeApp` receba um objeto completo — sem estas variáveis o
+          # login nem começa e TODOS os specs morrem no `locator.fill` da tela de
+          # login (foi assim que a 1ª execução deste job falhou os 5).
+          # Localmente isso vem do `.env`, que não existe no runner.
+          VITE_FIREBASE_API_KEY: fake-api-key-for-e2e
+          VITE_FIREBASE_AUTH_DOMAIN: demo-e2e.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: demo-e2e
+          VITE_FIREBASE_STORAGE_BUCKET: demo-e2e.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:0000000000000000000000'
         run: |
           pnpm dev > /tmp/vite.log 2>&1 &
           for i in $(seq 1 60); do
