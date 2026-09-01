@@ -1095,7 +1095,8 @@
       "funnelStageMessages": "Mensajes por etapa",
       "presentationInvite": "Invitación a presentación",
       "map": "Mapa",
-      "templateCatalog": "Plantillas"
+      "templateCatalog": "Plantillas",
+      "templateDrafts": "Registrar mensaje"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -3608,6 +3609,73 @@
         "min": "Verificado hace {{count}} min",
         "hour": "Verificado hace {{count}} h",
         "day": "Verificado hace {{count}} d"
+      }
+    },
+    "templateDrafts": {
+      "title": "Registrar mensaje",
+      "subtitle": "Escribí el mensaje, mirá cómo lo recibe la cuidadora, y guardalo.",
+      "avisoNaoEnvia": "Lo que guardás acá queda guardado en Enlite. TODAVÍA NO se envía a Meta para autorización — ese paso todavía no existe en el producto.",
+      "salvoNaoEnviado": "Guardado. Todavía NO enviado para autorización.",
+      "listaTitulo": "Borradores guardados",
+      "carregando": "Cargando…",
+      "vazio": "Todavía no hay borradores. Escribí el primero arriba.",
+      "salvar": "Guardar borrador",
+      "salvarEdicao": "Guardar cambios",
+      "cancelar": "Cancelar",
+      "editar": "Editar",
+      "arquivar": "Archivar",
+      "preview": "Así lo recibe la cuidadora",
+      "previewVazio": "Escribí el mensaje para ver la vista previa.",
+      "restante": "Quedan {{n}} caracteres",
+      "slugFicaraComo": "Se va a guardar como: {{slug}}",
+      "erroCarregar": "No pudimos cargar los borradores.",
+      "erroSalvar": "No pudimos guardar. Intentá de nuevo.",
+      "erroArquivar": "No pudimos archivar el borrador.",
+      "campo": {
+        "name": "Nombre",
+        "slug": "Identificador",
+        "body": "Mensaje",
+        "category": "Categoría",
+        "language": "Idioma"
+      },
+      "idioma": {
+        "es-AR": "Español (Argentina)",
+        "pt-BR": "Portugués (Brasil)"
+      },
+      "categoria": {
+        "MARKETING": "Marketing",
+        "UTILITY": "Utilidad",
+        "AUTHENTICATION": "Autenticación"
+      },
+      "conflito": {
+        "slug_em_uso_por_template_vivo": "Ya existe un mensaje activo con ese identificador.",
+        "slug_em_uso_por_rascunho": "Ya existe otro borrador con ese identificador.",
+        "versao_desatualizada": "Otra persona guardó este borrador mientras lo editabas. Recargá para ver la versión actual.",
+        "generico": "No se pudo guardar por un conflicto."
+      },
+      "regra": {
+        "generica": "Ese valor no es válido.",
+        "name": {
+          "obrigatorio": "El nombre es obligatorio."
+        },
+        "slug": {
+          "obrigatorio": "El identificador es obligatorio.",
+          "formato": "Solo minúsculas, números y guion bajo."
+        },
+        "category": {
+          "invalida": "Categoría no válida."
+        },
+        "language": {
+          "invalido": "Idioma no válido."
+        },
+        "body": {
+          "obrigatorio": "El mensaje es obligatorio.",
+          "muito_longo": "El mensaje pasa de 1024 caracteres.",
+          "placeholder_numeracao": "Las variables tienen que ser {{1}}, {{2}}… sin saltos y empezando en 1.",
+          "placeholder_no_inicio": "El mensaje no puede empezar con una variable.",
+          "placeholder_no_fim": "El mensaje no puede terminar con una variable.",
+          "placeholders_adjacentes": "Dos variables no pueden ir pegadas: tiene que haber texto entre ellas."
+        }
       }
     }
   },

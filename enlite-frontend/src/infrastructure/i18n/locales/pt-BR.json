@@ -1095,7 +1095,8 @@
       "funnelStageMessages": "Mensagens por etapa",
       "presentationInvite": "Convite à apresentação",
       "map": "Mapa",
-      "templateCatalog": "Modelos"
+      "templateCatalog": "Modelos",
+      "templateDrafts": "Registrar mensagem"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3529,6 +3530,73 @@
         "min": "Verificado há {{count}} min",
         "hour": "Verificado há {{count}} h",
         "day": "Verificado há {{count}} d"
+      }
+    },
+    "templateDrafts": {
+      "title": "Registrar mensagem",
+      "subtitle": "Escreva a mensagem, veja como a cuidadora recebe, e salve.",
+      "avisoNaoEnvia": "O que você salva aqui fica guardado na Enlite. AINDA NÃO é enviado à Meta para autorização — esse passo ainda não existe no produto.",
+      "salvoNaoEnviado": "Salvo. Ainda NÃO enviado para autorização.",
+      "listaTitulo": "Rascunhos salvos",
+      "carregando": "Carregando…",
+      "vazio": "Ainda não há rascunhos. Escreva o primeiro acima.",
+      "salvar": "Salvar rascunho",
+      "salvarEdicao": "Salvar alterações",
+      "cancelar": "Cancelar",
+      "editar": "Editar",
+      "arquivar": "Arquivar",
+      "preview": "Como a cuidadora recebe",
+      "previewVazio": "Escreva a mensagem para ver a pré-visualização.",
+      "restante": "Faltam {{n}} caracteres",
+      "slugFicaraComo": "Vai ser salvo como: {{slug}}",
+      "erroCarregar": "Não conseguimos carregar os rascunhos.",
+      "erroSalvar": "Não conseguimos salvar. Tente de novo.",
+      "erroArquivar": "Não conseguimos arquivar o rascunho.",
+      "campo": {
+        "name": "Nome",
+        "slug": "Identificador",
+        "body": "Mensagem",
+        "category": "Categoria",
+        "language": "Idioma"
+      },
+      "idioma": {
+        "es-AR": "Espanhol (Argentina)",
+        "pt-BR": "Português (Brasil)"
+      },
+      "categoria": {
+        "MARKETING": "Marketing",
+        "UTILITY": "Utilidade",
+        "AUTHENTICATION": "Autenticação"
+      },
+      "conflito": {
+        "slug_em_uso_por_template_vivo": "Já existe uma mensagem ativa com esse identificador.",
+        "slug_em_uso_por_rascunho": "Já existe outro rascunho com esse identificador.",
+        "versao_desatualizada": "Outra pessoa salvou este rascunho enquanto você editava. Recarregue para ver a versão atual.",
+        "generico": "Não deu para salvar por causa de um conflito."
+      },
+      "regra": {
+        "generica": "Esse valor não é válido.",
+        "name": {
+          "obrigatorio": "O nome é obrigatório."
+        },
+        "slug": {
+          "obrigatorio": "O identificador é obrigatório.",
+          "formato": "Só minúscula, número e underscore."
+        },
+        "category": {
+          "invalida": "Categoria inválida."
+        },
+        "language": {
+          "invalido": "Idioma inválido."
+        },
+        "body": {
+          "obrigatorio": "A mensagem é obrigatória.",
+          "muito_longo": "A mensagem passa de 1024 caracteres.",
+          "placeholder_numeracao": "As variáveis precisam ser {{1}}, {{2}}… sem pular e começando em 1.",
+          "placeholder_no_inicio": "A mensagem não pode começar com uma variável.",
+          "placeholder_no_fim": "A mensagem não pode terminar com uma variável.",
+          "placeholders_adjacentes": "Duas variáveis não podem ficar coladas: precisa de texto entre elas."
+        }
       }
     }
   },

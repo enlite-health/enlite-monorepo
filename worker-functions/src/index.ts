@@ -87,6 +87,8 @@ import { FunnelStageMessagesController } from './modules/matching/interfaces/con
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
 import { createTemplateCatalogRoutes } from './modules/matching/interfaces/routes/templateCatalogRoutes';
 import { TemplateCatalogController } from './modules/matching/interfaces/controllers/TemplateCatalogController';
+import { createTemplateDraftsRoutes } from './modules/matching/interfaces/routes/templateDraftsRoutes';
+import { TemplateDraftsController } from './modules/matching/interfaces/controllers/TemplateDraftsController';
 
 const app = express();
 
@@ -437,6 +439,7 @@ app.use('/api/admin', createAdminVacanciesRoutes(
 // ========== Mensagem por etapa (DEC-12) ==========
 app.use('/api/admin', createFunnelStageMessagesRoutes(new FunnelStageMessagesController(), authMiddleware));
 app.use('/api/admin', createTemplateCatalogRoutes(new TemplateCatalogController(), authMiddleware));
+app.use('/api/admin', createTemplateDraftsRoutes(new TemplateDraftsController(), authMiddleware));
 
 // ========== Analytics & BI (extracted router) ==========
 app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware));
