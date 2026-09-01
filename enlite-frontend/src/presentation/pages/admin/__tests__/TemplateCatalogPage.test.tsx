@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { dataLegivel } from '../TemplateCatalogDetailDrawer';
+import { dataLegivel } from '../templateCatalogView';
 
 /**
  * ⚠️ As telas passaram a ter `<Link>` em 01/09 (o botão que liga o catálogo à

@@ -103,3 +103,25 @@ export function relativeFrom(iso: string, agora: Date): RelativeAge | null {
   if (hora < 24) return { unidade: 'hour', valor: hora };
   return { unidade: 'day', valor: Math.floor(hora / 24) };
 }
+
+/**
+ * A data como uma pessoa lê, não como o Postgres devolve.
+ *
+ * ⚠️ Antes saía `2026-09-01T02:19:00Z` cru na tela do detalhe — o Gabriel viu em
+ * 01/09/2026. Locale `es-AR` porque é o padrão do projeto (CLAUDE.md do
+ * frontend). ISO inválida devolve `null`, e a tela então diz "nunca" — nunca
+ * "Invalid Date", que é o que aparece quando se confia no `new Date()` cego.
+ *
+ * Mora aqui, e não no componente, porque exportar função de arquivo de
+ * componente reprova em `react-refresh/only-export-components` — e o lint roda
+ * com `--max-warnings 0`, então um aviso derruba o CI inteiro.
+ */
+export function dataLegivel(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}

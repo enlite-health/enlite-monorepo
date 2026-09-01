@@ -21,6 +21,10 @@ import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
+// ⚠️ `dataLegivel` mora no módulo de lógica, não aqui: exportar função de um
+// arquivo de componente reprova em `react-refresh/only-export-components`, e o
+// lint roda com --max-warnings 0. Um aviso derrubou o CI.
+import { dataLegivel } from './templateCatalogView';
 
 export interface TemplateCatalogDetailDrawerProps {
   row: TemplateCatalogRow;
@@ -30,23 +34,6 @@ export interface TemplateCatalogDetailDrawerProps {
 
 /** Duração da animação de abrir/fechar — a mesma do HelpDrawer. */
 const ANIM_MS = 300;
-
-/**
- * A data como uma pessoa lê, não como o Postgres devolve.
- *
- * ⚠️ Antes saía `2026-09-01T02:19:00Z` cru na tela. Locale `es-AR` porque é o
- * padrão do projeto (CLAUDE.md do frontend). ISO inválida devolve `null` — a
- * tela então diz "nunca" em vez de "Invalid Date".
- */
-export function dataLegivel(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString('es-AR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
-}
 
 /** Uma linha rótulo→valor. Valor ausente não vira linha vazia: some. */
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }): JSX.Element | null {
