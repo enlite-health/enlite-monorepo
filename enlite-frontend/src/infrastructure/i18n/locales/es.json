@@ -3490,17 +3490,36 @@
     },
     "map": {
       "title": "Mapa",
-      "subtitle": "Prestadores y pacientes sobre el mapa. Hacé clic en el mapa para mover el centro del radio.",
+      "subtitle": "Quién está cerca de quién: buscá prestadores alrededor de un paciente para invitarlos, o mirá dónde están los pacientes.",
       "refresh": "Actualizar",
       "tabs": {
         "workers": "Prestadores",
         "patients": "Pacientes"
       },
+      "steps": {
+        "center": "Desde dónde",
+        "filters": "Filtros",
+        "results": "Resultados"
+      },
+      "centerHint": "O hacé clic en el mapa para mover el centro del radio.",
+      "legend": "Referencias:",
+      "center": {
+        "current": "Centro: {{label}}",
+        "initial": "punto inicial",
+        "marked": "punto marcado en el mapa",
+        "backToPatient": "Volver a {{name}}",
+        "backToInitial": "Volver al punto inicial"
+      },
+      "viewWorker": "Ver perfil",
+      "viewPatient": "Ver ficha",
+      "closePopup": "Cerrar",
+      "selectedNoLocation": "{{name}} no tiene ubicación registrada — no aparece en el mapa.",
       "country": "País",
       "radius": "Radio",
       "centerOnPatient": {
         "label": "Centrar en paciente",
-        "placeholder": "Centrar en un paciente…"
+        "placeholder": "Centrar en un paciente…",
+        "search": "Buscar paciente…"
       },
       "docs": {
         "label": "Documentación",

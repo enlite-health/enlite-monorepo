@@ -186,10 +186,13 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     // Centrar no paciente + 5 km: A e B ficam (< 5 km), C some (~16 km), D (sem coordenada) continua.
     // O seletor só busca depois de tocado: até aqui, nenhum POST a /patients/map.
     expect(mapPosts.filter((m) => m.url.endsWith('/api/admin/patients/map'))).toHaveLength(0);
+    // combobox com busca, não <select>: abrir dispara a busca preguiçosa e lista as opções
     const picker = page.getByTestId('map-center-patient');
-    await picker.focus();
-    await expect(picker.locator('option', { hasText: patientName })).toHaveCount(1, { timeout: 15_000 });
-    await picker.selectOption({ label: await picker.locator('option', { hasText: patientName }).first().textContent() as string });
+    await picker.getByRole('button').click();
+    const pickerOption = picker.getByRole('option').filter({ hasText: patientName });
+    await expect(pickerOption).toHaveCount(1, { timeout: 15_000 });
+    await pickerOption.click();
+    await expect(page.getByTestId('map-center-label')).toContainText(patientName, { timeout: 15_000 });
     await page.getByTestId('map-radius').selectOption('5');
     await expect(page.getByTestId('map-counts')).toContainText('en 5 km');
     await expect(list.locator(`[data-point-id="${workerC}"]`)).toHaveCount(0, { timeout: 15_000 });
@@ -254,10 +257,10 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await page.getByTestId('map-tab-workers').click();
     await page.getByTestId('map-country').selectOption('BR');
     const picker = page.getByTestId('map-center-patient');
-    await picker.focus();
-    await expect(picker.locator('option', { hasText: patientBrName })).toHaveCount(1, { timeout: 15_000 });
-    await expect(picker.locator('option', { hasText: patientName })).toHaveCount(0);
-    await picker.selectOption({ label: await picker.locator('option', { hasText: patientBrName }).first().textContent() as string });
+    await picker.getByRole('button').click();
+    await expect(picker.getByRole('option').filter({ hasText: patientBrName })).toHaveCount(1, { timeout: 15_000 });
+    await expect(picker.getByRole('option').filter({ hasText: patientName })).toHaveCount(0);
+    await picker.getByRole('option').filter({ hasText: patientBrName }).click();
     await expect(page.getByTestId('map-counts')).toBeVisible();
     await page.getByTestId('map-country').selectOption('AR');
     await page.getByTestId('map-tab-patients').click();

@@ -4,7 +4,7 @@
  * lista, centro por paciente/clique, seleção).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminMapPage } from './AdminMapPage';
 
@@ -34,12 +34,13 @@ vi.mock('@hooks/admin/useMapPoints', () => ({
 // O mapa vira um botão que simula o clique do usuário e um marcador do selecionado
 const mapProps = vi.fn<[unknown], void>();
 vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
-  PointsMap: (props: { points: Array<{ id: string; title: string }>; center: { lat: number; lng: number }; radiusKm: number; onCenterChange: (c: { lat: number; lng: number }) => void; selectedId: string | null; onSelect: (id: string | null) => void }) => {
+  PointsMap: (props: { points: Array<{ id: string; title: string }>; center: { lat: number; lng: number }; radiusKm: number; onCenterChange: (c: { lat: number; lng: number }) => void; selectedId: string | null; onSelect: (id: string | null) => void; hoveredId: string | null; onHover: (id: string | null) => void }) => {
     mapProps(props);
     return (
-      <div data-testid="fake-map" data-center={`${props.center.lat},${props.center.lng}`} data-radius={props.radiusKm} data-selected={props.selectedId ?? ''} data-points={props.points.map((p) => p.id).join(',')}>
+      <div data-testid="fake-map" data-center={`${props.center.lat},${props.center.lng}`} data-radius={props.radiusKm} data-selected={props.selectedId ?? ''} data-hovered={props.hoveredId ?? ''} data-points={props.points.map((p) => p.id).join(',')}>
         <button data-testid="fake-map-click" onClick={() => props.onCenterChange({ lat: -34.7, lng: -58.5 })}>click</button>
         <button data-testid="fake-map-select" onClick={() => props.onSelect(props.points[0]?.id ?? null)}>select</button>
+        <button data-testid="fake-map-hover" onClick={() => props.onHover(props.points[1]?.id ?? null)}>hover</button>
       </div>
     );
   },
@@ -70,6 +71,26 @@ const lastPatientsFilters = () => lastPatientsCall()[0];
 const lastPickerFilters = () => lastPickerCall()[0];
 const CABA = { lat: -34.6037, lng: -58.3816 };
 const SAO_PAULO = { lat: -23.5505, lng: -46.6333 };
+
+/** O seletor de paciente é um combobox com busca, não um `<select>`: abrir e clicar. */
+function openPicker(): HTMLElement {
+  const picker = screen.getByTestId('map-center-patient');
+  fireEvent.click(within(picker).getByRole('button'));
+  return picker;
+}
+function pickerOptions(): string[] {
+  return within(openPicker()).getAllByRole('option').map((o) => o.textContent ?? '');
+}
+function pickPatient(label: string): void {
+  const picker = openPicker();
+  // pelo ROLE, não pelo texto: com a lista aberta o rótulo do botão repete o placeholder
+  const option = within(picker).getAllByRole('option').find((o) => o.textContent === label);
+  if (!option) throw new Error(`opção "${label}" não está na lista`);
+  fireEvent.click(option);
+}
+function pickerLabel(): string {
+  return within(screen.getByTestId('map-center-patient')).getByRole('button').textContent ?? '';
+}
 
 describe('AdminMapPage', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -105,30 +126,28 @@ describe('AdminMapPage', () => {
     setup();
     fireEvent.change(screen.getByTestId('map-radius'), { target: { value: '10' } });
     expect(lastPickerCall()).toEqual([{ country: 'AR', center: CABA, radius_km: 10 }, false]);
-    fireEvent.focus(screen.getByTestId('map-center-patient'));
+    // pelo TECLADO: focar o seletor já dispara a busca preguiçosa (não só o clique)
+    fireEvent.focusIn(screen.getByTestId('map-center-patient'));
     expect(lastPickerCall()).toEqual([{ country: 'AR', center: CABA, radius_km: 10 }, true]);
+    openPicker();
     // a aba de pacientes continua parada
     expect(lastPatientsCall()[1]).toBe(false);
     // mover o centro (clique no mapa) move também o escopo do seletor
     fireEvent.click(screen.getByTestId('fake-map-click'));
     expect(lastPickerFilters()).toEqual({ country: 'AR', center: { lat: -34.7, lng: -58.5 }, radius_km: 10 });
-    const picker = screen.getByTestId('map-center-patient') as HTMLSelectElement;
     // P8 (sem endereço) e P6 (lat sem lng) ficam fora; P7 sem lugar mostra só o nome
-    expect(Array.from(picker.options).map((o) => o.value)).toEqual(['', 'a-9', 'a-7', '5']);
-    expect(picker.options[1].textContent).toBe('P 9 · CABA');
-    expect(picker.options[2].textContent).toBe('P 7');
+    expect(pickerOptions()).toEqual(['Centrar en un paciente…', 'P 9 · CABA', 'P 7', 'P 5 · CABA']);
   });
 
   it('trocar o país move o centro para o padrão do país (BR nasce em São Paulo) e limpa o paciente escolhido', () => {
     setup();
-    fireEvent.focus(screen.getByTestId('map-center-patient'));
-    fireEvent.change(screen.getByTestId('map-center-patient'), { target: { value: 'a-9' } });
+    pickPatient('P 9 · CABA');
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.61,-58.41');
     fireEvent.change(screen.getByTestId('map-country'), { target: { value: 'BR' } });
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', `${SAO_PAULO.lat},${SAO_PAULO.lng}`);
     expect(lastWorkersFilters()).toEqual({ country: 'BR', center: SAO_PAULO, radius_km: 25 });
     expect(lastPickerFilters()).toEqual({ country: 'BR', center: SAO_PAULO, radius_km: 25 });
-    expect((screen.getByTestId('map-center-patient') as HTMLSelectElement).value).toBe('');
+    expect(pickerLabel()).toContain('Centrar en un paciente…');
     fireEvent.change(screen.getByTestId('map-country'), { target: { value: 'AR' } });
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', `${CABA.lat},${CABA.lng}`);
   });
@@ -148,16 +167,15 @@ describe('AdminMapPage', () => {
 
   it('centrar em paciente move o centro; clique no mapa move de novo e limpa o seletor', () => {
     setup();
-    fireEvent.focus(screen.getByTestId('map-center-patient'));
-    fireEvent.change(screen.getByTestId('map-center-patient'), { target: { value: 'a-9' } });
+    pickPatient('P 9 · CABA');
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.61,-58.41');
-    expect((screen.getByTestId('map-center-patient') as HTMLSelectElement).value).toBe('a-9');
+    expect(pickerLabel()).toContain('P 9 · CABA');
     fireEvent.click(screen.getByTestId('fake-map-click'));
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.7,-58.5');
-    expect((screen.getByTestId('map-center-patient') as HTMLSelectElement).value).toBe('');
+    expect(pickerLabel()).toContain('Centrar en un paciente…');
     expect(lastWorkersFilters()).toMatchObject({ center: { lat: -34.7, lng: -58.5 } });
     // escolher "vazio" ou um id sem coordenada não move
-    fireEvent.change(screen.getByTestId('map-center-patient'), { target: { value: '' } });
+    pickPatient('Centrar en un paciente…');
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.7,-58.5');
   });
 
@@ -237,5 +255,63 @@ describe('AdminMapPage', () => {
     expect((last(mapProps.mock.calls)?.[0] as { points: Array<{ color: string }> }).points[0].color).toBe('#6b7280');
     fireEvent.click(screen.getByTestId('map-tab-patients'));
     expect((last(mapProps.mock.calls)?.[0] as { points: Array<{ color: string }> }).points[0].color).toBe('#6b7280');
+  });
+
+  it('o centro tem identidade legível e volta atrás: clicar no mapa não apaga o paciente de referência', () => {
+    setup();
+    // nasce no ponto inicial do país: nada para desfazer
+    expect(screen.getByTestId('map-center-label')).toHaveTextContent('Centro: punto inicial');
+    expect(screen.queryByTestId('map-center-back')).toBeNull();
+
+    pickPatient('P 9 · CABA');
+    expect(screen.getByTestId('map-center-label')).toHaveTextContent('Centro: P 9');
+    expect(screen.queryByTestId('map-center-back')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('fake-map-click'));
+    expect(screen.getByTestId('map-center-label')).toHaveTextContent('Centro: punto marcado en el mapa');
+    fireEvent.click(screen.getByTestId('map-center-back'));
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.61,-58.41');
+    expect(pickerLabel()).toContain('P 9 · CABA');
+
+    // sem paciente de referência, o "voltar" leva ao ponto inicial do país
+    fireEvent.change(screen.getByTestId('map-country'), { target: { value: 'BR' } });
+    fireEvent.click(screen.getByTestId('fake-map-click'));
+    fireEvent.click(screen.getByTestId('map-center-back'));
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', `${SAO_PAULO.lat},${SAO_PAULO.lng}`);
+  });
+
+  it('destaque nos dois sentidos: cursor na linha acende o pino, e o pino acende a linha', () => {
+    setup();
+    const items = screen.getAllByTestId('map-list-item');
+    fireEvent.mouseEnter(items[0]);
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-hovered', '1');
+    expect(items[0].className).toContain('bg-gray-100');
+    fireEvent.mouseLeave(screen.getByTestId('map-list'));
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-hovered', '');
+    // do mapa para a lista
+    fireEvent.click(screen.getByTestId('fake-map-hover'));
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-hovered', '2');
+    expect(screen.getAllByTestId('map-list-item')[1].className).toContain('bg-gray-100');
+    // e vale na aba de pacientes, onde a linha é identificada pelo endereço
+    fireEvent.click(screen.getByTestId('map-tab-patients'));
+    fireEvent.mouseEnter(screen.getAllByTestId('map-list-item')[0]);
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-hovered', 'a-9');
+  });
+
+  it('escolher quem não tem coordenada avisa em vez de não fazer nada', () => {
+    setup();
+    expect(screen.queryByTestId('map-selected-no-location')).toBeNull();
+    fireEvent.click(screen.getAllByTestId('map-list-item')[1]); // W 2, lat null
+    expect(screen.getByTestId('map-selected-no-location')).toHaveTextContent('W 2 no tiene ubicación registrada');
+    fireEvent.click(screen.getAllByTestId('map-list-item')[0]); // W 1 tem coordenada
+    expect(screen.queryByTestId('map-selected-no-location')).toBeNull();
+  });
+
+  it('a legenda mostra uma bolinha por cor da aba ativa', () => {
+    setup();
+    expect(screen.getByTestId('map-legend')).toHaveTextContent('Documentación completa');
+    expect(screen.getByTestId('map-legend')).toHaveTextContent('Dado de baja');
+    fireEvent.click(screen.getByTestId('map-tab-patients'));
+    expect(screen.getByTestId('map-legend')).toHaveTextContent('En admisión / Esperando financiero');
   });
 });

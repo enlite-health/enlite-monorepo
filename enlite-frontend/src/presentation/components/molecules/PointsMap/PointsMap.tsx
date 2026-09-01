@@ -15,8 +15,10 @@
  * Estado exposto ao DOM (`data-map-status`, `data-markers`) para o E2E
  * afirmar sem depender de tiles — o canvas do Google não é determinístico.
  */
-import { useEffect, useRef, useState } from 'react';
-import { MapPin } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
+import { ArrowRight, MapPin, X } from 'lucide-react';
 import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
 import { Text } from '@presentation/components/atoms/Text';
 
@@ -24,8 +26,14 @@ export interface MapPoint {
   id: string;
   lat: number | null;
   lng: number | null;
-  /** Texto do balão ao clicar (nome + status). Já traduzido pelo chamador. */
+  /** NOME da pessoa — título do balão e tooltip nativo do pino. */
   title: string;
+  /** Linha secundária do balão (profissão, status, bairro). Já traduzida. */
+  details?: string;
+  /** Distância já formatada ("1.9 km"), quando a busca tem centro. */
+  distance?: string | null;
+  /** Tooltip nativo do pino (uma linha). Sem ele, o nome. */
+  tooltip?: string;
   /** Cor do pino (hex). */
   color: string;
   /** Rota interna aberta a partir do balão (ex.: /admin/workers/:id). */
@@ -37,9 +45,17 @@ export interface PointsMapProps {
   center: { lat: number; lng: number };
   radiusKm: number | null;
   onCenterChange: (c: { lat: number; lng: number }) => void;
-  /** Id do ponto a destacar (abre o balão). */
+  /** Id do ponto a destacar (abre o balão e leva a viewport até ele). */
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
+  /** Id do ponto sob o cursor na LISTA — engorda o pino correspondente. */
+  hoveredId?: string | null;
+  /** Cursor entrando/saindo de um PINO — para a lista acender a linha. */
+  onHover?: (id: string | null) => void;
+  /** Rótulo do link do balão ("Ver perfil"). Sem ele o balão não mostra link. */
+  linkLabel?: string;
+  /** Rótulo acessível do botão de fechar do balão. */
+  closeLabel?: string;
   placeholderText: string;
   className?: string;
   height?: number;
@@ -47,20 +63,65 @@ export interface PointsMapProps {
 
 export type MapStatus = 'loading' | 'ready' | 'unavailable';
 
-function pinIcon(color: string): google.maps.Symbol {
+/**
+ * ⚠️ As flags do arco vão SEPARADAS (`0 1 1 0-5`), nunca na forma compacta
+ * (`0 110-5`) dos ícones minificados: o SVG aceita as duas, o parser de
+ * `google.maps.Symbol` só aceita a primeira. Com a compacta ele lança
+ * "Expected number at position 109, found z" a cada redesenho e NENHUM pino
+ * é desenhado — o mapa fica só com o centro e o círculo, e `data-markers`
+ * continua marcando verde (ele conta o que a página quis, não o que o Google
+ * pintou). Medido em 31/08 com controle positivo: compacta = 1 erro/0 pinos,
+ * separada = 0 erros/desenha.
+ */
+const PIN_PATH =
+  'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z';
+
+function pinIcon(color: string, emphasized = false): google.maps.Symbol {
   return {
-    path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z',
+    path: PIN_PATH,
     fillColor: color,
     fillOpacity: 1,
-    strokeColor: '#ffffff',
-    strokeWeight: 1.5,
-    scale: 1.4,
+    strokeColor: emphasized ? '#111827' : '#ffffff',
+    strokeWeight: emphasized ? 2.5 : 1.5,
+    scale: emphasized ? 2 : 1.4,
     anchor: new google.maps.Point(12, 22),
   };
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string);
+/**
+ * Cartão do balão. Vive DENTRO do InfoWindow do Google, por portal, e não como
+ * string de HTML: assim o nome entra como texto (nunca como markup — não há o
+ * que escapar), a tipografia é a dos atoms, e o link é o `Link` do router. Com
+ * `<a href>` cru, clicar no balão recarregava o SPA inteiro e o mapa voltava
+ * ao ponto de partida — o oposto do que o balão existe para fazer.
+ */
+function InfoCard({ point, linkLabel, closeLabel, onClose }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void }): JSX.Element {
+  return (
+    <div className="points-map-info relative font-lexend min-w-[210px] max-w-[280px] p-3" data-testid="points-map-info-card">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={closeLabel}
+        data-testid="points-map-info-close"
+        className="absolute top-2 right-2 p-1 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+      >
+        <X size={14} />
+      </button>
+      <div className="flex items-baseline justify-between gap-3 pr-6">
+        <Text as="span" size="sm" weight="semibold" color="secondary">{point.title}</Text>
+        {point.distance && <Text as="span" size="xs" color="muted" className="shrink-0">{point.distance}</Text>}
+      </div>
+      {point.details && (
+        <Text as="div" size="xs" color="muted" className="mt-1 pr-6">{point.details}</Text>
+      )}
+      {point.href && linkLabel && (
+        <Link to={point.href} className="inline-flex items-center gap-1 mt-2 text-primary hover:underline">
+          <Text as="span" size="xs" weight="medium" color="inherit">{linkLabel}</Text>
+          <ArrowRight size={12} />
+        </Link>
+      )}
+    </div>
+  );
 }
 
 export function PointsMap({
@@ -70,6 +131,10 @@ export function PointsMap({
   onCenterChange,
   selectedId = null,
   onSelect,
+  hoveredId = null,
+  onHover,
+  linkLabel,
+  closeLabel = 'Cerrar',
   placeholderText,
   className = '',
   height = 560,
@@ -80,10 +145,15 @@ export function PointsMap({
   const circleRef = useRef<google.maps.Circle | null>(null);
   const centerMarkerRef = useRef<google.maps.Marker | null>(null);
   const infoRef = useRef<google.maps.InfoWindow | null>(null);
+  /** Nó estável para o React desenhar dentro do balão do Google. */
+  const infoNodeRef = useRef<HTMLDivElement>(document.createElement('div'));
+  const emphasizedRef = useRef<Set<string>>(new Set());
   const onCenterChangeRef = useRef(onCenterChange);
   const onSelectRef = useRef(onSelect);
+  const onHoverRef = useRef(onHover);
   onCenterChangeRef.current = onCenterChange;
   onSelectRef.current = onSelect;
+  onHoverRef.current = onHover;
   const [status, setStatus] = useState<MapStatus>('loading');
   // `ready` é o SDK; os tiles chegam depois — e é o que um print precisa esperar.
   const [tilesLoaded, setTilesLoaded] = useState(false);
@@ -110,7 +180,9 @@ export function PointsMap({
           if (ll) onCenterChangeRef.current({ lat: ll.lat(), lng: ll.lng() });
         });
         map.addListener('tilesloaded', () => setTilesLoaded(true));
-        infoRef.current = new google.maps.InfoWindow();
+        // `headerDisabled`: a faixa de header do Google (com o X dele) some — era
+        // ela a área branca acima do conteúdo. O fechar passa a ser do cartão.
+        infoRef.current = new google.maps.InfoWindow({ headerDisabled: true } as google.maps.InfoWindowOptions);
         infoRef.current.addListener('closeclick', () => onSelectRef.current?.(null));
         mapRef.current = map;
         setStatus('ready');
@@ -181,14 +253,32 @@ export function PointsMap({
       if (existing) {
         existing.setPosition(position);
         existing.setIcon(pinIcon(p.color));
-        existing.setTitle(p.title);
+        existing.setTitle(p.tooltip ?? p.title);
         continue;
       }
-      const marker = new google.maps.Marker({ map, position, title: p.title, icon: pinIcon(p.color) });
+      const marker = new google.maps.Marker({ map, position, title: p.tooltip ?? p.title, icon: pinIcon(p.color) });
       marker.addListener('click', () => onSelectRef.current?.(id));
+      marker.addListener('mouseover', () => onHoverRef.current?.(id));
+      marker.addListener('mouseout', () => onHoverRef.current?.(null));
       markersRef.current.set(id, marker);
     }
   }, [status, points]);
+
+  // 3b. Destaque (lista ↔ mapa): só os ids que ENTRARAM ou SAÍRAM do destaque
+  //     são repintados — varrer 5.000 pinos a cada hover travaria a UI.
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const next = new Set([hoveredId, selectedId].filter((v): v is string => !!v));
+    for (const id of new Set([...emphasizedRef.current, ...next])) {
+      const marker = markersRef.current.get(id);
+      const p = points.find((x) => x.id === id);
+      if (!marker || !p) continue;
+      const on = next.has(id);
+      marker.setIcon(pinIcon(p.color, on));
+      marker.setZIndex(on ? 900 : null);
+    }
+    emphasizedRef.current = next;
+  }, [status, hoveredId, selectedId, points]);
 
   // 4. Balão do ponto selecionado.
   useEffect(() => {
@@ -205,12 +295,23 @@ export function PointsMap({
       info.close();
       return;
     }
-    const link = point.href ? `<br/><a href="${escapeHtml(point.href)}" style="color:#2563eb">→</a>` : '';
-    info.setContent(`<div style="font: 13px system-ui; max-width: 240px">${escapeHtml(point.title)}${link}</div>`);
-    info.open({ map, anchor: marker });
+    // A viewport VAI até o ponto. Sem isto, escolher alguém na lista abre o
+    // balão onde o mapa já estava — e quem está fora do enquadramento abre
+    // balão fora da tela: a tela inteira parece "sempre o mesmo lugar".
+    const position = marker.getPosition();
+    if (position) map.panTo(position);
+    info.setContent(infoNodeRef.current);
+    // `shouldFocus: false`: o balão abre como EFEITO de um clique na lista, e
+    // roubar o foco para dentro dele tira o teclado de onde a pessoa estava —
+    // além de pintar o anel de foco no link já na abertura.
+    info.open({ map, anchor: marker, shouldFocus: false });
   }, [status, selectedId, points]);
 
   const markersCount = points.filter((p) => p.lat !== null && p.lng !== null).length;
+  const selectedPoint = useMemo(
+    () => points.find((p) => p.id === selectedId && p.lat !== null) ?? null,
+    [points, selectedId],
+  );
 
   return (
     <div className={`relative w-full rounded-[10px] overflow-hidden border border-gray-200 ${className}`} style={{ height }}>
@@ -222,6 +323,10 @@ export function PointsMap({
         data-markers={status === 'ready' ? markersCount : 0}
         data-tiles={tilesLoaded ? 'loaded' : 'pending'}
       />
+      {selectedPoint && createPortal(
+        <InfoCard point={selectedPoint} linkLabel={linkLabel} closeLabel={closeLabel} onClose={() => onSelectRef.current?.(null)} />,
+        infoNodeRef.current,
+      )}
       {status !== 'ready' && (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100"

@@ -15,28 +15,42 @@
  * Só a aba visível busca: a outra fica parada até ser aberta, e o seletor
  * "centrar en paciente" só busca depois que alguém o toca — abrir a página
  * custa UMA request, não três.
+ *
+ * A coluna esquerda é lida em TRÊS passos numerados — centro, filtros,
+ * resultados — porque a tela não se explica sozinha: sem isso o "Centrar en
+ * un paciente", que é a pergunta que a tela responde, parecia só mais um
+ * dropdown no meio da pilha.
+ *
+ * Lista e mapa são a MESMA coisa vista de dois jeitos: o cursor na linha
+ * engorda o pino, o cursor no pino acende a linha, e escolher leva a viewport
+ * até o ponto. O centro tem identidade legível ("Centro: Fulano") e volta
+ * atrás — um clique errado não pode apagar a referência de trabalho.
  */
 import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Undo2 } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
 import { Button } from '@presentation/components/atoms/Button';
+import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { PointsMap, type MapPoint } from '@presentation/components/molecules/PointsMap/PointsMap';
+import { Field, Step } from './mapSidebar';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
 import type { MapCountry, PatientsMapFilters, WorkersMapFilters } from '@infrastructure/http/AdminMapApiService';
 import { getCountryOptions } from '../patientsData';
 import {
   DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM, PATIENT_STATUSES, PATIENT_STATUS_COLOR,
-  PROFESSIONS, RADIUS_OPTIONS_KM, WORKER_STATUS_COLOR, distanceLabel, patientPointTitle, patientStatusLabel, placeLabel,
-  professionLabel, workerPointTitle, workerStatusLabel,
+  PROFESSIONS, RADIUS_OPTIONS_KM, WORKER_STATUS_COLOR, distanceLabel, legendEntries, patientDetails, patientPointTitle,
+  patientStatusLabel, placeLabel, professionLabel, sameCenter, workerDetails, workerPointTitle,
 } from './mapPageConfig';
 
 type Kind = 'workers' | 'patients';
 type Docs = 'all' | 'complete' | 'incomplete';
+interface PickedPatient { id: string; label: string; lat: number; lng: number }
 
 /** Clicar no nome abre a ficha — sem também selecionar a linha. */
 const stopRowSelect = (e: MouseEvent): void => e.stopPropagation();
@@ -53,7 +67,9 @@ export function AdminMapPage(): JSX.Element {
   const [onlyOpenVacancies, setOnlyOpenVacancies] = useState(false);
   const [centerPatientId, setCenterPatientId] = useState<string>('');
   const [pickerTouched, setPickerTouched] = useState(false);
+  const [lastPatient, setLastPatient] = useState<PickedPatient | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const workersFilters = useMemo<WorkersMapFilters>(() => ({
     country,
@@ -84,15 +100,17 @@ export function AdminMapPage(): JSX.Element {
 
   const onCenterChange = useCallback((c: { lat: number; lng: number }) => {
     setCenter(c);
-    setCenterPatientId('');
+    setCenterPatientId('');   // o seletor deixa de refletir o centro...
     setSelectedId(null);
-  }, []);
+    setHoveredId(null);
+  }, []);                     // ...mas `lastPatient` FICA, senão não há como voltar.
 
   const onCountryChange = (v: string): void => {
     const next = v as MapCountry;
     setCountry(next);
     // Cada país tem o seu centro: BR não pode nascer em Buenos Aires.
     onCenterChange(DEFAULT_CENTER_BY_COUNTRY[next]);
+    setLastPatient(null);     // o paciente de referência era do país anterior
   };
 
   const onPickPatient = (id: string): void => {
@@ -100,22 +118,51 @@ export function AdminMapPage(): JSX.Element {
     const p = picker.points.find((x) => x.id === id || x.addressId === id);
     if (p && p.lat !== null && p.lng !== null) {
       setCenter({ lat: p.lat, lng: p.lng });
+      setLastPatient({ id, label: p.name, lat: p.lat, lng: p.lng });
       setSelectedId(null);
     }
+  };
+
+  const atCountryCenter = sameCenter(center, DEFAULT_CENTER_BY_COUNTRY[country]);
+  const atLastPatient = !!lastPatient && sameCenter(center, { lat: lastPatient.lat, lng: lastPatient.lng });
+  const centerLabel = atLastPatient && lastPatient
+    ? lastPatient.label
+    : atCountryCenter
+      ? t('admin.map.center.initial', 'punto inicial')
+      : t('admin.map.center.marked', 'punto marcado en el mapa');
+
+  const onBack = (): void => {
+    if (lastPatient) {
+      setCenter({ lat: lastPatient.lat, lng: lastPatient.lng });
+      setCenterPatientId(lastPatient.id);
+    } else {
+      setCenter(DEFAULT_CENTER_BY_COUNTRY[country]);
+    }
+    setSelectedId(null);
   };
 
   const mapPoints = useMemo<MapPoint[]>(() => {
     if (kind === 'workers') {
       return workers.points.map((p) => ({
-        id: p.id, lat: p.lat, lng: p.lng, title: workerPointTitle(t, p),
+        id: p.id, lat: p.lat, lng: p.lng, title: p.name, details: workerDetails(t, p),
+        distance: distanceLabel(p.distanceKm) || null, tooltip: workerPointTitle(t, p),
         color: WORKER_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/workers/${p.id}`,
       }));
     }
     return patients.points.map((p) => ({
-      id: p.addressId ?? p.id, lat: p.lat, lng: p.lng, title: patientPointTitle(t, p),
+      id: p.addressId ?? p.id, lat: p.lat, lng: p.lng, title: p.name, details: patientDetails(t, p),
+      distance: distanceLabel(p.distanceKm) || null, tooltip: patientPointTitle(t, p),
       color: PATIENT_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/patients/${p.id}`,
     }));
   }, [kind, workers.points, patients.points, t]);
+
+  // Escolher quem NÃO tem coordenada não pode ser silêncio: o mapa não muda e
+  // o balão não abre, e sem aviso isso se lê como tela travada.
+  const selectedWithoutLocation = useMemo<string | null>(() => {
+    if (!selectedId) return null;
+    const p = mapPoints.find((x) => x.id === selectedId);
+    return p && p.lat === null ? p.title : null;
+  }, [selectedId, mapPoints]);
 
   const radiusOptions: SelectOption[] = RADIUS_OPTIONS_KM.map((km) => ({ value: String(km), label: `${km} km` }));
   const countryOptions: SelectOption[] = getCountryOptions(t);
@@ -127,16 +174,16 @@ export function AdminMapPage(): JSX.Element {
   const professionOptions: SelectOption[] = [{ value: '', label: t('admin.map.profession.all', 'Todas las profesiones') }, ...PROFESSIONS.map((p) => ({ value: p, label: professionLabel(t, p) }))];
   const patientStatusOptions: SelectOption[] = [{ value: '', label: t('admin.map.patientStatus.all', 'Todos los estados') }, ...PATIENT_STATUSES.map((s) => ({ value: s, label: patientStatusLabel(t, s) }))];
   // Só quem tem coordenada COMPLETA pode virar centro.
-  const patientPickerOptions: SelectOption[] = [
-    { value: '', label: t('admin.map.centerOnPatient.placeholder', 'Centrar en un paciente…') },
-    ...picker.points.filter((p) => p.lat !== null && p.lng !== null).map((p) => {
-      const place = placeLabel(p);
-      return { value: p.addressId ?? p.id, label: place ? `${p.name} · ${place}` : p.name };
-    }),
-  ];
+  const patientPickerOptions = picker.points.filter((p) => p.lat !== null && p.lng !== null).map((p) => {
+    const place = placeLabel(p);
+    return { value: p.addressId ?? p.id, label: place ? `${p.name} · ${place}` : p.name };
+  });
 
   const tabClass = (k: Kind): string =>
     `px-4 py-2 rounded-t-md border-b-2 ${kind === k ? 'border-primary text-primary' : 'border-transparent text-gray-600 hover:text-gray-900'}`;
+
+  const rowClass = (id: string): string =>
+    `px-3 py-2 cursor-pointer ${selectedId === id ? 'bg-blue-50' : hoveredId === id ? 'bg-gray-100' : 'hover:bg-gray-50'}`;
 
   return (
     <PageContainer>
@@ -144,7 +191,7 @@ export function AdminMapPage(): JSX.Element {
         <div>
           <Heading level={1}>{t('admin.map.title', 'Mapa')}</Heading>
           <Text size="sm" color="secondary">
-            {t('admin.map.subtitle', 'Prestadores y pacientes sobre el mapa. Hacé clic en el mapa para mover el centro del radio.')}
+            {t('admin.map.subtitle', 'Quién está cerca de quién: buscá prestadores alrededor de un paciente para invitarlos, o mirá dónde están los pacientes.')}
           </Text>
         </div>
         <Button variant="outline" onClick={() => active.refetch()} data-testid="map-refresh" aria-label={t('admin.map.refresh', 'Actualizar')}>
@@ -153,37 +200,91 @@ export function AdminMapPage(): JSX.Element {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 mb-4" role="tablist">
-        <button type="button" role="tab" aria-selected={kind === 'workers'} className={tabClass('workers')} data-testid="map-tab-workers" onClick={() => { setKind('workers'); setSelectedId(null); }}>
+        <button type="button" role="tab" aria-selected={kind === 'workers'} className={tabClass('workers')} data-testid="map-tab-workers" onClick={() => { setKind('workers'); setSelectedId(null); setHoveredId(null); }}>
           <Text as="span" size="sm" weight="semibold" color="inherit">{t('admin.map.tabs.workers', 'Prestadores')}</Text>
         </button>
-        <button type="button" role="tab" aria-selected={kind === 'patients'} className={tabClass('patients')} data-testid="map-tab-patients" onClick={() => { setKind('patients'); setSelectedId(null); }}>
+        <button type="button" role="tab" aria-selected={kind === 'patients'} className={tabClass('patients')} data-testid="map-tab-patients" onClick={() => { setKind('patients'); setSelectedId(null); setHoveredId(null); }}>
           <Text as="span" size="sm" weight="semibold" color="inherit">{t('admin.map.tabs.patients', 'Pacientes')}</Text>
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-        <aside className="flex flex-col gap-3 min-w-0">
-          <div className="grid grid-cols-2 gap-2">
-            <Select data-testid="map-country" options={countryOptions} value={country} onValueChange={onCountryChange} aria-label={t('admin.map.country', 'País')} />
-            <Select data-testid="map-radius" options={radiusOptions} value={String(radiusKm)} onValueChange={(v) => setRadiusKm(Number(v))} aria-label={t('admin.map.radius', 'Radio')} />
-          </div>
+        <aside className="flex flex-col gap-4 min-w-0">
+          <section className="flex flex-col gap-2 rounded-md border border-gray-200 bg-white px-3 py-3" data-testid="map-center-block">
+            <Step n={1} title={t('admin.map.steps.center', 'Desde dónde')} />
+            {kind === 'workers' && (
+              <Field id="map-center-patient" label={t('admin.map.centerOnPatient.label', 'Centrar en paciente')} group>
+                {/* o `onFocusCapture`/`onClick` no wrapper preserva a busca preguiçosa:
+                    o seletor só vai ao servidor depois que alguém o toca. */}
+                <div data-testid="map-center-patient" onFocusCapture={() => setPickerTouched(true)} onClick={() => setPickerTouched(true)}>
+                  <SearchableSelect
+                    options={patientPickerOptions}
+                    value={centerPatientId}
+                    onChange={onPickPatient}
+                    placeholder={t('admin.map.centerOnPatient.placeholder', 'Centrar en un paciente…')}
+                    searchPlaceholder={t('admin.map.centerOnPatient.search', 'Buscar paciente…')}
+                  />
+                </div>
+              </Field>
+            )}
+            <div className="flex items-center justify-between gap-2" data-testid="map-center-label">
+              <Text as="div" size="xs" color="muted" className="truncate">
+                {t('admin.map.center.current', { defaultValue: 'Centro: {{label}}', label: centerLabel })}
+              </Text>
+              {!atCountryCenter && !atLastPatient && (
+                <button type="button" onClick={onBack} data-testid="map-center-back" className="inline-flex items-center gap-1 shrink-0 text-primary hover:underline">
+                  <Undo2 size={13} />
+                  <Text as="span" size="xs" color="inherit">
+                    {lastPatient
+                      ? t('admin.map.center.backToPatient', { defaultValue: 'Volver a {{name}}', name: lastPatient.label })
+                      : t('admin.map.center.backToInitial', 'Volver al punto inicial')}
+                  </Text>
+                </button>
+              )}
+            </div>
+            <Text as="div" size="xs" color="muted">
+              {t('admin.map.centerHint', 'O hacé clic en el mapa para mover el centro del radio.')}
+            </Text>
+          </section>
 
-          {kind === 'workers' ? (
-            <>
-              <Select data-testid="map-center-patient" options={patientPickerOptions} value={centerPatientId} onValueChange={onPickPatient} onFocus={() => setPickerTouched(true)} aria-label={t('admin.map.centerOnPatient.label', 'Centrar en paciente')} />
-              <Select data-testid="map-docs" options={docsOptions} value={docs} onValueChange={(v) => setDocs(v as Docs)} aria-label={t('admin.map.docs.label', 'Documentación')} />
-              <Select data-testid="map-profession" options={professionOptions} value={profession} onValueChange={setProfession} aria-label={t('admin.map.profession.label', 'Profesión')} />
-            </>
-          ) : (
-            <>
-              <Select data-testid="map-patient-status" options={patientStatusOptions} value={patientStatus} onValueChange={setPatientStatus} aria-label={t('admin.map.patientStatus.label', 'Estado')} />
-              <label className="flex items-center gap-2">
-                <input type="checkbox" data-testid="map-open-vacancies" checked={onlyOpenVacancies} onChange={(e) => setOnlyOpenVacancies(e.target.checked)} />
-                <Text as="span" size="sm">{t('admin.map.onlyOpenVacancies', 'Solo con vacantes abiertas')}</Text>
-              </label>
-            </>
-          )}
+          <section className="flex flex-col gap-2" data-testid="map-filters-block">
+            <Step n={2} title={t('admin.map.steps.filters', 'Filtros')} />
+            <div className="grid grid-cols-2 gap-2">
+              <Field id="map-country" label={t('admin.map.country', 'País')}>
+                <Select data-testid="map-country" id="map-country" inputSize="compact" options={countryOptions} value={country} onValueChange={onCountryChange} />
+              </Field>
+              <Field id="map-radius" label={t('admin.map.radius', 'Radio')}>
+                <Select data-testid="map-radius" id="map-radius" inputSize="compact" options={radiusOptions} value={String(radiusKm)} onValueChange={(v) => setRadiusKm(Number(v))} />
+              </Field>
+            </div>
 
+            {kind === 'workers' ? (
+              <>
+                <Field id="map-docs" label={t('admin.map.docs.label', 'Documentación')}>
+                  <Select data-testid="map-docs" id="map-docs" inputSize="compact" options={docsOptions} value={docs} onValueChange={(v) => setDocs(v as Docs)} />
+                </Field>
+                <Field id="map-profession" label={t('admin.map.profession.label', 'Profesión')}>
+                  <Select data-testid="map-profession" id="map-profession" inputSize="compact" options={professionOptions} value={profession} onValueChange={setProfession} />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field id="map-patient-status" label={t('admin.map.patientStatus.label', 'Estado')}>
+                  <Select data-testid="map-patient-status" id="map-patient-status" inputSize="compact" options={patientStatusOptions} value={patientStatus} onValueChange={setPatientStatus} />
+                </Field>
+                <Checkbox
+                  id="map-open-vacancies"
+                  data-testid="map-open-vacancies"
+                  className="mt-1"
+                  checked={onlyOpenVacancies}
+                  onChange={(e) => setOnlyOpenVacancies(e.target.checked)}
+                  label={t('admin.map.onlyOpenVacancies', 'Solo con vacantes abiertas')}
+                />
+              </>
+            )}
+          </section>
+
+          <Step n={3} title={t('admin.map.steps.results', 'Resultados')} />
           <div className="rounded-md bg-gray-50 border border-gray-200 px-3 py-2" data-testid="map-counts">
           <Text as="div" size="sm" color="primary">
             {active.isLoading ? (
@@ -214,17 +315,17 @@ export function AdminMapPage(): JSX.Element {
           </Text>
           </div>
 
-          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md max-h-[440px] overflow-y-auto" data-testid="map-list">
+          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md max-h-[440px] overflow-y-auto" data-testid="map-list" onMouseLeave={() => setHoveredId(null)}>
             {kind === 'workers'
               ? workers.points.map((p) => (
-                <li key={p.id} data-testid="map-list-item" data-point-id={p.id} data-has-coords={p.lat !== null} className={`px-3 py-2 cursor-pointer ${selectedId === p.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => setSelectedId(p.id)}>
+                <li key={p.id} data-testid="map-list-item" data-point-id={p.id} data-has-coords={p.lat !== null} className={rowClass(p.id)} onMouseEnter={() => setHoveredId(p.id)} onClick={() => setSelectedId(p.id)}>
                   <div className="flex items-center gap-2">
                     <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: WORKER_STATUS_COLOR[p.status] ?? '#6b7280' }} />
                     <Link to={`/admin/workers/${p.id}`} className="hover:underline truncate" onClick={stopRowSelect}><Text as="span" size="sm" weight="medium" color="primary">{p.name}</Text></Link>
                     {p.distanceKm !== null && <Text as="span" size="xs" color="secondary" className="ml-auto shrink-0">{distanceLabel(p.distanceKm)}</Text>}
                   </div>
                   <Text as="div" size="xs" color="secondary" className="truncate">
-                    {[professionLabel(t, p.profession), workerStatusLabel(t, p.status), placeLabel(p) || (p.lat === null ? t('admin.map.noLocation', 'sin ubicación') : '')].filter(Boolean).join(' · ')}
+                    {workerDetails(t, p)}
                   </Text>
                 </li>
               ))
@@ -232,14 +333,14 @@ export function AdminMapPage(): JSX.Element {
                 // Um ponto por ENDEREÇO: o id da linha, do pino e da seleção é o mesmo.
                 const pointId = p.addressId ?? p.id;
                 return (
-                  <li key={pointId} data-testid="map-list-item" data-point-id={pointId} data-patient-id={p.id} data-has-coords={p.lat !== null} className={`px-3 py-2 cursor-pointer ${selectedId === pointId ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => setSelectedId(pointId)}>
+                  <li key={pointId} data-testid="map-list-item" data-point-id={pointId} data-patient-id={p.id} data-has-coords={p.lat !== null} className={rowClass(pointId)} onMouseEnter={() => setHoveredId(pointId)} onClick={() => setSelectedId(pointId)}>
                     <div className="flex items-center gap-2">
                       <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PATIENT_STATUS_COLOR[p.status] ?? '#6b7280' }} />
                       <Link to={`/admin/patients/${p.id}`} className="hover:underline truncate" onClick={stopRowSelect}><Text as="span" size="sm" weight="medium" color="primary">{p.name}</Text></Link>
                       {p.distanceKm !== null && <Text as="span" size="xs" color="secondary" className="ml-auto shrink-0">{distanceLabel(p.distanceKm)}</Text>}
                     </div>
                     <Text as="div" size="xs" color="secondary" className="truncate">
-                      {[patientStatusLabel(t, p.status), placeLabel(p) || (p.lat === null ? t('admin.map.noLocation', 'sin ubicación') : ''), p.openVacancies > 0 ? t('admin.map.openVacancies', { count: p.openVacancies, defaultValue: '{{count}} vacante(s) abierta(s)' }) : ''].filter(Boolean).join(' · ')}
+                      {patientDetails(t, p)}
                     </Text>
                   </li>
                 );
@@ -250,15 +351,37 @@ export function AdminMapPage(): JSX.Element {
           </ul>
         </aside>
 
-        <PointsMap
-          points={mapPoints}
-          center={center}
-          radiusKm={radiusKm}
-          onCenterChange={onCenterChange}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          placeholderText={t('admin.map.unavailable', 'El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.')}
-        />
+        <div className="flex flex-col gap-2 min-w-0">
+          <PointsMap
+            points={mapPoints}
+            center={center}
+            radiusKm={radiusKm}
+            onCenterChange={onCenterChange}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            hoveredId={hoveredId}
+            onHover={setHoveredId}
+            linkLabel={kind === 'workers' ? t('admin.map.viewWorker', 'Ver perfil') : t('admin.map.viewPatient', 'Ver ficha')}
+            closeLabel={t('admin.map.closePopup', 'Cerrar')}
+            placeholderText={t('admin.map.unavailable', 'El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.')}
+          />
+          {selectedWithoutLocation && (
+            <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2" data-testid="map-selected-no-location">
+              <Text as="div" size="xs" color="secondary">
+                {t('admin.map.selectedNoLocation', { defaultValue: '{{name}} no tiene ubicación registrada — no aparece en el mapa.', name: selectedWithoutLocation })}
+              </Text>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1" data-testid="map-legend">
+            <Text as="span" size="xs" color="muted">{t('admin.map.legend', 'Referencias:')}</Text>
+            {legendEntries(t, kind).map((e) => (
+              <span key={e.color} className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: e.color }} />
+                <Text as="span" size="xs" color="muted">{e.label}</Text>
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </PageContainer>
   );
