@@ -16,6 +16,22 @@ import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatal
  *
  * Quando o lado não existe, a célula não fica vazia: ela oferece criar a
  * versão que falta. É o único ponto da tela em que a ausência vira ação.
+ *
+ * 🔒 O SLUG NÃO APARECE AQUI, e a razão só ficou visível numa foto. A coluna
+ * "Mensaje" passou a liderar com o identificador da mensagem (emenda do
+ * Gabriel no #277) — decisão tomada quando a tela ainda era uma linha por
+ * TEMPLATE e não existia um segundo lugar mostrando o nome. Com as colunas de
+ * idioma passou a existir, e a linha exibia a mesma palavra duas vezes:
+ *
+ *   Mensaje: finalize_signup_direct   |  🇦🇷 [Aprobada] ar_finalize_signup_direct
+ *
+ * Nas 12 linhas de produção sem marcador de idioma o `base_name` É o slug, e a
+ * repetição era literal — a segunda cópia não acrescentava um caractere.
+ * Naquelas com prefixo, acrescentava três (`ar_`).
+ *
+ * O slug continua sendo o que se cola no suporte da Twilio ou da Meta, então
+ * não sumiu: está no drawer, e o clique nesta célula abre o drawer DESTA
+ * versão. Um clique, em vez de uma palavra repetida em 26 linhas.
  */
 export function TemplateCatalogLanguageCell({
   row, language, baseName, statusTone, statusLabel, onOpen,
@@ -53,9 +69,6 @@ export function TemplateCatalogLanguageCell({
     >
       <span data-testid={`tc-status-${row.slug}`} className={`inline-flex rounded-pill px-2 py-0.5 ${statusTone(row.metaStatus)}`}>
         <Text as="span" size="xs" weight="medium" color="inherit">{statusLabel(row.metaStatus)}</Text>
-      </span>
-      <span className="mt-0.5 block max-w-[13rem] truncate">
-        <Text as="span" size="xs" color="secondary">{row.slug}</Text>
       </span>
       {row.metaReason && (
         <span data-testid={`tc-reason-${row.slug}`} className="mt-0.5 block max-w-[13rem] truncate text-[#8E1230]">
