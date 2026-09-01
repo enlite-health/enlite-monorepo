@@ -33,6 +33,8 @@ import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
+import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
+import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
@@ -208,6 +210,8 @@ export function App() {
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
+          <Route path="plantillas" element={<TemplateCatalogPage />} />
+          <Route path="plantillas/registrar" element={<TemplateDraftsPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />

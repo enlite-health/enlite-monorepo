@@ -1094,7 +1094,9 @@
       "patientChatRoles": "Roles de grupos",
       "funnelStageMessages": "Mensajes por etapa",
       "presentationInvite": "Invitación a presentación",
-      "map": "Mapa"
+      "map": "Mapa",
+      "templateCatalog": "Plantillas",
+      "templateDrafts": "Registrar mensaje"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -3564,6 +3566,166 @@
       "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",
       "status": {
         "unknown": "Sin estado"
+      }
+    },
+    "templateCatalog": {
+      "title": "Plantillas de mensajes",
+      "subtitle": "Los mensajes que la plataforma puede enviar por WhatsApp y en qué estado los tiene Meta.",
+      "readOnlyHint": "Solo lectura. Dónde se usa cada mensaje se decide en Mensajes por etapa.",
+      "message": "Mensaje",
+      "metaStatus": "Estado en Meta",
+      "usedIn": "Se usa en",
+      "checkedAt": "Última verificación",
+      "never": "Nunca",
+      "neverChecked": "Sin verificar",
+      "noText": "Sin texto sincronizado",
+      "unused": "Sin uso",
+      "empty": "Todavía no hay plantillas en el catálogo.",
+      "error": "No pudimos cargar el catálogo.",
+      "status": {
+        "APPROVED": "Aprobada",
+        "PENDING": "En revisión",
+        "REJECTED": "Rechazada",
+        "PAUSED": "Pausada por Meta",
+        "DISABLED": "Deshabilitada por Meta",
+        "IN_APPEAL": "En apelación",
+        "LIMIT_EXCEEDED": "Límite excedido",
+        "ARCHIVED": "Archivada",
+        "PENDING_DELETION": "Pendiente de borrado",
+        "DELETED": "Borrada"
+      },
+      "reason": {
+        "ABUSIVE_CONTENT": "Contenido abusivo",
+        "CATEGORY_NOT_AVAILABLE": "Categoría no disponible",
+        "INCORRECT_CATEGORY": "Categoría incorrecta",
+        "INVALID_FORMAT": "Formato inválido — Meta no dio más detalle",
+        "NONE": "Sin motivo informado",
+        "PROMOTIONAL": "Contenido promocional",
+        "SCAM": "Detectada como estafa",
+        "TAG_CONTENT_MISMATCH": "El idioma o la categoría no coinciden con el texto"
+      },
+      "ineligible": {
+        "generic": "No sirve para mensajes por etapa",
+        "CATEGORY": "No sirve para etapas: no es UTILITY",
+        "DENY_LIST": "No sirve para etapas: es un recordatorio",
+        "PLACEHOLDERS": "No sirve para etapas: usa datos que el sistema no completa",
+        "SLOT_MISMATCH": "No sirve para etapas: las variables no coinciden con el texto aprobado",
+        "INACTIVE": "Inactiva",
+        "OPT_OUT_CLAUSE": "Le falta la cláusula de baja"
+      },
+      "filter": {
+        "all": "Todas",
+        "approved": "Aprobadas",
+        "pending": "En revisión",
+        "off": "Desactivadas por Meta",
+        "rejected": "Rechazadas",
+        "unchecked": "Sin verificar",
+        "other": "Otros estados"
+      },
+      "filterEmpty": "Ninguna plantilla en este estado.",
+      "syncAge": {
+        "now": "Verificado recién",
+        "min": "Verificado hace {{count}} min",
+        "hour": "Verificado hace {{count}} h",
+        "day": "Verificado hace {{count}} d"
+      },
+      "metaDetail": "Qué dijo Meta"
+    },
+    "templateDrafts": {
+      "title": "Registrar mensaje",
+      "subtitle": "Escribí el mensaje, mirá cómo lo recibe la cuidadora, y guardalo.",
+      "avisoNaoEnvia": "Guardar NO envía nada. El envío a Meta es un paso aparte, con confirmación — y una vez enviado, el nombre queda ocupado para siempre.",
+      "salvoNaoEnviado": "Guardado. Todavía NO enviado para autorización.",
+      "listaTitulo": "Borradores guardados",
+      "carregando": "Cargando…",
+      "vazio": "Todavía no hay borradores. Escribí el primero arriba.",
+      "salvar": "Guardar borrador",
+      "salvarEdicao": "Guardar cambios",
+      "cancelar": "Cancelar",
+      "editar": "Editar",
+      "arquivar": "Archivar",
+      "preview": "Así lo recibe la cuidadora",
+      "previewVazio": "Escribí el mensaje para ver la vista previa.",
+      "restante": "Quedan {{n}} caracteres",
+      "slugFicaraComo": "Se va a guardar como: {{slug}}",
+      "erroCarregar": "No pudimos cargar los borradores.",
+      "erroSalvar": "No pudimos guardar. Intentá de nuevo.",
+      "erroArquivar": "No pudimos archivar el borrador.",
+      "campo": {
+        "name": "Nombre",
+        "slug": "Identificador",
+        "body": "Mensaje",
+        "category": "Categoría",
+        "language": "Idioma"
+      },
+      "idioma": {
+        "es-AR": "Español (Argentina)",
+        "pt-BR": "Portugués (Brasil)"
+      },
+      "categoria": {
+        "MARKETING": "Marketing",
+        "UTILITY": "Utilidad",
+        "AUTHENTICATION": "Autenticación"
+      },
+      "conflito": {
+        "slug_em_uso_por_template_vivo": "Ya existe un mensaje activo con ese identificador.",
+        "slug_em_uso_por_rascunho": "Ya existe otro borrador con ese identificador.",
+        "versao_desatualizada": "Otra persona guardó este borrador mientras lo editabas. Recargá para ver la versión actual.",
+        "generico": "No se pudo guardar por un conflicto."
+      },
+      "regra": {
+        "generica": "Ese valor no es válido.",
+        "name": {
+          "obrigatorio": "El nombre es obligatorio."
+        },
+        "slug": {
+          "obrigatorio": "El identificador es obligatorio.",
+          "formato": "Solo minúsculas, números y guion bajo."
+        },
+        "category": {
+          "invalida": "Categoría no válida."
+        },
+        "language": {
+          "invalido": "Idioma no válido."
+        },
+        "body": {
+          "obrigatorio": "El mensaje es obligatorio.",
+          "muito_longo": "El mensaje pasa de 1024 caracteres.",
+          "placeholder_no_inicio": "El mensaje no puede empezar con una variable.",
+          "placeholder_no_fim": "El mensaje no puede terminar con una variable.",
+          "placeholders_adjacentes": "Dos variables no pueden ir pegadas: tiene que haber texto entre ellas.",
+          "placeholder_posicional": "Usá variables con nombre ({{worker_name}}), no {{1}}: con números el sistema no sabe qué poner.",
+          "variavel_desconhecida": "Esa variable no existe. Usá una de las disponibles."
+        }
+      },
+      "enviar": "Enviar a autorización",
+      "enviado": "Enviado a Meta. Ahora esperá la autorización — vas a verla en Plantillas.",
+      "duplicar": "Duplicar y corregir",
+      "erroEnviar": "No pudimos enviar. Intentá de nuevo.",
+      "erroDuplicar": "No pudimos duplicar el borrador.",
+      "variaveisDisponiveis": "Variables disponibles: {{lista}}",
+      "ultimaFalha": "Último intento falló: {{erro}}",
+      "estado": {
+        "draft": "Borrador — todavía no enviado",
+        "submitted": "Enviado a Meta — esperando autorización"
+      },
+      "confirmar": {
+        "titulo": "¿Enviar «{{slug}}» a Meta?",
+        "nome": "El nombre queda ocupado en la cuenta de WhatsApp para siempre, aunque Meta rechace el mensaje.",
+        "edicao": "Después de enviar no vas a poder editarlo: solo duplicar y corregir.",
+        "prazo": "Meta puede tardar horas en responder, y la respuesta no depende de nosotros.",
+        "sim": "Sí, enviar a Meta",
+        "nao": "Cancelar"
+      },
+      "indisponivel": {
+        "flag_desligada": "El envío a Meta está desactivado en el servidor. Hay que activarlo antes de usar este botón.",
+        "sem_credencial": "Faltan las credenciales de Twilio en el servidor. Sin ellas no se puede enviar."
+      },
+      "envioErro": {
+        "ja_submetido": "Este mensaje ya fue enviado antes.",
+        "draft_nao_encontrado": "El borrador ya no existe.",
+        "twilio_falhou": "Twilio rechazó el envío. Mirá el detalle en el borrador.",
+        "ja_submetido_use_duplicar": "Ya fue enviado: duplicá y corregí en lugar de editar."
       }
     }
   },

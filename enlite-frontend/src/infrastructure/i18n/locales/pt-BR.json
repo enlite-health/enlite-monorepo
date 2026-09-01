@@ -1094,7 +1094,9 @@
       "patientChatRoles": "Papéis de grupos",
       "funnelStageMessages": "Mensagens por etapa",
       "presentationInvite": "Convite à apresentação",
-      "map": "Mapa"
+      "map": "Mapa",
+      "templateCatalog": "Modelos",
+      "templateDrafts": "Registrar mensagem"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3485,6 +3487,166 @@
       "unavailable": "O mapa não está disponível (sem chave do Google Maps). A lista continua funcionando.",
       "status": {
         "unknown": "Sem estado"
+      }
+    },
+    "templateCatalog": {
+      "title": "Modelos de mensagem",
+      "subtitle": "As mensagens que a plataforma pode enviar por WhatsApp e em que estado a Meta as tem.",
+      "readOnlyHint": "Somente leitura. Onde cada mensagem é usada se decide em Mensagens por etapa.",
+      "message": "Mensagem",
+      "metaStatus": "Estado na Meta",
+      "usedIn": "Usada em",
+      "checkedAt": "Última verificação",
+      "never": "Nunca",
+      "neverChecked": "Sem verificar",
+      "noText": "Sem texto sincronizado",
+      "unused": "Sem uso",
+      "empty": "Ainda não há modelos no catálogo.",
+      "error": "Não conseguimos carregar o catálogo.",
+      "status": {
+        "APPROVED": "Aprovada",
+        "PENDING": "Em revisão",
+        "REJECTED": "Recusada",
+        "PAUSED": "Pausada pela Meta",
+        "DISABLED": "Desabilitada pela Meta",
+        "IN_APPEAL": "Em recurso",
+        "LIMIT_EXCEEDED": "Limite excedido",
+        "ARCHIVED": "Arquivada",
+        "PENDING_DELETION": "Exclusão pendente",
+        "DELETED": "Excluída"
+      },
+      "reason": {
+        "ABUSIVE_CONTENT": "Conteúdo abusivo",
+        "CATEGORY_NOT_AVAILABLE": "Categoria indisponível",
+        "INCORRECT_CATEGORY": "Categoria incorreta",
+        "INVALID_FORMAT": "Formato inválido — a Meta não detalhou",
+        "NONE": "Sem motivo informado",
+        "PROMOTIONAL": "Conteúdo promocional",
+        "SCAM": "Detectada como golpe",
+        "TAG_CONTENT_MISMATCH": "O idioma ou a categoria não batem com o texto"
+      },
+      "ineligible": {
+        "generic": "Não serve para mensagens por etapa",
+        "CATEGORY": "Não serve para etapas: não é UTILITY",
+        "DENY_LIST": "Não serve para etapas: é um lembrete",
+        "PLACEHOLDERS": "Não serve para etapas: usa dados que o sistema não preenche",
+        "SLOT_MISMATCH": "Não serve para etapas: as variáveis não batem com o texto aprovado",
+        "INACTIVE": "Inativa",
+        "OPT_OUT_CLAUSE": "Falta a cláusula de saída"
+      },
+      "filter": {
+        "all": "Todas",
+        "approved": "Aprovadas",
+        "pending": "Em revisão",
+        "off": "Desativadas pela Meta",
+        "rejected": "Recusadas",
+        "unchecked": "Sem verificar",
+        "other": "Outros estados"
+      },
+      "filterEmpty": "Nenhum modelo neste estado.",
+      "syncAge": {
+        "now": "Verificado agora",
+        "min": "Verificado há {{count}} min",
+        "hour": "Verificado há {{count}} h",
+        "day": "Verificado há {{count}} d"
+      },
+      "metaDetail": "O que a Meta disse"
+    },
+    "templateDrafts": {
+      "title": "Registrar mensagem",
+      "subtitle": "Escreva a mensagem, veja como a cuidadora recebe, e salve.",
+      "avisoNaoEnvia": "Salvar NÃO envia nada. O envio à Meta é um passo à parte, com confirmação — e depois de enviado, o nome fica ocupado para sempre.",
+      "salvoNaoEnviado": "Salvo. Ainda NÃO enviado para autorização.",
+      "listaTitulo": "Rascunhos salvos",
+      "carregando": "Carregando…",
+      "vazio": "Ainda não há rascunhos. Escreva o primeiro acima.",
+      "salvar": "Salvar rascunho",
+      "salvarEdicao": "Salvar alterações",
+      "cancelar": "Cancelar",
+      "editar": "Editar",
+      "arquivar": "Arquivar",
+      "preview": "Como a cuidadora recebe",
+      "previewVazio": "Escreva a mensagem para ver a pré-visualização.",
+      "restante": "Faltam {{n}} caracteres",
+      "slugFicaraComo": "Vai ser salvo como: {{slug}}",
+      "erroCarregar": "Não conseguimos carregar os rascunhos.",
+      "erroSalvar": "Não conseguimos salvar. Tente de novo.",
+      "erroArquivar": "Não conseguimos arquivar o rascunho.",
+      "campo": {
+        "name": "Nome",
+        "slug": "Identificador",
+        "body": "Mensagem",
+        "category": "Categoria",
+        "language": "Idioma"
+      },
+      "idioma": {
+        "es-AR": "Espanhol (Argentina)",
+        "pt-BR": "Português (Brasil)"
+      },
+      "categoria": {
+        "MARKETING": "Marketing",
+        "UTILITY": "Utilidade",
+        "AUTHENTICATION": "Autenticação"
+      },
+      "conflito": {
+        "slug_em_uso_por_template_vivo": "Já existe uma mensagem ativa com esse identificador.",
+        "slug_em_uso_por_rascunho": "Já existe outro rascunho com esse identificador.",
+        "versao_desatualizada": "Outra pessoa salvou este rascunho enquanto você editava. Recarregue para ver a versão atual.",
+        "generico": "Não deu para salvar por causa de um conflito."
+      },
+      "regra": {
+        "generica": "Esse valor não é válido.",
+        "name": {
+          "obrigatorio": "O nome é obrigatório."
+        },
+        "slug": {
+          "obrigatorio": "O identificador é obrigatório.",
+          "formato": "Só minúscula, número e underscore."
+        },
+        "category": {
+          "invalida": "Categoria inválida."
+        },
+        "language": {
+          "invalido": "Idioma inválido."
+        },
+        "body": {
+          "obrigatorio": "A mensagem é obrigatória.",
+          "muito_longo": "A mensagem passa de 1024 caracteres.",
+          "placeholder_no_inicio": "A mensagem não pode começar com uma variável.",
+          "placeholder_no_fim": "A mensagem não pode terminar com uma variável.",
+          "placeholders_adjacentes": "Duas variáveis não podem ficar coladas: precisa de texto entre elas.",
+          "placeholder_posicional": "Use variáveis com nome ({{worker_name}}), não {{1}}: com número o sistema não sabe o que preencher.",
+          "variavel_desconhecida": "Essa variável não existe. Use uma das disponíveis."
+        }
+      },
+      "enviar": "Enviar para autorização",
+      "enviado": "Enviado à Meta. Agora aguarde a autorização — ela aparece em Plantillas.",
+      "duplicar": "Duplicar e corrigir",
+      "erroEnviar": "Não conseguimos enviar. Tente de novo.",
+      "erroDuplicar": "Não conseguimos duplicar o rascunho.",
+      "variaveisDisponiveis": "Variáveis disponíveis: {{lista}}",
+      "ultimaFalha": "Última tentativa falhou: {{erro}}",
+      "estado": {
+        "draft": "Rascunho — ainda não enviado",
+        "submitted": "Enviado à Meta — aguardando autorização"
+      },
+      "confirmar": {
+        "titulo": "Enviar «{{slug}}» à Meta?",
+        "nome": "O nome fica ocupado na conta de WhatsApp para sempre, mesmo se a Meta recusar a mensagem.",
+        "edicao": "Depois de enviar você não poderá editá-la: só duplicar e corrigir.",
+        "prazo": "A Meta pode levar horas para responder, e a resposta não depende de nós.",
+        "sim": "Sim, enviar à Meta",
+        "nao": "Cancelar"
+      },
+      "indisponivel": {
+        "flag_desligada": "O envio à Meta está desligado no servidor. É preciso ligá-lo antes de usar este botão.",
+        "sem_credencial": "Faltam as credenciais da Twilio no servidor. Sem elas não dá para enviar."
+      },
+      "envioErro": {
+        "ja_submetido": "Esta mensagem já foi enviada antes.",
+        "draft_nao_encontrado": "O rascunho não existe mais.",
+        "twilio_falhou": "A Twilio recusou o envio. Veja o detalhe no rascunho.",
+        "ja_submetido_use_duplicar": "Já foi enviado: duplique e corrija em vez de editar."
       }
     }
   },
