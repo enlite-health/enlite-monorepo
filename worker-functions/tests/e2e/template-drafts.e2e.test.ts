@@ -12,7 +12,7 @@
  *      texto de quem gravou antes continua lá, intacto;
  *   3. o índice parcial deixa reusar o slug de um rascunho ARQUIVADO;
  *   4. colisão com template VIVO é distinguida da colisão com outro rascunho;
- *   5. escrita exige admin; leitura basta staff;
+ *   5. TUDO exige admin — inclusive a leitura (decisão do Gabriel, 01/09);
  *   6. 🔒 `/submit` existe e sobe DESLIGADA: sem `TEMPLATE_SUBMISSION_ENABLED`
  *      ela devolve 503 com o motivo, e NADA sai para a rede.
  *
@@ -99,12 +99,12 @@ describe('Rascunho de mensagem (spec 010 F2 2.1/2.2) @integration', () => {
     const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
     const id = criado.data.data.draft.id;
 
-    const antes = await api.get('/api/admin/template-drafts', asRecruiter);
+    const antes = await api.get('/api/admin/template-drafts', asAdmin);
     expect(antes.data.data.drafts.map((d: { id: string }) => d.id)).toContain(id);
 
     await api.delete(`/api/admin/template-drafts/${id}`, asAdmin);
 
-    const depois = await api.get('/api/admin/template-drafts', asRecruiter);
+    const depois = await api.get('/api/admin/template-drafts', asAdmin);
     expect(depois.data.data.drafts.map((d: { id: string }) => d.id)).not.toContain(id);
 
     // Arquivar NÃO apaga: o texto escrito continua no banco.
@@ -177,8 +177,8 @@ describe('Rascunho de mensagem (spec 010 F2 2.1/2.2) @integration', () => {
     expect(q.rowCount).toBe(0);
   });
 
-  it('escrita exige ADMIN; leitura basta staff', async () => {
-    expect((await api.get('/api/admin/template-drafts', asRecruiter)).status).toBe(200);
+  it('🔒 staff NÃO passa em NADA — nem para ler', async () => {
+    expect((await api.get('/api/admin/template-drafts', asRecruiter)).status).toBe(403);
     expect((await api.post('/api/admin/template-drafts', corpo(), asRecruiter)).status).toBe(403);
 
     const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);

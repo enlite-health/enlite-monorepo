@@ -3,9 +3,9 @@
  *
  * Dois contratos travados aqui:
  *
- * 1. **Escrita é `requireAdmin`, leitura é `requireStaff`.** Precedente do
- *    parecer `lex` de 29/08, condição C7 — quem configura ≠ quem dispara. Uma
- *    escrita que virasse staff passaria despercebida sem este teste.
+ * 1. **TUDO é `requireAdmin`, inclusive a leitura.** Decisão do Gabriel em
+ *    01/09/2026. O menu já filtrava por `isAdmin`, mas menu não é controle de
+ *    acesso — sem este teste, um staff chamaria a API direto e veria tudo.
  * 2. **`/submit` e `/duplicate` existem e são ADMIN.** A submissão escreve para
  *    fora do perímetro; o parecer do `lex` NÃO foi emitido (decisão do Gabriel,
  *    31/08/2026) e a rota sobe desligada por flag. Aqui travamos ao menos que
@@ -47,12 +47,12 @@ function makeApp(): { app: express.Express; calls: Record<string, jest.Mock> } {
 describe('createTemplateDraftsRoutes', () => {
   beforeEach(() => { seen.length = 0; });
 
-  it('GET /template-drafts chama o list, atrás de staff', async () => {
+  it('GET /template-drafts chama o list, atrás de ADMIN', async () => {
     const { app, calls } = makeApp();
     const res = await request(app).get('/api/admin/template-drafts');
     expect(res.status).toBe(200);
     expect(calls.list).toHaveBeenCalledTimes(1);
-    expect(seen).toEqual(['staff GET /template-drafts']);
+    expect(seen).toEqual(['admin GET /template-drafts']);
   });
 
   it('POST /template-drafts chama o create, atrás de ADMIN', async () => {
@@ -101,14 +101,15 @@ describe('createTemplateDraftsRoutes', () => {
     expect(seen.filter((s) => s.startsWith('staff'))).toEqual([]);
   });
 
-  it('🔒 nenhuma escrita passa por staff — só leitura é staff', async () => {
+  it('🔒 NENHUMA rota aceita staff — nem a leitura', async () => {
     const { app } = makeApp();
+    await request(app).get('/api/admin/template-drafts');
     await request(app).post('/api/admin/template-drafts').send({});
     await request(app).put('/api/admin/template-drafts/a').send({});
     await request(app).delete('/api/admin/template-drafts/a');
     await request(app).post('/api/admin/template-drafts/a/submit').send({ confirmado: true });
     await request(app).post('/api/admin/template-drafts/a/duplicate').send({});
     expect(seen.filter((s) => s.startsWith('staff'))).toEqual([]);
-    expect(seen).toHaveLength(5);
+    expect(seen).toHaveLength(6);
   });
 });
