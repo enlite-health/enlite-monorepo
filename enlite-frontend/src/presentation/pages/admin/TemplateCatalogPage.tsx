@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AdminTemplateCatalogApiService, type TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
 import { Heading } from '@presentation/components/atoms/Heading';
+import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
+import { TemplateCatalogDetailDrawer } from './TemplateCatalogDetailDrawer';
 import { FILTER_ORDER, countByGroup, filterByGroup, lastCheckedAt, relativeFrom, type FilterKey } from './templateCatalogView';
 
 /**
@@ -78,6 +81,7 @@ export function TemplateCatalogPage(): JSX.Element {
    * O instante da carga, congelado. Não é `new Date()` no render: assim a idade
    * mostrada não muda a cada re-render, e o teste visual é determinístico.
    */
+  const [detalhe, setDetalhe] = useState<TemplateCatalogRow | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   /**
@@ -118,10 +122,20 @@ export function TemplateCatalogPage(): JSX.Element {
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <Heading level={1}>{t('admin.templateCatalog.title')}</Heading>
-        <Text size="sm" color="secondary">{t('admin.templateCatalog.subtitle')}</Text>
-        <Text size="xs" color="secondary">{t('admin.templateCatalog.readOnlyHint')}</Text>
+      {/* ⚠️ O botão existe porque a tela de criar mora em OUTRA rota e em outro
+          item de menu, e não havia link nenhum entre as duas: quem abria
+          "Plantillas" via só uma lista e concluía, com razão, que não dava para
+          adicionar mensagem. O Gabriel bateu nisso em 01/09/2026. Duas telas
+          para um conceito só precisam, no mínimo, se enxergar. */}
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Heading level={1}>{t('admin.templateCatalog.title')}</Heading>
+          <Text size="sm" color="secondary">{t('admin.templateCatalog.subtitle')}</Text>
+          <Text size="xs" color="secondary">{t('admin.templateCatalog.readOnlyHint')}</Text>
+        </div>
+        <Link to="/admin/plantillas/registrar" data-testid="tc-nova-mensagem" className="shrink-0">
+          <Button size="sm">{t('admin.templateCatalog.novaMensagem')}</Button>
+        </Link>
       </div>
 
       {/* Guarda por `!== null`, não por truthiness: um erro cuja mensagem é
@@ -193,7 +207,11 @@ export function TemplateCatalogPage(): JSX.Element {
             {shown.map((r) => {
               const summary = approvedTextOneLine(r);
               return (
-                <TableRow key={r.slug} clickable={false} data-testid={`tc-row-${r.slug}`}>
+                <TableRow
+                  key={r.slug}
+                  data-testid={`tc-row-${r.slug}`}
+                  onClick={() => setDetalhe(r)}
+                >
                   <TableCell unwrapped className="w-full max-w-0">
                     {/* Altura fixa + reticências: os corpos vão de 16 a 942 caracteres
                         em produção, e altura que dependa do texto deixa a tabela irregular. */}
@@ -206,17 +224,11 @@ export function TemplateCatalogPage(): JSX.Element {
                       <span className="min-w-0 truncate">
                         <Text as="span" size="xs" color="secondary">{r.slug}</Text>
                       </span>
-                      {/* As variáveis que a mensagem exige. Sem isto, "usa dados
-                          que o sistema não completa" não diz QUAIS. */}
-                      {r.placeholders.length > 0 && (
-                        <span className="mt-0.5 flex flex-wrap gap-1" data-testid={`tc-vars-${r.slug}`}>
-                          {r.placeholders.map((p) => (
-                            <span key={p} className="rounded bg-clinic/10 px-1.5 py-px text-clinic">
-                              <Text as="span" size="xs" color="inherit">{p}</Text>
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                      {/* ⚠️ As variáveis saíram daqui em 01/09: na listagem elas
+                          apareciam como "1 2 3 4 5" — números nus, que não
+                          ensinam nada a quem lê. Agora vivem no detalhe, com
+                          rótulo e explicação. Decisão do Gabriel, vendo a tela
+                          de produção. */}
                       {/* Elegibilidade é pergunta SEPARADA do estado na Meta: um
                           template pode estar aprovado lá e não servir aqui. */}
                       {!r.eligible && (
@@ -275,6 +287,14 @@ export function TemplateCatalogPage(): JSX.Element {
             })}
           </TableBody>
         </Table>
+      )}
+    
+      {detalhe && (
+        <TemplateCatalogDetailDrawer
+          row={detalhe}
+          statusLabel={statusLabel}
+          onClose={() => setDetalhe(null)}
+        />
       )}
     </PageContainer>
   );

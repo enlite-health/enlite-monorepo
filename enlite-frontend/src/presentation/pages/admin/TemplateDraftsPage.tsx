@@ -16,6 +16,7 @@
  * corrigir", porque o texto que foi para a Meta não pode ser reescrito por baixo.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   AdminTemplateDraftsApiService,
@@ -214,6 +215,10 @@ export function TemplateDraftsPage(): JSX.Element {
   return (
     <PageContainer>
       <div className="mb-6">
+        {/* O caminho de volta: as duas telas são o mesmo conceito. */}
+        <Link to="/admin/plantillas" data-testid="td-voltar-catalogo">
+          <Text size="xs" color="secondary">{t('admin.templateDrafts.voltarCatalogo')}</Text>
+        </Link>
         <Heading level={1}>{t('admin.templateDrafts.title')}</Heading>
         <Text size="sm" color="secondary">{t('admin.templateDrafts.subtitle')}</Text>
       </div>
@@ -348,11 +353,23 @@ export function TemplateDraftsPage(): JSX.Element {
                 <Text size="xs" color="secondary">{d.slug} · {d.language} · {d.category}</Text>
                 <Text size="xs" color="secondary">
                   <span data-testid={`td-estado-${d.slug}`}>
-                    {d.status === 'submitted'
-                      ? t('admin.templateDrafts.estado.submitted')
-                      : t('admin.templateDrafts.estado.draft')}
+                    {/* 🔒 'decided' mostra o VEREDITO da Meta. Antes, tudo que
+                        fora enviado dizia "esperando autorización" para sempre —
+                        o Gabriel viu isso na tela de produção em 01/09. */}
+                    {d.status === 'decided'
+                      ? t(`admin.templateDrafts.veredito.${d.metaStatus}`, String(d.metaStatus))
+                      : d.status === 'submitted'
+                        ? t('admin.templateDrafts.estado.submitted')
+                        : t('admin.templateDrafts.estado.draft')}
                   </span>
                 </Text>
+                {d.status === 'decided' && d.metaReason && (
+                  <Text size="xs" color="inherit" className="text-red-700">
+                    <span data-testid={`td-motivo-${d.slug}`}>
+                      {t(`admin.templateCatalog.reason.${d.metaReason}`, d.metaReason)}
+                    </span>
+                  </Text>
+                )}
                 {d.submissionError && (
                   <Text size="xs" color="inherit" className="text-red-700">
                     <span data-testid={`td-falha-${d.slug}`}>
@@ -362,7 +379,7 @@ export function TemplateDraftsPage(): JSX.Element {
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
-                {d.status === 'submitted' ? (
+                {d.status !== 'draft' ? (
                   // Submetido não se edita: o texto foi para a Meta e reescrevê-lo
                   // por baixo faria o banco discordar do que está lá fora.
                   <Button size="sm" variant="outline" data-testid={`td-duplicar-${d.slug}`} onClick={() => void duplicar(d)}>

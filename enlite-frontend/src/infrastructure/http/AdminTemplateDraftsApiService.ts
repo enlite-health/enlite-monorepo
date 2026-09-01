@@ -33,11 +33,26 @@ export interface TemplateDraft {
   submittedBy: string | null;
   /** Última falha de submissão, em texto. */
   submissionError: string | null;
+  /**
+   * O veredito da META. Vem por LEFT JOIN com `message_templates` — NÃO da
+   * tabela de rascunho. `null` = enviado e ela ainda não respondeu.
+   */
+  metaStatus: string | null;
+  metaReason: string | null;
+  /** Explicação em prosa da Meta, quando ela manda. */
+  metaDetail: string | null;
+  metaCheckedAt: string | null;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
   updatedAt: string;
-  /** 'draft' | 'submitted'. Explícito: a tela muda o que permite conforme ele. */
+  /**
+   * 'draft' | 'submitted' | 'decided'.
+   *   draft     — escrito, não enviado
+   *   submitted — enviado, a Meta AINDA não respondeu
+   *   decided   — a Meta respondeu; `metaStatus` diz o quê
+   * Antes de 01/09 tudo que fora enviado ficava 'submitted' para sempre.
+   */
   status: string;
 }
 

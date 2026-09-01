@@ -78,11 +78,32 @@ interface DraftRow {
   submitted_at: string | null;
   submitted_by: string | null;
   submission_error: string | null;
+  meta_approval_status: string | null;
+  meta_approval_reason: string | null;
+  meta_approval_detail: string | null;
+  meta_approval_checked_at: string | null;
 }
 
-const CAMPOS = `id, slug, name, body, category, language, version,
-                created_by, updated_by, created_at, updated_at,
-                content_sid, submitted_at, submitted_by, submission_error`;
+const CAMPOS = `d.id, d.slug, d.name, d.body, d.category, d.language, d.version,
+                d.created_by, d.updated_by, d.created_at, d.updated_at,
+                d.content_sid, d.submitted_at, d.submitted_by, d.submission_error`;
+
+/**
+ * 🔒 O estado da META vem de `message_templates`, NÃO daqui.
+ *
+ * `submitted_at` só responde "foi enviado?". O veredito da Meta vive na outra
+ * tabela, preenchido pelo sync. Sem esta junção a tela dizia "esperando
+ * autorización" PARA SEMPRE — inclusive com a mensagem aprovada há semanas.
+ * Foi o Gabriel quem viu, na tela de produção, em 01/09/2026.
+ *
+ * LEFT JOIN por `content_sid`: o rascunho não submetido não tem par, e ausência
+ * de linha lá é "ainda não foi", não erro.
+ */
+const CAMPOS_META = `t.meta_approval_status, t.meta_approval_reason,
+                     t.meta_approval_detail, t.meta_approval_checked_at`;
+
+const DE = `FROM message_template_drafts d
+            LEFT JOIN message_templates t ON UPPER(t.content_sid) = UPPER(d.content_sid)`;
 
 function paraApi(r: DraftRow): Record<string, unknown> {
   return {
@@ -101,9 +122,18 @@ function paraApi(r: DraftRow): Record<string, unknown> {
     submittedAt: r.submitted_at,
     submittedBy: r.submitted_by,
     submissionError: r.submission_error,
-    // Explícito, nunca inferido de ausência: a tela precisa DIZER em que pé
-    // está, e "submetido" muda o que ela permite (editar deixa de existir).
-    status: r.submitted_at ? 'submitted' : 'draft',
+    metaStatus: r.meta_approval_status,
+    metaReason: r.meta_approval_reason,
+    metaDetail: r.meta_approval_detail,
+    metaCheckedAt: r.meta_approval_checked_at,
+    /**
+     * Três estados, e a diferença entre os dois últimos é o bug de 01/09:
+     *   'draft'     — escrito, não enviado
+     *   'submitted' — enviado, e a Meta AINDA não respondeu
+     *   'decided'   — a Meta respondeu; `metaStatus` diz o quê
+     * Antes, tudo que tinha `submitted_at` era 'submitted' para sempre.
+     */
+    status: !r.submitted_at ? 'draft' : (r.meta_approval_status ? 'decided' : 'submitted'),
   };
 }
 
@@ -124,9 +154,9 @@ export class TemplateDraftsController {
   async list(_req: Request, res: Response): Promise<void> {
     try {
       const r = await this.db.query<DraftRow>(
-        `SELECT ${CAMPOS} FROM message_template_drafts
-          WHERE archived_at IS NULL
-          ORDER BY updated_at DESC`,
+        `SELECT ${CAMPOS}, ${CAMPOS_META} ${DE}
+          WHERE d.archived_at IS NULL
+          ORDER BY d.updated_at DESC`,
       );
       res.status(200).json({ success: true, data: { drafts: r.rows.map(paraApi) } });
     } catch (error: unknown) {
@@ -168,7 +198,9 @@ export class TemplateDraftsController {
       const r = await this.db.query<DraftRow>(
         `INSERT INTO message_template_drafts (slug, name, body, category, language, created_by, updated_by)
               VALUES ($1, $2, $3, $4, $5, $6, $6)
-           RETURNING ${CAMPOS}`,
+           RETURNING ${CAMPOS.replace(/\bd\./g, '')}, NULL::text AS meta_approval_status,
+                     NULL::text AS meta_approval_reason, NULL::text AS meta_approval_detail,
+                     NULL::timestamptz AS meta_approval_checked_at`,
         [slug, entrada.name, entrada.body, entrada.category, entrada.language, actor],
       );
       res.status(201).json({ success: true, data: { draft: paraApi(r.rows[0]) } });
@@ -209,7 +241,9 @@ export class TemplateDraftsController {
             SET slug = $1, name = $2, body = $3, category = $4, language = $5,
                 updated_by = $6, updated_at = now(), version = version + 1
           WHERE id = $7 AND version = $8 AND archived_at IS NULL AND content_sid IS NULL
-      RETURNING ${CAMPOS}`,
+      RETURNING ${CAMPOS.replace(/\bd\./g, '')}, NULL::text AS meta_approval_status,
+                NULL::text AS meta_approval_reason, NULL::text AS meta_approval_detail,
+                NULL::timestamptz AS meta_approval_checked_at`,
         [slug, entrada.name, entrada.body, entrada.category, entrada.language, actor, id, version],
       );
 
@@ -322,7 +356,7 @@ export class TemplateDraftsController {
   async duplicate(req: Request, res: Response): Promise<void> {
     try {
       const origem = await this.db.query<DraftRow>(
-        `SELECT ${CAMPOS} FROM message_template_drafts WHERE id = $1`, [req.params.id],
+        `SELECT ${CAMPOS}, ${CAMPOS_META} ${DE} WHERE d.id = $1`, [req.params.id],
       );
       if ((origem.rowCount ?? 0) === 0) {
         res.status(404).json({ success: false, error: 'draft_nao_encontrado' });
@@ -346,7 +380,9 @@ export class TemplateDraftsController {
       const r = await this.db.query<DraftRow>(
         `INSERT INTO message_template_drafts (slug, name, body, category, language, created_by, updated_by)
               VALUES ($1, $2, $3, $4, $5, $6, $6)
-           RETURNING ${CAMPOS}`,
+           RETURNING ${CAMPOS.replace(/\bd\./g, '')}, NULL::text AS meta_approval_status,
+                     NULL::text AS meta_approval_reason, NULL::text AS meta_approval_detail,
+                     NULL::timestamptz AS meta_approval_checked_at`,
         [novoSlug, d.name, d.body, d.category, d.language, actor],
       );
       res.status(201).json({ success: true, data: { draft: paraApi(r.rows[0]) } });
