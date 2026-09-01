@@ -12,6 +12,7 @@ import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatal
 
 const row = (over: Partial<TemplateCatalogRow> = {}): TemplateCatalogRow => ({
   slug: 's', name: 's', bodyTwilio: 'x', category: 'UTILITY', isActive: true,
+  language: 'es-AR', baseName: 's',
   contentSid: 'HX', metaStatus: 'APPROVED', metaReason: null, metaDetail: null,
   metaCheckedAt: null, eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [], ...over,
 });

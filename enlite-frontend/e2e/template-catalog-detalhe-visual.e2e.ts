@@ -19,7 +19,16 @@ const row = (over: Record<string, unknown>) => ({
   slug: 'x', name: 'x', bodyTwilio: null, category: 'UTILITY', isActive: true,
   contentSid: 'HXaaa', metaStatus: null, metaReason: null, metaDetail: null,
   metaCheckedAt: null, eligible: true, ineligibleReason: null,
-  placeholders: [], usedInStages: [], ...over,
+  placeholders: [], usedInStages: [],
+  ...over,
+  // 🔒 O BACKEND SEMPRE MANDA `baseName` (`COALESCE(base_name, slug)`), e o mock
+  // precisa mandar também. Sem ele a tela agrupa TODAS as linhas sob `undefined`
+  // e desenha UMA linha só — medido: 5 entram, 1 sai. O screenshot viraria a
+  // foto de um bug do mock, não da tela.
+  baseName: (over.baseName as string | undefined) ?? (over.slug as string | undefined) ?? 'x',
+  // `language` pode ser null de verdade (linha vinda do Console da Twilio), mas
+  // o padrão do catálogo real é es-AR: 26 das 28 linhas de produção.
+  language: 'language' in over ? over.language : 'es-AR',
 });
 
 const PAYLOAD = { success: true, data: { templates: [

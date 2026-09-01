@@ -15,6 +15,7 @@ import {
   quandoRelativo,
   restante,
   slugPrevisto,
+  inicialDaURL,
 } from '../templateDraftsView';
 
 describe('slugPrevisto', () => {
@@ -106,5 +107,33 @@ describe('quandoRelativo', () => {
   });
   it('data ilegível devolve null em vez de NaN na tela', () => {
     expect(quandoRelativo('nao-e-data', agora)).toBeNull();
+  });
+});
+
+describe('inicialDaURL — o "＋ Crear versión" do catálogo', () => {
+  const VAZIO = { slug: '', name: '', body: '', category: 'UTILITY', language: 'es-AR' };
+  const de = (qs: string) => inicialDaURL(new URLSearchParams(qs), VAZIO);
+
+  it('🔒 o `base` vai para o SLUG — é o que faz o par nascer certo', () => {
+    // O backend prefixa por idioma, então o mesmo `base` dos dois lados vira
+    // `ar_x` e `br_x`. Chegar com o campo vazio faria a pessoa redigitar de
+    // cabeça, e um caractere diferente cria uma mensagem órfã.
+    expect(de('base=admission_confirmation&lang=pt-BR')).toMatchObject({
+      slug: 'admission_confirmation', language: 'pt-BR',
+    });
+  });
+  it('sem parâmetro nenhum, o formulário nasce vazio como sempre nasceu', () => {
+    expect(de('')).toEqual(VAZIO);
+  });
+  it('🔒 idioma inválido é IGNORADO, não aceito — `?lang=xx` vem da barra de endereço', () => {
+    // Um valor fora do conjunto no `select` deixaria o formulário num estado
+    // que o backend recusa sem a tela saber dizer por quê.
+    expect(de('base=x&lang=klingon').language).toBe('es-AR');
+  });
+  it('espaço em volta do base não vira parte do nome', () => {
+    expect(de('base=%20%20x%20%20').slug).toBe('x');
+  });
+  it('só o idioma, sem base, não inventa slug', () => {
+    expect(de('lang=pt-BR')).toMatchObject({ slug: '', language: 'pt-BR' });
   });
 });

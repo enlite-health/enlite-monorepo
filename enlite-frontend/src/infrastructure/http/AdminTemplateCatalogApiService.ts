@@ -27,6 +27,22 @@ import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthServic
 export interface TemplateCatalogRow {
   slug: string;
   name: string;
+  /**
+   * `es-AR` | `pt-BR`, ou `null` = idioma NÃO REGISTRADO.
+   *
+   * `null` é ausência de informação nossa, não um idioma — linha que o sync
+   * trouxe do Console da Twilio nasce assim. A tela diz "não registrado" em
+   * vez de assumir espanhol, pelo mesmo motivo que `unchecked` não é `pending`.
+   */
+  language: string | null;
+  /**
+   * A chave que une a versão espanhola e a portuguesa da MESMA mensagem.
+   *
+   * Vem do banco já com `COALESCE(base_name, slug)`, então nunca é null: linha
+   * não classificada vira um grupo de uma mensagem só — não pareia, mas
+   * também nunca pareia errado.
+   */
+  baseName: string;
   /** Texto APROVADO na Meta. É o único texto que a tela mostra. */
   bodyTwilio: string | null;
   category: string | null;

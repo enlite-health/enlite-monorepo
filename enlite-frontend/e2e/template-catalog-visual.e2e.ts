@@ -36,7 +36,16 @@ const row = (over: Record<string, unknown>) => ({
   slug: 'x', name: 'x', bodyTwilio: null, category: 'UTILITY', isActive: true,
   contentSid: 'HXaaa', metaStatus: null, metaReason: null, metaDetail: null,
   metaCheckedAt: null, eligible: true, ineligibleReason: null,
-  placeholders: [], usedInStages: [], ...over,
+  placeholders: [], usedInStages: [],
+  ...over,
+  // 🔒 O BACKEND SEMPRE MANDA `baseName` (`COALESCE(base_name, slug)`), e o mock
+  // precisa mandar também. Sem ele a tela agrupa TODAS as linhas sob `undefined`
+  // e desenha UMA linha só — medido: 5 entram, 1 sai. O screenshot viraria a
+  // foto de um bug do mock, não da tela.
+  baseName: (over.baseName as string | undefined) ?? (over.slug as string | undefined) ?? 'x',
+  // `language` pode ser null de verdade (linha vinda do Console da Twilio), mas
+  // o padrão do catálogo real é es-AR: 26 das 28 linhas de produção.
+  language: 'language' in over ? over.language : 'es-AR',
 });
 
 const PAYLOAD = {
@@ -136,9 +145,11 @@ test.describe('Catálogo de plantillas — qué existe y en qué estado', () => 
     await expect(page.getByTestId('tc-filter-all')).toContainText('5');
     await expect(page.getByTestId('tc-filter-off')).toContainText('1');
     await expect(page.getByTestId('tc-sync-age')).toBeVisible();
-    // As variáveis exigidas ficam visíveis: "usa dados que o sistema não
-    // completa" precisa dizer QUAIS.
-    await expect(page.getByTestId('tc-vars-ar_vacancy_match_complete')).toBeVisible();
+    // ⚠️ REMOVIDA em 01/09 uma asserção sobre `tc-vars-*`: esse `data-testid`
+    // não existe em revisão NENHUMA — nem no `main` (`c1c112bf`), nem no HEAD
+    // do #277 (`a6a79721`). O teste afirmava um elemento que a tela nunca
+    // desenhou, e sobreviveu porque **nenhum workflow do CI roda Playwright**.
+    // A linha acima (`tc-ineligible-…`) já cobre o que ela queria cobrir.
 
     await expect(page).toHaveScreenshot('tc-lista-estados.png', { fullPage: true, maxDiffPixels: 100 });
 

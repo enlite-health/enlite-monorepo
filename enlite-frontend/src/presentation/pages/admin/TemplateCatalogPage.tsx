@@ -8,7 +8,9 @@ import { Text } from '@presentation/components/atoms/Text';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { TemplateCatalogDetailDrawer } from './TemplateCatalogDetailDrawer';
-import { FILTER_ORDER, countByGroup, filterByGroup, lastCheckedAt, relativeFrom, type FilterKey } from './templateCatalogView';
+import { FILTER_ORDER, countByGroup, groupOf, lastCheckedAt, relativeFrom } from './templateCatalogView';
+import { ES, MISSING, PT, type MessagePair, agruparEmPares, faltaUmaVersao, filtrarPares, idiomaQueFalta, versaoPrincipal, type CatalogFilter } from './templateCatalogPairs';
+import { TemplateCatalogLanguageCell } from './TemplateCatalogLanguageCell';
 
 /**
  * /admin/plantillas — o catálogo de mensagens (spec 010, F1).
@@ -73,15 +75,24 @@ function approvedTextOneLine(row: TemplateCatalogRow): string | null {
 }
 
 export function TemplateCatalogPage(): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<TemplateCatalogRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterKey>('all');
+  const [filter, setFilter] = useState<CatalogFilter>('all');
   /**
    * O instante da carga, congelado. Não é `new Date()` no render: assim a idade
    * mostrada não muda a cada re-render, e o teste visual é determinístico.
    */
-  const [detalhe, setDetalhe] = useState<TemplateCatalogRow | null>(null);
+  /**
+   * O que o drawer está mostrando: a VERSÃO clicada e o PAR dela.
+   *
+   * Um estado só, e não dois: o drawer precisa da versão (qual idioma foi
+   * aberto) E do par (qual idioma FALTA, para oferecer criar — `row` sozinha
+   * nunca sabe se existe uma irmã do outro lado). Guardá-los separados criava
+   * um estado impossível — versão sem par — que o código tinha de checar e
+   * nenhum teste conseguia produzir.
+   */
+  const [detalhe, setDetalhe] = useState<{ row: TemplateCatalogRow; par: MessagePair } | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   /**
@@ -110,7 +121,19 @@ export function TemplateCatalogPage(): JSX.Element {
   useEffect(() => { void load(); }, [load]);
 
   const counts = useMemo(() => countByGroup(rows ?? []), [rows]);
-  const shown = useMemo(() => filterByGroup(rows ?? [], filter), [rows, filter]);
+  /**
+   * Uma linha por MENSAGEM. O par vem do `baseName`, que é coluna do banco —
+   * ver `templateCatalogPairs.ts` e a migration 300 para por que não dá para
+   * derivá-lo do slug.
+   */
+  const pares = useMemo(() => agruparEmPares(rows ?? []), [rows]);
+  const shown = useMemo(() => filtrarPares(pares, filter, groupOf), [pares, filter]);
+  /**
+   * ⚠️ Conta MENSAGENS, não templates — unidade diferente da dos filtros de
+   * estado, que continuam contando templates. Somar os dois daria um total
+   * que não existe, e por isso o rótulo deste filtro diz "mensagens".
+   */
+  const faltamVersao = useMemo(() => faltaUmaVersao(pares).length, [pares]);
   const syncAge = useMemo(() => {
     const iso = lastCheckedAt(rows ?? []);
     return iso && loadedAt ? relativeFrom(iso, loadedAt) : null;
@@ -170,6 +193,23 @@ export function TemplateCatalogPage(): JSX.Element {
               <Text as="span" size="xs" weight="semibold" color="inherit">{counts[key]}</Text>
             </button>
           ))}
+          {/* "Falta una versión" fecha a faixa, separado por uma barra, porque a
+              UNIDADE dele é outra: os filtros à esquerda contam templates; este
+              conta mensagens. Sem a separação alguém somaria os números e
+              chegaria num total que não existe. */}
+          <span className="mx-1 h-5 w-px bg-gray-300" aria-hidden="true" />
+          <button
+            type="button"
+            data-testid={`tc-filter-${MISSING}`}
+            aria-pressed={filter === MISSING}
+            onClick={() => setFilter(MISSING)}
+            className={`inline-flex items-center gap-2 rounded-pill border px-3.5 py-1.5 ${
+              filter === MISSING ? 'border-primary bg-primary text-white' : 'border-gray-300 bg-white text-gray-800'
+            }`}
+          >
+            <Text as="span" size="xs" color="inherit">{t('admin.templateCatalog.filter.missing')}</Text>
+            <Text as="span" size="xs" weight="semibold" color="inherit">{faltamVersao}</Text>
+          </button>
           {/* A idade do dado fica ao lado dos filtros, não escondida numa coluna:
               um catálogo verificado há três dias diz coisa diferente de um
               verificado há três minutos, e isso vale para a lista inteira. */}
@@ -199,92 +239,88 @@ export function TemplateCatalogPage(): JSX.Element {
         <Table data-testid="tc-table">
           <TableHeader>
             <TableHead>{t('admin.templateCatalog.message')}</TableHead>
-            <TableHead>{t('admin.templateCatalog.metaStatus')}</TableHead>
+            {/* Duas colunas de idioma lado a lado: a MESMA mensagem em duas
+                versões. Antes de 01/09 cada versão era uma linha, e
+                `admission_confirmation_es` e `_pt` apareciam como duas coisas
+                sem relação nenhuma. */}
+            <TableHead>🇦🇷 {t('admin.templateCatalog.espanol')}</TableHead>
+            <TableHead>🇧🇷 {t('admin.templateCatalog.portugues')}</TableHead>
             <TableHead>{t('admin.templateCatalog.usedIn')}</TableHead>
             <TableHead>{t('admin.templateCatalog.checkedAt')}</TableHead>
           </TableHeader>
           <TableBody>
-            {shown.map((r) => {
-              const summary = approvedTextOneLine(r);
+            {shown.map((par) => {
+              // Uma versão representa a mensagem onde a tela precisa de UMA:
+              // texto da lista, data da verificação, detalhe que abre no clique.
+              const principal = versaoPrincipal(par, i18n.language);
+              const texto = approvedTextOneLine(principal);
               return (
                 <TableRow
-                  key={r.slug}
-                  data-testid={`tc-row-${r.slug}`}
-                  onClick={() => setDetalhe(r)}
+                  key={par.baseName}
+                  data-testid={`tc-row-${par.baseName}`}
+                  onClick={() => setDetalhe({ row: principal, par })}
                 >
                   <TableCell unwrapped className="max-w-[22rem]">
-                    {/* Altura fixa + reticências: os corpos vão de 16 a 942 caracteres
-                        em produção, e altura que dependa do texto deixa a tabela irregular. */}
-                    {/* ⚠️ Ordem INVERTIDA em 01/09 (Gabriel): o identificador é o
-                        título e vem primeiro, com a cor do texto; a mensagem
-                        desce para linha secundária. Quem varre a lista procura
-                        QUAL mensagem é, não o que ela diz — o texto inteiro
-                        está a um clique, no detalhe. */}
+                    {/* Altura fixa + reticências: os corpos vão de 16 a 942
+                        caracteres em produção, e altura que dependa do texto
+                        deixa a tabela irregular. */}
                     <div className="flex min-h-9 flex-col justify-center py-1">
                       <span className="min-w-0 truncate">
-                        <Text as="span" size="sm" color="primary">{r.slug}</Text>
+                        <Text as="span" size="sm" color="primary">{par.baseName}</Text>
                       </span>
                       <span className="min-w-0 truncate">
                         <Text as="span" size="xs" color="secondary">
-                          {summary ? `«${summary}»` : t('admin.templateCatalog.noText')}
+                          {texto ? `«${texto}»` : t('admin.templateCatalog.noText')}
                         </Text>
                       </span>
-                      {/* ⚠️ As variáveis saíram daqui em 01/09: na listagem elas
-                          apareciam como "1 2 3 4 5" — números nus, que não
-                          ensinam nada a quem lê. Agora vivem no detalhe, com
-                          rótulo e explicação. Decisão do Gabriel, vendo a tela
-                          de produção. */}
-                      {/* Elegibilidade é pergunta SEPARADA do estado na Meta: um
-                          template pode estar aprovado lá e não servir aqui. */}
-                      {!r.eligible && (
-                        <span data-testid={`tc-ineligible-${r.slug}`} className="min-w-0 truncate text-[#8E1230]">
+                      {/* Linha que o banco ainda não classificou. Aparece em vez
+                          de ser calada: sem isto ela sumiria das duas colunas de
+                          idioma e a mensagem pareceria não existir. */}
+                      {par.semIdioma.length > 0 && (
+                        <span data-testid={`tc-sem-idioma-${par.baseName}`} className="min-w-0 truncate text-[#7A5200]">
                           <Text as="span" size="xs" color="inherit">
-                            {t(`admin.templateCatalog.ineligible.${r.ineligibleReason}`, t('admin.templateCatalog.ineligible.generic'))}
+                            {t('admin.templateCatalog.idiomaNaoRegistrado', { slugs: par.semIdioma.map((r) => r.slug).join(', ') })}
                           </Text>
                         </span>
                       )}
                     </div>
                   </TableCell>
                   <TableCell unwrapped>
-                    <span data-testid={`tc-status-${r.slug}`} className={`inline-flex rounded-pill px-2 py-0.5 ${statusTone(r.metaStatus)}`}>
-                      <Text as="span" size="xs" weight="medium" color="inherit">{statusLabel(r.metaStatus)}</Text>
-                    </span>
-                    {r.metaReason && (
-                      <span data-testid={`tc-reason-${r.slug}`} className="mt-0.5 block truncate text-[#8E1230]">
-                        <Text as="span" size="xs" color="inherit">
-                          {t(`admin.templateCatalog.reason.${r.metaReason}`, r.metaReason)}
-                        </Text>
-                      </span>
-                    )}
-                    {/* A explicação em PROSA da Meta. Era buscada, gravada e
-                        devolvida pela API — e não aparecia na tela. O código
-                        seco (`INVALID_FORMAT`) é justamente o que a doc da
-                        Twilio diz chegar "without explaining details"; ir
-                        buscar na Meta só valeu a pena por causa DESTE campo. */}
-                    {r.metaDetail && (
-                      <span data-testid={`tc-detail-${r.slug}`} className="mt-0.5 block text-[#8E1230]">
-                        <Text as="span" size="xs" color="inherit">
-                          {t('admin.templateCatalog.metaDetail')}: {r.metaDetail}
-                        </Text>
-                      </span>
-                    )}
+                    <TemplateCatalogLanguageCell
+                      row={par.es} language={ES} baseName={par.baseName}
+                      statusTone={statusTone} statusLabel={statusLabel}
+                      onOpen={(r) => setDetalhe({ row: r, par })}
+                    />
+                  </TableCell>
+                  <TableCell unwrapped>
+                    <TemplateCatalogLanguageCell
+                      row={par.pt} language={PT} baseName={par.baseName}
+                      statusTone={statusTone} statusLabel={statusLabel}
+                      onOpen={(r) => setDetalhe({ row: r, par })}
+                    />
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
-                    {r.usedInStages.length === 0 ? (
-                      <Text size="xs" color="secondary">{t('admin.templateCatalog.unused')}</Text>
-                    ) : (
-                      <span data-testid={`tc-used-${r.slug}`} className="inline-flex flex-wrap gap-1">
-                        {r.usedInStages.map((s) => (
-                          <span key={s} className="rounded-pill bg-turquoise/20 px-2 py-0.5">
-                            <Text as="span" size="xs" color="primary">{t(`admin.kanban.columns.${s}`, s)}</Text>
-                          </span>
-                        ))}
-                      </span>
-                    )}
+                    {/* "Usado em" é a união dos dois idiomas: apagar a mensagem
+                        desliga os dois lados, então quem decide precisa ver
+                        tudo que ela alimenta. */}
+                    {(() => {
+                      const etapas = [...new Set([par.es, par.pt, ...par.semIdioma].flatMap((r) => r?.usedInStages ?? []))].sort();
+                      return etapas.length === 0 ? (
+                        <Text size="xs" color="secondary">{t('admin.templateCatalog.unused')}</Text>
+                      ) : (
+                        <span data-testid={`tc-used-${par.baseName}`} className="inline-flex flex-wrap gap-1">
+                          {etapas.map((st) => (
+                            <span key={st} className="rounded-pill bg-turquoise/20 px-2 py-0.5">
+                              <Text as="span" size="xs" color="primary">{t(`admin.kanban.columns.${st}`, st)}</Text>
+                            </span>
+                          ))}
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
                     <Text size="xs" color="secondary">
-                      {r.metaCheckedAt ? formatWhen(r.metaCheckedAt) : t('admin.templateCatalog.never')}
+                      {principal.metaCheckedAt ? formatWhen(principal.metaCheckedAt) : t('admin.templateCatalog.never')}
                     </Text>
                   </TableCell>
                 </TableRow>
@@ -296,8 +332,10 @@ export function TemplateCatalogPage(): JSX.Element {
     
       {detalhe && (
         <TemplateCatalogDetailDrawer
-          row={detalhe}
+          row={detalhe.row}
           statusLabel={statusLabel}
+          baseName={detalhe.par.baseName}
+          faltaIdioma={idiomaQueFalta(detalhe.par)}
           onClose={() => setDetalhe(null)}
         />
       )}
