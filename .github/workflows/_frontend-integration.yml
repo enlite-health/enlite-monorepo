@@ -1,0 +1,157 @@
+name: Frontend Integration E2E (reusable)
+
+# Por que este workflow existe
+# ─────────────────────────────
+# Até 31/08/2026 o Playwright NÃO rodava em CI nenhum — `grep -rn "playwright"
+# .github/workflows/` devolvia ZERO. O portão do frontend era lint + vitest, que
+# não abrem navegador. Consequência medida: um `<select>` da aba Geral parou de
+# disparar o autosave, 50 prestadoras travaram, e as três camadas de teste
+# passaram verdes o tempo todo — porque nenhuma exercitava o formulário.
+#
+# Toda a suíte `e2e/integration/` sobe stack REAL (frontend + backend + Postgres,
+# sem mock) e é a única camada que enxerga o vão entre o clique e a requisição
+# HTTP. Ela existia e era honor-system: só rodava se alguém lembrasse.
+#
+# ⚠️ Este job NÃO substitui o `e2e-prod` (monitor das 3h contra produção). Aqui é
+# portão de PR, contra stack efêmera; lá é vigilância do que está no ar.
+
+on:
+  workflow_call:
+    inputs:
+      grep:
+        description: >
+          Filtro opcional de specs. VAZIO = roda a suíte inteira. Quando
+          preenchido, o job IMPRIME o que ficou de fora — cobertura reduzida em
+          silêncio lê como "está tudo coberto" e foi assim que chegamos aqui.
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  integration-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Stack real: Postgres + API + emulador Firebase ──
+      #
+      # Duas invocações de propósito, e a ORDEM importa:
+      #
+      # 1. `postgres api` SEM o override do firebase. Esse override troca a API
+      #    para `USE_MOCK_AUTH=false` — que não é o modo em que esta suíte roda
+      #    (os testes injetam token `mock_*`).
+      # 2. o emulador com `--no-deps`. Sem isso o compose exige
+      #    `firebase-emulator: condition: service_healthy`, e o healthcheck desse
+      #    container está quebrado (aparece `unhealthy` mesmo servindo 200 em
+      #    9099 — reproduzido local e no runner). O gate viraria falso-vermelho.
+      #    Quem decide se está pronto é a espera por HTTP abaixo, não o healthcheck.
+      #
+      # O emulador não é opcional: vários specs autenticam por ele e, sem ele,
+      # falham em massa com `ECONNREFUSED 127.0.0.1:9099`.
+      - name: Sobe Postgres + API + emulador Firebase
+        working-directory: worker-functions
+        run: |
+          BASE="-f docker-compose.yml -f docker-compose.test.yml"
+          docker compose $BASE up -d postgres api
+          docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
+
+          espera() {
+            for i in $(seq 1 60); do
+              curl -sf "$2" >/dev/null && echo "$1 pronto" && return 0
+              sleep 2
+            done
+            echo "::error::$1 não respondeu em 120s ($2)"
+            return 1
+          }
+          espera "api" http://localhost:8080/health || {
+            docker compose $BASE logs api | tail -50
+            exit 1
+          }
+          espera "emulador Firebase" http://localhost:9099/ || {
+            docker compose $BASE -f docker-compose.firebase.yml logs firebase-emulator | tail -50
+            exit 1
+          }
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: enlite-frontend/pnpm-lock.yaml
+
+      - name: Instala dependências
+        working-directory: enlite-frontend
+        run: pnpm install
+
+      - name: Instala o Chromium do Playwright
+        working-directory: enlite-frontend
+        run: npx playwright install --with-deps chromium
+
+      # A chave do Maps é REAL de propósito: o spec do endereço reproduz o widget
+      # do Google, e um fake responderia só o que nós mesmos programássemos —
+      # nunca teria pegado o bug do teclado (`place_changed` sem
+      # `formatted_address`). Ver worker-address-keyboard.integration.e2e.ts.
+      - name: Sobe o dev server
+        working-directory: enlite-frontend
+        env:
+          VITE_API_WORKER_FUNCTIONS_URL: http://localhost:8080
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          # Config do Firebase FALSA de propósito, e nenhum segredo é preciso: o
+          # helper de auth desta suíte intercepta `identitytoolkit.googleapis.com`
+          # e `securetoken.googleapis.com` com `page.route`, então nenhuma dessas
+          # chamadas sai do navegador. O que o app precisa é apenas que
+          # `initializeApp` receba um objeto completo — sem estas variáveis o
+          # login nem começa e TODOS os specs morrem no `locator.fill` da tela de
+          # login (foi assim que a 1ª execução deste job falhou os 5).
+          # Localmente isso vem do `.env`, que não existe no runner.
+          VITE_FIREBASE_API_KEY: fake-api-key-for-e2e
+          VITE_FIREBASE_AUTH_DOMAIN: demo-e2e.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: demo-e2e
+          VITE_FIREBASE_STORAGE_BUCKET: demo-e2e.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:0000000000000000000000'
+        run: |
+          pnpm dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:5173/ >/dev/null && echo "vite pronto" && exit 0
+            sleep 2
+          done
+          echo "::error::Vite não respondeu em 120s"
+          tail -50 /tmp/vite.log
+          exit 1
+
+      - name: Testes de integração (stack real, zero mock)
+        working-directory: enlite-frontend
+        env:
+          CI: 'true'
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+        run: |
+          # `--ignore-snapshots`: este portão mede COMPORTAMENTO (o dado que o
+          # usuário digita chega ao banco?), não pixel. E não teria escolha —
+          # os baselines versionados são `*-darwin.png`, tirados em macOS; num
+          # runner linux o arquivo correspondente não existe e o Playwright
+          # reprovaria por ausência de baseline, não por regressão visual.
+          # Comparação visual continua sendo feita à mão no macOS.
+          if [ -n "${{ inputs.grep }}" ]; then
+            echo "::warning::COBERTURA REDUZIDA — rodando apenas: ${{ inputs.grep }}"
+            echo "Specs presentes no repositório e NÃO exercitados por esta execução:"
+            ls e2e/integration/*.integration.e2e.ts | grep -vE "${{ inputs.grep }}" || true
+            npx playwright test --project=integration --ignore-snapshots --grep "${{ inputs.grep }}"
+          else
+            npx playwright test --project=integration --ignore-snapshots
+          fi
+
+      - name: Relatório (só quando falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-integration-report
+          path: |
+            enlite-frontend/playwright-report/
+            enlite-frontend/test-results/
+          retention-days: 7

@@ -73,11 +73,44 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     uses: ./.github/workflows/_frontend-quality.yml
 
+  # A camada que faltava. `frontend-quality` é lint + vitest: nenhum dos dois abre
+  # navegador, e por isso o bug do autosave de 31/08 atravessou três suítes verdes.
+  # Este job sobe a stack real e exercita o formulário como usuário.
+  frontend-integration:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/_frontend-integration.yml
+    secrets: inherit
+    with:
+      # ⚠️ COBERTURA DECLARADAMENTE PARCIAL, e o job imprime o que ficou de fora.
+      #
+      # A suíte `@integration` inteira NÃO está verde hoje: 17 dos 42 specs falham
+      # — e falham TAMBÉM no `origin/main` sem nenhuma alteração (amostrado em 3,
+      # 3/3 vermelhos no baseline). São falhas pré-existentes, de kanban/vagas/admin,
+      # que precisam de um saneamento próprio. Exigir a suíte inteira agora
+      # reprovaria todo PR do repositório e o portão seria desligado na primeira
+      # semana — que é pior do que não ter portão.
+      #
+      # Então este gate começa cobrindo a CLASSE que nos custou 50 prestadoras:
+      # dado que o usuário digita e some. Esses specs foram verificados vermelho-
+      # sem-fix / verde-com-fix nesta mesma sessão.
+      #
+      # Quando o saneamento zerar os 17, tirar o filtro daqui — é uma linha.
+      #
+      # `worker-address-keyboard` fica DE FORA deste portão de propósito, e não
+      # por estar quebrado: ele depende do widget REAL do Google Places, e no
+      # runner as sugestões não vêm (medido: `.pac-item` nunca aparece, 2/2
+      # falham; local, 2/2 passam). Amarrar o merge à disponibilidade de um
+      # terceiro cria justamente o portão intermitente que o time desliga.
+      # A cobertura dele não se perde: roda local e no `e2e-prod`, onde o Google
+      # real É o ponto e uma falha vira alerta, não bloqueio de merge.
+      grep: 'worker-profile-fields-persist'
+
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
   # existe para resolver.
   gate:
-    needs: [changes, backend-quality, backend-e2e, frontend-quality]
+    needs: [changes, backend-quality, backend-e2e, frontend-quality, frontend-integration]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -89,6 +122,7 @@ jobs:
           echo "backend-quality:  ${{ needs.backend-quality.result }}"
           echo "backend-e2e:      ${{ needs.backend-e2e.result }}"
           echo "frontend-quality: ${{ needs.frontend-quality.result }}"
+          echo "frontend-integr.: ${{ needs.frontend-integration.result }}"
 
           # `skipped` é resultado legítimo (a área não foi tocada). Qualquer
           # outra coisa que não seja `success` reprova — inclusive `cancelled`,
@@ -97,7 +131,8 @@ jobs:
           for r in "${{ needs.changes.result }}" \
                    "${{ needs.backend-quality.result }}" \
                    "${{ needs.backend-e2e.result }}" \
-                   "${{ needs.frontend-quality.result }}"; do
+                   "${{ needs.frontend-quality.result }}" \
+                   "${{ needs.frontend-integration.result }}"; do
             case "$r" in
               success|skipped) ;;
               *) FALHOU=1 ;;

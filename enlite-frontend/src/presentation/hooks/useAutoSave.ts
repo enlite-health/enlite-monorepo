@@ -44,11 +44,25 @@ export function useAutoSave(
     timeoutRef.current = setTimeout(executeSave, delay);
   }, [executeSave, delay]);
 
+  // Ao desmontar, o save pendente é ENVIADO, não descartado.
+  //
+  // A versão anterior só fazia `clearTimeout`, e isso perdia dado de verdade: quem
+  // mexe num campo e troca de aba (ou fecha a página) dentro da janela de debounce
+  // ficava sem gravação nenhuma — sem erro, sem aviso. Como estas telas não têm botão
+  // Guardar, o autosave é a ÚNICA chance de persistir; descartá-lo é perder o que a
+  // pessoa acabou de digitar.
+  //
+  // `executeSave` usa refs (nunca estado do componente), então rodar depois do
+  // unmount é seguro. O erro é engolido de propósito: não há mais tela para mostrar
+  // toast, e deixar a promise rejeitar viraria unhandled rejection.
   useEffect(() => {
     return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (!timeoutRef.current) return;
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = undefined;
+      void executeSave().catch(() => undefined);
     };
-  }, []);
+  }, [executeSave]);
 
   return triggerSave;
 }

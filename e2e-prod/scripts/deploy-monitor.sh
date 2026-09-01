@@ -60,7 +60,11 @@ SCHEDULER_SA="e2e-prod-invoker@${PROJECT}.iam.gserviceaccount.com"
 RUN_SA="e2e-prod-runtime@${PROJECT}.iam.gserviceaccount.com"
 
 # URLs de produção (Cloud Run) — injetadas como env do job (12-factor; fora da imagem).
-PROD_BASE_URL="https://enlite-frontend-byh3gvl5yq-tl.a.run.app"
+# O domínio REAL do portal — o mesmo que a prestadora digita. Não é cosmético:
+# o CORS do bucket `enlite-worker-documents` autoriza `app.enlite.health` e a
+# run.app numérica, mas NÃO a variante em hash que estava aqui. Com ela, subir
+# documento pelo navegador morria em "Failed to fetch" (medido 31/08/2026).
+PROD_BASE_URL="https://app.enlite.health"
 PROD_API_URL="https://worker-functions-byh3gvl5yq-tl.a.run.app"
 
 # Timezone do negócio (Argentina) — o cron "3h" é 3h local, não UTC.

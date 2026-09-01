@@ -141,6 +141,20 @@ export async function updatePersonalInfo(
         updated_at as "updatedAt"
     `;
 
+    // O `COALESCE(...)` do UPDATE acima só protege contra NULL — e o cliente não manda
+    // NULL, manda VAZIO: `buildSavePayload` envia `campo || ''` e `campo || []`. Então
+    // um save disparado antes da tela hidratar gravava '' / [] por cima de dado bom,
+    // com o COALESCE achando que estava fazendo seu trabalho.
+    //
+    // Estes são os campos que o gate de REGISTERED exige: esvaziá-los desregistraria a
+    // pessoa, então "vazio" nunca é uma escrita legítima — é sempre ruído. Vira NULL
+    // para o COALESCE preservar o que já está lá. Campos onde apagar É legítimo (foto
+    // de perfil, complemento) NÃO entram aqui.
+    const keepIfBlank = <T extends string>(v: T | undefined | null): T | null =>
+      v === undefined || v === null || v.trim() === '' ? null : v;
+    const keepIfEmpty = (v: string[] | undefined | null): string[] | null =>
+      v === undefined || v === null || v.length === 0 ? null : v;
+
     const values = [
       data.workerId,
       encryptedFirstName,
@@ -148,19 +162,19 @@ export async function updatePersonalInfo(
       encryptedSex,
       encryptedGender,
       encryptedBirthDate,
-      data.documentType,
+      keepIfBlank(data.documentType),
       encryptedDocumentNumber,
       data.phone || null,
       encryptedPhone,
       encryptedPhotoUrl,
       encryptedLanguages,
-      data.profession,
-      data.knowledgeLevel,
-      data.titleCertificate,
-      data.experienceTypes,
-      data.yearsExperience,
-      data.preferredTypes,
-      data.preferredAgeRange,
+      keepIfBlank(data.profession),
+      keepIfBlank(data.knowledgeLevel),
+      keepIfBlank(data.titleCertificate),
+      keepIfEmpty(data.experienceTypes),
+      keepIfBlank(data.yearsExperience),
+      keepIfEmpty(data.preferredTypes),
+      keepIfEmpty(data.preferredAgeRange),
       data.termsAccepted,
       data.privacyAccepted,
       nameBidxLiteral,
