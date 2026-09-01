@@ -227,12 +227,12 @@ export function AdminMapPage(): JSX.Element {
                 </div>
               </Field>
             )}
-            <div className="flex items-center justify-between gap-2" data-testid="map-center-label">
+            <div className="flex items-center justify-between gap-2" data-testid="map-center-label" data-clarity-mask="True">
               <Text as="div" size="xs" color="muted" className="truncate">
                 {t('admin.map.center.current', { defaultValue: 'Centro: {{label}}', label: centerLabel })}
               </Text>
               {!atCountryCenter && !atLastPatient && (
-                <button type="button" onClick={onBack} data-testid="map-center-back" className="inline-flex items-center gap-1 shrink-0 text-primary hover:underline">
+                <button type="button" onClick={onBack} data-testid="map-center-back" data-clarity-mask="True" className="inline-flex items-center gap-1 shrink-0 text-primary hover:underline">
                   <Undo2 size={13} />
                   <Text as="span" size="xs" color="inherit">
                     {lastPatient
@@ -315,7 +315,7 @@ export function AdminMapPage(): JSX.Element {
           </Text>
           </div>
 
-          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md max-h-[440px] overflow-y-auto" data-testid="map-list" onMouseLeave={() => setHoveredId(null)}>
+          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md max-h-[440px] overflow-y-auto" data-testid="map-list" data-clarity-mask="True" onMouseLeave={() => setHoveredId(null)}>
             {kind === 'workers'
               ? workers.points.map((p) => (
                 <li key={p.id} data-testid="map-list-item" data-point-id={p.id} data-has-coords={p.lat !== null} className={rowClass(p.id)} onMouseEnter={() => setHoveredId(p.id)} onClick={() => setSelectedId(p.id)}>
@@ -351,7 +351,12 @@ export function AdminMapPage(): JSX.Element {
           </ul>
         </aside>
 
-        <div className="flex flex-col gap-2 min-w-0">
+        {/* `data-clarity-mask` — o Clarity está VIVO em PRD (main.tsx) e o modo
+            Balanced mascara só número e e-mail: nome + estado de paciente iriam
+            para a gravação de sessão. O wrapper cobre o balão e o `title` dos
+            marcadores, que são DOM do Google e não dá para marcar de outro jeito
+            (lex 01/09, condição 1). */}
+        <div className="flex flex-col gap-2 min-w-0" data-clarity-mask="True">
           <PointsMap
             points={mapPoints}
             center={center}
