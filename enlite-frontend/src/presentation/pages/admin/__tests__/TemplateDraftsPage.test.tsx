@@ -135,6 +135,34 @@ describe('salvar', () => {
     });
   });
 
+  it('🔒 aviso de regra aparece DEPOIS de salvar, em âmbar, sem travar nada', async () => {
+    // AR-01: gravou sem cláusula de baja. Se este painel não existisse, a regra
+    // não teria por onde chegar — o backend só devolve aviso no 200/201, e a
+    // tela até 01/09 só olhava `problemas` dentro de um `catch`.
+    createDraft.mockResolvedValue({
+      draft: draft(),
+      avisos: [{ campo: 'body', regra: 'sem_clausula_de_baja', gravidade: 'aviso' as const }],
+    });
+    const u = userEvent.setup();
+    render(<TemplateDraftsPage />);
+    await preencher(u);
+    await u.click(screen.getByTestId('td-salvar'));
+    await waitFor(() => expect(screen.getByTestId('td-avisos').textContent)
+      .toContain('admin.templateDrafts.regra.body.sem_clausula_de_baja'));
+    // ...e o salvamento CONTINUA sendo um sucesso. Aviso não é recusa.
+    expect(screen.getByTestId('td-salvo')).toBeTruthy();
+    expect(screen.queryByTestId('td-problemas-body')).toBeNull();
+  });
+
+  it('sem aviso, o painel âmbar não existe — não é um cartaz permanente', async () => {
+    const u = userEvent.setup();
+    render(<TemplateDraftsPage />);
+    await preencher(u);
+    await u.click(screen.getByTestId('td-salvar'));
+    await waitFor(() => expect(screen.getByTestId('td-salvo')).toBeTruthy());
+    expect(screen.queryByTestId('td-avisos')).toBeNull();
+  });
+
   it('depois de salvar diz "guardado, ainda NÃO enviado" — nunca só "salvo"', async () => {
     const u = userEvent.setup();
     render(<TemplateDraftsPage />);
@@ -188,7 +216,7 @@ describe('salvar', () => {
 describe('quando o servidor recusa', () => {
   it('422 mostra a regra violada NO CAMPO, não como erro genérico', async () => {
     createDraft.mockRejectedValue(new DraftApiError('rejeitado', 422, null, [
-      { campo: 'body', regra: 'placeholder_no_fim' },
+      { campo: 'body', regra: 'placeholder_no_fim', gravidade: 'bloqueia' as const },
     ]));
     const u = userEvent.setup();
     render(<TemplateDraftsPage />);
@@ -202,8 +230,8 @@ describe('quando o servidor recusa', () => {
 
   it('vários problemas no corpo aparecem TODOS, não só o primeiro', async () => {
     createDraft.mockRejectedValue(new DraftApiError('rejeitado', 422, null, [
-      { campo: 'body', regra: 'placeholder_no_inicio' },
-      { campo: 'body', regra: 'placeholder_no_fim' },
+      { campo: 'body', regra: 'placeholder_no_inicio', gravidade: 'bloqueia' as const },
+      { campo: 'body', regra: 'placeholder_no_fim', gravidade: 'bloqueia' as const },
     ]));
     const u = userEvent.setup();
     render(<TemplateDraftsPage />);
@@ -400,7 +428,7 @@ describe('enviar para autorização — o ato irreversível', () => {
   });
 
   it('422 no envio fecha a confirmação e mostra a regra no campo', async () => {
-    submitDraft.mockRejectedValue(new DraftApiError('x', 422, null, [{ campo: 'body', regra: 'placeholder_posicional' }]));
+    submitDraft.mockRejectedValue(new DraftApiError('x', 422, null, [{ campo: 'body', regra: 'placeholder_posicional', gravidade: 'bloqueia' as const }]));
     const u = userEvent.setup();
     await abrirConfirmacao(u);
     await u.click(screen.getByTestId('td-confirmar-sim'));

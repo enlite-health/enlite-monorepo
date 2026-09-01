@@ -25,6 +25,7 @@ import {
   type TemplateDraft,
 } from '@infrastructure/http/AdminTemplateDraftsApiService';
 import { VARIAVEIS_AJUDA } from './templateDraftsView';
+import { TemplateDraftAvisos } from './TemplateDraftAvisos';
 import { TemplateDraftConfirmDialog } from './TemplateDraftConfirmDialog';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -59,6 +60,16 @@ export function TemplateDraftsPage(): JSX.Element {
   /** Mensagem literal vinda do servidor (500). Não é chave — não passa por `t`. */
   const [erroBruto, setErroBruto] = useState<string | null>(null);
   const [salvoKey, setSalvoKey] = useState<string | null>(null);
+  /**
+   * O que o backend gravou APESAR de. Vem no 200/201, nunca num erro.
+   *
+   * 🔒 Por que estado separado de `problemas`: os dois falam a mesma língua
+   * (`campo`+`regra`), mas significam o oposto. `problemas` é "não gravou, olha
+   * o que está errado"; `avisos` é "gravou, e mesmo assim isto aqui falta".
+   * Juntá-los num estado só faria a tela pintar de vermelho um salvamento que
+   * deu certo — e a pessoa passaria a ignorar o vermelho.
+   */
+  const [avisosSalvos, setAvisosSalvos] = useState<ProblemaDeRegra[]>([]);
   const [salvando, setSalvando] = useState(false);
   /** O rascunho aguardando confirmação de envio. `null` = nenhum diálogo aberto. */
   const [confirmando, setConfirmando] = useState<TemplateDraft | null>(null);
@@ -114,6 +125,7 @@ export function TemplateDraftsPage(): JSX.Element {
     setForm({ ...VAZIO });
     setEditando(null);
     setProblemas([]);
+    setAvisosSalvos([]);
     setErroKey(null);
   };
 
@@ -121,6 +133,7 @@ export function TemplateDraftsPage(): JSX.Element {
     setForm({ slug: d.slug, name: d.name, body: d.body, category: d.category, language: d.language });
     setEditando(d);
     setProblemas([]);
+    setAvisosSalvos([]);
     setErroKey(null);
     setSalvoKey(null);
   };
@@ -132,13 +145,15 @@ export function TemplateDraftsPage(): JSX.Element {
     setErroBruto(null);
     setSalvoKey(null);
     try {
-      if (editando) {
-        await AdminTemplateDraftsApiService.updateDraft(editando.id, { ...form, version: editando.version });
-      } else {
-        await AdminTemplateDraftsApiService.createDraft(form);
-      }
+      const r = editando
+        ? await AdminTemplateDraftsApiService.updateDraft(editando.id, { ...form, version: editando.version })
+        : await AdminTemplateDraftsApiService.createDraft(form);
       setSalvoKey('admin.templateDrafts.salvoNaoEnviado');
       limpar();
+      // DEPOIS do `limpar`, que zera os avisos: o rascunho foi gravado e estes
+      // avisos são sobre ELE. Zerar em seguida apagaria a única vez que a
+      // pessoa vai ver que a mensagem saiu sem caminho de saída.
+      setAvisosSalvos(r.avisos ?? []);
       await carregar();
     } catch (e: unknown) {
       if (e instanceof DraftApiError) {
@@ -230,6 +245,7 @@ export function TemplateDraftsPage(): JSX.Element {
         </Text>
       </div>
 
+      <TemplateDraftAvisos avisos={avisosSalvos} />
       {salvoKey && (
         <div className="mb-4 rounded border border-green-300 bg-green-50 p-3" data-testid="td-salvo">
           <Text size="sm" color="inherit" className="text-green-800">{t(salvoKey)}</Text>

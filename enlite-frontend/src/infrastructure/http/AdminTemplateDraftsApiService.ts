@@ -64,10 +64,18 @@ export interface DraftEntrada {
   language: string;
 }
 
-/** Uma regra de plataforma violada, como o backend a nomeia. */
+/**
+ * Uma regra de plataforma violada, como o backend a nomeia.
+ *
+ * `gravidade` é o que separa as duas coisas que chegam por aqui:
+ *   bloqueia → veio num 422, a gravação não aconteceu;
+ *   aviso    → veio num 200/201, JÁ gravou, e a tela mostra sem travar nada.
+ * Sem esse campo o aviso não teria por onde chegar — era travar ou sumir.
+ */
 export interface ProblemaDeRegra {
   campo: 'slug' | 'name' | 'body' | 'category' | 'language';
   regra: string;
+  gravidade: 'bloqueia' | 'aviso';
 }
 
 /**
@@ -124,12 +132,12 @@ export const AdminTemplateDraftsApiService = {
     return request<{ drafts: TemplateDraft[] }>('GET', '/api/admin/template-drafts');
   },
 
-  async createDraft(entrada: DraftEntrada): Promise<{ draft: TemplateDraft }> {
-    return request<{ draft: TemplateDraft }>('POST', '/api/admin/template-drafts', entrada);
+  async createDraft(entrada: DraftEntrada): Promise<{ draft: TemplateDraft; avisos?: ProblemaDeRegra[] }> {
+    return request<{ draft: TemplateDraft; avisos?: ProblemaDeRegra[] }>('POST', '/api/admin/template-drafts', entrada);
   },
 
-  async updateDraft(id: string, entrada: DraftEntrada & { version: number }): Promise<{ draft: TemplateDraft }> {
-    return request<{ draft: TemplateDraft }>('PUT', `/api/admin/template-drafts/${id}`, entrada);
+  async updateDraft(id: string, entrada: DraftEntrada & { version: number }): Promise<{ draft: TemplateDraft; avisos?: ProblemaDeRegra[] }> {
+    return request<{ draft: TemplateDraft; avisos?: ProblemaDeRegra[] }>('PUT', `/api/admin/template-drafts/${id}`, entrada);
   },
 
   async archiveDraft(id: string): Promise<void> {

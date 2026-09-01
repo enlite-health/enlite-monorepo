@@ -3625,7 +3625,12 @@
           "placeholder_no_fim": "A mensagem não pode terminar com uma variável.",
           "placeholders_adjacentes": "Duas variáveis não podem ficar coladas: precisa de texto entre elas.",
           "placeholder_posicional": "Use variáveis com nome ({{worker_name}}), não {{1}}: com número o sistema não sabe o que preencher.",
-          "variavel_desconhecida": "Essa variável não existe. Use uma das disponíveis."
+          "variavel_desconhecida": "Essa variável não existe. Use uma das disponíveis.",
+          "sem_clausula_de_baja": "Falta a cláusula de saída. É obrigatória na Argentina (Decreto 1558/2001, art. 27). Dá para seguir sem ela, mas fica registrado que faltava.",
+          "sem_caminho_de_saida": "Mensagem de difusão precisa dizer como parar de receber. A Meta recusa as que não dizem.",
+          "clausula_de_baja_nao_reconhecida": "A mensagem oferece uma saída, mas a palavra que ela manda responder não é uma que o sistema reconhece. Quem responder isso NÃO vai ser dado de baixa. Use uma destas: BAJA, PARAR, CANCELAR, SALIR, STOP.",
+          "variaveis_demais": "Mais de 10 variáveis. A Meta não aceita tantas.",
+          "variavel_com_simbolo": "A variável não pode ter #, $ nem %."
         }
       },
       "enviar": "Enviar para autorização",
@@ -3665,7 +3670,10 @@
         "PENDING": "Em revisão da Meta",
         "IN_APPEAL": "Em apelação"
       },
-      "voltarCatalogo": "← Voltar ao catálogo"
+      "voltarCatalogo": "← Voltar ao catálogo",
+      "avisos": {
+        "titulo": "Salvou, mas falta uma coisa:"
+      }
     }
   },
   "publicVacancy": {
