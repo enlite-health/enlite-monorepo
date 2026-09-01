@@ -15,6 +15,10 @@
 import { SUPPORTED_PLACEHOLDERS } from '../../application/StageTemplateEligibility';
 import {
   CATEGORIAS,
+  avisos,
+  bloqueios,
+  clausulaDeBaja,
+  LIMITE_VARIAVEIS,
   idiomaTwilio,
   IDIOMAS,
   LIMITE_CORPO,
@@ -36,6 +40,14 @@ const ok = {
 };
 
 const regras = (e: Partial<typeof ok>) => validarRascunho({ ...ok, ...e }).map((p) => p.regra);
+/**
+ * O que IMPEDE gravar. Desde 01/09 o retorno de `validarRascunho` mistura
+ * bloqueio e aviso: um `toEqual([])` cru passaria a reprovar todo caminho limpo
+ * em es-AR só por causa do aviso de AR-01, que é exatamente o que a regra quer
+ * que aconteça. "Limpo" passou a significar "nada trava", e o teste diz isso.
+ */
+const trava = (e: Partial<typeof ok>) => bloqueios(validarRascunho({ ...ok, ...e })).map((p) => p.regra);
+const alerta = (e: Partial<typeof ok>) => avisos(validarRascunho({ ...ok, ...e })).map((p) => p.regra);
 const campos = (e: Partial<typeof ok>) => validarRascunho({ ...ok, ...e }).map((p) => p.campo);
 
 describe('constantes', () => {
@@ -133,17 +145,22 @@ describe('slugComPrefixo', () => {
 });
 
 describe('validarRascunho — o caminho limpo', () => {
-  it('rascunho válido não devolve problema nenhum', () => {
-    expect(validarRascunho(ok)).toEqual([]);
+  it('rascunho válido não trava nada', () => {
+    expect(trava({})).toEqual([]);
   });
   it('texto sem variável é válido — nem toda mensagem tem uma', () => {
-    expect(validarRascunho({ ...ok, body: 'Hola, te esperamos.' })).toEqual([]);
+    expect(trava({ body: 'Hola, te esperamos.' })).toEqual([]);
   });
   it('exatamente no limite passa; o limite é teto, não parede um antes', () => {
-    expect(validarRascunho({ ...ok, body: 'a'.repeat(LIMITE_CORPO) })).toEqual([]);
+    expect(trava({ body: 'a'.repeat(LIMITE_CORPO) })).toEqual([]);
   });
   it('as três variáveis suportadas passam', () => {
-    expect(validarRascunho({ ...ok, body: 'Hola {{worker_name}}, alias {{name}}, del caso {{case_number}}, gracias.' })).toEqual([]);
+    expect(trava({ body: 'Hola {{worker_name}}, alias {{name}}, del caso {{case_number}}, gracias.' })).toEqual([]);
+  });
+  it('🔒 todo problema declara a gravidade — sem ela o controller não sabe o que travar', () => {
+    const todos = validarRascunho({ ...ok, body: '{{1}} texto', category: 'NADA' });
+    expect(todos.length).toBeGreaterThan(0);
+    expect(todos.every((p) => p.gravidade === 'bloqueia' || p.gravidade === 'aviso')).toBe(true);
   });
 });
 
@@ -169,7 +186,7 @@ describe('validarRascunho — identidade', () => {
 
 describe('validarRascunho — corpo', () => {
   it('corpo vazio reprova e ENCERRA — sem texto não há o que dizer das demais', () => {
-    expect(validarRascunho({ ...ok, body: '   ' })).toEqual([{ campo: 'body', regra: 'obrigatorio' }]);
+    expect(validarRascunho({ ...ok, body: '   ' })).toEqual([{ campo: 'body', regra: 'obrigatorio', gravidade: 'bloqueia' }]);
   });
   it('passar do limite reprova', () => {
     expect(regras({ body: 'a'.repeat(LIMITE_CORPO + 1) })).toContain('muito_longo');
@@ -207,5 +224,98 @@ describe('validarRascunho — corpo', () => {
     const p = validarRascunho({ slug: 'X!', name: '', body: '{{1}}', category: 'NOPE', language: 'de' });
     expect(new Set(p.map((x) => x.campo))).toEqual(new Set(['slug', 'name', 'body', 'category', 'language']));
     expect(p.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('META-02 — no máximo 10 variáveis', () => {
+  // O conjunto suportado tem 3 nomes; para passar de 10 DISTINTOS é preciso
+  // inventar nomes, que já reprovam por `variavel_desconhecida`. O que este
+  // teste protege é a contagem em si: ela é sobre DISTINTOS.
+  const onzeDistintos = 'Hola ' + Array.from({ length: 11 }, (_, i) => `{{v${i}}}`).join(' y ') + ' fin.';
+  const dezDistintos = 'Hola ' + Array.from({ length: 10 }, (_, i) => `{{v${i}}}`).join(' y ') + ' fin.';
+
+  it('onze distintas reprovam', () => {
+    expect(trava({ body: onzeDistintos })).toContain('variaveis_demais');
+  });
+  it('dez passam — o limite é teto', () => {
+    expect(trava({ body: dezDistintos })).not.toContain('variaveis_demais');
+    expect(LIMITE_VARIAVEIS).toBe(10);
+  });
+  it('🔒 conta DISTINTAS, não ocorrências — `paraTwilio` reusa o número na repetição', () => {
+    const repetida = 'Hola {{worker_name}}, ' + '{{worker_name}} '.repeat(20) + 'fin.';
+    expect(trava({ body: repetida })).not.toContain('variaveis_demais');
+  });
+});
+
+describe('META-05 — símbolo proibido dentro da variável', () => {
+  it.each(['#', '$', '%'])('`%s` na variável reprova', (simbolo) => {
+    expect(trava({ body: `Hola {{worker${simbolo}name}}, gracias.` })).toContain('variavel_com_simbolo');
+  });
+  it('🔒 e NÃO se disfarça de `variavel_desconhecida` — a pessoa trocaria o nome e erraria de novo', () => {
+    const rs = trava({ body: 'Hola {{worker#name}}, gracias.' });
+    expect(rs).toContain('variavel_com_simbolo');
+    expect(rs).not.toContain('variavel_desconhecida');
+  });
+  it('variável desconhecida SEM símbolo continua sendo desconhecida', () => {
+    expect(trava({ body: 'Hola {{apellido}}, gracias.' })).toContain('variavel_desconhecida');
+  });
+});
+
+describe('clausulaDeBaja — o detector', () => {
+  it('convite + termo que o inbound honra é cláusula de verdade', () => {
+    const c = clausulaDeBaja('Hola. Respondé BAJA para no recibir más mensajes.');
+    expect(c.tipo).toBe('reconhecida');
+  });
+  it('frase inequívoca também conta', () => {
+    expect(clausulaDeBaja('Escribí "darme de baja" cuando quieras.').tipo).toBe('reconhecida');
+  });
+  it('🔒 termo EXACT casa por PALAVRA — e é um caminho diferente do das frases', () => {
+    // «Respondé BAJA para no recibir más» casaria antes em OPT_OUT_CONTAINS
+    // ('no recibir mas') e nunca chegaria ao laço de EXACT. Sem uma frase curta
+    // como esta, a busca com fronteira de palavra fica sem teste — e foi o que
+    // a cobertura acusou: o `return termo` do laço EXACT, nunca alcançado.
+    expect(clausulaDeBaja('Hola. Respondé BAJA cuando quieras.')).toEqual({ tipo: 'reconhecida', termo: 'baja' });
+  });
+  it('sem convite nenhum é ausente', () => {
+    expect(clausulaDeBaja('Hola María, tu entrevista quedó confirmada.').tipo).toBe('ausente');
+  });
+  it('🔒 o termo sozinho NÃO é cláusula — "podés cancelar tu entrevista" não dá saída de nada', () => {
+    expect(clausulaDeBaja('Si no podés venir, podés cancelar tu entrevista.').tipo).toBe('ausente');
+  });
+  it('🔒 fronteira de palavra: "sacarte la duda" não vira `sacar`', () => {
+    expect(clausulaDeBaja('Respondé este mensaje para sacarte la duda.').tipo).toBe('nao_reconhecida');
+  });
+  it('🔒 O CASO QUE JUSTIFICA A FUNÇÃO: promete saída com palavra que o inbound NÃO honra', () => {
+    // Quem responder «NO MÁS» não é dado de baixa: o termo não está em
+    // OPT_OUT_EXACT nem em OPT_OUT_CONTAINS. A promessa falha em silêncio.
+    expect(clausulaDeBaja('Respondé NO MÁS para dejar de recibir esto.').tipo).toBe('nao_reconhecida');
+  });
+});
+
+describe('AR-01 e MKT-02 — avisam, nunca bloqueiam', () => {
+  const semSaida = 'Hola, te esperamos en la entrevista.';
+  const comSaida = 'Hola, te esperamos. Respondé BAJA para no recibir más mensajes.';
+
+  it('es-AR sem cláusula avisa AR-01', () => {
+    expect(alerta({ language: 'es-AR', category: 'UTILITY', body: semSaida })).toEqual(['sem_clausula_de_baja']);
+  });
+  it('🔒 e NÃO trava — a decisão é de quem escreve (emenda do Gabriel, 01/09)', () => {
+    expect(trava({ language: 'es-AR', category: 'UTILITY', body: semSaida })).toEqual([]);
+  });
+  it('pt-BR MARKETING sem cláusula avisa MKT-02', () => {
+    expect(alerta({ language: 'pt-BR', slug: 'br_x', category: 'MARKETING', body: semSaida })).toEqual(['sem_caminho_de_saida']);
+  });
+  it('pt-BR UTILITY não avisa nada — nem AR-01 nem MKT-02 se aplicam', () => {
+    expect(alerta({ language: 'pt-BR', slug: 'br_x', category: 'UTILITY', body: semSaida })).toEqual([]);
+  });
+  it('🔒 es-AR MARKETING dá UM aviso só — duas linhas sobre o mesmo texto faltando é ruído', () => {
+    expect(alerta({ language: 'es-AR', category: 'MARKETING', body: semSaida })).toEqual(['sem_clausula_de_baja']);
+  });
+  it('com cláusula reconhecida não avisa nada', () => {
+    expect(alerta({ language: 'es-AR', category: 'MARKETING', body: comSaida })).toEqual([]);
+  });
+  it('🔒 cláusula que promete saída inexistente tem chave PRÓPRIA — é pior que ausente', () => {
+    const body = 'Hola. Respondé NO MÁS para dejar de recibir esto.';
+    expect(alerta({ language: 'es-AR', body })).toEqual(['clausula_de_baja_nao_reconhecida']);
   });
 });

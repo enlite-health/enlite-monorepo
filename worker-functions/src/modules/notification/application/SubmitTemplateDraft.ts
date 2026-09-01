@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { TwilioContentWriter } from '../infrastructure/TwilioContentWriter';
-import { Idioma, idiomaTwilio, paraTwilio, validarRascunho, Problema } from '../domain/templateDraftRules';
+import { Idioma, bloqueios, idiomaTwilio, paraTwilio, validarRascunho, Problema } from '../domain/templateDraftRules';
 
 /**
  * SubmitTemplateDraft — o ato irreversível (spec 010, F2 passos 2.3 e 2.4).
@@ -73,7 +73,12 @@ export class SubmitTemplateDraft {
     const problemas = validarRascunho({
       slug: d.slug, name: d.name, body: d.body, category: d.category, language: d.language,
     });
-    if (problemas.length > 0) return { tipo: 'regras', problemas };
+    // 🔒 SÓ BLOQUEIO PARA A SUBMISSÃO. Aviso (AR-01/MKT-02) não trava: a decisão
+    // de mandar sem cláusula de baja é de quem escreve, e ela já foi tomada na
+    // tela — o `confirmado: true` do controller é o registro dessa escolha.
+    // Travar aqui contrariaria em silêncio o que a tela prometeu.
+    const impedem = bloqueios(problemas);
+    if (impedem.length > 0) return { tipo: 'regras', problemas: impedem };
 
     const indisponivel = this.writer.indisponivel;
     if (indisponivel) return { tipo: 'indisponivel', motivo: indisponivel };

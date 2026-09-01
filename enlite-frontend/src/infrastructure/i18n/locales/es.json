@@ -3704,7 +3704,12 @@
           "placeholder_no_fim": "El mensaje no puede terminar con una variable.",
           "placeholders_adjacentes": "Dos variables no pueden ir pegadas: tiene que haber texto entre ellas.",
           "placeholder_posicional": "Usá variables con nombre ({{worker_name}}), no {{1}}: con números el sistema no sabe qué poner.",
-          "variavel_desconhecida": "Esa variable no existe. Usá una de las disponibles."
+          "variavel_desconhecida": "Esa variable no existe. Usá una de las disponibles.",
+          "sem_clausula_de_baja": "Falta la cláusula de baja. Es obligatoria en Argentina (Decreto 1558/2001, art. 27). Podés seguir sin ella, pero quedará registrado que faltaba.",
+          "sem_caminho_de_saida": "Un mensaje de difusión tiene que decir cómo dejar de recibirlo. Meta rechaza los que no lo dicen.",
+          "clausula_de_baja_nao_reconhecida": "El mensaje ofrece una salida, pero la palabra que pide responder no es una que el sistema reconozca. Quien conteste eso NO va a ser dado de baja. Usá una de estas: BAJA, PARAR, CANCELAR, SALIR, STOP.",
+          "variaveis_demais": "Más de 10 variables. Meta no acepta tantas.",
+          "variavel_com_simbolo": "La variable no puede llevar #, $ ni %."
         }
       },
       "enviar": "Enviar a autorización",
@@ -3744,7 +3749,10 @@
         "PENDING": "En revisión de Meta",
         "IN_APPEAL": "En apelación"
       },
-      "voltarCatalogo": "← Volver al catálogo"
+      "voltarCatalogo": "← Volver al catálogo",
+      "avisos": {
+        "titulo": "Se guardó, pero falta algo:"
+      }
     }
   },
   "publicVacancy": {

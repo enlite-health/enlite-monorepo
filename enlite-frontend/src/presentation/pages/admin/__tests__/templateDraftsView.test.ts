@@ -69,9 +69,9 @@ describe('restante', () => {
 
 describe('chaveDeProblema', () => {
   it('prefixa por campo para que regras homônimas tenham textos diferentes', () => {
-    expect(chaveDeProblema({ campo: 'name', regra: 'obrigatorio' }))
+    expect(chaveDeProblema({ campo: 'name', regra: 'obrigatorio', gravidade: 'bloqueia' as const }))
       .toBe('admin.templateDrafts.regra.name.obrigatorio');
-    expect(chaveDeProblema({ campo: 'body', regra: 'obrigatorio' }))
+    expect(chaveDeProblema({ campo: 'body', regra: 'obrigatorio', gravidade: 'bloqueia' as const }))
       .toBe('admin.templateDrafts.regra.body.obrigatorio');
   });
 });
@@ -79,9 +79,9 @@ describe('chaveDeProblema', () => {
 describe('problemasPorCampo', () => {
   it('agrupa por campo preservando a ordem', () => {
     const r = problemasPorCampo([
-      { campo: 'body', regra: 'muito_longo' },
-      { campo: 'name', regra: 'obrigatorio' },
-      { campo: 'body', regra: 'placeholder_no_fim' },
+      { campo: 'body', regra: 'muito_longo', gravidade: 'bloqueia' as const },
+      { campo: 'name', regra: 'obrigatorio', gravidade: 'bloqueia' as const },
+      { campo: 'body', regra: 'placeholder_no_fim', gravidade: 'bloqueia' as const },
     ]);
     expect(r.body.map((p) => p.regra)).toEqual(['muito_longo', 'placeholder_no_fim']);
     expect(r.name).toHaveLength(1);

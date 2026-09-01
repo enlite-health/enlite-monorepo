@@ -7,6 +7,8 @@ import {
   CATEGORIAS,
   IDIOMAS,
   Idioma,
+  avisos,
+  bloqueios,
   slugComPrefixo,
   validarRascunho,
 } from '../../../notification/domain/templateDraftRules';
@@ -177,10 +179,11 @@ export class TemplateDraftsController {
     const entrada = { ...parsed.data, slug };
 
     const problemas = validarRascunho(entrada);
-    if (problemas.length > 0) {
+    if (bloqueios(problemas).length > 0) {
       res.status(422).json({ success: false, error: 'Draft rejected by platform rules', problemas });
       return;
     }
+    const avisosDaRegra = avisos(problemas);
 
     try {
       // Colisão com template VIVO é checada aqui e não por FK: a mensagem "já
@@ -203,7 +206,7 @@ export class TemplateDraftsController {
                      NULL::timestamptz AS meta_approval_checked_at`,
         [slug, entrada.name, entrada.body, entrada.category, entrada.language, actor],
       );
-      res.status(201).json({ success: true, data: { draft: paraApi(r.rows[0]) } });
+      res.status(201).json({ success: true, data: { draft: paraApi(r.rows[0]), avisos: avisosDaRegra } });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));
       // 23505 = unique_violation: outro rascunho vivo já usa o slug.
@@ -229,10 +232,11 @@ export class TemplateDraftsController {
     const entrada = { ...resto, slug };
 
     const problemas = validarRascunho(entrada);
-    if (problemas.length > 0) {
+    if (bloqueios(problemas).length > 0) {
       res.status(422).json({ success: false, error: 'Draft rejected by platform rules', problemas });
       return;
     }
+    const avisosDaRegra = avisos(problemas);
 
     try {
       const actor = actorDe(req);
@@ -272,7 +276,7 @@ export class TemplateDraftsController {
         return;
       }
 
-      res.status(200).json({ success: true, data: { draft: paraApi(r.rows[0]) } });
+      res.status(200).json({ success: true, data: { draft: paraApi(r.rows[0]), avisos: avisosDaRegra } });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));
       if ((error as { code?: string })?.code === '23505') {
