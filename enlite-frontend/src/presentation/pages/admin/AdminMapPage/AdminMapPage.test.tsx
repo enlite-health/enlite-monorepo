@@ -34,13 +34,15 @@ vi.mock('@hooks/admin/useMapPoints', () => ({
 // O mapa vira um botão que simula o clique do usuário e um marcador do selecionado
 const mapProps = vi.fn<[unknown], void>();
 vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
-  PointsMap: (props: { points: Array<{ id: string; title: string }>; center: { lat: number; lng: number }; radiusKm: number; onCenterChange: (c: { lat: number; lng: number }) => void; selectedId: string | null; onSelect: (id: string | null) => void; hoveredId: string | null; onHover: (id: string | null) => void }) => {
+  PointsMap: (props: { points: Array<{ id: string; title: string; lat: number | null; lng: number | null }>; center: { lat: number; lng: number }; radiusKm: number; onCenterChange: (c: { lat: number; lng: number }) => void; selectedId: string | null; onSelect: (id: string | null) => void; hoveredId: string | null; onHover: (id: string | null) => void; onCenterHere: (p: { id: string; lat: number | null; lng: number | null }) => void }) => {
     mapProps(props);
     return (
       <div data-testid="fake-map" data-center={`${props.center.lat},${props.center.lng}`} data-radius={props.radiusKm} data-selected={props.selectedId ?? ''} data-hovered={props.hoveredId ?? ''} data-points={props.points.map((p) => p.id).join(',')}>
         <button data-testid="fake-map-click" onClick={() => props.onCenterChange({ lat: -34.7, lng: -58.5 })}>click</button>
         <button data-testid="fake-map-select" onClick={() => props.onSelect(props.points[0]?.id ?? null)}>select</button>
         <button data-testid="fake-map-hover" onClick={() => props.onHover(props.points[1]?.id ?? null)}>hover</button>
+        <button data-testid="fake-map-center-here" onClick={() => props.onCenterHere(props.points[0] as never)}>centrar aqui</button>
+        <button data-testid="fake-map-center-here-sem-coord" onClick={() => props.onCenterHere({ id: 'z', lat: null, lng: null })}>sem coord</button>
       </div>
     );
   },
@@ -321,10 +323,44 @@ describe('AdminMapPage', () => {
     expect(screen.getByTestId('map-list')).toHaveAttribute('data-clarity-mask', 'True');
     // o rótulo do centro, que exibe o NOME do paciente escolhido
     expect(screen.getByTestId('map-center-label')).toHaveAttribute('data-clarity-mask', 'True');
+    // o seletor de paciente: as opções são "nome · bairro"
+    expect(screen.getByTestId('map-center-patient')).toHaveAttribute('data-clarity-mask', 'True');
     // o mapa: cobre o balão e o `title` dos marcadores, que são DOM do Google
     expect(screen.getByTestId('fake-map').closest('[data-clarity-mask="True"]')).not.toBeNull();
     // o aviso de quem não tem coordenada herda a máscara do mesmo wrapper
     fireEvent.click(screen.getAllByTestId('map-list-item')[1]);
     expect(screen.getByTestId('map-selected-no-location').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
+
+  it('"centrar aqui" do balão move o centro; ponto sem coordenada não move nada', () => {
+    setup();
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', `${CABA.lat},${CABA.lng}`);
+    fireEvent.click(screen.getByTestId('fake-map-center-here'));
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.6,-58.4');
+    expect(lastWorkersFilters()).toMatchObject({ center: { lat: -34.6, lng: -58.4 } });
+    // guarda: sem coordenada não há para onde ir
+    fireEvent.click(screen.getByTestId('fake-map-center-here-sem-coord'));
+    expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.6,-58.4');
+  });
+
+  it('enquanto uma busca NOVA está em voo, a lista diz que está buscando — na primeira carga, não', () => {
+    // `setup` monta uma árvore NOVA sem desmontar a anterior: sempre olhar a última.
+    const ultimaLista = () => last(screen.getAllByTestId('map-list')) as HTMLElement;
+
+    // primeira carga: sem resultado ainda, quem fala é o "Cargando…" do contador
+    setup({ ...okWorkers, isLoading: true, points: [] }, okPatients);
+    expect(screen.getByTestId('map-loading')).toBeInTheDocument();
+    expect(screen.queryAllByTestId('map-list-searching')).toHaveLength(0);
+
+    // busca nova com resultado antigo na tela: a lista inteira é marcada
+    setup({ ...okWorkers, isLoading: true }, okPatients);
+    expect(last(screen.getAllByTestId('map-list-searching'))).toHaveTextContent('Buscando…');
+    expect(ultimaLista().className).toContain('opacity-40');
+
+    // busca terminada: some, e a lista volta ao normal
+    setup(okWorkers, okPatients);
+    expect(screen.getAllByTestId('map-list-searching')).toHaveLength(1);
+    expect(ultimaLista().className).not.toContain('opacity-40');
+  });
+
 });

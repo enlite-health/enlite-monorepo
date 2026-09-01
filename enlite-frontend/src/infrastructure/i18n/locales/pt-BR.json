@@ -3433,6 +3433,8 @@
         "backToPatient": "Voltar para {{name}}",
         "backToInitial": "Voltar ao ponto inicial"
       },
+      "searching": "Buscando…",
+      "centerHere": "Centrar aqui",
       "viewWorker": "Ver perfil",
       "viewPatient": "Ver ficha",
       "closePopup": "Fechar",

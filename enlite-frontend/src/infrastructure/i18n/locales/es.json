@@ -3512,6 +3512,8 @@
         "backToPatient": "Volver a {{name}}",
         "backToInitial": "Volver al punto inicial"
       },
+      "searching": "Buscando…",
+      "centerHere": "Centrar aquí",
       "viewWorker": "Ver perfil",
       "viewPatient": "Ver ficha",
       "closePopup": "Cerrar",

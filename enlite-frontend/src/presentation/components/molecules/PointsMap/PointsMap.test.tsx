@@ -314,4 +314,41 @@ describe('PointsMap', () => {
     await act(async () => { rejectLoad(new Error('late')); await Promise.resolve(); });
     expect(maps).toHaveLength(0);
   });
+
+  it('o balão oferece "centrar aqui" — o clique que queria ser no mapa acerta uma pessoa', async () => {
+    const onCenterHere = vi.fn();
+    const pt = P('a', { title: 'Ana', details: 'AT', distance: '1 km', href: '/x/a' });
+    render(
+      <MemoryRouter>
+        <PointsMap points={[pt]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} selectedId="a" linkLabel="Ver perfil" centerHereLabel="Centrar aquí" onCenterHere={onCenterHere} placeholderText="x" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(infos[0].open).toHaveBeenCalled());
+    const node = infos[0].setContent.mock.calls[0][0] as HTMLElement;
+    await waitFor(() => expect(node.querySelector('[data-testid="points-map-info-center-here"]')).not.toBeNull());
+    const botao = node.querySelector('[data-testid="points-map-info-center-here"]') as HTMLButtonElement;
+    expect(botao.textContent).toContain('Centrar aquí');
+    act(() => botao.click());
+    expect(onCenterHere).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+  });
+
+  it('o ponto do centro PULSA quando o centro muda, e volta ao tamanho normal', async () => {
+    const { rerender } = renderMap();
+    await waitFor(() => expect(markers.length).toBeGreaterThan(0));
+    const centro = markers.find((m) => !m.opts.title) as FakeMarker;
+    expect((centro.opts.icon as { scale: number }).scale).toBe(7);
+
+    rerender(<PointsMap points={[P('a')]} center={{ lat: -34.7, lng: -58.5 }} radiusKm={5} onCenterChange={vi.fn()} placeholderText="x" />);
+    // pulso imediato: sem isto, a única coisa que se mexe na tela é um ponto de 7px
+    await waitFor(() => expect((last(centro.setIcon.mock.calls)?.[0] as { scale: number }).scale).toBe(13));
+    // e volta sozinho
+    await waitFor(() => expect((last(centro.setIcon.mock.calls)?.[0] as { scale: number }).scale).toBe(7), { timeout: 2000 });
+  });
+
+  it('desmontar no meio do pulso não deixa timer solto', async () => {
+    const { rerender, unmount } = renderMap();
+    await waitFor(() => expect(markers.length).toBeGreaterThan(0));
+    rerender(<PointsMap points={[P('a')]} center={{ lat: -34.7, lng: -58.5 }} radiusKm={5} onCenterChange={vi.fn()} placeholderText="x" />);
+    unmount();
+  });
 });
