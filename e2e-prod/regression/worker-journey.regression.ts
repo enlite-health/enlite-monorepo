@@ -40,14 +40,9 @@ import {
   newWorkerApiContext,
   deleteWorkerAuthAccount,
 } from '../src/support/workerApi';
-import {
-  readTinyDocumentPng,
-  uniqueArMobile,
-  buildCaregiverGeneralInfo,
-  buildServiceArea,
-  buildAvailability,
-  uploadWorkerDocument,
-} from '../src/support/workerRegistration';
+// A FATIA 2 não monta mais payload nem sobe documento por API — quem faz isso
+// agora é a TELA (workerRegistrationUi). Sobra só o gerador de telefone único.
+import { uniqueArMobile } from '../src/support/workerRegistration';
 import {
   registerWorkerViaUi,
   openWorkerProfile,
