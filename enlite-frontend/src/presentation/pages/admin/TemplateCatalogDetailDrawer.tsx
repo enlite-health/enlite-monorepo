@@ -140,12 +140,29 @@ export function TemplateCatalogDetailDrawer({
           ) : null}
         </Campo>
 
+        {/*
+          * 🔒 QUANDO A META NÃO EXPLICA, O CAMPO DIZ ISSO — antes ele SUMIA.
+          * `Campo` devolve null com valor vazio, então este bloco desaparecia
+          * inteiro e o produto ficava sem nenhum lugar dizendo que a Meta não
+          * mandou detalhe. Quem carregava essa informação era o rótulo da
+          * LISTA ("Formato inválido — Meta no dio más detalle"), onde ela era
+          * ruído: numa varredura interessa O QUE deu errado, não que não há
+          * mais o que dizer. Tirar de lá sem dar casa aqui apagaria o dado.
+          *
+          * E some a inconsistência: os vizinhos deste drawer já preenchem o
+          * vazio em vez de esconder — `tc-detalhe-sid` mostra "—",
+          * `tc-detalhe-verificado` mostra "nunca".
+          */}
         <Campo rotulo={t('admin.templateCatalog.metaDetail')}>
           {row.metaDetail ? (
             <Text as="span" size="sm" color="inherit">
               <span data-testid="tc-detalhe-explicacao">{row.metaDetail}</span>
             </Text>
-          ) : null}
+          ) : (
+            <Text as="span" size="sm" color="secondary">
+              <span data-testid="tc-detalhe-sem-explicacao">{t('admin.templateCatalog.metaSinDetalle')}</span>
+            </Text>
+          )}
         </Campo>
 
         {/* AS VARIÁVEIS — o motivo deste drawer existir. Aqui elas têm rótulo. */}

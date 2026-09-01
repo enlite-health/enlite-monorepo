@@ -3600,20 +3600,20 @@
         "ABUSIVE_CONTENT": "Contenido abusivo",
         "CATEGORY_NOT_AVAILABLE": "Categoría no disponible",
         "INCORRECT_CATEGORY": "Categoría incorrecta",
-        "INVALID_FORMAT": "Formato inválido — Meta no dio más detalle",
+        "INVALID_FORMAT": "Formato inválido",
         "NONE": "Sin motivo informado",
         "PROMOTIONAL": "Contenido promocional",
         "SCAM": "Detectada como estafa",
         "TAG_CONTENT_MISMATCH": "El idioma o la categoría no coinciden con el texto"
       },
       "ineligible": {
-        "generic": "No sirve para mensajes por etapa",
-        "CATEGORY": "No sirve para etapas: no es UTILITY",
-        "DENY_LIST": "No sirve para etapas: es un recordatorio",
-        "PLACEHOLDERS": "No sirve para etapas: usa datos que el sistema no completa",
-        "SLOT_MISMATCH": "No sirve para etapas: las variables no coinciden con el texto aprobado",
-        "INACTIVE": "Inactiva",
-        "OPT_OUT_CLAUSE": "Le falta la cláusula de baja"
+        "generic": "sin motivo específico",
+        "CATEGORY": "no es UTILITY",
+        "DENY_LIST": "es un recordatorio",
+        "PLACEHOLDERS": "usa datos que el sistema no completa",
+        "SLOT_MISMATCH": "las variables no coinciden con el texto aprobado",
+        "INACTIVE": "está inactiva",
+        "OPT_OUT_CLAUSE": "le falta la cláusula de baja"
       },
       "filter": {
         "all": "Todas",
@@ -3647,7 +3647,9 @@
       "criarVersaoEn": {
         "es-AR": "Crear versión en español",
         "pt-BR": "Crear versión en português"
-      }
+      },
+      "etapasCurto": "Etapas",
+      "metaSinDetalle": "Meta no dio más detalle"
     },
     "templateDrafts": {
       "title": "Registrar mensaje",

@@ -78,7 +78,7 @@ export function TemplateCatalogLanguageCell({
         <Text as="span" size="xs" weight="medium" color="inherit">{statusLabel(row.metaStatus)}</Text>
       </span>
       {row.metaReason && (
-        <span data-testid={`tc-reason-${row.slug}`} className="mt-0.5 block max-w-[13rem] truncate text-[#8E1230]">
+        <span data-testid={`tc-reason-${row.slug}`} className="mt-0.5 block max-w-[13rem] line-clamp-2 text-[#8E1230]">
           <Text as="span" size="xs" color="inherit">
             {t(`admin.templateCatalog.reason.${row.metaReason}`, row.metaReason)}
           </Text>
@@ -88,9 +88,20 @@ export function TemplateCatalogLanguageCell({
           template pode estar aprovado lá e não servir aqui — é o caso do
           posicional. O espanhol pode servir e o português não. */}
       {!row.eligible && (
-        <span data-testid={`tc-ineligible-${row.slug}`} className="mt-0.5 block max-w-[13rem] truncate text-[#8E1230]">
+        /*
+         * 🔒 "Etapas:" é o ENQUADRAMENTO, e ele vive aqui — não dentro da chave
+         * de i18n. As chaves guardavam "No sirve para etapas: usa datos que el
+         * sistema no completa" (58 caracteres), e os 21 primeiros eram idênticos
+         * em TODA linha da coluna: dizem o significado da coluna, não o da
+         * linha. Pior, no drawer eles apareciam de novo logo abaixo do rótulo
+         * "Por qué no sirve para etapas" — a mesma frase duas vezes na tela.
+         *
+         * Agora a chave guarda só o motivo e cada superfície põe o seu
+         * enquadramento: aqui um "Etapas:" curto, no drawer o rótulo do campo.
+         */
+        <span data-testid={`tc-ineligible-${row.slug}`} className="mt-0.5 block max-w-[13rem] line-clamp-2 text-[#8E1230]">
           <Text as="span" size="xs" color="inherit">
-            {t(`admin.templateCatalog.ineligible.${row.ineligibleReason}`, t('admin.templateCatalog.ineligible.generic'))}
+            {t('admin.templateCatalog.etapasCurto')}: {t(`admin.templateCatalog.ineligible.${row.ineligibleReason}`, t('admin.templateCatalog.ineligible.generic'))}
           </Text>
         </span>
       )}
