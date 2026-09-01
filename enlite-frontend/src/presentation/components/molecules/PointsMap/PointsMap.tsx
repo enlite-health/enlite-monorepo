@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ArrowRight, MapPin, X } from 'lucide-react';
+import { ArrowRight, Crosshair, MapPin, X } from 'lucide-react';
 import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
 import { Text } from '@presentation/components/atoms/Text';
 
@@ -56,12 +56,21 @@ export interface PointsMapProps {
   linkLabel?: string;
   /** Rótulo acessível do botão de fechar do balão. */
   closeLabel?: string;
+  /** Rótulo do "centrar aqui" do balão. Sem ele e sem `onCenterHere`, não aparece. */
+  centerHereLabel?: string;
+  /** Mover o centro do raio para o ponto do balão — com o mapa cheio de pinos,
+   *  o clique que queria ser "aqui" acerta uma pessoa; isto devolve a intenção. */
+  onCenterHere?: (point: MapPoint) => void;
   placeholderText: string;
   className?: string;
   height?: number;
 }
 
 export type MapStatus = 'loading' | 'ready' | 'unavailable';
+
+const CENTER_SCALE = 7;
+const CENTER_SCALE_PULSE = 13;
+const PULSE_MS = 320;
 
 /**
  * ⚠️ As flags do arco vão SEPARADAS (`0 1 1 0-5`), nunca na forma compacta
@@ -75,6 +84,11 @@ export type MapStatus = 'loading' | 'ready' | 'unavailable';
  */
 const PIN_PATH =
   'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z';
+
+/** Ponto do centro do raio. `scale` maior = pulso de confirmação do clique. */
+function centerIcon(scale: number): google.maps.Symbol {
+  return { path: google.maps.SymbolPath.CIRCLE, scale, fillColor: '#111827', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 };
+}
 
 function pinIcon(color: string, emphasized = false): google.maps.Symbol {
   return {
@@ -95,7 +109,7 @@ function pinIcon(color: string, emphasized = false): google.maps.Symbol {
  * `<a href>` cru, clicar no balão recarregava o SPA inteiro e o mapa voltava
  * ao ponto de partida — o oposto do que o balão existe para fazer.
  */
-function InfoCard({ point, linkLabel, closeLabel, onClose }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void }): JSX.Element {
+function InfoCard({ point, linkLabel, closeLabel, onClose, centerHereLabel, onCenterHere }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void; centerHereLabel?: string; onCenterHere?: () => void }): JSX.Element {
   return (
     <div className="points-map-info relative font-lexend min-w-[210px] max-w-[280px] p-3" data-testid="points-map-info-card">
       <button
@@ -114,12 +128,20 @@ function InfoCard({ point, linkLabel, closeLabel, onClose }: { point: MapPoint; 
       {point.details && (
         <Text as="div" size="xs" color="muted" className="mt-1 pr-6">{point.details}</Text>
       )}
-      {point.href && linkLabel && (
-        <Link to={point.href} className="inline-flex items-center gap-1 mt-2 text-primary hover:underline">
-          <Text as="span" size="xs" weight="medium" color="inherit">{linkLabel}</Text>
-          <ArrowRight size={12} />
-        </Link>
-      )}
+      <div className="flex items-center gap-3 mt-2">
+        {point.href && linkLabel && (
+          <Link to={point.href} className="inline-flex items-center gap-1 text-primary hover:underline">
+            <Text as="span" size="xs" weight="medium" color="inherit">{linkLabel}</Text>
+            <ArrowRight size={12} />
+          </Link>
+        )}
+        {onCenterHere && centerHereLabel && (
+          <button type="button" onClick={onCenterHere} data-testid="points-map-info-center-here" className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 hover:underline">
+            <Crosshair size={12} />
+            <Text as="span" size="xs" weight="medium" color="inherit">{centerHereLabel}</Text>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -135,6 +157,8 @@ export function PointsMap({
   onHover,
   linkLabel,
   closeLabel = 'Cerrar',
+  centerHereLabel,
+  onCenterHere,
   placeholderText,
   className = '',
   height = 560,
@@ -148,12 +172,15 @@ export function PointsMap({
   /** Nó estável para o React desenhar dentro do balão do Google. */
   const infoNodeRef = useRef<HTMLDivElement>(document.createElement('div'));
   const emphasizedRef = useRef<Set<string>>(new Set());
+  const pulseRef = useRef<number | null>(null);
   const onCenterChangeRef = useRef(onCenterChange);
   const onSelectRef = useRef(onSelect);
   const onHoverRef = useRef(onHover);
+  const onCenterHereRef = useRef(onCenterHere);
   onCenterChangeRef.current = onCenterChange;
   onSelectRef.current = onSelect;
   onHoverRef.current = onHover;
+  onCenterHereRef.current = onCenterHere;
   const [status, setStatus] = useState<MapStatus>('loading');
   // `ready` é o SDK; os tiles chegam depois — e é o que um print precisa esperar.
   const [tilesLoaded, setTilesLoaded] = useState(false);
@@ -197,20 +224,24 @@ export function PointsMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => () => { if (pulseRef.current !== null) window.clearTimeout(pulseRef.current); }, []);
+
   // 2. Centro + círculo do raio.
   useEffect(() => {
     const map = mapRef.current;
     if (status !== 'ready' || !map) return;
     map.panTo(center);
     if (!centerMarkerRef.current) {
-      centerMarkerRef.current = new google.maps.Marker({
-        map,
-        position: center,
-        zIndex: 1000,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#111827', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 },
-      });
+      centerMarkerRef.current = new google.maps.Marker({ map, position: center, zIndex: 1000, icon: centerIcon(CENTER_SCALE) });
     } else {
       centerMarkerRef.current.setPosition(center);
+      // Pulso de confirmação. Medido em 01/09: o clique é registrado em 7ms e a
+      // viewport muda aos 14ms — não há lentidão. O que faltava era a tela DIZER
+      // que entendeu: a única coisa que se movia era um ponto de 7px, enquanto a
+      // lista ao lado continuava idêntica até a resposta chegar.
+      centerMarkerRef.current.setIcon(centerIcon(CENTER_SCALE_PULSE));
+      if (pulseRef.current !== null) window.clearTimeout(pulseRef.current);
+      pulseRef.current = window.setTimeout(() => centerMarkerRef.current?.setIcon(centerIcon(CENTER_SCALE)), PULSE_MS);
     }
     if (radiusKm === null) {
       circleRef.current?.setMap(null);
@@ -324,7 +355,14 @@ export function PointsMap({
         data-tiles={tilesLoaded ? 'loaded' : 'pending'}
       />
       {selectedPoint && createPortal(
-        <InfoCard point={selectedPoint} linkLabel={linkLabel} closeLabel={closeLabel} onClose={() => onSelectRef.current?.(null)} />,
+        <InfoCard
+          point={selectedPoint}
+          linkLabel={linkLabel}
+          closeLabel={closeLabel}
+          onClose={() => onSelectRef.current?.(null)}
+          centerHereLabel={centerHereLabel}
+          onCenterHere={onCenterHere ? () => onCenterHereRef.current?.(selectedPoint) : undefined}
+        />,
         infoNodeRef.current,
       )}
       {status !== 'ready' && (

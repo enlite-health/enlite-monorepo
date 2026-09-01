@@ -29,7 +29,7 @@
 import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Undo2 } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -38,7 +38,7 @@ import { Select, type SelectOption } from '@presentation/components/atoms/Select
 import { Button } from '@presentation/components/atoms/Button';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { PointsMap, type MapPoint } from '@presentation/components/molecules/PointsMap/PointsMap';
-import { Field, Step } from './mapSidebar';
+import { CenterLabel, Field, Legend, NoLocationNotice, Searching, Step } from './mapSidebar';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
 import type { MapCountry, PatientsMapFilters, WorkersMapFilters } from '@infrastructure/http/AdminMapApiService';
 import { getCountryOptions } from '../patientsData';
@@ -123,6 +123,13 @@ export function AdminMapPage(): JSX.Element {
     }
   };
 
+  // "Centrar aquí" do balão: mesma coisa que clicar no mapa naquele ponto — com
+  // o mapa cheio de pinos, o clique que queria ser "aqui" acerta uma pessoa.
+  const onCenterHere = useCallback((p: MapPoint) => {
+    if (p.lat === null || p.lng === null) return;
+    onCenterChange({ lat: p.lat, lng: p.lng });
+  }, [onCenterChange]);
+
   const atCountryCenter = sameCenter(center, DEFAULT_CENTER_BY_COUNTRY[country]);
   const atLastPatient = !!lastPatient && sameCenter(center, { lat: lastPatient.lat, lng: lastPatient.lng });
   const centerLabel = atLastPatient && lastPatient
@@ -182,6 +189,10 @@ export function AdminMapPage(): JSX.Element {
   const tabClass = (k: Kind): string =>
     `px-4 py-2 rounded-t-md border-b-2 ${kind === k ? 'border-primary text-primary' : 'border-transparent text-gray-600 hover:text-gray-900'}`;
 
+  /** Já havia resultado na tela e uma busca nova está em voo. Na PRIMEIRA carga
+   *  não vale: ali o "Cargando…" do contador já é o único conteúdo. */
+  const buscandoDeNovo = active.isLoading && active.points.length > 0;
+
   const rowClass = (id: string): string =>
     `px-3 py-2 cursor-pointer ${selectedId === id ? 'bg-blue-50' : hoveredId === id ? 'bg-gray-100' : 'hover:bg-gray-50'}`;
 
@@ -227,21 +238,15 @@ export function AdminMapPage(): JSX.Element {
                 </div>
               </Field>
             )}
-            <div className="flex items-center justify-between gap-2" data-testid="map-center-label" data-clarity-mask="True">
-              <Text as="div" size="xs" color="muted" className="truncate">
-                {t('admin.map.center.current', { defaultValue: 'Centro: {{label}}', label: centerLabel })}
-              </Text>
-              {!atCountryCenter && !atLastPatient && (
-                <button type="button" onClick={onBack} data-testid="map-center-back" data-clarity-mask="True" className="inline-flex items-center gap-1 shrink-0 text-primary hover:underline">
-                  <Undo2 size={13} />
-                  <Text as="span" size="xs" color="inherit">
-                    {lastPatient
-                      ? t('admin.map.center.backToPatient', { defaultValue: 'Volver a {{name}}', name: lastPatient.label })
-                      : t('admin.map.center.backToInitial', 'Volver al punto inicial')}
-                  </Text>
-                </button>
-              )}
-            </div>
+            <CenterLabel
+              text={t('admin.map.center.current', { defaultValue: 'Centro: {{label}}', label: centerLabel })}
+              backLabel={!atCountryCenter && !atLastPatient
+                ? (lastPatient
+                  ? t('admin.map.center.backToPatient', { defaultValue: 'Volver a {{name}}', name: lastPatient.label })
+                  : t('admin.map.center.backToInitial', 'Volver al punto inicial'))
+                : undefined}
+              onBack={!atCountryCenter && !atLastPatient ? onBack : undefined}
+            />
             <Text as="div" size="xs" color="muted">
               {t('admin.map.centerHint', 'O hacé clic en el mapa para mover el centro del radio.')}
             </Text>
@@ -315,7 +320,11 @@ export function AdminMapPage(): JSX.Element {
           </Text>
           </div>
 
-          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md max-h-[440px] overflow-y-auto" data-testid="map-list" data-clarity-mask="True" onMouseLeave={() => setHoveredId(null)}>
+          {/* A lista é a maior massa visual da tela. Enquanto a busca não voltava
+              ela ficava IDÊNTICA, e só um texto pequeno virava "Cargando…" — daí
+              a leitura de que o clique não tinha feito nada. */}
+          <div className="relative">
+          <ul className={`divide-y divide-gray-100 border border-gray-200 rounded-md max-h-[440px] overflow-y-auto ${buscandoDeNovo ? 'opacity-40' : ''}`} data-testid="map-list" data-clarity-mask="True" onMouseLeave={() => setHoveredId(null)}>
             {kind === 'workers'
               ? workers.points.map((p) => (
                 <li key={p.id} data-testid="map-list-item" data-point-id={p.id} data-has-coords={p.lat !== null} className={rowClass(p.id)} onMouseEnter={() => setHoveredId(p.id)} onClick={() => setSelectedId(p.id)}>
@@ -349,6 +358,8 @@ export function AdminMapPage(): JSX.Element {
               <li className="px-3 py-4" data-testid="map-empty"><Text size="sm" color="secondary">{t('admin.map.empty', 'Nadie en este radio. Probá un radio mayor o mové el centro.')}</Text></li>
             )}
           </ul>
+          {buscandoDeNovo && <Searching label={t('admin.map.searching', 'Buscando…')} />}
+          </div>
         </aside>
 
         {/* `data-clarity-mask` — o Clarity está VIVO em PRD (main.tsx) e o modo
@@ -368,24 +379,14 @@ export function AdminMapPage(): JSX.Element {
             onHover={setHoveredId}
             linkLabel={kind === 'workers' ? t('admin.map.viewWorker', 'Ver perfil') : t('admin.map.viewPatient', 'Ver ficha')}
             closeLabel={t('admin.map.closePopup', 'Cerrar')}
+            centerHereLabel={t('admin.map.centerHere', 'Centrar aquí')}
+            onCenterHere={onCenterHere}
             placeholderText={t('admin.map.unavailable', 'El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.')}
           />
           {selectedWithoutLocation && (
-            <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2" data-testid="map-selected-no-location">
-              <Text as="div" size="xs" color="secondary">
-                {t('admin.map.selectedNoLocation', { defaultValue: '{{name}} no tiene ubicación registrada — no aparece en el mapa.', name: selectedWithoutLocation })}
-              </Text>
-            </div>
+            <NoLocationNotice text={t('admin.map.selectedNoLocation', { defaultValue: '{{name}} no tiene ubicación registrada — no aparece en el mapa.', name: selectedWithoutLocation })} />
           )}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1" data-testid="map-legend">
-            <Text as="span" size="xs" color="muted">{t('admin.map.legend', 'Referencias:')}</Text>
-            {legendEntries(t, kind).map((e) => (
-              <span key={e.color} className="inline-flex items-center gap-1.5">
-                <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: e.color }} />
-                <Text as="span" size="xs" color="muted">{e.label}</Text>
-              </span>
-            ))}
-          </div>
+          <Legend label={t('admin.map.legend', 'Referencias:')} entries={legendEntries(t, kind)} />
         </div>
       </div>
     </PageContainer>
