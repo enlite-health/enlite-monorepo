@@ -8,11 +8,13 @@ import { TemplateDraftsController } from '../controllers/TemplateDraftsControlle
  * Leitura: staff. Escrita: admin — precedente do parecer `lex` de 29/08,
  * condição C7 (quem configura ≠ quem dispara).
  *
- * 🔒 NÃO existe rota de submissão, e a ausência é deliberada: submeter à Meta é
- * ato para fora do perímetro (F2 2.4) e depende de parecer do `lex` que ainda
- * não foi emitido. O teste desta rota assere 404 em
- * `POST /template-drafts/:id/submit` para que a ausência seja VERIFICADA e não
- * apenas pretendida — do mesmo jeito que o catálogo trava a escrita.
+ * 🔒 REGISTRO: a rota `/submit` escreve para FORA do perímetro (cria Content na
+ * Twilio e submete à Meta) e o parecer do `lex` NÃO foi emitido. O Gabriel
+ * determinou construir assim em 31/08/2026. A rota sobe DESLIGADA por
+ * `TEMPLATE_SUBMISSION_ENABLED`, porque merge = deploy neste repo.
+ *
+ * ⚠️ `/submit` é a única rota irreversível do arquivo. Ela exige `confirmado:
+ * true` no corpo, e o teste trava isso — sem a confirmação, 400.
  */
 export function createTemplateDraftsRoutes(
   controller: TemplateDraftsController,
@@ -23,5 +25,7 @@ export function createTemplateDraftsRoutes(
   router.post('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.create(req, res));
   router.put('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.update(req, res));
   router.delete('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.archive(req, res));
+  router.post('/template-drafts/:id/submit', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.submit(req, res));
+  router.post('/template-drafts/:id/duplicate', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.duplicate(req, res));
   return router;
 }

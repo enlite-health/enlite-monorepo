@@ -38,17 +38,19 @@ describe('slugPrevisto', () => {
 });
 
 describe('previewDe', () => {
-  it('troca a variável por um exemplo legível em vez da chave crua', () => {
-    expect(previewDe('Hola {{1}}, el {{2}}')).toBe('Hola [valor 1], el [valor 2]');
+  it('troca a variável NOMEADA por um exemplo legível', () => {
+    expect(previewDe('Hola {{worker_name}}, caso {{case_number}}'))
+      .toBe('Hola [nombre], caso [nº de caso]');
   });
   it('usa o exemplo fornecido quando existe', () => {
-    expect(previewDe('Hola {{1}}', ['María'])).toBe('Hola María');
-  });
-  it('exemplo vazio cai no rótulo genérico, não some', () => {
-    expect(previewDe('Hola {{1}}', [''])).toBe('Hola [valor 1]');
+    expect(previewDe('Hola {{worker_name}}', { worker_name: 'María' })).toBe('Hola María');
   });
   it('tolera espaço dentro das chaves', () => {
-    expect(previewDe('Hola {{ 1 }}')).toBe('Hola [valor 1]');
+    expect(previewDe('Hola {{ worker_name }}')).toBe('Hola [nombre]');
+  });
+  it('🔒 token DESCONHECIDO fica CRU — a prévia não inventa valor para o que não será preenchido', () => {
+    expect(previewDe('Hola {{nao_existe}}')).toBe('Hola {{nao_existe}}');
+    expect(previewDe('Hola {{1}}')).toBe('Hola {{1}}');
   });
   it('texto sem variável passa intacto', () => {
     expect(previewDe('Hola a todos')).toBe('Hola a todos');

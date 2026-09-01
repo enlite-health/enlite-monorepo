@@ -2,10 +2,11 @@
  * O serviço de rascunho (spec 010, F2 2.1/2.2).
  *
  * O que estes testes travam:
- *  1. **A superfície é de 4 métodos.** Não há submissão — submeter sai do
- *     perímetro e depende do `lex`. Um quinto método reprova aqui.
- *  2. **O corpo do erro NÃO é descartado.** O 422 traz a lista de regras e o
- *     409 traz a versão atual; jogar fora deixaria a tela muda.
+ *  1. **`confirmado: true` viaja NO CORPO.** O servidor exige — a confirmação
+ *     não é só um diálogo na tela, e uma chamada direta sem ela é recusada.
+ *  2. **O corpo do erro NÃO é descartado.** O 422 traz a lista de regras, o 409
+ *     a versão atual e o 503 o MOTIVO (flag ou credencial); jogar fora deixaria
+ *     a tela muda justamente quando ela mais precisa explicar.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AdminTemplateDraftsApiService, DraftApiError } from '../AdminTemplateDraftsApiService';
@@ -29,9 +30,39 @@ const entrada = { slug: 'bienvenida', name: 'B', body: 'Hola {{1}} y chau', cate
 describe('AdminTemplateDraftsApiService', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('🔒 expõe exatamente 4 métodos — não existe submissão à Meta', () => {
+  it('a superfície é exatamente estes 6 métodos — nada a mais entra sem teste', () => {
     expect(Object.keys(AdminTemplateDraftsApiService).sort())
-      .toEqual(['archiveDraft', 'createDraft', 'listDrafts', 'updateDraft']);
+      .toEqual(['archiveDraft', 'createDraft', 'duplicateDraft', 'listDrafts', 'submitDraft', 'updateDraft']);
+  });
+
+  it('🔒 submitDraft manda `confirmado: true` NO CORPO — o servidor exige, não é só diálogo', async () => {
+    const f = mockFetch({ success: true, data: { submission: { contentSid: 'HXa', slug: 'ar_x' } } });
+    await AdminTemplateDraftsApiService.submitDraft('abc');
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/template-drafts/abc/submit');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ confirmado: true });
+  });
+
+  it('duplicateDraft → POST no /duplicate', async () => {
+    const f = mockFetch({ success: true, data: { draft: { id: 'novo' } } });
+    await AdminTemplateDraftsApiService.duplicateDraft('abc');
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/template-drafts/abc/duplicate');
+    expect(init.method).toBe('POST');
+  });
+
+  it('503 preserva o MOTIVO — a tela precisa dizer se é flag ou credencial', async () => {
+    mockFetch({ success: false, error: 'submissao_indisponivel', motivo: 'flag_desligada' }, 503);
+    const err = await AdminTemplateDraftsApiService.submitDraft('a').catch((e) => e);
+    expect(err.status).toBe(503);
+    expect(err.motivo).toBe('flag_desligada');
+  });
+
+  it('motivo ausente vira null, não undefined solto', async () => {
+    mockFetch({ success: false, error: 'x' }, 500);
+    const err = await AdminTemplateDraftsApiService.submitDraft('a').catch((e) => e);
+    expect(err.motivo).toBeNull();
   });
 
   it('listDrafts → GET, sem corpo', async () => {

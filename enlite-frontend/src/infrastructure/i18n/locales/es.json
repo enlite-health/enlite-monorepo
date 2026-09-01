@@ -3609,12 +3609,13 @@
         "min": "Verificado hace {{count}} min",
         "hour": "Verificado hace {{count}} h",
         "day": "Verificado hace {{count}} d"
-      }
+      },
+      "metaDetail": "Qué dijo Meta"
     },
     "templateDrafts": {
       "title": "Registrar mensaje",
       "subtitle": "Escribí el mensaje, mirá cómo lo recibe la cuidadora, y guardalo.",
-      "avisoNaoEnvia": "Lo que guardás acá queda guardado en Enlite. TODAVÍA NO se envía a Meta para autorización — ese paso todavía no existe en el producto.",
+      "avisoNaoEnvia": "Guardar NO envía nada. El envío a Meta es un paso aparte, con confirmación — y una vez enviado, el nombre queda ocupado para siempre.",
       "salvoNaoEnviado": "Guardado. Todavía NO enviado para autorización.",
       "listaTitulo": "Borradores guardados",
       "carregando": "Cargando…",
@@ -3671,11 +3672,41 @@
         "body": {
           "obrigatorio": "El mensaje es obligatorio.",
           "muito_longo": "El mensaje pasa de 1024 caracteres.",
-          "placeholder_numeracao": "Las variables tienen que ser {{1}}, {{2}}… sin saltos y empezando en 1.",
           "placeholder_no_inicio": "El mensaje no puede empezar con una variable.",
           "placeholder_no_fim": "El mensaje no puede terminar con una variable.",
-          "placeholders_adjacentes": "Dos variables no pueden ir pegadas: tiene que haber texto entre ellas."
+          "placeholders_adjacentes": "Dos variables no pueden ir pegadas: tiene que haber texto entre ellas.",
+          "placeholder_posicional": "Usá variables con nombre ({{worker_name}}), no {{1}}: con números el sistema no sabe qué poner.",
+          "variavel_desconhecida": "Esa variable no existe. Usá una de las disponibles."
         }
+      },
+      "enviar": "Enviar a autorización",
+      "enviado": "Enviado a Meta. Ahora esperá la autorización — vas a verla en Plantillas.",
+      "duplicar": "Duplicar y corregir",
+      "erroEnviar": "No pudimos enviar. Intentá de nuevo.",
+      "erroDuplicar": "No pudimos duplicar el borrador.",
+      "variaveisDisponiveis": "Variables disponibles: {{lista}}",
+      "ultimaFalha": "Último intento falló: {{erro}}",
+      "estado": {
+        "draft": "Borrador — todavía no enviado",
+        "submitted": "Enviado a Meta — esperando autorización"
+      },
+      "confirmar": {
+        "titulo": "¿Enviar «{{slug}}» a Meta?",
+        "nome": "El nombre queda ocupado en la cuenta de WhatsApp para siempre, aunque Meta rechace el mensaje.",
+        "edicao": "Después de enviar no vas a poder editarlo: solo duplicar y corregir.",
+        "prazo": "Meta puede tardar horas en responder, y la respuesta no depende de nosotros.",
+        "sim": "Sí, enviar a Meta",
+        "nao": "Cancelar"
+      },
+      "indisponivel": {
+        "flag_desligada": "El envío a Meta está desactivado en el servidor. Hay que activarlo antes de usar este botón.",
+        "sem_credencial": "Faltan las credenciales de Twilio en el servidor. Sin ellas no se puede enviar."
+      },
+      "envioErro": {
+        "ja_submetido": "Este mensaje ya fue enviado antes.",
+        "draft_nao_encontrado": "El borrador ya no existe.",
+        "twilio_falhou": "Twilio rechazó el envío. Mirá el detalle en el borrador.",
+        "ja_submetido_use_duplicar": "Ya fue enviado: duplicá y corregí en lugar de editar."
       }
     }
   },

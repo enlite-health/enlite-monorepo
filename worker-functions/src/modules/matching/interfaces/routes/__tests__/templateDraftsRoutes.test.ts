@@ -6,9 +6,10 @@
  * 1. **Escrita é `requireAdmin`, leitura é `requireStaff`.** Precedente do
  *    parecer `lex` de 29/08, condição C7 — quem configura ≠ quem dispara. Uma
  *    escrita que virasse staff passaria despercebida sem este teste.
- * 2. **A rota de SUBMISSÃO não existe.** Submeter à Meta é ato para fora do
- *    perímetro e depende de parecer do `lex` que ainda não foi emitido. O 404
- *    aqui é a prova de que a ausência é verificada, não apenas pretendida.
+ * 2. **`/submit` e `/duplicate` existem e são ADMIN.** A submissão escreve para
+ *    fora do perímetro; o parecer do `lex` NÃO foi emitido (decisão do Gabriel,
+ *    31/08/2026) e a rota sobe desligada por flag. Aqui travamos ao menos que
+ *    ela nunca fique atrás de `staff`.
  *
  * Molde: templateCatalogRoutes.test.ts.
  */
@@ -34,6 +35,8 @@ function makeApp(): { app: express.Express; calls: Record<string, jest.Mock> } {
     create: respond('create'),
     update: respond('update'),
     archive: respond('archive'),
+    submit: respond('submit'),
+    duplicate: respond('duplicate'),
   };
   const app = express();
   app.use(express.json());
@@ -76,15 +79,26 @@ describe('createTemplateDraftsRoutes', () => {
     expect(seen).toEqual(['admin DELETE /template-drafts/abc']);
   });
 
-  it('🔒 NÃO existe rota de submissão à Meta — 404, e isso é o portão do lex', async () => {
+  it('POST /template-drafts/:id/submit chama o submit, atrás de ADMIN', async () => {
+    const { app, calls } = makeApp();
+    const res = await request(app).post('/api/admin/template-drafts/abc/submit').send({ confirmado: true });
+    expect(res.status).toBe(200);
+    expect(calls.submit).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['admin POST /template-drafts/abc/submit']);
+  });
+
+  it('POST /template-drafts/:id/duplicate chama o duplicate, atrás de ADMIN', async () => {
+    const { app, calls } = makeApp();
+    const res = await request(app).post('/api/admin/template-drafts/abc/duplicate').send({});
+    expect(res.status).toBe(200);
+    expect(calls.duplicate).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['admin POST /template-drafts/abc/duplicate']);
+  });
+
+  it('🔒 a submissão NUNCA fica atrás de staff — é a rota irreversível', async () => {
     const { app } = makeApp();
-    for (const p of [
-      '/api/admin/template-drafts/abc/submit',
-      '/api/admin/template-drafts/abc/submeter',
-      '/api/admin/template-drafts/abc/publish',
-    ]) {
-      expect((await request(app).post(p).send({})).status).toBe(404);
-    }
+    await request(app).post('/api/admin/template-drafts/abc/submit').send({ confirmado: true });
+    expect(seen.filter((s) => s.startsWith('staff'))).toEqual([]);
   });
 
   it('🔒 nenhuma escrita passa por staff — só leitura é staff', async () => {
@@ -92,7 +106,9 @@ describe('createTemplateDraftsRoutes', () => {
     await request(app).post('/api/admin/template-drafts').send({});
     await request(app).put('/api/admin/template-drafts/a').send({});
     await request(app).delete('/api/admin/template-drafts/a');
+    await request(app).post('/api/admin/template-drafts/a/submit').send({ confirmado: true });
+    await request(app).post('/api/admin/template-drafts/a/duplicate').send({});
     expect(seen.filter((s) => s.startsWith('staff'))).toEqual([]);
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(5);
   });
 });

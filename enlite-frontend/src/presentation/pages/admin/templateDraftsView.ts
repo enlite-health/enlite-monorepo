@@ -14,6 +14,16 @@ import type { ProblemaDeRegra } from '@infrastructure/http/AdminTemplateDraftsAp
 export const LIMITE_CORPO = 1024;
 
 export const CATEGORIAS = ['MARKETING', 'UTILITY', 'AUTHENTICATION'] as const;
+
+/**
+ * As variáveis que a pessoa pode usar, para a tela LISTAR.
+ *
+ * ⚠️ Quem decide é o backend (`templateDraftRules`, que por sua vez importa de
+ * `StageTemplateEligibility`). Isto aqui é a mesma lista escrita para exibição —
+ * e o e2e sem mock compara as duas, para que uma divergência apareça como teste
+ * vermelho e não como variável recusada depois de a pessoa escrever o texto.
+ */
+export const VARIAVEIS_AJUDA = ['worker_name', 'name', 'case_number'] as const;
 export const IDIOMAS = ['es-AR', 'pt-BR'] as const;
 
 /** Prefixo que o backend vai aplicar. Espelhado aqui só para MOSTRAR o resultado antes de salvar. */
@@ -46,11 +56,15 @@ export function slugPrevisto(base: string, language: string): string {
  * Troca `{{1}}` por um exemplo visível em vez de deixar a chave crua: a pessoa
  * que escreve precisa enxergar o texto como ele chega, não o gabarito.
  */
-export function previewDe(body: string, exemplos: string[] = []): string {
-  return body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_todo, n: string) => {
-    const i = Number(n) - 1;
-    const v = exemplos[i];
-    return v && v.length > 0 ? v : `[valor ${n}]`;
+export function previewDe(body: string, exemplos: Record<string, string> = {}): string {
+  const padrao: Record<string, string> = {
+    worker_name: '[nombre]', name: '[nombre]', case_number: '[nº de caso]',
+  };
+  return body.replace(/\{\{\s*([^}]*?)\s*\}\}/g, (todo, nome: string) => {
+    const v = exemplos[nome] ?? padrao[nome];
+    // Token desconhecido fica CRU de propósito: a pessoa precisa ver que aquilo
+    // não vai ser preenchido, em vez de a pré-visualização inventar um valor.
+    return v ?? todo;
   });
 }
 

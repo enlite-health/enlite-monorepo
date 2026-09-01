@@ -13,9 +13,13 @@
  *   3. o índice parcial deixa reusar o slug de um rascunho ARQUIVADO;
  *   4. colisão com template VIVO é distinguida da colisão com outro rascunho;
  *   5. escrita exige admin; leitura basta staff;
- *   6. 🔒 NÃO existe rota de submissão — F2 2.3/2.4 dependem do `lex`.
+ *   6. 🔒 `/submit` existe e sobe DESLIGADA: sem `TEMPLATE_SUBMISSION_ENABLED`
+ *      ela devolve 503 com o motivo, e NADA sai para a rede.
  *
- * Nenhuma saída para a rede: rascunho é gravação interna, e só.
+ * ⚠️ Este e2e NÃO liga a flag e NÃO configura credencial da Twilio. É regra dura
+ * do projeto: teste nunca toca canal real. O que ele prova da submissão é que
+ * ela está travada e explica o porquê — o caminho feliz é coberto pelo unitário
+ * do caso de uso, com o writer dublado.
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
@@ -34,7 +38,7 @@ function mockToken(uid: string, role: string): string {
 const corpo = (over: Record<string, unknown> = {}) => ({
   slug: `${PREFIXO}bienvenida`,
   name: 'Bienvenida E2E',
-  body: 'Hola {{1}}, te esperamos el {{2}} en la entrevista.',
+  body: 'Hola {{worker_name}}, te esperamos para el caso {{case_number}}, gracias.',
   category: 'UTILITY',
   language: 'es-AR',
   ...over,
@@ -77,7 +81,7 @@ describe('Rascunho de mensagem (spec 010 F2 2.1/2.2) @integration', () => {
       [`ar_${PREFIXO}bienvenida`],
     );
     expect(q.rowCount).toBe(1);
-    expect(q.rows[0].body).toContain('{{1}}');
+    expect(q.rows[0].body).toContain('{{worker_name}}');
     expect(q.rows[0].created_by).toBe('td-admin-uid');
   });
 
@@ -165,7 +169,9 @@ describe('Rascunho de mensagem (spec 010 F2 2.1/2.2) @integration', () => {
     const r = await api.post('/api/admin/template-drafts', corpo({ body: '{{1}}{{2}}' }), asAdmin);
     expect(r.status).toBe(422);
     const regras = r.data.problemas.map((p: { regra: string }) => p.regra);
-    expect(regras).toEqual(expect.arrayContaining(['placeholder_no_inicio', 'placeholder_no_fim', 'placeholders_adjacentes']));
+    expect(regras).toEqual(expect.arrayContaining([
+      'placeholder_posicional', 'placeholder_no_inicio', 'placeholder_no_fim', 'placeholders_adjacentes',
+    ]));
 
     const q = await pool.query(`SELECT 1 FROM message_template_drafts WHERE slug LIKE $1`, [`%${PREFIXO}%`]);
     expect(q.rowCount).toBe(0);
@@ -186,12 +192,53 @@ describe('Rascunho de mensagem (spec 010 F2 2.1/2.2) @integration', () => {
     expect((await api.post('/api/admin/template-drafts', corpo())).status).toBe(401);
   });
 
-  it('🔒 NÃO existe rota de submissão à Meta — o portão do lex, verificado', async () => {
+  it('🔒 submit SEM confirmação é 400 — e nada é submetido', async () => {
     const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
     const id = criado.data.data.draft.id;
-    for (const p of ['submit', 'submeter', 'publish', 'enviar']) {
-      const r = await api.post(`/api/admin/template-drafts/${id}/${p}`, {}, asAdmin);
-      expect(r.status).toBe(404);
-    }
+    const r = await api.post(`/api/admin/template-drafts/${id}/submit`, {}, asAdmin);
+    expect(r.status).toBe(400);
+    expect(r.data.error).toBe('confirmacao_obrigatoria');
+
+    const q = await pool.query(`SELECT content_sid FROM message_template_drafts WHERE id = $1`, [id]);
+    expect(q.rows[0].content_sid).toBeNull();
+  });
+
+  it('🔒 com confirmação mas DESLIGADO: 503 com o motivo, e NADA sai para a rede', async () => {
+    const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
+    const id = criado.data.data.draft.id;
+    const r = await api.post(`/api/admin/template-drafts/${id}/submit`, { confirmado: true }, asAdmin);
+
+    // 503 e não 500: desligado é estado configurado, não defeito.
+    expect(r.status).toBe(503);
+    expect(r.data.error).toBe('submissao_indisponivel');
+    expect(['flag_desligada', 'sem_credencial']).toContain(r.data.motivo);
+
+    // A prova de que nada saiu: o rascunho continua sem SID e sem marca de envio.
+    const q = await pool.query(
+      `SELECT content_sid, submitted_at FROM message_template_drafts WHERE id = $1`, [id],
+    );
+    expect(q.rows[0].content_sid).toBeNull();
+    expect(q.rows[0].submitted_at).toBeNull();
+  });
+
+  it('duplicar gera slug livre e o clone nasce como RASCUNHO', async () => {
+    const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
+    const id = criado.data.data.draft.id;
+    const r = await api.post(`/api/admin/template-drafts/${id}/duplicate`, {}, asAdmin);
+    expect(r.status).toBe(201);
+    expect(r.data.data.draft.slug).toBe(`ar_${PREFIXO}bienvenida_v2`);
+    expect(r.data.data.draft.contentSid).toBeNull();
+    expect(r.data.data.draft.status).toBe('draft');
+
+    // Duplicar de novo não colide: pula para o v3.
+    const outra = await api.post(`/api/admin/template-drafts/${id}/duplicate`, {}, asAdmin);
+    expect(outra.data.data.draft.slug).toBe(`ar_${PREFIXO}bienvenida_v3`);
+  });
+
+  it('escrita de submit e duplicate também exige admin', async () => {
+    const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
+    const id = criado.data.data.draft.id;
+    expect((await api.post(`/api/admin/template-drafts/${id}/submit`, { confirmado: true }, asRecruiter)).status).toBe(403);
+    expect((await api.post(`/api/admin/template-drafts/${id}/duplicate`, {}, asRecruiter)).status).toBe(403);
   });
 });

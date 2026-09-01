@@ -239,6 +239,18 @@ export function TemplateCatalogPage(): JSX.Element {
                         </Text>
                       </span>
                     )}
+                    {/* A explicação em PROSA da Meta. Era buscada, gravada e
+                        devolvida pela API — e não aparecia na tela. O código
+                        seco (`INVALID_FORMAT`) é justamente o que a doc da
+                        Twilio diz chegar "without explaining details"; ir
+                        buscar na Meta só valeu a pena por causa DESTE campo. */}
+                    {r.metaDetail && (
+                      <span data-testid={`tc-detail-${r.slug}`} className="mt-0.5 block text-[#8E1230]">
+                        <Text as="span" size="xs" color="inherit">
+                          {t('admin.templateCatalog.metaDetail')}: {r.metaDetail}
+                        </Text>
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
                     {r.usedInStages.length === 0 ? (

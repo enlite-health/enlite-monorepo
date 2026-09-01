@@ -3,12 +3,17 @@
  *
  * A pessoa escreve, vê como a cuidadora vai receber, e salva. Ponto.
  *
- * 🔒 O que esta tela NÃO tem, e a ausência é deliberada: botão de enviar para
- * autorização da Meta. Submeter sai do nosso perímetro e depende de parecer do
- * `lex`, que ainda não foi emitido. Por isso a tela diz, com todas as letras,
- * "guardado — ainda NÃO enviado para autorização": a diferença entre salvo e
- * submetido é exatamente o que a pessoa não consegue ver sozinha, e deixá-la
- * supor que salvou = enviou seria o pior desfecho possível.
+ * 🔒 REGISTRO: o botão "enviar para autorização" escreve para FORA do perímetro
+ * e o parecer do `lex` NÃO foi emitido — o Gabriel determinou construir assim em
+ * 31/08/2026. A submissão sobe DESLIGADA por flag no servidor; sem ela a tela
+ * recebe 503 e diz o motivo, em vez de fingir que enviou.
+ *
+ * ⚠️ Enviar é IRREVERSÍVEL: o nome do template fica queimado na WABA mesmo se a
+ * Meta recusar. Por isso o botão abre uma confirmação que ENUMERA o que se torna
+ * irreversível, e só o "sim" dela dispara — critério da própria spec.
+ *
+ * Depois de enviado, editar deixa de existir: a tela oferece "duplicar e
+ * corrigir", porque o texto que foi para a Meta não pode ser reescrito por baixo.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +23,8 @@ import {
   type ProblemaDeRegra,
   type TemplateDraft,
 } from '@infrastructure/http/AdminTemplateDraftsApiService';
+import { VARIAVEIS_AJUDA } from './templateDraftsView';
+import { TemplateDraftConfirmDialog } from './TemplateDraftConfirmDialog';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
@@ -52,6 +59,9 @@ export function TemplateDraftsPage(): JSX.Element {
   const [erroBruto, setErroBruto] = useState<string | null>(null);
   const [salvoKey, setSalvoKey] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  /** O rascunho aguardando confirmação de envio. `null` = nenhum diálogo aberto. */
+  const [confirmando, setConfirmando] = useState<TemplateDraft | null>(null);
+  const [enviando, setEnviando] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
@@ -146,6 +156,48 @@ export function TemplateDraftsPage(): JSX.Element {
       }
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const enviar = async (d: TemplateDraft): Promise<void> => {
+    setEnviando(true);
+    setErroKey(null);
+    setErroBruto(null);
+    setSalvoKey(null);
+    try {
+      await AdminTemplateDraftsApiService.submitDraft(d.id);
+      setSalvoKey('admin.templateDrafts.enviado');
+      setConfirmando(null);
+      await carregar();
+    } catch (e: unknown) {
+      if (e instanceof DraftApiError) {
+        if (e.status === 503) {
+          // 503 não é "deu erro": é "está desligado", e a pessoa precisa saber
+          // qual dos dois motivos para saber a quem pedir.
+          setErroKey(`admin.templateDrafts.indisponivel.${e.motivo}`);
+        } else if (e.problemas.length > 0) {
+          setProblemas(e.problemas);
+          setConfirmando(null);
+        } else if (e.codigo) {
+          setErroKey(`admin.templateDrafts.envioErro.${e.codigo}`);
+        } else {
+          setErroBruto(e.message);
+        }
+      } else {
+        setErroKey('admin.templateDrafts.erroEnviar');
+      }
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const duplicar = async (d: TemplateDraft): Promise<void> => {
+    try {
+      const r = await AdminTemplateDraftsApiService.duplicateDraft(d.id);
+      await carregar();
+      editar(r.draft);
+    } catch {
+      setErroKey('admin.templateDrafts.erroDuplicar');
     }
   };
 
@@ -247,6 +299,11 @@ export function TemplateDraftsPage(): JSX.Element {
             <span data-testid="td-restante">{t('admin.templateDrafts.restante', { n: sobra })}</span>
           </Text>
           {motivos('body')}
+          <Text size="xs" color="secondary">
+            <span data-testid="td-variaveis-ajuda">
+              {t('admin.templateDrafts.variaveisDisponiveis', { lista: VARIAVEIS_AJUDA.map((v) => `{{${v}}}`).join(', ') })}
+            </span>
+          </Text>
         </div>
 
         <div className="md:col-span-2">
@@ -268,6 +325,15 @@ export function TemplateDraftsPage(): JSX.Element {
         </div>
       </div>
 
+      {confirmando && (
+        <TemplateDraftConfirmDialog
+          slug={confirmando.slug}
+          enviando={enviando}
+          onConfirmar={() => void enviar(confirmando)}
+          onCancelar={() => setConfirmando(null)}
+        />
+      )}
+
       <Heading level={2}>{t('admin.templateDrafts.listaTitulo')}</Heading>
       {drafts === null ? (
         <Text size="sm" color="secondary"><span data-testid="td-carregando">{t('admin.templateDrafts.carregando')}</span></Text>
@@ -280,11 +346,38 @@ export function TemplateDraftsPage(): JSX.Element {
               <div className="min-w-0">
                 <Text size="sm" color="inherit">{d.name}</Text>
                 <Text size="xs" color="secondary">{d.slug} · {d.language} · {d.category}</Text>
+                <Text size="xs" color="secondary">
+                  <span data-testid={`td-estado-${d.slug}`}>
+                    {d.status === 'submitted'
+                      ? t('admin.templateDrafts.estado.submitted')
+                      : t('admin.templateDrafts.estado.draft')}
+                  </span>
+                </Text>
+                {d.submissionError && (
+                  <Text size="xs" color="inherit" className="text-red-700">
+                    <span data-testid={`td-falha-${d.slug}`}>
+                      {t('admin.templateDrafts.ultimaFalha', { erro: d.submissionError })}
+                    </span>
+                  </Text>
+                )}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="outline" data-testid={`td-editar-${d.slug}`} onClick={() => editar(d)}>
-                  {t('admin.templateDrafts.editar')}
-                </Button>
+                {d.status === 'submitted' ? (
+                  // Submetido não se edita: o texto foi para a Meta e reescrevê-lo
+                  // por baixo faria o banco discordar do que está lá fora.
+                  <Button size="sm" variant="outline" data-testid={`td-duplicar-${d.slug}`} onClick={() => void duplicar(d)}>
+                    {t('admin.templateDrafts.duplicar')}
+                  </Button>
+                ) : (
+                  <>
+                    <Button size="sm" variant="outline" data-testid={`td-editar-${d.slug}`} onClick={() => editar(d)}>
+                      {t('admin.templateDrafts.editar')}
+                    </Button>
+                    <Button size="sm" data-testid={`td-enviar-${d.slug}`} onClick={() => setConfirmando(d)}>
+                      {t('admin.templateDrafts.enviar')}
+                    </Button>
+                  </>
+                )}
                 <Button size="sm" variant="outline" data-testid={`td-arquivar-${d.slug}`} onClick={() => void arquivar(d)}>
                   {t('admin.templateDrafts.arquivar')}
                 </Button>

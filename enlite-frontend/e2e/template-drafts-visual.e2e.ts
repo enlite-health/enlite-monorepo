@@ -13,12 +13,13 @@
  *   `npx playwright test --config=playwright.mocked.config.ts e2e/template-drafts-visual.e2e.ts`
  *
  * O que este arquivo fotografa, em ordem de importância:
- *   1. o AVISO de que salvar NÃO envia para a Meta — o mal-entendido mais caro
- *      possível aqui é a pessoa achar que submeteu e esperar autorização;
- *   2. a ausência de qualquer botão de submeter (o portão do `lex`);
- *   3. a mensagem de regra violada VISÍVEL abaixo do campo — os atoms Input e
+ *   1. a CONFIRMAÇÃO que enumera o que se torna irreversível — a spec pede isso
+ *      com todas as letras, e um "tem certeza?" cumpriria a forma sem a
+ *      substância;
+ *   2. a mensagem de regra violada VISÍVEL abaixo do campo — os atoms Input e
  *      Textarea usam `error` só para a borda, e sem o texto a pessoa via
- *      vermelho sem motivo. Este é o defeito que o teste unitário achou.
+ *      vermelho sem motivo. Este é o defeito que o teste unitário achou;
+ *   3. o estado SUBMETIDO, onde editar deixa de existir e sobra duplicar.
  *
  * ⚠️ Tolerância em `maxDiffPixels`, não em `maxDiffPixelRatio`: com ratio numa
  * página de 1440x900 uma LINHA DE TEXTO inteira cabe na margem, e foi assim que
@@ -33,7 +34,7 @@ const RASCUNHO = {
   id: '11111111-1111-4111-8111-111111111111',
   slug: 'ar_bienvenida_nueva',
   name: 'Bienvenida nueva',
-  body: 'Hola {{1}}, te esperamos el {{2}} en la entrevista.',
+  body: 'Hola {{worker_name}}, te esperamos para el caso {{case_number}}, gracias.',
   category: 'UTILITY',
   language: 'es-AR',
   version: 3,
@@ -82,16 +83,12 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
     await page.goto('/admin/plantillas/registrar');
     await expect(page.getByTestId('td-form')).toBeVisible({ timeout: 30_000 });
 
-    // 1. O aviso de perímetro está VISÍVEL, não escondido num tooltip.
+    // O aviso de perímetro está VISÍVEL, não escondido num tooltip.
     await expect(page.getByTestId('td-aviso-perimetro')).toBeVisible();
-    await expect(page.getByTestId('td-aviso-perimetro')).toContainText(/TODAVÍA NO se envía a Meta/i);
 
-    // 2. 🔒 Não existe botão de submeter — o portão do `lex`, fotografado.
-    const rotulos = await page.getByRole('button').allTextContents();
-    expect(rotulos.some((r) => /enviar|submit|publicar|autoriza/i.test(r))).toBe(false);
-
-    // 3. O rascunho salvo aparece na lista.
+    // O rascunho salvo aparece, com o estado dito por extenso.
     await expect(page.getByTestId('td-item-ar_bienvenida_nueva')).toBeVisible();
+    await expect(page.getByTestId('td-estado-ar_bienvenida_nueva')).toContainText(/todavía no enviado/i);
 
     await expect(page).toHaveScreenshot('template-drafts-lista.png', { maxDiffPixels: 120 });
   });
@@ -106,14 +103,52 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
 
     await page.getByTestId('td-input-name').fill('Bienvenida nueva');
     await page.getByTestId('td-input-slug').fill('bienvenida nueva');
-    await page.getByTestId('td-input-body').fill('Hola {{1}}, te esperamos el {{2}} en la entrevista.');
+    await page.getByTestId('td-input-body').fill('Hola {{worker_name}}, te esperamos para el caso {{case_number}}, gracias.');
 
     // O nome final aparece ANTES de gravar — ninguém descobre o slug depois.
     await expect(page.getByTestId('td-slug-previsto')).toContainText('ar_bienvenida_nueva');
     // A variável vira exemplo legível, não chave crua.
-    await expect(page.getByTestId('td-preview')).toContainText('[valor 1]');
+    await expect(page.getByTestId('td-preview')).toContainText('[nombre]');
+    // E a tela LISTA as variáveis: ninguém precisa adivinhar quais existem.
+    await expect(page.getByTestId('td-variaveis-ajuda')).toContainText('worker_name');
 
     await expect(page).toHaveScreenshot('template-drafts-escrevendo.png', { maxDiffPixels: 120 });
+  });
+
+  test('a confirmação ENUMERA o que se torna irreversível', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.route('**/api/admin/template-drafts', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { drafts: [RASCUNHO] } }) }));
+
+    await page.goto('/admin/plantillas/registrar');
+    await expect(page.getByTestId('td-form')).toBeVisible({ timeout: 30_000 });
+
+    await page.getByTestId('td-enviar-ar_bienvenida_nueva').click();
+
+    // Três consequências, ditas em português claro — não "tem certeza?".
+    await expect(page.getByTestId('td-confirmar')).toBeVisible();
+    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/nombre queda ocupado/i);
+    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/no vas a poder editarlo/i);
+    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/puede tardar horas/i);
+
+    await expect(page).toHaveScreenshot('template-drafts-confirmar.png', { maxDiffPixels: 120 });
+  });
+
+  test('submetido: editar some, sobra duplicar', async ({ page }) => {
+    await loginAsAdmin(page);
+    const submetido = { ...RASCUNHO, contentSid: 'HXja', submittedAt: '2026-08-31T20:00:00Z', status: 'submitted' };
+    await page.route('**/api/admin/template-drafts', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { drafts: [submetido] } }) }));
+
+    await page.goto('/admin/plantillas/registrar');
+    await expect(page.getByTestId('td-item-ar_bienvenida_nueva')).toBeVisible({ timeout: 30_000 });
+
+    await expect(page.getByTestId('td-duplicar-ar_bienvenida_nueva')).toBeVisible();
+    await expect(page.getByTestId('td-editar-ar_bienvenida_nueva')).toHaveCount(0);
+    await expect(page.getByTestId('td-enviar-ar_bienvenida_nueva')).toHaveCount(0);
+    await expect(page.getByTestId('td-estado-ar_bienvenida_nueva')).toContainText(/esperando autorización/i);
+
+    await expect(page).toHaveScreenshot('template-drafts-submetido.png', { maxDiffPixels: 120 });
   });
 
   test('regra violada aparece com TEXTO abaixo do campo, não só borda vermelha', async ({ page }) => {
@@ -125,7 +160,7 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
           body: JSON.stringify({
             success: false, error: 'Draft rejected by platform rules',
             problemas: [
-              { campo: 'body', regra: 'placeholder_no_inicio' },
+              { campo: 'body', regra: 'placeholder_posicional' },
               { campo: 'body', regra: 'placeholders_adjacentes' },
             ],
           }),
@@ -145,7 +180,7 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
 
     // O TEXTO do motivo, não só a borda: era exatamente isto que faltava.
     await expect(page.getByTestId('td-problemas-body')).toBeVisible();
-    await expect(page.getByTestId('td-problemas-body')).toContainText(/no puede empezar con una variable/i);
+    await expect(page.getByTestId('td-problemas-body')).toContainText(/variables con nombre/i);
     await expect(page.getByTestId('td-problemas-body')).toContainText(/no pueden ir pegadas/i);
 
     await expect(page).toHaveScreenshot('template-drafts-regra-violada.png', { maxDiffPixels: 120 });

@@ -21,6 +21,8 @@ const listDrafts = vi.fn();
 const createDraft = vi.fn();
 const updateDraft = vi.fn();
 const archiveDraft = vi.fn();
+const submitDraft = vi.fn();
+const duplicateDraft = vi.fn();
 
 vi.mock('@infrastructure/http/AdminTemplateDraftsApiService', async (orig) => {
   const real = await orig<typeof import('@infrastructure/http/AdminTemplateDraftsApiService')>();
@@ -31,6 +33,8 @@ vi.mock('@infrastructure/http/AdminTemplateDraftsApiService', async (orig) => {
       createDraft: (...a: unknown[]) => createDraft(...a),
       updateDraft: (...a: unknown[]) => updateDraft(...a),
       archiveDraft: (...a: unknown[]) => archiveDraft(...a),
+      submitDraft: (...a: unknown[]) => submitDraft(...a),
+      duplicateDraft: (...a: unknown[]) => duplicateDraft(...a),
     },
   };
 });
@@ -55,9 +59,10 @@ vi.mock('react-i18next', () => ({
 
 const draft = (over: Partial<TemplateDraft> = {}): TemplateDraft => ({
   id: 'id-1', slug: 'ar_bienvenida', name: 'Bienvenida',
-  body: 'Hola {{1}}, te esperamos.', category: 'UTILITY', language: 'es-AR',
+  body: 'Hola {{worker_name}}, te esperamos.', category: 'UTILITY', language: 'es-AR',
   version: 1, createdBy: 'uid-a', updatedBy: 'uid-a',
   createdAt: '2026-08-31T12:00:00Z', updatedAt: '2026-08-31T12:00:00Z',
+  contentSid: null, submittedAt: null, submittedBy: null, submissionError: null,
   status: 'draft', ...over,
 });
 
@@ -77,7 +82,7 @@ const escrever = async (u: ReturnType<typeof userEvent.setup>, testid: string, t
 const preencher = async (u: ReturnType<typeof userEvent.setup>) => {
   await u.type(screen.getByTestId('td-input-name'), 'Bienvenida');
   await u.type(screen.getByTestId('td-input-slug'), 'bienvenida');
-  await escrever(u, 'td-input-body', 'Hola {{1}} y chau');
+  await escrever(u, 'td-input-body', 'Hola {{worker_name}} y chau');
 };
 
 beforeEach(() => {
@@ -86,6 +91,8 @@ beforeEach(() => {
   createDraft.mockResolvedValue({ draft: draft() });
   updateDraft.mockResolvedValue({ draft: draft({ version: 2 }) });
   archiveDraft.mockResolvedValue(undefined);
+  submitDraft.mockResolvedValue({ submission: { contentSid: 'HXa', slug: 'ar_bienvenida' } });
+  duplicateDraft.mockResolvedValue({ draft: draft({ id: 'id-2', slug: 'ar_bienvenida_v2' }) });
 });
 
 describe('o perímetro — o que a tela promete e o que não', () => {
@@ -95,11 +102,14 @@ describe('o perímetro — o que a tela promete e o que não', () => {
       .toContain('admin.templateDrafts.avisoNaoEnvia');
   });
 
-  it('🔒 NÃO existe botão de enviar/submeter — a ausência é o portão do lex', async () => {
+  it('🔒 enviar NUNCA dispara direto — o clique só abre a confirmação', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft()] });
+    const u = userEvent.setup();
     render(<TemplateDraftsPage />);
-    await waitFor(() => expect(listDrafts).toHaveBeenCalled());
-    const rotulos = screen.getAllByRole('button').map((b) => b.textContent ?? '');
-    expect(rotulos.some((r) => /submet|enviar|publicar|submit/i.test(r))).toBe(false);
+    await waitFor(() => expect(screen.getByTestId('td-enviar-ar_bienvenida')).toBeTruthy());
+    await u.click(screen.getByTestId('td-enviar-ar_bienvenida'));
+    expect(screen.getByTestId('td-confirmar')).toBeTruthy();
+    expect(submitDraft).not.toHaveBeenCalled();
   });
 });
 
@@ -143,8 +153,8 @@ describe('salvar', () => {
   it('a pré-visualização troca a variável por exemplo legível', async () => {
     const u = userEvent.setup();
     render(<TemplateDraftsPage />);
-    await escrever(u, 'td-input-body', 'Hola {{1}}!');
-    expect(screen.getByTestId('td-preview').textContent).toContain('[valor 1]');
+    await escrever(u, 'td-input-body', 'Hola {{worker_name}}!');
+    expect(screen.getByTestId('td-preview').textContent).toContain('[nombre]');
   });
 
   it('passar do limite mostra contagem NEGATIVA e pinta de vermelho', async () => {
@@ -323,5 +333,146 @@ describe('lista e edição', () => {
     await u.selectOptions(screen.getByTestId('td-select-category'), 'MARKETING');
     await u.click(screen.getByTestId('td-salvar'));
     await waitFor(() => expect(createDraft.mock.calls[0][0].category).toBe('MARKETING'));
+  });
+});
+
+describe('enviar para autorização — o ato irreversível', () => {
+  const abrirConfirmacao = async (u: ReturnType<typeof userEvent.setup>) => {
+    listDrafts.mockResolvedValue({ drafts: [draft()] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-enviar-ar_bienvenida')).toBeTruthy());
+    await u.click(screen.getByTestId('td-enviar-ar_bienvenida'));
+  };
+
+  it('a confirmação ENUMERA o que se torna irreversível — não é "tem certeza?"', async () => {
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    expect(screen.getByTestId('td-confirmar-lista').children).toHaveLength(3);
+    const texto = screen.getByTestId('td-confirmar-lista').textContent ?? '';
+    expect(texto).toContain('confirmar.nome');
+    expect(texto).toContain('confirmar.edicao');
+    expect(texto).toContain('confirmar.prazo');
+  });
+
+  it('cancelar fecha e NÃO envia', async () => {
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-nao'));
+    expect(screen.queryByTestId('td-confirmar')).toBeNull();
+    expect(submitDraft).not.toHaveBeenCalled();
+  });
+
+  it('confirmar envia e avisa que agora é esperar', async () => {
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-sim'));
+    await waitFor(() => expect(submitDraft).toHaveBeenCalledWith('id-1'));
+    await waitFor(() => expect(screen.getByTestId('td-salvo').textContent)
+      .toContain('admin.templateDrafts.enviado'));
+  });
+
+  it('🔒 503 diz QUAL motivo — flag desligada ou credencial faltando', async () => {
+    submitDraft.mockRejectedValue(new DraftApiError('x', 503, 'submissao_indisponivel', [], null, 'flag_desligada'));
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-sim'));
+    await waitFor(() => expect(screen.getByTestId('td-erro').textContent)
+      .toContain('indisponivel.flag_desligada'));
+  });
+
+  it('502 da Twilio vira mensagem nomeada, não erro cru', async () => {
+    submitDraft.mockRejectedValue(new DraftApiError('x', 502, 'twilio_falhou'));
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-sim'));
+    await waitFor(() => expect(screen.getByTestId('td-erro').textContent)
+      .toContain('envioErro.twilio_falhou'));
+  });
+
+  it('422 no envio fecha a confirmação e mostra a regra no campo', async () => {
+    submitDraft.mockRejectedValue(new DraftApiError('x', 422, null, [{ campo: 'body', regra: 'placeholder_posicional' }]));
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-sim'));
+    await waitFor(() => expect(screen.queryByTestId('td-confirmar')).toBeNull());
+    expect(screen.getByTestId('td-problemas-body').textContent).toContain('placeholder_posicional');
+  });
+
+  it('erro sem código cai na mensagem do servidor', async () => {
+    submitDraft.mockRejectedValue(new DraftApiError('caiu tudo', 500, null));
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-sim'));
+    await waitFor(() => expect(screen.getByTestId('td-erro').textContent).toContain('caiu tudo'));
+  });
+
+  it('erro que não é da API cai no texto genérico', async () => {
+    submitDraft.mockRejectedValue(new Error('rede'));
+    const u = userEvent.setup();
+    await abrirConfirmacao(u);
+    await u.click(screen.getByTestId('td-confirmar-sim'));
+    await waitFor(() => expect(screen.getByTestId('td-erro').textContent)
+      .toContain('admin.templateDrafts.erroEnviar'));
+  });
+});
+
+describe('depois de submetido', () => {
+  const submetido = () => draft({ contentSid: 'HXja', submittedAt: '2026-08-31T20:00:00Z', status: 'submitted' });
+
+  it('🔒 NÃO oferece editar nem enviar — só duplicar', async () => {
+    listDrafts.mockResolvedValue({ drafts: [submetido()] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-duplicar-ar_bienvenida')).toBeTruthy());
+    expect(screen.queryByTestId('td-editar-ar_bienvenida')).toBeNull();
+    expect(screen.queryByTestId('td-enviar-ar_bienvenida')).toBeNull();
+  });
+
+  it('mostra o estado "enviado, aguardando" — não deixa a pessoa supor', async () => {
+    listDrafts.mockResolvedValue({ drafts: [submetido()] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-estado-ar_bienvenida').textContent)
+      .toContain('estado.submitted'));
+  });
+
+  it('rascunho não submetido diz que ainda não foi', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft()] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-estado-ar_bienvenida').textContent)
+      .toContain('estado.draft'));
+  });
+
+  it('duplicar cria o clone e já o abre para edição', async () => {
+    listDrafts.mockResolvedValue({ drafts: [submetido()] });
+    const u = userEvent.setup();
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-duplicar-ar_bienvenida')).toBeTruthy());
+    await u.click(screen.getByTestId('td-duplicar-ar_bienvenida'));
+    await waitFor(() => expect(duplicateDraft).toHaveBeenCalledWith('id-1'));
+    await waitFor(() => expect((screen.getByTestId('td-input-slug') as HTMLInputElement).value)
+      .toBe('ar_bienvenida_v2'));
+  });
+
+  it('falha ao duplicar avisa', async () => {
+    listDrafts.mockResolvedValue({ drafts: [submetido()] });
+    duplicateDraft.mockRejectedValue(new Error('nope'));
+    const u = userEvent.setup();
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-duplicar-ar_bienvenida')).toBeTruthy());
+    await u.click(screen.getByTestId('td-duplicar-ar_bienvenida'));
+    await waitFor(() => expect(screen.getByTestId('td-erro').textContent)
+      .toContain('admin.templateDrafts.erroDuplicar'));
+  });
+
+  it('a última falha de envio aparece na linha, não fica escondida no banco', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft({ submissionError: 'criar_content: 400 nome em uso' })] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-falha-ar_bienvenida').textContent)
+      .toContain('400 nome em uso'));
+  });
+
+  it('lista as variáveis disponíveis — a pessoa não pode ter de adivinhar', async () => {
+    render(<TemplateDraftsPage />);
+    expect(screen.getByTestId('td-variaveis-ajuda').textContent).toContain('worker_name');
+    expect(screen.getByTestId('td-variaveis-ajuda').textContent).toContain('case_number');
   });
 });

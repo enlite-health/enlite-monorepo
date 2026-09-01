@@ -119,6 +119,7 @@ jobs:
             TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_PT=HXbce81c8d53926d61493cb870cb3254b4
             TWILIO_TEMPLATE_ADMISSION_REMINDER_ES=HX85f46263a1b26334b0f389716274d01c
             TWILIO_TEMPLATE_ADMISSION_REMINDER_PT=HX48369d7544b03ed3759a3306b3432d35
+            WABA_ID=4410859772526279
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
@@ -126,6 +127,7 @@ jobs:
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             SENDGRID_API_KEY=sendgrid-api-key:latest
             ACCOUNT_LINK_TOKEN_SECRET=account-link-token-secret:latest
+            WABA_TOKEN=waba-token:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com

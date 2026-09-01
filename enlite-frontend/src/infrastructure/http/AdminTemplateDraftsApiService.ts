@@ -4,10 +4,13 @@
  * Serviço próprio, mesmo padrão do AdminTemplateCatalogApiService, para não
  * engordar o AdminApiService.
  *
- * 🔒 NÃO existe método de submissão, e a ausência é o portão: submeter à Meta
- * sai do nosso perímetro (F2 2.4) e depende de parecer do `lex`. O teste deste
- * serviço assere que a superfície pública tem exatamente 4 métodos — acrescentar
- * um quinto sem passar pelo `lex` reprova.
+ * 🔒 REGISTRO: `submitDraft` escreve para FORA do perímetro (cria Content na
+ * Twilio e submete à Meta) e o parecer do `lex` NÃO foi emitido. O Gabriel
+ * determinou construir assim em 31/08/2026.
+ *
+ * ⚠️ `submitDraft` é IRREVERSÍVEL e exige `confirmado: true` — a confirmação
+ * viaja no corpo, não é só um diálogo na tela: uma chamada direta à API sem ela
+ * é recusada com 400.
  *
  * ⚠️ Por que este serviço não reusa o `request` do catálogo: aquele descarta o
  * corpo do erro (`throw new Error(json.error)`), e aqui o corpo É a informação —
@@ -24,11 +27,17 @@ export interface TemplateDraft {
   category: string;
   language: string;
   version: number;
+  /** SID do Content na Twilio. `null` = nunca submetido. */
+  contentSid: string | null;
+  submittedAt: string | null;
+  submittedBy: string | null;
+  /** Última falha de submissão, em texto. */
+  submissionError: string | null;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Sempre 'draft' enquanto a submissão não existir. Guardado ≠ submetido. */
+  /** 'draft' | 'submitted'. Explícito: a tela muda o que permite conforme ele. */
   status: string;
 }
 
@@ -59,6 +68,8 @@ export class DraftApiError extends Error {
     readonly codigo: string | null = null,
     readonly problemas: ProblemaDeRegra[] = [],
     readonly versaoAtual: number | null = null,
+    /** Do 503: 'flag_desligada' | 'sem_credencial'. A tela diz QUAL é. */
+    readonly motivo: string | null = null,
   ) {
     super(message);
     this.name = 'DraftApiError';
@@ -87,6 +98,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       typeof json.error === 'string' ? json.error : null,
       Array.isArray(json.problemas) ? json.problemas : [],
       typeof json.versaoAtual === 'number' ? json.versaoAtual : null,
+      typeof json.motivo === 'string' ? json.motivo : null,
     );
   }
   return json.data as T;
@@ -107,5 +119,19 @@ export const AdminTemplateDraftsApiService = {
 
   async archiveDraft(id: string): Promise<void> {
     await request<unknown>('DELETE', `/api/admin/template-drafts/${id}`);
+  },
+
+  /**
+   * ⚠️ IRREVERSÍVEL. O `confirmado: true` é exigido pelo servidor: sem ele a
+   * chamada é recusada, mesmo que a tela ache que confirmou.
+   */
+  async submitDraft(id: string): Promise<{ submission: { contentSid: string; slug: string } }> {
+    return request<{ submission: { contentSid: string; slug: string } }>(
+      'POST', `/api/admin/template-drafts/${id}/submit`, { confirmado: true },
+    );
+  },
+
+  async duplicateDraft(id: string): Promise<{ draft: TemplateDraft }> {
+    return request<{ draft: TemplateDraft }>('POST', `/api/admin/template-drafts/${id}/duplicate`);
   },
 };

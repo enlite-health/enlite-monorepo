@@ -3530,12 +3530,13 @@
         "min": "Verificado há {{count}} min",
         "hour": "Verificado há {{count}} h",
         "day": "Verificado há {{count}} d"
-      }
+      },
+      "metaDetail": "O que a Meta disse"
     },
     "templateDrafts": {
       "title": "Registrar mensagem",
       "subtitle": "Escreva a mensagem, veja como a cuidadora recebe, e salve.",
-      "avisoNaoEnvia": "O que você salva aqui fica guardado na Enlite. AINDA NÃO é enviado à Meta para autorização — esse passo ainda não existe no produto.",
+      "avisoNaoEnvia": "Salvar NÃO envia nada. O envio à Meta é um passo à parte, com confirmação — e depois de enviado, o nome fica ocupado para sempre.",
       "salvoNaoEnviado": "Salvo. Ainda NÃO enviado para autorização.",
       "listaTitulo": "Rascunhos salvos",
       "carregando": "Carregando…",
@@ -3592,11 +3593,41 @@
         "body": {
           "obrigatorio": "A mensagem é obrigatória.",
           "muito_longo": "A mensagem passa de 1024 caracteres.",
-          "placeholder_numeracao": "As variáveis precisam ser {{1}}, {{2}}… sem pular e começando em 1.",
           "placeholder_no_inicio": "A mensagem não pode começar com uma variável.",
           "placeholder_no_fim": "A mensagem não pode terminar com uma variável.",
-          "placeholders_adjacentes": "Duas variáveis não podem ficar coladas: precisa de texto entre elas."
+          "placeholders_adjacentes": "Duas variáveis não podem ficar coladas: precisa de texto entre elas.",
+          "placeholder_posicional": "Use variáveis com nome ({{worker_name}}), não {{1}}: com número o sistema não sabe o que preencher.",
+          "variavel_desconhecida": "Essa variável não existe. Use uma das disponíveis."
         }
+      },
+      "enviar": "Enviar para autorização",
+      "enviado": "Enviado à Meta. Agora aguarde a autorização — ela aparece em Plantillas.",
+      "duplicar": "Duplicar e corrigir",
+      "erroEnviar": "Não conseguimos enviar. Tente de novo.",
+      "erroDuplicar": "Não conseguimos duplicar o rascunho.",
+      "variaveisDisponiveis": "Variáveis disponíveis: {{lista}}",
+      "ultimaFalha": "Última tentativa falhou: {{erro}}",
+      "estado": {
+        "draft": "Rascunho — ainda não enviado",
+        "submitted": "Enviado à Meta — aguardando autorização"
+      },
+      "confirmar": {
+        "titulo": "Enviar «{{slug}}» à Meta?",
+        "nome": "O nome fica ocupado na conta de WhatsApp para sempre, mesmo se a Meta recusar a mensagem.",
+        "edicao": "Depois de enviar você não poderá editá-la: só duplicar e corrigir.",
+        "prazo": "A Meta pode levar horas para responder, e a resposta não depende de nós.",
+        "sim": "Sim, enviar à Meta",
+        "nao": "Cancelar"
+      },
+      "indisponivel": {
+        "flag_desligada": "O envio à Meta está desligado no servidor. É preciso ligá-lo antes de usar este botão.",
+        "sem_credencial": "Faltam as credenciais da Twilio no servidor. Sem elas não dá para enviar."
+      },
+      "envioErro": {
+        "ja_submetido": "Esta mensagem já foi enviada antes.",
+        "draft_nao_encontrado": "O rascunho não existe mais.",
+        "twilio_falhou": "A Twilio recusou o envio. Veja o detalhe no rascunho.",
+        "ja_submetido_use_duplicar": "Já foi enviado: duplique e corrija em vez de editar."
       }
     }
   },
