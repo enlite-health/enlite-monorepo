@@ -15,7 +15,7 @@
  * envio e divergiu do aprovado em 12 de 27 templates; mostrá-lo já pôs um
  * sentinela na tela como se fosse mensagem.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -26,6 +26,26 @@ export interface TemplateCatalogDetailDrawerProps {
   row: TemplateCatalogRow;
   statusLabel: (s: string | null) => string;
   onClose: () => void;
+}
+
+/** Duração da animação de abrir/fechar — a mesma do HelpDrawer. */
+const ANIM_MS = 300;
+
+/**
+ * A data como uma pessoa lê, não como o Postgres devolve.
+ *
+ * ⚠️ Antes saía `2026-09-01T02:19:00Z` cru na tela. Locale `es-AR` porque é o
+ * padrão do projeto (CLAUDE.md do frontend). ISO inválida devolve `null` — a
+ * tela então diz "nunca" em vez de "Invalid Date".
+ */
+export function dataLegivel(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 }
 
 /** Uma linha rótulo→valor. Valor ausente não vira linha vazia: some. */
@@ -43,33 +63,56 @@ export function TemplateCatalogDetailDrawer({
   row, statusLabel, onClose,
 }: TemplateCatalogDetailDrawerProps): JSX.Element {
   const { t } = useTranslation();
+  /**
+   * `show` existe para a animação ACONTECER: montar já com a classe final faz o
+   * navegador pintar direto no lugar, sem transição — foi o que aconteceu.
+   * Um tick depois da montagem, `show` vira true e o translate anima.
+   */
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShow(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  /** Fecha animando: espera a transição terminar antes de desmontar. */
+  const fechar = (): void => {
+    setShow(false);
+    setTimeout(onClose, ANIM_MS);
+  };
 
   // Escape fecha — mesma convenção do HelpDrawer.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') fechar(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  });
 
   const posicionais = row.placeholders.filter((p) => /^\d+$/.test(p));
   const nomeadas = row.placeholders.filter((p) => !/^\d+$/.test(p));
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0'}`}
+        onClick={fechar}
+        aria-hidden="true"
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-label={row.name}
         data-testid="tc-detalhe"
-        className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-xl flex-col overflow-y-auto rounded-bl-[32px] rounded-tl-[32px] bg-white p-6 shadow-2xl"
+        className={`fixed right-0 top-0 z-50 flex h-screen w-full max-w-md flex-col overflow-y-auto rounded-bl-[32px] rounded-tl-[32px] bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out ${
+          show ? 'translate-x-0' : 'translate-x-full'
+        }`}
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <Heading level={2}>{row.name}</Heading>
             <Text size="xs" color="secondary">{row.slug}</Text>
           </div>
-          <button type="button" onClick={onClose} data-testid="tc-detalhe-fechar" aria-label={t('common.close', 'Cerrar')}>
+          <button type="button" onClick={fechar} data-testid="tc-detalhe-fechar" aria-label={t('common.close', 'Cerrar')}>
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -160,7 +203,7 @@ export function TemplateCatalogDetailDrawer({
         <Campo rotulo={t('admin.templateCatalog.checkedAt')}>
           <Text as="span" size="sm" color="secondary">
             <span data-testid="tc-detalhe-verificado">
-              {row.metaCheckedAt ?? t('admin.templateCatalog.never')}
+              {dataLegivel(row.metaCheckedAt) ?? t('admin.templateCatalog.never')}
             </span>
           </Text>
         </Campo>

@@ -212,17 +212,22 @@ export function TemplateCatalogPage(): JSX.Element {
                   data-testid={`tc-row-${r.slug}`}
                   onClick={() => setDetalhe(r)}
                 >
-                  <TableCell unwrapped className="w-full max-w-0">
+                  <TableCell unwrapped className="max-w-[22rem]">
                     {/* Altura fixa + reticências: os corpos vão de 16 a 942 caracteres
                         em produção, e altura que dependa do texto deixa a tabela irregular. */}
+                    {/* ⚠️ Ordem INVERTIDA em 01/09 (Gabriel): o identificador é o
+                        título e vem primeiro, com a cor do texto; a mensagem
+                        desce para linha secundária. Quem varre a lista procura
+                        QUAL mensagem é, não o que ela diz — o texto inteiro
+                        está a um clique, no detalhe. */}
                     <div className="flex min-h-9 flex-col justify-center py-1">
                       <span className="min-w-0 truncate">
-                        <Text as="span" size="sm" color={summary ? 'primary' : 'secondary'}>
-                          {summary ? `«${summary}»` : t('admin.templateCatalog.noText')}
-                        </Text>
+                        <Text as="span" size="sm" color="primary">{r.slug}</Text>
                       </span>
                       <span className="min-w-0 truncate">
-                        <Text as="span" size="xs" color="secondary">{r.slug}</Text>
+                        <Text as="span" size="xs" color="secondary">
+                          {summary ? `«${summary}»` : t('admin.templateCatalog.noText')}
+                        </Text>
                       </span>
                       {/* ⚠️ As variáveis saíram daqui em 01/09: na listagem elas
                           apareciam como "1 2 3 4 5" — números nus, que não

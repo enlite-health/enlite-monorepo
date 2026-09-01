@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { dataLegivel } from '../TemplateCatalogDetailDrawer';
 
 /**
  * ⚠️ As telas passaram a ter `<Link>` em 01/09 (o botão que liga o catálogo à
@@ -382,5 +383,41 @@ describe('o detalhe da mensagem — os campos que só ele mostra', () => {
     const u = await abrir({});
     await u.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByTestId('tc-detalhe')).toBeNull());
+  });
+});
+
+describe('ajustes de 01/09 (Gabriel, olhando a tela)', () => {
+  describe('a data de verificação, formatada', () => {
+    it('ISO vira data legível em es-AR, não string crua', () => {
+      const r = dataLegivel('2026-09-01T02:19:00Z');
+      expect(r).not.toContain('T');
+      expect(r).not.toContain('Z');
+      expect(r).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+    });
+    it('null continua null — a tela decide dizer "nunca"', () => {
+      expect(dataLegivel(null)).toBeNull();
+    });
+    it('🔒 ISO inválida vira null, NUNCA "Invalid Date" na tela', () => {
+      expect(dataLegivel('nao-e-data')).toBeNull();
+      expect(dataLegivel('')).toBeNull();
+    });
+  });
+
+  it('a data aparece formatada no detalhe', async () => {
+    const u = userEvent.setup();
+    await renderWith([row({ metaCheckedAt: '2026-09-01T02:19:00Z' })]);
+    await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
+    await screen.findByTestId('tc-detalhe');
+    const txt = screen.getByTestId('tc-detalhe-verificado').textContent ?? '';
+    expect(txt).not.toContain('T02:19');
+    expect(txt).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+  });
+
+  it('🔒 a linha mostra o IDENTIFICADOR primeiro e a mensagem embaixo', async () => {
+    await renderWith([row({ slug: 'ar_bienvenida', bodyTwilio: 'Texto de la mensaje' })]);
+    const linha = await screen.findByTestId('tc-row-ar_bienvenida');
+    const txt = linha.textContent ?? '';
+    // A ordem no DOM é a ordem visual: identificador antes do texto.
+    expect(txt.indexOf('ar_bienvenida')).toBeLessThan(txt.indexOf('Texto de la mensaje'));
   });
 });
