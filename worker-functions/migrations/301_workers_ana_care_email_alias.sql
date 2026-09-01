@@ -1,4 +1,4 @@
--- 283_workers_ana_care_email_alias.sql
+-- 301_workers_ana_care_email_alias.sql
 -- Marca de que o cadastro no Ana Care nasceu com um ALIAS de e-mail (`+1`) em vez
 -- do endereço real do prestador.
 --
@@ -19,9 +19,9 @@
 -- (com o Ana Care ou com o prestador) e para a fila ser CONTÁVEL do nosso lado.
 -- NULL = cadastro normal, com o e-mail real.
 --
--- Numeração: 283 e não 268 de propósito — a branch `stage` já ocupa 268..282 (ABAC e
--- painel de grupos). Usar 268 aqui criaria duas migrations com o mesmo número quando
--- a stage for para o main.
+-- Numeração: 301. Esta migration foi escrita em 18/08/2026 como 283 para pular a faixa
+-- 268..282, que a `stage` ocupava; ficou parada 13 dias e nesse meio-tempo o `main`
+-- consumiu até a 300 — inclusive a própria 283. Renumerada na retomada (01/09/2026).
 --
 -- Idempotente: IF NOT EXISTS.
 
