@@ -3564,7 +3564,11 @@
       "espanol": "Espanhol",
       "portugues": "Português",
       "criarVersao": "Criar versão",
-      "idiomaNaoRegistrado": "Idioma não registrado: {{slugs}}"
+      "idiomaNaoRegistrado": "Idioma não registrado: {{slugs}}",
+      "criarVersaoEn": {
+        "es-AR": "Criar versão em espanhol",
+        "pt-BR": "Criar versão em português"
+      }
     },
     "templateDrafts": {
       "title": "Registrar mensagem",

@@ -17,6 +17,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -30,6 +31,18 @@ export interface TemplateCatalogDetailDrawerProps {
   row: TemplateCatalogRow;
   statusLabel: (s: string | null) => string;
   onClose: () => void;
+  /**
+   * O idioma que ESTA mensagem ainda não tem (`es-AR` | `pt-BR`), ou `null`
+   * quando o par está completo.
+   *
+   * 🔒 A ação de criar a versão que falta mora AQUI, e não na listagem, porque
+   * na listagem ela se repetia em 24 das 26 linhas — a mesma chamada para ação,
+   * linha após linha, para um estado que nem é defeito (o Brasil não está
+   * ligado). A lista reporta; o drawer age.
+   */
+  faltaIdioma?: string | null;
+  /** O nome-base da mensagem, para o link levar o campo já preenchido. */
+  baseName?: string;
 }
 
 /** Duração da animação de abrir/fechar — a mesma do HelpDrawer. */
@@ -47,7 +60,7 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 }
 
 export function TemplateCatalogDetailDrawer({
-  row, statusLabel, onClose,
+  row, statusLabel, onClose, faltaIdioma = null, baseName,
 }: TemplateCatalogDetailDrawerProps): JSX.Element {
   const { t } = useTranslation();
   /**
@@ -200,6 +213,21 @@ export function TemplateCatalogDetailDrawer({
             <span data-testid="tc-detalhe-sid">{row.contentSid ?? '—'}</span>
           </Text>
         </Campo>
+
+        {/* A única ação deste drawer, e ela só existe quando há o que fazer:
+            criar a versão do idioma que falta. Some quando o par está completo,
+            em vez de ficar desabilitada — botão morto é ruído. */}
+        {faltaIdioma !== null && baseName !== undefined && (
+          <Link
+            to={`/admin/plantillas/registrar?base=${encodeURIComponent(baseName)}&lang=${encodeURIComponent(faltaIdioma)}`}
+            data-testid={`tc-detalhe-criar-${faltaIdioma}`}
+            className="mt-4 inline-flex items-center gap-1 rounded-pill bg-primary px-3.5 py-1.5 text-white"
+          >
+            <Text as="span" size="xs" color="inherit">
+              ＋ {t(`admin.templateCatalog.criarVersaoEn.${faltaIdioma}`, t('admin.templateCatalog.criarVersao'))}
+            </Text>
+          </Link>
+        )}
       </div>
     </>
   );

@@ -1,5 +1,4 @@
 import type { JSX } from 'react';
-import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
@@ -46,17 +45,25 @@ export function TemplateCatalogLanguageCell({
   const { t } = useTranslation();
 
   if (row === null) {
+    /*
+     * 🔒 UM TRAÇO MUDO, e não um "＋ Crear versión". Medido: 24 das 26 mensagens
+     * de produção não têm versão em português, então a coluna inteira virava
+     * uma parede da MESMA chamada para ação repetida linha após linha.
+     *
+     * E, pior que o ruído: não ter versão brasileira NÃO é defeito hoje. O
+     * Brasil não está ligado — cadastrar em pt-BR não liga o Brasil, isso
+     * depende do mapa país→remetente e do inbound por número. Pintar 24 linhas
+     * como "falta fazer algo aqui" transforma o estado NORMAL em alarme, que é
+     * o oposto do que esta tela deveria fazer.
+     *
+     * Quem quer a informação tem o número no chip "Falta una versión"; quem
+     * quer a AÇÃO abre a linha, e o drawer oferece criar a versão que falta.
+     * A lista REPORTA; o drawer AGE.
+     */
     return (
-      <Link
-        to={`/admin/plantillas/registrar?base=${encodeURIComponent(baseName)}&lang=${encodeURIComponent(language)}`}
-        data-testid={`tc-criar-${language}-${baseName}`}
-        className="inline-flex items-center gap-1 text-turquoise hover:underline"
-        // A linha inteira abre o detalhe no clique; sem isto, criar a versão
-        // abriria o drawer da OUTRA versão junto — dois destinos num clique só.
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Text as="span" size="xs" color="inherit">＋ {t('admin.templateCatalog.criarVersao')}</Text>
-      </Link>
+      <span data-testid={`tc-sem-versao-${language}-${baseName}`}>
+        <Text as="span" size="xs" color="secondary">—</Text>
+      </span>
     );
   }
 

@@ -75,12 +75,24 @@ export interface MessagePair {
  * A versão que representa a mensagem quando a tela precisa de UMA: o texto da
  * listagem, a data da última verificação, o detalhe que abre no clique.
  *
- * O espanhol lidera porque é o idioma da operação hoje; cai no português e
- * depois na linha sem idioma registrado, para que uma mensagem que só existe
- * de um lado ainda tenha o que mostrar.
+ * 🔒 SEGUE O IDIOMA DO PERFIL DE QUEM OLHA (emenda do Gabriel, 01/09): quem usa
+ * o painel em português lê o texto da versão brasileira; quem usa em espanhol
+ * lê o argentino. Antes o espanhol liderava sempre, e um leitor brasileiro
+ * varria a lista inteira num idioma que não é o dele para descobrir o que cada
+ * mensagem diz — sendo que a versão em português existia ali do lado.
+ *
+ * 🔒 O IDIOMA ENTRA POR PARÂMETRO, não por `i18n` importado aqui: este módulo é
+ * puro e testável sem React. Quem sabe o idioma é a tela.
+ *
+ * A queda é sempre para o outro idioma antes de desistir — uma mensagem que só
+ * existe de um lado tem de mostrar ALGUMA coisa, e o texto no idioma errado é
+ * melhor do que célula vazia.
  */
-export function versaoPrincipal(p: MessagePair): TemplateCatalogRow {
-  return p.es ?? p.pt ?? p.primeira;
+export function versaoPrincipal(p: MessagePair, idiomaDoPerfil: string): TemplateCatalogRow {
+  const preferePortugues = idiomaDoPerfil.toLowerCase().startsWith('pt');
+  return preferePortugues
+    ? p.pt ?? p.es ?? p.primeira
+    : p.es ?? p.pt ?? p.primeira;
 }
 
 export function agruparEmPares(rows: readonly TemplateCatalogRow[]): MessagePair[] {

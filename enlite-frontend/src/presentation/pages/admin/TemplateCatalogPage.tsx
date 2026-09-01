@@ -9,7 +9,7 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { TemplateCatalogDetailDrawer } from './TemplateCatalogDetailDrawer';
 import { FILTER_ORDER, countByGroup, groupOf, lastCheckedAt, relativeFrom } from './templateCatalogView';
-import { ES, MISSING, PT, agruparEmPares, faltaUmaVersao, filtrarPares, versaoPrincipal, type CatalogFilter } from './templateCatalogPairs';
+import { ES, MISSING, PT, type MessagePair, agruparEmPares, faltaUmaVersao, filtrarPares, idiomaQueFalta, versaoPrincipal, type CatalogFilter } from './templateCatalogPairs';
 import { TemplateCatalogLanguageCell } from './TemplateCatalogLanguageCell';
 
 /**
@@ -75,7 +75,7 @@ function approvedTextOneLine(row: TemplateCatalogRow): string | null {
 }
 
 export function TemplateCatalogPage(): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<TemplateCatalogRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<CatalogFilter>('all');
@@ -83,7 +83,16 @@ export function TemplateCatalogPage(): JSX.Element {
    * O instante da carga, congelado. Não é `new Date()` no render: assim a idade
    * mostrada não muda a cada re-render, e o teste visual é determinístico.
    */
-  const [detalhe, setDetalhe] = useState<TemplateCatalogRow | null>(null);
+  /**
+   * O que o drawer está mostrando: a VERSÃO clicada e o PAR dela.
+   *
+   * Um estado só, e não dois: o drawer precisa da versão (qual idioma foi
+   * aberto) E do par (qual idioma FALTA, para oferecer criar — `row` sozinha
+   * nunca sabe se existe uma irmã do outro lado). Guardá-los separados criava
+   * um estado impossível — versão sem par — que o código tinha de checar e
+   * nenhum teste conseguia produzir.
+   */
+  const [detalhe, setDetalhe] = useState<{ row: TemplateCatalogRow; par: MessagePair } | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   /**
@@ -243,13 +252,13 @@ export function TemplateCatalogPage(): JSX.Element {
             {shown.map((par) => {
               // Uma versão representa a mensagem onde a tela precisa de UMA:
               // texto da lista, data da verificação, detalhe que abre no clique.
-              const principal = versaoPrincipal(par);
+              const principal = versaoPrincipal(par, i18n.language);
               const texto = approvedTextOneLine(principal);
               return (
                 <TableRow
                   key={par.baseName}
                   data-testid={`tc-row-${par.baseName}`}
-                  onClick={() => setDetalhe(principal)}
+                  onClick={() => setDetalhe({ row: principal, par })}
                 >
                   <TableCell unwrapped className="max-w-[22rem]">
                     {/* Altura fixa + reticências: os corpos vão de 16 a 942
@@ -279,13 +288,15 @@ export function TemplateCatalogPage(): JSX.Element {
                   <TableCell unwrapped>
                     <TemplateCatalogLanguageCell
                       row={par.es} language={ES} baseName={par.baseName}
-                      statusTone={statusTone} statusLabel={statusLabel} onOpen={setDetalhe}
+                      statusTone={statusTone} statusLabel={statusLabel}
+                      onOpen={(r) => setDetalhe({ row: r, par })}
                     />
                   </TableCell>
                   <TableCell unwrapped>
                     <TemplateCatalogLanguageCell
                       row={par.pt} language={PT} baseName={par.baseName}
-                      statusTone={statusTone} statusLabel={statusLabel} onOpen={setDetalhe}
+                      statusTone={statusTone} statusLabel={statusLabel}
+                      onOpen={(r) => setDetalhe({ row: r, par })}
                     />
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
@@ -321,8 +332,10 @@ export function TemplateCatalogPage(): JSX.Element {
     
       {detalhe && (
         <TemplateCatalogDetailDrawer
-          row={detalhe}
+          row={detalhe.row}
           statusLabel={statusLabel}
+          baseName={detalhe.par.baseName}
+          faltaIdioma={idiomaQueFalta(detalhe.par)}
           onClose={() => setDetalhe(null)}
         />
       )}

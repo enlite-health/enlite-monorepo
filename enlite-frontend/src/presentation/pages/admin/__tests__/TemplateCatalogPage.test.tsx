@@ -9,7 +9,7 @@
  *  3. Estado desconhecido aparece CRU — nunca vira "desconhecido" nem some.
  *  4. Nunca verificado ≠ pendente.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { dataLegivel } from '../templateCatalogView';
@@ -35,10 +35,18 @@ vi.mock('@infrastructure/http/AdminTemplateCatalogApiService', () => ({
  * ingênuo (`f ?? k`) devolvia esse objeto, React não renderiza objeto, e a tela
  * inteira saía em branco — 20 testes falhando por causa do dublê, não do código.
  */
+let idiomaDoPerfil = 'es';
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, arg?: string | Record<string, unknown>) =>
       typeof arg === 'string' ? arg : arg && typeof arg === 'object' ? `${k}:${JSON.stringify(arg)}` : k,
+    // ⚠️ O `i18n` faz parte da forma do hook REAL, e o dublê precisa tê-lo: a
+    // listagem escolhe qual versão da mensagem mostrar pelo idioma do perfil
+    // (`i18n.language`). Sem ele o componente estourava e TODAS as linhas
+    // sumiam — 20 testes caíram de uma vez, nenhum deles sobre idioma.
+    // `idiomaDoPerfil` abaixo deixa cada teste escolher o perfil.
+    i18n: { language: idiomaDoPerfil },
   }),
 }));
 
@@ -451,12 +459,32 @@ describe('a listagem por MENSAGEM (01/09) — duas colunas de idioma numa linha 
     expect(screen.getByTestId('tc-status-admission_confirmation_pt')).toHaveTextContent('PENDING');
   });
 
-  it('o lado que não existe oferece CRIAR a versão, com o base e o idioma na URL', async () => {
+  it('🔒 o lado que não existe fica MUDO na lista — 24 de 26 linhas não viram parede de CTA', async () => {
+    // Não ter versão brasileira não é defeito hoje: o Brasil não está ligado.
+    // Pintar 24 linhas como "falta fazer algo" transforma o normal em alarme.
     await renderWith([row({ slug: 'ar_invite_open', baseName: 'invite_open', language: 'es-AR' })]);
-    const link = await screen.findByTestId('tc-criar-pt-BR-invite_open');
+    expect(await screen.findByTestId('tc-sem-versao-pt-BR-invite_open')).toHaveTextContent('—');
+    expect(screen.queryByTestId('tc-criar-pt-BR-invite_open')).not.toBeInTheDocument();
+  });
+
+  it('a AÇÃO de criar a versão que falta vive no drawer, com base e idioma na URL', async () => {
+    const u = userEvent.setup();
+    await renderWith([row({ slug: 'ar_invite_open', baseName: 'invite_open', language: 'es-AR' })]);
+    await u.click(screen.getByTestId('tc-row-invite_open'));
+    const link = await screen.findByTestId('tc-detalhe-criar-pt-BR');
     expect(link).toHaveAttribute('href', '/admin/plantillas/registrar?base=invite_open&lang=pt-BR');
-    // E o lado que existe NÃO oferece criar.
-    expect(screen.queryByTestId('tc-criar-es-AR-invite_open')).not.toBeInTheDocument();
+  });
+
+  it('🔒 par COMPLETO não mostra ação nenhuma no drawer — botão morto é ruído', async () => {
+    const u = userEvent.setup();
+    await renderWith([
+      row({ slug: 'ar_x', baseName: 'x', language: 'es-AR' }),
+      row({ slug: 'br_x', baseName: 'x', language: 'pt-BR' }),
+    ]);
+    await u.click(screen.getByTestId('tc-row-x'));
+    await screen.findByTestId('tc-detalhe');
+    expect(screen.queryByTestId('tc-detalhe-criar-pt-BR')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tc-detalhe-criar-es-AR')).not.toBeInTheDocument();
   });
 
   it('o filtro "falta una versión" conta e mostra só as incompletas', async () => {
@@ -498,10 +526,40 @@ describe('os cliques da coluna de idioma', () => {
     expect(await screen.findByTestId('tc-detalhe')).toHaveTextContent('texto português');
   });
 
-  it('🔒 "＋ Crear versión" NÃO abre o detalhe junto — seriam dois destinos num clique', async () => {
+  it('e clicar na versão espanhola abre a espanhola — cada coluna abre a SUA', async () => {
     const u = userEvent.setup();
+    await renderWith([
+      row({ slug: 'ar_x', baseName: 'x', language: 'es-AR', bodyTwilio: 'texto español' }),
+      row({ slug: 'br_x', baseName: 'x', language: 'pt-BR', bodyTwilio: 'texto português' }),
+    ]);
+    await u.click(screen.getByTestId('tc-lang-es-AR-ar_x'));
+    expect(await screen.findByTestId('tc-detalhe')).toHaveTextContent('texto español');
+  });
+
+  it('a célula muda do lado que falta não é clicável — não há dois destinos na linha', async () => {
     await renderWith([row({ slug: 'ar_x', baseName: 'x', language: 'es-AR' })]);
-    await u.click(screen.getByTestId('tc-criar-pt-BR-x'));
-    expect(screen.queryByTestId('tc-detalhe')).not.toBeInTheDocument();
+    const vazia = await screen.findByTestId('tc-sem-versao-pt-BR-x');
+    expect(vazia.querySelector('a')).toBeNull();
+    expect(vazia.querySelector('button')).toBeNull();
+  });
+});
+
+describe('o texto da lista segue o idioma do perfil (emenda do Gabriel, 01/09)', () => {
+  const par = [
+    row({ slug: 'ar_x', baseName: 'x', language: 'es-AR', bodyTwilio: 'texto en español' }),
+    row({ slug: 'br_x', baseName: 'x', language: 'pt-BR', bodyTwilio: 'texto em português' }),
+  ];
+  afterEach(() => { idiomaDoPerfil = 'es'; });
+
+  it('perfil em espanhol lê o texto argentino', async () => {
+    idiomaDoPerfil = 'es';
+    await renderWith(par);
+    expect(screen.getByTestId('tc-row-x')).toHaveTextContent('texto en español');
+  });
+
+  it('🔒 perfil em português lê o texto BRASILEIRO — a versão existia ali do lado', async () => {
+    idiomaDoPerfil = 'pt-BR';
+    await renderWith(par);
+    expect(screen.getByTestId('tc-row-x')).toHaveTextContent('texto em português');
   });
 });

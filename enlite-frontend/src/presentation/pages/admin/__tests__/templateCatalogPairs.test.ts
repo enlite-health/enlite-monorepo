@@ -109,21 +109,44 @@ describe('faltaUmaVersao', () => {
   });
 });
 
-describe('versaoPrincipal', () => {
-  it('o espanhol lidera — é o idioma da operação hoje', () => {
-    const p = agruparEmPares([
-      linha({ slug: 'br_x', baseName: 'x', language: PT }),
-      linha({ slug: 'ar_x', baseName: 'x', language: ES }),
-    ]);
-    expect(versaoPrincipal(p[0])?.slug).toBe('ar_x');
+describe('versaoPrincipal — segue o idioma do perfil (emenda do Gabriel, 01/09)', () => {
+  const par = () => agruparEmPares([
+    linha({ slug: 'br_x', baseName: 'x', language: PT }),
+    linha({ slug: 'ar_x', baseName: 'x', language: ES }),
+  ])[0];
+
+  it('perfil em espanhol lê a versão argentina', () => {
+    expect(versaoPrincipal(par(), 'es').slug).toBe('ar_x');
   });
-  it('cai no português quando só ele existe', () => {
+  it('🔒 perfil em português lê a versão BRASILEIRA — não o espanhol', () => {
+    // Antes o espanhol liderava sempre, e quem usa o painel em português varria
+    // a lista inteira num idioma que não é o dele — com a versão em português
+    // existindo ali do lado.
+    expect(versaoPrincipal(par(), 'pt-BR').slug).toBe('br_x');
+  });
+  it('a variante do código não importa: `pt`, `pt-BR`, `PT-br` são o mesmo perfil', () => {
+    for (const l of ['pt', 'pt-BR', 'PT-br']) expect(versaoPrincipal(par(), l).slug).toBe('br_x');
+  });
+  it('idioma desconhecido cai no espanhol — é o idioma da operação', () => {
+    expect(versaoPrincipal(par(), 'fr').slug).toBe('ar_x');
+  });
+
+  it('🔒 perfil em português, mensagem SÓ em espanhol: mostra o espanhol', () => {
+    // Texto no idioma errado é melhor que célula vazia — a mensagem existe.
+    const p = agruparEmPares([linha({ slug: 'ar_x', baseName: 'x', language: ES })]);
+    expect(versaoPrincipal(p[0], 'pt-BR').slug).toBe('ar_x');
+  });
+  it('perfil em espanhol, mensagem só em português: mostra o português', () => {
     const p = agruparEmPares([linha({ slug: 'br_x', baseName: 'x', language: PT })]);
-    expect(versaoPrincipal(p[0])?.slug).toBe('br_x');
+    expect(versaoPrincipal(p[0], 'es').slug).toBe('br_x');
   });
   it('e na linha sem idioma quando é a única — mensagem não classificada ainda aparece', () => {
     const p = agruparEmPares([linha({ slug: 'x', baseName: 'x', language: null })]);
-    expect(versaoPrincipal(p[0])?.slug).toBe('x');
+    expect(versaoPrincipal(p[0], 'es').slug).toBe('x');
+  });
+  it('perfil em português também chega na linha sem idioma — os dois caminhos caem de pé', () => {
+    const p = agruparEmPares([linha({ slug: 'x', baseName: 'x', language: null })]);
+    expect(versaoPrincipal(p[0], 'pt-BR').slug).toBe('x');
   });
 });
 
@@ -136,7 +159,7 @@ describe('🔒 nada é descartado — o modo de falha que escondeu PAUSED até 3
     const pares = agruparEmPares([linha({ slug: 'x', baseName: 'x', language: 'es' })]);
     expect(pares).toHaveLength(1);
     expect(pares[0].semIdioma.map((r) => r.slug)).toEqual(['x']);
-    expect(versaoPrincipal(pares[0]).slug).toBe('x');
+    expect(versaoPrincipal(pares[0], 'es').slug).toBe('x');
   });
 
   it('o SEGUNDO template do mesmo idioma no mesmo baseName também aparece', () => {

@@ -3643,7 +3643,11 @@
       "espanol": "Español",
       "portugues": "Português",
       "criarVersao": "Crear versión",
-      "idiomaNaoRegistrado": "Idioma no registrado: {{slugs}}"
+      "idiomaNaoRegistrado": "Idioma no registrado: {{slugs}}",
+      "criarVersaoEn": {
+        "es-AR": "Crear versión en español",
+        "pt-BR": "Crear versión en português"
+      }
     },
     "templateDrafts": {
       "title": "Registrar mensaje",
