@@ -12,7 +12,16 @@
  * 4. **Conflito de versão vira aviso legível**, nunca sobrescrita silenciosa.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+
+/**
+ * ⚠️ As telas passaram a ter `<Link>` em 01/09 (o botão que liga o catálogo à
+ * tela de criar). Sem Router o React quebra em `basename` — 79 testes caíram de
+ * uma vez, e nenhum deles falava de navegação. Envolver aqui mantém os testes
+ * medindo o que mediam.
+ */
+const render = (ui: React.ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
 import userEvent from '@testing-library/user-event';
 import { TemplateDraftsPage } from '../TemplateDraftsPage';
 import { DraftApiError, type TemplateDraft } from '@infrastructure/http/AdminTemplateDraftsApiService';
@@ -63,6 +72,7 @@ const draft = (over: Partial<TemplateDraft> = {}): TemplateDraft => ({
   version: 1, createdBy: 'uid-a', updatedBy: 'uid-a',
   createdAt: '2026-08-31T12:00:00Z', updatedAt: '2026-08-31T12:00:00Z',
   contentSid: null, submittedAt: null, submittedBy: null, submissionError: null,
+  metaStatus: null, metaReason: null, metaDetail: null, metaCheckedAt: null,
   status: 'draft', ...over,
 });
 
@@ -474,5 +484,47 @@ describe('depois de submetido', () => {
     render(<TemplateDraftsPage />);
     expect(screen.getByTestId('td-variaveis-ajuda').textContent).toContain('worker_name');
     expect(screen.getByTestId('td-variaveis-ajuda').textContent).toContain('case_number');
+  });
+});
+
+describe('🔒 o veredito da META na lista — o bug de 01/09', () => {
+  it('enviado e SEM resposta ainda diz "esperando"', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft({
+      contentSid: 'HXa', submittedAt: '2026-09-01T02:00:00Z', status: 'submitted',
+    })] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-estado-ar_bienvenida').textContent)
+      .toContain('estado.submitted'));
+  });
+
+  it('🔒 APROVADO mostra o veredito — antes ficava "esperando" PARA SEMPRE', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft({
+      contentSid: 'HXa', submittedAt: '2026-09-01T02:00:00Z',
+      metaStatus: 'APPROVED', status: 'decided',
+    })] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-estado-ar_bienvenida').textContent)
+      .toContain('veredito.APPROVED'));
+  });
+
+  it('RECUSADO mostra o veredito E o motivo', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft({
+      contentSid: 'HXa', submittedAt: '2026-09-01T02:00:00Z',
+      metaStatus: 'REJECTED', metaReason: 'INCORRECT_CATEGORY', status: 'decided',
+    })] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-estado-ar_bienvenida').textContent)
+      .toContain('veredito.REJECTED'));
+    expect(screen.getByTestId('td-motivo-ar_bienvenida').textContent).toContain('INCORRECT_CATEGORY');
+  });
+
+  it('decidido também NÃO deixa editar — só duplicar', async () => {
+    listDrafts.mockResolvedValue({ drafts: [draft({
+      contentSid: 'HXa', submittedAt: '2026-09-01T02:00:00Z',
+      metaStatus: 'APPROVED', status: 'decided',
+    })] });
+    render(<TemplateDraftsPage />);
+    await waitFor(() => expect(screen.getByTestId('td-duplicar-ar_bienvenida')).toBeTruthy());
+    expect(screen.queryByTestId('td-editar-ar_bienvenida')).toBeNull();
   });
 });

@@ -241,4 +241,47 @@ describe('Rascunho de mensagem (spec 010 F2 2.1/2.2) @integration', () => {
     expect((await api.post(`/api/admin/template-drafts/${id}/submit`, { confirmado: true }, asRecruiter)).status).toBe(403);
     expect((await api.post(`/api/admin/template-drafts/${id}/duplicate`, {}, asRecruiter)).status).toBe(403);
   });
+
+  it('🔒 o estado da META chega na lista — o bug que a tela de produção revelou', async () => {
+    const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
+    const id = criado.data.data.draft.id;
+    const slug = criado.data.data.draft.slug;
+    const sid = 'HXfaketdmeta1111111111111111111111';
+
+    // Simula o que a submissão faria: marca o rascunho e cria o par vivo com o
+    // veredito da Meta já preenchido pelo sync.
+    await pool.query(
+      `UPDATE message_template_drafts SET content_sid = $2, submitted_at = now() WHERE id = $1`,
+      [id, sid],
+    );
+    await pool.query(
+      `INSERT INTO message_templates (slug, name, body, category, is_active, content_sid,
+                                      meta_approval_status, meta_approval_reason)
+            VALUES ($1, $1, 'x', 'UTILITY', true, $2, 'REJECTED', 'INCORRECT_CATEGORY')`,
+      [slug, sid],
+    );
+
+    const r = await api.get('/api/admin/template-drafts', asAdmin);
+    const d = r.data.data.drafts.find((x: { id: string }) => x.id === id);
+
+    // Antes do conserto isto era 'submitted' e metaStatus nem existia.
+    expect(d.status).toBe('decided');
+    expect(d.metaStatus).toBe('REJECTED');
+    expect(d.metaReason).toBe('INCORRECT_CATEGORY');
+
+    await pool.query(`DELETE FROM message_templates WHERE slug = $1`, [slug]);
+  });
+
+  it('enviado e ainda SEM veredito continua "submitted"', async () => {
+    const criado = await api.post('/api/admin/template-drafts', corpo(), asAdmin);
+    const id = criado.data.data.draft.id;
+    await pool.query(
+      `UPDATE message_template_drafts SET content_sid = $2, submitted_at = now() WHERE id = $1`,
+      [id, 'HXfaketdmeta2222222222222222222222'],
+    );
+    const r = await api.get('/api/admin/template-drafts', asAdmin);
+    const d = r.data.data.drafts.find((x: { id: string }) => x.id === id);
+    expect(d.status).toBe('submitted');
+    expect(d.metaStatus).toBeNull();
+  });
 });

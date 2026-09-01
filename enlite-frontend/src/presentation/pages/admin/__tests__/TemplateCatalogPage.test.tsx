@@ -10,7 +10,16 @@
  *  4. Nunca verificado ≠ pendente.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+
+/**
+ * ⚠️ As telas passaram a ter `<Link>` em 01/09 (o botão que liga o catálogo à
+ * tela de criar). Sem Router o React quebra em `basename` — 79 testes caíram de
+ * uma vez, e nenhum deles falava de navegação. Envolver aqui mantém os testes
+ * medindo o que mediam.
+ */
+const render = (ui: React.ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
 import userEvent from '@testing-library/user-event';
 import { TemplateCatalogPage } from '../TemplateCatalogPage';
 import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
@@ -229,14 +238,65 @@ describe('TemplateCatalogPage', () => {
     });
   });
 
-  describe('variáveis da mensagem', () => {
-    it('mostra quais dados a mensagem exige', async () => {
-      await renderWith([row({ placeholders: ['worker_name', 'case_number'] })]);
-      const chips = await screen.findByTestId('tc-vars-ar_bienvenida');
-      expect(chips).toHaveTextContent('worker_name');
-      expect(chips).toHaveTextContent('case_number');
+describe('variáveis da mensagem — saíram da LISTA e vieram para o DETALHE', () => {
+    it('🔒 a listagem NÃO mostra mais as variáveis', async () => {
+      // Nos 27 templates antigos, posicionais, isto virava "1 2 3 4 5" na
+      // listagem: números nus que não ensinam nada. Decisão do Gabriel, 01/09.
+      await renderWith([row({ placeholders: ['1', '2', '3', '4', '5'] })]);
+      await screen.findByTestId('tc-table');
+      expect(screen.queryByTestId('tc-vars-ar_bienvenida')).not.toBeInTheDocument();
     });
 
+    it('clicar na linha abre o detalhe com as variáveis E a explicação', async () => {
+      const u = userEvent.setup();
+      await renderWith([row({ placeholders: ['1', '2'], eligible: false, ineligibleReason: 'PLACEHOLDERS' })]);
+      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
+
+      const det = await screen.findByTestId('tc-detalhe');
+      expect(det).toBeTruthy();
+      expect(screen.getByTestId('tc-detalhe-vars').textContent).toContain('{{1}}');
+      // A frase que faltava: sem ela, "1 2" continua não dizendo nada.
+      expect(screen.getByTestId('tc-detalhe-vars-posicionais').textContent)
+        .toContain('variaveisPosicionais');
+    });
+
+    it('variável NOMEADA ganha a explicação certa, não a de posicional', async () => {
+      const u = userEvent.setup();
+      await renderWith([row({ placeholders: ['worker_name'] })]);
+      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
+      await screen.findByTestId('tc-detalhe');
+      expect(screen.getByTestId('tc-detalhe-vars-nomeadas')).toBeTruthy();
+      expect(screen.queryByTestId('tc-detalhe-vars-posicionais')).toBeNull();
+    });
+
+    it('sem variáveis o detalhe DIZ que é texto fixo, não deixa em branco', async () => {
+      const u = userEvent.setup();
+      await renderWith([row({ placeholders: [] })]);
+      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
+      await screen.findByTestId('tc-detalhe');
+      expect(screen.getByTestId('tc-detalhe-vars-nenhuma').textContent).toContain('semVariaveis');
+    });
+
+    it('o detalhe fecha', async () => {
+      const u = userEvent.setup();
+      await renderWith([row({ placeholders: [] })]);
+      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
+      await screen.findByTestId('tc-detalhe');
+      await u.click(screen.getByTestId('tc-detalhe-fechar'));
+      await waitFor(() => expect(screen.queryByTestId('tc-detalhe')).toBeNull());
+    });
+
+    it('🔒 o botão de REGISTRAR mensagem existe na listagem', async () => {
+      // Sem ele, quem abre "Plantillas" vê só uma lista e conclui que não dá
+      // para adicionar mensagem — foi exatamente o que aconteceu.
+      await renderWith([row({})]);
+      await screen.findByTestId('tc-table');
+      const botao = screen.getByTestId('tc-nova-mensagem');
+      expect(botao.getAttribute('href')).toBe('/admin/plantillas/registrar');
+    });
+  });
+
+  describe('variáveis — casos antigos', () => {
     it('sem variáveis não mostra bloco vazio', async () => {
       await renderWith([row({ placeholders: [] })]);
       await screen.findByTestId('tc-row-ar_bienvenida');
@@ -247,5 +307,80 @@ describe('TemplateCatalogPage', () => {
   it('data de verificação é formatada', async () => {
     await renderWith([row()]);
     expect(await screen.findByText(/31\/08\/2026/)).toBeInTheDocument();
+  });
+});
+
+describe('o detalhe da mensagem — os campos que só ele mostra', () => {
+  const abrir = async (over: Record<string, unknown>) => {
+    const u = userEvent.setup();
+    await renderWith([row(over)]);
+    await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
+    await screen.findByTestId('tc-detalhe');
+    return u;
+  };
+
+  it('mostra o TEXTO aprovado, que é o que a pessoa veio ver', async () => {
+    await abrir({ bodyTwilio: 'Hola {{1}}, todo bien por acá.' });
+    expect(screen.getByTestId('tc-detalhe-texto').textContent).toContain('todo bien por acá');
+  });
+
+  it('recusada: mostra o motivo E a explicação em prosa da Meta', async () => {
+    await abrir({
+      metaStatus: 'REJECTED', metaReason: 'INCORRECT_CATEGORY',
+      metaDetail: 'La categoría no coincide con el contenido.',
+    });
+    expect(screen.getByTestId('tc-detalhe-motivo').textContent).toContain('INCORRECT_CATEGORY');
+    expect(screen.getByTestId('tc-detalhe-explicacao').textContent).toContain('no coincide');
+  });
+
+  it('aprovada: nem motivo nem explicação aparecem — não há o que dizer', async () => {
+    await abrir({ metaStatus: 'APPROVED', metaReason: null, metaDetail: null });
+    expect(screen.queryByTestId('tc-detalhe-motivo')).toBeNull();
+    expect(screen.queryByTestId('tc-detalhe-explicacao')).toBeNull();
+  });
+
+  it('mostra as etapas em que a mensagem é usada', async () => {
+    await abrir({ usedInStages: ['HIRED', 'SELECTED'] });
+    const txt = screen.getByTestId('tc-detalhe-etapas').textContent ?? '';
+    expect(txt).toContain('HIRED');
+    expect(txt).toContain('SELECTED');
+  });
+
+  it('sem uso, diz que não é usada — não deixa em branco', async () => {
+    await abrir({ usedInStages: [] });
+    expect(screen.getByTestId('tc-detalhe-etapas').textContent).toContain('unused');
+  });
+
+  it('inelegível: explica por que não serve para etapas', async () => {
+    await abrir({ eligible: false, ineligibleReason: 'PLACEHOLDERS' });
+    // O dublê de `t` devolve o fallback quando há 2º argumento — o que importa
+    // aqui é que o bloco APARECE e fala de inelegibilidade.
+    expect(screen.getByTestId('tc-detalhe-inelegivel').textContent).toContain('ineligible');
+  });
+
+  it('elegível não mostra o bloco de "por que não serve"', async () => {
+    await abrir({ eligible: true });
+    expect(screen.queryByTestId('tc-detalhe-inelegivel')).toBeNull();
+  });
+
+  it('nunca verificado diz "nunca", não data vazia', async () => {
+    await abrir({ metaCheckedAt: null });
+    expect(screen.getByTestId('tc-detalhe-verificado').textContent).toContain('never');
+  });
+
+  it('sem content_sid mostra travessão, não "null"', async () => {
+    await abrir({ contentSid: null });
+    expect(screen.getByTestId('tc-detalhe-sid').textContent).toBe('—');
+  });
+
+  it('sem texto sincronizado avisa, em vez de painel vazio', async () => {
+    await abrir({ bodyTwilio: null });
+    expect(screen.getByTestId('tc-detalhe-texto').textContent).toContain('noText');
+  });
+
+  it('Escape fecha o detalhe', async () => {
+    const u = await abrir({});
+    await u.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('tc-detalhe')).toBeNull());
   });
 });

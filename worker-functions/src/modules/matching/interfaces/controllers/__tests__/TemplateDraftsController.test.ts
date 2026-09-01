@@ -20,6 +20,8 @@ const linha = (over: Record<string, unknown> = {}) => ({
   version: 1, created_by: 'uid-a', updated_by: 'uid-a',
   created_at: '2026-08-31T12:00:00Z', updated_at: '2026-08-31T12:00:00Z',
   content_sid: null, submitted_at: null, submitted_by: null, submission_error: null,
+  meta_approval_status: null, meta_approval_reason: null,
+  meta_approval_detail: null, meta_approval_checked_at: null,
   ...over,
 });
 
@@ -446,5 +448,59 @@ describe('duplicate — duplicar e corrigir', () => {
     const a = ambiente(jest.fn(async () => { throw 'string crua'; }));
     await a.controller.duplicate(req({ params: { id: 'x' } }), a.res);
     expect(a.status()).toBe(500);
+  });
+});
+
+describe('🔒 o estado da META chega na lista — o bug de 01/09', () => {
+  it('enviado e SEM resposta da Meta ainda é "submitted"', async () => {
+    const a = ambiente(jest.fn(async () => ({
+      rows: [linha({ content_sid: 'HXa', submitted_at: '2026-09-01T02:00:00Z' })], rowCount: 1,
+    })));
+    await a.controller.list(req(), a.res);
+    expect(a.body().data.drafts[0]).toMatchObject({ status: 'submitted', metaStatus: null });
+  });
+
+  it('🔒 enviado e APROVADO vira "decided" — antes ficava "submitted" PARA SEMPRE', async () => {
+    const a = ambiente(jest.fn(async () => ({
+      rows: [linha({
+        content_sid: 'HXa', submitted_at: '2026-09-01T02:00:00Z',
+        meta_approval_status: 'APPROVED', meta_approval_checked_at: '2026-09-01T03:00:00Z',
+      })], rowCount: 1,
+    })));
+    await a.controller.list(req(), a.res);
+    expect(a.body().data.drafts[0]).toMatchObject({
+      status: 'decided', metaStatus: 'APPROVED', metaReason: null,
+    });
+  });
+
+  it('recusado traz o motivo e a explicação em prosa', async () => {
+    const a = ambiente(jest.fn(async () => ({
+      rows: [linha({
+        content_sid: 'HXa', submitted_at: '2026-09-01T02:00:00Z',
+        meta_approval_status: 'REJECTED', meta_approval_reason: 'INCORRECT_CATEGORY',
+        meta_approval_detail: 'A categoria não bate com o conteúdo.',
+      })], rowCount: 1,
+    })));
+    await a.controller.list(req(), a.res);
+    expect(a.body().data.drafts[0]).toMatchObject({
+      status: 'decided', metaStatus: 'REJECTED', metaReason: 'INCORRECT_CATEGORY',
+      metaDetail: 'A categoria não bate com o conteúdo.',
+    });
+  });
+
+  it('🔒 a listagem faz LEFT JOIN por content_sid — sem isso o estado nunca chega', async () => {
+    const q: jest.Mock = jest.fn(async () => ({ rows: [], rowCount: 0 }));
+    const a = ambiente(q);
+    await a.controller.list(req(), a.res);
+    const sql = q.mock.calls[0][0] as string;
+    expect(sql).toContain('LEFT JOIN message_templates');
+    expect(sql).toContain('meta_approval_status');
+    expect(sql).toMatch(/UPPER\(t\.content_sid\)\s*=\s*UPPER\(d\.content_sid\)/);
+  });
+
+  it('rascunho nunca enviado continua "draft", mesmo com a junção', async () => {
+    const a = ambiente(jest.fn(async () => ({ rows: [linha()], rowCount: 1 })));
+    await a.controller.list(req(), a.res);
+    expect(a.body().data.drafts[0]).toMatchObject({ status: 'draft', metaStatus: null });
   });
 });

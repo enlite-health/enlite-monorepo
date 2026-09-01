@@ -3550,7 +3550,14 @@
         "hour": "Verificado há {{count}} h",
         "day": "Verificado há {{count}} d"
       },
-      "metaDetail": "O que a Meta disse"
+      "metaDetail": "O que a Meta disse",
+      "variaveis": "Variáveis que usa",
+      "semVariaveis": "Nenhuma — texto fixo",
+      "variaveisPosicionais": "São posicionais ({{1}}, {{2}}…): o sistema não sabe o que pôr em cada uma. Por isso não serve para mensagem por etapa.",
+      "variaveisNomeadas": "Com nome: o sistema preenche sozinho.",
+      "reasonLabel": "Motivo da recusa",
+      "porQueNaoServe": "Por que não serve para etapas",
+      "novaMensagem": "Registrar mensagem nova"
     },
     "templateDrafts": {
       "title": "Registrar mensagem",
@@ -3647,7 +3654,16 @@
         "draft_nao_encontrado": "O rascunho não existe mais.",
         "twilio_falhou": "A Twilio recusou o envio. Veja o detalhe no rascunho.",
         "ja_submetido_use_duplicar": "Já foi enviado: duplique e corrija em vez de editar."
-      }
+      },
+      "veredito": {
+        "APPROVED": "Aprovada pela Meta ✓",
+        "REJECTED": "Recusada pela Meta",
+        "PAUSED": "Pausada pela Meta",
+        "DISABLED": "Desabilitada pela Meta",
+        "PENDING": "Em revisão da Meta",
+        "IN_APPEAL": "Em apelação"
+      },
+      "voltarCatalogo": "← Voltar ao catálogo"
     }
   },
   "publicVacancy": {
