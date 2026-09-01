@@ -48,6 +48,17 @@
 -- Aditiva: só acrescenta colunas e preenche. Não apaga linha, não renomeia
 -- slug, não toca em `content_sid` nem em nada que a Meta já aprovou.
 
+-- 🔒 TRANSAÇÃO EXPLÍCITA, e não é enfeite. O `run-migration-prod.sh` chama o
+-- psql com `ON_ERROR_STOP=1` mas SEM transação: cada statement daria commit
+-- sozinho, e uma falha no meio deixaria a tabela com as colunas criadas e o
+-- backfill pela metade — 28 linhas em que algumas têm `base_name` e outras não,
+-- que é justamente o estado que a listagem não sabe representar.
+--
+-- Todos os statements aqui são transacionais no Postgres (ALTER, COMMENT,
+-- UPDATE e CREATE INDEX não-concorrente), então ou entra tudo ou não entra nada.
+
+BEGIN;
+
 ALTER TABLE message_templates
   ADD COLUMN IF NOT EXISTS language  VARCHAR(10),
   ADD COLUMN IF NOT EXISTS base_name VARCHAR(120);
@@ -116,3 +127,5 @@ UPDATE message_templates AS t
 -- "duas linhas parecidas" por "nenhuma linha sincronizada" é pior.
 CREATE INDEX IF NOT EXISTS idx_message_templates_base_name
     ON message_templates (base_name, language);
+
+COMMIT;
