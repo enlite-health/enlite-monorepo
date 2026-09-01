@@ -44,10 +44,18 @@ vi.mock('react-i18next', () => ({
 
 const row = (over: Partial<TemplateCatalogRow> = {}): TemplateCatalogRow => ({
   slug: 'ar_bienvenida', name: 'ar_bienvenida', bodyTwilio: 'Hola María, bienvenida',
+  language: 'es-AR',
   category: 'UTILITY', isActive: true, contentSid: 'HXaaa',
   metaStatus: 'APPROVED', metaReason: null, metaDetail: null,
   metaCheckedAt: '2026-08-31T12:00:00Z',
-  eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [], ...over,
+  eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [],
+  ...over,
+  // 🔒 O `baseName` acompanha o slug por padrão — é o caso REAL de 12 das 28
+  // linhas de produção, que não têm marcador de idioma nenhum e cujo
+  // `base_name` é o próprio slug. Sem isto, dois fixtures com slugs
+  // diferentes cairiam no mesmo `baseName` e colapsariam numa linha só,
+  // fazendo o teste medir um agrupamento que produção não tem.
+  baseName: over.baseName ?? over.slug ?? 'ar_bienvenida',
 });
 
 const renderWith = async (templates: TemplateCatalogRow[]) => {
@@ -419,5 +427,81 @@ describe('ajustes de 01/09 (Gabriel, olhando a tela)', () => {
     const txt = linha.textContent ?? '';
     // A ordem no DOM é a ordem visual: identificador antes do texto.
     expect(txt.indexOf('ar_bienvenida')).toBeLessThan(txt.indexOf('Texto de la mensaje'));
+  });
+});
+
+describe('a listagem por MENSAGEM (01/09) — duas colunas de idioma numa linha só', () => {
+  const par = [
+    row({ slug: 'admission_confirmation_es', baseName: 'admission_confirmation', language: 'es-AR', metaStatus: 'APPROVED' }),
+    row({ slug: 'admission_confirmation_pt', baseName: 'admission_confirmation', language: 'pt-BR', metaStatus: 'PENDING' }),
+  ];
+
+  it('🔒 as duas versões viram UMA linha — antes eram duas coisas sem relação', async () => {
+    await renderWith(par);
+    expect(await screen.findByTestId('tc-row-admission_confirmation')).toBeInTheDocument();
+    expect(screen.queryByTestId('tc-row-admission_confirmation_es')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tc-row-admission_confirmation_pt')).not.toBeInTheDocument();
+  });
+
+  it('🔒 cada idioma carrega o PRÓPRIO estado — aprovado de um lado, em revisão do outro', async () => {
+    // As aprovações são independentes: dois Contents, dois pedidos à Meta.
+    // Um selo único no par não teria como representar isto.
+    await renderWith(par);
+    expect(await screen.findByTestId('tc-status-admission_confirmation_es')).toHaveTextContent('APPROVED');
+    expect(screen.getByTestId('tc-status-admission_confirmation_pt')).toHaveTextContent('PENDING');
+  });
+
+  it('o lado que não existe oferece CRIAR a versão, com o base e o idioma na URL', async () => {
+    await renderWith([row({ slug: 'ar_invite_open', baseName: 'invite_open', language: 'es-AR' })]);
+    const link = await screen.findByTestId('tc-criar-pt-BR-invite_open');
+    expect(link).toHaveAttribute('href', '/admin/plantillas/registrar?base=invite_open&lang=pt-BR');
+    // E o lado que existe NÃO oferece criar.
+    expect(screen.queryByTestId('tc-criar-es-AR-invite_open')).not.toBeInTheDocument();
+  });
+
+  it('o filtro "falta una versión" conta e mostra só as incompletas', async () => {
+    const u = userEvent.setup();
+    await renderWith([...par, row({ slug: 'ar_invite_open', baseName: 'invite_open', language: 'es-AR' })]);
+    const botao = await screen.findByTestId('tc-filter-missing');
+    expect(botao).toHaveTextContent('1');
+    await u.click(botao);
+    expect(screen.getByTestId('tc-row-invite_open')).toBeInTheDocument();
+    expect(screen.queryByTestId('tc-row-admission_confirmation')).not.toBeInTheDocument();
+  });
+
+  it('🔒 filtro de estado mantém os DOIS lados desenhados — senão o par pareceria incompleto', async () => {
+    // Sob "aprobadas", o par entra pelo espanhol. Se a tela filtrasse as linhas
+    // soltas antes de agrupar, o português sumiria e a mensagem apareceria como
+    // se faltasse uma versão que na verdade está em revisão.
+    const u = userEvent.setup();
+    await renderWith(par);
+    await u.click(await screen.findByTestId('tc-filter-approved'));
+    expect(screen.getByTestId('tc-row-admission_confirmation')).toBeInTheDocument();
+    expect(screen.getByTestId('tc-status-admission_confirmation_pt')).toHaveTextContent('PENDING');
+    expect(screen.queryByTestId('tc-criar-pt-BR-admission_confirmation')).not.toBeInTheDocument();
+  });
+
+  it('🔒 idioma não registrado APARECE em vez de sumir das duas colunas', async () => {
+    await renderWith([row({ slug: 'qualified_worker', baseName: 'qualified_worker', language: null })]);
+    expect(await screen.findByTestId('tc-sem-idioma-qualified_worker')).toHaveTextContent('qualified_worker');
+  });
+});
+
+describe('os cliques da coluna de idioma', () => {
+  it('clicar na versão abre o detalhe DAQUELA versão, não da outra', async () => {
+    const u = userEvent.setup();
+    await renderWith([
+      row({ slug: 'ar_x', baseName: 'x', language: 'es-AR', bodyTwilio: 'texto español' }),
+      row({ slug: 'br_x', baseName: 'x', language: 'pt-BR', bodyTwilio: 'texto português' }),
+    ]);
+    await u.click(screen.getByTestId('tc-lang-pt-BR-br_x'));
+    expect(await screen.findByTestId('tc-detalhe')).toHaveTextContent('texto português');
+  });
+
+  it('🔒 "＋ Crear versión" NÃO abre o detalhe junto — seriam dois destinos num clique', async () => {
+    const u = userEvent.setup();
+    await renderWith([row({ slug: 'ar_x', baseName: 'x', language: 'es-AR' })]);
+    await u.click(screen.getByTestId('tc-criar-pt-BR-x'));
+    expect(screen.queryByTestId('tc-detalhe')).not.toBeInTheDocument();
   });
 });

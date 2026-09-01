@@ -16,7 +16,7 @@
  * corrigir", porque o texto que foi para a Meta não pode ser reescrito por baixo.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   AdminTemplateDraftsApiService,
@@ -24,7 +24,7 @@ import {
   type ProblemaDeRegra,
   type TemplateDraft,
 } from '@infrastructure/http/AdminTemplateDraftsApiService';
-import { VARIAVEIS_AJUDA } from './templateDraftsView';
+import { VARIAVEIS_AJUDA, inicialDaURL } from './templateDraftsView';
 import { TemplateDraftAvisos } from './TemplateDraftAvisos';
 import { TemplateDraftConfirmDialog } from './TemplateDraftConfirmDialog';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -50,7 +50,10 @@ const VAZIO = { slug: '', name: '', body: '', category: 'UTILITY', language: 'es
 export function TemplateDraftsPage(): JSX.Element {
   const { t } = useTranslation();
   const [drafts, setDrafts] = useState<TemplateDraft[] | null>(null);
-  const [form, setForm] = useState({ ...VAZIO });
+  const [searchParams] = useSearchParams();
+  // `useState` com inicializador roda UMA vez: a pessoa pode apagar o que veio
+  // da URL sem o valor voltar a cada render.
+  const [form, setForm] = useState(() => inicialDaURL(searchParams, VAZIO));
   const [editando, setEditando] = useState<TemplateDraft | null>(null);
   const [problemas, setProblemas] = useState<ProblemaDeRegra[]>([]);
   // 🔒 Estes dois guardam CHAVE, não texto traduzido. Guardar o texto obrigaria

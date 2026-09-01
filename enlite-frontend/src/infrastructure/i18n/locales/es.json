@@ -3622,7 +3622,8 @@
         "off": "Desactivadas por Meta",
         "rejected": "Rechazadas",
         "unchecked": "Sin verificar",
-        "other": "Otros estados"
+        "other": "Otros estados",
+        "missing": "Falta una versión"
       },
       "filterEmpty": "Ninguna plantilla en este estado.",
       "syncAge": {
@@ -3638,7 +3639,11 @@
       "variaveisNomeadas": "Con nombre: el sistema las completa solo.",
       "reasonLabel": "Motivo del rechazo",
       "porQueNaoServe": "Por qué no sirve para etapas",
-      "novaMensagem": "Registrar mensaje nuevo"
+      "novaMensagem": "Registrar mensaje nuevo",
+      "espanol": "Español",
+      "portugues": "Português",
+      "criarVersao": "Crear versión",
+      "idiomaNaoRegistrado": "Idioma no registrado: {{slugs}}"
     },
     "templateDrafts": {
       "title": "Registrar mensaje",

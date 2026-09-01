@@ -103,3 +103,31 @@ export function quandoRelativo(iso: string | null, agora: Date): { valor: number
   if (h < 24) return { valor: h, unidade: 'h' };
   return { valor: Math.floor(h / 24), unidade: 'd' };
 }
+
+/** Os idiomas que a tela aceita vir por URL. */
+const IDIOMAS_VALIDOS = new Set(['es-AR', 'pt-BR']);
+
+/**
+ * O estado inicial do formulário quando se chega pelo "＋ Crear versión" do
+ * catálogo: `?base=<base_name>&lang=<idioma>`.
+ *
+ * 🔒 O `base` VAI PARA O SLUG, e é isso que faz o par nascer certo. O backend
+ * prefixa por idioma (`ar_`/`br_`), então digitar o mesmo `base` dos dois
+ * lados produz `ar_x` e `br_x` — que só pareiam na tela porque a coluna
+ * `base_name` os une. Chegar aqui com o campo em branco faria a pessoa
+ * redigitar de cabeça o nome da outra versão, e um caractere diferente cria
+ * uma mensagem órfã em vez da tradução que ela quis fazer.
+ *
+ * 🔒 Idioma fora do conjunto é IGNORADO, não aceito: `?lang=xx` viria do que
+ * alguém digitou na barra de endereço, e um valor inválido no `select` deixa
+ * o formulário num estado que o backend recusa sem a tela saber por quê.
+ */
+export function inicialDaURL<T extends { slug: string; language: string }>(params: URLSearchParams, vazio: T): T {
+  const base = (params.get('base') ?? '').trim();
+  const lang = params.get('lang') ?? '';
+  return {
+    ...vazio,
+    slug: base,
+    language: IDIOMAS_VALIDOS.has(lang) ? lang : vazio.language,
+  };
+}

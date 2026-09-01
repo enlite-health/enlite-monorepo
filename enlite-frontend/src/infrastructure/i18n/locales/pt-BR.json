@@ -3543,7 +3543,8 @@
         "off": "Desativadas pela Meta",
         "rejected": "Recusadas",
         "unchecked": "Sem verificar",
-        "other": "Outros estados"
+        "other": "Outros estados",
+        "missing": "Falta uma versão"
       },
       "filterEmpty": "Nenhum modelo neste estado.",
       "syncAge": {
@@ -3559,7 +3560,11 @@
       "variaveisNomeadas": "Com nome: o sistema preenche sozinho.",
       "reasonLabel": "Motivo da recusa",
       "porQueNaoServe": "Por que não serve para etapas",
-      "novaMensagem": "Registrar mensagem nova"
+      "novaMensagem": "Registrar mensagem nova",
+      "espanol": "Espanhol",
+      "portugues": "Português",
+      "criarVersao": "Criar versão",
+      "idiomaNaoRegistrado": "Idioma não registrado: {{slugs}}"
     },
     "templateDrafts": {
       "title": "Registrar mensagem",

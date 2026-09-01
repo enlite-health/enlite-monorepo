@@ -31,6 +31,8 @@ import { evaluateTemplateEligibility } from '../../../notification/application/S
 interface CatalogRow {
   slug: string;
   name: string;
+  language: string | null;
+  base_name: string | null;
   body: string | null;
   body_twilio: string | null;
   category: string | null;
@@ -54,6 +56,13 @@ export class TemplateCatalogController {
     try {
       const r = await this.db.query<CatalogRow>(
         `SELECT t.slug, t.name, t.body, t.body_twilio, t.category, t.is_active, t.content_sid,
+                t.language,
+                -- COALESCE, e nao t.base_name cru: linha criada pelo sync a partir
+                -- do Console da Twilio nasce com base_name NULL, e caindo em slug
+                -- ela vira um grupo de UM. Nunca pareia errado, so nao pareia.
+                -- Deixar NULL faria todas elas colapsarem num unico grupo "null",
+                -- juntando mensagens que nao tem relacao nenhuma.
+                COALESCE(t.base_name, t.slug) AS base_name,
                 t.meta_approval_status, t.meta_approval_reason, t.meta_approval_detail,
                 t.meta_approval_checked_at,
                 -- "usado em" é LEITURA nesta tela: onde a mensagem é usada se
@@ -77,6 +86,10 @@ export class TemplateCatalogController {
             return {
               slug: t.slug,
               name: t.name,
+              // `null` é "idioma não registrado", e a tela diz isso — nunca vira
+              // es-AR por omissão. Ver o cabeçalho da migration 300.
+              language: t.language,
+              baseName: t.base_name,
               // `bodyTwilio` é o texto que a Meta aprovou — o único que a tela
               // mostra. `body` é contrato de ENVIO (nomes das variáveis) e
               // divergiu do aprovado em 12 de 27 templates numa conferência de
