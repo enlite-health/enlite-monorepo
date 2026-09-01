@@ -249,3 +249,57 @@ describe('syncStatuses', () => {
     await expect(p.fetchAll()).rejects.not.toThrow(/TOKEN_SECRETO/);
   });
 });
+
+describe('rejectedReason — o campo que faltava, e a ausência era invisível', () => {
+  it('parseMetaTemplate captura o motivo e normaliza a caixa', () => {
+    const t = parseMetaTemplate({ name: 'x_hx' + 'a'.repeat(32), status: 'REJECTED', rejected_reason: 'incorrect_category' });
+    expect(t?.rejectedReason).toBe('INCORRECT_CATEGORY');
+  });
+
+  it('🔒 `NONE` vira null — guardar "NONE" faria a tela exibir motivo em template aprovado', () => {
+    for (const v of ['NONE', 'none', 'None']) {
+      const t = parseMetaTemplate({ name: 'x_hx' + 'a'.repeat(32), status: 'APPROVED', rejected_reason: v });
+      expect(t?.rejectedReason).toBeNull();
+    }
+  });
+
+  it('campo ausente vira null, não undefined', () => {
+    const t = parseMetaTemplate({ name: 'x_hx' + 'a'.repeat(32), status: 'APPROVED' });
+    expect(t?.rejectedReason).toBeNull();
+  });
+
+  it('valor não-string vira null', () => {
+    const t = parseMetaTemplate({ name: 'x_hx' + 'a'.repeat(32), status: 'REJECTED', rejected_reason: 42 });
+    expect(t?.rejectedReason).toBeNull();
+  });
+
+  it('🔒 o motivo CHEGA na coluna — era o buraco: buscado, e nunca gravado', async () => {
+    const sid = 'HX' + 'C'.repeat(32); // maiúsculo: é como o provider normaliza
+    const gravacoes: unknown[][] = [];
+    const db = {
+      query: jest.fn(async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('UPDATE message_templates')) { gravacoes.push(params); return { rows: [], rowCount: 1 }; }
+        return { rows: [{ content_sid: sid }], rowCount: 1 };
+      }),
+    } as never;
+    const fetchImpl = jest.fn(async () => ({
+      ok: true, status: 200, text: async () => '',
+      json: async () => ({ data: [{ name: `x_${sid.toLowerCase()}`, status: 'REJECTED', rejected_reason: 'INCORRECT_CATEGORY', language: 'es_AR' }] }),
+    }));
+    const p = new MetaTemplateStatusProvider(db, 'waba-1', 'tok', fetchImpl as never);
+    await p.syncStatuses();
+
+    expect(gravacoes).toHaveLength(1);
+    expect(gravacoes[0]).toEqual([sid, 'REJECTED', 'INCORRECT_CATEGORY']);
+  });
+
+  it('🔒 pede `rejected_reason` à Meta — sem isso a coluna nunca preenche', async () => {
+    const db = { query: jest.fn(async () => ({ rows: [], rowCount: 0 })) } as never;
+    const fetchImpl = jest.fn(async () => ({
+      ok: true, status: 200, text: async () => '', json: async () => ({ data: [] }),
+    }));
+    await new MetaTemplateStatusProvider(db, 'waba-1', 'tok', fetchImpl as never).fetchAll();
+    const url = (fetchImpl.mock.calls[0] as unknown as [string])[0];
+    expect(url).toContain('rejected_reason');
+  });
+});

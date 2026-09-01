@@ -45,6 +45,8 @@ export interface MetaTemplate {
   status: string;
   category: string | null;
   qualityScore: string | null;
+  /** Código da recusa (conjunto fechado de 8 da Meta). `null` quando não houve. */
+  rejectedReason: string | null;
   id: string | null;
 }
 
@@ -55,6 +57,7 @@ export interface MetaStatusUpdate {
   language: string;
   category: string | null;
   qualityScore: string | null;
+  rejectedReason: string | null;
 }
 
 /**
@@ -116,6 +119,12 @@ export function parseMetaTemplate(raw: unknown): MetaTemplate | null {
     status,
     category: typeof o.category === 'string' ? o.category : null,
     qualityScore,
+    // `NONE` é como a Meta diz "sem motivo" — guardar isso como se fosse um
+    // motivo faria a tela exibir "NONE" para template aprovado.
+    rejectedReason:
+      typeof o.rejected_reason === 'string' && o.rejected_reason.toUpperCase() !== 'NONE'
+        ? o.rejected_reason.toUpperCase()
+        : null,
     id: typeof o.id === 'string' ? o.id : null,
   };
 }
@@ -152,7 +161,12 @@ export class MetaTemplateStatusProvider {
       return [];
     }
     const out: MetaTemplate[] = [];
-    const fields = 'name,language,status,category,quality_score,id';
+    // ⚠️ `rejected_reason` FALTAVA aqui, e a ausência era invisível: com zero
+    // templates recusados na conta, `meta_approval_reason` ficava NULL e ninguém
+    // notava. Descoberto em 01/09/2026, quando a primeira submissão real voltou
+    // REJECTED/INCORRECT_CATEGORY e a coluna continuou vazia. Ir buscar na Meta
+    // só valia por causa DESTE campo — a Twilio entrega a recusa seca.
+    const fields = 'name,language,status,category,quality_score,rejected_reason,id';
     let url: string | null = `${GRAPH_BASE}/${this.wabaId}/message_templates?fields=${fields}&limit=100`;
 
     for (let page = 0; url && page < MAX_PAGES; page++) {
@@ -210,6 +224,7 @@ export class MetaTemplateStatusProvider {
         await this.persist({
           contentSid: sid,
           status: t.status,
+          rejectedReason: t.rejectedReason,
           language: t.language,
           category: t.category,
           qualityScore: t.qualityScore,
@@ -252,11 +267,14 @@ export class MetaTemplateStatusProvider {
     await this.db.query(
       `UPDATE message_templates
           SET meta_approval_status  = $2,
+              meta_approval_reason  = $3,
               meta_approval_checked_at = NOW()
         WHERE UPPER(content_sid) = $1
-          AND (meta_approval_status IS DISTINCT FROM $2 OR meta_approval_checked_at IS NULL
+          AND (meta_approval_status IS DISTINCT FROM $2
+               OR meta_approval_reason IS DISTINCT FROM $3
+               OR meta_approval_checked_at IS NULL
                OR meta_approval_checked_at < NOW() - INTERVAL '1 minute')`,
-      [u.contentSid, u.status],
+      [u.contentSid, u.status, u.rejectedReason],
     );
   }
 }
