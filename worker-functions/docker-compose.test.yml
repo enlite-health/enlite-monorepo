@@ -33,7 +33,12 @@ services:
       - "9199:9199"
       - "4000:4000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9099 2>/dev/null || exit 1"]
+      # 127.0.0.1, NÃO `localhost`: dentro deste container `localhost` resolve para
+      # `::1` (IPv6) antes do IPv4, e o emulador escuta só em 0.0.0.0 (IPv4). O wget
+      # do busybox tentava ::1, levava "Connection refused", e o container ficava
+      # `unhealthy` PARA SEMPRE — mesmo servindo 200 na porta. Como a API depende
+      # de `service_healthy`, isso derrubava a stack inteira no CI (medido 01/09).
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9099 2>/dev/null || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
