@@ -85,17 +85,34 @@ test.describe('Catálogo — o detalhe e o caminho para criar', () => {
     await expect(page.getByTestId('tc-table')).toBeVisible({ timeout: 30_000 });
   });
 
-  test('a listagem NÃO mostra mais os números, e tem botão de registrar', async ({ page }) => {
-    // 🔒 O defeito: "1 2 3 4 5" apareciam aqui, sem rótulo.
-    await expect(page.getByTestId('tc-vars-admission_confirmation_es')).toHaveCount(0);
+  /*
+   * ⚠️ ESTE TESTE MEDIA A AUSÊNCIA DO ELEMENTO, e a ausência deixou de ser a
+   * resposta certa. O defeito original era o número NU — "1 2 3 4 5" solto na
+   * célula, que não se lê como nada. A correção não foi apagar a informação: foi
+   * mostrá-la como `{{1}}`, que se lê como marcador de posição, com o custo
+   * explicado no detalhe. Afirmar `toHaveCount(0)` passou a proibir o conserto.
+   */
+  test('a listagem mostra a variável como marcador, nunca como número nu', async ({ page }) => {
+    const vars = page.getByTestId('tc-vars-admission_confirmation_es');
+    await expect(vars).toBeVisible();
+    await expect(vars).toContainText('{{1}}');
+    // O que continua proibido: um dígito sozinho, sem as chaves que o explicam.
+    expect((await vars.textContent() ?? '').replace(/\{\{\d+\}\}/g, '').trim()).toBe('');
     // 🔒 O caminho que não existia.
     await expect(page.getByTestId('tc-nova-mensagem')).toBeVisible();
     await expect(page).toHaveScreenshot('catalogo-sem-numeros.png', { maxDiffPixels: 120 });
   });
 
+  /*
+   * ⚠️ O DETALHE VIROU ROTA. `tc-detalhe` era o invólucro do drawer, que deixou
+   * de existir em 01/09 — o desenho pede endereço próprio, porque quem chega
+   * aqui vai ler e depois agir, e um drawer some ao clicar fora no meio da
+   * leitura. O teste mudou de porta, não de asserção.
+   */
   test('o detalhe explica as variáveis posicionais', async ({ page }) => {
     await page.getByTestId('tc-row-admission_confirmation_es').click();
-    await expect(page.getByTestId('tc-detalhe')).toBeVisible();
+    await expect(page).toHaveURL(/plantillas\/[^/]+$/);
+    await expect(page.getByTestId('tc-detalhe-texto')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('tc-detalhe-vars')).toContainText('{{1}}');
     await expect(page.getByTestId('tc-detalhe-vars-posicionais')).toContainText(/no sabe qué poner/i);
     await expect(page).toHaveScreenshot('detalhe-posicionais.png', { maxDiffPixels: 120 });
@@ -103,7 +120,7 @@ test.describe('Catálogo — o detalhe e o caminho para criar', () => {
 
   test('o detalhe de uma recusada mostra motivo E explicação da Meta', async ({ page }) => {
     await page.getByTestId('tc-row-ar_recusada_exemplo').click();
-    await expect(page.getByTestId('tc-detalhe-motivo')).toBeVisible();
+    await expect(page.getByTestId('tc-detalhe-motivo')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('tc-detalhe-explicacao')).toContainText(/promocional/i);
     await expect(page).toHaveScreenshot('detalhe-recusada.png', { maxDiffPixels: 120 });
   });

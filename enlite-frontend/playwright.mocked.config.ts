@@ -22,6 +22,28 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
+  /**
+   * 🔒 OS TRÊS QUE TOCAM AMBIENTE REAL FICAM DE FORA — e a lista existe porque
+   * o `testMatch` acima casa TODO arquivo de e2e, sem exclusão nenhuma. Um
+   * `npx playwright test --config=playwright.mocked.config.ts` sem argumentos,
+   * num config cujo nome é "mocked", disparava:
+   *
+   *   · `staging-journey-clean`  — sobe contra a stage E **cria e apaga usuário**
+   *     no Firebase real (`identitytoolkit.googleapis.com`, accounts:signUp e
+   *     accounts:delete);
+   *   · `staging-full-journey`   — idem;
+   *   · `vacancy-enum-i18n-real` — **signIn real no Firebase de produção** com a
+   *     conta de teste, contra o backend real (`@real-auth`).
+   *
+   * A regra do projeto é "teste nunca toca canal real", e ela não pode depender
+   * de quem roda lembrar de passar o caminho certo. Rodar esses três é ato
+   * deliberado: aponte o arquivo, com as variáveis de ambiente que eles exigem.
+   */
+  testIgnore: [
+    '**/staging-journey-clean.e2e.ts',
+    '**/staging-full-journey.e2e.ts',
+    '**/vacancy-enum-i18n-real.e2e.ts',
+  ],
   fullyParallel: false,
   retries: 0,
   workers: 1,
