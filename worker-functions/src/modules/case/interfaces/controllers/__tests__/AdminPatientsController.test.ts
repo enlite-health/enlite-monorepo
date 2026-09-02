@@ -54,8 +54,16 @@ jest.mock('../../../application/PatientTestFixtureService', () => {
       this.name = 'NotATestPatientError';
     }
   }
+  class TestVacancyHasApplicationsError extends Error {
+    readonly code = 'TEST_VACANCY_HAS_APPLICATIONS';
+    constructor(id: string, readonly applications: number) {
+      super(`Patient ${id} has test vacancies with ${applications} real application(s) — refusing to purge`);
+      this.name = 'TestVacancyHasApplicationsError';
+    }
+  }
   return {
     NotATestPatientError,
+    TestVacancyHasApplicationsError,
     PatientTestFixtureService: jest.fn().mockImplementation(() => ({
       setTestFlag: mockSetTestFlag,
       purge: mockPurge,
@@ -490,6 +498,27 @@ describe('AdminPatientsController — purge de paciente sintético', () => {
     expect(res.status).toHaveBeenCalledWith(409);
     const body = (res.status as jest.Mock).mock.results[0].value.json.mock.calls[0][0];
     expect(body).toMatchObject({ success: false, code: 'NOT_A_TEST_PATIENT' });
+  });
+
+  it('409 quando a vaga sintética tem candidatura de prestador real (C3)', async () => {
+    const { TestVacancyHasApplicationsError } = jest.requireMock(
+      '../../../application/PatientTestFixtureService',
+    );
+    mockPurge.mockRejectedValue(new TestVacancyHasApplicationsError(PATIENT_ID, 2));
+    const controller = new AdminPatientsController();
+    const [req, res] = mockReqRes({ id: PATIENT_ID });
+
+    await controller.purgeTestPatient(req, res);
+
+    // 409 e não 500: é uma RECUSA deliberada, e quem chamou precisa saber
+    // quantas candidaturas de gente real seriam perdidas.
+    expect(res.status).toHaveBeenCalledWith(409);
+    const body = (res.status as jest.Mock).mock.results[0].value.json.mock.calls[0][0];
+    expect(body).toMatchObject({
+      success: false,
+      code: 'TEST_VACANCY_HAS_APPLICATIONS',
+      applications: 2,
+    });
   });
 
   it('404 quando o paciente não existe', async () => {

@@ -1,6 +1,8 @@
+import * as functions from 'firebase-functions';
 import {
   PatientTestFixtureService,
   NotATestPatientError,
+  TestVacancyHasApplicationsError,
 } from '../PatientTestFixtureService';
 
 /**
@@ -122,6 +124,7 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
       calendarEventsDeleted: 1,
       calendarEventsFailed: 0,
       vacanciesDeleted: 2,
+      cascaded: {},
     });
     expect(calendar.deleteEvent).toHaveBeenCalledWith(
       'admission-ar@enlite.health',
@@ -200,6 +203,89 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
     await expect(svc.purge(PATIENT_ID)).rejects.toThrow('boom');
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
+  });
+});
+
+describe('PatientTestFixtureService.purge — C3: candidatura de prestador real', () => {
+  /** Handler: a vaga do paciente tem N candidaturas. */
+  const comCandidaturas = (n: number) => (sql: string) =>
+    sql.includes('FROM worker_job_applications') ? { rows: [{ n }], rowCount: 1 } : undefined;
+
+  it('ABORTA quando a vaga sintética tem candidatura real — e nada é apagado', async () => {
+    const { db, client, clientCalls } = makeDb([
+      selectIsTest(true),
+      noAppointments,
+      comCandidaturas(2),
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).rejects.toBeInstanceOf(TestVacancyHasApplicationsError);
+
+    // `worker_job_applications` sai por CASCADE junto com a vaga: apagar aqui
+    // custaria o dado de quem se candidatou de verdade.
+    expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(false);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(false);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('o erro carrega código e contagem (o controller devolve 409)', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, comCandidaturas(3)]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).rejects.toMatchObject({
+      code: 'TEST_VACANCY_HAS_APPLICATIONS',
+      applications: 3,
+    });
+  });
+
+  it('zero candidaturas: a vaga e o paciente são apagados normalmente', async () => {
+    const { db, clientCalls } = makeDb([selectIsTest(true), noAppointments, comCandidaturas(0)]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
+    expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(true);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+});
+
+describe('PatientTestFixtureService.purge — C2: a trilha da eliminação', () => {
+  it('registra o ATOR: sem a linha no banco, o log é a única evidência de quem apagou', async () => {
+    const spy = jest.spyOn(functions.logger, 'info').mockImplementation(() => undefined);
+    const { db } = makeDb([selectIsTest(true), noAppointments]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await svc.purge(PATIENT_ID, 'uid-do-admin');
+
+    expect(spy).toHaveBeenCalledWith(
+      'patient.test_purge.done',
+      expect.objectContaining({ patientId: PATIENT_ID, actorUid: 'uid-do-admin' }),
+    );
+    // Contagem e UUID, nunca PII (D165 / lex C2).
+    const payload = JSON.stringify(spy.mock.calls.at(-1)?.[1]);
+    expect(payload).not.toMatch(/@|\+54|diagnos/i);
+    spy.mockRestore();
+  });
+
+  it('conta por tabela o que sai por CASCADE — some junto e não daria para contar depois', async () => {
+    const { db } = makeDb([
+      selectIsTest(true),
+      noAppointments,
+      (sql) =>
+        sql.includes('FROM patient_status_history')
+          ? {
+              rows: [
+                { tabela: 'patient_status_history', n: 4 },
+                { tabela: 'patient_addresses', n: 1 },
+              ],
+              rowCount: 2,
+            }
+          : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.cascaded).toEqual({ patient_status_history: 4, patient_addresses: 1 });
   });
 });
 
