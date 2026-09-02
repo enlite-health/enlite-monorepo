@@ -134,10 +134,11 @@ export const TemplateComposerEditor = forwardRef<EditorHandle, EditorProps>(
       if (el.contains(r.commonAncestorContainer)) ultimoRange.current = r.cloneRange();
     };
 
+    // Sem dependências: `lembrarSelecao` só lê refs, e reassinar o ouvinte a cada
+    // render trocaria o listener no meio de uma seleção em andamento.
     useEffect(() => {
       document.addEventListener('selectionchange', lembrarSelecao);
       return () => document.removeEventListener('selectionchange', lembrarSelecao);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const emitir = (): void => {
