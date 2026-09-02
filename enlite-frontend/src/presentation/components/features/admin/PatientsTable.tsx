@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Eye } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { toDisplayName } from '@domain/value-objects/displayName';
 import {
   Table,
   TableHeader,
@@ -122,10 +123,13 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
           ) : (
             safePatients.map((row) => {
               // O formato "Sobrenome, Nome" é o da tabela e fica como está.
-              const fullName = [row.lastName, row.firstName].filter(Boolean).join(', ');
+              const fullName = [row.lastName, row.firstName]
+                .filter(Boolean)
+                .map((n) => toDisplayName(n))
+                .join(', ');
               // D249: sem nome do paciente, o traço fica no lugar dele e quem
               // identifica a ficha é o responsável, na linha de baixo.
-              const responsibleName = row.responsibleName || null;
+              const responsibleName = toDisplayName(row.responsibleName) || null;
               const caseLabel = row.caseNumber != null
                 ? `${t('admin.patients.codeColumn')} #${row.caseNumber}`
                 : '—';

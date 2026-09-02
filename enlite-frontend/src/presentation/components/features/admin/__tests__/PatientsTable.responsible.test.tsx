@@ -98,7 +98,7 @@ describe('PatientsTable — nome do responsável (D249)', () => {
   it('paciente sem nome: traço em cima, responsável embaixo', () => {
     render(<PatientsTable patients={[linha({ responsibleName: 'flavia villagra' })]} />);
 
-    expect(screen.getByTestId('patient-row-p-1-responsible')).toHaveTextContent('flavia villagra');
+    expect(screen.getByTestId('patient-row-p-1-responsible')).toHaveTextContent('Flavia Villagra');
     // A célula de NOME, não qualquer '—' da linha (código e documento também usam).
     expect(screen.getByTestId('patient-row-p-1-name')).toHaveTextContent('—');
   });
@@ -111,7 +111,7 @@ describe('PatientsTable — nome do responsável (D249)', () => {
     );
 
     expect(screen.queryByTestId('patient-row-p-1-responsible')).toBeNull();
-    expect(screen.getByText('benítez, joaquín')).toBeInTheDocument();
+    expect(screen.getByText('Benítez, Joaquín')).toBeInTheDocument();
   });
 
   it('sem nome e sem responsável: o traço sozinho, nunca célula vazia', () => {

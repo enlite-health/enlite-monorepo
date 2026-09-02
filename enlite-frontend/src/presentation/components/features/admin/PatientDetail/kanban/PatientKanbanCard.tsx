@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Clock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { toDisplayName } from '@domain/value-objects/displayName';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
 
 interface Props {
@@ -17,11 +18,13 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ').trim();
+  // O lead grava em minúsculas (D249, normalização de armazenamento); a
+  // capitalização é da borda de exibição.
+  const fullName = toDisplayName([patient.firstName, patient.lastName].filter(Boolean).join(' '));
   // D249: no lead "para otra persona" quem se identifica é o RESPONSÁVEL, e o
   // paciente nasce sem nome. O traço é literal — diz "ainda não sabemos", que é
   // diferente de um nome fabricado a partir de quem ligou por ele.
-  const responsibleName = patient.responsibleName ?? null;
+  const responsibleName = toDisplayName(patient.responsibleName) || null;
   const semNome = t('admin.patients.kanban.noName', { defaultValue: '—' });
   // Lead do formulário público: sem nome, todo card diz "Solicitante" e o board
   // vira N caixas idênticas. O contato mascarado é o que desempata — só existe

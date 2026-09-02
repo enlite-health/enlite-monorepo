@@ -48,14 +48,24 @@ describe('PatientKanbanCard — identidade (D249)', () => {
 
     expect(screen.getByTestId('patient-kanban-card-p-1-open')).toHaveTextContent('—');
     expect(screen.getByTestId('patient-kanban-card-p-1-responsible')).toHaveTextContent(
-      'flavia villagra',
+      'Flavia Villagra',
+    );
+  });
+
+  it('o BANCO guarda minúsculo, a TELA mostra capitalizado — a normalização é de armazenamento', () => {
+    // O dado que chega da API é exatamente o que o `splitFullName` gravou.
+    renderCard(item({ responsibleName: 'maría de los ángeles pérez' }));
+
+    // E a partícula continua minúscula: "De Los Ángeles" estaria errado.
+    expect(screen.getByTestId('patient-kanban-card-p-1-responsible')).toHaveTextContent(
+      'María de los Ángeles Pérez',
     );
   });
 
   it('paciente COM nome: o nome manda e nenhuma linha de responsável aparece', () => {
     renderCard(item({ firstName: 'joaquín', lastName: 'benítez', responsibleName: 'flavia villagra' }));
 
-    expect(screen.getByTestId('patient-kanban-card-p-1-open')).toHaveTextContent('joaquín benítez');
+    expect(screen.getByTestId('patient-kanban-card-p-1-open')).toHaveTextContent('Joaquín Benítez');
     expect(screen.queryByTestId('patient-kanban-card-p-1-responsible')).toBeNull();
   });
 
