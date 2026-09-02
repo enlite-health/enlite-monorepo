@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 
-type TextSize = 'xs' | 'sm' | 'base' | 'lg' | 'xl';
+type TextSize = '2xs' | 'xs' | 'sm' | 'base' | 'lg' | 'xl';
 type TextWeight = 'normal' | 'medium' | 'semibold' | 'bold';
 type TextColor =
   | 'primary'
@@ -20,7 +20,24 @@ interface TextProps {
   title?: string;
 }
 
+/**
+ * 🔒 `2xs` (11px) — o degrau que faltava embaixo, e por que é UM só.
+ *
+ * A maquete "Registro de Plantillas" declara TREZE tamanhos — 9; 9,5; 10; 10,5;
+ * 11; 11,5; 12; 12,5; 13; 14; 16; 17; 22 —, vários a meio pixel de distância.
+ * Isso não é uma escala: é o que sai de escrever CSS à mão. Reproduzi-la aqui
+ * significaria mintar oito tokens no atom mais usado do painel e importar a
+ * AUSÊNCIA de sistema junto com a fidelidade.
+ *
+ * O que entra é o degrau que o painel de fato não tinha: nada abaixo de 12px,
+ * enquanto a maquete usa 11px em 38 lugares — o tamanho mais frequente dela.
+ * Os valores de meio pixel (11,5 e 12,5) arredondam para o vizinho: meio pixel
+ * de fonte não é decisão de design, é resíduo de autoria.
+ *
+ * Entrelinha 1,5 como o `xs`, que é o que a maquete usa nesses textos.
+ */
 const sizeStyles: Record<TextSize, string> = {
+  '2xs': 'text-[11px] leading-[1.5]',
   xs: 'text-xs leading-[1.5]',
   sm: 'text-sm leading-snug',
   base: 'text-base leading-[1.5]',
