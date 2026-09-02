@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AdminTemplateCatalogApiService, type TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -7,10 +7,10 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
-import { TemplateCatalogDetailDrawer } from './TemplateCatalogDetailDrawer';
-import { FILTER_ORDER, countByGroup, groupOf, lastCheckedAt, relativeFrom } from './templateCatalogView';
-import { ES, MISSING, PT, type MessagePair, agruparEmPares, faltaUmaVersao, filtrarPares, idiomaQueFalta, versaoPrincipal, type CatalogFilter } from './templateCatalogPairs';
+import { countByGroup, grupoDaLinha, lastCheckedAt, relativeFrom, statusTone } from './templateCatalogView';
+import { ES, PT, agruparEmPares, faltaUmaVersao, filtrarPares, versaoPrincipal, type CatalogFilter } from './templateCatalogPairs';
 import { TemplateCatalogLanguageCell } from './TemplateCatalogLanguageCell';
+import { TemplateCatalogFilters } from './TemplateCatalogFilters';
 
 /**
  * /admin/plantillas — o catálogo de mensagens (spec 010, F1).
@@ -33,24 +33,7 @@ import { TemplateCatalogLanguageCell } from './TemplateCatalogLanguageCell';
  * que a mensagem faz. Mesma decisão já tomada no seletor por etapa.
  */
 
-/** Só é chamado com data presente; ISO inválido vira "Invalid Date" na tela (visível, não mascarado). */
-function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
 
-/**
- * Cor do estado. Os estados de DESLIGAMENTO (a Meta tirou do ar algo que estava
- * funcionando) têm peso visual próprio: não são "pendente", são incidente.
- */
-function statusTone(status: string | null): string {
-  switch (status) {
-    case 'APPROVED': return 'bg-turquoise/25 text-[#0B5C4E]';
-    case 'PENDING': case 'IN_APPEAL': return 'bg-wait/30 text-[#7A5200]';
-    case 'REJECTED': return 'bg-pink-cancel/25 text-[#8E1230]';
-    case 'PAUSED': case 'DISABLED': case 'LIMIT_EXCEEDED': return 'bg-coordination/20 text-[#8E1230]';
-    default: return 'bg-gray-300 text-gray-800';
-  }
-}
 
 /**
  * Uma linha só, com o texto APROVADO como ele é. Sem texto, devolve null.
@@ -84,15 +67,14 @@ export function TemplateCatalogPage(): JSX.Element {
    * mostrada não muda a cada re-render, e o teste visual é determinístico.
    */
   /**
-   * O que o drawer está mostrando: a VERSÃO clicada e o PAR dela.
-   *
-   * Um estado só, e não dois: o drawer precisa da versão (qual idioma foi
-   * aberto) E do par (qual idioma FALTA, para oferecer criar — `row` sozinha
-   * nunca sabe se existe uma irmã do outro lado). Guardá-los separados criava
-   * um estado impossível — versão sem par — que o código tinha de checar e
-   * nenhum teste conseguia produzir.
+   * 🔒 O DETALHE VIROU ROTA (`/admin/plantillas/:slug`), e com isso saiu daqui
+   * um estado inteiro. Não é só estética do desenho: enquanto era drawer, o
+   * detalhe não tinha endereço — não dava para colar num chamado da Twilio nem
+   * voltar a ele pelo histórico do navegador, e clicar fora no meio da leitura
+   * o fechava. A lista agora só NAVEGA; quem monta o detalhe é a página.
    */
-  const [detalhe, setDetalhe] = useState<{ row: TemplateCatalogRow; par: MessagePair } | null>(null);
+  const navigate = useNavigate();
+  const abrir = (slug: string) => navigate(`/admin/plantillas/${encodeURIComponent(slug)}`);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   /**
@@ -127,7 +109,7 @@ export function TemplateCatalogPage(): JSX.Element {
    * derivá-lo do slug.
    */
   const pares = useMemo(() => agruparEmPares(rows ?? []), [rows]);
-  const shown = useMemo(() => filtrarPares(pares, filter, groupOf), [pares, filter]);
+  const shown = useMemo(() => filtrarPares(pares, filter, grupoDaLinha), [pares, filter]);
   /**
    * ⚠️ Conta MENSAGENS, não templates — unidade diferente da dos filtros de
    * estado, que continuam contando templates. Somar os dois daria um total
@@ -154,10 +136,9 @@ export function TemplateCatalogPage(): JSX.Element {
         <div className="min-w-0">
           <Heading level={1}>{t('admin.templateCatalog.title')}</Heading>
           <Text size="sm" color="secondary">{t('admin.templateCatalog.subtitle')}</Text>
-          <Text size="xs" color="secondary">{t('admin.templateCatalog.readOnlyHint')}</Text>
         </div>
         <Link to="/admin/plantillas/registrar" data-testid="tc-nova-mensagem" className="shrink-0">
-          <Button size="sm">{t('admin.templateCatalog.novaMensagem')}</Button>
+          <Button size="compact">{t('admin.templateCatalog.novaMensagem')}</Button>
         </Link>
       </div>
 
@@ -177,50 +158,10 @@ export function TemplateCatalogPage(): JSX.Element {
       )}
 
       {rows !== null && rows.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-gray-300 pb-4" data-testid="tc-filters">
-          {FILTER_ORDER.map((key) => (
-            <button
-              key={key}
-              type="button"
-              data-testid={`tc-filter-${key}`}
-              aria-pressed={filter === key}
-              onClick={() => setFilter(key)}
-              className={`inline-flex items-center gap-2 rounded-pill border px-3.5 py-1.5 ${
-                filter === key ? 'border-primary bg-primary text-white' : 'border-gray-300 bg-white text-gray-800'
-              }`}
-            >
-              <Text as="span" size="xs" color="inherit">{t(`admin.templateCatalog.filter.${key}`)}</Text>
-              <Text as="span" size="xs" weight="semibold" color="inherit">{counts[key]}</Text>
-            </button>
-          ))}
-          {/* "Falta una versión" fecha a faixa, separado por uma barra, porque a
-              UNIDADE dele é outra: os filtros à esquerda contam templates; este
-              conta mensagens. Sem a separação alguém somaria os números e
-              chegaria num total que não existe. */}
-          <span className="mx-1 h-5 w-px bg-gray-300" aria-hidden="true" />
-          <button
-            type="button"
-            data-testid={`tc-filter-${MISSING}`}
-            aria-pressed={filter === MISSING}
-            onClick={() => setFilter(MISSING)}
-            className={`inline-flex items-center gap-2 rounded-pill border px-3.5 py-1.5 ${
-              filter === MISSING ? 'border-primary bg-primary text-white' : 'border-gray-300 bg-white text-gray-800'
-            }`}
-          >
-            <Text as="span" size="xs" color="inherit">{t('admin.templateCatalog.filter.missing')}</Text>
-            <Text as="span" size="xs" weight="semibold" color="inherit">{faltamVersao}</Text>
-          </button>
-          {/* A idade do dado fica ao lado dos filtros, não escondida numa coluna:
-              um catálogo verificado há três dias diz coisa diferente de um
-              verificado há três minutos, e isso vale para a lista inteira. */}
-          {syncAge && (
-            <span className="ml-auto" data-testid="tc-sync-age">
-              <Text as="span" size="xs" color="secondary">
-                {t(`admin.templateCatalog.syncAge.${syncAge.unidade}`, { count: syncAge.valor })}
-              </Text>
-            </span>
-          )}
-        </div>
+        <TemplateCatalogFilters
+          filter={filter} counts={counts} faltamVersao={faltamVersao}
+          syncAge={syncAge} onFilter={setFilter}
+        />
       )}
 
       {rows !== null && rows.length === 0 && loadError === null && (
@@ -236,17 +177,41 @@ export function TemplateCatalogPage(): JSX.Element {
       )}
 
       {rows !== null && shown.length > 0 && (
-        <Table data-testid="tc-table">
+        <Table
+          data-testid="tc-table"
+          /*
+           * 🔒 `table-fixed` — sem ele as larguras em % NÃO VALEM. Com o layout
+           * automático o navegador dimensiona pela maior célula, a coluna
+           * "Mensaje" cresce com o texto (que chega a 942 caracteres em
+           * produção), e "Se usa en" é empurrada para FORA do contêiner: a
+           * coluna que existe para proteger quem for tirar uma mensagem do ar
+           * some sem nada indicando que sumiu. Medido na foto de 01/09.
+           * O `truncate` também só funciona com largura fixada.
+           */
+          className="table-fixed"
+        >
           <TableHeader>
-            <TableHead>{t('admin.templateCatalog.message')}</TableHead>
+            {/* 🔒 LARGURAS EXPLÍCITAS, as do desenho (39/17/17/20/7%). Sem
+                elas o navegador dimensionava pela coluna mais larga: a coluna
+                "Mensaje" crescia com o texto, empurrava "Se usa en" para fora
+                do contêiner e a tabela passava a rolar na horizontal — a
+                coluna que existe para PROTEGER quem for tirar uma mensagem do
+                ar ficava invisível sem nada indicando isso. */}
+            <TableHead className="w-[39%]">{t('admin.templateCatalog.message')}</TableHead>
             {/* Duas colunas de idioma lado a lado: a MESMA mensagem em duas
                 versões. Antes de 01/09 cada versão era uma linha, e
                 `admission_confirmation_es` e `_pt` apareciam como duas coisas
                 sem relação nenhuma. */}
-            <TableHead>🇦🇷 {t('admin.templateCatalog.espanol')}</TableHead>
-            <TableHead>🇧🇷 {t('admin.templateCatalog.portugues')}</TableHead>
-            <TableHead>{t('admin.templateCatalog.usedIn')}</TableHead>
-            <TableHead>{t('admin.templateCatalog.checkedAt')}</TableHead>
+            <TableHead className="w-[17%]">🇦🇷 {t('admin.templateCatalog.espanol')}</TableHead>
+            <TableHead className="w-[17%]">🇧🇷 {t('admin.templateCatalog.portugues')}</TableHead>
+            <TableHead className="w-[20%]">{t('admin.templateCatalog.usedIn')}</TableHead>
+            {/* 🔒 A COLUNA "Última verificación" SAIU. A idade do dado já está
+                na faixa de filtros ("Sincronizado con Twilio hace 4 min"), e
+                ela vale para a lista INTEIRA — o sync roda de uma vez. Uma
+                coluna repetindo a mesma data em todas as linhas gastava 20% da
+                largura para não distinguir linha nenhuma. Quem quer a data de
+                UMA mensagem abre o detalhe, onde ela é sobre aquela linha. */}
+            <TableHead unwrapped className="w-[7%]"><span className="sr-only">{t('admin.templateCatalog.acoes')}</span></TableHead>
           </TableHeader>
           <TableBody>
             {shown.map((par) => {
@@ -254,28 +219,85 @@ export function TemplateCatalogPage(): JSX.Element {
               // texto da lista, data da verificação, detalhe que abre no clique.
               const principal = versaoPrincipal(par, i18n.language);
               const texto = approvedTextOneLine(principal);
+              /*
+               * As variáveis do PAR, sem repetir: as duas versões da mesma
+               * mensagem usam as mesmas, e listá-las duas vezes encheria a
+               * linha com a informação repetida.
+               */
+              const variaveis = [...new Set([par.es, par.pt, ...par.semIdioma]
+                .flatMap((r) => r?.placeholders ?? []))];
+              /* Inelegível se QUALQUER versão for: a pergunta é sobre a mensagem. */
+              const inelegivel = [par.es, par.pt, ...par.semIdioma]
+                .find((r) => r !== null && !r.eligible)?.ineligibleReason ?? null;
+              /* Rascunho: nenhuma versão existe fora daqui ainda. */
+              const ehRascunho = [par.es, par.pt, ...par.semIdioma]
+                .filter((r) => r !== null).every((r) => r!.isDraft);
               return (
                 <TableRow
                   key={par.baseName}
                   data-testid={`tc-row-${par.baseName}`}
-                  onClick={() => setDetalhe({ row: principal, par })}
+                  onClick={() => abrir(principal.slug)}
                 >
-                  <TableCell unwrapped className="max-w-[22rem]">
-                    {/* Altura fixa + reticências: os corpos vão de 16 a 942
+                  <TableCell unwrapped>
+                    {/* Altura mínima + reticências: os corpos vão de 16 a 942
                         caracteres em produção, e altura que dependa do texto
                         deixa a tabela irregular. */}
                     <div className="flex min-h-9 flex-col justify-center py-1">
+                      {/* 🔒 O TEXTO LIDERA. Nas 27 linhas de produção
+                          `message_templates.name` é idêntico ao `slug`, então
+                          ler `ar_finalize_signup_luz` não diz a ninguém o que
+                          vai sair. O identificador continua na linha de baixo,
+                          onde serve a quem for abrir chamado — e não disputa a
+                          leitura com a única coisa que responde "que mensagem é
+                          esta". Inversão pedida pelo desenho de 31/08. */}
                       <span className="min-w-0 truncate">
-                        <Text as="span" size="sm" color="primary">{par.baseName}</Text>
+                        {ehRascunho && texto === null ? (
+                          <Text as="span" size="sm" color="secondary" className="italic">
+                            {t('admin.templateCatalog.rascunhoSemTexto')}
+                          </Text>
+                        ) : (
+                          <Text as="span" size="sm" color="primary">
+                            {texto ? `«${texto}»` : t('admin.templateCatalog.noText')}
+                          </Text>
+                        )}
                       </span>
-                      <span className="min-w-0 truncate">
-                        <Text as="span" size="xs" color="secondary">
-                          {texto ? `«${texto}»` : t('admin.templateCatalog.noText')}
+                      <span className="flex min-w-0 flex-wrap items-center gap-1 truncate">
+                        <Text as="span" size="xs" color="secondary" className="font-mono">
+                          {par.baseName}
                         </Text>
+                        {/* As variáveis voltaram para a linha COMO CHIPS, e a
+                            objeção de 01/09 continua respeitada: o que virava
+                            "1 2 3 4 5" era o número nu. O chip mostra
+                            `{{1}}`, que se lê como marcador de posição, e a
+                            explicação do que isso custa segue no detalhe. */}
+                        {variaveis.length > 0 && (
+                          <span data-testid={`tc-vars-${par.baseName}`} className="flex flex-wrap gap-1">
+                            {variaveis.map((v) => (
+                              <span key={v} className="rounded bg-[#F1EEF8] px-1.5 text-clinic">
+                                <Text as="span" size="xs" color="inherit" className="font-mono">{`{{${v}}}`}</Text>
+                              </span>
+                            ))}
+                          </span>
+                        )}
                       </span>
-                      {/* Linha que o banco ainda não classificou. Aparece em vez
-                          de ser calada: sem isto ela sumiria das duas colunas de
-                          idioma e a mensagem pareceria não existir. */}
+                      {/* 🔒 A FLAG DE INELEGIBILIDADE MUDOU DE COLUNA. Ela vivia
+                          na célula do idioma, onde o texto longo quebrava em
+                          três linhas e inflava a altura de toda a linha. Aqui
+                          ela é uma frase curta sob a mensagem, como no desenho —
+                          e a pergunta que responde ("esta MENSAGEM serve para
+                          etapa?") é sobre a mensagem, não sobre o idioma. */}
+                      {inelegivel && (
+                        /* 🔒 `line-clamp-2`, NUNCA `truncate`. Medido: as
+                           frases têm 58 e 70 caracteres e o `truncate`
+                           (nowrap + reticências) as cortava no meio da
+                           palavra. Duas linhas cabem; meia palavra não
+                           informa. */
+                        <span data-testid={`tc-ineligible-${par.baseName}`} className="line-clamp-2 min-w-0 text-[#8E1230]">
+                          <Text as="span" size="xs" color="inherit">
+                            {t('admin.templateCatalog.etapasCurto')}: {t(`admin.templateCatalog.ineligible.${inelegivel}`, t('admin.templateCatalog.ineligible.generic'))}
+                          </Text>
+                        </span>
+                      )}
                       {par.semIdioma.length > 0 && (
                         <span data-testid={`tc-sem-idioma-${par.baseName}`} className="min-w-0 truncate text-[#7A5200]">
                           <Text as="span" size="xs" color="inherit">
@@ -289,14 +311,14 @@ export function TemplateCatalogPage(): JSX.Element {
                     <TemplateCatalogLanguageCell
                       row={par.es} language={ES} baseName={par.baseName}
                       statusTone={statusTone} statusLabel={statusLabel}
-                      onOpen={(r) => setDetalhe({ row: r, par })}
+                      onOpen={(r) => abrir(r.slug)}
                     />
                   </TableCell>
                   <TableCell unwrapped>
                     <TemplateCatalogLanguageCell
                       row={par.pt} language={PT} baseName={par.baseName}
                       statusTone={statusTone} statusLabel={statusLabel}
-                      onOpen={(r) => setDetalhe({ row: r, par })}
+                      onOpen={(r) => abrir(r.slug)}
                     />
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
@@ -318,10 +340,18 @@ export function TemplateCatalogPage(): JSX.Element {
                       );
                     })()}
                   </TableCell>
-                  <TableCell unwrapped className="whitespace-nowrap">
-                    <Text size="xs" color="secondary">
-                      {principal.metaCheckedAt ? formatWhen(principal.metaCheckedAt) : t('admin.templateCatalog.never')}
-                    </Text>
+                  <TableCell unwrapped align="right">
+                    {/*
+                      * 🔒 O "⋯" NÃO É DECORAÇÃO E NÃO É UM MENU FALSO. A maquete
+                      * o desenha como afordância de "há mais aqui"; um menu
+                      * suspenso com itens que ainda não executam nada seria
+                      * teatro — e teatro numa tela que existe para acabar com
+                      * afirmação sem lastro. Ele leva ao detalhe, que é onde as
+                      * ações realmente moram (duplicar, criar versão, Twilio).
+                      */}
+                    <span data-testid={`tc-mais-${par.baseName}`} aria-hidden="true" className="px-2 text-gray-800">
+                      <Text as="span" size="sm" color="inherit">⋯</Text>
+                    </span>
                   </TableCell>
                 </TableRow>
               );
@@ -330,15 +360,6 @@ export function TemplateCatalogPage(): JSX.Element {
         </Table>
       )}
     
-      {detalhe && (
-        <TemplateCatalogDetailDrawer
-          row={detalhe.row}
-          statusLabel={statusLabel}
-          baseName={detalhe.par.baseName}
-          faltaIdioma={idiomaQueFalta(detalhe.par)}
-          onClose={() => setDetalhe(null)}
-        />
-      )}
     </PageContainer>
   );
 }

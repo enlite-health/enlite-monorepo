@@ -17,7 +17,7 @@ import { agruparEmPares, faltaUmaVersao, idiomaQueFalta, versaoPrincipal, ES, PT
 const linha = (o: Partial<TemplateCatalogRow> & { slug: string; baseName: string }): TemplateCatalogRow => ({
   name: o.slug, bodyTwilio: null, category: 'UTILITY', isActive: true, contentSid: 'HX1',
   metaStatus: 'APPROVED', metaReason: null, metaDetail: null, metaCheckedAt: null,
-  eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [],
+  eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [], isDraft: false,
   language: ES, ...o,
 });
 

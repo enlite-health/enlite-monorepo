@@ -3623,7 +3623,8 @@
         "rejected": "Rechazadas",
         "unchecked": "Sin verificar",
         "other": "Otros estados",
-        "missing": "Falta una versión"
+        "missing": "Falta una versión",
+        "draft": "Borradores"
       },
       "filterEmpty": "Ninguna plantilla en este estado.",
       "syncAge": {
@@ -3649,11 +3650,51 @@
         "pt-BR": "Crear versión en português"
       },
       "etapasCurto": "Etapas",
-      "metaSinDetalle": "Meta no dio más detalle"
+      "metaSinDetalle": "Meta no dio más detalle",
+      "timeline": {
+        "criado": "Borrador creado",
+        "enviado": "Enviada a Meta",
+        "aprovado": "Meta la aprobó",
+        "recusado": "Meta la rechazó",
+        "pausado": "Meta la pausó",
+        "desligado": "Meta la deshabilitó",
+        "aguardando": "Esperando a Meta",
+        "depois": {
+          "min": "{{count}} min después",
+          "h": "{{count}} h después",
+          "d": "{{count}} días después"
+        },
+        "veioDaMeta": "vino de Meta, sin editar",
+        "semHistorico": "No tenemos historial de esta plantilla: llegó por la sincronización con Twilio y Meta todavía no nos respondió."
+      },
+      "queFazer": {
+        "titulo": "Qué podés hacer",
+        "duplicar": {
+          "titulo": "Duplicar y corregir",
+          "detalhe": "Copiamos el texto a un borrador nuevo para que lo edites."
+        },
+        "archivar": {
+          "titulo": "Archivar",
+          "detalhe": "Sale del listado. Nada la envía."
+        },
+        "metaExplicou": "Meta explicó el motivo, así que no hace falta que adivinemos.",
+        "metaNaoExplicou": "Meta no mandó explicación. El código de arriba es todo lo que llegó."
+      },
+      "duplicarCorrigir": "Duplicar y corregir",
+      "verEnTwilio": "Ver el detalle en Twilio",
+      "voltarCatalogo": "Volver al catálogo",
+      "carregando": "Cargando…",
+      "naoEncontrada": "No encontramos ninguna plantilla con el identificador «{{slug}}». Puede haber salido del catálogo.",
+      "idiomaNaoRegistradoCurto": "Idioma no registrado",
+      "acoes": "Acciones",
+      "rascunhoSemTexto": "Sin texto todavía — borrador",
+      "rascunho": {
+        "titulo": "Esto es un borrador"
+      }
     },
     "templateDrafts": {
-      "title": "Registrar mensaje",
-      "subtitle": "Escribí el mensaje, mirá cómo lo recibe la cuidadora, y guardalo.",
+      "title": "Nueva plantilla",
+      "subtitle": "Guardá el borrador cuantas veces quieras. Recién cuando la envíes a Meta el texto queda fijo.",
       "avisoNaoEnvia": "Guardar NO envía nada. El envío a Meta es un paso aparte, con confirmación — y una vez enviado, el nombre queda ocupado para siempre.",
       "salvoNaoEnviado": "Guardado. Todavía NO enviado para autorización.",
       "listaTitulo": "Borradores guardados",
@@ -3676,11 +3717,21 @@
         "slug": "Identificador",
         "body": "Mensaje",
         "category": "Categoría",
-        "language": "Idioma"
+        "language": "Idioma",
+        "nombre": "Nombre",
+        "nombreAjuda": "El prefijo de país lo ponemos nosotros, uno por idioma. Solo minúsculas, números y guiones bajos.",
+        "idiomas": "Idiomas",
+        "idiomasAjuda": "Meta autoriza cada idioma por separado, y el idioma de cada uno queda fijo al enviarlo.",
+        "idiomaTravado": "El idioma de un borrador ya guardado no se cambia: creá la otra versión desde el catálogo.",
+        "bodyPlaceholder": "Escribí acá el mensaje que va a recibir la cuidadora."
       },
       "idioma": {
         "es-AR": "Español (Argentina)",
         "pt-BR": "Portugués (Brasil)"
+      },
+      "idiomaCorto": {
+        "es-AR": "español",
+        "pt-BR": "portugués"
       },
       "categoria": {
         "MARKETING": "Marketing",
@@ -3735,12 +3786,32 @@
         "submitted": "Enviado a Meta — esperando autorización"
       },
       "confirmar": {
-        "titulo": "¿Enviar «{{slug}}» a Meta?",
-        "nome": "El nombre queda ocupado en la cuenta de WhatsApp para siempre, aunque Meta rechace el mensaje.",
-        "edicao": "Después de enviar no vas a poder editarlo: solo duplicar y corregir.",
-        "prazo": "Meta puede tardar horas en responder, y la respuesta no depende de nosotros.",
-        "sim": "Sí, enviar a Meta",
-        "nao": "Cancelar"
+        "titulo": "Enviar a Meta para autorización",
+        "subtitulo": "Después de este paso el texto queda fijo.",
+        "nome": {
+          "forte": "El nombre queda ocupado para siempre.",
+          "resto": "En la cuenta de WhatsApp, aunque Meta rechace el mensaje."
+        },
+        "edicao": {
+          "forte": "No vas a poder editar el texto.",
+          "resto": "Para cambiar una palabra hay que crear otra plantilla y volver a esperar."
+        },
+        "idiomaFixo": {
+          "forte": "El idioma queda fijo para siempre,",
+          "resto": "incluso antes de la respuesta."
+        },
+        "prazo": {
+          "forte": "Meta suele responder en un día hábil.",
+          "resto": "Hasta entonces la plantilla no puede enviarse a nadie."
+        },
+        "soUmIdioma": {
+          "forte": "Enviás solo el {{idioma}}.",
+          "resto": "La otra versión queda en borrador y se envía aparte, cuando la termines."
+        },
+        "confirmoLeitura": "Leí el texto y confirmo que es el que quiero enviar.",
+        "autoria": "Va a quedar registrado que la enviaste vos.",
+        "sim": "Enviar a Meta",
+        "nao": "Volver a editar"
       },
       "indisponivel": {
         "flag_desligada": "El envío a Meta está desactivado en el servidor. Hay que activarlo antes de usar este botón.",
@@ -3763,7 +3834,76 @@
       "voltarCatalogo": "← Volver al catálogo",
       "avisos": {
         "titulo": "Se guardó, pero falta algo:"
-      }
+      },
+      "tipo": {
+        "pergunta": "¿Qué tipo de mensaje es?",
+        "ajuda": "Define la categoría ante Meta y qué datos podés insertar. No configurás nada técnico a mano.",
+        "aviso": {
+          "titulo": "Aviso del proceso",
+          "detalhe": "Le cuenta algo que ya pasó"
+        },
+        "invitacion": {
+          "titulo": "Invitación",
+          "detalhe": "Le pide que haga algo"
+        },
+        "difusion": {
+          "titulo": "Difusión",
+          "detalhe": "Novedades y campañas"
+        }
+      },
+      "inserir": "Insertar:",
+      "variavel": {
+        "worker_name": "Nombre de la cuidadora",
+        "name": "Nombre",
+        "case_number": "Nº de caso"
+      },
+      "faltaOutroIdioma": "Falta el texto en el otro idioma",
+      "asiLoRecibe": "Así lo recibe la cuidadora",
+      "datosDeEjemplo": "Los datos son de ejemplo. Nunca usamos una cuidadora real para la vista previa.",
+      "revisarEnviar": "Revisar y enviar →",
+      "salveAntesDeEnviar": "Guardá el borrador antes de poder enviarlo a Meta.",
+      "checklist": {
+        "titulo": "Antes de enviar a Meta",
+        "fonte": "Reglas de Meta y de la plataforma. Las verificamos acá para que no esperes un día a que te rechacen.",
+        "categoria": {
+          "titulo": "Categoría {{categoria}}",
+          "ok": "La elegimos por vos, a partir del tipo de mensaje.",
+          "falta": "La elegimos por vos, a partir del tipo de mensaje."
+        },
+        "variaveis": {
+          "titulo": "El sistema sabe completar las variables",
+          "ok": "Todas las que usaste se llenan solas al enviar.",
+          "falta": "Hay una variable que no sabemos completar: el envío fallaría."
+        },
+        "bordas": {
+          "titulo": "No empieza ni termina con una variable",
+          "ok": "Meta rechaza los textos que sí.",
+          "falta": "Meta rechaza los textos que empiezan o terminan con una variable."
+        },
+        "nome": {
+          "titulo": "Nombre libre en los dos idiomas",
+          "ok": "Ningún otro mensaje usa ese nombre.",
+          "falta": "Revisá el nombre: falta o tiene caracteres que no aceptamos."
+        },
+        "tamanho": {
+          "titulo": "{{n}} de {{limite}} caracteres",
+          "ok": "Cabe con holgura.",
+          "falta": "Pasaste el límite: Meta no acepta el texto así."
+        },
+        "clausulaBaja": {
+          "titulo": "Cláusula de baja",
+          "ok": "El texto ofrece una salida que el sistema honra.",
+          "falta": "Obligatoria en Argentina. Sin ella podés guardar y enviar igual, pero conviene agregarla."
+        },
+        "outroIdioma": {
+          "titulo": "Falta el texto en el otro idioma",
+          "ok": "Las dos versiones están escritas.",
+          "falta": "Podés enviar solo este idioma ahora y el otro después."
+        }
+      },
+      "inserirClausula": "Cláusula de baja",
+      "clausulaDeBaja": "\n\nRespondé BAJA si no querés recibir más mensajes.",
+      "copiarParaTraduzir": "copiar el español para traducir"
     }
   },
   "publicVacancy": {

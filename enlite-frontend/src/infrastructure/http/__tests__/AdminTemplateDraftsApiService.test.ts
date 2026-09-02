@@ -30,9 +30,27 @@ const entrada = { slug: 'bienvenida', name: 'B', body: 'Hola {{1}} y chau', cate
 describe('AdminTemplateDraftsApiService', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('a superfície é exatamente estes 6 métodos — nada a mais entra sem teste', () => {
+  /**
+   * ⚠️ SUBIU DE 6 PARA 7 em 01/09, com `validarRascunho` — e o portão fez o
+   * trabalho dele: acrescentar o método derrubou este teste, que é exatamente
+   * o ponto. `validarRascunho` NÃO GRAVA nada; ela roda as mesmas regras do
+   * `create` sem tocar no banco, para alimentar a lista de verificação ao vivo
+   * do compositor. Ver `templateDraftsRoutes.ts` para por que ela existe em vez
+   * de as regras serem reimplementadas na tela.
+   */
+  it('a superfície é exatamente estes 7 métodos — nada a mais entra sem teste', () => {
     expect(Object.keys(AdminTemplateDraftsApiService).sort())
-      .toEqual(['archiveDraft', 'createDraft', 'duplicateDraft', 'listDrafts', 'submitDraft', 'updateDraft']);
+      .toEqual(['archiveDraft', 'createDraft', 'duplicateDraft', 'listDrafts', 'submitDraft', 'updateDraft', 'validarRascunho']);
+  });
+
+  it('🔒 validarRascunho é POST em /validar e NÃO toca em nenhuma rota de escrita', async () => {
+    const f = mockFetch({ success: true, data: { slug: 'ar_x', bloqueios: [], avisos: [] } });
+    await AdminTemplateDraftsApiService.validarRascunho({
+      slug: 'x', name: 'x', body: 'Hola', category: 'UTILITY', language: 'es-AR',
+    });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/template-drafts/validar');
+    expect(init.method).toBe('POST');
   });
 
   it('🔒 submitDraft manda `confirmado: true` NO CORPO — o servidor exige, não é só diálogo', async () => {

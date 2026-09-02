@@ -122,12 +122,38 @@ const IDIOMAS_VALIDOS = new Set(['es-AR', 'pt-BR']);
  * alguém digitou na barra de endereço, e um valor inválido no `select` deixa
  * o formulário num estado que o backend recusa sem a tela saber por quê.
  */
-export function inicialDaURL<T extends { slug: string; language: string }>(params: URLSearchParams, vazio: T): T {
+export function inicialDaURL<T extends { slug: string; language: string; body: string }>(params: URLSearchParams, vazio: T): T {
   const base = (params.get('base') ?? '').trim();
   const lang = params.get('lang') ?? '';
+  /**
+   * 🔒 `body` chega pelo "Duplicar y corregir" da tela de detalhe, e é a razão
+   * de aquele botão não ser um beco. Um Content já submetido à Meta NÃO se
+   * edita — corrigir uma vírgula significa começar outro. Se o rascunho novo
+   * nascesse em branco, quem clicou teria de reescrever à mão o texto que está
+   * na tela ao lado, e é aí que a correção vira uma mensagem diferente da que
+   * a Meta comentou.
+   *
+   * Vem CRU, sem sanitizar: é texto que a Meta já aprovou ou recusou, e
+   * "melhorá-lo" na entrada faria a pessoa corrigir algo que não é o que foi
+   * julgado. O que valida é o backend, na hora de gravar.
+   */
+  const body = params.get('body');
   return {
     ...vazio,
     slug: base,
     language: IDIOMAS_VALIDOS.has(lang) ? lang : vazio.language,
+    body: body !== null && body !== '' ? body : vazio.body,
   };
+}
+
+/**
+ * Para onde o "Editar" de um rascunho leva: o compositor abre ESTE rascunho.
+ *
+ * 🔒 Pelo `id`, e não pela base. `?base=` também chega pelo "duplicar y
+ * corregir", que quer um rascunho NOVO com o texto de um Content já submetido —
+ * se o compositor adivinhasse a edição pela base, a correção sobrescreveria o
+ * original em vez de criar o substituto.
+ */
+export function urlDeEdicao(id: string): string {
+  return `/admin/plantillas/registrar?draft=${encodeURIComponent(id)}`;
 }

@@ -59,6 +59,16 @@ export interface TemplateCatalogRow {
   placeholders: string[];
   /** Etapas do Kanban que disparam esta mensagem. Leitura — decide-se em outra tela. */
   usedInStages: string[];
+  /**
+   * Linha que ainda é RASCUNHO — não existe na Twilio nem na Meta.
+   *
+   * 🔒 Não dá para deduzir isto de `metaStatus === null`: esse `null` já
+   * significa "nunca perguntamos à Meta", e é o estado de templates VIVOS que o
+   * sync trouxe sem verificação. Fundir os dois faria um rascunho aparecer como
+   * template não verificado, e quem lesse concluiria que uma mensagem
+   * inexistente está no ar.
+   */
+  isDraft: boolean;
 }
 
 export interface TemplateCatalog {

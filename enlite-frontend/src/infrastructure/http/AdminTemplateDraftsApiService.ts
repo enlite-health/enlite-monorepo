@@ -22,6 +22,14 @@ import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthServic
 export interface TemplateDraft {
   id: string;
   slug: string;
+  /**
+   * A chave que une a versão espanhola e a portuguesa (migration 302).
+   *
+   * Vem do banco já com `COALESCE(base_name, slug)`, então nunca é null —
+   * mesma garantia que o catálogo dá. Rascunho antigo, de antes da 301, tem
+   * base igual ao próprio slug: não pareia, mas também nunca pareia errado.
+   */
+  baseName: string;
   name: string;
   body: string;
   category: string;
@@ -72,6 +80,20 @@ export interface DraftEntrada {
  *   aviso    → veio num 200/201, JÁ gravou, e a tela mostra sem travar nada.
  * Sem esse campo o aviso não teria por onde chegar — era travar ou sumir.
  */
+/**
+ * O que o servidor respondeu sobre um texto ainda não gravado.
+ *
+ * 🔒 `bloqueios` e `avisos` chegam SEPARADOS, e continuam separados na tela:
+ * "não vai gravar" e "vai gravar e mesmo assim falta isto" são coisas
+ * diferentes. Fundi-las pintaria de vermelho um salvamento que deu certo — e a
+ * pessoa passaria a ignorar o vermelho.
+ */
+export interface ResultadoDaValidacao {
+  slug: string;
+  bloqueios: ProblemaDeRegra[];
+  avisos: ProblemaDeRegra[];
+}
+
 export interface ProblemaDeRegra {
   campo: 'slug' | 'name' | 'body' | 'category' | 'language';
   regra: string;
@@ -128,6 +150,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const AdminTemplateDraftsApiService = {
+  /**
+   * Roda as regras SEM gravar — alimenta a lista de verificação ao vivo.
+   *
+   * 🔒 Não existe régua no cliente: quem responde é `validarRascunho`, a mesma
+   * função que decide no `create` e no `submit`. Ver `templateDraftsRoutes.ts`.
+   */
+  async validarRascunho(entrada: DraftEntrada): Promise<ResultadoDaValidacao> {
+    return request<ResultadoDaValidacao>('POST', '/api/admin/template-drafts/validar', entrada);
+  },
+
   async listDrafts(): Promise<{ drafts: TemplateDraft[] }> {
     return request<{ drafts: TemplateDraft[] }>('GET', '/api/admin/template-drafts');
   },
