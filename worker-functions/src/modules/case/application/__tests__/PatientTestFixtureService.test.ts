@@ -110,7 +110,7 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
             }
           : undefined,
       (sql) => (sql.includes('DELETE FROM admission_appointments') ? { rows: [], rowCount: 1 } : undefined),
-      (sql) => (sql.includes('UPDATE job_postings') ? { rows: [], rowCount: 2 } : undefined),
+      (sql) => (sql.includes('DELETE FROM job_postings') ? { rows: [], rowCount: 2 } : undefined),
     ]);
     const svc = new PatientTestFixtureService(db as never, calendar as never);
 
@@ -128,10 +128,12 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
       'evt-1',
       expect.any(String),
     );
-    // soft-delete (deleted_at), nunca DELETE físico do paciente
-    const patientWrite = clientCalls.find((c) => c.sql.includes('UPDATE patients'));
-    expect(patientWrite?.sql).toContain('deleted_at = NOW()');
-    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(false);
+    // Dado sintético SAI da tabela: não pode sobreviver ao teste que o criou.
+    // A versão anterior marcava deleted_at "para continuar auditável" e deixou
+    // 149 linhas em produção. A auditabilidade agora mora no log do PurgeResult.
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+    expect(clientCalls.some((c) => /UPDATE patients/i.test(c.sql))).toBe(false);
+    expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(true);
   });
 
   it('falha no Calendar é CONTADA, não aborta a limpeza do banco', async () => {
@@ -149,7 +151,7 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
 
     expect(result?.calendarEventsDeleted).toBe(0);
     expect(result?.calendarEventsFailed).toBe(1);
-    expect(clientCalls.some((c) => c.sql.includes('UPDATE patients'))).toBe(true);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
   });
 
   it('appointment sem evento no Calendar não chama a API do Google', async () => {
@@ -170,12 +172,26 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
     expect(result?.calendarEventsFailed).toBe(0);
   });
 
+  it('alcança paciente de teste JÁ soft-deletado — o passivo não fica inalcançável', async () => {
+    const { db, calls, clientCalls } = makeDb([selectIsTest(true), noAppointments]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
+
+    // A trava é `is_test`, não `deleted_at`. Filtrar por `deleted_at IS NULL`
+    // no SELECT faria a rota devolver 404 para toda linha que a versão soft
+    // já havia marcado — exatamente o passivo que precisa ser removido.
+    const select = calls.find((c) => c.sql.includes('SELECT is_test FROM patients'));
+    expect(select?.sql).not.toMatch(/deleted_at/i);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+
   it('faz rollback se a transação falhar no meio', async () => {
     const { db, client } = makeDb([
       selectIsTest(true),
       noAppointments,
       (sql) => {
-        if (sql.includes('UPDATE job_postings')) throw new Error('boom');
+        if (sql.includes('DELETE FROM job_postings')) throw new Error('boom');
         return undefined;
       },
     ]);

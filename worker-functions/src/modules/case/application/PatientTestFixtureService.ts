@@ -46,8 +46,19 @@ interface AppointmentRow {
  * o método lançar `NotATestPatientError` — não existe caminho, nem por engano
  * nem por id errado, em que este serviço apague dado de gente de verdade.
  *
- * A limpeza é SOFT (deleted_at), igual ao resto do sistema: o registro sai das
- * telas, das estatísticas e do funil, e continua auditável.
+ * A limpeza é FÍSICA (DELETE). A versão anterior marcava `deleted_at` "para
+ * continuar auditável", e o efeito medido em produção (02/09/2026) foi 149
+ * pacientes sintéticos acumulados desde 30/07 — invisíveis nas telas, mas vivos
+ * na tabela e contaminando toda consulta que não filtre `deleted_at`. Dado de
+ * teste não sobrevive ao teste que o criou; a auditabilidade mora no log
+ * `patient.test_purge.done`, que registra o que a limpeza fez sem reter PII.
+ *
+ * As 6 tabelas-filhas em ON DELETE CASCADE (patient_addresses, patient_chat_ids,
+ * patient_field_overrides_audit, patient_professionals, patient_responsibles,
+ * patient_status_history) saem junto. As que são NO ACTION precisam sair ANTES,
+ * ou a FK aborta o DELETE: `admission_appointments` e `job_postings` são
+ * apagadas aqui. Falta `vacancy_relink_audit.new_patient_id` — hoje sem nenhuma
+ * linha de teste, mas capaz de travar o purge no dia em que houver.
  */
 export class PatientTestFixtureService {
   constructor(
@@ -74,7 +85,8 @@ export class PatientTestFixtureService {
 
   /**
    * Remove o rastro de um paciente de teste: evento(s) no Google Calendar,
-   * entrevista(s) de admissão, vaga(s) geradas e o próprio paciente.
+   * entrevista(s) de admissão, vaga(s) geradas e o próprio paciente — todos
+   * apagados de verdade, sem linha remanescente.
    *
    * Ordem importa: o evento do Calendar sai PRIMEIRO (é o efeito externo — se
    * falhar, queremos saber antes de perder a referência no banco). A falha em
@@ -83,7 +95,9 @@ export class PatientTestFixtureService {
    */
   async purge(patientId: string): Promise<PurgeResult | null> {
     const { rows: patientRows } = await this.db.query<{ is_test: boolean }>(
-      `SELECT is_test FROM patients WHERE id = $1 AND deleted_at IS NULL`,
+      // Sem filtro de `deleted_at`: a trava é `is_test`. Filtrar aqui tornaria
+      // inalcançável todo registro que a versão soft já marcou (404 eterno).
+      `SELECT is_test FROM patients WHERE id = $1`,
       [patientId],
     );
     if (patientRows.length === 0) return null;
@@ -127,18 +141,14 @@ export class PatientTestFixtureService {
       );
       appointmentsCancelled = appt.rowCount ?? 0;
 
+      // FK NO ACTION: a vaga precisa sair antes do paciente, ou o DELETE aborta.
       const vac = await client.query(
-        `UPDATE job_postings
-            SET deleted_at = NOW(), updated_at = NOW()
-          WHERE patient_id = $1 AND deleted_at IS NULL`,
+        `DELETE FROM job_postings WHERE patient_id = $1`,
         [patientId],
       );
       vacanciesDeleted = vac.rowCount ?? 0;
 
-      await client.query(
-        `UPDATE patients SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-        [patientId],
-      );
+      await client.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
 
       await client.query('COMMIT');
     } catch (err) {
