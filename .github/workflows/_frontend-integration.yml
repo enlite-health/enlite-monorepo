@@ -172,6 +172,34 @@ jobs:
           E2E_BASE_URL: http://localhost:5173
         run: npx playwright test --config=playwright.mocked.config.ts e2e/plantillas-vs-desenho.e2e.ts
 
+      # 🔒 A PROVA VISUAL MOCKADA ENTRA NO CI — e o motivo é um apodrecimento
+      # medido, não zelo. Em 02/09 o `template-drafts-visual.e2e.ts` estava
+      # VERMELHO havia um dia inteiro e nada avisou: os cinco testes apontavam
+      # para `td-input-name`, `td-slug-previsto`, `td-aviso-perimetro` e para a
+      # lista de rascunhos, todos removidos na reescrita do compositor. Como
+      # nada aqui o executava, não havia como divergir.
+      #
+      # ⚠️ `--ignore-snapshots` DE PROPÓSITO, e não por preguiça. As baselines
+      # são gitignored (`e2e/**-snapshots/`), então a comparação de pixel nunca
+      # aconteceu no CI — e não pode acontecer sem antes decidir onde versionar
+      # imagens geradas no Linux, que renderiza fonte diferente do macOS. O que
+      # apodreceu não foi pixel: foram SELETORES que sumiram. É isso que este
+      # passo pega, e pega em segundos.
+      #
+      # A fidelidade ao desenho continua medida, e por outro instrumento: o
+      # `plantillas-pixel-loop` compara `getComputedStyle` dos dois lados, sem
+      # imagem nenhuma, e por isso não depende de plataforma.
+      - name: Prova visual mockada — as telas de plantillas
+        working-directory: enlite-frontend
+        env:
+          CI: 'true'
+          E2E_BASE_URL: http://localhost:5173
+        run: |
+          npx playwright test --config=playwright.mocked.config.ts --ignore-snapshots \
+            e2e/template-drafts-visual.e2e.ts \
+            e2e/template-catalog-visual.e2e.ts \
+            e2e/template-catalog-detalhe-visual.e2e.ts
+
       # As fotos sobem SEMPRE, não só na falha: elas são o insumo da comparação
       # de pixel que se faz à mão. Guardá-las apenas quando o job quebra deixaria
       # de fora justamente o caso em que se quer olhar — o verde que está feio.
