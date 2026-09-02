@@ -27,3 +27,7 @@ e2e/fixtures/figma/*.expected.png
 
 # Provas visuais geradas pelos testes @integration (screenshots/vídeo)
 e2e/artifacts
+
+# Saída do comparador desenho x app (e2e/plantillas-vs-desenho): são fotos
+# regeneradas a cada execução, como as baselines do Playwright logo acima.
+e2e/__comparador__/

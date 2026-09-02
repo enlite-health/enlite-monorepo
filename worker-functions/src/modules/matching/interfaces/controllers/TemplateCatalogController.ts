@@ -43,6 +43,7 @@ interface CatalogRow {
   meta_approval_detail: string | null;
   meta_approval_checked_at: string | null;
   used_in_stages: string[] | null;
+  is_draft: boolean;
 }
 
 export class TemplateCatalogController {
@@ -73,9 +74,50 @@ export class TemplateCatalogController {
                      FROM funnel_stage_messages m
                     WHERE m.template_slug = t.slug AND m.enabled = true),
                   ARRAY[]::text[]
-                ) AS used_in_stages
+                ) AS used_in_stages,
+                false AS is_draft
            FROM message_templates t
-          ORDER BY t.slug`,
+
+         UNION ALL
+
+         /*
+          * OS RASCUNHOS. O desenho poe o rascunho como LINHA do catalogo
+          * ("Sin texto todavia - borrador de Ana, 30/08"), e a razao e que a
+          * pergunta desta tela e "o que existe e em que pe esta" -- um rascunho
+          * e uma dessas coisas. Antes de eles aparecerem aqui, o unico caminho
+          * para um rascunho salvo era a lista no pe da tela de registrar: dado
+          * gravado que o catalogo nao enxergava.
+          *
+          * A GUARDA CONTRA A LINHA DUPLA. Um rascunho submetido ganha
+          * content_sid, e o sync seguinte cria a linha correspondente em
+          * message_templates. Sem o NOT EXISTS a mesma mensagem apareceria
+          * duas vezes -- uma como rascunho, outra como template -- e a tela
+          * afirmaria dois cadastros onde ha um.
+          *
+          * O body entra nas DUAS colunas de texto de proposito: um rascunho
+          * ainda nao tem texto aprovado pela Meta, e o que existe e o que a
+          * pessoa escreveu. Nao e a mesma coisa que body_twilio de um template
+          * vivo, mas e a unica verdade disponivel -- e a tela marca a linha
+          * como rascunho, entao ninguem le aquilo como "aprovado".
+          */
+         SELECT d.slug, d.name, d.body, d.body AS body_twilio, d.category,
+                true AS is_active, d.content_sid, d.language,
+                COALESCE(d.base_name, d.slug) AS base_name,
+                NULL::text AS meta_approval_status, NULL::text AS meta_approval_reason,
+                NULL::text AS meta_approval_detail, NULL::timestamptz AS meta_approval_checked_at,
+                -- Rascunho nao esta pendurado em etapa nenhuma: nao tem slug
+                -- vivo para funnel_stage_messages apontar.
+                ARRAY[]::text[] AS used_in_stages,
+                true AS is_draft
+           FROM message_template_drafts d
+          WHERE d.archived_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM message_templates x
+               WHERE d.content_sid IS NOT NULL
+                 AND UPPER(x.content_sid) = UPPER(d.content_sid)
+            )
+
+          ORDER BY slug`,
       );
 
       res.status(200).json({
@@ -108,6 +150,15 @@ export class TemplateCatalogController {
               ineligibleReason: e.reason,
               placeholders: e.placeholders,
               usedInStages: t.used_in_stages ?? [],
+              /*
+               * 🔒 A TELA PRECISA SABER QUE É RASCUNHO, e não pode deduzir por
+               * `metaStatus === null`. `null` já significa outra coisa —
+               * "nunca perguntamos à Meta" — e é o estado de templates VIVOS
+               * que o sync trouxe sem verificação. Fundir os dois faria um
+               * rascunho aparecer como template não verificado, e a pessoa
+               * concluiria que uma mensagem inexistente está no ar.
+               */
+              isDraft: t.is_draft === true,
             };
           }),
         },

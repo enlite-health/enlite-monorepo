@@ -216,6 +216,23 @@ export function slugComPrefixo(base: string, language: Idioma): string {
 }
 
 /**
+ * O caminho de volta: do slug final para o nome que a pessoa digitou.
+ *
+ * 🔒 É o INVERSO EXATO de `slugComPrefixo`, e não uma adivinhação — por isso ele
+ * pode existir aqui e a migration 300 teve de enumerar 28 linhas à mão. Lá, os
+ * slugs vieram do Console da Twilio em três convenções diferentes ao longo de
+ * meses; aqui, TODO slug passou por `slugComPrefixo` neste mesmo arquivo, e
+ * desfazer uma transformação que a gente aplicou é aritmética, não palpite.
+ *
+ * Guarda: sem o prefixo esperado, devolve o slug inteiro. A mensagem vira um
+ * par de uma só — que é a verdade — em vez de ser forçada num par errado.
+ */
+export function baseDoSlug(slug: string, language: Idioma): string {
+  const prefixo = PREFIXO_POR_IDIOMA[language];
+  return slug.startsWith(prefixo) ? slug.slice(prefixo.length) : slug;
+}
+
+/**
  * As formas de MANDAR responder algo. Normalizadas (minúscula, sem acento).
  *
  * Sem o verbo, a palavra sozinha não é cláusula: um texto que diz "podés

@@ -34,6 +34,7 @@ import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
+import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
 import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
@@ -212,6 +213,8 @@ export function App() {
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
           <Route path="plantillas/registrar" element={<TemplateDraftsPage />} />
+          {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}
+          <Route path="plantillas/:slug" element={<TemplateCatalogDetailPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />

@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { dataLegivel } from '../templateCatalogView';
 
 /**
@@ -20,7 +20,30 @@ import { dataLegivel } from '../templateCatalogView';
  * uma vez, e nenhum deles falava de navegação. Envolver aqui mantém os testes
  * medindo o que mediam.
  */
-const render = (ui: React.ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+/**
+ * A sonda de destino. A lista deixou de abrir um drawer e passou a NAVEGAR para
+ * `/admin/plantillas/:slug` (Tela 4 do desenho). Sem uma rota de chegada, o
+ * clique levaria a lugar nenhum e o teste não teria como afirmar PARA ONDE foi —
+ * ele passaria por não ter olhado.
+ */
+function SondaDetalhe(): JSX.Element {
+  const { slug } = useParams<{ slug: string }>();
+  return <div data-testid="sonda-detalhe">{slug}</div>;
+}
+
+const render = (ui: React.ReactElement) => rtlRender(
+  <MemoryRouter initialEntries={['/admin/plantillas']}>
+    <Routes>
+      <Route path="/admin/plantillas" element={ui} />
+      {/* ⚠️ A rota ESTÁTICA vem antes da paramétrica, como no `App.tsx`. Sem
+          ela, `/admin/plantillas/registrar` casaria com `:slug` e a sonda de
+          detalhe apareceria com slug "registrar" — o teste mediria uma
+          navegação que o app real nunca faz. */}
+      <Route path="/admin/plantillas/registrar" element={<div data-testid="sonda-registrar" />} />
+      <Route path="/admin/plantillas/:slug" element={<SondaDetalhe />} />
+    </Routes>
+  </MemoryRouter>,
+);
 import userEvent from '@testing-library/user-event';
 import { TemplateCatalogPage } from '../TemplateCatalogPage';
 import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
@@ -57,6 +80,7 @@ const row = (over: Partial<TemplateCatalogRow> = {}): TemplateCatalogRow => ({
   metaStatus: 'APPROVED', metaReason: null, metaDetail: null,
   metaCheckedAt: '2026-08-31T12:00:00Z',
   eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [],
+  isDraft: false,
   ...over,
   // 🔒 O `baseName` acompanha o slug por padrão — é o caso REAL de 12 das 28
   // linhas de produção, que não têm marcador de idioma nenhum e cujo
@@ -256,51 +280,40 @@ describe('TemplateCatalogPage', () => {
   });
 
 describe('variáveis da mensagem — saíram da LISTA e vieram para o DETALHE', () => {
-    it('🔒 a listagem NÃO mostra mais as variáveis', async () => {
-      // Nos 27 templates antigos, posicionais, isto virava "1 2 3 4 5" na
-      // listagem: números nus que não ensinam nada. Decisão do Gabriel, 01/09.
-      await renderWith([row({ placeholders: ['1', '2', '3', '4', '5'] })]);
+    /**
+     * ⚠️ ESTE TESTE FOI INVERTIDO, e a medição que o criou continua válida.
+     *
+     * Em 01/09 as variáveis saíram da lista porque, nos 27 templates antigos
+     * (posicionais), a célula virava "1 2 3 4 5" — números nus que não ensinam
+     * nada. O desenho de 31/08 pede os chips de volta, e a diferença está na
+     * FORMA: o chip mostra `{{1}}`, que se lê como marcador de posição, e não
+     * um algarismo solto. O que a lista NÃO faz é explicar o custo daquilo —
+     * isso continua no detalhe, onde há espaço para a frase.
+     */
+    it('a listagem mostra as variáveis como CHIP, não como número nu', async () => {
+      await renderWith([row({ placeholders: ['1', '2'] })]);
+      const chips = await screen.findByTestId('tc-vars-ar_bienvenida');
+      expect(chips.textContent).toContain('{{1}}');
+      expect(chips.textContent).not.toBe('1 2');
+    });
+
+    it('sem variáveis não desenha o bloco de chips', async () => {
+      await renderWith([row({ placeholders: [] })]);
       await screen.findByTestId('tc-table');
       expect(screen.queryByTestId('tc-vars-ar_bienvenida')).not.toBeInTheDocument();
     });
 
-    it('clicar na linha abre o detalhe com as variáveis E a explicação', async () => {
+    /**
+     * 🔒 O QUE A LISTA FAZ HOJE É NAVEGAR. O detalhe virou rota própria, e o que
+     * esta camada tem de garantir é só isto: o clique leva ao slug CERTO. O que
+     * a tela de destino mostra é medido em `TemplateCatalogDetailPage.test.tsx`,
+     * para onde as asserções de conteúdo migraram inteiras.
+     */
+    it('clicar na linha leva ao detalhe DAQUELA mensagem', async () => {
       const u = userEvent.setup();
-      await renderWith([row({ placeholders: ['1', '2'], eligible: false, ineligibleReason: 'PLACEHOLDERS' })]);
+      await renderWith([row({ placeholders: ['1', '2'] })]);
       await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
-
-      const det = await screen.findByTestId('tc-detalhe');
-      expect(det).toBeTruthy();
-      expect(screen.getByTestId('tc-detalhe-vars').textContent).toContain('{{1}}');
-      // A frase que faltava: sem ela, "1 2" continua não dizendo nada.
-      expect(screen.getByTestId('tc-detalhe-vars-posicionais').textContent)
-        .toContain('variaveisPosicionais');
-    });
-
-    it('variável NOMEADA ganha a explicação certa, não a de posicional', async () => {
-      const u = userEvent.setup();
-      await renderWith([row({ placeholders: ['worker_name'] })]);
-      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
-      await screen.findByTestId('tc-detalhe');
-      expect(screen.getByTestId('tc-detalhe-vars-nomeadas')).toBeTruthy();
-      expect(screen.queryByTestId('tc-detalhe-vars-posicionais')).toBeNull();
-    });
-
-    it('sem variáveis o detalhe DIZ que é texto fixo, não deixa em branco', async () => {
-      const u = userEvent.setup();
-      await renderWith([row({ placeholders: [] })]);
-      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
-      await screen.findByTestId('tc-detalhe');
-      expect(screen.getByTestId('tc-detalhe-vars-nenhuma').textContent).toContain('semVariaveis');
-    });
-
-    it('o detalhe fecha', async () => {
-      const u = userEvent.setup();
-      await renderWith([row({ placeholders: [] })]);
-      await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
-      await screen.findByTestId('tc-detalhe');
-      await u.click(screen.getByTestId('tc-detalhe-fechar'));
-      await waitFor(() => expect(screen.queryByTestId('tc-detalhe')).toBeNull());
+      expect((await screen.findByTestId('sonda-detalhe')).textContent).toBe('ar_bienvenida');
     });
 
     it('🔒 o botão de REGISTRAR mensagem existe na listagem', async () => {
@@ -321,86 +334,27 @@ describe('variáveis da mensagem — saíram da LISTA e vieram para o DETALHE', 
     });
   });
 
-  it('data de verificação é formatada', async () => {
-    await renderWith([row()]);
-    expect(await screen.findByText(/31\/08\/2026/)).toBeInTheDocument();
+  /**
+   * ⚠️ A COLUNA DE DATA SAIU DA LISTA (desenho de 31/08). A informação não se
+   * perdeu: a idade do dado está na faixa de filtros e vale para a lista
+   * inteira — o sync roda de uma vez — e a data de UMA mensagem está no
+   * detalhe, medida em `TemplateCatalogDetailPage.test.tsx`. O que este teste
+   * garante agora é que ela NÃO voltou a repetir a mesma data em toda linha.
+   */
+  it('a lista não repete a data de verificação em cada linha', async () => {
+    await renderWith([row(), row({ slug: 'ar_outra', baseName: 'outra' })]);
+    await screen.findByTestId('tc-table');
+    expect(screen.queryAllByText(/31\/08\/2026/)).toHaveLength(0);
   });
 });
 
-describe('o detalhe da mensagem — os campos que só ele mostra', () => {
-  const abrir = async (over: Record<string, unknown>) => {
-    const u = userEvent.setup();
-    await renderWith([row(over)]);
-    await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
-    await screen.findByTestId('tc-detalhe');
-    return u;
-  };
-
-  it('mostra o TEXTO aprovado, que é o que a pessoa veio ver', async () => {
-    await abrir({ bodyTwilio: 'Hola {{1}}, todo bien por acá.' });
-    expect(screen.getByTestId('tc-detalhe-texto').textContent).toContain('todo bien por acá');
-  });
-
-  it('recusada: mostra o motivo E a explicação em prosa da Meta', async () => {
-    await abrir({
-      metaStatus: 'REJECTED', metaReason: 'INCORRECT_CATEGORY',
-      metaDetail: 'La categoría no coincide con el contenido.',
-    });
-    expect(screen.getByTestId('tc-detalhe-motivo').textContent).toContain('INCORRECT_CATEGORY');
-    expect(screen.getByTestId('tc-detalhe-explicacao').textContent).toContain('no coincide');
-  });
-
-  it('aprovada: nem motivo nem explicação aparecem — não há o que dizer', async () => {
-    await abrir({ metaStatus: 'APPROVED', metaReason: null, metaDetail: null });
-    expect(screen.queryByTestId('tc-detalhe-motivo')).toBeNull();
-    expect(screen.queryByTestId('tc-detalhe-explicacao')).toBeNull();
-  });
-
-  it('mostra as etapas em que a mensagem é usada', async () => {
-    await abrir({ usedInStages: ['HIRED', 'SELECTED'] });
-    const txt = screen.getByTestId('tc-detalhe-etapas').textContent ?? '';
-    expect(txt).toContain('HIRED');
-    expect(txt).toContain('SELECTED');
-  });
-
-  it('sem uso, diz que não é usada — não deixa em branco', async () => {
-    await abrir({ usedInStages: [] });
-    expect(screen.getByTestId('tc-detalhe-etapas').textContent).toContain('unused');
-  });
-
-  it('inelegível: explica por que não serve para etapas', async () => {
-    await abrir({ eligible: false, ineligibleReason: 'PLACEHOLDERS' });
-    // O dublê de `t` devolve o fallback quando há 2º argumento — o que importa
-    // aqui é que o bloco APARECE e fala de inelegibilidade.
-    expect(screen.getByTestId('tc-detalhe-inelegivel').textContent).toContain('ineligible');
-  });
-
-  it('elegível não mostra o bloco de "por que não serve"', async () => {
-    await abrir({ eligible: true });
-    expect(screen.queryByTestId('tc-detalhe-inelegivel')).toBeNull();
-  });
-
-  it('nunca verificado diz "nunca", não data vazia', async () => {
-    await abrir({ metaCheckedAt: null });
-    expect(screen.getByTestId('tc-detalhe-verificado').textContent).toContain('never');
-  });
-
-  it('sem content_sid mostra travessão, não "null"', async () => {
-    await abrir({ contentSid: null });
-    expect(screen.getByTestId('tc-detalhe-sid').textContent).toBe('—');
-  });
-
-  it('sem texto sincronizado avisa, em vez de painel vazio', async () => {
-    await abrir({ bodyTwilio: null });
-    expect(screen.getByTestId('tc-detalhe-texto').textContent).toContain('noText');
-  });
-
-  it('Escape fecha o detalhe', async () => {
-    const u = await abrir({});
-    await u.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByTestId('tc-detalhe')).toBeNull());
-  });
-});
+/*
+ * ⚠️ O bloco "o detalhe da mensagem — os campos que só ele mostra" (15 testes)
+ * NÃO foi apagado: migrou inteiro para `TemplateCatalogDetailPage.test.tsx`
+ * quando o drawer virou rota. Motivo, explicação, variáveis, uso,
+ * elegibilidade, data e SID continuam sendo medidos, palavra por palavra — só
+ * que na tela onde agora moram.
+ */
 
 describe('ajustes de 01/09 (Gabriel, olhando a tela)', () => {
   describe('a data de verificação, formatada', () => {
@@ -419,22 +373,19 @@ describe('ajustes de 01/09 (Gabriel, olhando a tela)', () => {
     });
   });
 
-  it('a data aparece formatada no detalhe', async () => {
-    const u = userEvent.setup();
-    await renderWith([row({ metaCheckedAt: '2026-09-01T02:19:00Z' })]);
-    await u.click(screen.getByTestId('tc-row-ar_bienvenida'));
-    await screen.findByTestId('tc-detalhe');
-    const txt = screen.getByTestId('tc-detalhe-verificado').textContent ?? '';
-    expect(txt).not.toContain('T02:19');
-    expect(txt).toMatch(/\d{2}\/\d{2}\/\d{4}/);
-  });
-
-  it('🔒 a linha mostra o IDENTIFICADOR primeiro e a mensagem embaixo', async () => {
+  /**
+   * ⚠️ INVERTIDO em 01/09 pelo desenho, e a razão da inversão é a mesma que
+   * motivou a ordem anterior: `name` é idêntico ao `slug` nas 27 linhas de
+   * produção, então o identificador não diz o que a mensagem faz. A emenda de
+   * antes o pôs em primeiro porque não havia SEGUNDO lugar mostrando o nome;
+   * agora há — a coluna de idioma traz o slug de cada versão. O texto lidera, e
+   * o identificador continua na linha, uma linha abaixo.
+   */
+  it('🔒 a linha mostra o TEXTO primeiro e o identificador embaixo', async () => {
     await renderWith([row({ slug: 'ar_bienvenida', bodyTwilio: 'Texto de la mensaje' })]);
     const linha = await screen.findByTestId('tc-row-ar_bienvenida');
     const txt = linha.textContent ?? '';
-    // A ordem no DOM é a ordem visual: identificador antes do texto.
-    expect(txt.indexOf('ar_bienvenida')).toBeLessThan(txt.indexOf('Texto de la mensaje'));
+    expect(txt.indexOf('Texto de la mensaje')).toBeLessThan(txt.indexOf('ar_bienvenida'));
   });
 });
 
@@ -459,32 +410,35 @@ describe('a listagem por MENSAGEM (01/09) — duas colunas de idioma numa linha 
     expect(screen.getByTestId('tc-status-admission_confirmation_pt')).toHaveTextContent('PENDING');
   });
 
-  it('🔒 o lado que não existe fica MUDO na lista — 24 de 26 linhas não viram parede de CTA', async () => {
-    // Não ter versão brasileira não é defeito hoje: o Brasil não está ligado.
-    // Pintar 24 linhas como "falta fazer algo" transforma o normal em alarme.
+  /**
+   * ⚠️ INVERTIDO pelo desenho, com a objeção medida resolvida de outro jeito.
+   *
+   * A objeção era real: 24 das 26 mensagens não têm versão em português, e a
+   * coluna virava uma parede da MESMA chamada para ação — transformando o
+   * estado NORMAL (o Brasil não está ligado) em alarme. O que conserta isso é o
+   * PESO, não a ausência: link discreto, sem cor de alerta e sem borda. Este
+   * teste trava o peso, que é a parte que pode regredir sem ninguém notar.
+   */
+  it('o lado que falta OFERECE criar a versão — em link discreto, não em botão', async () => {
     await renderWith([row({ slug: 'ar_invite_open', baseName: 'invite_open', language: 'es-AR' })]);
-    expect(await screen.findByTestId('tc-sem-versao-pt-BR-invite_open')).toHaveTextContent('—');
-    expect(screen.queryByTestId('tc-criar-pt-BR-invite_open')).not.toBeInTheDocument();
+    const link = await screen.findByTestId('tc-criar-pt-BR-invite_open');
+    expect(link.getAttribute('href')).toBe('/admin/plantillas/registrar?base=invite_open&lang=pt-BR');
+    // 🔒 Sem cor de alerta e sem borda: oferece, não cobra.
+    expect(link.className).not.toContain('bg-pink');
+    expect(link.className).not.toContain('border');
   });
 
-  it('a AÇÃO de criar a versão que falta vive no drawer, com base e idioma na URL', async () => {
+  /*
+   * ⚠️ "a AÇÃO de criar a versão que falta" e "par completo não mostra ação"
+   * migraram para `TemplateCatalogDetailPage.test.tsx`: a ação mora na tela de
+   * detalhe, e é lá que ela tem de ser medida. O que fica aqui é o que é da
+   * LISTA — que a linha leva ao slug certo.
+   */
+  it('clicar na linha do par leva à versão PRINCIPAL da mensagem', async () => {
     const u = userEvent.setup();
     await renderWith([row({ slug: 'ar_invite_open', baseName: 'invite_open', language: 'es-AR' })]);
     await u.click(screen.getByTestId('tc-row-invite_open'));
-    const link = await screen.findByTestId('tc-detalhe-criar-pt-BR');
-    expect(link).toHaveAttribute('href', '/admin/plantillas/registrar?base=invite_open&lang=pt-BR');
-  });
-
-  it('🔒 par COMPLETO não mostra ação nenhuma no drawer — botão morto é ruído', async () => {
-    const u = userEvent.setup();
-    await renderWith([
-      row({ slug: 'ar_x', baseName: 'x', language: 'es-AR' }),
-      row({ slug: 'br_x', baseName: 'x', language: 'pt-BR' }),
-    ]);
-    await u.click(screen.getByTestId('tc-row-x'));
-    await screen.findByTestId('tc-detalhe');
-    expect(screen.queryByTestId('tc-detalhe-criar-pt-BR')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('tc-detalhe-criar-es-AR')).not.toBeInTheDocument();
+    expect((await screen.findByTestId('sonda-detalhe')).textContent).toBe('ar_invite_open');
   });
 
   it('o filtro "falta una versión" conta e mostra só as incompletas', async () => {
@@ -516,31 +470,41 @@ describe('a listagem por MENSAGEM (01/09) — duas colunas de idioma numa linha 
 });
 
 describe('os cliques da coluna de idioma', () => {
-  it('clicar na versão abre o detalhe DAQUELA versão, não da outra', async () => {
+  it('clicar na versão leva ao detalhe DAQUELA versão, não da outra', async () => {
     const u = userEvent.setup();
     await renderWith([
       row({ slug: 'ar_x', baseName: 'x', language: 'es-AR', bodyTwilio: 'texto español' }),
       row({ slug: 'br_x', baseName: 'x', language: 'pt-BR', bodyTwilio: 'texto português' }),
     ]);
     await u.click(screen.getByTestId('tc-lang-pt-BR-br_x'));
-    expect(await screen.findByTestId('tc-detalhe')).toHaveTextContent('texto português');
+    // 🔒 O slug do DESTINO é a prova: `br_x`, não `ar_x`. Antes isto se media
+    // pelo texto dentro do drawer; agora se mede pela rota, que é mais forte —
+    // texto igual nas duas versões passaria batido, slug não.
+    expect((await screen.findByTestId('sonda-detalhe')).textContent).toBe('br_x');
   });
 
-  it('e clicar na versão espanhola abre a espanhola — cada coluna abre a SUA', async () => {
+  it('e clicar na versão espanhola leva à espanhola — cada coluna leva à SUA', async () => {
     const u = userEvent.setup();
     await renderWith([
       row({ slug: 'ar_x', baseName: 'x', language: 'es-AR', bodyTwilio: 'texto español' }),
       row({ slug: 'br_x', baseName: 'x', language: 'pt-BR', bodyTwilio: 'texto português' }),
     ]);
     await u.click(screen.getByTestId('tc-lang-es-AR-ar_x'));
-    expect(await screen.findByTestId('tc-detalhe')).toHaveTextContent('texto español');
+    expect((await screen.findByTestId('sonda-detalhe')).textContent).toBe('ar_x');
   });
 
-  it('a célula muda do lado que falta não é clicável — não há dois destinos na linha', async () => {
+  /**
+   * 🔒 O CLIQUE NA CÉLULA VAZIA NÃO PODE VAZAR PARA A LINHA. A linha navega
+   * para o detalhe; a célula oferece criar a versão. Sem o `stopPropagation` os
+   * dois disparam e a pessoa acaba no detalhe da versão espanhola, sem entender
+   * por que o "criar versão" não funcionou.
+   */
+  it('clicar em "criar versión" NÃO abre também o detalhe da linha', async () => {
+    const u = userEvent.setup();
     await renderWith([row({ slug: 'ar_x', baseName: 'x', language: 'es-AR' })]);
-    const vazia = await screen.findByTestId('tc-sem-versao-pt-BR-x');
-    expect(vazia.querySelector('a')).toBeNull();
-    expect(vazia.querySelector('button')).toBeNull();
+    await u.click(await screen.findByTestId('tc-criar-pt-BR-x'));
+    expect(await screen.findByTestId('sonda-registrar')).toBeTruthy();
+    expect(screen.queryByTestId('sonda-detalhe')).toBeNull();
   });
 });
 

@@ -14,7 +14,7 @@ const row = (over: Partial<TemplateCatalogRow> = {}): TemplateCatalogRow => ({
   slug: 's', name: 's', bodyTwilio: 'x', category: 'UTILITY', isActive: true,
   language: 'es-AR', baseName: 's',
   contentSid: 'HX', metaStatus: 'APPROVED', metaReason: null, metaDetail: null,
-  metaCheckedAt: null, eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [], ...over,
+  metaCheckedAt: null, eligible: true, ineligibleReason: null, placeholders: [], usedInStages: [], isDraft: false, ...over,
 });
 
 describe('groupOf', () => {

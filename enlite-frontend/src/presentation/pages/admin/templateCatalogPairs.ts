@@ -150,12 +150,14 @@ export function idiomaQueFalta(p: MessagePair): string | null {
 export function filtrarPares(
   pares: readonly MessagePair[],
   key: string,
-  grupoDe: (status: string | null) => string,
+  // ⚠️ Recebe a LINHA, não só o status: rascunho tem grupo próprio e o status
+  // dele é `null`, que significa outra coisa. Ver `grupoDaLinha`.
+  grupoDe: (row: TemplateCatalogRow) => string,
 ): MessagePair[] {
   if (key === 'all') return [...pares];
   if (key === MISSING) return faltaUmaVersao(pares);
   return pares.filter((p) =>
-    [p.es, p.pt, ...p.semIdioma].some((r) => r !== null && grupoDe(r.metaStatus) === key),
+    [p.es, p.pt, ...p.semIdioma].some((r) => r !== null && grupoDe(r) === key),
   );
 }
 

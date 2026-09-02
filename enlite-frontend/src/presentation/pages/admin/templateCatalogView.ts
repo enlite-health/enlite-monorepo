@@ -18,11 +18,22 @@ import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatal
  *                 foi o que escondeu PAUSED de nós até 31/08/2026.
  */
 
-export type StatusGroup = 'approved' | 'pending' | 'rejected' | 'off' | 'unchecked' | 'other';
+export type StatusGroup = 'draft' | 'approved' | 'pending' | 'rejected' | 'off' | 'unchecked' | 'other';
 export type FilterKey = StatusGroup | 'all';
 
 /** Ordem em que os filtros aparecem. `all` primeiro, `other` por último. */
-export const FILTER_ORDER: readonly FilterKey[] = ['all', 'approved', 'pending', 'off', 'rejected', 'unchecked', 'other'];
+/**
+ * Ordem em que os filtros aparecem — a do desenho: todas, rascunhos, em
+ * revisão, aprovadas, rejeitadas. Depois vêm os três que o desenho não tem.
+ *
+ * ⚠️ `off`, `unchecked` e `other` FICARAM, e a maquete não os desenha. Ela é de
+ * 31/08, um dia antes de descobrirmos que a Meta DESLIGA mensagens que já
+ * estavam no ar (PAUSED/DISABLED) e que o nosso tipo nem previa esses estados.
+ * `off` é o filtro do incidente: alguém denunciou a mensagem, ou a conta bateu
+ * num teto. Tirá-lo para bater com o desenho reintroduziria exatamente a
+ * cegueira que este catálogo existe para acabar.
+ */
+export const FILTER_ORDER: readonly FilterKey[] = ['all', 'draft', 'pending', 'approved', 'rejected', 'off', 'unchecked', 'other'];
 
 const POR_STATUS: Record<string, StatusGroup> = {
   APPROVED: 'approved',
@@ -43,6 +54,18 @@ export function groupOf(status: string | null): StatusGroup {
   return POR_STATUS[status.toUpperCase()] ?? 'other';
 }
 
+/**
+ * O grupo de uma LINHA — rascunho tem grupo próprio, antes de olhar o estado.
+ *
+ * 🔒 O rascunho vem com `metaStatus: null` e cairia em `unchecked`, que
+ * significa "existe na Twilio e nunca perguntamos à Meta". São coisas
+ * diferentes: o rascunho não existe em lugar nenhum fora daqui. Juntá-los faria
+ * a contagem de "sin verificar" incluir mensagens que nunca foram criadas.
+ */
+export function grupoDaLinha(row: { metaStatus: string | null; isDraft?: boolean }): StatusGroup {
+  return row.isDraft === true ? 'draft' : groupOf(row.metaStatus);
+}
+
 export type GroupCounts = Record<FilterKey, number>;
 
 /**
@@ -55,12 +78,12 @@ export type GroupCounts = Record<FilterKey, number>;
 export function countByGroup(rows: TemplateCatalogRow[]): GroupCounts {
   const c = Object.fromEntries(FILTER_ORDER.map((k) => [k, 0])) as GroupCounts;
   c.all = rows.length;
-  for (const r of rows) c[groupOf(r.metaStatus)]++;
+  for (const r of rows) c[grupoDaLinha(r)]++;
   return c;
 }
 
 export function filterByGroup(rows: TemplateCatalogRow[], key: FilterKey): TemplateCatalogRow[] {
-  return key === 'all' ? rows : rows.filter((r) => groupOf(r.metaStatus) === key);
+  return key === 'all' ? rows : rows.filter((r) => grupoDaLinha(r) === key);
 }
 
 /** A verificação mais recente do catálogo, ou null se ninguém foi verificado. */
@@ -124,4 +147,27 @@ export function dataLegivel(iso: string | null): string | null {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
+}
+
+/**
+ * A cor do estado da Meta.
+ *
+ * 🔒 MORA AQUI, e não na página, porque a listagem e a tela de detalhe têm de
+ * pintar o MESMO estado da MESMA cor — duas cópias divergem no primeiro ajuste,
+ * e aí "Pausada" vira uma cor na lista e outra no detalhe, sugerindo que são
+ * coisas diferentes.
+ *
+ * Os estados de DESLIGAMENTO (a Meta tirou do ar algo que estava funcionando)
+ * têm peso próprio: não são "pendente", são incidente.
+ */
+export function statusTone(status: string | null): string {
+  switch (status) {
+    // As opacidades vêm MEDIDAS da maquete (`.p-appr` .28, `.p-rev` .32,
+    // `.p-rej` .26) — antes eram /25 e /30 arredondados por mim.
+    case 'APPROVED': return 'bg-turquoise/[0.28] text-[#0B5C4E]';
+    case 'PENDING': case 'IN_APPEAL': return 'bg-wait/[0.32] text-[#7A5200]';
+    case 'REJECTED': return 'bg-pink-cancel/[0.26] text-[#8E1230]';
+    case 'PAUSED': case 'DISABLED': case 'LIMIT_EXCEEDED': return 'bg-coordination/20 text-[#8E1230]';
+    default: return 'bg-gray-300 text-gray-800';
+  }
 }
