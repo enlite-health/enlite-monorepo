@@ -146,6 +146,44 @@ jobs:
             npx playwright test --project=integration --ignore-snapshots
           fi
 
+      # ── O portão ESTRUTURAL das telas de plantillas (spec 010) ──
+      #
+      # Por que ele existe: a spec 010 foi entregue em produção sem que NADA na
+      # cadeia comparasse a tela construída com o desenho de 31/08. O "termina
+      # quando" era comportamental — data-testid, chave de i18n, contagem — e
+      # 4679 testes unitários não abrem navegador. O resultado: a modal virou
+      # uma caixa no fluxo da página, o compositor virou um CRUD, a tela de
+      # detalhe virou um drawer, e nenhum vermelho apareceu.
+      #
+      # ⚠️ ELE NÃO MEDE PIXEL, e não finge medir. Os baselines versionados são
+      # `*-darwin.png`; num runner linux o Playwright reprovaria por AUSÊNCIA de
+      # baseline, que não é regressão. Comparação de pixel continua à mão, no
+      # macOS, contra os PNGs do desenho.
+      #
+      # O que ele mede é o que de fato regrediu e independe de plataforma:
+      # coluna que some por transbordo, texto que se sobrepõe ao vizinho, modal
+      # que não é `position: fixed`, ato irreversível sem a trava do checkbox,
+      # detalhe sem endereço próprio. Cada uma dessas medidas foi SABOTADA e
+      # ficou vermelha antes de entrar aqui — portão que não morde é teatro.
+      - name: Portão visual estrutural — plantillas × desenho
+        working-directory: enlite-frontend
+        env:
+          CI: 'true'
+          E2E_BASE_URL: http://localhost:5173
+        run: npx playwright test --config=playwright.mocked.config.ts e2e/plantillas-vs-desenho.e2e.ts
+
+      # As fotos sobem SEMPRE, não só na falha: elas são o insumo da comparação
+      # de pixel que se faz à mão. Guardá-las apenas quando o job quebra deixaria
+      # de fora justamente o caso em que se quer olhar — o verde que está feio.
+      - name: Fotos das telas (para comparar com o desenho)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plantillas-telas
+          path: enlite-frontend/e2e/__comparador__/app/
+          retention-days: 14
+          if-no-files-found: warn
+
       - name: Relatório (só quando falha)
         if: failure()
         uses: actions/upload-artifact@v4

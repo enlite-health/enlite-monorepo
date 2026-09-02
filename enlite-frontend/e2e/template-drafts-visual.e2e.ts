@@ -12,6 +12,15 @@
  *   `npx vite --port 5173 --strictPort &` e
  *   `npx playwright test --config=playwright.mocked.config.ts e2e/template-drafts-visual.e2e.ts`
  *
+ * 🔒 ELE ESTAVA VERMELHO ANTES DESTA EDIÇÃO, e nada avisou. O compositor foi
+ * reescrito em 01/09 (a Tela 2 do desenho): `td-input-name` colapsou com
+ * `td-input-slug`, `td-slug-previsto` virou o par `td-par-slug-*`, o aviso
+ * âmbar `td-aviso-perimetro` saiu, e depois a lista "Borradores guardados"
+ * mudou para o detalhe da mensagem. Os cinco testes daqui apontavam para
+ * elementos que já não existem — e como este arquivo NÃO roda no CI (lá só
+ * correm `e2e/integration/` e o portão `plantillas-vs-desenho`), a suíte ficou
+ * quebrada em silêncio. Prova visual que ninguém executa não é prova.
+ *
  * O que este arquivo fotografa, em ordem de importância:
  *   1. a CONFIRMAÇÃO que enumera o que se torna irreversível — a spec pede isso
  *      com todas as letras, e um "tem certeza?" cumpriria a forma sem a
@@ -33,6 +42,11 @@ const FIREBASE_API_KEY = 'test-api-key';
 const RASCUNHO = {
   id: '11111111-1111-4111-8111-111111111111',
   slug: 'ar_bienvenida_nueva',
+  // 🔒 `baseName` é o que o compositor usa para reabrir: o nome SEM o prefixo de
+  // país. Ele passou a ser coluna do banco na migration 302 — antes era
+  // derivado do slug em cada leitura, e o dublê que o omitia abria o formulário
+  // com o campo vazio, o que parecia defeito da tela.
+  baseName: 'bienvenida_nueva',
   name: 'Bienvenida nueva',
   body: 'Hola {{worker_name}}, te esperamos para el caso {{case_number}}, gracias.',
   category: 'UTILITY',
@@ -75,22 +89,27 @@ async function loginAsAdmin(page: Page): Promise<void> {
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test.describe('Registrar mensaje — escribir, ver y guardar', () => {
-  test('a tela com um rascunho salvo, e o aviso de que NÃO envia à Meta', async ({ page }) => {
+  test('`?draft=` abre o rascunho salvo, e a promessa de não enviar está no subtítulo', async ({ page }) => {
     await loginAsAdmin(page);
     await page.route('**/api/admin/template-drafts', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { drafts: [RASCUNHO] } }) }));
 
-    await page.goto('/admin/plantillas/registrar');
+    await page.goto(`/admin/plantillas/registrar?draft=${RASCUNHO.id}`);
     await expect(page.getByTestId('td-form')).toBeVisible({ timeout: 30_000 });
 
-    // O aviso de perímetro está VISÍVEL, não escondido num tooltip.
-    await expect(page.getByTestId('td-aviso-perimetro')).toBeVisible();
+    // O rascunho chega no formulário — é o que substituiu clicar na lista.
+    await expect(page.getByTestId('td-input-slug')).toHaveValue('bienvenida_nueva');
+    await expect(page.getByTestId('td-input-body')).toContainText(/te esperamos/i);
 
-    // O rascunho salvo aparece, com o estado dito por extenso.
-    await expect(page.getByTestId('td-item-ar_bienvenida_nueva')).toBeVisible();
-    await expect(page.getByTestId('td-estado-ar_bienvenida_nueva')).toContainText(/todavía no enviado/i);
+    /*
+     * A promessa "guardar não envia" mora no SUBTÍTULO, e num lugar só. Ela
+     * ficava também numa caixa âmbar e na modal — três lugares para uma frase,
+     * e aviso repetido ensina a ignorar a cor.
+     */
+    await expect(page.getByText(/Recién cuando la envíes a Meta/i)).toBeVisible();
+    await expect(page.getByTestId('td-aviso-perimetro')).toHaveCount(0);
 
-    await expect(page).toHaveScreenshot('template-drafts-lista.png', { maxDiffPixels: 120 });
+    await expect(page).toHaveScreenshot('template-drafts-editando.png', { maxDiffPixels: 120 });
   });
 
   test('escrever mostra o slug previsto e a pré-visualização', async ({ page }) => {
@@ -101,16 +120,19 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
     await page.goto('/admin/plantillas/registrar');
     await expect(page.getByTestId('td-form')).toBeVisible({ timeout: 30_000 });
 
-    await page.getByTestId('td-input-name').fill('Bienvenida nueva');
-    await page.getByTestId('td-input-slug').fill('bienvenida nueva');
+    // UM campo de nome, não dois: nas 27 linhas de produção `name` é idêntico
+    // ao `slug`, e pedir os dois era pedir a mesma coisa duas vezes.
+    await page.getByTestId('td-input-slug').fill('bienvenida_nueva');
     await page.getByTestId('td-input-body').fill('Hola {{worker_name}}, te esperamos para el caso {{case_number}}, gracias.');
 
-    // O nome final aparece ANTES de gravar — ninguém descobre o slug depois.
-    await expect(page.getByTestId('td-slug-previsto')).toContainText('ar_bienvenida_nueva');
-    // A variável vira exemplo legível, não chave crua.
-    await expect(page.getByTestId('td-preview')).toContainText('[nombre]');
-    // E a tela LISTA as variáveis: ninguém precisa adivinhar quais existem.
-    await expect(page.getByTestId('td-variaveis-ajuda')).toContainText('worker_name');
+    // Os dois nomes finais aparecem ANTES de gravar, um por idioma — o prefixo
+    // de país é nosso, e ninguém descobre o slug depois de submeter.
+    await expect(page.getByTestId('td-par-slug-es-AR')).toHaveAttribute('data-slug', 'ar_bienvenida_nueva');
+    await expect(page.getByTestId('td-par-slug-pt-BR')).toHaveAttribute('data-slug', 'br_bienvenida_nueva');
+    // A variável vira um valor de exemplo grifado, não chave crua.
+    await expect(page.getByTestId('td-preview')).toContainText('María González');
+    // E a variável entra por BOTÃO: o conjunto é fechado por construção.
+    await expect(page.getByTestId('td-inserir-worker_name')).toBeVisible();
 
     await expect(page).toHaveScreenshot('template-drafts-escrevendo.png', { maxDiffPixels: 120 });
   });
@@ -120,33 +142,55 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
     await page.route('**/api/admin/template-drafts', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { drafts: [RASCUNHO] } }) }));
 
-    await page.goto('/admin/plantillas/registrar');
+    await page.goto(`/admin/plantillas/registrar?draft=${RASCUNHO.id}`);
     await expect(page.getByTestId('td-form')).toBeVisible({ timeout: 30_000 });
 
-    await page.getByTestId('td-enviar-ar_bienvenida_nueva').click();
+    // Só um rascunho JÁ GRAVADO pode ser submetido: o envio precisa de um `id`.
+    await page.getByTestId('td-revisar-enviar').click();
 
-    // Três consequências, ditas em português claro — não "tem certeza?".
+    // As consequências enumeradas em espanhol claro — não "tem certeza?".
     await expect(page.getByTestId('td-confirmar')).toBeVisible();
     await expect(page.getByTestId('td-confirmar-lista')).toContainText(/nombre queda ocupado/i);
-    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/no vas a poder editarlo/i);
-    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/puede tardar horas/i);
+    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/no vas a poder editar el texto/i);
+    await expect(page.getByTestId('td-confirmar-lista')).toContainText(/un día hábil/i);
+    // 🔒 CINCO consequências, não três. O idioma que fica fixo e "estás enviando
+    // só um dos dois" entraram em 01/09 — as duas são irreversíveis do mesmo
+    // jeito, e a modal existe justamente para enumerar o que não tem volta.
+    await expect(page.getByTestId('td-confirmar-lista').locator('li')).toHaveCount(5);
 
     await expect(page).toHaveScreenshot('template-drafts-confirmar.png', { maxDiffPixels: 120 });
   });
 
-  test('submetido: editar some, sobra duplicar', async ({ page }) => {
+  /*
+   * ⚠️ ESTE TESTE MUDOU DE TELA, não de intenção. "Submetido não se edita" era
+   * uma propriedade da lista no pé do compositor; a lista saiu, e as quatro
+   * ações do rascunho vivem agora no DETALHE da mensagem. A regra continua
+   * sendo a mesma, e continua fotografada — no lugar onde ela mora.
+   */
+  test('submetido: no detalhe, editar some e sobra duplicar', async ({ page }) => {
     await loginAsAdmin(page);
     const submetido = { ...RASCUNHO, contentSid: 'HXja', submittedAt: '2026-08-31T20:00:00Z', status: 'submitted' };
     await page.route('**/api/admin/template-drafts', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { drafts: [submetido] } }) }));
+    await page.route('**/api/admin/template-catalog', (route) =>
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { templates: [{
+          slug: 'ar_bienvenida_nueva', name: 'ar_bienvenida_nueva', baseName: 'bienvenida_nueva',
+          bodyTwilio: RASCUNHO.body, language: 'es-AR', category: 'UTILITY', isActive: true,
+          contentSid: 'HXja', metaStatus: 'PENDING', metaReason: null, metaDetail: null,
+          metaCheckedAt: null, eligible: false, ineligibleReason: 'no_aprobada',
+          placeholders: [], usedInStages: [], isDraft: true,
+        }] } }),
+      }));
 
-    await page.goto('/admin/plantillas/registrar');
-    await expect(page.getByTestId('td-item-ar_bienvenida_nueva')).toBeVisible({ timeout: 30_000 });
+    await page.goto('/admin/plantillas/ar_bienvenida_nueva');
+    await expect(page.getByTestId('tc-detalhe-rascunho')).toBeVisible({ timeout: 30_000 });
 
-    await expect(page.getByTestId('td-duplicar-ar_bienvenida_nueva')).toBeVisible();
-    await expect(page.getByTestId('td-editar-ar_bienvenida_nueva')).toHaveCount(0);
-    await expect(page.getByTestId('td-enviar-ar_bienvenida_nueva')).toHaveCount(0);
-    await expect(page.getByTestId('td-estado-ar_bienvenida_nueva')).toContainText(/esperando autorización/i);
+    await expect(page.getByTestId('tc-rascunho-duplicar')).toBeVisible();
+    await expect(page.getByTestId('tc-rascunho-editar')).toHaveCount(0);
+    await expect(page.getByTestId('tc-rascunho-enviar')).toHaveCount(0);
+    await expect(page.getByTestId('tc-rascunho-estado')).toContainText(/esperando autorización/i);
 
     await expect(page).toHaveScreenshot('template-drafts-submetido.png', { maxDiffPixels: 120 });
   });
@@ -173,7 +217,6 @@ test.describe('Registrar mensaje — escribir, ver y guardar', () => {
     await page.goto('/admin/plantillas/registrar');
     await expect(page.getByTestId('td-form')).toBeVisible({ timeout: 30_000 });
 
-    await page.getByTestId('td-input-name').fill('Mala');
     await page.getByTestId('td-input-slug').fill('mala');
     await page.getByTestId('td-input-body').fill('{{1}}{{2}} hola');
     await page.getByTestId('td-salvar').click();
