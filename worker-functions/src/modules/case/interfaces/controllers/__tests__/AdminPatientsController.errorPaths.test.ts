@@ -42,6 +42,10 @@ jest.mock('../../../infrastructure/PatientQueryRepository', () => ({
 
 jest.mock('../../../application/PatientTestFixtureService', () => ({
   NotATestPatientError: class NotATestPatientError extends Error {},
+  // Sem esta linha o `instanceof` do controller recebe `undefined` e estoura
+  // ("Right-hand side of 'instanceof' is not an object") em TODO caminho de erro
+  // do purge — o mock precisa exportar o que o módulo real exporta.
+  TestVacancyHasApplicationsError: class TestVacancyHasApplicationsError extends Error {},
   PatientTestFixtureService: jest.fn().mockImplementation(() => ({
     setTestFlag: mockSetTestFlag,
     purge: mockPurge,

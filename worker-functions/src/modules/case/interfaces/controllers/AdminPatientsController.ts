@@ -35,6 +35,7 @@ import {
 import {
   PatientTestFixtureService,
   NotATestPatientError,
+  TestVacancyHasApplicationsError,
 } from '../../application/PatientTestFixtureService';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
@@ -144,7 +145,10 @@ export class AdminPatientsController {
     }
 
     try {
-      const result = await this.testFixtures.purge(paramsResult.data.patientId);
+      // C2 — o ator vai para o log da eliminação: sem a linha no banco, ele é a
+      // única evidência de quem apagou.
+      const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id ?? null;
+      const result = await this.testFixtures.purge(paramsResult.data.patientId, actorUid);
       if (result === null) {
         res.status(404).json({ success: false, error: 'Patient not found' });
         return;
@@ -153,6 +157,17 @@ export class AdminPatientsController {
     } catch (err: unknown) {
       if (err instanceof NotATestPatientError) {
         res.status(409).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      // C3 — a vaga sintética tem candidatura de prestador real: 409, não 500.
+      // A limpeza não pode custar o dado de quem se candidatou de verdade.
+      if (err instanceof TestVacancyHasApplicationsError) {
+        res.status(409).json({
+          success: false,
+          error: err.message,
+          code: err.code,
+          applications: err.applications,
+        });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
