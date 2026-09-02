@@ -38,7 +38,7 @@ export async function findByAuthUid(
         w.years_experience as "yearsExperience",
         w.preferred_types as "preferredTypes",
         w.preferred_age_range as "preferredAgeRange",
-        w.country, w.timezone,
+        w.country, w.timezone, w.status,
         w.created_at as "createdAt", w.updated_at as "updatedAt",
         sa.address_line as "serviceAddress",
         sa.address_complement as "serviceAddressComplement",
@@ -109,6 +109,9 @@ export async function findByAuthUid(
       preferredTypes: row.preferredTypes || [],
       preferredAgeRange: row.preferredAgeRange || [],
       country: row.country, timezone: row.timezone,
+      // `status` faz parte do tipo Worker mas não era mapeado aqui — o cast do retorno escondia a
+      // lacuna, e quem lê `/api/workers/me` recebia `undefined`. O e2e da reativação pegou.
+      status: row.status,
       createdAt: new Date(row.createdAt), updatedAt: new Date(row.updatedAt),
       serviceAddress: row.serviceAddress || undefined,
       serviceAddressComplement: row.serviceAddressComplement || undefined,
