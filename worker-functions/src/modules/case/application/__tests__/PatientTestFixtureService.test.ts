@@ -1,3 +1,10 @@
+// O default do construtor (`db = DatabaseConnection.getInstance().getPool()`) só
+// é alcançável se a conexão não for real — o controller sempre passa o pool dele.
+const mockGetPool = jest.fn();
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: { getInstance: () => ({ getPool: mockGetPool }) },
+}));
+
 import * as functions from 'firebase-functions';
 import {
   PatientTestFixtureService,
@@ -24,6 +31,10 @@ function makeDb(handlers: Array<(sql: string, params?: unknown[]) => unknown | u
         const r = h(sql, params);
         if (r !== undefined) return r;
       }
+      // Default: a contagem de candidaturas responde ZERO explícito. Sem isto,
+      // "nenhuma linha" cairia no fail-closed do purge (que é o correto em
+      // produção) e todo teste da transação viraria recusa.
+      if (sql.includes('FROM worker_job_applications')) return { rows: [{ n: 0 }], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     }),
     release: jest.fn(),
@@ -238,6 +249,21 @@ describe('PatientTestFixtureService.purge — C3: candidatura de prestador real'
     });
   });
 
+  it('sem conseguir CONTAR as candidaturas, recusa em vez de arriscar (fail-closed)', async () => {
+    const { db, client, clientCalls } = makeDb([
+      selectIsTest(true),
+      noAppointments,
+      (sql) =>
+        sql.includes('FROM worker_job_applications') ? { rows: [], rowCount: 0 } : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).rejects.toThrow(/Could not count applications/);
+
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(false);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
   it('zero candidaturas: a vaga e o paciente são apagados normalmente', async () => {
     const { db, clientCalls } = makeDb([selectIsTest(true), noAppointments, comCandidaturas(0)]);
     const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
@@ -286,6 +312,92 @@ describe('PatientTestFixtureService.purge — C2: a trilha da eliminação', () 
     const result = await svc.purge(PATIENT_ID);
 
     expect(result?.cascaded).toEqual({ patient_status_history: 4, patient_addresses: 1 });
+  });
+});
+
+describe('PatientTestFixtureService.resolveCalendarId — env faltante', () => {
+  it('sem a env do calendário do país, o evento vira falha CONTADA e a limpeza segue', async () => {
+    delete process.env.ADMISSION_CALENDAR_ID_AR;
+    const calendar = calendarSpy();
+    const { db, clientCalls } = makeDb([
+      selectIsTest(true),
+      (sql) =>
+        sql.includes('FROM admission_appointments')
+          ? { rows: [{ id: 'appt-1', country: 'AR', calendar_event_id: 'evt-1' }], rowCount: 1 }
+          : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendar as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    // Env faltante em produção deixaria o evento órfão no Google Calendar. É
+    // falha contada, não silêncio — e não impede o registro de sair da tabela.
+    expect(calendar.deleteEvent).not.toHaveBeenCalled();
+    expect(result?.calendarEventsFailed).toBe(1);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+});
+
+describe('PatientTestFixtureService.purge — bordas que só o ramo do else vê', () => {
+  it('Calendar rejeitando com valor NÃO-Error também conta como falha', async () => {
+    const calendar = { deleteEvent: jest.fn(async () => { throw 'string crua'; }) };
+    const { db } = makeDb([
+      selectIsTest(true),
+      (sql) =>
+        sql.includes('FROM admission_appointments')
+          ? { rows: [{ id: 'appt-1', country: 'AR', calendar_event_id: 'evt-1' }], rowCount: 1 }
+          : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendar as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.calendarEventsFailed).toBe(1);
+  });
+
+  it('driver devolvendo rowCount null vira 0, não NaN nem undefined', async () => {
+    // ⚠️ Ordem importa: `noAppointments` casa por `includes('FROM
+    // admission_appointments')`, o que também é verdade para o DELETE — se ele
+    // vier antes, devolve rowCount 0 e o ramo do `??` nunca é exercido.
+    const { db } = makeDb([
+      selectIsTest(true),
+      (sql) =>
+        /DELETE FROM (admission_appointments|job_postings)/i.test(sql)
+          ? { rows: [], rowCount: null }
+          : undefined,
+      noAppointments,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.appointmentsCancelled).toBe(0);
+    expect(result?.vacanciesDeleted).toBe(0);
+  });
+});
+
+describe('PatientTestFixtureService — construção como a produção faz', () => {
+  it('sem argumento nenhum: o pool vem do DatabaseConnection', async () => {
+    const { db } = makeDb([selectIsTest(null)]);
+    mockGetPool.mockReturnValue(db);
+
+    const svc = new PatientTestFixtureService();
+
+    // Paciente inexistente → null (o controller traduz para 404). O que importa
+    // aqui é que o serviço se construiu sozinho e consultou o pool do singleton.
+    await expect(svc.purge(PATIENT_ID)).resolves.toBeNull();
+    expect(mockGetPool).toHaveBeenCalled();
+  });
+
+  it('com só o pool: calendário e e-mail de impersonação vêm dos defaults', async () => {
+    // O controller constrói assim (`new PatientTestFixtureService(this.db)`), então
+    // estes dois defaults SÃO caminho de produção. Sem appointment com evento,
+    // nada de rede é tocado.
+    const { db, clientCalls } = makeDb([selectIsTest(true), noAppointments]);
+    const svc = new PatientTestFixtureService(db as never);
+
+    await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
   });
 });
 

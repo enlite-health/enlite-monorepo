@@ -185,7 +185,16 @@ export class PatientTestFixtureService {
           WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = $1)`,
         [patientId],
       );
-      const realApplications = appRows[0]?.n ?? 0;
+      // Fail-CLOSED: sem contagem não se apaga. `?? 0` aqui significaria "não
+      // consegui contar, então pode ir" — a regra da casa é o contrário
+      // (contagem zero é falha, nunca sucesso). `count(*)` sempre devolve linha;
+      // se um dia não devolver, a limpeza para em vez de arriscar.
+      const realApplications = appRows[0]?.n;
+      if (realApplications == null) {
+        throw new Error(
+          `Could not count applications for patient ${patientId} vacancies — refusing to purge`,
+        );
+      }
       if (realApplications > 0) throw new TestVacancyHasApplicationsError(patientId, realApplications);
 
       // FK NO ACTION: a vaga precisa sair antes do paciente, ou o DELETE aborta.

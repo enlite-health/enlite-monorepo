@@ -75,6 +75,15 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // O único caminho do sistema que APAGA paciente — e desde a D248 apaga de
+    // verdade. A trava (`is_test`) e a guarda de candidatura real (lex C3) são o
+    // que separa faxina de perda de dado: regressão aqui não pode passar calada.
+    'src/modules/case/application/PatientTestFixtureService.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/infrastructure/{PatientClinicalRepository,PatientDetailQueryHelper,PatientQueryRepository}.ts': {
       statements: 100,
       branches: 100,
