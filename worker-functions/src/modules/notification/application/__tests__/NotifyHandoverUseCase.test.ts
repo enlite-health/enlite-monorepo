@@ -10,6 +10,9 @@
  * 5. grupo não configurado pro team → groupNotified=false, ticket ainda tentado
  * 6. falha do grupo (false) e do ticket (false) → resultado reporta, NUNCA lança
  * 7. sem workerName → 'Sin nombre'
+ * 8. ticket nasce Urgent (priority '4') e com assunto SEM jargão
+ * 9. nota interna é postada com o motivo INTEIRO (sem o corte de 200)
+ * 10. sem noteService / nota falhando → noteCreated=false, resto intacto
  */
 import { NotifyHandoverUseCase } from '../NotifyHandoverUseCase';
 
@@ -28,6 +31,7 @@ const COMMUNITY_GROUP = '120363000000000000@g.us';
 describe('NotifyHandoverUseCase', () => {
   let groupNotify: { sendToGroup: jest.Mock };
   let ticketService: { createTicket: jest.Mock };
+  let noteService: { mirrorAsNote: jest.Mock };
   let useCase: NotifyHandoverUseCase;
   const OLD_ENV = process.env;
 
@@ -47,9 +51,11 @@ describe('NotifyHandoverUseCase', () => {
     process.env.CHATWOOT_URL = 'https://chatwoot.example.app';
     groupNotify = { sendToGroup: jest.fn().mockResolvedValue(true) };
     ticketService = { createTicket: jest.fn().mockResolvedValue(true) };
+    noteService = { mirrorAsNote: jest.fn().mockResolvedValue(true) };
     useCase = new NotifyHandoverUseCase(
       groupNotify as never,
       ticketService as never,
+      noteService as never,
     );
   });
 
@@ -60,14 +66,25 @@ describe('NotifyHandoverUseCase', () => {
   it('kill-switch OFF → skipped, nenhuma chamada', async () => {
     delete process.env.HANDOVER_NOTIFY_ENABLED;
     const result = await useCase.execute(baseInput);
-    expect(result).toEqual({ skipped: true, groupNotified: false, ticketCreated: false });
+    expect(result).toEqual({
+      skipped: true,
+      groupNotified: false,
+      ticketCreated: false,
+      noteCreated: false,
+    });
     expect(groupNotify.sendToGroup).not.toHaveBeenCalled();
     expect(ticketService.createTicket).not.toHaveBeenCalled();
+    expect(noteService.mirrorAsNote).not.toHaveBeenCalled();
   });
 
   it('recruitment → grupo certo, mensagem com nome/phone/motivo/link', async () => {
     const result = await useCase.execute(baseInput);
-    expect(result).toEqual({ skipped: false, groupNotified: true, ticketCreated: true });
+    expect(result).toEqual({
+      skipped: false,
+      groupNotified: true,
+      ticketCreated: true,
+      noteCreated: true,
+    });
     expect(groupNotify.sendToGroup).toHaveBeenCalledTimes(1);
     const [groupId, message] = groupNotify.sendToGroup.mock.calls[0];
     expect(groupId).toBe(RECRUITMENT_GROUP);
@@ -80,7 +97,8 @@ describe('NotifyHandoverUseCase', () => {
     );
     expect(ticketService.createTicket).toHaveBeenCalledWith(
       '+5491122364870',
-      expect.stringContaining('Handover Luz'),
+      expect.stringContaining('Pendiente respuesta del equipo'),
+      { priority: '4' },
     );
   });
 
@@ -101,7 +119,12 @@ describe('NotifyHandoverUseCase', () => {
   it('grupo não configurado → groupNotified=false, ticket ainda tentado', async () => {
     delete process.env.PERISKOPE_GROUP_RECRUITMENT_ID;
     const result = await useCase.execute(baseInput);
-    expect(result).toEqual({ skipped: false, groupNotified: false, ticketCreated: true });
+    expect(result).toEqual({
+      skipped: false,
+      groupNotified: false,
+      ticketCreated: true,
+      noteCreated: true,
+    });
     expect(groupNotify.sendToGroup).not.toHaveBeenCalled();
     expect(ticketService.createTicket).toHaveBeenCalledTimes(1);
   });
@@ -109,13 +132,72 @@ describe('NotifyHandoverUseCase', () => {
   it('falhas best-effort são reportadas, nunca lançadas', async () => {
     groupNotify.sendToGroup.mockResolvedValue(false);
     ticketService.createTicket.mockResolvedValue(false);
+    noteService.mirrorAsNote.mockResolvedValue(false);
     const result = await useCase.execute(baseInput);
-    expect(result).toEqual({ skipped: false, groupNotified: false, ticketCreated: false });
+    expect(result).toEqual({
+      skipped: false,
+      groupNotified: false,
+      ticketCreated: false,
+      noteCreated: false,
+    });
   });
 
   it('sem workerName → "Sin nombre"', async () => {
     const { workerName: _omit, ...semNome } = baseInput;
     await useCase.execute(semNome);
     expect(groupNotify.sendToGroup.mock.calls[0][1]).toContain('Sin nombre');
+  });
+  it('nota interna leva nome, telefone e time — e NÃO leva link do Chatwoot', async () => {
+    await useCase.execute(baseInput);
+    expect(noteService.mirrorAsNote).toHaveBeenCalledTimes(1);
+    const [phone, note] = noteService.mirrorAsNote.mock.calls[0];
+    expect(phone).toBe('+5491122364870');
+    expect(note).toContain('Reclutamiento');
+    expect(note).toContain('Gastón Rodríguez');
+    expect(note).toContain('+5491122364870');
+    expect(note).toContain('Pregunta valor hora / encuadre');
+    // O time de recrutamento não tem acesso ao Chatwoot: link ali é ruído morto.
+    expect(note).not.toContain('chatwoot');
+  });
+
+  it('a nota leva o motivo INTEIRO — o corte de 200 é só do grupo/ticket', async () => {
+    const longReason = 'x'.repeat(300);
+    await useCase.execute({ ...baseInput, reason: longReason });
+    const note: string = noteService.mirrorAsNote.mock.calls[0][1];
+    expect(note).toContain(longReason);
+    expect(note).not.toContain('…');
+  });
+
+  it('assunto do ticket não carrega jargão técnico ("handover")', async () => {
+    await useCase.execute(baseInput);
+    const subject: string = ticketService.createTicket.mock.calls[0][1];
+    expect(subject.toLowerCase()).not.toContain('handover');
+    expect(subject).toMatch(/^Pendiente respuesta del equipo — /);
+    expect(subject.length).toBeLessThanOrEqual(120);
+  });
+
+  it('assunto longo é cortado em 120 chars (limite da API)', async () => {
+    await useCase.execute({ ...baseInput, reason: 'y'.repeat(400) });
+    expect(ticketService.createTicket.mock.calls[0][1]).toHaveLength(120);
+  });
+
+  it('sem noteService → noteCreated=false, grupo e ticket intactos', async () => {
+    const semNota = new NotifyHandoverUseCase(
+      groupNotify as never,
+      ticketService as never,
+    );
+    const result = await semNota.execute(baseInput);
+    expect(result).toEqual({
+      skipped: false,
+      groupNotified: true,
+      ticketCreated: true,
+      noteCreated: false,
+    });
+  });
+
+  it('sem workerName → a nota diz "sin nombre"', async () => {
+    const { workerName: _omit, ...semNome } = baseInput;
+    await useCase.execute(semNome);
+    expect(noteService.mirrorAsNote.mock.calls[0][1]).toContain('sin nombre');
   });
 });

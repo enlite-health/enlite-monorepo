@@ -1,6 +1,6 @@
 import { AxiosInstance } from 'axios';
 import { createPeriskopeHttpClient } from './periskopeHttpClient';
-import { IPeriskopeTicketService } from '../domain/IPeriskopeTicketService';
+import { IPeriskopeTicketService, TicketPriority } from '../domain/IPeriskopeTicketService';
 import { logger, reportError } from '@shared/logging';
 
 /**
@@ -28,7 +28,7 @@ export class PeriskopeTicketService implements IPeriskopeTicketService {
   async createTicket(
     chatPhone: string,
     subject: string,
-    opts?: { assignee?: string; labels?: string },
+    opts?: { assignee?: string; labels?: string; priority?: TicketPriority },
   ): Promise<boolean> {
     if (!this.isConfigured || !this.http) {
       logger.warn({ msg: '[PeriskopeTicketService] createTicket skipped — not configured' });
@@ -40,6 +40,7 @@ export class PeriskopeTicketService implements IPeriskopeTicketService {
       subject,
       ...(opts?.assignee ? { assignee: opts.assignee } : {}),
       ...(opts?.labels ? { labels: opts.labels } : {}),
+      ...(opts?.priority ? { priority: opts.priority } : {}),
     };
 
     try {
