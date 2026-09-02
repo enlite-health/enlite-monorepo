@@ -40,7 +40,8 @@ const vazio: PatientKanbanGroups = { SOLICITANTE: [], ADMISSION: [], PENDING_ADM
 const comItem: PatientKanbanGroups = {
   ...vazio,
   SOLICITANTE: [{ id: 'p1', firstName: 'Solicitante', lastName: null, caseNumber: null,
-                  dependencyLevel: null, status: 'SOLICITANTE' }],
+                  dependencyLevel: null, status: 'SOLICITANTE', responsibleName: null,
+                  leadContactEmailMasked: null, leadContactIsResponsible: false }],
 };
 
 beforeEach(() => { capturado = null; });

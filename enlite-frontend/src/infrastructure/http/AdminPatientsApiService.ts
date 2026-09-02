@@ -342,6 +342,7 @@ export class AdminPatientsApiServiceClass {
       hoursInStage: p.hoursInStage ?? null,
       slaBreached: p.slaBreached ?? false,
       slaThresholdHours: p.slaThresholdHours ?? null,
+      responsibleName: p.responsibleName ?? null,
       leadContactEmailMasked: p.leadContactEmailMasked ?? null,
       leadContactIsResponsible: p.leadContactIsResponsible ?? false,
     }));

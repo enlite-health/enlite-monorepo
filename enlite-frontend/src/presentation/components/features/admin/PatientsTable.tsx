@@ -14,6 +14,9 @@ export interface PatientRow {
   id: string;
   firstName: string;
   lastName: string;
+  /** Nome do responsável primário — mostrado sob o traço enquanto o paciente
+   *  não tem nome próprio (D249). `null` quando não há responsável. */
+  responsibleName?: string | null;
   documentType: string | null;
   documentNumber: string | null;
   caseNumber: number | null;
@@ -118,7 +121,11 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
             </TableRow>
           ) : (
             safePatients.map((row) => {
-              const fullName = [row.lastName, row.firstName].filter(Boolean).join(', ') || '—';
+              // O formato "Sobrenome, Nome" é o da tabela e fica como está.
+              const fullName = [row.lastName, row.firstName].filter(Boolean).join(', ');
+              // D249: sem nome do paciente, o traço fica no lugar dele e quem
+              // identifica a ficha é o responsável, na linha de baixo.
+              const responsibleName = row.responsibleName || null;
               const caseLabel = row.caseNumber != null
                 ? `${t('admin.patients.codeColumn')} #${row.caseNumber}`
                 : '—';
@@ -131,7 +138,20 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                   <TableCell unwrapped className="w-10">
                     <Eye className="w-5 h-5 text-gray-800" aria-label={t('admin.patients.table.view')} />
                   </TableCell>
-                  <TableCell weight="medium">{fullName}</TableCell>
+                  <TableCell weight="medium">
+                    <span className="block" data-testid={`patient-row-${row.id}-name`}>
+                      {fullName || '—'}
+                    </span>
+                    {!fullName && responsibleName && (
+                      // O átomo `Text` não repassa props extras — o testid vive
+                      // no span, como no PatientKanbanCard.
+                      <span className="block truncate" data-testid={`patient-row-${row.id}-responsible`}>
+                        <Text as="span" size="xs" color="secondary">
+                          {t('admin.patients.kanban.responsible')}: {responsibleName}
+                        </Text>
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell weight="medium" className="whitespace-nowrap">
                     {formatDocument(row.documentType, row.documentNumber)}
                   </TableCell>
