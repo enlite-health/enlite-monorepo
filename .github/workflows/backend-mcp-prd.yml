@@ -77,6 +77,9 @@ jobs:
             FIREBASE_WEB_API_KEY=AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI
             FIREBASE_WEB_AUTH_DOMAIN=enlite-prd.firebaseapp.com
             ALLOWED_MEDIA_HOSTS=api.twilio.com\,*.twilio.com\,chatwoot.enlite.health
+            HANDOVER_NOTIFY_ENABLED=true
+            PERISKOPE_GROUP_RECRUITMENT_ID=120363334377379340@g.us
+            PERISKOPE_NOTE_AUTHOR=enlite@enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
