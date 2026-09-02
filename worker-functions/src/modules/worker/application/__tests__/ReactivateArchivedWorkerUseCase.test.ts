@@ -23,9 +23,17 @@ const WID = '84eb35fe-73d1-4b79-b186-c41b0b64fd31';
  * `updateRowCount` = linhas afetadas pelo UPDATE de `workers` (0 = alguém correu na frente).
  */
 function makeDeps(
-  originRow: { status: string; archived_by: string | null; ever_requested: boolean } | null,
+  originRow: {
+    status: string;
+    archived_by: string | null;
+    ever_requested: boolean;
+    status_before?: string | null;
+  } | null,
   updateRowCount = 1,
 ) {
+  if (originRow && originRow.status_before === undefined) {
+    originRow.status_before = 'INCOMPLETE_REGISTER';
+  }
   const client = {
     query: jest.fn().mockImplementation((sql: string) => {
       if (String(sql).includes('UPDATE workers')) {
@@ -45,10 +53,11 @@ function makeDeps(
   return { pool, client };
 }
 
-const archivedByUs = (job: string) => ({
+const archivedByUs = (job: string, statusBefore = 'INCOMPLETE_REGISTER') => ({
   status: 'DISABLED',
   archived_by: job,
   ever_requested: false,
+  status_before: statusBefore,
 });
 
 const sqlsOf = (client: { query: jest.Mock }) => client.query.mock.calls.map((c) => String(c[0]));
@@ -62,7 +71,7 @@ describe('reactivateIfArchivedByUs', () => {
       async (job) => {
         const { pool, client } = makeDeps(archivedByUs(job));
 
-        await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(true);
+        await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe('INCOMPLETE_REGISTER');
 
         const sqls = sqlsOf(client);
         expect(sqls.some((s) => s.includes('BEGIN'))).toBe(true);
@@ -81,7 +90,7 @@ describe('reactivateIfArchivedByUs', () => {
     ])('%s (system: mas fora da allow-list) → NÃO reativa', async (job) => {
       const { pool, client } = makeDeps(archivedByUs(job));
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(pool.connect).not.toHaveBeenCalled();
       expect(client.query).not.toHaveBeenCalled();
     });
@@ -133,7 +142,7 @@ describe('reactivateIfArchivedByUs', () => {
         ever_requested: true,
       });
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(pool.connect).not.toHaveBeenCalled();
       expect(client.query).not.toHaveBeenCalled();
     });
@@ -147,7 +156,7 @@ describe('reactivateIfArchivedByUs', () => {
         ever_requested: true,
       });
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(client.query).not.toHaveBeenCalled();
     });
 
@@ -167,16 +176,56 @@ describe('reactivateIfArchivedByUs', () => {
     });
   });
 
+  // Achado do code-review no PR #286: o script do lote arquiva `status <> 'DISABLED'`, ou seja
+  // QUALQUER status. Uma constante rebaixaria quem era REGISTERED — tirando elegibilidade a vaga e
+  // jogando a pessoa de volta no wizard.
+  describe('restitui o estado ANTERIOR, não um valor fixo', () => {
+    it('arquivado quando era REGISTERED → restaura REGISTERED, não rebaixa', async () => {
+      const { pool, client } = makeDeps(
+        archivedByUs('system:bulk-archive-stale-2026-01-30', 'REGISTERED'),
+      );
+
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe('REGISTERED');
+
+      const call = client.query.mock.calls.find((c) => String(c[0]).includes('UPDATE workers'));
+      expect(call![1]).toEqual([WID, 'REGISTERED']);
+    });
+
+    it.each([[null], ['DISABLED'], ['LEGADO_QUALQUER'], ['']])(
+      'old_value inválido (%s) → NÃO reativa (sem saber para onde, não restitui)',
+      async (before) => {
+        const { pool } = makeDeps(
+          archivedByUs('system:bulk-archive-stale-2026-01-30', before as string),
+        );
+        await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
+        expect(pool.connect).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  // Segundo achado do code-review: `staff:%` é gravado pelo painel em QUALQUER mudança de status
+  // (EncuadreController). Sem filtrar por transição PARA DISABLED, uma edição administrativa
+  // qualquer bloquearia para sempre a vítima legítima do lote — o dano que o PR existe para evitar.
+  it('o deny de titular só considera transições PARA DISABLED', async () => {
+    const { pool } = makeDeps(archivedByUs('system:bulk-archive-stale-2026-01-30'));
+
+    await reactivateIfArchivedByUs(pool as never, WID);
+
+    const sql = String(pool.query.mock.calls[0][0]);
+    const existsBlock = sql.slice(sql.indexOf('EXISTS'));
+    expect(existsBlock).toContain("h2.new_value = 'DISABLED'");
+  });
+
   describe('falha fechada — na dúvida, não reativa', () => {
     it('worker inexistente → false, sem escrita', async () => {
       const { pool } = makeDeps(null);
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('sem histórico de arquivamento (archived_by null) → false', async () => {
       const { pool } = makeDeps({ status: 'DISABLED', archived_by: null, ever_requested: false });
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
@@ -186,7 +235,7 @@ describe('reactivateIfArchivedByUs', () => {
         connect: jest.fn(),
       };
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(reportError).toHaveBeenCalledTimes(1);
 
       // Contexto só com o id: `err.detail` do Postgres ecoa a linha do worker, que é PII.
@@ -203,7 +252,7 @@ describe('reactivateIfArchivedByUs', () => {
         connect: jest.fn(),
       };
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(reportError).toHaveBeenCalledTimes(1);
 
       const [err] = (reportError as jest.Mock).mock.calls[0];
@@ -215,7 +264,7 @@ describe('reactivateIfArchivedByUs', () => {
       const { pool } = makeDeps(archivedByUs('system:bulk-archive-stale-2026-01-30'));
       pool.connect = jest.fn().mockRejectedValue(new Error('pool exhausted'));
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(reportError).toHaveBeenCalledTimes(1);
     });
   });
@@ -227,13 +276,13 @@ describe('reactivateIfArchivedByUs', () => {
         archived_by: 'system:bulk-archive-stale-2026-01-30',
         ever_requested: false,
       });
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('outra transação reativou primeiro (UPDATE afeta 0) → false', async () => {
       const { pool } = makeDeps(archivedByUs('system:bulk-archive-stale-2026-01-30'), 0);
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe(false);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
     });
   });
 });

@@ -29,12 +29,16 @@ import { reportError } from '@shared/logging';
 export const REACTIVATION_JOB = 'reactivacion-por-actividad';
 
 /**
- * Estado restaurado. Constante, não lookup: medido em produção, os 3.818 workers arquivados por
- * ato administrativo estavam TODOS em `INCOMPLETE_REGISTER` antes. Promover a `REGISTERED` seria
- * barrado por `fn_guard_registered_status` de qualquer forma — e falhar no meio de um request do
- * prestador é pior que não promover.
+ * Restituir é devolver ao estado ANTERIOR — que vem do `old_value` da própria transição, não de uma
+ * constante. Hoje a coorte é uniforme (medido: os 3.818 arquivados administrativamente estavam
+ * TODOS em `INCOMPLETE_REGISTER`), mas o script do lote arquiva `status <> 'DISABLED'`, ou seja
+ * QUALQUER status: um lote futuro pegaria `REGISTERED`, e uma constante rebaixaria essa pessoa —
+ * tirando a elegibilidade a vaga e jogando-a de volta no wizard de cadastro.
+ *
+ * Só estes valores são aceitos como destino. Qualquer outra coisa (nulo, legado, lixo) → não
+ * reativa: sem saber para onde restituir, não se restitui.
  */
-const RESTORED_STATUS: WorkerStatus = 'INCOMPLETE_REGISTER';
+const RESTORABLE_STATUSES: readonly WorkerStatus[] = ['INCOMPLETE_REGISTER', 'REGISTERED'];
 
 /**
  * Allow-list explícita — NÃO prefixo `system:%`.
@@ -61,38 +65,51 @@ const TITULAR_REQUEST_MARKERS = ['luz:%', 'lgpd:%', 'worker_self%', 'staff:%'];
 interface ArchivalOrigin {
   status: string;
   archivedBy: string | null;
+  /** Estado imediatamente anterior ao arquivamento — o destino da restituição. */
+  statusBefore: string | null;
   everRequestedByTitular: boolean;
 }
 
 /**
  * Reativa `workerId` se — e somente se — ele estiver `DISABLED` por ato administrativo nosso.
  *
- * @returns `true` se reativou; `false` se não havia o que fazer OU se a origem não autoriza.
- *          Nunca lança: quem chama está no caminho de um request do prestador, e auditoria/reparo
- *          jamais pode derrubar o acesso dele ao próprio cadastro.
+ * @returns o status para o qual restituiu, ou `null` se não havia o que fazer OU se a origem não
+ *          autoriza. Nunca lança: quem chama está no caminho de um request do prestador, e
+ *          auditoria/reparo jamais pode derrubar o acesso dele ao próprio cadastro.
  */
-export async function reactivateIfArchivedByUs(pool: Pool, workerId: string): Promise<boolean> {
+export async function reactivateIfArchivedByUs(
+  pool: Pool,
+  workerId: string,
+): Promise<WorkerStatus | null> {
   try {
     const origin = await readArchivalOrigin(pool, workerId);
 
     // Falha fechada. `null` aqui significa "não consegui determinar a origem" — e determinar é a
     // única coisa que separa erro nosso de vontade da pessoa. É a D103 ao contrário: lá, uma
     // consulta de liveness que devolvia vazio arquivava todo mundo; aqui, reativaria.
-    if (!origin) return false;
-    if (origin.status !== 'DISABLED') return false;
-    if (origin.everRequestedByTitular) return false;
-    if (!isReversibleJob(origin.archivedBy)) return false;
+    if (!origin) return null;
+    if (origin.status !== 'DISABLED') return null;
+    if (origin.everRequestedByTitular) return null;
+    if (!isReversibleJob(origin.archivedBy)) return null;
 
-    return await applyReactivation(pool, workerId);
+    const target = origin.statusBefore as WorkerStatus;
+    if (!RESTORABLE_STATUSES.includes(target)) return null;
+
+    return (await applyReactivation(pool, workerId, target)) ? target : null;
   } catch (err) {
     // Nunca propaga: quem chama está servindo um request do prestador. Mas também nunca some em
     // silêncio — retificação quebrada e invisível deixa o prazo do art. 16 inc. 2 correr sem que
-    // ninguém saiba. Só o id: `err.detail` do Postgres ecoa a linha inteira, que é PII.
+    // ninguém saiba.
+    // ⚠️ O CONTEXTO só carrega o id, mas isso NÃO redige o erro: `reportError` entrega o `err` cru
+    // ao pino, cujo serializer padrão copia as props do `DatabaseError` do `pg` — `detail` inclusive,
+    // e `detail` de violação de constraint ecoa a linha inteira (PII). Aqui não há caminho
+    // alcançável (o UPDATE grava um status validado e o guard não dispara para estes destinos), mas
+    // não citar este bloco como precedente de redação: ele não redige nada.
     reportError(err instanceof Error ? err : new Error(String(err)), {
       source: 'ReactivateArchivedWorkerUseCase:reactivateIfArchivedByUs',
       workerId,
     });
-    return false;
+    return null;
   }
 }
 
@@ -110,7 +127,7 @@ export async function reactivateOnActivity(
 ): Promise<WorkerStatus | null> {
   if (status !== 'DISABLED') return null;
   const pool = DatabaseConnection.getInstance().getPool();
-  return (await reactivateIfArchivedByUs(pool, workerId)) ? RESTORED_STATUS : null;
+  return reactivateIfArchivedByUs(pool, workerId);
 }
 
 function isReversibleJob(changedBy: string | null): boolean {
@@ -125,6 +142,7 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
   const res = await pool.query<{
     status: string;
     archived_by: string | null;
+    status_before: string | null;
     ever_requested: boolean;
   }>(
     `SELECT w.status,
@@ -134,10 +152,20 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
                 AND h.new_value = 'DISABLED'
               ORDER BY h.created_at DESC
               LIMIT 1) AS archived_by,
+            (SELECT h.old_value
+               FROM worker_status_history h
+              WHERE h.worker_id = w.id
+                AND h.new_value = 'DISABLED'
+              ORDER BY h.created_at DESC
+              LIMIT 1) AS status_before,
             EXISTS (
               SELECT 1
                 FROM worker_status_history h2
                WHERE h2.worker_id = w.id
+                 -- só transições PARA DISABLED: o pedido de baixa é uma desativação. Sem este
+                 -- filtro, o marcador staff: (que o painel grava em QUALQUER mudança de status,
+                 -- via EncuadreController) bloquearia para sempre uma vítima legítima do lote.
+                 AND h2.new_value = 'DISABLED'
                  AND h2.changed_by LIKE ANY ($2::text[])
             ) AS ever_requested
        FROM workers w
@@ -150,6 +178,7 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
     ? {
         status: row.status,
         archivedBy: row.archived_by,
+        statusBefore: row.status_before,
         everRequestedByTitular: row.ever_requested,
       }
     : null;
@@ -172,7 +201,11 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
  * pediu — mas a mentira está no LEITOR, que ignora `reason`, e é lá que ela deve ser consertada.
  * Reescrever o registro de vontade de alguém para corrigir a frase de uma tela é o negócio errado.
  */
-async function applyReactivation(pool: Pool, workerId: string): Promise<boolean> {
+async function applyReactivation(
+  pool: Pool,
+  workerId: string,
+  target: WorkerStatus,
+): Promise<boolean> {
   return withActorContext(
     pool,
     async (client) => {
@@ -181,7 +214,7 @@ async function applyReactivation(pool: Pool, workerId: string): Promise<boolean>
             SET status = $2
           WHERE id = $1
             AND status = 'DISABLED'`,
-        [workerId, RESTORED_STATUS],
+        [workerId, target],
       );
 
       // 0 linhas → outra transação já reativou (ou desativou de novo). Não é erro; não é reativação.

@@ -31,6 +31,7 @@ describe('Reativação por atividade — só desfaz o que foi ato administrativo
     tag: string,
     archivedBy: string,
     optOutReason: 'admin' | 'user_request',
+    statusBefore = 'INCOMPLETE_REGISTER',
   ): Promise<{ workerId: string; uid: string; email: string }> {
     const uid = `uid-${tag}-${suffix}`;
     const email = `worker-${tag}-${suffix}@reactivacion.test`;
@@ -46,8 +47,8 @@ describe('Reativação por atividade — só desfaz o que foi ato administrativo
     // A transição que arquivou. `changed_by` é o dado que decide tudo.
     await pool.query(
       `INSERT INTO worker_status_history (worker_id, field_name, old_value, new_value, changed_by)
-       VALUES ($1, 'status', 'INCOMPLETE_REGISTER', 'DISABLED', $2)`,
-      [workerId, archivedBy],
+       VALUES ($1, 'status', $3, 'DISABLED', $2)`,
+      [workerId, archivedBy, statusBefore],
     );
 
     await pool.query(
@@ -193,6 +194,27 @@ describe('Reativação por atividade — só desfaz o que foi ato administrativo
     const after = await readState(workerId);
     expect(after.status).toBe('DISABLED');
     expect(after.optOut.opted_in_at).toBeNull();
+  });
+
+  // Achado do code-review (PR #286): o lote arquiva QUALQUER status, não só INCOMPLETE_REGISTER.
+  // Contra o banco real isto mostra o que nenhum mock mostraria: restituir a REGISTERED passa pelo
+  // trigger `fn_guard_registered_status`, que exige cadastro completo. Worker mínimo não passa →
+  // a transação falha e a reativação NÃO acontece (falha fechada, request do prestador intacto).
+  it('arquivado quando era REGISTERED, com cadastro incompleto → guard do banco barra, falha fechada', async () => {
+    const { workerId, uid, email } = await createArchivedWorker(
+      'era-registered',
+      'system:bulk-archive-stale-2026-01-30',
+      'admin',
+      'REGISTERED',
+    );
+
+    const res = await workerOpensApp(uid, email);
+    expect(res.status).toBe(200);
+
+    const after = await readState(workerId);
+    expect(after.status).toBe('DISABLED');
+    // Não houve promoção indevida nem rebaixamento silencioso: nada mudou.
+    expect(after.lastHistory.changed_by).toBe('system:bulk-archive-stale-2026-01-30');
   });
 
   it('é idempotente: abrir o app de novo não gera nova transição', async () => {
