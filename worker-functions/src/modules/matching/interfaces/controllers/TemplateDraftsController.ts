@@ -10,6 +10,7 @@ import {
   avisos,
   bloqueios,
   slugComPrefixo,
+  baseDoSlug,
   validarRascunho,
 } from '../../../notification/domain/templateDraftRules';
 import { SubmitTemplateDraft, submissaoDeuCerto } from '../../../notification/application/SubmitTemplateDraft';
@@ -67,6 +68,8 @@ const EditarSchema = z.object({ ...BASE, version: z.number().int().positive() })
 interface DraftRow {
   id: string;
   slug: string;
+  /** A chave do par (migration 302). `COALESCE(base_name, slug)` — nunca null. */
+  base_name: string;
   name: string;
   body: string;
   category: string;
@@ -86,7 +89,14 @@ interface DraftRow {
   meta_approval_checked_at: string | null;
 }
 
-const CAMPOS = `d.id, d.slug, d.name, d.body, d.category, d.language, d.version,
+/**
+ * 🔒 `COALESCE(base_name, slug)` pelo mesmo motivo da 300: linha que a migration
+ * não conseguiu classificar vira um grupo de UMA mensagem — não pareia, mas
+ * também nunca pareia errado. `null` chegando à tela faria o agrupamento juntar
+ * todos os não-classificados sob a mesma chave `undefined`.
+ */
+const CAMPOS = `d.id, d.slug, COALESCE(d.base_name, d.slug) AS base_name,
+                d.name, d.body, d.category, d.language, d.version,
                 d.created_by, d.updated_by, d.created_at, d.updated_at,
                 d.content_sid, d.submitted_at, d.submitted_by, d.submission_error`;
 
@@ -111,6 +121,7 @@ function paraApi(r: DraftRow): Record<string, unknown> {
   return {
     id: r.id,
     slug: r.slug,
+    baseName: r.base_name,
     name: r.name,
     body: r.body,
     category: r.category,
@@ -168,6 +179,39 @@ export class TemplateDraftsController {
     }
   }
 
+  /**
+   * Roda as regras SEM gravar — alimenta a lista de verificação ao vivo da tela.
+   *
+   * 🔒 Chama `validarRascunho`, exatamente a mesma função de `create` e
+   * `submit`. Não há uma segunda régua aqui, e não pode haver: a lista que a
+   * pessoa lê enquanto escreve tem de ser a que decide na hora de gravar, senão
+   * ela aprende a ignorar os dois.
+   *
+   * ⚠️ Devolve 200 mesmo com problemas. Um rascunho incompleto NÃO é erro de
+   * requisição — é o estado normal de quem está no meio da escrita. Responder
+   * 400 aqui faria a tela pintar de vermelho a cada tecla.
+   */
+  async validar(req: Request, res: Response): Promise<void> {
+    const parsed = CriarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: 'payload_invalido' });
+      return;
+    }
+    const slug = slugComPrefixo(parsed.data.slug, parsed.data.language as Idioma);
+    const problemas = validarRascunho({ ...parsed.data, slug });
+    res.json({
+      success: true,
+      data: {
+        slug,
+        // Separados na resposta pela mesma razão que na tela: "não vai gravar"
+        // e "vai gravar e mesmo assim falta isto" são coisas diferentes, e
+        // juntá-las faria o aviso ser lido como erro.
+        bloqueios: bloqueios(problemas),
+        avisos: avisos(problemas),
+      },
+    });
+  }
+
   async create(req: Request, res: Response): Promise<void> {
     const parsed = CriarSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -199,12 +243,15 @@ export class TemplateDraftsController {
 
       const actor = actorDe(req);
       const r = await this.db.query<DraftRow>(
-        `INSERT INTO message_template_drafts (slug, name, body, category, language, created_by, updated_by)
-              VALUES ($1, $2, $3, $4, $5, $6, $6)
+        `INSERT INTO message_template_drafts (slug, base_name, name, body, category, language, created_by, updated_by)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
            RETURNING ${CAMPOS.replace(/\bd\./g, '')}, NULL::text AS meta_approval_status,
                      NULL::text AS meta_approval_reason, NULL::text AS meta_approval_detail,
                      NULL::timestamptz AS meta_approval_checked_at`,
-        [slug, entrada.name, entrada.body, entrada.category, entrada.language, actor],
+        // A base é derivada do slug FINAL, não do que veio no payload: assim
+        // `slug === slugComPrefixo(base_name, language)` vale sempre, inclusive
+        // quando a normalização mudou o que a pessoa digitou.
+        [slug, baseDoSlug(slug, entrada.language as Idioma), entrada.name, entrada.body, entrada.category, entrada.language, actor],
       );
       res.status(201).json({ success: true, data: { draft: paraApi(r.rows[0]), avisos: avisosDaRegra } });
     } catch (error: unknown) {
@@ -242,13 +289,16 @@ export class TemplateDraftsController {
       const actor = actorDe(req);
       const r = await this.db.query<DraftRow>(
         `UPDATE message_template_drafts
-            SET slug = $1, name = $2, body = $3, category = $4, language = $5,
-                updated_by = $6, updated_at = now(), version = version + 1
-          WHERE id = $7 AND version = $8 AND archived_at IS NULL AND content_sid IS NULL
+            SET slug = $1, base_name = $2, name = $3, body = $4, category = $5, language = $6,
+                updated_by = $7, updated_at = now(), version = version + 1
+          WHERE id = $8 AND version = $9 AND archived_at IS NULL AND content_sid IS NULL
       RETURNING ${CAMPOS.replace(/\bd\./g, '')}, NULL::text AS meta_approval_status,
                 NULL::text AS meta_approval_reason, NULL::text AS meta_approval_detail,
                 NULL::timestamptz AS meta_approval_checked_at`,
-        [slug, entrada.name, entrada.body, entrada.category, entrada.language, actor, id, version],
+        // ⚠️ `base_name` é REGRAVADO na edição, e não só na criação: trocar o
+        // idioma do rascunho troca o prefixo do slug, e uma base congelada
+        // deixaria a linha pareando com a mensagem errada.
+        [slug, baseDoSlug(slug, entrada.language as Idioma), entrada.name, entrada.body, entrada.category, entrada.language, actor, id, version],
       );
 
       // rowCount 0 é ambíguo por si só, e tratá-lo como sucesso é o defeito que
@@ -382,12 +432,16 @@ export class TemplateDraftsController {
 
       const actor = actorDe(req);
       const r = await this.db.query<DraftRow>(
-        `INSERT INTO message_template_drafts (slug, name, body, category, language, created_by, updated_by)
-              VALUES ($1, $2, $3, $4, $5, $6, $6)
+        `INSERT INTO message_template_drafts (slug, base_name, name, body, category, language, created_by, updated_by)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
            RETURNING ${CAMPOS.replace(/\bd\./g, '')}, NULL::text AS meta_approval_status,
                      NULL::text AS meta_approval_reason, NULL::text AS meta_approval_detail,
                      NULL::timestamptz AS meta_approval_checked_at`,
-        [novoSlug, d.name, d.body, d.category, d.language, actor],
+        // 🔒 A cópia NÃO herda a base do original: o slug ganhou `_v2`, e uma
+        // base igual faria as duas disputarem o índice único (base_name,
+        // language) — a duplicação morreria em 23505. A cópia é uma mensagem
+        // nova, e a base dela sai do slug novo.
+        [novoSlug, baseDoSlug(novoSlug, d.language as Idioma), d.name, d.body, d.category, d.language, actor],
       );
       res.status(201).json({ success: true, data: { draft: paraApi(r.rows[0]) } });
     } catch (error: unknown) {

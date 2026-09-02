@@ -134,7 +134,11 @@ describe('create', () => {
       .mockResolvedValueOnce({ rows: [linha()], rowCount: 1 });
     const a = ambiente(q);
     await a.controller.create(req({ body: corpoOk }), a.res);
-    expect(q.mock.calls[1][1][5]).toBe('uid-a');
+    // ⚠️ Índice 6, não 5: o `base_name` (migration 302) entrou como 2º
+    // parâmetro do INSERT e empurrou todos os seguintes. Asserção posicional
+    // paga esse preço — em troca, ela pega uma troca de ordem que um
+    // `objectContaining` deixaria passar.
+    expect(q.mock.calls[1][1][6]).toBe('uid-a');
   });
   it('sem usuário na request a autoria fica null, não quebra', async () => {
     const q = jest.fn()
@@ -142,8 +146,25 @@ describe('create', () => {
       .mockResolvedValueOnce({ rows: [linha()], rowCount: 1 });
     const a = ambiente(q);
     await a.controller.create({ body: corpoOk, params: {} } as unknown as Request, a.res);
-    expect(q.mock.calls[1][1][5]).toBeNull();
+    expect(q.mock.calls[1][1][6]).toBeNull();
   });
+  /**
+   * 🔒 A BASE VEM DO SLUG FINAL, não do que veio no payload. Assim
+   * `slug === slugComPrefixo(base_name, language)` vale sempre, inclusive
+   * quando a normalização mudou o que a pessoa digitou. Se a base guardasse o
+   * texto cru, "Bienvenida Nueva" viraria slug `ar_bienvenida_nueva` e base
+   * `Bienvenida Nueva` — e o par nunca fecharia com a versão portuguesa.
+   */
+  it('grava base_name derivada do slug final, sem o prefixo do idioma', async () => {
+    const q = jest.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [linha()], rowCount: 1 });
+    const a = ambiente(q);
+    await a.controller.create(req({ body: { ...corpoOk, slug: 'Bienvenida Nueva' } }), a.res);
+    expect(q.mock.calls[1][1][0]).toBe('ar_bienvenida_nueva');
+    expect(q.mock.calls[1][1][1]).toBe('bienvenida_nueva');
+  });
+
   it('400 quando o payload não bate o schema', async () => {
     const a = ambiente(jest.fn());
     await a.controller.create(req({ body: { name: 'x' } }), a.res);

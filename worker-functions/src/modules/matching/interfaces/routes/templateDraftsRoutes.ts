@@ -28,6 +28,22 @@ export function createTemplateDraftsRoutes(
   const router = Router();
   router.get('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.list(req, res));
   router.post('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.create(req, res));
+  /*
+   * 🔒 `/validar` NÃO GRAVA NADA, e existe por uma razão de arquitetura, não de
+   * conveniência. O desenho da Tela 2 pede uma lista de verificação AO VIVO —
+   * "Antes de enviar a Meta", 8 itens que reagem enquanto a pessoa escreve.
+   *
+   * A tentação seria reimplementar as regras no frontend para ter isso sem ida
+   * ao servidor. Está escrito em `templateDraftsView.ts`, com todas as letras,
+   * por que não: "reimplementá-las aqui criaria duas verdades que divergem no
+   * primeiro ajuste — e a que a pessoa vê não seria a que decide".
+   *
+   * Esta rota é a saída: ela roda `validarRascunho`, A MESMA função que o
+   * `create` e o `submit` rodam. A lista fica viva e continua havendo uma
+   * verdade só. Se as regras mudarem, mudam nos três lugares de uma vez porque
+   * são o mesmo lugar.
+   */
+  router.post('/template-drafts/validar', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.validar(req, res));
   router.put('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.update(req, res));
   router.delete('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.archive(req, res));
   router.post('/template-drafts/:id/submit', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.submit(req, res));
