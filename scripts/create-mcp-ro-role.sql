@@ -105,6 +105,8 @@ $$;
 --    Fora (item 2, texto clínico livre): diagnosis, additional_comments, emergency_instructions.
 --    Fora (OP-04.a, D218 bônus): insurance_verified (afiliação sindical) e device_type (regime de
 --    internação) — a nossa OP-04.a já os classifica como sensíveis.
+--    Fora (spec 012, lex C7.1-d / B9 / C3): on_hold_note (texto clínico), on_hold_reason,
+--    service_start_date, admission_status — coluna nova em `patients` nasce invisível: NÃO listar.
 --    Rótulos de catálogo ficam (dependency_level, clinical_specialty, service_type, attention_reasons:
 --    ≤9 valores distintos, ≤35 chars, medido em prod 29/08 — item 1).
 REVOKE SELECT ON public.patients FROM enlite_mcp_ro;
@@ -136,7 +138,10 @@ BEGIN
       ('publications',              ARRAY['observations']),
       ('worker_placement_audits',   ARRAY['observations','patient_raw_name']),
       ('worker_job_applications',   ARRAY['internal_notes']),
-      ('interview_slots',           ARRAY['notes'])   -- lex M2: entrevista de matching fala de patologia
+      ('interview_slots',           ARRAY['notes']),  -- lex M2: entrevista de matching fala de patologia
+      -- spec 012 (lex C2.1): `access_notes` é texto livre sobre o DOMICÍLIO de um paciente. A tabela
+      -- tinha GRANT de tabela inteira — a coluna nova (mig 316) nasceria legível pelo LLM no dia 1.
+      ('patient_addresses',         ARRAY['access_notes'])
     ) AS t(tabela, excluir)
   LOOP
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables
@@ -163,7 +168,8 @@ BEGIN
   -- lex B2, DENTRO da transação: se alguma tabela irmã ficou com SELECT de tabela inteira (nome errado,
   -- tabela pulada), o script inteiro reverte. Fail-closed no único ponto que era fail-open.
   FOR alvo IN SELECT unnest(ARRAY['patients','job_postings','job_postings_clickup_sync','job_posting_comments',
-                                  'publications','worker_placement_audits','worker_job_applications','interview_slots']) AS tabela LOOP
+                                  'publications','worker_placement_audits','worker_job_applications','interview_slots',
+                                  'patient_addresses']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;
