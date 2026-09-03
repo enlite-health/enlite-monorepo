@@ -2765,7 +2765,9 @@
         "lastName": "Sobrenome",
         "relationship": "Parentesco",
         "phone": "Telefone",
-        "email": "E-mail"
+        "email": "E-mail",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número do documento"
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -2947,7 +2949,9 @@
           "responsiblePhone": "Telefone do Responsável",
           "documentType": "Tipo de documento",
           "documentNumber": "Número do documento",
-          "email": "Email"
+          "email": "Email",
+          "patientEmail": "Email do paciente",
+          "address": "Endereço:"
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3019,7 +3023,9 @@
           "title": "Equipe Tratante",
           "tableFullName": "Nome Completo",
           "tablePhoneNumber": "Número de Telefone",
-          "tableProfile": "Perfil"
+          "tableProfile": "Perfil",
+          "isTeam": "Equipe tratante",
+          "professional": "Profissional"
         },
         "supervisionCard": {
           "title": "Supervisão",

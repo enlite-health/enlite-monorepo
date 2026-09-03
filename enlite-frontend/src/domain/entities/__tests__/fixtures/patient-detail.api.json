@@ -1,0 +1,160 @@
+{
+  "id": "66c44d5a-9bf3-4c89-9362-ec4ede6b8919",
+  "clickupTaskId": "E2E-CONTRACT-FIXTURE-A2",
+  "firstName": "Contrato",
+  "lastName": "Fixture",
+  "birthDate": null,
+  "documentType": null,
+  "documentNumber": null,
+  "affiliateId": null,
+  "sex": null,
+  "phoneWhatsapp": null,
+  "contactEmail": "contrato.fixture@example.test",
+  "diagnosis": null,
+  "dependencyLevel": null,
+  "clinicalSpecialty": null,
+  "clinicalSegments": null,
+  "serviceType": null,
+  "deviceType": null,
+  "additionalComments": null,
+  "additionalCommentsUpdatedAt": null,
+  "additionalCommentsUpdatedBy": null,
+  "emergencyInstructions": null,
+  "emergencyInstructionsUpdatedAt": null,
+  "emergencyInstructionsUpdatedBy": null,
+  "hasJudicialProtection": null,
+  "hasCud": null,
+  "hasConsent": null,
+  "insuranceInformed": "OSDE 210 (fixture)",
+  "insuranceVerified": null,
+  "cityLocality": null,
+  "province": null,
+  "zoneNeighborhood": null,
+  "country": "AR",
+  "chatIds": {},
+  "familyChatId": null,
+  "providersChatId": null,
+  "status": "ADMISSION",
+  "needsAttention": false,
+  "attentionReasons": [],
+  "lastCaseNumber": null,
+  "responsibles": [
+    {
+      "id": "33ece701-71e7-4270-8d53-c3b0850753cf",
+      "firstName": "Resp",
+      "lastName": "Fixture",
+      "relationship": "PARENT",
+      "phone": "+5491100000001",
+      "email": "resp.fixture@example.test",
+      "documentNumber": "11222333",
+      "documentType": "DNI",
+      "isPrimary": true,
+      "displayOrder": 1,
+      "source": "web_form"
+    }
+  ],
+  "addresses": [
+    {
+      "id": "cf680305-a6d6-48f8-8d21-5cd576de068a",
+      "addressType": "primary",
+      "addressFormatted": "Av. Fixture 123, CABA, AR",
+      "addressRaw": "Av. Fixture 123",
+      "complement": "Piso 2",
+      "displayOrder": 1,
+      "lat": -34.6,
+      "lng": -58.38,
+      "isPrimary": true,
+      "availability": {
+        "totalCoveredHours": 0,
+        "maxHours": 168,
+        "isFull": false,
+        "perDay": [
+          {
+            "dayOfWeek": 0,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 1,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 2,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 3,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 4,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 5,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 6,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          }
+        ],
+        "activeVacanciesCount": 0,
+        "hasUnknownSchedule": false
+      }
+    }
+  ],
+  "professionals": [
+    {
+      "id": "87990781-a578-4337-a0f5-1927c837d31b",
+      "name": "Dra. Fixture Tratante",
+      "phone": "+5491100000002",
+      "email": "prof.fixture@example.test",
+      "displayOrder": 1,
+      "isTeam": false
+    }
+  ],
+  "createdAt": "2026-09-03T10:31:34.485Z",
+  "updatedAt": "2026-09-03T10:31:34.485Z"
+}

@@ -31,12 +31,14 @@ export function LocalizacoesCard({ addresses }: LocalizacoesCardProps) {
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.locationsCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled onClick={() => {}} className="flex items-center gap-1">
+        <Button variant="outline" size="sm" disabled className="flex items-center gap-1">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
         </Button>
       </div>
 
+      {/* lex C2.1: rua + número é texto — sobe em claro para o Clarity sem isto. */}
+      <div data-clarity-mask="True">
       <Table>
         <TableHeader>
           <TableHead>{t('admin.patients.detail.locationsCard.tableName')}</TableHead>
@@ -61,18 +63,15 @@ export function LocalizacoesCard({ addresses }: LocalizacoesCardProps) {
                     defaultValue: `Endereço ${idx + 1}`,
                   })}
                 </TableCell>
-                <TableCell>
-                  {addr.fullAddress
-                    ?? ([addr.street, addr.number, addr.city, addr.state]
-                        .filter(Boolean)
-                        .join(', ') || empty)}
-                </TableCell>
+                {/* Contrato real da API (spec 011 A2): formatado pelo geocoder, senão o cru do operador. */}
+                <TableCell>{addr.addressFormatted ?? addr.addressRaw ?? empty}</TableCell>
                 <TableCell className="text-gray-600">{addr.complement ?? empty}</TableCell>
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

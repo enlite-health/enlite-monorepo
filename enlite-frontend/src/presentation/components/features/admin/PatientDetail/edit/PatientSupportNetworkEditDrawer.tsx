@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
+import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 
 interface Props {
   patientId: string;
@@ -23,13 +24,23 @@ interface Props {
 }
 
 const CLOSE_MS = 300;
+/** Mesmas opções do drawer geral (tipos de documento do paciente). */
+const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
+/** Procedência de um familiar criado AQUI. Existente reenvia a sua (lex C1.2). */
+const PANEL_SOURCE = 'admin_manual';
 
+// Campo opcional nasce como '' (defaultValues/append) e `source` SEMPRE vem — do
+// detalhe ou de PANEL_SOURCE no append; o tipo é `string` e o submit não carrega
+// fallback para um `undefined` que nunca chega.
 const rowSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
-  relationship: z.string().trim().optional(),
-  phone: z.string().trim().optional(),
-  email: z.union([z.literal(''), z.string().trim().email()]).optional(),
+  relationship: z.string().trim(),
+  phone: z.string().trim(),
+  email: z.union([z.literal(''), z.string().trim().email()]),
+  documentType: z.string(),
+  documentNumber: z.string().trim(),
+  source: z.string(),
   isPrimary: z.boolean(),
 });
 const schema = z.object({ responsibles: z.array(rowSchema) });
@@ -40,6 +51,10 @@ type FormValues = z.infer<typeof schema>;
  * PATCH /api/admin/patients/:id/support-network overwrites the whole
  * responsibles set. firstName + lastName are required per row (backend schema);
  * exactly one row can be the primary contact. displayOrder is the row index.
+ *
+ * REPLACE significa: o que este drawer não reenvia, o banco perde (spec 011 A1).
+ * Por isso cada linha carrega e devolve TODOS os campos da tabela — documento
+ * (tipo + número, lex C1.1) e procedência (`source`, lex C1.2) inclusive.
  */
 export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -58,12 +73,20 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
         relationship: r.relationship ?? '',
         phone: r.phone ?? '',
         email: r.email ?? '',
+        documentType: r.documentType ?? '',
+        documentNumber: r.documentNumber ?? '',
+        source: r.source,
         isPrimary: r.isPrimary,
       })),
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'responsibles' });
+
+  const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
+    value: d,
+    label: t(`admin.patients.detail.documentTypes.${d}`, { defaultValue: d }),
+  }));
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setShow(true));
@@ -86,7 +109,7 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
-    const nz = (v: string | undefined): string | null => { const s = (v ?? '').trim(); return s ? s : null; };
+    const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
     const payload: PatientSupportNetworkSectionPayload = {
       responsibles: values.responsibles.map((r, index) => ({
         firstName: r.firstName.trim(),
@@ -94,6 +117,9 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
         relationship: nz(r.relationship),
         phone: nz(r.phone),
         email: nz(r.email),
+        documentType: nz(r.documentType),
+        documentNumber: nz(r.documentNumber),
+        source: r.source,
         isPrimary: r.isPrimary,
         displayOrder: index,
       })),
@@ -108,8 +134,10 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
       await AdminApiService.updatePatientSection(patientId, 'support-network', payload);
       onSaved();
       handleClose();
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : te('saveError'));
+    } catch {
+      // lex C1.3: a mensagem NUNCA ecoa o payload — uma resposta da API que cite
+      // o número do documento não pode virar texto na tela. Genérica de propósito.
+      setSubmitError(te('saveError'));
     } finally {
       setBusy(false);
     }
@@ -172,6 +200,14 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
                 <FormField label={te('email')} htmlFor={`psn-email-${index}`} optional error={errors.responsibles?.[index]?.email?.message}>
                   <InputWithIcon id={`psn-email-${index}`} type="email" inputSize="compact" data-testid={`psn-email-${index}`} {...register(`responsibles.${index}.email` as const)} />
                 </FormField>
+                <FormField label={te('documentType')} htmlFor={`psn-documentType-${index}`} optional>
+                  <Controller control={control} name={`responsibles.${index}.documentType` as const} render={({ field }) => (
+                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" options={documentTypeOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
+                  )} />
+                </FormField>
+                <FormField label={te('documentNumber')} htmlFor={`psn-documentNumber-${index}`} optional>
+                  <InputWithIcon id={`psn-documentNumber-${index}`} inputSize="compact" data-testid={`psn-documentNumber-${index}`} {...register(`responsibles.${index}.documentNumber` as const)} />
+                </FormField>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -191,7 +227,7 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => append({ firstName: '', lastName: '', relationship: '', phone: '', email: '', isPrimary: fields.length === 0 })}
+            onClick={() => append({ firstName: '', lastName: '', relationship: '', phone: '', email: '', documentType: '', documentNumber: '', source: PANEL_SOURCE, isPrimary: fields.length === 0 })}
             className="flex items-center gap-1 w-fit"
             data-testid="psn-add"
           >

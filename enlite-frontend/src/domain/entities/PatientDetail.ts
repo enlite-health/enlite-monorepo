@@ -17,6 +17,14 @@ export interface PatientResponsibleDetail {
   documentType: string | null;
   documentNumber: string | null;
   isPrimary: boolean;
+  displayOrder: number;
+  /**
+   * Procedência da linha ('clickup' | 'web_form' | 'admin_manual' | …). O
+   * drawer da rede de apoio REENVIA este valor: a seção é replace-all e o
+   * backend cai em 'clickup' quando ele falta — o que apagaria a amarra entre o
+   * dado e o consentimento colhido no formulário público (spec 011 A1, lex C1.2).
+   */
+  source: string;
 }
 
 export interface AddressAvailabilityPerDay {
@@ -34,36 +42,44 @@ export interface AddressAvailability {
   hasUnknownSchedule: boolean;
 }
 
+/**
+ * Endereço como a API o devolve (`PatientDetailQueryHelper.mapAddresses`).
+ * Não existe `fullAddress`/`street`/`city` no contrato: o que há é o texto
+ * formatado pelo geocoder e o texto cru do operador (spec 011 A2).
+ */
 export interface PatientAddressDetail {
   id: string;
-  street: string | null;
-  number: string | null;
+  addressType: string;
+  addressFormatted: string | null;
+  addressRaw: string | null;
   /** Address complement (Depto, Piso, andar). Migration 157. */
   complement: string | null;
-  neighborhood: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  zipCode: string | null;
-  fullAddress: string | null;
-  // Extended fields for vacancy creation form
-  lat?: number | null;
-  lng?: number | null;
-  isPrimary?: boolean;
+  displayOrder: number;
+  lat: number | null;
+  lng: number | null;
+  isPrimary: boolean;
   availability?: AddressAvailability;
 }
 
+/**
+ * Profissional tratante como a API o devolve. `patient_professionals` NÃO tem
+ * coluna de especialidade — o que existe é `is_team` (mig 038: a linha
+ * representa o equipo multidisciplinar, e `name` é o nome do equipo). Nada
+ * aqui é derivado (spec 011 A2, lex C2.2).
+ */
 export interface PatientProfessionalDetail {
   id: string;
-  fullName: string | null;
+  name: string | null;
   phone: string | null;
   email: string | null;
-  specialty: string | null;
+  displayOrder: number;
+  isTeam: boolean;
 }
 
 export interface PatientDetail {
   id: string;
-  clickupTaskId: string;
+  /** null para paciente NATIVO (criado no painel ou pelo formulário público, mig 251). */
+  clickupTaskId: string | null;
   firstName: string | null;
   lastName: string | null;
   birthDate: string | null; // ISO string
@@ -72,6 +88,8 @@ export interface PatientDetail {
   affiliateId: string | null;
   sex: string | null; // 'MALE'|'FEMALE'|'INTERSEX'|'UNDISCLOSED'
   phoneWhatsapp: string | null;
+  /** E-mail do paciente (mig 251), descriptografado SÓ no detalhe. null = não informado (spec 011 A4). */
+  contactEmail: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
   /**
    * Grupos de WhatsApp do Periskope por PAPEL (migration 261): papel -> chat_id
@@ -199,6 +217,8 @@ export interface PatientResponsibleInput {
   documentNumber?: string | null;
   isPrimary: boolean;
   displayOrder: number;
+  /** Procedência da linha — reenviada do detalhe; linha nova do painel = 'admin_manual'. */
+  source?: string;
 }
 
 /** section = 'support-network' — replaces the whole responsibles set. */

@@ -23,15 +23,17 @@ const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
 const SEXES = ['FEMALE', 'MALE', 'INTERSEX', 'UNDISCLOSED'] as const;
 const CLOSE_MS = 300;
 
+// Todo campo opcional nasce como '' (defaultValues) — `` diz isso ao tipo,
+// e o `onSubmit` deixa de carregar fallbacks para um `undefined` que nunca chega.
 const schema = z.object({
   firstName: z.string().trim().min(1),
-  lastName: z.string().trim().optional(),
-  phoneWhatsapp: z.string().trim().optional(),
-  contactEmail: z.union([z.literal(''), z.string().trim().email()]).optional(),
-  documentType: z.string().optional(),
-  documentNumber: z.string().trim().optional(),
-  birthDate: z.string().optional(),
-  sex: z.string().optional(),
+  lastName: z.string().trim(),
+  phoneWhatsapp: z.string().trim(),
+  contactEmail: z.union([z.literal(''), z.string().trim().email()]),
+  documentType: z.string(),
+  documentNumber: z.string().trim(),
+  birthDate: z.string(),
+  sex: z.string(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -63,7 +65,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
       firstName: patient.firstName ?? '',
       lastName: patient.lastName ?? '',
       phoneWhatsapp: patient.phoneWhatsapp ?? '',
-      contactEmail: '',
+      contactEmail: patient.contactEmail ?? '',
       documentType: patient.documentType ?? '',
       documentNumber: patient.documentNumber ?? '',
       birthDate: toDateInput(patient.birthDate),
@@ -101,19 +103,22 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     setSubmitError(null);
     const payload: PatientGeneralSectionPayload = {};
     // nullable text: '' clears to null; only send when changed.
-    const nz = (v: string | undefined): string | null => {
-      const s = (v ?? '').trim();
+    const nz = (v: string): string | null => {
+      const s = v.trim();
       return s ? s : null;
     };
     if (values.firstName.trim() !== (patient.firstName ?? '')) payload.firstName = values.firstName.trim();
     if (nz(values.lastName) !== (patient.lastName ?? null)) payload.lastName = nz(values.lastName);
     if (nz(values.phoneWhatsapp) !== (patient.phoneWhatsapp ?? null)) payload.phoneWhatsapp = nz(values.phoneWhatsapp);
-    if (nz(values.contactEmail)) payload.contactEmail = nz(values.contactEmail);
+    // Mesma regra dos outros campos (lex C4.3): não mexer → não envia; limpar → null.
+    if (nz(values.contactEmail) !== (patient.contactEmail ?? null)) payload.contactEmail = nz(values.contactEmail);
     if (nz(values.documentType) !== (patient.documentType ?? null)) payload.documentType = nz(values.documentType);
     if (nz(values.documentNumber) !== (patient.documentNumber ?? null)) payload.documentNumber = nz(values.documentNumber);
     if (nz(values.sex) !== (patient.sex ?? null)) payload.sex = nz(values.sex);
-    const birth = (values.birthDate ?? '').trim() || null;
-    if (birth !== toDateInput(patient.birthDate) ) payload.birthDate = birth;
+    // Os dois lados na MESMA forma ('' = sem data): paciente sem data + Guardar sem
+    // mexer não pode virar PATCH {birthDate:null} nem bumpar updated_at (QA 🟡3).
+    const birth = values.birthDate.trim();
+    if (birth !== toDateInput(patient.birthDate)) payload.birthDate = birth || null;
 
     if (Object.keys(payload).length === 0) { handleClose(); return; }
 
@@ -171,7 +176,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={tc('documentType')} htmlFor="pge-documentType" optional>
               <Controller control={control} name="documentType" render={({ field }) => (
-                <SelectField inputSize="compact" options={documentTypeOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid="pge-documentType" />
+                <SelectField inputSize="compact" options={documentTypeOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid="pge-documentType" />
               )} />
             </FormField>
             <FormField label={tc('documentNumber')} htmlFor="pge-documentNumber" optional>
@@ -182,7 +187,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={td('generalInfoCard.sex')} htmlFor="pge-sex" optional>
               <Controller control={control} name="sex" render={({ field }) => (
-                <SelectField inputSize="compact" options={sexOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid="pge-sex" />
+                <SelectField inputSize="compact" options={sexOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid="pge-sex" />
               )} />
             </FormField>
           </div>

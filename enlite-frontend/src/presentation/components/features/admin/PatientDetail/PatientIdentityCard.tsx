@@ -36,11 +36,13 @@ const STATUS_I18N_MAP: Record<string, string> = {
   CANCELADO: 'admin.patients.detail.patientStatus.CANCELADO',
 };
 
-function Field({ label, value }: { label: string; value: string | null }) {
+function Field({ label, value, testId }: { label: string; value: string | null; testId?: string }) {
   return (
     <Text size="sm" className="leading-snug">
       <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
-      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
+      <span data-testid={testId}>
+        <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
+      </span>
     </Text>
   );
 }
@@ -56,7 +58,9 @@ function formatDate(iso: string | null, locale = 'es-AR'): string | null {
 
 function buildAddress(patient: PatientDetail): string | null {
   const addr = patient.addresses?.[0];
-  if (addr?.fullAddress) return addr.fullAddress;
+  // Contrato real da API (spec 011 A2): `addressFormatted`/`addressRaw`, não `fullAddress`.
+  const formatted = addr?.addressFormatted ?? addr?.addressRaw;
+  if (formatted) return formatted;
   const parts = [
     patient.zoneNeighborhood,
     patient.cityLocality,
@@ -99,7 +103,10 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
   const primaryResponsible = patient.responsibles?.find((r) => r.isPrimary) ?? patient.responsibles?.[0] ?? null;
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div
+      className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4"
+      data-testid="patient-identity-card"
+    >
       <div className="flex items-center gap-4 mb-2">
         <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 shrink-0">
           <User className="w-8 h-8" />
@@ -126,18 +133,27 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
       </div>
 
       <div className="flex justify-end">
-        <Button variant="outline" size="sm" disabled onClick={() => {}} className="w-28">
+        <Button variant="outline" size="sm" disabled className="w-28">
           {t('admin.patients.detail.edit')}
         </Button>
       </div>
 
       <div className="flex flex-col gap-3">
         <Field label={`${t('admin.patients.detail.identityCard.responsiblePhone')}:`} value={patient.phoneWhatsapp} />
+        {/* E-mail do paciente EM CLARO (lex A4: é o contato do titular na ficha dele); a
+            máscara do Clarity vai no DOM porque o modo do dashboard é configuração remota
+            que ninguém aqui controla (lex C4.2). */}
+        <div data-clarity-mask="True">
+          <Field label={`${t('admin.patients.detail.identityCard.patientEmail')}:`} value={patient.contactEmail} testId="patient-contact-email" />
+        </div>
         <Field label={`${t('admin.patients.detail.identityCard.admission')}:`} value={formatDate(patient.createdAt)} />
         <Field label={`${t('admin.patients.detail.identityCard.lastUpdate')}:`} value={formatDate(patient.updatedAt)} />
         <Field label={`${t('admin.patients.detail.identityCard.discharge')}:`} value={null} />
+        {/* Rua + número é texto: o Clarity (Balanced) não mascara sozinho (lex C2.1; QA 🔴2). */}
         {address && (
-          <Field label="Endereço:" value={address} />
+          <div data-clarity-mask="True">
+            <Field label={t('admin.patients.detail.identityCard.address')} value={address} testId="patient-address" />
+          </div>
         )}
       </div>
 

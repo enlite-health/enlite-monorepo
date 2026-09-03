@@ -240,3 +240,45 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
     expect(result!.addresses[0].isPrimary).toBe(false); // address_type !== 'primary'
   });
 });
+
+// ── Spec 011 bloco A (A3 / A4) ────────────────────────────────────────────────
+
+describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4)', () => {
+  const emptyRelated = () => ({ rows: [] });
+
+  function runWithRow(row: Record<string, unknown>) {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated());
+    const enc = makeEncryptionService();
+    return { queryImpl, enc, run: () => fetchPatientDetail(makePool(queryImpl), enc, PATIENT_ID) };
+  }
+
+  it('A3 (lex caminho a) — a ficha lê COALESCE(insurance_informed, health_insurance_name): o painel grava na coluna protegida, o sync do ClickUp sobrescreve a outra', async () => {
+    const { queryImpl, run } = runWithRow(basePatientRow());
+    await run();
+    const mainSql = String(queryImpl.mock.calls[0][0]);
+    expect(mainSql).toMatch(/COALESCE\(\s*p?\.?insurance_informed\s*,\s*p?\.?health_insurance_name\s*\)\s+AS\s+"insuranceInformed"/);
+  });
+
+  it('A4 (lex C4.1) — seleciona contact_email_encrypted e descriptografa via KMS: exatamente 1 decrypt a mais, com o ciphertext certo', async () => {
+    const { queryImpl, enc, run } = runWithRow(basePatientRow({ contactEmailEncrypted: 'enc-contact-email' }));
+    const result = await run();
+    expect(String(queryImpl.mock.calls[0][0])).toContain('contact_email_encrypted');
+    expect(result!.contactEmail).toBe('dec(enc-contact-email)');
+    // Espião: sem responsáveis nem profissionais, o ÚNICO decrypt desta carga é o do e-mail.
+    const decrypt = enc.decrypt as jest.Mock;
+    expect(decrypt).toHaveBeenCalledTimes(1);
+    expect(decrypt).toHaveBeenCalledWith('enc-contact-email');
+  });
+
+  it('A4 — paciente sem e-mail: contactEmail null (nunca "" — o `decrypt("")` do passthrough devolve string vazia)', async () => {
+    const { run } = runWithRow(basePatientRow({ contactEmailEncrypted: null }));
+    const result = await run();
+    expect(result!.contactEmail).toBeNull();
+  });
+});

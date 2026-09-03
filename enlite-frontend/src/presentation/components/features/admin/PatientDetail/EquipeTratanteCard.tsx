@@ -22,12 +22,15 @@ export function EquipeTratanteCard({ professionals }: EquipeTratanteCardProps) {
   const safeProfessionals = professionals ?? [];
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div
+      className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4"
+      data-testid="equipe-tratante-card"
+    >
       <div className="flex items-center justify-between flex-wrap gap-2">
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.treatingTeamCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled onClick={() => {}} className="flex items-center gap-1">
+        <Button variant="outline" size="sm" disabled className="flex items-center gap-1">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
         </Button>
@@ -43,6 +46,8 @@ export function EquipeTratanteCard({ professionals }: EquipeTratanteCardProps) {
         />
       </div>
 
+      {/* lex C2.1: nome de profissional é texto — o Clarity (Balanced) não o mascara sozinho. */}
+      <div data-clarity-mask="True">
       <Table>
         <TableHeader>
           <TableHead>{t('admin.patients.detail.treatingTeamCard.tableFullName')}</TableHead>
@@ -61,14 +66,16 @@ export function EquipeTratanteCard({ professionals }: EquipeTratanteCardProps) {
           ) : (
             safeProfessionals.map((prof) => (
               <TableRow key={prof.id}>
-                <TableCell>{prof.fullName ?? '—'}</TableCell>
+                <TableCell>{prof.name ?? '—'}</TableCell>
                 <TableCell>{prof.phone ?? '—'}</TableCell>
-                <TableCell>{prof.specialty ?? '—'}</TableCell>
+                {/* lex C2.2: não há coluna de especialidade — Perfil é o is_team da tabela, nunca derivado. */}
+                <TableCell>{t(`admin.patients.detail.treatingTeamCard.${prof.isTeam ? 'isTeam' : 'professional'}`)}</TableCell>
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

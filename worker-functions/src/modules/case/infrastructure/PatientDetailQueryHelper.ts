@@ -24,6 +24,10 @@ const PATIENT_DETAIL_SQL = `
     affiliate_id             AS "affiliateId",
     sex,
     phone_whatsapp           AS "phoneWhatsapp",
+    -- E-mail do paciente (mig 251; spec 011 A4, lex C4.1): cifrado com KMS, sai
+    -- SÓ no detalhe — a listagem não seleciona esta coluna. Descriptografado
+    -- abaixo, uma chamada por carga de ficha.
+    p.contact_email_encrypted AS "contactEmailEncrypted",
     diagnosis,
     dependency_level         AS "dependencyLevel",
     clinical_specialty       AS "clinicalSpecialty",
@@ -45,7 +49,13 @@ const PATIENT_DETAIL_SQL = `
     has_judicial_protection  AS "hasJudicialProtection",
     has_cud                  AS "hasCud",
     has_consent              AS "hasConsent",
-    insurance_informed       AS "insuranceInformed",
+    -- Cobertura (spec 011 A3, lex "caminho a"): o painel grava em
+    -- health_insurance_name (fill-only no upsert do ClickUp, mig 147) e o
+    -- sync do ClickUp SOBRESCREVE insurance_informed com o que o mapper manda —
+    -- e ele não manda. Ler só insurance_informed escondia a cobertura gravada;
+    -- mover a escrita para lá faria o próximo webhook apagá-la. A ficha lê as
+    -- duas; a coluna de origem (ClickUp) tem precedência quando existe.
+    COALESCE(p.insurance_informed, p.health_insurance_name) AS "insuranceInformed",
     insurance_verified       AS "insuranceVerified",
     city_locality            AS "cityLocality",
     province,
@@ -206,9 +216,12 @@ export async function fetchPatientDetail(
     schedule: v.schedule,
   }));
 
-  const [responsibles, professionals] = await Promise.all([
+  const [responsibles, professionals, contactEmail] = await Promise.all([
     decryptResponsibles(responsibleRows.rows, encryptionService),
     decryptProfessionals(professionalRows.rows, encryptionService),
+    // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
+    // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
+    p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
   ]);
 
   const addresses = mapAddresses(addressRows.rows, vacancies);
@@ -224,6 +237,7 @@ export async function fetchPatientDetail(
     affiliateId: p.affiliateId,
     sex: p.sex,
     phoneWhatsapp: p.phoneWhatsapp,
+    contactEmail,
     diagnosis: p.diagnosis,
     dependencyLevel: p.dependencyLevel,
     clinicalSpecialty: p.clinicalSpecialty,

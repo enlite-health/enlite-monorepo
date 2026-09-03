@@ -1,0 +1,188 @@
+/**
+ * PatientSupportNetworkEditDrawer — spec 011, A1 (lex C1.1 / C1.2 / C1.3).
+ *
+ * A seção `support-network` é gravada por SUBSTITUIÇÃO TOTAL (DELETE + INSERT).
+ * Tudo que o drawer não reenvia, o banco perde. Estes testes travam que o
+ * payload carrega documento (tipo + número) e procedência (`source`) de cada
+ * responsável — e que o número nunca é ecoado na mensagem de erro.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+
+const translations = ptBR as Record<string, any>;
+function t(key: string, optsOrDefault?: any): string {
+  let current: any = translations;
+  for (const part of key.split('.')) current = current?.[part];
+  if (typeof current === 'string') return current;
+  if (typeof optsOrDefault === 'string') return optsOrDefault;
+  if (typeof optsOrDefault === 'object' && typeof optsOrDefault?.defaultValue === 'string') return optsOrDefault.defaultValue;
+  return key;
+}
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
+
+const updatePatientSection = vi.fn();
+vi.mock('@infrastructure/http/AdminApiService', () => ({
+  AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
+}));
+
+import { PatientSupportNetworkEditDrawer } from '../PatientSupportNetworkEditDrawer';
+
+const PATIENT_ID = 'a0000000-0000-0000-0000-000000000001';
+const DOC_NUMBER = '987.654.321-00';
+
+const responsible: PatientResponsibleDetail = {
+  id: 'r1',
+  firstName: 'Luciana',
+  lastName: 'Soto',
+  relationship: 'MOM',
+  phone: '(11) 99852-0481',
+  email: 'luciana.soto@example.com',
+  documentType: 'CPF',
+  documentNumber: DOC_NUMBER,
+  isPrimary: true,
+  displayOrder: 1,
+  source: 'web_form',
+};
+
+function renderDrawer(rows: PatientResponsibleDetail[] = [responsible]) {
+  return render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={rows} onClose={vi.fn()} onSaved={vi.fn()} />);
+}
+
+describe('PatientSupportNetworkEditDrawer — documento e procedência do responsável (A1)', () => {
+  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: PATIENT_ID }); });
+
+  it('C1.1 — carrega tipo e número do documento do responsável nos campos do drawer', () => {
+    renderDrawer();
+    expect(screen.getByTestId('psn-documentType-0')).toHaveValue('CPF');
+    expect(screen.getByTestId('psn-documentNumber-0')).toHaveValue(DOC_NUMBER);
+  });
+
+  it('C1.1 + C1.2 — editar SÓ o telefone reenvia documento e source intactos (a seção é replace-all)', async () => {
+    renderDrawer();
+    fireEvent.change(screen.getByTestId('psn-phone-0'), { target: { value: '(11) 90000-0000' } });
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(PATIENT_ID, 'support-network', {
+      responsibles: [{
+        firstName: 'Luciana',
+        lastName: 'Soto',
+        relationship: 'MOM',
+        phone: '(11) 90000-0000',
+        email: 'luciana.soto@example.com',
+        documentType: 'CPF',
+        documentNumber: DOC_NUMBER,
+        source: 'web_form',
+        isPrimary: true,
+        displayOrder: 0,
+      }],
+    });
+  });
+
+  it('limpar o número do documento manda null (limpar é uma edição, não um esquecimento)', async () => {
+    renderDrawer();
+    fireEvent.change(screen.getByTestId('psn-documentNumber-0'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    const payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ documentNumber: string | null; documentType: string | null }> };
+    expect(payload.responsibles[0].documentNumber).toBeNull();
+    expect(payload.responsibles[0].documentType).toBe('CPF');
+  });
+
+  it('trocar o tipo de documento pelo select vai no payload', async () => {
+    renderDrawer();
+    fireEvent.change(screen.getByTestId('psn-documentType-0'), { target: { value: 'DNI' } });
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    const payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ documentType: string | null }> };
+    expect(payload.responsibles[0].documentType).toBe('DNI');
+  });
+
+  it('C1.2 — familiar NOVO nasce com source do painel (admin_manual), nunca herda "clickup"', async () => {
+    renderDrawer([]);
+    fireEvent.click(screen.getByTestId('psn-add'));
+    fireEvent.change(screen.getByTestId('psn-firstName-0'), { target: { value: 'Nuevo' } });
+    fireEvent.change(screen.getByTestId('psn-lastName-0'), { target: { value: 'Familiar' } });
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    const payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ source: string; documentType: string | null; documentNumber: string | null; isPrimary: boolean }> };
+    expect(payload.responsibles[0]).toMatchObject({ source: 'admin_manual', documentType: null, documentNumber: null, isPrimary: true });
+  });
+
+  it('C1.3 — a mensagem de erro NUNCA ecoa o número do documento (mesmo que a API o devolva)', async () => {
+    updatePatientSection.mockRejectedValueOnce(new Error(`Validation failed for documentNumber ${DOC_NUMBER}`));
+    renderDrawer();
+    fireEvent.click(screen.getByTestId('psn-save'));
+    const err = await screen.findByTestId('psn-error');
+    expect(err.textContent).not.toContain(DOC_NUMBER);
+    expect(err.textContent).toBe('Erro ao salvar');
+  });
+});
+
+// ── Cobertura 100 % do arquivo (D200): nulos, primário, remover, validação, fechar ──
+
+describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
+  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: PATIENT_ID }); });
+
+  it('responsável com campos nulos carrega vazio; lista ausente vira vazia', () => {
+    const nulls: PatientResponsibleDetail = { id: 'r0', firstName: null, lastName: null, relationship: null, phone: null, email: null, documentType: null, documentNumber: null, isPrimary: false, displayOrder: 1, source: 'clickup' };
+    const { unmount } = renderDrawer([nulls]);
+    for (const id of ['psn-firstName-0', 'psn-lastName-0', 'psn-rel-0', 'psn-phone-0', 'psn-email-0', 'psn-documentNumber-0']) {
+      expect(screen.getByTestId(id)).toHaveValue('');
+    }
+    expect(screen.getByTestId('psn-documentType-0')).toHaveValue('');
+    expect(screen.getByTestId('psn-primary-0')).not.toBeChecked();
+    unmount();
+    render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={undefined as unknown as []} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('psn-empty')).toBeInTheDocument();
+  });
+
+  it('ninguém marcado como principal → o primeiro vira principal ao salvar; marcar outro desmarca o resto', async () => {
+    const second: PatientResponsibleDetail = { ...responsible, id: 'r2', firstName: 'Pedro', isPrimary: false };
+    renderDrawer([{ ...responsible, isPrimary: false }, second]);
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    let payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ isPrimary: boolean }> };
+    expect(payload.responsibles.map((r) => r.isPrimary)).toEqual([true, false]);
+
+    fireEvent.click(screen.getByTestId('psn-primary-1'));
+    expect(screen.getByTestId('psn-primary-1')).toBeChecked();
+    expect(screen.getByTestId('psn-primary-0')).not.toBeChecked();
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(2));
+    payload = updatePatientSection.mock.calls[1][2] as { responsibles: Array<{ isPrimary: boolean }> };
+    expect(payload.responsibles.map((r) => r.isPrimary)).toEqual([false, true]);
+  });
+
+  it('remover um familiar tira a linha do payload', async () => {
+    renderDrawer([responsible, { ...responsible, id: 'r2', firstName: 'Pedro', isPrimary: false }]);
+    fireEvent.click(screen.getByTestId('psn-remove-1'));
+    expect(screen.queryByTestId('psn-row-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect((updatePatientSection.mock.calls[0][2] as { responsibles: unknown[] }).responsibles).toHaveLength(1);
+  });
+
+  it('nome/sobrenome vazios e e-mail inválido: erros na tela, sem chamar a API', async () => {
+    renderDrawer();
+    fireEvent.change(screen.getByTestId('psn-firstName-0'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('psn-lastName-0'), { target: { value: ' ' } });
+    fireEvent.change(screen.getByTestId('psn-email-0'), { target: { value: 'invalido' } });
+    fireEvent.click(screen.getByTestId('psn-save'));
+    expect((await screen.findAllByText(/at least 1 character/)).length).toBe(2);
+    expect(screen.getByText(/Invalid email/)).toBeInTheDocument();
+    expect(updatePatientSection).not.toHaveBeenCalled();
+  });
+
+  it('Escape e clique no backdrop fecham; outra tecla não', async () => {
+    const onClose = vi.fn();
+    render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={[responsible]} onClose={onClose} onSaved={vi.fn()} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.click(screen.getByTestId('patient-support-edit-backdrop'));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2), { timeout: 2000 });
+    fireEvent.keyDown(document, { key: 'a' });
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});

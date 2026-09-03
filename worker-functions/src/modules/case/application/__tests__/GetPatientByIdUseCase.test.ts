@@ -26,6 +26,7 @@ const mockPatient: PatientDetailRow = {
   affiliateId: 'AF-001',
   sex: 'MALE',
   phoneWhatsapp: '+5491100000000',
+  contactEmail: null,
   diagnosis: 'ASD',
   dependencyLevel: 'MODERATE',
   clinicalSpecialty: 'ASD',

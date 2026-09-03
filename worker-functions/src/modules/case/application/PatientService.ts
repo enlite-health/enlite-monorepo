@@ -292,7 +292,8 @@ export class PatientService {
     identityInput: PatientIdentityUpsertInput,
     input: PatientServiceUpsertInput,
   ): Promise<{ id: string; created: boolean; flagged: boolean; conflict: 'CASE_NUMBER_CONFLICT' }> {
-    const attentionReasons = new Set<AttentionReason>(identityInput.attentionReasons ?? []);
+    // identityInput.attentionReasons vem SEMPRE preenchido (Array.from acima); Set aceita undefined.
+    const attentionReasons = new Set<AttentionReason>(identityInput.attentionReasons);
     attentionReasons.add('CASE_NUMBER_CONFLICT');
 
     const safeIdentityInput: PatientIdentityUpsertInput = {
@@ -343,7 +344,11 @@ export class PatientService {
     );
 
     if (input.responsibles !== undefined) {
-      await this.responsibleRepo.replaceAll(patientId, input.responsibles, client);
+      // SYNC/criação: substitui SÓ as linhas 'clickup'. Familiar do painel
+      // ('admin_manual') ou do formulário ('web_form') sobrevive ao próximo
+      // taskUpdated — o mapper devolve [] e o replaceAll apagava tudo (QA 🔴1).
+      // O drawer (updatePatientSection 'support-network') continua replaceAll.
+      await this.responsibleRepo.replaceBySource(patientId, input.responsibles, 'clickup', client);
     }
 
     if (input.addresses !== undefined) {
@@ -490,7 +495,7 @@ export class PatientService {
    * Partial, section-scoped update of a patient (native or ClickUp-origin).
    *   - general:         identity fields (name, doc, phone, contact email…)
    *   - clinical:        the full PatientClinical block (reuses clinicalRepo)
-   *   - support-network: responsibles (reuses responsibleRepo.replaceAll)
+   *   - support-network: responsibles (replaceAll — a lista inteira, é a intenção da tela)
    *   - service:         just service_type (targeted UPDATE — does NOT clobber
    *                      the rest of the clinical block)
    * Does NOT touch `origin`. Runs in a single transaction.

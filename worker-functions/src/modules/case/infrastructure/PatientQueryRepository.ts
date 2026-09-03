@@ -68,6 +68,8 @@ export interface PatientDetailRow {
   affiliateId: string | null;
   sex: string | null;
   phoneWhatsapp: string | null;
+  /** E-mail do paciente, descriptografado (KMS) SÓ no detalhe — spec 011 A4. null = não informado. */
+  contactEmail: string | null;
   // Clinical
   diagnosis: string | null;
   dependencyLevel: string | null;
