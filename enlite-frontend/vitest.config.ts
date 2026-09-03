@@ -111,6 +111,35 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        /**
+         * Tabela de pacientes e a página que a alimenta — os dois em 100/100/100
+         * medidos na suíte INTEIRA (03/09/2026), junto com o util de locale que
+         * nasceu da unificação das três cópias do mapa de idioma. Entram aqui
+         * pelo motivo escrito no cabeçalho: 100% conquistado e não cobrado cai
+         * para o nível do próximo PR, em silêncio.
+         *
+         * ⚠️ `AdminPatientsPage.tsx` estava em 0% até hoje — o único teste com
+         * "AdminPatients" no nome lê os JSON de tradução e nunca renderiza a
+         * página. Zero não era "nada errado": era "ninguém olhou".
+         */
+        '**/src/presentation/components/features/admin/PatientsTable.tsx': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/presentation/pages/admin/AdminPatientsPage.tsx': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/presentation/utils/dateLocale.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/edit/ClinicalTextareaField.tsx': {
           statements: 100,
           branches: 100,

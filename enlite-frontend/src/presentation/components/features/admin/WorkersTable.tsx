@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { useTranslation } from 'react-i18next';
 import { Eye } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
@@ -41,12 +42,7 @@ const COLUMNS = [
 
 function formatDate(iso: string, locale: string): string {
   if (!iso) return '—';
-  const dateLocale = locale === 'es' ? 'es-AR' : 'pt-BR';
-  return new Date(iso).toLocaleDateString(dateLocale, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return new Date(iso).toLocaleDateString(resolveDateLocale(locale), SHORT_DATE_OPTIONS);
 }
 
 export function WorkersTable({ workers, onRowClick, renderAction }: WorkersTableProps): JSX.Element {

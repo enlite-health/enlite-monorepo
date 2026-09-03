@@ -16,6 +16,14 @@
  *   - Coluna "Servicio" mostra o alias (Acompañante Terapéutico), nunca o ENUM
  *   - Data do registro aparece sob o nome, sem coluna nova
  *   - Screenshot visual obrigatório
+ *
+ * ⚠️ ESTE ARQUIVO NÃO RODA NO CI — medido em 03/09/2026. O workflow só executa
+ * `--project=integration` (que casa apenas `e2e/integration/**`) e três specs
+ * de plantillas nomeadas; os projetos `chromium`/`firefox`/`webkit`, onde este
+ * arquivo vive, não são invocados, e o runner nem instala firefox/webkit. Ele
+ * continua valendo como verificação LOCAL, mas a guarda que precisa reprovar um
+ * PR mora em `e2e/integration/admin-patients-tabela.integration.e2e.ts`.
+ * Ao acrescentar aqui uma garantia que não pode regredir, acrescente lá também.
  */
 
 import { test, expect, Page } from '@playwright/test';
