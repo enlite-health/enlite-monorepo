@@ -346,6 +346,9 @@ export interface PatientKanbanItem {
    * só nas fichas cujo nome é o placeholder 'Solicitante' — nas demais é null,
    * e o endereço cru NUNCA chega ao browser (a máscara é do servidor, C1).
    */
+  /** Nome do responsável primário — a identidade do card quando o paciente
+   *  ainda não tem nome (D249). Texto claro; a coluna não é cifrada. */
+  responsibleName: string | null;
   leadContactEmailMasked?: string | null;
   /** true quando o contato acima é do responsável, não do paciente (C6). */
   leadContactIsResponsible?: boolean;

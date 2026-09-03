@@ -37,7 +37,7 @@ describe('CreateLeadUseCase', () => {
       requesterType: 'patient',
       email: 'lead@example.com',
       phone: '+5491133334444',
-      name: 'Marina',
+      name: 'Marina Sosa Ledesma',
       country: 'AR',
       consent: true,
     });
@@ -50,8 +50,9 @@ describe('CreateLeadUseCase', () => {
       status: 'SOLICITANTE',
       contactEmail: 'lead@example.com',
     });
-    expect(input.firstName).toBe('Marina');
-    expect(input.lastName).toBeNull();
+    // "Para mí": o nome completo é do PACIENTE, quebrado no primeiro espaço.
+    expect(input.firstName).toBe('marina');
+    expect(input.lastName).toBe('sosa ledesma');
     expect(input.phoneWhatsapp).toBe('+5491133334444');
     expect(input.serviceType).toEqual(['CAREGIVER']);
     expect(input.responsibles).toBeUndefined();
@@ -66,20 +67,23 @@ describe('CreateLeadUseCase', () => {
       requesterType: 'responsible',
       email: 'family@example.com',
       phone: '+5491155556666',
-      name: 'Jorge',
+      name: 'Jorge Alberto Pérez',
       country: 'AR',
       consent: true,
     });
 
     const [input, opts] = createNativePatient.mock.calls[0];
-    // patient identity unknown; contact NOT on the patient
-    expect(input.firstName).toBe(LEAD_PLACEHOLDER_FIRST_NAME);
+    // O paciente nasce SEM nome — null, não placeholder. Quem preencheu foi o
+    // familiar; inventar nome de paciente a partir do nome dele seria dado falso.
+    expect(input.firstName).toBeNull();
+    expect(input.lastName).toBeNull();
     expect(input.phoneWhatsapp).toBeNull();
     expect(opts.contactEmail).toBeUndefined();
-    // contact on the primary responsible
+    // Nome, telefone e e-mail vão INTEIROS para o responsável primário.
     expect(input.responsibles).toHaveLength(1);
     expect(input.responsibles![0]).toMatchObject({
-      firstName: 'Jorge',
+      firstName: 'jorge',
+      lastName: 'alberto pérez',
       phone: '+5491155556666',
       email: 'family@example.com',
       isPrimary: true,
@@ -89,22 +93,86 @@ describe('CreateLeadUseCase', () => {
     expect(input.serviceType).toEqual(['PSYCHOLOGIST']);
   });
 
-  it('falls back to placeholder firstName when name is omitted', async () => {
+  it('sobrenome composto fica inteiro em lastName (nada se perde)', async () => {
     const { service, createNativePatient } = makeService();
     const useCase = new CreateLeadUseCase(service);
 
     await useCase.execute({
       serviceType: 'acompanantes_terapeuticos',
       requesterType: 'patient',
-      email: 'noname@example.com',
+      email: 'unnome@example.com',
       phone: '+5491100000000',
+      name: 'Flavia Solo',
       country: 'AR',
       consent: true,
     });
 
     const [input] = createNativePatient.mock.calls[0];
-    expect(input.firstName).toBe(LEAD_PLACEHOLDER_FIRST_NAME);
+    expect(input.firstName).toBe('flavia');
+    expect(input.lastName).toBe('solo');
     expect(input.serviceType).toEqual(['AT']);
+  });
+
+  it('nome de um termo só (chamada direta, sem o schema): sobrenome vira null', async () => {
+    const { service, createNativePatient } = makeService();
+    const useCase = new CreateLeadUseCase(service);
+
+    // O schema público exige dois termos, então este corpo não chega aqui pela
+    // rota. O use case é defensivo mesmo assim: '' não pode ir para a coluna
+    // como string vazia disfarçada de sobrenome.
+    await useCase.execute({
+      serviceType: 'cuidadores',
+      requesterType: 'patient',
+      email: 'umtermo@example.com',
+      phone: '+5491100000003',
+      name: 'Cher',
+      country: 'AR',
+      consent: true,
+    });
+
+    const [input] = createNativePatient.mock.calls[0];
+    expect(input.firstName).toBe('cher');
+    expect(input.lastName).toBeNull();
+  });
+
+  it('responsável: nome e sobrenome vão separados para patient_responsibles', async () => {
+    const { service, createNativePatient } = makeService();
+    const useCase = new CreateLeadUseCase(service);
+
+    await useCase.execute({
+      serviceType: 'cuidadores',
+      requesterType: 'responsible',
+      email: 'fam@example.com',
+      phone: '+5491100000001',
+      name: 'Flavia Unica',
+      country: 'AR',
+      consent: true,
+    });
+
+    const [input] = createNativePatient.mock.calls[0];
+    expect(input.responsibles![0]).toMatchObject({ firstName: 'flavia', lastName: 'unica' });
+  });
+
+  it('NENHUM lead novo nasce com o placeholder — ele é só herança das 13 fichas antigas', async () => {
+    const { service, createNativePatient } = makeService();
+    const useCase = new CreateLeadUseCase(service);
+
+    for (const requesterType of ['patient', 'responsible'] as const) {
+      await useCase.execute({
+        serviceType: 'cuidadores',
+        requesterType,
+        email: 'x@example.com',
+        phone: '+5491100000002',
+        name: 'Alguém Aqui',
+        country: 'AR',
+        consent: true,
+      });
+    }
+
+    for (const [input] of createNativePatient.mock.calls) {
+      expect(input.firstName).not.toBe(LEAD_PLACEHOLDER_FIRST_NAME);
+      expect(input.responsibles?.[0]?.firstName).not.toBe(LEAD_PLACEHOLDER_FIRST_NAME);
+    }
   });
 });
 
@@ -117,6 +185,23 @@ describe('publicLeadSchema', () => {
     country: 'AR',
     consent: true,
   };
+  /** Corpo válido = base + nome. Os casos de recusa usam `base` cru de propósito. */
+  const valido = { ...base, name: 'Persona Válida' };
+
+  it('REJEITA corpo sem nome — o campo é obrigatório desde 02/09 (D249)', () => {
+    const semNome = { ...base };
+    expect(publicLeadSchema.safeParse(semNome).success).toBe(false);
+  });
+
+  it('rejeita nome só com espaço (o trim acontece antes do min)', () => {
+    expect(publicLeadSchema.safeParse({ ...base, name: '   ' }).success).toBe(false);
+  });
+
+  it('REJEITA nome com um termo só — exige nome E sobrenome (D249)', () => {
+    expect(publicLeadSchema.safeParse({ ...base, name: 'Flavia' }).success).toBe(false);
+    expect(publicLeadSchema.safeParse({ ...base, name: '  Flavia  ' }).success).toBe(false);
+    expect(publicLeadSchema.safeParse({ ...base, name: 'Flavia Villagra' }).success).toBe(true);
+  });
 
   it('rejects an invalid email', () => {
     const parsed = publicLeadSchema.safeParse({ ...base, email: 'not-an-email' });
@@ -124,7 +209,7 @@ describe('publicLeadSchema', () => {
   });
 
   it('normalizes email to trimmed lowercase and accepts a valid body', () => {
-    const parsed = publicLeadSchema.safeParse({ ...base, email: '  Person@Example.com  ' });
+    const parsed = publicLeadSchema.safeParse({ ...valido, email: '  Person@Example.com  ' });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.email).toBe('person@example.com');
@@ -151,7 +236,7 @@ describe('publicLeadSchema', () => {
   });
 
   it('accepts country BR and preserves it', () => {
-    const parsed = publicLeadSchema.safeParse({ ...base, country: 'BR' });
+    const parsed = publicLeadSchema.safeParse({ ...valido, country: 'BR' });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.country).toBe('BR');

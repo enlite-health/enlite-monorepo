@@ -38,6 +38,8 @@ vi.mock('@infrastructure/http/LeadsApiService', () => ({
 async function chegarNaTelaDeHorarios(): Promise<void> {
   fireEvent.change(screen.getByTestId('lead-serviceType'), { target: { value: 'cuidadores' } });
   fireEvent.click(screen.getByTestId('lead-requesterType-patient'));
+  // D249: nome e sobrenome são obrigatórios — sem isto o submit nem sai.
+  fireEvent.change(screen.getByTestId('lead-name'), { target: { value: 'Paciente Ejemplo' } });
   fireEvent.change(screen.getByTestId('lead-email'), { target: { value: 'paciente@example.com' } });
   fireEvent.change(screen.getByTestId('lead-phone'), { target: { value: '+5491122334455' } });
   fireEvent.click(screen.getByTestId('lead-consent'));

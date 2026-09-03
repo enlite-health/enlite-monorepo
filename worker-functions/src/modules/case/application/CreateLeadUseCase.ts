@@ -4,7 +4,7 @@ import {
   LEAD_SERVICE_TO_PROFESSION,
   type PublicLeadBody,
 } from '../interfaces/validators/publicLeadSchema';
-import { LEAD_PLACEHOLDER_FIRST_NAME } from '../domain/LeadContact';
+import { splitFullName } from '../domain/fullName';
 
 /**
  * CreateLeadUseCase — turns a public web-form submission into a native patient
@@ -13,13 +13,14 @@ import { LEAD_PLACEHOLDER_FIRST_NAME } from '../domain/LeadContact';
  * Contract (decisão D2/D4/D7):
  *   - Enlite is the source of truth: no ClickUp round-trip. Uses the native
  *     write path (createNativePatient), never upsertFromClickUp.
- *   - Minimal identity: a lead may have no name → firstName falls back to the
- *     safe placeholder 'Solicitante'.
- *   - requesterType='patient':     contact is the patient's own
- *     (phone_whatsapp + contact_email).
- *   - requesterType='responsible': contact lives on a primary
- *     patient_responsible (phone + email); the patient row carries no phone,
- *     since the number/email belong to the family member who filled the form.
+ *   - Identidade (D249, 02/09): o formulário colhe o nome completo em UM campo
+ *     e ele é OBRIGATÓRIO. A quem o nome pertence depende de quem preencheu.
+ *   - requesterType='patient':     o nome, o telefone e o e-mail são do PACIENTE.
+ *   - requesterType='responsible': tudo isso é do RESPONSÁVEL — vai para um
+ *     `patient_responsibles` marcado `is_primary`, e o paciente nasce **sem
+ *     nome** (`first_name` NULL, que a coluna aceita). Não se inventa nome de
+ *     paciente a partir do nome de quem ligou por ele; a tela mostra "—" até
+ *     alguém preencher a ficha.
  *
  * The contact-channel invariant of createNativePatient always holds here (we
  * always have both email and phone), so it should never throw; if it does, the
@@ -27,10 +28,10 @@ import { LEAD_PLACEHOLDER_FIRST_NAME } from '../domain/LeadContact';
  */
 
 /**
- * Placeholder used when the form omits the optional name.
- * Mora no domínio (`domain/LeadContact`) porque a listagem do Kanban também
- * precisa reconhecê-lo, e application/infrastructure não se importam entre si.
- * Re-exportado aqui para não quebrar quem já importa deste módulo.
+ * Placeholder da era em que o formulário não colhia nome (até 02/09).
+ * Nenhum lead NOVO nasce com ele — mas as 13 fichas que já existem em produção
+ * carregam, e a listagem ainda precisa reconhecê-lo para desempatá-las pelo
+ * e-mail mascarado (D228/D231). Re-exportado para não quebrar quem importa daqui.
  */
 export { LEAD_PLACEHOLDER_FIRST_NAME } from '../domain/LeadContact';
 
@@ -43,22 +44,20 @@ export class CreateLeadUseCase {
 
   async execute(input: PublicLeadBody): Promise<CreateLeadResult> {
     const profession = LEAD_SERVICE_TO_PROFESSION[input.serviceType];
-    const providedName = input.name?.trim();
+    const { firstName, lastName } = splitFullName(input.name);
 
     const isResponsible = input.requesterType === 'responsible';
 
-    // For a responsible, the patient identity is unknown (the family member
-    // filled the form); the optional name belongs to the responsible. For a
-    // patient, the optional name is the patient's own.
-    const patientFirstName = isResponsible
-      ? LEAD_PLACEHOLDER_FIRST_NAME
-      : providedName || LEAD_PLACEHOLDER_FIRST_NAME;
-
+    // "Para otra persona": o nome é de quem preencheu, não do paciente. O
+    // paciente fica SEM nome — `null`, não placeholder: a tela precisa distinguir
+    // "ainda não sabemos" de "chama-se Solicitante".
     const responsibles = isResponsible
       ? [
           {
-            firstName: providedName || LEAD_PLACEHOLDER_FIRST_NAME,
-            lastName: '',
+            firstName,
+            // `patient_responsibles.last_name` é NOT NULL: nome de um termo só
+            // grava '', nunca null.
+            lastName,
             phone: input.phone,
             email: input.email,
             isPrimary: true,
@@ -70,8 +69,8 @@ export class CreateLeadUseCase {
 
     const result = await this.patientService.createNativePatient(
       {
-        firstName: patientFirstName,
-        lastName: null,
+        firstName: isResponsible ? null : firstName,
+        lastName: isResponsible ? null : lastName || null,
         // Patient's own WhatsApp only when the requester IS the patient.
         phoneWhatsapp: isResponsible ? null : input.phone,
         serviceType: [profession],

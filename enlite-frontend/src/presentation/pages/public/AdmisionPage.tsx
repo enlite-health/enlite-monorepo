@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Mail, Phone, Calendar, Video, CheckCircle2 } from 'lucide-react';
+import { Mail, Phone, Calendar, Video, CheckCircle2, User } from 'lucide-react';
 import { Heading, Text, Button } from '@presentation/components/atoms';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField';
@@ -69,7 +69,15 @@ function useLeadSchema(t: TFunction) {
           .string()
           .trim()
           .min(6, { message: t('admission.form.phone.required') }),
-        name: z.string().trim().optional(),
+        name: z
+          .string()
+          .trim()
+          .min(1, { message: t('admission.form.name.required') })
+          // Nome E sobrenome: o servidor exige o mesmo (publicLeadSchema), então
+          // a tela avisa antes em vez de deixar o POST voltar 400.
+          .refine((v) => v.split(/\s+/).filter(Boolean).length >= 2, {
+            message: t('admission.form.name.needsLastName'),
+          }),
         consent: z.boolean().refine((v) => v === true, {
           message: t('admission.form.consent.required'),
         }),
@@ -83,7 +91,7 @@ type LeadFormValues = {
   requesterType: LeadRequesterType;
   email: string;
   phone: string;
-  name?: string;
+  name: string;
   consent: boolean;
 };
 
@@ -122,7 +130,7 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
         requesterType: values.requesterType,
         email: values.email,
         phone: values.phone,
-        name: values.name?.trim() || undefined,
+        name: values.name.trim(),
         country,
         consent: values.consent,
       });
@@ -209,6 +217,22 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
                   </Text>
                 </label>
               </div>
+            </FormField>
+
+            <FormField
+              label={t('admission.form.name.label')}
+              required
+            >
+              <InputWithIcon
+                inputSize="default"
+                data-testid="lead-name"
+                type="text"
+                autoComplete="name"
+                placeholder={t('admission.form.name.placeholder')}
+                icon={<User size={20} className="text-[#737373]" />}
+                error={errors.name?.message}
+                {...register('name')}
+              />
             </FormField>
 
             <FormField

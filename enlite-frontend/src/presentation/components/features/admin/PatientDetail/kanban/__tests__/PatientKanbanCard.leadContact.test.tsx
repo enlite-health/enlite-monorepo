@@ -32,6 +32,7 @@ function lead(overrides: Partial<PatientKanbanItem> = {}): PatientKanbanItem {
     caseNumber: null,
     dependencyLevel: null,
     status: 'SOLICITANTE',
+    responsibleName: null,
     leadContactEmailMasked: 'jo***@gmail.com',
     leadContactIsResponsible: false,
     ...overrides,
@@ -131,10 +132,10 @@ describe('o resto do card — cobertura dos ramos que a feature não usa', () =>
     expect(screen.queryByTestId('sla-badge-lead-1')).toBeNull();
   });
 
-  it('sem nome E sem contato, cai no rótulo "sem nome" — nunca em branco', async () => {
+  it('sem nome E sem contato, cai no traço — nunca em branco', async () => {
     await i18n.changeLanguage('es');
     renderCard(lead({ firstName: null, lastName: null, leadContactEmailMasked: null }));
-    expect(screen.getByTestId('patient-kanban-card-lead-1').textContent).toContain('Sin nombre');
+    expect(screen.getByTestId('patient-kanban-card-lead-1').textContent).toContain('—');
   });
 
   it('clicar no título navega para a ficha', () => {

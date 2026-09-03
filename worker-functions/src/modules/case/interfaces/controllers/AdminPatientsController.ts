@@ -412,6 +412,9 @@ export class AdminPatientsController {
         hoursInStage: row.hoursInStage ?? null,
         slaThresholdHours: row.slaThresholdHours ?? null,
         slaBreached: row.slaBreached ?? false,
+        // Quem responde pelo paciente. A lista mostra "Responsável: X" onde
+        // mostraria o nome, enquanto o paciente não tiver o dele (D249).
+        responsibleName: row.responsibleName ?? null,
         // Desempate do lead sem nome — JÁ mascarado pelo repositório (lex C1).
         // Ausente (null) em toda ficha com nome real (lex C2).
         leadContactEmailMasked: row.leadContactEmailMasked ?? null,

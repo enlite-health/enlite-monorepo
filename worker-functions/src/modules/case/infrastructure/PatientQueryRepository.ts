@@ -161,7 +161,10 @@ export interface PatientListRow {
    * null e nem chega a ser descriptografada — o corte é aqui, no servidor, para
    * que o payload não carregue contato do board inteiro (C2).
    */
-  leadContactEmailMasked: string | null;
+  /** Nome do responsável primário, texto claro (a coluna não é cifrada).
+   *  `null` quando não há responsável — o lead "para mí" não tem. */
+  responsibleName: string | null;
+    leadContactEmailMasked: string | null;
   /**
    * true quando o e-mail acima é do RESPONSÁVEL, não do paciente — acontece nos
    * leads em que quem preencheu o formulário foi o familiar. Sem esta marca o
@@ -300,13 +303,30 @@ export class PatientQueryRepository {
             AND r.is_primary
           ORDER BY r.display_order, r.created_at
           LIMIT 1)            AS "responsibleEmailEnc",
+        -- Nome do responsável primário (D249). Texto claro, sem KMS: a coluna
+        -- não é cifrada. É o que a lista mostra quando o paciente ainda não tem
+        -- nome — o lead "para otra persona" nasce assim.
+        (SELECT NULLIF(btrim(concat_ws(' ', r.first_name, NULLIF(r.last_name, ''))), '')
+           FROM patient_responsibles r
+          WHERE r.patient_id = p.id
+            AND r.is_primary
+          ORDER BY r.display_order, r.created_at
+          LIMIT 1)            AS "responsibleName",
         COUNT(*) OVER()        AS total_count
       FROM patients p
       WHERE
         ($${searchIdx}::text IS NULL
           OR p.first_name    ILIKE '%' || $${searchIdx} || '%'
           OR p.last_name     ILIKE '%' || $${searchIdx} || '%'
-          OR p.document_number ILIKE '%' || $${searchIdx} || '%')
+          OR p.document_number ILIKE '%' || $${searchIdx} || '%'
+          -- D249: a lista mostra "Responsável: X" quando o paciente não tem
+          -- nome. Sem isto, o operador lê um nome na tela, digita esse nome na
+          -- busca e não acha nada — que é pior do que não mostrar.
+          OR EXISTS (
+               SELECT 1 FROM patient_responsibles r
+                WHERE r.patient_id = p.id
+                  AND (r.first_name ILIKE '%' || $${searchIdx} || '%'
+                    OR r.last_name  ILIKE '%' || $${searchIdx} || '%')))
         AND ($${needsAttentionIdx}::boolean IS NULL OR p.needs_attention = $${needsAttentionIdx})
         AND ($${attentionReasonIdx}::text IS NULL OR $${attentionReasonIdx} = ANY(p.attention_reasons))
         AND ($${clinicalSpecialtyIdx}::text IS NULL OR p.clinical_specialty = $${clinicalSpecialtyIdx})
@@ -355,6 +375,14 @@ export class PatientQueryRepository {
         hoursInStage: sla.hoursInStage,
         slaThresholdHours: sla.slaThresholdHours,
         slaBreached: sla.slaBreached,
+        // Nome de quem responde pelo paciente — a lista cai nele quando o
+        // paciente ainda não tem nome próprio (D249).
+        // O placeholder da era pré-D249 também contaminou os responsáveis: as 6
+        // fichas antigas com familiar têm 'Solicitante' ali. Mostrar
+        // "Responsável: Solicitante" seria trocar um card mudo por outro.
+        responsibleName: isLeadPlaceholderName(row.responsibleName as string | null, null)
+          ? null
+          : ((row.responsibleName as string | null) ?? null),
         // Preenchidos na segunda passada, só para as fichas com placeholder.
         leadContactEmailMasked: null,
         leadContactIsResponsible: false,

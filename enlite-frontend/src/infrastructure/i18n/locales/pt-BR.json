@@ -19,6 +19,12 @@
         "responsible": "Para outra pessoa",
         "required": "Indique para quem é"
       },
+      "name": {
+        "label": "Nome e sobrenome",
+        "placeholder": "Ex.: Flavia Villagra",
+        "required": "Informe seu nome e sobrenome",
+        "needsLastName": "Informe também o sobrenome"
+      },
       "email": {
         "label": "E-mail",
         "placeholder": "seuemail@exemplo.com",
@@ -2766,7 +2772,7 @@
         "toggleList": "Lista",
         "toggleKanban": "Kanban",
         "caseNumber": "Caso",
-        "noName": "Sem nome",
+        "noName": "—",
         "moveError": "Não foi possível mover o paciente",
         "columns": {
           "SOLICITANTE": "Solicitante",
@@ -2774,7 +2780,8 @@
           "PENDING_ADMISSION": "Aguardando financeiro",
           "ACTIVE": "Ativo"
         },
-        "contactOfResponsible": "Contato do responsável"
+        "contactOfResponsible": "Contato do responsável",
+        "responsible": "Responsável"
       },
       "countryLabel": "País",
       "countryOptions": {

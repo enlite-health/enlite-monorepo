@@ -105,6 +105,7 @@ export function AdminPatientsPage(): JSX.Element {
         id: p.id,
         firstName: p.firstName ?? '',
         lastName: p.lastName ?? '',
+        responsibleName: p.responsibleName ?? null,
         documentType: p.documentType ?? null,
         documentNumber: p.documentNumber ?? null,
         caseNumber: p.caseNumber ?? null,
