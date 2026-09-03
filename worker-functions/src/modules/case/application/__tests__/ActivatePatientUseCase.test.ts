@@ -54,6 +54,10 @@ import {
 interface DispatchOpts {
   patientRow?: { id: string; status: string; case_number: number | null } | null;
   addressIds?: string[];
+  /** Spec 013 bloco C: `patient_contracted_services` ATIVOS deste paciente (a query já filtra
+   * `WHERE active` — um serviço inativo simplesmente não aparece aqui, o mesmo shape de "zero
+   * serviços declarados"). Omitido = comportamento pré-existente (fallback, sem serviço). */
+  activeServices?: Array<{ id: string; providers_needed: number | null }>;
 }
 
 function programClient(opts: DispatchOpts): { seen: string[] } {
@@ -71,6 +75,10 @@ function programClient(opts: DispatchOpts): { seen: string[] } {
     }
     if (sql.includes('FROM patient_addresses')) {
       const rows = (opts.addressIds ?? []).map((id) => ({ id }));
+      return { rowCount: rows.length, rows };
+    }
+    if (sql.includes('FROM patient_contracted_services')) {
+      const rows = opts.activeServices ?? [];
       return { rowCount: rows.length, rows };
     }
     if (sql.includes('nextval')) {
@@ -228,6 +236,66 @@ describe('ActivatePatientUseCase', () => {
     const updateIdx = seen.findIndex((s) => s.includes('UPDATE patients SET status'));
     expect(setConfigIdx).toBeGreaterThan(-1);
     expect(setConfigIdx).toBeLessThan(updateIdx);
+  });
+
+  // ── Spec 013 bloco C: cross-product serviço×endereço (linhas 142-151), sem cobertura
+  // antes desta rodada (QA-caça #2) ───────────────────────────────────────────────────
+
+  it('l. 2 serviços ativos × 2 endereços ativos → 4 vagas (cross-product), cada uma com o contracted_service_id do serviço certo e providers_needed propagado', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-cross', status: 'PENDING_ADMISSION', case_number: 77 },
+      addressIds: ['addr-1', 'addr-2'],
+      activeServices: [
+        { id: 'svc-1', providers_needed: 2 },
+        { id: 'svc-2', providers_needed: null },
+      ],
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-cross');
+
+    // 2 endereços × 2 serviços = 4 vagas — linha 145 (o `.map` interno) é o que gera o produto
+    // cartesiano por endereço; sem ela haveria só 2 vagas (uma por endereço, sem serviço).
+    expect(result.createdVacancyIds).toEqual(['vac-1', 'vac-2', 'vac-3', 'vac-4']);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(4);
+
+    // Ordem: flatMap por endereço, map interno por serviço — addr-1×svc-1, addr-1×svc-2,
+    // addr-2×svc-1, addr-2×svc-2. Cada chamada carrega o par CERTO (não o último serviço para
+    // todas as vagas — o bug óbvio de closure/reuso de variável nesta forma de loop).
+    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ patient_address_id: 'addr-1', contracted_service_id: 'svc-1', providers_needed: 2 }),
+    );
+    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ patient_address_id: 'addr-1', contracted_service_id: 'svc-2', providers_needed: null }),
+    );
+    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ patient_address_id: 'addr-2', contracted_service_id: 'svc-1', providers_needed: 2 }),
+    );
+    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({ patient_address_id: 'addr-2', contracted_service_id: 'svc-2', providers_needed: null }),
+    );
+  });
+
+  it('m. serviço inativo só (zero linhas ativas) → fallback: 1 vaga por endereço, contracted_service_id null', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-fallback', status: 'PENDING_ADMISSION', case_number: 88 },
+      addressIds: ['addr-only'],
+      // A query já filtra `WHERE active` — um paciente com serviço(s) só INATIVO(s) chega aqui
+      // com a mesma lista vazia de "nenhum serviço declarado" (mesmo shape, é o ponto do teste).
+      activeServices: [],
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-fallback');
+
+    expect(result.createdVacancyIds).toEqual(['vac-1']);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ patient_address_id: 'addr-only', contracted_service_id: null, providers_needed: null }),
+    );
   });
 
   // ── Ramos pré-existentes do arquivo, sem cobertura antes desta rodada (D200: 100% do

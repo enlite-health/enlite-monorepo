@@ -61,6 +61,17 @@ export interface ActivatePatientResult {
  * Idempotency: a patient already ACTIVE returns { alreadyActive: true,
  * createdVacancyIds: [] } without creating anything (no duplicate vacancies).
  *
+ * Spec 013 (bloco C): with ≥1 ACTIVE `patient_contracted_services` row, activation creates one
+ * draft vacancy per (active service × active address) — not per address alone — and stamps
+ * `contracted_service_id`. Only CODIFIED defaults propagate to the vaga (`providers_needed`;
+ * lex C-b2 caminho 1): `worker_profile_sought`/`salary_text` never come from the service.
+ * `weekly_hours`/`care_location`/dispositivos have NO matching column on `job_postings` today
+ * (`schedule` is day/time slots, not an hours total; devices were moved OFF job_postings by
+ * migration 149) — they are NOT propagated; a schema decision is needed before they can be
+ * (LISTA do relatório 013). With ZERO active services (every patient before this feature is
+ * adopted), activation falls back to the PREVIOUS behaviour — one draft per address, no
+ * `contracted_service_id` — so existing patients are not blocked from activating.
+ *
  * NOTE (deliberate): unlike VacancyCrudController.createVacancy, this use case
  * does NOT emit a `vacancy.created` domain event. That event drives
  * VacancyAutoInviteHandler, which runs matchmaking + WhatsApp auto-invite and
@@ -117,8 +128,30 @@ export class ActivatePatientUseCase {
         throw new NoActiveAddressError(patientId);
       }
 
+      // Spec 013 bloco C: services declared for this patient, ACTIVE only. Zero rows here is
+      // the case for every patient today (the entity nasceu vazia) — the loop below falls back
+      // to one draft per address, exactly like before this feature.
+      const serviceRes = await client.query<{ id: string; providers_needed: number | null }>(
+        `SELECT id, providers_needed
+           FROM patient_contracted_services
+          WHERE patient_id = $1 AND active
+          ORDER BY created_at ASC`,
+        [patientId],
+      );
+
+      const pairs: Array<{ addressId: string; serviceId: string | null; providersNeeded: number | null }> =
+        serviceRes.rowCount && serviceRes.rowCount > 0
+          ? addrRes.rows.flatMap((addr) =>
+              serviceRes.rows.map((svc) => ({
+                addressId: addr.id,
+                serviceId: svc.id,
+                providersNeeded: svc.providers_needed,
+              })),
+            )
+          : addrRes.rows.map((addr) => ({ addressId: addr.id, serviceId: null, providersNeeded: null }));
+
       const createdVacancyIds: string[] = [];
-      for (const addr of addrRes.rows) {
+      for (const pair of pairs) {
         // Same vacancy_number sequence + title convention as createVacancy.
         const vnRes = await client.query<{ vn: string }>(
           "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
@@ -126,16 +159,18 @@ export class ActivatePatientUseCase {
         const vacancyNumber = parseInt(vnRes.rows[0].vn, 10);
         const computedTitle = `CASO ${case_number}-${vacancyNumber}`;
 
-        // Minimal draft: only patient_id, case_number, patient_address_id.
-        // Everything else falls back to the buildInsertParams defaults
-        // (salary_text 'A convenir', status 'PENDING_ACTIVATION',
-        // required_professions []) and the DB defaults (is_draft true).
+        // Minimal draft: only patient_id, case_number, patient_address_id (+ contracted_service_id
+        // and providers_needed when the pair comes from a declared service). Everything else
+        // falls back to the buildInsertParams defaults (salary_text 'A convenir', status
+        // 'PENDING_ACTIVATION', required_professions []) and the DB defaults (is_draft true).
+        // NEVER worker_profile_sought/salary_text from the service (lex C-b2/C-c.3).
         const params = buildInsertParams({
           vacancyNumber,
           case_number,
           computedTitle,
           patient_id: patientId,
-          patient_address_id: addr.id,
+          patient_address_id: pair.addressId,
+          contracted_service_id: pair.serviceId,
           required_professions: null,
           required_sex: null,
           age_range_min: null,
@@ -145,7 +180,7 @@ export class ActivatePatientUseCase {
           worker_attributes: null,
           schedule: null,
           work_schedule: null,
-          providers_needed: null,
+          providers_needed: pair.providersNeeded,
           salary_text: null,
           payment_day: null,
           daily_obs: null,

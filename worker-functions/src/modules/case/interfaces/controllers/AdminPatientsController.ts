@@ -9,6 +9,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { projectPatientClinicalForActor, clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
+import { projectContractedServiceForActor, actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
 import { GetPatientFunnelUseCase } from '../../application/GetPatientFunnelUseCase';
 import { patientFunnelQuerySchema } from '../../application/patientFunnelSchema';
 import {
@@ -534,7 +535,17 @@ export class AdminPatientsController {
 
       // Ponto ÚNICO de leitura do texto clínico restrito (D211.2): redige para quem não pode.
       const cells = clinicalCellsOf(req);
-      const projected = projectPatientClinicalForActor(result.patient as unknown as Record<string, unknown>, cells);
+      const clinicalProjected = projectPatientClinicalForActor(result.patient as unknown as Record<string, unknown>, cells);
+      // lex C-c.4: hourlyValue de cada serviço contratado redigido para quem não é admin —
+      // mesmo ponto único de leitura do texto clínico acima, campo por campo do array.
+      const roles = actorRolesOf(req);
+      const rawServices = (clinicalProjected as { contractedServices?: unknown[] }).contractedServices;
+      const projected = Array.isArray(rawServices)
+        ? {
+            ...clinicalProjected,
+            contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, roles)),
+          }
+        : clinicalProjected;
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
       // Nunca o texto, nunca o nome. Request redigida não gera linha (minimização).
       if (canReadPatientClinical(cells)) {

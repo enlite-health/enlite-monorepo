@@ -84,6 +84,15 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Cross-product serviço×endereço da ativação (spec 013 bloco C) — cada vaga carrega o
+    // contracted_service_id/providers_needed do serviço CERTO; regressão aqui embaralha vagas
+    // entre serviços diferentes calada (QA-caça #2, achado real).
+    'src/modules/case/application/ActivatePatientUseCase.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/infrastructure/{PatientClinicalRepository,PatientDetailQueryHelper,PatientQueryRepository}.ts': {
       statements: 100,
       branches: 100,

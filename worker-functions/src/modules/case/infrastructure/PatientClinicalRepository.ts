@@ -85,7 +85,19 @@ export class PatientClinicalRepository {
     if (input.clinicalSegments !== undefined) push('clinical_segments', input.clinicalSegments);
     if (input.serviceType !== undefined) {
       // serviceType is TEXT[] in DB after migration 139. Empty array → NULL (never store []).
-      push('service_type', input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null);
+      const value = input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null;
+      params.push(value);
+      // FR-C1 (spec 013, migration 321): quando o paciente TEM ≥1 patient_contracted_services
+      // ATIVO, service_type[] é DERIVADO (trigger fn_sync_patient_service_type_escalar) — o
+      // espelho ClickUp para de escrever para não brigar com o derivado (mesma classe de bug
+      // corrigida na migration 310/F64: trigger recalcula, escritor incondicional escreve por
+      // cima e o escritor ganha por ser o último). Sem serviço ativo, escreve normalmente.
+      sets.push(
+        `service_type = CASE WHEN EXISTS (
+           SELECT 1 FROM patient_contracted_services pcs
+            WHERE pcs.patient_id = patients.id AND pcs.active
+         ) THEN patients.service_type ELSE $${params.length} END`,
+      );
     }
     if (input.additionalComments !== undefined) {
       push('additional_comments', input.additionalComments);

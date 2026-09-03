@@ -650,13 +650,24 @@ export class PatientService {
           // Targeted: only service_type. (Desde a D211.1 o clinicalRepo.upsert é
           // parcial — chave ausente não toca a coluna — mas este caminho
           // continua direto: uma coluna, uma query.)
+          //
+          // FR-C1 (spec 013, migration 321): "nunca escrito à mão pelos drawers" é
+          // INCONDICIONAL — não só quando o serviço já existe. Este caminho é o segundo
+          // escritor de service_type[] (o primeiro é PatientClinicalRepository.upsert, o
+          // espelho ClickUp) e precisa da MESMA guarda por EXISTS, ou reabre a classe de bug
+          // da migration 310/F64 por uma porta que o guard de lá não cobre. O drawer novo do
+          // bloco C não chama mais esta rota (ver ServicosContratadosCard) — a guarda é
+          // cinto de segurança para quem ainda chamar.
           const serviceType = (data as PatientRelatedInput).serviceType;
           const value =
             serviceType !== undefined && serviceType !== null && serviceType.length > 0
               ? serviceType
               : null;
           await client.query(
-            'UPDATE patients SET service_type = $2, updated_at = NOW() WHERE id = $1',
+            `UPDATE patients SET service_type = CASE WHEN EXISTS (
+               SELECT 1 FROM patient_contracted_services pcs
+                WHERE pcs.patient_id = patients.id AND pcs.active
+             ) THEN patients.service_type ELSE $2 END, updated_at = NOW() WHERE id = $1`,
             [patientId, value],
           );
           break;

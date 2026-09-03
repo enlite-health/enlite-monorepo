@@ -16,6 +16,10 @@ export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry } from './Pa
 export type { InsuranceProvider } from './PatientCoverage';
 export type { PatientAddressLogisticsPayload } from './PatientAddress';
 export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
+// Só os 2 tipos que algum consumidor importa DAQUI (o resto — payloads de escrita, enums —
+// vem direto de `PatientContractedService.ts`; reexportar tudo aqui estourava o teto de 400).
+export type { PatientContractedServiceDetail, PatientContractedServiceProvider } from './PatientContractedService';
+import type { PatientContractedServiceDetail } from './PatientContractedService';
 
 export interface PatientResponsibleDetail {
   id: string;
@@ -169,6 +173,8 @@ export interface PatientDetail {
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
+  /** Serviços contratados (spec 013, bloco C) — contrato do detalhe. */
+  contractedServices: PatientContractedServiceDetail[];
   lastCaseNumber?: number | null;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string

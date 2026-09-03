@@ -70,7 +70,6 @@ import { PatientProfileTabs } from '../PatientProfileTabs';
 import { FamiliaresCard } from '../FamiliaresCard';
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
 import { LocalizacoesCard } from '../LocalizacoesCard';
-import { ServicosContratadosCard } from '../ServicosContratadosCard';
 import { EnquadreTerapeuticoCard } from '../EnquadreTerapeuticoCard';
 
 // ── PatientIdentityCard ──────────────────────────────────────────────────────
@@ -770,42 +769,13 @@ describe('LocalizacoesCard', () => {
 });
 
 // ── ServicosContratadosCard ──────────────────────────────────────────────────
-
-describe('ServicosContratadosCard', () => {
-  it('renders card title', () => {
-    render(<ServicosContratadosCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Serviços Contratados')).toBeInTheDocument();
-  });
-
-  it('renders all column headers', () => {
-    render(<ServicosContratadosCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Dispositivo')).toBeInTheDocument();
-    expect(screen.getByText('Profissional')).toBeInTheDocument();
-    expect(screen.getByText('Quant.')).toBeInTheDocument();
-    expect(screen.getByText('Local de Atendimento')).toBeInTheDocument();
-    expect(screen.getByText('Sexo')).toBeInTheDocument();
-    expect(screen.getByText('Valor')).toBeInTheDocument();
-    expect(screen.getByText('Versão')).toBeInTheDocument();
-  });
-
-  it('renders a row per serviceType in patient', () => {
-    render(<ServicosContratadosCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Acompanhante Terapêutico')).toBeInTheDocument();
-  });
-
-  it('renders empty state when serviceType is null', () => {
-    render(<ServicosContratadosCard patient={patientDetailMinimal} />);
-    expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
-  });
-
-  it('has an enabled edit button that opens the service edit drawer', () => {
-    render(<ServicosContratadosCard patient={patientDetailMinimal} />);
-    const btn = screen.getByTestId('edit-service-btn');
-    expect(btn).not.toBeDisabled();
-    fireEvent.click(btn);
-    expect(screen.getByTestId('patient-service-edit-drawer')).toBeInTheDocument();
-  });
-});
+// Spec 013, bloco C (03/09): o card deixou de ler só `patient.serviceType`/`deviceType` (as 5
+// colunas fantasma — "Sexo", "Quant.", "Valor", "Versión", 3ª coluna — nunca tinham dado por
+// trás, #PEND-08) e passou a ler `patient.contractedServices[]`, entidade própria. O botão de
+// editar abre `PatientContractedServicesEditDrawer` (lista + form por serviço), não mais
+// `PatientServiceEditDrawer` (campo único). Os testes movidos + estendidos para
+// `ServicosContratadosCard.test.tsx` (i18n real, molde `sex-both-i18n.test.tsx` — pega vazamento
+// de enum cru, que os `getByText` literais em pt-BR abaixo não pegavam).
 
 // ── EnquadreTerapeuticoCard ──────────────────────────────────────────────────
 

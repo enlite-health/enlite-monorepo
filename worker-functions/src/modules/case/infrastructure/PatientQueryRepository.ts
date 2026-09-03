@@ -138,6 +138,12 @@ export interface PatientDetailRow {
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
+  /**
+   * Serviços contratados (spec 013, bloco C — migration 319), com prestadores alocados. Contrato
+   * do detalhe. `hourlyValue` é redigido no ponto único (AdminPatientsController.getPatientById,
+   * lex C-c.4) para quem não é admin — aqui vem sempre o valor cru.
+   */
+  contractedServices: import('./PatientContractedServiceRepository').ContractedServiceDetail[];
   /** Last case_number across all job_postings for this patient (null if none). */
   lastCaseNumber: number | null;
   // Audit

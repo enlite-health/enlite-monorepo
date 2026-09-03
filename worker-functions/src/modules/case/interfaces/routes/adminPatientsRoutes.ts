@@ -6,6 +6,7 @@ import { AuthMiddleware } from '@modules/identity';
 import { AdminPatientsMapController } from '../controllers/AdminPatientsMapController';
 import { AdminPatientAddressesController } from '../controllers/AdminPatientAddressesController';
 import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
+import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -22,6 +23,7 @@ export function createAdminPatientsRoutes(
   mapController: AdminPatientsMapController = new AdminPatientsMapController(),
   addressesController: AdminPatientAddressesController = new AdminPatientAddressesController(),
   insuranceProvidersController: AdminInsuranceProvidersController = new AdminInsuranceProvidersController(),
+  contractedServicesController: AdminPatientContractedServicesController = new AdminPatientContractedServicesController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -166,6 +168,26 @@ export function createAdminPatientsRoutes(
   // Purga só de paciente is_test (real → 409). Ver PatientTestFixtureService.
   router.delete('/patients/:id', adminOnly, (req: Request, res: Response) =>
     controller.purgeTestPatient(req, res),
+  );
+
+  // ── Serviço contratado, entidade própria (spec 013, bloco C) ───────────────
+  // Literais ANTES do PATCH dinâmico /:id/:section — 'contracted-services' seria capturado
+  // como :section e barrado pelo whitelist. Sem DELETE (lex C-a.4/C-e.2): baixa é PATCH
+  // {active:false}.
+  router.get('/patients/:id/contracted-services', staffOnly, (req: Request, res: Response) =>
+    contractedServicesController.list(req, res),
+  );
+  router.post('/patients/:id/contracted-services', staffOnly, (req: Request, res: Response) =>
+    contractedServicesController.create(req, res),
+  );
+  router.patch('/patients/:id/contracted-services/:sid', staffOnly, (req: Request, res: Response) =>
+    contractedServicesController.update(req, res),
+  );
+  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, (req: Request, res: Response) =>
+    contractedServicesController.associateProvider(req, res),
+  );
+  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, (req: Request, res: Response) =>
+    contractedServicesController.updateProvider(req, res),
   );
 
   // PATCH /patients/:id/:section — section-scoped partial edit (last: fully dynamic)

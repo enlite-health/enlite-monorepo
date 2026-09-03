@@ -1,0 +1,316 @@
+import { useState } from 'react';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
+import { Trash2 } from 'lucide-react';
+import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
+import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import {
+  SERVICE_CODES,
+  CARE_LOCATIONS,
+  CONTRACT_TYPES,
+  TAX_CONDITIONS,
+  SUPERVISION_FREQUENCIES,
+  GUARD_SHIFTS,
+} from '@domain/entities/PatientContractedService';
+import { Button } from '@presentation/components/atoms/Button';
+import { Text } from '@presentation/components/atoms/Text';
+import { Textarea } from '@presentation/components/atoms/Textarea';
+import { FormField } from '@presentation/components/molecules/FormField';
+import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
+import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
+import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
+
+interface Props {
+  patientId: string;
+  service: PatientContractedServiceDetail | null;
+  /** Index visual ("Serviço 1", "Serviço 2"…) — só para o rótulo, nunca enviado. */
+  index: number;
+  onSaved: () => void;
+  onCancelNew?: () => void;
+}
+
+// Todos os campos numéricos ficam STRING no formulário (molde dos demais drawers do painel —
+// `PatientSupportNetworkEditDrawer` etc.): a conversão pra number|null acontece em `onSubmit`,
+// nunca no schema — um `.transform()` no zod faz o tipo de ENTRADA do form divergir do de
+// SAÍDA, e `useForm<FormValues>` só aceita um dos dois.
+const numericString = z.string().refine((v) => v.trim() === '' || !Number.isNaN(Number(v)), 'invalid number');
+
+const schema = z.object({
+  serviceCode: z.string().min(1),
+  professionalProfile: z.string(),
+  providersNeeded: numericString,
+  authorizedHours: numericString,
+  weeklyHours: numericString,
+  careLocation: z.string(),
+  hourlyValue: numericString,
+  version: z.string(),
+  startDate: z.string(),
+  contractType: z.string(),
+  taxCondition: z.string(),
+  supervisionFrequency: z.string(),
+  guardShift: z.string(),
+  deviceTypeCodes: z.array(z.string()),
+});
+type FormValues = z.infer<typeof schema>;
+
+function empty(v: string | number | null | undefined): string {
+  return v === null || v === undefined ? '' : String(v);
+}
+
+function numOrNull(v: string): number | null {
+  const s = v.trim();
+  return s === '' ? null : Number(s);
+}
+
+export interface DeactivateServiceDeps {
+  patientId: string;
+  confirmMessage: string;
+  setBusy: (busy: boolean) => void;
+  onSaved: () => void;
+}
+
+/**
+ * Baixa (`active:false`) do serviço, com confirmação — extraída da closure do componente e
+ * EXPORTADA só para teste direto (QA-caça #4): o botão que chama isto só renderiza quando
+ * `!isNew && service.active`, ou seja, `service` já vem garantido não-null pela JSX — o guarda
+ * `if (!service) return` abaixo é por isso INALCANÇÁVEL por qualquer clique simulado (o elemento
+ * nem existe no DOM quando `service` é null). Chamar esta função diretamente com `service=null`
+ * é o único jeito de exercitar essa branch.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- exportado só para teste direto (QA-caça #4), ver docblock acima.
+export async function deactivateService(
+  service: PatientContractedServiceDetail | null,
+  deps: DeactivateServiceDeps,
+): Promise<void> {
+  if (!service) return;
+  if (!window.confirm(deps.confirmMessage)) return;
+  deps.setBusy(true);
+  try {
+    await AdminContractedServicesApiService.updateContractedService(deps.patientId, service.id, { active: false });
+    deps.onSaved();
+  } finally {
+    deps.setBusy(false);
+  }
+}
+
+/**
+ * Formulário de UM serviço contratado — cria (POST) quando `service` é `null`, atualiza
+ * (PATCH, Merge Patch parcial) quando existe. `hourlyValue` fica DESABILITADO quando o backend
+ * redigiu (lex C-c.4) — evita o operador não-admin sobrescrever um valor que não pode ver.
+ */
+export function ContractedServiceFormRow({ patientId, service, index, onSaved, onCancelNew }: Props): JSX.Element {
+  const { t } = useTranslation();
+  const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
+  const isNew = service === null;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { register, handleSubmit, control } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      serviceCode: service?.serviceCode ?? '',
+      professionalProfile: service?.professionalProfile ?? '',
+      providersNeeded: empty(service?.providersNeeded),
+      authorizedHours: empty(service?.authorizedHours),
+      weeklyHours: empty(service?.weeklyHours),
+      careLocation: service?.careLocation ?? '',
+      hourlyValue: empty(service?.hourlyValue),
+      version: service?.version ?? '',
+      startDate: service?.startDate ? service.startDate.slice(0, 10) : '',
+      contractType: service?.contractType ?? '',
+      taxCondition: service?.taxCondition ?? '',
+      supervisionFrequency: service?.supervisionFrequency ?? '',
+      guardShift: service?.guardShift ?? '',
+      deviceTypeCodes: service?.deviceTypes ?? [],
+    },
+  });
+
+  const serviceOptions: SelectOption[] = SERVICE_CODES.map((s) => ({
+    value: s,
+    label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
+  }));
+  const careLocationOptions: SelectOption[] = CARE_LOCATIONS.map((v) => ({
+    value: v,
+    label: t(`admin.patients.detail.contractedServicesCard.careLocationOptions.${v}`, { defaultValue: v }),
+  }));
+  const contractTypeOptions: SelectOption[] = CONTRACT_TYPES.map((v) => ({
+    value: v,
+    label: t(`admin.patients.detail.contractedServicesCard.contractTypeOptions.${v}`, { defaultValue: v }),
+  }));
+  const taxConditionOptions: SelectOption[] = TAX_CONDITIONS.map((v) => ({
+    value: v,
+    label: t(`admin.patients.detail.contractedServicesCard.taxConditionOptions.${v}`, { defaultValue: v }),
+  }));
+  const supervisionOptions: SelectOption[] = SUPERVISION_FREQUENCIES.map((v) => ({
+    value: v,
+    label: t(`admin.patients.detail.contractedServicesCard.supervisionFrequencyOptions.${v}`, { defaultValue: v }),
+  }));
+  const guardShiftOptions: SelectOption[] = GUARD_SHIFTS.map((v) => ({
+    value: v,
+    label: t(`admin.patients.detail.contractedServicesCard.guardShiftOptions.${v}`, { defaultValue: v }),
+  }));
+  const deviceOptions: SelectOption[] = DEVICE_TYPE_CODES.map((v) => ({
+    value: v,
+    label: t(`admin.patients.deviceTypeOptions.${v}`, { defaultValue: v }),
+  }));
+
+  const onSubmit = async (values: FormValues): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    const nz = (v: string): string | null => (v.trim() ? v.trim() : null);
+    try {
+      if (isNew) {
+        await AdminContractedServicesApiService.createContractedService(patientId, {
+          serviceCode: values.serviceCode as never,
+          professionalProfile: nz(values.professionalProfile),
+          providersNeeded: numOrNull(values.providersNeeded),
+          authorizedHours: numOrNull(values.authorizedHours),
+          weeklyHours: numOrNull(values.weeklyHours),
+          careLocation: nz(values.careLocation) as never,
+          hourlyValue: numOrNull(values.hourlyValue),
+          version: nz(values.version),
+          startDate: nz(values.startDate),
+          contractType: nz(values.contractType) as never,
+          taxCondition: nz(values.taxCondition) as never,
+          supervisionFrequency: nz(values.supervisionFrequency) as never,
+          guardShift: nz(values.guardShift) as never,
+          deviceTypeCodes: values.deviceTypeCodes,
+        });
+      } else {
+        await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
+          professionalProfile: nz(values.professionalProfile),
+          providersNeeded: numOrNull(values.providersNeeded),
+          authorizedHours: numOrNull(values.authorizedHours),
+          weeklyHours: numOrNull(values.weeklyHours),
+          careLocation: nz(values.careLocation) as never,
+          // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
+          // habilitado, envia o que o operador digitou (inclusive limpar → null).
+          hourlyValue: service.hourlyValueRedacted ? undefined : numOrNull(values.hourlyValue),
+          version: nz(values.version),
+          startDate: nz(values.startDate),
+          contractType: nz(values.contractType) as never,
+          taxCondition: nz(values.taxCondition) as never,
+          supervisionFrequency: nz(values.supervisionFrequency) as never,
+          guardShift: nz(values.guardShift) as never,
+          deviceTypeCodes: values.deviceTypeCodes,
+        });
+      }
+      onSaved();
+    } catch {
+      setError(isNew ? te('createServiceError') : te('updateServiceError'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deactivate = (): Promise<void> =>
+    deactivateService(service, { patientId, confirmMessage: te('deactivateServiceConfirm'), setBusy, onSaved });
+
+  return (
+    <div
+      className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200"
+      data-testid={isNew ? 'contracted-service-new' : `contracted-service-form-${service.id}`}
+    >
+      <div className="flex items-center justify-between">
+        <Text size="sm" weight="semibold" color="secondary">
+          {te('contractedServiceHeading').replace('{{n}}', String(index))}
+          {service && !service.active && ` — ${te('inactiveBadge')}`}
+        </Text>
+        <div className="flex items-center gap-2">
+          {isNew && onCancelNew && (
+            <button type="button" onClick={onCancelNew} aria-label={te('close')} data-testid="contracted-service-new-cancel" className="text-slate-400 hover:text-slate-700 p-1 rounded">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          {!isNew && service.active && (
+            <Button type="button" variant="outline" size="sm" onClick={deactivate} isLoading={busy} data-testid={`contracted-service-deactivate-${service.id}`}>
+              {te('deactivateService')}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <FormField label={te('selectServiceCode')} htmlFor={`svc-code-${index}`} required>
+          <Controller control={control} name="serviceCode" render={({ field }) => (
+            <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
+          )} />
+        </FormField>
+        <FormField label={te('providersNeeded')} htmlFor={`svc-providersNeeded-${index}`} optional>
+          <InputWithIcon id={`svc-providersNeeded-${index}`} type="number" inputSize="compact" data-testid={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
+        </FormField>
+        <FormField label={te('weeklyHours')} htmlFor={`svc-weeklyHours-${index}`} optional>
+          <InputWithIcon id={`svc-weeklyHours-${index}`} type="number" inputSize="compact" data-testid={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
+        </FormField>
+        <FormField label={te('authorizedHours')} htmlFor={`svc-authorizedHours-${index}`} optional>
+          <InputWithIcon id={`svc-authorizedHours-${index}`} type="number" inputSize="compact" data-testid={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
+        </FormField>
+        <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
+          <Controller control={control} name="careLocation" render={({ field }) => (
+            <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
+          )} />
+        </FormField>
+        <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
+          {service?.hourlyValueRedacted ? (
+            <InputWithIcon id={`svc-hourlyValue-${index}`} inputSize="compact" value={te('hourlyValueRedacted')} disabled data-testid={`svc-hourlyValue-${index}`} />
+          ) : (
+            <InputWithIcon id={`svc-hourlyValue-${index}`} type="number" inputSize="compact" data-testid={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
+          )}
+        </FormField>
+        <FormField label={te('version')} htmlFor={`svc-version-${index}`} optional>
+          <InputWithIcon id={`svc-version-${index}`} inputSize="compact" data-testid={`svc-version-${index}`} {...register('version')} />
+        </FormField>
+        <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
+          <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
+        </FormField>
+        <FormField label={te('contractType')} htmlFor={`svc-contractType-${index}`} optional>
+          <Controller control={control} name="contractType" render={({ field }) => (
+            <SelectField id={`svc-contractType-${index}`} inputSize="compact" options={contractTypeOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-contractType-${index}`} />
+          )} />
+        </FormField>
+        <FormField label={te('taxCondition')} htmlFor={`svc-taxCondition-${index}`} optional>
+          <Controller control={control} name="taxCondition" render={({ field }) => (
+            <SelectField id={`svc-taxCondition-${index}`} inputSize="compact" options={taxConditionOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-taxCondition-${index}`} />
+          )} />
+        </FormField>
+        <FormField label={te('supervisionFrequency')} htmlFor={`svc-supervisionFrequency-${index}`} optional>
+          <Controller control={control} name="supervisionFrequency" render={({ field }) => (
+            <SelectField id={`svc-supervisionFrequency-${index}`} inputSize="compact" options={supervisionOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-supervisionFrequency-${index}`} />
+          )} />
+        </FormField>
+        <FormField label={te('guardShift')} htmlFor={`svc-guardShift-${index}`} optional>
+          <Controller control={control} name="guardShift" render={({ field }) => (
+            <SelectField id={`svc-guardShift-${index}`} inputSize="compact" options={guardShiftOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-guardShift-${index}`} />
+          )} />
+        </FormField>
+      </div>
+
+      <FormField label={te('deviceTypes')} htmlFor={`svc-devices-${index}`} optional>
+        <Controller control={control} name="deviceTypeCodes" render={({ field }) => (
+          <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('unset')} id={`svc-devices-${index}`} />
+        )} />
+      </FormField>
+
+      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')}>
+        <div data-clarity-mask="True">
+          <Textarea id={`svc-profile-${index}`} inputSize="compact" resize="vertical" rows={3} data-testid={`svc-profile-${index}`} {...register('professionalProfile')} />
+        </div>
+      </FormField>
+
+      <div className="flex items-center justify-between">
+        <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} className="w-32" data-testid={isNew ? 'contracted-service-new-save' : `contracted-service-save-${service.id}`}>
+          {te('save')}
+        </Button>
+        {error && <Text size="sm" className="text-red-600" data-testid={isNew ? 'contracted-service-new-error' : `contracted-service-error-${service?.id}`}>{error}</Text>}
+      </div>
+
+      {!isNew && (
+        <ContractedServiceProvidersSection patientId={patientId} serviceId={service.id} providers={service.providers} onChanged={onSaved} />
+      )}
+    </div>
+  );
+}

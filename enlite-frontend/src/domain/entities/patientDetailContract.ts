@@ -84,6 +84,51 @@ const professionalSchema = z
   })
   .strict();
 
+// Spec 013, bloco C: o serviço contratado como entidade, com prestadores alocados.
+const contractedServiceProviderSchema = z
+  .object({
+    id: z.string(),
+    serviceId: z.string(),
+    workerId: z.string(),
+    workerName: z.string().nullable(),
+    weeklyHours: z.number().nullable(),
+    active: z.boolean(),
+    endedAt: isoDate.nullable(),
+    country: z.string(),
+    createdAt: isoDate,
+    updatedAt: isoDate,
+  })
+  .strict();
+
+const contractedServiceSchema = z
+  .object({
+    id: z.string(),
+    patientId: z.string(),
+    serviceCode: z.string(),
+    professionalProfile: z.string().nullable(),
+    providersNeeded: z.number().nullable(),
+    authorizedHours: z.number().nullable(),
+    weeklyHours: z.number().nullable(),
+    careLocation: z.string().nullable(),
+    // lex C-c.4: redigido (null) para quem não é admin — hourlyValueRedacted diz qual dos dois.
+    hourlyValue: z.number().nullable(),
+    hourlyValueRedacted: z.boolean(),
+    version: z.string().nullable(),
+    startDate: isoDate.nullable(),
+    contractType: z.string().nullable(),
+    taxCondition: z.string().nullable(),
+    supervisionFrequency: z.string().nullable(),
+    guardShift: z.string().nullable(),
+    active: z.boolean(),
+    endedAt: isoDate.nullable(),
+    country: z.string(),
+    deviceTypes: z.array(z.string()),
+    providers: z.array(contractedServiceProviderSchema),
+    createdAt: isoDate,
+    updatedAt: isoDate,
+  })
+  .strict();
+
 export const patientDetailContractSchema = z
   .object({
     id: z.string(),
@@ -137,6 +182,7 @@ export const patientDetailContractSchema = z
     responsibles: z.array(responsibleSchema),
     addresses: z.array(addressSchema),
     professionals: z.array(professionalSchema),
+    contractedServices: z.array(contractedServiceSchema),
     lastCaseNumber: z.number().nullable().optional(),
     createdAt: isoDate,
     updatedAt: isoDate,

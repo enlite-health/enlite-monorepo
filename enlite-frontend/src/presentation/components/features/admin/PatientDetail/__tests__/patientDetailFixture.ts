@@ -90,6 +90,7 @@ export const patientDetailFixture: PatientDetail = {
       isTeam: false,
     },
   ],
+  contractedServices: [],
   createdAt: '2025-01-10T12:00:00Z',
   updatedAt: '2026-04-20T09:30:00Z',
 };
@@ -142,6 +143,7 @@ export const patientDetailMinimal: PatientDetail = {
   responsibles: [],
   addresses: [],
   professionals: [],
+  contractedServices: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 };

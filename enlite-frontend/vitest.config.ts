@@ -173,6 +173,29 @@ export default defineConfig({
         '**/src/infrastructure/http/AdminPatientsApiService.ts': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Spec 013 bloco C (03/09): serviço contratado como entidade — o novo card (fim das 5
+        // colunas fantasma, #PEND-08), o drawer lista+form, a seção de prestadores, o contrato
+        // extendido (contractedServices[]) e o cliente HTTP. `AdminContractedServicesApiService.ts`
+        // fica em 96% de branches (o `||` do fallback de `VITE_API_WORKER_FUNCTIONS_URL` no
+        // constructor, mesmo padrão não coberto nos irmãos desta pasta) — não entra no piso de
+        // branches por isso; os outros 3 eixos são 100.
+        '**/src/domain/entities/PatientContractedService.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/ServicosContratadosCard.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // QA-caça #4 (03/09): os 2 branches que faltavam (`if (!service) return` no deactivate de
+        // ContractedServiceFormRow, `if (!selected) return` no associate de
+        // ContractedServiceProvidersSection) eram INALCANÇÁVEIS via clique simulado — extraídos
+        // em `deactivateService`/`runAssociateProvider` exportados e testados diretamente. Os 3
+        // arquivos medem 100 nos 4 eixos agora.
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{ContractedServiceFormRow,ContractedServiceProvidersSection,PatientContractedServicesEditDrawer}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/infrastructure/http/AdminContractedServicesApiService.ts': {
+          statements: 100, functions: 100, lines: 100,
+        },
         '**/src/presentation/pages/admin/PatientDetailPage.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },

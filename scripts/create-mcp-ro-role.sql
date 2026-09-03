@@ -141,7 +141,17 @@ BEGIN
       ('interview_slots',           ARRAY['notes']),  -- lex M2: entrevista de matching fala de patologia
       -- spec 012 (lex C2.1): `access_notes` é texto livre sobre o DOMICÍLIO de um paciente. A tabela
       -- tinha GRANT de tabela inteira — a coluna nova (mig 316) nasceria legível pelo LLM no dia 1.
-      ('patient_addresses',         ARRAY['access_notes'])
+      ('patient_addresses',         ARRAY['access_notes']),
+      -- spec 013 bloco C (QA-caça #1, mesma classe D216/D218): `professional_profile` (texto livre
+      -- sobre o profissional buscado) e `hourly_value` (preço do contrato, lex C-c) da 319 tinham
+      -- GRANT de tabela inteira via "ALL TABLES" — legíveis pelo MCP no dia 1. As 3 tabelas irmãs
+      -- (318/319) entram nominalmente mesmo as sem texto/valor a excluir: GRANT por coluna (em vez
+      -- do "ALL TABLES" implícito) garante que coluna nova nasça invisível também aqui (mesma razão
+      -- do C6 para tabela nova).
+      ('patient_contracted_services', ARRAY['professional_profile','hourly_value']),
+      ('contracted_service_providers', ARRAY[]::text[]),
+      ('contracted_service_devices',   ARRAY[]::text[]),
+      ('service_types',                ARRAY[]::text[])
     ) AS t(tabela, excluir)
   LOOP
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables
@@ -169,7 +179,8 @@ BEGIN
   -- tabela pulada), o script inteiro reverte. Fail-closed no único ponto que era fail-open.
   FOR alvo IN SELECT unnest(ARRAY['patients','job_postings','job_postings_clickup_sync','job_posting_comments',
                                   'publications','worker_placement_audits','worker_job_applications','interview_slots',
-                                  'patient_addresses']) AS tabela LOOP
+                                  'patient_addresses','patient_contracted_services','contracted_service_providers',
+                                  'contracted_service_devices','service_types']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;

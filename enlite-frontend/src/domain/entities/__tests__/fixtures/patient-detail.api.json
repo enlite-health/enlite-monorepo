@@ -171,5 +171,47 @@
     }
   ],
   "createdAt": "2026-09-03T12:26:10.088Z",
-  "updatedAt": "2026-09-03T12:26:11.118Z"
+  "updatedAt": "2026-09-03T12:26:11.118Z",
+  "contractedServices": [
+    {
+      "id": "54a27de8-2418-4151-8887-c150548caa7d",
+      "patientId": "84e558de-cce1-4b29-bd97-86de1812a295",
+      "serviceCode": "AT",
+      "professionalProfile": "Perfil sintético de fixture — busca AT con experiencia en movilidad reducida.",
+      "providersNeeded": 2,
+      "authorizedHours": 20,
+      "weeklyHours": 20,
+      "careLocation": "HOME",
+      "hourlyValue": 1500,
+      "version": "v1",
+      "startDate": "2026-09-01T00:00:00.000Z",
+      "contractType": "OBRA_SOCIAL",
+      "taxCondition": "IVA_EXEMPT",
+      "supervisionFrequency": "DAYS_30",
+      "guardShift": "MORNING",
+      "active": true,
+      "endedAt": null,
+      "country": "AR",
+      "deviceTypes": [
+        "HOME"
+      ],
+      "providers": [
+        {
+          "id": "e6435681-6182-4e7a-91fb-d040765cf87e",
+          "serviceId": "54a27de8-2418-4151-8887-c150548caa7d",
+          "workerId": "763fce15-6ead-4612-8db1-211751b9623e",
+          "workerName": null,
+          "weeklyHours": 20,
+          "active": true,
+          "endedAt": null,
+          "country": "AR",
+          "createdAt": "2026-09-03T15:34:15.954Z",
+          "updatedAt": "2026-09-03T15:34:15.954Z"
+        }
+      ],
+      "createdAt": "2026-09-03T15:34:15.840Z",
+      "updatedAt": "2026-09-03T15:34:15.840Z",
+      "hourlyValueRedacted": false
+    }
+  ]
 }

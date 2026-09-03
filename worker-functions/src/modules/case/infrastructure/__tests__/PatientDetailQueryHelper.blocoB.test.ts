@@ -14,7 +14,8 @@ function pool(main: Record<string, unknown>, address: Record<string, unknown>): 
     .mockResolvedValueOnce({ rows: [] })            // responsibles
     .mockResolvedValueOnce({ rows: [address] })      // addresses
     .mockResolvedValueOnce({ rows: [] })            // professionals
-    .mockResolvedValueOnce({ rows: [] });           // vacancies
+    .mockResolvedValueOnce({ rows: [] })            // vacancies
+    .mockResolvedValueOnce({ rows: [] });           // contracted services (spec 013, bloco C)
   return { pool: { query } as unknown as Pool, query };
 }
 const enc = { decrypt: jest.fn().mockResolvedValue(null) } as unknown as KMSEncryptionService;
