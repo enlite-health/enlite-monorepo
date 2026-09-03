@@ -153,6 +153,34 @@ describe('PatientQueryRepository.list', () => {
     expect(rows).toEqual([]);
   });
 
+  it('a6b. responsibleName com o placeholder pré-D249 sai como null', async () => {
+    // As 6 fichas antigas com familiar têm 'Solicitante' em patient_responsibles.
+    // "Responsável: Solicitante" seria trocar um card mudo por outro.
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ responsibleName: 'Solicitante' })],
+    });
+
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters({ limit: 20, offset: 0 }));
+
+    expect(rows[0].responsibleName).toBeNull();
+  });
+
+  it('a6c. responsibleName real passa; ausente vira null', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ responsibleName: 'flavia villagra' })],
+    });
+    const repo = new PatientQueryRepository();
+    const comNome = await repo.list(baseFilters({ limit: 20, offset: 0 }));
+    expect(comNome.rows[0].responsibleName).toBe('flavia villagra');
+
+    // Coluna ausente na linha (não `null`): o `?? null` do mapeamento.
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow()] });
+    const semNome = await repo.list(baseFilters({ limit: 20, offset: 0 }));
+    expect(semNome.rows[0].responsibleName).toBeNull();
+  });
+
   it('a7. attentionReasons ausente na linha → [] no mapeamento', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow({ attentionReasons: undefined })] });
     const repo = new PatientQueryRepository();
