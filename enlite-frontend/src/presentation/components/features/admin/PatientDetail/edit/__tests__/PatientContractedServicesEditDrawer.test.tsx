@@ -41,6 +41,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, version: null, startDate: null,
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
+  providerAgeBand: null,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
 };

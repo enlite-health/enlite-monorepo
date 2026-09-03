@@ -77,16 +77,37 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   it('1. POST cria o serviço; country derivado do paciente (trigger); created_by gravado', async () => {
     const r = await api.post(
       `/api/admin/patients/${patientAR}/contracted-services`,
-      { serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'] },
+      // Spec 015 (US-A6.1): providerAgeBand no POST — round-trip na resposta E na coluna nova.
+      { serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
       asAdmin,
     );
     expect(r.status).toBe(201);
-    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'] });
+    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
     serviceId = r.data.data.id;
-    const { rows: [row] } = await pool.query(`SELECT country, created_by, updated_by FROM patient_contracted_services WHERE id = $1`, [serviceId]);
+    const { rows: [row] } = await pool.query(`SELECT country, created_by, updated_by, provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     expect(row.country).toBe('AR');
     expect(row.created_by).toBeTruthy();
     expect(row.created_by).toBe(row.updated_by); // C-a.3: autoria na mesma transação
+    expect(row.provider_age_band).toBe('AGE_30_45');
+  });
+
+  // Spec 015 (US-A6.1): fora do enum → rejeitado pelo schema (convenção viva deste controller:
+  // 400 para erro de VALIDAÇÃO de shape, não 422 — ver relatorio.md LISTA item 1). Nada escrito.
+  it('11. providerAgeBand fora do enum → 400, nada escrito', async () => {
+    const before = (await pool.query(`SELECT provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { providerAgeBand: 'NAO_EXISTE' }, asAdmin);
+    expect(r.status).toBe(400);
+    const after = (await pool.query(`SELECT provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    expect(after).toEqual(before);
+  });
+
+  // Spec 015: PATCH limpa a franja (volta a null, "não informado") — caminho válido.
+  it('12. PATCH providerAgeBand:null limpa a franja (volta a "não informado")', async () => {
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { providerAgeBand: null }, asAdmin);
+    expect(r.status).toBe(200);
+    expect(r.data.data.providerAgeBand).toBeNull();
+    // Restaura para os testes seguintes (2/4) não dependerem da ordem.
+    await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { providerAgeBand: 'AGE_30_45' }, asAdmin);
   });
 
   it('2. PATCH é Merge Patch: só o campo enviado muda', async () => {
@@ -216,26 +237,33 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
       [`${TASK_PREFIX}act-with`, 900000 + RUN % 90000],
     )).rows[0].id;
     await pool.query(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle 1',1),($1,'secondary','Calle 2',2)`, [withServices]);
-    const s1 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20 }, asAdmin);
-    const s2 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'CAREGIVER', providersNeeded: 1, weeklyHours: 10 }, asAdmin);
+    // Spec 015 (US-A6.2): franjas DIFERENTES nos 2 serviços — prova que cada vaga herda a franja
+    // do SERVIÇO CERTO, não a última lida.
+    const s1 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, providerAgeBand: 'AGE_20_30' }, asAdmin);
+    const s2 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'CAREGIVER', providersNeeded: 1, weeklyHours: 10, providerAgeBand: 'AGE_45_PLUS' }, asAdmin);
 
     const act = await api.post(`/api/admin/patients/${withServices}/activate`, {}, asAdmin);
     expect(act.status).toBe(200);
     expect(act.data.data.createdVacancyIds).toHaveLength(4); // 2 serviços × 2 endereços
 
     const { rows: vacancies } = await pool.query(
-      `SELECT contracted_service_id, providers_needed, worker_profile_sought, salary_text FROM job_postings WHERE patient_id = $1 ORDER BY providers_needed`,
+      `SELECT contracted_service_id, providers_needed, worker_profile_sought, salary_text, age_range_min, age_range_max FROM job_postings WHERE patient_id = $1 ORDER BY providers_needed`,
       [withServices],
     );
     expect(vacancies).toHaveLength(4);
     const byService = new Map<string, number>();
+    const ageRangeByService = new Map<string, { min: number; max: number | null }>();
     for (const v of vacancies) {
       expect(v.worker_profile_sought).toBeNull(); // lex C-b2: NUNCA vem do serviço
       expect(v.salary_text).toBe('A convenir'); // lex C-c.3: NUNCA vem do serviço
       byService.set(v.contracted_service_id, (byService.get(v.contracted_service_id) ?? 0) + 1);
+      ageRangeByService.set(v.contracted_service_id, { min: v.age_range_min, max: v.age_range_max });
     }
     expect(byService.get(s1.data.data.id)).toBe(2);
     expect(byService.get(s2.data.data.id)).toBe(2);
+    // Spec 015 (US-A6.2): AGE_20_30 → {20,29}; AGE_45_PLUS → {45,null} — cada serviço com a SUA franja.
+    expect(ageRangeByService.get(s1.data.data.id)).toEqual({ min: 20, max: 29 });
+    expect(ageRangeByService.get(s2.data.data.id)).toEqual({ min: 45, max: null });
 
     // Paciente SEM nenhum serviço ativo: fallback ao comportamento anterior (1 vaga/endereço, sem contracted_service_id).
     const withoutServices = (await pool.query<{ id: string }>(
@@ -247,7 +275,10 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const act2 = await api.post(`/api/admin/patients/${withoutServices}/activate`, {}, asAdmin);
     expect(act2.status).toBe(200);
     expect(act2.data.data.createdVacancyIds).toHaveLength(1);
-    const fallbackRow = (await pool.query(`SELECT contracted_service_id FROM job_postings WHERE patient_id = $1`, [withoutServices])).rows[0];
+    const fallbackRow = (await pool.query(`SELECT contracted_service_id, age_range_min, age_range_max FROM job_postings WHERE patient_id = $1`, [withoutServices])).rows[0];
     expect(fallbackRow.contracted_service_id).toBeNull();
+    // Spec 015 (FR-3): fallback intocado — nunca herda franja de serviço nenhum.
+    expect(fallbackRow.age_range_min).toBeNull();
+    expect(fallbackRow.age_range_max).toBeNull();
   });
 });

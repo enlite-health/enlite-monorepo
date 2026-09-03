@@ -231,6 +231,9 @@ async function mapContractedServices(
     taxCondition: r.tax_condition,
     supervisionFrequency: r.supervision_frequency,
     guardShift: r.guard_shift,
+    // Spec 015 (US-A6.1, migration 322): franja etária solicitada do prestador. `SELECT *`
+    // (fetchRelated) já traz a coluna nova — só falta espelhar no shape decorado.
+    providerAgeBand: r.provider_age_band,
     active: r.active,
     endedAt: r.ended_at,
     country: r.country,

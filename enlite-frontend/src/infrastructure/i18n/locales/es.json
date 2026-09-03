@@ -2878,6 +2878,7 @@
         "taxCondition": "Condición de IVA",
         "supervisionFrequency": "Frecuencia de supervisión",
         "guardShift": "Turno de guardia",
+        "providerAgeBand": "Franja etaria solicitada del prestador",
         "deviceTypes": "Dispositivo(s)",
         "providersTitle": "Prestadores asociados",
         "noProviders": "Ningún prestador asociado todavía.",
@@ -3233,6 +3234,7 @@
           "tableStart": "Inicio",
           "tableContract": "Contratación",
           "tableIVA": "IVA",
+          "tableProviderAgeBand": "Franja etaria prestador",
           "inactiveBadge": "Baja",
           "serviceTypes": {
             "AT": "Acompañante Terapéutico",
@@ -3270,6 +3272,12 @@
             "AFTERNOON": "Tarde",
             "NIGHT": "Noche",
             "FULL_DAY": "24 Hs"
+          },
+          "providerAgeBandOptions": {
+            "ANY": "Edad Indistinta",
+            "AGE_20_30": "20 a 30 Años",
+            "AGE_30_45": "30 a 45 Años",
+            "AGE_45_PLUS": "+ 45 Años"
           }
         },
         "matchingCard": {

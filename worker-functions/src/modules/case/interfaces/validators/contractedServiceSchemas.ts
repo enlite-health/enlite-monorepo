@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CARE_LOCATIONS, CONTRACT_TYPES, TAX_CONDITIONS, SUPERVISION_FREQUENCIES, GUARD_SHIFTS } from '../../domain/enums/ContractedService';
+import { CARE_LOCATIONS, CONTRACT_TYPES, TAX_CONDITIONS, SUPERVISION_FREQUENCIES, GUARD_SHIFTS, PROVIDER_AGE_BANDS } from '../../domain/enums/ContractedService';
 
 const SERVICE_CODES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 
@@ -24,6 +24,10 @@ export const createContractedServiceSchema = z
     taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
+    // Spec 015 (US-A6.1, D191/D254/D256): franja etária solicitada do PRESTADOR para este
+    // serviço — propaga para a vaga na ativação (ProviderAgeBandMapping.ts). Fora do enum → 400
+    // "Invalid body" (convenção viva do controller para TODO erro zod; 422 é só DeviceTypeUnknownError).
+    providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
     country: z.enum(['AR', 'BR']).nullable().optional(),
   })
@@ -45,6 +49,7 @@ export const updateContractedServiceSchema = z
     taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
+    providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
     // Só `false` é caminho de escrita válido (baixa, lex C-a.4) — reabrir não existe.
     active: z.literal(false).optional(),

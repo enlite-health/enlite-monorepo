@@ -34,6 +34,14 @@ export const GUARD_SHIFTS = [
 ] as const;
 export type GuardShift = (typeof GUARD_SHIFTS)[number];
 
+/**
+ * Franja etária SOLICITADA DO PRESTADOR para este serviço (spec 015, US-A6.1; D191/D254/D256;
+ * migration 322). `null` = não informado. Ao ativar, propaga para `age_range_min/max` da vaga
+ * NASCIDA DESTE SERVIÇO (backend: `ProviderAgeBandMapping.ts`, fonte única).
+ */
+export const PROVIDER_AGE_BANDS = ['ANY', 'AGE_20_30', 'AGE_30_45', 'AGE_45_PLUS'] as const;
+export type ProviderAgeBand = (typeof PROVIDER_AGE_BANDS)[number];
+
 export interface PatientContractedServiceProvider {
   id: string;
   serviceId: string;
@@ -77,6 +85,8 @@ export interface PatientContractedServiceDetail {
   taxCondition: string | null;
   supervisionFrequency: string | null;
   guardShift: string | null;
+  /** Franja etária solicitada do prestador (spec 015) — string frouxa, molde do resto do contrato. */
+  providerAgeBand: string | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -101,6 +111,7 @@ export interface CreateContractedServiceBody {
   taxCondition?: TaxCondition | null;
   supervisionFrequency?: SupervisionFrequency | null;
   guardShift?: GuardShift | null;
+  providerAgeBand?: ProviderAgeBand | null;
   deviceTypeCodes?: string[];
 }
 

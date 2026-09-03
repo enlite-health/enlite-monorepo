@@ -268,11 +268,23 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
     // archivo) — es el camino real y alcanzable para probar el banner. La vaga sembrada en
     // `beforeAll` (`insertBaseVacancy`, sin schedule ni meet link) llega INCOMPLETA de
     // fábrica: ni toco nada, sólo abro y envío.
+    // Sincroniza pela RESPOSTA do GET da vaga (modo edição carrega assíncrono): sob carga, o
+    // clique chegava antes de o formulário hidratar e o submit se perdia — verde sozinho,
+    // vermelho na regressão de 4 arquivos (medido 03/09). Mesma regra da ativação no bloco C.
+    const vacancyLoaded = page.waitForResponse(
+      (r) => r.request().method() === 'GET' && new RegExp(`/api/admin/vacancies/${vacancyId}(\\?|$)`).test(r.url()),
+      { timeout: 20_000 },
+    );
     await page.goto(`/admin/vacancies/${vacancyId}/edit`);
+    expect((await vacancyLoaded).ok()).toBe(true);
     await expect(page.getByTestId('create-vacancy-save-btn')).toBeEnabled({ timeout: 15_000 });
-    await forceClick(page.getByTestId('create-vacancy-save-btn'));
 
     const banner = page.getByTestId('vacancy-form-validation-error');
+    // O submit é do RHF: se o clique cair num re-render, repete (no máximo 3×) até o banner aparecer.
+    for (let attempt = 0; attempt < 3 && !(await banner.isVisible()); attempt++) {
+      await forceClick(page.getByTestId('create-vacancy-save-btn'));
+      await banner.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+    }
     await expect(banner).toBeVisible({ timeout: 10_000 });
     await expect(banner).toContainText('Faltan datos para crear la vacante');
     // Nombres de campo — nunca valores (lex D6.1): la vaga sembrada no tiene horario ni

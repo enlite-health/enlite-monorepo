@@ -40,3 +40,16 @@ export const GUARD_SHIFTS: readonly GuardShift[] = [
   'NIGHT',
   'FULL_DAY',
 ];
+
+/**
+ * Franja etária SOLICITADA DO PRESTADOR para este serviço (spec 015, US-A6.1; D191/D254/D256;
+ * migration 322). `null` = não informado. Mapeia para `job_postings.age_range_min/max` da vaga
+ * NASCIDA DESTE SERVIÇO — fonte única em `../ProviderAgeBandMapping.ts`.
+ */
+export type ProviderAgeBand = 'ANY' | 'AGE_20_30' | 'AGE_30_45' | 'AGE_45_PLUS';
+export const PROVIDER_AGE_BANDS: readonly ProviderAgeBand[] = [
+  'ANY',
+  'AGE_20_30',
+  'AGE_30_45',
+  'AGE_45_PLUS',
+];

@@ -13,6 +13,7 @@ import {
   TAX_CONDITIONS,
   SUPERVISION_FREQUENCIES,
   GUARD_SHIFTS,
+  PROVIDER_AGE_BANDS,
 } from '@domain/entities/PatientContractedService';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
@@ -60,6 +61,7 @@ const schema = z.object({
   taxCondition: z.string(),
   supervisionFrequency: z.string(),
   guardShift: z.string(),
+  providerAgeBand: z.string(),
   deviceTypeCodes: z.array(z.string()),
 });
 type FormValues = z.infer<typeof schema>;
@@ -132,6 +134,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
       taxCondition: service?.taxCondition ?? '',
       supervisionFrequency: service?.supervisionFrequency ?? '',
       guardShift: service?.guardShift ?? '',
+      providerAgeBand: service?.providerAgeBand ?? '',
       deviceTypeCodes: service?.deviceTypes ?? [],
     },
   });
@@ -169,6 +172,10 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
     value: v,
     label: t(`admin.patients.deviceTypeOptions.${v}`, { defaultValue: v }),
   }));
+  const providerAgeBandOptions: SelectOption[] = PROVIDER_AGE_BANDS.map((v) => ({
+    value: v,
+    label: t(`admin.patients.detail.contractedServicesCard.providerAgeBandOptions.${v}`, { defaultValue: v }),
+  }));
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setError(null);
@@ -190,6 +197,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
           taxCondition: nz(values.taxCondition) as never,
           supervisionFrequency: nz(values.supervisionFrequency) as never,
           guardShift: nz(values.guardShift) as never,
+          providerAgeBand: nz(values.providerAgeBand) as never,
           deviceTypeCodes: values.deviceTypeCodes,
         });
       } else {
@@ -208,6 +216,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
           taxCondition: nz(values.taxCondition) as never,
           supervisionFrequency: nz(values.supervisionFrequency) as never,
           guardShift: nz(values.guardShift) as never,
+          providerAgeBand: nz(values.providerAgeBand) as never,
           deviceTypeCodes: values.deviceTypeCodes,
         });
       }
@@ -302,6 +311,11 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
         <FormField label={te('guardShift')} htmlFor={`svc-guardShift-${index}`} optional>
           <Controller control={control} name="guardShift" render={({ field }) => (
             <SelectField id={`svc-guardShift-${index}`} inputSize="compact" options={guardShiftOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-guardShift-${index}`} />
+          )} />
+        </FormField>
+        <FormField label={te('providerAgeBand')} htmlFor={`svc-providerAgeBand-${index}`} optional>
+          <Controller control={control} name="providerAgeBand" render={({ field }) => (
+            <SelectField id={`svc-providerAgeBand-${index}`} inputSize="compact" options={providerAgeBandOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-providerAgeBand-${index}`} />
           )} />
         </FormField>
       </div>

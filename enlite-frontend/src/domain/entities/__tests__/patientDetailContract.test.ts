@@ -17,6 +17,13 @@
  * `blocking` com ADDRESS) já têm cobertura própria em
  * `AdminPatientsController.test.ts` (Cenário 1b) e `PatientCompleteness.test.ts`.
  *
+ * RECAPTURADA de novo em 03/09 (spec 015, US-A6.1): `contractedServices[].providerAgeBand`
+ * (migration 322) — mesmo mecanismo, imagem `enlite-api` rebuildada desta worktree (`docker exec
+ * enlite-api grep -c providerAgeBand /app/dist/modules/case/infrastructure/
+ * PatientDetailQueryHelper.js` → 1). Paciente/serviço semeados de novo (ids mudam a cada
+ * recaptura); serviço nasce com `provider_age_band='AGE_30_45'` — é o valor que o teste abaixo
+ * verifica chegar cru no contrato (a TELA é quem traduz, não o contrato).
+ *
  * O que este teste trava:
  *  - a entidade `PatientDetail` lê as chaves que a API manda (`name`, não
  *    `fullName`; `addressFormatted`, não `fullAddress`) — o `.strict()` do
@@ -72,5 +79,10 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
     expect(p.contractedServices).toHaveLength(1);
     expect(p.contractedServices[0].active).toBe(true);
     expect(p.contractedServices[0].serviceCode).toBe('AT');
+  });
+
+  it('spec 015 (US-A6.1): providerAgeBand chega CRU no contrato — a tradução é responsabilidade da TELA, não do contrato', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.contractedServices[0].providerAgeBand).toBe('AGE_30_45');
   });
 });

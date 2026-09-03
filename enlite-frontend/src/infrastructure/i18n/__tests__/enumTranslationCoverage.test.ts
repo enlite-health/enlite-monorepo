@@ -22,6 +22,7 @@ import {
   TAX_CONDITIONS,
   SUPERVISION_FREQUENCIES,
   GUARD_SHIFTS,
+  PROVIDER_AGE_BANDS,
 } from '@domain/entities/PatientContractedService';
 
 type Locale = Record<string, unknown>;
@@ -130,6 +131,8 @@ const CONTRACTED_SERVICE_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   ['admin.patients.detail.contractedServicesCard.taxConditionOptions', TAX_CONDITIONS],
   ['admin.patients.detail.contractedServicesCard.supervisionFrequencyOptions', SUPERVISION_FREQUENCIES],
   ['admin.patients.detail.contractedServicesCard.guardShiftOptions', GUARD_SHIFTS],
+  // Spec 015 (US-A6.1): franja etária solicitada do prestador.
+  ['admin.patients.detail.contractedServicesCard.providerAgeBandOptions', PROVIDER_AGE_BANDS],
 ];
 
 describe.each([

@@ -32,6 +32,8 @@ export interface ContractedServiceDetail {
   taxCondition: string | null;
   supervisionFrequency: string | null;
   guardShift: string | null;
+  /** Franja etária solicitada do prestador (spec 015, migration 322) — null = não informado. */
+  providerAgeBand: string | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -55,6 +57,7 @@ export interface ContractedServiceWriteInput {
   taxCondition?: string | null;
   supervisionFrequency?: string | null;
   guardShift?: string | null;
+  providerAgeBand?: string | null;
   deviceTypeCodes?: string[];
   /** Só `false` é caminho válido de escrita (baixa) — reabrir não existe (mesma régua do C-e.2). */
   active?: boolean;
@@ -81,6 +84,7 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['taxCondition', 'tax_condition'],
   ['supervisionFrequency', 'supervision_frequency'],
   ['guardShift', 'guard_shift'],
+  ['providerAgeBand', 'provider_age_band'],
 ];
 
 interface ServiceRow {
@@ -99,6 +103,7 @@ interface ServiceRow {
   tax_condition: string | null;
   supervision_frequency: string | null;
   guard_shift: string | null;
+  provider_age_band: string | null;
   active: boolean;
   ended_at: string | null;
   country: string;
@@ -144,6 +149,7 @@ export class PatientContractedServiceRepository {
       taxCondition: row.tax_condition,
       supervisionFrequency: row.supervision_frequency,
       guardShift: row.guard_shift,
+      providerAgeBand: row.provider_age_band,
       active: row.active,
       endedAt: row.ended_at,
       country: row.country,

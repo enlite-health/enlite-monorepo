@@ -119,6 +119,8 @@ const contractedServiceSchema = z
     taxCondition: z.string().nullable(),
     supervisionFrequency: z.string().nullable(),
     guardShift: z.string().nullable(),
+    // Spec 015 (US-A6.1): franja etária solicitada do prestador — string frouxa, molde do resto.
+    providerAgeBand: z.string().nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),

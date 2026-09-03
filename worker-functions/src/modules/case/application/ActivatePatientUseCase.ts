@@ -6,6 +6,8 @@ import {
   computePatientCompleteness,
   type PatientCompletenessCode,
 } from '../domain/PatientCompleteness';
+import { vacancyRangeForProviderAgeBand } from '../domain/ProviderAgeBandMapping';
+import type { ProviderAgeBand } from '../domain/enums/ContractedService';
 
 /**
  * Thrown when the patient does not exist (or was soft-deleted). The controller
@@ -98,6 +100,11 @@ export interface ActivatePatientResult {
  * adopted), activation falls back to the PREVIOUS behaviour — one draft per address, no
  * `contracted_service_id` — so existing patients are not blocked from activating.
  *
+ * Spec 015 (US-A6.2, D254 item 6): each service-born vaga also inherits `age_range_min/max` from
+ * the service's `provider_age_band`, through the SAME single mapping used everywhere else
+ * (`vacancyRangeForProviderAgeBand`, `ProviderAgeBandMapping.ts`) — never a local re-derivation.
+ * `null` (not informed) and the fallback (no service) both resolve to `{min:null,max:null}`.
+ *
  * NOTE (deliberate): unlike VacancyCrudController.createVacancy, this use case
  * does NOT emit a `vacancy.created` domain event. That event drives
  * VacancyAutoInviteHandler, which runs matchmaking + WhatsApp auto-invite and
@@ -170,8 +177,14 @@ export class ActivatePatientUseCase {
       // Spec 013 bloco C: services declared for this patient, ACTIVE only. Zero rows here is
       // the case for every patient today (the entity nasceu vazia) — the loop below falls back
       // to one draft per address, exactly like before this feature.
-      const serviceRes = await client.query<{ id: string; providers_needed: number | null }>(
-        `SELECT id, providers_needed
+      const serviceRes = await client.query<{
+        id: string;
+        providers_needed: number | null;
+        // Spec 015 (US-A6.2): coluna nova (migration 322) — a query já filtrava `WHERE active`,
+        // então um serviço inativo simplesmente não aparece aqui (mesmo shape de antes).
+        provider_age_band: string | null;
+      }>(
+        `SELECT id, providers_needed, provider_age_band
            FROM patient_contracted_services
           WHERE patient_id = $1 AND active
           ORDER BY created_at ASC`,
@@ -212,16 +225,29 @@ export class ActivatePatientUseCase {
         throw new NoActiveAddressError(patientId);
       }
 
-      const pairs: Array<{ addressId: string; serviceId: string | null; providersNeeded: number | null }> =
+      const pairs: Array<{
+        addressId: string;
+        serviceId: string | null;
+        providersNeeded: number | null;
+        // Spec 015 (US-A6.2): sempre um objeto (nunca null) — vacancyRangeForProviderAgeBand
+        // já resolve "não informado"/fallback para {min:null,max:null} (ProviderAgeBandMapping.ts).
+        ageRange: { min: number | null; max: number | null };
+      }> =
         serviceRes.rowCount && serviceRes.rowCount > 0
           ? addrRes.rows.flatMap((addr) =>
               serviceRes.rows.map((svc) => ({
                 addressId: addr.id,
                 serviceId: svc.id,
                 providersNeeded: svc.providers_needed,
+                ageRange: vacancyRangeForProviderAgeBand(svc.provider_age_band as ProviderAgeBand | null),
               })),
             )
-          : addrRes.rows.map((addr) => ({ addressId: addr.id, serviceId: null, providersNeeded: null }));
+          : addrRes.rows.map((addr) => ({
+              addressId: addr.id,
+              serviceId: null,
+              providersNeeded: null,
+              ageRange: { min: null, max: null },
+            }));
 
       const createdVacancyIds: string[] = [];
       for (const pair of pairs) {
@@ -246,8 +272,11 @@ export class ActivatePatientUseCase {
           contracted_service_id: pair.serviceId,
           required_professions: null,
           required_sex: null,
-          age_range_min: null,
-          age_range_max: null,
+          // Spec 015 (US-A6.2, D254 item 6): herda da franja do SERVIÇO — fonte única
+          // vacancyRangeForProviderAgeBand (ProviderAgeBandMapping.ts). Fallback (sem serviço) e
+          // "não informado" resolvem para null/null acima, na construção de `pairs`.
+          age_range_min: pair.ageRange.min,
+          age_range_max: pair.ageRange.max,
           worker_profile_sought: null,
           required_experience: null,
           worker_attributes: null,

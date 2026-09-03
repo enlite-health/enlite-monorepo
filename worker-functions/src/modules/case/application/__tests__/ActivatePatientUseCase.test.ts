@@ -68,8 +68,10 @@ interface DispatchOpts {
   addressIds?: string[];
   /** Spec 013 bloco C: `patient_contracted_services` ATIVOS deste paciente (a query já filtra
    * `WHERE active` — um serviço inativo simplesmente não aparece aqui, o mesmo shape de "zero
-   * serviços declarados"). Omitido = comportamento pré-existente (fallback, sem serviço). */
-  activeServices?: Array<{ id: string; providers_needed: number | null }>;
+   * serviços declarados"). Omitido = comportamento pré-existente (fallback, sem serviço).
+   * `provider_age_band` (spec 015, US-A6.2) omitido = undefined, mesmo tratamento de null
+   * (vacancyRangeForProviderAgeBand). */
+  activeServices?: Array<{ id: string; providers_needed: number | null; provider_age_band?: string | null }>;
   /** Spec 014: `patient_responsibles` deste paciente (só importa quando `birth_date` é menor). */
   responsibleCount?: number;
 }
@@ -273,12 +275,16 @@ describe('ActivatePatientUseCase', () => {
   // ── Spec 013 bloco C: cross-product serviço×endereço (linhas 142-151), sem cobertura
   // antes desta rodada (QA-caça #2) ───────────────────────────────────────────────────
 
-  it('l. 2 serviços ativos × 2 endereços ativos → 4 vagas (cross-product), cada uma com o contracted_service_id do serviço certo e providers_needed propagado', async () => {
+  it('l. 2 serviços ativos × 2 endereços ativos → 4 vagas (cross-product), cada uma com o contracted_service_id do serviço certo, providers_needed E a franja (age_range_min/max) propagados', async () => {
     const { seen } = programClient({
       patientRow: { id: 'pat-cross', status: 'PENDING_ADMISSION', case_number: 77 },
       addressIds: ['addr-1', 'addr-2'],
       activeServices: [
-        { id: 'svc-1', providers_needed: 2 },
+        // Spec 015 (US-A6.2): svc-1 pediu franja 30-45 → toda vaga NASCIDA DESTE SERVIÇO carrega
+        // age_range_min=30/max=44 (ProviderAgeBandMapping.ts), em QUALQUER endereço.
+        { id: 'svc-1', providers_needed: 2, provider_age_band: 'AGE_30_45' },
+        // svc-2 nunca teve a franja preenchida (coluna nova em serviço pré-existente) →
+        // não toca a vaga (null/null), MESMO shape do fallback.
         { id: 'svc-2', providers_needed: null },
       ],
     });
@@ -295,19 +301,52 @@ describe('ActivatePatientUseCase', () => {
     // todas as vagas — o bug óbvio de closure/reuso de variável nesta forma de loop).
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ patient_address_id: 'addr-1', contracted_service_id: 'svc-1', providers_needed: 2 }),
+      expect.objectContaining({
+        patient_address_id: 'addr-1', contracted_service_id: 'svc-1', providers_needed: 2,
+        age_range_min: 30, age_range_max: 44,
+      }),
     );
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ patient_address_id: 'addr-1', contracted_service_id: 'svc-2', providers_needed: null }),
+      expect.objectContaining({
+        patient_address_id: 'addr-1', contracted_service_id: 'svc-2', providers_needed: null,
+        age_range_min: null, age_range_max: null,
+      }),
     );
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       3,
-      expect.objectContaining({ patient_address_id: 'addr-2', contracted_service_id: 'svc-1', providers_needed: 2 }),
+      expect.objectContaining({
+        patient_address_id: 'addr-2', contracted_service_id: 'svc-1', providers_needed: 2,
+        age_range_min: 30, age_range_max: 44,
+      }),
     );
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       4,
-      expect.objectContaining({ patient_address_id: 'addr-2', contracted_service_id: 'svc-2', providers_needed: null }),
+      expect.objectContaining({
+        patient_address_id: 'addr-2', contracted_service_id: 'svc-2', providers_needed: null,
+        age_range_min: null, age_range_max: null,
+      }),
+    );
+  });
+
+  // ── Spec 015 (US-A6.2, T003 "teste unitário direto"): os 4 valores do enum, isolados ────────
+  it.each([
+    ['ANY', null, null],
+    ['AGE_20_30', 20, 29],
+    ['AGE_30_45', 30, 44],
+    ['AGE_45_PLUS', 45, null],
+  ])('n. serviço com provider_age_band=%s → vaga com age_range_min=%s, age_range_max=%s', async (band, min, max) => {
+    programClient({
+      patientRow: { id: 'pat-band', status: 'PENDING_ADMISSION', case_number: 99 },
+      addressIds: ['addr-1'],
+      activeServices: [{ id: 'svc-band', providers_needed: 1, provider_age_band: band as string }],
+    });
+
+    await new ActivatePatientUseCase().execute('pat-band');
+
+    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ contracted_service_id: 'svc-band', age_range_min: min, age_range_max: max }),
     );
   });
 
@@ -326,7 +365,10 @@ describe('ActivatePatientUseCase', () => {
     expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ patient_address_id: 'addr-only', contracted_service_id: null, providers_needed: null }),
+      expect.objectContaining({
+        patient_address_id: 'addr-only', contracted_service_id: null, providers_needed: null,
+        age_range_min: null, age_range_max: null,
+      }),
     );
   });
 

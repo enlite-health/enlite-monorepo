@@ -102,6 +102,31 @@ describe('AdminPatientContractedServicesController', () => {
       expect(repo.create.mock.calls[0][0]).toMatchObject({ patientId: PATIENT_ID, serviceCode: 'AT', actorUid: 'uid-1' });
     });
 
+    // Spec 015 (US-A6.1, FR-2): providerAgeBand aceito e repassado ao repo tal qual os demais
+    // enums do schema (careLocation, contractType, ...) — mesmo molde da linha acima.
+    it('201 quando cria com providerAgeBand válido, repassado ao repo', async () => {
+      const repo = { create: jest.fn().mockResolvedValue({ ...SERVICE, providerAgeBand: 'AGE_30_45' }) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', providerAgeBand: 'AGE_30_45' } }), res);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(repo.create.mock.calls[0][0]).toMatchObject({ providerAgeBand: 'AGE_30_45' });
+    });
+
+    // FR-2 pede "422 fora do enum"; a convenção VIVA deste controller (molde bloco C, teste
+    // acima "serviceCode fora do vocabulário") responde 400 para TODO erro de validação zod
+    // (`body.success===false`) — 422 fica reservado a `DeviceTypeUnknownError`, um erro de
+    // NEGÓCIO descoberto DEPOIS do parse, não de shape do body. Dar 422 só a este campo
+        // quebraria a consistência entre os enums do MESMO schema — ver LISTA do relatório.
+    it('400 body inválido (providerAgeBand fora do vocabulário) — mesma convenção dos demais enums deste schema', async () => {
+      const repo = { create: jest.fn() };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', providerAgeBand: 'INEXISTENTE' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
     it('422 quando o repo lança DeviceTypeUnknownError', async () => {
       const repo = { create: jest.fn().mockRejectedValue(new DeviceTypeUnknownError(['X'])) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
@@ -176,6 +201,16 @@ describe('AdminPatientContractedServicesController', () => {
       const res = mockRes();
       await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    // Spec 015 (US-A6.1, FR-2): providerAgeBand aceito no PATCH e repassado ao repo.
+    it('200 quando atualiza providerAgeBand, repassado ao repo', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue({ ...SERVICE, providerAgeBand: 'ANY' }) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providerAgeBand: 'ANY' } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(repo.update.mock.calls[0][1]).toMatchObject({ providerAgeBand: 'ANY' });
     });
 
     it('404 quando update devolve null (corrida: apagado entre o findById e o UPDATE)', async () => {

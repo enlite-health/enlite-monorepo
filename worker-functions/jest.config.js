@@ -86,8 +86,33 @@ module.exports = {
     },
     // Cross-product serviço×endereço da ativação (spec 013 bloco C) — cada vaga carrega o
     // contracted_service_id/providers_needed do serviço CERTO; regressão aqui embaralha vagas
-    // entre serviços diferentes calada (QA-caça #2, achado real).
+    // entre serviços diferentes calada (QA-caça #2, achado real). Spec 015 (US-A6.2) estendeu
+    // este mesmo arquivo com a franja etária (age_range_min/max) — segue medindo 100.
+    // Spec 015 (A6): entidade do serviço contratado — `provider_age_band` entra no INSERT/UPDATE/decorate;
+    // QA-caça A6 #2 achou o arquivo TOCADO fora do piso (88 % de branches desde o bloco C). Travado em 100.
+    'src/modules/case/infrastructure/PatientContractedServiceRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/application/ActivatePatientUseCase.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 015 (US-A6.2, D254 item 6): fonte ÚNICA do mapa franja→vaga — regressão aqui muda o
+    // que TODA vaga nascida de serviço recebe de age_range_min/max, calado.
+    'src/modules/case/domain/ProviderAgeBandMapping.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 015 (US-A6.1): schema de validação do serviço contratado, estendido com
+    // providerAgeBand — medido 100 nos 4 eixos na suíte inteira do módulo `case`.
+    'src/modules/case/interfaces/validators/contractedServiceSchemas.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

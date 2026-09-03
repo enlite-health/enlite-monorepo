@@ -1,6 +1,6 @@
 {
-  "id": "3bf4da8f-9a37-42ba-9193-0c8f1fa8006e",
-  "clickupTaskId": "E2E-CONTRACT-FIXTURE-D255",
+  "id": "9960be58-4c96-4a82-a19a-f395fcf34ff0",
+  "clickupTaskId": "E2E-CONTRACT-FIXTURE-A6-1788471672",
   "firstName": "Contrato",
   "lastName": "Fixture",
   "birthDate": null,
@@ -17,7 +17,7 @@
   "serviceType": [
     "AT"
   ],
-  "deviceType": "HOME",
+  "deviceType": null,
   "additionalComments": null,
   "additionalCommentsUpdatedAt": null,
   "additionalCommentsUpdatedBy": null,
@@ -47,10 +47,10 @@
   "needsAttention": false,
   "attentionReasons": [],
   "phoneMatchesResponsible": false,
-  "lastCaseNumber": 990778,
+  "lastCaseNumber": 990672,
   "responsibles": [
     {
-      "id": "cae15d70-bf3c-43d1-8005-e9bdf6e15fcb",
+      "id": "7b215a7f-e62c-419b-aff9-1a97dc77ba3e",
       "firstName": "Marta",
       "lastName": "Fixture",
       "relationship": "PARENT",
@@ -65,18 +65,18 @@
   ],
   "addresses": [
     {
-      "id": "71e13451-b09f-44e7-ace0-6a8b3850d0d5",
+      "id": "eac5b719-7aaf-4f2e-9ea9-73408ec5dd81",
       "addressType": "primary",
       "addressFormatted": "Av. Fixture 123, CABA, AR",
-      "addressRaw": "Av. Fixture 123",
+      "addressRaw": "Av. Fixture 123, CABA",
       "complement": null,
       "displayOrder": 1,
       "lat": -34.6,
-      "lng": -58.4,
+      "lng": -58.38,
       "isPrimary": true,
-      "neighborhood": "Palermo",
-      "logisticsCorridor": "Norte",
-      "accessNotes": "Timbre 2B (fixture)",
+      "neighborhood": null,
+      "logisticsCorridor": null,
+      "accessNotes": null,
       "country": "AR",
       "availability": {
         "totalCoveredHours": 0,
@@ -161,9 +161,9 @@
   ],
   "professionals": [
     {
-      "id": "a22a10e1-bb65-4d11-bd9f-8efe016ec884",
+      "id": "d52bcb7d-88c4-45ec-a5c7-01fcd3921f69",
       "name": "Dra. Fixture Tratante",
-      "phone": "+5491100000022",
+      "phone": "",
       "email": "",
       "displayOrder": 1,
       "isTeam": false
@@ -171,8 +171,8 @@
   ],
   "contractedServices": [
     {
-      "id": "2b252d40-f8c0-4cbb-ac8a-03539701a693",
-      "patientId": "3bf4da8f-9a37-42ba-9193-0c8f1fa8006e",
+      "id": "970c1212-4eb6-4b51-bffc-59a3de5b9eaa",
+      "patientId": "9960be58-4c96-4a82-a19a-f395fcf34ff0",
       "serviceCode": "AT",
       "professionalProfile": "Perfil sintético de fixture — busca AT con experiencia en movilidad reducida.",
       "providersNeeded": 2,
@@ -186,18 +186,19 @@
       "taxCondition": "IVA_EXEMPT",
       "supervisionFrequency": "DAYS_30",
       "guardShift": "MORNING",
+      "providerAgeBand": "AGE_30_45",
       "active": true,
       "endedAt": null,
       "country": "AR",
       "deviceTypes": [],
       "providers": [],
-      "createdAt": "2026-09-03T20:43:15.857Z",
-      "updatedAt": "2026-09-03T20:43:15.857Z",
+      "createdAt": "2026-09-03T21:41:17.788Z",
+      "updatedAt": "2026-09-03T21:41:17.788Z",
       "hourlyValueRedacted": false
     }
   ],
-  "createdAt": "2026-09-03T20:43:07.953Z",
-  "updatedAt": "2026-09-03T20:43:15.857Z",
+  "createdAt": "2026-09-03T21:41:13.571Z",
+  "updatedAt": "2026-09-03T21:41:17.788Z",
   "completeness": {
     "missing": [],
     "blocking": [],

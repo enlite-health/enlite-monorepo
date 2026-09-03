@@ -38,6 +38,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, version: 'v1', startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
+  providerAgeBand: 'AGE_30_45',
   active: true, endedAt: null, country: 'AR', deviceTypes: ['HOME'], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
 };
@@ -73,6 +74,26 @@ describe('ContractedServiceFormRow', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
+  // Spec 015 (US-A6.1): franja etária solicitada do prestador — select no drawer.
+  it('modo NOVO: escolher providerAgeBand e salvar envia o valor escolhido', async () => {
+    mockCreate.mockResolvedValue(SERVICE);
+    render(<ContractedServiceFormRow patientId="pat1" service={null} index={1} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    fireEvent.change(screen.getByTestId('svc-providerAgeBand-1'), { target: { value: 'AGE_30_45' } });
+    fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    expect(mockCreate.mock.calls[0][1]).toMatchObject({ providerAgeBand: 'AGE_30_45' });
+  });
+
+  it('modo NOVO: sem escolher providerAgeBand, envia null (nunca string vazia)', async () => {
+    mockCreate.mockResolvedValue(SERVICE);
+    render(<ContractedServiceFormRow patientId="pat1" service={null} index={1} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    expect(mockCreate.mock.calls[0][1]).toMatchObject({ providerAgeBand: null });
+  });
+
   it('modo NOVO: erro ao criar mostra mensagem', async () => {
     mockCreate.mockRejectedValue(new Error('boom'));
     render(<ContractedServiceFormRow patientId="pat1" service={null} index={1} onSaved={vi.fn()} />);
@@ -87,6 +108,7 @@ describe('ContractedServiceFormRow', () => {
     expect(screen.getByTestId('svc-code-1')).toBeDisabled();
     expect((screen.getByTestId('svc-providersNeeded-1') as HTMLInputElement).value).toBe('2');
     expect((screen.getByTestId('svc-profile-1') as HTMLTextAreaElement).value).toBe('perfil sintético');
+    expect((screen.getByTestId('svc-providerAgeBand-1') as HTMLSelectElement).value).toBe('AGE_30_45');
     expect(screen.getByTestId('providers-section-s1')).toBeTruthy();
   });
 
@@ -98,6 +120,14 @@ describe('ContractedServiceFormRow', () => {
     fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ weeklyHours: 25 })));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('modo EXISTENTE: editar providerAgeBand e salvar chama updateContractedService com o novo valor', async () => {
+    mockUpdate.mockResolvedValue(SERVICE);
+    render(<ContractedServiceFormRow patientId="pat1" service={SERVICE} index={1} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('svc-providerAgeBand-1'), { target: { value: 'AGE_45_PLUS' } });
+    fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ providerAgeBand: 'AGE_45_PLUS' })));
   });
 
   it('modo EXISTENTE: hourlyValue redigido (lex C-c.4) fica DESABILITADO e o submit NUNCA envia a chave', async () => {

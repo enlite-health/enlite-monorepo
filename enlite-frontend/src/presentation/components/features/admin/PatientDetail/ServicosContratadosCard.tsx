@@ -94,6 +94,11 @@ function ServiceRow({ service, t }: { service: PatientContractedServiceDetail; t
           ? t(`admin.patients.detail.contractedServicesCard.taxConditionOptions.${service.taxCondition}`, service.taxCondition)
           : EMPTY}
       </TableCell>
+      <TableCell data-testid={`contracted-service-age-band-${service.id}`}>
+        {service.providerAgeBand
+          ? t(`admin.patients.detail.contractedServicesCard.providerAgeBandOptions.${service.providerAgeBand}`, service.providerAgeBand)
+          : EMPTY}
+      </TableCell>
     </TableRow>
   );
 }
@@ -139,11 +144,12 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableStart')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableContract')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableIVA')}</TableHead>
+          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableProviderAgeBand')}</TableHead>
         </TableHeader>
         <TableBody>
           {services.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={10} className="py-6 text-center">
+              <TableCell unwrapped colSpan={11} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>

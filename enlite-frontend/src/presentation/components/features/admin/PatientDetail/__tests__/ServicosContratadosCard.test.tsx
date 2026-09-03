@@ -55,6 +55,7 @@ const SERVICE: PatientContractedServiceDetail = {
   taxCondition: 'IVA_EXEMPT',
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
+  providerAgeBand: 'AGE_30_45',
   active: true,
   endedAt: null,
   country: 'AR',
@@ -84,6 +85,9 @@ describe('ServicosContratadosCard — #PEND-08 (spec 013, bloco C)', () => {
     // Valor real, não redigido para este ator (hourlyValueRedacted: false).
     expect(screen.getByTestId('contracted-service-value-svc-1').textContent).toContain('1500');
 
+    // Spec 015 (US-A6.1): franja etária solicitada do prestador, traduzida — nunca o enum cru.
+    expect(screen.getByTestId('contracted-service-age-band-svc-1').textContent).toBe('30 a 45 Años');
+
     expectNoRawEnumLeaks(row);
   });
 
@@ -110,6 +114,7 @@ describe('ServicosContratadosCard — #PEND-08 (spec 013, bloco C)', () => {
       providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
       hourlyValue: null, hourlyValueRedacted: false, version: null, startDate: null,
       contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
+      providerAgeBand: null,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -125,6 +130,7 @@ describe('ServicosContratadosCard — #PEND-08 (spec 013, bloco C)', () => {
     // pair(null, null) das horas: os dois lados null aqui → "—".
     expect(screen.getByTestId('contracted-service-hours-svc-min').textContent).toBe('—');
     expect(screen.getByTestId('contracted-service-value-svc-min').textContent).toContain('—');
+    expect(screen.getByTestId('contracted-service-age-band-svc-min').textContent).toBe('—');
   });
 
   it('pair(): providersNeeded null com prestadores ativos > 0 mostra "— / N", nunca o número bare (QA-caça #3)', () => {
